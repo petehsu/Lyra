@@ -1,0 +1,45 @@
+---
+title: File Editor
+description: Double-click open flow, save loop, and intelligent core baseline
+---
+
+## Open behavior
+
+When a file is double-clicked in File Manager:
+
+1. open a `file-editor` tab in workspace
+2. enforce same-path singleton (activate existing tab instead of duplicating)
+3. keep directory double-click behavior as directory navigation
+
+## Save loop
+
+V1 supports three save triggers:
+
+1. manual save: `Ctrl/Cmd + S`
+2. idle autosave: 800ms default
+3. blur autosave
+
+Writes are handled by Rust with atomic-save semantics and revision conflict protection.
+
+## Intelligent baseline
+
+Current capabilities:
+
+1. syntax highlighting
+2. completion
+3. diagnostics
+
+Languages covered: `TS/JS`, `Rust`, `Python`.
+
+## Forward compatibility
+
+The editor stream contract is reserved for future AI IDE flows:
+
+1. `plan`
+2. `patch`
+3. `cursor`
+4. `diagnostic`
+5. `approval`
+
+Execution remains disabled in V1; only contracts and boundaries are frozen.
+

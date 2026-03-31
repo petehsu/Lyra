@@ -1,0 +1,20 @@
+{
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {
+    "max-lines": [
+      "error",
+      {
+        "max": 420,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ]
+  }
+}

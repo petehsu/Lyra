@@ -1,0 +1,274 @@
+import { Check, Copy } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+import type { GlobalDialogState } from "./types";
+
+type GlobalDialogHostProps = {
+  readonly state: GlobalDialogState;
+  readonly onClose: () => void;
+  readonly onSelectAction: (actionId: string) => void;
+};
+
+const toActionLayoutClassName = (count: number): string => {
+  if (count <= 1) {
+    return "lyra-global-dialog-actions-1";
+  }
+  if (count === 2) {
+    return "lyra-global-dialog-actions-2";
+  }
+  return "lyra-global-dialog-actions-3";
+};
+
+const DEFAULT_SOURCE_ICON_LABEL = "APP";
+const COPIED_MARK_DURATION_MS = 1600;
+
+const resolveSourceIconLabel = (source: GlobalDialogState["source"]): string => {
+  if (source === undefined) {
+    return DEFAULT_SOURCE_ICON_LABEL;
+  }
+
+  if (source.iconLabel !== undefined) {
+    return source.iconLabel;
+  }
+
+  const compactTitle = source.title.replace(/\s+/g, "");
+  const fallback = compactTitle.slice(0, 2).toUpperCase();
+  return fallback.length > 0 ? fallback : DEFAULT_SOURCE_ICON_LABEL;
+};
+
+const writeClipboardText = async (text: string): Promise<boolean> => {
+  if (
+    typeof navigator !== "undefined"
+    && typeof navigator.clipboard?.writeText === "function"
+  ) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback to execCommand below.
+    }
+  }
+
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const probe = document.createElement("textarea");
+  probe.value = text;
+  probe.setAttribute("readonly", "true");
+  probe.style.position = "fixed";
+  probe.style.opacity = "0";
+  probe.style.pointerEvents = "none";
+  probe.style.left = "-10000px";
+  probe.style.top = "-10000px";
+  document.body.append(probe);
+  probe.focus();
+  probe.select();
+
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    document.body.removeChild(probe);
+  }
+};
+
+export const GlobalDialogHost = ({
+  state,
+  onClose,
+  onSelectAction
+}: GlobalDialogHostProps) => {
+  const [copiedItemId, setCopiedItemId] = useState<string | null>(null);
+  const copiedResetTimerRef = useRef<number | null>(null);
+
+  const clearCopiedResetTimer = useCallback((): void => {
+    if (copiedResetTimerRef.current !== null) {
+      window.clearTimeout(copiedResetTimerRef.current);
+      copiedResetTimerRef.current = null;
+    }
+  }, []);
+
+  const onCopyItem = useCallback((itemId: string, value: string): void => {
+    void (async () => {
+      const copied = await writeClipboardText(value);
+      if (copied === false) {
+        return;
+      }
+
+      setCopiedItemId(itemId);
+      clearCopiedResetTimer();
+      copiedResetTimerRef.current = window.setTimeout(() => {
+        setCopiedItemId((currentId) =>
+          currentId === itemId ? null : currentId
+        );
+        copiedResetTimerRef.current = null;
+      }, COPIED_MARK_DURATION_MS);
+    })();
+  }, [clearCopiedResetTimer]);
+
+  useEffect(() => {
+    if (state.isOpen === false) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose, state.isOpen]);
+
+  useEffect(() => {
+    if (state.isOpen === false) {
+      setCopiedItemId(null);
+      clearCopiedResetTimer();
+    }
+  }, [clearCopiedResetTimer, state.isOpen]);
+
+  useEffect(
+    () => () => {
+      clearCopiedResetTimer();
+    },
+    [clearCopiedResetTimer]
+  );
+
+  if (state.isOpen === false || typeof document === "undefined") {
+    return null;
+  }
+
+  const actionsClassName = [
+    "lyra-global-dialog-actions",
+    toActionLayoutClassName(state.actions.length)
+  ].join(" ");
+  const sourceIconLabel = resolveSourceIconLabel(state.source);
+  const sourceIconTone = state.source?.iconTone ?? "default";
+  const sourceIconClassName = [
+    "lyra-global-dialog-source-icon",
+    `lyra-global-dialog-source-icon-${sourceIconTone}`
+  ].join(" ");
+
+  return createPortal(
+    <div
+      className="lyra-global-dialog-layer"
+      aria-label="global-dialog-layer"
+      onMouseDown={onClose}
+      onDragStart={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <section
+        className="lyra-global-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={state.title}
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
+        onDragStart={(event) => {
+          event.preventDefault();
+        }}
+      >
+        {state.source !== undefined ? (
+          <section
+            className="lyra-global-dialog-source"
+            aria-label="global-dialog-source"
+          >
+            <span className={sourceIconClassName} aria-hidden="true">
+              {sourceIconLabel}
+            </span>
+            <div className="lyra-global-dialog-source-meta">
+              <strong>{state.source.title}</strong>
+              {state.source.subtitle !== undefined ? (
+                <small>{state.source.subtitle}</small>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        <header className="lyra-global-dialog-header">
+          <h2>{state.title}</h2>
+          {state.description !== undefined ? (
+            <p>{state.description}</p>
+          ) : null}
+        </header>
+
+        {state.copyItems.length > 0 ? (
+          <section
+            className="lyra-global-dialog-copy-list"
+            aria-label="global-dialog-copy-list"
+          >
+            {state.copyItems.map((item) => {
+              const isCopied = copiedItemId === item.id;
+              const copyLabel = isCopied
+                ? state.copiedActionLabel
+                : state.copyActionLabel;
+              const copyClassName = isCopied
+                ? "lyra-global-dialog-copy-action lyra-global-dialog-copy-action-copied"
+                : "lyra-global-dialog-copy-action";
+
+              return (
+                <article
+                  key={item.id}
+                  className="lyra-global-dialog-copy-item"
+                  aria-label={`global-dialog-copy-item-${item.id}`}
+                >
+                  <div className="lyra-global-dialog-copy-meta">
+                    <strong>{item.label}</strong>
+                    <code>{item.value}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className={copyClassName}
+                    aria-label={`${copyLabel} ${item.label}`}
+                    title={`${copyLabel}: ${item.label}`}
+                    onClick={() => {
+                      onCopyItem(item.id, item.value);
+                    }}
+                  >
+                    {isCopied ? <Check size={13} /> : <Copy size={13} />}
+                  </button>
+                </article>
+              );
+            })}
+          </section>
+        ) : null}
+
+        {state.actions.length > 0 ? (
+          <footer className={actionsClassName}>
+            {state.actions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                className={[
+                  "lyra-global-dialog-action",
+                  action.tone === "primary"
+                    ? "lyra-global-dialog-action-primary"
+                    : "",
+                  action.tone === "danger"
+                    ? "lyra-global-dialog-action-danger"
+                    : ""
+                ]
+                  .filter((value) => value.length > 0)
+                  .join(" ")}
+                disabled={action.disabled}
+                onClick={() => {
+                  onSelectAction(action.id);
+                }}
+              >
+                {action.label}
+              </button>
+            ))}
+          </footer>
+        ) : null}
+      </section>
+    </div>,
+    document.body
+  );
+};

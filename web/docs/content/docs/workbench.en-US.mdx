@@ -1,0 +1,38 @@
+---
+title: Workbench Model
+description: Unified model for panels, tabs, and cross-zone transfer
+---
+
+## Core objects
+
+1. Workspace tabs: browser, settings, file manager, file editor, terminal, and more.
+2. Panel layout: left panel, center workspace, bottom terminal.
+3. Unified context menu: globally managed with consistent style and behavior.
+
+## Tab lifecycle
+
+Lyra centralizes tab lifecycle into an application service:
+
+1. create
+2. activate
+3. transfer (for example, terminal `dock` and `workspace`)
+4. close
+5. reorder and drag operations
+
+This keeps future app integrations from re-implementing tab behavior repeatedly.
+
+## Terminal transfer
+
+Terminal tabs can move both ways between dock and workspace:
+
+1. context-menu action
+2. drag-and-drop action
+
+Sessions remain alive during transfer; React unmount is never used as the session-close signal.
+
+## Design language priorities
+
+1. Less is more: remove duplication and visual noise.
+2. Immersive first: avoid heavy lines and boxed framing.
+3. Familiar first: innovation should not increase learning cost.
+4. Fused active tab: active tab and content surface should visually connect.

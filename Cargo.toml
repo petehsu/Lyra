@@ -1,0 +1,17 @@
+[workspace]
+members = [
+  "crates/lyrad",
+  "crates/lyra-sandbox",
+  "crates/lyra-terminal-napi",
+  "crates/lyra-files-napi",
+  "crates/lyra-lsp-napi",
+  "crates/lyra-skills-napi",
+  "crates/lyra-mcp-napi",
+  "crates/lyra-ai-napi",
+  "crates/lyra-computer-napi",
+  "crates/lyra-system-image-napi"
+]
+resolver = "2"
+
+[patch.crates-io]
+portable-pty = { path = "vendor/portable-pty" }

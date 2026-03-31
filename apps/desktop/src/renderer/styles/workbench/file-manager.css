@@ -1,0 +1,923 @@
+/* File manager surface, list/grid, and overflow marquee styles */
+.lyra-file-manager-surface {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--lyra-bg-editor);
+}
+
+.lyra-file-manager-toolbar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 90%, var(--lyra-bg-editor) 10%);
+}
+
+.lyra-file-manager-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lyra-file-manager-tool-button {
+  width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
+  border-radius: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.74;
+  transition:
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.lyra-file-manager-tool-button:hover {
+  background: transparent;
+  color: var(--lyra-text-primary);
+  opacity: 1;
+}
+
+.lyra-file-manager-tool-button:disabled {
+  opacity: 0.28;
+  color: var(--lyra-text-muted);
+  pointer-events: none;
+}
+
+.lyra-file-manager-tool-button-active {
+  opacity: 1;
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-manager-tool-button-danger:hover:not(:disabled) {
+  color: var(--lyra-window-close-hover-bg);
+}
+
+.lyra-file-manager-breadcrumbs {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.lyra-file-manager-breadcrumb,
+.lyra-file-manager-breadcrumb-current {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+
+.lyra-file-manager-breadcrumb {
+  cursor: pointer;
+  transition: color var(--lyra-transition-fast);
+}
+
+.lyra-file-manager-breadcrumb:hover {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-manager-breadcrumb-active,
+.lyra-file-manager-breadcrumb-current {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-manager-breadcrumbs i {
+  color: var(--lyra-text-muted);
+  font-style: normal;
+}
+
+.lyra-file-manager-layout {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.lyra-file-manager-nav {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 8px;
+  border-right: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 92%, var(--lyra-bg-editor) 8%);
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.lyra-file-manager-nav-group {
+  display: grid;
+  gap: 4px;
+}
+
+.lyra-file-manager-nav-label {
+  padding: 0 8px 4px;
+  color: var(--lyra-text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lyra-file-manager-nav-item {
+  min-width: 0;
+  height: 28px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  text-align: left;
+  position: relative;
+  transition: color var(--lyra-transition-fast);
+}
+
+.lyra-file-manager-nav-item:hover {
+  color: var(--lyra-text-primary);
+  background: transparent;
+}
+
+.lyra-file-manager-nav-item-active {
+  color: var(--lyra-text-primary);
+  background: transparent;
+}
+
+.lyra-file-manager-nav-item-active::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lyra-line-focused) 82%, var(--lyra-text-primary) 18%);
+}
+
+.lyra-file-manager-nav-item:hover .lyra-file-manager-icon-shell,
+.lyra-file-manager-nav-item-active .lyra-file-manager-icon-shell {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-manager-nav-item-active span {
+  font-weight: 500;
+}
+
+.lyra-file-manager-nav-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-file-manager-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--lyra-bg-editor);
+}
+
+.lyra-file-manager-home {
+  min-width: 0;
+  display: grid;
+  gap: 18px;
+  padding: 16px;
+}
+
+.lyra-file-manager-skeleton-home {
+  min-width: 0;
+  display: grid;
+  gap: 18px;
+  padding: 16px;
+}
+
+.lyra-file-manager-skeleton-home-section {
+  display: grid;
+  gap: 10px;
+}
+
+.lyra-file-manager-skeleton-home-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyra-file-manager-skeleton-home-header-icon {
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+}
+
+.lyra-file-manager-skeleton-home-header-title {
+  width: 92px;
+  height: 12px;
+}
+
+.lyra-file-manager-home-section {
+  display: grid;
+  gap: 10px;
+}
+
+.lyra-file-manager-home-section-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-file-manager-home-section-header h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.lyra-file-manager-home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.lyra-file-manager-home-card {
+  min-width: 0;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--lyra-bg-surface) 90%, var(--lyra-bg-editor) 10%);
+  padding: 12px;
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  text-align: left;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-file-manager-home-card-skeleton {
+  cursor: default;
+  pointer-events: none;
+}
+
+.lyra-file-manager-disk-card-skeleton .lyra-file-manager-disk-meter {
+  overflow: visible;
+  background: transparent;
+}
+
+.lyra-file-manager-skeleton-card-icon {
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+}
+
+.lyra-file-manager-skeleton-card-title {
+  width: 65%;
+  height: 13px;
+}
+
+.lyra-file-manager-skeleton-card-subtitle {
+  width: 85%;
+  height: 11px;
+}
+
+.lyra-file-manager-skeleton-disk-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.lyra-file-manager-skeleton-disk-title {
+  width: 68%;
+  height: 13px;
+}
+
+.lyra-file-manager-skeleton-disk-path {
+  width: 88%;
+  height: 11px;
+}
+
+.lyra-file-manager-skeleton-disk-meter {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+}
+
+.lyra-file-manager-skeleton-disk-meta-line {
+  width: 92%;
+  height: 11px;
+}
+
+.lyra-file-manager-skeleton-disk-meta-line-short {
+  width: 64%;
+}
+
+.lyra-file-manager-skeleton-disk-kind {
+  width: 56px;
+  height: 16px;
+  border-radius: 999px;
+}
+
+.lyra-file-manager-home-card:hover {
+  color: var(--lyra-text-primary);
+  border-color: var(--lyra-line-focused);
+}
+
+.lyra-file-manager-home-card strong,
+.lyra-file-manager-home-card small {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-file-manager-home-card strong {
+  color: inherit;
+  font-size: 13px;
+}
+
+.lyra-file-manager-disk-card {
+  padding: 16px;
+  gap: 8px;
+}
+
+.lyra-file-manager-disk-summary {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.lyra-file-manager-disk-summary-icon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-file-manager-disk-summary-body {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.lyra-file-manager-disk-summary-body strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-file-manager-disk-kind {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 32%, transparent);
+}
+
+.lyra-file-manager-disk-kind-system {
+  color: color-mix(in srgb, var(--lyra-terminal-green) 80%, var(--lyra-text-primary) 20%);
+  background: color-mix(in srgb, var(--lyra-terminal-green) 18%, transparent);
+}
+
+.lyra-file-manager-disk-kind-local {
+  color: color-mix(in srgb, var(--lyra-terminal-blue) 78%, var(--lyra-text-primary) 22%);
+  background: color-mix(in srgb, var(--lyra-terminal-blue) 16%, transparent);
+}
+
+.lyra-file-manager-disk-kind-removable {
+  color: color-mix(in srgb, var(--lyra-terminal-yellow) 84%, var(--lyra-text-primary) 16%);
+  background: color-mix(in srgb, var(--lyra-terminal-yellow) 18%, transparent);
+}
+
+.lyra-file-manager-disk-kind-external {
+  color: color-mix(in srgb, var(--lyra-line-focused) 78%, var(--lyra-text-primary) 22%);
+  background: color-mix(in srgb, var(--lyra-line-focused) 16%, transparent);
+}
+
+.lyra-file-manager-disk-meter {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--lyra-bg-hover) 34%, var(--lyra-bg-editor) 66%);
+}
+
+.lyra-file-manager-disk-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--lyra-line-focused) 78%, var(--lyra-terminal-green) 22%);
+}
+
+.lyra-file-manager-disk-meter-fill-healthy {
+  background: color-mix(in srgb, var(--lyra-terminal-green) 82%, var(--lyra-line-focused) 18%);
+}
+
+.lyra-file-manager-disk-meter-fill-warning {
+  background: color-mix(in srgb, var(--lyra-terminal-yellow) 86%, var(--lyra-line-focused) 14%);
+}
+
+.lyra-file-manager-disk-meter-fill-danger {
+  background: color-mix(in srgb, var(--lyra-terminal-red) 84%, var(--lyra-line-focused) 16%);
+}
+
+.lyra-file-manager-disk-meta {
+  width: 100%;
+  display: grid;
+  gap: 2px;
+  color: var(--lyra-text-muted);
+  font-size: 11px;
+}
+
+.lyra-file-manager-disk-footer {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyra-file-manager-device-card {
+  cursor: default;
+}
+
+.lyra-file-manager-disk-path {
+  min-width: 0;
+  color: var(--lyra-text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-file-manager-home-card small,
+.lyra-file-manager-home-empty {
+  color: var(--lyra-text-muted);
+  font-size: 11px;
+}
+
+.lyra-file-manager-list-shell {
+  min-width: 0;
+  display: grid;
+  padding: 10px 12px 16px;
+}
+
+.lyra-file-manager-list-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px 12px;
+  align-content: start;
+}
+
+.lyra-file-manager-list-grid-skeleton {
+  pointer-events: none;
+}
+
+.lyra-file-manager-large-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 14px;
+}
+
+.lyra-file-manager-large-tile-skeleton {
+  pointer-events: none;
+}
+
+.lyra-file-manager-large-tile {
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 2px 4px 6px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  color: var(--lyra-text-secondary);
+  text-align: left;
+  transition: color var(--lyra-transition-fast);
+}
+
+.lyra-file-manager-large-tile[data-lyra-allow-web-drag="true"] {
+  -webkit-user-drag: element;
+}
+
+.lyra-file-manager-large-tile[data-lyra-allow-web-drag="true"] * {
+  -webkit-user-drag: none;
+}
+
+.lyra-file-manager-large-tile:hover {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-manager-large-tile-active,
+.lyra-file-manager-large-tile-active:hover {
+  color: var(--lyra-text-primary);
+  background: transparent;
+}
+
+.lyra-file-manager-large-tile-draft {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-manager-large-tile-preview {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.lyra-file-manager-large-tile-preview,
+.lyra-file-manager-large-tile-preview * {
+  pointer-events: none;
+}
+
+.lyra-file-manager-skeleton-large-preview {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+}
+
+.lyra-file-manager-large-tile-preview .lyra-file-manager-icon-shell {
+  width: 88%;
+  height: 88%;
+  flex: 0 0 auto;
+}
+
+.lyra-file-manager-large-tile-preview .lyra-file-manager-icon-shell svg {
+  width: 100%;
+  height: 100%;
+  stroke-width: 1.3;
+}
+
+.lyra-file-manager-large-tile-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.lyra-file-manager-large-tile-body {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.lyra-file-manager-large-tile-body small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-file-manager-large-tile-title {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lyra-file-manager-skeleton-large-title {
+  width: 72%;
+  height: 13px;
+}
+
+.lyra-file-manager-skeleton-large-subtitle {
+  width: 54%;
+  height: 11px;
+}
+
+.lyra-file-manager-large-tile-body small {
+  color: var(--lyra-text-muted);
+  font-size: 11px;
+}
+
+.lyra-file-manager-list-header,
+.lyra-file-manager-list-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 0;
+}
+
+.lyra-file-manager-list-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0 10px;
+  min-height: 30px;
+  color: var(--lyra-text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--lyra-bg-editor) 94%, transparent);
+}
+
+.lyra-file-manager-list-row {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  text-align: left;
+  transition: color var(--lyra-transition-fast);
+}
+
+.lyra-file-manager-list-row[data-lyra-allow-web-drag="true"] {
+  -webkit-user-drag: element;
+}
+
+.lyra-file-manager-list-row[data-lyra-allow-web-drag="true"] * {
+  -webkit-user-drag: none;
+}
+
+.lyra-file-manager-list-row-skeleton {
+  pointer-events: none;
+  color: transparent;
+}
+
+.lyra-file-manager-list-row:hover {
+  color: var(--lyra-text-primary);
+  background: transparent;
+}
+
+.lyra-file-manager-list-row-active,
+.lyra-file-manager-list-row-active:hover {
+  color: var(--lyra-text-primary);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 72%, var(--lyra-bg-editor) 28%);
+}
+
+.lyra-file-manager-list-row-draft {
+  color: var(--lyra-text-primary);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 46%, transparent);
+}
+
+.lyra-file-manager-list-cell-primary {
+  min-width: 0;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyra-file-manager-list-cell-primary-draft .lyra-file-manager-create-input {
+  flex: 1 1 auto;
+}
+
+.lyra-file-manager-list-cell-primary-draft .lyra-file-manager-create-actions {
+  margin-left: auto;
+}
+
+.lyra-file-manager-list-cell-primary span,
+.lyra-file-manager-list-cell-secondary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-file-manager-list-name {
+  width: 100%;
+}
+
+.lyra-file-manager-skeleton-list-icon {
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+}
+
+.lyra-file-manager-skeleton-list-name {
+  width: min(86%, 260px);
+  height: 12px;
+}
+
+.lyra-file-manager-skeleton-list-subline {
+  width: min(68%, 220px);
+  height: 10px;
+  margin-left: 23px;
+  margin-top: 4px;
+  border-radius: 5px;
+}
+
+.lyra-file-manager-list-cell-secondary {
+  color: var(--lyra-text-muted);
+  font-size: 12px;
+}
+
+.lyra-overflow-marquee {
+  min-width: 0;
+  width: 100%;
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.lyra-overflow-marquee-track {
+  min-width: 0;
+  display: inline-block;
+  transform: translateX(0);
+  will-change: transform;
+}
+
+.lyra-overflow-marquee-active[data-overflow="true"] .lyra-overflow-marquee-track {
+  animation-name: lyra-overflow-marquee;
+  animation-duration: var(--lyra-marquee-duration, 6s);
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes lyra-overflow-marquee {
+  0% {
+    transform: translateX(0);
+  }
+
+  20% {
+    transform: translateX(0);
+  }
+
+  80% {
+    transform: translateX(calc(-1 * var(--lyra-marquee-offset, 0px)));
+  }
+
+  100% {
+    transform: translateX(calc(-1 * var(--lyra-marquee-offset, 0px)));
+  }
+}
+
+.lyra-file-manager-empty-state-span {
+  grid-column: 1 / -1;
+}
+
+.lyra-file-manager-icon-shell {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.lyra-file-manager-icon-shell-disk {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+
+.lyra-file-manager-icon-shell-disk-brand {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+}
+
+.lyra-file-manager-disk-brand-image {
+  width: 36px;
+  height: 36px;
+  display: block;
+  object-fit: contain;
+}
+
+[data-lyra-theme-tone="dark"] .lyra-file-manager-disk-brand-image-adaptive {
+  filter: brightness(0) invert(1) saturate(0) contrast(1.1);
+}
+
+[data-lyra-theme-tone="light"] .lyra-file-manager-disk-brand-image-adaptive {
+  filter: none;
+}
+
+.lyra-file-manager-disk-vector {
+  width: 28px;
+  height: 28px;
+  display: block;
+  overflow: visible;
+}
+
+.lyra-file-manager-disk-vector-system {
+  color: color-mix(in srgb, var(--lyra-terminal-green) 80%, var(--lyra-text-primary) 20%);
+}
+
+.lyra-file-manager-disk-vector-local {
+  color: color-mix(in srgb, var(--lyra-terminal-blue) 80%, var(--lyra-text-primary) 20%);
+}
+
+.lyra-file-manager-disk-vector-removable {
+  color: color-mix(in srgb, var(--lyra-terminal-yellow) 88%, var(--lyra-text-primary) 12%);
+}
+
+.lyra-file-manager-disk-vector-external {
+  color: color-mix(in srgb, var(--lyra-terminal-cyan) 80%, var(--lyra-text-primary) 20%);
+}
+
+.lyra-file-manager-create-input {
+  min-width: 0;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: var(--lyra-text-primary);
+  font: inherit;
+  outline: none;
+}
+
+.lyra-file-manager-create-input::placeholder {
+  color: var(--lyra-text-muted);
+}
+
+.lyra-file-manager-create-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.lyra-file-manager-create-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-file-manager-create-button:hover {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-manager-empty-state {
+  margin: 18px 12px 0;
+  min-height: 64px;
+  border: 0.5px dashed color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  color: var(--lyra-text-muted);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 84%, var(--lyra-bg-editor) 16%);
+}
+
+.lyra-file-manager-empty-state-error {
+  color: var(--lyra-window-close-hover-bg);
+}
+
+.lyra-file-manager-drag-preview {
+  position: fixed;
+  top: -10000px;
+  left: -10000px;
+  max-width: 260px;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-bg-surface) 90%, transparent) 0%,
+      color-mix(in srgb, var(--lyra-bg-panel) 72%, transparent) 100%
+    );
+  color: var(--lyra-text-primary);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(8px) saturate(1.04);
+  backdrop-filter: blur(8px) saturate(1.04);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--lyra-bg-app) 24%, transparent);
+}

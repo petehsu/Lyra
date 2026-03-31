@@ -1,0 +1,29 @@
+---
+title: Search Home
+description: Interaction and information model from home search to aggregated results
+---
+
+The search home is Lyra's primary browsing entry, not just an input field.
+
+It serves two goals at once:
+
+1. Keep first-open state clean with low cognitive load.
+2. Transition into an actionable aggregated result flow after submit.
+
+## Interaction model
+
+1. Home state: centered input, clear "start here" emphasis.
+2. Results state: input moves upward and stays editable while result list takes the main area.
+3. Source markers: each item keeps a source tag to avoid opaque ranking behavior.
+
+## Information layout rules
+
+1. Keep aggregated header and source summary at the top.
+2. Each result card includes: title, URL, snippet, source.
+3. Do not rebuild the input across states; keep continuity.
+
+## Extension points
+
+1. Source-level toggles for aggregation engines.
+2. Grouped sections (web / docs / local apps).
+3. Refined open-in-new-tab behavior with workspace tab lifecycle.

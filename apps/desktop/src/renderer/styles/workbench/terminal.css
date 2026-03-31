@@ -1,0 +1,272 @@
+/* Terminal dock, tabs, panes, and host styles */
+.lyra-panel-bottom {
+  background: var(--lyra-bg-surface);
+  overflow: hidden;
+}
+
+.lyra-terminal-dock {
+  --lyra-terminal-stage-bg: color-mix(in srgb, var(--lyra-bg-editor) 74%, var(--lyra-terminal-bg) 26%);
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 156px minmax(0, 1fr);
+  background: var(--lyra-terminal-stage-bg);
+  position: relative;
+}
+
+.lyra-terminal-dock-workspace-drop-target::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 0.5px dashed color-mix(in srgb, var(--lyra-line-focused) 74%, transparent);
+  background: color-mix(in srgb, var(--lyra-line-focused) 12%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--lyra-line-focused) 32%, transparent);
+}
+
+.lyra-terminal-side {
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: var(--lyra-terminal-stage-bg);
+}
+
+.lyra-terminal-tabs {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--lyra-terminal-stage-bg);
+  position: relative;
+}
+
+.lyra-terminal-tabs-drop-end::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.5px;
+  background: color-mix(in srgb, var(--lyra-line-focused) 82%, transparent);
+  pointer-events: none;
+}
+
+.lyra-terminal-tab {
+  min-width: 0;
+  height: var(--lyra-size-terminal-tab-h);
+  min-height: var(--lyra-size-terminal-tab-h);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  border-bottom: 0.5px solid color-mix(in srgb, var(--lyra-line-variant) 76%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 92%, var(--lyra-terminal-bg) 8%);
+  color: var(--lyra-text-secondary);
+  position: relative;
+}
+
+.lyra-terminal-tab-drop-target-before::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -0.5px;
+  height: 1.5px;
+  background: color-mix(in srgb, var(--lyra-line-focused) 82%, transparent);
+  pointer-events: none;
+}
+
+.lyra-terminal-tab-main {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 10px;
+  text-align: left;
+  cursor: grab;
+}
+
+.lyra-terminal-tab-main:active {
+  cursor: grabbing;
+}
+
+.lyra-terminal-tab-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lyra-text-muted);
+}
+
+.lyra-terminal-tab-title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-terminal-tab-close {
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  transition: opacity var(--lyra-transition-fast);
+  color: var(--lyra-text-muted);
+}
+
+.lyra-terminal-tab:hover .lyra-terminal-tab-close,
+.lyra-terminal-tab:focus-within .lyra-terminal-tab-close {
+  opacity: 1;
+}
+
+.lyra-terminal-tab-close:hover {
+  background: transparent;
+  color: var(--lyra-window-close-hover-bg);
+}
+
+.lyra-terminal-tab-active {
+  background: color-mix(in srgb, var(--lyra-bg-editor) 76%, var(--lyra-terminal-bg) 24%);
+  color: var(--lyra-text-primary);
+  z-index: 2;
+}
+
+.lyra-terminal-tab-active .lyra-terminal-tab-icon {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-terminal-toolbar-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: transparent;
+}
+
+.lyra-terminal-toolbar-actions button {
+  width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
+  justify-self: center;
+  border-radius: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.72;
+  transition:
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.lyra-terminal-toolbar-actions button:hover {
+  background: transparent;
+  opacity: 1;
+  color: var(--lyra-text-primary);
+}
+
+.lyra-terminal-toolbar-actions button:disabled {
+  opacity: 0.28;
+  color: var(--lyra-text-muted);
+  pointer-events: none;
+}
+
+.lyra-terminal-stage {
+  min-width: 0;
+  min-height: 0;
+  background: var(--lyra-terminal-stage-bg);
+}
+
+.lyra-terminal-empty {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--lyra-text-muted);
+}
+
+.lyra-terminal-workspace-surface {
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--lyra-terminal-stage-bg);
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.lyra-terminal-panes {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  gap: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.lyra-terminal-panes-horizontal {
+  flex-direction: column;
+}
+
+.lyra-terminal-panes-vertical {
+  flex-direction: row;
+}
+
+.lyra-terminal-pane {
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  display: block;
+  border-right: 0.5px solid var(--lyra-line-variant);
+}
+
+.lyra-terminal-panes-horizontal .lyra-terminal-pane {
+  border-right: 0;
+}
+
+.lyra-terminal-pane-active {
+  background: color-mix(in srgb, var(--lyra-terminal-bg) 46%, var(--lyra-bg-editor) 54%);
+}
+
+.lyra-terminal-pane-body {
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.lyra-terminal-host {
+  width: 100%;
+  height: 100%;
+  padding: 6px 6px 6px;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.lyra-terminal-host-ready {
+  opacity: 1;
+}
+
+.lyra-terminal-host .xterm,
+.lyra-terminal-host .xterm-screen {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.lyra-terminal-host .xterm,
+.lyra-terminal-host .xterm-viewport {
+  background-color: var(--lyra-terminal-bg) !important;
+}
+
+.lyra-terminal-status {
+  position: absolute;
+  inset: auto 8px 8px 8px;
+  border: 0.5px solid var(--lyra-line-default);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--lyra-bg-surface) 88%, var(--lyra-window-close-hover-bg) 12%);
+  padding: 6px 8px;
+  color: var(--lyra-text-primary);
+}

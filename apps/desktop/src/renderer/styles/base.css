@@ -1,0 +1,259 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--lyra-font-ui);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--lyra-text-primary);
+  background: var(--lyra-bg-app);
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+
+input::placeholder {
+  color: var(--lyra-text-muted);
+}
+
+/* Unified Lyra scrollbar: pill shape, no arrows, no layout shift */
+html,
+body,
+#app,
+.lyra-root,
+.lyra-root * {
+  scrollbar-gutter: auto;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#app::-webkit-scrollbar,
+.lyra-root::-webkit-scrollbar,
+.lyra-root *::-webkit-scrollbar {
+  width: var(--lyra-scrollbar-size);
+  height: var(--lyra-scrollbar-size);
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+#app::-webkit-scrollbar-track,
+.lyra-root::-webkit-scrollbar-track,
+.lyra-root *::-webkit-scrollbar-track,
+html::-webkit-scrollbar-track-piece,
+body::-webkit-scrollbar-track-piece,
+#app::-webkit-scrollbar-track-piece,
+.lyra-root::-webkit-scrollbar-track-piece,
+.lyra-root *::-webkit-scrollbar-track-piece {
+  background: transparent;
+  border-radius: var(--lyra-scrollbar-radius);
+}
+
+html::-webkit-scrollbar-track-piece:vertical,
+body::-webkit-scrollbar-track-piece:vertical,
+#app::-webkit-scrollbar-track-piece:vertical,
+.lyra-root::-webkit-scrollbar-track-piece:vertical,
+.lyra-root *::-webkit-scrollbar-track-piece:vertical {
+  margin-block: 2px;
+}
+
+html::-webkit-scrollbar-track-piece:horizontal,
+body::-webkit-scrollbar-track-piece:horizontal,
+#app::-webkit-scrollbar-track-piece:horizontal,
+.lyra-root::-webkit-scrollbar-track-piece:horizontal,
+.lyra-root *::-webkit-scrollbar-track-piece:horizontal {
+  margin-inline: 2px;
+}
+
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner,
+#app::-webkit-scrollbar-corner,
+.lyra-root::-webkit-scrollbar-corner,
+.lyra-root *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+#app::-webkit-scrollbar-thumb,
+.lyra-root::-webkit-scrollbar-thumb,
+.lyra-root *::-webkit-scrollbar-thumb {
+  min-height: 24px;
+  min-width: 24px;
+  border-radius: var(--lyra-scrollbar-radius) !important;
+  -webkit-border-radius: var(--lyra-scrollbar-radius) !important;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  -webkit-background-clip: padding-box;
+  -webkit-appearance: none;
+  background-color: transparent !important;
+  transition: background-color var(--lyra-transition-fast), opacity var(--lyra-transition-fast);
+}
+
+html::-webkit-scrollbar-thumb:vertical,
+body::-webkit-scrollbar-thumb:vertical,
+#app::-webkit-scrollbar-thumb:vertical,
+.lyra-root::-webkit-scrollbar-thumb:vertical,
+.lyra-root *::-webkit-scrollbar-thumb:vertical,
+html::-webkit-scrollbar-thumb:horizontal,
+body::-webkit-scrollbar-thumb:horizontal,
+#app::-webkit-scrollbar-thumb:horizontal,
+.lyra-root::-webkit-scrollbar-thumb:horizontal,
+.lyra-root *::-webkit-scrollbar-thumb:horizontal {
+  border-radius: var(--lyra-scrollbar-radius) !important;
+  -webkit-border-radius: var(--lyra-scrollbar-radius) !important;
+  background-clip: padding-box;
+  -webkit-background-clip: padding-box;
+  overflow: hidden;
+}
+
+/* hard guard: keep capsule in all containers */
+html::-webkit-scrollbar-thumb:vertical,
+body::-webkit-scrollbar-thumb:vertical,
+#app::-webkit-scrollbar-thumb:vertical,
+.lyra-root::-webkit-scrollbar-thumb:vertical,
+.lyra-root *::-webkit-scrollbar-thumb:vertical,
+html::-webkit-scrollbar-thumb:horizontal,
+body::-webkit-scrollbar-thumb:horizontal,
+#app::-webkit-scrollbar-thumb:horizontal,
+.lyra-root::-webkit-scrollbar-thumb:horizontal,
+.lyra-root *::-webkit-scrollbar-thumb:horizontal {
+  border-radius: 999px !important;
+  -webkit-border-radius: 999px !important;
+  overflow: hidden !important;
+}
+
+html:hover::-webkit-scrollbar-thumb,
+body:hover::-webkit-scrollbar-thumb,
+#app:hover::-webkit-scrollbar-thumb,
+.lyra-root:hover::-webkit-scrollbar-thumb,
+.lyra-root *:hover::-webkit-scrollbar-thumb,
+html:focus-within::-webkit-scrollbar-thumb,
+body:focus-within::-webkit-scrollbar-thumb,
+#app:focus-within::-webkit-scrollbar-thumb,
+.lyra-root:focus-within::-webkit-scrollbar-thumb,
+.lyra-root *:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--lyra-scrollbar-thumb-idle) !important;
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+#app::-webkit-scrollbar-thumb:hover,
+.lyra-root::-webkit-scrollbar-thumb:hover,
+.lyra-root *::-webkit-scrollbar-thumb:hover {
+  background-color: var(--lyra-scrollbar-thumb-hover) !important;
+}
+
+html::-webkit-scrollbar-thumb:active,
+body::-webkit-scrollbar-thumb:active,
+#app::-webkit-scrollbar-thumb:active,
+.lyra-root::-webkit-scrollbar-thumb:active,
+.lyra-root *::-webkit-scrollbar-thumb:active {
+  background-color: var(--lyra-scrollbar-thumb-active) !important;
+}
+
+html::-webkit-scrollbar-button,
+body::-webkit-scrollbar-button,
+#app::-webkit-scrollbar-button,
+.lyra-root::-webkit-scrollbar-button,
+.lyra-root *::-webkit-scrollbar-button,
+html::-webkit-scrollbar-button:single-button,
+body::-webkit-scrollbar-button:single-button,
+#app::-webkit-scrollbar-button:single-button,
+.lyra-root::-webkit-scrollbar-button:single-button,
+.lyra-root *::-webkit-scrollbar-button:single-button,
+html::-webkit-scrollbar-button:vertical:start:decrement,
+body::-webkit-scrollbar-button:vertical:start:decrement,
+#app::-webkit-scrollbar-button:vertical:start:decrement,
+.lyra-root::-webkit-scrollbar-button:vertical:start:decrement,
+.lyra-root *::-webkit-scrollbar-button:vertical:start:decrement,
+html::-webkit-scrollbar-button:vertical:end:increment,
+body::-webkit-scrollbar-button:vertical:end:increment,
+#app::-webkit-scrollbar-button:vertical:end:increment,
+.lyra-root::-webkit-scrollbar-button:vertical:end:increment,
+.lyra-root *::-webkit-scrollbar-button:vertical:end:increment,
+html::-webkit-scrollbar-button:horizontal:start:decrement,
+body::-webkit-scrollbar-button:horizontal:start:decrement,
+#app::-webkit-scrollbar-button:horizontal:start:decrement,
+.lyra-root::-webkit-scrollbar-button:horizontal:start:decrement,
+.lyra-root *::-webkit-scrollbar-button:horizontal:start:decrement,
+html::-webkit-scrollbar-button:horizontal:end:increment,
+body::-webkit-scrollbar-button:horizontal:end:increment,
+#app::-webkit-scrollbar-button:horizontal:end:increment,
+.lyra-root::-webkit-scrollbar-button:horizontal:end:increment,
+.lyra-root *::-webkit-scrollbar-button:horizontal:end:increment,
+html::-webkit-scrollbar-button:single-button:vertical:decrement,
+body::-webkit-scrollbar-button:single-button:vertical:decrement,
+#app::-webkit-scrollbar-button:single-button:vertical:decrement,
+.lyra-root::-webkit-scrollbar-button:single-button:vertical:decrement,
+.lyra-root *::-webkit-scrollbar-button:single-button:vertical:decrement,
+html::-webkit-scrollbar-button:single-button:vertical:increment,
+body::-webkit-scrollbar-button:single-button:vertical:increment,
+#app::-webkit-scrollbar-button:single-button:vertical:increment,
+.lyra-root::-webkit-scrollbar-button:single-button:vertical:increment,
+.lyra-root *::-webkit-scrollbar-button:single-button:vertical:increment,
+html::-webkit-scrollbar-button:single-button:horizontal:decrement,
+body::-webkit-scrollbar-button:single-button:horizontal:decrement,
+#app::-webkit-scrollbar-button:single-button:horizontal:decrement,
+.lyra-root::-webkit-scrollbar-button:single-button:horizontal:decrement,
+.lyra-root *::-webkit-scrollbar-button:single-button:horizontal:decrement,
+html::-webkit-scrollbar-button:single-button:horizontal:increment,
+body::-webkit-scrollbar-button:single-button:horizontal:increment,
+#app::-webkit-scrollbar-button:single-button:horizontal:increment,
+.lyra-root::-webkit-scrollbar-button:single-button:horizontal:increment,
+.lyra-root *::-webkit-scrollbar-button:single-button:horizontal:increment {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  -webkit-appearance: none !important;
+  background: transparent !important;
+}
+
+/* Hide scrollbars when remaining scroll distance is too small */
+[data-lyra-scrollbar-hidden="true"] {
+  scrollbar-width: none !important;
+}
+
+[data-lyra-scrollbar-hidden="true"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+}
+
+[data-lyra-scrollbar-hidden="true"]::-webkit-scrollbar-thumb {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Keep layout stable only on main scrolling containers */
+.lyra-results-main,
+.lyra-results-side,
+.lyra-settings-surface,
+.lyra-file-manager-nav,
+.lyra-file-manager-content,
+.lyra-terminal-tabs {
+  scrollbar-gutter: stable;
+}

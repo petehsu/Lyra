@@ -1,0 +1,119 @@
+/* Skills center preview/import/create styles */
+.lyra-skills-center-inline-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.lyra-skills-center-preview-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lyra-skills-center-preview-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 62%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--lyra-bg-panel) 40%, transparent);
+  cursor: pointer;
+  transition:
+    border-color var(--lyra-transition-fast),
+    background-color var(--lyra-transition-fast);
+}
+
+.lyra-skills-center-preview-item:hover {
+  border-color: color-mix(in srgb, var(--lyra-line-default) 88%, var(--lyra-line-focused) 12%);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 24%, transparent);
+}
+
+.lyra-skills-center-preview-item-selected {
+  border-color: var(--lyra-line-focused);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 34%, transparent);
+}
+
+.lyra-skills-center-preview-item input {
+  margin: 2px 0 0;
+}
+
+.lyra-skills-center-preview-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lyra-skills-center-preview-copy strong,
+.lyra-skills-center-preview-copy small {
+  display: block;
+  min-width: 0;
+}
+
+.lyra-skills-center-preview-copy strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lyra-text-primary);
+}
+
+.lyra-skills-center-preview-copy small {
+  color: var(--lyra-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.lyra-skills-center-textarea-large {
+  min-height: 220px;
+  resize: vertical;
+}
+
+.lyra-skills-center-content-preview {
+  margin: 0;
+  padding: 14px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 62%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--lyra-bg-panel-strong) 58%, transparent);
+  color: var(--lyra-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow: auto;
+}
+
+.lyra-skills-center-shell {
+  grid-template-columns: 208px minmax(0, 1fr);
+}
+
+.lyra-skills-center-sidebar {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--lyra-bg-panel) 74%, var(--lyra-bg-editor) 26%) 0%,
+    color-mix(in srgb, var(--lyra-bg-panel) 58%, var(--lyra-bg-editor) 42%) 100%
+  );
+}
+
+.lyra-skills-center-toolbar {
+  background: color-mix(in srgb, var(--lyra-bg-panel) 44%, transparent);
+}
+
+.lyra-skills-center-list-panel {
+  background: color-mix(in srgb, var(--lyra-bg-panel) 20%, transparent);
+}
+
+.lyra-skills-center-detail-panel {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--lyra-bg-editor) 96%, transparent) 0%,
+    color-mix(in srgb, var(--lyra-bg-panel) 8%, var(--lyra-bg-editor) 92%) 100%
+  );
+}
+
+.lyra-skills-center-panel-shell .lyra-mcp-center-field,
+.lyra-skills-center-panel-shell .lyra-mcp-center-capability-group,
+.lyra-skills-center-panel-shell .lyra-mcp-center-alert,
+.lyra-skills-center-panel-shell .lyra-skills-center-content-preview {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--lyra-bg-surface) 22%, transparent);
+}

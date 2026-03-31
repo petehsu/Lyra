@@ -1,0 +1,45 @@
+---
+title: 架构总览
+description: Lyra 的分层架构、模块边界与工程守卫
+---
+
+## 分层
+
+1. App Layer：`apps/desktop`
+2. Service Layer：控制面、自动化、Agent 编排（规划中/分阶段）
+3. System Layer：Rust 系统能力与 sandbox
+4. Shared Contracts：协议与插件 SDK
+
+原则：只允许通过显式契约向下依赖，禁止跨层偷用内部实现。
+
+## 模块边界
+
+Lyra 模块默认结构：
+
+1. `types.*`：契约定义
+2. `service.*`：核心行为
+3. `index.*`：唯一公开入口
+4. `tests/*`：模块测试
+
+禁止项：
+
+1. 巨石文件持续堆逻辑。
+2. 跨模块 deep import（如 `../../other/internal/*`）。
+3. 共享可变全局状态。
+
+## 工程守卫
+
+1. 单文件控制在 420 行以内。
+2. 所有共享尺寸与颜色必须走 token/theme 系统。
+3. 文案必须走 i18n key，不能散落硬编码。
+4. UI 变更必须通过风格守卫脚本，防止“网页感”回归。
+
+## ADR 机制
+
+重要架构决策通过 ADR 固化，避免“口头架构”。
+
+当前已落地重点：
+
+1. `ADR-0003`：Workbench 壳层组合与标签演进准备。
+2. `ADR-0004`：File Editor（Rust + Monaco）基础能力冻结。
+

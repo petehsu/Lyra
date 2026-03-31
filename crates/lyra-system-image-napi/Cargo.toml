@@ -1,0 +1,17 @@
+[package]
+name = "lyra-system-image-napi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2.16.13", default-features = false, features = ["napi8"] }
+napi-derive = "2.16.13"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+walkdir = "2.5.0"
+
+[build-dependencies]
+napi-build = "2.1.4"

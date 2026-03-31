@@ -1,0 +1,1 @@
+export { createFilesIpcBridge } from "./service";

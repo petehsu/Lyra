@@ -1,0 +1,38 @@
+---
+title: Linux Compatibility
+description: Startup strategy, degradation path, and diagnostics export
+---
+
+## Goals
+
+1. deterministic startup behavior on Linux
+2. fast degradation path when graphics/driver issues occur
+3. exportable diagnostics for support and release validation
+
+## Startup decision order
+
+Backend selection:
+
+1. CLI flags
+2. environment variables
+3. auto detection (Wayland/X11)
+
+GPU selection:
+
+1. safe mode (force software rendering)
+2. explicit CLI/ENV overrides
+3. hardware rendering by default
+
+## Runtime safeguards
+
+1. mutually exclusive Wayland/X11 environment handling
+2. hardware acceleration fallback controls
+3. persisted runtime compatibility status for diagnostics
+
+## Diagnostics APIs
+
+1. `lyraDesktop.linuxCompat.readStatus()`
+2. `lyraDesktop.linuxCompat.exportDiagnostics()`
+
+When startup fails, export diagnostics first, then tune backend/GPU overrides.
+

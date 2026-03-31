@@ -1,0 +1,10 @@
+{
+  "name": "@lyra/browser-automation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node -e \"console.log('browser-automation scaffold ready')\"",
+    "build": "tsc -p tsconfig.json"
+  }
+}

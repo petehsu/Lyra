@@ -1,0 +1,206 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html:has(body[data-scroll-locked]) {
+  scrollbar-gutter: auto;
+}
+
+html[data-lyra-host="lyra"][data-lyra-theme="one-light"] {
+  --color-fd-background: #fafafa;
+  --color-fd-foreground: #242529;
+  --color-fd-muted: #ebebec;
+  --color-fd-muted-foreground: #58585a;
+  --color-fd-popover: #ebebec;
+  --color-fd-popover-foreground: #242529;
+  --color-fd-card: #ebebec;
+  --color-fd-card-foreground: #242529;
+  --color-fd-border: rgba(201, 201, 202, 0.5);
+  --color-fd-primary: #5c78e2;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #dfdfe0;
+  --color-fd-secondary-foreground: #242529;
+  --color-fd-accent: #dfdfe0;
+  --color-fd-accent-foreground: #242529;
+  --color-fd-ring: #7d82e8;
+  --color-fd-overlay: rgba(36, 37, 41, 0.16);
+  --color-fd-info: #5c78e2;
+  --color-fd-warning: #a48819;
+  --color-fd-error: #d36151;
+  --color-fd-success: #669f59;
+}
+
+html[data-lyra-host="lyra"][data-lyra-theme="one-dark"] {
+  --color-fd-background: #282c33;
+  --color-fd-foreground: #dce0e5;
+  --color-fd-muted: #2f343e;
+  --color-fd-muted-foreground: #a9afbc;
+  --color-fd-popover: #2f343e;
+  --color-fd-popover-foreground: #dce0e5;
+  --color-fd-card: #2f343e;
+  --color-fd-card-foreground: #dce0e5;
+  --color-fd-border: rgba(70, 75, 87, 0.5);
+  --color-fd-primary: #74ade8;
+  --color-fd-primary-foreground: #101721;
+  --color-fd-secondary: #363c46;
+  --color-fd-secondary-foreground: #dce0e5;
+  --color-fd-accent: #363c46;
+  --color-fd-accent-foreground: #dce0e5;
+  --color-fd-ring: #47679e;
+  --color-fd-overlay: rgba(0, 0, 0, 0.32);
+  --color-fd-info: #74ade8;
+  --color-fd-warning: #dec184;
+  --color-fd-error: #d07277;
+  --color-fd-success: #a1c181;
+}
+
+html[data-lyra-host="lyra"][data-lyra-theme="ayu-light"] {
+  --color-fd-background: #fcfcfc;
+  --color-fd-foreground: #5c6166;
+  --color-fd-muted: #ececed;
+  --color-fd-muted-foreground: #8b8e92;
+  --color-fd-popover: #ececed;
+  --color-fd-popover-foreground: #5c6166;
+  --color-fd-card: #ececed;
+  --color-fd-card-foreground: #5c6166;
+  --color-fd-border: rgba(207, 209, 210, 0.5);
+  --color-fd-primary: #3b9ee5;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #dfe0e1;
+  --color-fd-secondary-foreground: #5c6166;
+  --color-fd-accent: #dfe0e1;
+  --color-fd-accent-foreground: #5c6166;
+  --color-fd-ring: #c4daf6;
+  --color-fd-overlay: rgba(48, 52, 58, 0.14);
+  --color-fd-info: #3b9ee5;
+  --color-fd-warning: #f1ad49;
+  --color-fd-error: #ef7271;
+  --color-fd-success: #85b304;
+}
+
+html[data-lyra-host="lyra"][data-lyra-theme="ayu-dark"] {
+  --color-fd-background: #0d1016;
+  --color-fd-foreground: #bfbdb6;
+  --color-fd-muted: #1f2127;
+  --color-fd-muted-foreground: #8a8986;
+  --color-fd-popover: #1f2127;
+  --color-fd-popover-foreground: #bfbdb6;
+  --color-fd-card: #1f2127;
+  --color-fd-card-foreground: #bfbdb6;
+  --color-fd-border: rgba(63, 64, 67, 0.5);
+  --color-fd-primary: #5ac1fe;
+  --color-fd-primary-foreground: #0d1016;
+  --color-fd-secondary: #2d2f34;
+  --color-fd-secondary-foreground: #bfbdb6;
+  --color-fd-accent: #2d2f34;
+  --color-fd-accent-foreground: #bfbdb6;
+  --color-fd-ring: #1b4a6e;
+  --color-fd-overlay: rgba(0, 0, 0, 0.36);
+  --color-fd-info: #5ac1fe;
+  --color-fd-warning: #feb454;
+  --color-fd-error: #ef7177;
+  --color-fd-success: #aad84c;
+}
+
+html[data-lyra-host="lyra"][data-lyra-theme="gruvbox-light"] {
+  --color-fd-background: #fbf1c7;
+  --color-fd-foreground: #282828;
+  --color-fd-muted: #ecddb4;
+  --color-fd-muted-foreground: #5f5650;
+  --color-fd-popover: #ecddb4;
+  --color-fd-popover-foreground: #282828;
+  --color-fd-card: #ecddb4;
+  --color-fd-card-foreground: #282828;
+  --color-fd-border: rgba(200, 184, 153, 0.55);
+  --color-fd-primary: #0b6678;
+  --color-fd-primary-foreground: #fbf1c7;
+  --color-fd-secondary: #ddcca7;
+  --color-fd-secondary-foreground: #282828;
+  --color-fd-accent: #ddcca7;
+  --color-fd-accent-foreground: #282828;
+  --color-fd-ring: #adc5cc;
+  --color-fd-overlay: rgba(40, 40, 40, 0.16);
+  --color-fd-info: #0b6678;
+  --color-fd-warning: #b57615;
+  --color-fd-error: #9d0308;
+  --color-fd-success: #797410;
+}
+
+html[data-lyra-host="lyra"][data-lyra-theme="gruvbox-dark"] {
+  --color-fd-background: #282828;
+  --color-fd-foreground: #fbf1c7;
+  --color-fd-muted: #3a3735;
+  --color-fd-muted-foreground: #c5b597;
+  --color-fd-popover: #3a3735;
+  --color-fd-popover-foreground: #fbf1c7;
+  --color-fd-card: #3a3735;
+  --color-fd-card-foreground: #fbf1c7;
+  --color-fd-border: rgba(91, 83, 77, 0.55);
+  --color-fd-primary: #83a598;
+  --color-fd-primary-foreground: #1d1d1d;
+  --color-fd-secondary: #494340;
+  --color-fd-secondary-foreground: #fbf1c7;
+  --color-fd-accent: #494340;
+  --color-fd-accent-foreground: #fbf1c7;
+  --color-fd-ring: #303a36;
+  --color-fd-overlay: rgba(0, 0, 0, 0.36);
+  --color-fd-info: #83a598;
+  --color-fd-warning: #f9bd2f;
+  --color-fd-error: #fb4a35;
+  --color-fd-success: #b7bb26;
+}
+
+html[data-lyra-host="lyra"] #nd-sidebar {
+  --color-fd-muted: var(--color-fd-card);
+  --color-fd-secondary: var(--color-fd-accent);
+  --color-fd-muted-foreground: var(--color-fd-muted-foreground);
+}
+
+.lyra-docs-standalone-controls {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 50;
+  display: grid;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--color-fd-border) 90%, transparent);
+  border-radius: 12px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--color-fd-background) 88%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.lyra-docs-control-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-fd-muted-foreground);
+  font-size: 12px;
+}
+
+.lyra-docs-control-row span {
+  min-width: 48px;
+}
+
+.lyra-docs-control-row button {
+  border: 1px solid color-mix(in srgb, var(--color-fd-border) 92%, transparent);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: transparent;
+  color: var(--color-fd-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lyra-docs-control-row button.is-active {
+  border-color: color-mix(in srgb, var(--color-fd-primary) 70%, transparent);
+  color: var(--color-fd-primary);
+}
+
+html[data-lyra-host="lyra"] .lyra-docs-standalone-controls {
+  display: none;
+}

@@ -1,0 +1,111 @@
+@font-face {
+  font-family: "Lyra Nerd Mono";
+  src: url("../assets/fonts/IosevkaNerdFontMono-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --lyra-font-ui: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Segoe UI", sans-serif;
+  --lyra-font-mono: "Lyra Nerd Mono", "Iosevka Nerd Font Mono", "IBM Plex Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+
+  --lyra-bg-app: #dcdcdd;
+  --lyra-bg-surface: #ebebec;
+  --lyra-bg-surface-elevated: #f3f3f4;
+  --lyra-bg-editor: #fafafa;
+  --lyra-bg-panel: #ebebec;
+  --lyra-bg-active: #cacaca;
+  --lyra-bg-hover: #dfdfe0;
+  --lyra-bg-toolbar: #fafafa;
+
+  --lyra-line-default: #c9c9ca;
+  --lyra-line-variant: #dfdfe0;
+  --lyra-line-focused: #7d82e8;
+
+  --lyra-text-primary: #242529;
+  --lyra-text-secondary: #58585a;
+  --lyra-text-muted: #7e8086;
+  --lyra-text-accent: #5c78e2;
+
+  --lyra-browser-tabs-bg: #d7d8db;
+  --lyra-browser-tab-bg: #e2e3e6;
+  --lyra-browser-tab-top-border: #cfd0d3;
+  --lyra-window-close-hover-bg: #e46969;
+  --lyra-window-close-hover-fg: #ffffff;
+
+  --lyra-status-success: #669f59;
+  --lyra-status-warning: #a48819;
+  --lyra-status-error: #d36151;
+
+  --lyra-tab-inactive: #ebebec;
+  --lyra-tab-active: #fafafa;
+
+  --lyra-terminal-bg: #fafafa;
+  --lyra-terminal-fg: #2a2c33;
+  --lyra-terminal-cursor: #5c78e2;
+  --lyra-terminal-cursor-accent: #fafafa;
+  --lyra-terminal-selection-bg: #7d82e8;
+  --lyra-terminal-black: #000000;
+  --lyra-terminal-red: #de3e35;
+  --lyra-terminal-green: #3f953a;
+  --lyra-terminal-yellow: #d2b67c;
+  --lyra-terminal-blue: #2f5af3;
+  --lyra-terminal-magenta: #950095;
+  --lyra-terminal-cyan: #0997b3;
+  --lyra-terminal-white: #bbbbbb;
+  --lyra-terminal-bright-black: #000000;
+  --lyra-terminal-bright-red: #de3e35;
+  --lyra-terminal-bright-green: #3f953a;
+  --lyra-terminal-bright-yellow: #d2b67c;
+  --lyra-terminal-bright-blue: #2f5af3;
+  --lyra-terminal-bright-magenta: #a00095;
+  --lyra-terminal-bright-cyan: #0bbcd6;
+  --lyra-terminal-bright-white: #ffffff;
+  --lyra-terminal-chrome-gradient-top: #f3f4f6;
+  --lyra-terminal-chrome-gradient-bottom: #eceef2;
+  --lyra-terminal-toolbar-chip-bg: #dde4f2;
+  --lyra-terminal-toolbar-chip-fg: #2a3a52;
+  --lyra-terminal-toolbar-chip-border: #b8c2d6;
+  --lyra-terminal-tab-active-border: #5c78e2;
+  --lyra-terminal-pane-active-border: #3f953a;
+
+  --lyra-shadow-elevated: 0 4px 12px rgba(20, 24, 33, 0.08);
+  --lyra-menu-bg: rgba(28, 31, 36, 0.72);
+  --lyra-menu-item-bg: rgba(36, 40, 47, 0.84);
+  --lyra-menu-border: rgba(108, 116, 132, 0.46);
+  --lyra-menu-hover-bg: rgba(75, 88, 112, 0.48);
+  --lyra-menu-shadow: 0 12px 34px rgba(18, 22, 32, 0.26);
+  --lyra-menu-frost-top: rgba(88, 95, 110, 0.22);
+  --lyra-menu-frost-bottom: rgba(52, 57, 68, 0.15);
+  --lyra-menu-inner-line: rgba(164, 170, 184, 0.22);
+  --lyra-menu-backdrop-filter: blur(22px) saturate(1.2) contrast(1.02);
+  --lyra-menu-danger: var(--lyra-window-close-hover-bg);
+  --lyra-radius-sm: 4px;
+  --lyra-radius-md: 6px;
+  --lyra-radius-lg: 10px;
+
+  --lyra-space-1: 2px;
+  --lyra-space-2: 6px;
+  --lyra-space-3: 10px;
+  --lyra-space-4: 14px;
+  --lyra-space-5: 18px;
+
+  --lyra-size-titlebar-h: 34px;
+  --lyra-size-browser-tab-h: 34px;
+  --lyra-size-terminal-tab-h: 34px;
+  --lyra-size-icon-button-w: 26px;
+  --lyra-size-icon-button-h: 22px;
+  --lyra-size-browser-nav-slot: 32px;
+  --lyra-size-browser-pill-h: 52px;
+  --lyra-size-browser-pill-compact-h: 40px;
+  --lyra-size-browser-circle: 28px;
+
+  --lyra-transition-fast: 120ms ease;
+
+  --lyra-scrollbar-size: 10px;
+  --lyra-scrollbar-radius: 999px;
+  --lyra-scrollbar-thumb-idle: color-mix(in srgb, var(--lyra-text-muted) 44%, transparent);
+  --lyra-scrollbar-thumb-hover: color-mix(in srgb, var(--lyra-text-secondary) 64%, transparent);
+  --lyra-scrollbar-thumb-active: color-mix(in srgb, var(--lyra-text-primary) 74%, transparent);
+}

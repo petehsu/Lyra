@@ -1,0 +1,21 @@
+[package]
+name = "lyra-mcp-napi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2.16.13", default-features = false, features = ["napi8"] }
+napi-derive = "2.16.13"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+sha2 = "0.10.8"
+reqwest = { version = "0.12.24", default-features = false, features = ["blocking", "rustls-tls"] }
+uuid = { version = "1.11.0", features = ["v4"] }
+keyring = "3.6.2"
+once_cell = "1.21.3"
+
+[build-dependencies]
+napi-build = "2.1.4"

@@ -1,0 +1,303 @@
+.root {
+  --lyra-bg-editor: var(--color-fd-background);
+  --lyra-browser-tabs-bg: color-mix(in srgb, var(--color-fd-card) 86%, var(--color-fd-background) 14%);
+  --lyra-browser-tab-bg: color-mix(in srgb, var(--color-fd-card) 92%, var(--color-fd-background) 8%);
+  --lyra-browser-tab-top-border: color-mix(in srgb, var(--color-fd-border) 88%, transparent);
+  --lyra-line-default: color-mix(in srgb, var(--color-fd-border) 92%, transparent);
+  --lyra-line-focused: color-mix(in srgb, var(--color-fd-ring) 90%, transparent);
+  --lyra-text-primary: var(--color-fd-foreground);
+  --lyra-text-secondary: var(--color-fd-muted-foreground);
+  --lyra-text-muted: color-mix(in srgb, var(--color-fd-muted-foreground) 78%, transparent);
+  --lyra-window-close-hover-bg: var(--color-fd-error);
+  --lyra-size-browser-tab-h: 34px;
+  --lyra-size-browser-nav-slot: 32px;
+  --lyra-transition-fast: 120ms ease;
+
+  margin: 16px 0 18px;
+}
+
+.workspaceStage {
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--lyra-bg-editor);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) var(--lyra-size-browser-tab-h);
+  min-height: 196px;
+}
+
+.workspaceCanvas {
+  min-height: 0;
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--lyra-bg-editor) 96%, var(--lyra-browser-tabs-bg) 4%) 0%,
+      color-mix(in srgb, var(--lyra-bg-editor) 100%, transparent) 100%
+    );
+}
+
+.browserTabs,
+.browserNavButton,
+.browserTabMain,
+.browserTabClose,
+.browserTabAdd {
+  box-sizing: border-box;
+}
+
+.browserNavButton,
+.browserTabMain,
+.browserTabClose,
+.browserTabAdd {
+  border: 0;
+  background: transparent;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+}
+
+.browserTabs {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  grid-template-columns:
+    var(--lyra-size-browser-nav-slot)
+    var(--lyra-size-browser-nav-slot)
+    var(--lyra-size-browser-nav-slot)
+    minmax(0, 1fr);
+  background: var(--lyra-browser-tabs-bg);
+}
+
+.browserTabs::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0.5px;
+  background: var(--lyra-browser-tab-top-border);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.browserTabsReorderActive {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--lyra-line-focused) 82%, transparent),
+    color-mix(in srgb, var(--lyra-line-focused) 82%, transparent)
+  );
+  background-repeat: no-repeat;
+  background-size: 1.5px 100%;
+  background-position: var(--lyra-browser-drop-indicator-x, 0) 0;
+}
+
+.browserNavButton {
+  color: var(--lyra-text-muted);
+  opacity: 0.56;
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  transition:
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.browserNavButton:hover {
+  background: transparent;
+  opacity: 1;
+  color: var(--lyra-text-primary);
+}
+
+.browserNavButton:disabled {
+  opacity: 0.24;
+  color: var(--lyra-text-muted);
+  cursor: default;
+  pointer-events: none;
+}
+
+.browserNavButtonActive {
+  opacity: 1;
+  color: var(--lyra-text-primary);
+}
+
+.browserTabStrip {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  position: relative;
+}
+
+.browserTabStrip::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.browserTabStripStacked {
+  --lyra-browser-tab-collapsed-w: 34px;
+  --lyra-browser-tab-active-w: 156px;
+}
+
+.browserTabStripStacked .browserTabItem {
+  min-width: 0;
+  max-width: none;
+  flex: 0 0 auto;
+}
+
+.browserTabStripStacked .browserTabItemCollapsed {
+  width: var(--lyra-browser-tab-collapsed-w);
+  min-width: var(--lyra-browser-tab-collapsed-w);
+  max-width: var(--lyra-browser-tab-collapsed-w);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.browserTabMainCollapsed {
+  justify-content: center;
+  padding: 0;
+}
+
+.browserTabStripStacked .browserTabItemActive {
+  min-width: var(--lyra-browser-tab-active-w);
+  max-width: min(240px, 36vw);
+  flex: 0 1 var(--lyra-browser-tab-active-w);
+}
+
+.browserTabItem {
+  min-width: 118px;
+  max-width: 180px;
+  height: var(--lyra-size-browser-tab-h);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  border-top: 0.5px solid var(--lyra-browser-tab-top-border);
+  border-right: 0.5px solid var(--lyra-line-default);
+  background: var(--lyra-browser-tab-bg);
+  position: relative;
+  z-index: 2;
+}
+
+.browserTabMain {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 10px;
+  color: var(--lyra-text-secondary);
+  text-align: left;
+  cursor: grab;
+}
+
+.browserTabMain:active {
+  cursor: grabbing;
+}
+
+.browserTabIcon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lyra-text-muted);
+}
+
+.browserTabIconSvg {
+  width: 14px;
+  height: 14px;
+}
+
+.browserTabTitle {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.browserTabClose {
+  color: var(--lyra-text-muted);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.browserTabItem:hover .browserTabClose,
+.browserTabItem:focus-within .browserTabClose {
+  opacity: 1;
+}
+
+.browserTabClose:hover {
+  color: var(--lyra-window-close-hover-bg);
+}
+
+.browserTabItemActive {
+  border-top-color: transparent;
+  background: var(--lyra-bg-editor);
+  z-index: 3;
+}
+
+.browserTabItemActive::before {
+  content: "";
+  position: absolute;
+  left: -0.5px;
+  right: -0.5px;
+  top: -0.5px;
+  height: 1.5px;
+  background: var(--lyra-bg-editor);
+  pointer-events: none;
+}
+
+.browserTabItemActive .browserTabMain {
+  color: var(--lyra-text-primary);
+}
+
+.browserTabItemActive .browserTabIcon {
+  color: var(--lyra-text-primary);
+}
+
+.browserTabItemDragging {
+  opacity: 0.72;
+}
+
+.browserTabAdd {
+  flex: 0 0 var(--lyra-size-browser-nav-slot);
+  width: var(--lyra-size-browser-nav-slot);
+  min-width: var(--lyra-size-browser-nav-slot);
+  border-left: 0.5px solid var(--lyra-line-default);
+  background: var(--lyra-browser-tabs-bg);
+  color: var(--lyra-text-muted);
+  opacity: 0.56;
+  cursor: pointer;
+  position: sticky;
+  right: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  transition:
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.browserTabAdd:hover {
+  background: transparent;
+  opacity: 1;
+  color: var(--lyra-text-primary);
+}
+
+.guideText {
+  margin-top: 10px;
+  display: grid;
+  gap: 3px;
+}
+
+.guideText p {
+  margin: 0;
+  color: color-mix(in srgb, var(--lyra-text-secondary) 90%, transparent);
+  font-size: 11px;
+  line-height: 1.4;
+}

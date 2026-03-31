@@ -1,0 +1,258 @@
+/* Global dialog overlay and action styles */
+.lyra-global-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: color-mix(in srgb, var(--lyra-bg-app) 36%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.06);
+  backdrop-filter: blur(14px) saturate(1.06);
+}
+
+.lyra-global-dialog {
+  width: min(560px, calc(100vw - 44px));
+  max-height: calc(100vh - 44px);
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 78%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--lyra-bg-surface) 94%, transparent) 0%,
+    color-mix(in srgb, var(--lyra-bg-editor) 96%, transparent) 100%
+  );
+  box-shadow: var(--lyra-shadow-elevated);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+.lyra-global-dialog-source {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--lyra-bg-surface) 88%, var(--lyra-bg-editor) 12%);
+  padding: 8px 10px;
+}
+
+.lyra-global-dialog-source-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-editor) 82%, var(--lyra-bg-surface) 18%);
+}
+
+.lyra-global-dialog-source-icon-default {
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-global-dialog-source-icon-accent {
+  color: color-mix(in srgb, var(--lyra-line-focused) 82%, var(--lyra-text-primary) 18%);
+}
+
+.lyra-global-dialog-source-icon-success {
+  color: color-mix(in srgb, var(--lyra-terminal-green) 78%, var(--lyra-text-primary) 22%);
+}
+
+.lyra-global-dialog-source-icon-danger {
+  color: color-mix(in srgb, var(--lyra-window-close-hover-bg) 80%, var(--lyra-text-primary) 20%);
+}
+
+.lyra-global-dialog-source-meta {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.lyra-global-dialog-source-meta strong {
+  color: var(--lyra-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lyra-global-dialog-source-meta small {
+  color: var(--lyra-text-muted);
+  font-size: 11px;
+}
+
+.lyra-global-dialog-copy-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lyra-global-dialog-copy-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--lyra-bg-editor) 90%, var(--lyra-bg-surface) 10%);
+  padding: 8px 10px;
+}
+
+.lyra-global-dialog-copy-meta {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.lyra-global-dialog-copy-meta strong {
+  color: var(--lyra-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lyra-global-dialog-copy-meta code {
+  margin: 0;
+  display: block;
+  color: var(--lyra-text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  font-family: var(--lyra-font-mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.lyra-global-dialog-copy-action {
+  width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 76%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--lyra-bg-surface) 92%, transparent);
+  color: var(--lyra-text-secondary);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  opacity: 0.86;
+  transition:
+    border-color var(--lyra-transition-fast),
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.lyra-global-dialog-copy-action:hover {
+  border-color: color-mix(in srgb, var(--lyra-line-focused) 48%, var(--lyra-line-default) 52%);
+  color: var(--lyra-text-primary);
+  opacity: 1;
+}
+
+.lyra-global-dialog-copy-action-copied {
+  border-color: color-mix(in srgb, var(--lyra-terminal-green) 56%, var(--lyra-line-default) 44%);
+  color: color-mix(in srgb, var(--lyra-terminal-green) 76%, var(--lyra-text-primary) 24%);
+  opacity: 1;
+}
+
+.lyra-global-dialog-header {
+  display: grid;
+  gap: 7px;
+}
+
+.lyra-global-dialog-header h2 {
+  margin: 0;
+  color: var(--lyra-text-primary);
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.lyra-global-dialog-header p {
+  margin: 0;
+  color: var(--lyra-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.lyra-global-dialog-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.lyra-global-dialog-actions-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lyra-global-dialog-actions-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lyra-global-dialog-actions-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lyra-global-dialog-action {
+  min-height: 32px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--lyra-bg-surface) 94%, transparent);
+  color: var(--lyra-text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  transition:
+    border-color var(--lyra-transition-fast),
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.lyra-global-dialog-action:hover:enabled {
+  border-color: color-mix(in srgb, var(--lyra-line-focused) 52%, var(--lyra-line-default) 48%);
+}
+
+.lyra-global-dialog-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.lyra-global-dialog-action-primary {
+  border-color: color-mix(in srgb, var(--lyra-line-focused) 68%, transparent);
+  color: color-mix(in srgb, var(--lyra-line-focused) 78%, var(--lyra-text-primary) 22%);
+}
+
+.lyra-global-dialog-action-danger {
+  border-color: color-mix(in srgb, var(--lyra-window-close-hover-bg) 56%, var(--lyra-line-default) 44%);
+  color: color-mix(in srgb, var(--lyra-window-close-hover-bg) 78%, var(--lyra-text-primary) 22%);
+}
+
+@media (max-width: 980px) {
+  .lyra-global-dialog-layer {
+    padding: 14px;
+  }
+
+  .lyra-global-dialog {
+    width: min(560px, calc(100vw - 28px));
+    max-height: calc(100vh - 28px);
+  }
+
+  .lyra-global-dialog-copy-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lyra-global-dialog-copy-action {
+    justify-self: end;
+  }
+
+  .lyra-global-dialog-actions-2,
+  .lyra-global-dialog-actions-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

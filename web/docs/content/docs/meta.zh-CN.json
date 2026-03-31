@@ -1,0 +1,15 @@
+{
+  "title": "文档",
+  "pages": [
+    "index",
+    "quickstart",
+    "architecture",
+    "workbench",
+    "topbar",
+    "workspace-tabs",
+    "search-home",
+    "file-manager",
+    "file-editor",
+    "linux-compat"
+  ]
+}

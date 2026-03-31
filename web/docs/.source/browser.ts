@@ -1,0 +1,12 @@
+// @ts-nocheck
+import { browser } from 'fumadocs-mdx/runtime/browser';
+import type * as Config from '../source.config';
+
+const create = browser<typeof Config, import("fumadocs-mdx/runtime/types").InternalTypeConfig & {
+  DocData: {
+  }
+}>();
+const browserCollections = {
+  docs: create.doc("docs", {"architecture.en-US.mdx": () => import("../content/docs/architecture.en-US.mdx?collection=docs"), "architecture.zh-CN.mdx": () => import("../content/docs/architecture.zh-CN.mdx?collection=docs"), "file-editor.en-US.mdx": () => import("../content/docs/file-editor.en-US.mdx?collection=docs"), "file-editor.zh-CN.mdx": () => import("../content/docs/file-editor.zh-CN.mdx?collection=docs"), "file-manager.en-US.mdx": () => import("../content/docs/file-manager.en-US.mdx?collection=docs"), "file-manager.zh-CN.mdx": () => import("../content/docs/file-manager.zh-CN.mdx?collection=docs"), "index.en-US.mdx": () => import("../content/docs/index.en-US.mdx?collection=docs"), "index.zh-CN.mdx": () => import("../content/docs/index.zh-CN.mdx?collection=docs"), "linux-compat.en-US.mdx": () => import("../content/docs/linux-compat.en-US.mdx?collection=docs"), "linux-compat.zh-CN.mdx": () => import("../content/docs/linux-compat.zh-CN.mdx?collection=docs"), "quickstart.en-US.mdx": () => import("../content/docs/quickstart.en-US.mdx?collection=docs"), "quickstart.zh-CN.mdx": () => import("../content/docs/quickstart.zh-CN.mdx?collection=docs"), "search-home.en-US.mdx": () => import("../content/docs/search-home.en-US.mdx?collection=docs"), "search-home.zh-CN.mdx": () => import("../content/docs/search-home.zh-CN.mdx?collection=docs"), "topbar.en-US.mdx": () => import("../content/docs/topbar.en-US.mdx?collection=docs"), "topbar.zh-CN.mdx": () => import("../content/docs/topbar.zh-CN.mdx?collection=docs"), "workbench.en-US.mdx": () => import("../content/docs/workbench.en-US.mdx?collection=docs"), "workbench.zh-CN.mdx": () => import("../content/docs/workbench.zh-CN.mdx?collection=docs"), "workspace-tabs.en-US.mdx": () => import("../content/docs/workspace-tabs.en-US.mdx?collection=docs"), "workspace-tabs.zh-CN.mdx": () => import("../content/docs/workspace-tabs.zh-CN.mdx?collection=docs"), }),
+};
+export default browserCollections;

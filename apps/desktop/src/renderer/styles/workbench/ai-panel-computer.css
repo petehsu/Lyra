@@ -1,0 +1,1075 @@
+.lyra-ai-panel-workspace-runtime {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--lyra-bg-app) 94%, transparent);
+}
+
+.lyra-ai-computer {
+  --lyra-ai-computer-menubar-height: 34px;
+  --lyra-ai-computer-taskbar-height: 34px;
+  --lyra-ai-computer-taskbar-icon-size: 16px;
+  --lyra-ai-computer-wallpaper-shadow: color-mix(in srgb, black 18%, transparent);
+  /* Unified glass tokens for every AI-computer window and launcher surface. */
+  --lyra-ai-computer-glass-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-bg-panel) 72%, transparent) 0%,
+      color-mix(in srgb, var(--lyra-bg-editor) 58%, transparent) 100%
+    );
+  --lyra-ai-computer-glass-stroke: color-mix(in srgb, white 24%, transparent);
+  --lyra-ai-computer-glass-blur: blur(20px) saturate(1.08);
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-rows: var(--lyra-ai-computer-menubar-height) minmax(0, 1fr) var(--lyra-ai-computer-taskbar-height);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--lyra-bg-app) 96%, transparent);
+}
+
+.lyra-ai-computer-powered-off {
+  grid-template-rows: var(--lyra-ai-computer-menubar-height) minmax(0, 1fr);
+}
+
+.lyra-ai-computer:focus {
+  outline: none;
+}
+
+.lyra-ai-computer-menubar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+  margin-top: -1px;
+  border-bottom: 1px solid color-mix(in srgb, var(--lyra-line-default) 24%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-panel) 48%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.18);
+  backdrop-filter: blur(18px) saturate(1.18);
+  position: relative;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.lyra-ai-computer-menubar-start,
+.lyra-ai-computer-menubar-end {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyra-ai-computer-menubar-start {
+  flex: 0 1 min(56%, 340px);
+}
+
+.lyra-ai-computer-menubar-end {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.lyra-ai-computer-menubar-host-name,
+.lyra-ai-computer-menubar-clock-value {
+  min-width: 0;
+  color: var(--lyra-text-secondary);
+  font-size: 11px;
+  font-weight: 520;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.lyra-ai-computer-menubar-clock-value {
+  color: var(--lyra-text-primary);
+  font-weight: 600;
+}
+
+.lyra-ai-computer-menubar-host-name {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-computer-menubar-host-icon {
+  width: 12px;
+  height: 12px;
+  object-fit: contain;
+}
+
+.lyra-ai-computer-menubar-host-fallback {
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-computer-menubar-host-icon-adaptive,
+.lyra-ai-computer-power-screen-host-adaptive {
+  display: block;
+  background: currentColor;
+  -webkit-mask-image: var(--lyra-ai-computer-host-logo-url);
+  mask-image: var(--lyra-ai-computer-host-logo-url);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.lyra-ai-computer-menubar-power {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lyra-text-secondary);
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  cursor: pointer;
+  transition:
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.lyra-ai-computer-menubar-power:hover {
+  color: var(--lyra-text-primary);
+  opacity: 1;
+}
+
+.lyra-ai-computer-menubar-power-active {
+  color: color-mix(in srgb, var(--lyra-line-focused) 88%, var(--lyra-text-primary) 12%);
+  background: transparent;
+  box-shadow: none;
+}
+
+.lyra-ai-computer-stage {
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.lyra-ai-computer-stage > * {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.lyra-ai-computer-desktop,
+.lyra-ai-computer-booting {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.lyra-ai-computer-desktop::after,
+.lyra-ai-computer-booting::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 16%, color-mix(in srgb, white 14%, transparent) 0%, transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, black 8%, transparent) 0%, transparent 20%, color-mix(in srgb, black 12%, transparent) 100%);
+  pointer-events: none;
+}
+
+.lyra-ai-computer-desktop-powered-off::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--lyra-bg-app) 30%, transparent);
+  -webkit-backdrop-filter: blur(6px) saturate(0.88);
+  backdrop-filter: blur(6px) saturate(0.88);
+}
+
+.lyra-ai-computer-desktop-standby,
+.lyra-ai-computer-power-screen-stack,
+.lyra-ai-computer-booting {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  justify-items: center;
+  gap: 16px;
+  text-align: center;
+  padding: 28px;
+  z-index: 1;
+}
+
+.lyra-ai-computer-desktop-standby-copy,
+.lyra-ai-computer-power-screen-stack {
+  max-width: 420px;
+  display: grid;
+  gap: 8px;
+}
+
+.lyra-ai-computer-desktop-standby strong,
+.lyra-ai-computer-power-screen-stack strong,
+.lyra-ai-computer-booting strong {
+  color: white;
+  font-size: 28px;
+  font-weight: 680;
+  letter-spacing: 0.01em;
+  text-shadow: 0 12px 40px color-mix(in srgb, black 30%, transparent);
+}
+
+.lyra-ai-computer-desktop-standby span,
+.lyra-ai-computer-power-screen-stack span,
+.lyra-ai-computer-booting span {
+  color: color-mix(in srgb, white 82%, transparent);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.lyra-ai-computer-desktop-standby-logo-group,
+.lyra-ai-computer-power-screen-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.lyra-ai-computer-power-screen-brand {
+  color: color-mix(in srgb, white 92%, transparent);
+  filter: drop-shadow(0 8px 20px color-mix(in srgb, black 24%, transparent));
+}
+
+.lyra-ai-computer-power-screen-brand-logo {
+  width: 88px;
+  height: 88px;
+}
+
+.lyra-ai-computer-power-screen-devices {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: color-mix(in srgb, white 78%, transparent);
+}
+
+.lyra-ai-computer-power-screen-device-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+}
+
+.lyra-ai-computer-power-screen-device-icon-monitor {
+  background: currentColor;
+  -webkit-mask-image: var(--lyra-ai-computer-monitor-logo-url);
+  mask-image: var(--lyra-ai-computer-monitor-logo-url);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+[data-lyra-theme-tone="dark"] .lyra-ai-computer-power-screen-brand {
+  color: color-mix(in srgb, white 94%, transparent);
+}
+
+[data-lyra-theme-tone="light"] .lyra-ai-computer-power-screen-brand {
+  color: color-mix(in srgb, white 88%, var(--lyra-text-primary) 12%);
+}
+
+[data-lyra-theme-tone="dark"] .lyra-ai-computer-power-screen-devices {
+  color: color-mix(in srgb, white 78%, transparent);
+}
+
+[data-lyra-theme-tone="light"] .lyra-ai-computer-power-screen-devices {
+  color: color-mix(in srgb, white 70%, var(--lyra-text-primary) 30%);
+}
+
+.lyra-ai-computer-booting {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.lyra-ai-computer-booting-orb {
+  width: 84px;
+  height: 84px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 34% 30%, color-mix(in srgb, white 28%, transparent) 0%, transparent 34%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-line-focused) 74%, transparent) 0%,
+      color-mix(in srgb, var(--lyra-line-focused) 42%, transparent) 100%
+    );
+  box-shadow:
+    0 0 0 10px color-mix(in srgb, var(--lyra-line-focused) 10%, transparent),
+    0 0 56px color-mix(in srgb, var(--lyra-line-focused) 22%, transparent);
+  animation: lyra-ai-computer-boot-pulse 1.7s ease-in-out infinite;
+}
+
+@keyframes lyra-ai-computer-boot-pulse {
+  0%,
+  100% {
+    transform: scale(0.94);
+  }
+
+  50% {
+    transform: scale(1);
+  }
+}
+
+.lyra-ai-computer-window-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.lyra-ai-computer-window {
+  position: absolute;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--lyra-bg-editor) 96%, var(--lyra-bg-panel) 4%);
+  box-shadow:
+    0 24px 48px var(--lyra-ai-computer-wallpaper-shadow),
+    0 8px 18px color-mix(in srgb, black 10%, transparent),
+    inset 0 0 0 0.5px var(--lyra-ai-computer-glass-stroke);
+  pointer-events: auto;
+}
+
+.lyra-ai-computer-window-active {
+  box-shadow:
+    0 28px 56px color-mix(in srgb, black 22%, transparent),
+    0 12px 22px color-mix(in srgb, black 14%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, white 30%, transparent);
+}
+
+.lyra-ai-computer-window-maximized {
+  border-radius: 0;
+}
+
+.lyra-ai-computer-window-workspace {
+  will-change: transform;
+}
+
+.lyra-ai-computer-window-minimized-keepalive {
+  opacity: 0;
+  visibility: hidden;
+  transform: translate3d(0, 16px, 0) scale(0.985);
+  pointer-events: none;
+  transition:
+    opacity var(--lyra-transition-fast),
+    transform var(--lyra-transition-fast),
+    visibility 0s linear var(--lyra-transition-fast);
+}
+
+.lyra-ai-computer-window-minimizing-burst {
+  pointer-events: none;
+  animation: lyra-ai-computer-window-burst-out 180ms cubic-bezier(0.25, 0.85, 0.3, 1) forwards;
+}
+
+@keyframes lyra-ai-computer-window-burst-out {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+
+  to {
+    transform: translate3d(
+      var(--lyra-ai-computer-window-burst-x, 0),
+      var(--lyra-ai-computer-window-burst-y, 0),
+      0
+    ) scale(0.84);
+    opacity: 0;
+  }
+}
+
+.lyra-ai-computer-window-timeline {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--lyra-bg-panel) 78%, transparent);
+}
+
+.lyra-ai-computer-window-titlebar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border-bottom: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 36%, transparent);
+  background: var(--lyra-ai-computer-glass-bg);
+  -webkit-backdrop-filter: var(--lyra-ai-computer-glass-blur);
+  backdrop-filter: var(--lyra-ai-computer-glass-blur);
+  cursor: grab;
+}
+
+.lyra-ai-computer-window-workspace .lyra-ai-computer-window-titlebar:active {
+  cursor: grabbing;
+}
+
+.lyra-ai-computer-window-titlebar-start,
+.lyra-ai-computer-window-titlebar-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyra-ai-computer-window-title {
+  min-width: 0;
+  color: var(--lyra-text-primary);
+  font-size: 12px;
+  font-weight: 620;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-ai-computer-window-status {
+  min-width: 0;
+  max-width: 40%;
+  color: var(--lyra-text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-ai-computer-window-action {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lyra-bg-hover) 60%, transparent);
+  color: var(--lyra-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background-color var(--lyra-transition-fast),
+    color var(--lyra-transition-fast);
+}
+
+.lyra-ai-computer-window-action:hover {
+  background: color-mix(in srgb, var(--lyra-bg-hover) 84%, transparent);
+  color: var(--lyra-text-primary);
+}
+
+.lyra-ai-computer-window-action-close:hover {
+  color: color-mix(in srgb, #ff6b6b 90%, white 10%);
+}
+
+.lyra-ai-computer-window-body,
+.lyra-ai-computer-app-surface,
+.lyra-ai-computer-app-surface > *,
+.lyra-ai-computer-browser {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.lyra-ai-computer-window-body {
+  position: relative;
+  overflow: hidden;
+  background: var(--lyra-bg-editor);
+}
+
+.lyra-ai-computer-window-resize {
+  position: absolute;
+  z-index: 2;
+}
+
+.lyra-ai-computer-window-resize::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lyra-line-focused) 35%, transparent);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--lyra-line-focused) 42%, transparent);
+  opacity: 0;
+  transition: opacity var(--lyra-transition-fast);
+}
+
+.lyra-ai-computer-window-resize:hover::after,
+.lyra-ai-computer-window-resize:active::after {
+  opacity: 0.82;
+}
+
+.lyra-ai-computer-window-resize-n,
+.lyra-ai-computer-window-resize-s {
+  left: 14px;
+  right: 14px;
+  height: 8px;
+}
+
+.lyra-ai-computer-window-resize-n {
+  top: -4px;
+  cursor: ns-resize;
+}
+
+.lyra-ai-computer-window-resize-s {
+  bottom: -4px;
+  cursor: ns-resize;
+}
+
+.lyra-ai-computer-window-resize-e,
+.lyra-ai-computer-window-resize-w {
+  top: 14px;
+  bottom: 14px;
+  width: 8px;
+}
+
+.lyra-ai-computer-window-resize-e {
+  right: -4px;
+  cursor: ew-resize;
+}
+
+.lyra-ai-computer-window-resize-w {
+  left: -4px;
+  cursor: ew-resize;
+}
+
+.lyra-ai-computer-window-resize-ne,
+.lyra-ai-computer-window-resize-nw,
+.lyra-ai-computer-window-resize-se,
+.lyra-ai-computer-window-resize-sw {
+  width: 16px;
+  height: 16px;
+}
+
+.lyra-ai-computer-window-resize-ne::after,
+.lyra-ai-computer-window-resize-nw::after,
+.lyra-ai-computer-window-resize-se::after,
+.lyra-ai-computer-window-resize-sw::after {
+  border-radius: 5px;
+}
+
+.lyra-ai-computer-window-resize-ne {
+  top: -4px;
+  right: -4px;
+  cursor: nesw-resize;
+}
+
+.lyra-ai-computer-window-resize-nw {
+  top: -4px;
+  left: -4px;
+  cursor: nwse-resize;
+}
+
+.lyra-ai-computer-window-resize-se {
+  right: -4px;
+  bottom: -4px;
+  cursor: nwse-resize;
+}
+
+.lyra-ai-computer-window-resize-sw {
+  left: -4px;
+  bottom: -4px;
+  cursor: nesw-resize;
+}
+
+.lyra-ai-computer-browser {
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr);
+  background: color-mix(in srgb, var(--lyra-bg-editor) 96%, transparent);
+}
+
+.lyra-ai-computer-browser-head {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 36%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-panel) 44%, transparent);
+}
+
+.lyra-ai-computer-browser-head input {
+  width: 100%;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--lyra-bg-hover) 72%, transparent);
+  color: var(--lyra-text-primary);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--lyra-line-default) 42%, transparent);
+}
+
+.lyra-ai-computer-browser-head input:focus {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--lyra-line-focused) 54%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--lyra-line-focused) 14%, transparent);
+}
+
+.lyra-ai-computer-taskbar {
+  min-width: 0;
+  height: var(--lyra-ai-computer-taskbar-height);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-top: 1px solid color-mix(in srgb, var(--lyra-line-default) 20%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-panel) 38%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+  backdrop-filter: blur(22px) saturate(1.18);
+  position: relative;
+  z-index: 6;
+}
+
+.lyra-ai-computer-taskbar-start,
+.lyra-ai-computer-taskbar-center,
+.lyra-ai-computer-taskbar-pinned,
+.lyra-ai-computer-taskbar-windows {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyra-ai-computer-taskbar-center {
+  justify-content: center;
+}
+
+.lyra-ai-computer-taskbar-launcher,
+.lyra-ai-computer-taskbar-pinned-item,
+.lyra-ai-computer-taskbar-window,
+.lyra-ai-computer-taskbar-search {
+  height: 24px;
+  border: 0;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.lyra-ai-computer-taskbar-launcher,
+.lyra-ai-computer-taskbar-pinned-item {
+  width: 24px;
+  background: transparent;
+  color: color-mix(in srgb, var(--lyra-text-secondary) 88%, var(--lyra-text-primary) 12%);
+  box-shadow: none;
+  transition: color var(--lyra-transition-fast);
+}
+
+.lyra-ai-computer-taskbar-launcher:hover,
+.lyra-ai-computer-taskbar-pinned-item:hover {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-ai-computer-taskbar-launcher-logo {
+  width: var(--lyra-ai-computer-taskbar-icon-size);
+  height: var(--lyra-ai-computer-taskbar-icon-size);
+}
+
+.lyra-ai-computer-taskbar-pinned-item > svg {
+  width: var(--lyra-ai-computer-taskbar-icon-size);
+  height: var(--lyra-ai-computer-taskbar-icon-size);
+}
+
+.lyra-ai-computer-taskbar-launcher-active {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-ai-computer-taskbar-launcher-anchor {
+  position: relative;
+}
+
+.lyra-ai-computer-launcher-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+}
+
+.lyra-ai-computer-launcher-panel {
+  --lyra-ai-computer-launcher-panel-top: clamp(100px, 24%, 210px);
+  position: absolute;
+  left: 50%;
+  top: var(--lyra-ai-computer-launcher-panel-top);
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100% - var(--lyra-ai-computer-launcher-panel-top) - 16px);
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--lyra-ai-computer-glass-bg);
+  box-shadow:
+    0 32px 56px color-mix(in srgb, black 26%, transparent),
+    inset 0 0 0 0.5px var(--lyra-ai-computer-glass-stroke);
+  -webkit-backdrop-filter: var(--lyra-ai-computer-glass-blur);
+  backdrop-filter: var(--lyra-ai-computer-glass-blur);
+  display: grid;
+  grid-template-rows: 32px minmax(0, 1fr);
+  gap: 10px;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.lyra-ai-computer-launcher-search {
+  min-width: 0;
+  height: 32px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-computer-launcher-search > svg {
+  width: 16px;
+  height: 16px;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-computer-launcher-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--lyra-text-primary);
+  font-size: 12px;
+}
+
+.lyra-ai-computer-launcher-search input:focus {
+  outline: none;
+}
+
+.lyra-ai-computer-launcher-list {
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+  padding: 1px;
+}
+
+.lyra-ai-computer-launcher-item {
+  min-width: 0;
+  height: 26px;
+  border: 0;
+  border-radius: 0;
+  padding: 0 2px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  color: color-mix(in srgb, var(--lyra-text-secondary) 86%, transparent);
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.62;
+  cursor: pointer;
+  transition:
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.lyra-ai-computer-launcher-item:hover,
+.lyra-ai-computer-launcher-item-active,
+.lyra-ai-computer-launcher-item-open {
+  color: color-mix(in srgb, var(--lyra-line-focused) 64%, var(--lyra-text-primary) 36%);
+  opacity: 1;
+}
+
+.lyra-ai-computer-launcher-item-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-computer-launcher-item-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+
+.lyra-ai-computer-launcher-item > svg {
+  width: 16px;
+  height: 16px;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-computer-launcher-item:hover > svg,
+.lyra-ai-computer-launcher-item-active > svg,
+.lyra-ai-computer-launcher-item-open > svg {
+  color: color-mix(in srgb, var(--lyra-line-focused) 64%, var(--lyra-text-primary) 36%);
+}
+
+.lyra-ai-computer-taskbar-pinned-item {
+  position: relative;
+}
+
+.lyra-ai-computer-taskbar-item-anchor {
+  position: relative;
+}
+
+.lyra-ai-computer-taskbar-pinned-item-active,
+.lyra-ai-computer-taskbar-pinned-item-open {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-ai-computer-taskbar-pinned-indicator {
+  position: absolute;
+  bottom: 1px;
+  left: 50%;
+  width: 10px;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lyra-line-focused) 72%, transparent);
+  transform: translateX(-50%) scaleX(0);
+  transition: transform var(--lyra-transition-fast);
+}
+
+.lyra-ai-computer-taskbar-pinned-item-open .lyra-ai-computer-taskbar-pinned-indicator,
+.lyra-ai-computer-taskbar-pinned-item-active .lyra-ai-computer-taskbar-pinned-indicator {
+  transform: translateX(-50%) scaleX(1);
+}
+
+.lyra-ai-computer-taskbar-preview {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  min-width: 248px;
+  max-width: min(840px, 88vw);
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--lyra-ai-computer-glass-bg);
+  box-shadow:
+    0 18px 34px color-mix(in srgb, black 28%, transparent),
+    inset 0 0 0 0.5px var(--lyra-ai-computer-glass-stroke);
+  -webkit-backdrop-filter: var(--lyra-ai-computer-glass-blur);
+  backdrop-filter: var(--lyra-ai-computer-glass-blur);
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  z-index: 200;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--lyra-transition-fast),
+    visibility 0s linear var(--lyra-transition-fast);
+}
+
+.lyra-ai-computer-taskbar-preview-visible {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity var(--lyra-transition-fast),
+    visibility 0s linear 0s;
+}
+
+.lyra-ai-computer-taskbar-preview-item {
+  flex: 0 0 248px;
+  width: 248px;
+  height: 156px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--lyra-bg-panel) 52%, transparent);
+  color: var(--lyra-text-secondary);
+  display: grid;
+  grid-template-rows: 24px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px;
+  cursor: pointer;
+  transition:
+    background-color var(--lyra-transition-fast),
+    color var(--lyra-transition-fast);
+}
+
+.lyra-ai-computer-taskbar-preview-item:hover,
+.lyra-ai-computer-taskbar-preview-item-active {
+  background: color-mix(in srgb, var(--lyra-bg-hover) 82%, transparent);
+  color: var(--lyra-text-primary);
+}
+
+.lyra-ai-computer-taskbar-preview-item-icon {
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-ai-computer-taskbar-preview-item-meta {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+
+.lyra-ai-computer-taskbar-preview-item-surface {
+  min-width: 0;
+  min-height: 0;
+  border-radius: 7px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--lyra-bg-editor) 76%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--lyra-line-default) 26%, transparent);
+  pointer-events: none;
+}
+
+.lyra-ai-computer-taskbar-preview-item-title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
+.lyra-ai-computer-dock-context-menu {
+  position: absolute;
+  z-index: 2147483647;
+  width: 200px;
+  padding: 7px;
+  border-radius: 10px;
+  background: var(--lyra-ai-computer-glass-bg);
+  box-shadow:
+    0 18px 38px color-mix(in srgb, black 28%, transparent),
+    inset 0 0 0 0.5px var(--lyra-ai-computer-glass-stroke);
+  -webkit-backdrop-filter: var(--lyra-ai-computer-glass-blur);
+  backdrop-filter: var(--lyra-ai-computer-glass-blur);
+  display: grid;
+  gap: 5px;
+}
+
+.lyra-ai-computer-dock-context-menu-item {
+  min-width: 0;
+  height: 29px;
+  border: 0;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--lyra-bg-panel) 54%, transparent);
+  color: var(--lyra-text-primary);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  text-align: left;
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background-color var(--lyra-transition-fast),
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.lyra-ai-computer-dock-context-menu-item:hover {
+  background: color-mix(in srgb, var(--lyra-bg-hover) 84%, transparent);
+}
+
+.lyra-ai-computer-dock-context-menu-item:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.lyra-ai-computer-dock-context-menu-item-danger:hover {
+  color: color-mix(in srgb, #ff6b6b 90%, white 10%);
+}
+
+.lyra-ai-computer-taskbar-search {
+  padding: 0 14px;
+  gap: 8px;
+  background: color-mix(in srgb, var(--lyra-bg-hover) 60%, transparent);
+  color: var(--lyra-text-secondary);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, white 16%, transparent);
+}
+
+.lyra-ai-computer-taskbar-search span {
+  white-space: nowrap;
+}
+
+.lyra-ai-computer-taskbar-window {
+  max-width: 220px;
+  padding: 0 12px;
+  gap: 8px;
+  background: color-mix(in srgb, var(--lyra-bg-panel) 50%, transparent);
+  color: var(--lyra-text-secondary);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, white 14%, transparent);
+}
+
+.lyra-ai-computer-taskbar-window-active {
+  background: color-mix(in srgb, var(--lyra-bg-panel) 74%, transparent);
+  color: var(--lyra-text-primary);
+}
+
+.lyra-ai-computer-taskbar-window-minimized {
+  opacity: 0.72;
+}
+
+.lyra-ai-computer-taskbar-window-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-ai-computer-taskbar-window-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-computer-app-surface-preview .lyra-file-editor-surface-ai-miniature,
+.lyra-ai-computer-app-surface-preview .lyra-file-editor-surface {
+  border-radius: 0;
+}
+
+@media (max-width: 1280px) {
+  .lyra-ai-computer-taskbar {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: stretch;
+    gap: 10px;
+  }
+
+  .lyra-ai-computer-taskbar-start,
+  .lyra-ai-computer-taskbar-center {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}

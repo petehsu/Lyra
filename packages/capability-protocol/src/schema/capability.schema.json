@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LyraCapability",
+  "type": "object",
+  "required": ["id", "kind", "title"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "kind": { "type": "string", "enum": ["resource", "tool", "event"] },
+    "title": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

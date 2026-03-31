@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "source": "rust-lang/rust-analyzer",
+  "releaseTag": "2026-03-23",
+  "generatedAt": "2026-03-28T03:50:18.230Z",
+  "targets": [
+    {
+      "id": "linux-x64",
+      "platform": "linux",
+      "arch": "x64",
+      "assetName": "rust-analyzer-x86_64-unknown-linux-gnu.gz",
+      "binaryFileName": "rust-analyzer",
+      "relativePath": "linux-x64/rust-analyzer",
+      "sha256": "1f566af0f261001fb23cae38105da19b324f6d6774f0168f426b1f6da2889154",
+      "sizeBytes": 50623736
+    }
+  ]
+}

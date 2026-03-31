@@ -1,0 +1,388 @@
+/* File editor toolbar, loading, and host styles */
+.lyra-file-editor-surface {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--lyra-bg-editor);
+}
+
+.lyra-file-editor-surface-ai-workspace {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-bg-surface) 90%, transparent) 0%,
+      color-mix(in srgb, var(--lyra-bg-editor) 100%, transparent) 100%
+    );
+}
+
+.lyra-file-editor-surface-ai-miniature {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-bg-surface) 92%, transparent) 0%,
+      color-mix(in srgb, var(--lyra-bg-editor) 94%, transparent) 100%
+    );
+}
+
+.lyra-file-editor-toolbar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  height: var(--lyra-size-browser-tab-h);
+  padding: 0 10px;
+  border-bottom: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 90%, var(--lyra-bg-editor) 10%);
+}
+
+.lyra-file-editor-surface-ai-miniature .lyra-file-editor-toolbar {
+  height: 30px;
+  padding: 0 8px;
+  gap: 8px;
+}
+
+.lyra-file-editor-surface-ai-miniature .lyra-file-editor-toolbar-main strong {
+  font-size: 11px;
+}
+
+.lyra-file-editor-surface-ai-miniature .lyra-file-editor-toolbar-main small {
+  font-size: 10px;
+}
+
+.lyra-file-editor-surface-ai-miniature .lyra-file-editor-toolbar-actions {
+  gap: 4px;
+}
+
+.lyra-file-editor-surface-ai-miniature .lyra-file-editor-chip {
+  display: none;
+}
+
+.lyra-file-editor-surface-ai-miniature .lyra-file-editor-ai-work-delta {
+  height: 18px;
+  padding: 0 6px;
+  font-size: 10px;
+}
+
+.lyra-file-editor-surface-ai-miniature .lyra-file-editor-body {
+  overflow: hidden;
+}
+
+.lyra-file-editor-surface-ai-miniature .lyra-file-editor-host,
+.lyra-file-editor-surface-ai-miniature .lyra-file-editor-diff-host {
+  height: 100%;
+}
+
+.lyra-file-editor-toolbar-main {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.lyra-file-editor-toolbar-main strong {
+  min-width: 0;
+  margin: 0;
+  color: var(--lyra-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-file-editor-toolbar-main small {
+  min-width: 0;
+  margin: 0;
+  color: var(--lyra-text-muted);
+  font-size: 11px;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-file-editor-toolbar-main-running strong,
+.lyra-file-editor-toolbar-main-running small {
+  text-shadow:
+    0 0 0.24em color-mix(in srgb, var(--lyra-accent-primary) 34%, transparent),
+    0 0 0.52em color-mix(in srgb, var(--lyra-accent-primary) 16%, transparent);
+}
+
+.lyra-file-editor-toolbar-scan-char {
+  display: inline-block;
+  animation: lyra-file-editor-toolbar-char-scan 1.2s linear infinite;
+}
+
+.lyra-file-editor-toolbar-scan-char-title {
+  color: color-mix(in srgb, var(--lyra-text-primary) 76%, var(--lyra-text-secondary) 24%);
+}
+
+.lyra-file-editor-toolbar-scan-char-path {
+  color: color-mix(in srgb, var(--lyra-text-muted) 78%, var(--lyra-text-secondary) 22%);
+}
+
+.lyra-file-editor-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lyra-file-editor-ai-work-delta {
+  min-width: 0;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 34%, transparent);
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.lyra-file-editor-ai-work-delta-added {
+  color: color-mix(in srgb, var(--lyra-terminal-green) 88%, var(--lyra-text-primary) 12%);
+}
+
+.lyra-file-editor-ai-work-delta-removed {
+  color: color-mix(in srgb, var(--lyra-terminal-red) 88%, var(--lyra-text-primary) 12%);
+}
+
+.lyra-file-editor-diff-toggle {
+  width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
+  border: 0;
+  border-radius: 5px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: color-mix(in srgb, var(--lyra-text-muted) 90%, transparent);
+  opacity: 0.82;
+  transition: color var(--lyra-transition-fast), opacity var(--lyra-transition-fast);
+}
+
+.lyra-file-editor-diff-toggle:hover {
+  opacity: 1;
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-editor-diff-toggle-active {
+  opacity: 1;
+  color: color-mix(in srgb, var(--lyra-line-focused) 88%, var(--lyra-text-primary) 12%);
+}
+
+.lyra-file-editor-ai-work-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lyra-file-editor-ai-work-action {
+  width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
+  border: 0;
+  border-radius: 5px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: color-mix(in srgb, var(--lyra-text-muted) 90%, transparent);
+  opacity: 0.82;
+  transition: color var(--lyra-transition-fast), opacity var(--lyra-transition-fast);
+}
+
+.lyra-file-editor-ai-work-action:hover {
+  opacity: 1;
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-editor-ai-work-action-accept:hover {
+  color: color-mix(in srgb, var(--lyra-terminal-green) 90%, var(--lyra-text-primary) 10%);
+}
+
+.lyra-file-editor-ai-work-action-reject:hover {
+  color: color-mix(in srgb, var(--lyra-terminal-red) 90%, var(--lyra-text-primary) 10%);
+}
+
+.lyra-file-editor-ai-work-action-rejected {
+  color: color-mix(in srgb, var(--lyra-terminal-red) 90%, var(--lyra-text-primary) 10%);
+  opacity: 1;
+}
+
+.lyra-file-editor-ai-work-action-undo {
+  color: color-mix(in srgb, var(--lyra-terminal-green) 86%, var(--lyra-text-primary) 14%);
+}
+
+.lyra-file-editor-chip {
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-radius: 999px;
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 34%, transparent);
+  font-size: 11px;
+}
+
+.lyra-file-editor-chip-warning {
+  color: color-mix(in srgb, var(--lyra-status-warning) 72%, var(--lyra-text-primary) 28%);
+  border-color: color-mix(in srgb, var(--lyra-status-warning) 45%, transparent);
+  background: color-mix(in srgb, var(--lyra-status-warning) 14%, transparent);
+}
+
+.lyra-file-editor-save-button,
+.lyra-file-editor-retry-button {
+  border: 0;
+  color: var(--lyra-text-secondary);
+  background: transparent;
+  transition: color var(--lyra-transition-fast), opacity var(--lyra-transition-fast);
+}
+
+.lyra-file-editor-save-button {
+  width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.78;
+}
+
+.lyra-file-editor-save-button:hover:enabled {
+  color: var(--lyra-text-primary);
+  opacity: 1;
+}
+
+.lyra-file-editor-save-button:disabled {
+  opacity: 0.34;
+  color: var(--lyra-text-muted);
+  pointer-events: none;
+}
+
+.lyra-file-editor-empty-state {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  color: var(--lyra-text-secondary);
+  text-align: center;
+  padding: 16px;
+}
+
+.lyra-file-editor-empty-state p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--lyra-text-muted);
+}
+
+.lyra-file-editor-retry-button {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  font-size: 12px;
+}
+
+.lyra-file-editor-retry-button:hover {
+  color: var(--lyra-text-primary);
+  border-color: var(--lyra-line-focused);
+}
+
+.lyra-file-editor-body {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  overflow: hidden;
+}
+
+.lyra-file-editor-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--lyra-bg-editor) 90%, transparent);
+}
+
+.lyra-file-editor-loading-skeleton {
+  width: min(640px, 82%);
+  display: grid;
+  gap: 10px;
+}
+
+.lyra-file-editor-skeleton-title {
+  width: 36%;
+  height: 16px;
+  border-radius: 7px;
+}
+
+.lyra-file-editor-skeleton-line {
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+}
+
+.lyra-file-editor-skeleton-line-short {
+  width: 82%;
+}
+
+.lyra-file-editor-host {
+  grid-area: 1 / 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.lyra-file-editor-host-hidden {
+  visibility: hidden;
+}
+
+.lyra-file-editor-diff-host {
+  grid-area: 1 / 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.lyra-file-editor-diff-host-hidden {
+  display: none;
+}
+
+@keyframes lyra-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes lyra-file-editor-toolbar-char-scan {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-0.42px);
+    filter: brightness(1.08);
+  }
+}

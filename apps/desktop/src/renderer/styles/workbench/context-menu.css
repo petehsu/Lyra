@@ -1,0 +1,110 @@
+/* Context menu host and item styles */
+.lyra-context-menu-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+
+.lyra-context-menu {
+  position: fixed;
+  min-width: 188px;
+  display: grid;
+  gap: 1px;
+  padding: 6px;
+  overflow: hidden;
+  isolation: isolate;
+  pointer-events: auto;
+  border-radius: calc(var(--lyra-radius-lg) + 2px);
+  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  backdrop-filter: blur(16px) saturate(1.08);
+}
+
+.lyra-context-menu::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--lyra-bg-surface) 0%, var(--lyra-bg-editor) 100%);
+  opacity: 0.95;
+}
+
+.lyra-context-menu::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: none;
+}
+
+.lyra-context-menu-item {
+  position: relative;
+  z-index: 1;
+  min-height: 28px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  box-shadow: none;
+  text-shadow: none;
+  transition: color var(--lyra-transition-fast), opacity var(--lyra-transition-fast);
+}
+
+.lyra-context-menu-item-separator {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.lyra-context-menu-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.lyra-context-menu-item:hover:enabled {
+  background: transparent;
+  color: var(--lyra-text-primary);
+  opacity: 1;
+}
+
+.lyra-context-menu-item:focus,
+.lyra-context-menu-item:focus-visible,
+.lyra-context-menu-item:active {
+  outline: none;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+.lyra-context-menu-item:disabled {
+  opacity: 0.44;
+  cursor: default;
+}
+
+.lyra-context-menu-item-danger {
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-context-menu-item-danger:hover:enabled {
+  color: color-mix(in srgb, var(--lyra-window-close-hover-bg) 82%, var(--lyra-text-primary) 18%);
+}
+
+.lyra-context-menu-item-danger .lyra-context-menu-item-icon {
+  color: inherit;
+}
+
