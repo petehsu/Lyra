@@ -24,3 +24,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local reference repos
+/参考/
