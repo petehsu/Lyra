@@ -1,15 +1,14 @@
 [workspace]
 members = [
+  "crates/lyra-ai-core",
   "crates/lyrad",
+  "crates/lyra-runtime-protocol",
   "crates/lyra-sandbox",
-  "crates/lyra-terminal-napi",
+  "crates/lyra-terminal-core",
   "crates/lyra-files-napi",
-  "crates/lyra-lsp-napi",
+  "crates/lyra-lsp-core",
   "crates/lyra-skills-napi",
-  "crates/lyra-mcp-napi",
-  "crates/lyra-ai-napi",
-  "crates/lyra-computer-napi",
-  "crates/lyra-system-image-napi"
+  "crates/lyra-mcp-core"
 ]
 resolver = "2"
 

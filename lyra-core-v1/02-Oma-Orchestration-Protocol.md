@@ -14,7 +14,7 @@ Oma 模式（Open Multi-Agent）要解决的问题不是“让更多 Agent 同�
 以下类型是 v1 的统一对外契约。所有 Oma 流程记录必须可映射到这些对象。
 
 ```ts
-type Mode = "chat" | "agent" | "oma";
+type Mode = "agent" | "oma";
 type TicketStatus = "draft" | "assigned" | "in_progress" | "blocked" | "done" | "rejected";
 type VoteOption = "yes" | "no" | "abstain";
 type GateStatus = "pass" | "fail" | "skipped";

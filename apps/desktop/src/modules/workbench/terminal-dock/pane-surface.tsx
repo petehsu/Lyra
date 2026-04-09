@@ -18,6 +18,12 @@ export type TerminalPaneSurfaceProps = {
   readonly onFocus: () => void;
 };
 
+const readCssNumber = (element: HTMLElement, name: `--${string}`, fallback: number): number => {
+  const value = window.getComputedStyle(element).getPropertyValue(name).trim();
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 export const TerminalPaneSurface = ({
   pane,
   active,
@@ -49,7 +55,6 @@ export const TerminalPaneSurface = ({
 
     try {
       terminal.options.theme = resolveTerminalTheme(host);
-      terminal.refresh(0, Math.max(0, terminal.rows - 1));
     } catch (_error) {
       // xterm may throw during teardown ticks
     }
@@ -78,13 +83,17 @@ export const TerminalPaneSurface = ({
       return;
     }
 
+    const terminalFontSize = readCssNumber(host, "--lyra-text-size-meta", 12);
+    const terminalLineHeight =
+      readCssNumber(host, "--lyra-text-line-body", 20) / Math.max(terminalFontSize, 1);
+
     const terminal = new Terminal({
       allowTransparency: false,
       cursorBlink: true,
       convertEol: true,
       fontFamily: "var(--lyra-font-mono)",
-      fontSize: 12,
-      lineHeight: 1.25,
+      fontSize: terminalFontSize,
+      lineHeight: terminalLineHeight,
       scrollback: 10_000,
       theme: resolveTerminalTheme(host)
     });
@@ -99,10 +108,13 @@ export const TerminalPaneSurface = ({
       if (sessionDisposedRef.current) {
         return;
       }
+      if (!host.isConnected) {
+        return;
+      }
       if (host.clientWidth <= 0 || host.clientHeight <= 0) {
         return;
       }
-      if (terminalWithElement.element === undefined) {
+      if (terminalWithElement.element === undefined || !terminalWithElement.element.isConnected) {
         return;
       }
       try {
@@ -182,7 +194,11 @@ export const TerminalPaneSurface = ({
         if (event.sessionId !== pane.sessionId) {
           return;
         }
-        terminal.write(event.data);
+        try {
+          terminal.write(event.data);
+        } catch (_error) {
+          // xterm may still emit late writes during teardown or hidden-layout transitions.
+        }
       });
 
     const unlistenExit =
@@ -193,7 +209,11 @@ export const TerminalPaneSurface = ({
         if (event.sessionId !== pane.sessionId) {
           return;
         }
-        terminal.writeln(`\r\n[process exited: ${event.exitCode}]`);
+        try {
+          terminal.writeln(`\r\n[process exited: ${event.exitCode}]`);
+        } catch (_error) {
+          // xterm may still flush a final repaint after disposal.
+        }
       });
 
     const unlistenError =

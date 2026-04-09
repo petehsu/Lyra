@@ -26,16 +26,6 @@ export const SkillsCenterSurface = ({ model, labels }: SkillsCenterSurfaceProps)
     () => [...state.globalSkills, ...state.projectSkills],
     [state.globalSkills, state.projectSkills]
   );
-  const categoryOptions = useMemo(
-    () =>
-      Array.from(
-        new Set([
-          ...state.catalog.map((item) => item.category),
-          ...allInstalledSkills.map((skill) => skill.manifest.category)
-        ])
-      ).sort((left, right) => left.localeCompare(right)),
-    [allInstalledSkills, state.catalog]
-  );
   const selectedSkill =
     allInstalledSkills.find((skill) => skill.skillId === state.selectedSkillId) ?? null;
   const selectedDetails =
@@ -44,7 +34,6 @@ export const SkillsCenterSurface = ({ model, labels }: SkillsCenterSurfaceProps)
     selectedSkill === null
       ? undefined
       : state.effectiveSkills.find((skill) => skill.skillId === selectedSkill.skillId);
-  const featuredCatalog = state.catalog.filter((item) => item.featured);
 
   useEffect(() => {
     if (selectedSkill === null || selectedDetails !== undefined) {
@@ -55,233 +44,71 @@ export const SkillsCenterSurface = ({ model, labels }: SkillsCenterSurfaceProps)
 
   return (
     <section className="lyra-skills-center-surface lyra-mcp-center-surface" aria-label="ai-skills-surface">
-      <div className="lyra-mcp-center-shell lyra-skills-center-shell">
-        <aside className="lyra-mcp-center-sidebar lyra-skills-center-sidebar">
-          <header className="lyra-mcp-center-sidebar-header">
-            <h2>{labels.title}</h2>
-            <p>{labels.sidebarDescription}</p>
-          </header>
-
-          <section className="lyra-mcp-center-sidebar-group">
-            <span>{labels.sidebarScope}</span>
-            <div className="lyra-mcp-center-sidebar-stack">
-              <button
-                type="button"
-                className={
-                  state.preferredScope === "global"
-                    ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                    : "lyra-mcp-center-side-button"
-                }
-                onClick={() => {
-                  model.setPreferredScope("global");
-                }}
-              >
-                <strong>{labels.scopeGlobal}</strong>
-                <small>{state.globalSkills.length}</small>
-              </button>
-              <button
-                type="button"
-                className={
-                  state.preferredScope === "project"
-                    ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                    : "lyra-mcp-center-side-button"
-                }
-                onClick={() => {
-                  model.setPreferredScope("project");
-                }}
-                disabled={state.projectSkills.length === 0}
-              >
-                <strong>{labels.scopeProject}</strong>
-                <small>
-                  {state.projectSkills.length > 0
-                    ? String(state.projectSkills.length)
-                    : labels.scopeProjectUnavailable}
-                </small>
-              </button>
-            </div>
-          </section>
-
-          <section className="lyra-mcp-center-sidebar-group">
-            <span>{labels.sidebarStatus}</span>
-            <div className="lyra-mcp-center-sidebar-stack">
-              {([
-                ["all", labels.statusAll],
-                ["enabled", labels.statusEnabled],
-                ["disabled", labels.statusDisabled],
-                ["untrusted", labels.statusUntrusted]
-              ] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={
-                    state.statusFilter === value
-                      ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                      : "lyra-mcp-center-side-button"
-                  }
-                  onClick={() => {
-                    model.setStatusFilter(value);
-                  }}
-                >
-                  <strong>{label}</strong>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="lyra-mcp-center-sidebar-group">
-            <span>{labels.sidebarSources}</span>
-            <div className="lyra-mcp-center-sidebar-stack">
-              {([
-                ["all", labels.sourceAll],
-                ["builtin", labels.sourceBuiltin],
-                ["lyra", labels.sourceLyra],
-                ["claude", labels.sourceClaude],
-                ["continue", labels.sourceContinue]
-              ] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={
-                    state.sourceFilter === value
-                      ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                      : "lyra-mcp-center-side-button"
-                  }
-                  onClick={() => {
-                    model.setSourceFilter(value);
-                  }}
-                >
-                  <strong>{label}</strong>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="lyra-mcp-center-sidebar-group">
-            <span>{labels.sidebarCategories}</span>
-            <div className="lyra-mcp-center-sidebar-stack">
-              <button
-                type="button"
-                className={
-                  state.categoryFilter === "all"
-                    ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                    : "lyra-mcp-center-side-button"
-                }
-                onClick={() => {
-                  model.setCategoryFilter("all");
-                }}
-              >
-                <strong>{labels.statusAll}</strong>
-              </button>
-              {categoryOptions.map((category) => (
-                <button
-                  key={category}
-                  type="button"
-                  className={
-                    state.categoryFilter === category
-                      ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                      : "lyra-mcp-center-side-button"
-                  }
-                  onClick={() => {
-                    model.setCategoryFilter(category);
-                  }}
-                >
-                  <strong>{category}</strong>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="lyra-mcp-center-sidebar-group">
-            <span>{labels.sidebarBuiltin}</span>
-            <div className="lyra-mcp-center-sidebar-stack">
-              {featuredCatalog.length === 0 ? (
-                <p className="lyra-mcp-center-muted">{labels.emptyCatalog}</p>
-              ) : (
-                featuredCatalog.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={
-                      state.panelMode === "catalog" && state.selectedCatalogId === item.id
-                        ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                        : "lyra-mcp-center-side-button"
-                    }
-                    onClick={() => {
-                      model.selectCatalogItem(item.id);
-                    }}
-                  >
-                    <strong>{item.name}</strong>
-                    <small>{renderTypeLabel(item.skillType, labels)}</small>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className="lyra-mcp-center-sidebar-group">
-            <span>{labels.sidebarInstalledGlobal}</span>
-            <div className="lyra-mcp-center-sidebar-stack">
-              {state.globalSkills.length === 0 ? (
-                <p className="lyra-mcp-center-muted">{labels.emptyInstalled}</p>
-              ) : (
-                state.globalSkills.map((skill) => (
-                  <button
-                    key={`global-${skill.skillId}`}
-                    type="button"
-                    className={
-                      state.panelMode === "details" && state.selectedSkillId === skill.skillId
-                        ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                        : "lyra-mcp-center-side-button"
-                    }
-                    onClick={() => {
-                      model.selectSkill(skill.skillId);
-                      void model.readSkillDetails(skill.skillId);
-                    }}
-                  >
-                    <strong>{skill.manifest.name}</strong>
-                    <small>{renderEnableLabel(skill.enableState, labels)}</small>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className="lyra-mcp-center-sidebar-group">
-            <span>{labels.sidebarInstalledProject}</span>
-            <div className="lyra-mcp-center-sidebar-stack">
-              {state.projectSkills.length === 0 ? (
-                <p className="lyra-mcp-center-muted">{labels.scopeProjectUnavailable}</p>
-              ) : (
-                state.projectSkills.map((skill) => (
-                  <button
-                    key={`project-${skill.skillId}`}
-                    type="button"
-                    className={
-                      state.panelMode === "details" && state.selectedSkillId === skill.skillId
-                        ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                        : "lyra-mcp-center-side-button"
-                    }
-                    onClick={() => {
-                      model.selectSkill(skill.skillId);
-                      void model.readSkillDetails(skill.skillId);
-                    }}
-                  >
-                    <strong>{skill.manifest.name}</strong>
-                    <small>{renderEnableLabel(skill.enableState, labels)}</small>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-        </aside>
-
+      <div className="lyra-mcp-center-shell lyra-mcp-center-shell-no-sidebar lyra-skills-center-shell">
         <section className="lyra-mcp-center-main lyra-skills-center-main">
           <header className="lyra-mcp-center-toolbar lyra-skills-center-toolbar">
-            <div className="lyra-mcp-center-toolbar-copy">
-              <strong>{labels.toolbarInstalled}</strong>
-              <small>{labels.toolbarInstalledDescription}</small>
+            <div className="lyra-mcp-center-toolbar-filters">
+              <div className="lyra-mcp-center-scope-tabs">
+                <button
+                  type="button"
+                  className={
+                    state.preferredScope === "global"
+                      ? "lyra-mcp-center-tab lyra-mcp-center-tab-active"
+                      : "lyra-mcp-center-tab"
+                  }
+                  onClick={() => { model.setPreferredScope("global"); }}
+                >
+                  {labels.scopeGlobal}
+                  <small>{state.globalSkills.length}</small>
+                </button>
+                <button
+                  type="button"
+                  className={
+                    state.preferredScope === "project"
+                      ? "lyra-mcp-center-tab lyra-mcp-center-tab-active"
+                      : "lyra-mcp-center-tab"
+                  }
+                  disabled={state.projectSkills.length === 0}
+                  onClick={() => { model.setPreferredScope("project"); }}
+                >
+                  {labels.scopeProject}
+                  <small>
+                    {state.projectSkills.length > 0
+                      ? String(state.projectSkills.length)
+                      : "—"}
+                  </small>
+                </button>
+              </div>
+              <div className="lyra-mcp-center-status-pills">
+                {([
+                  ["all", labels.statusAll],
+                  ["enabled", labels.statusEnabled],
+                  ["disabled", labels.statusDisabled],
+                  ["untrusted", labels.statusUntrusted]
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={
+                      state.statusFilter === value
+                        ? "lyra-mcp-center-pill lyra-mcp-center-pill-active"
+                        : "lyra-mcp-center-pill"
+                    }
+                    onClick={() => { model.setStatusFilter(value); }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="lyra-mcp-center-actions">
+              <button
+                type="button"
+                className="lyra-mcp-center-button lyra-mcp-center-button-ghost"
+                onClick={() => { void model.load(); }}
+              >
+                <RefreshCw size={14} />
+              </button>
               <button
                 type="button"
                 className="lyra-mcp-center-button lyra-mcp-center-button-ghost"
@@ -290,27 +117,9 @@ export const SkillsCenterSurface = ({ model, labels }: SkillsCenterSurfaceProps)
                 <Package size={14} />
                 <span>{labels.actionOpenCatalog}</span>
               </button>
-              <button
-                type="button"
-                className="lyra-mcp-center-button lyra-mcp-center-button-ghost"
-                onClick={model.openImport}
-              >
-                <Package size={14} />
-                <span>{labels.actionOpenImport}</span>
-              </button>
               <button type="button" className="lyra-mcp-center-button" onClick={model.openCreate}>
                 <FilePlus2 size={14} />
                 <span>{labels.actionOpenCreate}</span>
-              </button>
-              <button
-                type="button"
-                className="lyra-mcp-center-button lyra-mcp-center-button-ghost"
-                onClick={() => {
-                  void model.load();
-                }}
-              >
-                <RefreshCw size={14} />
-                <span>{labels.actionRefresh}</span>
               </button>
             </div>
           </header>
@@ -324,10 +133,6 @@ export const SkillsCenterSurface = ({ model, labels }: SkillsCenterSurfaceProps)
 
           <div className="lyra-mcp-center-body">
             <section className="lyra-mcp-center-list-panel lyra-skills-center-list-panel">
-              <header className="lyra-mcp-center-list-header">
-                <h3>{labels.details}</h3>
-                <span>{visibleSkills.length}</span>
-              </header>
               {visibleSkills.length === 0 ? (
                 <div className="lyra-mcp-center-empty-state">{labels.emptyInstalled}</div>
               ) : (

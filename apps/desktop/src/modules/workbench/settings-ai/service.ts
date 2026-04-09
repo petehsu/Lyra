@@ -9,6 +9,7 @@ import type {
   AiUpsertProfileRequest,
   AiValidateProfileRequest
 } from "../../../shared/ai";
+import type { AiMemoryConfig } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import {
   findSelectedProfile,
@@ -41,6 +42,11 @@ export const useSettingsAiModel = ({
   const [statusMessage, setStatusMessage] = useState(labels.statusIdle);
   const [statusTone, setStatusTone] = useState<"neutral" | "success" | "error">("neutral");
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const [memoryConfigText, setMemoryConfigText] = useState("");
+  const [memoryConfigStatus, setMemoryConfigStatus] = useState(labels.memoryConfigStatusIdle);
+  const [memoryConfigStatusTone, setMemoryConfigStatusTone] = useState<"neutral" | "success" | "error">("neutral");
+  const [isMemoryConfigLoading, setIsMemoryConfigLoading] = useState(false);
+  const [isMemoryConfigSaving, setIsMemoryConfigSaving] = useState(false);
 
   const syncProfiles = useCallback(async (): Promise<void> => {
     if (desktopApi === null) {
@@ -84,6 +90,10 @@ export const useSettingsAiModel = ({
   useEffect(() => {
     setStatusMessage(labels.statusIdle);
   }, [labels.statusIdle]);
+
+  useEffect(() => {
+    setMemoryConfigStatus(labels.memoryConfigStatusIdle);
+  }, [labels.memoryConfigStatusIdle]);
 
   useEffect(() => {
     void syncProfiles();
@@ -197,6 +207,130 @@ export const useSettingsAiModel = ({
         : [...current.clearSecretFields, fieldId]
     }));
   }, []);
+
+  const authorizeOpenAiChatGpt = useCallback(async (): Promise<void> => {
+    if (desktopApi === null || draft.providerId !== "openai") {
+      return;
+    }
+
+    setIsSaving(true);
+    setStatusTone("neutral");
+    try {
+      const result = await desktopApi.ai.authorizeOpenAiChatGpt();
+      const preset = resolvePreset(presetCatalog, draft.presetId, draft.providerId, draft.protocolId);
+      const normalizedName = draft.name.trim().length > 0
+        ? draft.name.trim()
+        : "OpenAI ChatGPT OAuth";
+      const normalizedModel = draft.model.trim().length > 0
+        ? draft.model.trim()
+        : (preset?.defaultModel ?? "gpt-5.4");
+      const saved = await desktopApi.ai.upsertProfile({
+        ...(draft.id === null ? {} : { id: draft.id }),
+        name: normalizedName,
+        providerId: draft.providerId,
+        protocolId: draft.protocolId,
+        presetId: draft.presetId,
+        connectionConfig: draft.connectionConfig,
+        authConfig: {
+          ...draft.authConfig,
+          authMode: "chatgpt_oauth",
+          ...(result.accountId === undefined ? {} : { chatgptAccountId: result.accountId })
+        },
+        headers: parseMap(draft.headersText),
+        model: normalizedModel,
+        customModels: parseCustomModels(draft.customModelsText),
+        secretValues: { refreshToken: result.refreshToken },
+        clearSecretFields: draft.clearSecretFields.filter((entry) => entry !== "refreshToken")
+      });
+      setSelectedProfileId(saved.id);
+      await syncProfiles();
+      setStatusMessage(labels.statusChatGptAuthorized);
+      setStatusTone("success");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : String(error));
+      setStatusTone("error");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [
+    desktopApi,
+    draft.authConfig,
+    draft.clearSecretFields,
+    draft.connectionConfig,
+    draft.customModelsText,
+    draft.headersText,
+    draft.id,
+    draft.model,
+    draft.name,
+    draft.presetId,
+    draft.protocolId,
+    draft.providerId,
+    labels.statusChatGptAuthorized,
+    presetCatalog,
+    syncProfiles
+  ]);
+
+  const authorizeOpenAiChatGptDeviceCode = useCallback(async (): Promise<void> => {
+    if (desktopApi === null || draft.providerId !== "openai") {
+      return;
+    }
+
+    setIsSaving(true);
+    setStatusTone("neutral");
+    try {
+      const result = await desktopApi.ai.authorizeOpenAiChatGptDeviceCode();
+      const preset = resolvePreset(presetCatalog, draft.presetId, draft.providerId, draft.protocolId);
+      const normalizedName = draft.name.trim().length > 0
+        ? draft.name.trim()
+        : "OpenAI ChatGPT OAuth";
+      const normalizedModel = draft.model.trim().length > 0
+        ? draft.model.trim()
+        : (preset?.defaultModel ?? "gpt-5.4");
+      const saved = await desktopApi.ai.upsertProfile({
+        ...(draft.id === null ? {} : { id: draft.id }),
+        name: normalizedName,
+        providerId: draft.providerId,
+        protocolId: draft.protocolId,
+        presetId: draft.presetId,
+        connectionConfig: draft.connectionConfig,
+        authConfig: {
+          ...draft.authConfig,
+          authMode: "chatgpt_oauth",
+          ...(result.accountId === undefined ? {} : { chatgptAccountId: result.accountId })
+        },
+        headers: parseMap(draft.headersText),
+        model: normalizedModel,
+        customModels: parseCustomModels(draft.customModelsText),
+        secretValues: { refreshToken: result.refreshToken },
+        clearSecretFields: draft.clearSecretFields.filter((entry) => entry !== "refreshToken")
+      });
+      setSelectedProfileId(saved.id);
+      await syncProfiles();
+      setStatusMessage(labels.statusChatGptAuthorized);
+      setStatusTone("success");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : String(error));
+      setStatusTone("error");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [
+    desktopApi,
+    draft.authConfig,
+    draft.clearSecretFields,
+    draft.connectionConfig,
+    draft.customModelsText,
+    draft.headersText,
+    draft.id,
+    draft.model,
+    draft.name,
+    draft.presetId,
+    draft.protocolId,
+    draft.providerId,
+    labels.statusChatGptAuthorized,
+    presetCatalog,
+    syncProfiles
+  ]);
 
   const buildSecretValues = useCallback((): Record<string, string | null> | null => {
     const secretEntries = Object.entries(draft.secretValues)
@@ -371,6 +505,58 @@ export const useSettingsAiModel = ({
     await runDiscovery(true);
   }, [runDiscovery]);
 
+  const loadMemoryConfig = useCallback(async (): Promise<void> => {
+    if (desktopApi === null || desktopApi.agent === undefined) {
+      return;
+    }
+    setIsMemoryConfigLoading(true);
+    setMemoryConfigStatusTone("neutral");
+    try {
+      const config = await desktopApi.agent.getMemoryConfig();
+      setMemoryConfigText(JSON.stringify(config, null, 2));
+      setMemoryConfigStatus(labels.memoryConfigStatusLoaded);
+      setMemoryConfigStatusTone("success");
+    } catch (error) {
+      setMemoryConfigStatus(error instanceof Error ? error.message : String(error));
+      setMemoryConfigStatusTone("error");
+    } finally {
+      setIsMemoryConfigLoading(false);
+    }
+  }, [desktopApi, labels.memoryConfigStatusLoaded]);
+
+  const saveMemoryConfig = useCallback(async (): Promise<void> => {
+    if (desktopApi === null || desktopApi.agent === undefined) {
+      return;
+    }
+    let parsed: AiMemoryConfig;
+    try {
+      parsed = JSON.parse(memoryConfigText) as AiMemoryConfig;
+    } catch {
+      setMemoryConfigStatus(labels.memoryConfigStatusInvalidJson);
+      setMemoryConfigStatusTone("error");
+      return;
+    }
+
+    setIsMemoryConfigSaving(true);
+    setMemoryConfigStatusTone("neutral");
+    try {
+      const updated = await desktopApi.agent.updateMemoryConfig(parsed);
+      setMemoryConfigText(JSON.stringify(updated, null, 2));
+      setMemoryConfigStatus(labels.memoryConfigStatusSaved);
+      setMemoryConfigStatusTone("success");
+    } catch (error) {
+      setMemoryConfigStatus(error instanceof Error ? error.message : String(error));
+      setMemoryConfigStatusTone("error");
+    } finally {
+      setIsMemoryConfigSaving(false);
+    }
+  }, [
+    desktopApi,
+    labels.memoryConfigStatusInvalidJson,
+    labels.memoryConfigStatusSaved,
+    memoryConfigText
+  ]);
+
   return {
     profiles,
     providerCatalog,
@@ -382,9 +568,14 @@ export const useSettingsAiModel = ({
     isSaving,
     isTesting,
     isDiscovering,
+    isMemoryConfigLoading,
+    isMemoryConfigSaving,
     statusMessage,
     statusTone,
     lastCheckedAt,
+    memoryConfigText,
+    memoryConfigStatus,
+    memoryConfigStatusTone,
     selectProfile,
     createProfileDraft,
     selectPreset,
@@ -394,11 +585,16 @@ export const useSettingsAiModel = ({
     updateHeadersText,
     updateCustomModelsText,
     clearSecretField,
+    authorizeOpenAiChatGpt,
+    authorizeOpenAiChatGptDeviceCode,
     saveProfile,
     deleteProfile,
     setDefaultProfile,
     testConnection,
     discoverModels,
-    refreshDiscoveredModels
+    refreshDiscoveredModels,
+    loadMemoryConfig,
+    saveMemoryConfig,
+    updateMemoryConfigText: setMemoryConfigText
   };
 };

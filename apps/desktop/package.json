@@ -5,7 +5,7 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-napi -p lyra-files-napi -p lyra-lsp-napi -p lyra-skills-napi -p lyra-mcp-napi -p lyra-ai-napi -p lyra-computer-napi -p lyra-system-image-napi",
+    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad -p lyra-files-napi -p lyra-skills-napi",
     "lsp:bundle:rust-analyzer": "node --import tsx ../../tools/lsp/install-rust-analyzer.ts",
     "lsp:preflight": "node --import tsx ../../tools/lsp/preflight-lsp.ts",
     "release:preflight": "npm run typecheck && npm run test && node --import tsx ../../tools/lsp/preflight-lsp.ts --all-targets",
@@ -16,15 +16,30 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint:ui-style": "node --import tsx ../../tools/verify-workbench-style.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "icon:mac": "bash ../../scripts/desktop/generate-macos-iconset.sh"
+  },
+  "build": {
+    "appId": "dev.lyra.desktop",
+    "productName": "Lyra",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "resources/icons/macos/lyra.icns"
+    }
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
+    "@xyflow/react": "^12.10.2",
+    "dagre": "^0.8.5",
+    "dompurify": "^3.3.3",
     "lucide-react": "^0.469.0",
+    "marked": "^17.0.5",
+    "mermaid": "^11.13.0",
     "monaco-editor": "^0.52.2",
     "pinyin-pro": "^3.27.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "vscode-jsonrpc": "8.2.0",
     "xterm": "^5.3.0",
     "zustand": "^5.0.3"
   },
@@ -32,6 +47,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^14.5.2",
+    "@types/dagre": "^0.7.54",
     "@types/node": "^22.10.1",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

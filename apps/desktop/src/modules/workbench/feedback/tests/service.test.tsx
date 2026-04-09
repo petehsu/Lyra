@@ -16,18 +16,14 @@ describe("workbench feedback service", () => {
 
     act(() => {
       result.current.publishFeedback({
-        code: "ai.runtime.approval.accepted",
-        level: "success",
-        sessionId: "session-1",
-        runtimeItemId: "runtime-1"
+        code: "workbench.info",
+        level: "success"
       });
     });
 
     expect(received).toHaveLength(1);
     expect(received[0]).toMatchObject({
-      code: "ai.runtime.approval.accepted",
-      sessionId: "session-1",
-      runtimeItemId: "runtime-1"
+      code: "workbench.info"
     });
 
     unsubscribe();
@@ -43,7 +39,7 @@ describe("workbench feedback service", () => {
 
     act(() => {
       result.current.publishFeedback({
-        code: "ai.runtime.approval.undo",
+        code: "workbench.warning",
         level: "info"
       });
     });
@@ -52,11 +48,11 @@ describe("workbench feedback service", () => {
 
     act(() => {
       result.current.publishFeedback({
-        code: "ai.runtime.approval.rejected",
+        code: "workbench.error",
         level: "warning"
       });
     });
 
-    expect(received).toEqual(["ai.runtime.approval.undo"]);
+    expect(received).toEqual(["workbench.warning"]);
   });
 });

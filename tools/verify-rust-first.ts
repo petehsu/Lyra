@@ -32,7 +32,6 @@ const DESKTOP_PACKAGE_JSON = "apps/desktop/package.json";
 const CARGO_TOML = "Cargo.toml";
 const REQUIRED_ARCHITECTURE_DOCS = [
   "docs/architecture/rust-first-engineering.md",
-  "docs/architecture/ai-computer-system-image-guardrails.md",
   "docs/architecture/lyra-storage-layout.md"
 ] as const;
 const IGNORE_DIRS = new Set(["node_modules", ".git", "dist", "coverage", "target", ".next", "out"]);
@@ -81,21 +80,21 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
   {
     name: "terminal",
     dirName: "terminal",
-    crateDir: "crates/lyra-terminal-napi",
-    cratePackageName: "lyra-terminal-napi",
+    crateDir: "crates/lyra-terminal-core",
+    cratePackageName: "lyra-terminal-core",
     servicePath: "apps/desktop/src/main/terminal/service.ts",
-    loaderPath: "apps/desktop/src/main/terminal/native-loader.ts",
+    loaderPath: "apps/desktop/src/main/runtime-client.ts",
     typesPath: "apps/desktop/src/main/terminal/types.ts",
     indexPath: "apps/desktop/src/main/terminal/index.ts",
     mainBridgeFactoryName: "createTerminalIpcBridge",
     requiredServiceRules: [
       {
-        pattern: /from\s+["']\.\/native-loader["']/,
-        message: "Terminal service must import its native loader."
+        pattern: /from\s+["']\.\.\/runtime-client["']/,
+        message: "Terminal service must import the shared runtime client."
       },
       {
-        pattern: /\bloadTerminalNativeBindings\b/,
-        message: "Terminal service must load native bindings explicitly."
+        pattern: /\bruntimeClient\.request\b/,
+        message: "Terminal service must issue daemon requests through the shared runtime client."
       }
     ],
     forbiddenServiceRules: [
@@ -116,21 +115,21 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
   {
     name: "lsp",
     dirName: "lsp",
-    crateDir: "crates/lyra-lsp-napi",
-    cratePackageName: "lyra-lsp-napi",
+    crateDir: "crates/lyra-lsp-core",
+    cratePackageName: "lyra-lsp-core",
     servicePath: "apps/desktop/src/main/lsp/service.ts",
-    loaderPath: "apps/desktop/src/main/lsp/native-loader.ts",
+    loaderPath: "apps/desktop/src/main/runtime-client.ts",
     typesPath: "apps/desktop/src/main/lsp/types.ts",
     indexPath: "apps/desktop/src/main/lsp/index.ts",
     mainBridgeFactoryName: "createLspIpcBridge",
     requiredServiceRules: [
       {
-        pattern: /from\s+["']\.\/native-loader["']/,
-        message: "LSP service must import its native loader."
+        pattern: /from\s+["']\.\.\/runtime-client["']/,
+        message: "LSP service must import the shared runtime client."
       },
       {
-        pattern: /\bloadLspNativeBindings\b/,
-        message: "LSP service must load native bindings explicitly."
+        pattern: /\bruntimeClient\.request\b/,
+        message: "LSP service must issue daemon requests through the shared runtime client."
       }
     ],
     forbiddenServiceRules: [
@@ -194,21 +193,21 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
   {
     name: "mcp",
     dirName: "mcp",
-    crateDir: "crates/lyra-mcp-napi",
-    cratePackageName: "lyra-mcp-napi",
+    crateDir: "crates/lyra-mcp-core",
+    cratePackageName: "lyra-mcp-core",
     servicePath: "apps/desktop/src/main/mcp/service.ts",
-    loaderPath: "apps/desktop/src/main/mcp/native-loader.ts",
+    loaderPath: "apps/desktop/src/main/runtime-client.ts",
     typesPath: "apps/desktop/src/main/mcp/types.ts",
     indexPath: "apps/desktop/src/main/mcp/index.ts",
     mainBridgeFactoryName: "createMcpIpcBridge",
     requiredServiceRules: [
       {
-        pattern: /from\s+["']\.\/native-loader["']/,
-        message: "MCP service must import its native loader."
+        pattern: /from\s+["']\.\.\/runtime-client["']/,
+        message: "MCP service must import the shared runtime client."
       },
       {
-        pattern: /\bloadMcpNativeBindings\b/,
-        message: "MCP service must load native bindings explicitly."
+        pattern: /\bruntimeClient\.request\b/,
+        message: "MCP service must issue daemon requests through the shared runtime client."
       }
     ],
     forbiddenServiceRules: [
@@ -233,21 +232,21 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
   {
     name: "ai",
     dirName: "ai",
-    crateDir: "crates/lyra-ai-napi",
-    cratePackageName: "lyra-ai-napi",
+    crateDir: "crates/lyra-ai-core",
+    cratePackageName: "lyra-ai-core",
     servicePath: "apps/desktop/src/main/ai/service.ts",
-    loaderPath: "apps/desktop/src/main/ai/native-loader.ts",
+    loaderPath: "apps/desktop/src/main/runtime-client.ts",
     typesPath: "apps/desktop/src/main/ai/types.ts",
     indexPath: "apps/desktop/src/main/ai/index.ts",
     mainBridgeFactoryName: "createAiIpcBridge",
     requiredServiceRules: [
       {
-        pattern: /from\s+["']\.\/native-loader["']/,
-        message: "AI service must import its native loader."
+        pattern: /from\s+["']\.\.\/runtime-client["']/,
+        message: "AI service must import the shared runtime client."
       },
       {
-        pattern: /\bloadAiNativeBindings\b/,
-        message: "AI service must load native bindings explicitly."
+        pattern: /\bruntimeClient\.request\b/,
+        message: "AI service must issue daemon requests through the shared runtime client."
       }
     ],
     forbiddenServiceRules: [
@@ -264,88 +263,14 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
         message: "AI service must not keep TypeScript fallback implementation notes or branches."
       }
     ]
-  },
-  {
-    name: "computer",
-    dirName: "computer",
-    crateDir: "crates/lyra-computer-napi",
-    cratePackageName: "lyra-computer-napi",
-    servicePath: "apps/desktop/src/main/computer/service.ts",
-    loaderPath: "apps/desktop/src/main/computer/native-loader.ts",
-    typesPath: "apps/desktop/src/main/computer/types.ts",
-    indexPath: "apps/desktop/src/main/computer/index.ts",
-    mainBridgeFactoryName: "createComputerIpcBridge",
-    requiredServiceRules: [
-      {
-        pattern: /from\s+["']\.\/native-loader["']/,
-        message: "Computer service must import its native loader."
-      },
-      {
-        pattern: /\bloadComputerNativeBindings\b/,
-        message: "Computer service must load native bindings explicitly."
-      }
-    ],
-    forbiddenServiceRules: [
-      {
-        pattern: /from\s+["']node:child_process["']/,
-        message: "Computer runtime lifecycle belongs in Rust, not in TypeScript child_process handlers."
-      },
-      {
-        pattern: /safeStorage/,
-        message: "Computer session persistence must stay native."
-      },
-      {
-        pattern: /Fall through to the existing TypeScript implementation/,
-        message: "Computer service must not keep TypeScript fallback implementation notes or branches."
-      }
-    ]
-  },
-  {
-    name: "system-image",
-    dirName: "system-image",
-    crateDir: "crates/lyra-system-image-napi",
-    cratePackageName: "lyra-system-image-napi",
-    servicePath: "apps/desktop/src/main/system-image/service.ts",
-    loaderPath: "apps/desktop/src/main/system-image/native-loader.ts",
-    typesPath: "apps/desktop/src/main/system-image/types.ts",
-    indexPath: "apps/desktop/src/main/system-image/index.ts",
-    mainBridgeFactoryName: "createSystemImageIpcBridge",
-    requiredServiceRules: [
-      {
-        pattern: /from\s+["']\.\/native-loader["']/,
-        message: "System image service must import its native loader."
-      },
-      {
-        pattern: /\bloadSystemImageNativeBindings\b/,
-        message: "System image service must load native bindings explicitly."
-      }
-    ],
-    forbiddenServiceRules: [
-      {
-        pattern: /from\s+["']node:child_process["']/,
-        message: "System image install and lifecycle must not depend on TypeScript child_process handlers."
-      },
-      {
-        pattern: /from\s+["']node:fs["']|from\s+["']node:fs\/promises["']/,
-        message: "System image registry/install IO must stay native; do not add TypeScript fs fallbacks."
-      },
-      {
-        pattern: /safeStorage/,
-        message: "System image registry persistence must stay native."
-      },
-      {
-        pattern: /Fall through to the existing TypeScript implementation/,
-        message: "System image service must not keep TypeScript fallback implementation notes or branches."
-      },
-      {
-        pattern: /\breadFileSync\b|\bwriteFileSync\b|\bmkdirSync\b|\brmSync\b/,
-        message: "System image service must remain a thin bridge; local persistence mutation belongs in Rust."
-      }
-    ]
   }
 ] as const;
 
 const tsOwnedMainModules = new Map<string, string>([
+  [
+    "capabilities",
+    "TypeScript-owned shell module: unified capability registry, app manifests, and invoke/event orchestration."
+  ],
   ["search", "TypeScript-owned shell module: provider composition and lightweight search routing."],
   ["linux-compat", "TypeScript-owned shell module: Electron/Linux startup environment integration."],
   ["storage", "TypeScript-owned shell module: unified storage root resolution and Electron path wiring."],

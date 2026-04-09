@@ -1,4 +1,4 @@
-import type { AiProviderCapability, AiProviderPreset } from "../../../shared/ai";
+import type { AiProviderPreset } from "../../../shared/ai";
 import { SettingsAiProviderIcon } from "./icon-registry";
 import { SettingsAiFieldRenderer } from "./field-renderer";
 import { buildModelOptions } from "./model-options";
@@ -24,17 +24,6 @@ const formatCheckedAt = (timestamp: number): string => {
   }
 };
 
-const capabilityLabel = (labels: SettingsAiLabels, capability: AiProviderCapability): string => {
-  switch (capability) {
-    case "full":
-      return labels.capabilityFull;
-    case "static":
-      return labels.capabilityStatic;
-    default:
-      return labels.capabilityPending;
-  }
-};
-
 const ProviderList = ({
   labels,
   presets,
@@ -46,7 +35,11 @@ const ProviderList = ({
   readonly selectedPresetId: string | null;
   readonly onSelect: (presetId: string) => void;
 }) => (
-  <div className="lyra-settings-ai-selection-list" role="listbox" aria-label={labels.providerTitle}>
+  <div
+    className="lyra-settings-ai-selection-list lyra-settings-ai-selection-list-grid"
+    role="listbox"
+    aria-label={labels.providerTitle}
+  >
     {presets.map((preset) => (
       <button
         key={preset.id}
@@ -64,9 +57,6 @@ const ProviderList = ({
             <strong>{preset.label}</strong>
           </span>
           <small>{preset.description}</small>
-        </span>
-        <span className="lyra-settings-ai-selection-meta">
-          <span className="lyra-settings-ai-badge">{capabilityLabel(labels, preset.capability)}</span>
         </span>
       </button>
     ))}
@@ -102,6 +92,30 @@ export const SettingsAiView = ({
           <h3>{labels.profilesTitle}</h3>
         </header>
         <div className="lyra-settings-ai-actions">
+          {selectedPreset?.providerId === "openai" ? (
+            <>
+              <button
+                type="button"
+                className="lyra-settings-ai-action"
+                disabled={model.isSaving || model.isLoading}
+                onClick={() => {
+                  void model.authorizeOpenAiChatGpt();
+                }}
+              >
+                {labels.authorizeChatGpt}
+              </button>
+              <button
+                type="button"
+                className="lyra-settings-ai-action"
+                disabled={model.isSaving || model.isLoading}
+                onClick={() => {
+                  void model.authorizeOpenAiChatGptDeviceCode();
+                }}
+              >
+                {labels.authorizeChatGptDeviceCode}
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             className="lyra-settings-ai-action"
@@ -131,7 +145,11 @@ export const SettingsAiView = ({
           </button>
         </div>
         {hasProfiles ? (
-          <div className="lyra-settings-ai-selection-list" role="listbox" aria-label={labels.profilesTitle}>
+          <div
+            className="lyra-settings-ai-selection-list lyra-settings-ai-selection-list-grid"
+            role="listbox"
+            aria-label={labels.profilesTitle}
+          >
             {model.profiles.map((profile) => (
               <button
                 key={profile.id}
@@ -205,18 +223,10 @@ export const SettingsAiView = ({
               }}
             />
           </label>
-          <div className="lyra-settings-ai-field">
-            <span>{labels.capabilityLabel}</span>
-            <div className="lyra-settings-ai-inline-meta">
-              <span className="lyra-settings-ai-badge">{capabilityLabel(labels, selectedPreset?.capability ?? "pending")}</span>
-              <small>{selectedPreset?.label ?? model.draft.providerId}</small>
-            </div>
-          </div>
           <SettingsAiModelPicker
             labels={labels}
             value={model.draft.model}
             placeholder={labels.modelPlaceholder}
-            capability={selectedPreset?.capability ?? "pending"}
             models={modelOptions}
             onChange={model.updateModel}
           />
@@ -325,10 +335,6 @@ export const SettingsAiView = ({
             <span>{selectedPreset?.label ?? model.draft.providerId}</span>
           </div>
           <div className="lyra-settings-ai-status-row">
-            <strong>{labels.capabilityLabel}</strong>
-            <span>{capabilityLabel(labels, selectedPreset?.capability ?? "pending")}</span>
-          </div>
-          <div className="lyra-settings-ai-status-row">
             <strong>{labels.modelLabel}</strong>
             <span>{model.draft.model || labels.emptyTitle}</span>
           </div>
@@ -346,6 +352,55 @@ export const SettingsAiView = ({
                 : formatCheckedAt(model.lastCheckedAt)}
             </span>
           </div>
+        </div>
+      </section>
+
+      <section className="lyra-settings-group">
+        <header className="lyra-settings-group-header">
+          <h3>{labels.memoryConfigTitle}</h3>
+        </header>
+        <div className="lyra-settings-ai-status-row">
+          <span>{labels.memoryConfigDescription}</span>
+        </div>
+        <div className="lyra-settings-ai-form">
+          <label className="lyra-settings-ai-field lyra-settings-ai-field-span-2">
+            <textarea
+              className="lyra-settings-ai-input lyra-settings-ai-input-multiline"
+              value={model.memoryConfigText}
+              placeholder={labels.memoryConfigPlaceholder}
+              onChange={(event) => {
+                model.updateMemoryConfigText(event.target.value);
+              }}
+            />
+          </label>
+        </div>
+        <div className="lyra-settings-ai-actions">
+          <button
+            type="button"
+            className="lyra-settings-ai-action"
+            disabled={model.isMemoryConfigLoading || model.isMemoryConfigSaving}
+            onClick={() => {
+              void model.loadMemoryConfig();
+            }}
+          >
+            {labels.memoryConfigLoad}
+          </button>
+          <button
+            type="button"
+            className="lyra-settings-ai-action"
+            disabled={model.isMemoryConfigLoading || model.isMemoryConfigSaving}
+            onClick={() => {
+              void model.saveMemoryConfig();
+            }}
+          >
+            {labels.memoryConfigSave}
+          </button>
+        </div>
+        <div className="lyra-settings-ai-status-row">
+          <strong>{labels.statusTitle}</strong>
+          <span className={`lyra-settings-ai-status-tone-${model.memoryConfigStatusTone}`}>
+            {model.memoryConfigStatus}
+          </span>
         </div>
       </section>
     </>

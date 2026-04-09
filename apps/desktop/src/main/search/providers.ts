@@ -23,7 +23,11 @@ type ProviderResult = {
   readonly error?: string;
 };
 
-type ProviderFetcher = (query: string, limit: number, engineId: string) => Promise<readonly SearchAggregateResult[]>;
+type ProviderFetcher = (
+  query: string,
+  limit: number,
+  engine: SearchAggregateEngine
+) => Promise<readonly SearchAggregateResult[]>;
 
 const fetchText = async (url: string): Promise<string> => {
   const controller = new AbortController();
@@ -48,6 +52,34 @@ const fetchText = async (url: string): Promise<string> => {
     }
 
     return await response.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const fetchJson = async <T>(url: string): Promise<T> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+        accept: "application/json,text/plain;q=0.9,*/*;q=0.8",
+        "user-agent": USER_AGENT
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return await response.json() as T;
   } finally {
     clearTimeout(timeout);
   }
@@ -88,7 +120,8 @@ const createResult = (
   };
 };
 
-const fetchBingRss: ProviderFetcher = async (query, limit, engineId) => {
+const fetchBingRss: ProviderFetcher = async (query, limit, engine) => {
+  const engineId = engine.id;
   const url = `https://www.bing.com/search?format=rss&count=${Math.max(limit, 10)}&q=${encodeURIComponent(query)}`;
   const xml = await fetchText(url);
 
@@ -118,7 +151,8 @@ const fetchBingRss: ProviderFetcher = async (query, limit, engineId) => {
   return results;
 };
 
-const fetchDuckDuckGoHtml: ProviderFetcher = async (query, limit, engineId) => {
+const fetchDuckDuckGoHtml: ProviderFetcher = async (query, limit, engine) => {
+  const engineId = engine.id;
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
   const html = await fetchText(url);
 
@@ -221,7 +255,8 @@ const decodeJsUrl = (raw: string): string =>
     .replace(/\\"/g, '"')
     .replace(/\\\\/g, "\\");
 
-const fetchBraveHtml: ProviderFetcher = async (query, limit, engineId) => {
+const fetchBraveHtml: ProviderFetcher = async (query, limit, engine) => {
+  const engineId = engine.id;
   const url = `https://search.brave.com/search?q=${encodeURIComponent(query)}&source=web`;
   const html = await fetchText(url);
 
@@ -274,10 +309,62 @@ const fetchBraveHtml: ProviderFetcher = async (query, limit, engineId) => {
   return results;
 };
 
+const normalizeSearxngEndpoint = (value: string): string =>
+  value.replace(/\/+$/, "");
+
+const fetchSearxng: ProviderFetcher = async (query, limit, engine) => {
+  const endpoint =
+    typeof engine.endpoint === "string" && engine.endpoint.trim().length > 0
+      ? normalizeSearxngEndpoint(engine.endpoint.trim())
+      : "";
+  if (endpoint.length === 0) {
+    throw new Error("searxng endpoint is missing");
+  }
+  const url =
+    `${endpoint}/search?format=json&q=${encodeURIComponent(query)}`
+    + `&language=zh-CN&safesearch=0`;
+  const payload = await fetchJson<{
+    readonly results?: readonly {
+      readonly url?: string;
+      readonly title?: string;
+      readonly content?: string;
+    }[];
+  }>(url);
+  const rawResults = payload.results ?? [];
+  const seen = new Set<string>();
+  const results: SearchAggregateResult[] = [];
+  for (let index = 0; index < rawResults.length; index += 1) {
+    if (results.length >= limit) {
+      break;
+    }
+    const raw = rawResults[index];
+    if (raw === undefined || typeof raw.url !== "string") {
+      continue;
+    }
+    const dedupeKey = toResultMergeKey(raw.url);
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+    const result = createResult(
+      engine.id,
+      index + 1,
+      raw.url,
+      raw.title ?? raw.url,
+      raw.content ?? ""
+    );
+    if (result !== null) {
+      seen.add(dedupeKey);
+      results.push(result);
+    }
+  }
+  return results;
+};
+
 const PROVIDERS: Record<string, ProviderFetcher> = {
   bing: fetchBingRss,
   duckduckgo: fetchDuckDuckGoHtml,
-  brave: fetchBraveHtml
+  brave: fetchBraveHtml,
+  searxng: fetchSearxng
 };
 
 export const fetchEngineResults = async (
@@ -297,7 +384,7 @@ export const fetchEngineResults = async (
   }
 
   try {
-    const results = await provider(query, limit, engine.id);
+    const results = await provider(query, limit, engine);
     return {
       results,
       latencyMs: Date.now() - startedAt

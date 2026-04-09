@@ -9,6 +9,7 @@ export type {
   FileEditorChangeReviewDecision,
   FileEditorChangeReviewStatus,
   FileEditorControlMode,
+  FileEditorRevealLocation,
   FileEditorLabels,
   FileEditorModel,
   FileEditorReadOutcome,

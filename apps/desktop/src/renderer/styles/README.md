@@ -5,7 +5,11 @@ Lyra Desktop renderer 样式采用“基础层 + 模块层”结构，避免回�
 ## 目录结构
 
 - `tokens.css`
-  - 设计 Token 与主题变量入口（颜色、尺寸、动效变量）。
+  - 设计 Token 与主题变量入口。
+  - 现在分为：
+    - foundation tokens：`--lyra-unit-*`、`--lyra-space-*`、`--lyra-radius-*`、`--lyra-text-size-*`、`--lyra-control-h-*`
+    - semantic tokens：`--lyra-shell-*`、`--lyra-control-*`、`--lyra-list-*`、`--lyra-surface-*`、`--lyra-tab-*`
+    - optical tokens：`--lyra-optical-*`
 - `base.css`
   - 全局基础样式与通用元素重置。
 - `workbench/*.css`
@@ -27,7 +31,6 @@ Lyra Desktop renderer 样式采用“基础层 + 模块层”结构，避免回�
 - `workbench/mcp-center-forms.css`
 - `workbench/mcp-center.css`（迁移过渡壳，原则上不再新增规则）
 - `workbench/skills-center.css`
-- `workbench/sidebar-composer.css`
 - `workbench/terminal.css`
 - `workbench/file-editor.css`
 
@@ -48,6 +51,9 @@ Lyra Desktop renderer 样式采用“基础层 + 模块层”结构，避免回�
 - 跨模块共享样式优先放 `core.css`（仅限真正共享的结构层规则）。
 - 不修改 class 命名约定：统一 `lyra-` 前缀。
 - `@media` 与 `@keyframes` 尽量就近放在所属模块文件内，不跨文件分裂定义。
+- Workbench 模块样式禁止新增裸 `px`、裸颜色；优先消费 semantic token，其次才是 foundation token。
+- 允许的断点字面量只有 `980px` 和 `1180px`，且仅用于 `@media`。
+- 光学校正只能通过正式 token 落地，不允许匿名魔法数字。
 
 ## 变更流程
 
@@ -66,4 +72,17 @@ Lyra Desktop renderer 样式采用“基础层 + 模块层”结构，避免回�
 - Desktop 类型检查：`npm --prefix apps/desktop run typecheck`
 - Shell 核心测试：`npm --prefix apps/desktop run test -- src/modules/workbench/shell/tests/workbench-shell.test.tsx`
 
-`lint:ui-style` 由 `tools/verify-workbench-style.ts` 扫描 `styles/workbench/*.css`，如果你改动了受保护选择器（例如 settings/context-menu 规则），需要同步更新该脚本。
+`lint:ui-style` 由 `tools/verify-workbench-style.ts` 扫描：
+
+- `apps/desktop/src/renderer/styles/workbench/*.css`
+- `apps/desktop/src/modules/workbench/**/*.css`
+- `apps/desktop/src/modules/workbench/**/*.ts(x)` 中的 inline style
+
+它会同时检查：
+
+- 受保护选择器规则
+- 裸长度字面量
+- inline style 裸视觉字面量
+- 断点白名单
+
+如果你确实需要新增例外，先把它沉淀成 token，再更新守卫规则；不要直接把硬编码塞回组件。

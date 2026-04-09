@@ -8,11 +8,10 @@ export type LyraModuleStorageRoots = {
   readonly ai: string;
   readonly mcp: string;
   readonly skills: string;
-  readonly computer: string;
-  readonly systemImages: string;
   readonly linuxCompat: string;
   readonly terminal: string;
   readonly workbenchState: string;
+  readonly search: string;
 };
 
 export type LyraStorageRoots = {
@@ -39,11 +38,10 @@ export const resolveLyraStorageRoots = (): LyraStorageRoots => {
       ai: path.join(modulesRoot, "ai"),
       mcp: path.join(modulesRoot, "mcp"),
       skills: path.join(modulesRoot, "skills"),
-      computer: path.join(modulesRoot, "computer"),
-      systemImages: path.join(modulesRoot, "system-images"),
       linuxCompat: path.join(modulesRoot, "linux-compat"),
       terminal: path.join(modulesRoot, "terminal"),
-      workbenchState: path.join(modulesRoot, "workbench-state")
+      workbenchState: path.join(modulesRoot, "workbench-state"),
+      search: path.join(modulesRoot, "search")
     }
   };
 };

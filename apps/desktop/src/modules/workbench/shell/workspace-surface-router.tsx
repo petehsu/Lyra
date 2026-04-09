@@ -1,18 +1,20 @@
 import type { ReactNode } from "react";
 
-import { BrowserResultSurface } from "../browser-search";
+import { BrowserResultSurface, DeepSearchResultSurface } from "../browser-search";
 import type { SearchEngineDefinition } from "../browser-search/types";
-import { AiPanelSurface } from "../ai-panel";
-import type { AiPanelSurfaceProps } from "../ai-panel/types";
 import {
   BrowserPageSurface,
   BrowserSearchSurface,
-  BrowserSettingsSurface,
-  type BrowserPageNavigationState,
-  type BrowserPageNavigator
+  BrowserSettingsSurface
 } from "../browser-tabs";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
-import { FileManagerSurface, type FileManagerModel, type FileManagerSurfaceLabels } from "../file-manager";
+import { AiHistorySurface } from "../ai-history";
+import {
+  FileManagerSurface,
+  type FileManagerChooserMode,
+  type FileManagerModel,
+  type FileManagerSurfaceLabels
+} from "../file-manager";
 import {
   FileEditorSurface,
   type FileEditorChangeReviewItem,
@@ -37,8 +39,8 @@ import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/typ
 import type { TerminalThemePresetId } from "../terminal-theme";
 import type { WorkbenchThemeId } from "../theme";
 import {
+  isAiHistoryAppId,
   isAiMcpAppId,
-  isAiPanelAppId,
   isAiSkillsAppId,
   isFileEditorAppId,
   isFileManagerAppId,
@@ -68,19 +70,88 @@ export type WorkspaceSurfaceI18nProps = {
   readonly resultsEngineOverview: string;
   readonly resultsNoResults: string;
   readonly resultsEngineError: string;
-};
-
-export type WorkspaceSurfaceAiPanelProps = {
-  readonly taskCardAcceptLabel: string;
-  readonly taskCardRejectLabel: string;
-  readonly taskCardUndoLabel: string;
-  readonly fileChangeReviewItems?: readonly FileEditorChangeReviewItem[];
-  readonly onAcceptFileChangeReviewItem?: (item: FileEditorChangeReviewItem) => void;
-  readonly onRejectFileChangeReviewItem?: (item: FileEditorChangeReviewItem) => void;
-  readonly onUndoFileChangeReviewItem?: (item: FileEditorChangeReviewItem) => void;
-  readonly resolveSurfaceProps: (
-    sessionId: string
-  ) => Omit<AiPanelSurfaceProps, "variant"> | null;
+  readonly resultsOfficial: string;
+  readonly resultsOfficialHomepage: string;
+  readonly resultsOfficialSubsite: string;
+  readonly resultsOfficialDocs: string;
+  readonly resultsOfficialLogin: string;
+  readonly resultsOfficialDownload: string;
+  readonly resultsOfficialSupport: string;
+  readonly resultsSourceFilter: string;
+  readonly resultsAllTab: string;
+  readonly resultsWebTab: string;
+  readonly resultsLocalTab: string;
+  readonly resultsLocalTitle: string;
+  readonly resultsLocalPanelTitle: string;
+  readonly resultsLocalNoMatches: string;
+  readonly resultsLocalSearchingMore: string;
+  readonly resultsLocalScope: string;
+  readonly resultsLocalScannedFiles: string;
+  readonly resultsLocalScannedDirs: string;
+  readonly resultsLocalContentScans: string;
+  readonly resultsLocalMatched: string;
+  readonly resultsLocalIndex: string;
+  readonly resultsLocalScore: string;
+  readonly resultsLocalLine: string;
+  readonly channelIdle: string;
+  readonly channelLoading: string;
+  readonly channelReady: string;
+  readonly channelError: string;
+  readonly deepSearchToggle: string;
+  readonly deepSearchChip: string;
+  readonly deepSearchHeading: string;
+  readonly deepSearchStop: string;
+  readonly deepSearchFitView: string;
+  readonly deepSearchResetLayout: string;
+  readonly deepSearchLoading: string;
+  readonly deepSearchEmpty: string;
+  readonly deepSearchOverview: string;
+  readonly deepSearchSelectedNode: string;
+  readonly deepSearchPhase: string;
+  readonly deepSearchBudget: string;
+  readonly deepSearchWebStatus: string;
+  readonly deepSearchLocalStatus: string;
+  readonly deepSearchDeduped: string;
+  readonly deepSearchDerived: string;
+  readonly deepSearchRounds: string;
+  readonly deepSearchOpen: string;
+  readonly deepSearchExpand: string;
+  readonly deepSearchCenter: string;
+  readonly deepSearchNoSelection: string;
+  readonly deepSearchAll: string;
+  readonly deepSearchSnippet: string;
+  readonly deepSearchSource: string;
+  readonly deepSearchConnectedLinks: string;
+  readonly deepSearchEdgeFilters: string;
+  readonly deepSearchDirection: string;
+  readonly deepSearchIncoming: string;
+  readonly deepSearchOutgoing: string;
+  readonly deepSearchBoth: string;
+  readonly deepSearchDiscovered: string;
+  readonly deepSearchExpanded: string;
+  readonly deepSearchRelated: string;
+  readonly deepSearchHostsSubdomain: string;
+  readonly deepSearchContainsPage: string;
+  readonly deepSearchLineage: string;
+  readonly deepSearchAlternateLinks: string;
+  readonly deepSearchRevealInManager: string;
+  readonly deepSearchMatchKind: string;
+  readonly deepSearchLine: string;
+  readonly deepSearchSharedTerms: string;
+  readonly deepSearchDomain: string;
+  readonly deepSearchSubdomain: string;
+  readonly deepSearchPage: string;
+  readonly deepSearchVerified: string;
+  readonly deepSearchGuessed: string;
+  readonly deepSearchDiscoveredBy: string;
+  readonly deepSearchVerificationScore: string;
+  readonly deepSearchGuessedDomains: string;
+  readonly deepSearchVerifiedDomains: string;
+  readonly deepSearchSubdomains: string;
+  readonly deepSearchVisitedPages: string;
+  readonly deepSearchQueuedPages: string;
+  readonly deepSearchDroppedPages: string;
+  readonly deepSearchSiteExpansionStatus: string;
 };
 
 export type WorkspaceSurfaceRouterProps = {
@@ -90,18 +161,7 @@ export type WorkspaceSurfaceRouterProps = {
   readonly browserSearchModel: BrowserSearchModel;
   readonly engineById: ReadonlyMap<string, SearchEngineDefinition>;
   readonly onOpenSearchResult: (url: string, title: string) => void;
-  readonly onPageMetaChange: (
-    tabId: string,
-    meta: { readonly title?: string; readonly faviconUrl?: string }
-  ) => void;
-  readonly onPageNavigatorReady: (
-    tabId: string,
-    navigator: BrowserPageNavigator | null
-  ) => void;
-  readonly onPageNavigationStateChange: (
-    tabId: string,
-    state: BrowserPageNavigationState
-  ) => void;
+  readonly onPageHostChange: (tabId: string, element: HTMLElement | null) => void;
   readonly terminalModel: TerminalDockModel;
   readonly desktopApi: LyraDesktopApi | null;
   readonly terminalLabels: TerminalDockLabels;
@@ -110,13 +170,34 @@ export type WorkspaceSurfaceRouterProps = {
   readonly resolvedThemeId: string;
   readonly fileManagerModel: FileManagerModel;
   readonly fileManagerLabels: FileManagerSurfaceLabels;
+  readonly resolveFileManagerChooser?: (instanceId: string) => FileManagerChooserMode | null;
   readonly fileEditorModel: FileEditorModel;
   readonly fileEditorLabels: FileEditorLabels;
+  readonly fileEditorReview?: {
+    readonly editorWorkAcceptLabel: string;
+    readonly editorWorkRejectLabel: string;
+    readonly editorWorkUndoLabel: string;
+    readonly editorWorkPrevLabel: string;
+    readonly editorWorkNextLabel: string;
+    readonly editorWorkAcceptAllLabel: string;
+    readonly canGoToPreviousEditorWorkItem: boolean;
+    readonly canGoToNextEditorWorkItem: boolean;
+    readonly canAcceptAllEditorWorkItems: boolean;
+    readonly resolveActiveEditorWorkItem: (filePath: string) => FileEditorChangeReviewItem | undefined;
+    readonly onGoToPreviousEditorWorkItem: () => void;
+    readonly onGoToNextEditorWorkItem: () => void;
+    readonly onAcceptAllEditorWorkItems: () => void;
+    readonly onAcceptEditorWorkItem: (item: FileEditorChangeReviewItem) => void;
+    readonly onRejectEditorWorkItem: (item: FileEditorChangeReviewItem) => void;
+    readonly onUndoEditorWorkItem: (item: FileEditorChangeReviewItem) => void;
+  };
   readonly onOpenFileFromManager: (filePath: string) => void;
+  readonly onRevealPathInFileManager: (filePath: string) => void;
   readonly splitThreePaneLayout: WorkbenchSplitThreePaneLayout;
   readonly settings: WorkspaceSurfaceSettingsProps;
+  readonly searchResultsSourceFilter: "all" | "web" | "local";
+  readonly onSearchResultsSourceFilterChange: (value: "all" | "web" | "local") => void;
   readonly i18n: WorkspaceSurfaceI18nProps;
-  readonly aiPanel: WorkspaceSurfaceAiPanelProps;
   readonly mcpCenter: {
     readonly model: McpCenterModel;
     readonly labels: McpCenterLabels;
@@ -124,6 +205,22 @@ export type WorkspaceSurfaceRouterProps = {
   readonly skillsCenter: {
     readonly model: SkillsCenterModel;
     readonly labels: SkillsCenterLabels;
+  };
+  readonly aiHistory: {
+    readonly locale: string;
+    readonly title: string;
+    readonly newSessionTitle: string;
+    readonly openSettingsLabel: string;
+    readonly newConversationLabel: string;
+    readonly openConversationLabel: string;
+    readonly deleteConversationLabel: string;
+    readonly profileLabel: string;
+    readonly sessionIdLabel: string;
+    readonly loadingSessionsLabel: string;
+    readonly emptyStateTitle: string;
+    readonly emptyStateDescription: string;
+    readonly defaultProfileId?: string | null;
+    readonly onOpenSettings: () => void;
   };
   readonly notifications: {
     readonly model: WorkbenchNotificationModel;
@@ -140,9 +237,7 @@ export const WorkspaceSurfaceRouter = ({
   browserSearchModel,
   engineById,
   onOpenSearchResult,
-  onPageMetaChange,
-  onPageNavigatorReady,
-  onPageNavigationStateChange,
+  onPageHostChange,
   terminalModel,
   desktopApi,
   terminalLabels,
@@ -151,39 +246,176 @@ export const WorkspaceSurfaceRouter = ({
   resolvedThemeId,
   fileManagerModel,
   fileManagerLabels,
+  resolveFileManagerChooser,
   fileEditorModel,
   fileEditorLabels,
+  fileEditorReview,
   onOpenFileFromManager,
+  onRevealPathInFileManager,
   splitThreePaneLayout,
   settings,
+  searchResultsSourceFilter,
+  onSearchResultsSourceFilterChange,
   i18n,
-  aiPanel,
   mcpCenter,
   skillsCenter,
+  aiHistory,
   notifications
 }: WorkspaceSurfaceRouterProps) => {
-  const isAiPanelWorkspaceTab = (tab: WorkspaceTab): boolean =>
-    tab.pageKind === "app" && tab.appId !== undefined && isAiPanelAppId(tab.appId);
+  const renderPageSurface = (tab: WorkspaceTab): ReactNode => (
+    <BrowserPageSurface
+      tabId={tab.id}
+      onHostChange={onPageHostChange}
+    />
+  );
 
   const renderTabSurface = (tab: WorkspaceTab): ReactNode => {
     if (tab.pageKind === "results") {
+      const resultMode = tab.resultMode ?? tab.searchMode ?? "standard";
+      if (resultMode === "deep") {
+        return (
+          <DeepSearchResultSurface
+            logoUrl={logoUrl}
+            inputValue={tab.inputValue}
+            placeholder={i18n.searchPlaceholder}
+            searchActionLabel={i18n.searchActionLabel}
+            deepSearchEnabled={browserSearchModel.activeSearchMode === "deep"}
+            labels={{
+              headingLabel: i18n.deepSearchHeading,
+              deepSearchToggleLabel: i18n.deepSearchToggle,
+              deepSearchChipLabel: i18n.deepSearchChip,
+              stopLabel: i18n.deepSearchStop,
+              fitViewLabel: i18n.deepSearchFitView,
+              resetLayoutLabel: i18n.deepSearchResetLayout,
+              loadingLabel: i18n.deepSearchLoading,
+              emptyLabel: i18n.deepSearchEmpty,
+              officialResultLabel: i18n.resultsOfficial,
+              officialHomepageLabel: i18n.resultsOfficialHomepage,
+              officialSubsiteLabel: i18n.resultsOfficialSubsite,
+              officialDocsLabel: i18n.resultsOfficialDocs,
+              officialLoginLabel: i18n.resultsOfficialLogin,
+              officialDownloadLabel: i18n.resultsOfficialDownload,
+              officialSupportLabel: i18n.resultsOfficialSupport,
+              overviewLabel: i18n.deepSearchOverview,
+              selectedNodeLabel: i18n.deepSearchSelectedNode,
+              phaseLabel: i18n.deepSearchPhase,
+              budgetLabel: i18n.deepSearchBudget,
+              webStatusLabel: i18n.deepSearchWebStatus,
+              localStatusLabel: i18n.deepSearchLocalStatus,
+              dedupedLabel: i18n.deepSearchDeduped,
+              derivedLabel: i18n.deepSearchDerived,
+              roundsLabel: i18n.deepSearchRounds,
+              sourceFilterLabel: i18n.resultsSourceFilter,
+              webLabel: i18n.resultsWebTab,
+              localLabel: i18n.resultsLocalTab,
+              openLabel: i18n.deepSearchOpen,
+              expandLabel: i18n.deepSearchExpand,
+              centerLabel: i18n.deepSearchCenter,
+              emptySelectionLabel: i18n.deepSearchNoSelection,
+              allLabel: i18n.resultsAllTab,
+              snippetLabel: i18n.deepSearchSnippet,
+              sourceLabel: i18n.deepSearchSource,
+              connectedLinksLabel: i18n.deepSearchConnectedLinks,
+              edgeFiltersLabel: i18n.deepSearchEdgeFilters,
+              directionLabel: i18n.deepSearchDirection,
+              incomingLabel: i18n.deepSearchIncoming,
+              outgoingLabel: i18n.deepSearchOutgoing,
+              bothLabel: i18n.deepSearchBoth,
+              discoveredLabel: i18n.deepSearchDiscovered,
+              expandedLabel: i18n.deepSearchExpanded,
+              relatedLabel: i18n.deepSearchRelated,
+              hostsSubdomainLabel: i18n.deepSearchHostsSubdomain,
+              containsPageLabel: i18n.deepSearchContainsPage,
+              lineageLabel: i18n.deepSearchLineage,
+              alternateLinksLabel: i18n.deepSearchAlternateLinks,
+              revealInManagerLabel: i18n.deepSearchRevealInManager,
+              matchKindLabel: i18n.deepSearchMatchKind,
+              lineLabel: i18n.deepSearchLine,
+              sharedTermsLabel: i18n.deepSearchSharedTerms,
+              domainLabel: i18n.deepSearchDomain,
+              subdomainLabel: i18n.deepSearchSubdomain,
+              pageLabel: i18n.deepSearchPage,
+              verifiedLabel: i18n.deepSearchVerified,
+              guessedLabel: i18n.deepSearchGuessed,
+              discoveredByLabel: i18n.deepSearchDiscoveredBy,
+              verificationScoreLabel: i18n.deepSearchVerificationScore,
+              guessedDomainsLabel: i18n.deepSearchGuessedDomains,
+              verifiedDomainsLabel: i18n.deepSearchVerifiedDomains,
+              subdomainsLabel: i18n.deepSearchSubdomains,
+              visitedPagesLabel: i18n.deepSearchVisitedPages,
+              queuedPagesLabel: i18n.deepSearchQueuedPages,
+              droppedPagesLabel: i18n.deepSearchDroppedPages,
+              siteExpansionStatusLabel: i18n.deepSearchSiteExpansionStatus
+            }}
+            snapshot={browserSearchModel.deepSearchState.snapshot}
+            searching={browserSearchModel.isSearching}
+            viewportMemoryKey={`${tab.id}:${tab.query ?? ""}`}
+            restoreViewportEnabled={settings.deepSearchRestoreViewportValue}
+            localOpenBehavior={settings.deepSearchLocalOpenBehaviorValue}
+            sourceFilter={searchResultsSourceFilter}
+            sharedStartRect={browserSearchModel.sharedTransitionRect}
+            onInputChange={tabsModel.updateActiveInput}
+            onSubmit={tabsModel.commitActiveInput}
+            onToggleDeepSearch={browserSearchModel.onToggleDeepSearch}
+            onCancel={browserSearchModel.onCancelDeepSearch}
+            onExpandNode={browserSearchModel.onExpandDeepNode}
+            onSourceFilterChange={onSearchResultsSourceFilterChange}
+            onOpenUrl={onOpenSearchResult}
+            onOpenLocalPath={onOpenFileFromManager}
+            onRevealLocalPath={onRevealPathInFileManager}
+            onSharedAnimationDone={browserSearchModel.onSharedAnimationDone}
+          />
+        );
+      }
       return (
         <BrowserResultSurface
           logoUrl={logoUrl}
           inputValue={tab.inputValue}
           placeholder={i18n.searchPlaceholder}
           searchActionLabel={i18n.searchActionLabel}
+          deepSearchToggleLabel={i18n.deepSearchToggle}
+          deepSearchEnabled={browserSearchModel.activeSearchMode === "deep"}
+          deepSearchChipLabel={i18n.deepSearchChip}
           headingLabel={i18n.resultsHeading}
           blendLabel={i18n.resultsBlendTitle}
           engineOverviewLabel={i18n.resultsEngineOverview}
+          officialResultLabel={i18n.resultsOfficial}
+          officialHomepageLabel={i18n.resultsOfficialHomepage}
+          officialSubsiteLabel={i18n.resultsOfficialSubsite}
+          officialDocsLabel={i18n.resultsOfficialDocs}
+          officialLoginLabel={i18n.resultsOfficialLogin}
+          officialDownloadLabel={i18n.resultsOfficialDownload}
+          officialSupportLabel={i18n.resultsOfficialSupport}
+          sourceFilterLabel={i18n.resultsSourceFilter}
+          allTabLabel={i18n.resultsAllTab}
           emptyLabel={
             browserSearchModel.searchError === null
               ? i18n.resultsNoResults
               : `${i18n.resultsNoResults} · ${browserSearchModel.searchError}`
           }
           engineErrorLabel={i18n.resultsEngineError}
-          isLoading={browserSearchModel.isSearching}
-          payload={browserSearchModel.searchPayload}
+          webTabLabel={i18n.resultsWebTab}
+          localTabLabel={i18n.resultsLocalTab}
+          localTitleLabel={i18n.resultsLocalTitle}
+          localPanelTitleLabel={i18n.resultsLocalPanelTitle}
+          localNoMatchesLabel={i18n.resultsLocalNoMatches}
+          localSearchingMoreLabel={i18n.resultsLocalSearchingMore}
+          localScopeLabel={i18n.resultsLocalScope}
+          localScannedFilesLabel={i18n.resultsLocalScannedFiles}
+          localScannedDirsLabel={i18n.resultsLocalScannedDirs}
+          localContentScansLabel={i18n.resultsLocalContentScans}
+          localMatchedLabel={i18n.resultsLocalMatched}
+          localIndexLabel={i18n.resultsLocalIndex}
+          localScoreLabel={i18n.resultsLocalScore}
+          localLineLabel={i18n.resultsLocalLine}
+          channelIdleLabel={i18n.channelIdle}
+          channelLoadingLabel={i18n.channelLoading}
+          channelReadyLabel={i18n.channelReady}
+          channelErrorLabel={i18n.channelError}
+          sourceFilter={searchResultsSourceFilter}
+          payload={browserSearchModel.standardSearchState}
+          onToggleDeepSearch={browserSearchModel.onToggleDeepSearch}
+          onSourceFilterChange={onSearchResultsSourceFilterChange}
           sharedStartRect={browserSearchModel.sharedTransitionRect}
           engineById={engineById}
           onInputChange={tabsModel.updateActiveInput}
@@ -195,15 +427,7 @@ export const WorkspaceSurfaceRouter = ({
     }
 
     if (tab.pageKind === "page") {
-      return (
-        <BrowserPageSurface
-          tabId={tab.id}
-          address={tab.displayAddress}
-          onPageMetaChange={onPageMetaChange}
-          onNavigatorReady={onPageNavigatorReady}
-          onNavigationStateChange={onPageNavigationStateChange}
-        />
-      );
+      return renderPageSurface(tab);
     }
 
     if (tab.pageKind === "search") {
@@ -213,47 +437,22 @@ export const WorkspaceSurfaceRouter = ({
           inputValue={tab.inputValue}
           placeholder={i18n.searchPlaceholder}
           searchActionLabel={i18n.searchActionLabel}
+          deepSearchToggleLabel={i18n.deepSearchToggle}
+          deepSearchEnabled={browserSearchModel.activeSearchMode === "deep"}
+          deepSearchChipLabel={i18n.deepSearchChip}
           onPillRef={(element) => {
             browserSearchModel.searchPillRef.current = element;
           }}
           onInputChange={tabsModel.updateActiveInput}
           onSubmit={browserSearchModel.onSearchSurfaceSubmit}
+          onToggleDeepSearch={browserSearchModel.onToggleDeepSearch}
         />
       );
     }
 
     if (tab.pageKind === "settings") {
       return (
-        <BrowserSettingsSurface
-          title={settings.title}
-          aiCategoryLabel={settings.aiCategoryLabel}
-          languageLabel={settings.languageLabel}
-          themeLabel={settings.themeLabel}
-          terminalThemeLabel={settings.terminalThemeLabel}
-          splitTriggerModeLabel={settings.splitTriggerModeLabel}
-          splitThreePaneLayoutLabel={settings.splitThreePaneLayoutLabel}
-          splitOverflowPolicyLabel={settings.splitOverflowPolicyLabel}
-          localeValue={settings.localeValue}
-          themeValue={settings.themeValue}
-          terminalThemeValue={settings.terminalThemeValue}
-          splitTriggerModeValue={settings.splitTriggerModeValue}
-          splitThreePaneLayoutValue={settings.splitThreePaneLayoutValue}
-          splitOverflowPolicyValue={settings.splitOverflowPolicyValue}
-          localeOptions={settings.localeOptions}
-          themeOptions={settings.themeOptions}
-          terminalThemeOptions={settings.terminalThemeOptions}
-          splitTriggerModeOptions={settings.splitTriggerModeOptions}
-          splitThreePaneLayoutOptions={settings.splitThreePaneLayoutOptions}
-          splitOverflowPolicyOptions={settings.splitOverflowPolicyOptions}
-          aiLabels={settings.aiLabels}
-          aiModel={settings.aiModel}
-          onLocaleChange={settings.onLocaleChange}
-          onThemeChange={settings.onThemeChange}
-          onTerminalThemeChange={settings.onTerminalThemeChange}
-          onSplitTriggerModeChange={settings.onSplitTriggerModeChange}
-          onSplitThreePaneLayoutChange={settings.onSplitThreePaneLayoutChange}
-          onSplitOverflowPolicyChange={settings.onSplitOverflowPolicyChange}
-        />
+        <BrowserSettingsSurface {...settings} />
       );
     }
 
@@ -294,6 +493,7 @@ export const WorkspaceSurfaceRouter = ({
           labels={fileManagerLabels}
           model={fileManagerModel}
           onOpenFile={onOpenFileFromManager}
+          chooser={resolveFileManagerChooser?.(tab.appInstanceId) ?? null}
         />
       );
     }
@@ -303,44 +503,35 @@ export const WorkspaceSurfaceRouter = ({
       if (state === null) {
         return null;
       }
-      const fileChangeReviewItem = aiPanel.fileChangeReviewItems?.find(
-        (item) => item.filePath === state.filePath
-      );
+      const activeEditorWorkItem = fileEditorReview?.resolveActiveEditorWorkItem(state.filePath);
       return (
         <FileEditorSurface
           state={state}
           labels={fileEditorLabels}
           model={fileEditorModel}
           themeSignature={resolvedThemeId}
-          editorWorkAcceptLabel={aiPanel.taskCardAcceptLabel}
-          editorWorkRejectLabel={aiPanel.taskCardRejectLabel}
-          editorWorkUndoLabel={aiPanel.taskCardUndoLabel}
-          {...(fileChangeReviewItem === undefined
+          {...(fileEditorReview === undefined
             ? {}
-            : { activeEditorWorkItem: fileChangeReviewItem })}
-          {...(aiPanel.onAcceptFileChangeReviewItem === undefined
-            ? {}
-            : { onAcceptEditorWorkItem: aiPanel.onAcceptFileChangeReviewItem })}
-          {...(aiPanel.onRejectFileChangeReviewItem === undefined
-            ? {}
-            : { onRejectEditorWorkItem: aiPanel.onRejectFileChangeReviewItem })}
-          {...(aiPanel.onUndoFileChangeReviewItem === undefined
-            ? {}
-            : { onUndoEditorWorkItem: aiPanel.onUndoFileChangeReviewItem })}
-        />
-      );
-    }
-
-    if (isAiPanelAppId(tab.appId)) {
-      const sessionId = tab.appInstanceId ?? "";
-      const surfaceProps = aiPanel.resolveSurfaceProps(sessionId);
-      if (surfaceProps === null) {
-        return null;
-      }
-      return (
-        <AiPanelSurface
-          variant="workspace"
-          {...surfaceProps}
+            : {
+                editorWorkAcceptLabel: fileEditorReview.editorWorkAcceptLabel,
+                editorWorkRejectLabel: fileEditorReview.editorWorkRejectLabel,
+                editorWorkUndoLabel: fileEditorReview.editorWorkUndoLabel,
+                editorWorkPrevLabel: fileEditorReview.editorWorkPrevLabel,
+                editorWorkNextLabel: fileEditorReview.editorWorkNextLabel,
+                editorWorkAcceptAllLabel: fileEditorReview.editorWorkAcceptAllLabel,
+                canGoToPreviousEditorWorkItem: fileEditorReview.canGoToPreviousEditorWorkItem,
+                canGoToNextEditorWorkItem: fileEditorReview.canGoToNextEditorWorkItem,
+                canAcceptAllEditorWorkItems: fileEditorReview.canAcceptAllEditorWorkItems,
+                ...(activeEditorWorkItem === undefined
+                  ? {}
+                  : { activeEditorWorkItem }),
+                onGoToPreviousEditorWorkItem: fileEditorReview.onGoToPreviousEditorWorkItem,
+                onGoToNextEditorWorkItem: fileEditorReview.onGoToNextEditorWorkItem,
+                onAcceptAllEditorWorkItems: fileEditorReview.onAcceptAllEditorWorkItems,
+                onAcceptEditorWorkItem: fileEditorReview.onAcceptEditorWorkItem,
+                onRejectEditorWorkItem: fileEditorReview.onRejectEditorWorkItem,
+                onUndoEditorWorkItem: fileEditorReview.onUndoEditorWorkItem
+              })}
         />
       );
     }
@@ -367,39 +558,35 @@ export const WorkspaceSurfaceRouter = ({
       return <SkillsCenterSurface model={skillsCenter.model} labels={skillsCenter.labels} />;
     }
 
+    if (isAiHistoryAppId(tab.appId)) {
+      return (
+        <AiHistorySurface
+          desktopApi={desktopApi}
+          locale={aiHistory.locale}
+          title={aiHistory.title}
+          newSessionTitle={aiHistory.newSessionTitle}
+          openSettingsLabel={aiHistory.openSettingsLabel}
+          newConversationLabel={aiHistory.newConversationLabel}
+          openConversationLabel={aiHistory.openConversationLabel}
+          deleteConversationLabel={aiHistory.deleteConversationLabel}
+          profileLabel={aiHistory.profileLabel}
+          sessionIdLabel={aiHistory.sessionIdLabel}
+          loadingSessionsLabel={aiHistory.loadingSessionsLabel}
+          emptyStateTitle={aiHistory.emptyStateTitle}
+          emptyStateDescription={aiHistory.emptyStateDescription}
+          {...(aiHistory.defaultProfileId === undefined
+            ? {}
+            : { defaultProfileId: aiHistory.defaultProfileId })}
+          onOpenSettings={aiHistory.onOpenSettings}
+        />
+      );
+    }
+
     return null;
   };
 
   const visibleLayout = tabsModel.getVisibleWorkspaceLayout();
   const tabById = new Map(tabsModel.tabs.map((tab) => [tab.id, tab] as const));
-  const aiPanelWorkspaceTabs = tabsModel.tabs.filter(isAiPanelWorkspaceTab);
-
-  const renderAiPanelKeepAliveLayer = (
-    visibleAiTabIds: ReadonlySet<string>,
-    showVisibleAiTabs: boolean
-  ): ReactNode => {
-    if (aiPanelWorkspaceTabs.length === 0) {
-      return null;
-    }
-    return (
-      <section className="lyra-workspace-surface-keepalive" aria-label="workspace-ai-keepalive">
-        {aiPanelWorkspaceTabs.map((tab) => {
-          const isVisible = visibleAiTabIds.has(tab.id);
-          if (!showVisibleAiTabs && isVisible) {
-            return null;
-          }
-          const paneClassName = isVisible && showVisibleAiTabs
-            ? "lyra-workspace-surface-keepalive-pane lyra-workspace-surface-keepalive-pane-active"
-            : "lyra-workspace-surface-keepalive-pane lyra-workspace-surface-keepalive-pane-hidden";
-          return (
-            <section key={tab.id} className={paneClassName}>
-              {renderTabSurface(tab)}
-            </section>
-          );
-        })}
-      </section>
-    );
-  };
 
   if (visibleLayout.mode === "split") {
     const splitClassName = [
@@ -407,13 +594,6 @@ export const WorkspaceSurfaceRouter = ({
       `lyra-workspace-split-count-${visibleLayout.visibleTabIds.length}`,
       `lyra-workspace-split-layout-${splitThreePaneLayout}`
     ].join(" ");
-    const visibleAiTabIds = new Set(
-      visibleLayout.visibleTabIds.filter((tabId) => {
-        const tab = tabById.get(tabId);
-        return tab !== undefined && isAiPanelWorkspaceTab(tab);
-      })
-    );
-
     return (
       <div className="lyra-workspace-surface-split">
         <div className={splitClassName} aria-label="workspace-split-layout">
@@ -445,23 +625,11 @@ export const WorkspaceSurfaceRouter = ({
             );
           })}
         </div>
-        {renderAiPanelKeepAliveLayer(visibleAiTabIds, false)}
       </div>
     );
   }
 
   const targetTab = activeTab ?? tabById.get(visibleLayout.activeTabId);
-  const activeAiTabId = targetTab !== undefined && isAiPanelWorkspaceTab(targetTab)
-    ? targetTab.id
-    : null;
-  const singleVisibleAiTabIds = activeAiTabId === null
-    ? new Set<string>()
-    : new Set([activeAiTabId]);
 
-  return (
-    <div className="lyra-workspace-surface-single">
-      {targetTab === undefined || activeAiTabId !== null ? null : renderTabSurface(targetTab)}
-      {renderAiPanelKeepAliveLayer(singleVisibleAiTabIds, true)}
-    </div>
-  );
+  return <div className="lyra-workspace-surface-single">{targetTab === undefined ? null : renderTabSurface(targetTab)}</div>;
 };

@@ -9,8 +9,7 @@ import {
   type LspRuntimeEvent
 } from "../../shared/desktop-bridge";
 import { resolveBundledRustAnalyzerCandidates } from "./runtime-paths";
-import { loadLspNativeBindings } from "./native-loader";
-import type { LspNativeBindings, LspNativeLoadResult } from "./types";
+import type { LyraRuntimeClient } from "../runtime-client";
 
 type LspServerEnvKey =
   | "LYRA_LSP_TYPESCRIPT_SERVER"
@@ -216,24 +215,19 @@ const parseEvent = (payload: unknown): LspRuntimeEvent | null => {
 
 export type LspIpcBridge = {
   readonly dispose: () => void;
-  readonly loadResult: Extract<LspNativeLoadResult, { readonly ok: true }>;
+  readonly loadResult: { readonly loadedFrom: string };
 };
 
 export const createLspIpcBridge = (
+  runtimeClient: LyraRuntimeClient,
   getWindow: () => BrowserWindow | null
 ): LspIpcBridge => {
   configureLanguageServerEnvironment();
-  const loadResult = loadLspNativeBindings();
-  if (loadResult.ok === false) {
-    throw new Error(
-      `lsp native unavailable: ${loadResult.errorMessage}\ntried paths:\n${loadResult.triedPaths.join("\n")}`
-    );
-  }
-  const bindings = loadResult.bindings;
-
-  bindings.registerEventCallback((firstArg, secondArg) => {
-    const eventCandidate = secondArg === undefined ? firstArg : secondArg;
-    const event = parseEvent(eventCandidate);
+  const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
+    if (eventName !== "lsp.runtime") {
+      return;
+    }
+    const event = parseEvent(payload);
     if (event === null) {
       return;
     }
@@ -244,32 +238,49 @@ export const createLspIpcBridge = (
     }
     window.webContents.send(LYRA_CHANNELS.lspEvent, event);
   });
+  const requestRuntime = async <T>(method: string, payload: unknown): Promise<T> =>
+    await runtimeClient.request<T>(method, payload);
 
   const handlers: Array<readonly [string, (_event: IpcMainInvokeEvent, payload: unknown) => unknown]> = [
     [
       LYRA_CHANNELS.lspOpenDocument,
       (_event, payload) =>
-        bindings.openDocument(normalizeDocumentRequest(payload as LspDocumentRequest))
+        requestRuntime<void>(
+          "lsp.documents.open",
+          normalizeDocumentRequest(payload as LspDocumentRequest)
+        )
     ],
     [
       LYRA_CHANNELS.lspChangeDocument,
       (_event, payload) =>
-        bindings.changeDocument(normalizeDocumentRequest(payload as LspDocumentRequest))
+        requestRuntime<void>(
+          "lsp.documents.change",
+          normalizeDocumentRequest(payload as LspDocumentRequest)
+        )
     ],
     [
       LYRA_CHANNELS.lspSaveDocument,
       (_event, payload) =>
-        bindings.saveDocument(normalizeDocumentRequest(payload as LspDocumentRequest))
+        requestRuntime<void>(
+          "lsp.documents.save",
+          normalizeDocumentRequest(payload as LspDocumentRequest)
+        )
     ],
     [
       LYRA_CHANNELS.lspCloseDocument,
       (_event, payload) =>
-        bindings.closeDocument(normalizeDocumentRequest(payload as LspDocumentRequest))
+        requestRuntime<void>(
+          "lsp.documents.close",
+          normalizeDocumentRequest(payload as LspDocumentRequest)
+        )
     ],
     [
       LYRA_CHANNELS.lspCompletion,
       (_event, payload) =>
-        bindings.completion(normalizeCompletionRequest(payload as LspCompletionRequest))
+        requestRuntime(
+          "lsp.completion",
+          normalizeCompletionRequest(payload as LspCompletionRequest)
+        )
     ]
   ];
 
@@ -278,12 +289,14 @@ export const createLspIpcBridge = (
   }
 
   return {
-    loadResult,
+    loadResult: {
+      loadedFrom: "lyrad"
+    },
     dispose: () => {
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);
       }
-      bindings.shutdown();
+      unsubscribeRuntimeEvents();
     }
   };
 };

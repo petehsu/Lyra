@@ -722,7 +722,6 @@ export const BrowserTabStrip = ({
       return;
     }
     strip.scrollLeft += horizontalDelta;
-    event.preventDefault();
   }, []);
 
   const onTabItemMouseDown = useCallback((event: ReactMouseEvent<HTMLElement>, tabId: string): void => {

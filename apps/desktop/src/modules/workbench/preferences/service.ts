@@ -1,6 +1,11 @@
 import { useState } from "react";
 
 import { WORKBENCH_LOCALES, type WorkbenchLocale } from "../i18n";
+import type {
+  SearchDeepCrawlPolicy,
+  SearchDeepBudgetPreset,
+  SearchLocalScopePreset
+} from "../../../shared/desktop-bridge";
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
 import { isWorkbenchThemeId } from "../theme";
 import type { WorkbenchThemeId } from "../theme";
@@ -9,6 +14,7 @@ import type { TerminalThemePresetId } from "../terminal-theme";
 import type {
   WorkbenchPreferences,
   WorkbenchPreferencesModel,
+  WorkbenchSearchResultsSourceFilter,
   WorkbenchSplitOverflowPolicy,
   WorkbenchSplitThreePaneLayout,
   WorkbenchSplitTriggerMode
@@ -35,6 +41,25 @@ const isSplitOverflowPolicy = (value: unknown): value is WorkbenchSplitOverflowP
   value === "block_with_notice" ||
   value === "replace_oldest" ||
   value === "replace_target";
+const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
+const isSearchScopePreset = (value: unknown): value is SearchLocalScopePreset =>
+  value === "home" || value === "full_system" || value === "workspace" || value === "custom";
+const isSearchDeepBudgetPreset = (value: unknown): value is SearchDeepBudgetPreset =>
+  value === "low" || value === "medium" || value === "high";
+const isSearchDeepCrawlPolicy = (value: unknown): value is SearchDeepCrawlPolicy =>
+  value === "accessibility_only";
+const isDeepSearchLocalOpenBehavior = (
+  value: unknown
+): value is "open_file" | "reveal_in_manager" =>
+  value === "open_file" || value === "reveal_in_manager";
+const isSearchResultsSourceFilter = (value: unknown): value is WorkbenchSearchResultsSourceFilter =>
+  value === "all" || value === "web" || value === "local";
+const asStringArray = (value: unknown): readonly string[] =>
+  Array.isArray(value)
+    ? value
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0)
+    : [];
 
 export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): WorkbenchPreferences => {
   if (typeof window === "undefined") {
@@ -54,7 +79,28 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly splitTriggerMode?: unknown;
       readonly splitThreePaneLayout?: unknown;
       readonly splitOverflowPolicy?: unknown;
+      readonly aiRichRenderingEnabled?: unknown;
+      readonly searchScopePreset?: unknown;
+      readonly searchCustomRoots?: unknown;
+      readonly searchEnableFuzzy?: unknown;
+      readonly searchEnableContent?: unknown;
+      readonly searchIncludeHidden?: unknown;
+      readonly searchWebEngineIds?: unknown;
+      readonly searchSearxngEndpoint?: unknown;
+      readonly searchAutoIndexEnabled?: unknown;
+      readonly deepSearchDefaultBudget?: unknown;
+      readonly deepSearchRestoreViewport?: unknown;
+      readonly deepSearchLocalOpenBehavior?: unknown;
+      readonly deepSearchSiteExpansionEnabled?: unknown;
+      readonly deepSearchProactiveDomainGuessingEnabled?: unknown;
+      readonly deepSearchCrawlPolicy?: unknown;
+      readonly searchResultsSourceFilter?: unknown;
     };
+
+    const normalizedSearxngEndpoint =
+      typeof parsed.searchSearxngEndpoint === "string"
+        ? parsed.searchSearxngEndpoint.trim()
+        : defaults.searchSearxngEndpoint;
 
     return {
       locale: isLocale(parsed.locale) ? parsed.locale : defaults.locale,
@@ -70,7 +116,51 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
         : defaults.splitThreePaneLayout,
       splitOverflowPolicy: isSplitOverflowPolicy(parsed.splitOverflowPolicy)
         ? parsed.splitOverflowPolicy
-        : defaults.splitOverflowPolicy
+        : defaults.splitOverflowPolicy,
+      aiRichRenderingEnabled: isBoolean(parsed.aiRichRenderingEnabled)
+        ? parsed.aiRichRenderingEnabled
+        : defaults.aiRichRenderingEnabled,
+      searchScopePreset: isSearchScopePreset(parsed.searchScopePreset)
+        ? parsed.searchScopePreset
+        : defaults.searchScopePreset,
+      searchCustomRoots: asStringArray(parsed.searchCustomRoots),
+      searchEnableFuzzy: isBoolean(parsed.searchEnableFuzzy)
+        ? parsed.searchEnableFuzzy
+        : defaults.searchEnableFuzzy,
+      searchEnableContent: isBoolean(parsed.searchEnableContent)
+        ? parsed.searchEnableContent
+        : defaults.searchEnableContent,
+      searchIncludeHidden: isBoolean(parsed.searchIncludeHidden)
+        ? parsed.searchIncludeHidden
+        : defaults.searchIncludeHidden,
+      searchWebEngineIds: asStringArray(parsed.searchWebEngineIds),
+      ...(normalizedSearxngEndpoint === undefined
+        ? {}
+        : { searchSearxngEndpoint: normalizedSearxngEndpoint }),
+      searchAutoIndexEnabled: isBoolean(parsed.searchAutoIndexEnabled)
+        ? parsed.searchAutoIndexEnabled
+        : defaults.searchAutoIndexEnabled,
+      deepSearchDefaultBudget: isSearchDeepBudgetPreset(parsed.deepSearchDefaultBudget)
+        ? parsed.deepSearchDefaultBudget
+        : defaults.deepSearchDefaultBudget,
+      deepSearchRestoreViewport: isBoolean(parsed.deepSearchRestoreViewport)
+        ? parsed.deepSearchRestoreViewport
+        : defaults.deepSearchRestoreViewport,
+      deepSearchLocalOpenBehavior: isDeepSearchLocalOpenBehavior(parsed.deepSearchLocalOpenBehavior)
+        ? parsed.deepSearchLocalOpenBehavior
+        : defaults.deepSearchLocalOpenBehavior,
+      deepSearchSiteExpansionEnabled: isBoolean(parsed.deepSearchSiteExpansionEnabled)
+        ? parsed.deepSearchSiteExpansionEnabled
+        : defaults.deepSearchSiteExpansionEnabled,
+      deepSearchProactiveDomainGuessingEnabled: isBoolean(parsed.deepSearchProactiveDomainGuessingEnabled)
+        ? parsed.deepSearchProactiveDomainGuessingEnabled
+        : defaults.deepSearchProactiveDomainGuessingEnabled,
+      deepSearchCrawlPolicy: isSearchDeepCrawlPolicy(parsed.deepSearchCrawlPolicy)
+        ? parsed.deepSearchCrawlPolicy
+        : defaults.deepSearchCrawlPolicy,
+      searchResultsSourceFilter: isSearchResultsSourceFilter(parsed.searchResultsSourceFilter)
+        ? parsed.searchResultsSourceFilter
+        : defaults.searchResultsSourceFilter
     };
   } catch (_error) {
     return defaults;
@@ -137,6 +227,117 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         splitOverflowPolicy
+      }));
+    },
+    setAiRichRenderingEnabled: (aiRichRenderingEnabled) => {
+      commit((current) => ({
+        ...current,
+        aiRichRenderingEnabled
+      }));
+    },
+    setSearchScopePreset: (searchScopePreset) => {
+      commit((current) => ({
+        ...current,
+        searchScopePreset
+      }));
+    },
+    setSearchCustomRoots: (searchCustomRoots) => {
+      commit((current) => ({
+        ...current,
+        searchCustomRoots: searchCustomRoots
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      }));
+    },
+    setSearchEnableFuzzy: (searchEnableFuzzy) => {
+      commit((current) => ({
+        ...current,
+        searchEnableFuzzy
+      }));
+    },
+    setSearchEnableContent: (searchEnableContent) => {
+      commit((current) => ({
+        ...current,
+        searchEnableContent
+      }));
+    },
+    setSearchIncludeHidden: (searchIncludeHidden) => {
+      commit((current) => ({
+        ...current,
+        searchIncludeHidden
+      }));
+    },
+    setSearchWebEngineIds: (searchWebEngineIds) => {
+      commit((current) => ({
+        ...current,
+        searchWebEngineIds: searchWebEngineIds
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      }));
+    },
+    setSearchSearxngEndpoint: (searchSearxngEndpoint) => {
+      const normalizedSearxngEndpoint =
+        typeof searchSearxngEndpoint === "string" && searchSearxngEndpoint.trim().length > 0
+          ? searchSearxngEndpoint.trim()
+          : undefined;
+      commit((current) => ({
+        ...(normalizedSearxngEndpoint === undefined
+          ? (() => {
+              const { searchSearxngEndpoint: _searchSearxngEndpoint, ...rest } = current;
+              return rest;
+            })()
+          : {
+              ...current,
+              searchSearxngEndpoint: normalizedSearxngEndpoint
+            })
+      }));
+    },
+    setSearchAutoIndexEnabled: (searchAutoIndexEnabled) => {
+      commit((current) => ({
+        ...current,
+        searchAutoIndexEnabled
+      }));
+    },
+    setDeepSearchDefaultBudget: (deepSearchDefaultBudget) => {
+      commit((current) => ({
+        ...current,
+        deepSearchDefaultBudget
+      }));
+    },
+    setDeepSearchRestoreViewport: (deepSearchRestoreViewport) => {
+      commit((current) => ({
+        ...current,
+        deepSearchRestoreViewport
+      }));
+    },
+    setDeepSearchLocalOpenBehavior: (deepSearchLocalOpenBehavior) => {
+      commit((current) => ({
+        ...current,
+        deepSearchLocalOpenBehavior
+      }));
+    },
+    setDeepSearchSiteExpansionEnabled: (deepSearchSiteExpansionEnabled) => {
+      commit((current) => ({
+        ...current,
+        deepSearchSiteExpansionEnabled
+      }));
+    },
+    setDeepSearchProactiveDomainGuessingEnabled: (deepSearchProactiveDomainGuessingEnabled) => {
+      commit((current) => ({
+        ...current,
+        deepSearchProactiveDomainGuessingEnabled
+      }));
+    },
+    setDeepSearchCrawlPolicy: (deepSearchCrawlPolicy) => {
+      commit((current) => ({
+        ...current,
+        deepSearchCrawlPolicy
+      }));
+    },
+    setSearchResultsSourceFilter: (searchResultsSourceFilter) => {
+      commit((current) => ({
+        ...current,
+        searchResultsSourceFilter
       }));
     },
     reset: () => {

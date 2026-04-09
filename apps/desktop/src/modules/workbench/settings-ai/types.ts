@@ -21,6 +21,8 @@ export type SettingsAiLabels = {
   readonly testConnection: string;
   readonly discoverModels: string;
   readonly refreshModels: string;
+  readonly authorizeChatGpt: string;
+  readonly authorizeChatGptDeviceCode: string;
   readonly profileNameLabel: string;
   readonly profileNamePlaceholder: string;
   readonly modelLabel: string;
@@ -35,6 +37,7 @@ export type SettingsAiLabels = {
   readonly statusSaved: string;
   readonly statusDeleted: string;
   readonly statusDefaultUpdated: string;
+  readonly statusChatGptAuthorized: string;
   readonly statusLastChecked: string;
   readonly emptyTitle: string;
   readonly emptyDescription: string;
@@ -51,6 +54,15 @@ export type SettingsAiLabels = {
   readonly modelSourceDynamic: string;
   readonly modelSourcePreset: string;
   readonly modelSourceCustom: string;
+  readonly memoryConfigTitle: string;
+  readonly memoryConfigDescription: string;
+  readonly memoryConfigPlaceholder: string;
+  readonly memoryConfigLoad: string;
+  readonly memoryConfigSave: string;
+  readonly memoryConfigStatusIdle: string;
+  readonly memoryConfigStatusLoaded: string;
+  readonly memoryConfigStatusSaved: string;
+  readonly memoryConfigStatusInvalidJson: string;
 };
 
 export type SettingsAiDraft = {
@@ -81,9 +93,14 @@ export type SettingsAiModel = {
   readonly isSaving: boolean;
   readonly isTesting: boolean;
   readonly isDiscovering: boolean;
+  readonly isMemoryConfigLoading: boolean;
+  readonly isMemoryConfigSaving: boolean;
   readonly statusMessage: string;
   readonly statusTone: "neutral" | "success" | "error";
   readonly lastCheckedAt: number | null;
+  readonly memoryConfigText: string;
+  readonly memoryConfigStatus: string;
+  readonly memoryConfigStatusTone: "neutral" | "success" | "error";
   readonly selectProfile: (profileId: string) => void;
   readonly createProfileDraft: () => void;
   readonly selectPreset: (presetId: string) => void;
@@ -97,10 +114,15 @@ export type SettingsAiModel = {
   readonly updateHeadersText: (value: string) => void;
   readonly updateCustomModelsText: (value: string) => void;
   readonly clearSecretField: (fieldId: string) => void;
+  readonly authorizeOpenAiChatGpt: () => Promise<void>;
+  readonly authorizeOpenAiChatGptDeviceCode: () => Promise<void>;
   readonly saveProfile: () => Promise<void>;
   readonly deleteProfile: () => Promise<void>;
   readonly setDefaultProfile: () => Promise<void>;
   readonly testConnection: () => Promise<void>;
   readonly discoverModels: () => Promise<void>;
   readonly refreshDiscoveredModels: () => Promise<void>;
+  readonly loadMemoryConfig: () => Promise<void>;
+  readonly saveMemoryConfig: () => Promise<void>;
+  readonly updateMemoryConfigText: (value: string) => void;
 };

@@ -10,6 +10,7 @@ export type {
   FileManagerAppId,
   FileManagerAppIconKey,
   FileManagerAppState,
+  FileManagerChooserMode,
   FileManagerModel,
   FileManagerSurfaceLabels,
   UseFileManagerModelOptions

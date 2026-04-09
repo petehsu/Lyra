@@ -1,4 +1,4 @@
-import { Bot } from "lucide-react";
+import { Bot, History } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import type { AiPanelAppIconKey } from "./types";
@@ -29,7 +29,10 @@ const renderSvgMaskIcon = (iconUrl: string, className?: string) => (
   />
 );
 
-export const renderAiPanelTopbarIcon = (kind: "mcp" | "skills") => {
+export const renderAiPanelTopbarIcon = (kind: "history" | "mcp" | "skills") => {
+  if (kind === "history") {
+    return <History size={13} aria-hidden="true" />;
+  }
   if (kind === "mcp") {
     return renderSvgMaskIcon(
       MCP_ICON_URL,
@@ -43,6 +46,9 @@ export const renderAiPanelTopbarIcon = (kind: "mcp" | "skills") => {
 };
 
 export const renderAiPanelAppIcon = (iconKey: AiPanelAppIconKey) => {
+  if (iconKey === "ai-panel-history") {
+    return renderShell(<History size={SIZE} />);
+  }
   if (iconKey === "ai-panel-mcp") {
     return renderShell(
       renderSvgMaskIcon(MCP_ICON_URL, "lyra-ai-panel-svg-icon-app lyra-ai-panel-svg-icon-app-mcp")

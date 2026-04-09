@@ -78,28 +78,41 @@ export const SettingsAiFieldRenderer = ({
   return (
     <label key={field.id} className="lyra-settings-ai-field">
       <span>{field.label}</span>
-      <input
-        className="lyra-settings-ai-input"
-        type={isSecret ? "password" : "text"}
-        autoComplete="off"
-        value={value}
-        placeholder={field.placeholder}
-        onChange={(event) => {
-          model.updateDraftField(isSecret ? "secret" : target, field.id, event.target.value);
-        }}
-      />
-      {helperText ? <small>{helperText}</small> : null}
       {isSecret ? (
-        <button
-          type="button"
-          className="lyra-settings-ai-action"
-          onClick={() => {
-            model.clearSecretField(field.id);
+        <span className="lyra-settings-ai-secret-row">
+          <input
+            className="lyra-settings-ai-input"
+            type="password"
+            autoComplete="off"
+            value={value}
+            placeholder={field.placeholder}
+            onChange={(event) => {
+              model.updateDraftField("secret", field.id, event.target.value);
+            }}
+          />
+          <button
+            type="button"
+            className="lyra-settings-ai-action lyra-settings-ai-action-inline"
+            onClick={() => {
+              model.clearSecretField(field.id);
+            }}
+          >
+            {labels.clearApiKey}
+          </button>
+        </span>
+      ) : (
+        <input
+          className="lyra-settings-ai-input"
+          type="text"
+          autoComplete="off"
+          value={value}
+          placeholder={field.placeholder}
+          onChange={(event) => {
+            model.updateDraftField(target, field.id, event.target.value);
           }}
-        >
-          {labels.clearApiKey}
-        </button>
-      ) : null}
+        />
+      )}
+      {helperText ? <small>{helperText}</small> : null}
     </label>
   );
 };

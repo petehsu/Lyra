@@ -29,6 +29,8 @@ import type {
 } from "../../shared/mcp";
 import type {
   McpIpcBridge,
+  McpToolCallRequest,
+  McpToolCallResult,
   PersistedMcpEnvironmentEntry,
   PersistedMcpScopeDocument,
   PersistedMcpSecretStore,
@@ -36,7 +38,7 @@ import type {
 } from "./types";
 import type { FilesNativeBindings } from "../files/types";
 import { createWorkbenchFsPort, type WorkbenchFsPort } from "../runtime/workbench-fs-port";
-import { loadMcpNativeBindings } from "./native-loader";
+import type { LyraRuntimeClient } from "../runtime-client";
 
 const MCP_STORAGE_VERSION = 1;
 const MCP_DEFAULT_ICON_KEY = "custom-command";
@@ -155,27 +157,6 @@ const MCP_CATALOG: readonly McpCatalogItem[] = [
     }
   },
   {
-    id: "memory",
-    title: "Memory",
-    summary: "Persist lightweight structured memory for Lyra AI.",
-    description: "Useful when you want long-lived scratch memory outside a single chat.",
-    iconKey: "memory",
-    official: true,
-    transports: ["stdio"],
-    installKind: "npm",
-    recommendedScope: "global",
-    defaultCommand: "npx",
-    defaultArgs: ["-y", "@modelcontextprotocol/server-memory"],
-    defaultEnvironment: [],
-    permissions: ["storage:lyra-userdata"],
-    tools: [
-      { name: "memory_search", description: "Search saved memory entries." },
-      { name: "memory_write", description: "Store a memory entry." }
-    ],
-    resources: [],
-    prompts: []
-  },
-  {
     id: "python-runner",
     title: "Python Runner",
     summary: "Run a Python-based MCP server through uv-managed runtime.",
@@ -211,6 +192,8 @@ const isInstallKind = (value: unknown): value is McpInstallKind =>
 const nowIso = (): string => new Date().toISOString();
 
 const createId = (prefix: string): string => `${prefix}-${randomUUID()}`;
+
+const MCP_DEFAULT_TOOL_TIMEOUT_MS = 60_000;
 
 const trimOrUndefined = (value: unknown): string | undefined => {
   if (typeof value !== "string") {
@@ -358,17 +341,13 @@ const buildCatalogIntrospection = (
 
 export const createMcpIpcBridge = (
   storageRoot: string,
+  runtimeClient: LyraRuntimeClient,
   getWindow: () => BrowserWindow | null,
   filesNativeBindings: FilesNativeBindings
 ): McpIpcBridge => {
   const workbenchFsPort = createWorkbenchFsPort(filesNativeBindings);
-  const nativeLoadResult = loadMcpNativeBindings();
-  if (nativeLoadResult.ok === false) {
-    throw new Error(
-      `mcp native unavailable: ${nativeLoadResult.errorMessage}\ntried paths:\n${nativeLoadResult.triedPaths.join("\n")}`
-    );
-  }
-  const nativeBindings = nativeLoadResult.bindings;
+  const requestRuntime = async <T>(method: string, payload?: unknown): Promise<T> =>
+    await runtimeClient.request<T>(method, payload ?? {});
 
   const publishEvent = (event: McpRuntimeEvent): void => {
     const window = getWindow();
@@ -378,96 +357,83 @@ export const createMcpIpcBridge = (
     window.webContents.send(LYRA_CHANNELS.mcpEvent, event);
   };
 
-  nativeBindings.registerMcpEventCallback((eventJson) => {
-    try {
-      publishEvent(JSON.parse(eventJson) as McpRuntimeEvent);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      publishEvent({
-        kind: "log",
-        serverId: "mcp-native",
-        level: "error",
-        message: `Failed to decode MCP runtime event: ${message}`,
-        timestamp: nowIso()
-      });
+  const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
+    if (eventName !== "mcp.runtime") {
+      return;
     }
+    if (payload !== null && typeof payload === "object") {
+      publishEvent(payload as McpRuntimeEvent);
+      return;
+    }
+    const message =
+      payload instanceof Error ? payload.message : `Unexpected MCP runtime payload: ${String(payload)}`;
+    publishEvent({
+      kind: "log",
+      serverId: "lyrad",
+      level: "error",
+      message,
+      timestamp: nowIso()
+    });
   });
 
   const readSecretStorePort = async (): Promise<PersistedMcpSecretStore> => {
-    return JSON.parse(
-      nativeBindings.readMcpSecretStoreJson(
-        JSON.stringify({
-          storageRoot
-        })
-      )
-    ) as PersistedMcpSecretStore;
+    return await requestRuntime<PersistedMcpSecretStore>("mcp.read_secret_store", {
+      storageRoot
+    });
   };
 
   const writeSecretStorePort = async (payload: PersistedMcpSecretStore): Promise<void> => {
-    nativeBindings.writeMcpSecretStoreJson(
-      JSON.stringify({
-        storageRoot,
-        store: payload
-      })
-    );
+    await requestRuntime<void>("mcp.write_secret_store", {
+      storageRoot,
+      store: payload
+    });
   };
 
-  const readRuntimeStatusesPort = (): ReadonlyMap<string, McpRuntimeStatus> =>
+  const readRuntimeStatusesPort = async (): Promise<ReadonlyMap<string, McpRuntimeStatus>> =>
     new Map(
-      (
-        JSON.parse(nativeBindings.readMcpRuntimeStatusesJson()) as readonly McpRuntimeStatus[]
-      ).map((status) => [status.serverId, status])
+      (await requestRuntime<readonly McpRuntimeStatus[]>("mcp.read_runtime_statuses")).map(
+        (status) => [status.serverId, status]
+      )
     );
 
   const readScopeDocumentPort = async (
     scope: McpScope,
     projectRoot?: string
   ): Promise<PersistedMcpScopeDocument> => {
-    return JSON.parse(
-      nativeBindings.readMcpScopeDocumentJson(
-        JSON.stringify({
-          storageRoot,
-          scope,
-          ...(projectRoot === undefined ? {} : { projectRoot })
-        })
-      )
-    ) as PersistedMcpScopeDocument;
+    return await requestRuntime<PersistedMcpScopeDocument>("mcp.read_scope_document", {
+      storageRoot,
+      scope,
+      ...(projectRoot === undefined ? {} : { projectRoot })
+    });
   };
 
   const writeScopeDocumentPort = async (
     payload: PersistedMcpScopeDocument
   ): Promise<void> => {
-    nativeBindings.writeMcpScopeDocumentJson(
-      JSON.stringify({
-        storageRoot,
-        document: payload
-      })
-    );
+    await requestRuntime<void>("mcp.write_scope_document", {
+      storageRoot,
+      document: payload
+    });
   };
 
   const sanitizeEnvironmentPort = (
     entries: readonly PersistedMcpEnvironmentEntry[],
     secretStore: PersistedMcpSecretStore
-  ): readonly McpEnvironmentEntry[] => {
-    return JSON.parse(
-      nativeBindings.sanitizeMcpEnvironmentJson(
-        JSON.stringify({
-          entries,
-          secretStore
-        })
-      )
-    ) as readonly McpEnvironmentEntry[];
-  };
+  ): Promise<readonly McpEnvironmentEntry[]> =>
+    requestRuntime<readonly McpEnvironmentEntry[]>("mcp.sanitize_environment", {
+      entries,
+      secretStore
+    });
 
   const decoratePersistedServer = (
     server: PersistedMcpServerConfig,
     secretStore: PersistedMcpSecretStore,
     runtimeStatuses: ReadonlyMap<string, McpRuntimeStatus>
-  ): McpServerConfig => ({
+  ): Promise<McpServerConfig> => sanitizeEnvironmentPort(server.environment, secretStore).then((environment) => ({
     ...server,
-    environment: sanitizeEnvironmentPort(server.environment, secretStore),
+    environment,
     runtimeStatus: runtimeStatuses.get(server.id) ?? defaultRuntimeStatus(server)
-  });
+  }));
 
   const normalizeEnvironmentInputPort = async (
     nextEntries: readonly McpEnvironmentInput[],
@@ -475,30 +441,26 @@ export const createMcpIpcBridge = (
   ): Promise<readonly PersistedMcpEnvironmentEntry[]> => {
     const secretStore = await readSecretStorePort();
     const timestamp = nowIso();
-    const result = JSON.parse(
-      nativeBindings.normalizeMcpEnvironmentInputJson(
-        JSON.stringify({
-          nextEntries: nextEntries.map((entry) => {
-            if (entry.mode !== "secret") {
-              return entry;
-            }
-            return {
-              key: entry.key,
-              mode: "secret" as const,
-              ...(entry.secretRefId === undefined ? {} : { secretRefId: entry.secretRefId }),
-              ...(entry.secretValue === undefined ? {} : { secretValue: entry.secretValue }),
-              lastUpdatedAt: timestamp
-            };
-          }),
-          previousEntries,
-          secretStore,
-          nowIso: timestamp
-        })
-      )
-    ) as {
+    const result = await requestRuntime<{
       readonly environment: readonly PersistedMcpEnvironmentEntry[];
       readonly secretStore: PersistedMcpSecretStore;
-    };
+    }>("mcp.normalize_environment_input", {
+      nextEntries: nextEntries.map((entry) => {
+        if (entry.mode !== "secret") {
+          return entry;
+        }
+        return {
+          key: entry.key,
+          mode: "secret" as const,
+          ...(entry.secretRefId === undefined ? {} : { secretRefId: entry.secretRefId }),
+          ...(entry.secretValue === undefined ? {} : { secretValue: entry.secretValue }),
+          lastUpdatedAt: timestamp
+        };
+      }),
+      previousEntries,
+      secretStore,
+      nowIso: timestamp
+    });
     await writeSecretStorePort(result.secretStore);
     return result.environment;
   };
@@ -511,14 +473,13 @@ export const createMcpIpcBridge = (
       return;
     }
     const secretStore = await readSecretStorePort();
-    const nextSecretStore = JSON.parse(
-      nativeBindings.deleteMcpSecretRefsJson(
-        JSON.stringify({
-          secretStore,
-          refs
-        })
-      )
-    ) as PersistedMcpSecretStore;
+    const nextSecretStore = await requestRuntime<PersistedMcpSecretStore>(
+      "mcp.delete_secret_refs",
+      {
+        secretStore,
+        refs
+      }
+    );
     await writeSecretStorePort(nextSecretStore);
   };
 
@@ -528,30 +489,24 @@ export const createMcpIpcBridge = (
     projectDocument: PersistedMcpScopeDocument
   ): Promise<McpEffectiveConfig> => {
     const secretStore = await readSecretStorePort();
-    const runtimeStatuses = Array.from(readRuntimeStatusesPort().values());
-    return JSON.parse(
-      nativeBindings.mergeMcpEffectiveConfigJson(
-        JSON.stringify({
-          ...(resolvedProjectRoot === undefined ? {} : { resolvedProjectRoot }),
-          globalDocument,
-          projectDocument,
-          secretStore,
-          runtimeStatuses
-        })
-      )
-    ) as McpEffectiveConfig;
+    const runtimeStatuses = Array.from((await readRuntimeStatusesPort()).values());
+    return await requestRuntime<McpEffectiveConfig>("mcp.merge_effective_config", {
+      ...(resolvedProjectRoot === undefined ? {} : { resolvedProjectRoot }),
+      globalDocument,
+      projectDocument,
+      secretStore,
+      runtimeStatuses
+    });
   };
 
   const writeManagedManifestPort = async (
     server: PersistedMcpServerConfig
   ): Promise<void> => {
-    nativeBindings.writeMcpManagedManifestJson(
-      JSON.stringify({
-        storageRoot,
-        server,
-        generatedAt: nowIso()
-      })
-    );
+    await requestRuntime<void>("mcp.write_managed_manifest", {
+      storageRoot,
+      server,
+      generatedAt: nowIso()
+    });
   };
 
   const validatePersistedServerPort = async (
@@ -561,37 +516,29 @@ export const createMcpIpcBridge = (
     const availableExternalKeys = Object.entries(process.env)
       .filter(([, value]) => typeof value === "string" && value.length > 0)
       .map(([key]) => key);
-    return JSON.parse(
-      nativeBindings.validateMcpServerJson(
-        JSON.stringify({
-          server,
-          checkedAt: nowIso(),
-          secretStore,
-          availableExternalKeys
-        })
-      )
-    ) as McpValidationResult;
+    return await requestRuntime<McpValidationResult>("mcp.validate_server", {
+      server,
+      checkedAt: nowIso(),
+      secretStore,
+      availableExternalKeys
+    });
   };
 
   const createServerFromTemplatePort = (
     request: McpInstallTemplateRequest,
     catalogItem: McpCatalogItem,
     resolvedScope: { readonly scope: McpScope; readonly projectRoot?: string }
-  ): PersistedMcpServerConfig =>
-    JSON.parse(
-      nativeBindings.createMcpServerFromTemplateJson(
-        JSON.stringify({
-          catalogItem,
-          ...(request.title === undefined ? {} : { title: request.title }),
-          ...(request.serverKey === undefined ? {} : { serverKey: request.serverKey }),
-          setupValues: normalizeSetupValues(request.setupValues),
-          ...(request.enabled === undefined ? {} : { enabled: request.enabled }),
-          ...(request.autoStart === undefined ? {} : { autoStart: request.autoStart }),
-          resolvedScope,
-          nowIso: nowIso()
-        })
-      )
-    ) as PersistedMcpServerConfig;
+  ): Promise<PersistedMcpServerConfig> =>
+    requestRuntime<PersistedMcpServerConfig>("mcp.create_server_from_template", {
+      catalogItem,
+      ...(request.title === undefined ? {} : { title: request.title }),
+      ...(request.serverKey === undefined ? {} : { serverKey: request.serverKey }),
+      setupValues: normalizeSetupValues(request.setupValues),
+      ...(request.enabled === undefined ? {} : { enabled: request.enabled }),
+      ...(request.autoStart === undefined ? {} : { autoStart: request.autoStart }),
+      resolvedScope,
+      nowIso: nowIso()
+    });
 
   const readDecoratedScopeServers = async (
     scope: McpScope,
@@ -599,11 +546,13 @@ export const createMcpIpcBridge = (
   ): Promise<readonly McpServerConfig[]> => {
     const resolvedScope = withResolvedScope(workbenchFsPort, scope, projectRoot);
     const secretStore = await readSecretStorePort();
-    const runtimeStatuses = readRuntimeStatusesPort();
+    const runtimeStatuses = await readRuntimeStatusesPort();
     const document = await readScopeDocumentPort(resolvedScope.scope, resolvedScope.projectRoot);
 
-    return document.servers.map((server) =>
-      decoratePersistedServer(server, secretStore, runtimeStatuses)
+    return await Promise.all(
+      document.servers.map((server) =>
+        decoratePersistedServer(server, secretStore, runtimeStatuses)
+      )
     );
   };
 
@@ -642,8 +591,8 @@ export const createMcpIpcBridge = (
 
   const decorateServer = async (server: PersistedMcpServerConfig): Promise<McpServerConfig> => {
     const secretStore = await readSecretStorePort();
-    const runtimeStatuses = readRuntimeStatusesPort();
-    return decoratePersistedServer(server, secretStore, runtimeStatuses);
+    const runtimeStatuses = await readRuntimeStatusesPort();
+    return await decoratePersistedServer(server, secretStore, runtimeStatuses);
   };
 
   const updatePersistedLastError = async (
@@ -687,84 +636,143 @@ export const createMcpIpcBridge = (
     server: PersistedMcpServerConfig
   ): Promise<McpServerConfig> => {
     const secretStore = await readSecretStorePort();
-    const result = JSON.parse(
-      nativeBindings.startMcpRuntimeJson(
-        JSON.stringify({
-          server,
-          checkedAt: nowIso(),
-          secretStore,
-          availableExternalKeys: buildAvailableExternalKeys(),
-          baseEnv: buildBaseEnvironment(),
-          introspectionSnapshot: buildCatalogIntrospection(server.id, server.templateId)
-        })
-      )
-    ) as {
+    const result = await requestRuntime<{
       readonly validation: McpValidationResult;
       readonly status: McpRuntimeStatus;
-    };
+    }>("mcp.start_runtime", {
+      server,
+      checkedAt: nowIso(),
+      secretStore,
+      availableExternalKeys: buildAvailableExternalKeys(),
+      baseEnv: buildBaseEnvironment(),
+      introspectionSnapshot: buildCatalogIntrospection(server.id, server.templateId)
+    });
 
     await updatePersistedLastError(
       request,
       result.validation.ok ? undefined : result.validation.summary
     );
-    return decorateServer(server);
+    const decorated = decorateServer(server);
+    if (result.validation.ok) {
+      await syncMcpToolsToAgent(server);
+    }
+    return decorated;
   };
 
   const stopRuntimePort = async (
     server: PersistedMcpServerConfig,
     reason: string
-  ): Promise<McpRuntimeStatus> =>
-    JSON.parse(
-      nativeBindings.stopMcpRuntimeJson(
-        JSON.stringify({
-          serverId: server.id,
-          transport: server.transport,
-          reason
-        })
-      )
-    ) as McpRuntimeStatus;
+  ): Promise<McpRuntimeStatus> => {
+    const status = await requestRuntime<McpRuntimeStatus>("mcp.stop_runtime", {
+      serverId: server.id,
+      transport: server.transport,
+      reason
+    });
+    await removeMcpToolsFromAgent(server.id);
+    return status;
+  };
 
   const restartRuntimePort = async (
     request: McpServerRequest,
     server: PersistedMcpServerConfig
   ): Promise<McpServerConfig> => {
     const secretStore = await readSecretStorePort();
-    const result = JSON.parse(
-      nativeBindings.restartMcpRuntimeJson(
-        JSON.stringify({
-          server,
-          checkedAt: nowIso(),
-          secretStore,
-          availableExternalKeys: buildAvailableExternalKeys(),
-          baseEnv: buildBaseEnvironment(),
-          introspectionSnapshot: buildCatalogIntrospection(server.id, server.templateId)
-        })
-      )
-    ) as {
+    const result = await requestRuntime<{
       readonly validation: McpValidationResult;
       readonly status: McpRuntimeStatus;
-    };
+    }>("mcp.restart_runtime", {
+      server,
+      checkedAt: nowIso(),
+      secretStore,
+      availableExternalKeys: buildAvailableExternalKeys(),
+      baseEnv: buildBaseEnvironment(),
+      introspectionSnapshot: buildCatalogIntrospection(server.id, server.templateId)
+    });
 
     await updatePersistedLastError(
       request,
       result.validation.ok ? undefined : result.validation.summary
     );
-    return decorateServer(server);
+    const decorated = decorateServer(server);
+    if (result.validation.ok) {
+      await syncMcpToolsToAgent(server);
+    }
+    return decorated;
   };
 
   const readRuntimeIntrospectionPort = async (
     server: PersistedMcpServerConfig
   ): Promise<McpIntrospectionSnapshot> => {
-    const snapshot = JSON.parse(
-      nativeBindings.readMcpRuntimeIntrospectionJson(
-        JSON.stringify({
-          serverId: server.id,
-          fallbackSnapshot: buildCatalogIntrospection(server.id, server.templateId)
-        })
-      )
-    ) as McpIntrospectionSnapshot | null;
+    const snapshot = await requestRuntime<McpIntrospectionSnapshot | null>(
+      "mcp.read_runtime_introspection",
+      {
+        serverId: server.id,
+        fallbackSnapshot: buildCatalogIntrospection(server.id, server.templateId)
+      }
+    );
 
     return snapshot ?? buildCatalogIntrospection(server.id, server.templateId);
+  };
+
+  // --- MCP ↔ Agent tool bridge ---
+
+  const syncMcpToolsToAgent = async (server: PersistedMcpServerConfig): Promise<void> => {
+    try {
+      const snapshot = await readRuntimeIntrospectionPort(server);
+      await requestRuntime("agent.mcp_bridge.sync", {
+        server,
+        tools: snapshot.tools.map((t) => ({
+          name: t.name,
+          description: t.description ?? ""
+        }))
+      });
+    } catch {
+      // Non-fatal: agent bridge sync failure should not break MCP lifecycle.
+    }
+  };
+
+  const removeMcpToolsFromAgent = async (serverId: string): Promise<void> => {
+    try {
+      await requestRuntime("agent.mcp_bridge.remove", { serverId });
+    } catch {
+      // Non-fatal.
+    }
+  };
+
+  const callToolPort = async (
+    request: McpToolCallRequest
+  ): Promise<McpToolCallResult> => {
+    const { server } = await resolvePersistedServer(request);
+    if (server.transport !== "stdio") {
+      throw new Error(
+        `MCP tool execution is currently supported only for stdio servers. ${server.id} uses ${server.transport}.`
+      );
+    }
+    const toolName = trimOrUndefined(request.toolName);
+    if (toolName === undefined) {
+      throw new Error("toolName is required");
+    }
+    const snapshot = await readRuntimeIntrospectionPort(server);
+    if (snapshot.tools.some((tool) => tool.name === toolName) === false) {
+      throw new Error(`tool not found in MCP snapshot: ${toolName}`);
+    }
+    const toolArguments =
+      request.arguments !== undefined
+      && request.arguments !== null
+      && Array.isArray(request.arguments) === false
+      ? request.arguments
+      : {};
+    const timeoutMs =
+      typeof request.timeoutMs === "number" && Number.isFinite(request.timeoutMs)
+        ? Math.max(1_000, Math.round(request.timeoutMs))
+        : MCP_DEFAULT_TOOL_TIMEOUT_MS;
+    return await requestRuntime<McpToolCallResult>("mcp.call_tool", {
+      server,
+      toolName,
+      arguments: toolArguments,
+      timeoutMs,
+      ...(request.aiSessionId === undefined ? {} : { aiSessionId: request.aiSessionId })
+    });
   };
 
   const handlers: Array<readonly [string, (event: IpcMainInvokeEvent, payload?: unknown) => Promise<unknown>]> = [
@@ -805,8 +813,7 @@ export const createMcpIpcBridge = (
         );
         const catalogItem = findCatalogItem(request.templateId);
         const document = await readScopeDocumentPort(resolvedScope.scope, resolvedScope.projectRoot);
-
-        const nextServer = createServerFromTemplatePort(request, catalogItem, resolvedScope);
+        const nextServer = await createServerFromTemplatePort(request, catalogItem, resolvedScope);
         const existing = document.servers.find(
           (server) => server.serverKey === nextServer.serverKey
         );
@@ -1002,11 +1009,33 @@ export const createMcpIpcBridge = (
   }
 
   return {
+    readCatalog: () => MCP_CATALOG,
+    readServers: async (scope: McpScope, projectRoot?: string) =>
+      await readDecoratedScopeServers(scope, projectRoot),
+    readEffectiveServers: async (request?: McpReadEffectiveServersRequest) => {
+      const resolvedProjectRoot = resolveProjectRoot(workbenchFsPort, request?.projectRoot);
+      const globalDocument = await readScopeDocumentPort(MCP_SCOPE_GLOBAL);
+      const projectDocument =
+        resolvedProjectRoot === undefined
+          ? buildDefaultScopeDocument(MCP_SCOPE_PROJECT)
+          : await readScopeDocumentPort(MCP_SCOPE_PROJECT, resolvedProjectRoot);
+
+      return await mergeEffectiveConfigPort(
+        resolvedProjectRoot,
+        globalDocument,
+        projectDocument
+      );
+    },
+    readServerIntrospection: async (request: McpServerRequest) => {
+      const { server } = await resolvePersistedServer(request);
+      return await readRuntimeIntrospectionPort(server);
+    },
+    callTool: async (request: McpToolCallRequest) => await callToolPort(request),
     dispose: async () => {
-      nativeBindings.shutdownMcpRuntime();
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);
       }
+      unsubscribeRuntimeEvents();
     }
   };
 };

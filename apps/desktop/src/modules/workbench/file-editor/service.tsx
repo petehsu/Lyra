@@ -9,6 +9,7 @@ import type { FileTextEncoding } from "../../../shared/file-manager";
 import type {
   FileEditorAppIconKey,
   FileEditorAppState,
+  FileEditorRevealLocation,
   FileEditorModel,
   FileEditorSaveSource,
   FileEditorSuggestion,
@@ -99,7 +100,8 @@ const createInitialState = (
   message: undefined,
   lastSavedAt: undefined,
   lspVersion: 1,
-  diagnostics: []
+  diagnostics: [],
+  pendingRevealLocation: undefined
 });
 
 const resolveEncoding = (value: string | undefined): FileTextEncoding =>
@@ -107,6 +109,18 @@ const resolveEncoding = (value: string | undefined): FileTextEncoding =>
 
 const toReadableError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const normalizeRevealLocation = (
+  location: FileEditorRevealLocation
+): FileEditorRevealLocation => ({
+  line: Math.max(1, Math.round(location.line)),
+  ...(typeof location.column === "number" && Number.isFinite(location.column)
+    ? { column: Math.max(1, Math.round(location.column)) }
+    : {}),
+  ...(typeof location.endLine === "number" && Number.isFinite(location.endLine)
+    ? { endLine: Math.max(1, Math.round(location.endLine)) }
+    : {})
+});
 
 const readUnsupportedMessage = (reason: string | undefined): string => {
   if (reason === "file-too-large") {
@@ -376,7 +390,8 @@ export const useFileEditorModel = ({
           revision: undefined,
           sizeBytes: result.sizeBytes,
           lspVersion: 1,
-          diagnostics: []
+          diagnostics: [],
+          pendingRevealLocation: current.pendingRevealLocation
         });
         touch(instanceId);
         delete lspSyncedVersionRef.current[instanceId];
@@ -402,7 +417,8 @@ export const useFileEditorModel = ({
         unsupportedReason: undefined,
         message: undefined,
         lspVersion: 1,
-        diagnostics: []
+        diagnostics: [],
+        pendingRevealLocation: current.pendingRevealLocation
       };
       replaceState(instanceId, nextState);
       delete lspSyncedVersionRef.current[instanceId];
@@ -535,6 +551,7 @@ export const useFileEditorModel = ({
         content: "",
         lastSavedContent: "",
         diagnostics: [],
+        pendingRevealLocation: existing.pendingRevealLocation,
         ...(normalizedSessionId === undefined ? {} : { sessionId: normalizedSessionId })
       };
       const nextStates = {
@@ -634,6 +651,27 @@ export const useFileEditorModel = ({
     setStatesById((current) => applyHydrationEviction(current, instanceId));
   }, [applyHydrationEviction, touch]);
 
+  const revealLocation = useCallback((instanceId: string, location: FileEditorRevealLocation) => {
+    const normalizedLocation = normalizeRevealLocation(location);
+    patchState(instanceId, (state) => ({
+      ...state,
+      pendingRevealLocation: normalizedLocation
+    }));
+    touch(instanceId);
+  }, [patchState, touch]);
+
+  const clearRevealLocation = useCallback((instanceId: string) => {
+    patchState(instanceId, (state) => {
+      if (state.pendingRevealLocation === undefined) {
+        return state;
+      }
+      return {
+        ...state,
+        pendingRevealLocation: undefined
+      };
+    });
+  }, [patchState]);
+
   const setContent = useCallback((instanceId: string, content: string) => {
     patchState(instanceId, (state) => {
       if (state.isReadOnly || state.status === "loading" || state.isHydrated === false) {
@@ -652,6 +690,46 @@ export const useFileEditorModel = ({
         lspVersion: state.lspVersion + 1,
         status: state.status === "conflict" ? "conflict" : "ready",
         iconKey: iconFromState(state.status === "conflict" ? "conflict" : "ready", state.isReadOnly)
+      };
+    });
+    touch(instanceId);
+  }, [patchState, touch]);
+
+  const applyExternalContent = useCallback((
+    instanceId: string,
+    content: string,
+    options?: {
+      readonly markHydrated?: boolean;
+      readonly readOnly?: boolean;
+    }
+  ) => {
+    patchState(instanceId, (state) => {
+      const markHydrated = options?.markHydrated ?? true;
+      const isReadOnly = options?.readOnly ?? state.isReadOnly;
+      const contentChanged = state.content !== content;
+      if (
+        contentChanged === false &&
+        state.isHydrated === markHydrated &&
+        state.isReadOnly === isReadOnly &&
+        state.status === "ready" &&
+        state.isDirty === false
+      ) {
+        return state;
+      }
+
+      return {
+        ...state,
+        status: "ready",
+        iconKey: iconFromState("ready", isReadOnly),
+        content,
+        lastSavedContent: content,
+        isDirty: false,
+        isReadOnly,
+        isHydrated: markHydrated,
+        sizeBytes: content.length,
+        message: undefined,
+        unsupportedReason: undefined,
+        lspVersion: contentChanged ? state.lspVersion + 1 : state.lspVersion
       };
     });
     touch(instanceId);
@@ -787,7 +865,10 @@ export const useFileEditorModel = ({
       openFile,
       hydrateIfNeeded,
       touchInstance,
+      revealLocation,
+      clearRevealLocation,
       setContent,
+      applyExternalContent,
       save,
       statFile,
       requestCompletion
@@ -802,7 +883,10 @@ export const useFileEditorModel = ({
       openFile,
       hydrateIfNeeded,
       touchInstance,
+      revealLocation,
+      clearRevealLocation,
       setContent,
+      applyExternalContent,
       save,
       statFile,
       requestCompletion

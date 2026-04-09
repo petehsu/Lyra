@@ -13,41 +13,6 @@ export type WorkbenchTab = {
   readonly dirty: boolean;
 };
 
-export type AiMode = "assist" | "agent";
-
-export type AiPlanStepState = "todo" | "running" | "done";
-
-export type AiPlanStep = {
-  readonly id: string;
-  readonly label: string;
-  readonly state: AiPlanStepState;
-};
-
-export type AiActionStatus = "pending" | "running" | "success" | "failed";
-
-export type AiActionEvent = {
-  readonly id: string;
-  readonly action: string;
-  readonly status: AiActionStatus;
-  readonly timestamp: string;
-};
-
-export type ApprovalStatus = "pending" | "approved" | "rejected";
-
-export type ApprovalItem = {
-  readonly id: string;
-  readonly summary: string;
-  readonly status: ApprovalStatus;
-};
-
-export type AiThreadRole = "assistant" | "user";
-
-export type AiThreadMessage = {
-  readonly id: string;
-  readonly role: AiThreadRole;
-  readonly content: string;
-};
-
 export type ShellMetric = {
   readonly id: string;
   readonly label: string;

@@ -9,6 +9,8 @@ export type WorkspaceTabPageKind =
   | "terminal"
   | "app";
 
+export type WorkspaceSearchMode = "standard" | "deep";
+
 export type WorkspaceTab = {
   readonly id: string;
   readonly title: string;
@@ -17,6 +19,8 @@ export type WorkspaceTab = {
   readonly displayAddress: string;
   readonly faviconUrl: string | undefined;
   readonly query: string | undefined;
+  readonly searchMode?: WorkspaceSearchMode;
+  readonly resultMode?: WorkspaceSearchMode;
   readonly terminalTabId?: string;
   readonly appId?: WorkbenchAppId;
   readonly appInstanceId?: string;
@@ -28,6 +32,12 @@ export type WorkspaceTab = {
 
 export type WorkspaceTabPageMeta = {
   readonly title?: string;
+  readonly faviconUrl?: string;
+};
+
+export type WorkspaceTabPageRuntimeState = {
+  readonly address: string;
+  readonly title: string;
   readonly faviconUrl?: string;
 };
 
@@ -108,7 +118,12 @@ export type WorkspaceTabsActions = {
   readonly openPageInNewTab: (address: string, title?: string) => void;
   readonly closeTab: (tabId: string) => void;
   readonly updatePageMeta: (tabId: string, meta: WorkspaceTabPageMeta) => void;
+  readonly syncPageRuntimeState: (
+    tabId: string,
+    state: WorkspaceTabPageRuntimeState
+  ) => void;
   readonly updateActiveInput: (value: string) => void;
+  readonly setActiveSearchMode: (mode: WorkspaceSearchMode) => void;
   readonly commitActiveInput: () => void;
 };
 

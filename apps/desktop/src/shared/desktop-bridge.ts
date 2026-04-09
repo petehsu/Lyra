@@ -1,57 +1,42 @@
 import type {
-  AiCancelChatTurnRequest,
-  AiChatSession,
-  AiChatSessionSummary,
-  AiChatTurnRequest,
-  AiChatTurnResponse,
   AiDiscoverModelsRequest,
   AiDeleteProfileRequest,
   AiModelDiscoveryResult,
+  AiOpenAiChatGptAuthResult,
   AiProviderCatalogItem,
   AiProviderPreset,
   AiProfileValidationResult,
   AiProviderProfile,
-  AiReadSessionHistoryRequest,
-  AiReadSessionRequest,
-  AiRuntimeEvent,
   AiSetDefaultProfileRequest,
   AiUpsertProfileRequest,
   AiValidateProfileRequest
 } from "./ai";
 import type {
-  AiComputerAppKind,
-  AiComputerAppInstance,
-  AiComputerBootReason,
-  AiComputerCloseAppRequest,
-  AiComputerFocusAppRequest,
-  AiComputerHostPlatform,
-  AiComputerHostStatus,
-  AiComputerOpenAppRequest,
-  AiComputerPowerOffRequest,
-  AiComputerPowerRequest,
-  AiComputerPowerState,
-  AiComputerReadSessionRequest,
-  AiComputerSessionEvent,
-  AiComputerSessionState,
-  AiComputerUpdateWindowFrameRequest,
-  AiComputerWindowActionRequest,
-  AiComputerWindowFrame,
-  AiComputerWindowState
-} from "./computer";
-import type {
-  LyraSystemAssignSessionImageRequest,
-  LyraSystemClearSessionImageOverrideRequest,
-  LyraSystemEvent,
-  LyraSystemImageDescriptor,
-  LyraSystemInstallFromDirectoryRequest,
-  LyraSystemInstallFromPackageRequest,
-  LyraSystemReadResolvedSessionRequest,
-  LyraSystemRegistryState,
-  LyraSystemResolvedSession,
-  LyraSystemSetDefaultImageRequest,
-  LyraSystemSetRuntimeModeOverrideRequest,
-  LyraSystemUninstallRequest
-} from "./system-image";
+  AiMemoryConfig,
+  AgentAnswerQuestionRequest,
+  AgentAnswerPlanQuestionRequest,
+  AgentBindSessionProjectRequest,
+  AgentEnterPlanModeRequest,
+  AgentCreateSessionRequest,
+  AgentDeleteSessionRequest,
+  AgentGetPendingInteractionsRequest,
+  AgentGetPlanRequest,
+  AgentGetSessionRequest,
+  AgentPlanState,
+  AgentPendingInteraction,
+  AgentResolvePlanApprovalRequest,
+  AgentRuntimeEvent,
+  AgentSendTurnRequest,
+  AgentSendTurnResult,
+  AgentSession,
+  AgentSessionDetail,
+  CommandApprovalSubmitRequest,
+  PlanApprovalRequest,
+  PlanInteractionResponse,
+  PlanQuestionItem,
+  PlanQuestionOption,
+  PlanQuestionRequest
+} from "./agent";
 import type {
   FileManagerCreateFileRequest,
   FileManagerCreateFolderRequest,
@@ -110,25 +95,32 @@ import type {
   SkillRequest,
   UpdateSkillStateRequest
 } from "./skills";
+import type {
+  CapabilityApprovalResolveRequest,
+  CapabilityCallResult,
+  CapabilityDescriptor,
+  CapabilityInvokeRequest,
+  CapabilityListRequest,
+  CapabilityReadRegistryResponse,
+  CapabilityResolveApprovalResponse,
+  CapabilityRuntimeEvent
+} from "./capabilities";
 import type { TerminalThemePresetId } from "./terminal-theme";
+import type {
+  WorkbenchBrowserEvent,
+  WorkbenchBrowserLayoutSnapshot,
+  WorkbenchBrowserNavigateRequest,
+  WorkbenchBrowserNavigateResult,
+  WorkbenchBrowserPageRuntimeState,
+  WorkbenchBrowserReadPageStateRequest,
+  WorkbenchBrowserTopologySnapshot
+} from "./workbench-browser";
 
 export type {
-  AiCancelChatTurnRequest,
-  AiChatMessage,
-  AiChatMessageId,
-  AiChatMessageRole,
-  AiChatMessageStatus,
-  AiChatMode,
-  AiChatSession,
-  AiChatSessionId,
-  AiChatSessionSummary,
-  AiChatToken,
-  AiChatTurnId,
-  AiChatTurnRequest,
-  AiChatTurnResponse,
   AiDiscoverModelsRequest,
   AiDeleteProfileRequest,
   AiModelDiscoveryResult,
+  AiOpenAiChatGptAuthResult,
   AiProfileId,
   AiProfileValidationResult,
   AiProviderCatalogItem,
@@ -144,56 +136,43 @@ export type {
   AiProtocolId,
   AiProfileAuthConfig,
   AiProfileConnectionConfig,
-  AiReadSessionHistoryRequest,
-  AiReadSessionRequest,
-  AiRuntimeEvent,
   AiSetDefaultProfileRequest,
   AiUpsertProfileRequest,
   AiValidateProfileRequest
 } from "./ai";
 export type {
-  AiComputerAppKind,
-  AiComputerAppInstance,
-  AiComputerBootReason,
-  AiComputerCloseAppRequest,
-  AiComputerFocusAppRequest,
-  AiComputerHostPlatform,
-  AiComputerHostStatus,
-  AiComputerOpenAppRequest,
-  AiComputerPowerOffRequest,
-  AiComputerPowerRequest,
-  AiComputerPowerState,
-  AiComputerReadSessionRequest,
-  AiComputerSessionEvent,
-  AiComputerSessionState,
-  AiComputerUpdateWindowFrameRequest,
-  AiComputerWindowActionRequest,
-  AiComputerWindowFrame,
-  AiComputerWindowState
-} from "./computer";
-export type {
-  LyraSystemAssignSessionImageRequest,
-  LyraSystemClearSessionImageOverrideRequest,
-  LyraSystemCompatibility,
-  LyraSystemContextState,
-  LyraSystemEvent,
-  LyraSystemImageDescriptor,
-  LyraSystemImageInstallSource,
-  LyraSystemImageManifest,
-  LyraSystemInstallFromDirectoryRequest,
-  LyraSystemInstallFromPackageRequest,
-  LyraSystemPlatformArch,
-  LyraSystemPlatformArtifact,
-  LyraSystemPlatformArtifactKind,
-  LyraSystemReadResolvedSessionRequest,
-  LyraSystemRegistryState,
-  LyraSystemResolvedSession,
-  LyraSystemRuntimeMode,
-  LyraSystemSetDefaultImageRequest,
-  LyraSystemSetRuntimeModeOverrideRequest,
-  LyraSystemShellMode,
-  LyraSystemUninstallRequest
-} from "./system-image";
+  AiMemoryConfig,
+  AgentAnswerQuestionRequest,
+  AgentAnswerPlanQuestionRequest,
+  AgentBindSessionProjectRequest,
+  AgentEnterPlanModeRequest,
+  AgentCreateSessionRequest,
+  AgentDeleteSessionRequest,
+  AgentGetPendingInteractionsRequest,
+  AgentGetPlanRequest,
+  AgentGetSessionRequest,
+  AgentPlanState,
+  AgentPendingInteraction,
+  AgentPendingInteractionKind,
+  AgentPendingInteractionStatus,
+  AgentResolvePlanApprovalRequest,
+  AgentMessage,
+  AgentRuntimeEvent,
+  AgentRuntimePhase,
+  AgentSendTurnRequest,
+  AgentSendTurnResult,
+  AgentSession,
+  AgentSessionDetail,
+  CommandApprovalSubmitRequest,
+  PlanApprovalRequest,
+  PlanInteractionResponse,
+  PlanQuestionItem,
+  PlanQuestionOption,
+  PlanQuestionRequest,
+  AgentToolCall,
+  AgentTurn,
+  AgentUsage
+} from "./agent";
 export type {
   McpCatalogItem,
   McpCatalogQuickSetup,
@@ -223,6 +202,28 @@ export type {
   McpValidationResult
 } from "./mcp";
 export type {
+  CapabilityAiExposure,
+  CapabilityApprovalDecision,
+  CapabilityApprovalMode,
+  CapabilityApprovalRequest,
+  CapabilityApprovalResolution,
+  CapabilityCallRequest,
+  CapabilityCallResult,
+  CapabilityDescriptor,
+  CapabilityDomain,
+  CapabilityEvent,
+  CapabilityError,
+  CapabilityApprovalResolveRequest,
+  CapabilityInvokeRequest,
+  CapabilityListRequest,
+  CapabilityListResponse,
+  CapabilityRegistrySnapshot,
+  CapabilityReadRegistryResponse,
+  CapabilityResolveApprovalResponse,
+  CapabilityRuntimeEvent,
+  LyraAppManifest
+} from "./capabilities";
+export type {
   CreateLyraSkillRequest,
   DeleteSkillRequest,
   EffectiveSkillConfig,
@@ -249,6 +250,17 @@ export type {
   SkillRequest,
   UpdateSkillStateRequest
 } from "./skills";
+export type {
+  WorkbenchBrowserEvent,
+  WorkbenchBrowserLayoutSnapshot,
+  WorkbenchBrowserNavigateRequest,
+  WorkbenchBrowserNavigateResult,
+  WorkbenchBrowserPageLayout,
+  WorkbenchBrowserPageRuntimeState,
+  WorkbenchBrowserPageSpec,
+  WorkbenchBrowserReadPageStateRequest,
+  WorkbenchBrowserTopologySnapshot
+} from "./workbench-browser";
 
 export const LYRA_CHANNELS = {
   minimizeWindow: "lyra:shell/window/minimize",
@@ -261,6 +273,16 @@ export const LYRA_CHANNELS = {
   linuxCompatExportDiagnostics: "lyra:linux-compat/export-diagnostics",
   windowStateChanged: "lyra:shell/window/state-changed",
   aggregateSearch: "lyra:search/aggregate",
+  localSearch: "lyra:search/local",
+  localSearchStreamStart: "lyra:search/local-stream/start",
+  localSearchStreamRead: "lyra:search/local-stream/read",
+  localSearchStreamCancel: "lyra:search/local-stream/cancel",
+  searchIndexStatus: "lyra:search/index-status",
+  searchRebuildIndex: "lyra:search/rebuild-index",
+  searchDeepStreamStart: "lyra:search/deep-stream/start",
+  searchDeepStreamRead: "lyra:search/deep-stream/read",
+  searchDeepStreamCancel: "lyra:search/deep-stream/cancel",
+  searchDeepExpand: "lyra:search/deep-stream/expand",
   filesReadHome: "lyra:files/read-home",
   filesReadDirectory: "lyra:files/read-directory",
   filesReadTrash: "lyra:files/read-trash",
@@ -281,42 +303,39 @@ export const LYRA_CHANNELS = {
   aiReadProfiles: "lyra:ai/read-profiles",
   aiReadProviderCatalog: "lyra:ai/read-provider-catalog",
   aiReadPresetCatalog: "lyra:ai/read-preset-catalog",
+  aiAuthorizeOpenAiChatGpt: "lyra:ai/authorize-openai-chatgpt",
+  aiAuthorizeOpenAiChatGptDeviceCode: "lyra:ai/authorize-openai-chatgpt-device-code",
   aiUpsertProfile: "lyra:ai/upsert-profile",
   aiDeleteProfile: "lyra:ai/delete-profile",
   aiSetDefaultProfile: "lyra:ai/set-default-profile",
   aiValidateProfile: "lyra:ai/validate-profile",
   aiDiscoverModels: "lyra:ai/discover-models",
   aiRefreshDiscoveredModels: "lyra:ai/refresh-discovered-models",
-  aiReadSession: "lyra:ai/read-session",
-  aiReadSessionHistory: "lyra:ai/read-session-history",
-  aiSendChatTurn: "lyra:ai/send-chat-turn",
-  aiCancelChatTurn: "lyra:ai/cancel-chat-turn",
-  aiEvent: "lyra:ai/event",
-  computerReadSession: "lyra:computer/read-session",
-  computerReadHostStatus: "lyra:computer/read-host-status",
-  computerPowerOn: "lyra:computer/power-on",
-  computerPowerOff: "lyra:computer/power-off",
-  computerOpenApp: "lyra:computer/open-app",
-  computerFocusApp: "lyra:computer/focus-app",
-  computerCloseApp: "lyra:computer/close-app",
-  computerMoveAppWindow: "lyra:computer/move-app-window",
-  computerResizeAppWindow: "lyra:computer/resize-app-window",
-  computerMinimizeApp: "lyra:computer/minimize-app",
-  computerMaximizeApp: "lyra:computer/maximize-app",
-  computerRestoreApp: "lyra:computer/restore-app",
-  computerEvent: "lyra:computer/event",
-  systemImagesReadRegistry: "lyra:system-images/read-registry",
-  systemImagesListInstalled: "lyra:system-images/list-installed",
-  systemImagesInstallFromDirectory: "lyra:system-images/install-from-directory",
-  systemImagesInstallFromPackage: "lyra:system-images/install-from-package",
-  systemImagesInstallOfficialSeed: "lyra:system-images/install-official-seed",
-  systemImagesUninstall: "lyra:system-images/uninstall",
-  systemImagesSetDefault: "lyra:system-images/set-default-image",
-  systemImagesAssignSession: "lyra:system-images/assign-session-image",
-  systemImagesClearSessionOverride: "lyra:system-images/clear-session-override",
-  systemImagesSetRuntimeModeOverride: "lyra:system-images/set-runtime-mode-override",
-  systemImagesReadResolvedSession: "lyra:system-images/read-resolved-session",
-  systemImagesEvent: "lyra:system-images/event",
+  agentListSessions: "lyra:agent/list-sessions",
+  agentCreateSession: "lyra:agent/create-session",
+  agentGetSession: "lyra:agent/get-session",
+  agentBindSessionProject: "lyra:agent/bind-session-project",
+  agentDeleteSession: "lyra:agent/delete-session",
+  agentSendTurn: "lyra:agent/send-turn",
+  agentEnterPlanMode: "lyra:agent/enter-plan-mode",
+  agentGetPlan: "lyra:agent/get-plan",
+  agentGetPendingInteractions: "lyra:agent/get-pending-interactions",
+  agentAnswerQuestion: "lyra:agent/answer-question",
+  agentAnswerPlanQuestion: "lyra:agent/answer-plan-question",
+  agentResolvePlanApproval: "lyra:agent/resolve-plan-approval",
+  agentGetMemoryConfig: "lyra:agent/get-memory-config",
+  agentUpdateMemoryConfig: "lyra:agent/update-memory-config",
+  agentEvent: "lyra:agent/event",
+  agentSubmitCommandApproval: "lyra:agent/submit-command-approval",
+  workbenchBrowserSyncTopology: "lyra:workbench-browser/sync-topology",
+  workbenchBrowserSyncLayout: "lyra:workbench-browser/sync-layout",
+  workbenchBrowserNavigate: "lyra:workbench-browser/navigate",
+  workbenchBrowserGoBack: "lyra:workbench-browser/go-back",
+  workbenchBrowserGoForward: "lyra:workbench-browser/go-forward",
+  workbenchBrowserReload: "lyra:workbench-browser/reload",
+  workbenchBrowserStop: "lyra:workbench-browser/stop",
+  workbenchBrowserReadPageState: "lyra:workbench-browser/read-page-state",
+  workbenchBrowserEvent: "lyra:workbench-browser/event",
   mcpReadCatalog: "lyra:mcp/read-catalog",
   mcpReadServers: "lyra:mcp/read-servers",
   mcpReadEffectiveServers: "lyra:mcp/read-effective-servers",
@@ -350,9 +369,15 @@ export const LYRA_CHANNELS = {
   terminalRestoreSessions: "lyra:terminal/restore-sessions",
   terminalReloadPrompt: "lyra:terminal/reload-prompt",
   terminalWriteSession: "lyra:terminal/write-session",
+  terminalReadSession: "lyra:terminal/read-session",
   terminalResizeSession: "lyra:terminal/resize-session",
   terminalCloseSession: "lyra:terminal/close-session",
   terminalEvent: "lyra:terminal/event",
+  capabilityReadRegistry: "lyra:capabilities/read-registry",
+  capabilityList: "lyra:capabilities/list",
+  capabilityInvoke: "lyra:capabilities/invoke",
+  capabilityResolveApproval: "lyra:capabilities/resolve-approval",
+  capabilityEvent: "lyra:capabilities/event",
   workbenchStateReadSync: "lyra:workbench-state/read-sync",
   workbenchStateWriteSync: "lyra:workbench-state/write-sync",
   workbenchStateRemoveSync: "lyra:workbench-state/remove-sync"
@@ -420,7 +445,16 @@ export type SearchAggregateEngine = {
   readonly id: string;
   readonly label: string;
   readonly accentColor: string;
+  readonly endpoint?: string;
 };
+
+export type SearchOfficialCategory =
+  | "official_homepage"
+  | "official_subsite"
+  | "official_docs"
+  | "official_login"
+  | "official_download"
+  | "official_support";
 
 export type SearchAggregateResult = {
   readonly id: string;
@@ -429,6 +463,8 @@ export type SearchAggregateResult = {
   readonly displayUrl: string;
   readonly snippet: string;
   readonly sourceEngineIds: readonly string[];
+  readonly isOfficialResult?: boolean;
+  readonly officialCategory?: SearchOfficialCategory;
 };
 
 export type SearchAggregateEngineBucket = {
@@ -452,15 +488,350 @@ export type SearchAggregateResponse = {
   readonly elapsedMs: number;
 };
 
+export type SearchLocalScopePreset = "home" | "full_system" | "workspace" | "custom";
+
+export type SearchLocalRequest = {
+  readonly query: string;
+  readonly limit: number;
+  readonly scopePreset: SearchLocalScopePreset;
+  readonly customRoots?: readonly string[];
+  readonly projectRoot?: string;
+  readonly includeHidden?: boolean;
+  readonly enableFuzzy?: boolean;
+  readonly enableContent?: boolean;
+  readonly enableExtensionMatch?: boolean;
+};
+
+export type SearchLocalResultItem = {
+  readonly id: string;
+  readonly path: string;
+  readonly displayPath: string;
+  readonly fileName: string;
+  readonly extension?: string;
+  readonly matchKind: "content" | "file_name" | "extension" | "path" | "fuzzy";
+  readonly score: number;
+  readonly snippet?: string;
+  readonly line?: number;
+  readonly modifiedAt?: number;
+};
+
+export type SearchLocalStats = {
+  readonly scannedFiles: number;
+  readonly scannedDirs: number;
+  readonly contentScannedFiles: number;
+  readonly matchedFiles: number;
+  readonly skippedUnreadable: number;
+  readonly skippedBinaryOrTooLarge: number;
+  readonly usedIndex: boolean;
+};
+
+export type SearchLocalResponse = {
+  readonly query: string;
+  readonly scopePreset: SearchLocalScopePreset;
+  readonly roots: readonly string[];
+  readonly results: readonly SearchLocalResultItem[];
+  readonly truncated: boolean;
+  readonly elapsedMs: number;
+  readonly stats: SearchLocalStats;
+};
+
+export type SearchLocalStreamStartRequest = SearchLocalRequest;
+
+export type SearchLocalStreamStartResponse = {
+  readonly streamId: string;
+  readonly query: string;
+  readonly scopePreset: SearchLocalScopePreset;
+  readonly roots: readonly string[];
+};
+
+export type SearchLocalStreamReadRequest = {
+  readonly streamId: string;
+  readonly limit?: number;
+};
+
+export type SearchLocalStreamReadResponse = {
+  readonly streamId: string;
+  readonly query: string;
+  readonly scopePreset: SearchLocalScopePreset;
+  readonly roots: readonly string[];
+  readonly results: readonly SearchLocalResultItem[];
+  readonly truncated: boolean;
+  readonly elapsedMs: number;
+  readonly stats: SearchLocalStats;
+  readonly done: boolean;
+  readonly error?: string;
+};
+
+export type SearchLocalStreamCancelRequest = {
+  readonly streamId: string;
+};
+
+export type SearchLocalStreamCancelResponse = {
+  readonly removed: boolean;
+};
+
+export type SearchIndexStatusResponse = {
+  readonly state: "idle" | "building" | "ready" | "failed";
+  readonly indexedFiles: number;
+  readonly indexedDirs: number;
+  readonly lastBuiltAt?: string;
+  readonly progress?: number;
+  readonly error?: string;
+};
+
+export type SearchRebuildIndexRequest = {
+  readonly scopePreset: SearchLocalScopePreset;
+  readonly customRoots?: readonly string[];
+  readonly projectRoot?: string;
+  readonly includeHidden?: boolean;
+  readonly force?: boolean;
+};
+
+export type SearchRebuildIndexResponse = {
+  readonly status: SearchIndexStatusResponse;
+  readonly scopePreset: SearchLocalScopePreset;
+  readonly roots: readonly string[];
+};
+
+export type SearchDeepBudgetPreset = "low" | "medium" | "high";
+export type SearchDeepCrawlPolicy = "accessibility_only";
+
+export type SearchDeepNodeKind =
+  | "root_query"
+  | "derived_query"
+  | "site_domain"
+  | "site_subdomain"
+  | "web_page"
+  | "local_result";
+
+export type SearchDeepEdgeKind =
+  | "discovered_from"
+  | "expanded_to"
+  | "hosts_subdomain"
+  | "contains_page"
+  | "related_to";
+
+export type SearchDeepEdgeReasonCode =
+  | "web_match"
+  | "local_match"
+  | "query_expansion"
+  | "semantic_overlap"
+  | "domain_guess"
+  | "domain_verify"
+  | "subdomain_guess"
+  | "sitemap_discovery"
+  | "html_link_discovery"
+  | "redirect_canonical";
+
+export type SearchDeepNodeStatus = "loading" | "ready" | "error";
+
+export type SearchDeepQueryNodeMetadata = {
+  readonly query: string;
+};
+
+export type SearchDeepSiteDomainNodeMetadata = {
+  readonly registrableDomain: string;
+  readonly finalUrl: string;
+  readonly verificationScore: number;
+  readonly verifiedFrom: "result" | "guessed" | "redirect";
+  readonly guessSources: readonly string[];
+  readonly isOfficialResult?: boolean;
+};
+
+export type SearchDeepSiteSubdomainNodeMetadata = {
+  readonly hostname: string;
+  readonly registrableDomain: string;
+  readonly finalUrl: string;
+  readonly verificationScore: number;
+  readonly discoveredBy: "result" | "guess" | "sitemap" | "html";
+  readonly isOfficialResult?: boolean;
+};
+
+export type SearchDeepWebPageNodeMetadata = {
+  readonly url: string;
+  readonly canonicalUrl?: string;
+  readonly hostname: string;
+  readonly registrableDomain: string;
+  readonly snippet?: string;
+  readonly contentPreview?: string;
+  readonly fetchDepth: number;
+  readonly discoveredBy: "search" | "sitemap" | "html" | "redirect";
+  readonly sourceEngineIds?: readonly string[];
+  readonly isOfficialResult?: boolean;
+};
+
+export type SearchDeepLocalNodeMetadata = {
+  readonly path: string;
+  readonly displayPath: string;
+  readonly snippet?: string;
+  readonly line?: number;
+  readonly extension?: string;
+  readonly modifiedAt?: number;
+  readonly matchKind?: "content" | "file_name" | "extension" | "path" | "fuzzy";
+};
+
+export type SearchDeepNodeMetadata = {
+  readonly query?: string;
+  readonly registrableDomain?: string;
+  readonly finalUrl?: string;
+  readonly verificationScore?: number;
+  readonly verifiedFrom?: "result" | "guessed" | "redirect";
+  readonly guessSources?: readonly string[];
+  readonly hostname?: string;
+  readonly discoveredBy?: "result" | "guess" | "sitemap" | "html" | "redirect" | "search";
+  readonly url?: string;
+  readonly canonicalUrl?: string;
+  readonly snippet?: string;
+  readonly contentPreview?: string;
+  readonly fetchDepth?: number;
+  readonly sourceEngineIds?: readonly string[];
+  readonly isOfficialResult?: boolean;
+  readonly officialCategory?: SearchOfficialCategory;
+  readonly path?: string;
+  readonly displayPath?: string;
+  readonly line?: number;
+  readonly extension?: string;
+  readonly modifiedAt?: number;
+  readonly matchKind?: "content" | "file_name" | "extension" | "path" | "fuzzy";
+};
+
+export type SearchDeepNode = {
+  readonly id: string;
+  readonly kind: SearchDeepNodeKind;
+  readonly title: string;
+  readonly subtitle?: string;
+  readonly status: SearchDeepNodeStatus;
+  readonly score?: number;
+  readonly sourceKinds?: readonly ("web" | "local")[];
+  readonly metadata?: SearchDeepNodeMetadata;
+};
+
+export type SearchDeepEdge = {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly targetId: string;
+  readonly kind: SearchDeepEdgeKind;
+  readonly reasonCode?: SearchDeepEdgeReasonCode;
+  readonly metadata?: {
+    readonly sharedTokens?: readonly string[];
+    readonly overlapScore?: number;
+    readonly sourceEngineIds?: readonly string[];
+    readonly matchKind?: "content" | "file_name" | "extension" | "path" | "fuzzy";
+    readonly line?: number;
+    readonly seedQuery?: string;
+    readonly derivedToken?: string;
+    readonly guessSources?: readonly string[];
+    readonly registrableDomain?: string;
+    readonly finalUrl?: string;
+    readonly discoveredBy?: "result" | "guess" | "sitemap" | "html" | "redirect" | "search";
+  };
+};
+
+export type SearchDeepRequest = {
+  readonly query: string;
+  readonly budgetPreset: SearchDeepBudgetPreset;
+  readonly scopePreset: SearchLocalScopePreset;
+  readonly customRoots?: readonly string[];
+  readonly projectRoot?: string;
+  readonly includeHidden?: boolean;
+  readonly enableFuzzy?: boolean;
+  readonly enableContent?: boolean;
+  readonly enableExtensionMatch?: boolean;
+  readonly engines: readonly SearchAggregateEngine[];
+  readonly enableSiteExpansion?: boolean;
+  readonly enableProactiveDomainGuessing?: boolean;
+  readonly crawlPolicy?: SearchDeepCrawlPolicy;
+};
+
+export type SearchDeepSnapshot = {
+  readonly query: string;
+  readonly budgetPreset: SearchDeepBudgetPreset;
+  readonly phase: "bootstrapping" | "streaming" | "completed" | "error";
+  readonly nodes: readonly SearchDeepNode[];
+  readonly edges: readonly SearchDeepEdge[];
+  readonly web: {
+    readonly status: "idle" | "loading" | "ready" | "error";
+    readonly engineBuckets: readonly SearchAggregateEngineBucket[];
+    readonly blendedCount: number;
+    readonly siteExpansion?: {
+      readonly status: "idle" | "loading" | "ready" | "error";
+      readonly domainCandidates: number;
+      readonly verifiedDomains: number;
+      readonly discoveredSubdomains: number;
+      readonly visitedPages: number;
+      readonly queuedPages: number;
+      readonly droppedPages: number;
+      readonly guessAttempts: number;
+      readonly error?: string;
+    };
+    readonly error?: string;
+  };
+  readonly local: {
+    readonly status: "idle" | "loading" | "ready" | "error";
+    readonly scopePreset: SearchLocalScopePreset;
+    readonly roots: readonly string[];
+    readonly elapsedMs: number;
+    readonly stats: SearchLocalStats;
+    readonly indexStatus?: SearchIndexStatusResponse;
+    readonly error?: string;
+  };
+  readonly stats: {
+    readonly dedupedResults: number;
+    readonly derivedQueries: number;
+    readonly expansionRounds: number;
+  };
+  readonly lastUpdatedAt: string;
+};
+
+export type SearchDeepStreamStartRequest = SearchDeepRequest;
+
+export type SearchDeepStreamStartResponse = {
+  readonly streamId: string;
+  readonly snapshot: SearchDeepSnapshot;
+};
+
+export type SearchDeepStreamReadRequest = {
+  readonly streamId: string;
+};
+
+export type SearchDeepStreamReadResponse = {
+  readonly streamId: string;
+  readonly snapshot: SearchDeepSnapshot;
+  readonly done: boolean;
+  readonly error?: string;
+};
+
+export type SearchDeepStreamCancelRequest = {
+  readonly streamId: string;
+};
+
+export type SearchDeepStreamCancelResponse = {
+  readonly removed: boolean;
+};
+
+export type SearchDeepExpandRequest = {
+  readonly streamId: string;
+  readonly nodeId: string;
+};
+
+export type SearchDeepExpandResponse = {
+  readonly streamId: string;
+  readonly accepted: boolean;
+};
+
 export type TerminalSessionId = string;
 
-export type TerminalCommandSource = "user" | "ai";
+export type TerminalCommandSource = "user" | "ai" | "capability";
+export type TerminalSessionMode = "command" | "shell";
 
 export type TerminalCreateRequest = {
   readonly sessionId?: TerminalSessionId;
   readonly title?: string;
   readonly cwd?: string;
   readonly shell?: string;
+  readonly mode?: TerminalSessionMode;
+  readonly command?: string;
+  readonly persist?: boolean;
   readonly terminalThemePreset?: TerminalThemePresetId;
   readonly uiThemeId?: string;
   readonly cols: number;
@@ -476,12 +847,53 @@ export type TerminalSessionSnapshot = {
   readonly cols: number;
   readonly rows: number;
   readonly createdAt: string;
+  readonly source?: TerminalCommandSource;
+  readonly mode?: TerminalSessionMode;
+  readonly command?: string;
+  readonly persist?: boolean;
+  readonly running?: boolean;
+  readonly exitCode?: number | null;
 };
 
 export type TerminalWriteRequest = {
   readonly sessionId: TerminalSessionId;
-  readonly data: string;
+  readonly data?: string;
+  readonly text?: string;
+  readonly keys?: readonly (
+    | "enter"
+    | "escape"
+    | "tab"
+    | "ctrl_c"
+    | "ctrl_d"
+    | "up"
+    | "down"
+    | "left"
+    | "right"
+    | "page_up"
+    | "page_down"
+    | "home"
+    | "end"
+  )[];
+  readonly appendNewline?: boolean;
   readonly source: TerminalCommandSource;
+};
+
+export type TerminalReadRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly cursor?: string;
+  readonly maxBytes?: number;
+  readonly waitMs?: number;
+};
+
+export type TerminalReadResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly cursor: string;
+  readonly output: string;
+  readonly running: boolean;
+  readonly exitCode: number | null;
+  readonly truncated: boolean;
+  readonly source: TerminalCommandSource;
+  readonly mode: TerminalSessionMode;
 };
 
 export type TerminalResizeRequest = {
@@ -530,41 +942,6 @@ export type TerminalErrorEvent = {
 };
 
 export type TerminalEvent = TerminalDataEvent | TerminalExitEvent | TerminalErrorEvent;
-
-export type AiEditorStreamEvent =
-  | {
-      readonly kind: "plan";
-      readonly sessionId: string;
-      readonly stepId: string;
-      readonly text: string;
-    }
-  | {
-      readonly kind: "patch";
-      readonly sessionId: string;
-      readonly filePath: string;
-      readonly diff: string;
-    }
-  | {
-      readonly kind: "cursor";
-      readonly sessionId: string;
-      readonly filePath: string;
-      readonly line: number;
-      readonly column: number;
-    }
-  | {
-      readonly kind: "diagnostic";
-      readonly sessionId: string;
-      readonly filePath: string;
-      readonly severity: "info" | "warning" | "error";
-      readonly message: string;
-    }
-  | {
-      readonly kind: "approval";
-      readonly sessionId: string;
-      readonly approvalId: string;
-      readonly summary: string;
-      readonly status: "pending" | "approved" | "rejected";
-    };
 
 export type LspLanguageId = "typescript" | "javascript" | "rust" | "python";
 
@@ -652,12 +1029,40 @@ export type ShellEventsApi = {
 
 export type SearchApi = {
   readonly aggregate: (request: SearchAggregateRequest) => Promise<SearchAggregateResponse>;
+  readonly local: (request: SearchLocalRequest) => Promise<SearchLocalResponse>;
+  readonly startLocalStream: (
+    request: SearchLocalStreamStartRequest
+  ) => Promise<SearchLocalStreamStartResponse>;
+  readonly readLocalStream: (
+    request: SearchLocalStreamReadRequest
+  ) => Promise<SearchLocalStreamReadResponse>;
+  readonly cancelLocalStream: (
+    request: SearchLocalStreamCancelRequest
+  ) => Promise<SearchLocalStreamCancelResponse>;
+  readonly readIndexStatus: () => Promise<SearchIndexStatusResponse>;
+  readonly rebuildIndex: (
+    request: SearchRebuildIndexRequest
+  ) => Promise<SearchRebuildIndexResponse>;
+  readonly startDeepStream: (
+    request: SearchDeepStreamStartRequest
+  ) => Promise<SearchDeepStreamStartResponse>;
+  readonly readDeepStream: (
+    request: SearchDeepStreamReadRequest
+  ) => Promise<SearchDeepStreamReadResponse>;
+  readonly cancelDeepStream: (
+    request: SearchDeepStreamCancelRequest
+  ) => Promise<SearchDeepStreamCancelResponse>;
+  readonly expandDeepNode: (
+    request: SearchDeepExpandRequest
+  ) => Promise<SearchDeepExpandResponse>;
 };
 
 export type AiApi = {
   readonly readProfiles: () => Promise<readonly AiProviderProfile[]>;
   readonly readProviderCatalog: () => Promise<readonly AiProviderCatalogItem[]>;
   readonly readPresetCatalog: () => Promise<readonly AiProviderPreset[]>;
+  readonly authorizeOpenAiChatGpt: () => Promise<AiOpenAiChatGptAuthResult>;
+  readonly authorizeOpenAiChatGptDeviceCode: () => Promise<AiOpenAiChatGptAuthResult>;
   readonly upsertProfile: (request: AiUpsertProfileRequest) => Promise<AiProviderProfile>;
   readonly deleteProfile: (request: AiDeleteProfileRequest) => Promise<void>;
   readonly setDefaultProfile: (request: AiSetDefaultProfileRequest) => Promise<AiProviderProfile>;
@@ -670,13 +1075,31 @@ export type AiApi = {
   readonly refreshDiscoveredModels: (
     request: AiDiscoverModelsRequest
   ) => Promise<AiModelDiscoveryResult>;
-  readonly readSession: (request: AiReadSessionRequest) => Promise<AiChatSession>;
-  readonly readSessionHistory: (
-    request?: AiReadSessionHistoryRequest
-  ) => Promise<readonly AiChatSessionSummary[]>;
-  readonly sendChatTurn: (request: AiChatTurnRequest) => Promise<AiChatTurnResponse>;
-  readonly cancelChatTurn: (request: AiCancelChatTurnRequest) => Promise<AiChatSession>;
-  readonly onEvent: (listener: (event: AiRuntimeEvent) => void) => () => void;
+};
+
+export type AgentApi = {
+  readonly listSessions: () => Promise<readonly AgentSession[]>;
+  readonly createSession: (request?: AgentCreateSessionRequest) => Promise<AgentSession>;
+  readonly getSession: (request: AgentGetSessionRequest) => Promise<AgentSessionDetail>;
+  readonly bindSessionProject: (
+    request: AgentBindSessionProjectRequest
+  ) => Promise<AgentSession>;
+  readonly deleteSession: (request: AgentDeleteSessionRequest) => Promise<void>;
+  readonly sendTurn: (request: AgentSendTurnRequest) => Promise<AgentSendTurnResult>;
+  readonly enterPlanMode: (request: AgentEnterPlanModeRequest) => Promise<AgentSessionDetail>;
+  readonly getPlan: (request: AgentGetPlanRequest) => Promise<AgentPlanState | null>;
+  readonly getPendingInteractions: (
+    request: AgentGetPendingInteractionsRequest
+  ) => Promise<readonly AgentPendingInteraction[]>;
+  readonly answerQuestion: (request: AgentAnswerQuestionRequest) => Promise<void>;
+  readonly answerPlanQuestion: (request: AgentAnswerPlanQuestionRequest) => Promise<void>;
+  readonly resolvePlanApproval: (
+    request: AgentResolvePlanApprovalRequest
+  ) => Promise<AgentSendTurnResult | null>;
+  readonly getMemoryConfig: () => Promise<AiMemoryConfig>;
+  readonly updateMemoryConfig: (config: AiMemoryConfig) => Promise<AiMemoryConfig>;
+  readonly submitCommandApproval: (request: CommandApprovalSubmitRequest) => Promise<void>;
+  readonly onEvent: (listener: (event: AgentRuntimeEvent) => void) => () => void;
 };
 
 export type McpApi = {
@@ -747,74 +1170,26 @@ export type FilesApi = {
   readonly statFile: (request: FileStatRequest) => Promise<FileStatResult>;
 };
 
-export type ComputerApi = {
-  readonly readSession: (
-    request: AiComputerReadSessionRequest
-  ) => Promise<AiComputerSessionState>;
-  readonly readHostStatus: () => Promise<AiComputerHostStatus>;
-  readonly powerOn: (request: AiComputerPowerRequest) => Promise<AiComputerSessionState>;
-  readonly powerOff: (
-    request: AiComputerPowerOffRequest
-  ) => Promise<AiComputerSessionState>;
-  readonly openApp: (
-    request: AiComputerOpenAppRequest
-  ) => Promise<AiComputerSessionState>;
-  readonly focusApp: (
-    request: AiComputerFocusAppRequest
-  ) => Promise<AiComputerSessionState>;
-  readonly closeApp: (
-    request: AiComputerCloseAppRequest
-  ) => Promise<AiComputerSessionState>;
-  readonly moveAppWindow: (
-    request: AiComputerUpdateWindowFrameRequest
-  ) => Promise<AiComputerSessionState>;
-  readonly resizeAppWindow: (
-    request: AiComputerUpdateWindowFrameRequest
-  ) => Promise<AiComputerSessionState>;
-  readonly minimizeApp: (
-    request: AiComputerWindowActionRequest
-  ) => Promise<AiComputerSessionState>;
-  readonly maximizeApp: (
-    request: AiComputerWindowActionRequest
-  ) => Promise<AiComputerSessionState>;
-  readonly restoreApp: (
-    request: AiComputerWindowActionRequest
-  ) => Promise<AiComputerSessionState>;
-  readonly subscribeSession: (
-    sessionId: string,
-    listener: (event: AiComputerSessionEvent) => void
-  ) => () => void;
-};
-
-export type SystemImagesApi = {
-  readonly readRegistry: () => Promise<LyraSystemRegistryState>;
-  readonly listInstalled: () => Promise<readonly LyraSystemImageDescriptor[]>;
-  readonly installFromDirectory: (
-    request: LyraSystemInstallFromDirectoryRequest
-  ) => Promise<LyraSystemImageDescriptor>;
-  readonly installFromPackage: (
-    request: LyraSystemInstallFromPackageRequest
-  ) => Promise<LyraSystemImageDescriptor>;
-  readonly installOfficialSeed: () => Promise<LyraSystemImageDescriptor>;
-  readonly uninstall: (request: LyraSystemUninstallRequest) => Promise<LyraSystemRegistryState>;
-  readonly setDefaultImage: (
-    request: LyraSystemSetDefaultImageRequest
-  ) => Promise<LyraSystemRegistryState>;
-  readonly assignSessionImage: (
-    request: LyraSystemAssignSessionImageRequest
-  ) => Promise<LyraSystemResolvedSession>;
-  readonly clearSessionImageOverride: (
-    request: LyraSystemClearSessionImageOverrideRequest
-  ) => Promise<LyraSystemResolvedSession>;
-  readonly setRuntimeModeOverride: (
-    request: LyraSystemSetRuntimeModeOverrideRequest
-  ) => Promise<LyraSystemRegistryState>;
-  readonly readResolvedSessionSystem: (
-    request: LyraSystemReadResolvedSessionRequest
-  ) => Promise<LyraSystemResolvedSession>;
-  readonly subscribeSystemEvents: (
-    listener: (event: LyraSystemEvent) => void
-  ) => () => void;
+export type WorkbenchBrowserApi = {
+  readonly syncTopology: (
+    snapshot: WorkbenchBrowserTopologySnapshot
+  ) => Promise<void>;
+  readonly syncLayout: (
+    snapshot: WorkbenchBrowserLayoutSnapshot
+  ) => Promise<void>;
+  readonly navigate: (
+    request: WorkbenchBrowserNavigateRequest
+  ) => Promise<WorkbenchBrowserNavigateResult>;
+  readonly goBack: (request: { readonly tabId: string }) => Promise<void>;
+  readonly goForward: (request: { readonly tabId: string }) => Promise<void>;
+  readonly reload: (
+    request: { readonly tabId: string; readonly ignoreCache?: boolean }
+  ) => Promise<void>;
+  readonly stop: (request: { readonly tabId: string }) => Promise<void>;
+  readonly readPageState: (
+    request?: WorkbenchBrowserReadPageStateRequest
+  ) => Promise<WorkbenchBrowserPageRuntimeState | null>;
+  readonly onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => () => void;
 };
 
 export type TerminalApi = {
@@ -822,11 +1197,26 @@ export type TerminalApi = {
   readonly restoreSessions: (request: TerminalRestoreRequest) => Promise<readonly TerminalSessionSnapshot[]>;
   readonly reloadPrompt: (request: TerminalReloadPromptRequest) => Promise<TerminalReloadPromptResult>;
   readonly write: (request: TerminalWriteRequest) => Promise<void>;
+  readonly read: (request: TerminalReadRequest) => Promise<TerminalReadResponse>;
   readonly resize: (request: TerminalResizeRequest) => Promise<void>;
   readonly closeSession: (request: TerminalCloseRequest) => Promise<void>;
   readonly onData: (listener: (event: TerminalDataEvent) => void) => () => void;
   readonly onExit: (listener: (event: TerminalExitEvent) => void) => () => void;
   readonly onError: (listener: (event: TerminalErrorEvent) => void) => () => void;
+};
+
+export type CapabilitiesApi = {
+  readonly readRegistry: () => Promise<CapabilityReadRegistryResponse>;
+  readonly listCapabilities: (
+    request?: CapabilityListRequest
+  ) => Promise<readonly CapabilityDescriptor[]>;
+  readonly invokeCapability: (
+    request: CapabilityInvokeRequest
+  ) => Promise<CapabilityCallResult>;
+  readonly resolveApproval: (
+    request: CapabilityApprovalResolveRequest
+  ) => Promise<CapabilityResolveApprovalResponse>;
+  readonly onEvent: (listener: (event: CapabilityRuntimeEvent) => void) => () => void;
 };
 
 export type LspApi = {
@@ -860,11 +1250,12 @@ export type LyraDesktopApi = {
   readonly search: SearchApi;
   readonly files: FilesApi;
   readonly ai: AiApi;
-  readonly computer: ComputerApi;
-  readonly systemImages: SystemImagesApi;
+  readonly agent?: AgentApi;
+  readonly workbenchBrowser: WorkbenchBrowserApi;
   readonly mcp: McpApi;
   readonly skills: SkillsApi;
   readonly lsp: LspApi;
   readonly terminal: TerminalApi;
+  readonly capabilities: CapabilitiesApi;
   readonly workbenchState: WorkbenchStateApi;
 };

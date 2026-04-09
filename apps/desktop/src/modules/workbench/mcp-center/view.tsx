@@ -21,120 +21,69 @@ export const McpCenterSurface = ({ model, labels }: McpCenterSurfaceProps) => {
   const selectedServer =
     state.effectiveConfig.servers.find((server) => server.id === state.selectedServerId) ?? null;
   const projectScopeAvailable = state.effectiveConfig.resolvedProjectRoot !== undefined;
-  const officialCount = state.catalog.filter((item) => item.official).length;
-  const customCount = state.effectiveConfig.servers.filter((server) => server.source === "custom").length;
 
   return (
     <section className="lyra-mcp-center-surface" aria-label="ai-mcp-surface">
-      <div className="lyra-mcp-center-shell">
-        <aside className="lyra-mcp-center-sidebar">
-          <header className="lyra-mcp-center-sidebar-header">
-            <h2>{labels.title}</h2>
-            <p>{labels.sidebarDescription}</p>
-          </header>
-
-          <section className="lyra-mcp-center-sidebar-group">
-            <span>{labels.sidebarScope}</span>
-            <div className="lyra-mcp-center-sidebar-stack">
-              <button
-                type="button"
-                className={
-                  state.preferredScope === "global"
-                    ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                    : "lyra-mcp-center-side-button"
-                }
-                onClick={() => {
-                  model.setPreferredScope("global");
-                }}
-              >
-                <strong>{labels.scopeGlobal}</strong>
-                <small>{labels.sidebarGlobalCount}: {state.globalServers.length}</small>
-              </button>
-              <button
-                type="button"
-                className={
-                  state.preferredScope === "project"
-                    ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                    : "lyra-mcp-center-side-button"
-                }
-                disabled={projectScopeAvailable === false}
-                onClick={() => {
-                  model.setPreferredScope("project");
-                }}
-              >
-                <strong>{projectScopeAvailable ? labels.scopeProject : labels.scopeProjectUnavailable}</strong>
-                <small>{labels.sidebarProjectCount}: {state.projectServers.length}</small>
-              </button>
-            </div>
-          </section>
-
-          <section className="lyra-mcp-center-sidebar-group">
-            <span>{labels.sidebarStatus}</span>
-            <div className="lyra-mcp-center-sidebar-stack">
-              {(
-                [
-                  ["all", labels.statusAll],
-                  ["running", labels.statusRunning],
-                  ["stopped", labels.statusStopped],
-                  ["error", labels.statusError]
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={
-                    state.statusFilter === value
-                      ? "lyra-mcp-center-side-button lyra-mcp-center-side-button-active"
-                      : "lyra-mcp-center-side-button"
-                  }
-                  onClick={() => {
-                    model.setStatusFilter(value);
-                  }}
-                >
-                  <strong>{label}</strong>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="lyra-mcp-center-sidebar-group">
-            <span>{labels.sidebarSources}</span>
-            <div className="lyra-mcp-center-sidebar-meta">
-              <div>
-                <strong>{labels.sidebarOfficialCatalog}</strong>
-                <small>{officialCount}</small>
-              </div>
-              <div>
-                <strong>{labels.sidebarCustomServers}</strong>
-                <small>{customCount}</small>
-              </div>
-              <div>
-                <strong>{labels.sidebarProjectRoot}</strong>
-                <small>
-                  {state.effectiveConfig.resolvedProjectRoot ?? labels.scopeProjectUnavailable}
-                </small>
-              </div>
-            </div>
-          </section>
-        </aside>
-
+      <div className="lyra-mcp-center-shell lyra-mcp-center-shell-no-sidebar">
         <section className="lyra-mcp-center-main">
           <header className="lyra-mcp-center-toolbar">
-            <div className="lyra-mcp-center-toolbar-copy">
-              <strong>{labels.toolbarInstalled}</strong>
-              <small>{labels.toolbarInstalledDescription}</small>
+            <div className="lyra-mcp-center-toolbar-filters">
+              <div className="lyra-mcp-center-scope-tabs">
+                <button
+                  type="button"
+                  className={
+                    state.preferredScope === "global"
+                      ? "lyra-mcp-center-tab lyra-mcp-center-tab-active"
+                      : "lyra-mcp-center-tab"
+                  }
+                  onClick={() => { model.setPreferredScope("global"); }}
+                >
+                  {labels.scopeGlobal}
+                </button>
+                <button
+                  type="button"
+                  className={
+                    state.preferredScope === "project"
+                      ? "lyra-mcp-center-tab lyra-mcp-center-tab-active"
+                      : "lyra-mcp-center-tab"
+                  }
+                  disabled={projectScopeAvailable === false}
+                  onClick={() => { model.setPreferredScope("project"); }}
+                >
+                  {projectScopeAvailable ? labels.scopeProject : labels.scopeProjectUnavailable}
+                </button>
+              </div>
+              <div className="lyra-mcp-center-status-pills">
+                {(
+                  [
+                    ["all", labels.statusAll],
+                    ["running", labels.statusRunning],
+                    ["stopped", labels.statusStopped],
+                    ["error", labels.statusError]
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={
+                      state.statusFilter === value
+                        ? "lyra-mcp-center-pill lyra-mcp-center-pill-active"
+                        : "lyra-mcp-center-pill"
+                    }
+                    onClick={() => { model.setStatusFilter(value); }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-
             <div className="lyra-mcp-center-actions">
               <button
                 type="button"
                 className="lyra-mcp-center-button lyra-mcp-center-button-ghost"
-                onClick={() => {
-                  void model.load();
-                }}
+                onClick={() => { void model.load(); }}
               >
                 <RefreshCw size={14} />
-                <span>{labels.actionRefresh}</span>
               </button>
               <button
                 type="button"
@@ -164,11 +113,6 @@ export const McpCenterSurface = ({ model, labels }: McpCenterSurfaceProps) => {
 
           <div className="lyra-mcp-center-body">
             <section className="lyra-mcp-center-list-panel">
-              <header className="lyra-mcp-center-list-header">
-                <h3>{labels.installed}</h3>
-                <span>{visibleServers.length}</span>
-              </header>
-
               {visibleServers.length === 0 ? (
                 <div className="lyra-mcp-center-empty-state">{labels.emptyInstalled}</div>
               ) : (
@@ -185,9 +129,7 @@ export const McpCenterSurface = ({ model, labels }: McpCenterSurfaceProps) => {
                             ? "lyra-mcp-center-server-row lyra-mcp-center-server-row-active"
                             : "lyra-mcp-center-server-row"
                         }
-                        onClick={() => {
-                          model.selectServer(server.id);
-                        }}
+                        onClick={() => { model.selectServer(server.id); }}
                       >
                         <span className="lyra-mcp-center-server-icon">
                           {renderCatalogIcon(server.iconKey)}

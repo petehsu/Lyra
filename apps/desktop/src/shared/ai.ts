@@ -43,9 +43,6 @@ export type AiModelDiscoveryStatus = "idle" | "ready" | "error";
 export type AiProviderCapability = "full" | "static" | "pending";
 
 export type AiProfileId = string;
-export type AiChatSessionId = string;
-export type AiChatTurnId = string;
-export type AiChatMessageId = string;
 export type AiProviderPresetId = string;
 export type AiProviderIconKey = string;
 
@@ -198,89 +195,9 @@ export type AiProfileValidationResult = {
   readonly checkedAt: number;
 };
 
-export type AiChatMode = "chat" | "agent" | "oma";
-export type AiChatMessageRole = "user" | "assistant" | "system" | "tool";
-export type AiChatMessageStatus = "pending" | "streaming" | "completed" | "error";
-
-export type AiChatTextToken = {
-  readonly kind: "text";
-  readonly value: string;
-};
-
-export type AiChatFileToken = {
-  readonly kind: "file";
-  readonly name: string;
-  readonly entryKind: "file" | "directory";
-  readonly source: "directory" | "trash";
-  readonly path?: string;
-  readonly iconKind?: string;
-};
-
-export type AiChatToken =
-  | AiChatTextToken
-  | AiChatFileToken;
-
-export type AiChatMessage = {
-  readonly id: AiChatMessageId;
-  readonly sessionId: AiChatSessionId;
-  readonly turnId?: AiChatTurnId;
-  readonly role: AiChatMessageRole;
-  readonly mode: AiChatMode;
-  readonly content: string;
-  readonly status: AiChatMessageStatus;
-  readonly createdAt: number;
-  readonly updatedAt: number;
-  readonly tokens?: readonly AiChatToken[];
-};
-
-export type AiChatSessionSummary = {
-  readonly id: AiChatSessionId;
-  readonly title: string;
-  readonly updatedAt: number;
-  readonly summary: string;
-  readonly mode: AiChatMode;
-};
-
-export type AiChatSession = {
-  readonly id: AiChatSessionId;
-  readonly title: string;
-  readonly updatedAt: number;
-  readonly summary: string;
-  readonly mode: AiChatMode;
-  readonly activeTurnId: AiChatTurnId | null;
-  readonly messages: readonly AiChatMessage[];
-};
-
-export type AiReadSessionRequest = {
-  readonly sessionId: AiChatSessionId;
-  readonly fallbackTitle?: string;
-  readonly preferredMode?: AiChatMode;
-};
-
-export type AiReadSessionHistoryRequest = {
-  readonly limit?: number;
-};
-
-export type AiChatTurnRequest = {
-  readonly sessionId: AiChatSessionId;
-  readonly mode: AiChatMode;
-  readonly text: string;
-  readonly tokens: readonly AiChatToken[];
-  readonly fallbackTitle?: string;
-};
-
-export type AiChatTurnResponse = {
-  readonly turnId: AiChatTurnId;
-  readonly session: AiChatSession;
-};
-
-export type AiCancelChatTurnRequest = {
-  readonly sessionId: AiChatSessionId;
-  readonly turnId: AiChatTurnId;
-};
-
-export type AiRuntimeEvent = {
-  readonly kind: "session_updated";
-  readonly session: AiChatSession;
-  readonly summary: AiChatSessionSummary;
+export type AiOpenAiChatGptAuthResult = {
+  readonly refreshToken: string;
+  readonly accessToken: string;
+  readonly expiresAt: number;
+  readonly accountId?: string;
 };

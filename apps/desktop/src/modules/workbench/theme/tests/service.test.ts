@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import { WORKBENCH_BREAKPOINTS } from "../breakpoints";
+import { WORKBENCH_FOUNDATION_TOKENS } from "../foundation";
+import { WORKBENCH_SEMANTIC_TOKENS } from "../semantic";
 import {
   isWorkbenchThemeId,
   observeSystemPrefersDark,
@@ -103,5 +106,20 @@ describe("workbench theme service", () => {
     const unknown = resolveThemeVars("unknown-theme" as never, false);
     expect(unknown).toEqual(fallback);
     expect(Object.keys(unknown).length).toBeGreaterThan(0);
+  });
+
+  test("resolveThemeVars includes foundation and semantic tokens", () => {
+    const vars = resolveThemeVars("one-light", false);
+    expect(vars["--lyra-shell-titlebar-h"]).toBe("var(--lyra-control-h-34)");
+    expect(vars["--lyra-control-h-default"]).toBe("var(--lyra-control-h-32)");
+    expect(vars["--lyra-font-sans"]).toContain("IBM Plex Sans");
+    expect(vars["--lyra-text-size-body"]).toBe("var(--lyra-text-size-13)");
+  });
+
+  test("exports breakpoint, foundation, and semantic token registries", () => {
+    expect(WORKBENCH_BREAKPOINTS.compact).toBe("980px");
+    expect(WORKBENCH_BREAKPOINTS.regular).toBe("1180px");
+    expect(WORKBENCH_FOUNDATION_TOKENS["--lyra-space-10"]).toBe("10px");
+    expect(WORKBENCH_SEMANTIC_TOKENS["--lyra-dialog-max-w"]).toBe("560px");
   });
 });

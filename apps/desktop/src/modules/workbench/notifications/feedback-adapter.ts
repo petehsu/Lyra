@@ -3,23 +3,15 @@ import type { WorkbenchFeedbackEvent } from "../feedback";
 import type { WorkbenchNotificationPublishRequest } from "./types";
 
 const titleByCode: Partial<Record<WorkbenchFeedbackEvent["code"], string>> = {
-  "ai.runtime.approval.accepted": "AI 修改已同意",
-  "ai.runtime.approval.rejected": "AI 修改已拒绝",
-  "ai.runtime.approval.undo": "AI 修改已撤销",
-  "ai.runtime.approval.accept_all": "AI 批量修改已同意",
-  "ai.runtime.error": "AI 运行错误",
-  "ai.runtime.permission_denied": "AI 权限被拒绝",
-  "ai.runtime.timeout": "AI 执行超时"
+  "workbench.info": "工作台通知",
+  "workbench.warning": "工作台警告",
+  "workbench.error": "工作台错误"
 };
 
 const previewByCode: Partial<Record<WorkbenchFeedbackEvent["code"], string>> = {
-  "ai.runtime.approval.accepted": "你已同意本次 AI 变更。",
-  "ai.runtime.approval.rejected": "你已拒绝本次 AI 变更。",
-  "ai.runtime.approval.undo": "你已撤销本次审批决定。",
-  "ai.runtime.approval.accept_all": "你已同意当前全部待审批更改。",
-  "ai.runtime.error": "AI 运行流程发生错误。",
-  "ai.runtime.permission_denied": "AI 请求的能力被拒绝。",
-  "ai.runtime.timeout": "AI 执行超时，请稍后重试。"
+  "workbench.info": "收到新的工作台信息。",
+  "workbench.warning": "收到新的工作台警告。",
+  "workbench.error": "收到新的工作台错误。"
 };
 
 const resolveNotificationTitle = (event: WorkbenchFeedbackEvent): string =>
@@ -59,20 +51,11 @@ export const mapFeedbackEventToNotification = (
     ...(body === undefined ? {} : { body }),
     level: event.level,
     source: {
-      id: "ai-runtime",
-      title: "AI Runtime",
-      iconKey: "ai"
+      id: "workbench",
+      title: "Workbench",
+      iconKey: "notification"
     },
-    target:
-      event.sessionId === undefined
-        ? { kind: "none" }
-        : {
-            kind: "app-tab",
-            appId: "ai-panel",
-            appInstanceId: event.sessionId,
-            title: "AI 面板",
-            iconKey: "ai-panel-default"
-          },
+    target: { kind: "none" },
     createdAt: event.createdAt
   };
 };

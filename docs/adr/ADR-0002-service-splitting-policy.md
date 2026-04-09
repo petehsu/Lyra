@@ -7,7 +7,6 @@ Date: 2026-03-26
 Split runtime capabilities into independent services:
 - control-plane
 - browser-automation
-- agent-engine
 
 ## Service Boundary Rules
 - Transport contracts only through `packages/capability-protocol`

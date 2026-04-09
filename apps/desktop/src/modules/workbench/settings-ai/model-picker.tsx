@@ -1,5 +1,4 @@
 import type {
-  AiProviderCapability,
   AiProviderModelEntry
 } from "../../../shared/ai";
 import type { SettingsAiLabels } from "./types";
@@ -8,20 +7,8 @@ type SettingsAiModelPickerProps = {
   readonly labels: SettingsAiLabels;
   readonly value: string;
   readonly placeholder: string;
-  readonly capability: AiProviderCapability;
   readonly models: readonly AiProviderModelEntry[];
   readonly onChange: (value: string) => void;
-};
-
-const capabilityLabel = (labels: SettingsAiLabels, capability: AiProviderCapability): string => {
-  switch (capability) {
-    case "full":
-      return labels.capabilityFull;
-    case "static":
-      return labels.capabilityStatic;
-    default:
-      return labels.capabilityPending;
-  }
 };
 
 const modelSourceLabel = (labels: SettingsAiLabels, source: AiProviderModelEntry["source"]): string =>
@@ -35,14 +22,12 @@ export const SettingsAiModelPicker = ({
   labels,
   value,
   placeholder,
-  capability,
   models,
   onChange
 }: SettingsAiModelPickerProps) => (
   <label className="lyra-settings-ai-field lyra-settings-ai-field-span-2">
     <span className="lyra-settings-ai-field-heading">
       <span>{labels.modelLabel}</span>
-      <span className="lyra-settings-ai-badge">{capabilityLabel(labels, capability)}</span>
     </span>
     <input
       className="lyra-settings-ai-input"

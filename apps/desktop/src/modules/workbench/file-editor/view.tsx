@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, GitCompareArrows, Lock, Save, Undo2, X } from "lucide-react";
+import { AlertTriangle, Check, CheckCheck, ChevronDown, ChevronUp, GitCompareArrows, Lock, Save, Undo2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api";
 
@@ -16,6 +16,9 @@ import type {
 const MONACO_THEME_ID = "lyra-workbench";
 const AUTO_SAVE_DELAY_MS = 800;
 const LSP_MARKER_OWNER = "lyra-lsp";
+const MONACO_FONT_SIZE = 13;
+const MONACO_LINE_HEIGHT = 20;
+const MONACO_PADDING = 12;
 
 const COMPLETION_TRIGGER_CHARACTERS = [".", ":", "\"", "'", "/", "@", "<"];
 
@@ -113,7 +116,16 @@ type FileEditorSurfaceProps = {
   readonly editorWorkAcceptLabel?: string;
   readonly editorWorkRejectLabel?: string;
   readonly editorWorkUndoLabel?: string;
+  readonly editorWorkPrevLabel?: string;
+  readonly editorWorkNextLabel?: string;
+  readonly editorWorkAcceptAllLabel?: string;
+  readonly canGoToPreviousEditorWorkItem?: boolean;
+  readonly canGoToNextEditorWorkItem?: boolean;
+  readonly canAcceptAllEditorWorkItems?: boolean;
   readonly activeEditorWorkItem?: FileEditorChangeReviewItem;
+  readonly onGoToPreviousEditorWorkItem?: () => void;
+  readonly onGoToNextEditorWorkItem?: () => void;
+  readonly onAcceptAllEditorWorkItems?: () => void;
   readonly onAcceptEditorWorkItem?: (item: FileEditorChangeReviewItem) => void;
   readonly onRejectEditorWorkItem?: (item: FileEditorChangeReviewItem) => void;
   readonly onUndoEditorWorkItem?: (item: FileEditorChangeReviewItem) => void;
@@ -159,7 +171,16 @@ export const FileEditorSurface = ({
   editorWorkAcceptLabel,
   editorWorkRejectLabel,
   editorWorkUndoLabel,
+  editorWorkPrevLabel,
+  editorWorkNextLabel,
+  editorWorkAcceptAllLabel,
+  canGoToPreviousEditorWorkItem = false,
+  canGoToNextEditorWorkItem = false,
+  canAcceptAllEditorWorkItems = false,
   activeEditorWorkItem,
+  onGoToPreviousEditorWorkItem,
+  onGoToNextEditorWorkItem,
+  onAcceptAllEditorWorkItems,
   onAcceptEditorWorkItem,
   onRejectEditorWorkItem,
   onUndoEditorWorkItem
@@ -201,10 +222,12 @@ export const FileEditorSurface = ({
     }
   );
   const diffOriginalContent =
-    activeEditorWorkItem !== undefined &&
-    diffBaseline !== null &&
-    diffBaseline.workItemId === activeEditorWorkItem.id
-      ? diffBaseline.content
+    activeEditorWorkItem?.baselineContent !== undefined
+      ? activeEditorWorkItem.baselineContent
+      : activeEditorWorkItem !== undefined &&
+          diffBaseline !== null &&
+          diffBaseline.workItemId === activeEditorWorkItem.id
+        ? diffBaseline.content
       : (state?.lastSavedContent ?? "");
   const canToggleDiff =
     state !== null &&
@@ -224,6 +247,10 @@ export const FileEditorSurface = ({
       setDiffBaseline(null);
       return;
     }
+    if (activeEditorWorkItem.baselineContent !== undefined) {
+      setDiffBaseline(null);
+      return;
+    }
     setDiffBaseline((current) => {
       if (current?.workItemId === activeEditorWorkItem.id) {
         return current;
@@ -234,6 +261,16 @@ export const FileEditorSurface = ({
       };
     });
   }, [activeEditorWorkItem, state?.instanceId, state?.lastSavedContent]);
+
+  useEffect(() => {
+    if (activeEditorWorkItem?.baselineContent === undefined || state === null) {
+      return;
+    }
+    if (state.content === activeEditorWorkItem.baselineContent) {
+      return;
+    }
+    setIsDiffMode(true);
+  }, [activeEditorWorkItem?.baselineContent, activeEditorWorkItem?.id, state?.content, state?.instanceId]);
 
   useEffect(() => {
     if (state === null) {
@@ -282,11 +319,11 @@ export const FileEditorSurface = ({
           scrollBeyondLastLine: false,
           tabSize: 2,
           fontFamily: "var(--lyra-font-mono)",
-          fontSize: 13,
-          lineHeight: 20,
+          fontSize: MONACO_FONT_SIZE,
+          lineHeight: MONACO_LINE_HEIGHT,
           padding: {
-            top: 12,
-            bottom: 12
+            top: MONACO_PADDING,
+            bottom: MONACO_PADDING
           },
           readOnly: latestState.isReadOnly || isAiOnly
         });
@@ -438,19 +475,45 @@ export const FileEditorSurface = ({
 
     if (textModel.getValue() !== state.content) {
       applyingStateRef.current = true;
-      const selection = editor.getSelection();
-      textModel.pushEditOperations(
-        [],
-        [
-          {
-            range: textModel.getFullModelRange(),
-            text: state.content
-          }
-        ],
-        () => null
-      );
-      if (selection !== null) {
-        editor.setSelection(selection);
+      const currentValue = textModel.getValue();
+      const currentLength = currentValue.length;
+      const newLength = state.content.length;
+
+      // During AI streaming, content grows incrementally.
+      // If the new content starts with the current value, only append the delta
+      // so the user sees text appearing rather than the whole document flashing.
+      if (currentLength > 0 && state.content.startsWith(currentValue)) {
+        const appendedText = state.content.slice(currentLength);
+        const lastLine = textModel.getLineCount();
+        const lastCol = textModel.getLineMaxColumn(lastLine);
+        textModel.pushEditOperations(
+          [],
+          [
+            {
+              range: new monaco.Range(lastLine, lastCol, lastLine, lastCol),
+              text: appendedText
+            }
+          ],
+          () => null
+        );
+        // Scroll to the end so the newly appended text is visible
+        editor.revealLine(lastLine);
+      } else {
+        // Full replacement for non-append scenarios (initial load, complete rewrite)
+        const selection = editor.getSelection();
+        textModel.pushEditOperations(
+          [],
+          [
+            {
+              range: textModel.getFullModelRange(),
+              text: state.content
+            }
+          ],
+          () => null
+        );
+        if (selection !== null) {
+          editor.setSelection(selection);
+        }
       }
       applyingStateRef.current = false;
     }
@@ -532,8 +595,8 @@ export const FileEditorSurface = ({
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
       fontFamily: "var(--lyra-font-mono)",
-      fontSize: 13,
-      lineHeight: 20
+      fontSize: MONACO_FONT_SIZE,
+      lineHeight: MONACO_LINE_HEIGHT
     });
     diffEditorRef.current = diffEditor;
     diffEditor.setModel({
@@ -581,6 +644,52 @@ export const FileEditorSurface = ({
     setIsDiffMode(false);
   }, [canToggleDiff]);
 
+  useEffect(() => {
+    const revealLocation = state?.pendingRevealLocation;
+    if (state === null || revealLocation === undefined) {
+      return;
+    }
+
+    const targetEditor = isDiffMode
+      ? diffEditorRef.current?.getModifiedEditor() ?? editorRef.current
+      : editorRef.current;
+    if (targetEditor === null) {
+      return;
+    }
+
+    const textModel = targetEditor.getModel();
+    const startLine = Math.max(1, revealLocation.line);
+    const endLine = textModel === null
+      ? Math.max(startLine, revealLocation.endLine ?? startLine)
+      : Math.min(
+          textModel.getLineCount(),
+          Math.max(startLine, revealLocation.endLine ?? startLine)
+        );
+    const startColumn = Math.max(1, revealLocation.column ?? 1);
+    const endColumn = textModel === null
+      ? startColumn
+      : Math.max(
+          startColumn,
+          textModel.getLineMaxColumn(Math.min(endLine, textModel.getLineCount()))
+        );
+
+    targetEditor.revealLineInCenter(startLine);
+    targetEditor.setSelection({
+      startLineNumber: startLine,
+      startColumn,
+      endLineNumber: endLine,
+      endColumn
+    });
+    targetEditor.focus();
+    void model.clearRevealLocation(state.instanceId);
+  }, [
+    isDiffMode,
+    model,
+    state?.content,
+    state?.instanceId,
+    state?.pendingRevealLocation
+  ]);
+
   if (state === null) {
     return null;
   }
@@ -590,7 +699,10 @@ export const FileEditorSurface = ({
     activeEditorWorkItem.status === "completed" &&
     editorWorkAcceptLabel !== undefined &&
     editorWorkRejectLabel !== undefined &&
-    editorWorkUndoLabel !== undefined;
+    editorWorkUndoLabel !== undefined &&
+    editorWorkPrevLabel !== undefined &&
+    editorWorkNextLabel !== undefined &&
+    editorWorkAcceptAllLabel !== undefined;
   const isEditorWorkRunning = activeEditorWorkItem?.status === "running";
   const editorWorkIsAccepted = activeEditorWorkItem?.decision === "accepted";
   const editorWorkIsRejected = activeEditorWorkItem?.decision === "rejected";
@@ -650,6 +762,39 @@ export const FileEditorSurface = ({
           ) : null}
           {hasEditorWorkActions ? (
             <span className="lyra-file-editor-ai-work-actions">
+              <button
+                type="button"
+                className="lyra-file-editor-ai-work-action"
+                aria-label={editorWorkPrevLabel}
+                disabled={!canGoToPreviousEditorWorkItem}
+                onClick={() => {
+                  onGoToPreviousEditorWorkItem?.();
+                }}
+              >
+                <ChevronUp size={12} />
+              </button>
+              <button
+                type="button"
+                className="lyra-file-editor-ai-work-action"
+                aria-label={editorWorkNextLabel}
+                disabled={!canGoToNextEditorWorkItem}
+                onClick={() => {
+                  onGoToNextEditorWorkItem?.();
+                }}
+              >
+                <ChevronDown size={12} />
+              </button>
+              <button
+                type="button"
+                className="lyra-file-editor-ai-work-action lyra-file-editor-ai-work-action-accept"
+                aria-label={editorWorkAcceptAllLabel}
+                disabled={!canAcceptAllEditorWorkItems}
+                onClick={() => {
+                  onAcceptAllEditorWorkItems?.();
+                }}
+              >
+                <CheckCheck size={12} />
+              </button>
               {editorWorkIsAccepted ? (
                 <button
                   type="button"

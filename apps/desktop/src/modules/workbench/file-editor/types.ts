@@ -52,21 +52,30 @@ export type FileEditorAppState = {
   readonly lastSavedAt: string | undefined;
   readonly lspVersion: number;
   readonly diagnostics: readonly LspDiagnostic[];
+  readonly pendingRevealLocation?: FileEditorRevealLocation | undefined;
 };
 
 export type FileEditorSuggestion = LspCompletionResult["items"][number];
 
 export type FileEditorChangeReviewStatus = "running" | "completed" | "error";
 export type FileEditorChangeReviewDecision = "accepted" | "rejected";
+export type FileEditorRevealLocation = {
+  readonly line: number;
+  readonly column?: number;
+  readonly endLine?: number;
+};
 
 export type FileEditorChangeReviewItem = {
   readonly id: string;
   readonly status: FileEditorChangeReviewStatus;
   readonly filePath: string;
+  readonly created?: boolean | undefined;
   readonly addedLines: number;
   readonly removedLines: number;
   readonly createdAt: number;
-  readonly decision?: FileEditorChangeReviewDecision;
+  readonly baselineContent?: string | undefined;
+  readonly firstChangedLine?: number | undefined;
+  readonly decision?: FileEditorChangeReviewDecision | undefined;
 };
 
 export type FileEditorLabels = {
@@ -108,7 +117,17 @@ export type FileEditorModel = {
   readonly openFile: (instanceId: string, filePath: string) => Promise<void>;
   readonly hydrateIfNeeded: (instanceId: string) => Promise<void>;
   readonly touchInstance: (instanceId: string) => void;
+  readonly revealLocation: (instanceId: string, location: FileEditorRevealLocation) => void;
+  readonly clearRevealLocation: (instanceId: string) => void;
   readonly setContent: (instanceId: string, content: string) => void;
+  readonly applyExternalContent: (
+    instanceId: string,
+    content: string,
+    options?: {
+      readonly markHydrated?: boolean;
+      readonly readOnly?: boolean;
+    }
+  ) => void;
   readonly save: (instanceId: string, source: FileEditorSaveSource) => Promise<void>;
   readonly statFile: (instanceId: string) => Promise<FileStatResult | null>;
   readonly requestCompletion: (

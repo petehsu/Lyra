@@ -103,7 +103,15 @@ export type FileManagerSurfaceLabels = {
   readonly contextEjectDevice: string;
   readonly viewList: string;
   readonly viewLarge: string;
+  readonly chooserBindProjectLabel: string;
 };
+
+export type FileManagerChooserMode =
+  | {
+      readonly kind: "ai-project-bind";
+      readonly confirmLabel: string;
+      readonly onConfirm: () => void;
+    };
 
 export type FileManagerModel = {
   readonly createInstance: () => {

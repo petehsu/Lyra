@@ -199,30 +199,6 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
       "Workbench FS port must not depend on Node fs fallback implementation."
   },
   {
-    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/computer/",
-    pattern: /\bwindow\.lyraDesktop\b/,
-    message:
-      "AI computer renderer modules must not access window.lyraDesktop directly. Inject desktopApi via model/surface props."
-  },
-  {
-    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/computer/view.tsx",
-    pattern: /desktopApi\.systemImages\./,
-    message:
-      "AI computer view must not call systemImages bridge directly. Route through useAiComputerModel/service."
-  },
-  {
-    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/computer/app-surface.tsx",
-    pattern: /desktopApi\.systemImages\./,
-    message:
-      "AI computer app surfaces must not call systemImages bridge directly. Route through useAiComputerModel/service."
-  },
-  {
-    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/computer/",
-    pattern: /\blocalStorage\b|\bsessionStorage\b/,
-    message:
-      "AI computer session/system truth must not be persisted in renderer storage. Keep source of truth in native modules."
-  },
-  {
     scopePrefix: "apps/desktop/src/modules/workbench/",
     pattern: /\blocalStorage\b|\bsessionStorage\b/,
     excludePathPattern: /\/tests\//,

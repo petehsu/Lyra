@@ -1,5 +1,5 @@
 import { WORKBENCH_RESOLVED_THEMES, WORKBENCH_THEME_IDS } from "./config";
-import type { WorkbenchResolvedThemeId, WorkbenchThemeId } from "./types";
+import type { WorkbenchResolvedThemeId, WorkbenchThemeId, WorkbenchThemeVars } from "./types";
 
 const FALLBACK_THEME: WorkbenchResolvedThemeId = "one-light";
 const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
@@ -56,7 +56,7 @@ export const observeSystemPrefersDark = (onChange: (prefersDark: boolean) => voi
 export const resolveThemeVars = (
   themeId: WorkbenchThemeId,
   prefersDark: boolean = readSystemPrefersDark()
-): Record<`--${string}`, string> => {
+): WorkbenchThemeVars => {
   const resolvedThemeId = resolveWorkbenchThemeId(themeId, prefersDark);
   return WORKBENCH_RESOLVED_THEMES[resolvedThemeId]?.vars ?? WORKBENCH_RESOLVED_THEMES[FALLBACK_THEME].vars;
 };

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LyraCapabilityCallRequest",
+  "type": "object",
+  "required": ["capabilityId", "payload"],
+  "properties": {
+    "callId": { "type": "string" },
+    "capabilityId": { "type": "string", "pattern": "^[a-z0-9-]+\\.[a-z0-9._-]+$" },
+    "payload": {},
+    "context": {
+      "type": "object",
+      "properties": {
+        "aiSessionId": { "type": "string" },
+        "aiTurnId": { "type": "string" },
+        "computerSessionId": { "type": "string" },
+        "projectRoot": { "type": "string" },
+        "workspaceRoot": { "type": "string" },
+        "appInstanceId": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

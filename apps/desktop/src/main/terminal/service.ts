@@ -3,6 +3,9 @@ import {
   LYRA_CHANNELS,
   type TerminalCloseRequest,
   type TerminalCreateRequest,
+  type TerminalEvent,
+  type TerminalReadRequest,
+  type TerminalReadResponse,
   type TerminalReloadPromptRequest,
   type TerminalReloadPromptResult,
   type TerminalResizeRequest,
@@ -14,13 +17,21 @@ import {
   isTerminalThemePresetId,
   type TerminalThemePresetId
 } from "../../shared/terminal-theme";
-import { loadTerminalNativeBindings } from "./native-loader";
+import type { LyraRuntimeClient } from "../runtime-client";
 import {
   buildStarshipPromptInjection,
   createStarshipRuntime,
   describeStarshipRuntime
 } from "./starship";
-import type { TerminalNativeBindings, TerminalNativeLoadResult } from "./types";
+import type {
+  TerminalCapabilitySessionCloseRequest,
+  TerminalCapabilitySessionReadRequest,
+  TerminalCapabilitySessionStartRequest,
+  TerminalCapabilitySessionWriteRequest,
+  TerminalExecRequest,
+  TerminalExecResult,
+  TerminalIpcBridge
+} from "./types";
 const DEFAULT_TERMINAL_THEME_PRESET: TerminalThemePresetId = "glacier-blocks";
 type SessionMeta = {
   readonly shell: string;
@@ -43,6 +54,10 @@ const normalizeRequestedShell = (value: unknown): string | undefined => {
   if (process.platform === "win32") {
     return undefined;
   }
+  const envShell = process.env.SHELL?.trim();
+  if (envShell !== undefined && envShell.length > 0) {
+    return envShell;
+  }
   return "bash";
 };
 const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateRequest => {
@@ -60,15 +75,22 @@ const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateR
     ...(request.sessionId !== undefined ? { sessionId: request.sessionId } : {}),
     ...(request.title !== undefined ? { title: request.title } : {}),
     ...(request.cwd !== undefined ? { cwd: request.cwd } : {}),
-    ...(normalizedShell !== undefined ? { shell: normalizedShell } : {})
+    ...(normalizedShell !== undefined ? { shell: normalizedShell } : {}),
+    ...(request.mode !== undefined ? { mode: request.mode } : {}),
+    ...(request.command !== undefined ? { command: request.command } : {}),
+    ...(typeof request.persist === "boolean" ? { persist: request.persist } : {})
   };
 };
 const normalizeRestoreRequest = (request: TerminalRestoreRequest): TerminalRestoreRequest => ({
   sessions: request.sessions.map((session) => normalizeCreateRequest(session))
 });
 const normalizeWriteRequest = (request: TerminalWriteRequest): TerminalWriteRequest => ({
-  ...request,
-  source: request.source ?? "user"
+  source: request.source ?? "user",
+  sessionId: request.sessionId,
+  ...(typeof request.data === "string" ? { data: request.data } : {}),
+  ...(typeof request.text === "string" ? { text: request.text } : {}),
+  ...(Array.isArray(request.keys) ? { keys: request.keys } : {}),
+  ...(typeof request.appendNewline === "boolean" ? { appendNewline: request.appendNewline } : {})
 });
 const normalizeResizeRequest = (request: TerminalResizeRequest): TerminalResizeRequest => ({
   ...request,
@@ -86,24 +108,6 @@ const normalizeReloadPromptRequest = (
   terminalThemePreset: normalizeTerminalPreset(request.terminalThemePreset),
   source: request.source ?? "user"
 });
-const isSessionMissingError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error);
-  return /session not found/i.test(message);
-};
-const invokeIgnoreMissingSession = (
-  bindings: TerminalNativeBindings,
-  run: (native: TerminalNativeBindings) => void
-): void => {
-  try {
-    run(bindings);
-  } catch (error) {
-    if (isSessionMissingError(error)) {
-      return;
-    }
-    throw error;
-  }
-};
-const isAiSource = (source: string | undefined): boolean => source === "ai";
 const parseEventMeta = (value: unknown): { readonly kind: string; readonly sessionId: string } | null => {
   if (value === null || typeof value !== "object") {
     return null;
@@ -135,21 +139,30 @@ const createFallbackCreateRequest = (
   rows: snapshot.rows,
   source: "user"
 });
-export type TerminalIpcBridge = {
-  readonly dispose: () => void;
-  readonly loadResult: Extract<TerminalNativeLoadResult, { readonly ok: true }>;
+
+const CAPABILITY_EXIT_PREFIX = "__LYRA_CAPABILITY_EXIT__";
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const stripCommandMarker = (
+  output: string,
+  marker: string,
+  fallbackExitCode: number
+): { readonly output: string; readonly exitCode: number } => {
+  const pattern = new RegExp(`${escapeRegExp(marker)}(\\d+)`);
+  const match = output.match(pattern);
+  const parsedExitCode = match === null ? fallbackExitCode : Number.parseInt(match[1] ?? "", 10);
+  return {
+    output: output.replace(pattern, "").trimEnd(),
+    exitCode: Number.isFinite(parsedExitCode) ? parsedExitCode : fallbackExitCode
+  };
 };
+
 export const createTerminalIpcBridge = (
   storageRoot: string,
+  runtimeClient: LyraRuntimeClient,
   getWindow: () => BrowserWindow | null
 ): TerminalIpcBridge => {
-  const loadResult = loadTerminalNativeBindings();
-  if (loadResult.ok === false) {
-    throw new Error(
-      `terminal native unavailable: ${loadResult.errorMessage}\ntried paths:\n${loadResult.triedPaths.join("\n")}`
-    );
-  }
-  const bindings = loadResult.bindings;
   const runtime = createStarshipRuntime(storageRoot);
   const runtimeStatus = describeStarshipRuntime(runtime);
   const sessionMetaById = new Map<string, SessionMeta>();
@@ -162,13 +175,32 @@ export const createTerminalIpcBridge = (
       `[lyra-terminal] starship runtime unavailable: ${runtimeStatus.reason ?? "unknown reason"}`
     );
   }
+  const requestRuntime = async <T>(method: string, payload: unknown): Promise<T> =>
+    await runtimeClient.request<T>(method, payload);
+  const publishEvent = (event: TerminalEvent): void => {
+    const meta = parseEventMeta(event);
+    if (meta?.kind === "exit") {
+      sessionMetaById.delete(meta.sessionId);
+    }
+    const window = getWindow();
+    if (window === null || window.isDestroyed()) {
+      return;
+    }
+    window.webContents.send(LYRA_CHANNELS.terminalEvent, event);
+  };
+  const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
+    if (eventName !== "terminal.runtime") {
+      return;
+    }
+    const event = payload as TerminalEvent;
+    publishEvent(event);
+  });
   const applyPromptInjection = (
-    native: TerminalNativeBindings,
     sessionId: string,
     shell: string,
     presetId: TerminalThemePresetId,
     uiThemeId: string
-  ): TerminalReloadPromptResult => {
+  ): Promise<TerminalReloadPromptResult> => (async () => {
     const injection = buildStarshipPromptInjection(runtime, {
       shell,
       presetId,
@@ -180,7 +212,7 @@ export const createTerminalIpcBridge = (
       );
     }
     try {
-      native.writeSession({
+      await requestRuntime<void>("terminal.sessions.write", {
         sessionId,
         data: injection.command,
         source: "user"
@@ -190,14 +222,14 @@ export const createTerminalIpcBridge = (
         deferred: false
       };
     } catch (error) {
-      if (isSessionMissingError(error)) {
+      if (error instanceof Error && /session not found/i.test(error.message)) {
         return createDeferredResult("session not found");
       }
       return createDeferredResult(
         error instanceof Error ? error.message : String(error)
       );
     }
-  };
+  })();
   const rememberSessionMeta = (
     snapshot: TerminalSessionSnapshot,
     request: TerminalCreateRequest
@@ -210,42 +242,35 @@ export const createTerminalIpcBridge = (
     sessionMetaById.set(snapshot.sessionId, meta);
     return meta;
   };
-  bindings.registerEventCallback((firstArg, secondArg) => {
-    const eventCandidate = secondArg === undefined ? firstArg : secondArg;
-    const meta = parseEventMeta(eventCandidate);
-    if (meta?.kind === "exit") {
-      sessionMetaById.delete(meta.sessionId);
+  const createTrackedSession = async (request: TerminalCreateRequest): Promise<TerminalSessionSnapshot> => {
+    const snapshot = await requestRuntime<TerminalSessionSnapshot>(
+      "terminal.sessions.create",
+      request
+    );
+    const meta = rememberSessionMeta(snapshot, request);
+    if (request.source === "user") {
+      const promptResult = await applyPromptInjection(
+        snapshot.sessionId,
+        meta.shell,
+        meta.presetId,
+        meta.uiThemeId
+      );
+      if (!promptResult.applied && promptResult.reason !== undefined) {
+        console.info(
+          `[lyra-terminal] prompt injection deferred id=${snapshot.sessionId} reason=${promptResult.reason}`
+        );
+      }
     }
-    const window = getWindow();
-    if (window === null || window.isDestroyed()) {
-      return;
-    }
-    window.webContents.send(LYRA_CHANNELS.terminalEvent, eventCandidate);
-  });
+    return snapshot;
+  };
   const handlers: Array<
     readonly [string, (event: IpcMainInvokeEvent, payload: unknown) => unknown]
   > = [
     [
       LYRA_CHANNELS.terminalCreateSession,
-      (_event, payload) => {
+      async (_event, payload) => {
         const normalized = normalizeCreateRequest(payload as TerminalCreateRequest);
-        if (isAiSource(normalized.source)) {
-          throw new Error("ai terminal execution is disabled in v1");
-        }
-        const snapshot = bindings.createSession(normalized);
-        const meta = rememberSessionMeta(snapshot, normalized);
-        const promptResult = applyPromptInjection(
-          bindings,
-          snapshot.sessionId,
-          meta.shell,
-          meta.presetId,
-          meta.uiThemeId
-        );
-        if (!promptResult.applied && promptResult.reason !== undefined) {
-          console.info(
-            `[lyra-terminal] prompt injection deferred id=${snapshot.sessionId} reason=${promptResult.reason}`
-          );
-        }
+        const snapshot = await createTrackedSession(normalized);
         console.info(
           `[lyra-terminal] session ready id=${snapshot.sessionId} shell=${snapshot.shell} cols=${snapshot.cols} rows=${snapshot.rows}`
         );
@@ -254,9 +279,12 @@ export const createTerminalIpcBridge = (
     ],
     [
       LYRA_CHANNELS.terminalRestoreSessions,
-      (_event, payload) => {
+      async (_event, payload) => {
         const normalized = normalizeRestoreRequest(payload as TerminalRestoreRequest);
-        const snapshots = bindings.restoreSessions(normalized);
+        const snapshots = await requestRuntime<readonly TerminalSessionSnapshot[]>(
+          "terminal.sessions.restore",
+          normalized
+        );
         const requestBySessionId = new Map(
           normalized.sessions
             .filter((session) => typeof session.sessionId === "string")
@@ -268,8 +296,7 @@ export const createTerminalIpcBridge = (
             normalized.sessions[0] ??
             createFallbackCreateRequest(snapshot);
           const meta = rememberSessionMeta(snapshot, sourceRequest);
-          const promptResult = applyPromptInjection(
-            bindings,
+          const promptResult = await applyPromptInjection(
             snapshot.sessionId,
             meta.shell,
             meta.presetId,
@@ -286,20 +313,16 @@ export const createTerminalIpcBridge = (
     ],
     [
       LYRA_CHANNELS.terminalReloadPrompt,
-      (_event, payload) => {
+      async (_event, payload) => {
         const normalized = normalizeReloadPromptRequest(
           payload as TerminalReloadPromptRequest
         );
-        if (isAiSource(normalized.source)) {
-          throw new Error("ai terminal execution is disabled in v1");
-        }
         const knownMeta = sessionMetaById.get(normalized.sessionId);
         if (knownMeta === undefined) {
           return createDeferredResult("session metadata unavailable");
         }
         const presetId = normalizeTerminalPreset(normalized.terminalThemePreset);
-        const result = applyPromptInjection(
-          bindings,
+        const result = await applyPromptInjection(
           normalized.sessionId,
           knownMeta.shell,
           presetId,
@@ -318,46 +341,133 @@ export const createTerminalIpcBridge = (
     [
       LYRA_CHANNELS.terminalWriteSession,
       (_event, payload) =>
-        invokeIgnoreMissingSession(bindings, (native) => {
+        (async () => {
           const normalized = normalizeWriteRequest(payload as TerminalWriteRequest);
-          if (isAiSource(normalized.source)) {
-            throw new Error("ai terminal execution is disabled in v1");
+          try {
+            await requestRuntime<void>("terminal.sessions.write", normalized);
+          } catch (error) {
+            if (error instanceof Error && /session not found/i.test(error.message)) {
+              return;
+            }
+            throw error;
           }
-          native.writeSession(normalized);
-        })
+        })()
+    ],
+    [
+      LYRA_CHANNELS.terminalReadSession,
+      (_event, payload) =>
+        requestRuntime<TerminalReadResponse>(
+          "terminal.sessions.read",
+          payload as TerminalReadRequest
+        )
     ],
     [
       LYRA_CHANNELS.terminalResizeSession,
       (_event, payload) =>
-        invokeIgnoreMissingSession(bindings, (native) => {
-          native.resizeSession(normalizeResizeRequest(payload as TerminalResizeRequest));
-        })
+        (async () => {
+          try {
+            await requestRuntime<void>(
+              "terminal.sessions.resize",
+              normalizeResizeRequest(payload as TerminalResizeRequest)
+            );
+          } catch (error) {
+            if (error instanceof Error && /session not found/i.test(error.message)) {
+              return;
+            }
+            throw error;
+          }
+        })()
     ],
     [
       LYRA_CHANNELS.terminalCloseSession,
       (_event, payload) =>
-        invokeIgnoreMissingSession(bindings, (native) => {
+        (async () => {
           const request = payload as TerminalCloseRequest;
           sessionMetaById.delete(request.sessionId);
-          native.closeSession(request);
-        })
+          try {
+            await requestRuntime<void>("terminal.sessions.close", request);
+          } catch (error) {
+            if (error instanceof Error && /session not found/i.test(error.message)) {
+              return;
+            }
+            throw error;
+          }
+        })()
     ]
   ];
   for (const [channel, handler] of handlers) {
     ipcMain.handle(channel, async (event, payload) => handler(event, payload));
   }
+  const executeCommand = async (
+    request: TerminalExecRequest
+  ): Promise<TerminalExecResult> => {
+    const trimmedCommand = request.command.trim();
+    if (trimmedCommand.length === 0) {
+      throw new Error("command is required");
+    }
+    return await requestRuntime<TerminalExecResult>("terminal.exec", {
+      command: trimmedCommand,
+      ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+      timeoutMs: request.timeoutMs
+    });
+  };
+  const startCapabilitySession = (
+    request: TerminalCapabilitySessionStartRequest
+  ): Promise<TerminalSessionSnapshot> =>
+    createTrackedSession(
+      normalizeCreateRequest({
+        title: request.title ?? "Capability Terminal Session",
+        ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+        cols: request.cols ?? 120,
+        rows: request.rows ?? 40,
+        ...(request.shell === undefined ? {} : { shell: request.shell }),
+        ...(request.mode === undefined ? {} : { mode: request.mode }),
+        ...(request.command === undefined ? {} : { command: request.command }),
+        ...(typeof request.persist === "boolean" ? { persist: request.persist } : {}),
+        source: "capability"
+      })
+    );
+  const readCapabilitySession = (
+    request: TerminalCapabilitySessionReadRequest
+  ): Promise<TerminalReadResponse> =>
+    requestRuntime<TerminalReadResponse>("terminal.sessions.read", request);
+  const writeCapabilitySession = (
+    request: TerminalCapabilitySessionWriteRequest
+  ): Promise<void> =>
+    (async () => {
+      await requestRuntime<void>("terminal.sessions.write", {
+        sessionId: request.sessionId,
+        ...(typeof request.data === "string" ? { data: request.data } : {}),
+        ...(typeof request.text === "string" ? { text: request.text } : {}),
+        ...(Array.isArray(request.keys) ? { keys: request.keys } : {}),
+        ...(typeof request.appendNewline === "boolean"
+          ? { appendNewline: request.appendNewline }
+          : {}),
+        source: "capability"
+      });
+    })();
+  const closeCapabilitySession = (
+    request: TerminalCapabilitySessionCloseRequest
+  ): Promise<void> =>
+    (async () => {
+      sessionMetaById.delete(request.sessionId);
+      await requestRuntime<void>("terminal.sessions.close", request);
+    })();
   return {
-    loadResult,
+    loadResult: {
+      loadedFrom: "lyrad"
+    },
+    executeCommand,
+    startCapabilitySession,
+    readCapabilitySession,
+    writeCapabilitySession,
+    closeCapabilitySession,
     dispose: () => {
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);
       }
+      unsubscribeRuntimeEvents();
       sessionMetaById.clear();
-      try {
-        bindings.shutdown();
-      } catch (_error) {
-        // ignore teardown errors
-      }
     }
   };
 };

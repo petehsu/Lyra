@@ -2,48 +2,45 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import {
   LYRA_CHANNELS,
-  type AiCancelChatTurnRequest,
-  type AiChatSession,
-  type AiChatSessionSummary,
-  type AiChatTurnRequest,
-  type AiChatTurnResponse,
+  type AiMemoryConfig,
+  type AgentAnswerQuestionRequest,
+  type AgentAnswerPlanQuestionRequest,
+  type AgentBindSessionProjectRequest,
+  type AgentEnterPlanModeRequest,
+  type AgentCreateSessionRequest,
+  type AgentDeleteSessionRequest,
+  type AgentGetPendingInteractionsRequest,
+  type AgentGetPlanRequest,
+  type AgentGetSessionRequest,
+  type AgentPendingInteraction,
+  type AgentPlanState,
+  type AgentResolvePlanApprovalRequest,
+  type AgentRuntimeEvent,
+  type AgentSendTurnRequest,
+  type AgentSendTurnResult,
+  type AgentSession,
+  type AgentSessionDetail,
+  type CommandApprovalSubmitRequest,
   type AiDeleteProfileRequest,
   type AiDiscoverModelsRequest,
   type AiModelDiscoveryResult,
+  type AiOpenAiChatGptAuthResult,
   type AiProfileValidationResult,
   type AiProviderCatalogItem,
   type AiProviderPreset,
   type AiProviderProfile,
-  type AiReadSessionHistoryRequest,
-  type AiReadSessionRequest,
-  type AiRuntimeEvent,
   type AiSetDefaultProfileRequest,
   type AiUpsertProfileRequest,
   type AiValidateProfileRequest,
-  type AiComputerCloseAppRequest,
-  type AiComputerFocusAppRequest,
-  type AiComputerHostStatus,
-  type AiComputerOpenAppRequest,
-  type AiComputerPowerOffRequest,
-  type AiComputerPowerRequest,
-  type AiComputerReadSessionRequest,
-  type AiComputerSessionEvent,
-  type AiComputerSessionState,
-  type AiComputerUpdateWindowFrameRequest,
-  type AiComputerWindowActionRequest,
-  type LyraSystemAssignSessionImageRequest,
-  type LyraSystemClearSessionImageOverrideRequest,
-  type LyraSystemEvent,
-  type LyraSystemImageDescriptor,
-  type LyraSystemInstallFromDirectoryRequest,
-  type LyraSystemInstallFromPackageRequest,
-  type LyraSystemReadResolvedSessionRequest,
-  type LyraSystemRegistryState,
-  type LyraSystemResolvedSession,
-  type LyraSystemSetDefaultImageRequest,
-  type LyraSystemSetRuntimeModeOverrideRequest,
-  type LyraSystemUninstallRequest,
   type AppMetaPayload,
+  type CapabilityCallResult,
+  type CapabilityDescriptor,
+  type CapabilityApprovalResolveRequest,
+  type CapabilityInvokeRequest,
+  type CapabilityListRequest,
+  type CapabilityReadRegistryResponse,
+  type CapabilityResolveApprovalResponse,
+  type CapabilityRuntimeEvent,
   type CreateLyraSkillRequest,
   type DeleteSkillRequest,
   type EffectiveSkillConfig,
@@ -82,6 +79,8 @@ import {
   type TerminalErrorEvent,
   type TerminalEvent,
   type TerminalExitEvent,
+  type TerminalReadRequest,
+  type TerminalReadResponse,
   type TerminalReloadPromptRequest,
   type TerminalReloadPromptResult,
   type TerminalResizeRequest,
@@ -89,6 +88,32 @@ import {
   type TerminalSessionSnapshot,
   type TerminalWriteRequest,
   type SearchAggregateRequest,
+  type SearchDeepExpandRequest,
+  type SearchDeepExpandResponse,
+  type SearchDeepStreamCancelRequest,
+  type SearchDeepStreamCancelResponse,
+  type SearchDeepStreamReadRequest,
+  type SearchDeepStreamReadResponse,
+  type SearchDeepStreamStartRequest,
+  type SearchDeepStreamStartResponse,
+  type SearchIndexStatusResponse,
+  type SearchLocalRequest,
+  type SearchLocalResponse,
+  type SearchLocalStreamCancelRequest,
+  type SearchLocalStreamCancelResponse,
+  type SearchLocalStreamReadRequest,
+  type SearchLocalStreamReadResponse,
+  type SearchLocalStreamStartRequest,
+  type SearchLocalStreamStartResponse,
+  type SearchRebuildIndexRequest,
+  type SearchRebuildIndexResponse,
+  type WorkbenchBrowserEvent,
+  type WorkbenchBrowserLayoutSnapshot,
+  type WorkbenchBrowserNavigateRequest,
+  type WorkbenchBrowserNavigateResult,
+  type WorkbenchBrowserPageRuntimeState,
+  type WorkbenchBrowserReadPageStateRequest,
+  type WorkbenchBrowserTopologySnapshot,
   type WorkbenchStateKey,
   type LyraDesktopApi,
   type WindowStatePayload
@@ -127,18 +152,18 @@ const terminalDataListeners = new Set<(event: TerminalDataEvent) => void>();
 const terminalExitListeners = new Set<(event: TerminalExitEvent) => void>();
 const terminalErrorListeners = new Set<(event: TerminalErrorEvent) => void>();
 let terminalEventBridgeReady = false;
-const aiEventListeners = new Set<(event: AiRuntimeEvent) => void>();
-let aiEventBridgeReady = false;
-const computerEventListeners = new Set<(event: AiComputerSessionEvent) => void>();
-let computerEventBridgeReady = false;
-const systemImagesEventListeners = new Set<(event: LyraSystemEvent) => void>();
-let systemImagesEventBridgeReady = false;
+const workbenchBrowserEventListeners = new Set<(event: WorkbenchBrowserEvent) => void>();
+let workbenchBrowserEventBridgeReady = false;
+const agentEventListeners = new Set<(event: AgentRuntimeEvent) => void>();
+let agentEventBridgeReady = false;
 const mcpEventListeners = new Set<(event: McpRuntimeEvent) => void>();
 let mcpEventBridgeReady = false;
 const skillsEventListeners = new Set<(event: SkillRuntimeEvent) => void>();
 let skillsEventBridgeReady = false;
 const lspEventListeners = new Set<(event: LspRuntimeEvent) => void>();
 let lspEventBridgeReady = false;
+const capabilityEventListeners = new Set<(event: CapabilityRuntimeEvent) => void>();
+let capabilityEventBridgeReady = false;
 
 const ensureTerminalEventBridge = (): void => {
   if (terminalEventBridgeReady) {
@@ -176,67 +201,44 @@ const ensureTerminalEventBridge = (): void => {
   );
 };
 
-const ensureAiEventBridge = (): void => {
-  if (aiEventBridgeReady) {
+const ensureWorkbenchBrowserEventBridge = (): void => {
+  if (workbenchBrowserEventBridgeReady) {
     return;
   }
-  aiEventBridgeReady = true;
+  workbenchBrowserEventBridgeReady = true;
 
   ipcRenderer.on(
-    LYRA_CHANNELS.aiEvent,
-    (_event: Electron.IpcRendererEvent, payload: AiRuntimeEvent): void => {
-      if (
-        payload === null ||
-        typeof payload !== "object" ||
-        typeof payload.kind !== "string" ||
-        payload.session === undefined
-      ) {
-        return;
-      }
-      for (const listener of aiEventListeners) {
-        listener(payload);
-      }
-    }
-  );
-};
-
-const ensureComputerEventBridge = (): void => {
-  if (computerEventBridgeReady) {
-    return;
-  }
-  computerEventBridgeReady = true;
-
-  ipcRenderer.on(
-    LYRA_CHANNELS.computerEvent,
-    (_event: Electron.IpcRendererEvent, payload: AiComputerSessionEvent): void => {
-      if (
-        payload === null ||
-        typeof payload !== "object" ||
-        typeof payload.sessionId !== "string" ||
-        payload.state === undefined
-      ) {
-        return;
-      }
-      for (const listener of computerEventListeners) {
-        listener(payload);
-      }
-    }
-  );
-};
-
-const ensureSystemImagesEventBridge = (): void => {
-  if (systemImagesEventBridgeReady) {
-    return;
-  }
-  systemImagesEventBridgeReady = true;
-
-  ipcRenderer.on(
-    LYRA_CHANNELS.systemImagesEvent,
-    (_event: Electron.IpcRendererEvent, payload: LyraSystemEvent): void => {
+    LYRA_CHANNELS.workbenchBrowserEvent,
+    (_event: Electron.IpcRendererEvent, payload: WorkbenchBrowserEvent): void => {
       if (payload === null || typeof payload !== "object" || typeof payload.kind !== "string") {
         return;
       }
-      for (const listener of systemImagesEventListeners) {
+      for (const listener of workbenchBrowserEventListeners) {
+        listener(payload);
+      }
+    }
+  );
+};
+
+const ensureAgentEventBridge = (): void => {
+  if (agentEventBridgeReady) {
+    return;
+  }
+  agentEventBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.agentEvent,
+    (_event: Electron.IpcRendererEvent, payload: AgentRuntimeEvent): void => {
+      if (
+        payload === null ||
+        typeof payload !== "object" ||
+        typeof payload.phase !== "string" ||
+        typeof payload.sessionId !== "string" ||
+        typeof payload.turnId !== "string"
+      ) {
+        return;
+      }
+      for (const listener of agentEventListeners) {
         listener(payload);
       }
     }
@@ -300,6 +302,30 @@ const ensureSkillsEventBridge = (): void => {
   );
 };
 
+const ensureCapabilityEventBridge = (): void => {
+  if (capabilityEventBridgeReady) {
+    return;
+  }
+  capabilityEventBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.capabilityEvent,
+    (_event: Electron.IpcRendererEvent, payload: CapabilityRuntimeEvent): void => {
+      if (
+        payload === null ||
+        typeof payload !== "object" ||
+        typeof payload.phase !== "string" ||
+        typeof payload.capabilityId !== "string"
+      ) {
+        return;
+      }
+      for (const listener of capabilityEventListeners) {
+        listener(payload);
+      }
+    }
+  );
+};
+
 const readAppMeta = (): AppMetaPayload => {
   try {
     return ipcRenderer.sendSync(LYRA_CHANNELS.readAppMetaSync) as AppMetaPayload;
@@ -356,7 +382,56 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
   },
   search: {
     aggregate: (request: SearchAggregateRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aggregateSearch, request)
+      ipcRenderer.invoke(LYRA_CHANNELS.aggregateSearch, request),
+    local: (request: SearchLocalRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.localSearch,
+        request
+      ) as Promise<SearchLocalResponse>,
+    startLocalStream: (request: SearchLocalStreamStartRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.localSearchStreamStart,
+        request
+      ) as Promise<SearchLocalStreamStartResponse>,
+    readLocalStream: (request: SearchLocalStreamReadRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.localSearchStreamRead,
+        request
+      ) as Promise<SearchLocalStreamReadResponse>,
+    cancelLocalStream: (request: SearchLocalStreamCancelRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.localSearchStreamCancel,
+        request
+      ) as Promise<SearchLocalStreamCancelResponse>,
+    readIndexStatus: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.searchIndexStatus
+      ) as Promise<SearchIndexStatusResponse>,
+    rebuildIndex: (request: SearchRebuildIndexRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.searchRebuildIndex,
+        request
+      ) as Promise<SearchRebuildIndexResponse>,
+    startDeepStream: (request: SearchDeepStreamStartRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.searchDeepStreamStart,
+        request
+      ) as Promise<SearchDeepStreamStartResponse>,
+    readDeepStream: (request: SearchDeepStreamReadRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.searchDeepStreamRead,
+        request
+      ) as Promise<SearchDeepStreamReadResponse>,
+    cancelDeepStream: (request: SearchDeepStreamCancelRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.searchDeepStreamCancel,
+        request
+      ) as Promise<SearchDeepStreamCancelResponse>,
+    expandDeepNode: (request: SearchDeepExpandRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.searchDeepExpand,
+        request
+      ) as Promise<SearchDeepExpandResponse>
   },
   ai: {
     readProfiles: () =>
@@ -365,6 +440,10 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.aiReadProviderCatalog) as Promise<readonly AiProviderCatalogItem[]>,
     readPresetCatalog: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiReadPresetCatalog) as Promise<readonly AiProviderPreset[]>,
+    authorizeOpenAiChatGpt: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAuthorizeOpenAiChatGpt) as Promise<AiOpenAiChatGptAuthResult>,
+    authorizeOpenAiChatGptDeviceCode: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAuthorizeOpenAiChatGptDeviceCode) as Promise<AiOpenAiChatGptAuthResult>,
     upsertProfile: (request: AiUpsertProfileRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiUpsertProfile, request) as Promise<AiProviderProfile>,
     deleteProfile: (request: AiDeleteProfileRequest) =>
@@ -376,25 +455,53 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     discoverModels: (request: AiDiscoverModelsRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiDiscoverModels, request) as Promise<AiModelDiscoveryResult>,
     refreshDiscoveredModels: (request: AiDiscoverModelsRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiRefreshDiscoveredModels, request) as Promise<AiModelDiscoveryResult>,
-    readSession: (request: AiReadSessionRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiReadSession, request) as Promise<AiChatSession>,
-    readSessionHistory: (request?: AiReadSessionHistoryRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiRefreshDiscoveredModels, request) as Promise<AiModelDiscoveryResult>
+  },
+  agent: {
+    listSessions: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentListSessions) as Promise<readonly AgentSession[]>,
+    createSession: (request?: AgentCreateSessionRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.aiReadSessionHistory,
+        LYRA_CHANNELS.agentCreateSession,
         request ?? {}
-      ) as Promise<readonly AiChatSessionSummary[]>,
-    sendChatTurn: (request: AiChatTurnRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiSendChatTurn, request) as Promise<AiChatTurnResponse>,
-    cancelChatTurn: (request: AiCancelChatTurnRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiCancelChatTurn, request) as Promise<AiChatSession>,
-    onEvent: (listener: (event: AiRuntimeEvent) => void) => {
-      ensureAiEventBridge();
-      aiEventListeners.add(listener);
+      ) as Promise<AgentSession>,
+    getSession: (request: AgentGetSessionRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentGetSession, request) as Promise<AgentSessionDetail>,
+    bindSessionProject: (request: AgentBindSessionProjectRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentBindSessionProject, request) as Promise<AgentSession>,
+    deleteSession: (request: AgentDeleteSessionRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentDeleteSession, request) as Promise<void>,
+    sendTurn: (request: AgentSendTurnRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentSendTurn, request) as Promise<AgentSendTurnResult>,
+    enterPlanMode: (request: AgentEnterPlanModeRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentEnterPlanMode, request) as Promise<AgentSessionDetail>,
+    getPlan: (request: AgentGetPlanRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentGetPlan, request) as Promise<AgentPlanState | null>,
+    getPendingInteractions: (request: AgentGetPendingInteractionsRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentGetPendingInteractions, request) as Promise<
+        readonly AgentPendingInteraction[]
+      >,
+    answerQuestion: (request: AgentAnswerQuestionRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentAnswerQuestion, request) as Promise<void>,
+    answerPlanQuestion: (request: AgentAnswerPlanQuestionRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentAnswerPlanQuestion, request) as Promise<void>,
+    resolvePlanApproval: (request: AgentResolvePlanApprovalRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentResolvePlanApproval, request) as Promise<
+        AgentSendTurnResult | null
+      >,
+    getMemoryConfig: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentGetMemoryConfig) as Promise<AiMemoryConfig>,
+    updateMemoryConfig: (config: AiMemoryConfig) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentUpdateMemoryConfig, config) as Promise<AiMemoryConfig>,
+    onEvent: (listener: (event: AgentRuntimeEvent) => void) => {
+      ensureAgentEventBridge();
+      agentEventListeners.add(listener);
       return () => {
-        aiEventListeners.delete(listener);
+        agentEventListeners.delete(listener);
       };
-    }
+    },
+    submitCommandApproval: (request: CommandApprovalSubmitRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentSubmitCommandApproval, request) as Promise<void>,
   },
   files: {
     readHome: () => ipcRenderer.invoke(LYRA_CHANNELS.filesReadHome) as Promise<FileManagerReadHomeResponse>,
@@ -429,138 +536,31 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     statFile: (request: FileStatRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.filesStatFile, request) as Promise<FileStatResult>
   },
-  computer: {
-    readSession: (request: AiComputerReadSessionRequest) =>
+  workbenchBrowser: {
+    syncTopology: (snapshot: WorkbenchBrowserTopologySnapshot) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserSyncTopology, snapshot) as Promise<void>,
+    syncLayout: (snapshot: WorkbenchBrowserLayoutSnapshot) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserSyncLayout, snapshot) as Promise<void>,
+    navigate: (request: WorkbenchBrowserNavigateRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserNavigate, request) as Promise<WorkbenchBrowserNavigateResult>,
+    goBack: (request: { readonly tabId: string }) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserGoBack, request) as Promise<void>,
+    goForward: (request: { readonly tabId: string }) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserGoForward, request) as Promise<void>,
+    reload: (request: { readonly tabId: string; readonly ignoreCache?: boolean }) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserReload, request) as Promise<void>,
+    stop: (request: { readonly tabId: string }) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserStop, request) as Promise<void>,
+    readPageState: (request?: WorkbenchBrowserReadPageStateRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.computerReadSession,
-        request
-      ) as Promise<AiComputerSessionState>,
-    readHostStatus: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerReadHostStatus
-      ) as Promise<AiComputerHostStatus>,
-    powerOn: (request: AiComputerPowerRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerPowerOn,
-        request
-      ) as Promise<AiComputerSessionState>,
-    powerOff: (request: AiComputerPowerOffRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerPowerOff,
-        request
-      ) as Promise<AiComputerSessionState>,
-    openApp: (request: AiComputerOpenAppRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerOpenApp,
-        request
-      ) as Promise<AiComputerSessionState>,
-    focusApp: (request: AiComputerFocusAppRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerFocusApp,
-        request
-      ) as Promise<AiComputerSessionState>,
-    closeApp: (request: AiComputerCloseAppRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerCloseApp,
-        request
-      ) as Promise<AiComputerSessionState>,
-    moveAppWindow: (request: AiComputerUpdateWindowFrameRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerMoveAppWindow,
-        request
-      ) as Promise<AiComputerSessionState>,
-    resizeAppWindow: (request: AiComputerUpdateWindowFrameRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerResizeAppWindow,
-        request
-      ) as Promise<AiComputerSessionState>,
-    minimizeApp: (request: AiComputerWindowActionRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerMinimizeApp,
-        request
-      ) as Promise<AiComputerSessionState>,
-    maximizeApp: (request: AiComputerWindowActionRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerMaximizeApp,
-        request
-      ) as Promise<AiComputerSessionState>,
-    restoreApp: (request: AiComputerWindowActionRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.computerRestoreApp,
-        request
-      ) as Promise<AiComputerSessionState>,
-    subscribeSession: (sessionId: string, listener: (event: AiComputerSessionEvent) => void) => {
-      ensureComputerEventBridge();
-      const wrappedListener = (event: AiComputerSessionEvent): void => {
-        if (event.sessionId !== sessionId) {
-          return;
-        }
-        listener(event);
-      };
-      computerEventListeners.add(wrappedListener);
+        LYRA_CHANNELS.workbenchBrowserReadPageState,
+        request ?? {}
+      ) as Promise<WorkbenchBrowserPageRuntimeState | null>,
+    onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => {
+      ensureWorkbenchBrowserEventBridge();
+      workbenchBrowserEventListeners.add(listener);
       return () => {
-        computerEventListeners.delete(wrappedListener);
-      };
-    }
-  },
-  systemImages: {
-    readRegistry: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesReadRegistry
-      ) as Promise<LyraSystemRegistryState>,
-    listInstalled: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesListInstalled
-      ) as Promise<readonly LyraSystemImageDescriptor[]>,
-    installFromDirectory: (request: LyraSystemInstallFromDirectoryRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesInstallFromDirectory,
-        request
-      ) as Promise<LyraSystemImageDescriptor>,
-    installFromPackage: (request: LyraSystemInstallFromPackageRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesInstallFromPackage,
-        request
-      ) as Promise<LyraSystemImageDescriptor>,
-    installOfficialSeed: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesInstallOfficialSeed
-      ) as Promise<LyraSystemImageDescriptor>,
-    uninstall: (request: LyraSystemUninstallRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesUninstall,
-        request
-      ) as Promise<LyraSystemRegistryState>,
-    setDefaultImage: (request: LyraSystemSetDefaultImageRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesSetDefault,
-        request
-      ) as Promise<LyraSystemRegistryState>,
-    assignSessionImage: (request: LyraSystemAssignSessionImageRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesAssignSession,
-        request
-      ) as Promise<LyraSystemResolvedSession>,
-    clearSessionImageOverride: (request: LyraSystemClearSessionImageOverrideRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesClearSessionOverride,
-        request
-      ) as Promise<LyraSystemResolvedSession>,
-    setRuntimeModeOverride: (request: LyraSystemSetRuntimeModeOverrideRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesSetRuntimeModeOverride,
-        request
-      ) as Promise<LyraSystemRegistryState>,
-    readResolvedSessionSystem: (request: LyraSystemReadResolvedSessionRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.systemImagesReadResolvedSession,
-        request
-      ) as Promise<LyraSystemResolvedSession>,
-    subscribeSystemEvents: (listener: (event: LyraSystemEvent) => void) => {
-      ensureSystemImagesEventBridge();
-      systemImagesEventListeners.add(listener);
-      return () => {
-        systemImagesEventListeners.delete(listener);
+        workbenchBrowserEventListeners.delete(listener);
       };
     }
   },
@@ -671,6 +671,8 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.terminalReloadPrompt, request) as Promise<TerminalReloadPromptResult>,
     write: (request: TerminalWriteRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.terminalWriteSession, request) as Promise<void>,
+    read: (request: TerminalReadRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalReadSession, request) as Promise<TerminalReadResponse>,
     resize: (request: TerminalResizeRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.terminalResizeSession, request) as Promise<void>,
     closeSession: (request: TerminalCloseRequest) =>
@@ -694,6 +696,34 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       terminalErrorListeners.add(listener);
       return () => {
         terminalErrorListeners.delete(listener);
+      };
+    }
+  },
+  capabilities: {
+    readRegistry: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.capabilityReadRegistry
+      ) as Promise<CapabilityReadRegistryResponse>,
+    listCapabilities: (request?: CapabilityListRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.capabilityList,
+        request ?? {}
+      ) as Promise<readonly CapabilityDescriptor[]>,
+    invokeCapability: (request: CapabilityInvokeRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.capabilityInvoke,
+        request
+      ) as Promise<CapabilityCallResult>,
+    resolveApproval: (request: CapabilityApprovalResolveRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.capabilityResolveApproval,
+        request
+      ) as Promise<CapabilityResolveApprovalResponse>,
+    onEvent: (listener: (event: CapabilityRuntimeEvent) => void) => {
+      ensureCapabilityEventBridge();
+      capabilityEventListeners.add(listener);
+      return () => {
+        capabilityEventListeners.delete(listener);
       };
     }
   },

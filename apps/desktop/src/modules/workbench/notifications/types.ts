@@ -36,7 +36,7 @@ export type WorkbenchNotificationTarget =
       readonly appId:
         | "file-manager"
         | "file-editor"
-        | "ai-panel"
+        | "ai-history"
         | "ai-mcp"
         | "ai-skills"
         | NotificationCenterAppId;

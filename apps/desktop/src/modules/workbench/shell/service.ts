@@ -429,16 +429,16 @@ export const resolveMainGridColumns = (state: {
   readonly showFiles: boolean;
   readonly showAi: boolean;
 }): string => {
-  const columns = ["48px"];
+  const columns = ["var(--lyra-unit-48)"];
 
   if (state.showFiles) {
-    columns.push(state.preset === "browser" ? "220px" : "250px");
+    columns.push(state.preset === "browser" ? "var(--lyra-unit-220)" : "var(--lyra-unit-240)");
   }
 
   columns.push("minmax(0, 1fr)");
 
   if (state.showAi) {
-    columns.push(state.preset === "browser" ? "420px" : "380px");
+    columns.push(state.preset === "browser" ? "var(--lyra-unit-420)" : "var(--lyra-unit-360)");
   }
 
   return columns.join(" ");

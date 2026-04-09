@@ -1,8 +1,7 @@
 ## 1. 核心概览（Core Overview）
 
-* **三模式目标**：
+* **双模式目标**：
 
-  * **Chat**：低门槛实时对话。
   * **Agent**：单体强执行能力，是 Oma 的 Apex。
   * **Oma（Open Multi-Agent）**：多角色协作，基于角色而非执行器。
 
@@ -33,23 +32,23 @@
 
 ## 2. 模式规格（Mode Specification）
 
-| 维度   | Chat | Agent   | Oma                  |
-| ---- | ---- | ------- | -------------------- |
-| 内核   | 独立对话 | 共享能力    | 共享 + 编排              |
-| 执行主体 | 单助手  | 单 Agent | 多 Role 网络            |
-| 委派   | 无    | 可选      | 核心能力                 |
-| 并发   | 无    | 有限      | 结构化强约束               |
-| 会议   | 无    | 无       | 可选投票会议               |
-| 门禁强度 | 低    | 中       | 强                    |
-| 交付收敛 | 回合   | 单体结果    | Integrator + Gate 收敛 |
+| 维度   | Agent   | Oma                  |
+| ---- | ------- | -------------------- |
+| 内核   | 共享能力    | 共享 + 编排              |
+| 执行主体 | 单 Agent | 多 Role 网络            |
+| 委派   | 可选      | 核心能力                 |
+| 并发   | 有限      | 结构化强约束               |
+| 会议   | 无       | 可选投票会议               |
+| 门禁强度 | 中       | 强                    |
+| 交付收敛 | 单体结果    | Integrator + Gate 收敛 |
 
 * **模式判定**：显式开关 > 会话粘性 > 入口策略
 * **切换状态机**：
 
-  * Chat ↔ Agent ↔ Oma，切换必须记录 switch_id、session_id、from/to mode、原因、触发源、时间戳
+  * Agent ↔ Oma，切换必须记录 switch_id、session_id、from/to mode、原因、触发源、时间戳
 * **执行档位**：
 
-  * `chat_readonly`, `agent_standard`, `oma_orchestrated`
+  * `agent_standard`, `oma_orchestrated`
 * **审批矩阵**：
 
   * 高风险操作需 explicit-approve
@@ -194,9 +193,9 @@ trust_score = 0.35 * quality + 0.20 * timeliness + 0.20 * user_rating + 0.15 * r
 
 ### ✅ 总结
 
-Lyra Core v1 提供了一个**多模式、角色化、可追责和可收敛的多 Agent 协作框架**：
+Lyra Core v1 提供了一个**双模式、角色化、可追责和可收敛的多 Agent 协作框架**：
 
-* **模式清晰**：Chat / Agent / Oma 三模式边界与切换可追踪。
+* **模式清晰**：Agent / Oma 双模式边界与切换可追踪。
 * **角色化执行**：Role/Skill/Tool/Policy 四层模型 + Apex Agent 顶层能力。
 * **可执行协议**：TaskTicket、DelegationContract、OmaExecutionGraph、Gate、ConflictRecord 等对象保证流程可追踪。
 * **治理与交付**：分支隔离、Integrator 收敛、强门禁、审计链路、可回放。

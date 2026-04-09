@@ -21,14 +21,16 @@ const createEngine = (id: string): SearchAggregateEngine => ({
 const createResult = (
   id: string,
   url: string,
-  sourceEngineIds: readonly string[]
+  sourceEngineIds: readonly string[],
+  overrides?: Partial<SearchAggregateResult>
 ): SearchAggregateResult => ({
   id,
   title: id,
   url,
   displayUrl: url,
   snippet: id,
-  sourceEngineIds
+  sourceEngineIds,
+  ...overrides
 });
 
 describe("search aggregate service", () => {
@@ -122,5 +124,58 @@ describe("search aggregate service", () => {
 
     expect(response.engineBuckets[0]?.error).toBe("timeout");
     expect(response.blendedResults).toEqual([]);
+  });
+
+  test("boosts likely official site for navigational queries", async () => {
+    const mockedFetchEngineResults = vi.mocked(fetchEngineResults);
+    mockedFetchEngineResults.mockResolvedValue({
+      latencyMs: 9,
+      results: [
+        createResult("wiki", "https://en.wikipedia.org/wiki/OpenAI", ["bing"], {
+          title: "OpenAI - Wikipedia",
+          snippet: "Encyclopedia entry"
+        }),
+        createResult("official", "https://openai.com/", ["bing"], {
+          title: "OpenAI",
+          snippet: "Official site"
+        })
+      ]
+    });
+
+    const response = await aggregateSearch({
+      query: "openai 官网",
+      limitPerEngine: 5,
+      engines: [createEngine("bing")]
+    });
+
+    expect(response.blendedResults[0]?.url).toBe("https://openai.com/");
+    expect(response.blendedResults[0]?.isOfficialResult).toBe(true);
+    expect(response.blendedResults[0]?.officialCategory).toBe("official_homepage");
+  });
+
+  test("boosts docs pages when query is documentation-oriented", async () => {
+    const mockedFetchEngineResults = vi.mocked(fetchEngineResults);
+    mockedFetchEngineResults.mockResolvedValue({
+      latencyMs: 11,
+      results: [
+        createResult("home", "https://platform.openai.com/", ["bing"], {
+          title: "OpenAI Platform",
+          snippet: "Build with OpenAI"
+        }),
+        createResult("docs", "https://platform.openai.com/docs/overview", ["bing"], {
+          title: "OpenAI Docs",
+          snippet: "API reference and guides"
+        })
+      ]
+    });
+
+    const response = await aggregateSearch({
+      query: "openai docs",
+      limitPerEngine: 5,
+      engines: [createEngine("bing")]
+    });
+
+    expect(response.blendedResults[0]?.url).toBe("https://platform.openai.com/docs/overview");
+    expect(response.blendedResults[0]?.officialCategory).toBe("official_docs");
   });
 });

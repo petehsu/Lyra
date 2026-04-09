@@ -7,16 +7,16 @@
 
 .lyra-mcp-center-server-row {
   width: 100%;
-  min-height: 54px;
-  padding: 10px 14px;
+  min-height: var(--lyra-unit-54);
+  padding: var(--lyra-unit-10) var(--lyra-unit-14);
   border: 0;
-  border-bottom: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
   background: transparent;
   color: inherit;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: var(--lyra-unit-22) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: var(--lyra-unit-10);
   text-align: left;
   cursor: pointer;
   transition:
@@ -36,9 +36,9 @@
   content: "";
   position: absolute;
   left: 0;
-  width: 2px;
-  height: calc(100% - 14px);
-  border-radius: 999px;
+  width: var(--lyra-unit-2);
+  height: calc(100% - var(--lyra-unit-14));
+  border-radius: var(--lyra-unit-999);
   background: var(--lyra-line-focused);
 }
 
@@ -47,8 +47,8 @@
 }
 
 .lyra-mcp-center-server-icon {
-  width: 18px;
-  height: 18px;
+  width: var(--lyra-unit-18);
+  height: var(--lyra-unit-18);
   color: var(--lyra-text-secondary);
   display: inline-flex;
   align-items: center;
@@ -56,8 +56,8 @@
 }
 
 .lyra-mcp-center-server-icon-large {
-  width: 20px;
-  height: 20px;
+  width: var(--lyra-unit-20);
+  height: var(--lyra-unit-20);
   color: var(--lyra-text-primary);
 }
 
@@ -65,7 +65,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--lyra-unit-2);
 }
 
 .lyra-mcp-center-server-copy strong,
@@ -77,28 +77,28 @@
 }
 
 .lyra-mcp-center-server-copy strong {
-  font-size: 13px;
+  font-size: var(--lyra-unit-13);
   font-weight: 500;
 }
 
 .lyra-mcp-center-server-copy small,
 .lyra-mcp-center-muted {
   color: var(--lyra-text-muted);
-  font-size: 11px;
+  font-size: var(--lyra-unit-11);
   line-height: 1.45;
 }
 
 .lyra-mcp-center-server-meta {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--lyra-unit-6);
   color: var(--lyra-text-muted);
 }
 
 .lyra-mcp-center-runtime-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
+  width: var(--lyra-unit-7);
+  height: var(--lyra-unit-7);
+  border-radius: var(--lyra-unit-999);
   background: var(--lyra-line-variant);
 }
 

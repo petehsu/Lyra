@@ -7,9 +7,13 @@ export type BrowserSearchSurfaceProps = {
   readonly inputValue: string;
   readonly placeholder: string;
   readonly searchActionLabel: string;
+  readonly deepSearchToggleLabel: string;
+  readonly deepSearchEnabled: boolean;
+  readonly deepSearchChipLabel: string;
   readonly onPillRef?: (element: HTMLDivElement | null) => void;
   readonly onInputChange: (value: string) => void;
   readonly onSubmit: () => void;
+  readonly onToggleDeepSearch: () => void;
 };
 
 export const BrowserSearchSurface = ({
@@ -17,15 +21,31 @@ export const BrowserSearchSurface = ({
   inputValue,
   placeholder,
   searchActionLabel,
+  deepSearchToggleLabel,
+  deepSearchEnabled,
+  deepSearchChipLabel,
   onPillRef,
   onInputChange,
-  onSubmit
+  onSubmit,
+  onToggleDeepSearch
 }: BrowserSearchSurfaceProps) => (
   <div className="lyra-workspace-browser-shell">
     <div className="lyra-browser-pill" ref={onPillRef}>
-      <span className="lyra-logo-circle">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={deepSearchEnabled}
+        aria-label={deepSearchToggleLabel}
+        title={deepSearchToggleLabel}
+        className={
+          deepSearchEnabled
+            ? "lyra-logo-circle lyra-logo-toggle lyra-logo-toggle-active"
+            : "lyra-logo-circle lyra-logo-toggle"
+        }
+        onClick={onToggleDeepSearch}
+      >
         <LyraBrandLogo logoUrl={logoUrl} />
-      </span>
+      </button>
       <input
         aria-label="browser-address-input"
         value={inputValue}
@@ -39,6 +59,9 @@ export const BrowserSearchSurface = ({
           }
         }}
       />
+      {deepSearchEnabled ? (
+        <span className="lyra-browser-mode-chip">{deepSearchChipLabel}</span>
+      ) : null}
       <button className="lyra-search-circle" aria-label={searchActionLabel} onClick={onSubmit}>
         <Search size={14} />
       </button>

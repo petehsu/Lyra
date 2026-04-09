@@ -1,0 +1,43 @@
+name: Agent Regression
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+jobs:
+  agent-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install native build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Rust Agent regression tests
+        run: cargo test -p lyra-ai-napi tests::turn::agent:: -- --nocapture
+
+      - name: Run desktop AI regression tests
+        run: |
+          pnpm --filter @lyra/desktop test -- src/main/ai/tests/capability-preflight.test.ts
+          pnpm --filter @lyra/desktop test -- src/main/ai/tests/runtime-events.test.ts
+          pnpm --filter @lyra/desktop test -- src/main/capabilities/tests/registry.test.ts
+          pnpm --filter @lyra/desktop test -- src/modules/workbench/ai-panel/tests/native-mappers.test.ts
+          pnpm --filter @lyra/desktop test -- src/modules/workbench/ai-panel/tests/session-store.test.tsx
+
+      - name: Typecheck desktop
+        run: pnpm --filter @lyra/desktop typecheck

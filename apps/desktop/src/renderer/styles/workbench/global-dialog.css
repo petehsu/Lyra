@@ -2,24 +2,24 @@
 .lyra-global-dialog-layer {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  z-index: var(--lyra-z-dialog);
   display: grid;
   place-items: center;
-  padding: 22px;
+  padding: var(--lyra-unit-22);
   background: color-mix(in srgb, var(--lyra-bg-app) 36%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(1.06);
-  backdrop-filter: blur(14px) saturate(1.06);
+  -webkit-backdrop-filter: blur(var(--lyra-unit-14)) saturate(1.06);
+  backdrop-filter: blur(var(--lyra-unit-14)) saturate(1.06);
 }
 
 .lyra-global-dialog {
-  width: min(560px, calc(100vw - 44px));
-  max-height: calc(100vh - 44px);
+  width: min(var(--lyra-dialog-max-w), calc(100vw - var(--lyra-unit-44)));
+  max-height: calc(100vh - var(--lyra-unit-44));
   overflow: auto;
   display: grid;
-  gap: 14px;
-  padding: 16px;
-  border-radius: 12px;
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 78%, transparent);
+  gap: var(--lyra-surface-gap);
+  padding: var(--lyra-dialog-pad);
+  border-radius: var(--lyra-surface-radius-lg);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 78%, transparent);
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--lyra-bg-surface) 94%, transparent) 0%,
@@ -36,21 +36,21 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
-  border-radius: 9px;
+  gap: var(--lyra-unit-10);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-radius: var(--lyra-unit-9);
   background: color-mix(in srgb, var(--lyra-bg-surface) 88%, var(--lyra-bg-editor) 12%);
-  padding: 8px 10px;
+  padding: var(--lyra-unit-8) var(--lyra-unit-10);
 }
 
 .lyra-global-dialog-source-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  width: var(--lyra-unit-30);
+  height: var(--lyra-unit-30);
+  border-radius: var(--lyra-unit-8);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
   display: grid;
   place-items: center;
-  font-size: 10px;
+  font-size: var(--lyra-unit-10);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -77,45 +77,45 @@
 .lyra-global-dialog-source-meta {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--lyra-unit-2);
 }
 
 .lyra-global-dialog-source-meta strong {
   color: var(--lyra-text-primary);
-  font-size: 13px;
+  font-size: var(--lyra-unit-13);
   font-weight: 600;
 }
 
 .lyra-global-dialog-source-meta small {
   color: var(--lyra-text-muted);
-  font-size: 11px;
+  font-size: var(--lyra-unit-11);
 }
 
 .lyra-global-dialog-copy-list {
   display: grid;
-  gap: 8px;
+  gap: var(--lyra-unit-8);
 }
 
 .lyra-global-dialog-copy-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
-  border-radius: 9px;
+  gap: var(--lyra-unit-10);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-radius: var(--lyra-unit-9);
   background: color-mix(in srgb, var(--lyra-bg-editor) 90%, var(--lyra-bg-surface) 10%);
-  padding: 8px 10px;
+  padding: var(--lyra-unit-8) var(--lyra-unit-10);
 }
 
 .lyra-global-dialog-copy-meta {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: var(--lyra-unit-4);
 }
 
 .lyra-global-dialog-copy-meta strong {
   color: var(--lyra-text-primary);
-  font-size: 12px;
+  font-size: var(--lyra-unit-12);
   font-weight: 600;
 }
 
@@ -123,7 +123,7 @@
   margin: 0;
   display: block;
   color: var(--lyra-text-secondary);
-  font-size: 11px;
+  font-size: var(--lyra-unit-11);
   line-height: 1.45;
   font-family: var(--lyra-font-mono);
   white-space: pre-wrap;
@@ -133,8 +133,8 @@
 .lyra-global-dialog-copy-action {
   width: var(--lyra-size-icon-button-w);
   height: var(--lyra-size-icon-button-h);
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 76%, transparent);
-  border-radius: 6px;
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 76%, transparent);
+  border-radius: var(--lyra-unit-6);
   background: color-mix(in srgb, var(--lyra-bg-surface) 92%, transparent);
   color: var(--lyra-text-secondary);
   display: grid;
@@ -161,26 +161,26 @@
 
 .lyra-global-dialog-header {
   display: grid;
-  gap: 7px;
+  gap: var(--lyra-unit-7);
 }
 
 .lyra-global-dialog-header h2 {
   margin: 0;
   color: var(--lyra-text-primary);
-  font-size: 16px;
+  font-size: var(--lyra-unit-16);
   line-height: 1.3;
 }
 
 .lyra-global-dialog-header p {
   margin: 0;
   color: var(--lyra-text-secondary);
-  font-size: 13px;
+  font-size: var(--lyra-unit-13);
   line-height: 1.45;
 }
 
 .lyra-global-dialog-actions {
   display: grid;
-  gap: 8px;
+  gap: var(--lyra-unit-8);
 }
 
 .lyra-global-dialog-actions-1 {
@@ -196,17 +196,17 @@
 }
 
 .lyra-global-dialog-action {
-  min-height: 32px;
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
-  border-radius: 7px;
+  min-height: var(--lyra-unit-32);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border-radius: var(--lyra-unit-7);
   background: color-mix(in srgb, var(--lyra-bg-surface) 94%, transparent);
   color: var(--lyra-text-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 0 10px;
-  font-size: 12px;
+  gap: var(--lyra-unit-6);
+  padding: 0 var(--lyra-unit-10);
+  font-size: var(--lyra-unit-12);
   font-weight: 500;
   transition:
     border-color var(--lyra-transition-fast),
@@ -235,12 +235,12 @@
 
 @media (max-width: 980px) {
   .lyra-global-dialog-layer {
-    padding: 14px;
+    padding: var(--lyra-unit-14);
   }
 
   .lyra-global-dialog {
-    width: min(560px, calc(100vw - 28px));
-    max-height: calc(100vh - 28px);
+    width: min(var(--lyra-unit-560), calc(100vw - var(--lyra-unit-28)));
+    max-height: calc(100vh - var(--lyra-unit-28));
   }
 
   .lyra-global-dialog-copy-item {

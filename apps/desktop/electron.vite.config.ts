@@ -5,6 +5,12 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 const projectRoot = __dirname;
 const DEFAULT_RENDERER_PORT = 5173;
+const sharedAliases = {
+  "@renderer": resolve(projectRoot, "src/renderer"),
+  "@workbench": resolve(projectRoot, "src/modules/workbench"),
+  "@lyra/capability-protocol": resolve(projectRoot, "../../packages/capability-protocol/src/index.ts"),
+  "@lyra/plugin-sdk": resolve(projectRoot, "../../packages/plugin-sdk/src/index.ts")
+};
 
 const resolveRendererPort = (): number => {
   const fromEnv = Number.parseInt(process.env.LYRA_RENDERER_PORT ?? "", 10);
@@ -14,10 +20,16 @@ const resolveRendererPort = (): number => {
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: sharedAliases
+    },
     build: {
       sourcemap: true,
       outDir: "out/main",
       rollupOptions: {
+        input: {
+          index: resolve(projectRoot, "src/main/index.ts")
+        },
         output: {
           format: "cjs",
           entryFileNames: "[name].cjs"
@@ -27,10 +39,16 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: sharedAliases
+    },
     build: {
       sourcemap: true,
       outDir: "out/preload",
       rollupOptions: {
+        input: {
+          index: resolve(projectRoot, "src/preload/index.ts")
+        },
         output: {
           format: "cjs",
           entryFileNames: "[name].cjs"
@@ -46,10 +64,7 @@ export default defineConfig({
       strictPort: false
     },
     resolve: {
-      alias: {
-        "@renderer": resolve(projectRoot, "src/renderer"),
-        "@workbench": resolve(projectRoot, "src/modules/workbench")
-      }
+      alias: sharedAliases
     },
     build: {
       outDir: resolve(projectRoot, "out/renderer"),

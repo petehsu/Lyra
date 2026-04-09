@@ -201,11 +201,13 @@ const discoverImportSource = async (
 export const createSkillsIpcBridge = ({
   storageRoot,
   getWindow,
-  filesNativeBindings
+  filesNativeBindings,
+  runtimeClient
 }: {
   readonly storageRoot: string;
   readonly getWindow: () => BrowserWindow | null;
   readonly filesNativeBindings: FilesNativeBindings;
+  readonly runtimeClient?: import("../runtime-client").LyraRuntimeClient;
 }): SkillsIpcBridge => {
   const workbenchFsPort = createWorkbenchFsPort(filesNativeBindings);
   const nativeLoadResult = loadSkillsNativeBindings();
@@ -224,6 +226,44 @@ export const createSkillsIpcBridge = ({
   const publish: SkillsEventPublisher = (event) => {
     const window = getWindow();
     window?.webContents.send(LYRA_CHANNELS.skillsEvent, event);
+  };
+
+  // --- Skills ↔ Agent prompt sync ---
+
+  const syncSkillPromptsToAgent = async (): Promise<void> => {
+    if (runtimeClient === undefined) return;
+    try {
+      const effective = await readEffective();
+      const prompts: { skillId: string; name: string; content: string }[] = [];
+      for (const skill of effective) {
+        if (skill.trustState !== "trusted" || skill.enableState !== "enabled") continue;
+        try {
+          const details = JSON.parse(
+            nativeBindings.readInstalledSkillDetailsJson(
+              JSON.stringify({
+                storageRoot,
+                scope: skill.scope,
+                ...(skill.projectRoot === undefined ? {} : { projectRoot: skill.projectRoot }),
+                skillId: skill.skillId,
+                maxChars: 16000
+              })
+            )
+          ) as SkillDetails | null;
+          if (details?.contentPreview) {
+            prompts.push({
+              skillId: skill.skillId,
+              name: skill.manifest.name,
+              content: details.contentPreview
+            });
+          }
+        } catch {
+          // Skip individual skill read failures.
+        }
+      }
+      await runtimeClient.request("agent.skills.set_prompts", { prompts });
+    } catch {
+      // Non-fatal: skill sync failure should not break skills lifecycle.
+    }
   };
 
   const readInstalled = async (
@@ -444,24 +484,38 @@ export const createSkillsIpcBridge = ({
         resolveExistingWorkbenchPath(workbenchFsPort, sourcePath) ?? sourcePath
       )
   );
-  ipcMain.handle(LYRA_CHANNELS.skillsImport, async (_event, request: SkillImportRequest) =>
-    installSkills(request)
-  );
+  ipcMain.handle(LYRA_CHANNELS.skillsImport, async (_event, request: SkillImportRequest) => {
+    const result = await installSkills(request);
+    void syncSkillPromptsToAgent();
+    return result;
+  });
   ipcMain.handle(
     LYRA_CHANNELS.skillsCreateLyraSkill,
-    async (_event, request: CreateLyraSkillRequest) => createLyraSkill(request)
+    async (_event, request: CreateLyraSkillRequest) => {
+      const result = await createLyraSkill(request);
+      void syncSkillPromptsToAgent();
+      return result;
+    }
   );
   ipcMain.handle(
     LYRA_CHANNELS.skillsUpdateState,
-    async (_event, request: UpdateSkillStateRequest) => updateSkillState(request)
+    async (_event, request: UpdateSkillStateRequest) => {
+      const result = await updateSkillState(request);
+      void syncSkillPromptsToAgent();
+      return result;
+    }
   );
-  ipcMain.handle(LYRA_CHANNELS.skillsDelete, async (_event, request: DeleteSkillRequest) =>
-    deleteSkill(request)
-  );
+  ipcMain.handle(LYRA_CHANNELS.skillsDelete, async (_event, request: DeleteSkillRequest) => {
+    await deleteSkill(request);
+    void syncSkillPromptsToAgent();
+  });
   ipcMain.handle(
     LYRA_CHANNELS.skillsReadDetails,
     async (_event, request: SkillRequest) => readSkillDetails(request)
   );
+
+  // Initial sync on bridge creation.
+  void syncSkillPromptsToAgent();
 
   return {
     dispose: async () => {

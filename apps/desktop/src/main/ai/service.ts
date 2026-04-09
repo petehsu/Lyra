@@ -1,12 +1,26 @@
-import { ipcMain, type BrowserWindow } from "electron";
+import { BrowserWindow, ipcMain, shell } from "electron";
 
 import {
   LYRA_CHANNELS,
-  type AiCancelChatTurnRequest,
-  type AiChatSession,
-  type AiChatSessionSummary,
-  type AiChatTurnRequest,
-  type AiChatTurnResponse,
+  type AiMemoryConfig,
+  type AgentAnswerQuestionRequest,
+  type AgentAnswerPlanQuestionRequest,
+  type AgentBindSessionProjectRequest,
+  type AgentEnterPlanModeRequest,
+  type AgentCreateSessionRequest,
+  type AgentDeleteSessionRequest,
+  type AgentGetPendingInteractionsRequest,
+  type AgentGetPlanRequest,
+  type AgentGetSessionRequest,
+  type AgentPendingInteraction,
+  type AgentPlanState,
+  type AgentResolvePlanApprovalRequest,
+  type AgentRuntimeEvent,
+  type AgentSendTurnRequest,
+  type AgentSendTurnResult,
+  type AgentSession,
+  type AgentSessionDetail,
+  type CommandApprovalSubmitRequest,
   type AiDeleteProfileRequest,
   type AiDiscoverModelsRequest,
   type AiModelDiscoveryResult,
@@ -14,166 +28,309 @@ import {
   type AiProviderCatalogItem,
   type AiProviderPreset,
   type AiProviderProfile,
-  type AiReadSessionHistoryRequest,
-  type AiReadSessionRequest,
-  type AiRuntimeEvent,
   type AiSetDefaultProfileRequest,
   type AiUpsertProfileRequest,
   type AiValidateProfileRequest
 } from "../../shared/desktop-bridge";
-import { loadAiNativeBindings } from "./native-loader";
+import {
+  authorizeOpenAiChatGptInBrowser,
+  authorizeOpenAiChatGptViaDeviceCode
+} from "./openai-auth";
+import type { LyraRuntimeClient } from "../runtime-client";
 import type {
   AiIpcBridge,
-  AiNativeBindings,
-  NativeAiCancelChatTurnRequest,
-  NativeAiChatTurnRequest,
+  NativeAgentAnswerQuestionRequest,
+  NativeAgentCreateSessionRequest,
+  NativeAgentDeleteSessionRequest,
+  NativeAgentBindSessionProjectRequest,
+  NativeAgentAnswerPlanQuestionRequest,
+  NativeAgentGetSessionRequest,
+  NativeAgentEnterPlanModeRequest,
+  NativeAgentGetPendingInteractionsRequest,
+  NativeAgentGetPlanRequest,
+  NativeAgentListSessionsRequest,
+  NativeAgentMemoryConfigRequest,
+  NativeAgentResolvePlanApprovalRequest,
+  NativeAgentSendTurnRequest,
+  NativeAgentUpdateMemoryConfigRequest,
+  NativeCommandApprovalSubmitRequest,
   NativeAiDeleteProfileRequest,
   NativeAiDiscoverModelsRequest,
   NativeAiReadPresetCatalogRequest,
   NativeAiReadProfilesRequest,
   NativeAiReadProviderCatalogRequest,
-  NativeAiReadSessionHistoryRequest,
-  NativeAiReadSessionRequest,
   NativeAiSetDefaultProfileRequest,
   NativeAiUpsertProfileRequest,
   NativeAiValidateProfileRequest
 } from "./types";
 
-const parseJson = <T>(payload: string): T => JSON.parse(payload) as T;
-
 export const createAiIpcBridge = (
   storageRoot: string,
-  getWindow: () => BrowserWindow | null
+  runtimeClient: LyraRuntimeClient
 ): AiIpcBridge => {
-  const loadResult = loadAiNativeBindings();
-  if (loadResult.ok === false) {
-    throw new Error(
-      `ai native unavailable: ${loadResult.errorMessage}\ntried paths:\n${loadResult.triedPaths.join("\n")}`
-    );
-  }
+  const requestRuntime = async <T>(method: string, payload: unknown): Promise<T> =>
+    await runtimeClient.request<T>(method, payload);
 
-  const bindings: AiNativeBindings = loadResult.bindings;
+  ipcMain.handle(LYRA_CHANNELS.aiReadProfiles, async () =>
+    await requestRuntime<readonly AiProviderProfile[]>("profiles.read", {
+      storageRoot
+    } satisfies NativeAiReadProfilesRequest)
+  );
 
-  bindings.registerAiEventCallback((eventJson) => {
-    const event = parseJson<AiRuntimeEvent>(eventJson);
-    const window = getWindow();
-    if (window === null || window.isDestroyed()) {
-      return;
-    }
-    window.webContents.send(LYRA_CHANNELS.aiEvent, event);
-  });
+  ipcMain.handle(LYRA_CHANNELS.aiReadProviderCatalog, async () =>
+    await requestRuntime<readonly AiProviderCatalogItem[]>("providers.catalog.read", {
+      storageRoot
+    } satisfies NativeAiReadProviderCatalogRequest)
+  );
 
-  ipcMain.handle(LYRA_CHANNELS.aiReadProfiles, () => {
-    const request: NativeAiReadProfilesRequest = { storageRoot };
-    return parseJson<readonly AiProviderProfile[]>(
-      bindings.readAiProfilesJson(JSON.stringify(request))
-    );
-  });
+  ipcMain.handle(LYRA_CHANNELS.aiReadPresetCatalog, async () =>
+    await requestRuntime<readonly AiProviderPreset[]>("providers.presets.read", {
+      storageRoot
+    } satisfies NativeAiReadPresetCatalogRequest)
+  );
 
-  ipcMain.handle(LYRA_CHANNELS.aiReadProviderCatalog, () => {
-    const request: NativeAiReadProviderCatalogRequest = { storageRoot };
-    return parseJson<readonly AiProviderCatalogItem[]>(
-      bindings.readAiProviderCatalogJson(JSON.stringify(request))
-    );
-  });
+  ipcMain.handle(LYRA_CHANNELS.aiAuthorizeOpenAiChatGpt, async () =>
+    await authorizeOpenAiChatGptInBrowser(async (url) => {
+      await shell.openExternal(url);
+      return true;
+    })
+  );
 
-  ipcMain.handle(LYRA_CHANNELS.aiReadPresetCatalog, () => {
-    const request: NativeAiReadPresetCatalogRequest = { storageRoot };
-    return parseJson<readonly AiProviderPreset[]>(
-      bindings.readAiPresetCatalogJson(JSON.stringify(request))
-    );
-  });
-
-  ipcMain.handle(LYRA_CHANNELS.aiUpsertProfile, (_event, request: AiUpsertProfileRequest) => {
-    const payload: NativeAiUpsertProfileRequest = { ...request, storageRoot };
-    return parseJson<AiProviderProfile>(
-      bindings.upsertAiProfileJson(JSON.stringify(payload))
-    );
-  });
-
-  ipcMain.handle(LYRA_CHANNELS.aiDeleteProfile, (_event, request: AiDeleteProfileRequest) => {
-    const payload: NativeAiDeleteProfileRequest = { ...request, storageRoot };
-    bindings.deleteAiProfileJson(JSON.stringify(payload));
-  });
-
-  ipcMain.handle(LYRA_CHANNELS.aiSetDefaultProfile, (_event, request: AiSetDefaultProfileRequest) => {
-    const payload: NativeAiSetDefaultProfileRequest = { ...request, storageRoot };
-    return parseJson<AiProviderProfile>(
-      bindings.setDefaultAiProfileJson(JSON.stringify(payload))
-    );
-  });
-
-  ipcMain.handle(LYRA_CHANNELS.aiValidateProfile, (_event, request: AiValidateProfileRequest) => {
-    const payload: NativeAiValidateProfileRequest = { ...request, storageRoot };
-    return parseJson<AiProfileValidationResult>(
-      bindings.validateAiProfileJson(JSON.stringify(payload))
-    );
-  });
-
-  ipcMain.handle(LYRA_CHANNELS.aiDiscoverModels, (_event, request: AiDiscoverModelsRequest) => {
-    const payload: NativeAiDiscoverModelsRequest = { ...request, storageRoot };
-    return parseJson<AiModelDiscoveryResult>(
-      bindings.discoverAiModelsJson(JSON.stringify(payload))
-    );
-  });
-
-  ipcMain.handle(LYRA_CHANNELS.aiRefreshDiscoveredModels, (_event, request: AiDiscoverModelsRequest) => {
-    const payload: NativeAiDiscoverModelsRequest = { ...request, storageRoot };
-    return parseJson<AiModelDiscoveryResult>(
-      bindings.refreshAiModelsJson(JSON.stringify(payload))
-    );
-  });
-
-  ipcMain.handle(LYRA_CHANNELS.aiReadSession, (_event, request: AiReadSessionRequest) => {
-    const payload: NativeAiReadSessionRequest = { ...request, storageRoot };
-    return parseJson<AiChatSession>(
-      bindings.readAiSessionJson(JSON.stringify(payload))
-    );
-  });
+  ipcMain.handle(LYRA_CHANNELS.aiAuthorizeOpenAiChatGptDeviceCode, async () =>
+    await authorizeOpenAiChatGptViaDeviceCode(async (url) => {
+      await shell.openExternal(url);
+      return true;
+    })
+  );
 
   ipcMain.handle(
-    LYRA_CHANNELS.aiReadSessionHistory,
-    (_event, request?: AiReadSessionHistoryRequest) => {
-      const payload: NativeAiReadSessionHistoryRequest = {
-        ...(request ?? {}),
-        storageRoot
-      };
-      return parseJson<readonly AiChatSessionSummary[]>(
-        bindings.readAiSessionHistoryJson(JSON.stringify(payload))
-      );
+    LYRA_CHANNELS.aiUpsertProfile,
+    async (_event, request: AiUpsertProfileRequest) =>
+      await requestRuntime<AiProviderProfile>("profiles.upsert", {
+        storageRoot,
+        ...request
+      } satisfies NativeAiUpsertProfileRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.aiDeleteProfile,
+    async (_event, request: AiDeleteProfileRequest) => {
+      await requestRuntime<null>("profiles.delete", {
+        storageRoot,
+        ...request
+      } satisfies NativeAiDeleteProfileRequest);
     }
   );
 
-  ipcMain.handle(LYRA_CHANNELS.aiSendChatTurn, (_event, request: AiChatTurnRequest) => {
-    const payload: NativeAiChatTurnRequest = { ...request, storageRoot };
-    return parseJson<AiChatTurnResponse>(
-      bindings.sendAiChatTurnJson(JSON.stringify(payload))
-    );
-  });
+  ipcMain.handle(
+    LYRA_CHANNELS.aiSetDefaultProfile,
+    async (_event, request: AiSetDefaultProfileRequest) =>
+      await requestRuntime<AiProviderProfile>("profiles.set_default", {
+        storageRoot,
+        ...request
+      } satisfies NativeAiSetDefaultProfileRequest)
+  );
 
-  ipcMain.handle(LYRA_CHANNELS.aiCancelChatTurn, (_event, request: AiCancelChatTurnRequest) => {
-    const payload: NativeAiCancelChatTurnRequest = { ...request, storageRoot };
-    return parseJson<AiChatSession>(
-      bindings.cancelAiChatTurnJson(JSON.stringify(payload))
-    );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiValidateProfile,
+    async (_event, request: AiValidateProfileRequest) =>
+      await requestRuntime<AiProfileValidationResult>("profiles.validate", {
+        storageRoot,
+        ...request
+      } satisfies NativeAiValidateProfileRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.aiDiscoverModels,
+    async (_event, request: AiDiscoverModelsRequest) =>
+      await requestRuntime<AiModelDiscoveryResult>("models.discover", {
+        storageRoot,
+        ...request
+      } satisfies NativeAiDiscoverModelsRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.aiRefreshDiscoveredModels,
+    async (_event, request: AiDiscoverModelsRequest) =>
+      await requestRuntime<AiModelDiscoveryResult>("models.discover", {
+        storageRoot,
+        ...request,
+        forceRefresh: true
+      } satisfies NativeAiDiscoverModelsRequest)
+  );
+
+  ipcMain.handle(LYRA_CHANNELS.agentListSessions, async () =>
+    await requestRuntime<readonly AgentSession[]>("agent.sessions.list", {
+      storageRoot
+    } satisfies NativeAgentListSessionsRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentCreateSession,
+    async (_event, request?: AgentCreateSessionRequest) =>
+      await requestRuntime<AgentSession>("agent.sessions.create", {
+        storageRoot,
+        ...(request ?? {})
+      } satisfies NativeAgentCreateSessionRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentGetSession,
+    async (_event, request: AgentGetSessionRequest) =>
+      await requestRuntime<AgentSessionDetail>("agent.sessions.get", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentGetSessionRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentBindSessionProject,
+    async (_event, request: AgentBindSessionProjectRequest) =>
+      await requestRuntime<AgentSession>("agent.sessions.bind_project", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentBindSessionProjectRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentDeleteSession,
+    async (_event, request: AgentDeleteSessionRequest) => {
+      await requestRuntime<null>("agent.sessions.delete", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentDeleteSessionRequest);
+    }
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentSendTurn,
+    async (_event, request: AgentSendTurnRequest) =>
+      await requestRuntime<AgentSendTurnResult>("agent.turns.send", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentSendTurnRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentEnterPlanMode,
+    async (_event, request: AgentEnterPlanModeRequest) =>
+      await requestRuntime<AgentSessionDetail>("agent.plan.enter", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentEnterPlanModeRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentGetPlan,
+    async (_event, request: AgentGetPlanRequest) =>
+      await requestRuntime<AgentPlanState | null>("agent.plan.get", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentGetPlanRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentGetPendingInteractions,
+    async (_event, request: AgentGetPendingInteractionsRequest) =>
+      await requestRuntime<readonly AgentPendingInteraction[]>("agent.interactions.get_pending", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentGetPendingInteractionsRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentAnswerQuestion,
+    async (_event, request: AgentAnswerQuestionRequest) => {
+      await requestRuntime<void>("agent.questions.answer", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentAnswerQuestionRequest);
+    }
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentAnswerPlanQuestion,
+    async (_event, request: AgentAnswerPlanQuestionRequest) => {
+      await requestRuntime<void>("agent.plan.answer_question", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentAnswerPlanQuestionRequest);
+    }
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentResolvePlanApproval,
+    async (_event, request: AgentResolvePlanApprovalRequest) =>
+      await requestRuntime<AgentSendTurnResult | null>("agent.plan.resolve_approval", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentResolvePlanApprovalRequest)
+  );
+
+  ipcMain.handle(LYRA_CHANNELS.agentGetMemoryConfig, async () =>
+    await requestRuntime<AiMemoryConfig>("agent.memory.getConfig", {
+      storageRoot
+    } satisfies NativeAgentMemoryConfigRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentUpdateMemoryConfig,
+    async (_event, config: AiMemoryConfig) =>
+      await requestRuntime<AiMemoryConfig>("agent.memory.updateConfig", {
+        storageRoot,
+        config
+      } satisfies NativeAgentUpdateMemoryConfigRequest)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.agentSubmitCommandApproval,
+    async (_event, request: CommandApprovalSubmitRequest) =>
+      await requestRuntime<void>("agent.command_approval.submit", {
+        storageRoot,
+        ...request
+      } satisfies NativeCommandApprovalSubmitRequest)
+  );
+
+  const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
+    if (eventName !== "agent.runtime") {
+      return;
+    }
+    const event = payload as AgentRuntimeEvent;
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed()) {
+        continue;
+      }
+      window.webContents.send(LYRA_CHANNELS.agentEvent, event);
+    }
   });
 
   return {
     dispose: () => {
+      unsubscribeRuntimeEvents();
       ipcMain.removeHandler(LYRA_CHANNELS.aiReadProfiles);
       ipcMain.removeHandler(LYRA_CHANNELS.aiReadProviderCatalog);
       ipcMain.removeHandler(LYRA_CHANNELS.aiReadPresetCatalog);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAuthorizeOpenAiChatGpt);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAuthorizeOpenAiChatGptDeviceCode);
       ipcMain.removeHandler(LYRA_CHANNELS.aiUpsertProfile);
       ipcMain.removeHandler(LYRA_CHANNELS.aiDeleteProfile);
       ipcMain.removeHandler(LYRA_CHANNELS.aiSetDefaultProfile);
       ipcMain.removeHandler(LYRA_CHANNELS.aiValidateProfile);
       ipcMain.removeHandler(LYRA_CHANNELS.aiDiscoverModels);
       ipcMain.removeHandler(LYRA_CHANNELS.aiRefreshDiscoveredModels);
-      ipcMain.removeHandler(LYRA_CHANNELS.aiReadSession);
-      ipcMain.removeHandler(LYRA_CHANNELS.aiReadSessionHistory);
-      ipcMain.removeHandler(LYRA_CHANNELS.aiSendChatTurn);
-      ipcMain.removeHandler(LYRA_CHANNELS.aiCancelChatTurn);
-      bindings.shutdownAiRuntime();
+      ipcMain.removeHandler(LYRA_CHANNELS.agentListSessions);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentCreateSession);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentGetSession);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentBindSessionProject);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentDeleteSession);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentSendTurn);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentEnterPlanMode);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentGetPlan);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentAnswerPlanQuestion);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentResolvePlanApproval);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentGetMemoryConfig);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentUpdateMemoryConfig);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentSubmitCommandApproval);
     }
   };
 };

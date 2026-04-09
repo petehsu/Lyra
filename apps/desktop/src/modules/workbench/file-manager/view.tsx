@@ -2,6 +2,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Check,
   FilePlus2,
   FolderPlus,
   FolderUp,
@@ -12,8 +13,7 @@ import {
   Star,
   StarOff,
   Trash2,
-  X,
-  Check
+  X
 } from "lucide-react";
 import {
   Fragment,
@@ -48,7 +48,12 @@ import type {
   FileManagerTrashEntry
 } from "../../../shared/file-manager";
 import { useLoadingVisibility } from "../shell/use-loading-visibility";
-import type { FileManagerAppState, FileManagerModel, FileManagerSurfaceLabels } from "./types";
+import type {
+  FileManagerAppState,
+  FileManagerChooserMode,
+  FileManagerModel,
+  FileManagerSurfaceLabels
+} from "./types";
 import { FileManagerImagePreview, isPreviewableImageEntry } from "./preview";
 
 type FileManagerSurfaceProps = {
@@ -56,6 +61,7 @@ type FileManagerSurfaceProps = {
   readonly labels: FileManagerSurfaceLabels;
   readonly model: FileManagerModel;
   readonly onOpenFile: (filePath: string) => void;
+  readonly chooser?: FileManagerChooserMode | null;
 };
 
 const FILE_MANAGER_HOME_FAVORITES_DEFAULT = 4;
@@ -561,7 +567,8 @@ export const FileManagerSurface = ({
   state,
   labels,
   model,
-  onOpenFile
+  onOpenFile,
+  chooser
 }: FileManagerSurfaceProps) => {
   const breadcrumbs = useMemo(
     () => (state?.currentLocation?.path ? splitBreadcrumbs(state.currentLocation.path) : []),
@@ -597,6 +604,11 @@ export const FileManagerSurface = ({
   const canGoForward = state.historyIndex >= 0 && state.historyIndex < state.history.length - 1;
   const canGoUp = state.parentPath !== undefined;
   const favoriteActive = isCurrentFavorite(state);
+  const canConfirmCurrentDirectory =
+    chooser?.kind === "ai-project-bind"
+    && state.viewKind === "directory"
+    && typeof state.currentLocation?.path === "string"
+    && state.currentLocation.path.trim().length > 0;
   const isLargeMode = state.presentationMode === "large";
   const canRenderBodyContent =
     state.status !== "error" &&
@@ -1366,6 +1378,32 @@ export const FileManagerSurface = ({
           ) : null}
         </section>
       </section>
+      {chooser?.kind === "ai-project-bind" ? (
+        <footer className="lyra-file-manager-chooser-bar">
+          <div className="lyra-file-manager-chooser-copy">
+            <span className="lyra-file-manager-chooser-label">
+              {labels.chooserBindProjectLabel}
+            </span>
+            <span className="lyra-file-manager-chooser-path">
+              {canConfirmCurrentDirectory ? state.currentLocation?.path : labels.unavailable}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="lyra-file-manager-chooser-confirm"
+            disabled={canConfirmCurrentDirectory !== true}
+            onClick={() => {
+              if (canConfirmCurrentDirectory !== true) {
+                return;
+              }
+              chooser.onConfirm();
+            }}
+          >
+            <Check size={14} />
+            <span>{chooser.confirmLabel}</span>
+          </button>
+        </footer>
+      ) : null}
     </section>
   );
 };

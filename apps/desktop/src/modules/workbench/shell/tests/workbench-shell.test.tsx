@@ -41,10 +41,89 @@ vi.mock("../use-browser-search-model", () => ({
   useBrowserSearchModel: () => ({
     isSearching: false,
     searchError: null,
-    searchPayload: null,
+    activeSearchMode: "standard",
+    currentResultMode: "standard",
+    standardSearchState: {
+      query: "",
+      queryRequestId: "test",
+      web: {
+        status: "idle",
+        payload: {
+          query: "",
+          blendedResults: [],
+          engineBuckets: [],
+          elapsedMs: 0,
+          fetchedAt: new Date().toISOString()
+        }
+      },
+      local: {
+        status: "idle",
+        payload: {
+          query: "",
+          scopePreset: "home",
+          roots: [],
+          results: [],
+          truncated: false,
+          elapsedMs: 0,
+          stats: {
+            scannedFiles: 0,
+            scannedDirs: 0,
+            contentScannedFiles: 0,
+            matchedFiles: 0,
+            skippedUnreadable: 0,
+            skippedBinaryOrTooLarge: 0,
+            usedIndex: false
+          }
+        }
+      }
+    },
+    deepSearchState: {
+      query: "",
+      queryRequestId: "deep-test",
+      budgetPreset: "medium",
+      status: "idle",
+      snapshot: {
+        query: "",
+        budgetPreset: "medium",
+        phase: "bootstrapping",
+        nodes: [],
+        edges: [],
+        web: {
+          status: "idle",
+          engineBuckets: [],
+          blendedCount: 0
+        },
+        local: {
+          status: "idle",
+          scopePreset: "home",
+          roots: [],
+          elapsedMs: 0,
+          stats: {
+            scannedFiles: 0,
+            scannedDirs: 0,
+            contentScannedFiles: 0,
+            matchedFiles: 0,
+            skippedUnreadable: 0,
+            skippedBinaryOrTooLarge: 0,
+            usedIndex: false
+          }
+        },
+        stats: {
+          dedupedResults: 0,
+          derivedQueries: 0,
+          expansionRounds: 0
+        },
+        lastUpdatedAt: new Date().toISOString()
+      },
+      done: false
+    },
     sharedTransitionRect: null,
     onSharedAnimationDone: vi.fn(),
     onSearchSurfaceSubmit: vi.fn(),
+    onSetActiveSearchMode: vi.fn(),
+    onToggleDeepSearch: vi.fn(),
+    onCancelDeepSearch: vi.fn(),
+    onExpandDeepNode: vi.fn(),
     searchPillRef: { current: null }
   })
 }));
@@ -165,8 +244,8 @@ vi.mock("../workspace-surface-router", () => ({
       );
     }
     if (activeTab?.pageKind === "app") {
-      if (activeTab.appId === "ai-panel") {
-        return <div aria-label="ai-panel-workspace-surface" />;
+      if (activeTab.appId === "ai-history") {
+        return <div aria-label="ai-history-surface" />;
       }
       if (activeTab.appId === "ai-mcp") {
         return <div aria-label="ai-mcp-surface" />;
@@ -186,9 +265,365 @@ vi.mock("../workspace-surface-router", () => ({
 import { WorkbenchShell } from "../index";
 import { readWorkbenchStateSync, resetWorkbenchStateStorageForTests } from "../../state-storage";
 
+const setDesktopApiPlatform = (platform: NodeJS.Platform): void => {
+  const now = Date.now();
+  const desktopApi = {
+    windowControls: {
+      minimize: vi.fn(async () => undefined),
+      toggleMaximize: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined)
+    },
+    appMeta: {
+      version: "0.1.0",
+      platform,
+      isPackaged: false
+    },
+    shellEvents: {
+      onWindowStateChange: vi.fn(() => () => undefined)
+    },
+    openExternal: vi.fn(async () => false),
+    linuxCompat: {
+      readStatus: vi.fn(async () => ({
+        platform: "linux" as const,
+        enabled: false,
+        safeMode: false,
+        backend: "x11" as const,
+        gpuMode: "hardware" as const,
+        backendSource: "default" as const,
+        gpuSource: "default" as const,
+        warnings: [],
+        notes: [],
+        appliedEnv: {},
+        appliedSwitches: {},
+        facts: {
+          sessionType: "unknown" as const,
+          desktop: null,
+          waylandDisplay: null,
+          x11Display: null,
+          isRoot: false
+        },
+        generatedAt: new Date().toISOString()
+      })),
+      exportDiagnostics: vi.fn(async () => ({
+        ok: true as const,
+        filePath: "/tmp/linux-compat.json"
+      }))
+    },
+    search: {
+      aggregate: vi.fn(async () => ({
+        query: "",
+        blendedResults: [],
+        engineBuckets: [],
+        fetchedAt: new Date().toISOString(),
+        elapsedMs: 0
+      })),
+      local: vi.fn(async () => ({
+        query: "",
+        scopePreset: "home" as const,
+        roots: [],
+        results: [],
+        truncated: false,
+        elapsedMs: 0,
+        stats: {
+          scannedFiles: 0,
+          scannedDirs: 0,
+          contentScannedFiles: 0,
+          matchedFiles: 0,
+          skippedUnreadable: 0,
+          skippedBinaryOrTooLarge: 0,
+          usedIndex: false
+        }
+      })),
+      startLocalStream: vi.fn(async () => ({
+        streamId: "stream-1",
+        query: "",
+        scopePreset: "home" as const,
+        roots: []
+      })),
+      readLocalStream: vi.fn(async () => ({
+        streamId: "stream-1",
+        query: "",
+        scopePreset: "home" as const,
+        roots: [],
+        results: [],
+        truncated: false,
+        elapsedMs: 0,
+        stats: {
+          scannedFiles: 0,
+          scannedDirs: 0,
+          contentScannedFiles: 0,
+          matchedFiles: 0,
+          skippedUnreadable: 0,
+          skippedBinaryOrTooLarge: 0,
+          usedIndex: false
+        },
+        done: true
+      })),
+      cancelLocalStream: vi.fn(async () => ({
+        removed: true
+      })),
+      readIndexStatus: vi.fn(async () => ({
+        state: "idle" as const,
+        indexedFiles: 0,
+        indexedDirs: 0
+      })),
+      rebuildIndex: vi.fn(async () => ({
+        status: {
+          state: "ready" as const,
+          indexedFiles: 0,
+          indexedDirs: 0
+        },
+        scopePreset: "home" as const,
+        roots: []
+      })),
+      startDeepStream: vi.fn(async () => ({
+        streamId: "deep-stream-1",
+        snapshot: {
+          query: "",
+          budgetPreset: "medium" as const,
+          phase: "bootstrapping" as const,
+          nodes: [],
+          edges: [],
+          web: {
+            status: "loading" as const,
+            engineBuckets: [],
+            blendedCount: 0
+          },
+          local: {
+            status: "loading" as const,
+            scopePreset: "home" as const,
+            roots: [],
+            elapsedMs: 0,
+            stats: {
+              scannedFiles: 0,
+              scannedDirs: 0,
+              contentScannedFiles: 0,
+              matchedFiles: 0,
+              skippedUnreadable: 0,
+              skippedBinaryOrTooLarge: 0,
+              usedIndex: false
+            }
+          },
+          stats: {
+            dedupedResults: 0,
+            derivedQueries: 0,
+            expansionRounds: 0
+          },
+          lastUpdatedAt: new Date().toISOString()
+        }
+      })),
+      readDeepStream: vi.fn(async () => ({
+        streamId: "deep-stream-1",
+        snapshot: {
+          query: "",
+          budgetPreset: "medium" as const,
+          phase: "completed" as const,
+          nodes: [],
+          edges: [],
+          web: {
+            status: "ready" as const,
+            engineBuckets: [],
+            blendedCount: 0
+          },
+          local: {
+            status: "ready" as const,
+            scopePreset: "home" as const,
+            roots: [],
+            elapsedMs: 0,
+            stats: {
+              scannedFiles: 0,
+              scannedDirs: 0,
+              contentScannedFiles: 0,
+              matchedFiles: 0,
+              skippedUnreadable: 0,
+              skippedBinaryOrTooLarge: 0,
+              usedIndex: false
+            }
+          },
+          stats: {
+            dedupedResults: 0,
+            derivedQueries: 0,
+            expansionRounds: 0
+          },
+          lastUpdatedAt: new Date().toISOString()
+        },
+        done: true
+      })),
+      cancelDeepStream: vi.fn(async () => ({
+        removed: true
+      })),
+      expandDeepNode: vi.fn(async () => ({
+        streamId: "deep-stream-1",
+        accepted: true
+      }))
+    },
+    ai: {
+      readProfiles: vi.fn(async () => []),
+      readProviderCatalog: vi.fn(async () => []),
+      readPresetCatalog: vi.fn(async () => []),
+      authorizeOpenAiChatGpt: vi.fn(async () => ({
+        refreshToken: "refresh-token",
+        accessToken: "access-token",
+        expiresAt: now
+      })),
+      authorizeOpenAiChatGptDeviceCode: vi.fn(async () => ({
+        refreshToken: "refresh-token",
+        accessToken: "access-token",
+        expiresAt: now
+      })),
+      upsertProfile: vi.fn(async () => {
+        throw new Error("not implemented");
+      }),
+      deleteProfile: vi.fn(async () => undefined),
+      setDefaultProfile: vi.fn(async () => {
+        throw new Error("not implemented");
+      }),
+      validateProfile: vi.fn(async () => ({
+        ok: true,
+        message: "ok",
+        checkedAt: now
+      })),
+      discoverModels: vi.fn(async () => ({
+        providerId: "openai" as const,
+        protocolId: "openai_compatible" as const,
+        status: "ready" as const,
+        message: "ok",
+        checkedAt: now,
+        models: []
+      })),
+      refreshDiscoveredModels: vi.fn(async () => ({
+        providerId: "openai" as const,
+        protocolId: "openai_compatible" as const,
+        status: "ready" as const,
+        message: "ok",
+        checkedAt: now,
+        models: []
+      }))
+    },
+    files: {
+      readHome: vi.fn(),
+      readDirectory: vi.fn(),
+      readTrash: vi.fn(),
+      createFile: vi.fn(),
+      createFolder: vi.fn(),
+      moveToTrash: vi.fn(),
+      restoreFromTrash: vi.fn(),
+      emptyTrash: vi.fn(),
+      mountDevice: vi.fn(),
+      ejectDevice: vi.fn(),
+      readFavorites: vi.fn(async () => ({ favorites: [] })),
+      writeFavorites: vi.fn(async (value) => value),
+      readRecentLocations: vi.fn(async () => ({ recentLocations: [] })),
+      writeRecentLocations: vi.fn(async (value) => value),
+      readTextFile: vi.fn(),
+      writeTextFile: vi.fn(),
+      statFile: vi.fn()
+    },
+    workbenchBrowser: {
+      syncTopology: vi.fn(async () => undefined),
+      syncLayout: vi.fn(async () => undefined),
+      navigate: vi.fn(async (request) => ({
+        address: request.address,
+        tabId: request.tabId ?? "browser-tab-test",
+        title: request.title ?? null
+      })),
+      goBack: vi.fn(async () => undefined),
+      goForward: vi.fn(async () => undefined),
+      reload: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      readPageState: vi.fn(async () => null),
+      onEvent: vi.fn(() => () => undefined)
+    },
+    mcp: {
+      readCatalog: vi.fn(async () => []),
+      readServers: vi.fn(async () => []),
+      readEffectiveServers: vi.fn(async () => ({ servers: [] })),
+      createServer: vi.fn(async () => {
+        throw new Error("not implemented");
+      }),
+      updateServer: vi.fn(async () => {
+        throw new Error("not implemented");
+      }),
+      deleteServer: vi.fn(async () => undefined),
+      installTemplate: vi.fn(async () => {
+        throw new Error("not implemented");
+      }),
+      validateServer: vi.fn(async () => ({ ok: true, errors: [], warnings: [] })),
+      startServer: vi.fn(async () => {
+        throw new Error("not implemented");
+      }),
+      stopServer: vi.fn(async () => {
+        throw new Error("not implemented");
+      }),
+      restartServer: vi.fn(async () => {
+        throw new Error("not implemented");
+      }),
+      readServerIntrospection: vi.fn(async () => ({
+        serverId: "test",
+        prompts: [],
+        resources: [],
+        tools: [],
+        sampledAt: new Date(now).toISOString()
+      })),
+      onEvent: vi.fn(() => () => undefined)
+    },
+    skills: {
+      readCatalog: vi.fn(async () => []),
+      readInstalled: vi.fn(async () => []),
+      readEffectiveSkills: vi.fn(async () => []),
+      discoverImportSource: vi.fn(async () => ({ kind: "directory", rootPath: "/tmp" })),
+      importSkills: vi.fn(async () => []),
+      createLyraSkill: vi.fn(async () => {
+        throw new Error("not implemented");
+      }),
+      updateSkillState: vi.fn(async () => {
+        throw new Error("not implemented");
+      }),
+      deleteSkill: vi.fn(async () => undefined),
+      readSkillDetails: vi.fn(async () => null),
+      onEvent: vi.fn(() => () => undefined)
+    },
+    lsp: {
+      openDocument: vi.fn(async () => undefined),
+      changeDocument: vi.fn(async () => undefined),
+      saveDocument: vi.fn(async () => undefined),
+      closeDocument: vi.fn(async () => undefined),
+      completion: vi.fn(async () => ({ items: [] })),
+      onEvent: vi.fn(() => () => undefined)
+    },
+    terminal: {
+      createSession: vi.fn(),
+      restoreSessions: vi.fn(async () => []),
+      reloadPrompt: vi.fn(async () => ({ applied: false, deferred: true })),
+      write: vi.fn(async () => undefined),
+      resize: vi.fn(async () => undefined),
+      closeSession: vi.fn(async () => undefined),
+      onData: vi.fn(() => () => undefined),
+      onExit: vi.fn(() => () => undefined),
+      onError: vi.fn(() => () => undefined)
+    },
+    workbenchState: {
+      readSync: vi.fn(() => null),
+      writeSync: vi.fn(),
+      removeSync: vi.fn()
+    }
+  } as any;
+
+  Object.defineProperty(window, "lyraDesktop", {
+    configurable: true,
+    writable: true,
+    value: desktopApi
+  });
+};
+
 describe("workbench shell", () => {
   beforeEach(() => {
     resetWorkbenchStateStorageForTests();
+    Object.defineProperty(window, "lyraDesktop", {
+      configurable: true,
+      writable: true,
+      value: undefined
+    });
   });
 
   test("renders empty frame regions", () => {
@@ -235,14 +670,6 @@ describe("workbench shell", () => {
     expect(screen.getByLabelText("notification-center-surface")).toBeInTheDocument();
   });
 
-  test("opens ai panel as a new app tab from left panel topbar button", () => {
-    render(<WorkbenchShell />);
-
-    fireEvent.click(screen.getByRole("button", { name: "在工作区打开 AI 面板" }));
-
-    expect(screen.getByLabelText("ai-panel-workspace-surface")).toBeInTheDocument();
-  });
-
   test("opens mcp and skills tabs from ai topbar buttons", () => {
     render(<WorkbenchShell />);
 
@@ -251,6 +678,13 @@ describe("workbench shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "打开 Skills" }));
     expect(screen.getByLabelText("ai-skills-surface")).toBeInTheDocument();
+  });
+
+  test("opens history tab from ai topbar button", () => {
+    render(<WorkbenchShell />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开历史对话" }));
+    expect(screen.getByLabelText("ai-history-surface")).toBeInTheDocument();
   });
 
   test("applies language and theme changes immediately", () => {
@@ -311,5 +745,23 @@ describe("workbench shell", () => {
     const raw = readWorkbenchStateSync("preferences");
     expect(raw).not.toBeNull();
     expect(raw).toContain("\"terminalThemePreset\":\"ocean-matrix\"");
+  });
+
+  test("hides custom macOS window buttons when platform is darwin", () => {
+    setDesktopApiPlatform("darwin");
+    render(<WorkbenchShell />);
+
+    expect(screen.queryByRole("button", { name: "最小化" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "最大化切换" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
+  });
+
+  test("renders custom window buttons on non-mac platforms", () => {
+    setDesktopApiPlatform("linux");
+    render(<WorkbenchShell />);
+
+    expect(screen.getByRole("button", { name: "最小化" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "最大化切换" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "关闭" })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,11 @@
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchThemeId } from "../theme";
 import type { TerminalThemePresetId } from "../terminal-theme";
+import type {
+  SearchDeepCrawlPolicy,
+  SearchDeepBudgetPreset,
+  SearchLocalScopePreset
+} from "../../../shared/desktop-bridge";
 
 export type WorkbenchSplitTriggerMode = "ctrl_left_drag" | "right_drag";
 
@@ -16,6 +21,8 @@ export type WorkbenchSplitOverflowPolicy =
   | "replace_oldest"
   | "replace_target";
 
+export type WorkbenchSearchResultsSourceFilter = "all" | "web" | "local";
+
 export type WorkbenchPreferences = {
   readonly locale: WorkbenchLocale;
   readonly theme: WorkbenchThemeId;
@@ -23,6 +30,22 @@ export type WorkbenchPreferences = {
   readonly splitTriggerMode: WorkbenchSplitTriggerMode;
   readonly splitThreePaneLayout: WorkbenchSplitThreePaneLayout;
   readonly splitOverflowPolicy: WorkbenchSplitOverflowPolicy;
+  readonly aiRichRenderingEnabled: boolean;
+  readonly searchScopePreset: SearchLocalScopePreset;
+  readonly searchCustomRoots: readonly string[];
+  readonly searchEnableFuzzy: boolean;
+  readonly searchEnableContent: boolean;
+  readonly searchIncludeHidden: boolean;
+  readonly searchWebEngineIds: readonly string[];
+  readonly searchSearxngEndpoint?: string;
+  readonly searchAutoIndexEnabled: boolean;
+  readonly deepSearchDefaultBudget: SearchDeepBudgetPreset;
+  readonly deepSearchRestoreViewport: boolean;
+  readonly deepSearchLocalOpenBehavior: "open_file" | "reveal_in_manager";
+  readonly deepSearchSiteExpansionEnabled: boolean;
+  readonly deepSearchProactiveDomainGuessingEnabled: boolean;
+  readonly deepSearchCrawlPolicy: SearchDeepCrawlPolicy;
+  readonly searchResultsSourceFilter: WorkbenchSearchResultsSourceFilter;
 };
 
 export type WorkbenchPreferencesModel = {
@@ -33,5 +56,21 @@ export type WorkbenchPreferencesModel = {
   readonly setSplitTriggerMode: (mode: WorkbenchSplitTriggerMode) => void;
   readonly setSplitThreePaneLayout: (layout: WorkbenchSplitThreePaneLayout) => void;
   readonly setSplitOverflowPolicy: (policy: WorkbenchSplitOverflowPolicy) => void;
+  readonly setAiRichRenderingEnabled: (enabled: boolean) => void;
+  readonly setSearchScopePreset: (value: SearchLocalScopePreset) => void;
+  readonly setSearchCustomRoots: (value: readonly string[]) => void;
+  readonly setSearchEnableFuzzy: (value: boolean) => void;
+  readonly setSearchEnableContent: (value: boolean) => void;
+  readonly setSearchIncludeHidden: (value: boolean) => void;
+  readonly setSearchWebEngineIds: (value: readonly string[]) => void;
+  readonly setSearchSearxngEndpoint: (value?: string) => void;
+  readonly setSearchAutoIndexEnabled: (value: boolean) => void;
+  readonly setDeepSearchDefaultBudget: (value: SearchDeepBudgetPreset) => void;
+  readonly setDeepSearchRestoreViewport: (value: boolean) => void;
+  readonly setDeepSearchLocalOpenBehavior: (value: "open_file" | "reveal_in_manager") => void;
+  readonly setDeepSearchSiteExpansionEnabled: (value: boolean) => void;
+  readonly setDeepSearchProactiveDomainGuessingEnabled: (value: boolean) => void;
+  readonly setDeepSearchCrawlPolicy: (value: SearchDeepCrawlPolicy) => void;
+  readonly setSearchResultsSourceFilter: (value: WorkbenchSearchResultsSourceFilter) => void;
   readonly reset: () => void;
 };

@@ -13,7 +13,8 @@ export const WORKBENCH_CONFIG = {
     resultsPerEngine: 5,
     searchEngines: [
       { id: "bing", label: "Bing", accentColor: "#008373" },
-      { id: "brave", label: "Brave", accentColor: "#FB542B" }
+      { id: "brave", label: "Brave", accentColor: "#FB542B" },
+      { id: "duckduckgo", label: "DuckDuckGo", accentColor: "#DE5833" }
     ]
   }
 } as const;

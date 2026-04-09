@@ -1,9 +1,13 @@
 import type {
+  McpCatalogItem,
+  McpEffectiveConfig,
   McpInstallKind,
   McpIntrospectionSnapshot,
   McpRuntimeStatus,
   McpServerId,
+  McpServerConfig,
   McpServerRequest,
+  McpReadEffectiveServersRequest,
   McpScope,
   McpTransport
 } from "../../shared/mcp";
@@ -76,40 +80,35 @@ export type RuntimeSnapshot = {
   readonly introspection?: McpIntrospectionSnapshot;
 };
 
+export type McpToolCallRequest = McpServerRequest & {
+  readonly toolName: string;
+  readonly arguments?: Readonly<Record<string, unknown>>;
+  readonly timeoutMs?: number;
+  readonly aiSessionId?: string;
+};
+
+export type McpToolCallResult = {
+  readonly serverId: McpServerId;
+  readonly toolName: string;
+  readonly transport: McpTransport;
+  readonly content: readonly unknown[];
+  readonly structuredContent?: unknown;
+  readonly isError: boolean;
+  readonly raw: Readonly<Record<string, unknown>>;
+};
+
 export type McpIpcBridge = {
   readonly dispose: () => Promise<void>;
+  readonly readCatalog: () => readonly McpCatalogItem[];
+  readonly readEffectiveServers: (
+    request?: McpReadEffectiveServersRequest
+  ) => Promise<McpEffectiveConfig>;
+  readonly readServerIntrospection: (
+    request: McpServerRequest
+  ) => Promise<McpIntrospectionSnapshot>;
+  readonly callTool: (request: McpToolCallRequest) => Promise<McpToolCallResult>;
+  readonly readServers: (
+    scope: McpScope,
+    projectRoot?: string
+  ) => Promise<readonly McpServerConfig[]>;
 };
-
-export type McpNativeBindings = {
-  readonly registerMcpEventCallback: (listener: (eventJson: string) => void) => void;
-  readonly readMcpScopeDocumentJson: (requestJson: string) => string;
-  readonly writeMcpScopeDocumentJson: (requestJson: string) => void;
-  readonly readMcpSecretStoreJson: (requestJson: string) => string;
-  readonly writeMcpSecretStoreJson: (requestJson: string) => void;
-  readonly sanitizeMcpEnvironmentJson: (requestJson: string) => string;
-  readonly normalizeMcpEnvironmentInputJson: (requestJson: string) => string;
-  readonly deleteMcpSecretRefsJson: (requestJson: string) => string;
-  readonly mergeMcpEffectiveConfigJson: (requestJson: string) => string;
-  readonly validateMcpServerJson: (requestJson: string) => string;
-  readonly writeMcpManagedManifestJson: (requestJson: string) => void;
-  readonly materializeMcpRuntimeEnvironmentJson: (requestJson: string) => string;
-  readonly createMcpServerFromTemplateJson: (requestJson: string) => string;
-  readonly readMcpRuntimeStatusesJson: () => string;
-  readonly readMcpRuntimeIntrospectionJson: (requestJson: string) => string;
-  readonly startMcpRuntimeJson: (requestJson: string) => string;
-  readonly stopMcpRuntimeJson: (requestJson: string) => string;
-  readonly restartMcpRuntimeJson: (requestJson: string) => string;
-  readonly shutdownMcpRuntime: () => void;
-};
-
-export type McpNativeLoadResult =
-  | {
-      readonly ok: true;
-      readonly bindings: McpNativeBindings;
-      readonly loadedFrom: string;
-    }
-  | {
-      readonly ok: false;
-      readonly errorMessage: string;
-      readonly triedPaths: readonly string[];
-    };

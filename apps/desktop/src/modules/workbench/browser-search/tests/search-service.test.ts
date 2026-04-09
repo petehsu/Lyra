@@ -93,23 +93,167 @@ describe("aggregated search service", () => {
           }))
         },
         search: {
-          aggregate
+          aggregate,
+          local: vi.fn(async () => ({
+            query: "lyra",
+            scopePreset: "home" as const,
+            roots: [],
+            results: [],
+            truncated: false,
+            elapsedMs: 0,
+            stats: {
+              scannedFiles: 0,
+              scannedDirs: 0,
+              contentScannedFiles: 0,
+              matchedFiles: 0,
+              skippedUnreadable: 0,
+              skippedBinaryOrTooLarge: 0,
+              usedIndex: false
+            }
+          })),
+          startLocalStream: vi.fn(async () => ({
+            streamId: "stream-1",
+            query: "lyra",
+            scopePreset: "home" as const,
+            roots: []
+          })),
+          readLocalStream: vi.fn(async () => ({
+            streamId: "stream-1",
+            query: "lyra",
+            scopePreset: "home" as const,
+            roots: [],
+            results: [],
+            truncated: false,
+            elapsedMs: 0,
+            stats: {
+              scannedFiles: 0,
+              scannedDirs: 0,
+              contentScannedFiles: 0,
+              matchedFiles: 0,
+              skippedUnreadable: 0,
+              skippedBinaryOrTooLarge: 0,
+              usedIndex: false
+            },
+            done: true
+          })),
+          cancelLocalStream: vi.fn(async () => ({
+            removed: true
+          })),
+          readIndexStatus: vi.fn(async () => ({
+            state: "idle" as const,
+            indexedFiles: 0,
+            indexedDirs: 0
+          })),
+          rebuildIndex: vi.fn(async () => ({
+            status: {
+              state: "ready" as const,
+              indexedFiles: 0,
+              indexedDirs: 0
+            },
+            scopePreset: "home" as const,
+            roots: []
+          })),
+          startDeepStream: vi.fn(async () => ({
+            streamId: "deep-stream-1",
+            snapshot: {
+              query: "lyra",
+              budgetPreset: "medium" as const,
+              phase: "bootstrapping" as const,
+              nodes: [],
+              edges: [],
+              web: {
+                status: "loading" as const,
+                engineBuckets: [],
+                blendedCount: 0
+              },
+              local: {
+                status: "loading" as const,
+                scopePreset: "home" as const,
+                roots: [],
+                elapsedMs: 0,
+                stats: {
+                  scannedFiles: 0,
+                  scannedDirs: 0,
+                  contentScannedFiles: 0,
+                  matchedFiles: 0,
+                  skippedUnreadable: 0,
+                  skippedBinaryOrTooLarge: 0,
+                  usedIndex: false
+                }
+              },
+              stats: {
+                dedupedResults: 0,
+                derivedQueries: 0,
+                expansionRounds: 0
+              },
+              lastUpdatedAt: "2026-03-26T00:00:00.000Z"
+            }
+          })),
+          readDeepStream: vi.fn(async () => ({
+            streamId: "deep-stream-1",
+            snapshot: {
+              query: "lyra",
+              budgetPreset: "medium" as const,
+              phase: "completed" as const,
+              nodes: [],
+              edges: [],
+              web: {
+                status: "ready" as const,
+                engineBuckets: [],
+                blendedCount: 0
+              },
+              local: {
+                status: "ready" as const,
+                scopePreset: "home" as const,
+                roots: [],
+                elapsedMs: 0,
+                stats: {
+                  scannedFiles: 0,
+                  scannedDirs: 0,
+                  contentScannedFiles: 0,
+                  matchedFiles: 0,
+                  skippedUnreadable: 0,
+                  skippedBinaryOrTooLarge: 0,
+                  usedIndex: false
+                }
+              },
+              stats: {
+                dedupedResults: 0,
+                derivedQueries: 0,
+                expansionRounds: 0
+              },
+              lastUpdatedAt: "2026-03-26T00:00:00.000Z"
+            },
+            done: true
+          })),
+          cancelDeepStream: vi.fn(async () => ({
+            removed: true
+          })),
+          expandDeepNode: vi.fn(async () => ({
+            streamId: "deep-stream-1",
+            accepted: true
+          }))
         },
         ai: {
           readProfiles: vi.fn(async () => []),
           readProviderCatalog: vi.fn(async () => []),
           readPresetCatalog: vi.fn(async () => []),
+          authorizeOpenAiChatGpt: vi.fn(async () => ({
+            refreshToken: "refresh-token",
+            accessToken: "access-token",
+            expiresAt: Date.now()
+          })),
+          authorizeOpenAiChatGptDeviceCode: vi.fn(async () => ({
+            refreshToken: "refresh-token",
+            accessToken: "access-token",
+            expiresAt: Date.now()
+          })),
           upsertProfile: vi.fn(),
           deleteProfile: vi.fn(),
           setDefaultProfile: vi.fn(),
           validateProfile: vi.fn(),
           discoverModels: vi.fn(),
-          refreshDiscoveredModels: vi.fn(),
-          readSession: vi.fn(),
-          readSessionHistory: vi.fn(async () => []),
-          sendChatTurn: vi.fn(),
-          cancelChatTurn: vi.fn(),
-          onEvent: vi.fn(() => () => undefined)
+          refreshDiscoveredModels: vi.fn()
         },
         files: {
           readHome: vi.fn(),
@@ -130,212 +274,20 @@ describe("aggregated search service", () => {
           writeTextFile: vi.fn(),
           statFile: vi.fn()
         },
-        computer: {
-          readSession: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: false,
-            powerState: "off" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
+        workbenchBrowser: {
+          syncTopology: vi.fn(async () => undefined),
+          syncLayout: vi.fn(async () => undefined),
+          navigate: vi.fn(async (request) => ({
+            address: request.address,
+            tabId: request.tabId ?? "browser-tab-test",
+            title: request.title ?? null
           })),
-          readHostStatus: vi.fn(async () => ({
-            platform: "linux" as const,
-            platformLabel: "Linux",
-            hostname: "lyra",
-            release: "test",
-            osFlavor: "linux" as const
-          })),
-          powerOn: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: true,
-            powerState: "booting" as const,
-            bootReason: "user" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
-          })),
-          powerOff: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: true,
-            powerState: "shutting_down" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
-          })),
-          openApp: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: true,
-            powerState: "on" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
-          })),
-          focusApp: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: true,
-            powerState: "on" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
-          })),
-          closeApp: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: true,
-            powerState: "on" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
-          })),
-          moveAppWindow: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: true,
-            powerState: "on" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
-          })),
-          resizeAppWindow: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: true,
-            powerState: "on" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
-          })),
-          minimizeApp: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: true,
-            powerState: "on" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
-          })),
-          maximizeApp: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: true,
-            powerState: "on" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
-          })),
-          restoreApp: vi.fn(async () => ({
-            sessionId: "test-session",
-            hasBooted: true,
-            powerState: "on" as const,
-            openApps: [],
-            activeAppId: null,
-            updatedAt: new Date().toISOString()
-          })),
-          subscribeSession: vi.fn(() => () => undefined)
-        },
-        systemImages: {
-          readRegistry: vi.fn(async () => ({
-            defaultImageId: "lyra-official",
-            runtimeModeOverride: null,
-            installedImages: []
-          })),
-          listInstalled: vi.fn(async () => []),
-          installFromDirectory: vi.fn(async () => ({
-            imageId: "lyra-official",
-            title: "Lyra Official System",
-            version: "1.0.0",
-            source: "directory" as const,
-            installPath: "/tmp/system-images/lyra-official/1.0.0",
-            installedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            manifest: {
-              id: "lyra-official",
-              title: "Lyra Official System",
-              version: "1.0.0",
-              apiVersion: { min: "1.0.0" },
-              shellMode: "full-shell" as const,
-              defaultRuntimeMode: "sandbox" as const,
-              entryPath: "system/index.js",
-              capabilities: [],
-              platformArtifacts: []
-            }
-          })),
-          installFromPackage: vi.fn(async () => ({
-            imageId: "lyra-official",
-            title: "Lyra Official System",
-            version: "1.0.0",
-            source: "package" as const,
-            installPath: "/tmp/system-images/lyra-official/1.0.0",
-            installedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            manifest: {
-              id: "lyra-official",
-              title: "Lyra Official System",
-              version: "1.0.0",
-              apiVersion: { min: "1.0.0" },
-              shellMode: "full-shell" as const,
-              defaultRuntimeMode: "sandbox" as const,
-              entryPath: "system/index.js",
-              capabilities: [],
-              platformArtifacts: []
-            }
-          })),
-          installOfficialSeed: vi.fn(async () => ({
-            imageId: "lyra-official",
-            title: "Lyra Official System",
-            version: "1.0.0",
-            source: "builtin-seed" as const,
-            installPath: "/tmp/system-images/lyra-official/1.0.0",
-            installedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            manifest: {
-              id: "lyra-official",
-              title: "Lyra Official System",
-              version: "1.0.0",
-              apiVersion: { min: "1.0.0" },
-              shellMode: "full-shell" as const,
-              defaultRuntimeMode: "sandbox" as const,
-              entryPath: "system/index.js",
-              capabilities: [],
-              platformArtifacts: []
-            }
-          })),
-          uninstall: vi.fn(async () => ({
-            defaultImageId: null,
-            runtimeModeOverride: null,
-            installedImages: []
-          })),
-          setDefaultImage: vi.fn(async () => ({
-            defaultImageId: "lyra-official",
-            runtimeModeOverride: null,
-            installedImages: []
-          })),
-          assignSessionImage: vi.fn(async () => ({
-            sessionId: "test-session",
-            resolvedSystemImageId: "lyra-official",
-            effectiveRuntimeMode: "sandbox" as const,
-            effectiveShellMode: "full-shell" as const,
-            systemContextState: "on" as const,
-            updatedAt: new Date().toISOString()
-          })),
-          clearSessionImageOverride: vi.fn(async () => ({
-            sessionId: "test-session",
-            resolvedSystemImageId: "lyra-official",
-            effectiveRuntimeMode: "sandbox" as const,
-            effectiveShellMode: "full-shell" as const,
-            systemContextState: "on" as const,
-            updatedAt: new Date().toISOString()
-          })),
-          setRuntimeModeOverride: vi.fn(async () => ({
-            defaultImageId: "lyra-official",
-            runtimeModeOverride: "sandbox" as const,
-            installedImages: []
-          })),
-          readResolvedSessionSystem: vi.fn(async () => ({
-            sessionId: "test-session",
-            resolvedSystemImageId: "lyra-official",
-            effectiveRuntimeMode: "sandbox" as const,
-            effectiveShellMode: "full-shell" as const,
-            systemContextState: "on" as const,
-            updatedAt: new Date().toISOString()
-          })),
-          subscribeSystemEvents: vi.fn(() => () => undefined)
+          goBack: vi.fn(async () => undefined),
+          goForward: vi.fn(async () => undefined),
+          reload: vi.fn(async () => undefined),
+          stop: vi.fn(async () => undefined),
+          readPageState: vi.fn(async () => null),
+          onEvent: vi.fn(() => () => undefined)
         },
         mcp: {
           readCatalog: vi.fn(async () => []),
@@ -380,11 +332,44 @@ describe("aggregated search service", () => {
           restoreSessions: vi.fn(),
           reloadPrompt: vi.fn(),
           write: vi.fn(),
+          read: vi.fn(async () => ({
+            sessionId: "session-1",
+            cursor: "0",
+            output: "",
+            running: false,
+            exitCode: 0,
+            truncated: false,
+            source: "user" as const,
+            mode: "shell" as const
+          })),
           resize: vi.fn(),
           closeSession: vi.fn(),
           onData: vi.fn(() => () => undefined),
           onExit: vi.fn(() => () => undefined),
           onError: vi.fn(() => () => undefined)
+        },
+        capabilities: {
+          readRegistry: vi.fn(async () => ({
+            updatedAt: new Date().toISOString(),
+            apps: [],
+            capabilities: []
+          })),
+          listCapabilities: vi.fn(async () => []),
+          invokeCapability: vi.fn(async () => ({
+            callId: "call-1",
+            capabilityId: "filesystem.read",
+            ok: true,
+            result: null,
+            completedAt: new Date().toISOString()
+          })),
+          resolveApproval: vi.fn(async () => ({
+            approvalId: "approval-1",
+            callId: "call-1",
+            capabilityId: "filesystem.read",
+            decision: "approved_once" as const,
+            resolvedAt: new Date().toISOString()
+          })),
+          onEvent: vi.fn(() => () => undefined)
         },
         workbenchState: {
           readSync: vi.fn(() => null),
@@ -407,9 +392,13 @@ describe("aggregated search service", () => {
   });
 
   test("createEmptySearchPayload builds the empty shape", () => {
-    const payload = createEmptySearchPayload("lyra");
+    const payload = createEmptySearchPayload({
+      query: "lyra",
+      scopePreset: "home"
+    });
     expect(payload.query).toBe("lyra");
-    expect(payload.blendedResults).toEqual([]);
-    expect(payload.engineBuckets).toEqual([]);
+    expect(payload.web.payload.blendedResults).toEqual([]);
+    expect(payload.web.payload.engineBuckets).toEqual([]);
+    expect(payload.local.payload.results).toEqual([]);
   });
 });

@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
 
+import type {
+  SearchDeepCrawlPolicy,
+  SearchDeepBudgetPreset,
+  SearchLocalScopePreset
+} from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
 import type {
   WorkbenchSplitOverflowPolicy,
@@ -25,18 +30,62 @@ export type BrowserSettingsSurfaceProps = {
   readonly splitTriggerModeLabel: string;
   readonly splitThreePaneLayoutLabel: string;
   readonly splitOverflowPolicyLabel: string;
+  readonly aiRichRenderLabel: string;
+  readonly aiRichRenderDescription: string;
+  readonly aiRichRenderEnabledLabel: string;
+  readonly aiRichRenderDisabledLabel: string;
+  readonly searchCategoryLabel: string;
+  readonly searchScopeLabel: string;
+  readonly searchCustomRootsLabel: string;
+  readonly searchCustomRootsPlaceholder: string;
+  readonly searchWebEnginesLabel: string;
+  readonly searchSearxngEndpointLabel: string;
+  readonly searchDeepBudgetLabel: string;
+  readonly deepSearchRestoreViewportLabel: string;
+  readonly deepSearchLocalOpenBehaviorLabel: string;
+  readonly deepSearchSiteExpansionLabel: string;
+  readonly deepSearchProactiveGuessLabel: string;
+  readonly deepSearchCrawlPolicyLabel: string;
+  readonly searchEnableFuzzyLabel: string;
+  readonly searchEnableContentLabel: string;
+  readonly searchIncludeHiddenLabel: string;
+  readonly searchAutoIndexLabel: string;
+  readonly searchIndexStatusLabel: string;
+  readonly searchRebuildIndexLabel: string;
   readonly localeValue: WorkbenchLocale;
   readonly themeValue: WorkbenchThemeId;
   readonly terminalThemeValue: TerminalThemePresetId;
   readonly splitTriggerModeValue: WorkbenchSplitTriggerMode;
   readonly splitThreePaneLayoutValue: WorkbenchSplitThreePaneLayout;
   readonly splitOverflowPolicyValue: WorkbenchSplitOverflowPolicy;
+  readonly aiRichRenderValue: boolean;
+  readonly searchScopeValue: SearchLocalScopePreset;
+  readonly searchCustomRootsValue: string;
+  readonly searchWebEngineIds: readonly string[];
+  readonly searchSearxngEndpointValue: string;
+  readonly searchDeepBudgetValue: SearchDeepBudgetPreset;
+  readonly deepSearchRestoreViewportValue: boolean;
+  readonly deepSearchLocalOpenBehaviorValue: "open_file" | "reveal_in_manager";
+  readonly deepSearchSiteExpansionValue: boolean;
+  readonly deepSearchProactiveGuessValue: boolean;
+  readonly deepSearchCrawlPolicyValue: SearchDeepCrawlPolicy;
+  readonly searchEnableFuzzyValue: boolean;
+  readonly searchEnableContentValue: boolean;
+  readonly searchIncludeHiddenValue: boolean;
+  readonly searchAutoIndexValue: boolean;
+  readonly searchIndexStatusValue: string;
+  readonly searchRebuildIndexPending: boolean;
   readonly localeOptions: readonly Option<WorkbenchLocale>[];
   readonly themeOptions: readonly Option<WorkbenchThemeId>[];
   readonly terminalThemeOptions: readonly (Option<TerminalThemePresetId> & { readonly swatches: readonly string[] })[];
   readonly splitTriggerModeOptions: readonly Option<WorkbenchSplitTriggerMode>[];
   readonly splitThreePaneLayoutOptions: readonly Option<WorkbenchSplitThreePaneLayout>[];
   readonly splitOverflowPolicyOptions: readonly Option<WorkbenchSplitOverflowPolicy>[];
+  readonly searchScopeOptions: readonly Option<SearchLocalScopePreset>[];
+  readonly searchDeepBudgetOptions: readonly Option<SearchDeepBudgetPreset>[];
+  readonly deepSearchLocalOpenBehaviorOptions: readonly Option<"open_file" | "reveal_in_manager">[];
+  readonly deepSearchCrawlPolicyOptions: readonly Option<SearchDeepCrawlPolicy>[];
+  readonly searchWebEngineOptions: readonly Option<string>[];
   readonly aiLabels: SettingsAiLabels;
   readonly aiModel: SettingsAiModel;
   readonly onLocaleChange: (value: WorkbenchLocale) => void;
@@ -47,6 +96,22 @@ export type BrowserSettingsSurfaceProps = {
     value: WorkbenchSplitThreePaneLayout
   ) => void;
   readonly onSplitOverflowPolicyChange: (value: WorkbenchSplitOverflowPolicy) => void;
+  readonly onAiRichRenderChange: (value: boolean) => void;
+  readonly onSearchScopeChange: (value: SearchLocalScopePreset) => void;
+  readonly onSearchCustomRootsChange: (value: string) => void;
+  readonly onSearchWebEnginesChange: (value: readonly string[]) => void;
+  readonly onSearchSearxngEndpointChange: (value: string) => void;
+  readonly onSearchDeepBudgetChange: (value: SearchDeepBudgetPreset) => void;
+  readonly onDeepSearchRestoreViewportChange: (value: boolean) => void;
+  readonly onDeepSearchLocalOpenBehaviorChange: (value: "open_file" | "reveal_in_manager") => void;
+  readonly onDeepSearchSiteExpansionChange: (value: boolean) => void;
+  readonly onDeepSearchProactiveGuessChange: (value: boolean) => void;
+  readonly onDeepSearchCrawlPolicyChange: (value: SearchDeepCrawlPolicy) => void;
+  readonly onSearchEnableFuzzyChange: (value: boolean) => void;
+  readonly onSearchEnableContentChange: (value: boolean) => void;
+  readonly onSearchIncludeHiddenChange: (value: boolean) => void;
+  readonly onSearchAutoIndexChange: (value: boolean) => void;
+  readonly onSearchRebuildIndex: () => void;
 };
 
 const buildThemePreviewClassName = (value: WorkbenchThemeId): string =>
@@ -58,7 +123,7 @@ const buildTerminalPreviewClassName = (value: TerminalThemePresetId): string =>
 const buildSplitLayoutPreviewClassName = (value: WorkbenchSplitThreePaneLayout): string =>
   `lyra-settings-split-layout-preview-${value}`;
 
-type SettingsCategoryId = "general" | "appearance" | "workspace" | "ai";
+type SettingsCategoryId = "general" | "appearance" | "workspace" | "search" | "ai";
 
 type SettingsCategory = {
   readonly id: SettingsCategoryId;
@@ -74,18 +139,62 @@ export const BrowserSettingsSurface = ({
   splitTriggerModeLabel,
   splitThreePaneLayoutLabel,
   splitOverflowPolicyLabel,
+  aiRichRenderLabel,
+  aiRichRenderDescription,
+  aiRichRenderEnabledLabel,
+  aiRichRenderDisabledLabel,
+  searchCategoryLabel,
+  searchScopeLabel,
+  searchCustomRootsLabel,
+  searchCustomRootsPlaceholder,
+  searchWebEnginesLabel,
+  searchSearxngEndpointLabel,
+  searchDeepBudgetLabel,
+  deepSearchRestoreViewportLabel,
+  deepSearchLocalOpenBehaviorLabel,
+  deepSearchSiteExpansionLabel,
+  deepSearchProactiveGuessLabel,
+  deepSearchCrawlPolicyLabel,
+  searchEnableFuzzyLabel,
+  searchEnableContentLabel,
+  searchIncludeHiddenLabel,
+  searchAutoIndexLabel,
+  searchIndexStatusLabel,
+  searchRebuildIndexLabel,
   localeValue,
   themeValue,
   terminalThemeValue,
   splitTriggerModeValue,
   splitThreePaneLayoutValue,
   splitOverflowPolicyValue,
+  aiRichRenderValue,
+  searchScopeValue,
+  searchCustomRootsValue,
+  searchWebEngineIds,
+  searchSearxngEndpointValue,
+  searchDeepBudgetValue,
+  deepSearchRestoreViewportValue,
+  deepSearchLocalOpenBehaviorValue,
+  deepSearchSiteExpansionValue,
+  deepSearchProactiveGuessValue,
+  deepSearchCrawlPolicyValue,
+  searchEnableFuzzyValue,
+  searchEnableContentValue,
+  searchIncludeHiddenValue,
+  searchAutoIndexValue,
+  searchIndexStatusValue,
+  searchRebuildIndexPending,
   localeOptions,
   themeOptions,
   terminalThemeOptions,
   splitTriggerModeOptions,
   splitThreePaneLayoutOptions,
   splitOverflowPolicyOptions,
+  searchScopeOptions,
+  searchDeepBudgetOptions,
+  deepSearchLocalOpenBehaviorOptions,
+  deepSearchCrawlPolicyOptions,
+  searchWebEngineOptions,
   aiLabels,
   aiModel,
   onLocaleChange,
@@ -93,7 +202,23 @@ export const BrowserSettingsSurface = ({
   onTerminalThemeChange,
   onSplitTriggerModeChange,
   onSplitThreePaneLayoutChange,
-  onSplitOverflowPolicyChange
+  onSplitOverflowPolicyChange,
+  onAiRichRenderChange,
+  onSearchScopeChange,
+  onSearchCustomRootsChange,
+  onSearchWebEnginesChange,
+  onSearchSearxngEndpointChange,
+  onSearchDeepBudgetChange,
+  onDeepSearchRestoreViewportChange,
+  onDeepSearchLocalOpenBehaviorChange,
+  onDeepSearchSiteExpansionChange,
+  onDeepSearchProactiveGuessChange,
+  onDeepSearchCrawlPolicyChange,
+  onSearchEnableFuzzyChange,
+  onSearchEnableContentChange,
+  onSearchIncludeHiddenChange,
+  onSearchAutoIndexChange,
+  onSearchRebuildIndex
 }: BrowserSettingsSurfaceProps) => {
   const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>("general");
   const categories = useMemo<readonly SettingsCategory[]>(
@@ -101,9 +226,10 @@ export const BrowserSettingsSurface = ({
       { id: "general", label: languageLabel },
       { id: "appearance", label: themeLabel },
       { id: "workspace", label: splitThreePaneLayoutLabel },
+      { id: "search", label: searchCategoryLabel },
       { id: "ai", label: aiCategoryLabel }
     ],
-    [aiCategoryLabel, languageLabel, splitThreePaneLayoutLabel, themeLabel]
+    [aiCategoryLabel, languageLabel, searchCategoryLabel, splitThreePaneLayoutLabel, themeLabel]
   );
 
   const scrollToCategory = (categoryId: SettingsCategoryId): void => {
@@ -392,6 +518,346 @@ export const BrowserSettingsSurface = ({
           </section>
 
           <section
+            id="lyra-settings-category-search"
+            className="lyra-settings-category"
+            onMouseEnter={() => {
+              setActiveCategory("search");
+            }}
+          >
+            <header className="lyra-settings-category-header">
+              <h2>{searchCategoryLabel}</h2>
+            </header>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{searchScopeLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={searchScopeLabel}>
+                {searchScopeOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    className={
+                      option.value === searchScopeValue
+                        ? "lyra-settings-choice lyra-settings-choice-active"
+                        : "lyra-settings-choice"
+                    }
+                    role="radio"
+                    aria-checked={option.value === searchScopeValue}
+                    onClick={() => {
+                      onSearchScopeChange(option.value);
+                    }}
+                  >
+                    <span className="lyra-settings-choice-main">
+                      <strong>{option.label}</strong>
+                      {option.description === undefined ? null : <small>{option.description}</small>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{searchCustomRootsLabel}</h3>
+              </header>
+              <textarea
+                className="lyra-settings-textarea"
+                value={searchCustomRootsValue}
+                placeholder={searchCustomRootsPlaceholder}
+                onChange={(event) => {
+                  onSearchCustomRootsChange(event.target.value);
+                }}
+              />
+            </section>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{searchWebEnginesLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="group" aria-label={searchWebEnginesLabel}>
+                {searchWebEngineOptions.map((option) => {
+                  const checked = searchWebEngineIds.includes(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      className={
+                        checked
+                          ? "lyra-settings-choice lyra-settings-choice-active"
+                          : "lyra-settings-choice"
+                      }
+                      type="button"
+                      onClick={() => {
+                        if (checked) {
+                          onSearchWebEnginesChange(
+                            searchWebEngineIds.filter((value) => value !== option.value)
+                          );
+                          return;
+                        }
+                        onSearchWebEnginesChange([...searchWebEngineIds, option.value]);
+                      }}
+                    >
+                      <span className="lyra-settings-choice-main">
+                        <strong>{option.label}</strong>
+                        {option.description === undefined ? null : <small>{option.description}</small>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{searchDeepBudgetLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={searchDeepBudgetLabel}>
+                {searchDeepBudgetOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    className={
+                      option.value === searchDeepBudgetValue
+                        ? "lyra-settings-choice lyra-settings-choice-active"
+                        : "lyra-settings-choice"
+                    }
+                    role="radio"
+                    aria-checked={option.value === searchDeepBudgetValue}
+                    onClick={() => {
+                      onSearchDeepBudgetChange(option.value);
+                    }}
+                  >
+                    <span className="lyra-settings-choice-main">
+                      <strong>{option.label}</strong>
+                      {option.description === undefined ? null : <small>{option.description}</small>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{deepSearchRestoreViewportLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="group" aria-label={deepSearchRestoreViewportLabel}>
+                <button
+                  className={
+                    deepSearchRestoreViewportValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  type="button"
+                  onClick={() => {
+                    onDeepSearchRestoreViewportChange(!deepSearchRestoreViewportValue);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{deepSearchRestoreViewportLabel}</strong>
+                  </span>
+                </button>
+              </div>
+            </section>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{deepSearchLocalOpenBehaviorLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={deepSearchLocalOpenBehaviorLabel}>
+                {deepSearchLocalOpenBehaviorOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    className={
+                      option.value === deepSearchLocalOpenBehaviorValue
+                        ? "lyra-settings-choice lyra-settings-choice-active"
+                        : "lyra-settings-choice"
+                    }
+                    role="radio"
+                    aria-checked={option.value === deepSearchLocalOpenBehaviorValue}
+                    onClick={() => {
+                      onDeepSearchLocalOpenBehaviorChange(option.value);
+                    }}
+                  >
+                    <span className="lyra-settings-choice-main">
+                      <strong>{option.label}</strong>
+                      {option.description === undefined ? null : <small>{option.description}</small>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{deepSearchSiteExpansionLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="group" aria-label={deepSearchSiteExpansionLabel}>
+                <button
+                  className={
+                    deepSearchSiteExpansionValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  type="button"
+                  onClick={() => {
+                    onDeepSearchSiteExpansionChange(!deepSearchSiteExpansionValue);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{deepSearchSiteExpansionLabel}</strong>
+                  </span>
+                </button>
+                <button
+                  className={
+                    deepSearchProactiveGuessValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  type="button"
+                  onClick={() => {
+                    onDeepSearchProactiveGuessChange(!deepSearchProactiveGuessValue);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{deepSearchProactiveGuessLabel}</strong>
+                  </span>
+                </button>
+              </div>
+            </section>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{deepSearchCrawlPolicyLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={deepSearchCrawlPolicyLabel}>
+                {deepSearchCrawlPolicyOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    className={
+                      option.value === deepSearchCrawlPolicyValue
+                        ? "lyra-settings-choice lyra-settings-choice-active"
+                        : "lyra-settings-choice"
+                    }
+                    role="radio"
+                    aria-checked={option.value === deepSearchCrawlPolicyValue}
+                    onClick={() => {
+                      onDeepSearchCrawlPolicyChange(option.value);
+                    }}
+                  >
+                    <span className="lyra-settings-choice-main">
+                      <strong>{option.label}</strong>
+                      {option.description === undefined ? null : <small>{option.description}</small>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{searchSearxngEndpointLabel}</h3>
+              </header>
+              <input
+                className="lyra-settings-input"
+                value={searchSearxngEndpointValue}
+                placeholder="https://your-searxng.example.com"
+                onChange={(event) => {
+                  onSearchSearxngEndpointChange(event.target.value);
+                }}
+              />
+            </section>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{searchEnableContentLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="group" aria-label={searchEnableContentLabel}>
+                <button
+                  className={
+                    searchEnableFuzzyValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  type="button"
+                  onClick={() => {
+                    onSearchEnableFuzzyChange(!searchEnableFuzzyValue);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{searchEnableFuzzyLabel}</strong>
+                  </span>
+                </button>
+                <button
+                  className={
+                    searchEnableContentValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  type="button"
+                  onClick={() => {
+                    onSearchEnableContentChange(!searchEnableContentValue);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{searchEnableContentLabel}</strong>
+                  </span>
+                </button>
+                <button
+                  className={
+                    searchIncludeHiddenValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  type="button"
+                  onClick={() => {
+                    onSearchIncludeHiddenChange(!searchIncludeHiddenValue);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{searchIncludeHiddenLabel}</strong>
+                  </span>
+                </button>
+                <button
+                  className={
+                    searchAutoIndexValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  type="button"
+                  onClick={() => {
+                    onSearchAutoIndexChange(!searchAutoIndexValue);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{searchAutoIndexLabel}</strong>
+                  </span>
+                </button>
+              </div>
+            </section>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{searchIndexStatusLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="group" aria-label={searchIndexStatusLabel}>
+                <div className="lyra-settings-choice">
+                  <span className="lyra-settings-choice-main">
+                    <strong>{searchIndexStatusValue}</strong>
+                  </span>
+                </div>
+                <button
+                  className="lyra-settings-choice"
+                  type="button"
+                  disabled={searchRebuildIndexPending}
+                  onClick={onSearchRebuildIndex}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{searchRebuildIndexPending ? `${searchRebuildIndexLabel}...` : searchRebuildIndexLabel}</strong>
+                  </span>
+                </button>
+              </div>
+            </section>
+          </section>
+
+          <section
             id="lyra-settings-category-ai"
             className="lyra-settings-category"
             onMouseEnter={() => {
@@ -401,6 +867,49 @@ export const BrowserSettingsSurface = ({
             <header className="lyra-settings-category-header">
               <h2>{aiCategoryLabel}</h2>
             </header>
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{aiRichRenderLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={aiRichRenderLabel}>
+                <button
+                  type="button"
+                  className={
+                    aiRichRenderValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  role="radio"
+                  aria-checked={aiRichRenderValue}
+                  onClick={() => {
+                    onAiRichRenderChange(true);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{aiRichRenderEnabledLabel}</strong>
+                    <small>{aiRichRenderDescription}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={
+                    aiRichRenderValue
+                      ? "lyra-settings-choice"
+                      : "lyra-settings-choice lyra-settings-choice-active"
+                  }
+                  role="radio"
+                  aria-checked={aiRichRenderValue === false}
+                  onClick={() => {
+                    onAiRichRenderChange(false);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{aiRichRenderDisabledLabel}</strong>
+                    <small>{aiRichRenderDescription}</small>
+                  </span>
+                </button>
+              </div>
+            </section>
             <SettingsAiView labels={aiLabels} model={aiModel} />
           </section>
         </main>

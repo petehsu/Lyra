@@ -1,58 +1,57 @@
 /* Workbench notification topbar and center tab */
 .lyra-notification-topbar {
-  justify-self: center;
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--lyra-unit-6);
   -webkit-app-region: no-drag;
 }
 
 .lyra-notification-topbar-entry {
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
-  background: color-mix(in srgb, var(--lyra-bg-surface) 92%, transparent);
+  width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
+  border-radius: var(--lyra-unit-5);
+  border: 0;
+  background: transparent;
   color: var(--lyra-text-secondary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   position: relative;
   cursor: pointer;
+  opacity: 0.72;
   transition:
     color var(--lyra-transition-fast),
-    border-color var(--lyra-transition-fast),
-    background-color var(--lyra-transition-fast);
+    opacity var(--lyra-transition-fast);
 }
 
 .lyra-notification-topbar-entry-active {
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 72%, var(--lyra-line-default) 28%);
   color: var(--lyra-text-primary);
+  opacity: 1;
 }
 
 .lyra-notification-topbar-entry:hover {
   color: var(--lyra-text-primary);
-  border-color: color-mix(in srgb, var(--lyra-line-default) 42%, var(--lyra-text-secondary) 58%);
+  opacity: 1;
 }
 
 .lyra-notification-topbar-unread-dot {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
+  top: var(--lyra-unit-6);
+  right: var(--lyra-unit-6);
+  width: var(--lyra-unit-6);
+  height: var(--lyra-unit-6);
+  border-radius: var(--lyra-unit-999);
   background: var(--lyra-accent-danger, #ff5d5d);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lyra-bg-surface) 94%, transparent);
+  box-shadow: 0 0 0 var(--lyra-unit-2) var(--lyra-bg-surface);
 }
 
 .lyra-notification-topbar-preview {
-  width: min(360px, 34vw);
-  min-width: 180px;
-  height: 28px;
-  border-radius: 999px;
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-focused) 64%, var(--lyra-line-default) 36%);
+  width: min(var(--lyra-size-notification-preview-max-w), 34vw);
+  min-width: var(--lyra-size-notification-preview-min-w);
+  height: var(--lyra-unit-28);
+  border-radius: var(--lyra-unit-999);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-focused) 64%, var(--lyra-line-default) 36%);
   background:
     linear-gradient(
       120deg,
@@ -62,12 +61,12 @@
   color: var(--lyra-text-secondary);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 9px;
+  gap: var(--lyra-unit-6);
+  padding: 0 var(--lyra-unit-9);
   cursor: pointer;
   overflow: hidden;
-  -webkit-backdrop-filter: blur(10px) saturate(1.05);
-  backdrop-filter: blur(10px) saturate(1.05);
+  -webkit-backdrop-filter: blur(var(--lyra-unit-10)) saturate(1.05);
+  backdrop-filter: blur(var(--lyra-unit-10)) saturate(1.05);
   transition:
     border-color var(--lyra-transition-fast),
     color var(--lyra-transition-fast);
@@ -79,8 +78,8 @@
 }
 
 .lyra-notification-topbar-preview-source {
-  width: 14px;
-  height: 14px;
+  width: var(--lyra-unit-14);
+  height: var(--lyra-unit-14);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -93,13 +92,13 @@
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 24px;
+  gap: var(--lyra-unit-24);
   overflow: hidden;
 }
 
 .lyra-notification-topbar-preview-marquee {
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--lyra-unit-11);
   animation: lyra-notification-topbar-marquee 15s linear infinite;
 }
 
@@ -109,7 +108,7 @@
   }
 
   to {
-    transform: translateX(calc(-100% - 24px));
+    transform: translateX(calc(-100% - var(--lyra-unit-24)));
   }
 }
 
@@ -126,14 +125,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 88%, transparent);
+  gap: var(--lyra-unit-12);
+  padding: var(--lyra-unit-12) var(--lyra-unit-14);
+  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 88%, transparent);
 }
 
 .lyra-notification-center-header h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--lyra-unit-13);
   font-weight: 600;
   color: var(--lyra-text-primary);
 }
@@ -141,7 +140,7 @@
 .lyra-notification-center-header-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--lyra-unit-6);
 }
 
 .lyra-notification-center-header-action {
@@ -149,10 +148,10 @@
   background: transparent;
   color: var(--lyra-text-secondary);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--lyra-unit-11);
   line-height: 1;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: var(--lyra-unit-6) var(--lyra-unit-8);
+  border-radius: var(--lyra-unit-8);
   cursor: pointer;
   transition:
     color var(--lyra-transition-fast),
@@ -167,37 +166,37 @@
 .lyra-notification-center-body {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(240px, 36%) minmax(0, 1fr);
+  grid-template-columns: minmax(var(--lyra-unit-240), 36%) minmax(0, 1fr);
 }
 
 .lyra-notification-center-list {
   min-height: 0;
   overflow-y: auto;
-  border-right: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 84%, transparent);
-  padding: 10px;
+  border-right: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 84%, transparent);
+  padding: var(--lyra-unit-10);
   display: grid;
   grid-auto-rows: min-content;
-  gap: 8px;
+  gap: var(--lyra-unit-8);
 }
 
 .lyra-notification-center-empty,
 .lyra-notification-center-detail-empty {
   color: var(--lyra-text-muted);
-  font-size: 12px;
-  padding: 12px;
+  font-size: var(--lyra-unit-12);
+  padding: var(--lyra-unit-12);
 }
 
 .lyra-notification-center-item {
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
-  border-radius: 10px;
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  border-radius: var(--lyra-unit-10);
   background: color-mix(in srgb, var(--lyra-bg-surface) 82%, transparent);
   color: inherit;
   text-align: left;
   min-width: 0;
-  padding: 10px;
+  padding: var(--lyra-unit-10);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: var(--lyra-unit-10);
   cursor: pointer;
   transition:
     border-color var(--lyra-transition-fast),
@@ -214,12 +213,12 @@
 }
 
 .lyra-notification-center-item-unread {
-  box-shadow: inset 2px 0 0 var(--lyra-line-focused);
+  box-shadow: inset var(--lyra-unit-2) 0 0 var(--lyra-line-focused);
 }
 
 .lyra-notification-center-item-icon {
-  width: 16px;
-  height: 16px;
+  width: var(--lyra-unit-16);
+  height: var(--lyra-unit-16);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -229,18 +228,18 @@
 .lyra-notification-center-item-main {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: var(--lyra-unit-4);
 }
 
 .lyra-notification-center-item-main strong {
   color: var(--lyra-text-primary);
-  font-size: 12px;
+  font-size: var(--lyra-unit-12);
 }
 
 .lyra-notification-center-item-main small {
   min-width: 0;
   color: var(--lyra-text-secondary);
-  font-size: 11px;
+  font-size: var(--lyra-unit-11);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -250,9 +249,9 @@
   display: grid;
   justify-items: end;
   align-content: space-between;
-  gap: 6px;
+  gap: var(--lyra-unit-6);
   color: var(--lyra-text-muted);
-  font-size: 10px;
+  font-size: var(--lyra-unit-10);
 }
 
 .lyra-notification-center-item-meta i {
@@ -262,14 +261,14 @@
 
 .lyra-notification-center-detail {
   min-height: 0;
-  padding: 12px;
+  padding: var(--lyra-unit-12);
 }
 
 .lyra-notification-center-detail-card {
   height: 100%;
   min-height: 0;
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
-  border-radius: 12px;
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-radius: var(--lyra-unit-12);
   background: color-mix(in srgb, var(--lyra-bg-surface) 86%, transparent);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -279,14 +278,14 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border-bottom: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 76%, transparent);
+  gap: var(--lyra-unit-10);
+  padding: var(--lyra-unit-12);
+  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 76%, transparent);
 }
 
 .lyra-notification-center-detail-icon {
-  width: 18px;
-  height: 18px;
+  width: var(--lyra-unit-18);
+  height: var(--lyra-unit-18);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -296,48 +295,48 @@
 .lyra-notification-center-detail-title-wrap {
   min-width: 0;
   display: grid;
-  gap: 3px;
+  gap: var(--lyra-unit-3);
 }
 
 .lyra-notification-center-detail-title-wrap strong {
   color: var(--lyra-text-primary);
-  font-size: 13px;
+  font-size: var(--lyra-unit-13);
 }
 
 .lyra-notification-center-detail-title-wrap small {
   color: var(--lyra-text-secondary);
-  font-size: 11px;
+  font-size: var(--lyra-unit-11);
 }
 
 .lyra-notification-center-detail-head time {
   color: var(--lyra-text-muted);
-  font-size: 10px;
+  font-size: var(--lyra-unit-10);
 }
 
 .lyra-notification-center-detail-content {
   min-height: 0;
   overflow-y: auto;
-  padding: 12px;
+  padding: var(--lyra-unit-12);
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: var(--lyra-unit-10);
 }
 
 .lyra-notification-center-detail-content p {
   margin: 0;
   color: var(--lyra-text-primary);
-  font-size: 12px;
+  font-size: var(--lyra-unit-12);
   line-height: 1.6;
 }
 
 .lyra-notification-center-detail-content pre {
   margin: 0;
-  padding: 10px;
-  border-radius: 8px;
-  border: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 62%, transparent);
+  padding: var(--lyra-unit-10);
+  border-radius: var(--lyra-unit-8);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 62%, transparent);
   background: color-mix(in srgb, var(--lyra-bg-editor) 90%, transparent);
   color: var(--lyra-text-secondary);
-  font-size: 11px;
+  font-size: var(--lyra-unit-11);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -346,20 +345,20 @@
 .lyra-notification-center-detail-actions {
   display: flex;
   justify-content: flex-end;
-  padding: 10px 12px 12px;
-  border-top: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  padding: var(--lyra-unit-10) var(--lyra-unit-12) var(--lyra-unit-12);
+  border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
 }
 
 .lyra-notification-center-detail-open {
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--lyra-unit-999);
   background: color-mix(in srgb, var(--lyra-bg-hover) 38%, transparent);
   color: var(--lyra-text-primary);
-  min-height: 27px;
-  padding: 0 11px;
+  min-height: var(--lyra-unit-27);
+  padding: 0 var(--lyra-unit-11);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--lyra-unit-6);
   cursor: pointer;
   transition: opacity var(--lyra-transition-fast);
 }
@@ -371,7 +370,7 @@
 
 @media (max-width: 1180px) {
   .lyra-notification-topbar-preview {
-    width: min(300px, 33vw);
+    width: min(var(--lyra-unit-300), 33vw);
   }
 }
 
@@ -382,11 +381,11 @@
 
   .lyra-notification-center-body {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(180px, 44%) minmax(0, 1fr);
+    grid-template-rows: minmax(var(--lyra-unit-180), 44%) minmax(0, 1fr);
   }
 
   .lyra-notification-center-list {
     border-right: 0;
-    border-bottom: 0.5px solid color-mix(in srgb, var(--lyra-line-default) 84%, transparent);
+    border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 84%, transparent);
   }
 }

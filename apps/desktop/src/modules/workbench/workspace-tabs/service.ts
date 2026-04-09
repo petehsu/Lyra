@@ -4,9 +4,11 @@ import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storag
 import type {
   WorkspaceAppTabMetaRequest,
   WorkspaceAppTabOpenRequest,
+  WorkspaceSearchMode,
   WorkspaceTabInsertOptions,
   WorkspaceTab,
   WorkspaceTabPageMeta,
+  WorkspaceTabPageRuntimeState,
   WorkspaceTabsConfig,
   WorkspaceTabsModel,
   WorkspaceTabsOptions,
@@ -18,6 +20,14 @@ const SETTINGS_ADDRESS = "lyra://settings";
 const FALLBACK_TERMINAL_TITLE = "Terminal";
 const WORKBENCH_STATE_KEY = "workspace-tabs" as const;
 const MAX_SPLIT_TAB_COUNT = 4;
+const VALID_WORKSPACE_APP_IDS = new Set([
+  "file-manager",
+  "file-editor",
+  "ai-history",
+  "ai-mcp",
+  "ai-skills",
+  "notification-center"
+] as const);
 
 type WorkspaceTabsRuntimeState = {
   readonly tabs: readonly WorkspaceTab[];
@@ -42,7 +52,9 @@ const createSearchTab = (
   inputValue: "",
   displayAddress: config.homeSearchAddress,
   faviconUrl: undefined,
-  query: undefined
+  query: undefined,
+  searchMode: "standard",
+  resultMode: "standard"
 });
 
 const createSettingsTab = (
@@ -55,7 +67,9 @@ const createSettingsTab = (
   inputValue: "",
   displayAddress: SETTINGS_ADDRESS,
   faviconUrl: undefined,
-  query: undefined
+  query: undefined,
+  searchMode: "standard",
+  resultMode: "standard"
 });
 
 const createTerminalTab = (
@@ -70,6 +84,8 @@ const createTerminalTab = (
   displayAddress: `lyra://terminal/${terminalTabId}`,
   faviconUrl: undefined,
   query: undefined,
+  searchMode: "standard",
+  resultMode: "standard",
   terminalTabId
 });
 
@@ -84,6 +100,8 @@ const createAppTab = (
   displayAddress: `lyra://app/${request.appId}/${request.appInstanceId}`,
   faviconUrl: undefined,
   query: undefined,
+  searchMode: "standard",
+  resultMode: "standard",
   appId: request.appId,
   appInstanceId: request.appInstanceId,
   appIconKey: request.iconKey,
@@ -131,7 +149,9 @@ const createPageTab = (
   inputValue: address,
   displayAddress: address,
   faviconUrl: undefined,
-  query: undefined
+  query: undefined,
+  searchMode: "standard",
+  resultMode: "standard"
 });
 
 const toSafeAddress = (value: string): string | null => {
@@ -354,6 +374,10 @@ const sanitizeOptionalString = (value: unknown): string | undefined => {
 const sanitizeOptionalBoolean = (value: unknown): boolean | undefined =>
   typeof value === "boolean" ? value : undefined;
 
+const isValidWorkspaceAppId = (
+  value: string
+): value is NonNullable<WorkspaceTab["appId"]> => VALID_WORKSPACE_APP_IDS.has(value as never);
+
 const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
   if (isRecord(value) === false) {
     return null;
@@ -394,6 +418,13 @@ const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
     return null;
   }
 
+  const sanitizedAppId =
+    appId !== undefined && isValidWorkspaceAppId(appId) ? appId : undefined;
+
+  if (pageKind === "app" && sanitizedAppId === undefined) {
+    return null;
+  }
+
   return {
     id,
     title,
@@ -403,7 +434,7 @@ const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
     faviconUrl,
     query,
     ...(terminalTabId === undefined ? {} : { terminalTabId }),
-    ...(appId === undefined ? {} : { appId: appId as NonNullable<WorkspaceTab["appId"]> }),
+    ...(sanitizedAppId === undefined ? {} : { appId: sanitizedAppId }),
     ...(appInstanceId === undefined ? {} : { appInstanceId }),
     ...(appIconKey === undefined
       ? {}
@@ -1021,6 +1052,50 @@ export const useWorkspaceTabsModel = (
     [patchTab]
   );
 
+  const syncPageRuntimeState = useCallback(
+    (tabId: string, state: WorkspaceTabPageRuntimeState): void => {
+      if (toNonEmptyTrimmed(tabId) === null) {
+        return;
+      }
+      const nextAddress = toSafeAddress(state.address);
+      const nextTitle = toNonEmptyTrimmed(state.title);
+      const nextFaviconUrl = state.faviconUrl?.trim();
+      if (nextAddress === null || nextTitle === null) {
+        return;
+      }
+
+      patchTab(tabId, (tab) => {
+        if (tab.pageKind !== "page") {
+          return tab;
+        }
+
+        const nextFaviconValue =
+          nextFaviconUrl === undefined || nextFaviconUrl.length === 0
+            ? undefined
+            : nextFaviconUrl;
+        if (
+          tab.title === nextTitle
+          && tab.displayAddress === nextAddress
+          && tab.inputValue === nextAddress
+          && tab.faviconUrl === nextFaviconValue
+        ) {
+          return tab;
+        }
+
+        return {
+          ...tab,
+          title: nextTitle,
+          displayAddress: nextAddress,
+          inputValue: nextAddress,
+          ...(nextFaviconValue === undefined
+            ? {}
+            : { faviconUrl: nextFaviconValue })
+        };
+      });
+    },
+    [patchTab]
+  );
+
   const updateActiveInput = useCallback((value: string): void => {
     latestInputRef.current = value;
     if (activeTab === undefined) {
@@ -1029,6 +1104,16 @@ export const useWorkspaceTabsModel = (
     patchTab(activeTab.id, (tab) => ({
       ...tab,
       inputValue: value
+    }));
+  }, [activeTab, patchTab]);
+
+  const setActiveSearchMode = useCallback((mode: WorkspaceSearchMode): void => {
+    if (activeTab === undefined) {
+      return;
+    }
+    patchTab(activeTab.id, (tab) => ({
+      ...tab,
+      searchMode: mode
     }));
   }, [activeTab, patchTab]);
 
@@ -1048,7 +1133,8 @@ export const useWorkspaceTabsModel = (
           displayAddress: config.homeSearchAddress,
           inputValue: "",
           query: undefined,
-          faviconUrl: undefined
+          faviconUrl: undefined,
+          resultMode: tab.searchMode ?? tab.resultMode ?? "standard"
         }));
       }
       return;
@@ -1066,7 +1152,8 @@ export const useWorkspaceTabsModel = (
         displayAddress: safeAddress,
         inputValue: safeAddress,
         query: undefined,
-        faviconUrl: undefined
+        faviconUrl: undefined,
+        resultMode: tab.resultMode ?? tab.searchMode ?? "standard"
       }));
       latestInputRef.current = safeAddress;
       return;
@@ -1079,7 +1166,8 @@ export const useWorkspaceTabsModel = (
       displayAddress: `${config.homeSearchAddress}?q=${encodeURIComponent(nextInput)}`,
       inputValue: nextInput,
       query: nextInput,
-      faviconUrl: undefined
+      faviconUrl: undefined,
+      resultMode: tab.searchMode ?? "standard"
     }));
   }, [activeTab, config.homeSearchAddress, config.homeTabTitle, config.maxSearchTitleLength, patchTab]);
 
@@ -1157,7 +1245,9 @@ export const useWorkspaceTabsModel = (
     openPageInNewTab,
     closeTab,
     updatePageMeta,
+    syncPageRuntimeState,
     updateActiveInput,
+    setActiveSearchMode,
     commitActiveInput
   };
 };

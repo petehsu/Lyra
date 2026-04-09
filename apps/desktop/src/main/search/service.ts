@@ -7,6 +7,10 @@ import type {
 
 import { fetchEngineResults } from "./providers";
 import { toResultMergeKey } from "./parse";
+import {
+  searchIntelligenceEngine,
+  type SearchQueryUnderstanding
+} from "./query-understanding";
 
 const MAX_ENGINES = 8;
 const MAX_RESULTS_PER_ENGINE = 10;
@@ -37,13 +41,19 @@ const sanitizeRequest = (request: SearchAggregateRequest): SearchAggregateReques
   };
 };
 
-const blendResults = (engineBuckets: readonly SearchAggregateEngineBucket[]): readonly SearchAggregateResult[] => {
+const blendResults = (
+  engineBuckets: readonly SearchAggregateEngineBucket[],
+  understanding: SearchQueryUnderstanding
+): readonly SearchAggregateResult[] => {
   const byMergeKey = new Map<
     string,
     {
       result: SearchAggregateResult;
       bestRank: number;
       rankScore: number;
+      queryAwareScore: number;
+      isOfficialResult: boolean;
+      officialCategory?: SearchAggregateResult["officialCategory"];
       sourceEngineIds: Set<string>;
     }
   >();
@@ -52,12 +62,18 @@ const blendResults = (engineBuckets: readonly SearchAggregateEngineBucket[]): re
     bucket.results.forEach((result, rankIndex) => {
       const mergeKey = toResultMergeKey(result.url);
       const current = byMergeKey.get(mergeKey);
+      const queryAwareScore = searchIntelligenceEngine.scoreAggregateResult(result, understanding, rankIndex);
+      const isOfficialResult = searchIntelligenceEngine.isOfficialResult(result, understanding);
+      const officialCategory = searchIntelligenceEngine.getOfficialResultCategory(result, understanding);
 
       if (current === undefined) {
         byMergeKey.set(mergeKey, {
           result,
           bestRank: rankIndex,
           rankScore: rankIndex + 1,
+          queryAwareScore,
+          isOfficialResult,
+          officialCategory: officialCategory ?? undefined,
           sourceEngineIds: new Set(result.sourceEngineIds)
         });
         return;
@@ -69,6 +85,9 @@ const blendResults = (engineBuckets: readonly SearchAggregateEngineBucket[]): re
 
       const isBetterRank = rankIndex < current.bestRank;
       current.rankScore += rankIndex + 1;
+      current.queryAwareScore = Math.max(current.queryAwareScore, queryAwareScore) + queryAwareScore * 0.25;
+      current.isOfficialResult = current.isOfficialResult || isOfficialResult;
+      current.officialCategory = current.officialCategory ?? officialCategory ?? undefined;
 
       if (isBetterRank) {
         current.bestRank = rankIndex;
@@ -80,9 +99,16 @@ const blendResults = (engineBuckets: readonly SearchAggregateEngineBucket[]): re
   return [...byMergeKey.values()]
     .map((entry) => ({
       ...entry.result,
-      sourceEngineIds: [...entry.sourceEngineIds]
+      sourceEngineIds: [...entry.sourceEngineIds],
+      ...(entry.isOfficialResult ? { isOfficialResult: true } : {}),
+      ...(entry.officialCategory === undefined ? {} : { officialCategory: entry.officialCategory })
     }))
     .sort((left, right) => {
+      const leftQueryScore = byMergeKey.get(toResultMergeKey(left.url))?.queryAwareScore ?? Number.MIN_SAFE_INTEGER;
+      const rightQueryScore = byMergeKey.get(toResultMergeKey(right.url))?.queryAwareScore ?? Number.MIN_SAFE_INTEGER;
+      if (leftQueryScore !== rightQueryScore) {
+        return rightQueryScore - leftQueryScore;
+      }
       const sourceDiff = right.sourceEngineIds.length - left.sourceEngineIds.length;
       if (sourceDiff !== 0) {
         return sourceDiff;
@@ -99,6 +125,7 @@ const blendResults = (engineBuckets: readonly SearchAggregateEngineBucket[]): re
 export const aggregateSearch = async (request: SearchAggregateRequest): Promise<SearchAggregateResponse> => {
   const startedAt = Date.now();
   const sanitized = sanitizeRequest(request);
+  const understanding = searchIntelligenceEngine.understandQuery(sanitized.query);
 
   if (sanitized.query.length === 0 || sanitized.engines.length === 0) {
     return {
@@ -113,10 +140,22 @@ export const aggregateSearch = async (request: SearchAggregateRequest): Promise<
   const bucketEntries = await Promise.all(
     sanitized.engines.map(async (engine): Promise<SearchAggregateEngineBucket> => {
       const fetched = await fetchEngineResults(engine, sanitized.query, sanitized.limitPerEngine);
+      const rerankedResults = searchIntelligenceEngine
+        .rerankAggregateResults(fetched.results, understanding)
+        .map((result) => {
+          const officialCategory = searchIntelligenceEngine.getOfficialResultCategory(result, understanding);
+          return {
+            ...result,
+            ...(searchIntelligenceEngine.isOfficialResult(result, understanding)
+              ? { isOfficialResult: true }
+              : {}),
+            ...(officialCategory === null ? {} : { officialCategory })
+          };
+        });
 
       return {
         engine,
-        results: fetched.results,
+        results: rerankedResults,
         latencyMs: fetched.latencyMs,
         ...(fetched.error !== undefined ? { error: fetched.error } : {})
       };
@@ -125,7 +164,7 @@ export const aggregateSearch = async (request: SearchAggregateRequest): Promise<
 
   return {
     query: sanitized.query,
-    blendedResults: blendResults(bucketEntries),
+    blendedResults: blendResults(bucketEntries, understanding),
     engineBuckets: bucketEntries,
     fetchedAt: new Date().toISOString(),
     elapsedMs: Date.now() - startedAt

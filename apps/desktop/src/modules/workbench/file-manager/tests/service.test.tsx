@@ -58,7 +58,8 @@ const labels: FileManagerSurfaceLabels = {
   contextEmptyTrash: "清空回收站",
   contextEjectDevice: "弹出设备",
   viewList: "列表视图",
-  viewLarge: "大视图"
+  viewLarge: "大视图",
+  chooserBindProjectLabel: "绑定当前目录"
 };
 
 const homeResponse: FileManagerReadHomeResponse = {
@@ -239,12 +240,161 @@ const createDesktopApi = (): {
         engineBuckets: [],
         fetchedAt: new Date().toISOString(),
         elapsedMs: 0
+      }),
+      local: async () => ({
+        query: "",
+        scopePreset: "home" as const,
+        roots: [],
+        results: [],
+        truncated: false,
+        elapsedMs: 0,
+        stats: {
+          scannedFiles: 0,
+          scannedDirs: 0,
+          contentScannedFiles: 0,
+          matchedFiles: 0,
+          skippedUnreadable: 0,
+          skippedBinaryOrTooLarge: 0,
+          usedIndex: false
+        }
+      }),
+      startLocalStream: async () => ({
+        streamId: "stream-1",
+        query: "",
+        scopePreset: "home" as const,
+        roots: []
+      }),
+      readLocalStream: async () => ({
+        streamId: "stream-1",
+        query: "",
+        scopePreset: "home" as const,
+        roots: [],
+        results: [],
+        truncated: false,
+        elapsedMs: 0,
+        stats: {
+          scannedFiles: 0,
+          scannedDirs: 0,
+          contentScannedFiles: 0,
+          matchedFiles: 0,
+          skippedUnreadable: 0,
+          skippedBinaryOrTooLarge: 0,
+          usedIndex: false
+        },
+        done: true
+      }),
+      cancelLocalStream: async () => ({
+        removed: true
+      }),
+      readIndexStatus: async () => ({
+        state: "idle" as const,
+        indexedFiles: 0,
+        indexedDirs: 0
+      }),
+      rebuildIndex: async () => ({
+        status: {
+          state: "ready" as const,
+          indexedFiles: 0,
+          indexedDirs: 0
+        },
+        scopePreset: "home" as const,
+        roots: []
+      }),
+      startDeepStream: async () => ({
+        streamId: "deep-stream-1",
+        snapshot: {
+          query: "",
+          budgetPreset: "medium" as const,
+          phase: "bootstrapping" as const,
+          nodes: [],
+          edges: [],
+          web: {
+            status: "loading" as const,
+            engineBuckets: [],
+            blendedCount: 0
+          },
+          local: {
+            status: "loading" as const,
+            scopePreset: "home" as const,
+            roots: [],
+            elapsedMs: 0,
+            stats: {
+              scannedFiles: 0,
+              scannedDirs: 0,
+              contentScannedFiles: 0,
+              matchedFiles: 0,
+              skippedUnreadable: 0,
+              skippedBinaryOrTooLarge: 0,
+              usedIndex: false
+            }
+          },
+          stats: {
+            dedupedResults: 0,
+            derivedQueries: 0,
+            expansionRounds: 0
+          },
+          lastUpdatedAt: new Date().toISOString()
+        }
+      }),
+      readDeepStream: async () => ({
+        streamId: "deep-stream-1",
+        snapshot: {
+          query: "",
+          budgetPreset: "medium" as const,
+          phase: "completed" as const,
+          nodes: [],
+          edges: [],
+          web: {
+            status: "ready" as const,
+            engineBuckets: [],
+            blendedCount: 0
+          },
+          local: {
+            status: "ready" as const,
+            scopePreset: "home" as const,
+            roots: [],
+            elapsedMs: 0,
+            stats: {
+              scannedFiles: 0,
+              scannedDirs: 0,
+              contentScannedFiles: 0,
+              matchedFiles: 0,
+              skippedUnreadable: 0,
+              skippedBinaryOrTooLarge: 0,
+              usedIndex: false
+            }
+          },
+          stats: {
+            dedupedResults: 0,
+            derivedQueries: 0,
+            expansionRounds: 0
+          },
+          lastUpdatedAt: new Date().toISOString()
+        },
+        done: true
+      }),
+      cancelDeepStream: async () => ({
+        removed: true
+      }),
+      expandDeepNode: async () => ({
+        streamId: "deep-stream-1",
+        accepted: true
       })
     },
     ai: {
       readProfiles: async () => [],
       readProviderCatalog: async () => [],
       readPresetCatalog: async () => [],
+      authorizeOpenAiChatGpt: async () => ({
+        refreshToken: "refresh-token",
+        accessToken: "access-token",
+        expiresAt: Date.now()
+      }),
+      authorizeOpenAiChatGptDeviceCode: async () => ({
+        refreshToken: "refresh-token",
+        accessToken: "access-token",
+        expiresAt: Date.now()
+      }),
       upsertProfile: async () => {
         throw new Error("not implemented");
       },
@@ -260,225 +410,22 @@ const createDesktopApi = (): {
       },
       refreshDiscoveredModels: async () => {
         throw new Error("not implemented");
-      },
-      readSession: async () => {
-        throw new Error("not implemented");
-      },
-      readSessionHistory: async () => [],
-      sendChatTurn: async () => {
-        throw new Error("not implemented");
-      },
-      cancelChatTurn: async () => {
-        throw new Error("not implemented");
-      },
+      }
+    },
+    workbenchBrowser: {
+      syncTopology: async () => undefined,
+      syncLayout: async () => undefined,
+      navigate: async (request) => ({
+        address: request.address,
+        tabId: request.tabId ?? "browser-tab-test",
+        title: request.title ?? null
+      }),
+      goBack: async () => undefined,
+      goForward: async () => undefined,
+      reload: async () => undefined,
+      stop: async () => undefined,
+      readPageState: async () => null,
       onEvent: () => () => undefined
-    },
-    computer: {
-      readSession: async () => ({
-        sessionId: "test-session",
-        hasBooted: false,
-        powerState: "off" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      readHostStatus: async () => ({
-        platform: "linux" as const,
-        platformLabel: "Linux",
-        hostname: "lyra",
-        release: "test",
-        osFlavor: "linux" as const
-      }),
-      powerOn: async () => ({
-        sessionId: "test-session",
-        hasBooted: true,
-        powerState: "booting" as const,
-        bootReason: "user" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      powerOff: async () => ({
-        sessionId: "test-session",
-        hasBooted: true,
-        powerState: "shutting_down" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      openApp: async () => ({
-        sessionId: "test-session",
-        hasBooted: true,
-        powerState: "on" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      focusApp: async () => ({
-        sessionId: "test-session",
-        hasBooted: true,
-        powerState: "on" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      closeApp: async () => ({
-        sessionId: "test-session",
-        hasBooted: true,
-        powerState: "on" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      moveAppWindow: async () => ({
-        sessionId: "test-session",
-        hasBooted: true,
-        powerState: "on" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      resizeAppWindow: async () => ({
-        sessionId: "test-session",
-        hasBooted: true,
-        powerState: "on" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      minimizeApp: async () => ({
-        sessionId: "test-session",
-        hasBooted: true,
-        powerState: "on" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      maximizeApp: async () => ({
-        sessionId: "test-session",
-        hasBooted: true,
-        powerState: "on" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      restoreApp: async () => ({
-        sessionId: "test-session",
-        hasBooted: true,
-        powerState: "on" as const,
-        openApps: [],
-        activeAppId: null,
-        updatedAt: new Date().toISOString()
-      }),
-      subscribeSession: () => () => undefined
-    },
-    systemImages: {
-      readRegistry: async () => ({
-        defaultImageId: "lyra-official",
-        runtimeModeOverride: null,
-        installedImages: []
-      }),
-      listInstalled: async () => [],
-      installFromDirectory: async () => ({
-        imageId: "lyra-official",
-        title: "Lyra Official System",
-        version: "1.0.0",
-        source: "directory",
-        installPath: "/tmp/system-images/lyra-official/1.0.0",
-        installedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        manifest: {
-          id: "lyra-official",
-          title: "Lyra Official System",
-          version: "1.0.0",
-          apiVersion: { min: "1.0.0" },
-          shellMode: "full-shell",
-          defaultRuntimeMode: "sandbox",
-          entryPath: "system/index.js",
-          capabilities: [],
-          platformArtifacts: []
-        }
-      }),
-      installFromPackage: async () => ({
-        imageId: "lyra-official",
-        title: "Lyra Official System",
-        version: "1.0.0",
-        source: "package",
-        installPath: "/tmp/system-images/lyra-official/1.0.0",
-        installedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        manifest: {
-          id: "lyra-official",
-          title: "Lyra Official System",
-          version: "1.0.0",
-          apiVersion: { min: "1.0.0" },
-          shellMode: "full-shell",
-          defaultRuntimeMode: "sandbox",
-          entryPath: "system/index.js",
-          capabilities: [],
-          platformArtifacts: []
-        }
-      }),
-      installOfficialSeed: async () => ({
-        imageId: "lyra-official",
-        title: "Lyra Official System",
-        version: "1.0.0",
-        source: "builtin-seed",
-        installPath: "/tmp/system-images/lyra-official/1.0.0",
-        installedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        manifest: {
-          id: "lyra-official",
-          title: "Lyra Official System",
-          version: "1.0.0",
-          apiVersion: { min: "1.0.0" },
-          shellMode: "full-shell",
-          defaultRuntimeMode: "sandbox",
-          entryPath: "system/index.js",
-          capabilities: [],
-          platformArtifacts: []
-        }
-      }),
-      uninstall: async () => ({
-        defaultImageId: null,
-        runtimeModeOverride: null,
-        installedImages: []
-      }),
-      setDefaultImage: async () => ({
-        defaultImageId: "lyra-official",
-        runtimeModeOverride: null,
-        installedImages: []
-      }),
-      assignSessionImage: async () => ({
-        sessionId: "test-session",
-        resolvedSystemImageId: "lyra-official",
-        effectiveRuntimeMode: "sandbox",
-        effectiveShellMode: "full-shell",
-        systemContextState: "on",
-        updatedAt: new Date().toISOString()
-      }),
-      clearSessionImageOverride: async () => ({
-        sessionId: "test-session",
-        resolvedSystemImageId: "lyra-official",
-        effectiveRuntimeMode: "sandbox",
-        effectiveShellMode: "full-shell",
-        systemContextState: "on",
-        updatedAt: new Date().toISOString()
-      }),
-      setRuntimeModeOverride: async () => ({
-        defaultImageId: "lyra-official",
-        runtimeModeOverride: "sandbox",
-        installedImages: []
-      }),
-      readResolvedSessionSystem: async () => ({
-        sessionId: "test-session",
-        resolvedSystemImageId: "lyra-official",
-        effectiveRuntimeMode: "sandbox",
-        effectiveShellMode: "full-shell",
-        systemContextState: "on",
-        updatedAt: new Date().toISOString()
-      }),
-      subscribeSystemEvents: () => () => undefined
     },
     mcp: {
       readCatalog: async () => [],
@@ -658,11 +605,44 @@ const createDesktopApi = (): {
       restoreSessions: async () => [],
       reloadPrompt: async () => ({ applied: false, deferred: false }),
       write: async () => undefined,
+      read: async () => ({
+        sessionId: "session-1",
+        cursor: "0",
+        output: "",
+        running: false,
+        exitCode: 0,
+        truncated: false,
+        source: "user" as const,
+        mode: "shell" as const
+      }),
       resize: async () => undefined,
       closeSession: async () => undefined,
       onData: () => () => undefined,
       onExit: () => () => undefined,
       onError: () => () => undefined
+    },
+    capabilities: {
+      readRegistry: async () => ({
+        updatedAt: new Date().toISOString(),
+        apps: [],
+        capabilities: []
+      }),
+      listCapabilities: async () => [],
+      invokeCapability: async () => ({
+        callId: "call-1",
+        capabilityId: "filesystem.read",
+        ok: true,
+        result: null,
+        completedAt: new Date().toISOString()
+      }),
+      resolveApproval: async () => ({
+        approvalId: "approval-1",
+        callId: "call-1",
+        capabilityId: "filesystem.read",
+        decision: "approved_once" as const,
+        resolvedAt: new Date().toISOString()
+      }),
+      onEvent: () => () => undefined
     },
     workbenchState: {
       readSync: () => null,

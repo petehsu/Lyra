@@ -1970,7 +1970,8 @@ mod tests {
         assert_eq!(slugify("  Hello  Lyra Skill!  "), "hello-lyra-skill");
         assert_eq!(slugify(""), "skill");
 
-        let content = "---\nname: Demo Skill\ndescription: Test description\nstrict: true\n---\n\nbody";
+        let content =
+            "---\nname: Demo Skill\ndescription: Test description\nstrict: true\n---\n\nbody";
         let (attributes, body) = parse_frontmatter(content);
         assert_eq!(
             frontmatter_string(&attributes, "name"),
@@ -2034,13 +2035,11 @@ mod tests {
         .expect("install should succeed");
 
         assert_eq!(install_result.installed.len(), 1);
-        assert!(
-            install_result
-                .document
-                .skills
-                .iter()
-                .any(|skill| skill.skill_id == skill_id)
-        );
+        assert!(install_result
+            .document
+            .skills
+            .iter()
+            .any(|skill| skill.skill_id == skill_id));
 
         let update_result =
             update_installed_skill_state_in_storage(UpdateInstalledSkillStateInStorageRequest {
@@ -2068,13 +2067,11 @@ mod tests {
             })
             .expect("remove should succeed");
 
-        assert!(
-            remove_result
-                .document
-                .skills
-                .iter()
-                .all(|skill| skill.skill_id != skill_id)
-        );
+        assert!(remove_result
+            .document
+            .skills
+            .iter()
+            .all(|skill| skill.skill_id != skill_id));
         assert!(!package_path.exists());
 
         let _ = fs::remove_dir_all(storage_root);

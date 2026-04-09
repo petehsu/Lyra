@@ -12,15 +12,12 @@ import "./styles/workbench/browser-tabs.css";
 import "./styles/workbench/global-dialog.css";
 import "./styles/workbench/file-manager.css";
 import "./styles/workbench/ai-panel.css";
-import "./styles/workbench/ai-panel-runtime.css";
-import "./styles/workbench/ai-panel-computer.css";
 import "./styles/workbench/notification-center.css";
 import "./styles/workbench/mcp-center-shell.css";
 import "./styles/workbench/mcp-center-list.css";
 import "./styles/workbench/mcp-center-panels.css";
 import "./styles/workbench/mcp-center-forms.css";
 import "./styles/workbench/skills-center.css";
-import "./styles/workbench/sidebar-composer.css";
 import "./styles/workbench/terminal.css";
 import "./styles/workbench/file-editor.css";
 

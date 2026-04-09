@@ -1,17 +1,27 @@
-import { app, BrowserWindow, ipcMain, protocol, shell } from "electron";
-import { mkdirSync, writeFileSync } from "node:fs";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  nativeImage,
+  type WebContents,
+  type MenuItemConstructorOptions,
+  ipcMain,
+  protocol,
+  shell
+} from "electron";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createAiIpcBridge } from "./ai";
+import { createCapabilitiesIpcBridge } from "./capabilities";
 import { createFilesIpcBridge } from "./files";
-import { createComputerIpcBridge } from "./computer";
 import { createLspIpcBridge } from "./lsp";
 import { createLinuxCompatBridge } from "./linux-compat";
 import { createMcpIpcBridge } from "./mcp";
-import { createSystemImageIpcBridge } from "./system-image";
-import { aggregateSearch } from "./search";
+import { createLyraRuntimeClient } from "./runtime-client";
+import { createSearchIpcBridge } from "./search";
 import { createSkillsIpcBridge } from "./skills";
 import {
   applyElectronStoragePaths,
@@ -19,17 +29,25 @@ import {
   resolveLyraStorageRoots
 } from "./storage";
 import { createTerminalIpcBridge } from "./terminal";
+import {
+  createWorkbenchBrowserIpcBridge,
+  type WorkbenchBrowserIpcBridge
+} from "./workbench-browser/service";
 import { createWorkbenchStateIpcBridge } from "./workbench-state";
 import {
   LYRA_CHANNELS,
   type AppMetaPayload,
   type LinuxCompatExportResponse,
-  type SearchAggregateRequest,
   type WindowStatePayload
 } from "../shared/desktop-bridge";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const LYRA_FILE_SCHEME = "lyra-file";
+const LYRA_APP_ICON_CANDIDATES = [
+  join(currentDir, "../renderer/assets/logo.png"),
+  join(currentDir, "../../src/renderer/assets/logo.png"),
+  join(process.cwd(), "apps/desktop/src/renderer/assets/logo.png")
+];
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -46,14 +64,17 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null;
 let disposeAiBridge: (() => void) | null = null;
+let disposeCapabilitiesBridge: (() => void) | null = null;
 let disposeTerminalBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
-let disposeComputerBridge: (() => void) | null = null;
-let disposeSystemImageBridge: (() => void) | null = null;
 let disposeLspBridge: (() => void) | null = null;
 let disposeMcpBridge: (() => Promise<void>) | null = null;
 let disposeSkillsBridge: (() => Promise<void>) | null = null;
+let disposeWorkbenchBrowserBridge: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
+let disposeRuntimeClient: (() => void) | null = null;
+let disposeSearchBridge: (() => void) | null = null;
+let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
 
 const storageRoots = resolveLyraStorageRoots();
 ensureLyraStorageRoots(storageRoots);
@@ -78,6 +99,77 @@ if (linuxCompatBridge.status.enabled) {
   }
 }
 
+const LYRA_APP_NAME = "Lyra";
+const isDevelopmentMode = (): boolean =>
+  typeof process.env.ELECTRON_RENDERER_URL === "string"
+  && process.env.ELECTRON_RENDERER_URL.length > 0;
+
+const resolveLyraAppIconPath = (): string | null => {
+  for (const candidate of LYRA_APP_ICON_CANDIDATES) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
+const resolveLyraAppIcon = (): Electron.NativeImage | null => {
+  const iconPath = resolveLyraAppIconPath();
+  if (iconPath === null) {
+    return null;
+  }
+  const icon = nativeImage.createFromPath(iconPath);
+  return icon.isEmpty() ? null : icon;
+};
+
+const createMacApplicationMenuTemplate = (): MenuItemConstructorOptions[] => [
+  {
+    label: LYRA_APP_NAME,
+    submenu: [
+      { role: "about" },
+      { type: "separator" },
+      { role: "hide" },
+      { role: "hideOthers" },
+      { role: "unhide" },
+      { type: "separator" },
+      { role: "quit" }
+    ]
+  },
+  {
+    role: "editMenu",
+    submenu: [
+      { role: "undo" },
+      { role: "redo" },
+      { type: "separator" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      { role: "selectAll" }
+    ]
+  },
+  ...(isDevelopmentMode()
+    ? [{
+        role: "viewMenu" as const,
+        submenu: [
+          { role: "reload" as const },
+          { role: "forceReload" as const },
+          { role: "toggleDevTools" as const }
+        ]
+      }]
+    : []),
+  {
+    role: "windowMenu"
+  }
+];
+
+const configureApplicationMenu = (): void => {
+  if (process.platform === "darwin") {
+    Menu.setApplicationMenu(Menu.buildFromTemplate(createMacApplicationMenuTemplate()));
+    return;
+  }
+  Menu.setApplicationMenu(null);
+};
+
 const toWindowState = (window: BrowserWindow): WindowStatePayload => ({
   isFocused: window.isFocused(),
   isMaximized: window.isMaximized()
@@ -85,6 +177,62 @@ const toWindowState = (window: BrowserWindow): WindowStatePayload => ({
 
 const publishWindowState = (window: BrowserWindow): void => {
   window.webContents.send(LYRA_CHANNELS.windowStateChanged, toWindowState(window));
+};
+
+const isDevToolsToggleInput = (input: Electron.Input): boolean => {
+  const key = input.key.toLowerCase();
+  return (
+    key === "f12"
+    || (
+      key === "i"
+      && (
+        (input.control && input.shift)
+        || (input.meta && input.alt)
+        || (input.meta && input.shift)
+      )
+    )
+  );
+};
+
+const toggleDevToolsForContents = (contents: WebContents): void => {
+  if (contents.isDevToolsOpened()) {
+    contents.closeDevTools();
+    return;
+  }
+  contents.openDevTools({ mode: "detach" });
+};
+
+const toggleDevToolsForPreferredTarget = (contents: WebContents): void => {
+  if (mainWindow !== null && contents.id === mainWindow.webContents.id) {
+    if (workbenchBrowserBridge?.toggleDevToolsForActivePage() === true) {
+      return;
+    }
+  }
+  toggleDevToolsForContents(contents);
+};
+
+const exitWindowFullscreen = (window: BrowserWindow): void => {
+  if (process.platform === "darwin" && window.isSimpleFullScreen()) {
+    window.setSimpleFullScreen(false);
+  }
+  if (window.isFullScreen()) {
+    window.setFullScreen(false);
+  }
+};
+
+const registerDevelopmentShortcuts = (): void => {
+  app.on("web-contents-created", (_event, contents: WebContents) => {
+    if (!isDevelopmentMode()) {
+      return;
+    }
+    contents.on("before-input-event", (event, input) => {
+      if (!isDevToolsToggleInput(input)) {
+        return;
+      }
+      event.preventDefault();
+      toggleDevToolsForPreferredTarget(contents);
+    });
+  });
 };
 
 const resolveLyraFilePath = (requestUrl: string): string | null => {
@@ -158,7 +306,7 @@ const registerLyraFileProtocol = (): void => {
 };
 
 const attachDevelopmentDiagnostics = (window: BrowserWindow): void => {
-  if (typeof process.env.ELECTRON_RENDERER_URL !== "string" || process.env.ELECTRON_RENDERER_URL.length === 0) {
+  if (!isDevelopmentMode()) {
     return;
   }
 
@@ -286,22 +434,26 @@ const attachDevelopmentDiagnostics = (window: BrowserWindow): void => {
 };
 
 const createMainWindow = (): BrowserWindow => {
+  const isMac = process.platform === "darwin";
+  const iconPath = resolveLyraAppIconPath();
   const window = new BrowserWindow({
     title: "Lyra",
     width: 1460,
     height: 920,
     minWidth: 1160,
     minHeight: 720,
-    frame: false,
+    fullscreenable: false,
+    frame: isMac,
     backgroundColor: "#dcdcdd",
     autoHideMenuBar: true,
-    titleBarStyle: process.platform === "darwin" ? "hidden" : "default",
+    titleBarStyle: isMac ? "hiddenInset" : "default",
+    ...(iconPath === null ? {} : { icon: iconPath }),
     webPreferences: {
       preload: join(currentDir, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      webviewTag: true
+      disableHtmlFullscreenWindowResize: true
     }
   });
 
@@ -314,41 +466,62 @@ const createMainWindow = (): BrowserWindow => {
 
   attachDevelopmentDiagnostics(window);
 
-  window.on("focus", () => publishWindowState(window));
+  window.on("focus", () => {
+    publishWindowState(window);
+    workbenchBrowserBridge?.reapplyLayout();
+  });
   window.on("blur", () => publishWindowState(window));
-  window.on("maximize", () => publishWindowState(window));
-  window.on("unmaximize", () => publishWindowState(window));
+  window.on("maximize", () => {
+    publishWindowState(window);
+    workbenchBrowserBridge?.reapplyLayout();
+  });
+  window.on("unmaximize", () => {
+    publishWindowState(window);
+    workbenchBrowserBridge?.reapplyLayout();
+  });
+  window.on("resize", () => {
+    workbenchBrowserBridge?.reapplyLayout();
+  });
+  window.on("enter-full-screen", () => {
+    setImmediate(() => {
+      exitWindowFullscreen(window);
+    });
+  });
 
   return window;
 };
 
 const registerIpcHandlers = (): void => {
-  const aiBridge = createAiIpcBridge(storageRoots.modules.ai, () => mainWindow);
-  console.info(`[lyra-ai] native bridge ready`);
-  disposeAiBridge = aiBridge.dispose;
-
   const filesBridge = createFilesIpcBridge(storageRoots.modules.fileManager);
   console.info(`[lyra-files] native loaded: ${filesBridge.loadResult.loadedFrom}`);
   disposeFilesBridge = filesBridge.dispose;
 
-  const computerBridge = createComputerIpcBridge(storageRoots.modules.computer, () => mainWindow);
-  console.info(`[lyra-computer] native loaded: ${computerBridge.loadResult.loadedFrom}`);
-  disposeComputerBridge = computerBridge.dispose;
+  const runtimeClient = createLyraRuntimeClient({
+    storageRoot: storageRoots.modules.ai
+  });
+  disposeRuntimeClient = runtimeClient.dispose;
 
-  const systemImageBridge = createSystemImageIpcBridge(storageRoots.modules.systemImages, () => mainWindow);
-  console.info(`[lyra-system-image] native loaded: ${systemImageBridge.loadResult.loadedFrom}`);
-  disposeSystemImageBridge = systemImageBridge.dispose;
-
-  const terminalBridge = createTerminalIpcBridge(storageRoots.modules.terminal, () => mainWindow);
-  console.info(`[lyra-terminal] native loaded: ${terminalBridge.loadResult.loadedFrom}`);
+  const terminalBridge = createTerminalIpcBridge(
+    storageRoots.modules.terminal,
+    runtimeClient,
+    () => mainWindow
+  );
+  console.info(`[lyra-terminal] runtime attached: ${terminalBridge.loadResult.loadedFrom}`);
   disposeTerminalBridge = terminalBridge.dispose;
 
-  const lspBridge = createLspIpcBridge(() => mainWindow);
-  console.info(`[lyra-lsp] native loaded: ${lspBridge.loadResult.loadedFrom}`);
+  const searchBridge = createSearchIpcBridge({
+    runtimeClient,
+    storageRoot: storageRoots.modules.search
+  });
+  disposeSearchBridge = searchBridge.dispose;
+
+  const lspBridge = createLspIpcBridge(runtimeClient, () => mainWindow);
+  console.info(`[lyra-lsp] runtime attached: ${lspBridge.loadResult.loadedFrom}`);
   disposeLspBridge = lspBridge.dispose;
 
   const mcpBridge = createMcpIpcBridge(
     storageRoots.modules.mcp,
+    runtimeClient,
     () => mainWindow,
     filesBridge.nativeBindings
   );
@@ -357,9 +530,32 @@ const registerIpcHandlers = (): void => {
   const skillsBridge = createSkillsIpcBridge({
     storageRoot: storageRoots.modules.skills,
     getWindow: () => mainWindow,
-    filesNativeBindings: filesBridge.nativeBindings
+    filesNativeBindings: filesBridge.nativeBindings,
+    runtimeClient
   });
   disposeSkillsBridge = skillsBridge.dispose;
+
+  workbenchBrowserBridge = createWorkbenchBrowserIpcBridge({
+    getWindow: () => mainWindow
+  });
+  disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
+
+  const capabilitiesBridge = createCapabilitiesIpcBridge({
+    filesNativeBindings: filesBridge.nativeBindings,
+    filesStorageRoot: storageRoots.modules.fileManager,
+    terminalBridge,
+    mcpBridge,
+    workbenchBrowserBridge,
+    getWindow: () => mainWindow
+  });
+  disposeCapabilitiesBridge = capabilitiesBridge.dispose;
+
+  const aiBridge = createAiIpcBridge(
+    storageRoots.modules.ai,
+    runtimeClient
+  );
+  console.info(`[lyra-ai] runtime bridge ready`);
+  disposeAiBridge = aiBridge.dispose;
 
   const workbenchStateBridge = createWorkbenchStateIpcBridge(
     storageRoots.modules.workbenchState
@@ -422,13 +618,27 @@ const registerIpcHandlers = (): void => {
       linuxCompatBridge.exportDiagnosticsSnapshot(storageRoots.modules.linuxCompat)
   );
 
-  ipcMain.handle(
-    LYRA_CHANNELS.aggregateSearch,
-    async (_event, request: SearchAggregateRequest) => aggregateSearch(request)
-  );
 };
 
+app.setName(LYRA_APP_NAME);
+process.title = LYRA_APP_NAME;
+
 app.whenReady().then(() => {
+  configureApplicationMenu();
+  registerDevelopmentShortcuts();
+  const appIconPath = resolveLyraAppIconPath();
+  app.setAboutPanelOptions({
+    applicationName: LYRA_APP_NAME,
+    applicationVersion: app.getVersion(),
+    version: app.getVersion(),
+    ...(appIconPath === null ? {} : { iconPath: appIconPath })
+  });
+  if (process.platform === "darwin") {
+    const appIcon = resolveLyraAppIcon();
+    if (appIcon !== null) {
+      app.dock.setIcon(appIcon);
+    }
+  }
   registerLyraFileProtocol();
   linuxCompatBridge.persistStatusSnapshot(storageRoots.modules.linuxCompat);
   registerIpcHandlers();
@@ -456,17 +666,13 @@ app.on("before-quit", () => {
     disposeAiBridge();
     disposeAiBridge = null;
   }
+  if (disposeCapabilitiesBridge !== null) {
+    disposeCapabilitiesBridge();
+    disposeCapabilitiesBridge = null;
+  }
   if (disposeFilesBridge !== null) {
     disposeFilesBridge();
     disposeFilesBridge = null;
-  }
-  if (disposeComputerBridge !== null) {
-    disposeComputerBridge();
-    disposeComputerBridge = null;
-  }
-  if (disposeSystemImageBridge !== null) {
-    disposeSystemImageBridge();
-    disposeSystemImageBridge = null;
   }
   if (disposeTerminalBridge !== null) {
     disposeTerminalBridge();
@@ -484,8 +690,21 @@ app.on("before-quit", () => {
     void disposeSkillsBridge();
     disposeSkillsBridge = null;
   }
+  if (disposeWorkbenchBrowserBridge !== null) {
+    disposeWorkbenchBrowserBridge();
+    disposeWorkbenchBrowserBridge = null;
+  }
+  workbenchBrowserBridge = null;
   if (disposeWorkbenchStateBridge !== null) {
     disposeWorkbenchStateBridge();
     disposeWorkbenchStateBridge = null;
+  }
+  if (disposeSearchBridge !== null) {
+    disposeSearchBridge();
+    disposeSearchBridge = null;
+  }
+  if (disposeRuntimeClient !== null) {
+    disposeRuntimeClient();
+    disposeRuntimeClient = null;
   }
 });

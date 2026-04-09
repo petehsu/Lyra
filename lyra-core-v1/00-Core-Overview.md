@@ -3,8 +3,8 @@
 ## 0. 文档定位
 - 文档类型：混合版（Vision + Executable Spec）。
 - 第一读者：内部研发团队（产品、架构、工程、算法、测试、平台）。
-- 目标：统一 Chat / Agent / Oma 的核心定义，并为实现提供可执行规范。
-- 正式术语：第三模式统一命名为 `Oma`，全称 `Open Multi-Agent`。
+- 目标：统一 Agent / Oma 的核心定义，并为实现提供可执行规范。
+- 正式术语：第二模式统一命名为 `Oma`，全称 `Open Multi-Agent`。
 - 宣传口号：`Oh My Agent`。
 
 ## 1. Core 文档包
@@ -18,9 +18,8 @@
 6. `05-Oma-Marketplace.md`（Oma Marketplace）
 
 ## 2. 核心愿景（Why）
-Lyra 的目标不是“把一个 Agent 做得更强”，而是让用户在同一工作台内获得三种稳定能力：
+Lyra 的目标不是“把一个 Agent 做得更强”，而是让用户在同一工作台内获得两种稳定能力：
 
-- Chat：低门槛实时对话能力。
 - Agent：单体高执行力能力，同时是 Oma 的 Apex 执行层。
 - Oma：多角色社会化协作能力（Open Multi-Agent）。
 
@@ -43,15 +42,10 @@ Oma 的关键创新点：
 - 先可运行后复杂化：首版商业机制可结算，但复杂经济系统后置。
 - Agent First：Agent 能力不因 Oma 出现而降级，必须持续对标一线编码 Agent 体验与效果。
 
-## 4. 三模式关系图
+## 4. 双模式关系图
 ```mermaid
 flowchart LR
     U[User] --> R[Mode Router]
-
-    subgraph CHAT[Chat Mode]
-      C1[Chat Core]
-      C2[Conversation Memory]
-    end
 
     subgraph CAP[Shared Capability Core]
       A1[Tool Runtime]
@@ -74,7 +68,6 @@ flowchart LR
       G2[Task Loop]
     end
 
-    R --> C1
     R --> G1
     R --> O1
     G1 --> CAP
@@ -109,7 +102,7 @@ flowchart LR
 
 ## 7. 首版范围与非目标
 首版范围（In Scope）：
-- 三模式边界定义。
+- 双模式边界定义。
 - Oma 路由、会议、委派、并发、冲突、门禁、集成闭环。
 - Role/Skill/Tool/Policy 四层模型。
 - Marketplace 端到端业务流程（发布、匹配、协作、评分、申诉、仲裁、惩罚）。
@@ -119,7 +112,6 @@ flowchart LR
 - 完整经济学仿真定价系统（仅提供扩展接口）。
 
 ## 8. 默认假设（Assumptions）
-- Chat 维持独立对话内核。
 - Agent 与 Oma 共享能力内核，且 Agent 是 Oma 的最高执行层（Apex Layer）。
 - Oma 编排层允许实验性策略，架构上预留重构位。
 - 安全与合规采用开发级基线。
@@ -132,7 +124,7 @@ flowchart LR
 4. 最后读 `05-Oma-Marketplace.md`（Oma Marketplace）。
 
 ## 10. 统一测试计划（Cross-doc Test Plan）
-- 模式一致性：同一请求在 Chat、Agent、Oma 三模式下行为符合边界定义。
+- 模式一致性：同一请求在 Agent、Oma 双模式下行为符合边界定义。
 - 路由一致性：无 `@`、单 `@`、多 `@`、错误 `@`、角色不可用均有确定性处理。
 - 会议机制：发起、投票、超时、纪要、行动项映射可全链路复现。
 - 并发收敛：多角色并行开发同一目标时，分支隔离、冲突收敛、最终集成可验证。

@@ -289,6 +289,44 @@ describe("workspace tabs model", () => {
     expect(result.current.activeTabId).toBe(firstMcpTabId);
   });
 
+  test("opens ai-history app tab as a singleton for the same app instance", () => {
+    const { result } = renderHook(() => useWorkspaceTabsModel(testConfig));
+
+    act(() => {
+      result.current.openAppTab({
+        appId: "ai-history",
+        appInstanceId: "ai-history-center",
+        title: "History",
+        iconKey: "ai-panel-history"
+      });
+    });
+
+    const firstHistoryTabId = result.current.activeTabId;
+
+    act(() => {
+      result.current.openNewTab();
+    });
+
+    expect(result.current.tabs).toHaveLength(3);
+
+    act(() => {
+      result.current.openAppTab({
+        appId: "ai-history",
+        appInstanceId: "ai-history-center",
+        title: "History",
+        iconKey: "ai-panel-history"
+      });
+    });
+
+    expect(
+      result.current.tabs.filter(
+        (tab) => tab.pageKind === "app" && tab.appId === "ai-history"
+      )
+    ).toHaveLength(1);
+    expect(result.current.tabs).toHaveLength(3);
+    expect(result.current.activeTabId).toBe(firstHistoryTabId);
+  });
+
   test("opens ai-skills app tab as a singleton for the same app instance", () => {
     const { result } = renderHook(() => useWorkspaceTabsModel(testConfig));
 

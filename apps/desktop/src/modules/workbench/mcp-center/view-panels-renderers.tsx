@@ -1,7 +1,6 @@
 import {
   Bot,
   Clock3,
-  Database,
   FileCode2,
   Folder,
   GitBranch,
@@ -28,8 +27,6 @@ export const renderCatalogIcon = (iconKey: string) => {
       return <GitBranch size={size} />;
     case "clock":
       return <Clock3 size={size} />;
-    case "memory":
-      return <Database size={size} />;
     case "python":
       return <FileCode2 size={size} />;
     case "custom-command":

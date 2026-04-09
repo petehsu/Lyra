@@ -1,23 +1,35 @@
 import type {
-  AiCancelChatTurnRequest,
-  AiChatSession,
-  AiChatSessionSummary,
-  AiChatTurnRequest,
-  AiChatTurnResponse,
   AiDeleteProfileRequest,
   AiDiscoverModelsRequest,
   AiModelDiscoveryResult,
+  AiProfileValidationResult,
   AiProviderCatalogItem,
   AiProviderPreset,
-  AiProfileValidationResult,
   AiProviderProfile,
-  AiReadSessionHistoryRequest,
-  AiReadSessionRequest,
-  AiRuntimeEvent,
   AiSetDefaultProfileRequest,
   AiUpsertProfileRequest,
   AiValidateProfileRequest
 } from "../../shared/ai";
+import type {
+  AiMemoryConfig,
+  AgentAnswerQuestionRequest,
+  AgentAnswerPlanQuestionRequest,
+  AgentBindSessionProjectRequest,
+  AgentEnterPlanModeRequest,
+  AgentCreateSessionRequest,
+  AgentDeleteSessionRequest,
+  AgentGetPendingInteractionsRequest,
+  AgentGetPlanRequest,
+  AgentGetSessionRequest,
+  AgentPlanState,
+  AgentPendingInteraction,
+  AgentResolvePlanApprovalRequest,
+  AgentRuntimeEvent,
+  AgentSendTurnRequest,
+  AgentSendTurnResult,
+  AgentSession,
+  AgentSessionDetail,
+  CommandApprovalSubmitRequest,} from "../../shared/agent";
 
 export type AiIpcBridge = {
   readonly dispose: () => void;
@@ -50,58 +62,76 @@ export type NativeAiDiscoverModelsRequest = AiDiscoverModelsRequest & {
   readonly storageRoot: string;
 };
 
-export type NativeAiReadSessionRequest = AiReadSessionRequest & {
+export type NativeAgentListSessionsRequest = {
   readonly storageRoot: string;
 };
 
-export type NativeAiReadSessionHistoryRequest = AiReadSessionHistoryRequest & {
+export type NativeAgentCreateSessionRequest = AgentCreateSessionRequest & {
   readonly storageRoot: string;
 };
 
-export type NativeAiChatTurnRequest = AiChatTurnRequest & {
+export type NativeAgentGetSessionRequest = AgentGetSessionRequest & {
   readonly storageRoot: string;
 };
 
-export type NativeAiCancelChatTurnRequest = AiCancelChatTurnRequest & {
+export type NativeAgentDeleteSessionRequest = AgentDeleteSessionRequest & {
   readonly storageRoot: string;
 };
 
-export type AiNativeBindings = {
-  readonly registerAiEventCallback: (listener: (eventJson: string) => void) => void;
-  readonly readAiProfilesJson: (requestJson: string) => string;
-  readonly readAiProviderCatalogJson: (requestJson: string) => string;
-  readonly readAiPresetCatalogJson: (requestJson: string) => string;
-  readonly upsertAiProfileJson: (requestJson: string) => string;
-  readonly deleteAiProfileJson: (requestJson: string) => void;
-  readonly setDefaultAiProfileJson: (requestJson: string) => string;
-  readonly validateAiProfileJson: (requestJson: string) => string;
-  readonly discoverAiModelsJson: (requestJson: string) => string;
-  readonly refreshAiModelsJson: (requestJson: string) => string;
-  readonly readAiSessionJson: (requestJson: string) => string;
-  readonly readAiSessionHistoryJson: (requestJson: string) => string;
-  readonly sendAiChatTurnJson: (requestJson: string) => string;
-  readonly cancelAiChatTurnJson: (requestJson: string) => string;
-  readonly shutdownAiRuntime: () => void;
+export type NativeAgentBindSessionProjectRequest = AgentBindSessionProjectRequest & {
+  readonly storageRoot: string;
 };
 
-export type AiNativeLoadResult =
-  | {
-      readonly ok: true;
-      readonly bindings: AiNativeBindings;
-      readonly loadedFrom: string;
-    }
-  | {
-      readonly ok: false;
-      readonly errorMessage: string;
-      readonly triedPaths: readonly string[];
-    };
+export type NativeAgentSendTurnRequest = AgentSendTurnRequest & {
+  readonly storageRoot: string;
+};
 
-export type ParsedAiEvent = AiRuntimeEvent;
+export type NativeAgentEnterPlanModeRequest = AgentEnterPlanModeRequest & {
+  readonly storageRoot: string;
+};
+
+export type NativeAgentGetPlanRequest = AgentGetPlanRequest & {
+  readonly storageRoot: string;
+};
+
+export type NativeAgentGetPendingInteractionsRequest = AgentGetPendingInteractionsRequest & {
+  readonly storageRoot: string;
+};
+
+export type NativeAgentAnswerQuestionRequest = AgentAnswerQuestionRequest & {
+  readonly storageRoot: string;
+};
+
+export type NativeAgentAnswerPlanQuestionRequest = AgentAnswerPlanQuestionRequest & {
+  readonly storageRoot: string;
+};
+
+export type NativeAgentResolvePlanApprovalRequest = AgentResolvePlanApprovalRequest & {
+  readonly storageRoot: string;
+};
+
+export type NativeAgentMemoryConfigRequest = {
+  readonly storageRoot: string;
+};
+
+export type NativeAgentUpdateMemoryConfigRequest = {
+  readonly storageRoot: string;
+  readonly config: AiMemoryConfig;
+};
+
+export type NativeCommandApprovalSubmitRequest = CommandApprovalSubmitRequest & {
+  readonly storageRoot: string;
+};
+
 export type ParsedAiProfiles = readonly AiProviderProfile[];
 export type ParsedAiProviderCatalog = readonly AiProviderCatalogItem[];
 export type ParsedAiPresetCatalog = readonly AiProviderPreset[];
-export type ParsedAiSession = AiChatSession;
-export type ParsedAiSessionHistory = readonly AiChatSessionSummary[];
-export type ParsedAiTurnResponse = AiChatTurnResponse;
 export type ParsedAiValidationResult = AiProfileValidationResult;
 export type ParsedAiDiscoveryResult = AiModelDiscoveryResult;
+export type ParsedAgentSessions = readonly AgentSession[];
+export type ParsedAgentSessionDetail = AgentSessionDetail;
+export type ParsedAgentPlanState = AgentPlanState | null;
+export type ParsedAgentPendingInteractions = readonly AgentPendingInteraction[];
+export type ParsedAgentSendTurnResult = AgentSendTurnResult;
+export type ParsedAgentRuntimeEvent = AgentRuntimeEvent;
+export type ParsedAgentMemoryConfig = AiMemoryConfig;

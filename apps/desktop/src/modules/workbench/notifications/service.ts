@@ -49,7 +49,7 @@ const sanitizeString = (value: unknown): string | null => {
 const APP_IDS = new Set<WorkbenchAppId>([
   "file-manager",
   "file-editor",
-  "ai-panel",
+  "ai-history",
   "ai-mcp",
   "ai-skills",
   "notification-center"
@@ -64,6 +64,7 @@ const APP_ICON_KEYS = new Set<WorkspaceAppIconKey>([
   "file-editor-readonly",
   "file-editor-unsupported",
   "ai-panel-default",
+  "ai-panel-history",
   "ai-panel-mcp",
   "ai-panel-skills",
   "notification-center-default"

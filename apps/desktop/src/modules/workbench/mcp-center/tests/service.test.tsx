@@ -159,15 +159,15 @@ const catalog = [
     resources: [{ name: "directory://workspace" }]
   }),
   createCatalogItem({
-    id: "memory",
-    title: "Memory",
-    summary: "Persistent memory store",
-    iconKey: "memory",
+    id: "git",
+    title: "Git",
+    summary: "Repository history and status tools",
+    iconKey: "git",
     installKind: "npm",
     defaultCommand: "npx",
-    defaultArgs: ["-y", "@modelcontextprotocol/server-memory"],
-    permissions: ["memory.read", "memory.write"],
-    prompts: [{ name: "memory_summary" }]
+    defaultArgs: ["-y", "@modelcontextprotocol/server-git", "."],
+    permissions: ["git.read", "git.write"],
+    tools: [{ name: "git_status" }]
   })
 ] as const;
 
@@ -186,21 +186,21 @@ const filesystemServer = createServer({
   permissions: ["filesystem.read", "filesystem.write"]
 });
 
-const projectMemoryServer = createServer({
-  id: "server-memory-project",
-  serverKey: "memory-project",
+const projectGitServer = createServer({
+  id: "server-git-project",
+  serverKey: "git-project",
   source: "catalog",
-  templateId: "memory",
-  title: "Memory",
-  summary: "Project memory",
-  iconKey: "memory",
+  templateId: "git",
+  title: "Git",
+  summary: "Project repository",
+  iconKey: "git",
   scope: "project",
   projectRoot: PROJECT_ROOT,
   transport: "stdio",
   installKind: "npm",
   command: "npx",
-  args: ["-y", "@modelcontextprotocol/server-memory"],
-  permissions: ["memory.read", "memory.write"]
+  args: ["-y", "@modelcontextprotocol/server-git", "."],
+  permissions: ["git.read", "git.write"]
 });
 
 const createMcpDesktopApi = ({
@@ -211,7 +211,7 @@ const createMcpDesktopApi = ({
   let serial = 0;
   let globalServers: readonly McpServerConfig[] = [filesystemServer];
   let projectServers: readonly McpServerConfig[] = projectEnabled
-    ? [projectMemoryServer]
+    ? [projectGitServer]
     : [];
   const eventListeners = new Set<(event: McpRuntimeEvent) => void>();
 
@@ -479,11 +479,11 @@ describe("mcp center model", () => {
     });
 
     await act(async () => {
-      await result.current.installTemplate("memory");
+      await result.current.installTemplate("git");
     });
 
     expect(desktop.installTemplate).toHaveBeenCalledWith({
-      templateId: "memory",
+      templateId: "git",
       scope: "project",
       projectRoot: PROJECT_ROOT
     });
@@ -491,7 +491,7 @@ describe("mcp center model", () => {
     await waitFor(() => {
       expect(
         result.current.state.effectiveConfig.servers.some(
-          (server) => server.id !== "server-memory-project" && server.templateId === "memory"
+          (server) => server.id !== "server-git-project" && server.templateId === "git"
         )
       ).toBe(true);
     });
