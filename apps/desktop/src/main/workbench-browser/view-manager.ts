@@ -4,10 +4,12 @@ import {
   WebContentsView,
   shell,
   type Rectangle,
-  type WebContents
+  type WebContents,
+  type WebFrameMain
 } from "electron";
 
 import type {
+  WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserEvent,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
@@ -18,7 +20,27 @@ import type {
   WorkbenchBrowserReadPageStateRequest,
   WorkbenchBrowserTopologySnapshot
 } from "../../shared/desktop-bridge";
-import type { WorkbenchBrowserPublishEvent, WorkbenchBrowserViewManager } from "./types";
+import type {
+  WorkbenchTabExtractTextResult,
+  WorkbenchVisualCaptureResult
+} from "../../shared/workbench-observation";
+import type {
+  BrowserDomSummaryReadOptions,
+  BrowserTextExtractOptions
+} from "../workbench-observation/browser/types";
+import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
+import {
+  buildFrameDomProbeScript,
+  normalizeFrameDomProbeResult
+} from "./frame-probe";
+import { createWorkbenchBrowserElementPickerController } from "./element-picker/controller";
+import { extractTextFromPage } from "./page-text-extractor";
+import type {
+  WorkbenchBrowserElementPickerController,
+  WorkbenchBrowserNativeInputEvent,
+  WorkbenchBrowserPublishEvent,
+  WorkbenchBrowserViewManager
+} from "./types";
 
 type BrowserPageEntry = {
   readonly tabId: string;
@@ -197,6 +219,39 @@ const toBounds = (layout: WorkbenchBrowserPageLayout): Rectangle => ({
   width: Math.max(1, layout.width),
   height: Math.max(1, layout.height)
 });
+
+const delay = async (ms: number): Promise<void> => {
+  if (ms <= 0) {
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, ms));
+};
+
+const toNativeInputEvent = (event: WorkbenchBrowserNativeInputEvent):
+  | Electron.MouseInputEvent
+  | Electron.MouseWheelInputEvent
+  | Electron.KeyboardInputEvent => {
+  switch (event.type) {
+    case "mouseMove":
+    case "mouseDown":
+    case "mouseUp":
+      return {
+        type: event.type,
+        x: Math.round(event.x),
+        y: Math.round(event.y),
+        button: event.button ?? "left",
+        clickCount: Math.max(1, Math.round(event.clickCount ?? 1))
+      };
+    case "keyDown":
+    case "keyUp":
+    case "char":
+      return {
+        type: event.type,
+        keyCode: event.keyCode,
+        modifiers: event.modifiers === undefined ? [] : [...event.modifiers]
+      };
+  }
+};
 
 export const createWorkbenchBrowserViewManager = ({
   getWindow,
@@ -383,6 +438,7 @@ export const createWorkbenchBrowserViewManager = ({
       return;
     }
     entry.isDestroyed = true;
+    elementPickerController.handlePageClosed(entry.tabId);
     const window = getWindow();
     if (window !== null && window.isDestroyed() === false && entry.attached) {
       overlayView.removeChildView(entry.view);
@@ -452,6 +508,7 @@ export const createWorkbenchBrowserViewManager = ({
         webContents.removeAllListeners("did-fail-load");
         webContents.removeAllListeners("did-navigate");
         webContents.removeAllListeners("did-navigate-in-page");
+        webContents.removeAllListeners("console-message");
         webContents.removeAllListeners("enter-html-full-screen");
         webContents.removeAllListeners("leave-html-full-screen");
         webContents.removeAllListeners("render-process-gone");
@@ -509,11 +566,17 @@ export const createWorkbenchBrowserViewManager = ({
     };
 
     webContents.on("did-navigate", (_event, url) => {
+      elementPickerController.handlePageNavigated(entry.tabId);
       syncAddress(url);
     });
 
     webContents.on("did-navigate-in-page", (_event, url) => {
+      elementPickerController.handlePageNavigated(entry.tabId);
       syncAddress(url);
+    });
+
+    webContents.on("console-message", (_event, _level, message) => {
+      elementPickerController.handleConsoleMessage(entry.tabId, message);
     });
 
     webContents.on("enter-html-full-screen", () => {
@@ -569,6 +632,7 @@ export const createWorkbenchBrowserViewManager = ({
   const syncTopology = (snapshot: WorkbenchBrowserTopologySnapshot): void => {
     const nextTopology = normalizeTopology(snapshot);
     topology = nextTopology;
+    elementPickerController.handleActiveTabChanged(nextTopology.activeTabId);
 
     const nextTabIds = new Set(nextTopology.pages.map((page) => page.tabId));
     for (const [tabId, entry] of entries) {
@@ -619,8 +683,234 @@ export const createWorkbenchBrowserViewManager = ({
     };
   };
 
+  const requireEntry = (tabId: string): BrowserPageEntry => {
+    const entry = entries.get(tabId);
+    if (entry === undefined || entry.isDestroyed) {
+      throw new Error(`Unknown browser tab: ${tabId}`);
+    }
+    return entry;
+  };
+
+  const findFrame = (
+    entry: BrowserPageEntry,
+    frameTreeNodeId: number
+  ): WebFrameMain | null =>
+    entry.webContents.mainFrame.framesInSubtree.find(
+      (frame) => frame.frameTreeNodeId === frameTreeNodeId && !frame.isDestroyed()
+    ) ?? null;
+
+  const elementPickerController: WorkbenchBrowserElementPickerController =
+    createWorkbenchBrowserElementPickerController({
+      host: {
+        publishEvent,
+        listFrames: (tabId) => {
+          const entry = requireEntry(tabId);
+          return entry.webContents.mainFrame.framesInSubtree
+            .filter((frame) => frame.isDestroyed() === false)
+            .map((frame) => ({
+              frameTreeNodeId: frame.frameTreeNodeId,
+              url: frame.url,
+              origin: frame.origin,
+              name: frame.name,
+              ...(frame.parent === null
+                ? {}
+                : { parentFrameTreeNodeId: frame.parent.frameTreeNodeId }),
+              isMainFrame: frame.frameTreeNodeId === entry.webContents.mainFrame.frameTreeNodeId
+            }));
+        },
+        executeFrameScript: async (
+          tabId,
+          request: {
+            readonly script: string;
+            readonly frameTreeNodeId?: number;
+            readonly userGesture?: boolean;
+          }
+        ) => {
+          const entry = requireEntry(tabId);
+          if (typeof request.frameTreeNodeId === "number" && Number.isFinite(request.frameTreeNodeId)) {
+            const frame = findFrame(entry, Math.round(request.frameTreeNodeId));
+            if (frame === null) {
+              throw new Error(`Unknown browser frame: ${request.frameTreeNodeId}`);
+            }
+            return await frame.executeJavaScript(request.script, request.userGesture === true);
+          }
+          return await entry.webContents.executeJavaScript(request.script, request.userGesture === true);
+        }
+      }
+    });
+
+  const readPageDomSummary = async (
+    tabId: string,
+    options?: BrowserDomSummaryReadOptions
+  ): Promise<WorkbenchObservationBrowserDomSummary> => {
+    const entry = requireEntry(tabId);
+    const maxChars = Math.max(256, Math.min(24_000, Math.round(options?.maxChars ?? 12_000)));
+    const maxLinks = Math.max(1, Math.min(100, Math.round(options?.maxLinks ?? 50)));
+    const maxHeadings = Math.max(1, Math.min(80, Math.round(options?.maxHeadings ?? 40)));
+    const maxForms = Math.max(1, Math.min(30, Math.round(options?.maxForms ?? 10)));
+
+    try {
+      const summary = await entry.webContents.executeJavaScript(`
+        (() => {
+          const normalizeText = (value) =>
+            typeof value === "string"
+              ? value.replace(/\\s+/g, " ").trim()
+              : "";
+          const bodyText = normalizeText(document.body?.innerText ?? "");
+          const headings = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"))
+            .map((element) => normalizeText(element.textContent ?? ""))
+            .filter((value) => value.length > 0);
+          const links = Array.from(document.querySelectorAll("a[href]"))
+            .map((element) => ({
+              text: normalizeText(element.textContent ?? ""),
+              href: typeof element.href === "string" ? element.href : ""
+            }))
+            .filter((entry) => entry.href.length > 0);
+          const forms = Array.from(document.querySelectorAll("form"))
+            .map((form) => ({
+              action: typeof form.action === "string" && form.action.length > 0 ? form.action : undefined,
+              method: typeof form.method === "string" && form.method.length > 0 ? form.method.toLowerCase() : undefined,
+              fields: Array.from(form.querySelectorAll("input, textarea, select, button"))
+                .map((field) =>
+                  normalizeText(
+                    field.getAttribute("name")
+                    ?? field.getAttribute("aria-label")
+                    ?? field.getAttribute("placeholder")
+                    ?? field.id
+                    ?? field.tagName
+                  )
+                )
+                .filter((value) => value.length > 0)
+            }));
+          const selectionText = normalizeText(String(window.getSelection?.() ?? ""));
+          return {
+            domTitle: normalizeText(document.title ?? ""),
+            documentLanguage: normalizeText(document.documentElement?.lang ?? ""),
+            selectionText,
+            headings,
+            mainTextExcerpt: bodyText.slice(0, ${maxChars}),
+            links: links.slice(0, ${maxLinks}),
+            forms: forms.slice(0, ${maxForms}),
+            truncated:
+              bodyText.length > ${maxChars}
+              || headings.length > ${maxHeadings}
+              || links.length > ${maxLinks}
+              || forms.length > ${maxForms}
+          };
+        })()
+      `, true);
+
+      const record = summary as Record<string, unknown>;
+      const headings = Array.isArray(record.headings)
+        ? record.headings
+            .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+            .slice(0, maxHeadings)
+        : [];
+      const links = Array.isArray(record.links)
+        ? record.links
+            .map((value) => {
+              if (value === null || typeof value !== "object") {
+                return null;
+              }
+              const entry = value as Record<string, unknown>;
+              if (typeof entry.href !== "string" || entry.href.trim().length === 0) {
+                return null;
+              }
+              return {
+                text: typeof entry.text === "string" ? entry.text : "",
+                href: entry.href
+              };
+            })
+            .filter((value): value is { text: string; href: string } => value !== null)
+            .slice(0, maxLinks)
+        : [];
+      const forms = Array.isArray(record.forms)
+        ? record.forms
+            .map((value) => {
+              if (value === null || typeof value !== "object") {
+                return null;
+              }
+              const entry = value as Record<string, unknown>;
+              const fields = Array.isArray(entry.fields)
+                ? entry.fields.filter((field): field is string => typeof field === "string")
+                : [];
+              const form: {
+                action?: string;
+                method?: string;
+                fields: readonly string[];
+              } = { fields };
+              if (typeof entry.action === "string" && entry.action.length > 0) {
+                form.action = entry.action;
+              }
+              if (typeof entry.method === "string" && entry.method.length > 0) {
+                form.method = entry.method;
+              }
+              return form;
+            })
+            .filter((value): value is { action?: string; method?: string; fields: readonly string[] } => value !== null)
+            .slice(0, maxForms)
+        : [];
+
+      return {
+        ...(typeof record.domTitle === "string" && record.domTitle.length > 0
+          ? { domTitle: record.domTitle }
+          : {}),
+        ...(typeof record.documentLanguage === "string" && record.documentLanguage.length > 0
+          ? { documentLanguage: record.documentLanguage }
+          : {}),
+        ...(typeof record.selectionText === "string" && record.selectionText.length > 0
+          ? { selectionText: record.selectionText }
+          : {}),
+        headings,
+        mainTextExcerpt:
+          typeof record.mainTextExcerpt === "string" ? record.mainTextExcerpt : "",
+        links,
+        forms,
+        truncated: record.truncated === true
+      };
+    } catch (_error) {
+      return {
+        headings: [],
+        mainTextExcerpt: "",
+        links: [],
+        forms: [],
+        truncated: false
+      };
+    }
+  };
+
+  const extractPageText = async (
+    tabId: string,
+    options?: BrowserTextExtractOptions
+  ): Promise<WorkbenchTabExtractTextResult> => {
+    const entry = requireEntry(tabId);
+    return await extractTextFromPage({
+      tabId,
+      webContents: entry.webContents,
+      ...(options === undefined ? {} : { options })
+    });
+  };
+
+  const capturePage = async (tabId: string): Promise<WorkbenchVisualCaptureResult> => {
+    const entry = requireEntry(tabId);
+    if (entry.runtime.isVisible === false) {
+      throw new Error("background_visual_capture_unsupported");
+    }
+    const image = await entry.webContents.capturePage();
+    const size = image.getSize();
+    return {
+      tabId,
+      mimeType: "image/png",
+      imageBase64: image.toPNG().toString("base64"),
+      width: size.width,
+      height: size.height,
+      visibleOnly: true
+    };
+  };
+
   return {
     dispose: () => {
+      void elementPickerController.dispose();
       for (const entry of entries.values()) {
         destroyEntry(entry, false);
       }
@@ -711,6 +1001,156 @@ export const createWorkbenchBrowserViewManager = ({
       }
       return entries.get(targetTabId)?.runtime ?? null;
     },
+    setElementPickerMode: async (request) => {
+      const tabId = normalizeString(request?.tabId);
+      if (tabId === null || entries.has(tabId) === false) {
+        publishEvent({
+          kind: "element-picker-state",
+          state: {
+            tabId: tabId ?? "unknown",
+            enabled: false,
+            cause: "script_error",
+            errorCode: "tab_not_found"
+          }
+        });
+        return;
+      }
+      await elementPickerController.setMode({
+        tabId,
+        enabled: request.enabled === true,
+        ...(request.enabled === true ? { appearance: request.appearance } : {})
+      });
+    },
+    showAgentElementPickerTarget: async (target: WorkbenchBrowserAgentTargetInfo) => {
+      const tabId = normalizeString(target?.tabId);
+      if (tabId === null || entries.has(tabId) === false) {
+        publishEvent({
+          kind: "element-picker-state",
+          state: {
+            tabId: tabId ?? "unknown",
+            enabled: false,
+            cause: "script_error",
+            errorCode: "tab_not_found"
+          }
+        });
+        return false;
+      }
+      return await elementPickerController.showAgentTarget({
+        ...target,
+        tabId
+      });
+    },
+    clearAgentElementPickerTarget: async (
+      tabId: string,
+      options?: { readonly preserveManualMode?: boolean }
+    ) => {
+      const normalizedTabId = normalizeString(tabId);
+      if (normalizedTabId === null || entries.has(normalizedTabId) === false) {
+        return;
+      }
+      await elementPickerController.clearAgentTarget(normalizedTabId, options);
+    },
+    readActiveTabId: () => getActiveOrFocusedTabId(),
+    listFrames: (tabId: string) => {
+      const entry = requireEntry(tabId);
+      return entry.webContents.mainFrame.framesInSubtree
+        .filter((frame) => frame.isDestroyed() === false)
+        .map((frame) => ({
+          frameTreeNodeId: frame.frameTreeNodeId,
+          url: frame.url,
+          origin: frame.origin,
+          name: frame.name,
+          ...(frame.parent === null
+            ? {}
+            : { parentFrameTreeNodeId: frame.parent.frameTreeNodeId }),
+          isMainFrame: frame.frameTreeNodeId === entry.webContents.mainFrame.frameTreeNodeId
+        }));
+    },
+    probeFrameDom: async (
+      tabId: string,
+      frameTreeNodeId: number,
+      options?: { readonly maxChars?: number }
+    ) => {
+      const entry = requireEntry(tabId);
+      const frame = findFrame(entry, frameTreeNodeId);
+      if (frame === null) {
+        throw new Error(`Unknown browser frame: ${frameTreeNodeId}`);
+      }
+      try {
+        const raw = await frame.executeJavaScript(
+          buildFrameDomProbeScript({
+            maxChars: Math.max(512, Math.min(40_000, Math.round(options?.maxChars ?? 8_000)))
+          }),
+          true
+        );
+        return normalizeFrameDomProbeResult(raw);
+      } catch (_error) {
+        return { embeddedDocuments: [] };
+      }
+    },
+    executeFrameScript: async (
+      tabId,
+      request: {
+        readonly script: string;
+        readonly frameTreeNodeId?: number;
+        readonly userGesture?: boolean;
+      }
+    ) => {
+      if (typeof request.script !== "string" || request.script.trim().length === 0) {
+        throw new Error("script is required");
+      }
+      const entry = requireEntry(tabId);
+      if (typeof request.frameTreeNodeId === "number" && Number.isFinite(request.frameTreeNodeId)) {
+        const frame = findFrame(entry, Math.round(request.frameTreeNodeId));
+        if (frame === null) {
+          throw new Error(`Unknown browser frame: ${request.frameTreeNodeId}`);
+        }
+        return await frame.executeJavaScript(request.script, request.userGesture === true);
+      }
+      return await entry.webContents.executeJavaScript(request.script, request.userGesture === true);
+    },
+    dispatchNativeInput: async (
+      tabId: string,
+      events: readonly WorkbenchBrowserNativeInputEvent[]
+    ) => {
+      const entry = requireEntry(tabId);
+      entry.webContents.focus();
+      for (const event of events) {
+        entry.webContents.sendInputEvent(toNativeInputEvent(event));
+        await delay(Math.max(0, Math.min(2_000, Math.round(event.delayMs ?? 0))));
+      }
+    },
+    fetchWithTabSession: async (tabId, request) => {
+      const entry = requireEntry(tabId);
+      const timeoutMs = Math.max(250, Math.min(30_000, Math.round(request.timeoutMs ?? 10_000)));
+      const maxBytes = Math.max(1_024, Math.min(128 * 1024 * 1024, Math.round(request.maxBytes ?? 64 * 1024 * 1024)));
+      const response = await entry.webContents.session.fetch(request.url, {
+        method: "GET",
+        ...(typeof request.referrer === "string" && request.referrer.trim().length > 0
+          ? { headers: { referer: request.referrer.trim() } }
+          : {}),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+      const contentLength = Number(response.headers.get("content-length") ?? NaN);
+      if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+        throw Object.assign(new Error("document_too_large"), { code: "document_too_large" });
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.byteLength > maxBytes) {
+        throw Object.assign(new Error("document_too_large"), { code: "document_too_large" });
+      }
+      return {
+        finalUrl: response.url,
+        status: response.status,
+        ...(response.headers.get("content-type") === null
+          ? {}
+          : { mimeType: response.headers.get("content-type") ?? "" }),
+        body: buffer
+      };
+    },
+    readPageDomSummary,
+    extractPageText,
+    capturePage,
     reapplyLayout: () => {
       applyLayout();
     },

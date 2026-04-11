@@ -22,6 +22,7 @@ export type WorkbenchSplitOverflowPolicy =
   | "replace_target";
 
 export type WorkbenchSearchResultsSourceFilter = "all" | "web" | "local";
+export type WorkbenchOmniboxNonBrowserSubmitTarget = "new_tab" | "replace_active_tab";
 
 export type WorkbenchPreferences = {
   readonly locale: WorkbenchLocale;
@@ -46,6 +47,7 @@ export type WorkbenchPreferences = {
   readonly deepSearchProactiveDomainGuessingEnabled: boolean;
   readonly deepSearchCrawlPolicy: SearchDeepCrawlPolicy;
   readonly searchResultsSourceFilter: WorkbenchSearchResultsSourceFilter;
+  readonly omniboxNonBrowserSubmitTarget: WorkbenchOmniboxNonBrowserSubmitTarget;
 };
 
 export type WorkbenchPreferencesModel = {
@@ -72,5 +74,8 @@ export type WorkbenchPreferencesModel = {
   readonly setDeepSearchProactiveDomainGuessingEnabled: (value: boolean) => void;
   readonly setDeepSearchCrawlPolicy: (value: SearchDeepCrawlPolicy) => void;
   readonly setSearchResultsSourceFilter: (value: WorkbenchSearchResultsSourceFilter) => void;
+  readonly setOmniboxNonBrowserSubmitTarget: (
+    value: WorkbenchOmniboxNonBrowserSubmitTarget
+  ) => void;
   readonly reset: () => void;
 };

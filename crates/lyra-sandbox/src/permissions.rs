@@ -57,7 +57,10 @@ impl PermissionsStore {
             Ok(content) => match serde_json::from_str(&content) {
                 Ok(store) => store,
                 Err(e) => {
-                    eprintln!("[lyra-sandbox] Failed to parse permissions at {:?}: {}", path, e);
+                    eprintln!(
+                        "[lyra-sandbox] Failed to parse permissions at {:?}: {}",
+                        path, e
+                    );
                     Self::default()
                 }
             },
@@ -78,21 +81,32 @@ impl PermissionsStore {
     /// Check if a command matches an always-allow rule.
     /// Uses simple pattern matching: `*` matches any suffix.
     pub fn is_allowed(&self, command: &str) -> bool {
-        self.allow.iter().any(|rule| pattern_matches(&rule.pattern, command))
+        self.allow
+            .iter()
+            .any(|rule| pattern_matches(&rule.pattern, command))
     }
 
     /// Check if a command matches an always-deny rule.
     pub fn is_denied(&self, command: &str) -> bool {
-        self.deny.iter().any(|rule| pattern_matches(&rule.pattern, command))
+        self.deny
+            .iter()
+            .any(|rule| pattern_matches(&rule.pattern, command))
     }
 
     /// Check if a command matches an always-ask rule.
     pub fn requires_ask(&self, command: &str) -> bool {
-        self.ask.iter().any(|rule| pattern_matches(&rule.pattern, command))
+        self.ask
+            .iter()
+            .any(|rule| pattern_matches(&rule.pattern, command))
     }
 
     /// Add a rule and persist it.
-    pub fn add_rule(&mut self, project_root: &str, pattern: &str, decision: PermissionDecision) -> std::io::Result<()> {
+    pub fn add_rule(
+        &mut self,
+        project_root: &str,
+        pattern: &str,
+        decision: PermissionDecision,
+    ) -> std::io::Result<()> {
         let rule = PermissionRule {
             pattern: pattern.to_string(),
             decision: decision.clone(),
@@ -108,7 +122,10 @@ impl PermissionsStore {
         }
 
         // Only persist if it's a permanent decision
-        if matches!(decision, PermissionDecision::AllowAlways | PermissionDecision::DenyAlways) {
+        if matches!(
+            decision,
+            PermissionDecision::AllowAlways | PermissionDecision::DenyAlways
+        ) {
             self.save(project_root)?;
         }
 
@@ -149,7 +166,9 @@ impl PermissionsStore {
 
 /// Build the path to the permissions file for a project.
 fn permissions_path(project_root: &str) -> PathBuf {
-    Path::new(project_root).join(".lyra").join("permissions.json")
+    Path::new(project_root)
+        .join(".lyra")
+        .join("permissions.json")
 }
 
 /// Simple pattern matching supporting `*` wildcard.
@@ -203,7 +222,10 @@ pub fn load_global_permissions() -> PermissionsStore {
 
 /// Merge project-level and global-level permissions.
 /// Project-level rules take precedence over global rules.
-pub fn merge_permissions(project: &PermissionsStore, global: &PermissionsStore) -> PermissionsStore {
+pub fn merge_permissions(
+    project: &PermissionsStore,
+    global: &PermissionsStore,
+) -> PermissionsStore {
     let mut merged = global.clone();
     // Project rules override global rules
     merged.allow.extend(project.allow.iter().cloned());

@@ -24,7 +24,10 @@ fn entering_plan_mode_initializes_session_state_and_plan() {
     })
     .expect("enter plan mode");
 
-    assert_eq!(detail.session.collaboration_mode, AgentCollaborationMode::Plan);
+    assert_eq!(
+        detail.session.collaboration_mode,
+        AgentCollaborationMode::Plan
+    );
     let plan = detail.plan.expect("plan state");
     assert_eq!(plan.version, 0);
     assert_eq!(plan.status, crate::agent::types::AgentPlanStatus::Draft);
@@ -79,10 +82,19 @@ fn reentering_plan_mode_emits_reentered_event_without_resetting_draft() {
     })
     .expect("reenter plan mode");
 
-    assert_eq!(detail.session.collaboration_mode, AgentCollaborationMode::Plan);
-    assert_eq!(detail.plan.as_ref().and_then(|value| Some(value.version)), Some(3));
     assert_eq!(
-        detail.plan.as_ref().map(|value| value.draft_markdown.as_str()),
+        detail.session.collaboration_mode,
+        AgentCollaborationMode::Plan
+    );
+    assert_eq!(
+        detail.plan.as_ref().and_then(|value| Some(value.version)),
+        Some(3)
+    );
+    assert_eq!(
+        detail
+            .plan
+            .as_ref()
+            .map(|value| value.draft_markdown.as_str()),
         Some("draft")
     );
 

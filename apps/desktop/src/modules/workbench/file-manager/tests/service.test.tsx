@@ -425,6 +425,7 @@ const createDesktopApi = (): {
       reload: async () => undefined,
       stop: async () => undefined,
       readPageState: async () => null,
+      setElementPickerMode: async () => undefined,
       onEvent: () => () => undefined
     },
     mcp: {
@@ -648,6 +649,9 @@ const createDesktopApi = (): {
       readSync: () => null,
       writeSync: () => undefined,
       removeSync: () => undefined
+    },
+    workbenchObservation: {
+      registerHandler: () => () => undefined
     }
   };
 

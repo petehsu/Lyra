@@ -11,12 +11,14 @@ use serde_json::{json, Value};
 
 use crate::agent::service::{
     answer_question, bind_session_project, create_session, enter_plan_mode, get_session, send_turn,
+    submit_command_approval,
 };
 use crate::agent::tools::{set_skill_prompts, SkillPromptEntry};
 use crate::agent::types::{
     AgentAnswerQuestionRequest, AgentBindSessionProjectRequest, AgentCreateSessionRequest,
     AgentEnterPlanModeRequest, AgentGetSessionRequest, AgentPendingInteractionKind,
     AgentPendingInteractionStatus, AgentPlanState, AgentPlanStatus, AgentSendTurnRequest,
+    CommandApprovalSubmitRequest,
 };
 use crate::profile::service::upsert_profile;
 use crate::profile::types::UpsertAiProfileRequest;
@@ -761,7 +763,7 @@ fn repeated_tool_loop_pauses_turn_without_fixed_step_limit() {
 }
 
 #[test]
-fn simple_observation_turn_uses_fast_path_and_skips_planning() {
+fn simple_observation_turn_uses_standard_strategy_without_language_routing() {
     let temp = TempStorageRoot::new();
     let storage_root = temp.as_string();
     let server = MockOpenAiServer::start(vec![simple_stream_response("Looks healthy.")]);
@@ -781,10 +783,10 @@ fn simple_observation_turn_uses_fast_path_and_skips_planning() {
         profile_id: None,
         project_root: None,
         max_steps: None,
-        enable_planning: true,
-        planning_min_chars: Some(1),
-        enable_reflection: true,
-        reflection_min_tool_calls: Some(1),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
         enable_context_collapse: None,
     })
     .expect("send turn");
@@ -805,8 +807,8 @@ fn simple_observation_turn_uses_fast_path_and_skips_planning() {
         .and_then(Value::as_str)
         .expect("system prompt");
     assert!(system_prompt.contains("## Turn Strategy"));
-    assert!(system_prompt.contains("bounded observational fast path"));
-    assert!(system_prompt.contains("minimum sufficient evidence"));
+    assert!(system_prompt.contains("standard execution"));
+    assert!(!system_prompt.contains("bounded observational fast path"));
 
     let detail = get_session(AgentGetSessionRequest {
         storage_root,
@@ -817,106 +819,9 @@ fn simple_observation_turn_uses_fast_path_and_skips_planning() {
         detail.runtime_events.iter().any(|event| {
             event.phase == "turn_strategy_selected"
                 && event.payload.get("strategy").and_then(Value::as_str)
-                    == Some("bounded_observation")
+                    == Some("standard_execution")
         }),
-        "expected bounded_observation runtime event"
-    );
-    assert!(
-        detail
-            .runtime_events
-            .iter()
-            .all(|event| event.phase != "planning_completed"),
-        "observation fast path should not trigger planning"
-    );
-}
-
-#[test]
-fn observation_turn_pauses_after_default_probe_budget() {
-    let temp = TempStorageRoot::new();
-    let storage_root = temp.as_string();
-
-    let tool_arguments = [
-        json!({ "pattern": "alpha", "path": storage_root, "limit": 5 }).to_string(),
-        json!({ "pattern": "beta", "path": storage_root, "limit": 5 }).to_string(),
-        json!({ "pattern": "gamma", "path": storage_root, "limit": 5 }).to_string(),
-        json!({ "pattern": "delta", "path": storage_root, "limit": 5 }).to_string(),
-    ];
-    let responses = tool_arguments
-        .iter()
-        .enumerate()
-        .map(|(index, args)| {
-            format!(
-                "data: {}\n\ndata: [DONE]\n\n",
-                json!({
-                    "choices": [{
-                        "delta": {
-                            "tool_calls": [{
-                                "index": 0,
-                                "id": format!("call_search_{}", index + 1),
-                                "type": "function",
-                                "function": {
-                                    "name": "filesystem_search",
-                                    "arguments": args,
-                                }
-                            }]
-                        }
-                    }]
-                })
-            )
-        })
-        .collect::<Vec<_>>();
-    let server = MockOpenAiServer::start(responses);
-    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
-
-    let session = create_session(AgentCreateSessionRequest {
-        storage_root: storage_root.clone(),
-        title: Some("Observation Probe Budget".to_string()),
-        profile_id: Some(profile_id),
-    })
-    .expect("create session");
-
-    let result = send_turn(AgentSendTurnRequest {
-        storage_root: storage_root.clone(),
-        session_id: session.id.clone(),
-        input: "看看项目里现在有哪些 hello 相关内容".to_string(),
-        profile_id: None,
-        project_root: None,
-        max_steps: None,
-        enable_planning: true,
-        planning_min_chars: Some(1),
-        enable_reflection: true,
-        reflection_min_tool_calls: Some(1),
-        enable_context_collapse: None,
-    })
-    .expect("send turn");
-
-    let requests = server.finish();
-    assert_eq!(
-        requests.len(),
-        4,
-        "expected probe budget to stop before a fifth round"
-    );
-    assert_eq!(result.turn.status, "paused");
-    assert!(
-        result
-            .assistant_message
-            .as_ref()
-            .is_some_and(|message| message.content.contains("bounded observational request")),
-        "expected observation pause explanation"
-    );
-
-    let detail = get_session(AgentGetSessionRequest {
-        storage_root,
-        session_id: session.id,
-    })
-    .expect("get session detail");
-    assert!(
-        detail.runtime_events.iter().any(|event| {
-            event.phase == "turn_strategy_reminder"
-                && event.payload.get("strategy").and_then(Value::as_str)
-                    == Some("bounded_observation")
-        }),
-        "expected turn_strategy_reminder event"
+        "expected standard_execution runtime event"
     );
 }
 
@@ -1107,7 +1012,9 @@ fn plan_mode_resets_stale_draft_when_project_root_changes() {
     assert_eq!(plan.status, AgentPlanStatus::Submitted);
     assert_eq!(plan.version, 1);
     assert!(
-        !plan.draft_markdown.contains(&old_root.to_string_lossy().to_string()),
+        !plan
+            .draft_markdown
+            .contains(&old_root.to_string_lossy().to_string()),
         "stale project path should be cleared from the refreshed draft"
     );
     assert!(
@@ -1170,14 +1077,16 @@ fn proposed_plan_text_creates_pending_plan_approval() {
                 && interaction.status == AgentPendingInteractionStatus::Pending
         })
         .collect::<Vec<_>>();
-    assert_eq!(pending.len(), 1, "expected synthesized plan approval interaction");
-    assert!(
-        pending[0]
-            .payload
-            .get("proposedMarkdown")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value.contains("Company Website Plan"))
+    assert_eq!(
+        pending.len(),
+        1,
+        "expected synthesized plan approval interaction"
     );
+    assert!(pending[0]
+        .payload
+        .get("proposedMarkdown")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.contains("Company Website Plan")));
     assert_eq!(
         detail.plan.as_ref().map(|plan| plan.status.clone()),
         Some(AgentPlanStatus::Submitted)
@@ -1315,6 +1224,130 @@ fn request_user_input_round_trips_through_pending_interaction() {
                 || interaction.status != AgentPendingInteractionStatus::Pending
         }),
         "question interaction should be resolved after answering"
+    );
+
+    let _requests = server.finish();
+}
+
+#[test]
+fn command_approval_allow_always_unblocks_current_turn_without_project_root() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let command_arguments = json!({
+        "command": "printf 'approval-roundtrip\\n'"
+    })
+    .to_string();
+    let first_response = format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_terminal_1",
+                        "type": "function",
+                        "function": {
+                            "name": "terminal_exec",
+                            "arguments": command_arguments,
+                        }
+                    }]
+                }
+            }]
+        })
+    );
+    let second_response = simple_stream_response("command completed after approval");
+    let server = MockOpenAiServer::start(vec![first_response, second_response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Command approval allow always".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let storage_root_for_turn = storage_root.clone();
+    let session_id_for_turn = session.id.clone();
+    let turn_handle = thread::spawn(move || {
+        send_turn(AgentSendTurnRequest {
+            storage_root: storage_root_for_turn,
+            session_id: session_id_for_turn,
+            input: "run a simple terminal command".to_string(),
+            profile_id: None,
+            project_root: None,
+            max_steps: Some(3),
+            enable_planning: false,
+            planning_min_chars: None,
+            enable_reflection: false,
+            reflection_min_tool_calls: None,
+            enable_context_collapse: None,
+        })
+    });
+
+    let (turn_id, tool_call_id) = loop {
+        let detail = get_session(AgentGetSessionRequest {
+            storage_root: storage_root.clone(),
+            session_id: session.id.clone(),
+        })
+        .expect("get session detail");
+        if let Some(interaction) = detail.pending_interactions.iter().find(|interaction| {
+            interaction.kind == AgentPendingInteractionKind::CommandApproval
+                && interaction.status == AgentPendingInteractionStatus::Pending
+        }) {
+            break (interaction.turn_id.clone(), interaction.id.clone());
+        }
+        thread::sleep(Duration::from_millis(25));
+    };
+
+    submit_command_approval(CommandApprovalSubmitRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        turn_id,
+        tool_call_id,
+        decision: "allow_always".to_string(),
+    })
+    .expect("submit command approval");
+
+    let result = turn_handle
+        .join()
+        .expect("join send turn thread")
+        .expect("send turn result");
+    assert_eq!(result.turn.status, "completed");
+    assert!(
+        result
+            .assistant_message
+            .as_ref()
+            .is_some_and(|message| message.content.contains("completed")),
+        "expected assistant to continue after approval"
+    );
+    assert!(
+        result.tool_calls.iter().any(|call| {
+            call.tool_name == "terminal.exec" && call.status == "completed"
+        }),
+        "terminal.exec should complete after allow_always"
+    );
+    assert!(
+        result.tool_calls.iter().all(|call| {
+            call.error_code.as_deref() != Some("AGENT_TOOL_APPROVAL_REQUIRED")
+        }),
+        "allow_always should not leave approval-required failure in final tool calls"
+    );
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root,
+        session_id: session.id,
+    })
+    .expect("get session detail");
+    assert!(
+        detail.pending_interactions.iter().all(|interaction| {
+            interaction.kind != AgentPendingInteractionKind::CommandApproval
+                || interaction.status != AgentPendingInteractionStatus::Pending
+        }),
+        "command approval interaction should be resolved after allowing"
+    );
+    assert!(
+        detail.runtime_events.iter().all(|event| event.phase != "paused"),
+        "turn should not pause after allow_always"
     );
 
     let _requests = server.finish();

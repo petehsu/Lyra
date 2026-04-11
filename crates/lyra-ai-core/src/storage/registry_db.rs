@@ -3,9 +3,9 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
 use crate::agent::types::{
-    AgentCollaborationMode, AgentMessage, AgentPendingInteraction,
-    AgentPendingInteractionKind, AgentPendingInteractionStatus, AgentPlanState, AgentPlanStatus,
-    AgentRuntimeEvent, AgentSession, AgentToolCall, AgentTurn, AgentUsage,
+    AgentCollaborationMode, AgentMessage, AgentPendingInteraction, AgentPendingInteractionKind,
+    AgentPendingInteractionStatus, AgentPlanState, AgentPlanStatus, AgentRuntimeEvent,
+    AgentSession, AgentToolCall, AgentTurn, AgentUsage,
 };
 use crate::error::{normalize_required_text, now_ms, parse_json, to_error, to_json};
 use crate::paths::{ensure_ai_dirs, resolve_ai_paths};
@@ -680,7 +680,11 @@ pub fn upsert_agent_pending_interaction(
                 interaction.updated_at,
             ],
         )
-        .map_err(|error| to_error(format!("failed to upsert agent pending interaction: {error}")))?;
+        .map_err(|error| {
+            to_error(format!(
+                "failed to upsert agent pending interaction: {error}"
+            ))
+        })?;
     read_agent_pending_interaction(storage_root, &interaction.id)?
         .ok_or_else(|| to_error("agent pending interaction not found after upsert"))
 }
@@ -710,8 +714,11 @@ pub fn list_agent_pending_interactions(
                 "failed to query agent pending interactions: {error}"
             ))
         })?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|error| to_error(format!("failed to collect agent pending interactions: {error}")))
+    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|error| {
+        to_error(format!(
+            "failed to collect agent pending interactions: {error}"
+        ))
+    })
 }
 
 pub fn delete_agent_session(storage_root: &str, session_id: &str) -> Result<()> {

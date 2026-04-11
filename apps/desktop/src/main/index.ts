@@ -16,11 +16,13 @@ import { fileURLToPath } from "node:url";
 
 import { createAiIpcBridge } from "./ai";
 import { createCapabilitiesIpcBridge } from "./capabilities";
+import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createFilesIpcBridge } from "./files";
 import { createLspIpcBridge } from "./lsp";
 import { createLinuxCompatBridge } from "./linux-compat";
 import { createMcpIpcBridge } from "./mcp";
 import { createLyraRuntimeClient } from "./runtime-client";
+import { createRuntimeHostRpcService } from "./runtime-host-rpc/service";
 import { createSearchIpcBridge } from "./search";
 import { createSkillsIpcBridge } from "./skills";
 import {
@@ -33,6 +35,14 @@ import {
   createWorkbenchBrowserIpcBridge,
   type WorkbenchBrowserIpcBridge
 } from "./workbench-browser/service";
+import {
+  createWorkbenchWebAutomationHostToolsBridge,
+  createWorkbenchWebAutomationService
+} from "./workbench-web-automation";
+import { createWorkbenchObservationRendererClient } from "./workbench-observation/local-tabs";
+import { createWorkbenchObservationHostToolsBridge } from "./workbench-observation/host-tools";
+import { createWorkbenchObservationService } from "./workbench-observation/service";
+import { createWorkbenchDocumentsService } from "./workbench-documents/service";
 import { createWorkbenchStateIpcBridge } from "./workbench-state";
 import {
   LYRA_CHANNELS,
@@ -73,7 +83,14 @@ let disposeSkillsBridge: (() => Promise<void>) | null = null;
 let disposeWorkbenchBrowserBridge: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
 let disposeRuntimeClient: (() => void) | null = null;
+let disposeRuntimeHostRpc: (() => void) | null = null;
 let disposeSearchBridge: (() => void) | null = null;
+let disposeWorkbenchObservationRendererClient: (() => void) | null = null;
+let disposeWorkbenchObservationService: (() => void) | null = null;
+let disposeWorkbenchDocumentsService: (() => void) | null = null;
+let disposeWorkbenchObservationHostTools: (() => void) | null = null;
+let disposeWorkbenchWebAutomationService: (() => void) | null = null;
+let disposeWorkbenchWebAutomationHostTools: (() => void) | null = null;
 let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
 
 const storageRoots = resolveLyraStorageRoots();
@@ -500,6 +517,8 @@ const registerIpcHandlers = (): void => {
     storageRoot: storageRoots.modules.ai
   });
   disposeRuntimeClient = runtimeClient.dispose;
+  const runtimeHostRpc = createRuntimeHostRpcService({ runtimeClient });
+  disposeRuntimeHostRpc = runtimeHostRpc.dispose;
 
   const terminalBridge = createTerminalIpcBridge(
     storageRoots.modules.terminal,
@@ -539,6 +558,34 @@ const registerIpcHandlers = (): void => {
     getWindow: () => mainWindow
   });
   disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
+  const workbenchWebAutomationService = createWorkbenchWebAutomationService({
+    browserBridge: workbenchBrowserBridge,
+    storageRoot: storageRoots.modules.webAutomation
+  });
+  disposeWorkbenchWebAutomationService = workbenchWebAutomationService.dispose;
+  const docsNativeLoadResult = loadDocsNativeBindings();
+  if (docsNativeLoadResult.ok === false) {
+    throw new Error(
+      `docs native unavailable: ${docsNativeLoadResult.errorMessage}\ntried paths:\n${docsNativeLoadResult.triedPaths.join("\n")}`
+    );
+  }
+  console.info(`[lyra-docs] native loaded from ${docsNativeLoadResult.loadedFrom}`);
+  const workbenchDocumentsService = createWorkbenchDocumentsService({
+    browserBridge: workbenchBrowserBridge,
+    docsNativeBindings: docsNativeLoadResult.bindings
+  });
+  disposeWorkbenchDocumentsService = workbenchDocumentsService.dispose;
+  const workbenchObservationRendererClient = createWorkbenchObservationRendererClient({
+    getWindow: () => mainWindow
+  });
+  disposeWorkbenchObservationRendererClient = workbenchObservationRendererClient.dispose;
+  const workbenchObservationService = createWorkbenchObservationService({
+    browserBridge: workbenchBrowserBridge,
+    documentsService: workbenchDocumentsService,
+    rendererClient: workbenchObservationRendererClient,
+    terminalBridge
+  });
+  disposeWorkbenchObservationService = workbenchObservationService.dispose;
 
   const capabilitiesBridge = createCapabilitiesIpcBridge({
     filesNativeBindings: filesBridge.nativeBindings,
@@ -546,9 +593,30 @@ const registerIpcHandlers = (): void => {
     terminalBridge,
     mcpBridge,
     workbenchBrowserBridge,
+    workbenchObservationService,
+    workbenchDocumentsService,
+    workbenchWebAutomationService,
     getWindow: () => mainWindow
   });
   disposeCapabilitiesBridge = capabilitiesBridge.dispose;
+  const workbenchObservationHostTools = createWorkbenchObservationHostToolsBridge({
+    capabilitiesBridge,
+    runtimeClient,
+    runtimeHostRpc
+  });
+  disposeWorkbenchObservationHostTools = workbenchObservationHostTools.dispose;
+  void workbenchObservationHostTools.sync().catch((error: unknown) => {
+    console.warn(`[lyra-workbench-observation] host tool sync failed ${String(error)}`);
+  });
+  const workbenchWebAutomationHostTools = createWorkbenchWebAutomationHostToolsBridge({
+    capabilitiesBridge,
+    runtimeClient,
+    runtimeHostRpc
+  });
+  disposeWorkbenchWebAutomationHostTools = workbenchWebAutomationHostTools.dispose;
+  void workbenchWebAutomationHostTools.sync().catch((error: unknown) => {
+    console.warn(`[lyra-workbench-automation] host tool sync failed ${String(error)}`);
+  });
 
   const aiBridge = createAiIpcBridge(
     storageRoots.modules.ai,
@@ -635,7 +703,7 @@ app.whenReady().then(() => {
   });
   if (process.platform === "darwin") {
     const appIcon = resolveLyraAppIcon();
-    if (appIcon !== null) {
+    if (appIcon !== null && app.dock !== undefined) {
       app.dock.setIcon(appIcon);
     }
   }
@@ -694,6 +762,30 @@ app.on("before-quit", () => {
     disposeWorkbenchBrowserBridge();
     disposeWorkbenchBrowserBridge = null;
   }
+  if (disposeWorkbenchObservationRendererClient !== null) {
+    disposeWorkbenchObservationRendererClient();
+    disposeWorkbenchObservationRendererClient = null;
+  }
+  if (disposeWorkbenchObservationService !== null) {
+    disposeWorkbenchObservationService();
+    disposeWorkbenchObservationService = null;
+  }
+  if (disposeWorkbenchDocumentsService !== null) {
+    disposeWorkbenchDocumentsService();
+    disposeWorkbenchDocumentsService = null;
+  }
+  if (disposeWorkbenchObservationHostTools !== null) {
+    disposeWorkbenchObservationHostTools();
+    disposeWorkbenchObservationHostTools = null;
+  }
+  if (disposeWorkbenchWebAutomationHostTools !== null) {
+    disposeWorkbenchWebAutomationHostTools();
+    disposeWorkbenchWebAutomationHostTools = null;
+  }
+  if (disposeWorkbenchWebAutomationService !== null) {
+    disposeWorkbenchWebAutomationService();
+    disposeWorkbenchWebAutomationService = null;
+  }
   workbenchBrowserBridge = null;
   if (disposeWorkbenchStateBridge !== null) {
     disposeWorkbenchStateBridge();
@@ -706,5 +798,9 @@ app.on("before-quit", () => {
   if (disposeRuntimeClient !== null) {
     disposeRuntimeClient();
     disposeRuntimeClient = null;
+  }
+  if (disposeRuntimeHostRpc !== null) {
+    disposeRuntimeHostRpc();
+    disposeRuntimeHostRpc = null;
   }
 });

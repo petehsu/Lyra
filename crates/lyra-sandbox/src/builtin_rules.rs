@@ -100,7 +100,6 @@ static BUILTIN_RULES: LazyLock<Vec<RuleEntry>> = LazyLock::new(|| {
             risk: CommandRiskLevel::Critical,
             description: "macOS library injection",
         },
-
         // ═══════════════════════════════════════════
         // HIGH RISK — Always requires explicit approval
         // ═══════════════════════════════════════════
@@ -178,7 +177,6 @@ static BUILTIN_RULES: LazyLock<Vec<RuleEntry>> = LazyLock::new(|| {
             risk: CommandRiskLevel::HighRisk,
             description: "Docker destructive operation",
         },
-
         // ═══════════════════════════════════════════
         // MEDIUM RISK — May need approval depending on mode
         // ═══════════════════════════════════════════
@@ -229,7 +227,6 @@ static BUILTIN_RULES: LazyLock<Vec<RuleEntry>> = LazyLock::new(|| {
             risk: CommandRiskLevel::MediumRisk,
             description: "Python package installation",
         },
-
         // ═══════════════════════════════════════════
         // LOW RISK — Minor write operations
         // ═══════════════════════════════════════════
@@ -268,7 +265,6 @@ static BUILTIN_RULES: LazyLock<Vec<RuleEntry>> = LazyLock::new(|| {
             risk: CommandRiskLevel::LowRisk,
             description: "Create link",
         },
-
         // ═══════════════════════════════════════════
         // SAFE — Read-only operations, auto-approved
         // ═══════════════════════════════════════════
@@ -361,13 +357,14 @@ static BUILTIN_RULES: LazyLock<Vec<RuleEntry>> = LazyLock::new(|| {
 pub fn compiled_rules() -> Vec<(Regex, CommandRiskLevel, &'static str)> {
     BUILTIN_RULES
         .iter()
-        .filter_map(|rule| {
-            match Regex::new(rule.pattern) {
-                Ok(re) => Some((re, rule.risk, rule.description)),
-                Err(e) => {
-                    eprintln!("[lyra-sandbox] Failed to compile rule '{}': {}", rule.pattern, e);
-                    None
-                }
+        .filter_map(|rule| match Regex::new(rule.pattern) {
+            Ok(re) => Some((re, rule.risk, rule.description)),
+            Err(e) => {
+                eprintln!(
+                    "[lyra-sandbox] Failed to compile rule '{}': {}",
+                    rule.pattern, e
+                );
+                None
             }
         })
         .collect()
@@ -411,8 +408,8 @@ fn is_single_read_only(command: &str) -> bool {
 
     // Check for write indicators
     let write_patterns = [
-        ">", ">>", "| tee", "| dd", "mkfs", "chmod", "chown", "mkdir", "touch",
-        "rm ", "mv ", "cp ", "rsync", "ln ", "sudo", "kill", "pkill", "killall",
+        ">", ">>", "| tee", "| dd", "mkfs", "chmod", "chown", "mkdir", "touch", "rm ", "mv ",
+        "cp ", "rsync", "ln ", "sudo", "kill", "pkill", "killall",
     ];
 
     for pattern in &write_patterns {

@@ -205,7 +205,8 @@ pub fn build_system_prompt(input: &PromptBuildInput<'_>) -> PromptBuildResult {
     vars.insert("cwd".to_string(), cwd.clone());
     vars.insert(
         "project_root".to_string(),
-        input.project_root
+        input
+            .project_root
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string)
@@ -391,10 +392,7 @@ pub fn build_plan_mode_system_prompt(
     let mut vars = BTreeMap::<String, String>::new();
     vars.insert("session_id".to_string(), non_empty(input.session_id));
     vars.insert("turn_number".to_string(), input.turn_number.to_string());
-    vars.insert(
-        "memory_recall_results".to_string(),
-        memory_recall,
-    );
+    vars.insert("memory_recall_results".to_string(), memory_recall);
     vars.insert(
         "user_habits_and_preferences".to_string(),
         user_preferences_memory,
@@ -406,7 +404,10 @@ pub fn build_plan_mode_system_prompt(
         detect_project_stacks(input.project_root),
     );
     vars.insert("mcp_tools_json".to_string(), mcp_tools_json);
-    vars.insert("plan_status".to_string(), format!("{:?}", plan.status).to_lowercase());
+    vars.insert(
+        "plan_status".to_string(),
+        format!("{:?}", plan.status).to_lowercase(),
+    );
     vars.insert("plan_version".to_string(), plan.version.to_string());
     vars.insert(
         "plan_last_submitted_version".to_string(),
@@ -414,7 +415,10 @@ pub fn build_plan_mode_system_prompt(
             .map(|value| value.to_string())
             .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
     );
-    vars.insert("plan_reentry_guidance".to_string(), non_empty(reentry_guidance));
+    vars.insert(
+        "plan_reentry_guidance".to_string(),
+        non_empty(reentry_guidance),
+    );
     vars.insert("plan_draft_markdown".to_string(), draft_markdown);
     vars.insert("plan_proposed_markdown".to_string(), proposed_markdown);
     vars.insert("plan_approved_markdown".to_string(), approved_markdown);
@@ -441,7 +445,8 @@ pub fn build_plan_mode_system_prompt(
     vars.insert("cwd".to_string(), cwd.clone());
     vars.insert(
         "project_root".to_string(),
-        input.project_root
+        input
+            .project_root
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string)
@@ -478,17 +483,32 @@ pub fn build_plan_mode_system_prompt(
     let sections = vec![
         ("identity", STATIC_IDENTITY.to_string()),
         ("plan_mode", STATIC_PLAN_MODE.to_string()),
-        ("task_progress", render_template(DYNAMIC_TASK_PROGRESS, &vars)),
+        (
+            "task_progress",
+            render_template(DYNAMIC_TASK_PROGRESS, &vars),
+        ),
         ("plan_state", render_template(DYNAMIC_PLAN_STATE, &vars)),
         ("tool_framework", STATIC_TOOL_FRAMEWORK.to_string()),
         ("output_format", STATIC_OUTPUT_FORMAT.to_string()),
         ("response_language", RESPONSE_LANGUAGE_RULES.to_string()),
         ("safety_rules", STATIC_SAFETY_RULES.to_string()),
-        ("session_context", render_template(DYNAMIC_SESSION_CONTEXT, &vars)),
+        (
+            "session_context",
+            render_template(DYNAMIC_SESSION_CONTEXT, &vars),
+        ),
         ("env_info", render_template(DYNAMIC_ENV_INFO, &vars)),
-        ("memory_snapshot", render_template(DYNAMIC_MEMORY_SNAPSHOT, &vars)),
-        ("user_preferences", render_template(DYNAMIC_USER_PREFERENCES, &vars)),
-        ("active_skills", render_template(DYNAMIC_ACTIVE_SKILLS, &vars)),
+        (
+            "memory_snapshot",
+            render_template(DYNAMIC_MEMORY_SNAPSHOT, &vars),
+        ),
+        (
+            "user_preferences",
+            render_template(DYNAMIC_USER_PREFERENCES, &vars),
+        ),
+        (
+            "active_skills",
+            render_template(DYNAMIC_ACTIVE_SKILLS, &vars),
+        ),
         ("mcp_tools", render_template(DYNAMIC_MCP_TOOLS, &vars)),
     ];
 
@@ -859,7 +879,7 @@ mod tests {
     }
 
     #[test]
-    fn observation_strategy_changes_todo_and_guidance() {
+    fn observation_requests_now_use_standard_strategy_without_language_heuristics() {
         let snapshot = sample_snapshot();
         let strategy = select_turn_strategy("看一下电脑现在状态怎么样");
         let result = build_system_prompt(&PromptBuildInput {
@@ -875,10 +895,8 @@ mod tests {
             turn_strategy: &strategy,
         });
 
-        assert!(result.prompt.contains("bounded observational fast path"));
-        assert!(result.prompt.contains("minimum evidence needed to answer"));
-        assert!(result
-            .prompt
-            .contains("Do not enter deep planning or reflection"));
+        assert!(result.prompt.contains("standard execution"));
+        assert!(result.prompt.contains("Use the normal autonomous workflow"));
+        assert!(!result.prompt.contains("bounded observational fast path"));
     }
 }

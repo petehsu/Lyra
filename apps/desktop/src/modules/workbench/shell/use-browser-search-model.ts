@@ -19,6 +19,11 @@ import type {
   LocalSearchScopePreset,
   SearchEngineDefinition
 } from "../browser-search/types";
+import {
+  retainSearchSnapshots,
+  setDeepSearchSnapshot,
+  setStandardSearchSnapshot
+} from "../browser-search/store";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type {
   WorkspaceSearchMode,
@@ -212,6 +217,7 @@ export const useBrowserSearchModel = ({
   const deepCrawlPolicy = searchSettings.deepCrawlPolicy;
 
   const publishStandardTaskState = useCallback((cacheKey: string, task: StandardSearchTask): void => {
+    setStandardSearchSnapshot(task.tabId, task.state);
     if (unmountedRef.current || activeStandardCacheKeyRef.current !== cacheKey) {
       return;
     }
@@ -221,6 +227,7 @@ export const useBrowserSearchModel = ({
   }, []);
 
   const publishDeepTaskState = useCallback((cacheKey: string, task: DeepSearchTask): void => {
+    setDeepSearchSnapshot(task.tabId, task.state);
     if (unmountedRef.current || activeDeepCacheKeyRef.current !== cacheKey) {
       return;
     }
@@ -715,6 +722,14 @@ export const useBrowserSearchModel = ({
       deepSearchTasksRef.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    retainSearchSnapshots(
+      tabsModel.tabs
+        .filter((tab) => tab.pageKind === "search" || tab.pageKind === "results")
+        .map((tab) => tab.id)
+    );
+  }, [tabsModel.tabs]);
 
   useEffect(() => {
     if (activeTabPageKind === "results") {

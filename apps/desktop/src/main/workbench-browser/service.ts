@@ -2,16 +2,34 @@ import { ipcMain, type BrowserWindow } from "electron";
 
 import {
   LYRA_CHANNELS,
+  type WorkbenchBrowserAgentTargetInfo,
   type WorkbenchBrowserEvent,
   type WorkbenchBrowserLayoutSnapshot,
   type WorkbenchBrowserNavigateRequest,
   type WorkbenchBrowserNavigateResult,
   type WorkbenchBrowserPageRuntimeState,
   type WorkbenchBrowserReadPageStateRequest,
+  type WorkbenchBrowserSetElementPickerModeRequest,
   type WorkbenchBrowserTopologySnapshot
 } from "../../shared/desktop-bridge";
+import type {
+  WorkbenchTabExtractTextResult,
+  WorkbenchVisualCaptureResult
+} from "../../shared/workbench-observation";
+import type {
+  BrowserDomSummaryReadOptions,
+  BrowserTextExtractOptions
+} from "../workbench-observation/browser/types";
+import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import { createWorkbenchBrowserViewManager } from "./view-manager";
-import type { WorkbenchBrowserViewManager } from "./types";
+import type {
+  WorkbenchBrowserFrameDescriptor,
+  WorkbenchBrowserFrameDomProbeResult,
+  WorkbenchBrowserNativeInputEvent,
+  WorkbenchBrowserSessionFetchRequest,
+  WorkbenchBrowserSessionFetchResult,
+  WorkbenchBrowserViewManager
+} from "./types";
 
 const publishEvent = (
   getWindow: () => BrowserWindow | null,
@@ -38,6 +56,48 @@ export type WorkbenchBrowserIpcBridge = {
   readonly readPageState: (
     request?: WorkbenchBrowserReadPageStateRequest
   ) => WorkbenchBrowserPageRuntimeState | null;
+  readonly setElementPickerMode: (
+    request: WorkbenchBrowserSetElementPickerModeRequest
+  ) => Promise<void>;
+  readonly showAgentElementPickerTarget: (
+    target: WorkbenchBrowserAgentTargetInfo
+  ) => Promise<boolean>;
+  readonly clearAgentElementPickerTarget: (
+    tabId: string,
+    options?: { readonly preserveManualMode?: boolean }
+  ) => Promise<void>;
+  readonly readActiveTabId: () => string | null;
+  readonly listFrames: (tabId: string) => readonly WorkbenchBrowserFrameDescriptor[];
+  readonly probeFrameDom: (
+    tabId: string,
+    frameTreeNodeId: number,
+    options?: { readonly maxChars?: number }
+  ) => Promise<WorkbenchBrowserFrameDomProbeResult>;
+  readonly executeFrameScript: (
+    tabId: string,
+    request: {
+      readonly script: string;
+      readonly frameTreeNodeId?: number;
+      readonly userGesture?: boolean;
+    }
+  ) => Promise<unknown>;
+  readonly dispatchNativeInput: (
+    tabId: string,
+    events: readonly WorkbenchBrowserNativeInputEvent[]
+  ) => Promise<void>;
+  readonly fetchWithTabSession: (
+    tabId: string,
+    request: WorkbenchBrowserSessionFetchRequest
+  ) => Promise<WorkbenchBrowserSessionFetchResult>;
+  readonly readPageDomSummary: (
+    tabId: string,
+    options?: BrowserDomSummaryReadOptions
+  ) => Promise<WorkbenchObservationBrowserDomSummary>;
+  readonly extractPageText: (
+    tabId: string,
+    options?: BrowserTextExtractOptions
+  ) => Promise<WorkbenchTabExtractTextResult>;
+  readonly capturePage: (tabId: string) => Promise<WorkbenchVisualCaptureResult>;
   readonly reapplyLayout: () => void;
   readonly toggleDevToolsForActivePage: () => boolean;
 };
@@ -87,6 +147,12 @@ export const createWorkbenchBrowserIpcBridge = ({
   ipcMain.handle(LYRA_CHANNELS.workbenchBrowserReadPageState, (_event, request?: unknown) => {
     return manager.readPageState(request as WorkbenchBrowserReadPageStateRequest | undefined);
   });
+  ipcMain.handle(
+    LYRA_CHANNELS.workbenchBrowserSetElementPickerMode,
+    async (_event, request: unknown) => {
+      await manager.setElementPickerMode(request as WorkbenchBrowserSetElementPickerModeRequest);
+    }
+  );
 
   return {
     dispose: () => {
@@ -98,6 +164,7 @@ export const createWorkbenchBrowserIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserReload);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserStop);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserReadPageState);
+      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetElementPickerMode);
       manager.dispose();
     },
     syncTopology: manager.syncTopology,
@@ -108,6 +175,18 @@ export const createWorkbenchBrowserIpcBridge = ({
     reload: manager.reload,
     stop: manager.stop,
     readPageState: manager.readPageState,
+    setElementPickerMode: manager.setElementPickerMode,
+    showAgentElementPickerTarget: manager.showAgentElementPickerTarget,
+    clearAgentElementPickerTarget: manager.clearAgentElementPickerTarget,
+    readActiveTabId: manager.readActiveTabId,
+    listFrames: manager.listFrames,
+    probeFrameDom: manager.probeFrameDom,
+    executeFrameScript: manager.executeFrameScript,
+    dispatchNativeInput: manager.dispatchNativeInput,
+    fetchWithTabSession: manager.fetchWithTabSession,
+    readPageDomSummary: manager.readPageDomSummary,
+    extractPageText: manager.extractPageText,
+    capturePage: manager.capturePage,
     reapplyLayout: manager.reapplyLayout,
     toggleDevToolsForActivePage: manager.toggleDevToolsForActivePage
   };

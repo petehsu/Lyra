@@ -337,7 +337,11 @@ fn parse_exit_code(status: portable_pty::ExitStatus) -> i32 {
     }
 }
 
-fn spawn_io_threads(session_id: String, runtime: Arc<SessionRuntime>, mut reader: Box<dyn Read + Send>) {
+fn spawn_io_threads(
+    session_id: String,
+    runtime: Arc<SessionRuntime>,
+    mut reader: Box<dyn Read + Send>,
+) {
     let session_id_for_reader = session_id.clone();
     let source_for_reader = runtime.source.clone();
     let mode_for_reader = runtime.mode.clone();
@@ -763,8 +767,8 @@ mod tests {
 
     #[test]
     fn ai_source_command_session_can_be_read() {
-        let snapshot = create_session(shell_request("printf 'hello'"))
-            .expect("create command session");
+        let snapshot =
+            create_session(shell_request("printf 'hello'")).expect("create command session");
         thread::sleep(Duration::from_millis(150));
         let output = read_session(TerminalReadRequest {
             session_id: snapshot.session_id.clone(),

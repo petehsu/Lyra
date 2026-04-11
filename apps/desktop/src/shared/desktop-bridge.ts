@@ -107,14 +107,26 @@ import type {
 } from "./capabilities";
 import type { TerminalThemePresetId } from "./terminal-theme";
 import type {
+  WorkbenchBrowserAgentTargetInfo,
+  WorkbenchBrowserElementPickerAppearance,
+  WorkbenchBrowserElementPickerDisableCause,
+  WorkbenchBrowserElementPickerOwner,
+  WorkbenchBrowserElementPickerPhase,
+  WorkbenchBrowserElementPickerState,
   WorkbenchBrowserEvent,
+  WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
   WorkbenchBrowserNavigateResult,
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserReadPageStateRequest,
+  WorkbenchBrowserSetElementPickerModeRequest,
   WorkbenchBrowserTopologySnapshot
 } from "./workbench-browser";
+import type {
+  WorkbenchObservationQueryRequest,
+  WorkbenchObservationQueryResult
+} from "./workbench-observation";
 
 export type {
   AiDiscoverModelsRequest,
@@ -251,7 +263,14 @@ export type {
   UpdateSkillStateRequest
 } from "./skills";
 export type {
+  WorkbenchBrowserAgentTargetInfo,
+  WorkbenchBrowserElementPickerAppearance,
+  WorkbenchBrowserElementPickerDisableCause,
+  WorkbenchBrowserElementPickerOwner,
+  WorkbenchBrowserElementPickerPhase,
+  WorkbenchBrowserElementPickerState,
   WorkbenchBrowserEvent,
+  WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
   WorkbenchBrowserNavigateResult,
@@ -259,8 +278,35 @@ export type {
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserPageSpec,
   WorkbenchBrowserReadPageStateRequest,
+  WorkbenchBrowserSetElementPickerModeRequest,
   WorkbenchBrowserTopologySnapshot
 } from "./workbench-browser";
+export type {
+  BrowserTabObservation,
+  DeepSearchObservation,
+  FileEditorObservation,
+  FileManagerObservation,
+  SearchHomeObservation,
+  SearchResultsObservation,
+  TerminalObservation,
+  WorkbenchObservedTabDescriptor,
+  WorkbenchObservationDetail,
+  WorkbenchObservationError,
+  WorkbenchObservationErrorCode,
+  WorkbenchObservationKind,
+  WorkbenchObservationPageKind,
+  WorkbenchObservationQueryRequest,
+  WorkbenchObservationQueryResult,
+  WorkbenchTabObservation,
+  WorkbenchTabObservationResult,
+  WorkbenchTabReadRequest,
+  WorkbenchTabsListRequest,
+  WorkbenchTabsListResult,
+  WorkbenchVisualCaptureRequest,
+  WorkbenchVisualCaptureResult,
+  WorkbenchWorkspaceReadRequest,
+  WorkbenchWorkspaceSnapshot
+} from "./workbench-observation";
 
 export const LYRA_CHANNELS = {
   minimizeWindow: "lyra:shell/window/minimize",
@@ -335,6 +381,7 @@ export const LYRA_CHANNELS = {
   workbenchBrowserReload: "lyra:workbench-browser/reload",
   workbenchBrowserStop: "lyra:workbench-browser/stop",
   workbenchBrowserReadPageState: "lyra:workbench-browser/read-page-state",
+  workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
   workbenchBrowserEvent: "lyra:workbench-browser/event",
   mcpReadCatalog: "lyra:mcp/read-catalog",
   mcpReadServers: "lyra:mcp/read-servers",
@@ -378,6 +425,8 @@ export const LYRA_CHANNELS = {
   capabilityInvoke: "lyra:capabilities/invoke",
   capabilityResolveApproval: "lyra:capabilities/resolve-approval",
   capabilityEvent: "lyra:capabilities/event",
+  workbenchObservationQuery: "lyra:workbench-observation/query",
+  workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
   workbenchStateReadSync: "lyra:workbench-state/read-sync",
   workbenchStateWriteSync: "lyra:workbench-state/write-sync",
   workbenchStateRemoveSync: "lyra:workbench-state/remove-sync"
@@ -1189,6 +1238,9 @@ export type WorkbenchBrowserApi = {
   readonly readPageState: (
     request?: WorkbenchBrowserReadPageStateRequest
   ) => Promise<WorkbenchBrowserPageRuntimeState | null>;
+  readonly setElementPickerMode: (
+    request: WorkbenchBrowserSetElementPickerModeRequest
+  ) => Promise<void>;
   readonly onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => () => void;
 };
 
@@ -1241,6 +1293,14 @@ export type WorkbenchStateApi = {
   readonly removeSync: (key: WorkbenchStateKey) => void;
 };
 
+export type WorkbenchObservationBridgeApi = {
+  readonly registerHandler: (
+    handler: (
+      request: WorkbenchObservationQueryRequest
+    ) => Promise<WorkbenchObservationQueryResult> | WorkbenchObservationQueryResult
+  ) => () => void;
+};
+
 export type LyraDesktopApi = {
   readonly windowControls: WindowControlsApi;
   readonly appMeta: AppMetaPayload;
@@ -1257,5 +1317,6 @@ export type LyraDesktopApi = {
   readonly lsp: LspApi;
   readonly terminal: TerminalApi;
   readonly capabilities: CapabilitiesApi;
+  readonly workbenchObservation: WorkbenchObservationBridgeApi;
   readonly workbenchState: WorkbenchStateApi;
 };

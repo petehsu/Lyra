@@ -2,6 +2,7 @@ import type { WorkbenchThemeVars } from "./types";
 
 export const WORKBENCH_SEMANTIC_TOKENS = {
   "--lyra-shell-titlebar-h": "var(--lyra-control-h-34)",
+  "--lyra-shell-titlebar-nav-h": "var(--lyra-control-h-28)",
   "--lyra-shell-browser-tabbar-h": "var(--lyra-control-h-34)",
   "--lyra-shell-terminal-tabbar-h": "var(--lyra-control-h-34)",
   "--lyra-shell-panel-pad-x": "var(--lyra-space-14)",

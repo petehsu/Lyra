@@ -11,6 +11,7 @@ pub mod prompt_repetition;
 pub mod service;
 pub mod terminal_policy;
 pub mod tool_budget;
+pub mod tool_diagnostics;
 pub mod tools;
 pub mod turn_strategy;
 pub mod types;

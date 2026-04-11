@@ -100,13 +100,18 @@ impl CommandEvaluation {
 /// Commands like vim, ssh, less, top require a real TTY to function properly.
 /// This detection mirrors Claude Code's PTY routing logic.
 pub fn needs_interactive_pty(command: &str) -> bool {
-    let cmd = command.split_whitespace().next().unwrap_or("").to_lowercase();
+    let cmd = command
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_lowercase();
     // Strip any leading path
     let base = cmd.rsplit('/').next().unwrap_or(&cmd);
 
     matches!(
         base,
-        "vim" | "vi"
+        "vim"
+            | "vi"
             | "nano"
             | "emacs"
             | "less"

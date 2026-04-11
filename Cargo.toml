@@ -8,6 +8,8 @@ members = [
   "crates/lyra-files-napi",
   "crates/lyra-lsp-core",
   "crates/lyra-skills-napi",
+  "crates/lyra-docs-core",
+  "crates/lyra-docs-napi",
   "crates/lyra-mcp-core"
 ]
 resolver = "2"

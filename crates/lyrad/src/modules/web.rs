@@ -40,14 +40,7 @@ const BLOCKED_PATH_SEGMENTS: [&str; 7] = [
     "/wp-admin",
 ];
 const COMMON_MULTI_LEVEL_SUFFIXES: [&str; 8] = [
-    "com.cn",
-    "com.hk",
-    "com.tw",
-    "co.jp",
-    "co.kr",
-    "co.uk",
-    "com.au",
-    "co.nz",
+    "com.cn", "com.hk", "com.tw", "co.jp", "co.kr", "co.uk", "com.au", "co.nz",
 ];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -304,7 +297,10 @@ fn normalize_url_key(url: &str) -> String {
 }
 
 fn to_registrable_domain(hostname: &str) -> String {
-    let normalized = hostname.to_lowercase().trim_start_matches("www.").to_string();
+    let normalized = hostname
+        .to_lowercase()
+        .trim_start_matches("www.")
+        .to_string();
     let segments = normalized
         .split('.')
         .filter(|segment| !segment.is_empty())
@@ -320,7 +316,9 @@ fn to_registrable_domain(hostname: &str) -> String {
 }
 
 fn is_blocked_path(path: &str) -> bool {
-    BLOCKED_PATH_SEGMENTS.iter().any(|segment| path.contains(segment))
+    BLOCKED_PATH_SEGMENTS
+        .iter()
+        .any(|segment| path.contains(segment))
 }
 
 fn join_url(base: &str, href: &str) -> Option<String> {
@@ -426,7 +424,10 @@ fn fetch_document(client: &Client, url: &str) -> Result<FetchedDocument, String>
     let _ = client.head(url).send();
     let response = client
         .get(url)
-        .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .header(
+            "accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        )
         .send()
         .map_err(|error| format!("fetch {url} failed: {error}"))?;
     if !response.status().is_success() && !response.status().is_redirection() {
@@ -447,7 +448,8 @@ fn fetch_document(client: &Client, url: &str) -> Result<FetchedDocument, String>
             MAX_HTML_BYTES
         },
     )?;
-    let parsed_final = Url::parse(&final_url).map_err(|error| format!("parse final url failed: {error}"))?;
+    let parsed_final =
+        Url::parse(&final_url).map_err(|error| format!("parse final url failed: {error}"))?;
     let hostname = parsed_final.host_str().unwrap_or_default().to_lowercase();
     let registrable_domain = to_registrable_domain(&hostname);
     if content_type.contains("xml") {
@@ -469,9 +471,15 @@ fn fetch_document(client: &Client, url: &str) -> Result<FetchedDocument, String>
     let snippet = attribute(&document, "meta[name='description']", "content")
         .or_else(|| attribute(&document, "meta[property='og:description']", "content"))
         .unwrap_or_default();
-    let canonical_url = attribute(&document, "link[rel='canonical']", "href").and_then(|value| join_url(&final_url, &value));
-    let sitemap_from_link = attribute(&document, "link[rel='sitemap']", "href").and_then(|value| join_url(&final_url, &value));
-    let mut sitemap_urls = vec![format!("{}://{}/sitemap.xml", parsed_final.scheme(), hostname)];
+    let canonical_url = attribute(&document, "link[rel='canonical']", "href")
+        .and_then(|value| join_url(&final_url, &value));
+    let sitemap_from_link = attribute(&document, "link[rel='sitemap']", "href")
+        .and_then(|value| join_url(&final_url, &value));
+    let mut sitemap_urls = vec![format!(
+        "{}://{}/sitemap.xml",
+        parsed_final.scheme(),
+        hostname
+    )];
     if let Some(link) = sitemap_from_link {
         sitemap_urls.push(link);
     }
@@ -489,7 +497,11 @@ fn fetch_document(client: &Client, url: &str) -> Result<FetchedDocument, String>
     })
 }
 
-fn verify_candidate(client: &Client, urls: &[String], registrable_domain: &str) -> Option<FetchedDocument> {
+fn verify_candidate(
+    client: &Client,
+    urls: &[String],
+    registrable_domain: &str,
+) -> Option<FetchedDocument> {
     for url in urls {
         let Ok(document) = fetch_document(client, url) else {
             continue;
@@ -548,10 +560,7 @@ fn push_page(state: &Arc<RwLock<SearchSiteStreamState>>, page: SearchSitePage) {
     update_state(state, |guard| {
         if guard.snapshot.pages.iter().any(|entry| {
             normalize_url_key(&entry.url) == normalize_url_key(&page.url)
-                || entry
-                    .canonical_url
-                    .as_deref()
-                    .map(normalize_url_key)
+                || entry.canonical_url.as_deref().map(normalize_url_key)
                     == page.canonical_url.as_deref().map(normalize_url_key)
         }) {
             return;
@@ -594,7 +603,11 @@ fn filter_same_domain_links(links: Vec<String>, registrable_domain: &str) -> Vec
         .collect()
 }
 
-fn discover_sitemap_pages(client: &Client, sitemap_urls: &[String], registrable_domain: &str) -> Vec<String> {
+fn discover_sitemap_pages(
+    client: &Client,
+    sitemap_urls: &[String],
+    registrable_domain: &str,
+) -> Vec<String> {
     let mut all_urls = Vec::new();
     let mut seen = HashSet::new();
     for sitemap_url in sitemap_urls {
@@ -627,13 +640,17 @@ fn build_subdomain_candidates(
         }
     }
     for prefix in HIGH_VALUE_SUBDOMAINS {
-        hostnames.insert((format!("{prefix}.{registrable_domain}"), "guess".to_string()));
+        hostnames.insert((
+            format!("{prefix}.{registrable_domain}"),
+            "guess".to_string(),
+        ));
     }
     for link in seed_links.iter().chain(sitemap_links.iter()) {
         if let Ok(parsed) = Url::parse(link) {
             if let Some(host) = parsed.host_str() {
                 let host = host.to_lowercase();
-                if to_registrable_domain(&host) == registrable_domain && host != registrable_domain {
+                if to_registrable_domain(&host) == registrable_domain && host != registrable_domain
+                {
                     hostnames.insert((
                         host.clone(),
                         if seed_links.iter().any(|entry| entry == link) {
@@ -675,7 +692,10 @@ fn crawl_domain(
         if hostname == *registrable_domain || verified_subdomains.contains(&hostname) {
             continue;
         }
-        let urls = vec![format!("https://{hostname}/"), format!("http://{hostname}/")];
+        let urls = vec![
+            format!("https://{hostname}/"),
+            format!("http://{hostname}/"),
+        ];
         let Some(sub_document) = verify_candidate(client, &urls, registrable_domain) else {
             continue;
         };
@@ -688,7 +708,9 @@ fn crawl_domain(
                 final_url: sub_document.final_url.clone(),
                 verification_score: 72.0,
                 discovered_by: discovered_by.clone(),
-                is_official_result: Some(request.understanding.official_hint || discovered_by == "result"),
+                is_official_result: Some(
+                    request.understanding.official_hint || discovered_by == "result",
+                ),
             },
         );
     }
@@ -703,7 +725,13 @@ fn crawl_domain(
     {
         let key = normalize_url_key(&seed.url);
         if seen_urls.insert(key) {
-            queued.push_back((seed.url.clone(), 0_u32, seed.hostname.clone(), "search".to_string(), Some(seed.clone())));
+            queued.push_back((
+                seed.url.clone(),
+                0_u32,
+                seed.hostname.clone(),
+                "search".to_string(),
+                Some(seed.clone()),
+            ));
         }
     }
 
@@ -722,10 +750,17 @@ fn crawl_domain(
         ));
     }
 
-    for link in sitemap_links.into_iter().chain(same_domain_links.into_iter()) {
+    for link in sitemap_links
+        .into_iter()
+        .chain(same_domain_links.into_iter())
+    {
         let key = normalize_url_key(&link);
         if seen_urls.insert(key) {
-            let discovered_by = if link.contains("sitemap") { "sitemap" } else { "html" };
+            let discovered_by = if link.contains("sitemap") {
+                "sitemap"
+            } else {
+                "html"
+            };
             let parent_host = Url::parse(&link)
                 .ok()
                 .and_then(|parsed| parsed.host_str().map(|host| host.to_lowercase()))
@@ -741,7 +776,15 @@ fn crawl_domain(
         update_state(state, |guard| {
             guard.snapshot.stats.queued_pages = queued.len() as u64;
         });
-        if depth > budget.max_depth || is_blocked_path(Url::parse(&url).ok().map(|parsed| parsed.path().to_string()).unwrap_or_default().as_str()) {
+        if depth > budget.max_depth
+            || is_blocked_path(
+                Url::parse(&url)
+                    .ok()
+                    .map(|parsed| parsed.path().to_string())
+                    .unwrap_or_default()
+                    .as_str(),
+            )
+        {
             update_state(state, |guard| {
                 guard.snapshot.stats.dropped_pages += 1;
             });
@@ -757,7 +800,10 @@ fn crawl_domain(
             continue;
         }
         let seed_source_engines = seed.as_ref().map(|entry| entry.source_engine_ids.clone());
-        let is_official = seed.as_ref().map(|entry| entry.is_official_result).unwrap_or(false)
+        let is_official = seed
+            .as_ref()
+            .map(|entry| entry.is_official_result)
+            .unwrap_or(false)
             || request.understanding.official_hint;
         push_page(
             state,
@@ -771,8 +817,16 @@ fn crawl_domain(
                 canonical_url: page_document.canonical_url.clone(),
                 hostname: page_document.hostname.clone(),
                 registrable_domain: registrable_domain.clone(),
-                snippet: if page_document.snippet.is_empty() { None } else { Some(page_document.snippet.clone()) },
-                content_preview: if page_document.content_preview.is_empty() { None } else { Some(page_document.content_preview.clone()) },
+                snippet: if page_document.snippet.is_empty() {
+                    None
+                } else {
+                    Some(page_document.snippet.clone())
+                },
+                content_preview: if page_document.content_preview.is_empty() {
+                    None
+                } else {
+                    Some(page_document.content_preview.clone())
+                },
                 fetch_depth: depth,
                 discovered_by: discovered_by.clone(),
                 parent_host: parent_host.clone(),
@@ -803,13 +857,22 @@ fn crawl_domain(
         if let Some(canonical) = page_document.canonical_url.as_ref() {
             let key = normalize_url_key(canonical);
             if seen_urls.insert(key) {
-                queued.push_back((canonical.clone(), depth + 1, page_document.hostname.clone(), "redirect".to_string(), None));
+                queued.push_back((
+                    canonical.clone(),
+                    depth + 1,
+                    page_document.hostname.clone(),
+                    "redirect".to_string(),
+                    None,
+                ));
             }
         }
     }
 }
 
-fn run_site_expansion(request: SearchSiteStreamStartRequest, state: Arc<RwLock<SearchSiteStreamState>>) {
+fn run_site_expansion(
+    request: SearchSiteStreamStartRequest,
+    state: Arc<RwLock<SearchSiteStreamState>>,
+) {
     let budget = resolve_budget(request.budget_preset);
     update_state(&state, |guard| {
         guard.snapshot.stats.domain_candidates = request.targets.len() as u64;
@@ -847,7 +910,9 @@ fn run_site_expansion(request: SearchSiteStreamStartRequest, state: Arc<RwLock<S
         candidate_urls.extend(default_domain_urls(&target.registrable_domain));
         candidate_urls.sort();
         candidate_urls.dedup();
-        let Some(domain_document) = verify_candidate(&client, &candidate_urls, &target.registrable_domain) else {
+        let Some(domain_document) =
+            verify_candidate(&client, &candidate_urls, &target.registrable_domain)
+        else {
             update_state(&state, |guard| {
                 guard.snapshot.stats.dropped_pages += 1;
             });
@@ -868,7 +933,9 @@ fn run_site_expansion(request: SearchSiteStreamStartRequest, state: Arc<RwLock<S
                 verification_score: target.score,
                 verified_from: verified_from.to_string(),
                 guess_sources: target.guess_sources.clone(),
-                is_official_result: Some(request.understanding.official_hint || target.official_weight > 0.0),
+                is_official_result: Some(
+                    request.understanding.official_hint || target.official_weight > 0.0,
+                ),
             },
         );
         crawl_domain(&client, &request, &state, budget, &target, &domain_document);
@@ -886,8 +953,8 @@ fn run_site_expansion(request: SearchSiteStreamStartRequest, state: Arc<RwLock<S
 }
 
 pub fn search_site_stream_start_json(request_json: String) -> Result<String, String> {
-    let request: SearchSiteStreamStartRequest =
-        serde_json::from_str(&request_json).map_err(|error| format!("parse request failed: {error}"))?;
+    let request: SearchSiteStreamStartRequest = serde_json::from_str(&request_json)
+        .map_err(|error| format!("parse request failed: {error}"))?;
     let stream_id = format!("site-stream-{}", Uuid::new_v4());
     let snapshot = create_snapshot(&request.query);
     let state = Arc::new(RwLock::new(SearchSiteStreamState {
@@ -901,13 +968,16 @@ pub fn search_site_stream_start_json(request_json: String) -> Result<String, Str
     std::thread::spawn(move || {
         run_site_expansion(request, state);
     });
-    serde_json::to_string(&SearchSiteStreamStartResponse { stream_id, snapshot })
-        .map_err(|error| format!("serialize response failed: {error}"))
+    serde_json::to_string(&SearchSiteStreamStartResponse {
+        stream_id,
+        snapshot,
+    })
+    .map_err(|error| format!("serialize response failed: {error}"))
 }
 
 pub fn search_site_stream_read_json(request_json: String) -> Result<String, String> {
-    let request: SearchSiteStreamReadRequest =
-        serde_json::from_str(&request_json).map_err(|error| format!("parse request failed: {error}"))?;
+    let request: SearchSiteStreamReadRequest = serde_json::from_str(&request_json)
+        .map_err(|error| format!("parse request failed: {error}"))?;
     let streams = site_stream_store()
         .read()
         .map_err(|_| "site stream state lock poisoned".to_string())?;
@@ -927,8 +997,8 @@ pub fn search_site_stream_read_json(request_json: String) -> Result<String, Stri
 }
 
 pub fn search_site_stream_cancel_json(request_json: String) -> Result<String, String> {
-    let request: SearchSiteStreamCancelRequest =
-        serde_json::from_str(&request_json).map_err(|error| format!("parse request failed: {error}"))?;
+    let request: SearchSiteStreamCancelRequest = serde_json::from_str(&request_json)
+        .map_err(|error| format!("parse request failed: {error}"))?;
     let removed = site_stream_store()
         .write()
         .map_err(|_| "site stream state lock poisoned".to_string())?
@@ -952,7 +1022,10 @@ mod tests {
     #[test]
     fn registrable_domain_handles_common_multilevel_suffixes() {
         assert_eq!(to_registrable_domain("docs.example.com"), "example.com");
-        assert_eq!(to_registrable_domain("a.b.example.com.cn"), "example.com.cn");
+        assert_eq!(
+            to_registrable_domain("a.b.example.com.cn"),
+            "example.com.cn"
+        );
     }
 
     #[test]
@@ -960,7 +1033,9 @@ mod tests {
         let xml = r#"<?xml version='1.0'?><urlset><url><loc>https://example.com/docs</loc></url><url><loc>https://docs.example.com/api</loc></url></urlset>"#;
         let entries = extract_sitemap_links(xml);
         assert_eq!(entries.len(), 2);
-        assert!(entries.iter().any(|entry| entry == "https://example.com/docs"));
+        assert!(entries
+            .iter()
+            .any(|entry| entry == "https://example.com/docs"));
     }
 
     #[test]

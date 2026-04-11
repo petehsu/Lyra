@@ -26,11 +26,13 @@ const nowIso = (): string => new Date().toISOString();
 const createCapabilityError = (
   code: string,
   message: string,
-  retryable?: boolean
+  retryable?: boolean,
+  details?: unknown
 ): CapabilityError => ({
   code,
   message,
-  ...(retryable === undefined ? {} : { retryable })
+  ...(retryable === undefined ? {} : { retryable }),
+  ...(details === undefined ? {} : { details })
 });
 
 const toCapabilityError = (error: unknown): CapabilityError => {
@@ -44,8 +46,9 @@ const toCapabilityError = (error: unknown): CapabilityError => {
       readonly code: string;
       readonly message: string;
       readonly retryable?: boolean;
+      readonly details?: unknown;
     };
-    return createCapabilityError(candidate.code, candidate.message, candidate.retryable);
+    return createCapabilityError(candidate.code, candidate.message, candidate.retryable, candidate.details);
   }
   if (error instanceof Error) {
     return createCapabilityError("CAPABILITY_INVOKE_FAILED", error.message);
@@ -124,7 +127,23 @@ export class AppRegistry {
   private readonly apps = new Map<string, LyraAppManifest>();
 
   register(app: LyraAppManifest): void {
-    this.apps.set(app.id, app);
+    const existing = this.apps.get(app.id);
+    if (existing === undefined) {
+      this.apps.set(app.id, app);
+      return;
+    }
+    this.apps.set(app.id, {
+      ...existing,
+      ...app,
+      permissions: Array.from(new Set([...existing.permissions, ...app.permissions])),
+      capabilities: Array.from(new Set([...existing.capabilities, ...app.capabilities])),
+      contributes: {
+        surfaces: Array.from(new Set([
+          ...(existing.contributes?.surfaces ?? []),
+          ...(app.contributes?.surfaces ?? [])
+        ]))
+      }
+    });
   }
 
   list(): readonly LyraAppManifest[] {

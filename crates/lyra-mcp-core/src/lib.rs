@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -17,7 +17,7 @@ use once_cell::sync::Lazy;
 use reqwest::blocking::Client;
 use reqwest::redirect::Policy;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -236,6 +236,28 @@ struct McpIntrospectionItem {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    execution_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    approval_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    side_effects: Option<McpIntrospectionSideEffects>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpIntrospectionSideEffects {
+    level: String,
+    mutates_workspace: bool,
+    mutates_memory: bool,
+    mutates_external_systems: bool,
+    mutates_session_state: bool,
+    opens_interactive_session: bool,
+    reads_network: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1417,45 +1439,94 @@ fn materialize_runtime_environment(
     Ok(environment)
 }
 
-fn call_mcp_tool_blocking(request: CallMcpToolRequest) -> Result<CallMcpToolResult> {
-    if request.server.transport != "stdio" {
-        return Err(to_error(format!(
-            "MCP tool execution is currently supported only for stdio servers. {} uses {}.",
-            request.server.id, request.server.transport
-        )));
-    }
+fn resolve_stdio_session_cwd(server: &PersistedMcpServerConfig) -> String {
+    server
+        .cwd
+        .as_deref()
+        .and_then(trim_or_none)
+        .or_else(|| server.project_root.clone())
+        .unwrap_or_else(|| ".".to_string())
+}
 
-    let command = request
-        .server
+fn spawn_stdio_mcp_process(
+    server: &PersistedMcpServerConfig,
+    environment: HashMap<String, String>,
+) -> Result<Child> {
+    let command = server
         .command
         .as_deref()
         .and_then(trim_or_none)
         .ok_or_else(|| to_error("startup command is required for stdio MCP servers"))?;
-    let tool_name =
-        trim_or_none(&request.tool_name).ok_or_else(|| to_error("toolName is required"))?;
-    let environment = materialize_runtime_environment(MaterializeRuntimeEnvironmentRequest {
-        entries: request.server.environment.clone(),
-        base_env: std::env::vars().collect(),
-    })?;
-
-    let mut child = Command::new(&command)
-        .args(&request.server.args)
-        .current_dir(
-            request
-                .server
-                .cwd
-                .as_deref()
-                .and_then(trim_or_none)
-                .or_else(|| request.server.project_root.clone())
-                .unwrap_or_else(|| ".".to_string()),
-        )
+    Command::new(command)
+        .args(&server.args)
+        .current_dir(resolve_stdio_session_cwd(server))
         .envs(environment)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| to_error(format!("failed to start MCP tool runtime: {error}")))?;
+        .map_err(|error| to_error(format!("failed to start MCP stdio runtime: {error}")))
+}
 
+fn read_mcp_error_message(message: &serde_json::Map<String, serde_json::Value>) -> String {
+    message
+        .get("error")
+        .and_then(Value::as_object)
+        .and_then(|error| error.get("message"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown MCP error")
+        .to_string()
+}
+
+fn initialize_mcp_client(stdin: &mut ChildStdin, stdout: &mut ChildStdout) -> Result<()> {
+    write_mcp_message(
+        stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {
+                    "roots": {},
+                    "sampling": {}
+                },
+                "clientInfo": {
+                    "name": "Lyra",
+                    "version": "0.1.0"
+                }
+            }
+        }),
+    )?;
+
+    let initialize = read_mcp_response(stdout, 0)?;
+    if initialize.get("error").is_some() {
+        return Err(to_error(format!(
+            "failed to initialize MCP runtime: {}",
+            read_mcp_error_message(&initialize)
+        )));
+    }
+
+    write_mcp_message(
+        stdin,
+        &json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        }),
+    )
+}
+
+fn with_stdio_mcp_session<T, F>(
+    server: &PersistedMcpServerConfig,
+    environment: HashMap<String, String>,
+    timeout: Duration,
+    timeout_label: &str,
+    operation: F,
+) -> Result<T>
+where
+    F: FnOnce(&mut ChildStdin, &mut ChildStdout) -> Result<T>,
+{
+    let mut child = spawn_stdio_mcp_process(server, environment)?;
     let mut stdin = child
         .stdin
         .take()
@@ -1472,7 +1543,6 @@ fn call_mcp_tool_blocking(request: CallMcpToolRequest) -> Result<CallMcpToolResu
     let child = Arc::new(Mutex::new(child));
     let timed_out = Arc::new(AtomicBool::new(false));
     let completed = Arc::new(AtomicBool::new(false));
-    let timeout = Duration::from_millis(request.timeout_ms.unwrap_or(60_000));
     let timeout_child = Arc::clone(&child);
     let timeout_flag = Arc::clone(&timed_out);
     let completed_flag = Arc::clone(&completed);
@@ -1497,96 +1567,9 @@ fn call_mcp_tool_blocking(request: CallMcpToolRequest) -> Result<CallMcpToolResu
         stderr_output
     });
 
-    let result = (|| -> Result<CallMcpToolResult> {
-        write_mcp_message(
-            &mut stdin,
-            &json!({
-                "jsonrpc": "2.0",
-                "id": 0,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2025-03-26",
-                    "capabilities": {
-                        "roots": {},
-                        "sampling": {}
-                    },
-                    "clientInfo": {
-                        "name": "Lyra",
-                        "version": "0.1.0"
-                    }
-                }
-            }),
-        )?;
-
-        let initialize = read_mcp_response(&mut stdout, 0)?;
-        if let Some(error) = initialize.get("error") {
-            return Err(to_error(format!(
-                "failed to initialize MCP tool runtime: {}",
-                error
-                    .get("message")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("unknown MCP initialize error")
-            )));
-        }
-
-        write_mcp_message(
-            &mut stdin,
-            &json!({
-                "jsonrpc": "2.0",
-                "method": "notifications/initialized"
-            }),
-        )?;
-
-        write_mcp_message(
-            &mut stdin,
-            &json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": tool_name,
-                    "arguments": request.arguments.unwrap_or_default(),
-                    "_meta": {
-                        "progressToken": 0,
-                        "agent-session-id": request.ai_session_id
-                    }
-                }
-            }),
-        )?;
-
-        let response = read_mcp_response(&mut stdout, 1)?;
-        if let Some(error) = response.get("error") {
-            return Err(to_error(format!(
-                "MCP tools/call failed: {}",
-                error
-                    .get("message")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("unknown MCP tools/call error")
-            )));
-        }
-        let raw = response
-            .get("result")
-            .cloned()
-            .ok_or_else(|| to_error("MCP tools/call response missing result"))?;
-        let raw_object = raw
-            .as_object()
-            .ok_or_else(|| to_error("MCP tools/call result must be an object"))?;
-        Ok(CallMcpToolResult {
-            server_id: request.server.id,
-            tool_name,
-            transport: "stdio".to_string(),
-            content: raw_object
-                .get("content")
-                .and_then(|value| value.as_array())
-                .cloned()
-                .unwrap_or_default(),
-            structured_content: raw_object.get("structuredContent").cloned(),
-            is_error: raw_object
-                .get("isError")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false),
-            raw,
-        })
+    let result = (|| -> Result<T> {
+        initialize_mcp_client(&mut stdin, &mut stdout)?;
+        operation(&mut stdin, &mut stdout)
     })();
 
     completed.store(true, Ordering::Relaxed);
@@ -1600,7 +1583,7 @@ fn call_mcp_tool_blocking(request: CallMcpToolRequest) -> Result<CallMcpToolResu
 
     if timed_out.load(Ordering::Relaxed) {
         return Err(to_error(format!(
-            "MCP tool call timed out after {}ms{}",
+            "{timeout_label} timed out after {}ms{}",
             timeout.as_millis(),
             if stderr_output.trim().is_empty() {
                 String::new()
@@ -1621,6 +1604,337 @@ fn call_mcp_tool_blocking(request: CallMcpToolRequest) -> Result<CallMcpToolResu
             ))
         }
     })
+}
+
+fn is_method_not_found(error: &Value) -> bool {
+    error
+        .get("code")
+        .and_then(Value::as_i64)
+        .is_some_and(|code| code == -32601)
+}
+
+fn introspection_item_name(
+    method: &str,
+    item: &serde_json::Map<String, serde_json::Value>,
+) -> Option<String> {
+    let candidate = item
+        .get("name")
+        .or_else(|| {
+            if method == "resources/list" {
+                item.get("uri").or_else(|| item.get("uriTemplate"))
+            } else {
+                None
+            }
+        })
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    Some(candidate.to_string())
+}
+
+fn parse_introspection_side_effects(value: &Value) -> Option<McpIntrospectionSideEffects> {
+    let object = value.as_object()?;
+    let level = object
+        .get("level")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let read_bool = |camel: &str, snake: &str| {
+        object
+            .get(camel)
+            .or_else(|| object.get(snake))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    };
+    Some(McpIntrospectionSideEffects {
+        level,
+        mutates_workspace: read_bool("mutatesWorkspace", "mutates_workspace"),
+        mutates_memory: read_bool("mutatesMemory", "mutates_memory"),
+        mutates_external_systems: read_bool("mutatesExternalSystems", "mutates_external_systems"),
+        mutates_session_state: read_bool("mutatesSessionState", "mutates_session_state"),
+        opens_interactive_session: read_bool(
+            "opensInteractiveSession",
+            "opens_interactive_session",
+        ),
+        reads_network: read_bool("readsNetwork", "reads_network"),
+    })
+}
+
+fn build_live_introspection_item(
+    method: &str,
+    item: &serde_json::Map<String, serde_json::Value>,
+) -> Option<McpIntrospectionItem> {
+    let read_value = |camel: &str, snake: &str| item.get(camel).or_else(|| item.get(snake));
+    let read_string = |camel: &str, snake: &str| {
+        read_value(camel, snake)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+    };
+    Some(McpIntrospectionItem {
+        name: introspection_item_name(method, item)?,
+        description: item
+            .get("description")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        input_schema: read_value("inputSchema", "input_schema").cloned(),
+        output_schema: read_value("outputSchema", "output_schema").cloned(),
+        execution_mode: read_string("executionMode", "execution_mode"),
+        approval_mode: read_string("approvalMode", "approval_mode"),
+        side_effects: read_value("sideEffects", "side_effects")
+            .and_then(parse_introspection_side_effects),
+    })
+}
+
+fn list_mcp_items(
+    stdin: &mut ChildStdin,
+    stdout: &mut ChildStdout,
+    method: &str,
+    response_field: &str,
+    mut request_id: i64,
+) -> Result<Vec<McpIntrospectionItem>> {
+    let mut items = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let params = cursor
+            .as_ref()
+            .map(|cursor| json!({ "cursor": cursor }))
+            .unwrap_or_else(|| json!({}));
+        write_mcp_message(
+            stdin,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "method": method,
+                "params": params,
+            }),
+        )?;
+        let response = read_mcp_response(stdout, request_id)?;
+        request_id += 1;
+
+        if let Some(error) = response.get("error") {
+            if is_method_not_found(error) {
+                return Ok(Vec::new());
+            }
+            return Err(to_error(format!(
+                "MCP {method} failed: {}",
+                read_mcp_error_message(&response)
+            )));
+        }
+
+        let result = response
+            .get("result")
+            .and_then(Value::as_object)
+            .ok_or_else(|| to_error(format!("MCP {method} response missing result object")))?;
+        if let Some(array) = result.get(response_field).and_then(Value::as_array) {
+            items.extend(array.iter().filter_map(|entry| {
+                entry
+                    .as_object()
+                    .and_then(|object| build_live_introspection_item(method, object))
+            }));
+        }
+
+        cursor = result
+            .get("nextCursor")
+            .or_else(|| result.get("next_cursor"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string);
+        if cursor.is_none() {
+            break;
+        }
+    }
+
+    Ok(items)
+}
+
+fn merge_live_introspection_item(
+    live: McpIntrospectionItem,
+    fallback: Option<&McpIntrospectionItem>,
+) -> McpIntrospectionItem {
+    let Some(fallback) = fallback else {
+        return live;
+    };
+    McpIntrospectionItem {
+        name: live.name,
+        description: live.description.or_else(|| fallback.description.clone()),
+        input_schema: live.input_schema.or_else(|| fallback.input_schema.clone()),
+        output_schema: live
+            .output_schema
+            .or_else(|| fallback.output_schema.clone()),
+        execution_mode: live
+            .execution_mode
+            .or_else(|| fallback.execution_mode.clone()),
+        approval_mode: live
+            .approval_mode
+            .or_else(|| fallback.approval_mode.clone()),
+        side_effects: live.side_effects.or_else(|| fallback.side_effects.clone()),
+    }
+}
+
+fn merge_live_introspection_items(
+    live_items: Vec<McpIntrospectionItem>,
+    fallback_items: &[McpIntrospectionItem],
+) -> Vec<McpIntrospectionItem> {
+    if live_items.is_empty() {
+        return fallback_items.to_vec();
+    }
+    let fallback_by_name = fallback_items
+        .iter()
+        .map(|item| (item.name.clone(), item))
+        .collect::<HashMap<_, _>>();
+    live_items
+        .into_iter()
+        .map(|item| {
+            let fallback = fallback_by_name.get(&item.name).copied();
+            merge_live_introspection_item(item, fallback)
+        })
+        .collect()
+}
+
+fn build_live_introspection_snapshot(
+    server_id: &str,
+    fallback_snapshot: Option<&McpIntrospectionSnapshot>,
+    tools: Vec<McpIntrospectionItem>,
+    resources: Vec<McpIntrospectionItem>,
+    prompts: Vec<McpIntrospectionItem>,
+) -> McpIntrospectionSnapshot {
+    let note = if fallback_snapshot.is_some() {
+        Some(
+            "Fetched from running MCP server; catalog metadata filled where the server omitted it."
+                .to_string(),
+        )
+    } else {
+        Some("Fetched from running MCP server.".to_string())
+    };
+    let (fallback_tools, fallback_resources, fallback_prompts) = fallback_snapshot
+        .map(|snapshot| {
+            (
+                snapshot.tools.as_slice(),
+                snapshot.resources.as_slice(),
+                snapshot.prompts.as_slice(),
+            )
+        })
+        .unwrap_or((&[][..], &[][..], &[][..]));
+    McpIntrospectionSnapshot {
+        server_id: server_id.to_string(),
+        fetched_at: now_iso(),
+        source: "live".to_string(),
+        note,
+        tools: merge_live_introspection_items(tools, fallback_tools),
+        resources: merge_live_introspection_items(resources, fallback_resources),
+        prompts: merge_live_introspection_items(prompts, fallback_prompts),
+    }
+}
+
+fn probe_stdio_runtime_introspection(
+    server: &PersistedMcpServerConfig,
+    environment: HashMap<String, String>,
+    fallback_snapshot: Option<&McpIntrospectionSnapshot>,
+) -> Result<McpIntrospectionSnapshot> {
+    with_stdio_mcp_session(
+        server,
+        environment,
+        Duration::from_secs(20),
+        "MCP introspection probe",
+        |stdin, stdout| {
+            let tools = list_mcp_items(stdin, stdout, "tools/list", "tools", 1)?;
+            let resources = list_mcp_items(stdin, stdout, "resources/list", "resources", 101)?;
+            let prompts = list_mcp_items(stdin, stdout, "prompts/list", "prompts", 201)?;
+            Ok(build_live_introspection_snapshot(
+                &server.id,
+                fallback_snapshot,
+                tools,
+                resources,
+                prompts,
+            ))
+        },
+    )
+}
+
+fn call_mcp_tool_blocking(request: CallMcpToolRequest) -> Result<CallMcpToolResult> {
+    let CallMcpToolRequest {
+        server,
+        tool_name,
+        arguments,
+        timeout_ms,
+        ai_session_id,
+    } = request;
+
+    if server.transport != "stdio" {
+        return Err(to_error(format!(
+            "MCP tool execution is currently supported only for stdio servers. {} uses {}.",
+            server.id, server.transport
+        )));
+    }
+
+    let tool_name = trim_or_none(&tool_name).ok_or_else(|| to_error("toolName is required"))?;
+    let environment = materialize_runtime_environment(MaterializeRuntimeEnvironmentRequest {
+        entries: server.environment.clone(),
+        base_env: std::env::vars().collect(),
+    })?;
+    let server_id = server.id.clone();
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(60_000));
+    let arguments = arguments.unwrap_or_default();
+
+    with_stdio_mcp_session(
+        &server,
+        environment,
+        timeout,
+        "MCP tool call",
+        |stdin, stdout| {
+            write_mcp_message(
+                stdin,
+                &json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": tool_name,
+                        "arguments": arguments,
+                        "_meta": {
+                            "progressToken": 0,
+                            "agent-session-id": ai_session_id
+                        }
+                    }
+                }),
+            )?;
+
+            let response = read_mcp_response(stdout, 1)?;
+            if response.get("error").is_some() {
+                return Err(to_error(format!(
+                    "MCP tools/call failed: {}",
+                    read_mcp_error_message(&response)
+                )));
+            }
+            let raw = response
+                .get("result")
+                .cloned()
+                .ok_or_else(|| to_error("MCP tools/call response missing result"))?;
+            let raw_object = raw
+                .as_object()
+                .ok_or_else(|| to_error("MCP tools/call result must be an object"))?;
+            Ok(CallMcpToolResult {
+                server_id,
+                tool_name,
+                transport: "stdio".to_string(),
+                content: raw_object
+                    .get("content")
+                    .and_then(|value| value.as_array())
+                    .cloned()
+                    .unwrap_or_default(),
+                structured_content: raw_object.get("structuredContent").cloned(),
+                is_error: raw_object
+                    .get("isError")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false),
+                raw,
+            })
+        },
+    )
 }
 
 fn build_posix_launch_script(server: &PersistedMcpServerConfig) -> Option<String> {
@@ -1917,12 +2231,13 @@ fn start_runtime(request: StartMcpRuntimeRequest) -> Result<StartMcpRuntimeResul
     );
     emit_runtime_validation(&validation);
 
-    let introspection_snapshot = request.introspection_snapshot.clone();
-    if let Some(snapshot) = introspection_snapshot.clone() {
-        set_runtime_introspection(snapshot);
-    }
+    let fallback_introspection_snapshot = request.introspection_snapshot.clone();
+    let mut introspection_snapshot = fallback_introspection_snapshot.clone();
 
     if !validation.ok {
+        if let Some(snapshot) = introspection_snapshot.clone() {
+            set_runtime_introspection(snapshot);
+        }
         let status = create_runtime_status(
             &request.server.id,
             &request.server.transport,
@@ -1939,6 +2254,9 @@ fn start_runtime(request: StartMcpRuntimeRequest) -> Result<StartMcpRuntimeResul
     }
 
     if request.server.transport != "stdio" {
+        if let Some(snapshot) = introspection_snapshot.clone() {
+            set_runtime_introspection(snapshot);
+        }
         let status = create_runtime_status(
             &request.server.id,
             &request.server.transport,
@@ -1980,6 +2298,28 @@ fn start_runtime(request: StartMcpRuntimeRequest) -> Result<StartMcpRuntimeResul
         entries: request.server.environment.clone(),
         base_env: request.base_env,
     })?;
+
+    match probe_stdio_runtime_introspection(
+        &request.server,
+        environment.clone(),
+        fallback_introspection_snapshot.as_ref(),
+    ) {
+        Ok(snapshot) => {
+            set_runtime_introspection(snapshot.clone());
+            introspection_snapshot = Some(snapshot);
+        }
+        Err(error) => {
+            emit_runtime_log(
+                &request.server.id,
+                "error",
+                &format!("live MCP introspection failed: {}", error.reason),
+            );
+            if let Some(snapshot) = fallback_introspection_snapshot.clone() {
+                set_runtime_introspection(snapshot.clone());
+                introspection_snapshot = Some(snapshot);
+            }
+        }
+    }
 
     let mut child = Command::new(&command)
         .args(&request.server.args)
@@ -2513,5 +2853,77 @@ mod tests {
         drop(statuses);
 
         let _ = shutdown_mcp_runtime();
+    }
+
+    #[test]
+    fn live_introspection_snapshot_merges_fallback_metadata() {
+        let fallback = McpIntrospectionSnapshot {
+            server_id: "mcp-test-runtime".to_string(),
+            fetched_at: now_iso(),
+            source: "catalog".to_string(),
+            note: None,
+            tools: vec![McpIntrospectionItem {
+                name: "fetch".to_string(),
+                description: Some("catalog description".to_string()),
+                input_schema: None,
+                output_schema: Some(json!({
+                    "type": "object",
+                    "properties": { "ok": { "type": "boolean" } }
+                })),
+                execution_mode: Some("parallel_readonly".to_string()),
+                approval_mode: Some("auto".to_string()),
+                side_effects: Some(McpIntrospectionSideEffects {
+                    level: "network_read".to_string(),
+                    mutates_workspace: false,
+                    mutates_memory: false,
+                    mutates_external_systems: false,
+                    mutates_session_state: false,
+                    opens_interactive_session: false,
+                    reads_network: true,
+                }),
+            }],
+            resources: Vec::new(),
+            prompts: Vec::new(),
+        };
+
+        let live = build_live_introspection_snapshot(
+            "mcp-test-runtime",
+            Some(&fallback),
+            vec![McpIntrospectionItem {
+                name: "fetch".to_string(),
+                description: Some("live description".to_string()),
+                input_schema: Some(json!({
+                    "type": "object",
+                    "properties": { "url": { "type": "string" } }
+                })),
+                output_schema: None,
+                execution_mode: None,
+                approval_mode: None,
+                side_effects: None,
+            }],
+            Vec::new(),
+            Vec::new(),
+        );
+
+        assert_eq!(live.source, "live");
+        assert_eq!(live.tools.len(), 1);
+        assert_eq!(
+            live.tools[0].description.as_deref(),
+            Some("live description")
+        );
+        assert!(live.tools[0].input_schema.is_some());
+        assert_eq!(live.tools[0].approval_mode.as_deref(), Some("auto"));
+        assert_eq!(
+            live.tools[0].execution_mode.as_deref(),
+            Some("parallel_readonly")
+        );
+        assert_eq!(
+            live.tools[0]
+                .side_effects
+                .as_ref()
+                .map(|effects| effects.level.as_str()),
+            Some("network_read")
+        );
+        assert!(live.tools[0].output_schema.is_some());
     }
 }

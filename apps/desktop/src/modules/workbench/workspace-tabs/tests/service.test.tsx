@@ -51,6 +51,57 @@ describe("workspace tabs model", () => {
     expect(result.current.activeTab?.title).toBe("example.com/docs");
   });
 
+  test("navigates resolved search into a new tab", () => {
+    const { result } = renderHook(() => useWorkspaceTabsModel(testConfig));
+
+    act(() => {
+      result.current.navigateResolvedInput(
+        {
+          kind: "search",
+          query: "lyra browser",
+          mode: "standard"
+        },
+        { target: "new-tab" }
+      );
+    });
+
+    expect(result.current.tabs).toHaveLength(2);
+    expect(result.current.activeTab?.pageKind).toBe("results");
+    expect(result.current.activeTab?.query).toBe("lyra browser");
+    expect(result.current.activeTab?.resultMode).toBe("standard");
+  });
+
+  test("replaces app tab with page navigation without leaking app fields", () => {
+    const { result } = renderHook(() => useWorkspaceTabsModel(testConfig));
+
+    act(() => {
+      result.current.openAppTab({
+        appId: "file-editor",
+        appInstanceId: "file-editor-1",
+        title: "notes.md",
+        iconKey: "file-editor-code",
+        filePath: "/tmp/notes.md",
+        fileSessionId: "session-1",
+        isDirty: true
+      });
+    });
+
+    act(() => {
+      result.current.navigateResolvedInput({
+        kind: "page",
+        address: "https://example.com/docs"
+      });
+    });
+
+    expect(result.current.activeTab?.pageKind).toBe("page");
+    expect(result.current.activeTab?.displayAddress).toBe("https://example.com/docs");
+    expect(result.current.activeTab?.appId).toBeUndefined();
+    expect(result.current.activeTab?.appInstanceId).toBeUndefined();
+    expect(result.current.activeTab?.filePath).toBeUndefined();
+    expect(result.current.activeTab?.fileSessionId).toBeUndefined();
+    expect(result.current.activeTab?.isDirty).toBeUndefined();
+  });
+
   test("opens search result in a new page tab", () => {
     const { result } = renderHook(() => useWorkspaceTabsModel(testConfig));
 

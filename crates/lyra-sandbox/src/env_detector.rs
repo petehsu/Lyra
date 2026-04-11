@@ -89,13 +89,13 @@ pub fn has_path_manipulation(command: &str) -> bool {
 /// Check if a command attempts to disable security features.
 pub fn disables_security(command: &str) -> bool {
     let patterns = [
-        "set +o",           // Disable shell options
-        "unset HISTFILE",   // Disable history logging
-        "history -c",       // Clear history
-        "HISTSIZE=0",       // Zero history
-        "HISTFILESIZE=0",   // Zero history file
-        "disable_history",  // Generic disable
-        "set +x",           // Disable trace
+        "set +o",          // Disable shell options
+        "unset HISTFILE",  // Disable history logging
+        "history -c",      // Clear history
+        "HISTSIZE=0",      // Zero history
+        "HISTFILESIZE=0",  // Zero history file
+        "disable_history", // Generic disable
+        "set +x",          // Disable trace
     ];
     patterns.iter().any(|&p| command.contains(p))
 }

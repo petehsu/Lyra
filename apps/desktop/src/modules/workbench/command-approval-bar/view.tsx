@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Terminal, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Terminal, Shield, ShieldAlert, ShieldCheck, Wrench } from "lucide-react";
 import type {
   CommandApprovalRequest,
   CommandApprovalResponse,
@@ -58,13 +58,14 @@ export function CommandApprovalBar({
 
   const risk = RISK_CONFIG[request.riskLevel];
   const RiskIcon = risk.icon;
+  const ToolIcon = request.toolName.startsWith("terminal.") ? Terminal : Wrench;
 
   return (
     <div className="lyra-command-approval-bar">
       <div className="lyra-command-approval-bar__inner">
         {/* Left: tool icon + command preview */}
         <div className="lyra-command-approval-bar__left">
-          <Terminal className="lyra-command-approval-bar__tool-icon" size={16} />
+          <ToolIcon className="lyra-command-approval-bar__tool-icon" size={16} />
           <span className="lyra-command-approval-bar__command">
             <code>{request.command}</code>
           </span>

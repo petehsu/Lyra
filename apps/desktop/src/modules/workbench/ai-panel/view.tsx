@@ -30,6 +30,10 @@ import { LyraBrandLogo } from "../brand";
 import type { FileEditorRevealLocation } from "../file-editor";
 import { createTranslator } from "../i18n";
 import { AgentComposer } from "./agent-composer";
+import {
+  resolveCommandApprovalCommandPreview,
+  resolveCommandApprovalToolLabel,
+} from "./command-approval-display";
 import { PlanApprovalBar } from "./plan-approval-bar";
 import { PlanQuestionBar } from "./plan-question-bar";
 import { renderAiPanelTopbarIcon } from "./icon-registry";
@@ -669,17 +673,12 @@ const toCommandApprovalRequest = (
     turnId: interaction.turnId,
     toolCallId,
     toolName,
-    toolLabel:
-      toolName === "terminal.session.start"
-        ? labels.toolTerminalSession
-        : toolName === "terminal.session.write"
-          ? labels.toolTerminalInput
-          : labels.toolTerminalExec,
-    command:
-      pickString(inputPayload, "command")
-      ?? pickString(metadataPayload, "command")
-      ?? pickString(metadataPayload, "approvalPattern")
-      ?? "",
+    toolLabel: resolveCommandApprovalToolLabel(toolName, labels),
+    command: resolveCommandApprovalCommandPreview({
+      toolName,
+      inputPayload,
+      metadataPayload,
+    }),
     riskLevel,
     riskDescription: pickString(payload, "message") ?? labels.commandNeedsApproval,
     ...(pickString(inputPayload, "cwd") === null ? {} : { cwd: pickString(inputPayload, "cwd")! }),
@@ -1491,14 +1490,8 @@ export const AiPanelSurface = ({
             ? riskLevelCandidate
             : "medium";
 
-        const command =
-          pickString(inputPayload, "command")
-          ?? pickString(metadataPayload, "command")
-          ?? pickString(metadataPayload, "approvalPattern")
-          ?? "";
         const cwd = pickString(inputPayload, "cwd");
         const toolName = pickString(approvalPayload, "toolName") ?? "terminal.exec";
-        void command;
         void cwd;
         void toolName;
         void riskLevel;
@@ -1512,13 +1505,12 @@ export const AiPanelSurface = ({
             turnId: event.turnId,
             toolCallId,
             toolName,
-            toolLabel:
-              toolName === "terminal.session.start"
-                ? interactionTextLabels.toolTerminalSession
-                : toolName === "terminal.session.write"
-                  ? interactionTextLabels.toolTerminalInput
-                  : interactionTextLabels.toolTerminalExec,
-            command,
+            toolLabel: resolveCommandApprovalToolLabel(toolName, interactionTextLabels),
+            command: resolveCommandApprovalCommandPreview({
+              toolName,
+              inputPayload,
+              metadataPayload,
+            }),
             riskLevel,
             riskDescription:
               pickString(approvalPayload, "message") ?? interactionTextLabels.commandNeedsApproval,

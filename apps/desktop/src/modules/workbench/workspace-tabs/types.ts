@@ -41,6 +41,22 @@ export type WorkspaceTabPageRuntimeState = {
   readonly faviconUrl?: string;
 };
 
+export type WorkspaceResolvedNavigation =
+  | {
+      readonly kind: "home";
+    }
+  | {
+      readonly kind: "page";
+      readonly address: string;
+    }
+  | {
+      readonly kind: "search";
+      readonly query: string;
+      readonly mode: WorkspaceSearchMode;
+    };
+
+export type WorkspaceNavigationTarget = "active-tab" | "new-tab";
+
 export type WorkspaceTabInsertOptions = {
   readonly targetIndex?: number;
 };
@@ -122,6 +138,12 @@ export type WorkspaceTabsActions = {
     tabId: string,
     state: WorkspaceTabPageRuntimeState
   ) => void;
+  readonly navigateResolvedInput: (
+    request: WorkspaceResolvedNavigation,
+    options?: {
+      readonly target?: WorkspaceNavigationTarget;
+    }
+  ) => string;
   readonly updateActiveInput: (value: string) => void;
   readonly setActiveSearchMode: (mode: WorkspaceSearchMode) => void;
   readonly commitActiveInput: () => void;

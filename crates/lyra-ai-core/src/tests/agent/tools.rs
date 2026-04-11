@@ -1,23 +1,33 @@
 use std::fs::{create_dir_all, write};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 
 use crate::agent::terminal_policy::{
     select_terminal_interaction_policy, TerminalInteractionPolicy,
-    TerminalInteractionPolicyKind,
 };
 use crate::agent::tools::{
-    execute_readonly_tool, execute_tool_with_progress, grant_approval_once, ToolExecutionContext,
+    clear_external_tools, execute_readonly_tool, execute_tool_with_progress, grant_approval_once,
+    plan_mode_tool_definitions_for_input, readonly_tool_definitions_for_input,
+    readonly_tool_definitions_for_input_with_context, register_external_tool,
+    register_host_tools_bridge, render_mcp_tools_prompt_json, tool_executes_serially,
+    unregister_host_tool_set, AgentToolError, ExternalToolApprovalMode, ExternalToolMetadata,
+    ExternalToolSideEffects, HostToolDescriptor, RegisteredExternalTool, ToolExecutionContext,
+    ToolExecutionMode, ToolRankingContext, WorkbenchWebRoutingContext,
 };
 use crate::agent::types::{
-    AgentCreateSessionRequest, AGENT_PLAN_APPROVAL_REQUIRED, AGENT_PLAN_QUESTION_REQUIRED,
-    AGENT_TOOL_READ_BLOCKED,
+    AgentCreateSessionRequest, AgentToolCall, AGENT_PLAN_APPROVAL_REQUIRED,
+    AGENT_PLAN_QUESTION_REQUIRED, AGENT_TOOL_READ_BLOCKED,
 };
 use crate::storage::registry_db;
 use crate::tests::support::TempStorageRoot;
+use lyra_sandbox::permissions::{PermissionDecision, PermissionsStore};
+
+static EXTERNAL_TOOL_TEST_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 fn create_workspace_root(temp: &TempStorageRoot) -> PathBuf {
     let root = PathBuf::from(temp.as_string()).join("workspace");
@@ -40,6 +50,68 @@ fn tool_context<'a>(
         tool_call_id,
         terminal_policy,
         plan_mode,
+    }
+}
+
+fn tool_rank(tools: &[crate::provider::types::AgentToolDefinition], name: &str) -> usize {
+    tools
+        .iter()
+        .position(|tool| tool.name == name)
+        .unwrap_or_else(|| panic!("tool not found in ranking: {name}"))
+}
+
+fn register_test_external_tool(name: &str, description: &str) {
+    register_test_external_tool_with_metadata(
+        name,
+        description,
+        ExternalToolApprovalMode::Auto,
+        ExternalToolSideEffects::read_only(),
+    );
+}
+
+fn register_test_external_tool_with_metadata(
+    name: &str,
+    description: &str,
+    approval_mode: ExternalToolApprovalMode,
+    side_effects: ExternalToolSideEffects,
+) {
+    register_external_tool(RegisteredExternalTool {
+        definition: crate::provider::types::AgentToolDefinition {
+            name: name.to_string(),
+            description: description.to_string(),
+            input_schema: json!({
+                "type": "object",
+                "additionalProperties": false
+            }),
+        },
+        metadata: ExternalToolMetadata {
+            output_schema: json!({"type": "object"}),
+            approval_mode,
+            side_effects,
+        },
+        executor: Arc::new(|_, _context| Ok(json!({"ok": true}))),
+        execution_mode: ToolExecutionMode::Serial,
+    });
+}
+
+fn test_tool_call(
+    tool_name: &str,
+    output: Option<Value>,
+    error_code: Option<&str>,
+    status: &str,
+) -> AgentToolCall {
+    AgentToolCall {
+        id: format!("call-{tool_name}"),
+        session_id: "session".to_string(),
+        turn_id: "turn".to_string(),
+        tool_name: tool_name.to_string(),
+        input: json!({}),
+        output,
+        status: status.to_string(),
+        error_code: error_code.map(ToString::to_string),
+        error_message: error_code.map(|code| format!("failed: {code}")),
+        started_at: 1,
+        finished_at: Some(2),
     }
 }
 
@@ -133,6 +205,1009 @@ fn rejects_unknown_tool_names() {
     let error = execute_readonly_tool("filesystem.unknown", &json!({}), None)
         .expect_err("unknown tool should fail");
     assert_eq!(error.code, AGENT_TOOL_READ_BLOCKED);
+}
+
+#[test]
+fn builtin_tool_execution_modes_are_centralized() {
+    assert!(!tool_executes_serially("filesystem.list"));
+    assert!(tool_executes_serially("filesystem.write"));
+    assert!(tool_executes_serially("terminal.exec"));
+}
+
+#[test]
+fn standard_tool_ranking_prefers_read_only_tools_for_generic_inspection() {
+    let ranked = readonly_tool_definitions_for_input("inspect the repository structure");
+
+    assert!(tool_rank(&ranked, "filesystem.list") < tool_rank(&ranked, "filesystem.edit"));
+    assert!(tool_rank(&ranked, "filesystem.read_range") < tool_rank(&ranked, "terminal.exec"));
+}
+
+#[test]
+fn standard_tool_ranking_keeps_terminal_exec_below_safe_readers_by_default() {
+    let ranked = readonly_tool_definitions_for_input("run tests and inspect failures");
+
+    assert!(tool_rank(&ranked, "filesystem.list") < tool_rank(&ranked, "terminal.exec"));
+    assert!(tool_rank(&ranked, "filesystem.read_range") < tool_rank(&ranked, "terminal.exec"));
+}
+
+#[test]
+fn plan_tool_ranking_starts_with_coordination_tools_by_default() {
+    let clarify_ranked =
+        plan_mode_tool_definitions_for_input("ask the user to clarify the deployment target");
+    assert!(
+        tool_rank(&clarify_ranked, "request_user_input")
+            < tool_rank(&clarify_ranked, "filesystem.list")
+    );
+
+    let approval_ranked = plan_mode_tool_definitions_for_input(
+        "submit the plan for approval once the draft is complete",
+    );
+    assert!(
+        tool_rank(&approval_ranked, "plan.update_draft")
+            < tool_rank(&approval_ranked, "plan.submit_for_approval")
+    );
+}
+
+#[test]
+fn external_tools_use_registered_execution_mode() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+    register_external_tool(RegisteredExternalTool {
+        definition: crate::provider::types::AgentToolDefinition {
+            name: "external.parallel".to_string(),
+            description: "parallel external tool".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "additionalProperties": false
+            }),
+        },
+        metadata: ExternalToolMetadata::read_only_json(),
+        executor: Arc::new(|_, _context| Ok(json!({"ok": true}))),
+        execution_mode: ToolExecutionMode::ParallelReadOnly,
+    });
+    register_external_tool(RegisteredExternalTool {
+        definition: crate::provider::types::AgentToolDefinition {
+            name: "external.serial".to_string(),
+            description: "serial external tool".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "additionalProperties": false
+            }),
+        },
+        metadata: ExternalToolMetadata {
+            output_schema: json!({"type": "object"}),
+            approval_mode: ExternalToolApprovalMode::Ask,
+            side_effects: ExternalToolSideEffects::workspace_write(),
+        },
+        executor: Arc::new(|_, _context| Ok(json!({"ok": true}))),
+        execution_mode: ToolExecutionMode::Serial,
+    });
+
+    assert!(!tool_executes_serially("external.parallel"));
+    assert!(tool_executes_serially("external.serial"));
+
+    clear_external_tools();
+}
+
+#[test]
+fn host_tool_errors_preserve_structured_diagnostics_metadata() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+    unregister_host_tool_set("test.host");
+
+    register_host_tools_bridge(
+        "test.host",
+        vec![HostToolDescriptor {
+            name: "workbench.document.read".to_string(),
+            description: "Read active workbench document".to_string(),
+            input_schema: json!({"type": "object"}),
+            output_schema: json!({"type": "object"}),
+            execution_mode: ToolExecutionMode::Serial,
+            approval_mode: ExternalToolApprovalMode::Auto,
+            side_effects: ExternalToolSideEffects::read_only(),
+            host_method: "workbench.document.read".to_string(),
+        }],
+        Arc::new(|_descriptor, _input, _context| {
+            Err(AgentToolError {
+                code: "HOST_TOOL_ERROR".to_string(),
+                message: "document format is unsupported".to_string(),
+                metadata: Some(json!({
+                    "domain": "workbench.document",
+                    "stage": "parse",
+                    "fetch": {
+                        "contentSignature": "html_doctype",
+                        "likelyCause": "resolved_document_url_returned_html_wrapper_instead_of_pdf_bytes"
+                    }
+                })),
+            })
+        }),
+    );
+
+    let error = execute_readonly_tool("workbench.document.read", &json!({}), None)
+        .expect_err("host tool should fail");
+
+    assert_eq!(error.code, "HOST_TOOL_ERROR");
+    let metadata = error.metadata.expect("structured diagnostics metadata");
+    assert_eq!(
+        metadata.get("domain").and_then(Value::as_str),
+        Some("workbench.document")
+    );
+    assert_eq!(
+        metadata
+            .get("fetch")
+            .and_then(Value::as_object)
+            .and_then(|fetch| fetch.get("likelyCause"))
+            .and_then(Value::as_str),
+        Some("resolved_document_url_returned_html_wrapper_instead_of_pdf_bytes")
+    );
+
+    unregister_host_tool_set("test.host");
+    clear_external_tools();
+}
+
+#[test]
+fn external_tool_ranking_prefers_safer_tools_when_relevance_is_similar() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_external_tool(RegisteredExternalTool {
+        definition: crate::provider::types::AgentToolDefinition {
+            name: "external.fetch_status".to_string(),
+            description: "inspect deployment status for a service".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "service": { "type": "string" }
+                },
+                "additionalProperties": false
+            }),
+        },
+        metadata: ExternalToolMetadata {
+            output_schema: json!({"type": "object"}),
+            approval_mode: ExternalToolApprovalMode::Auto,
+            side_effects: ExternalToolSideEffects::network_read(),
+        },
+        executor: Arc::new(|_, _context| Ok(json!({"ok": true}))),
+        execution_mode: ToolExecutionMode::ParallelReadOnly,
+    });
+    register_external_tool(RegisteredExternalTool {
+        definition: crate::provider::types::AgentToolDefinition {
+            name: "external.deploy_service".to_string(),
+            description: "inspect deployment status for a service".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "service": { "type": "string" }
+                },
+                "additionalProperties": false
+            }),
+        },
+        metadata: ExternalToolMetadata {
+            output_schema: json!({"type": "object"}),
+            approval_mode: ExternalToolApprovalMode::Ask,
+            side_effects: ExternalToolSideEffects::external_mutation(),
+        },
+        executor: Arc::new(|_, _context| Ok(json!({"ok": true}))),
+        execution_mode: ToolExecutionMode::Serial,
+    });
+
+    let ranked =
+        readonly_tool_definitions_for_input("inspect deployment status for the api service");
+    assert!(
+        tool_rank(&ranked, "external.fetch_status") < tool_rank(&ranked, "external.deploy_service")
+    );
+
+    clear_external_tools();
+}
+
+#[test]
+fn external_tool_ranking_keeps_risky_mutations_below_safe_reads_by_default() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_external_tool(RegisteredExternalTool {
+        definition: crate::provider::types::AgentToolDefinition {
+            name: "external.fetch_status".to_string(),
+            description: "fetch deployment status for a service".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "service": { "type": "string" }
+                },
+                "additionalProperties": false
+            }),
+        },
+        metadata: ExternalToolMetadata {
+            output_schema: json!({"type": "object"}),
+            approval_mode: ExternalToolApprovalMode::Auto,
+            side_effects: ExternalToolSideEffects::network_read(),
+        },
+        executor: Arc::new(|_, _context| Ok(json!({"ok": true}))),
+        execution_mode: ToolExecutionMode::ParallelReadOnly,
+    });
+    register_external_tool(RegisteredExternalTool {
+        definition: crate::provider::types::AgentToolDefinition {
+            name: "external.deploy_release".to_string(),
+            description: "deploy release to production for a service".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "service": { "type": "string" }
+                },
+                "additionalProperties": false
+            }),
+        },
+        metadata: ExternalToolMetadata {
+            output_schema: json!({"type": "object"}),
+            approval_mode: ExternalToolApprovalMode::Ask,
+            side_effects: ExternalToolSideEffects::external_mutation(),
+        },
+        executor: Arc::new(|_, _context| Ok(json!({"ok": true}))),
+        execution_mode: ToolExecutionMode::Serial,
+    });
+
+    let ranked =
+        readonly_tool_definitions_for_input("deploy release to production for the api service");
+    assert!(
+        tool_rank(&ranked, "external.fetch_status") < tool_rank(&ranked, "external.deploy_release")
+    );
+
+    clear_external_tools();
+}
+
+#[test]
+fn workbench_tool_ranking_prefers_structured_read_for_summary_requests() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_test_external_tool("workbench.tabs.list", "list open workbench tabs");
+    register_test_external_tool(
+        "workbench.document.inspect",
+        "inspect the active workbench document metadata",
+    );
+    register_test_external_tool(
+        "workbench.document.read",
+        "read the active workbench document",
+    );
+    register_test_external_tool(
+        "workbench.tab.read",
+        "read the structured contents of a workbench tab",
+    );
+    register_test_external_tool(
+        "workbench.document.search",
+        "search the active workbench document",
+    );
+    register_test_external_tool(
+        "workbench.tab.extract_text",
+        "extract copy-like text from a workbench tab",
+    );
+    register_test_external_tool(
+        "workbench.tab.capture_visual",
+        "capture the visible workbench tab as an image",
+    );
+
+    let ranked = readonly_tool_definitions_for_input("summarize the current webpage");
+    assert!(
+        tool_rank(&ranked, "workbench.tabs.list") < tool_rank(&ranked, "workbench.document.inspect")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.inspect")
+            < tool_rank(&ranked, "workbench.document.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.read") < tool_rank(&ranked, "workbench.tab.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.tab.read") < tool_rank(&ranked, "workbench.document.search")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.search")
+            < tool_rank(&ranked, "workbench.tab.extract_text")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.tab.extract_text")
+            < tool_rank(&ranked, "workbench.tab.capture_visual")
+    );
+
+    clear_external_tools();
+}
+
+#[test]
+fn workbench_tool_ranking_uses_the_same_default_observation_order_for_full_text_requests() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_test_external_tool("workbench.tabs.list", "list open workbench tabs");
+    register_test_external_tool(
+        "workbench.document.inspect",
+        "inspect the active workbench document metadata",
+    );
+    register_test_external_tool(
+        "workbench.document.read",
+        "read the active workbench document",
+    );
+    register_test_external_tool(
+        "workbench.tab.read",
+        "read the structured contents of a workbench tab",
+    );
+    register_test_external_tool(
+        "workbench.document.search",
+        "search the active workbench document",
+    );
+    register_test_external_tool(
+        "workbench.tab.extract_text",
+        "extract copy-like text from a workbench tab",
+    );
+
+    let ranked = readonly_tool_definitions_for_input(
+        "copy the full text of this article so I can read the entire page",
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.tabs.list") < tool_rank(&ranked, "workbench.document.inspect")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.inspect")
+            < tool_rank(&ranked, "workbench.document.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.read") < tool_rank(&ranked, "workbench.tab.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.tab.read") < tool_rank(&ranked, "workbench.document.search")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.search")
+            < tool_rank(&ranked, "workbench.tab.extract_text")
+    );
+
+    clear_external_tools();
+}
+
+#[test]
+fn workbench_tool_ranking_does_not_change_with_language_specific_phrasing() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_test_external_tool("workbench.tabs.list", "list open workbench tabs");
+    register_test_external_tool(
+        "workbench.document.inspect",
+        "inspect the active workbench document metadata",
+    );
+    register_test_external_tool(
+        "workbench.document.read",
+        "read the active workbench document",
+    );
+    register_test_external_tool(
+        "workbench.tab.read",
+        "read the structured contents of a workbench tab",
+    );
+    register_test_external_tool(
+        "workbench.document.search",
+        "search the active workbench document",
+    );
+    register_test_external_tool(
+        "workbench.tab.extract_text",
+        "extract copy-like text from a workbench tab",
+    );
+
+    let ranked = readonly_tool_definitions_for_input("再看一下现在这页标签内容是什么");
+    assert!(
+        tool_rank(&ranked, "workbench.tabs.list") < tool_rank(&ranked, "workbench.document.inspect")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.inspect")
+            < tool_rank(&ranked, "workbench.document.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.read") < tool_rank(&ranked, "workbench.tab.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.tab.read") < tool_rank(&ranked, "workbench.document.search")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.search")
+            < tool_rank(&ranked, "workbench.tab.extract_text")
+    );
+
+    clear_external_tools();
+}
+
+#[test]
+fn workbench_tool_ranking_keeps_visual_capture_as_an_expensive_fallback() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_test_external_tool("workbench.tabs.list", "list open workbench tabs");
+    register_test_external_tool(
+        "workbench.document.inspect",
+        "inspect the active workbench document metadata",
+    );
+    register_test_external_tool(
+        "workbench.document.read",
+        "read the active workbench document",
+    );
+    register_test_external_tool(
+        "workbench.tab.read",
+        "read the structured contents of a workbench tab",
+    );
+    register_test_external_tool(
+        "workbench.document.search",
+        "search the active workbench document",
+    );
+    register_test_external_tool(
+        "workbench.tab.capture_visual",
+        "capture the visible workbench tab as an image",
+    );
+
+    let ranked = readonly_tool_definitions_for_input("show me what this webpage layout looks like");
+    assert!(
+        tool_rank(&ranked, "workbench.tabs.list") < tool_rank(&ranked, "workbench.document.inspect")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.inspect")
+            < tool_rank(&ranked, "workbench.document.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.read") < tool_rank(&ranked, "workbench.tab.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.tab.read") < tool_rank(&ranked, "workbench.document.search")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.document.search")
+            < tool_rank(&ranked, "workbench.tab.capture_visual")
+    );
+
+    clear_external_tools();
+}
+
+#[test]
+fn workbench_web_tool_ranking_prefers_live_scan_before_graph_fallbacks() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_test_external_tool(
+        "workbench.web_target.scan",
+        "scan the visible page for likely interactive targets",
+    );
+    register_test_external_tool(
+        "workbench.tab.read",
+        "read summary state from the current page tab",
+    );
+    register_test_external_tool(
+        "workbench.tab.extract_text",
+        "extract readable text from the current page tab",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.build",
+        "build selector-addressable graph for current webpage",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.query",
+        "query interactable nodes from page graph",
+    );
+    register_test_external_tool(
+        "workbench.web_action.safe",
+        "run safe web action in page",
+    );
+    register_test_external_tool_with_metadata(
+        "workbench.web_action.mutate",
+        "run mutating web action in page",
+        ExternalToolApprovalMode::Ask,
+        ExternalToolSideEffects::session_mutation(),
+    );
+    register_test_external_tool_with_metadata(
+        "workbench.web_action.navigate",
+        "run navigation action in page",
+        ExternalToolApprovalMode::Ask,
+        ExternalToolSideEffects::network_read(),
+    );
+    register_test_external_tool(
+        "workbench.web_action.wait",
+        "wait for target state in page",
+    );
+
+    let ranked_english = readonly_tool_definitions_for_input("open this page and click a button");
+    let ranked_chinese = readonly_tool_definitions_for_input("帮我在当前网页里点按钮并输入内容");
+
+    for ranked in [&ranked_english, &ranked_chinese] {
+        assert!(
+            tool_rank(ranked, "workbench.web_target.scan")
+                < tool_rank(ranked, "workbench.web_graph.build")
+        );
+        assert!(
+            tool_rank(ranked, "workbench.web_target.scan")
+                < tool_rank(ranked, "workbench.web_action.safe")
+        );
+        assert!(
+            tool_rank(ranked, "workbench.web_target.scan")
+                < tool_rank(ranked, "workbench.web_graph.query")
+        );
+        assert!(
+            tool_rank(ranked, "workbench.web_action.safe")
+                < tool_rank(ranked, "workbench.web_action.wait")
+        );
+        assert!(
+            tool_rank(ranked, "workbench.web_action.wait")
+                < tool_rank(ranked, "workbench.web_action.mutate")
+        );
+        assert!(
+            tool_rank(ranked, "workbench.web_action.wait")
+                < tool_rank(ranked, "workbench.web_action.navigate")
+        );
+    }
+
+    clear_external_tools();
+}
+
+#[test]
+fn workbench_web_tool_ranking_prefers_actions_after_successful_live_scan() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_test_external_tool(
+        "workbench.web_target.scan",
+        "scan the visible page for likely interactive targets",
+    );
+    register_test_external_tool(
+        "workbench.tab.read",
+        "read summary state from the current page tab",
+    );
+    register_test_external_tool(
+        "workbench.tab.extract_text",
+        "extract readable text from the current page tab",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.build",
+        "build selector-addressable graph for current webpage",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.query",
+        "query interactable nodes from page graph",
+    );
+    register_test_external_tool(
+        "workbench.web_action.safe",
+        "run safe web action in page",
+    );
+    register_test_external_tool_with_metadata(
+        "workbench.web_action.mutate",
+        "run mutating web action in page",
+        ExternalToolApprovalMode::Ask,
+        ExternalToolSideEffects::session_mutation(),
+    );
+    register_test_external_tool(
+        "workbench.web_action.wait",
+        "wait for target state in page",
+    );
+
+    let ranked = readonly_tool_definitions_for_input_with_context(
+        "continue the current webpage interaction",
+        Some(&ToolRankingContext {
+            workbench_web: Some(WorkbenchWebRoutingContext {
+                has_live_scan_session: true,
+                has_live_candidates: true,
+                ..WorkbenchWebRoutingContext::default()
+            }),
+        }),
+    );
+
+    assert!(tool_rank(&ranked, "workbench.web_action.safe") < tool_rank(&ranked, "workbench.web_target.scan"));
+    assert!(tool_rank(&ranked, "workbench.web_action.wait") < tool_rank(&ranked, "workbench.web_graph.query"));
+    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.web_graph.build"));
+
+    clear_external_tools();
+}
+
+#[test]
+fn workbench_web_tool_routing_context_reads_recent_scan_results() {
+    let context = crate::agent::tools::derive_workbench_web_routing_context(&[
+        test_tool_call(
+            "workbench.web_target.scan",
+            Some(json!({
+                "scanSessionId": "scan-1",
+                "bestCandidate": {
+                    "candidateId": "cand-1",
+                    "interactable": {
+                        "typable": true,
+                        "clickable": false
+                    }
+                },
+                "candidates": [{
+                    "candidateId": "cand-1",
+                    "interactable": {
+                        "typable": true,
+                        "clickable": false
+                    }
+                }]
+            })),
+            None,
+            "completed",
+        ),
+        test_tool_call(
+            "workbench.web_action.mutate",
+            None,
+            Some("candidate_stale"),
+            "failed",
+        ),
+    ])
+    .expect("routing context");
+
+    assert!(context.has_live_scan_session);
+    assert!(context.has_live_candidates);
+    assert!(context.has_typable_candidate);
+    assert!(!context.has_clickable_candidate);
+    assert_eq!(context.last_failure_code.as_deref(), Some("candidate_stale"));
+    assert_eq!(
+        context.last_web_tool_name.as_deref(),
+        Some("workbench.web_action.mutate")
+    );
+}
+
+#[test]
+fn workbench_web_tool_routing_context_tracks_draft_only_mutations() {
+    let context = crate::agent::tools::derive_workbench_web_routing_context(&[
+        test_tool_call(
+            "workbench.web_action.mutate",
+            Some(json!({
+                "actionKind": "type",
+                "submitted": false,
+                "draftOnly": true,
+                "submissionMethod": "none"
+            })),
+            None,
+            "completed",
+        ),
+    ])
+    .expect("routing context");
+
+    assert!(context.last_mutate_draft_only);
+    assert!(!context.last_mutate_submitted);
+}
+
+#[test]
+fn workbench_web_tool_routing_context_treats_unconfirmed_enter_as_draft_only() {
+    let context = crate::agent::tools::derive_workbench_web_routing_context(&[
+        test_tool_call(
+            "workbench.web_action.mutate",
+            Some(json!({
+                "actionKind": "press_key",
+                "submitted": false,
+                "submissionMethod": "enter"
+            })),
+            None,
+            "completed",
+        ),
+    ])
+    .expect("routing context");
+
+    assert!(context.last_mutate_draft_only);
+    assert!(!context.last_mutate_submitted);
+}
+
+#[test]
+fn workbench_web_tool_ranking_avoids_wait_after_draft_only_type() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+    register_test_external_tool(
+        "workbench.web_target.scan",
+        "scan the visible page for likely interactive targets",
+    );
+    register_test_external_tool(
+        "workbench.tab.read",
+        "read summary state from the current page tab",
+    );
+    register_test_external_tool(
+        "workbench.tab.extract_text",
+        "extract readable text from the current page tab",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.build",
+        "build selector-addressable graph for current webpage",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.query",
+        "query interactable nodes from page graph",
+    );
+    register_test_external_tool(
+        "workbench.web_action.safe",
+        "run safe web action in page",
+    );
+    register_test_external_tool_with_metadata(
+        "workbench.web_action.mutate",
+        "run mutating web action in page",
+        ExternalToolApprovalMode::Ask,
+        ExternalToolSideEffects::session_mutation(),
+    );
+    register_test_external_tool(
+        "workbench.web_action.wait",
+        "wait for target state in page",
+    );
+
+    let ranked = readonly_tool_definitions_for_input_with_context(
+        "continue the current webpage interaction",
+        Some(&ToolRankingContext {
+            workbench_web: Some(WorkbenchWebRoutingContext {
+                has_live_scan_session: true,
+                has_live_candidates: true,
+                has_typable_candidate: true,
+                last_mutate_draft_only: true,
+                ..WorkbenchWebRoutingContext::default()
+            }),
+        }),
+    );
+
+    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.web_action.wait"));
+    assert!(tool_rank(&ranked, "workbench.web_target.scan") < tool_rank(&ranked, "workbench.web_action.wait"));
+    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.tab.extract_text"));
+    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.tab.read"));
+
+    clear_external_tools();
+}
+
+#[test]
+fn workbench_web_tool_ranking_prefers_mutate_over_reads_after_typable_scan() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_test_external_tool(
+        "workbench.web_target.scan",
+        "scan the visible page for likely interactive targets",
+    );
+    register_test_external_tool(
+        "workbench.tab.read",
+        "read summary state from the current page tab",
+    );
+    register_test_external_tool(
+        "workbench.tab.extract_text",
+        "extract readable text from the current page tab",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.build",
+        "build selector-addressable graph for current webpage",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.query",
+        "query interactable nodes from page graph",
+    );
+    register_test_external_tool(
+        "workbench.web_action.safe",
+        "run safe web action in page",
+    );
+    register_test_external_tool_with_metadata(
+        "workbench.web_action.mutate",
+        "run mutating web action in page",
+        ExternalToolApprovalMode::Ask,
+        ExternalToolSideEffects::session_mutation(),
+    );
+    register_test_external_tool(
+        "workbench.web_action.wait",
+        "wait for target state in page",
+    );
+
+    let ranked = readonly_tool_definitions_for_input_with_context(
+        "continue the current webpage interaction",
+        Some(&ToolRankingContext {
+            workbench_web: Some(WorkbenchWebRoutingContext {
+                has_live_scan_session: true,
+                has_live_candidates: true,
+                has_typable_candidate: true,
+                ..WorkbenchWebRoutingContext::default()
+            }),
+        }),
+    );
+
+    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.tab.read"));
+    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.tab.extract_text"));
+    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.web_graph.build"));
+
+    clear_external_tools();
+}
+
+#[test]
+fn mcp_prompt_json_includes_external_tool_metadata() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+    register_external_tool(RegisteredExternalTool {
+        definition: crate::provider::types::AgentToolDefinition {
+            name: "mcp:test/read_file".to_string(),
+            description: "read file through MCP".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                    "path": { "type": "string" }
+                }
+            }),
+        },
+        metadata: ExternalToolMetadata {
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "content": { "type": "string" }
+                }
+            }),
+            approval_mode: ExternalToolApprovalMode::Auto,
+            side_effects: ExternalToolSideEffects::read_only(),
+        },
+        executor: Arc::new(|_, _context| Ok(json!({"content": "hello"}))),
+        execution_mode: ToolExecutionMode::ParallelReadOnly,
+    });
+
+    let rendered = render_mcp_tools_prompt_json();
+    let parsed: Value = serde_json::from_str(&rendered).expect("parse rendered metadata");
+    let tools = parsed.as_array().expect("prompt tools array");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(
+        tools[0].get("approvalMode").and_then(Value::as_str),
+        Some("auto")
+    );
+    assert_eq!(
+        tools[0]
+            .get("sideEffects")
+            .and_then(|value| value.get("level"))
+            .and_then(Value::as_str),
+        Some("read_only")
+    );
+    assert!(tools[0]
+        .get("outputSchema")
+        .and_then(|value| value.get("properties"))
+        .and_then(|value| value.get("content"))
+        .is_some());
+
+    clear_external_tools();
+}
+
+#[test]
+fn external_tool_approval_is_enforced_and_can_be_granted_once() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+    let temp = TempStorageRoot::new();
+    let root = create_workspace_root(&temp);
+    let root_string = root.to_string_lossy().to_string();
+
+    register_external_tool(RegisteredExternalTool {
+        definition: crate::provider::types::AgentToolDefinition {
+            name: "external.ask".to_string(),
+            description: "external tool requiring approval".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "additionalProperties": false
+            }),
+        },
+        metadata: ExternalToolMetadata {
+            output_schema: json!({"type": "object"}),
+            approval_mode: ExternalToolApprovalMode::Ask,
+            side_effects: ExternalToolSideEffects::workspace_write(),
+        },
+        executor: Arc::new(|_, _context| Ok(json!({"ok": true}))),
+        execution_mode: ToolExecutionMode::Serial,
+    });
+
+    let error = execute_tool_with_progress(
+        "external.ask",
+        &json!({}),
+        tool_context(
+            None,
+            Some(root_string.as_str()),
+            Some("external-ask"),
+            None,
+            false,
+        ),
+        |_| {},
+    )
+    .expect_err("external tool should require approval");
+    assert_eq!(error.code, "AGENT_TOOL_APPROVAL_REQUIRED");
+    let metadata = error.metadata.expect("approval metadata");
+    assert_eq!(
+        metadata.get("approvalKind").and_then(Value::as_str),
+        Some("external_tool")
+    );
+    assert_eq!(
+        metadata.get("approvalPattern").and_then(Value::as_str),
+        Some("external_tool:external.ask")
+    );
+
+    grant_approval_once("external-ask", &metadata);
+
+    let result = execute_tool_with_progress(
+        "external.ask",
+        &json!({}),
+        tool_context(
+            None,
+            Some(root_string.as_str()),
+            Some("external-ask"),
+            None,
+            false,
+        ),
+        |_| {},
+    )
+    .expect("one-time approved external tool should execute");
+    assert_eq!(result.get("ok").and_then(Value::as_bool), Some(true));
+
+    clear_external_tools();
+}
+
+#[test]
+fn external_tool_honors_persisted_allow_policy() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+    let temp = TempStorageRoot::new();
+    let root = create_workspace_root(&temp);
+    let root_string = root.to_string_lossy().to_string();
+
+    register_external_tool(RegisteredExternalTool {
+        definition: crate::provider::types::AgentToolDefinition {
+            name: "external.persisted".to_string(),
+            description: "external tool with persisted approval".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "additionalProperties": false
+            }),
+        },
+        metadata: ExternalToolMetadata {
+            output_schema: json!({"type": "object"}),
+            approval_mode: ExternalToolApprovalMode::Ask,
+            side_effects: ExternalToolSideEffects::workspace_write(),
+        },
+        executor: Arc::new(|_, _context| Ok(json!({"ok": true}))),
+        execution_mode: ToolExecutionMode::Serial,
+    });
+
+    let mut permissions = PermissionsStore::default();
+    permissions
+        .add_rule(
+            root_string.as_str(),
+            "external_tool:external.persisted",
+            PermissionDecision::AllowAlways,
+        )
+        .expect("persist permissions");
+
+    let result = execute_tool_with_progress(
+        "external.persisted",
+        &json!({}),
+        tool_context(
+            None,
+            Some(root_string.as_str()),
+            Some("external-persisted"),
+            None,
+            false,
+        ),
+        |_| {},
+    )
+    .expect("persisted allow should bypass approval");
+    assert_eq!(result.get("ok").and_then(Value::as_bool), Some(true));
+
+    clear_external_tools();
 }
 
 #[test]
@@ -414,7 +1489,7 @@ fn terminal_exec_returns_interactive_advisory_for_tui_commands() {
     let temp = TempStorageRoot::new();
     let root = create_workspace_root(&temp);
     let root_string = root.to_string_lossy().to_string();
-    let policy = select_terminal_interaction_policy("看一下电脑现在状态怎么样");
+    let policy = select_terminal_interaction_policy();
 
     let result = execute_tool_with_progress(
         "terminal.exec",
@@ -437,9 +1512,7 @@ fn terminal_exec_returns_interactive_advisory_for_tui_commands() {
         Some("interactive_advisory")
     );
     assert_eq!(
-        result
-            .get("interactiveCategory")
-            .and_then(Value::as_str),
+        result.get("interactiveCategory").and_then(Value::as_str),
         Some("fullscreen_tui")
     );
     assert_eq!(
@@ -456,13 +1529,13 @@ fn terminal_exec_returns_interactive_advisory_for_tui_commands() {
 }
 
 #[test]
-fn terminal_session_shell_mode_is_blocked_without_explicit_request() {
+fn terminal_session_shell_mode_requires_approval_without_text_based_policy_inference() {
     let temp = TempStorageRoot::new();
     let root = create_workspace_root(&temp);
     let root_string = root.to_string_lossy().to_string();
-    let policy = select_terminal_interaction_policy("看一下电脑现在状态怎么样");
+    let policy = select_terminal_interaction_policy();
 
-    let result = execute_tool_with_progress(
+    let error = execute_tool_with_progress(
         "terminal.session.start",
         &json!({
             "mode": "shell",
@@ -476,13 +1549,9 @@ fn terminal_session_shell_mode_is_blocked_without_explicit_request() {
         ),
         |_| {},
     )
-    .expect("shell mode should be policy blocked");
+    .expect_err("shell mode should require approval");
 
-    assert_eq!(
-        result.get("kind").and_then(Value::as_str),
-        Some("interactive_policy_blocked")
-    );
-    assert_eq!(result.get("mode").and_then(Value::as_str), Some("shell"));
+    assert_eq!(error.code, "AGENT_TOOL_APPROVAL_REQUIRED");
 }
 
 #[test]
@@ -490,7 +1559,7 @@ fn terminal_session_command_mode_can_start_and_read_output() {
     let temp = TempStorageRoot::new();
     let root = create_workspace_root(&temp);
     let root_string = root.to_string_lossy().to_string();
-    let policy = select_terminal_interaction_policy("看一下电脑现在状态怎么样");
+    let policy = select_terminal_interaction_policy();
     let command = "printf 'hello-from-session\\n'";
 
     grant_approval_once(
@@ -563,12 +1632,7 @@ fn terminal_session_shell_mode_honors_one_time_approval() {
     let temp = TempStorageRoot::new();
     let root = create_workspace_root(&temp);
     let root_string = root.to_string_lossy().to_string();
-    let policy = TerminalInteractionPolicy {
-        kind: TerminalInteractionPolicyKind::RequireRequestedTui,
-        reasons: vec!["user explicitly asked for an interactive shell".to_string()],
-        explicit_tui_request: true,
-        user_insistence: true,
-    };
+    let policy = select_terminal_interaction_policy();
 
     let error = execute_tool_with_progress(
         "terminal.session.start",
@@ -807,7 +1871,10 @@ fn plan_update_and_submit_persist_plan_state() {
         |_| {},
     )
     .expect("update draft");
-    assert_eq!(updated.get("kind").and_then(Value::as_str), Some("plan_draft_updated"));
+    assert_eq!(
+        updated.get("kind").and_then(Value::as_str),
+        Some("plan_draft_updated")
+    );
 
     let saved = registry_db::read_agent_plan(&storage_root, &session.id)
         .expect("read plan")
@@ -838,7 +1905,10 @@ fn plan_update_and_submit_persist_plan_state() {
     let submitted = registry_db::read_agent_plan(&storage_root, &session.id)
         .expect("read submitted plan")
         .expect("submitted plan exists");
-    assert_eq!(submitted.status, crate::agent::types::AgentPlanStatus::Submitted);
+    assert_eq!(
+        submitted.status,
+        crate::agent::types::AgentPlanStatus::Submitted
+    );
     assert_eq!(submitted.last_submitted_version, Some(1));
     assert_eq!(
         submitted.proposed_markdown.as_deref(),
@@ -851,7 +1921,7 @@ fn plan_mode_blocks_mutating_terminal_exec_commands() {
     let temp = TempStorageRoot::new();
     let root = create_workspace_root(&temp);
     let root_string = root.to_string_lossy().to_string();
-    let policy = select_terminal_interaction_policy("请先规划，不要直接实现");
+    let policy = select_terminal_interaction_policy();
 
     let result = execute_tool_with_progress(
         "terminal.exec",

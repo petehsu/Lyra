@@ -33,11 +33,14 @@ use crate::agent::terminal_policy::{
     select_terminal_interaction_policy, terminal_policy_payload, TerminalInteractionPolicy,
 };
 use crate::agent::tool_budget::ToolResultBudgetState;
+use crate::agent::tool_diagnostics::build_tool_error_payload;
 use crate::agent::tools::{
     cancel_plan_approval, cancel_plan_question, cleanup_transient_ai_sessions,
-    execute_tool_with_progress, grant_approval_once, plan_mode_tool_definitions,
-    readonly_tool_definitions, register_plan_approval_waiter, register_plan_question_waiter,
-    render_activated_skill_prompts, render_mcp_tools_prompt_json, ToolExecutionContext,
+    derive_workbench_web_routing_context, execute_tool_with_progress, grant_approval_once,
+    plan_mode_tool_definitions_for_input_with_context,
+    readonly_tool_definitions_for_input_with_context, register_plan_approval_waiter,
+    register_plan_question_waiter, render_activated_skill_prompts, render_mcp_tools_prompt_json,
+    tool_executes_serially, ToolExecutionContext, ToolRankingContext,
 };
 use crate::agent::turn_strategy::{select_turn_strategy, TurnStrategy};
 use crate::agent::types::{
@@ -46,8 +49,8 @@ use crate::agent::types::{
     AgentEnterPlanModeRequest, AgentGetPendingInteractionsRequest, AgentGetPlanRequest,
     AgentGetSessionRequest, AgentListSessionsRequest, AgentMessage, AgentPendingInteraction,
     AgentPendingInteractionKind, AgentPendingInteractionStatus, AgentPlanState, AgentPlanStatus,
-    AgentResolvePlanApprovalRequest, AgentRuntimeEvent, AgentSendTurnRequest,
-    AgentSendTurnResult, AgentSession, AgentSessionDetail, AgentToolCall, AgentTurn, AgentUsage,
+    AgentResolvePlanApprovalRequest, AgentRuntimeEvent, AgentSendTurnRequest, AgentSendTurnResult,
+    AgentSession, AgentSessionDetail, AgentToolCall, AgentTurn, AgentUsage,
     CommandApprovalSubmitRequest, AGENT_PLAN_APPROVAL_REQUIRED, AGENT_PLAN_QUESTION_REQUIRED,
     AGENT_PROFILE_NOT_FOUND, AGENT_PROVIDER_UNSUPPORTED, AGENT_TOOL_APPROVAL_REQUIRED,
     AGENT_TOOL_EXEC_FAILED, AGENT_TURN_FAILED,
@@ -196,6 +199,40 @@ fn emit_interaction_queue_updated(
         "interaction_queue_updated",
         json!({ "pendingInteractions": pending }),
     )
+}
+
+fn emit_tool_failure_diagnosed_event(
+    storage_root: &str,
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    tool_name: &str,
+    error_payload: &Value,
+) -> Result<()> {
+    let diagnosis = error_payload
+        .as_object()
+        .and_then(|value| value.get("diagnosis"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    emit_event(
+        storage_root,
+        session_id,
+        turn_id,
+        "tool_failure_diagnosed",
+        json!({
+            "toolCallId": tool_call_id,
+            "toolName": tool_name,
+            "error": error_payload,
+            "diagnosis": diagnosis,
+        }),
+    )
+}
+
+fn build_tool_ranking_context(storage_root: &str, session_id: &str) -> Result<ToolRankingContext> {
+    let tool_calls = registry_db::list_agent_tool_calls(storage_root, session_id)?;
+    Ok(ToolRankingContext {
+        workbench_web: derive_workbench_web_routing_context(&tool_calls),
+    })
 }
 
 fn normalize_project_root(value: &str) -> Result<String> {
@@ -630,6 +667,22 @@ impl TurnProgressGuardState {
 
 fn interaction_timeout_message(tool_calls: &[AgentToolCall]) -> Option<String> {
     tool_calls.iter().find_map(|tool_call| {
+        if tool_call.status == "failed"
+            && tool_call.error_code.as_deref() == Some(AGENT_TOOL_APPROVAL_REQUIRED)
+        {
+            return Some(
+                "I paused because a tool action needs your approval before I can continue."
+                    .to_string(),
+            );
+        }
+        if tool_call.status == "failed"
+            && tool_call.error_code.as_deref() == Some("AGENT_TOOL_DENIED")
+        {
+            return Some(
+                "I paused because a required tool action was denied, so I cannot claim it completed."
+                    .to_string(),
+            );
+        }
         let message = tool_call.error_message.as_deref()?;
         if message.contains("timed out waiting for user input")
             || message.contains("timed out waiting for user response")
@@ -645,7 +698,9 @@ fn interaction_timeout_message(tool_calls: &[AgentToolCall]) -> Option<String> {
 
 #[cfg(test)]
 mod interaction_guard_tests {
-    use super::{interaction_timeout_message, TurnProgressGuardState, AGENT_TURN_PAUSED_NO_PROGRESS};
+    use super::{
+        interaction_timeout_message, TurnProgressGuardState, AGENT_TURN_PAUSED_NO_PROGRESS,
+    };
     use crate::agent::types::AgentToolCall;
     use serde_json::json;
 
@@ -659,6 +714,22 @@ mod interaction_guard_tests {
             output: None,
             status: "failed".to_string(),
             error_code: Some("AGENT_TURN_FAILED".to_string()),
+            error_message: Some(message.to_string()),
+            started_at: 1,
+            finished_at: Some(2),
+        }
+    }
+
+    fn failed_tool_call_with_code(code: &str, message: &str) -> AgentToolCall {
+        AgentToolCall {
+            id: "tool-1".to_string(),
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            tool_name: "workbench.web_action.mutate".to_string(),
+            input: json!({}),
+            output: None,
+            status: "failed".to_string(),
+            error_code: Some(code.to_string()),
             error_message: Some(message.to_string()),
             started_at: 1,
             finished_at: Some(2),
@@ -683,6 +754,19 @@ mod interaction_guard_tests {
         let reason = reason.expect("pause reason");
         assert_eq!(reason.code, AGENT_TURN_PAUSED_NO_PROGRESS);
         assert!(reason.message.contains("waiting on a user decision"));
+    }
+
+    #[test]
+    fn progress_guard_pauses_on_approval_required_failure() {
+        let mut guard = TurnProgressGuardState::default();
+        let reason = guard.observe_tool_results(&[failed_tool_call_with_code(
+            "AGENT_TOOL_APPROVAL_REQUIRED",
+            "external tool requires user approval: workbench.web_action.mutate",
+        )]);
+        assert!(reason.is_some());
+        let reason = reason.expect("pause reason");
+        assert_eq!(reason.code, AGENT_TURN_PAUSED_NO_PROGRESS);
+        assert!(reason.message.contains("needs your approval"));
     }
 }
 
@@ -745,7 +829,10 @@ fn fingerprint_recoverable_failure(tool_calls: &[AgentToolCall]) -> Option<Strin
                 .as_ref()
                 .and_then(|output| output.get("kind"))
                 .and_then(Value::as_str)?;
-            if matches!(kind, "no_match" | "unchanged" | "interactive_advisory" | "interactive_policy_blocked") {
+            if matches!(
+                kind,
+                "no_match" | "unchanged" | "interactive_advisory" | "interactive_policy_blocked"
+            ) {
                 let path = extract_tool_path(tool_call).unwrap_or_default();
                 return Some(format!(
                     "recoverable:{}:{}:{}",
@@ -953,8 +1040,8 @@ fn ensure_plan_state(storage_root: &str, session_id: &str) -> Result<AgentPlanSt
 pub fn enter_plan_mode(request: AgentEnterPlanModeRequest) -> Result<AgentSessionDetail> {
     let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
     let session_id = normalize_required_text(&request.session_id, "sessionId")?;
-    let existing_session =
-        registry_db::read_agent_session(&storage_root, &session_id)?.ok_or_else(|| {
+    let existing_session = registry_db::read_agent_session(&storage_root, &session_id)?
+        .ok_or_else(|| {
             agent_error(
                 AGENT_TURN_FAILED,
                 format!("session not found: {session_id}"),
@@ -1171,7 +1258,7 @@ fn execute_tool_calls(
     let mut i = 0;
 
     while i < tool_calls.len() {
-        if is_write_tool(&tool_calls[i].name) {
+        if tool_executes_serially(&tool_calls[i].name) {
             // Serial execution for write tools
             let finished = execute_single_tool(
                 storage_root,
@@ -1191,7 +1278,7 @@ fn execute_tool_calls(
         } else {
             // Collect consecutive read-only tools into a batch
             let batch_start = i;
-            while i < tool_calls.len() && !is_write_tool(&tool_calls[i].name) {
+            while i < tool_calls.len() && !tool_executes_serially(&tool_calls[i].name) {
                 i += 1;
             }
             let batch = &tool_calls[batch_start..i];
@@ -1216,25 +1303,6 @@ fn execute_tool_calls(
     }
 
     Ok(results)
-}
-
-/// Determine if a tool name represents a write operation that must execute serially.
-fn is_write_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "filesystem.write"
-            | "filesystem.edit"
-            | "filesystem.multi_edit"
-            | "memory.remember"
-            | "request_user_input"
-            | "plan.update_draft"
-            | "plan.submit_for_approval"
-            | "terminal.exec"
-            | "terminal.session.start"
-            | "terminal.session.write"
-            | "terminal.session.read"
-            | "terminal.session.close"
-    )
 }
 
 fn complete_tool_call_and_push_result(
@@ -1411,7 +1479,9 @@ fn execute_single_tool(
                         emit_interaction_resolved_event(storage_root, &interaction)?;
                         emit_interaction_queue_updated(storage_root, session_id, turn_id)?;
                     }
-                    if decision == "allow_once" {
+                    // Always grant current-call approval token. For allow_always this guarantees
+                    // immediate re-execution succeeds even when no project root is bound.
+                    if decision == "allow_once" || decision == "allow_always" {
                         grant_approval_once(&tool_call_id, &approval_metadata);
                     }
                     // Persist "allow_always" rule if chosen
@@ -1457,13 +1527,36 @@ fn execute_single_tool(
                                 &retry_error.code,
                                 &retry_error.message,
                             )?;
+                            let error_payload = build_tool_error_payload(
+                                &invocation.name,
+                                &retry_error.code,
+                                &retry_error.message,
+                                retry_error.metadata,
+                            );
+                            emit_event(
+                                storage_root,
+                                session_id,
+                                turn_id,
+                                "tool_finished",
+                                json!({
+                                    "toolCallId": failed_call.id,
+                                    "toolName": failed_call.tool_name,
+                                    "status": "failed",
+                                    "error": error_payload.clone(),
+                                }),
+                            )?;
+                            emit_tool_failure_diagnosed_event(
+                                storage_root,
+                                session_id,
+                                turn_id,
+                                &failed_call.id,
+                                &failed_call.tool_name,
+                                &error_payload,
+                            )?;
                             let agent_error_result = json!({
                                 "ok": false,
                                 "recoverable": false,
-                                "error": {
-                                    "code": retry_error.code,
-                                    "message": retry_error.message,
-                                }
+                                "error": error_payload,
                             });
                             provider_messages.push(AgentInferenceMessage {
                                 role: AgentInferenceMessageRole::Tool,
@@ -1492,6 +1585,12 @@ fn execute_single_tool(
                         "AGENT_TOOL_DENIED",
                         "command execution denied by user",
                     )?;
+                    let error_payload = build_tool_error_payload(
+                        &invocation.name,
+                        "AGENT_TOOL_DENIED",
+                        "command execution denied by user",
+                        None,
+                    );
                     emit_event(
                         storage_root,
                         session_id,
@@ -1502,15 +1601,21 @@ fn execute_single_tool(
                             "toolName": failed_call.tool_name,
                             "status": "denied",
                             "user_message": "Command execution was denied by the user.",
+                            "error": error_payload.clone(),
                         }),
+                    )?;
+                    emit_tool_failure_diagnosed_event(
+                        storage_root,
+                        session_id,
+                        turn_id,
+                        &failed_call.id,
+                        &failed_call.tool_name,
+                        &error_payload,
                     )?;
                     let agent_error_result = json!({
                         "ok": false,
                         "recoverable": false,
-                        "error": {
-                            "code": "AGENT_TOOL_DENIED",
-                            "message": "command execution denied by user",
-                        }
+                        "error": error_payload,
                     });
                     provider_messages.push(AgentInferenceMessage {
                         role: AgentInferenceMessageRole::Tool,
@@ -1726,6 +1831,7 @@ fn execute_single_tool(
                     &error.code,
                     &error.message,
                 )?;
+                let error_metadata = error.metadata.clone();
 
                 // Classify the tool error for recovery strategy
                 let severity = classify_tool_error(
@@ -1740,6 +1846,12 @@ fn execute_single_tool(
                 // Emit runtime event with withholding — suppress transient errors
                 let withheld = error_withholding.process(severity.clone(), 0);
                 if let Some(user_msg) = withheld {
+                    let error_payload = build_tool_error_payload(
+                        &invocation.name,
+                        &error.code,
+                        &error.message,
+                        error_metadata.clone(),
+                    );
                     emit_event(
                         storage_root,
                         session_id,
@@ -1750,10 +1862,7 @@ fn execute_single_tool(
                             "toolName": failed_call.tool_name,
                             "status": "failed",
                             "user_message": user_msg,
-                            "error": {
-                                "code": error.code,
-                                "message": error.message,
-                            }
+                            "error": error_payload,
                         }),
                     )?;
                 } else {
@@ -1781,28 +1890,36 @@ fn execute_single_tool(
                     .error_message
                     .clone()
                     .unwrap_or_else(|| "tool execution failed".to_string());
+                let error_payload = build_tool_error_payload(
+                    &invocation.name,
+                    &code,
+                    &message,
+                    error_metadata.clone(),
+                );
 
                 // Build agent-facing error message — include recovery hints for recoverable errors
                 let agent_error_result = if severity.is_recoverable() {
                     json!({
                         "ok": false,
                         "recoverable": true,
-                        "error": {
-                            "code": code,
-                            "message": message,
-                            "hint": format!("This error is recoverable. Consider reading the latest state and retrying with adjusted parameters."),
-                        }
+                        "error": error_payload.clone(),
+                        "hint": format!("This error is recoverable. Consider reading the latest state and retrying with adjusted parameters."),
                     })
                 } else {
                     json!({
                         "ok": false,
                         "recoverable": false,
-                        "error": {
-                            "code": code,
-                            "message": message,
-                        }
+                        "error": error_payload.clone(),
                     })
                 };
+                emit_tool_failure_diagnosed_event(
+                    storage_root,
+                    session_id,
+                    turn_id,
+                    &failed_call.id,
+                    &failed_call.tool_name,
+                    &error_payload,
+                )?;
 
                 provider_messages.push(AgentInferenceMessage {
                     role: AgentInferenceMessageRole::Tool,
@@ -1872,6 +1989,7 @@ struct RawToolExecResult {
     tool_result: Option<serde_json::Value>,
     error_code: Option<String>,
     error_message: Option<String>,
+    error_metadata: Option<serde_json::Value>,
 }
 
 /// Execute tools concurrently in a pure-Rust context (no napi errors).
@@ -1895,11 +2013,13 @@ fn run_concurrent_tools(
                             tool_result: Some(value),
                             error_code: None,
                             error_message: None,
+                            error_metadata: None,
                         },
                         Err(err) => RawToolExecResult {
                             tool_result: None,
                             error_code: Some(err.code),
                             error_message: Some(err.message),
+                            error_metadata: err.metadata,
                         },
                     }
                 })
@@ -1913,6 +2033,7 @@ fn run_concurrent_tools(
                     tool_result: None,
                     error_code: Some("AGENT_TOOL_EXEC_FAILED".to_string()),
                     error_message: Some("concurrent tool execution panicked".to_string()),
+                    error_metadata: None,
                 })
             })
             .collect()
@@ -2023,6 +2144,13 @@ fn execute_readonly_batch(
             let error_msg = raw
                 .error_message
                 .unwrap_or_else(|| "tool execution failed".to_string());
+            let error_metadata = raw.error_metadata;
+            let error_payload = build_tool_error_payload(
+                &invocations[idx].name,
+                &error_code,
+                &error_msg,
+                error_metadata.clone(),
+            );
             let failed_call = registry_db::fail_agent_tool_call(
                 storage_root,
                 started_id,
@@ -2035,10 +2163,20 @@ fn execute_readonly_batch(
                 turn_id,
                 "tool_finished",
                 json!({"toolCallId": failed_call.id, "toolName": failed_call.tool_name, "status": "failed",
-                    "error": {"code": &error_code, "message": &error_msg}}),
+                    "error": error_payload.clone()}),
             );
-            let error_result =
-                json!({"ok": false, "error": {"code": error_code, "message": error_msg}});
+            let _ = emit_tool_failure_diagnosed_event(
+                storage_root,
+                session_id,
+                turn_id,
+                &failed_call.id,
+                &failed_call.tool_name,
+                &error_payload,
+            );
+            let error_result = json!({
+                "ok": false,
+                "error": error_payload
+            });
             let error_content =
                 serde_json::to_string(&error_result).unwrap_or_else(|_| "{}".to_string());
             results.push((failed_call, error_content));
@@ -2225,7 +2363,11 @@ fn build_plan_scope_reset_guidance(project_root: Option<&str>) -> String {
     )
 }
 
-fn select_plan_handoff_input(storage_root: &str, session_id: &str, fallback: &str) -> Result<String> {
+fn select_plan_handoff_input(
+    storage_root: &str,
+    session_id: &str,
+    fallback: &str,
+) -> Result<String> {
     let messages = registry_db::list_agent_messages(storage_root, session_id)?;
     let best = messages
         .iter()
@@ -2737,7 +2879,13 @@ fn run_provider_loop(
                 usage_accumulator.2,
                 usage_accumulator.3,
             );
-            Ok((failed_turn, Some(assistant_message), tool_trace.clone(), usage, None))
+            Ok((
+                failed_turn,
+                Some(assistant_message),
+                tool_trace.clone(),
+                usage,
+                None,
+            ))
         }
     }
 }
@@ -2752,7 +2900,10 @@ fn run_plan_implementation_handoff(
     approved_plan: &str,
 ) -> Result<AgentSendTurnResult> {
     let effective_project_root = session.project_root.clone();
-    let profile_id = session.profile_id.clone().unwrap_or_else(|| profile.id.clone());
+    let profile_id = session
+        .profile_id
+        .clone()
+        .unwrap_or_else(|| profile.id.clone());
     let handoff_input = select_plan_handoff_input(storage_root, session_id, fallback_input)?;
     let running_turn = registry_db::create_agent_turn(storage_root, session_id, &profile_id)?;
     emit_event(
@@ -2780,9 +2931,11 @@ fn run_plan_implementation_handoff(
     )?;
 
     let secrets = resolve_secret_values(&profile.secret_refs, None, &KeyringSecretStore)?;
-    let tools = readonly_tool_definitions();
+    let tool_ranking_context = build_tool_ranking_context(storage_root, session_id)?;
+    let tools =
+        readonly_tool_definitions_for_input_with_context(&handoff_input, Some(&tool_ranking_context));
     let turn_strategy = select_turn_strategy(&handoff_input);
-    let terminal_policy = select_terminal_interaction_policy(&handoff_input);
+    let terminal_policy = select_terminal_interaction_policy();
     let turn_context = build_turn_context(
         storage_root,
         session_id,
@@ -2871,8 +3024,8 @@ fn run_plan_implementation_handoff(
         request.reflection_min_tool_calls.unwrap_or(3),
     )?;
     cleanup_transient_ai_sessions(session_id, &running_turn.id);
-    let next_session =
-        registry_db::read_agent_session(storage_root, session_id)?.unwrap_or_else(|| session.clone());
+    let next_session = registry_db::read_agent_session(storage_root, session_id)?
+        .unwrap_or_else(|| session.clone());
     Ok(AgentSendTurnResult {
         session: next_session,
         turn,
@@ -2890,7 +3043,10 @@ fn send_plan_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> 
     initialize_session_storage(&storage_root, &session_id)?;
     let mut session =
         registry_db::read_agent_session(&storage_root, &session_id)?.ok_or_else(|| {
-            agent_error(AGENT_TURN_FAILED, format!("session not found: {session_id}"))
+            agent_error(
+                AGENT_TURN_FAILED,
+                format!("session not found: {session_id}"),
+            )
         })?;
     let previous_project_root = session.project_root.clone();
     let requested_project_root = request
@@ -2905,7 +3061,8 @@ fn send_plan_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> 
         if session.project_root.as_deref() != Some(normalized_root.as_str())
             || session.project_name.as_deref() != project_name.as_deref()
         {
-            project_scope_changed = previous_project_root.as_deref() != Some(normalized_root.as_str());
+            project_scope_changed =
+                previous_project_root.as_deref() != Some(normalized_root.as_str());
             session = registry_db::update_agent_session_project(
                 &storage_root,
                 &session_id,
@@ -2960,10 +3117,17 @@ fn send_plan_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> 
         Some(&running_turn.id),
         effective_project_root.as_deref(),
     )?;
-    emit_memory_events(&storage_root, &session_id, &running_turn.id, user_memory_events)?;
+    emit_memory_events(
+        &storage_root,
+        &session_id,
+        &running_turn.id,
+        user_memory_events,
+    )?;
     let secrets = resolve_secret_values(&profile.secret_refs, None, &KeyringSecretStore)?;
-    let tools = plan_mode_tool_definitions();
-    let terminal_policy = select_terminal_interaction_policy(&input);
+    let tool_ranking_context = build_tool_ranking_context(&storage_root, &session_id)?;
+    let tools =
+        plan_mode_tool_definitions_for_input_with_context(&input, Some(&tool_ranking_context));
+    let terminal_policy = select_terminal_interaction_policy();
     let turn_context = build_turn_context(
         &storage_root,
         &session_id,
@@ -3206,9 +3370,10 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
     )?;
 
     let secrets = resolve_secret_values(&profile.secret_refs, None, &KeyringSecretStore)?;
-    let tools = readonly_tool_definitions();
+    let tool_ranking_context = build_tool_ranking_context(&storage_root, &session_id)?;
+    let tools = readonly_tool_definitions_for_input_with_context(&input, Some(&tool_ranking_context));
     let turn_strategy = select_turn_strategy(&input);
-    let terminal_policy = select_terminal_interaction_policy(&input);
+    let terminal_policy = select_terminal_interaction_policy();
     let explicit_max_steps = request.max_steps.filter(|value| *value > 0);
     let effective_max_steps = explicit_max_steps.or(turn_strategy.default_max_steps());
     let effective_planning = turn_strategy.planning_enabled(request.enable_planning);

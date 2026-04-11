@@ -10,6 +10,7 @@ const HANDSHAKE_METHOD = "runtime.handshake";
 type RuntimeError = {
   readonly code: string;
   readonly message: string;
+  readonly details?: unknown;
 };
 
 type RuntimeEnvelope =
@@ -38,6 +39,7 @@ type PendingRequest = {
 };
 
 export type RuntimeEventListener = (event: string, payload: unknown) => void;
+export type RuntimeRequestHandler = (payload: unknown) => Promise<unknown> | unknown;
 
 export type LyraRuntimeClientOptions = {
   readonly storageRoot: string;
@@ -45,6 +47,8 @@ export type LyraRuntimeClientOptions = {
 
 export type LyraRuntimeClient = {
   readonly request: <T>(method: string, payload: unknown) => Promise<T>;
+  readonly registerRequestHandler: (method: string, handler: RuntimeRequestHandler) => void;
+  readonly unregisterRequestHandler: (method: string) => void;
   readonly subscribe: (listener: RuntimeEventListener) => () => void;
   readonly dispose: () => void;
 };
@@ -109,7 +113,10 @@ const resolveRuntimeBinaryPath = (): string => {
 };
 
 const toError = (error: RuntimeError | undefined, fallback: string): Error =>
-  new Error(error?.message ?? fallback);
+  Object.assign(new Error(error?.message ?? fallback), {
+    ...(error?.code === undefined ? {} : { code: error.code }),
+    ...(error?.details === undefined ? {} : { details: error.details })
+  });
 
 const createSocket = (socketPath: string): Promise<net.Socket> =>
   new Promise((resolve, reject) => {
@@ -138,6 +145,7 @@ export const createLyraRuntimeClient = (
   const binaryPath = resolveRuntimeBinaryPath();
   const pending = new Map<string, PendingRequest>();
   const listeners = new Set<RuntimeEventListener>();
+  const requestHandlers = new Map<string, RuntimeRequestHandler>();
   let socket: net.Socket | null = null;
   let child: ChildProcessWithoutNullStreams | null = null;
   let buffer = "";
@@ -168,6 +176,62 @@ export const createLyraRuntimeClient = (
   };
 
   const handleEnvelope = (envelope: RuntimeEnvelope): void => {
+    if (envelope.kind === "request") {
+      const handler = requestHandlers.get(envelope.method);
+      if (handler === undefined) {
+        try {
+          writeEnvelope({
+            kind: "response",
+            id: envelope.id,
+            ok: false,
+            error: {
+              code: "RUNTIME_HOST_METHOD_NOT_FOUND",
+              message: `No runtime host handler registered for ${envelope.method}`
+            }
+          });
+        } catch (error) {
+          console.warn("[lyra-runtime] failed to reply to runtime host request", error);
+        }
+        return;
+      }
+
+      void Promise.resolve(handler(envelope.payload))
+        .then((result) => {
+          writeEnvelope({
+            kind: "response",
+            id: envelope.id,
+            ok: true,
+            result
+          });
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          const code =
+            error !== null && typeof error === "object" && typeof (error as { code?: unknown }).code === "string"
+              ? (error as { code: string }).code
+              : "RUNTIME_HOST_REQUEST_FAILED";
+          const details =
+            error !== null && typeof error === "object" && "details" in (error as Record<string, unknown>)
+              ? (error as { details?: unknown }).details
+              : undefined;
+          try {
+            writeEnvelope({
+              kind: "response",
+              id: envelope.id,
+              ok: false,
+              error: {
+                code,
+                message,
+                ...(details === undefined ? {} : { details })
+              }
+            });
+          } catch (writeError) {
+            console.warn("[lyra-runtime] failed to reply to runtime host request", writeError);
+          }
+        });
+      return;
+    }
+
     if (envelope.kind === "response") {
       const pendingRequest = pending.get(envelope.id);
       if (pendingRequest === undefined) {
@@ -324,6 +388,12 @@ export const createLyraRuntimeClient = (
       await ensureStarted();
       return await sendRequestUnsafe<T>(method, payload);
     },
+    registerRequestHandler: (method: string, handler: RuntimeRequestHandler) => {
+      requestHandlers.set(method, handler);
+    },
+    unregisterRequestHandler: (method: string) => {
+      requestHandlers.delete(method);
+    },
     subscribe: (listener: RuntimeEventListener) => {
       listeners.add(listener);
       return () => {
@@ -333,6 +403,7 @@ export const createLyraRuntimeClient = (
     dispose: () => {
       disposed = true;
       listeners.clear();
+      requestHandlers.clear();
       rejectAllPending("Lyra runtime client disposed");
       socket?.destroy();
       socket = null;

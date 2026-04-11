@@ -275,7 +275,10 @@ fn round_trips_pending_interactions() {
 
     let filtered = registry_db::list_agent_pending_interactions(&storage_root, &session.id)
         .expect("list pending interactions after resolve");
-    assert!(filtered.is_empty(), "resolved interactions should not stay in pending list");
+    assert!(
+        filtered.is_empty(),
+        "resolved interactions should not stay in pending list"
+    );
 
     let reloaded = registry_db::read_agent_pending_interaction(&storage_root, &resolved.id)
         .expect("read resolved interaction")

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
 import type {
+  WorkspaceNavigationTarget,
   WorkspaceAppTabMetaRequest,
   WorkspaceAppTabOpenRequest,
+  WorkspaceResolvedNavigation,
   WorkspaceSearchMode,
   WorkspaceTabInsertOptions,
   WorkspaceTab,
@@ -42,11 +44,11 @@ const DEFAULT_OPTIONS: WorkspaceTabsOptions = {
 
 const createTabId = (serial: number): string => `browser-tab-${serial}`;
 
-const createSearchTab = (
-  serial: number,
+const createSearchTabWithId = (
+  id: string,
   config: WorkspaceTabsConfig
 ): WorkspaceTab => ({
-  id: createTabId(serial),
+  id,
   title: config.homeTabTitle,
   pageKind: "search",
   inputValue: "",
@@ -57,11 +59,16 @@ const createSearchTab = (
   resultMode: "standard"
 });
 
-const createSettingsTab = (
+const createSearchTab = (
   serial: number,
   config: WorkspaceTabsConfig
+): WorkspaceTab => createSearchTabWithId(createTabId(serial), config);
+
+const createSettingsTabWithId = (
+  id: string,
+  config: WorkspaceTabsConfig
 ): WorkspaceTab => ({
-  id: createTabId(serial),
+  id,
   title: config.settingsTabTitle,
   pageKind: "settings",
   inputValue: "",
@@ -72,12 +79,17 @@ const createSettingsTab = (
   resultMode: "standard"
 });
 
-const createTerminalTab = (
+const createSettingsTab = (
   serial: number,
+  config: WorkspaceTabsConfig
+): WorkspaceTab => createSettingsTabWithId(createTabId(serial), config);
+
+const createTerminalTabWithId = (
+  id: string,
   terminalTabId: string,
   title: string
 ): WorkspaceTab => ({
-  id: createTabId(serial),
+  id,
   title,
   pageKind: "terminal",
   inputValue: "",
@@ -89,11 +101,17 @@ const createTerminalTab = (
   terminalTabId
 });
 
-const createAppTab = (
+const createTerminalTab = (
   serial: number,
+  terminalTabId: string,
+  title: string
+): WorkspaceTab => createTerminalTabWithId(createTabId(serial), terminalTabId, title);
+
+const createAppTabWithId = (
+  id: string,
   request: WorkspaceAppTabOpenRequest
 ): WorkspaceTab => ({
-  id: createTabId(serial),
+  id,
   title: request.title,
   pageKind: "app",
   inputValue: "",
@@ -111,6 +129,11 @@ const createAppTab = (
     : { fileSessionId: request.fileSessionId }),
   ...(request.isDirty === undefined ? {} : { isDirty: request.isDirty })
 });
+
+const createAppTab = (
+  serial: number,
+  request: WorkspaceAppTabOpenRequest
+): WorkspaceTab => createAppTabWithId(createTabId(serial), request);
 
 const looksLikeUrl = (value: string): boolean => URL_OR_DOMAIN_PATTERN.test(value);
 
@@ -138,12 +161,12 @@ const toSearchTitle = (query: string, maxLength: number): string => {
   return `${trimmed.slice(0, maxLength)}...`;
 };
 
-const createPageTab = (
-  serial: number,
+const createPageTabWithId = (
+  id: string,
   address: string,
   title?: string
 ): WorkspaceTab => ({
-  id: createTabId(serial),
+  id,
   title: title?.trim().length ? title.trim() : toPageTitle(address),
   pageKind: "page",
   inputValue: address,
@@ -153,6 +176,36 @@ const createPageTab = (
   searchMode: "standard",
   resultMode: "standard"
 });
+
+const createPageTab = (
+  serial: number,
+  address: string,
+  title?: string
+): WorkspaceTab => createPageTabWithId(createTabId(serial), address, title);
+
+const createResultsTabWithId = (
+  id: string,
+  query: string,
+  config: WorkspaceTabsConfig,
+  mode: WorkspaceSearchMode
+): WorkspaceTab => ({
+  id,
+  title: toSearchTitle(query, config.maxSearchTitleLength),
+  pageKind: "results",
+  inputValue: query,
+  displayAddress: `${config.homeSearchAddress}?q=${encodeURIComponent(query)}`,
+  faviconUrl: undefined,
+  query,
+  searchMode: "standard",
+  resultMode: mode
+});
+
+const createResultsTab = (
+  serial: number,
+  query: string,
+  config: WorkspaceTabsConfig,
+  mode: WorkspaceSearchMode
+): WorkspaceTab => createResultsTabWithId(createTabId(serial), query, config, mode);
 
 const toSafeAddress = (value: string): string | null => {
   const normalized = normalizeUrl(value.trim());
@@ -170,6 +223,36 @@ const toSafeAddress = (value: string): string | null => {
 const toNonEmptyTrimmed = (value: string): string | null => {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+const resolveReplacementTab = (
+  current: WorkspaceTab,
+  request: WorkspaceResolvedNavigation,
+  config: WorkspaceTabsConfig
+): WorkspaceTab => {
+  switch (request.kind) {
+    case "home":
+      return createSearchTabWithId(current.id, config);
+    case "page":
+      return createPageTabWithId(current.id, request.address);
+    case "search":
+      return createResultsTabWithId(current.id, request.query, config, request.mode);
+  }
+};
+
+const createNavigationTab = (
+  serial: number,
+  request: WorkspaceResolvedNavigation,
+  config: WorkspaceTabsConfig
+): WorkspaceTab => {
+  switch (request.kind) {
+    case "home":
+      return createSearchTab(serial, config);
+    case "page":
+      return createPageTab(serial, request.address);
+    case "search":
+      return createResultsTab(serial, request.query, config, request.mode);
+  }
 };
 
 const clampTargetIndex = (targetIndex: number, maxExclusive: number): number => {
@@ -1117,6 +1200,39 @@ export const useWorkspaceTabsModel = (
     }));
   }, [activeTab, patchTab]);
 
+  const navigateResolvedInput = useCallback((
+    request: WorkspaceResolvedNavigation,
+    options?: {
+      readonly target?: WorkspaceNavigationTarget;
+    }
+  ): string => {
+    const target = options?.target ?? "active-tab";
+
+    if (target === "active-tab") {
+      const current = activeTab;
+      if (current === undefined) {
+        return "";
+      }
+
+      const replacement = resolveReplacementTab(current, request, config);
+      patchTab(current.id, () => replacement);
+      latestInputRef.current = replacement.inputValue;
+      return replacement.id;
+    }
+
+    const serial = nextTabSerialRef.current;
+    const nextTab = createNavigationTab(serial, request, config);
+    nextTabSerialRef.current += 1;
+
+    setState((current) => ({
+      ...current,
+      tabs: [...current.tabs, nextTab],
+      activeTabId: nextTab.id
+    }));
+    latestInputRef.current = nextTab.inputValue;
+    return nextTab.id;
+  }, [activeTab, config, patchTab]);
+
   const commitActiveInput = useCallback((): void => {
     const current = activeTab;
     if (current === undefined) {
@@ -1126,16 +1242,7 @@ export const useWorkspaceTabsModel = (
     const nextInput = latestInputRef.current.trim();
     if (nextInput.length === 0) {
       if (current.pageKind !== "search") {
-        patchTab(current.id, (tab) => ({
-          ...tab,
-          pageKind: "search",
-          title: config.homeTabTitle,
-          displayAddress: config.homeSearchAddress,
-          inputValue: "",
-          query: undefined,
-          faviconUrl: undefined,
-          resultMode: tab.searchMode ?? tab.resultMode ?? "standard"
-        }));
+        navigateResolvedInput({ kind: "home" });
       }
       return;
     }
@@ -1145,31 +1252,19 @@ export const useWorkspaceTabsModel = (
       if (safeAddress === null) {
         return;
       }
-      patchTab(current.id, (tab) => ({
-        ...tab,
-        pageKind: "page",
-        title: toPageTitle(safeAddress),
-        displayAddress: safeAddress,
-        inputValue: safeAddress,
-        query: undefined,
-        faviconUrl: undefined,
-        resultMode: tab.resultMode ?? tab.searchMode ?? "standard"
-      }));
-      latestInputRef.current = safeAddress;
+      navigateResolvedInput({
+        kind: "page",
+        address: safeAddress
+      });
       return;
     }
 
-    patchTab(current.id, (tab) => ({
-      ...tab,
-      pageKind: "results",
-      title: toSearchTitle(nextInput, config.maxSearchTitleLength),
-      displayAddress: `${config.homeSearchAddress}?q=${encodeURIComponent(nextInput)}`,
-      inputValue: nextInput,
+    navigateResolvedInput({
+      kind: "search",
       query: nextInput,
-      faviconUrl: undefined,
-      resultMode: tab.searchMode ?? "standard"
-    }));
-  }, [activeTab, config.homeSearchAddress, config.homeTabTitle, config.maxSearchTitleLength, patchTab]);
+      mode: current.searchMode ?? "standard"
+    });
+  }, [activeTab, navigateResolvedInput]);
 
   const isTabInSplit = useCallback(
     (tabId: string): boolean => state.splitGroupTabIds.includes(tabId),
@@ -1246,6 +1341,7 @@ export const useWorkspaceTabsModel = (
     closeTab,
     updatePageMeta,
     syncPageRuntimeState,
+    navigateResolvedInput,
     updateActiveInput,
     setActiveSearchMode,
     commitActiveInput

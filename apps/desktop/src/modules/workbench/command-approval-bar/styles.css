@@ -1,18 +1,23 @@
 /* Command Approval Bar — matches input box width, narrower height */
 .lyra-command-approval-bar {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   border-top: var(--lyra-unit-1) solid var(--lyra-border-color, rgba(255, 255, 255, 0.1));
   background: var(--lyra-surface-variant, rgba(255, 255, 255, 0.05));
   backdrop-filter: blur(var(--lyra-unit-8));
+  overflow: hidden;
 }
 
 .lyra-command-approval-bar__inner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: var(--lyra-unit-6) var(--lyra-unit-12);
   gap: var(--lyra-unit-12);
-  min-height: var(--lyra-unit-36);
+  min-height: var(--lyra-unit-40);
+  min-width: 0;
 }
 
 /* Left: tool icon + command */
@@ -20,9 +25,8 @@
   display: flex;
   align-items: center;
   gap: var(--lyra-unit-6);
-  flex-shrink: 0;
+  flex: 1 1 var(--lyra-unit-220);
   min-width: 0;
-  flex: 1;
 }
 
 .lyra-command-approval-bar__tool-icon {
@@ -31,9 +35,17 @@
 }
 
 .lyra-command-approval-bar__command {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   font-family: var(--lyra-font-mono, 'JetBrains Mono', 'Fira Code', monospace);
   font-size: var(--lyra-unit-12);
   color: var(--lyra-text-primary, rgba(255, 255, 255, 0.9));
+}
+
+.lyra-command-approval-bar__command code {
+  display: block;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -53,7 +65,8 @@
   display: flex;
   align-items: center;
   gap: var(--lyra-unit-4);
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .lyra-command-approval-bar__risk-icon {
@@ -85,8 +98,12 @@
 .lyra-command-approval-bar__actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 100%;
+  min-width: 0;
+  width: 100%;
+  flex-wrap: wrap;
   gap: var(--lyra-unit-6);
-  flex-shrink: 0;
 }
 
 .lyra-command-approval-bar__btn {
@@ -98,6 +115,7 @@
   cursor: pointer;
   transition: opacity 0.15s;
   white-space: nowrap;
+  max-width: 100%;
 }
 
 .lyra-command-approval-bar__btn:hover {
@@ -125,17 +143,32 @@
   border-top: var(--lyra-unit-1) solid var(--lyra-border-color, rgba(255, 255, 255, 0.06));
   font-size: var(--lyra-unit-12);
   color: var(--lyra-text-secondary, rgba(255, 255, 255, 0.7));
+  min-width: 0;
+  width: 100%;
 }
 
 .lyra-command-approval-bar__detail-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(var(--lyra-unit-96), auto) minmax(0, 1fr);
   gap: var(--lyra-unit-8);
   padding: var(--lyra-unit-3) 0;
+  min-width: 0;
 }
 
 .lyra-command-approval-bar__detail-label {
   font-weight: 600;
   color: var(--lyra-text-primary, rgba(255, 255, 255, 0.9));
   flex-shrink: 0;
-  min-width: var(--lyra-unit-120);
+  min-width: var(--lyra-unit-96);
+}
+
+.lyra-command-approval-bar__detail-row > span,
+.lyra-command-approval-bar__detail-row > code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.lyra-command-approval-bar__detail-row > code {
+  white-space: pre-wrap;
 }

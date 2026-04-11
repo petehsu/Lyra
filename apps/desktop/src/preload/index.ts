@@ -108,9 +108,12 @@ import {
   type SearchRebuildIndexRequest,
   type SearchRebuildIndexResponse,
   type WorkbenchBrowserEvent,
+  type WorkbenchBrowserSetElementPickerModeRequest,
   type WorkbenchBrowserLayoutSnapshot,
   type WorkbenchBrowserNavigateRequest,
   type WorkbenchBrowserNavigateResult,
+  type WorkbenchObservationQueryRequest,
+  type WorkbenchObservationQueryResult,
   type WorkbenchBrowserPageRuntimeState,
   type WorkbenchBrowserReadPageStateRequest,
   type WorkbenchBrowserTopologySnapshot,
@@ -164,6 +167,12 @@ const lspEventListeners = new Set<(event: LspRuntimeEvent) => void>();
 let lspEventBridgeReady = false;
 const capabilityEventListeners = new Set<(event: CapabilityRuntimeEvent) => void>();
 let capabilityEventBridgeReady = false;
+let workbenchObservationHandler:
+  | ((
+      request: WorkbenchObservationQueryRequest
+    ) => Promise<WorkbenchObservationQueryResult> | WorkbenchObservationQueryResult)
+  | null = null;
+let workbenchObservationBridgeReady = false;
 
 const ensureTerminalEventBridge = (): void => {
   if (terminalEventBridgeReady) {
@@ -322,6 +331,44 @@ const ensureCapabilityEventBridge = (): void => {
       for (const listener of capabilityEventListeners) {
         listener(payload);
       }
+    }
+  );
+};
+
+const ensureWorkbenchObservationBridge = (): void => {
+  if (workbenchObservationBridgeReady) {
+    return;
+  }
+  workbenchObservationBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.workbenchObservationQuery,
+    (_event: Electron.IpcRendererEvent, payload: WorkbenchObservationQueryRequest): void => {
+      const handler = workbenchObservationHandler;
+      if (handler === null) {
+        void ipcRenderer.invoke(LYRA_CHANNELS.workbenchObservationQueryResult, {
+          requestId: payload.requestId,
+          ok: false,
+          error: {
+            code: "renderer_bridge_unavailable",
+            message: "Renderer workbench observation handler is not registered."
+          }
+        } satisfies WorkbenchObservationQueryResult);
+        return;
+      }
+
+      void Promise.resolve(handler(payload))
+        .catch((error: unknown): WorkbenchObservationQueryResult => ({
+          requestId: payload.requestId,
+          ok: false,
+          error: {
+            code: "renderer_bridge_unavailable",
+            message: error instanceof Error ? error.message : String(error)
+          }
+        }))
+        .then((result) =>
+          ipcRenderer.invoke(LYRA_CHANNELS.workbenchObservationQueryResult, result)
+        );
     }
   );
 };
@@ -556,6 +603,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.workbenchBrowserReadPageState,
         request ?? {}
       ) as Promise<WorkbenchBrowserPageRuntimeState | null>,
+    setElementPickerMode: (request: WorkbenchBrowserSetElementPickerModeRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserSetElementPickerMode,
+        request
+      ) as Promise<void>,
     onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => {
       ensureWorkbenchBrowserEventBridge();
       workbenchBrowserEventListeners.add(listener);
@@ -724,6 +776,17 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       capabilityEventListeners.add(listener);
       return () => {
         capabilityEventListeners.delete(listener);
+      };
+    }
+  },
+  workbenchObservation: {
+    registerHandler: (handler) => {
+      ensureWorkbenchObservationBridge();
+      workbenchObservationHandler = handler;
+      return () => {
+        if (workbenchObservationHandler === handler) {
+          workbenchObservationHandler = null;
+        }
       };
     }
   },

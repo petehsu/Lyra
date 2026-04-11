@@ -265,7 +265,7 @@ vi.mock("../workspace-surface-router", () => ({
 import { WorkbenchShell } from "../index";
 import { readWorkbenchStateSync, resetWorkbenchStateStorageForTests } from "../../state-storage";
 
-const setDesktopApiPlatform = (platform: NodeJS.Platform): void => {
+const setDesktopApiPlatform = (platform: NodeJS.Platform) => {
   const now = Date.now();
   const desktopApi = {
     windowControls: {
@@ -532,6 +532,7 @@ const setDesktopApiPlatform = (platform: NodeJS.Platform): void => {
       reload: vi.fn(async () => undefined),
       stop: vi.fn(async () => undefined),
       readPageState: vi.fn(async () => null),
+      setElementPickerMode: vi.fn(async () => undefined),
       onEvent: vi.fn(() => () => undefined)
     },
     mcp: {
@@ -606,6 +607,9 @@ const setDesktopApiPlatform = (platform: NodeJS.Platform): void => {
       readSync: vi.fn(() => null),
       writeSync: vi.fn(),
       removeSync: vi.fn()
+    },
+    workbenchObservation: {
+      registerHandler: vi.fn(() => () => undefined)
     }
   } as any;
 
@@ -614,6 +618,7 @@ const setDesktopApiPlatform = (platform: NodeJS.Platform): void => {
     writable: true,
     value: desktopApi
   });
+  return desktopApi;
 };
 
 describe("workbench shell", () => {
@@ -763,5 +768,25 @@ describe("workbench shell", () => {
     expect(screen.getByRole("button", { name: "最小化" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "最大化切换" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关闭" })).toBeInTheDocument();
+  });
+
+  test("shows element picker only on active page tabs and toggles browser mode", async () => {
+    const desktopApi = setDesktopApiPlatform("linux");
+    render(<WorkbenchShell />);
+
+    expect(screen.queryByRole("button", { name: "开启元素选择器" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开官方文档" }));
+
+    const pickerButton = await screen.findByRole("button", { name: "开启元素选择器" });
+    fireEvent.click(pickerButton);
+
+    expect(desktopApi.workbenchBrowser.setElementPickerMode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tabId: expect.any(String),
+        enabled: true,
+        appearance: expect.any(Object)
+      })
+    );
   });
 });

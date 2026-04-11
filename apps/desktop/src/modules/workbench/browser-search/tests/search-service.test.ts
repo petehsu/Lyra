@@ -287,6 +287,7 @@ describe("aggregated search service", () => {
           reload: vi.fn(async () => undefined),
           stop: vi.fn(async () => undefined),
           readPageState: vi.fn(async () => null),
+          setElementPickerMode: vi.fn(async () => undefined),
           onEvent: vi.fn(() => () => undefined)
         },
         mcp: {
@@ -375,6 +376,9 @@ describe("aggregated search service", () => {
           readSync: vi.fn(() => null),
           writeSync: vi.fn(),
           removeSync: vi.fn()
+        },
+        workbenchObservation: {
+          registerHandler: vi.fn(() => () => undefined)
         }
       },
       query: "lyra",

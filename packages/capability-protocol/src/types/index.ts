@@ -1,4 +1,4 @@
-export const CAPABILITY_DOMAINS = ["filesystem", "terminal", "browser", "mcp"] as const;
+export const CAPABILITY_DOMAINS = ["filesystem", "terminal", "browser", "mcp", "workbench"] as const;
 export const CAPABILITY_KINDS = ["action", "resource", "event"] as const;
 export const CAPABILITY_RISKS = ["read", "write", "command", "network"] as const;
 export const CAPABILITY_APPROVAL_MODES = ["auto", "ask", "deny"] as const;
@@ -85,6 +85,7 @@ export type CapabilityError = {
   readonly code: string;
   readonly message: string;
   readonly retryable?: boolean;
+  readonly details?: unknown;
 };
 
 export type CapabilityApprovalPreview =

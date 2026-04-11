@@ -1165,10 +1165,18 @@ fn handle_hover(request: LspPositionRequest) -> Result<Option<LspHoverResult>> {
             let s = range.get("start");
             let e = range.get("end");
             (
-                s.and_then(|v| v.get("line")).and_then(Value::as_u64).map(|n| n as u32),
-                s.and_then(|v| v.get("character")).and_then(Value::as_u64).map(|n| n as u32),
-                e.and_then(|v| v.get("line")).and_then(Value::as_u64).map(|n| n as u32),
-                e.and_then(|v| v.get("character")).and_then(Value::as_u64).map(|n| n as u32),
+                s.and_then(|v| v.get("line"))
+                    .and_then(Value::as_u64)
+                    .map(|n| n as u32),
+                s.and_then(|v| v.get("character"))
+                    .and_then(Value::as_u64)
+                    .map(|n| n as u32),
+                e.and_then(|v| v.get("line"))
+                    .and_then(Value::as_u64)
+                    .map(|n| n as u32),
+                e.and_then(|v| v.get("character"))
+                    .and_then(Value::as_u64)
+                    .map(|n| n as u32),
             )
         } else {
             (None, None, None, None)

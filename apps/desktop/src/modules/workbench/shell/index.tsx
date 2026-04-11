@@ -68,11 +68,16 @@ import {
   syncCssVarsToDocumentRoot
 } from "./service";
 import { useWorkbenchBrowserLayoutSync } from "./browser-layout-sync";
+import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
+import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "./use-browser-search-model";
 import { usePanelLayoutModel } from "./use-panel-layout";
 import { useScrollbarVisibilityGuard } from "./use-scrollbar-visibility-guard";
 import { useTerminalWorkspaceActions } from "./use-terminal-workspace-actions";
+import { useTitlebarElementPickerModel } from "./use-titlebar-element-picker-model";
+import { useTitlebarNavigationModel } from "./use-titlebar-navigation-model";
 import { WorkspaceSurfaceRouter } from "./workspace-surface-router";
+import { attachWorkbenchObservationBridge } from "../observation/service";
 import type { WorkbenchBrowserPageRuntimeState } from "../../../shared/desktop-bridge";
 
 type PageNavigationState = {
@@ -108,7 +113,8 @@ export const WorkbenchShell = () => {
     deepSearchSiteExpansionEnabled: true,
     deepSearchProactiveDomainGuessingEnabled: true,
     deepSearchCrawlPolicy: "accessibility_only",
-    searchResultsSourceFilter: "all"
+    searchResultsSourceFilter: "all",
+    omniboxNonBrowserSubmitTarget: "new_tab"
   });
 
   const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() =>
@@ -183,6 +189,10 @@ export const WorkbenchShell = () => {
   const activeTabPageKind = activeTab?.pageKind ?? "search";
   const activePageTabId = activeTab?.pageKind === "page" ? activeTab.id : "";
   const activeBrowserTabId = activeTab?.pageKind === "page" ? activeTab.id : null;
+  const activePageRuntimeState =
+    activeBrowserTabId === null
+      ? null
+      : (pageRuntimeStateByTabId[activeBrowserTabId] ?? null);
   const visibleWorkspaceLayout = tabsModel.getVisibleWorkspaceLayout();
   const visibleBrowserPageDescriptors = useMemo(
     () =>
@@ -207,6 +217,7 @@ export const WorkbenchShell = () => {
   const terminalModel = useTerminalDockModel();
   const contextMenuModel = useContextMenuModel();
   const panelLayoutModel = usePanelLayoutModel();
+
   const themeVars = useMemo(
     () =>
       resolveThemeVars(
@@ -501,6 +512,19 @@ export const WorkbenchShell = () => {
     ] as const),
     [t]
   );
+  const settingOmniboxNonBrowserSubmitTargetOptions = useMemo(
+    () => [
+      {
+        value: "new_tab" as const,
+        label: t("settings.omniboxNonBrowserSubmitTargetNewTabLabel")
+      },
+      {
+        value: "replace_active_tab" as const,
+        label: t("settings.omniboxNonBrowserSubmitTargetReplaceActiveLabel")
+      }
+    ],
+    [t]
+  );
   const settingDeepSearchLocalOpenBehaviorOptions = useMemo(
     () => ([
       { value: "open_file", label: t("settings.deepSearchOpenFileLabel") },
@@ -682,6 +706,15 @@ export const WorkbenchShell = () => {
     desktopApi,
     onMetaChange: tabsModel.updateAppTabMeta
   });
+  useEffect(() => {
+    return attachWorkbenchObservationBridge({
+      desktopApi,
+      tabsModel,
+      fileEditorModel,
+      fileManagerModel,
+      terminalModel
+    });
+  }, [desktopApi, fileEditorModel, fileManagerModel, tabsModel, terminalModel]);
   const feedbackModel = useWorkbenchFeedbackModel();
   const notificationModel = useWorkbenchNotificationModel();
   const publishNotification = notificationModel.publishNotification;
@@ -1417,6 +1450,49 @@ export const WorkbenchShell = () => {
     }
   }, [fileManagerModel, tabsModel]);
 
+  const openDirectoryFromNavigation = useCallback(async (path: string): Promise<void> => {
+    const normalizedPath = path.trim();
+    if (normalizedPath.length === 0) {
+      return;
+    }
+
+    if (
+      activeTab?.pageKind === "app" &&
+      activeTab.appId === "file-manager" &&
+      activeTab.appInstanceId !== undefined
+    ) {
+      tabsModel.setActiveTab(activeTab.id);
+      await fileManagerModel.openDirectory(activeTab.appInstanceId, normalizedPath, false);
+      return;
+    }
+
+    const instance = fileManagerModel.createInstance();
+    tabsModel.openAppTab(instance);
+    await fileManagerModel.openDirectory(instance.appInstanceId, normalizedPath, false);
+  }, [activeTab, fileManagerModel, tabsModel]);
+
+  const titlebarNavigation = useTitlebarNavigationModel({
+    desktopApi,
+    activeTab,
+    activePageRuntimeState,
+    activeFileEditorState,
+    activeFileManagerState,
+    tabsModel,
+    omniboxNonBrowserSubmitTarget:
+      preferencesModel.preferences.omniboxNonBrowserSubmitTarget,
+    placeholder: t("navigation.titlebarPlaceholder"),
+    ariaLabel: t("navigation.titlebarAriaLabel"),
+    onOpenFilePath: (path) => onOpenFileFromManager(path),
+    onOpenDirectoryPath: openDirectoryFromNavigation
+  });
+  const titlebarElementPicker = useTitlebarElementPickerModel({
+    desktopApi,
+    activeTab,
+    enableLabel: t("navigation.elementPickerEnable"),
+    disableLabel: t("navigation.elementPickerDisable"),
+    activeLabel: t("navigation.elementPickerActive")
+  });
+
   const activeEditorReviewIndex = useMemo(
     () => editorReviewItems.findIndex((item) => item.id === activeEditorReviewId),
     [activeEditorReviewId, editorReviewItems]
@@ -2013,9 +2089,24 @@ export const WorkbenchShell = () => {
       onDragStartCapture={onRootDragStartCapture}
     >
       <header className={titlebarClassName}>
-        <div
-          className={isMac ? "lyra-titlebar-traffic-spacer" : undefined}
-          aria-hidden="true"
+        {isMac ? (
+          <div
+            className="lyra-titlebar-traffic-spacer"
+            aria-hidden="true"
+          />
+        ) : null}
+        <TitlebarNavigation
+          {...titlebarNavigation}
+          trailingControl={
+            titlebarElementPicker.visible ? (
+              <TitlebarElementPickerButton
+                active={titlebarElementPicker.enabled}
+                ariaLabel={titlebarElementPicker.ariaLabel}
+                activeDescription={titlebarElementPicker.activeDescription}
+                onToggle={titlebarElementPicker.onToggle}
+              />
+            ) : undefined
+          }
         />
         <div className="lyra-titlebar-fill" aria-hidden="true" />
         <div className="lyra-window-controls lyra-no-drag">
@@ -2211,6 +2302,7 @@ export const WorkbenchShell = () => {
                 searchAutoIndexLabel: t("settings.searchAutoIndexLabel"),
                 searchIndexStatusLabel: t("settings.searchIndexStatusLabel"),
                 searchRebuildIndexLabel: t("settings.searchRebuildIndexLabel"),
+                omniboxNonBrowserSubmitTargetLabel: t("settings.omniboxNonBrowserSubmitTargetLabel"),
                 localeValue: preferencesModel.preferences.locale,
                 themeValue: preferencesModel.preferences.theme,
                 terminalThemeValue:
@@ -2242,6 +2334,8 @@ export const WorkbenchShell = () => {
                     ? "idle"
                     : `${searchIndexStatus.state} · files ${searchIndexStatus.indexedFiles} · dirs ${searchIndexStatus.indexedDirs}${typeof searchIndexStatus.progress === "number" ? ` · ${Math.round(searchIndexStatus.progress * 100)}%` : ""}${typeof searchIndexStatus.error === "string" ? ` · ${searchIndexStatus.error}` : ""}`,
                 searchRebuildIndexPending,
+                omniboxNonBrowserSubmitTargetValue:
+                  preferencesModel.preferences.omniboxNonBrowserSubmitTarget,
                 localeOptions: settingLocaleOptions,
                 themeOptions: settingThemeOptions,
                 terminalThemeOptions: settingTerminalThemeOptions,
@@ -2253,6 +2347,8 @@ export const WorkbenchShell = () => {
                 deepSearchLocalOpenBehaviorOptions: settingDeepSearchLocalOpenBehaviorOptions,
                 deepSearchCrawlPolicyOptions: settingDeepSearchCrawlPolicyOptions,
                 searchWebEngineOptions: settingSearchWebEngineOptions,
+                omniboxNonBrowserSubmitTargetOptions:
+                  settingOmniboxNonBrowserSubmitTargetOptions,
                 aiLabels: settingsAiLabels,
                 aiModel: settingsAiModel,
                 onLocaleChange: preferencesModel.setLocale,
@@ -2288,7 +2384,9 @@ export const WorkbenchShell = () => {
                 onSearchEnableContentChange: preferencesModel.setSearchEnableContent,
                 onSearchIncludeHiddenChange: preferencesModel.setSearchIncludeHidden,
                 onSearchAutoIndexChange: preferencesModel.setSearchAutoIndexEnabled,
-                onSearchRebuildIndex
+                onSearchRebuildIndex,
+                onOmniboxNonBrowserSubmitTargetChange:
+                  preferencesModel.setOmniboxNonBrowserSubmitTarget
               }}
               onOpenFileFromManager={onOpenFileFromManager}
               onRevealPathInFileManager={(filePath) => {

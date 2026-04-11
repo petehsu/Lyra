@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
@@ -9,7 +10,6 @@ use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
-use rayon::prelude::*;
 
 const DEFAULT_RESULT_LIMIT: usize = 48;
 const MAX_RESULT_LIMIT: usize = 300;
@@ -757,7 +757,10 @@ fn clip_snippet(line: &str, max_chars: usize) -> String {
     trimmed.chars().take(max_chars).collect::<String>() + "..."
 }
 
-fn scan_content_for_query(file_path: &str, query_lower: &str) -> (ContentScanOutcome, Option<String>, Option<u64>) {
+fn scan_content_for_query(
+    file_path: &str,
+    query_lower: &str,
+) -> (ContentScanOutcome, Option<String>, Option<u64>) {
     let metadata = match fs::metadata(file_path) {
         Ok(metadata) => metadata,
         Err(_) => return (ContentScanOutcome::Unreadable, None, None),
@@ -801,14 +804,7 @@ fn apply_metadata_matching(
             let score = 120.0
                 + (query_lower.len().min(entry.lower_file_name.len()) as f64
                     / entry.lower_file_name.len().max(1) as f64);
-            update_candidate(
-                candidates,
-                entry,
-                MatchKind::FileName,
-                score,
-                None,
-                None,
-            );
+            update_candidate(candidates, entry, MatchKind::FileName, score, None, None);
         }
         if entry.lower_path.contains(query_lower) {
             let score = 85.0
@@ -824,14 +820,7 @@ fn apply_metadata_matching(
                     .map(|value| value == extension_query)
                     .unwrap_or(false)
                 {
-                    update_candidate(
-                        candidates,
-                        entry,
-                        MatchKind::Extension,
-                        102.0,
-                        None,
-                        None,
-                    );
+                    update_candidate(candidates, entry, MatchKind::Extension, 102.0, None, None);
                 }
             }
         }
@@ -933,7 +922,10 @@ fn find_matches(
     values
 }
 
-fn to_search_results(matches: Vec<CandidateMatch>, limit: usize) -> (Vec<SearchLocalResultItem>, bool) {
+fn to_search_results(
+    matches: Vec<CandidateMatch>,
+    limit: usize,
+) -> (Vec<SearchLocalResultItem>, bool) {
     let truncated = matches.len() > limit;
     let results = matches
         .into_iter()
@@ -1342,7 +1334,10 @@ pub fn search_local_json(request_json: String) -> Result<String, String> {
         &request.custom_roots,
         request.project_root.as_deref(),
     );
-    let root_paths = roots.iter().map(|value| normalize_path_string(value)).collect::<Vec<_>>();
+    let root_paths = roots
+        .iter()
+        .map(|value| normalize_path_string(value))
+        .collect::<Vec<_>>();
     if root_paths.is_empty() {
         return Err("resolved search roots are empty".to_string());
     }
@@ -1457,7 +1452,8 @@ fn run_search_local_stream_worker(
     };
     let mut candidates = HashMap::<String, CandidateMatch>::new();
 
-    if let Some((entries, status)) = read_cached_entries(request.scope_preset, include_hidden, &root_paths)
+    if let Some((entries, status)) =
+        read_cached_entries(request.scope_preset, include_hidden, &root_paths)
     {
         stats.used_index = true;
         stats.scanned_files = status.indexed_files;
@@ -1820,7 +1816,10 @@ pub fn rebuild_search_index_json(request_json: String) -> Result<String, String>
         &request.custom_roots,
         request.project_root.as_deref(),
     );
-    let root_paths = roots.iter().map(|value| normalize_path_string(value)).collect::<Vec<_>>();
+    let root_paths = roots
+        .iter()
+        .map(|value| normalize_path_string(value))
+        .collect::<Vec<_>>();
     if root_paths.is_empty() {
         return Err("resolved index roots are empty".to_string());
     }
@@ -1889,7 +1888,8 @@ pub fn read_search_index_status_json(_request_json: String) -> Result<String, St
     let guard = search_index_store()
         .read()
         .map_err(|_| "search index state lock poisoned".to_string())?;
-    serde_json::to_string(&guard.status).map_err(|error| format!("serialize response failed: {error}"))
+    serde_json::to_string(&guard.status)
+        .map_err(|error| format!("serialize response failed: {error}"))
 }
 
 #[allow(dead_code)]
@@ -2034,10 +2034,7 @@ mod tests {
             .get("status")
             .and_then(Value::as_object)
             .expect("status object");
-        assert_eq!(
-            status.get("state").and_then(Value::as_str),
-            Some("ready")
-        );
+        assert_eq!(status.get("state").and_then(Value::as_str), Some("ready"));
         assert!(
             status
                 .get("indexedFiles")
@@ -2125,7 +2122,10 @@ mod tests {
         );
 
         let read_after_cancel = search_local_stream_read_json(cancel_request.to_string());
-        assert!(read_after_cancel.is_err(), "cancelled stream should no longer be readable");
+        assert!(
+            read_after_cancel.is_err(),
+            "cancelled stream should no longer be readable"
+        );
 
         fs::remove_dir_all(root).expect("cleanup temp root");
     }

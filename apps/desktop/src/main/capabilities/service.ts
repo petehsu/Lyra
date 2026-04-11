@@ -17,11 +17,16 @@ import type {
 import type { FilesNativeBindings } from "../files/types";
 import type { McpIpcBridge } from "../mcp/types";
 import type { TerminalIpcBridge } from "../terminal/types";
+import type { WorkbenchObservationService } from "../workbench-observation/types";
+import type { WorkbenchDocumentsService } from "../workbench-documents/types";
+import type { WorkbenchWebAutomationService } from "../workbench-web-automation/types";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { registerBrowserCapabilities } from "./adapters/browser";
+import { registerDocumentCapabilities } from "./adapters/documents";
 import { registerFilesystemCapabilities } from "./adapters/files";
 import { registerMcpCapabilities } from "./adapters/mcp";
 import { registerTerminalCapabilities } from "./adapters/terminal";
+import { registerWorkbenchCapabilities } from "./adapters/workbench";
 import { AppRegistry, CapabilityRegistry } from "./registry";
 import type { CapabilitiesIpcBridge } from "./types";
 
@@ -42,6 +47,9 @@ export const createCapabilitiesIpcBridge = ({
   terminalBridge,
   mcpBridge,
   workbenchBrowserBridge,
+  workbenchObservationService,
+  workbenchDocumentsService,
+  workbenchWebAutomationService,
   getWindow
 }: {
   readonly filesNativeBindings: FilesNativeBindings;
@@ -49,6 +57,9 @@ export const createCapabilitiesIpcBridge = ({
   readonly terminalBridge: TerminalIpcBridge;
   readonly mcpBridge: McpIpcBridge;
   readonly workbenchBrowserBridge: WorkbenchBrowserIpcBridge;
+  readonly workbenchObservationService: WorkbenchObservationService;
+  readonly workbenchDocumentsService: WorkbenchDocumentsService;
+  readonly workbenchWebAutomationService: WorkbenchWebAutomationService;
   readonly getWindow: () => BrowserWindow | null;
 }): CapabilitiesIpcBridge => {
   const appRegistry = new AppRegistry();
@@ -66,6 +77,14 @@ export const createCapabilitiesIpcBridge = ({
   appRegistry.register(registerTerminalCapabilities(capabilityRegistry, terminalBridge));
   appRegistry.register(registerBrowserCapabilities(capabilityRegistry, workbenchBrowserBridge));
   appRegistry.register(registerMcpCapabilities(capabilityRegistry, mcpBridge));
+  appRegistry.register(
+    registerWorkbenchCapabilities(
+      capabilityRegistry,
+      workbenchObservationService,
+      workbenchWebAutomationService
+    )
+  );
+  appRegistry.register(registerDocumentCapabilities(capabilityRegistry, workbenchDocumentsService));
 
   const readRegistry = (): CapabilityRegistrySnapshot => capabilityRegistry.snapshot(appRegistry.list());
 

@@ -7,6 +7,7 @@ import type {
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
 import type {
+  WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchSplitOverflowPolicy,
   WorkbenchSplitThreePaneLayout,
   WorkbenchSplitTriggerMode
@@ -52,6 +53,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly searchAutoIndexLabel: string;
   readonly searchIndexStatusLabel: string;
   readonly searchRebuildIndexLabel: string;
+  readonly omniboxNonBrowserSubmitTargetLabel: string;
   readonly localeValue: WorkbenchLocale;
   readonly themeValue: WorkbenchThemeId;
   readonly terminalThemeValue: TerminalThemePresetId;
@@ -75,6 +77,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly searchAutoIndexValue: boolean;
   readonly searchIndexStatusValue: string;
   readonly searchRebuildIndexPending: boolean;
+  readonly omniboxNonBrowserSubmitTargetValue: WorkbenchOmniboxNonBrowserSubmitTarget;
   readonly localeOptions: readonly Option<WorkbenchLocale>[];
   readonly themeOptions: readonly Option<WorkbenchThemeId>[];
   readonly terminalThemeOptions: readonly (Option<TerminalThemePresetId> & { readonly swatches: readonly string[] })[];
@@ -86,6 +89,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly deepSearchLocalOpenBehaviorOptions: readonly Option<"open_file" | "reveal_in_manager">[];
   readonly deepSearchCrawlPolicyOptions: readonly Option<SearchDeepCrawlPolicy>[];
   readonly searchWebEngineOptions: readonly Option<string>[];
+  readonly omniboxNonBrowserSubmitTargetOptions: readonly Option<WorkbenchOmniboxNonBrowserSubmitTarget>[];
   readonly aiLabels: SettingsAiLabels;
   readonly aiModel: SettingsAiModel;
   readonly onLocaleChange: (value: WorkbenchLocale) => void;
@@ -112,6 +116,9 @@ export type BrowserSettingsSurfaceProps = {
   readonly onSearchIncludeHiddenChange: (value: boolean) => void;
   readonly onSearchAutoIndexChange: (value: boolean) => void;
   readonly onSearchRebuildIndex: () => void;
+  readonly onOmniboxNonBrowserSubmitTargetChange: (
+    value: WorkbenchOmniboxNonBrowserSubmitTarget
+  ) => void;
 };
 
 const buildThemePreviewClassName = (value: WorkbenchThemeId): string =>
@@ -161,6 +168,7 @@ export const BrowserSettingsSurface = ({
   searchAutoIndexLabel,
   searchIndexStatusLabel,
   searchRebuildIndexLabel,
+  omniboxNonBrowserSubmitTargetLabel,
   localeValue,
   themeValue,
   terminalThemeValue,
@@ -184,6 +192,7 @@ export const BrowserSettingsSurface = ({
   searchAutoIndexValue,
   searchIndexStatusValue,
   searchRebuildIndexPending,
+  omniboxNonBrowserSubmitTargetValue,
   localeOptions,
   themeOptions,
   terminalThemeOptions,
@@ -195,6 +204,7 @@ export const BrowserSettingsSurface = ({
   deepSearchLocalOpenBehaviorOptions,
   deepSearchCrawlPolicyOptions,
   searchWebEngineOptions,
+  omniboxNonBrowserSubmitTargetOptions,
   aiLabels,
   aiModel,
   onLocaleChange,
@@ -218,7 +228,8 @@ export const BrowserSettingsSurface = ({
   onSearchEnableContentChange,
   onSearchIncludeHiddenChange,
   onSearchAutoIndexChange,
-  onSearchRebuildIndex
+  onSearchRebuildIndex,
+  onOmniboxNonBrowserSubmitTargetChange
 }: BrowserSettingsSurfaceProps) => {
   const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>("general");
   const categories = useMemo<readonly SettingsCategory[]>(
@@ -527,6 +538,34 @@ export const BrowserSettingsSurface = ({
             <header className="lyra-settings-category-header">
               <h2>{searchCategoryLabel}</h2>
             </header>
+
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{omniboxNonBrowserSubmitTargetLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={omniboxNonBrowserSubmitTargetLabel}>
+                {omniboxNonBrowserSubmitTargetOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    className={
+                      option.value === omniboxNonBrowserSubmitTargetValue
+                        ? "lyra-settings-choice lyra-settings-choice-active"
+                        : "lyra-settings-choice"
+                    }
+                    role="radio"
+                    aria-checked={option.value === omniboxNonBrowserSubmitTargetValue}
+                    onClick={() => {
+                      onOmniboxNonBrowserSubmitTargetChange(option.value);
+                    }}
+                  >
+                    <span className="lyra-settings-choice-main">
+                      <strong>{option.label}</strong>
+                      {option.description === undefined ? null : <small>{option.description}</small>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
 
             <section className="lyra-settings-group">
               <header className="lyra-settings-group-header">

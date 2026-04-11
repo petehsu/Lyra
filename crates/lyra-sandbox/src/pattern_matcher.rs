@@ -27,7 +27,10 @@ static COMPILED_PATTERNS: LazyLock<HashMap<&'static str, Regex>> = LazyLock::new
         (r"\beval\b", Regex::new(r"\beval\b").unwrap()),
         (r"\bexec\b", Regex::new(r"\bexec\b").unwrap()),
         // Base64 encoded commands
-        (r"base64\s+(-d|--decode)", Regex::new(r"base64\s+(-d|--decode)").unwrap()),
+        (
+            r"base64\s+(-d|--decode)",
+            Regex::new(r"base64\s+(-d|--decode)").unwrap(),
+        ),
         // Heredoc (using r#...# to allow quotes in raw string)
         (r#"<<\s*['"]?\w+"#, Regex::new(r#"<<\s*['"]?\w+"#).unwrap()),
         // Process substitution

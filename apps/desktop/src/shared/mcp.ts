@@ -59,6 +59,27 @@ export type McpCapabilityHint = {
   readonly description?: string;
 };
 
+export type McpToolExecutionMode = "parallel_readonly" | "serial";
+
+export type McpToolApprovalMode = "auto" | "ask" | "deny";
+
+export type McpToolSideEffectLevel =
+  | "read_only"
+  | "network_read"
+  | "session_mutation"
+  | "workspace_write"
+  | "external_mutation";
+
+export type McpToolSideEffects = {
+  readonly level: McpToolSideEffectLevel;
+  readonly mutatesWorkspace: boolean;
+  readonly mutatesMemory: boolean;
+  readonly mutatesExternalSystems: boolean;
+  readonly mutatesSessionState: boolean;
+  readonly opensInteractiveSession: boolean;
+  readonly readsNetwork: boolean;
+};
+
 export type McpCatalogQuickSetupFieldKind = "path" | "text";
 
 export type McpCatalogQuickSetupField = {
@@ -89,7 +110,7 @@ export type McpCatalogItem = {
   readonly defaultUrl?: string;
   readonly defaultEnvironment: readonly McpEnvironmentEntry[];
   readonly permissions: readonly string[];
-  readonly tools: readonly McpCapabilityHint[];
+  readonly tools: readonly McpIntrospectionItem[];
   readonly resources: readonly McpCapabilityHint[];
   readonly prompts: readonly McpCapabilityHint[];
   readonly quickSetup?: McpCatalogQuickSetup;
@@ -153,6 +174,11 @@ export type McpValidationResult = {
 export type McpIntrospectionItem = {
   readonly name: string;
   readonly description?: string;
+  readonly inputSchema?: Record<string, unknown>;
+  readonly outputSchema?: Record<string, unknown>;
+  readonly executionMode?: McpToolExecutionMode;
+  readonly approvalMode?: McpToolApprovalMode;
+  readonly sideEffects?: McpToolSideEffects;
 };
 
 export type McpIntrospectionSnapshot = {

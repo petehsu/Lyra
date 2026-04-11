@@ -30,7 +30,8 @@ const defaults: WorkbenchPreferences = {
   deepSearchSiteExpansionEnabled: true,
   deepSearchProactiveDomainGuessingEnabled: true,
   deepSearchCrawlPolicy: "accessibility_only",
-  searchResultsSourceFilter: "all"
+  searchResultsSourceFilter: "all",
+  omniboxNonBrowserSubmitTarget: "new_tab"
 };
 
 describe("workbench preferences", () => {
@@ -142,6 +143,7 @@ describe("workbench preferences", () => {
       result.current.setDeepSearchRestoreViewport(true);
       result.current.setDeepSearchLocalOpenBehavior("reveal_in_manager");
       result.current.setSearchResultsSourceFilter("local");
+      result.current.setOmniboxNonBrowserSubmitTarget("replace_active_tab");
     });
 
     expect(result.current.preferences).toEqual({
@@ -157,7 +159,8 @@ describe("workbench preferences", () => {
       deepSearchDefaultBudget: "high",
       deepSearchRestoreViewport: true,
       deepSearchLocalOpenBehavior: "reveal_in_manager",
-      searchResultsSourceFilter: "local"
+      searchResultsSourceFilter: "local",
+      omniboxNonBrowserSubmitTarget: "replace_active_tab"
     });
     expect(readWorkbenchPreferences(defaults)).toEqual({
       ...defaults,
@@ -172,7 +175,8 @@ describe("workbench preferences", () => {
       deepSearchDefaultBudget: "high",
       deepSearchRestoreViewport: true,
       deepSearchLocalOpenBehavior: "reveal_in_manager",
-      searchResultsSourceFilter: "local"
+      searchResultsSourceFilter: "local",
+      omniboxNonBrowserSubmitTarget: "replace_active_tab"
     });
   });
 });

@@ -5,7 +5,7 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad -p lyra-files-napi -p lyra-skills-napi",
+    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad -p lyra-files-napi -p lyra-skills-napi -p lyra-docs-napi",
     "lsp:bundle:rust-analyzer": "node --import tsx ../../tools/lsp/install-rust-analyzer.ts",
     "lsp:preflight": "node --import tsx ../../tools/lsp/preflight-lsp.ts",
     "release:preflight": "npm run typecheck && npm run test && node --import tsx ../../tools/lsp/preflight-lsp.ts --all-targets",
@@ -53,7 +53,7 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "cross-env": "^7.0.3",
-    "electron": "^33.2.1",
+    "electron": "41.2.0",
     "electron-vite": "^2.3.0",
     "jsdom": "^25.0.1",
     "pyright": "^1.1.408",

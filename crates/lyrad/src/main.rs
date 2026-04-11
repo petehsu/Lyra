@@ -1,3 +1,4 @@
+mod host_rpc;
 mod modules;
 
 use std::collections::HashSet;
@@ -7,26 +8,28 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
+use host_rpc::HostRpcClient;
 use lyra_ai_core::{
-    bind_agent_session_project_json, clear_rust_event_callback as clear_agent_event_callback,
-    create_agent_session_json, delete_agent_session_json, delete_ai_profile_json,
-    discover_ai_models_json, get_agent_pending_interactions_json, get_agent_plan_json,
+    answer_agent_plan_question_json, answer_agent_question_json, bind_agent_session_project_json,
+    clear_rust_event_callback as clear_agent_event_callback, create_agent_session_json,
+    delete_agent_session_json, delete_ai_profile_json, discover_ai_models_json,
+    enter_agent_plan_mode_json, get_agent_pending_interactions_json, get_agent_plan_json,
     get_agent_session_json, get_ai_memory_config_json, list_agent_sessions_json,
     read_ai_preset_catalog_json, read_ai_profiles_json, read_ai_provider_catalog_json,
-    refresh_ai_models_json, register_mcp_server_tools_bridge,
-    register_rust_event_callback as register_agent_event_callback, run_ai_memory_scheduler_tick,
-    send_agent_turn_json, set_default_ai_profile_json, set_skill_prompts,
-    submit_command_approval_json, unregister_mcp_server_tools, update_ai_memory_config_json,
-    answer_agent_plan_question_json, answer_agent_question_json, enter_agent_plan_mode_json,
-    resolve_agent_plan_approval_json, upsert_ai_profile_json, validate_ai_profile_json,
-    SkillPromptEntry,
+    refresh_ai_models_json, register_host_tools_bridge, register_mcp_server_tools_bridge,
+    register_rust_event_callback as register_agent_event_callback,
+    resolve_agent_plan_approval_json, run_ai_memory_scheduler_tick, send_agent_turn_json,
+    set_default_ai_profile_json, set_skill_prompts, submit_command_approval_json,
+    unregister_host_tool_set, unregister_mcp_server_tools, update_ai_memory_config_json,
+    upsert_ai_profile_json, validate_ai_profile_json, ExternalToolApprovalMode,
+    ExternalToolSideEffectLevel, ExternalToolSideEffects, HostToolDescriptor,
+    McpServerToolDescriptor, SkillPromptEntry, ToolExecutionMode,
 };
 use lyra_lsp_core::{
     change_document as lsp_change_document, clear_rust_event_callback as clear_lsp_event_callback,
     close_document as lsp_close_document, completion as lsp_completion,
     find_references as lsp_find_references, get_diagnostics as lsp_get_diagnostics,
-    goto_definition as lsp_goto_definition, hover as lsp_hover,
-    open_document as lsp_open_document,
+    goto_definition as lsp_goto_definition, hover as lsp_hover, open_document as lsp_open_document,
     register_rust_event_callback as register_lsp_event_callback,
     save_document as lsp_save_document, shutdown as shutdown_lsp, LspCompletionRequest,
     LspDiagnosticsRequest, LspDocumentRequest, LspPositionRequest,
@@ -79,6 +82,7 @@ const AGENT_RUNTIME_EVENT_NAME: &str = "agent.runtime";
 #[derive(Clone)]
 struct ConnectionContext {
     outgoing: UnboundedSender<RuntimeEnvelope>,
+    host_rpc: HostRpcClient,
 }
 
 #[derive(Debug, Deserialize)]
@@ -635,7 +639,11 @@ fn handle_mcp_request(method: &str, payload: Value) -> Result<Value, RuntimeErro
     }
 }
 
-fn handle_agent_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
+fn handle_agent_request(
+    method: &str,
+    payload: Value,
+    host_rpc: Option<&HostRpcClient>,
+) -> Result<Value, RuntimeError> {
     match method {
         "agent.sessions.list" => call_agent_json(payload, list_agent_sessions_json),
         "agent.sessions.create" => call_agent_json(payload, create_agent_session_json),
@@ -650,14 +658,22 @@ fn handle_agent_request(method: &str, payload: Value) -> Result<Value, RuntimeEr
         }
         "agent.questions.answer" => call_agent_void(payload, answer_agent_question_json),
         "agent.plan.answer_question" => call_agent_void(payload, answer_agent_plan_question_json),
-        "agent.plan.resolve_approval" => {
-            call_agent_json(payload, resolve_agent_plan_approval_json)
-        }
+        "agent.plan.resolve_approval" => call_agent_json(payload, resolve_agent_plan_approval_json),
         "agent.command_approval.submit" => call_agent_void(payload, submit_command_approval_json),
         "agent.memory.getConfig" => call_agent_json(payload, get_ai_memory_config_json),
         "agent.memory.updateConfig" => call_agent_json(payload, update_ai_memory_config_json),
         "agent.mcp_bridge.sync" => handle_mcp_bridge_sync(payload),
         "agent.mcp_bridge.remove" => handle_mcp_bridge_remove(payload),
+        "agent.host_tools.sync" => handle_host_tools_sync(
+            payload,
+            host_rpc.ok_or_else(|| {
+                runtime_error(
+                    "HOST_RPC_UNAVAILABLE",
+                    "host RPC is unavailable for this connection",
+                )
+            })?,
+        ),
+        "agent.host_tools.remove" => handle_host_tools_remove(payload),
         "agent.skills.set_prompts" => handle_set_skill_prompts(payload),
         _ => Err(runtime_error(
             "METHOD_NOT_FOUND",
@@ -699,11 +715,101 @@ struct McpBridgeTool {
     name: String,
     #[serde(default)]
     description: Option<String>,
+    #[serde(default)]
+    input_schema: Option<Value>,
+    #[serde(default)]
+    output_schema: Option<Value>,
+    #[serde(default)]
+    execution_mode: Option<String>,
+    #[serde(default)]
+    approval_mode: Option<String>,
+    #[serde(default)]
+    side_effects: Option<McpBridgeToolSideEffects>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpBridgeToolSideEffects {
+    #[serde(default)]
+    level: Option<String>,
+    #[serde(default)]
+    mutates_workspace: Option<bool>,
+    #[serde(default)]
+    mutates_memory: Option<bool>,
+    #[serde(default)]
+    mutates_external_systems: Option<bool>,
+    #[serde(default)]
+    mutates_session_state: Option<bool>,
+    #[serde(default)]
+    opens_interactive_session: Option<bool>,
+    #[serde(default)]
+    reads_network: Option<bool>,
+}
+
+fn parse_execution_mode(value: Option<&str>) -> Option<ToolExecutionMode> {
+    match value {
+        Some("parallel_readonly") => Some(ToolExecutionMode::ParallelReadOnly),
+        Some("serial") => Some(ToolExecutionMode::Serial),
+        _ => None,
+    }
+}
+
+fn parse_approval_mode(value: Option<&str>) -> Option<ExternalToolApprovalMode> {
+    match value {
+        Some("auto") => Some(ExternalToolApprovalMode::Auto),
+        Some("ask") => Some(ExternalToolApprovalMode::Ask),
+        Some("deny") => Some(ExternalToolApprovalMode::Deny),
+        _ => None,
+    }
+}
+
+fn parse_side_effect_level(value: Option<&str>) -> Option<ExternalToolSideEffectLevel> {
+    match value {
+        Some("read_only") => Some(ExternalToolSideEffectLevel::ReadOnly),
+        Some("network_read") => Some(ExternalToolSideEffectLevel::NetworkRead),
+        Some("session_mutation") => Some(ExternalToolSideEffectLevel::SessionMutation),
+        Some("workspace_write") => Some(ExternalToolSideEffectLevel::WorkspaceWrite),
+        Some("external_mutation") => Some(ExternalToolSideEffectLevel::ExternalMutation),
+        _ => None,
+    }
+}
+
+fn map_side_effects(value: Option<McpBridgeToolSideEffects>) -> Option<ExternalToolSideEffects> {
+    value.map(|effects| {
+        let mutates_workspace = effects.mutates_workspace.unwrap_or(false);
+        let mutates_memory = effects.mutates_memory.unwrap_or(false);
+        let mutates_external_systems = effects.mutates_external_systems.unwrap_or(false);
+        let mutates_session_state = effects.mutates_session_state.unwrap_or(false);
+        let opens_interactive_session = effects.opens_interactive_session.unwrap_or(false);
+        let reads_network = effects.reads_network.unwrap_or(false);
+        let level = parse_side_effect_level(effects.level.as_deref()).unwrap_or({
+            if mutates_workspace {
+                ExternalToolSideEffectLevel::WorkspaceWrite
+            } else if mutates_session_state || opens_interactive_session {
+                ExternalToolSideEffectLevel::SessionMutation
+            } else if mutates_external_systems {
+                ExternalToolSideEffectLevel::ExternalMutation
+            } else if reads_network {
+                ExternalToolSideEffectLevel::NetworkRead
+            } else {
+                ExternalToolSideEffectLevel::ReadOnly
+            }
+        });
+        ExternalToolSideEffects {
+            level,
+            mutates_workspace,
+            mutates_memory,
+            mutates_external_systems,
+            mutates_session_state,
+            opens_interactive_session,
+            reads_network,
+        }
+    })
 }
 
 fn handle_mcp_bridge_sync(payload: Value) -> Result<Value, RuntimeError> {
-    let request: McpBridgeSyncRequest = serde_json::from_value(payload)
-        .map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
+    let request: McpBridgeSyncRequest =
+        serde_json::from_value(payload).map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
 
     let server_id = request
         .server
@@ -718,10 +824,18 @@ fn handle_mcp_bridge_sync(payload: Value) -> Result<Value, RuntimeError> {
     // Unregister any previously registered tools for this server.
     unregister_mcp_server_tools(&server_id);
 
-    let tools: Vec<(String, String)> = request
+    let tools: Vec<McpServerToolDescriptor> = request
         .tools
         .into_iter()
-        .map(|t| (t.name, t.description.unwrap_or_default()))
+        .map(|t| McpServerToolDescriptor {
+            name: t.name,
+            description: t.description.unwrap_or_default(),
+            input_schema: t.input_schema,
+            output_schema: t.output_schema,
+            execution_mode: parse_execution_mode(t.execution_mode.as_deref()),
+            approval_mode: parse_approval_mode(t.approval_mode.as_deref()),
+            side_effects: map_side_effects(t.side_effects),
+        })
         .collect();
     let count = tools.len();
 
@@ -735,7 +849,9 @@ fn handle_mcp_bridge_sync(payload: Value) -> Result<Value, RuntimeError> {
             let arguments = input
                 .get("arguments")
                 .and_then(Value::as_object)
-                .cloned();
+                .cloned()
+                .or_else(|| input.as_object().cloned())
+                .unwrap_or_default();
             let call_request = json!({
                 "server": *server_config,
                 "toolName": tool_name,
@@ -760,10 +876,118 @@ struct McpBridgeRemoveRequest {
 }
 
 fn handle_mcp_bridge_remove(payload: Value) -> Result<Value, RuntimeError> {
-    let request: McpBridgeRemoveRequest = serde_json::from_value(payload)
-        .map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
+    let request: McpBridgeRemoveRequest =
+        serde_json::from_value(payload).map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
     unregister_mcp_server_tools(&request.server_id);
     Ok(json!({ "removed": true, "serverId": request.server_id }))
+}
+
+// --- Host Tool Bridge ---
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostToolsSyncRequest {
+    tool_set_id: String,
+    tools: Vec<HostBridgeTool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostBridgeTool {
+    name: String,
+    description: String,
+    #[serde(default)]
+    input_schema: Option<Value>,
+    #[serde(default)]
+    output_schema: Option<Value>,
+    #[serde(default)]
+    execution_mode: Option<String>,
+    #[serde(default)]
+    approval_mode: Option<String>,
+    #[serde(default)]
+    side_effects: Option<McpBridgeToolSideEffects>,
+    host_method: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostToolsRemoveRequest {
+    tool_set_id: String,
+}
+
+fn handle_host_tools_sync(payload: Value, host_rpc: &HostRpcClient) -> Result<Value, RuntimeError> {
+    let request: HostToolsSyncRequest =
+        serde_json::from_value(payload).map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
+    let tool_set_id = request.tool_set_id.trim().to_string();
+    if tool_set_id.is_empty() {
+        return Err(runtime_error("BAD_REQUEST", "missing toolSetId"));
+    }
+
+    unregister_host_tool_set(&tool_set_id);
+
+    let tools: Vec<HostToolDescriptor> = request
+        .tools
+        .into_iter()
+        .map(|tool| HostToolDescriptor {
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.input_schema.unwrap_or_else(|| {
+                json!({
+                    "type": "object",
+                    "additionalProperties": true
+                })
+            }),
+            output_schema: tool
+                .output_schema
+                .unwrap_or_else(|| json!({ "type": "object" })),
+            execution_mode: parse_execution_mode(tool.execution_mode.as_deref())
+                .unwrap_or(ToolExecutionMode::Serial),
+            approval_mode: parse_approval_mode(tool.approval_mode.as_deref())
+                .unwrap_or(ExternalToolApprovalMode::Auto),
+            side_effects: map_side_effects(tool.side_effects)
+                .unwrap_or_else(ExternalToolSideEffects::read_only),
+            host_method: tool.host_method,
+        })
+        .collect();
+    let registered_count = tools.len();
+    let bridge_client = host_rpc.clone();
+
+    register_host_tools_bridge(
+        &tool_set_id,
+        tools,
+        Arc::new(move |descriptor, input, context| {
+            let response = bridge_client.call_json_blocking(
+                &descriptor.host_method,
+                json!({
+                    "toolName": descriptor.name,
+                    "arguments": input,
+                    "context": {
+                        "storageRoot": context.storage_root,
+                        "projectRoot": context.project_root,
+                        "agentSessionId": context.agent_session_id,
+                        "agentTurnId": context.agent_turn_id,
+                        "toolCallId": context.tool_call_id,
+                        "planMode": context.plan_mode,
+                    }
+                }),
+                Duration::from_secs(3),
+            );
+            response.map_err(|error| lyra_ai_core::AgentToolError {
+                code: error.code,
+                message: error.message,
+                metadata: error.details,
+            })
+        }),
+    );
+
+    Ok(json!({ "registered": registered_count, "toolSetId": tool_set_id }))
+}
+
+fn handle_host_tools_remove(payload: Value) -> Result<Value, RuntimeError> {
+    let request: HostToolsRemoveRequest =
+        serde_json::from_value(payload).map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
+    unregister_host_tool_set(&request.tool_set_id);
+    Ok(json!({ "removed": true, "toolSetId": request.tool_set_id }))
 }
 
 // --- Skill Prompt Bridge ---
@@ -783,8 +1007,8 @@ struct SkillPromptPayload {
 }
 
 fn handle_set_skill_prompts(payload: Value) -> Result<Value, RuntimeError> {
-    let request: SetSkillPromptsRequest = serde_json::from_value(payload)
-        .map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
+    let request: SetSkillPromptsRequest =
+        serde_json::from_value(payload).map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
 
     let entries: Vec<SkillPromptEntry> = request
         .prompts
@@ -832,13 +1056,25 @@ fn handle_runtime_request(method: &str, payload: Value) -> Result<Value, Runtime
         "models.refresh" => call_json(payload, refresh_ai_models_json),
         method if method.starts_with("search.") => handle_search_request(method, payload),
         method if method.starts_with("terminal.") => handle_terminal_request(method, payload),
-        method if method.starts_with("agent.") => handle_agent_request(method, payload),
+        method if method.starts_with("agent.") => handle_agent_request(method, payload, None),
         method if method.starts_with("mcp.") => handle_mcp_request(method, payload),
         method if method.starts_with("lsp.") => handle_lsp_request(method, payload),
         other => Err(runtime_error(
             "METHOD_NOT_FOUND",
             format!("unknown runtime method: {other}"),
         )),
+    }
+}
+
+fn handle_runtime_request_with_connection(
+    method: &str,
+    payload: Value,
+    connection: &ConnectionContext,
+) -> Result<Value, RuntimeError> {
+    if method.starts_with("agent.") {
+        handle_agent_request(method, payload, Some(&connection.host_rpc))
+    } else {
+        handle_runtime_request(method, payload)
     }
 }
 
@@ -949,32 +1185,36 @@ async fn write_loop(
 }
 
 async fn handle_request_envelope(
-    outgoing: UnboundedSender<RuntimeEnvelope>,
+    connection: ConnectionContext,
     id: String,
     method: String,
     payload: Value,
 ) {
-    let response =
-        match tokio::task::spawn_blocking(move || handle_runtime_request(&method, payload)).await {
-            Ok(Ok(result)) => RuntimeEnvelope::Response {
-                id,
-                ok: true,
-                result: Some(result),
-                error: None,
-            },
-            Ok(Err(error)) => RuntimeEnvelope::Response {
-                id,
-                ok: false,
-                result: None,
-                error: Some(error),
-            },
-            Err(error) => RuntimeEnvelope::Response {
-                id,
-                ok: false,
-                result: None,
-                error: Some(runtime_error("TASK_JOIN_FAILED", error.to_string())),
-            },
-        };
+    let outgoing = connection.outgoing.clone();
+    let response = match tokio::task::spawn_blocking(move || {
+        handle_runtime_request_with_connection(&method, payload, &connection)
+    })
+    .await
+    {
+        Ok(Ok(result)) => RuntimeEnvelope::Response {
+            id,
+            ok: true,
+            result: Some(result),
+            error: None,
+        },
+        Ok(Err(error)) => RuntimeEnvelope::Response {
+            id,
+            ok: false,
+            result: None,
+            error: Some(error),
+        },
+        Err(error) => RuntimeEnvelope::Response {
+            id,
+            ok: false,
+            result: None,
+            error: Some(runtime_error("TASK_JOIN_FAILED", error.to_string())),
+        },
+    };
     let _ = outgoing.send(response);
 }
 
@@ -983,6 +1223,7 @@ async fn serve_connection(stream: UnixStream) -> Result<(), RuntimeError> {
     let (outgoing, receiver) = unbounded_channel::<RuntimeEnvelope>();
     let context = ConnectionContext {
         outgoing: outgoing.clone(),
+        host_rpc: HostRpcClient::new(outgoing.clone()),
     };
     register_runtime_hooks(&context);
     let registered_storage_roots = Arc::new(Mutex::new(HashSet::<String>::new()));
@@ -1001,17 +1242,34 @@ async fn serve_connection(stream: UnixStream) -> Result<(), RuntimeError> {
         }
         let envelope: RuntimeEnvelope = serde_json::from_str(&line)
             .map_err(|error| runtime_error("PROTOCOL_DECODE_FAILED", error.to_string()))?;
-        if let RuntimeEnvelope::Request {
-            id,
-            method,
-            payload,
-        } = envelope
-        {
-            if let Some(storage_root) = extract_storage_root(&payload) {
-                registered_storage_roots.lock().await.insert(storage_root);
+        match envelope {
+            RuntimeEnvelope::Request {
+                id,
+                method,
+                payload,
+            } => {
+                if let Some(storage_root) = extract_storage_root(&payload) {
+                    registered_storage_roots.lock().await.insert(storage_root);
+                }
+                tokio::spawn(handle_request_envelope(
+                    context.clone(),
+                    id,
+                    method,
+                    payload,
+                ));
             }
-            let outgoing = outgoing.clone();
-            tokio::spawn(handle_request_envelope(outgoing, id, method, payload));
+            RuntimeEnvelope::Response {
+                id,
+                ok,
+                result,
+                error,
+            } => {
+                context
+                    .host_rpc
+                    .resolve_response(id, ok, result, error)
+                    .await;
+            }
+            RuntimeEnvelope::Event { .. } => {}
         }
     }
 

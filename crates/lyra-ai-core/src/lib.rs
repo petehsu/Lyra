@@ -18,18 +18,18 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::agent::service::{
+    answer_plan_question as answer_agent_plan_question, answer_question as answer_agent_question,
     bind_session_project as bind_agent_session_project, create_session as create_agent_session,
-    delete_session as delete_agent_session, get_session as get_agent_session,
-    get_pending_interactions as get_agent_pending_interactions, list_sessions as list_agent_sessions,
-    send_turn as send_agent_turn, answer_plan_question as answer_agent_plan_question,
-    answer_question as answer_agent_question, enter_plan_mode as enter_agent_plan_mode,
-    get_plan as get_agent_plan, resolve_plan_approval as resolve_agent_plan_approval,
+    delete_session as delete_agent_session, enter_plan_mode as enter_agent_plan_mode,
+    get_pending_interactions as get_agent_pending_interactions, get_plan as get_agent_plan,
+    get_session as get_agent_session, list_sessions as list_agent_sessions,
+    resolve_plan_approval as resolve_agent_plan_approval, send_turn as send_agent_turn,
 };
 use crate::agent::types::{
-    AgentBindSessionProjectRequest, AgentCreateSessionRequest, AgentDeleteSessionRequest,
-    AgentGetPendingInteractionsRequest, AgentGetSessionRequest, AgentListSessionsRequest,
-    AgentSendTurnRequest, AgentAnswerPlanQuestionRequest, AgentAnswerQuestionRequest,
-    AgentEnterPlanModeRequest, AgentGetPlanRequest, AgentResolvePlanApprovalRequest,
+    AgentAnswerPlanQuestionRequest, AgentAnswerQuestionRequest, AgentBindSessionProjectRequest,
+    AgentCreateSessionRequest, AgentDeleteSessionRequest, AgentEnterPlanModeRequest,
+    AgentGetPendingInteractionsRequest, AgentGetPlanRequest, AgentGetSessionRequest,
+    AgentListSessionsRequest, AgentResolvePlanApprovalRequest, AgentSendTurnRequest,
     CommandApprovalSubmitRequest,
 };
 use crate::error::{parse_json, to_json};
@@ -186,27 +186,50 @@ pub fn clear_rust_event_callback() {
 // --- MCP / External Tool Bridge ---
 
 pub use crate::agent::tools::{
-    clear_external_tools, register_external_tool, set_skill_prompts, unregister_external_tool,
-    unregister_mcp_server_tools, AgentToolError, ExternalToolExecutor, RegisteredExternalTool,
-    SkillPromptEntry,
+    clear_external_tools, register_external_tool, register_host_tools_bridge, set_skill_prompts,
+    unregister_external_tool, unregister_host_tool_set, unregister_mcp_server_tools,
+    AgentToolError, ExternalToolApprovalMode, ExternalToolExecutor, ExternalToolMetadata,
+    ExternalToolSideEffectLevel, ExternalToolSideEffects, HostToolCallContext, HostToolDescriptor,
+    RegisteredExternalTool, SkillPromptEntry, ToolExecutionMode,
 };
 pub use crate::provider::types::AgentToolDefinition;
+
+#[derive(Clone, Debug)]
+pub struct McpServerToolDescriptor {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Option<serde_json::Value>,
+    pub output_schema: Option<serde_json::Value>,
+    pub execution_mode: Option<ToolExecutionMode>,
+    pub approval_mode: Option<ExternalToolApprovalMode>,
+    pub side_effects: Option<ExternalToolSideEffects>,
+}
 
 /// Register all tools from an MCP server into the agent's dynamic tool set.
 ///
 /// `server_id` is the unique MCP server identifier.
-/// `tools` is a list of `(name, description)` pairs from introspection.
+/// `tools` carries the MCP tool descriptors from introspection, including schemas and
+/// side-effect hints when available.
 /// `call_fn` is a callback that invokes the MCP tool and returns JSON output.
 pub fn register_mcp_server_tools_bridge(
     server_id: &str,
-    tools: Vec<(String, String)>,
+    tools: Vec<McpServerToolDescriptor>,
     call_fn: std::sync::Arc<
         dyn Fn(&str, &str, &serde_json::Value) -> std::result::Result<serde_json::Value, String>
             + Send
             + Sync,
     >,
 ) {
-    for (name, description) in tools {
+    for tool in tools {
+        let McpServerToolDescriptor {
+            name,
+            description,
+            input_schema,
+            output_schema,
+            execution_mode,
+            approval_mode,
+            side_effects,
+        } = tool;
         let tool_name = format!("mcp:{server_id}/{name}");
         let call_fn = call_fn.clone();
         let sid = server_id.to_string();
@@ -215,17 +238,22 @@ pub fn register_mcp_server_tools_bridge(
             definition: AgentToolDefinition {
                 name: tool_name,
                 description,
-                input_schema: serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "arguments": {
-                            "type": "object",
-                            "description": "Arguments to pass to the MCP tool"
-                        }
-                    }
+                input_schema: input_schema.unwrap_or_else(|| {
+                    serde_json::json!({
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "Arguments to pass to the MCP tool"
+                    })
                 }),
             },
-            executor: std::sync::Arc::new(move |input| {
+            metadata: ExternalToolMetadata {
+                output_schema: output_schema
+                    .unwrap_or_else(|| serde_json::json!({"type": "object"})),
+                approval_mode: approval_mode.unwrap_or(ExternalToolApprovalMode::Ask),
+                side_effects: side_effects.unwrap_or_default(),
+            },
+            execution_mode: execution_mode.unwrap_or(ToolExecutionMode::Serial),
+            executor: std::sync::Arc::new(move |input, _context| {
                 call_fn(&sid, &original_name, input).map_err(|e| AgentToolError {
                     code: "MCP_TOOL_ERROR".to_string(),
                     message: e.to_string(),

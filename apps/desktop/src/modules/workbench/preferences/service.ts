@@ -12,6 +12,7 @@ import type { WorkbenchThemeId } from "../theme";
 import { isWorkbenchTerminalThemePresetId } from "../terminal-theme";
 import type { TerminalThemePresetId } from "../terminal-theme";
 import type {
+  WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchPreferences,
   WorkbenchPreferencesModel,
   WorkbenchSearchResultsSourceFilter,
@@ -54,6 +55,10 @@ const isDeepSearchLocalOpenBehavior = (
   value === "open_file" || value === "reveal_in_manager";
 const isSearchResultsSourceFilter = (value: unknown): value is WorkbenchSearchResultsSourceFilter =>
   value === "all" || value === "web" || value === "local";
+const isWorkbenchOmniboxNonBrowserSubmitTarget = (
+  value: unknown
+): value is WorkbenchOmniboxNonBrowserSubmitTarget =>
+  value === "new_tab" || value === "replace_active_tab";
 const asStringArray = (value: unknown): readonly string[] =>
   Array.isArray(value)
     ? value
@@ -95,6 +100,7 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly deepSearchProactiveDomainGuessingEnabled?: unknown;
       readonly deepSearchCrawlPolicy?: unknown;
       readonly searchResultsSourceFilter?: unknown;
+      readonly omniboxNonBrowserSubmitTarget?: unknown;
     };
 
     const normalizedSearxngEndpoint =
@@ -160,7 +166,10 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
         : defaults.deepSearchCrawlPolicy,
       searchResultsSourceFilter: isSearchResultsSourceFilter(parsed.searchResultsSourceFilter)
         ? parsed.searchResultsSourceFilter
-        : defaults.searchResultsSourceFilter
+        : defaults.searchResultsSourceFilter,
+      omniboxNonBrowserSubmitTarget: isWorkbenchOmniboxNonBrowserSubmitTarget(parsed.omniboxNonBrowserSubmitTarget)
+        ? parsed.omniboxNonBrowserSubmitTarget
+        : defaults.omniboxNonBrowserSubmitTarget
     };
   } catch (_error) {
     return defaults;
@@ -338,6 +347,12 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         searchResultsSourceFilter
+      }));
+    },
+    setOmniboxNonBrowserSubmitTarget: (omniboxNonBrowserSubmitTarget) => {
+      commit((current) => ({
+        ...current,
+        omniboxNonBrowserSubmitTarget
       }));
     },
     reset: () => {

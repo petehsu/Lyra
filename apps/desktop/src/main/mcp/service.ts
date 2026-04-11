@@ -14,6 +14,7 @@ import type {
   McpEnvironmentInput,
   McpInstallKind,
   McpInstallTemplateRequest,
+  McpIntrospectionItem,
   McpIntrospectionSnapshot,
   McpReadEffectiveServersRequest,
   McpReadServersRequest,
@@ -61,9 +62,61 @@ const MCP_CATALOG: readonly McpCatalogItem[] = [
     defaultEnvironment: [],
     permissions: ["filesystem:project-root"],
     tools: [
-      { name: "read_file", description: "Read text file contents." },
-      { name: "write_file", description: "Write or patch local files." },
-      { name: "list_directory", description: "Enumerate directory entries." }
+      createReadOnlyTool(
+        "read_file",
+        "Read text file contents.",
+        {
+          type: "object",
+          required: ["path"],
+          properties: {
+            path: { type: "string" }
+          },
+          additionalProperties: false
+        },
+        {
+          type: "object",
+          properties: {
+            content: { type: "string" }
+          }
+        }
+      ),
+      createWorkspaceWriteTool(
+        "write_file",
+        "Write or patch local files.",
+        {
+          type: "object",
+          required: ["path", "content"],
+          properties: {
+            path: { type: "string" },
+            content: { type: "string" }
+          },
+          additionalProperties: false
+        },
+        {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" }
+          }
+        }
+      ),
+      createReadOnlyTool(
+        "list_directory",
+        "Enumerate directory entries.",
+        {
+          type: "object",
+          required: ["path"],
+          properties: {
+            path: { type: "string" }
+          },
+          additionalProperties: false
+        },
+        {
+          type: "object",
+          properties: {
+            entries: { type: "array" }
+          }
+        }
+      )
     ],
     resources: [{ name: "workspace-tree", description: "Project directory snapshot." }],
     prompts: [],
@@ -93,7 +146,26 @@ const MCP_CATALOG: readonly McpCatalogItem[] = [
     defaultEnvironment: [],
     permissions: ["network:http"],
     tools: [
-      { name: "fetch", description: "Fetch remote URLs with server-side controls." }
+      createNetworkReadTool(
+        "fetch",
+        "Fetch remote URLs with server-side controls.",
+        {
+          type: "object",
+          required: ["url"],
+          properties: {
+            url: { type: "string" },
+            method: { type: "string" }
+          },
+          additionalProperties: true
+        },
+        {
+          type: "object",
+          properties: {
+            status: { type: "number" },
+            body: { type: "string" }
+          }
+        }
+      )
     ],
     resources: [],
     prompts: []
@@ -113,8 +185,37 @@ const MCP_CATALOG: readonly McpCatalogItem[] = [
     defaultEnvironment: [],
     permissions: ["git:repo"],
     tools: [
-      { name: "git_status", description: "Read repository working tree status." },
-      { name: "git_diff", description: "Inspect working tree or commit diffs." }
+      createReadOnlyTool(
+        "git_status",
+        "Read repository working tree status.",
+        {
+          type: "object",
+          additionalProperties: false
+        },
+        {
+          type: "object",
+          properties: {
+            files: { type: "array" }
+          }
+        }
+      ),
+      createReadOnlyTool(
+        "git_diff",
+        "Inspect working tree or commit diffs.",
+        {
+          type: "object",
+          properties: {
+            revision: { type: "string" }
+          },
+          additionalProperties: false
+        },
+        {
+          type: "object",
+          properties: {
+            diff: { type: "string" }
+          }
+        }
+      )
     ],
     resources: [{ name: "repo-head", description: "Current HEAD reference." }],
     prompts: [],
@@ -143,7 +244,25 @@ const MCP_CATALOG: readonly McpCatalogItem[] = [
     defaultArgs: ["-y", "@modelcontextprotocol/server-time"],
     defaultEnvironment: [],
     permissions: [],
-    tools: [{ name: "time_now", description: "Read current date and time." }],
+    tools: [
+      createReadOnlyTool(
+        "time_now",
+        "Read current date and time.",
+        {
+          type: "object",
+          properties: {
+            timezone: { type: "string" }
+          },
+          additionalProperties: false
+        },
+        {
+          type: "object",
+          properties: {
+            iso: { type: "string" }
+          }
+        }
+      )
+    ],
     resources: [],
     prompts: [],
     quickSetup: {
@@ -194,6 +313,81 @@ const nowIso = (): string => new Date().toISOString();
 const createId = (prefix: string): string => `${prefix}-${randomUUID()}`;
 
 const MCP_DEFAULT_TOOL_TIMEOUT_MS = 60_000;
+
+function createReadOnlyTool(
+  name: string,
+  description: string,
+  inputSchema: Record<string, unknown>,
+  outputSchema: Record<string, unknown>
+): McpIntrospectionItem {
+  return {
+  name,
+  description,
+  inputSchema,
+  outputSchema,
+  executionMode: "parallel_readonly",
+  approvalMode: "auto",
+  sideEffects: {
+    level: "read_only",
+    mutatesWorkspace: false,
+    mutatesMemory: false,
+    mutatesExternalSystems: false,
+    mutatesSessionState: false,
+    opensInteractiveSession: false,
+    readsNetwork: false
+  }
+  };
+}
+
+function createWorkspaceWriteTool(
+  name: string,
+  description: string,
+  inputSchema: Record<string, unknown>,
+  outputSchema: Record<string, unknown>
+): McpIntrospectionItem {
+  return {
+  name,
+  description,
+  inputSchema,
+  outputSchema,
+  executionMode: "serial",
+  approvalMode: "ask",
+  sideEffects: {
+    level: "workspace_write",
+    mutatesWorkspace: true,
+    mutatesMemory: false,
+    mutatesExternalSystems: false,
+    mutatesSessionState: false,
+    opensInteractiveSession: false,
+    readsNetwork: false
+  }
+  };
+}
+
+function createNetworkReadTool(
+  name: string,
+  description: string,
+  inputSchema: Record<string, unknown>,
+  outputSchema: Record<string, unknown>
+): McpIntrospectionItem {
+  return {
+  name,
+  description,
+  inputSchema,
+  outputSchema,
+  executionMode: "parallel_readonly",
+  approvalMode: "auto",
+  sideEffects: {
+    level: "network_read",
+    mutatesWorkspace: false,
+    mutatesMemory: false,
+    mutatesExternalSystems: false,
+    mutatesSessionState: false,
+    opensInteractiveSession: false,
+    readsNetwork: true
+  }
+  };
+}
 
 const trimOrUndefined = (value: unknown): string | undefined => {
   if (typeof value !== "string") {
@@ -331,7 +525,7 @@ const buildCatalogIntrospection = (
     serverId,
     fetchedAt: nowIso(),
     source: "catalog",
-    note: "V1 exposes curated capability hints until live MCP introspection is enabled.",
+    note: "Catalog fallback exposes curated MCP tool schemas and side-effect hints until live introspection is enabled.",
     tools: template.tools,
     resources: template.resources,
     prompts: template.prompts
@@ -723,7 +917,12 @@ export const createMcpIpcBridge = (
         server,
         tools: snapshot.tools.map((t) => ({
           name: t.name,
-          description: t.description ?? ""
+          description: t.description ?? "",
+          ...(t.inputSchema === undefined ? {} : { inputSchema: t.inputSchema }),
+          ...(t.outputSchema === undefined ? {} : { outputSchema: t.outputSchema }),
+          ...(t.executionMode === undefined ? {} : { executionMode: t.executionMode }),
+          ...(t.approvalMode === undefined ? {} : { approvalMode: t.approvalMode }),
+          ...(t.sideEffects === undefined ? {} : { sideEffects: t.sideEffects })
         }))
       });
     } catch {

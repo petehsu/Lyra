@@ -726,11 +726,6 @@ export const FileEditorSurface = ({
               ? renderToolbarScanText(state.title, `${state.instanceId}-title`, "title")
               : state.title}
           </strong>
-          <small>
-            {isEditorWorkRunning
-              ? renderToolbarScanText(state.filePath, `${state.instanceId}-path`, "path")
-              : state.filePath}
-          </small>
         </div>
         <div className="lyra-file-editor-toolbar-actions">
           {activeEditorWorkItem !== undefined ? (
