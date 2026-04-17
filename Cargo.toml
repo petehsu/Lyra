@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/lyra-ai-core",
+  "crates/lyra-code-intel-core",
   "crates/lyrad",
   "crates/lyra-runtime-protocol",
   "crates/lyra-sandbox",

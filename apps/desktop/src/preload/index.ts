@@ -25,6 +25,7 @@ import {
   type AiDiscoverModelsRequest,
   type AiModelDiscoveryResult,
   type AiOpenAiChatGptAuthResult,
+  type BrowserUseRuntimeStatus,
   type AiProfileValidationResult,
   type AiProviderCatalogItem,
   type AiProviderPreset,
@@ -157,6 +158,8 @@ const terminalErrorListeners = new Set<(event: TerminalErrorEvent) => void>();
 let terminalEventBridgeReady = false;
 const workbenchBrowserEventListeners = new Set<(event: WorkbenchBrowserEvent) => void>();
 let workbenchBrowserEventBridgeReady = false;
+const browserUseRuntimeStatusListeners = new Set<(status: BrowserUseRuntimeStatus) => void>();
+let browserUseRuntimeStatusBridgeReady = false;
 const agentEventListeners = new Set<(event: AgentRuntimeEvent) => void>();
 let agentEventBridgeReady = false;
 const mcpEventListeners = new Set<(event: McpRuntimeEvent) => void>();
@@ -223,6 +226,30 @@ const ensureWorkbenchBrowserEventBridge = (): void => {
         return;
       }
       for (const listener of workbenchBrowserEventListeners) {
+        listener(payload);
+      }
+    }
+  );
+};
+
+const ensureBrowserUseRuntimeStatusBridge = (): void => {
+  if (browserUseRuntimeStatusBridgeReady) {
+    return;
+  }
+  browserUseRuntimeStatusBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.browserUseRuntimeStatusEvent,
+    (_event: Electron.IpcRendererEvent, payload: BrowserUseRuntimeStatus): void => {
+      if (
+        payload === null
+        || typeof payload !== "object"
+        || typeof payload.state !== "string"
+        || typeof payload.checkedAt !== "number"
+      ) {
+        return;
+      }
+      for (const listener of browserUseRuntimeStatusListeners) {
         listener(payload);
       }
     }
@@ -613,6 +640,19 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       workbenchBrowserEventListeners.add(listener);
       return () => {
         workbenchBrowserEventListeners.delete(listener);
+      };
+    }
+  },
+  browserUse: {
+    readRuntimeStatus: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.browserUseReadRuntimeStatus
+      ) as Promise<BrowserUseRuntimeStatus>,
+    onRuntimeStatus: (listener: (status: BrowserUseRuntimeStatus) => void) => {
+      ensureBrowserUseRuntimeStatusBridge();
+      browserUseRuntimeStatusListeners.add(listener);
+      return () => {
+        browserUseRuntimeStatusListeners.delete(listener);
       };
     }
   },

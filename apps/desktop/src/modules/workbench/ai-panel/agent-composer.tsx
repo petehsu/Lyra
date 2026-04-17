@@ -4,6 +4,8 @@ import { createTranslator, type WorkbenchLocale } from "../i18n";
 
 type AgentComposerProps = {
   readonly locale?: WorkbenchLocale;
+  readonly modelLabel?: string;
+  readonly modelNames?: readonly string[];
   readonly value: string;
   readonly ariaLabel: string;
   readonly placeholder: string;
@@ -11,6 +13,7 @@ type AgentComposerProps = {
   readonly inputDisabled: boolean;
   readonly sendDisabled: boolean;
   readonly sending: boolean;
+  readonly surfaceDimmed?: boolean;
   readonly bindProjectLabel?: string;
   readonly boundProjectName?: string | null;
   readonly planModeEnabled?: boolean;
@@ -30,6 +33,8 @@ const MAX_HEIGHT = 184;
 
 export const AgentComposer = ({
   locale = "en-US",
+  modelLabel,
+  modelNames = [],
   value,
   ariaLabel,
   placeholder,
@@ -37,6 +42,7 @@ export const AgentComposer = ({
   inputDisabled,
   sendDisabled,
   sending,
+  surfaceDimmed = false,
   bindProjectLabel,
   boundProjectName,
   planModeEnabled = false,
@@ -67,6 +73,9 @@ export const AgentComposer = ({
     planModeLabel !== undefined && planModeLabel.trim().length > 0
       ? planModeLabel
       : t("ai.planMode");
+  const resolvedModelNames = modelNames
+    .map((entry) => entry.trim())
+    .filter((entry, index, entries) => entry.length > 0 && entries.indexOf(entry) === index);
 
   // Adapted from OpenHands chat input auto-resize behavior.
   const smartResize = useCallback((): void => {
@@ -115,11 +124,25 @@ export const AgentComposer = ({
     <div
       ref={containerRef}
       className={
-        inputDisabled && !sending
+        surfaceDimmed && !sending
           ? "lyra-ai-agent-composer lyra-ai-agent-composer-disabled"
           : "lyra-ai-agent-composer"
       }
     >
+      {resolvedModelNames.length > 0 ? (
+        <div className="lyra-ai-agent-composer-models">
+          {modelLabel ? (
+            <span className="lyra-ai-agent-composer-models-label">{modelLabel}</span>
+          ) : null}
+          <div className="lyra-ai-agent-composer-model-list">
+            {resolvedModelNames.map((entry) => (
+              <span key={entry} className="lyra-ai-agent-composer-model-chip">
+                {entry}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <textarea
         ref={inputRef}
         className="lyra-ai-agent-composer-input"
@@ -168,13 +191,6 @@ export const AgentComposer = ({
           </span>
           <span className="lyra-ai-agent-plan-toggle-copy">
             <span className="lyra-ai-agent-plan-pill">{t("ai.planLabel")}</span>
-            <span className="lyra-ai-agent-plan-toggle-state">
-              {planModeLocked
-                ? t("ai.planStateLocked")
-                : planModeEnabled
-                  ? t("ai.planStateArmed")
-                  : t("ai.planStateOff")}
-            </span>
           </span>
         </button>
         <button

@@ -13,6 +13,7 @@ export type LyraModuleStorageRoots = {
   readonly workbenchState: string;
   readonly search: string;
   readonly webAutomation: string;
+  readonly browserUse: string;
 };
 
 export type LyraStorageRoots = {
@@ -43,7 +44,8 @@ export const resolveLyraStorageRoots = (): LyraStorageRoots => {
       terminal: path.join(modulesRoot, "terminal"),
       workbenchState: path.join(modulesRoot, "workbench-state"),
       search: path.join(modulesRoot, "search"),
-      webAutomation: path.join(modulesRoot, "web-automation")
+      webAutomation: path.join(modulesRoot, "web-automation"),
+      browserUse: path.join(modulesRoot, "browser-use")
     }
   };
 };

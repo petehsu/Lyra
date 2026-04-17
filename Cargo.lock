@@ -954,6 +954,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ignore"
+version = "0.4.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3d782a365a015e0f5c04902246139249abf769125006fbe7649e2ee88169b4a"
+dependencies = [
+ "crossbeam-deque",
+ "globset",
+ "log",
+ "memchr",
+ "regex-automata",
+ "same-file",
+ "walkdir",
+ "winapi-util",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1200,6 +1216,7 @@ dependencies = [
  "hmac",
  "jsonwebtoken",
  "keyring",
+ "lyra-code-intel-core",
  "lyra-lsp-core",
  "lyra-sandbox",
  "lyra-terminal-core",
@@ -1216,6 +1233,18 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "lyra-code-intel-core"
+version = "0.1.0"
+dependencies = [
+ "globset",
+ "ignore",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1334,6 +1363,7 @@ name = "lyrad"
 version = "0.1.0"
 dependencies = [
  "lyra-ai-core",
+ "lyra-code-intel-core",
  "lyra-lsp-core",
  "lyra-mcp-core",
  "lyra-runtime-protocol",

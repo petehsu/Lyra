@@ -1,10 +1,11 @@
 import type { LyraAppManifest } from "@lyra/capability-protocol";
 
 import type {
-  WorkbenchWebGraphBuildRequest,
-  WorkbenchWebGraphQueryRequest,
-  WorkbenchWebTargetIntent,
-  WorkbenchWebTargetScanRequest,
+  WorkbenchWebContextReadRequest,
+  WorkbenchWebFocusProbeRequest,
+  WorkbenchWebQueryRequest,
+  WorkbenchWebScanAndActRequest,
+  WorkbenchWebSkeletonReadRequest,
   WorkbenchWebWaitRequest
 } from "../../../shared/workbench-web-automation";
 import type {
@@ -52,36 +53,129 @@ const readStringArray = (value: unknown): readonly string[] | undefined => {
   return next.length > 0 ? next : undefined;
 };
 
-const parseWebTargetIntent = (value: unknown): WorkbenchWebTargetIntent => {
-  const payload = asRecord(value);
-  const operation = readString(payload.operation);
-  if (
-    operation !== "click"
-    && operation !== "type"
-    && operation !== "focus"
-    && operation !== "select"
-    && operation !== "submit"
-  ) {
-    throw new Error("intent.operation is required");
+const readTargetRole = (value: unknown): string | undefined =>
+  readString(value) ?? readStringArray(value)?.[0];
+
+const readObject = (value: unknown): Record<string, unknown> | undefined => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
   }
-  const allowContentEditable = readBoolean(payload.allowContentEditable);
-  const resolvedAllowContentEditable =
-    allowContentEditable === undefined && operation === "type"
-      ? true
-      : allowContentEditable;
-  const desiredRoles = readStringArray(payload.desiredRoles);
-  const desiredTags = readStringArray(payload.desiredTags);
-  const textHints = readStringArray(payload.textHints);
-  const placeholderHints = readStringArray(payload.placeholderHints);
+  return value as Record<string, unknown>;
+};
+
+const readFirstString = (...values: readonly unknown[]): string | undefined => {
+  for (const value of values) {
+    const normalized = readString(value);
+    if (normalized !== undefined) {
+      return normalized;
+    }
+  }
+  return undefined;
+};
+
+const readFirstNumber = (...values: readonly unknown[]): number | undefined => {
+  for (const value of values) {
+    const normalized = readNumber(value);
+    if (normalized !== undefined) {
+      return normalized;
+    }
+  }
+  return undefined;
+};
+
+const buildScanAndActFallbackTarget = (
+  payload: Record<string, unknown>,
+  actionInput: Record<string, unknown>
+): Record<string, unknown> => {
+  const candidateId = readFirstString(actionInput.candidateId, payload.candidateId);
+  const scanSessionId = readFirstString(actionInput.scanSessionId, payload.scanSessionId);
+  const nodeId = readFirstString(actionInput.nodeId, payload.nodeId);
+  const index = readFirstNumber(actionInput.index, payload.index);
+  const nodeRef = readObject(actionInput.nodeRef) ?? readObject(payload.nodeRef);
+  const cssSelector = readFirstString(
+    actionInput.cssSelector,
+    actionInput.selector,
+    payload.cssSelector,
+    payload.selector
+  );
+  const selectorAddress = readObject(actionInput.selectorAddress) ?? readObject(payload.selectorAddress);
+  const stableSignature = readObject(actionInput.stableSignature) ?? readObject(payload.stableSignature);
+  const tagName = readFirstString(actionInput.tagName, payload.tagName);
+  const role = readTargetRole(actionInput.role) ?? readTargetRole(payload.role);
+  const inputType = readFirstString(actionInput.inputType, payload.inputType);
+  const id = readFirstString(actionInput.id, payload.id);
+  const name = readFirstString(actionInput.name, payload.name);
+  const testId = readFirstString(actionInput.testId, payload.testId);
+  const ariaLabel = readFirstString(actionInput.ariaLabel, payload.ariaLabel);
+  const text = readFirstString(actionInput.text, payload.text);
+  const textContains = readFirstString(
+    actionInput.textContains,
+    payload.textContains,
+    actionInput.near,
+    payload.near,
+    actionInput.within,
+    payload.within
+  );
+  const textSnippet = readFirstString(actionInput.textSnippet, payload.textSnippet);
+  const placeholder = readFirstString(actionInput.placeholder, payload.placeholder);
+  const label = readFirstString(actionInput.label, payload.label);
   return {
-    operation,
-    ...(desiredRoles === undefined ? {} : { desiredRoles }),
-    ...(desiredTags === undefined ? {} : { desiredTags }),
-    ...(textHints === undefined ? {} : { textHints }),
-    ...(placeholderHints === undefined ? {} : { placeholderHints }),
-    ...(resolvedAllowContentEditable === undefined
-      ? {}
-      : { allowContentEditable: resolvedAllowContentEditable })
+    ...(candidateId === undefined ? {} : { candidateId }),
+    ...(scanSessionId === undefined ? {} : { scanSessionId }),
+    ...(nodeId === undefined ? {} : { nodeId }),
+    ...(index === undefined ? {} : { index }),
+    ...(nodeRef === undefined ? {} : { nodeRef }),
+    ...(cssSelector === undefined ? {} : { cssSelector }),
+    ...(selectorAddress === undefined ? {} : { selectorAddress }),
+    ...(stableSignature === undefined ? {} : { stableSignature }),
+    ...(tagName === undefined ? {} : { tagName }),
+    ...(role === undefined ? {} : { role }),
+    ...(inputType === undefined ? {} : { inputType }),
+    ...(id === undefined ? {} : { id }),
+    ...(name === undefined ? {} : { name }),
+    ...(testId === undefined ? {} : { testId }),
+    ...(ariaLabel === undefined ? {} : { ariaLabel }),
+    ...(text === undefined ? {} : { text }),
+    ...(textContains === undefined ? {} : { textContains }),
+    ...(textSnippet === undefined ? {} : { textSnippet }),
+    ...(placeholder === undefined ? {} : { placeholder }),
+    ...(label === undefined ? {} : { label }),
+  };
+};
+
+const parseQueryStateFilter = (
+  value: unknown
+): WorkbenchWebQueryRequest["state"] | undefined => {
+  const payload = asRecord(value);
+  const checked = readBoolean(payload.checked);
+  const selected = readBoolean(payload.selected);
+  const expanded = readBoolean(payload.expanded);
+  const disabled = readBoolean(payload.disabled);
+  const invalid = readBoolean(payload.invalid);
+  const required = readBoolean(payload.required);
+  const readonly = readBoolean(payload.readonly);
+  const visible = readBoolean(payload.visible);
+  if (
+    checked === undefined
+    && selected === undefined
+    && expanded === undefined
+    && disabled === undefined
+    && invalid === undefined
+    && required === undefined
+    && readonly === undefined
+    && visible === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    ...(checked === undefined ? {} : { checked }),
+    ...(selected === undefined ? {} : { selected }),
+    ...(expanded === undefined ? {} : { expanded }),
+    ...(disabled === undefined ? {} : { disabled }),
+    ...(invalid === undefined ? {} : { invalid }),
+    ...(required === undefined ? {} : { required }),
+    ...(readonly === undefined ? {} : { readonly }),
+    ...(visible === undefined ? {} : { visible })
   };
 };
 
@@ -93,6 +187,27 @@ const toWebAutomationCallContext = (
   ...(request.context?.aiSessionId === undefined ? {} : { agentSessionId: request.context.aiSessionId }),
   ...(request.context?.aiTurnId === undefined ? {} : { agentTurnId: request.context.aiTurnId })
 });
+
+const resolveObservationTabId = async (
+  observationService: WorkbenchObservationService,
+  requestedTabId: string
+): Promise<string> => {
+  if (
+    requestedTabId !== "active-tab"
+    && requestedTabId !== "current-tab"
+    && requestedTabId !== "active"
+    && requestedTabId !== "current"
+  ) {
+    return requestedTabId;
+  }
+  const listed = await observationService.listTabs({
+    scope: "visible"
+  });
+  if (typeof listed.activeTabId === "string" && listed.activeTabId.trim().length > 0) {
+    return listed.activeTabId;
+  }
+  throw new Error(`Unknown tab: ${requestedTabId}`);
+};
 
 export const registerWorkbenchCapabilities = (
   registry: CapabilityRegistry,
@@ -243,7 +358,10 @@ export const registerWorkbenchCapabilities = (
     },
     async (request) => {
       const payload = asRecord(request.payload);
-      const tabId = readString(payload.tabId);
+      const requestedTabId = readString(payload.tabId);
+      const tabId = requestedTabId === undefined
+        ? undefined
+        : await resolveObservationTabId(observationService, requestedTabId);
       if (tabId === undefined) {
         throw new Error("tabId is required");
       }
@@ -302,7 +420,10 @@ export const registerWorkbenchCapabilities = (
     },
     async (request) => {
       const payload = asRecord(request.payload);
-      const tabId = readString(payload.tabId);
+      const requestedTabId = readString(payload.tabId);
+      const tabId = requestedTabId === undefined
+        ? undefined
+        : await resolveObservationTabId(observationService, requestedTabId);
       if (tabId === undefined) {
         throw new Error("tabId is required");
       }
@@ -352,7 +473,10 @@ export const registerWorkbenchCapabilities = (
     },
     async (request) => {
       const payload = asRecord(request.payload);
-      const tabId = readString(payload.tabId);
+      const requestedTabId = readString(payload.tabId);
+      const tabId = requestedTabId === undefined
+        ? undefined
+        : await resolveObservationTabId(observationService, requestedTabId);
       if (tabId === undefined) {
         throw new Error("tabId is required");
       }
@@ -363,35 +487,331 @@ export const registerWorkbenchCapabilities = (
 
   registry.register(
     {
-      id: "workbench.web_target.scan",
+      id: "workbench.web_skeleton.read",
       domain: "workbench",
       kind: "resource",
-      title: "Scan Web Targets",
+      title: "Read Web Skeleton",
       appId: WORKBENCH_APP_ID,
-      operation: "web_target.scan",
-      description: "Scan the active visible page for likely interactive targets using a fast visible-first selector pass.",
+      operation: "web_skeleton.read",
+      description: "Read the current page's human-operable skeleton without taking over the page.",
       permissions: ["workbench:read"],
       risk: "read",
       approvalMode: "auto",
       aiExposure: "read",
       inputSchema: {
         type: "object",
-        required: ["intent"],
         properties: {
           tabId: { type: "string" },
           scope: { type: "string", enum: ["visible", "nearby", "expanded"] },
-          maxCandidates: { type: "number" },
-          continuationToken: { type: "string" },
-          intent: {
+          maxNodes: { type: "number" },
+          refresh: { type: "boolean" }
+        },
+        additionalProperties: false
+      },
+      outputSchema: {
+        type: "object"
+      }
+    },
+    async (request, context) => {
+      const payload = asRecord(request.payload);
+      const skeletonRequest: WorkbenchWebSkeletonReadRequest = {
+        ...(readString(payload.tabId) === undefined ? {} : { tabId: readString(payload.tabId) }),
+        ...(readString(payload.scope) === undefined
+          ? {}
+          : { scope: readString(payload.scope) as WorkbenchWebSkeletonReadRequest["scope"] }),
+        ...(readNumber(payload.maxNodes) === undefined ? {} : { maxNodes: readNumber(payload.maxNodes) }),
+        ...(readBoolean(payload.refresh) === undefined ? {} : { refresh: readBoolean(payload.refresh) })
+      };
+      return await webAutomationService.readSkeleton(
+        skeletonRequest,
+        toWebAutomationCallContext(request, context)
+      );
+    }
+  );
+
+  registry.register(
+    {
+      id: "workbench.web_query.find",
+      domain: "workbench",
+      kind: "resource",
+      title: "Find Web Skeleton Nodes",
+      appId: WORKBENCH_APP_ID,
+      operation: "web_query.find",
+      description: "Find human-operable controls from the current page skeleton using structured query constraints.",
+      permissions: ["workbench:read"],
+      risk: "read",
+      approvalMode: "auto",
+      aiExposure: "read",
+      inputSchema: {
+        type: "object",
+        properties: {
+          tabId: { type: "string" },
+          role: {
+            oneOf: [
+              { type: "string" },
+              { type: "array", items: { type: "string" } }
+            ]
+          },
+          name: { type: "string" },
+          text: { type: "string" },
+          textContains: { type: "string" },
+          textSnippet: { type: "string" },
+          ariaLabel: { type: "string" },
+          label: { type: "string" },
+          placeholder: { type: "string" },
+          within: { type: "string" },
+          near: { type: "string" },
+          nearDistance: { type: "number" },
+          regionId: { type: "string" },
+          groupId: { type: "string" },
+          index: { type: "number" },
+          maxResults: { type: "number" },
+          inDialog: { type: "boolean" },
+          underMenu: { type: "boolean" },
+          inTableRow: { type: "boolean" },
+          before: { type: "string" },
+          after: { type: "string" },
+          currentSubgoal: { type: "string" },
+          state: {
             type: "object",
-            required: ["operation"],
             properties: {
-              operation: { type: "string", enum: ["click", "type", "focus", "select", "submit"] },
-              desiredRoles: { type: "array", items: { type: "string" } },
-              desiredTags: { type: "array", items: { type: "string" } },
-              textHints: { type: "array", items: { type: "string" } },
-              placeholderHints: { type: "array", items: { type: "string" } },
-              allowContentEditable: { type: "boolean" }
+              checked: { type: "boolean" },
+              selected: { type: "boolean" },
+              expanded: { type: "boolean" },
+              disabled: { type: "boolean" },
+              invalid: { type: "boolean" },
+              required: { type: "boolean" },
+              readonly: { type: "boolean" },
+              visible: { type: "boolean" }
+            },
+            additionalProperties: false
+          },
+          refresh: { type: "boolean" }
+        },
+        additionalProperties: false
+      },
+      outputSchema: {
+        type: "object"
+      }
+    },
+    async (request, context) => {
+      const payload = asRecord(request.payload);
+      const role = readString(payload.role) ?? readStringArray(payload.role);
+      const resolvedText =
+        readString(payload.text)
+        ?? readString(payload.textContains)
+        ?? readString(payload.textSnippet);
+      const resolvedName =
+        readString(payload.name)
+        ?? readString(payload.ariaLabel)
+        ?? readString(payload.label)
+        ?? readString(payload.placeholder);
+      const queryRequest: WorkbenchWebQueryRequest = {
+        ...(readString(payload.tabId) === undefined ? {} : { tabId: readString(payload.tabId) }),
+        ...(role === undefined ? {} : { role }),
+        ...(resolvedName === undefined ? {} : { name: resolvedName }),
+        ...(resolvedText === undefined ? {} : { text: resolvedText }),
+        ...(readString(payload.within) === undefined ? {} : { within: readString(payload.within) }),
+        ...(readString(payload.near) === undefined ? {} : { near: readString(payload.near) }),
+        ...(readString(payload.regionId) === undefined ? {} : { regionId: readString(payload.regionId) }),
+        ...(readString(payload.groupId) === undefined ? {} : { groupId: readString(payload.groupId) }),
+        ...(readNumber(payload.index) === undefined ? {} : { index: readNumber(payload.index) }),
+        ...(readNumber(payload.maxResults) === undefined ? {} : { maxResults: readNumber(payload.maxResults) }),
+        ...(readBoolean(payload.inDialog) === undefined ? {} : { inDialog: readBoolean(payload.inDialog) }),
+        ...(readBoolean(payload.underMenu) === undefined ? {} : { underMenu: readBoolean(payload.underMenu) }),
+        ...(readBoolean(payload.inTableRow) === undefined ? {} : { inTableRow: readBoolean(payload.inTableRow) }),
+        ...(readString(payload.before) === undefined ? {} : { before: readString(payload.before) }),
+        ...(readString(payload.after) === undefined ? {} : { after: readString(payload.after) }),
+        ...(readString(payload.currentSubgoal) === undefined
+          ? {}
+          : { currentSubgoal: readString(payload.currentSubgoal) }),
+        ...(parseQueryStateFilter(payload.state) === undefined
+          ? {}
+          : { state: parseQueryStateFilter(payload.state) }),
+        ...(readBoolean(payload.refresh) === undefined
+          ? {}
+          : { refresh: readBoolean(payload.refresh) })
+      };
+      return await webAutomationService.querySkeleton(
+        queryRequest,
+        toWebAutomationCallContext(request, context)
+      );
+    }
+  );
+
+  registry.register(
+    {
+      id: "workbench.web_context.read",
+      domain: "workbench",
+      kind: "resource",
+      title: "Read Web Context",
+      appId: WORKBENCH_APP_ID,
+      operation: "web_context.read",
+      description: "Read node, neighborhood, region, or page context around a skeleton node using budgeted local structure.",
+      permissions: ["workbench:read"],
+      risk: "read",
+      approvalMode: "auto",
+      aiExposure: "read",
+      inputSchema: {
+        type: "object",
+        properties: {
+          tabId: { type: "string" },
+          regionId: { type: "string" },
+          scope: { type: "string", enum: ["node", "neighborhood", "region", "page"] },
+          maxNodes: { type: "number" },
+          currentSubgoal: { type: "string" },
+          refresh: { type: "boolean" },
+          nodeRef: { type: "object" }
+        },
+        additionalProperties: false
+      },
+      outputSchema: {
+        type: "object"
+      }
+    },
+    async (request, context) => {
+      const payload = asRecord(request.payload);
+      const contextRequest: WorkbenchWebContextReadRequest = {
+        ...(readString(payload.tabId) === undefined ? {} : { tabId: readString(payload.tabId) }),
+        ...(readString(payload.regionId) === undefined ? {} : { regionId: readString(payload.regionId) }),
+        ...(readString(payload.scope) === undefined
+          ? {}
+          : { scope: readString(payload.scope) as WorkbenchWebContextReadRequest["scope"] }),
+        ...(readNumber(payload.maxNodes) === undefined ? {} : { maxNodes: readNumber(payload.maxNodes) }),
+        ...(readString(payload.currentSubgoal) === undefined
+          ? {}
+          : { currentSubgoal: readString(payload.currentSubgoal) }),
+        ...(readBoolean(payload.refresh) === undefined
+          ? {}
+          : { refresh: readBoolean(payload.refresh) }),
+        ...((payload.nodeRef !== null && typeof payload.nodeRef === "object" && !Array.isArray(payload.nodeRef))
+          ? { nodeRef: payload.nodeRef as WorkbenchWebContextReadRequest["nodeRef"] }
+          : {})
+      };
+      return await webAutomationService.readContext(
+        contextRequest,
+        toWebAutomationCallContext(request, context)
+      );
+    }
+  );
+
+  registry.register(
+    {
+      id: "workbench.web_focus.probe",
+      domain: "workbench",
+      kind: "action",
+      title: "Probe Web Focus Locally",
+      appId: WORKBENCH_APP_ID,
+      operation: "web_focus.probe",
+      description: "Perform a local focus probe on the current page to validate keyboard reachability for a specific region or target.",
+      permissions: ["workbench:read"],
+      risk: "read",
+      approvalMode: "auto",
+      aiExposure: "read",
+      inputSchema: {
+        type: "object",
+        properties: {
+          tabId: { type: "string" },
+          widgetId: { type: "string" },
+          focusRegionId: { type: "string" },
+          refresh: { type: "boolean" },
+          target: { type: "object" }
+        },
+        additionalProperties: false
+      },
+      outputSchema: {
+        type: "object"
+      }
+    },
+    async (request, context) => {
+      const payload = asRecord(request.payload);
+      const probeRequest: WorkbenchWebFocusProbeRequest = {
+        ...(readString(payload.tabId) === undefined ? {} : { tabId: readString(payload.tabId) }),
+        ...(readString(payload.widgetId) === undefined ? {} : { widgetId: readString(payload.widgetId) }),
+        ...(readString(payload.focusRegionId) === undefined
+          ? {}
+          : { focusRegionId: readString(payload.focusRegionId) }),
+        ...(readBoolean(payload.refresh) === undefined
+          ? {}
+          : { refresh: readBoolean(payload.refresh) }),
+        ...((payload.target !== null && typeof payload.target === "object" && !Array.isArray(payload.target))
+          ? { target: payload.target as WorkbenchWebFocusProbeRequest["target"] }
+          : {})
+      };
+      return await webAutomationService.probeFocus(
+        probeRequest,
+        toWebAutomationCallContext(request, context)
+      );
+    }
+  );
+
+  registry.register(
+    {
+      id: "workbench.web_scan_and_act",
+      domain: "workbench",
+      kind: "action",
+      title: "Scan And Run Web Action",
+      appId: WORKBENCH_APP_ID,
+      operation: "web_scan_and_act",
+      description: "Run one atomic local cycle: scan, choose the best human-operable candidate, execute action, and verify goal progress.",
+      permissions: ["workbench:read", "workbench:write", "browser:navigate", "network:http"],
+      risk: "write",
+      approvalMode: "auto",
+      aiExposure: "read",
+      inputSchema: {
+        type: "object",
+        required: ["action"],
+        properties: {
+          tabId: { type: "string" },
+          graphId: { type: "string" },
+          action: { type: "object" },
+          timeoutMs: { type: "number" },
+          waitForNavigationMs: { type: "number" },
+          scope: { type: "string", enum: ["visible", "nearby", "expanded"] },
+          maxCandidates: { type: "number" },
+          maxResults: { type: "number" },
+          maxLatencyMs: { type: "number" },
+          followThroughSteps: { type: "number", enum: [0, 1, 2] },
+          goal: {
+            type: "object",
+            properties: {
+              expectedTransitions: {
+                type: "array",
+                items: { type: "string" }
+              },
+              mustAdvance: { type: "boolean" }
+            },
+            additionalProperties: false
+          },
+          role: {
+            oneOf: [
+              { type: "string" },
+              { type: "array", items: { type: "string" } }
+            ]
+          },
+          name: { type: "string" },
+          text: { type: "string" },
+          textContains: { type: "string" },
+          textSnippet: { type: "string" },
+          ariaLabel: { type: "string" },
+          label: { type: "string" },
+          placeholder: { type: "string" },
+          within: { type: "string" },
+          near: { type: "string" },
+          regionId: { type: "string" },
+          groupId: { type: "string" },
+          index: { type: "number" },
+          state: {
+            type: "object",
+            properties: {
+              checked: { type: "boolean" },
+              selected: { type: "boolean" },
+              expanded: { type: "boolean" },
+              disabled: { type: "boolean" },
+              invalid: { type: "boolean" },
+              required: { type: "boolean" },
+              readonly: { type: "boolean" },
+              visible: { type: "boolean" }
             },
             additionalProperties: false
           }
@@ -404,132 +824,165 @@ export const registerWorkbenchCapabilities = (
     },
     async (request, context) => {
       const payload = asRecord(request.payload);
-      const scanRequest: WorkbenchWebTargetScanRequest = {
-        intent: parseWebTargetIntent(payload.intent),
-        ...(readString(payload.tabId) === undefined ? {} : { tabId: readString(payload.tabId) }),
-        ...(readString(payload.scope) === undefined
-          ? {}
-          : { scope: readString(payload.scope) as WorkbenchWebTargetScanRequest["scope"] }),
-        ...(readNumber(payload.maxCandidates) === undefined
-          ? {}
-          : { maxCandidates: readNumber(payload.maxCandidates) }),
-        ...(readString(payload.continuationToken) === undefined
-          ? {}
-          : { continuationToken: readString(payload.continuationToken) })
-      };
-      return await webAutomationService.scanTargets(scanRequest, toWebAutomationCallContext(request, context));
-    }
-  );
-
-  registry.register(
-    {
-      id: "workbench.web_graph.build",
-      domain: "workbench",
-      kind: "resource",
-      title: "Build Web Element Graph",
-      appId: WORKBENCH_APP_ID,
-      operation: "web_graph.build",
-      description: "Build a structured, selector-addressable graph for the active web page and return highlighted likely input, focus, and click targets.",
-      permissions: ["workbench:read"],
-      risk: "read",
-      approvalMode: "auto",
-      aiExposure: "read",
-      inputSchema: {
-        type: "object",
-        properties: {
-          tabId: { type: "string" },
-          detail: { type: "string", enum: ["summary", "full"] },
-          forceRefresh: { type: "boolean" },
-          maxNodes: { type: "number" },
-          maxFrames: { type: "number" },
-          maxScrollSteps: { type: "number" },
-          maxBuildMs: { type: "number" }
-        },
-        additionalProperties: false
-      },
-      outputSchema: {
-        type: "object"
+      const actionInput = asRecord(payload.action);
+      const actionKind = readString(actionInput.kind) ?? readString(actionInput.type);
+      const actionTarget = asRecord(actionInput.target);
+      const hasActionTarget = Object.keys(actionTarget).length > 0;
+      const fallbackActionTarget = buildScanAndActFallbackTarget(payload, actionInput);
+      const normalizedPayload = (
+        actionKind !== undefined
+        && hasActionTarget === false
+        && (
+          actionKind === "click"
+          || actionKind === "hover"
+          || actionKind === "focus"
+          || actionKind === "scroll_into_view"
+          || actionKind === "expand_probe"
+          || actionKind === "submit_form"
+          || actionKind === "open_link_node"
+        )
+        && Object.keys(fallbackActionTarget).length > 0
+      )
+        ? {
+          ...payload,
+          action: {
+            ...actionInput,
+            target: fallbackActionTarget
+          }
+        }
+        : payload;
+      let actionRequest: ReturnType<typeof parseWorkbenchWebActionRequestPayload>;
+      try {
+        actionRequest = parseWorkbenchWebActionRequestPayload(normalizedPayload);
+      } catch (error) {
+        const message =
+          error instanceof Error && typeof error.message === "string"
+            ? error.message
+            : "";
+        const allowsTargetlessScanAndAct =
+          (
+            actionKind === "click"
+            || actionKind === "hover"
+            || actionKind === "focus"
+            || actionKind === "scroll_into_view"
+            || actionKind === "expand_probe"
+            || actionKind === "submit_form"
+            || actionKind === "open_link_node"
+          )
+          && message.includes("requires target");
+        if (!allowsTargetlessScanAndAct || actionKind === undefined) {
+          throw error;
+        }
+        actionRequest = {
+          ...(readString(normalizedPayload.tabId) === undefined
+            ? {}
+            : { tabId: readString(normalizedPayload.tabId) }),
+          ...(readString(normalizedPayload.graphId) === undefined
+            ? {}
+            : { graphId: readString(normalizedPayload.graphId) }),
+          action: {
+            kind: actionKind as "click" | "hover" | "focus" | "scroll_into_view" | "expand_probe" | "submit_form" | "open_link_node",
+            target: {}
+          },
+          ...(readNumber(normalizedPayload.timeoutMs) === undefined
+            ? {}
+            : { timeoutMs: readNumber(normalizedPayload.timeoutMs) }),
+          ...(readNumber(normalizedPayload.waitForNavigationMs) === undefined
+            ? {}
+            : { waitForNavigationMs: readNumber(normalizedPayload.waitForNavigationMs) }),
+        };
       }
-    },
-    async (request) => {
-      const payload = asRecord(request.payload);
-      const buildRequest: WorkbenchWebGraphBuildRequest = {
-        ...(readString(payload.tabId) === undefined ? {} : { tabId: readString(payload.tabId) }),
-        ...(readString(payload.detail) === "full" || readString(payload.detail) === "summary"
-          ? { detail: readString(payload.detail) as "summary" | "full" }
-          : {}),
-        ...(readBoolean(payload.forceRefresh) === undefined ? {} : { forceRefresh: readBoolean(payload.forceRefresh) }),
-        ...(readNumber(payload.maxNodes) === undefined ? {} : { maxNodes: readNumber(payload.maxNodes) }),
-        ...(readNumber(payload.maxFrames) === undefined ? {} : { maxFrames: readNumber(payload.maxFrames) }),
-        ...(readNumber(payload.maxScrollSteps) === undefined ? {} : { maxScrollSteps: readNumber(payload.maxScrollSteps) }),
-        ...(readNumber(payload.maxBuildMs) === undefined ? {} : { maxBuildMs: readNumber(payload.maxBuildMs) })
+      const roleHint =
+        readString(payload.role)
+        ?? readStringArray(payload.role)
+        ?? readString(actionInput.role)
+        ?? readStringArray(actionInput.role);
+      const resolvedText =
+        readString(payload.text)
+        ?? readString(payload.textContains)
+        ?? readString(payload.textSnippet)
+        ?? readString(actionInput.text)
+        ?? readString(actionInput.textContains)
+        ?? readString(actionInput.textSnippet);
+      const resolvedName =
+        readString(payload.name)
+        ?? readString(payload.ariaLabel)
+        ?? readString(payload.label)
+        ?? readString(payload.placeholder)
+        ?? readString(actionInput.name)
+        ?? readString(actionInput.ariaLabel)
+        ?? readString(actionInput.label)
+        ?? readString(actionInput.placeholder);
+      const goalPayload = asRecord(payload.goal);
+      const expectedTransitions = Array.isArray(goalPayload.expectedTransitions)
+        ? goalPayload.expectedTransitions
+          .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+          .map((entry) => entry.trim())
+        : undefined;
+      const resolvedWithin = readString(payload.within) ?? readString(actionInput.within);
+      const resolvedNear = readString(payload.near) ?? readString(actionInput.near);
+      const resolvedRegionId = readString(payload.regionId) ?? readString(actionInput.regionId);
+      const resolvedGroupId = readString(payload.groupId) ?? readString(actionInput.groupId);
+      const resolvedIndex = readNumber(payload.index) ?? readNumber(actionInput.index);
+      const resolvedState = parseQueryStateFilter(payload.state) ?? parseQueryStateFilter(actionInput.state);
+      const targetHints: WorkbenchWebScanAndActRequest["targetHints"] = {
+        ...(roleHint === undefined ? {} : { role: roleHint }),
+        ...(resolvedName === undefined ? {} : { name: resolvedName }),
+        ...(resolvedText === undefined ? {} : { text: resolvedText }),
+        ...(resolvedWithin === undefined ? {} : { within: resolvedWithin }),
+        ...(resolvedNear === undefined ? {} : { near: resolvedNear }),
+        ...(resolvedRegionId === undefined ? {} : { regionId: resolvedRegionId }),
+        ...(resolvedGroupId === undefined ? {} : { groupId: resolvedGroupId }),
+        ...(resolvedIndex === undefined ? {} : { index: resolvedIndex }),
+        ...(resolvedState === undefined ? {} : { state: resolvedState })
       };
-      return await webAutomationService.buildGraph(buildRequest);
-    }
-  );
-
-  registry.register(
-    {
-      id: "workbench.web_graph.query",
-      domain: "workbench",
-      kind: "resource",
-      title: "Query Web Element Graph",
-      appId: WORKBENCH_APP_ID,
-      operation: "web_graph.query",
-      description: "Query interactable nodes from a previously built page graph and return the best candidate node for the requested action.",
-      permissions: ["workbench:read"],
-      risk: "read",
-      approvalMode: "auto",
-      aiExposure: "read",
-      inputSchema: {
-        type: "object",
-        properties: {
-          tabId: { type: "string" },
-          graphId: { type: "string" },
-          textContains: { type: "string" },
-          text: { type: "string" },
-          query: { type: "string" },
-          contains: { type: "string" },
-          tagName: { type: "string" },
-          role: { type: "string" },
-          onlyInteractable: { type: "boolean" },
-          action: { type: "string", enum: ["click", "type", "select", "focus", "scroll", "submit"] },
-          maxResults: { type: "number" }
-        },
-        additionalProperties: false
-      },
-      outputSchema: {
-        type: "object"
-      }
-    },
-    async (request) => {
-      const payload = asRecord(request.payload);
-      const queryRequest: WorkbenchWebGraphQueryRequest = {
-        ...(readString(payload.tabId) === undefined ? {} : { tabId: readString(payload.tabId) }),
-        ...(readString(payload.graphId) === undefined ? {} : { graphId: readString(payload.graphId) }),
-        ...((readString(payload.textContains)
-          ?? readString(payload.text)
-          ?? readString(payload.query)
-          ?? readString(payload.contains)) === undefined
+      const hasTargetHints = Object.keys(targetHints).length > 0;
+      const followThroughSteps = readNumber(payload.followThroughSteps) ?? readNumber(actionInput.followThroughSteps);
+      const resolvedScope =
+        readString(payload.scope) ?? readString(actionInput.scope);
+      const resolvedMaxCandidates =
+        readNumber(payload.maxCandidates)
+        ?? readNumber(payload.maxResults)
+        ?? readNumber(actionInput.maxCandidates)
+        ?? readNumber(actionInput.maxResults);
+      const resolvedMaxLatencyMs = readNumber(payload.maxLatencyMs) ?? readNumber(actionInput.maxLatencyMs);
+      const scanAndActRequest: WorkbenchWebScanAndActRequest = {
+        ...actionRequest,
+        ...(resolvedScope === undefined
           ? {}
-          : {
-              textContains:
-                (readString(payload.textContains)
-                ?? readString(payload.text)
-                ?? readString(payload.query)
-                ?? readString(payload.contains))!,
-            }),
-        ...(readString(payload.tagName) === undefined ? {} : { tagName: readString(payload.tagName) }),
-        ...(readString(payload.role) === undefined ? {} : { role: readString(payload.role) }),
-        ...(readBoolean(payload.onlyInteractable) === undefined
+          : { scope: resolvedScope as WorkbenchWebScanAndActRequest["scope"] }),
+        ...(resolvedMaxCandidates === undefined
           ? {}
-          : { onlyInteractable: readBoolean(payload.onlyInteractable) }),
-        ...(readString(payload.action) === undefined
+          : { maxCandidates: resolvedMaxCandidates }),
+        ...(resolvedMaxLatencyMs === undefined
           ? {}
-          : { action: readString(payload.action) as WorkbenchWebGraphQueryRequest["action"] }),
-        ...(readNumber(payload.maxResults) === undefined ? {} : { maxResults: readNumber(payload.maxResults) })
+          : { maxLatencyMs: resolvedMaxLatencyMs }),
+        ...(followThroughSteps === undefined
+          ? {}
+          : { followThroughSteps: Math.max(0, Math.min(2, Math.round(followThroughSteps))) as 0 | 1 | 2 }),
+        ...(hasTargetHints ? { targetHints } : {}),
+        ...(
+          expectedTransitions !== undefined || readBoolean(goalPayload.mustAdvance) !== undefined
+            ? {
+              goal: {
+                ...(expectedTransitions === undefined
+                  ? {}
+                  : {
+                    expectedTransitions:
+                      expectedTransitions as NonNullable<WorkbenchWebScanAndActRequest["goal"]>["expectedTransitions"]
+                  }),
+                ...(readBoolean(goalPayload.mustAdvance) === undefined
+                  ? {}
+                  : { mustAdvance: readBoolean(goalPayload.mustAdvance) })
+              }
+            }
+            : {}
+        )
       };
-      return await webAutomationService.queryGraph(queryRequest);
+      return await webAutomationService.scanAndAct(
+        scanAndActRequest,
+        toWebAutomationCallContext(request, context)
+      );
     }
   );
 
@@ -586,6 +1039,17 @@ export const registerWorkbenchCapabilities = (
     async (request, context) => {
       const payload = asRecord(request.payload);
       const actionRequest = parseWorkbenchWebActionRequestPayload(payload);
+      if (
+        actionRequest.action.kind === "focus"
+        || actionRequest.action.kind === "hover"
+        || actionRequest.action.kind === "scroll_into_view"
+        || actionRequest.action.kind === "expand_probe"
+      ) {
+        return await webAutomationService.runSafeAction(
+          actionRequest,
+          toWebAutomationCallContext(request, context)
+        );
+      }
       return await webAutomationService.runMutateAction(
         actionRequest,
         toWebAutomationCallContext(request, context)
@@ -688,9 +1152,11 @@ export const registerWorkbenchCapabilities = (
       "workbench.tab.extract_text",
       "workbench.tab.read",
       "workbench.tab.capture_visual",
-      "workbench.web_target.scan",
-      "workbench.web_graph.build",
-      "workbench.web_graph.query",
+      "workbench.web_skeleton.read",
+      "workbench.web_query.find",
+      "workbench.web_context.read",
+      "workbench.web_focus.probe",
+      "workbench.web_scan_and_act",
       "workbench.web_action.safe",
       "workbench.web_action.mutate",
       "workbench.web_action.navigate",

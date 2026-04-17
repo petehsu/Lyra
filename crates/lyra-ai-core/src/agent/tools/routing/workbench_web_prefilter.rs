@@ -4,9 +4,11 @@ use crate::agent::tools::external::{
 
 use super::web_context::WorkbenchWebRoutingContext;
 
-const WEB_TARGET_SCAN: &str = "workbench.web_target.scan";
-const WEB_GRAPH_BUILD: &str = "workbench.web_graph.build";
-const WEB_GRAPH_QUERY: &str = "workbench.web_graph.query";
+const WEB_SKELETON_READ: &str = "workbench.web_skeleton.read";
+const WEB_QUERY_FIND: &str = "workbench.web_query.find";
+const WEB_CONTEXT_READ: &str = "workbench.web_context.read";
+const WEB_FOCUS_PROBE: &str = "workbench.web_focus.probe";
+const WEB_SCAN_AND_ACT: &str = "workbench.web_scan_and_act";
 const TAB_READ: &str = "workbench.tab.read";
 const TAB_EXTRACT_TEXT: &str = "workbench.tab.extract_text";
 const WEB_ACTION_SAFE: &str = "workbench.web_action.safe";
@@ -21,12 +23,14 @@ pub fn workbench_web_prefilter_bonus(
     context: Option<&WorkbenchWebRoutingContext>,
 ) -> i32 {
     let base = match tool_name {
-        WEB_TARGET_SCAN => 20,
-        WEB_GRAPH_BUILD => 10,
-        WEB_GRAPH_QUERY => 9,
-        WEB_ACTION_SAFE => 12,
-        WEB_ACTION_WAIT => 11,
-        WEB_ACTION_MUTATE => 8,
+        WEB_SKELETON_READ => 28,
+        WEB_QUERY_FIND => 26,
+        WEB_CONTEXT_READ => 24,
+        WEB_SCAN_AND_ACT => 30,
+        WEB_FOCUS_PROBE => 18,
+        WEB_ACTION_SAFE => 14,
+        WEB_ACTION_WAIT => 12,
+        WEB_ACTION_MUTATE => 10,
         WEB_ACTION_NAVIGATE => 6,
         _ => 0,
     };
@@ -53,91 +57,317 @@ pub fn workbench_web_prefilter_bonus(
     if let Some(context) = context {
         if context.has_live_candidates {
             context_bonus += match tool_name {
-                WEB_ACTION_SAFE | WEB_ACTION_WAIT => 18,
-                WEB_ACTION_MUTATE => 30,
-                WEB_ACTION_NAVIGATE => 8,
-                WEB_TARGET_SCAN => -8,
-                WEB_GRAPH_BUILD => -30,
-                WEB_GRAPH_QUERY => -18,
-                TAB_READ => -16,
+                WEB_SCAN_AND_ACT => 34,
+                WEB_ACTION_MUTATE => 28,
+                WEB_ACTION_SAFE => 28,
+                WEB_ACTION_WAIT => 12,
+                WEB_CONTEXT_READ => 4,
+                WEB_FOCUS_PROBE => 8,
+                WEB_QUERY_FIND => -16,
+                WEB_SKELETON_READ => -18,
+                TAB_READ => -18,
                 TAB_EXTRACT_TEXT => -20,
                 _ => 0,
             };
         } else if context.has_live_scan_session {
             context_bonus += match tool_name {
-                WEB_ACTION_SAFE | WEB_ACTION_WAIT | WEB_ACTION_MUTATE => 10,
-                WEB_TARGET_SCAN => -4,
-                WEB_GRAPH_BUILD => -12,
-                WEB_GRAPH_QUERY => -6,
+                WEB_SCAN_AND_ACT => 24,
+                WEB_QUERY_FIND => 12,
+                WEB_CONTEXT_READ => 10,
+                WEB_FOCUS_PROBE => 10,
+                WEB_ACTION_SAFE | WEB_ACTION_WAIT | WEB_ACTION_MUTATE => 8,
+                WEB_SKELETON_READ => 6,
                 TAB_READ => -8,
                 TAB_EXTRACT_TEXT => -10,
                 _ => 0,
             };
         } else {
             context_bonus += match tool_name {
-                WEB_TARGET_SCAN => 16,
-                WEB_GRAPH_BUILD => -8,
-                WEB_GRAPH_QUERY => -4,
+                WEB_SCAN_AND_ACT => 26,
+                WEB_SKELETON_READ => 24,
+                WEB_QUERY_FIND => 18,
+                WEB_CONTEXT_READ => 14,
+                WEB_FOCUS_PROBE => 10,
                 _ => 0,
             };
         }
 
         context_bonus += match context.last_failure_code.as_deref() {
-            Some("candidate_stale") | Some("candidate_not_found") | Some("postcondition_timeout") => {
+            Some("candidate_stale")
+            | Some("candidate_not_found")
+            | Some("postcondition_timeout") => match tool_name {
+                WEB_SCAN_AND_ACT => 14,
+                WEB_QUERY_FIND | WEB_CONTEXT_READ => 14,
+                WEB_SKELETON_READ => 10,
+                WEB_ACTION_MUTATE | WEB_ACTION_SAFE => -8,
+                _ => 0,
+            },
+            Some("no_interactable_candidates") | Some("selector_budget_exhausted") => {
                 match tool_name {
-                    WEB_TARGET_SCAN => 14,
-                    WEB_GRAPH_QUERY => 8,
-                    WEB_ACTION_MUTATE | WEB_ACTION_SAFE => -8,
+                    WEB_SCAN_AND_ACT => 12,
+                    WEB_SKELETON_READ => 12,
+                    WEB_QUERY_FIND | WEB_CONTEXT_READ => 10,
                     _ => 0,
                 }
             }
-            Some("no_interactable_candidates") | Some("selector_budget_exhausted") => match tool_name {
-                WEB_TARGET_SCAN => 8,
-                WEB_GRAPH_QUERY => 6,
-                WEB_GRAPH_BUILD => 4,
-                _ => 0,
-            },
             Some("active_visible_page_required") => match tool_name {
-                WEB_TARGET_SCAN
-                | WEB_GRAPH_BUILD
-                | WEB_GRAPH_QUERY
-                | WEB_ACTION_SAFE
-                | WEB_ACTION_WAIT
-                | WEB_ACTION_MUTATE
+                WEB_SKELETON_READ | WEB_QUERY_FIND | WEB_CONTEXT_READ | WEB_FOCUS_PROBE
+                | WEB_SCAN_AND_ACT | WEB_ACTION_SAFE | WEB_ACTION_WAIT | WEB_ACTION_MUTATE
                 | WEB_ACTION_NAVIGATE => -20,
                 _ => 0,
             },
             _ => 0,
         };
 
-        if context.last_graph_fallback_succeeded {
+        if context.active_widget_id.is_some() {
             context_bonus += match tool_name {
-                WEB_GRAPH_QUERY => 4,
-                WEB_GRAPH_BUILD => 2,
-                WEB_TARGET_SCAN => -2,
+                WEB_SCAN_AND_ACT => 18,
+                WEB_ACTION_MUTATE | WEB_ACTION_SAFE | WEB_ACTION_WAIT => 12,
+                WEB_QUERY_FIND | WEB_CONTEXT_READ => 10,
+                WEB_SKELETON_READ => 6,
+                TAB_READ => -12,
+                TAB_EXTRACT_TEXT => -14,
+                _ => 0,
+            };
+        }
+
+        if context.widget_graph_ready || context.native_widget_ready {
+            context_bonus += match tool_name {
+                WEB_SCAN_AND_ACT => 24,
+                WEB_ACTION_MUTATE | WEB_ACTION_SAFE | WEB_ACTION_WAIT => 18,
+                WEB_QUERY_FIND | WEB_CONTEXT_READ => 8,
+                WEB_SKELETON_READ => -10,
+                TAB_READ => -16,
+                TAB_EXTRACT_TEXT => -18,
+                _ => 0,
+            };
+        }
+
+        if context.active_item_id.is_some() {
+            context_bonus += match tool_name {
+                WEB_SCAN_AND_ACT => 24,
+                WEB_ACTION_MUTATE => 18,
+                WEB_ACTION_SAFE => 14,
+                WEB_ACTION_WAIT => 10,
+                WEB_QUERY_FIND | WEB_CONTEXT_READ => 8,
+                WEB_SKELETON_READ => 4,
+                TAB_READ => -16,
+                TAB_EXTRACT_TEXT => -18,
+                _ => 0,
+            };
+        }
+
+        if context.focus_atlas_ready {
+            context_bonus += match tool_name {
+                WEB_SCAN_AND_ACT => 18,
+                WEB_SKELETON_READ => -6,
+                WEB_QUERY_FIND => 12,
+                WEB_CONTEXT_READ => 10,
+                WEB_ACTION_SAFE | WEB_ACTION_MUTATE | WEB_ACTION_WAIT => 10,
+                TAB_READ => -8,
+                TAB_EXTRACT_TEXT => -10,
+                _ => 0,
+            };
+        }
+
+        if context.active_focus_region_id.is_some() {
+            context_bonus += match tool_name {
+                WEB_SCAN_AND_ACT => 20,
+                WEB_ACTION_SAFE | WEB_ACTION_MUTATE | WEB_ACTION_WAIT => 12,
+                WEB_QUERY_FIND | WEB_CONTEXT_READ => 10,
+                WEB_SKELETON_READ => 6,
+                TAB_READ => -10,
+                TAB_EXTRACT_TEXT => -12,
+                _ => 0,
+            };
+        }
+
+        if context.last_reveal_observed {
+            context_bonus += match tool_name {
+                WEB_SCAN_AND_ACT => 20,
+                WEB_ACTION_MUTATE => 16,
+                WEB_ACTION_SAFE => 10,
+                WEB_CONTEXT_READ => 10,
+                WEB_QUERY_FIND => 6,
+                WEB_SKELETON_READ => 2,
+                TAB_READ => -14,
+                TAB_EXTRACT_TEXT => -16,
+                _ => 0,
+            };
+        }
+
+        if context.last_focus_delta_observed || context.last_focus_probe_verified {
+            context_bonus += match tool_name {
+                WEB_SCAN_AND_ACT => 12,
+                WEB_ACTION_SAFE | WEB_ACTION_MUTATE | WEB_ACTION_WAIT => 8,
+                WEB_FOCUS_PROBE => 10,
+                WEB_CONTEXT_READ => 8,
+                WEB_QUERY_FIND => 4,
+                _ => 0,
+            };
+        }
+
+        context_bonus += match context.current_browser_subgoal.as_deref() {
+            Some("locate item") => match tool_name {
+                WEB_SCAN_AND_ACT => 28,
+                WEB_SKELETON_READ => 16,
+                WEB_QUERY_FIND => 24,
+                WEB_CONTEXT_READ => 18,
+                WEB_FOCUS_PROBE => 8,
+                WEB_ACTION_SAFE => 6,
+                WEB_ACTION_MUTATE => -6,
+                TAB_READ => -12,
+                TAB_EXTRACT_TEXT => -16,
+                _ => 0,
+            },
+            Some("reveal item actions") => match tool_name {
+                WEB_SCAN_AND_ACT => 26,
+                WEB_ACTION_SAFE => 22,
+                WEB_FOCUS_PROBE => 14,
+                WEB_CONTEXT_READ => 14,
+                WEB_QUERY_FIND => 10,
+                WEB_SKELETON_READ => 8,
+                WEB_ACTION_MUTATE => 4,
+                TAB_READ => -16,
+                TAB_EXTRACT_TEXT => -20,
+                _ => 0,
+            },
+            Some("open item menu") => match tool_name {
+                WEB_SCAN_AND_ACT => 26,
+                WEB_ACTION_MUTATE => 22,
+                WEB_ACTION_SAFE => 8,
+                WEB_ACTION_WAIT => 6,
+                WEB_CONTEXT_READ => 10,
+                WEB_QUERY_FIND => 8,
+                WEB_SKELETON_READ => 4,
+                TAB_READ => -14,
+                TAB_EXTRACT_TEXT => -18,
+                _ => 0,
+            },
+            Some("execute menu action") => match tool_name {
+                WEB_SCAN_AND_ACT => 30,
+                WEB_ACTION_MUTATE => 26,
+                WEB_ACTION_WAIT => 10,
+                WEB_CONTEXT_READ => 10,
+                WEB_QUERY_FIND => 4,
+                TAB_READ => -16,
+                TAB_EXTRACT_TEXT => -20,
+                _ => 0,
+            },
+            Some("locate mode switcher") => match tool_name {
+                WEB_SCAN_AND_ACT => 18,
+                WEB_SKELETON_READ => 10,
+                WEB_QUERY_FIND => 14,
+                WEB_CONTEXT_READ => 12,
+                WEB_ACTION_SAFE => 8,
+                _ => 0,
+            },
+            Some("toggle mode") => match tool_name {
+                WEB_SCAN_AND_ACT => 28,
+                WEB_ACTION_MUTATE => 22,
+                WEB_ACTION_WAIT => 8,
+                WEB_FOCUS_PROBE => 8,
+                WEB_QUERY_FIND => 10,
+                WEB_CONTEXT_READ => 12,
+                WEB_SKELETON_READ => 4,
+                _ => 0,
+            },
+            Some("locate composer") => match tool_name {
+                WEB_SCAN_AND_ACT => 20,
+                WEB_SKELETON_READ => 12,
+                WEB_QUERY_FIND => 18,
+                WEB_CONTEXT_READ => 14,
+                WEB_FOCUS_PROBE => 10,
+                WEB_ACTION_SAFE => 6,
+                _ => 0,
+            },
+            Some("type") => match tool_name {
+                WEB_SCAN_AND_ACT => 30,
+                WEB_ACTION_MUTATE => 26,
+                WEB_ACTION_SAFE => 6,
+                WEB_CONTEXT_READ => 8,
+                WEB_ACTION_WAIT => -16,
+                _ => 0,
+            },
+            Some("submit") => match tool_name {
+                WEB_SCAN_AND_ACT => 30,
+                WEB_ACTION_MUTATE => 24,
+                WEB_ACTION_WAIT => 12,
+                WEB_CONTEXT_READ => 8,
+                WEB_ACTION_SAFE => 4,
+                _ => 0,
+            },
+            Some("wait for response/state transition") => match tool_name {
+                WEB_SCAN_AND_ACT => -18,
+                WEB_ACTION_WAIT => 28,
+                WEB_ACTION_MUTATE => -12,
+                WEB_ACTION_SAFE => -6,
+                WEB_QUERY_FIND => -8,
+                WEB_CONTEXT_READ => -4,
+                WEB_SKELETON_READ => -10,
+                TAB_READ => -14,
+                TAB_EXTRACT_TEXT => -16,
+                _ => 0,
+            },
+            _ => 0,
+        };
+
+        if context.last_action_verified {
+            context_bonus += match tool_name {
+                WEB_SCAN_AND_ACT => 20,
+                WEB_ACTION_MUTATE | WEB_ACTION_SAFE | WEB_ACTION_WAIT => 16,
+                WEB_FOCUS_PROBE => 6,
+                WEB_QUERY_FIND | WEB_CONTEXT_READ => -8,
+                WEB_SKELETON_READ => -12,
+                _ => 0,
+            };
+        }
+
+        if matches!(
+            context.last_workflow_failure.as_deref(),
+            Some(
+                "hover_reveal_required"
+                    | "reveal_not_observed"
+                    | "menu_not_opened"
+                    | "list_item_not_changed"
+                    | "mode_not_switched"
+                    | "workflow_not_advanced"
+            )
+        ) {
+            context_bonus += match tool_name {
+                WEB_SCAN_AND_ACT => 24,
+                WEB_ACTION_SAFE => 16,
+                WEB_ACTION_MUTATE => 12,
+                WEB_FOCUS_PROBE => 10,
+                WEB_QUERY_FIND | WEB_CONTEXT_READ => 12,
+                WEB_SKELETON_READ => 10,
+                TAB_READ => -14,
+                TAB_EXTRACT_TEXT => -18,
                 _ => 0,
             };
         }
 
         if context.last_mutate_draft_only {
             context_bonus += match tool_name {
-                WEB_ACTION_WAIT => -72,
-                WEB_ACTION_MUTATE => 28,
+                WEB_SCAN_AND_ACT => 18,
+                WEB_ACTION_MUTATE => 32,
+                WEB_CONTEXT_READ => 12,
+                WEB_QUERY_FIND => 10,
                 WEB_ACTION_SAFE => 8,
-                WEB_TARGET_SCAN => 14,
-                WEB_GRAPH_QUERY => -10,
-                WEB_GRAPH_BUILD => -18,
-                TAB_READ => -20,
-                TAB_EXTRACT_TEXT => -28,
+                WEB_SKELETON_READ => -14,
+                WEB_ACTION_WAIT => -56,
                 _ => 0,
             };
         }
 
         if context.last_mutate_submitted {
             context_bonus += match tool_name {
+                WEB_SCAN_AND_ACT => 8,
                 WEB_ACTION_WAIT => 18,
                 WEB_ACTION_MUTATE => -10,
-                WEB_TARGET_SCAN => -6,
+                WEB_SKELETON_READ => -6,
+                WEB_QUERY_FIND => -6,
+                WEB_CONTEXT_READ => -4,
                 TAB_READ => 10,
                 TAB_EXTRACT_TEXT => 14,
                 _ => 0,
@@ -146,21 +376,24 @@ pub fn workbench_web_prefilter_bonus(
 
         if context.has_typable_candidate && !context.last_mutate_submitted {
             context_bonus += match tool_name {
-                WEB_ACTION_MUTATE => 16,
+                WEB_SCAN_AND_ACT => 28,
+                WEB_ACTION_MUTATE => 24,
                 WEB_ACTION_SAFE => 8,
+                WEB_QUERY_FIND | WEB_CONTEXT_READ => 10,
+                WEB_SKELETON_READ => -8,
                 WEB_ACTION_WAIT => -16,
                 TAB_READ => -12,
                 TAB_EXTRACT_TEXT => -16,
-                WEB_GRAPH_BUILD => -10,
-                WEB_GRAPH_QUERY => -8,
                 _ => 0,
             };
         }
 
         if context.has_clickable_candidate && !context.last_mutate_submitted {
             context_bonus += match tool_name {
-                WEB_ACTION_MUTATE => 8,
-                WEB_ACTION_SAFE => 6,
+                WEB_SCAN_AND_ACT => 20,
+                WEB_ACTION_MUTATE => 10,
+                WEB_ACTION_SAFE => 8,
+                WEB_QUERY_FIND => 6,
                 TAB_READ => -6,
                 TAB_EXTRACT_TEXT => -8,
                 _ => 0,
@@ -168,9 +401,10 @@ pub fn workbench_web_prefilter_bonus(
         }
     } else {
         context_bonus += match tool_name {
-            WEB_TARGET_SCAN => 16,
-            WEB_GRAPH_BUILD => -8,
-            WEB_GRAPH_QUERY => -4,
+            WEB_SCAN_AND_ACT => 28,
+            WEB_SKELETON_READ => 22,
+            WEB_QUERY_FIND => 18,
+            WEB_CONTEXT_READ => 14,
             _ => 0,
         };
     }

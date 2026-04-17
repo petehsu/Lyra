@@ -3,14 +3,34 @@ import type {
   WorkbenchWebActionRequest,
   WorkbenchWebActionTarget,
   WorkbenchWebElementSignature,
+  WorkbenchWebNodeRef,
   WorkbenchWebSelectorAddress,
 } from "../../shared/workbench-web-automation";
 
+const maybeParseJson = (value: unknown): unknown => {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith("{") && trimmed.endsWith("}"))
+    || (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  ) {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+};
+
 const asRecord = (value: unknown): Record<string, unknown> => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  const normalized = maybeParseJson(value);
+  if (normalized === null || typeof normalized !== "object" || Array.isArray(normalized)) {
     return {};
   }
-  return value as Record<string, unknown>;
+  return normalized as Record<string, unknown>;
 };
 
 const readString = (value: unknown): string | undefined =>
@@ -21,6 +41,19 @@ const readBoolean = (value: unknown): boolean | undefined =>
 
 const readNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
+const readStringArray = (value: unknown): readonly string[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = value
+    .map((entry) => readString(entry))
+    .filter((entry): entry is string => entry !== undefined);
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const readRole = (value: unknown): string | undefined =>
+  readString(value) ?? readStringArray(value)?.[0];
 
 const parseSelectorAddress = (value: unknown): WorkbenchWebSelectorAddress | undefined => {
   const record = asRecord(value);
@@ -43,7 +76,7 @@ const parseStableSignature = (value: unknown): WorkbenchWebElementSignature | un
   }
   return {
     tagName,
-    ...(readString(record.role) === undefined ? {} : { role: readString(record.role) }),
+    ...(readRole(record.role) === undefined ? {} : { role: readRole(record.role) }),
     ...(readString(record.inputType) === undefined ? {} : { inputType: readString(record.inputType) }),
     ...(readString(record.id) === undefined ? {} : { id: readString(record.id) }),
     ...(readString(record.name) === undefined ? {} : { name: readString(record.name) }),
@@ -56,22 +89,101 @@ const parseStableSignature = (value: unknown): WorkbenchWebElementSignature | un
   };
 };
 
+const parseNodeRef = (value: unknown): WorkbenchWebNodeRef | undefined => {
+  const record = asRecord(value);
+  const nodeId = readString(record.nodeId);
+  const revision = readString(record.revision);
+  if (nodeId === undefined || revision === undefined) {
+    return undefined;
+  }
+  return {
+    nodeId,
+    revision,
+    ...(readString(record.scanSessionId) === undefined
+      ? {}
+      : { scanSessionId: readString(record.scanSessionId) }),
+    ...(parseStableSignature(record.stableFingerprint) === undefined
+      ? {}
+      : { stableFingerprint: parseStableSignature(record.stableFingerprint) }),
+  };
+};
+
+const parseSemanticStableSignature = (record: Record<string, unknown>): WorkbenchWebElementSignature | undefined => {
+  const tagName = readString(record.tagName);
+  const role = readRole(record.role);
+  const inputType = readString(record.inputType);
+  const id = readString(record.id);
+  const name = readString(record.name);
+  const testId = readString(record.testId);
+  const ariaLabel = readString(record.ariaLabel);
+
+  if (
+    tagName === undefined
+    && role === undefined
+    && inputType === undefined
+    && id === undefined
+    && name === undefined
+    && testId === undefined
+    && ariaLabel === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(tagName === undefined ? {} : { tagName }),
+    ...(role === undefined ? {} : { role }),
+    ...(inputType === undefined ? {} : { inputType }),
+    ...(id === undefined ? {} : { id }),
+    ...(name === undefined ? {} : { name }),
+    ...(testId === undefined ? {} : { testId }),
+    ...(ariaLabel === undefined ? {} : { ariaLabel })
+  } as WorkbenchWebElementSignature;
+};
+
 const parseTarget = (value: unknown): WorkbenchWebActionTarget => {
   const record = asRecord(value);
+  const nodeRef = parseNodeRef(record.nodeRef);
   const selectorAddress = parseSelectorAddress(record.selectorAddress);
-  const stableSignature = parseStableSignature(record.stableSignature);
+  const stableSignature = parseStableSignature(record.stableSignature) ?? parseSemanticStableSignature(record);
   const candidateId = readString(record.candidateId);
   const scanSessionId = readString(record.scanSessionId);
   const nodeId = readString(record.nodeId);
+  const index = readNumber(record.index);
   const cssSelector = readString(record.cssSelector) ?? readString(record.selector);
+  const tagName = readString(record.tagName);
+  const role = readRole(record.role);
+  const inputType = readString(record.inputType);
+  const id = readString(record.id);
+  const name = readString(record.name);
+  const testId = readString(record.testId);
+  const ariaLabel = readString(record.ariaLabel);
+  const text = readString(record.text);
+  const textContains = readString(record.textContains);
+  const textSnippet = readString(record.textSnippet);
+  const placeholder = readString(record.placeholder);
+  const label = readString(record.label);
 
   return {
     ...(candidateId === undefined ? {} : { candidateId }),
     ...(scanSessionId === undefined ? {} : { scanSessionId }),
     ...(nodeId === undefined ? {} : { nodeId }),
+    ...(index === undefined ? {} : { index: Math.max(0, Math.round(index)) }),
+    ...(nodeRef === undefined ? {} : { nodeRef }),
     ...(cssSelector === undefined ? {} : { cssSelector }),
     ...(selectorAddress === undefined ? {} : { selectorAddress }),
     ...(stableSignature === undefined ? {} : { stableSignature }),
+    ...(tagName === undefined ? {} : { tagName }),
+    ...(role === undefined ? {} : { role }),
+    ...(inputType === undefined ? {} : { inputType }),
+    ...(id === undefined ? {} : { id }),
+    ...(name === undefined ? {} : { name }),
+    ...(testId === undefined ? {} : { testId }),
+    ...(ariaLabel === undefined ? {} : { ariaLabel }),
+    ...(text === undefined ? {} : { text }),
+    ...(textContains === undefined ? {} : { textContains }),
+    ...(textSnippet === undefined ? {} : { textSnippet }),
+    ...(placeholder === undefined ? {} : { placeholder }),
+    ...(label === undefined ? {} : { label }),
   };
 };
 
@@ -79,9 +191,51 @@ const hasTarget = (target: WorkbenchWebActionTarget): boolean =>
   typeof target.candidateId === "string"
   || typeof target.scanSessionId === "string"
   || typeof target.nodeId === "string"
+  || typeof target.index === "number"
+  || target.nodeRef !== undefined
   || typeof target.cssSelector === "string"
   || target.selectorAddress !== undefined
-  || target.stableSignature !== undefined;
+  || target.stableSignature !== undefined
+  || typeof target.tagName === "string"
+  || typeof target.role === "string"
+  || typeof target.inputType === "string"
+  || typeof target.id === "string"
+  || typeof target.name === "string"
+  || typeof target.testId === "string"
+  || typeof target.ariaLabel === "string"
+  || typeof target.text === "string"
+  || typeof target.textContains === "string"
+  || typeof target.textSnippet === "string"
+  || typeof target.placeholder === "string"
+  || typeof target.label === "string";
+
+const hasRawTargetSignal = (value: unknown): boolean => {
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) {
+    return false;
+  }
+  return readString(record.candidateId) !== undefined
+    || readString(record.scanSessionId) !== undefined
+    || readString(record.nodeId) !== undefined
+    || readNumber(record.index) !== undefined
+    || record.nodeRef !== undefined
+    || readString(record.cssSelector) !== undefined
+    || readString(record.selector) !== undefined
+    || record.selectorAddress !== undefined
+    || record.stableSignature !== undefined
+    || readString(record.tagName) !== undefined
+    || readRole(record.role) !== undefined
+    || readString(record.inputType) !== undefined
+    || readString(record.id) !== undefined
+    || readString(record.name) !== undefined
+    || readString(record.testId) !== undefined
+    || readString(record.ariaLabel) !== undefined
+    || readString(record.text) !== undefined
+    || readString(record.textContains) !== undefined
+    || readString(record.textSnippet) !== undefined
+    || readString(record.placeholder) !== undefined
+    || readString(record.label) !== undefined;
+};
 
 const isWeakDocumentSelector = (value: string | undefined): boolean => {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -130,6 +284,16 @@ const normalizeLegacyKind = (rawKind: string): WorkbenchWebAction["kind"] | null
       return "history_back";
     case "forward":
       return "history_forward";
+    case "scan":
+    case "query_find":
+    case "query":
+    case "find":
+    case "locate":
+    case "inspect":
+    case "probe":
+    case "observe":
+    case "analyze":
+      return "expand_probe";
     default:
       return null;
   }
@@ -186,6 +350,7 @@ const normalizeAction = (value: unknown): WorkbenchWebAction => {
   }
 
   const target = parseTarget(rawAction.target ?? rawAction);
+  const rawTargetSignal = hasRawTargetSignal(rawAction.target ?? rawAction);
 
   if (kind === "goto_url") {
     const address = readString(rawAction.address) ?? readString(rawAction.url);
@@ -295,17 +460,17 @@ const normalizeAction = (value: unknown): WorkbenchWebAction => {
             ...(target.stableSignature === undefined ? {} : { stableSignature: target.stableSignature }),
           }
         : target;
-    if (!hasTarget(normalizedTarget)) {
+    if (kind !== "expand_probe" && !hasTarget(normalizedTarget) && !rawTargetSignal) {
       throw new Error(`${kind} requires target`);
     }
     return {
       kind,
-      target: normalizedTarget,
+      target: hasTarget(normalizedTarget) ? normalizedTarget : {},
     };
   }
 
   if (kind === "click" || kind === "submit_form" || kind === "open_link_node") {
-    if (!hasTarget(target)) {
+    if (!hasTarget(target) && !rawTargetSignal) {
       throw new Error(`${kind} requires target`);
     }
     return {
@@ -369,9 +534,33 @@ const ACTION_TARGET_SCHEMA = {
     candidateId: { type: "string" },
     scanSessionId: { type: "string" },
     nodeId: { type: "string" },
+    index: { type: "number" },
+    nodeRef: {
+      type: "object",
+      required: ["nodeId", "revision"],
+      properties: {
+        nodeId: { type: "string" },
+        revision: { type: "string" },
+        scanSessionId: { type: "string" },
+        stableFingerprint: STABLE_SIGNATURE_SCHEMA
+      },
+      additionalProperties: false
+    },
     cssSelector: { type: "string" },
     selectorAddress: SELECTOR_ADDRESS_SCHEMA,
     stableSignature: STABLE_SIGNATURE_SCHEMA,
+    tagName: { type: "string" },
+    role: { type: "string" },
+    inputType: { type: "string" },
+    id: { type: "string" },
+    name: { type: "string" },
+    testId: { type: "string" },
+    ariaLabel: { type: "string" },
+    text: { type: "string" },
+    textContains: { type: "string" },
+    textSnippet: { type: "string" },
+    placeholder: { type: "string" },
+    label: { type: "string" },
   },
   additionalProperties: false,
 } as const;

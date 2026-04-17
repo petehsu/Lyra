@@ -1,9 +1,8 @@
 use crate::provider::types::AgentToolDefinition;
 
+mod browser_use;
 mod workbench;
 
-use super::routing::web_context::WorkbenchWebRoutingContext;
-use super::routing::workbench_web_prefilter::workbench_web_prefilter_bonus;
 use super::catalog::{
     all_builtin_tool_specs, decorated_builtin_definition, standard_builtin_tool_specs,
     BuiltinToolSpec, ToolExecutionMode,
@@ -12,6 +11,10 @@ use super::external::{
     decorated_tool_definition, registered_external_tools, ExternalToolApprovalMode,
     ExternalToolSideEffectLevel, ExternalToolSideEffects, RegisteredExternalTool,
 };
+use super::routing::browser_strategy::BrowserStrategyRoutingContext;
+use super::routing::browser_strategy_prefilter::browser_strategy_prefilter_bonus;
+use super::routing::web_context::WorkbenchWebRoutingContext;
+use super::routing::workbench_web_prefilter::workbench_web_prefilter_bonus;
 
 #[derive(Clone, Copy)]
 enum ToolAvailabilityMode {
@@ -31,6 +34,7 @@ struct ToolPlanningProfile {
 #[derive(Clone, Debug, Default)]
 pub struct ToolRankingContext {
     pub workbench_web: Option<WorkbenchWebRoutingContext>,
+    pub browser_strategy: Option<BrowserStrategyRoutingContext>,
 }
 
 pub fn ranked_standard_tool_definitions(user_input: &str) -> Vec<AgentToolDefinition> {
@@ -127,7 +131,57 @@ fn planning_score(
         &tool.side_effects,
         context.and_then(|value| value.workbench_web.as_ref()),
     );
-    intrinsic_tool_priority(tool, mode) - risk_penalty + tool.source_bias + routing_bonus
+    let browser_strategy_bonus = browser_strategy_prefilter_bonus(
+        &tool.definition.name,
+        context.and_then(|value| value.browser_strategy.as_ref()),
+    );
+    intrinsic_tool_priority(tool, mode) - risk_penalty
+        + tool.source_bias
+        + routing_bonus
+        + browser_strategy_bonus
+        + browser_workflow_escape_penalty(&tool.definition.name, context)
+}
+
+fn browser_workflow_escape_penalty(tool_name: &str, context: Option<&ToolRankingContext>) -> i32 {
+    let Some(context) = context else {
+        return 0;
+    };
+    let Some(web) = context.workbench_web.as_ref() else {
+        return 0;
+    };
+    let in_browser_workflow = web.page_mode.is_some()
+        && (web.widget_graph_ready
+            || web.native_widget_ready
+            || web.active_widget_id.is_some()
+            || web.has_live_candidates);
+    if !in_browser_workflow {
+        return 0;
+    }
+
+    match tool_name {
+        "terminal.exec"
+        | "terminal.session.start"
+        | "terminal.session.write"
+        | "terminal.session.read"
+        | "terminal.session.close" => -120,
+        "memory.recall" => -96,
+        "workbench.tab.capture_visual" => -72,
+        "workbench.web_graph.build" => {
+            if web.focus_atlas_ready || web.widget_graph_ready || web.native_widget_ready {
+                -96
+            } else {
+                0
+            }
+        }
+        "workbench.web_graph.query" => {
+            if web.focus_atlas_ready || web.widget_graph_ready || web.native_widget_ready {
+                -72
+            } else {
+                0
+            }
+        }
+        _ => 0,
+    }
 }
 
 fn risk_penalty(tool: &ToolPlanningProfile) -> i32 {
@@ -173,6 +227,9 @@ fn intrinsic_tool_priority(tool: &ToolPlanningProfile, mode: ToolAvailabilityMod
     let name = tool.definition.name.as_str();
     if name.starts_with("workbench.") {
         return workbench::tool_priority(tool);
+    }
+    if name.starts_with("browser_use.") {
+        return browser_use::tool_priority(tool);
     }
 
     if matches!(mode, ToolAvailabilityMode::Plan) {

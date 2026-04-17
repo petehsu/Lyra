@@ -774,11 +774,11 @@ describe("workbench shell", () => {
     const desktopApi = setDesktopApiPlatform("linux");
     render(<WorkbenchShell />);
 
-    expect(screen.queryByRole("button", { name: "开启元素选择器" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /开启元素选择器/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "打开官方文档" }));
 
-    const pickerButton = await screen.findByRole("button", { name: "开启元素选择器" });
+    const pickerButton = await screen.findByRole("button", { name: /开启元素选择器/ });
     fireEvent.click(pickerButton);
 
     expect(desktopApi.workbenchBrowser.setElementPickerMode).toHaveBeenCalledWith(

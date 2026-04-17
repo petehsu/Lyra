@@ -13,10 +13,14 @@ import type { AiMemoryConfig } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import {
   findSelectedProfile,
-  parseCustomModels,
   parseMap,
+  resolveConfiguredModels,
+  resolvePrimarySecretFieldId,
+  resolvePrimaryUrlFieldId,
+  serializeConfiguredModels,
   toDraft
 } from "./draft";
+import { buildModelOptions } from "./model-options";
 import { resolvePreset } from "./preset";
 import type { SettingsAiDraft, SettingsAiLabels, SettingsAiModel } from "./types";
 
@@ -137,8 +141,7 @@ export const useSettingsAiModel = ({
       clearSecretFields: [],
       configuredSecretFields: [],
       headersText: preset.customHeadersSupported ? current.headersText : "",
-      model: preset.defaultModel,
-      customModelsText: preset.customModelsSupported ? current.customModelsText : ""
+      modelsText: serializeConfiguredModels(preset.defaultModel, [])
     }));
     setDiscoveryResult(null);
   }, [draft.protocolId, draft.providerId, presetCatalog]);
@@ -182,16 +185,63 @@ export const useSettingsAiModel = ({
     setDraft((current) => ({ ...current, name: value }));
   }, []);
 
-  const updateModel = useCallback((value: string): void => {
-    setDraft((current) => ({ ...current, model: value }));
+  const updateUrl = useCallback((value: string): void => {
+    setDraft((current) => {
+      const preset = resolvePreset(presetCatalog, current.presetId, current.providerId, current.protocolId);
+      const fieldId = resolvePrimaryUrlFieldId(preset);
+      if (fieldId === null) {
+        return current;
+      }
+      return {
+        ...current,
+        connectionConfig: {
+          ...current.connectionConfig,
+          [fieldId]: value
+        }
+      };
+    });
+  }, [presetCatalog]);
+
+  const updateKey = useCallback((value: string): void => {
+    setDraft((current) => {
+      const preset = resolvePreset(presetCatalog, current.presetId, current.providerId, current.protocolId);
+      const fieldId = resolvePrimarySecretFieldId(preset);
+      if (fieldId === null) {
+        return current;
+      }
+      return {
+        ...current,
+        secretValues: {
+          ...current.secretValues,
+          [fieldId]: value
+        },
+        clearSecretFields: current.clearSecretFields.filter((entry) => entry !== fieldId)
+      };
+    });
+  }, [presetCatalog]);
+
+  const updateModelsText = useCallback((value: string): void => {
+    setDraft((current) => ({ ...current, modelsText: value }));
   }, []);
+
+  const toggleModelOption = useCallback((modelId: string): void => {
+    setDraft((current) => {
+      const preset = resolvePreset(presetCatalog, current.presetId, current.providerId, current.protocolId);
+      const knownModels = buildModelOptions(preset, discoveryResult, current.modelsText);
+      const resolved = resolveConfiguredModels(current.modelsText, knownModels, preset?.defaultModel ?? "");
+      const alreadyIncluded = resolved.modelIds.includes(modelId);
+      const nextIds = alreadyIncluded
+        ? resolved.modelIds.filter((entry) => entry !== modelId)
+        : [...resolved.modelIds, modelId];
+      return {
+        ...current,
+        modelsText: nextIds.join("\n")
+      };
+    });
+  }, [discoveryResult, presetCatalog]);
 
   const updateHeadersText = useCallback((value: string): void => {
     setDraft((current) => ({ ...current, headersText: value }));
-  }, []);
-
-  const updateCustomModelsText = useCallback((value: string): void => {
-    setDraft((current) => ({ ...current, customModelsText: value }));
   }, []);
 
   const clearSecretField = useCallback((fieldId: string): void => {
@@ -208,6 +258,19 @@ export const useSettingsAiModel = ({
     }));
   }, []);
 
+  const buildResolvedModels = useCallback(() => {
+    const preset = resolvePreset(presetCatalog, draft.presetId, draft.providerId, draft.protocolId);
+    const knownModels = buildModelOptions(preset, discoveryResult, draft.modelsText);
+    return resolveConfiguredModels(draft.modelsText, knownModels, preset?.defaultModel ?? "");
+  }, [
+    discoveryResult,
+    draft.modelsText,
+    draft.presetId,
+    draft.protocolId,
+    draft.providerId,
+    presetCatalog
+  ]);
+
   const authorizeOpenAiChatGpt = useCallback(async (): Promise<void> => {
     if (desktopApi === null || draft.providerId !== "openai") {
       return;
@@ -217,13 +280,13 @@ export const useSettingsAiModel = ({
     setStatusTone("neutral");
     try {
       const result = await desktopApi.ai.authorizeOpenAiChatGpt();
-      const preset = resolvePreset(presetCatalog, draft.presetId, draft.providerId, draft.protocolId);
       const normalizedName = draft.name.trim().length > 0
         ? draft.name.trim()
         : "OpenAI ChatGPT OAuth";
-      const normalizedModel = draft.model.trim().length > 0
-        ? draft.model.trim()
-        : (preset?.defaultModel ?? "gpt-5.4");
+      const resolvedModels = buildResolvedModels();
+      const normalizedModel = resolvedModels.primaryModel.trim().length > 0
+        ? resolvedModels.primaryModel.trim()
+        : "gpt-5.4";
       const saved = await desktopApi.ai.upsertProfile({
         ...(draft.id === null ? {} : { id: draft.id }),
         name: normalizedName,
@@ -238,7 +301,7 @@ export const useSettingsAiModel = ({
         },
         headers: parseMap(draft.headersText),
         model: normalizedModel,
-        customModels: parseCustomModels(draft.customModelsText),
+        customModels: resolvedModels.customModels,
         secretValues: { refreshToken: result.refreshToken },
         clearSecretFields: draft.clearSecretFields.filter((entry) => entry !== "refreshToken")
       });
@@ -255,18 +318,16 @@ export const useSettingsAiModel = ({
   }, [
     desktopApi,
     draft.authConfig,
+    buildResolvedModels,
     draft.clearSecretFields,
     draft.connectionConfig,
-    draft.customModelsText,
     draft.headersText,
     draft.id,
-    draft.model,
     draft.name,
     draft.presetId,
     draft.protocolId,
     draft.providerId,
     labels.statusChatGptAuthorized,
-    presetCatalog,
     syncProfiles
   ]);
 
@@ -279,13 +340,13 @@ export const useSettingsAiModel = ({
     setStatusTone("neutral");
     try {
       const result = await desktopApi.ai.authorizeOpenAiChatGptDeviceCode();
-      const preset = resolvePreset(presetCatalog, draft.presetId, draft.providerId, draft.protocolId);
       const normalizedName = draft.name.trim().length > 0
         ? draft.name.trim()
         : "OpenAI ChatGPT OAuth";
-      const normalizedModel = draft.model.trim().length > 0
-        ? draft.model.trim()
-        : (preset?.defaultModel ?? "gpt-5.4");
+      const resolvedModels = buildResolvedModels();
+      const normalizedModel = resolvedModels.primaryModel.trim().length > 0
+        ? resolvedModels.primaryModel.trim()
+        : "gpt-5.4";
       const saved = await desktopApi.ai.upsertProfile({
         ...(draft.id === null ? {} : { id: draft.id }),
         name: normalizedName,
@@ -300,7 +361,7 @@ export const useSettingsAiModel = ({
         },
         headers: parseMap(draft.headersText),
         model: normalizedModel,
-        customModels: parseCustomModels(draft.customModelsText),
+        customModels: resolvedModels.customModels,
         secretValues: { refreshToken: result.refreshToken },
         clearSecretFields: draft.clearSecretFields.filter((entry) => entry !== "refreshToken")
       });
@@ -317,18 +378,16 @@ export const useSettingsAiModel = ({
   }, [
     desktopApi,
     draft.authConfig,
+    buildResolvedModels,
     draft.clearSecretFields,
     draft.connectionConfig,
-    draft.customModelsText,
     draft.headersText,
     draft.id,
-    draft.model,
     draft.name,
     draft.presetId,
     draft.protocolId,
     draft.providerId,
     labels.statusChatGptAuthorized,
-    presetCatalog,
     syncProfiles
   ]);
 
@@ -340,6 +399,7 @@ export const useSettingsAiModel = ({
 
   const buildUpsertPayload = useCallback((): AiUpsertProfileRequest => {
     const secretValues = buildSecretValues();
+    const resolvedModels = buildResolvedModels();
     return {
       ...(draft.id === null ? {} : { id: draft.id }),
       name: draft.name,
@@ -349,15 +409,16 @@ export const useSettingsAiModel = ({
       connectionConfig: draft.connectionConfig,
       authConfig: draft.authConfig,
       headers: parseMap(draft.headersText),
-      model: draft.model,
-      customModels: parseCustomModels(draft.customModelsText),
+      model: resolvedModels.primaryModel,
+      customModels: resolvedModels.customModels,
       ...(secretValues === null ? {} : { secretValues }),
       ...(draft.clearSecretFields.length === 0 ? {} : { clearSecretFields: draft.clearSecretFields })
     };
-  }, [buildSecretValues, draft]);
+  }, [buildResolvedModels, buildSecretValues, draft]);
 
   const buildValidatePayload = useCallback((): AiValidateProfileRequest => {
     const secretValues = buildSecretValues();
+    const resolvedModels = buildResolvedModels();
     return {
       ...(draft.id === null ? {} : { id: draft.id }),
       providerId: draft.providerId,
@@ -366,10 +427,10 @@ export const useSettingsAiModel = ({
       connectionConfig: draft.connectionConfig,
       authConfig: draft.authConfig,
       headers: parseMap(draft.headersText),
-      model: draft.model,
+      model: resolvedModels.primaryModel,
       ...(secretValues === null ? {} : { secretValues })
     };
-  }, [buildSecretValues, draft]);
+  }, [buildResolvedModels, buildSecretValues, draft]);
 
   const buildDiscoveryPayload = useCallback((forceRefresh: boolean): AiDiscoverModelsRequest => {
     const secretValues = buildSecretValues();
@@ -484,9 +545,12 @@ export const useSettingsAiModel = ({
       setStatusMessage(result.message);
       setStatusTone(result.status === "ready" ? "success" : "error");
       setLastCheckedAt(result.checkedAt);
-      setDraft((current) => current.model.trim().length > 0 || result.models.length === 0
+      setDraft((current) => result.models.length === 0
         ? current
-        : { ...current, model: result.models[0]?.id ?? current.model });
+        : {
+            ...current,
+            modelsText: serializeConfiguredModels(result.models[0]?.id ?? "", result.models.slice(1))
+          });
     } catch (error) {
       setDiscoveryResult(null);
       setStatusMessage(error instanceof Error ? error.message : String(error));
@@ -576,14 +640,22 @@ export const useSettingsAiModel = ({
     memoryConfigText,
     memoryConfigStatus,
     memoryConfigStatusTone,
+    browserAutomationEngine: "lyra_direct",
+    lyraDirectMicroExecutorBudget: "3-5",
+    browserUseRuntimeStatus: {
+      state: "checking",
+      checkedAt: Date.now()
+    },
     selectProfile,
     createProfileDraft,
     selectPreset,
     updateName,
-    updateModel,
+    updateUrl,
+    updateKey,
+    updateModelsText,
+    toggleModelOption,
     updateDraftField,
     updateHeadersText,
-    updateCustomModelsText,
     clearSecretField,
     authorizeOpenAiChatGpt,
     authorizeOpenAiChatGptDeviceCode,
@@ -595,6 +667,8 @@ export const useSettingsAiModel = ({
     refreshDiscoveredModels,
     loadMemoryConfig,
     saveMemoryConfig,
-    updateMemoryConfigText: setMemoryConfigText
+    updateMemoryConfigText: setMemoryConfigText,
+    setBrowserAutomationEngine: () => {},
+    setLyraDirectMicroExecutorBudget: () => {}
   };
 };

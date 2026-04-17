@@ -69,12 +69,41 @@ const withSyncReply = <T>(run: () => T): SyncReply<T> => {
 
 export type WorkbenchStateIpcBridge = {
   readonly dispose: () => void;
+  readonly readState: (key: WorkbenchStateKey) => string | null;
+  readonly subscribe: (
+    listener: (event: {
+      readonly key: WorkbenchStateKey;
+      readonly json: string | null;
+    }) => void
+  ) => () => void;
 };
 
 export const createWorkbenchStateIpcBridge = (
   storageRoot: string
 ): WorkbenchStateIpcBridge => {
   mkdirSync(storageRoot, { recursive: true });
+  const stateListeners = new Set<(
+    event: { readonly key: WorkbenchStateKey; readonly json: string | null }
+  ) => void>();
+
+  const publish = (key: WorkbenchStateKey, json: string | null): void => {
+    for (const listener of stateListeners) {
+      listener({ key, json });
+    }
+  };
+
+  const readState = (key: WorkbenchStateKey): string | null => {
+    const filePath = resolveStateFilePath(storageRoot, key);
+    try {
+      return readFileSync(filePath, "utf8");
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+  };
 
   const listeners: Array<readonly [string, Parameters<typeof ipcMain.on>[1]]> = [
     [
@@ -82,16 +111,7 @@ export const createWorkbenchStateIpcBridge = (
       (event, payload: unknown) => {
         event.returnValue = withSyncReply(() => {
           const key = normalizeKey((payload as { readonly key?: unknown })?.key);
-          const filePath = resolveStateFilePath(storageRoot, key);
-          try {
-            return readFileSync(filePath, "utf8");
-          } catch (error) {
-            const nodeError = error as NodeJS.ErrnoException;
-            if (nodeError.code === "ENOENT") {
-              return null;
-            }
-            throw error;
-          }
+          return readState(key);
         }) satisfies SyncReply<string | null>;
       }
     ],
@@ -103,6 +123,7 @@ export const createWorkbenchStateIpcBridge = (
           const json = normalizeJson((payload as { readonly json?: unknown })?.json);
           const filePath = resolveStateFilePath(storageRoot, key);
           writeFileSync(filePath, json, "utf8");
+          publish(key, json);
           return null;
         }) satisfies SyncReply<null>;
       }
@@ -114,6 +135,7 @@ export const createWorkbenchStateIpcBridge = (
           const key = normalizeKey((payload as { readonly key?: unknown })?.key);
           const filePath = resolveStateFilePath(storageRoot, key);
           rmSync(filePath, { force: true });
+          publish(key, null);
           return null;
         }) satisfies SyncReply<null>;
       }
@@ -125,7 +147,15 @@ export const createWorkbenchStateIpcBridge = (
   }
 
   return {
+    readState,
+    subscribe: (listener) => {
+      stateListeners.add(listener);
+      return () => {
+        stateListeners.delete(listener);
+      };
+    },
     dispose: () => {
+      stateListeners.clear();
       for (const [channel, listener] of listeners) {
         ipcMain.removeListener(channel, listener);
       }

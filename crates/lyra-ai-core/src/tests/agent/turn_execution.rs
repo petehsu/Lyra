@@ -18,7 +18,7 @@ use crate::agent::types::{
     AgentAnswerQuestionRequest, AgentBindSessionProjectRequest, AgentCreateSessionRequest,
     AgentEnterPlanModeRequest, AgentGetSessionRequest, AgentPendingInteractionKind,
     AgentPendingInteractionStatus, AgentPlanState, AgentPlanStatus, AgentSendTurnRequest,
-    CommandApprovalSubmitRequest,
+    CommandApprovalSubmitRequest, AGENT_PROVIDER_INVALID_RESPONSE,
 };
 use crate::profile::service::upsert_profile;
 use crate::profile::types::UpsertAiProfileRequest;
@@ -135,6 +135,22 @@ fn simple_stream_response(content: &str) -> String {
                 "prompt_tokens": 8,
                 "completion_tokens": 4,
                 "total_tokens": 12
+            }
+        })
+    )
+}
+
+fn empty_stream_response() -> String {
+    format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({
+            "choices": [{
+                "delta": {}
+            }],
+            "usage": {
+                "prompt_tokens": 8,
+                "completion_tokens": 0,
+                "total_tokens": 8
             }
         })
     )
@@ -315,6 +331,68 @@ fn old_text_not_found_returns_no_match_and_turn_completes() {
     assert!(
         phases.iter().all(|phase| *phase != "failed"),
         "turn should not be marked failed when edit returns no_match"
+    );
+}
+
+#[test]
+fn empty_provider_completion_fails_turn_instead_of_completing() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let server = MockOpenAiServer::start(vec![empty_stream_response()]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Empty provider response".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "say hello".to_string(),
+        profile_id: None,
+        project_root: None,
+        max_steps: Some(2),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+    })
+    .expect("send turn");
+
+    let _requests = server.finish();
+    assert_eq!(result.turn.status, "failed");
+    assert_eq!(
+        result.turn.error_code.as_deref(),
+        Some(AGENT_PROVIDER_INVALID_RESPONSE)
+    );
+    assert!(result.tool_calls.is_empty());
+    let assistant_message = result
+        .assistant_message
+        .as_ref()
+        .expect("failure assistant message");
+    assert!(
+        assistant_message
+            .content
+            .contains(AGENT_PROVIDER_INVALID_RESPONSE),
+        "expected failure assistant message to include structured error code: {}",
+        assistant_message.content
+    );
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root,
+        session_id: session.id,
+    })
+    .expect("get session detail");
+    assert!(
+        detail
+            .runtime_events
+            .iter()
+            .all(|event| event.phase != "completed"),
+        "empty provider response must not emit completed"
     );
 }
 
@@ -532,6 +610,65 @@ fn planning_request_uses_repeated_input() {
 }
 
 #[test]
+fn planning_injects_only_structured_steps_into_main_request() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let planning_response = simple_stream_response(
+        "我需要理解用户请求，并模拟这个过程。\n虽然我无法直接操作浏览器，但我可以模拟界面。\n\n计划：\n1. 先读取当前页面状态\n2. 定位相关控件\n3. 执行需要的页面操作",
+    );
+    let final_response = simple_stream_response("done");
+    let server = MockOpenAiServer::start(vec![planning_response, final_response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Planning Sanitization".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "请在我打开的网页里执行操作".to_string(),
+        profile_id: None,
+        project_root: None,
+        max_steps: Some(2),
+        enable_planning: true,
+        planning_min_chars: Some(1),
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+    })
+    .expect("send turn");
+
+    assert_eq!(result.turn.status, "completed");
+    let requests = server.finish();
+    assert_eq!(requests.len(), 2, "expected planning + main requests");
+    let main_request = requests.get(1).expect("main request");
+    let plan_message = main_request
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| {
+            messages.iter().find(|message| {
+                message
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .is_some_and(|content| content.starts_with("[Plan]\n"))
+            })
+        })
+        .expect("main request plan message");
+    let plan_content = plan_message
+        .get("content")
+        .and_then(Value::as_str)
+        .expect("plan content");
+    assert!(plan_content.contains("1. 先读取当前页面状态"));
+    assert!(plan_content.contains("2. 定位相关控件"));
+    assert!(plan_content.contains("3. 执行需要的页面操作"));
+    assert!(!plan_content.contains("虽然我无法直接操作浏览器"));
+    assert!(!plan_content.contains("模拟界面"));
+}
+
 fn long_input_degrades_repetition_under_tight_budget() {
     let _guard = ENV_TEST_GUARD.lock().expect("lock env test guard");
     let _window = EnvVarReset::set("LYRA_CONTEXT_WINDOW", "40000");
@@ -1321,15 +1458,17 @@ fn command_approval_allow_always_unblocks_current_turn_without_project_root() {
         "expected assistant to continue after approval"
     );
     assert!(
-        result.tool_calls.iter().any(|call| {
-            call.tool_name == "terminal.exec" && call.status == "completed"
-        }),
+        result
+            .tool_calls
+            .iter()
+            .any(|call| { call.tool_name == "terminal.exec" && call.status == "completed" }),
         "terminal.exec should complete after allow_always"
     );
     assert!(
-        result.tool_calls.iter().all(|call| {
-            call.error_code.as_deref() != Some("AGENT_TOOL_APPROVAL_REQUIRED")
-        }),
+        result
+            .tool_calls
+            .iter()
+            .all(|call| { call.error_code.as_deref() != Some("AGENT_TOOL_APPROVAL_REQUIRED") }),
         "allow_always should not leave approval-required failure in final tool calls"
     );
 
@@ -1346,7 +1485,10 @@ fn command_approval_allow_always_unblocks_current_turn_without_project_root() {
         "command approval interaction should be resolved after allowing"
     );
     assert!(
-        detail.runtime_events.iter().all(|event| event.phase != "paused"),
+        detail
+            .runtime_events
+            .iter()
+            .all(|event| event.phase != "paused"),
         "turn should not pause after allow_always"
     );
 

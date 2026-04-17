@@ -36,8 +36,9 @@ use crate::agent::tool_budget::ToolResultBudgetState;
 use crate::agent::tool_diagnostics::build_tool_error_payload;
 use crate::agent::tools::{
     cancel_plan_approval, cancel_plan_question, cleanup_transient_ai_sessions,
-    derive_workbench_web_routing_context, execute_tool_with_progress, grant_approval_once,
-    plan_mode_tool_definitions_for_input_with_context,
+    derive_browser_strategy_routing_context, derive_workbench_web_routing_context,
+    execute_tool_with_progress, get_browser_strategy_runtime_state, grant_approval_once,
+    merge_browser_strategy_runtime_state, plan_mode_tool_definitions_for_input_with_context,
     readonly_tool_definitions_for_input_with_context, register_plan_approval_waiter,
     register_plan_question_waiter, render_activated_skill_prompts, render_mcp_tools_prompt_json,
     tool_executes_serially, ToolExecutionContext, ToolRankingContext,
@@ -52,8 +53,8 @@ use crate::agent::types::{
     AgentResolvePlanApprovalRequest, AgentRuntimeEvent, AgentSendTurnRequest, AgentSendTurnResult,
     AgentSession, AgentSessionDetail, AgentToolCall, AgentTurn, AgentUsage,
     CommandApprovalSubmitRequest, AGENT_PLAN_APPROVAL_REQUIRED, AGENT_PLAN_QUESTION_REQUIRED,
-    AGENT_PROFILE_NOT_FOUND, AGENT_PROVIDER_UNSUPPORTED, AGENT_TOOL_APPROVAL_REQUIRED,
-    AGENT_TOOL_EXEC_FAILED, AGENT_TURN_FAILED,
+    AGENT_PROFILE_NOT_FOUND, AGENT_PROVIDER_INVALID_RESPONSE, AGENT_PROVIDER_UNSUPPORTED,
+    AGENT_TOOL_APPROVAL_REQUIRED, AGENT_TOOL_EXEC_FAILED, AGENT_TURN_FAILED,
 };
 use crate::auth::service::resolve_secret_values;
 use crate::auth::store::KeyringSecretStore;
@@ -65,7 +66,8 @@ use crate::memory::{
 use crate::profile::types::StoredAiProviderProfile;
 use crate::provider;
 use crate::provider::types::{
-    AgentInferenceMessage, AgentInferenceMessageRole, AgentInferenceUsage, AgentToolInvocation,
+    AgentInferenceMessage, AgentInferenceMessageRole, AgentInferenceUsage, AgentToolDefinition,
+    AgentToolInvocation,
 };
 use crate::storage::registry_db;
 
@@ -112,9 +114,10 @@ fn agent_error(code: &str, message: impl Into<String>) -> napi::Error {
 }
 
 fn parse_agent_error_message(raw: &str) -> (&str, &str) {
-    let Some(rest) = raw.strip_prefix(AGENT_ERROR_PREFIX) else {
+    let Some(prefix_index) = raw.find(AGENT_ERROR_PREFIX) else {
         return (AGENT_TURN_FAILED, raw);
     };
+    let rest = &raw[prefix_index + AGENT_ERROR_PREFIX.len()..];
     let mut parts = rest.splitn(2, "::");
     let code = parts.next().unwrap_or(AGENT_TURN_FAILED);
     let message = parts.next().unwrap_or(raw);
@@ -123,6 +126,265 @@ fn parse_agent_error_message(raw: &str) -> (&str, &str) {
     } else {
         (code, message)
     }
+}
+
+fn is_structured_plan_step(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if matches!(trimmed.chars().next(), Some('-' | '*' | '•' | '1'..='9')) {
+        if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("• ") {
+            return true;
+        }
+        let digit_prefix_len = trimmed.chars().take_while(|ch| ch.is_ascii_digit()).count();
+        if digit_prefix_len > 0 {
+            let suffix = trimmed[digit_prefix_len..].trim_start();
+            return suffix.starts_with('.')
+                || suffix.starts_with(')')
+                || suffix.starts_with('、')
+                || suffix.starts_with(':')
+                || suffix.starts_with('-');
+        }
+    }
+    false
+}
+
+fn sanitize_planning_output(raw: &str) -> String {
+    let normalized = raw
+        .replace("<｜end▁of▁thinking｜>", "")
+        .replace("<|end_of_thinking|>", "")
+        .replace("<end_of_thinking>", "");
+    let steps = normalized
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| is_structured_plan_step(line))
+        .take(8)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+    steps.join("\n")
+}
+
+fn has_browser_automation_tools(tools: &[AgentToolDefinition]) -> bool {
+    tools.iter().any(|tool| {
+        tool.name.starts_with("workbench.web_")
+            || tool.name.starts_with("browser_use.")
+            || matches!(
+                tool.name.as_str(),
+                "workbench.tabs.list"
+                    | "workbench.tab.read"
+                    | "workbench.tab.extract_text"
+                    | "workbench.web_skeleton.read"
+            )
+    })
+}
+
+fn is_browser_observation_tool_name(name: &str) -> bool {
+    (name.starts_with("workbench.web_")
+        && !name.starts_with("workbench.web_action.")
+        && name != "workbench.web_focus.probe"
+        && name != "workbench.web_scan_and_act")
+        || matches!(
+            name,
+            "workbench.tabs.list"
+                | "workbench.tab.read"
+                | "workbench.tab.extract_text"
+                | "workbench.tab.capture_visual"
+                | "browser_use.session.prepare"
+                | "browser_use.page.state"
+                | "browser_use.page.extract"
+        )
+}
+
+fn is_browser_interaction_observation_tool_name(name: &str) -> bool {
+    (name.starts_with("workbench.web_")
+        && !name.starts_with("workbench.web_action.")
+        && name != "workbench.web_focus.probe"
+        && name != "workbench.web_scan_and_act")
+        || matches!(
+            name,
+            "workbench.tab.capture_visual"
+                | "browser_use.session.prepare"
+                | "browser_use.page.state"
+                | "browser_use.page.extract"
+        )
+}
+
+fn is_browser_action_tool_name(name: &str) -> bool {
+    matches!(
+        name,
+        "workbench.web_focus.probe"
+            | "workbench.web_scan_and_act"
+            | "workbench.web_action.safe"
+            | "workbench.web_action.mutate"
+            | "workbench.web_action.navigate"
+            | "workbench.web_action.wait"
+            | "browser_use.page.safe"
+            | "browser_use.page.mutate"
+            | "browser_use.page.navigate"
+            | "browser_use.page.wait"
+            | "browser_use.agent.run"
+    )
+}
+
+fn is_local_browser_action_tool_name(name: &str) -> bool {
+    matches!(
+        name,
+        "workbench.web_focus.probe"
+            | "workbench.web_scan_and_act"
+            | "workbench.web_action.safe"
+            | "workbench.web_action.mutate"
+            | "workbench.web_action.wait"
+            | "browser_use.page.safe"
+            | "browser_use.page.mutate"
+            | "browser_use.page.wait"
+            | "browser_use.agent.run"
+    )
+}
+
+fn has_browser_observation_progress(tool_calls: &[AgentToolCall]) -> bool {
+    tool_calls
+        .iter()
+        .any(|call| call.status == "completed" && is_browser_observation_tool_name(&call.tool_name))
+}
+
+fn has_browser_interaction_observation_progress(tool_calls: &[AgentToolCall]) -> bool {
+    tool_calls.iter().any(|call| {
+        call.status == "completed" && is_browser_interaction_observation_tool_name(&call.tool_name)
+    })
+}
+
+fn has_browser_action_attempt(tool_calls: &[AgentToolCall]) -> bool {
+    tool_calls
+        .iter()
+        .any(|call| is_browser_action_tool_name(&call.tool_name))
+}
+
+fn has_local_browser_action_attempt(tool_calls: &[AgentToolCall]) -> bool {
+    tool_calls
+        .iter()
+        .any(|call| is_local_browser_action_tool_name(&call.tool_name))
+}
+
+fn browser_observed_without_action(tool_calls: &[AgentToolCall]) -> bool {
+    has_browser_interaction_observation_progress(tool_calls)
+        && !has_browser_action_attempt(tool_calls)
+}
+
+fn browser_observed_without_local_action(tool_calls: &[AgentToolCall]) -> bool {
+    has_browser_interaction_observation_progress(tool_calls)
+        && !has_local_browser_action_attempt(tool_calls)
+}
+
+fn browser_action_retry_message() -> String {
+    "[Execution Requirement] You already inspected the open webpage, so do not end the turn with an observation-only answer. Before you conclude that the task cannot be completed, you must attempt at least one local page action tool or obtain a structured local browser action error. A navigation attempt does not satisfy this requirement when the task still requires in-page interaction. Reuse page observations that already exist. Prefer the native workbench page tools first, starting with scan_and_act, then skeleton read, structured query, local context read, focus probe, hover/safe actions, mutate actions, and wait. If a control appears only after hover or menu reveal, perform the hover step before concluding the control is absent.".to_string()
+}
+
+fn browser_action_unmet_message() -> String {
+    "I paused because the browser task only used observation tools and still never attempted a local page action. I need at least one real local browser action attempt or a structured local action failure before I can honestly conclude the task.".to_string()
+}
+
+fn browser_workflow_retry_message() -> String {
+    "[Execution Requirement] The local browser workflow is still incomplete because the latest browser action failed with a retryable structured error. Continue from the current local workflow state, prefer skeleton/query/context reads and local focus probe state, and avoid broad fallback rebuilds unless the local workflow fails again.".to_string()
+}
+
+fn browser_workflow_unmet_message() -> String {
+    "I paused because the latest browser action failed with a retryable structured workflow error and I still have not advanced the local browser workflow.".to_string()
+}
+
+fn missing_provider_output(assistant_text: &str, tool_calls: &[AgentToolInvocation]) -> bool {
+    tool_calls.is_empty() && assistant_text.trim().is_empty()
+}
+
+fn provider_invalid_response_error() -> napi::Error {
+    agent_error(
+        AGENT_PROVIDER_INVALID_RESPONSE,
+        "provider returned neither tool calls nor assistant text",
+    )
+}
+
+fn restricted_browser_action_tools(tools: &[AgentToolDefinition]) -> Vec<AgentToolDefinition> {
+    let allowed_names = [
+        "workbench.tabs.list",
+        "workbench.tab.read",
+        "workbench.web_skeleton.read",
+        "workbench.web_query.find",
+        "workbench.web_context.read",
+        "workbench.web_focus.probe",
+        "workbench.web_scan_and_act",
+        "workbench.web_action.safe",
+        "workbench.web_action.mutate",
+        "workbench.web_action.navigate",
+        "workbench.web_action.wait",
+        "browser_use.session.prepare",
+        "browser_use.page.state",
+        "browser_use.page.safe",
+        "browser_use.page.mutate",
+        "browser_use.page.navigate",
+        "browser_use.page.wait",
+        "browser_use.agent.run",
+    ];
+    let filtered = tools
+        .iter()
+        .filter(|tool| allowed_names.contains(&tool.name.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if filtered.is_empty() {
+        tools.to_vec()
+    } else {
+        filtered
+    }
+}
+
+fn local_browser_workflow_ready(tool_calls: &[AgentToolCall]) -> bool {
+    derive_workbench_web_routing_context(tool_calls)
+        .map(|web| {
+            web.focus_atlas_ready
+                || web.widget_graph_ready
+                || web.native_widget_ready
+                || web.has_live_candidates
+                || web.active_widget_id.is_some()
+                || web.active_item_id.is_some()
+                || web.active_focus_region_id.is_some()
+        })
+        .unwrap_or(false)
+}
+
+fn is_retryable_browser_workflow_failure_code(code: &str) -> bool {
+    matches!(
+        code,
+        "candidate_stale"
+            | "candidate_not_found"
+            | "scan_session_not_found"
+            | "node_not_found"
+            | "postcondition_timeout"
+            | "hover_reveal_required"
+            | "reveal_not_observed"
+            | "menu_not_opened"
+            | "list_item_not_changed"
+            | "mode_not_switched"
+            | "workflow_not_advanced"
+            | "wrong_widget_target"
+            | "no_state_transition"
+    )
+}
+
+fn browser_action_failure_requires_retry(tool_calls: &[AgentToolCall]) -> bool {
+    tool_calls
+        .iter()
+        .rev()
+        .find(|call| is_browser_action_tool_name(&call.tool_name))
+        .map(|call| {
+            call.status == "failed"
+                && call
+                    .error_code
+                    .as_deref()
+                    .map(is_retryable_browser_workflow_failure_code)
+                    .unwrap_or(false)
+        })
+        .unwrap_or(false)
 }
 
 fn emit_event(
@@ -232,7 +494,19 @@ fn build_tool_ranking_context(storage_root: &str, session_id: &str) -> Result<To
     let tool_calls = registry_db::list_agent_tool_calls(storage_root, session_id)?;
     Ok(ToolRankingContext {
         workbench_web: derive_workbench_web_routing_context(&tool_calls),
+        browser_strategy: merge_browser_strategy_runtime_state(
+            derive_browser_strategy_routing_context(&tool_calls),
+        ),
     })
+}
+
+fn browser_tool_families_prompt() -> String {
+    let state = get_browser_strategy_runtime_state();
+    let mut families = vec!["workbench.web_*".to_string()];
+    if state.browser_use_tool_exposed {
+        families.push("browser_use.*".to_string());
+    }
+    families.join(", ")
 }
 
 fn normalize_project_root(value: &str) -> Result<String> {
@@ -569,6 +843,8 @@ struct TurnProgressGuardState {
     repeated_failure_fingerprint: Option<(String, u32)>,
     repeated_loop_fingerprint: Option<(String, u32)>,
     repeated_zero_write: Option<(String, u32)>,
+    consecutive_browser_stall_batches: u32,
+    browser_workflow_advanced_once: bool,
 }
 
 impl TurnProgressGuardState {
@@ -629,6 +905,29 @@ impl TurnProgressGuardState {
     }
 
     fn observe_tool_results(&mut self, tool_calls: &[AgentToolCall]) -> Option<PauseReason> {
+        let batch_advanced = browser_workflow_batch_advanced(tool_calls);
+        if batch_advanced {
+            self.browser_workflow_advanced_once = true;
+        }
+
+        if browser_workflow_batch_stalled(tool_calls) {
+            self.consecutive_browser_stall_batches =
+                self.consecutive_browser_stall_batches.saturating_add(1);
+            let browser_stall_threshold = if self.browser_workflow_advanced_once {
+                6
+            } else {
+                4
+            };
+            if self.consecutive_browser_stall_batches >= browser_stall_threshold {
+                return Some(PauseReason {
+                    code: AGENT_TURN_PAUSED_NO_PROGRESS.to_string(),
+                    message: "the browser workflow retried several local actions without any verified state transition, so I paused to avoid looping".to_string(),
+                });
+            }
+        } else if batch_advanced {
+            self.consecutive_browser_stall_batches = 0;
+        }
+
         if let Some(message) = interaction_timeout_message(tool_calls) {
             return Some(PauseReason {
                 code: AGENT_TURN_PAUSED_NO_PROGRESS.to_string(),
@@ -639,7 +938,16 @@ impl TurnProgressGuardState {
         if let Some(fingerprint) = fingerprint_recoverable_failure(tool_calls) {
             let count =
                 bump_repeated_fingerprint(&mut self.repeated_failure_fingerprint, fingerprint);
-            if count >= 3 {
+            let repeated_failure_threshold = if has_browser_workflow_stall_failure(tool_calls) {
+                if self.browser_workflow_advanced_once {
+                    6
+                } else {
+                    4
+                }
+            } else {
+                3
+            };
+            if count >= repeated_failure_threshold {
                 return Some(PauseReason {
                     code: AGENT_TURN_PAUSED_NO_PROGRESS.to_string(),
                     message: "the same recoverable tool failure repeated several times without converging".to_string(),
@@ -663,6 +971,93 @@ impl TurnProgressGuardState {
 
         None
     }
+}
+
+fn is_browser_workflow_tool_name(name: &str) -> bool {
+    name.starts_with("workbench.web_") || name.starts_with("browser_use.")
+}
+
+fn browser_action_has_verified_transition(tool_call: &AgentToolCall) -> bool {
+    if tool_call.status != "completed" || !is_local_browser_action_tool_name(&tool_call.tool_name) {
+        return false;
+    }
+    let Some(output) = tool_call.output.as_ref() else {
+        return false;
+    };
+    if tool_call.tool_name == "workbench.web_action.wait" {
+        return output
+            .get("satisfied")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+    }
+    if output
+        .get("verified")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        let state_transition = output
+            .pointer("/verification/stateTransition")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        return !state_transition.trim().is_empty()
+            && !state_transition.eq_ignore_ascii_case("none");
+    }
+    false
+}
+
+fn browser_workflow_batch_advanced(tool_calls: &[AgentToolCall]) -> bool {
+    tool_calls
+        .iter()
+        .any(browser_action_has_verified_transition)
+}
+
+fn browser_workflow_batch_stalled(tool_calls: &[AgentToolCall]) -> bool {
+    let has_browser_tool = tool_calls
+        .iter()
+        .any(|call| is_browser_workflow_tool_name(&call.tool_name));
+    if !has_browser_tool {
+        return false;
+    }
+    let has_local_action_attempt = tool_calls
+        .iter()
+        .any(|call| is_local_browser_action_tool_name(&call.tool_name));
+    if !has_local_action_attempt || browser_workflow_batch_advanced(tool_calls) {
+        return false;
+    }
+    tool_calls.iter().any(|call| {
+        call.status == "failed"
+            && call
+                .error_code
+                .as_deref()
+                .map(is_workflow_stall_failure_code)
+                .unwrap_or(false)
+    })
+}
+
+fn is_workflow_stall_failure_code(code: &str) -> bool {
+    matches!(
+        code,
+        "no_state_transition"
+            | "workflow_not_advanced"
+            | "wrong_widget_target"
+            | "list_item_not_changed"
+            | "mode_not_switched"
+            | "menu_not_opened"
+            | "reveal_not_observed"
+            | "hover_reveal_required"
+    )
+}
+
+fn has_browser_workflow_stall_failure(tool_calls: &[AgentToolCall]) -> bool {
+    tool_calls.iter().any(|call| {
+        call.status == "failed"
+            && is_local_browser_action_tool_name(&call.tool_name)
+            && call
+                .error_code
+                .as_deref()
+                .map(is_workflow_stall_failure_code)
+                .unwrap_or(false)
+    })
 }
 
 fn interaction_timeout_message(tool_calls: &[AgentToolCall]) -> Option<String> {
@@ -699,9 +1094,15 @@ fn interaction_timeout_message(tool_calls: &[AgentToolCall]) -> Option<String> {
 #[cfg(test)]
 mod interaction_guard_tests {
     use super::{
-        interaction_timeout_message, TurnProgressGuardState, AGENT_TURN_PAUSED_NO_PROGRESS,
+        browser_action_failure_requires_retry, browser_action_has_verified_transition,
+        browser_observed_without_action, browser_observed_without_local_action,
+        browser_workflow_batch_advanced, browser_workflow_batch_stalled,
+        has_browser_automation_tools, interaction_timeout_message, local_browser_workflow_ready,
+        restricted_browser_action_tools, sanitize_planning_output, TurnProgressGuardState,
+        AGENT_TURN_PAUSED_NO_PROGRESS,
     };
     use crate::agent::types::AgentToolCall;
+    use crate::provider::types::AgentToolDefinition;
     use serde_json::json;
 
     fn failed_tool_call(message: &str) -> AgentToolCall {
@@ -731,6 +1132,43 @@ mod interaction_guard_tests {
             status: "failed".to_string(),
             error_code: Some(code.to_string()),
             error_message: Some(message.to_string()),
+            started_at: 1,
+            finished_at: Some(2),
+        }
+    }
+
+    fn completed_tool_call(name: &str) -> AgentToolCall {
+        AgentToolCall {
+            id: "tool-2".to_string(),
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            tool_name: name.to_string(),
+            input: json!({}),
+            output: Some(json!({ "ok": true })),
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
+            started_at: 1,
+            finished_at: Some(2),
+        }
+    }
+
+    fn completed_verified_browser_action(name: &str, transition: &str) -> AgentToolCall {
+        AgentToolCall {
+            id: "tool-verified".to_string(),
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            tool_name: name.to_string(),
+            input: json!({}),
+            output: Some(json!({
+                "verified": true,
+                "verification": {
+                    "stateTransition": transition
+                }
+            })),
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
             started_at: 1,
             finished_at: Some(2),
         }
@@ -768,6 +1206,254 @@ mod interaction_guard_tests {
         assert_eq!(reason.code, AGENT_TURN_PAUSED_NO_PROGRESS);
         assert!(reason.message.contains("needs your approval"));
     }
+
+    #[test]
+    fn planning_sanitizer_keeps_only_structured_steps() {
+        let sanitized = sanitize_planning_output(
+            "我会模拟这个过程。\n虽然我无法直接操作浏览器。\n\n计划：\n1. 读取页面状态\n2. 定位目标控件\n3. 执行动作",
+        );
+        assert_eq!(sanitized, "1. 读取页面状态\n2. 定位目标控件\n3. 执行动作");
+    }
+
+    #[test]
+    fn browser_workflow_retry_guard_requires_structured_retryable_failure() {
+        assert!(browser_action_failure_requires_retry(&[
+            failed_tool_call_with_code(
+                "workflow_not_advanced",
+                "the browser workflow did not advance",
+            )
+        ]));
+        assert!(browser_action_failure_requires_retry(&[
+            failed_tool_call_with_code("node_not_found", "unable to resolve target node",)
+        ]));
+        assert!(!browser_action_failure_requires_retry(&[
+            completed_tool_call("workbench.web_action.safe",)
+        ]));
+        assert!(!browser_action_failure_requires_retry(&[
+            failed_tool_call_with_code(
+                "protected_verification_widget",
+                "captcha challenge requires user handoff",
+            )
+        ]));
+    }
+
+    #[test]
+    fn browser_tool_guard_requires_actual_browser_tools() {
+        let browser_tools = vec![
+            AgentToolDefinition {
+                name: "workbench.web_query.find".to_string(),
+                description: "query the current page skeleton".to_string(),
+                input_schema: json!({"type": "object"}),
+            },
+            AgentToolDefinition {
+                name: "filesystem.read_range".to_string(),
+                description: "read a file range".to_string(),
+                input_schema: json!({"type": "object"}),
+            },
+        ];
+        assert!(has_browser_automation_tools(&browser_tools));
+
+        let non_browser_tools = vec![AgentToolDefinition {
+            name: "filesystem.read_range".to_string(),
+            description: "read a file range".to_string(),
+            input_schema: json!({"type": "object"}),
+        }];
+        assert!(!has_browser_automation_tools(&non_browser_tools));
+    }
+
+    #[test]
+    fn browser_observation_without_action_is_detected() {
+        assert!(browser_observed_without_action(&[
+            completed_tool_call("workbench.web_skeleton.read"),
+            completed_tool_call("workbench.tab.read"),
+        ]));
+        assert!(!browser_observed_without_action(&[
+            completed_tool_call("workbench.web_skeleton.read"),
+            completed_tool_call("workbench.web_action.safe"),
+        ]));
+    }
+
+    #[test]
+    fn simple_tab_observation_does_not_require_local_browser_action() {
+        assert!(!browser_observed_without_local_action(&[
+            completed_tool_call("workbench.tabs.list"),
+            completed_tool_call("workbench.tab.read"),
+        ]));
+    }
+
+    #[test]
+    fn browser_observation_without_local_action_treats_navigation_as_insufficient() {
+        assert!(browser_observed_without_local_action(&[
+            completed_tool_call("workbench.web_skeleton.read"),
+            completed_tool_call("workbench.web_action.navigate"),
+        ]));
+        assert!(!browser_observed_without_local_action(&[
+            completed_tool_call("workbench.web_skeleton.read"),
+            completed_tool_call("workbench.web_action.mutate"),
+        ]));
+    }
+
+    #[test]
+    fn local_browser_workflow_ready_requires_real_web_context() {
+        assert!(local_browser_workflow_ready(&[AgentToolCall {
+            id: "tool-widget".to_string(),
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            tool_name: "workbench.web_skeleton.read".to_string(),
+            input: json!({}),
+            output: Some(json!({
+                "nodes": [{
+                    "nodeId": "node-1",
+                    "widgetId": "widget-1",
+                    "widgetKind": "history-list"
+                }]
+            })),
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
+            started_at: 1,
+            finished_at: Some(2),
+        }]));
+        assert!(local_browser_workflow_ready(&[AgentToolCall {
+            id: "tool-scan".to_string(),
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            tool_name: "workbench.web_query.find".to_string(),
+            input: json!({}),
+            output: Some(json!({
+                "scanSessionId": "scan-1",
+                "bestMatch": {
+                    "nodeId": "cand-1"
+                }
+            })),
+            status: "completed".to_string(),
+            error_code: None,
+            error_message: None,
+            started_at: 1,
+            finished_at: Some(2),
+        }]));
+        assert!(!local_browser_workflow_ready(&[completed_tool_call(
+            "workbench.tabs.list",
+        )]));
+    }
+
+    #[test]
+    fn restricted_browser_action_tools_drop_observation_only_fallbacks() {
+        let tools = vec![
+            AgentToolDefinition {
+                name: "workbench.web_skeleton.read".to_string(),
+                description: "read page skeleton".to_string(),
+                input_schema: json!({"type": "object"}),
+            },
+            AgentToolDefinition {
+                name: "workbench.web_query.find".to_string(),
+                description: "query skeleton nodes".to_string(),
+                input_schema: json!({"type": "object"}),
+            },
+            AgentToolDefinition {
+                name: "workbench.tab.capture_visual".to_string(),
+                description: "capture screenshot".to_string(),
+                input_schema: json!({"type": "object"}),
+            },
+            AgentToolDefinition {
+                name: "workbench.web_action.mutate".to_string(),
+                description: "mutate page".to_string(),
+                input_schema: json!({"type": "object"}),
+            },
+        ];
+
+        let restricted = restricted_browser_action_tools(&tools);
+        let names = restricted
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"workbench.web_skeleton.read"));
+        assert!(names.contains(&"workbench.web_query.find"));
+        assert!(names.contains(&"workbench.web_action.mutate"));
+        assert!(!names.contains(&"workbench.tab.capture_visual"));
+    }
+
+    #[test]
+    fn browser_workflow_stall_batch_detection_requires_stall_failure_family() {
+        let stalled = vec![failed_tool_call_with_code(
+            "workflow_not_advanced",
+            "expand/collapse did not change local region state",
+        )];
+        assert!(browser_workflow_batch_stalled(&stalled));
+        assert!(!browser_workflow_batch_advanced(&stalled));
+
+        let rebinding_failure = vec![failed_tool_call_with_code(
+            "candidate_stale",
+            "candidate target is no longer available in the active workflow context",
+        )];
+        assert!(!browser_workflow_batch_stalled(&rebinding_failure));
+
+        let advanced = vec![completed_verified_browser_action(
+            "workbench.web_action.mutate",
+            "workflow_advanced",
+        )];
+        assert!(browser_workflow_batch_advanced(&advanced));
+        assert!(!browser_workflow_batch_stalled(&advanced));
+        assert!(browser_action_has_verified_transition(&advanced[0]));
+    }
+
+    #[test]
+    fn progress_guard_pauses_after_consecutive_browser_stall_batches() {
+        let mut guard = TurnProgressGuardState::default();
+        let stalled_batch = vec![failed_tool_call_with_code(
+            "workflow_not_advanced",
+            "expand/collapse did not change local region state",
+        )];
+        assert!(guard.observe_tool_results(&stalled_batch).is_none());
+        assert!(guard.observe_tool_results(&stalled_batch).is_none());
+        assert!(guard.observe_tool_results(&stalled_batch).is_none());
+        let reason = guard.observe_tool_results(&stalled_batch);
+        assert!(reason.is_some());
+        let reason = reason.expect("pause reason");
+        assert_eq!(reason.code, AGENT_TURN_PAUSED_NO_PROGRESS);
+        assert!(reason.message.contains("browser workflow retried"));
+    }
+
+    #[test]
+    fn progress_guard_resets_browser_stall_counter_after_verified_advance() {
+        let mut guard = TurnProgressGuardState::default();
+        let stalled_batch = vec![failed_tool_call_with_code(
+            "workflow_not_advanced",
+            "expand/collapse did not change local region state",
+        )];
+        let advanced_batch = vec![completed_verified_browser_action(
+            "workbench.web_action.safe",
+            "workflow_advanced",
+        )];
+
+        assert!(guard.observe_tool_results(&stalled_batch).is_none());
+        assert!(guard.observe_tool_results(&advanced_batch).is_none());
+        assert!(guard.observe_tool_results(&stalled_batch).is_none());
+        assert!(guard.observe_tool_results(&stalled_batch).is_none());
+    }
+
+    #[test]
+    fn progress_guard_allows_more_retries_after_verified_browser_progress() {
+        let mut guard = TurnProgressGuardState::default();
+        let advanced_batch = vec![completed_verified_browser_action(
+            "workbench.web_action.mutate",
+            "workflow_advanced",
+        )];
+        let stalled_batch = vec![failed_tool_call_with_code(
+            "no_state_transition",
+            "submit did not produce a clear field change or widget transition",
+        )];
+
+        assert!(guard.observe_tool_results(&advanced_batch).is_none());
+        for _ in 0..5 {
+            assert!(guard.observe_tool_results(&stalled_batch).is_none());
+        }
+        let reason = guard.observe_tool_results(&stalled_batch);
+        assert!(reason.is_some());
+        let reason = reason.expect("pause reason");
+        assert_eq!(reason.code, AGENT_TURN_PAUSED_NO_PROGRESS);
+    }
+
 }
 
 fn bump_repeated_fingerprint(slot: &mut Option<(String, u32)>, fingerprint: String) -> u32 {
@@ -1340,6 +2026,92 @@ fn complete_tool_call_and_push_result(
     Ok(finished_call)
 }
 
+fn is_placeholder_like_value(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let normalized = trimmed.to_lowercase();
+    matches!(
+        normalized.as_str(),
+        "unknown"
+            | "todo"
+            | "tbd"
+            | "n/a"
+            | "none"
+            | "null"
+            | "undefined"
+            | "?"
+            | "??"
+            | "待定"
+            | "不确定"
+    ) || normalized.contains("placeholder")
+        || normalized.contains("fill_me")
+}
+
+fn find_uncertain_input_path(value: &Value, path: &str) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::String(raw) => {
+            if is_placeholder_like_value(raw) {
+                Some(path.to_string())
+            } else {
+                None
+            }
+        }
+        Value::Array(items) => items
+            .iter()
+            .enumerate()
+            .find_map(|(index, item)| find_uncertain_input_path(item, &format!("{path}[{index}]"))),
+        Value::Object(map) => map
+            .iter()
+            .find_map(|(key, item)| find_uncertain_input_path(item, &format!("{path}.{key}"))),
+        _ => None,
+    }
+}
+
+fn is_uncertainty_gate_exempt_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "request_user_input" | "plan.update_draft" | "plan.submit_for_approval"
+    )
+}
+
+fn maybe_build_uncertain_input_error(
+    tool_name: &str,
+    input: &Value,
+) -> Option<crate::agent::tools::AgentToolError> {
+    if is_uncertainty_gate_exempt_tool(tool_name) {
+        return None;
+    }
+    let uncertain_path = find_uncertain_input_path(input, "$")?;
+    Some(crate::agent::tools::AgentToolError::plan_question_required(
+        "tool input contains unknown or placeholder values",
+        json!({
+            "questions": [
+                {
+                    "id": "missing_required_input",
+                    "header": "Need Exact Input",
+                    "question": format!(
+                        "Tool `{tool_name}` has an uncertain value at `{uncertain_path}`. What exact value should be used?"
+                    ),
+                    "options": [
+                        {
+                            "label": "Provide exact value (Recommended)",
+                            "description": "Use custom reply to provide the concrete value and continue."
+                        },
+                        {
+                            "label": "Skip this action",
+                            "description": "Do not run this tool and choose a different approach."
+                        }
+                    ]
+                }
+            ],
+            "allowNote": true
+        }),
+    ))
+}
+
 /// Execute a single tool call with full lifecycle management.
 fn execute_single_tool(
     storage_root: &str,
@@ -1376,39 +2148,46 @@ fn execute_single_tool(
     )?;
 
     let mut progress_emit_error: Option<napi::Error> = None;
-    let tool_result = match execute_tool_with_progress(
-        &invocation.name,
-        &effective_input,
-        ToolExecutionContext {
-            storage_root: Some(storage_root),
-            project_root,
-            agent_session_id: Some(session_id),
-            agent_turn_id: Some(turn_id),
-            tool_call_id: Some(&started_call.id),
-            terminal_policy: Some(terminal_policy),
-            plan_mode,
-        },
-        |progress_payload| {
-            if progress_emit_error.is_some() {
-                return;
-            }
-            if let Err(error) = emit_event(
-                storage_root,
-                session_id,
-                turn_id,
-                "tool_progress",
-                json!({
-                    "toolCallId": started_call.id,
-                    "toolName": invocation.name,
-                    "status": "running",
-                    "input": effective_input.clone(),
-                    "progress": progress_payload,
-                }),
-            ) {
-                progress_emit_error = Some(error);
-            }
-        },
-    ) {
+    let execution_result = if let Some(error) =
+        maybe_build_uncertain_input_error(&invocation.name, &effective_input)
+    {
+        Err(error)
+    } else {
+        execute_tool_with_progress(
+            &invocation.name,
+            &effective_input,
+            ToolExecutionContext {
+                storage_root: Some(storage_root),
+                project_root,
+                agent_session_id: Some(session_id),
+                agent_turn_id: Some(turn_id),
+                tool_call_id: Some(&started_call.id),
+                terminal_policy: Some(terminal_policy),
+                plan_mode,
+            },
+            |progress_payload| {
+                if progress_emit_error.is_some() {
+                    return;
+                }
+                if let Err(error) = emit_event(
+                    storage_root,
+                    session_id,
+                    turn_id,
+                    "tool_progress",
+                    json!({
+                        "toolCallId": started_call.id,
+                        "toolName": invocation.name,
+                        "status": "running",
+                        "input": effective_input.clone(),
+                        "progress": progress_payload,
+                    }),
+                ) {
+                    progress_emit_error = Some(error);
+                }
+            },
+        )
+    };
+    let tool_result = match execution_result {
         Ok(value) => value,
         Err(error) => {
             // Check if this is an approval-required error
@@ -2549,6 +3328,10 @@ fn run_provider_loop(
 
             apply_usage(&mut usage_accumulator, &inference.usage);
 
+            if missing_provider_output(&inference.assistant_text, &inference.tool_calls) {
+                return Err(provider_invalid_response_error());
+            }
+
             if !inference.tool_calls.is_empty() {
                 if let Some(reason) =
                     progress_guard.observe_inference(&inference.assistant_text, &inference.tool_calls)
@@ -2932,8 +3715,10 @@ fn run_plan_implementation_handoff(
 
     let secrets = resolve_secret_values(&profile.secret_refs, None, &KeyringSecretStore)?;
     let tool_ranking_context = build_tool_ranking_context(storage_root, session_id)?;
-    let tools =
-        readonly_tool_definitions_for_input_with_context(&handoff_input, Some(&tool_ranking_context));
+    let tools = readonly_tool_definitions_for_input_with_context(
+        &handoff_input,
+        Some(&tool_ranking_context),
+    );
     let turn_strategy = select_turn_strategy(&handoff_input);
     let terminal_policy = select_terminal_interaction_policy();
     let turn_context = build_turn_context(
@@ -2945,6 +3730,20 @@ fn run_plan_implementation_handoff(
     let turn_number = registry_db::list_agent_turns(storage_root, session_id)?.len();
     let activated_skill_prompts = render_activated_skill_prompts();
     let mcp_tools_json = render_mcp_tools_prompt_json();
+    let browser_strategy_state = get_browser_strategy_runtime_state();
+    let browser_tool_families = browser_tool_families_prompt();
+    let workbench_web_context = tool_ranking_context.workbench_web.as_ref();
+    let focus_atlas_status = workbench_web_context.map(|web| {
+        if web.focus_atlas_ready {
+            if web.last_focus_probe_verified {
+                "ready (probe_verified)"
+            } else {
+                "ready"
+            }
+        } else {
+            "not_ready"
+        }
+    });
     let prompt_result = build_system_prompt(&PromptBuildInput {
         session_id,
         turn_number,
@@ -2956,6 +3755,26 @@ fn run_plan_implementation_handoff(
         execution_profile: None,
         approval_profile: None,
         turn_strategy: &turn_strategy,
+        browser_engine_preference: browser_strategy_state.preferred_engine.as_deref(),
+        browser_use_health: browser_strategy_state.browser_use_health.as_deref(),
+        browser_tool_families: &browser_tool_families,
+        browser_page_mode: workbench_web_context.and_then(|web| web.page_mode.as_deref()),
+        focus_atlas_status,
+        active_widget_id: workbench_web_context.and_then(|web| web.active_widget_id.as_deref()),
+        active_item_id: workbench_web_context.and_then(|web| web.active_item_id.as_deref()),
+        active_focus_region_id: workbench_web_context
+            .and_then(|web| web.active_focus_region_id.as_deref()),
+        current_browser_subgoal: workbench_web_context
+            .and_then(|web| web.current_browser_subgoal.as_deref()),
+        last_reveal_observed: workbench_web_context.map(|web| {
+            if web.last_reveal_observed {
+                "yes"
+            } else {
+                "no"
+            }
+        }),
+        last_workflow_failure: workbench_web_context
+            .and_then(|web| web.last_workflow_failure.as_deref()),
     });
     let system_message = AgentInferenceMessage {
         role: AgentInferenceMessageRole::System,
@@ -3147,6 +3966,20 @@ fn send_plan_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> 
     } else {
         build_plan_reentry_guidance(Some(&plan_state))
     };
+    let browser_strategy_state = get_browser_strategy_runtime_state();
+    let browser_tool_families = browser_tool_families_prompt();
+    let workbench_web_context = tool_ranking_context.workbench_web.as_ref();
+    let focus_atlas_status = workbench_web_context.map(|web| {
+        if web.focus_atlas_ready {
+            if web.last_focus_probe_verified {
+                "ready (probe_verified)"
+            } else {
+                "ready"
+            }
+        } else {
+            "not_ready"
+        }
+    });
     let prompt_result = build_plan_mode_system_prompt(
         &PromptBuildInput {
             session_id: &session_id,
@@ -3159,6 +3992,26 @@ fn send_plan_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> 
             execution_profile: None,
             approval_profile: None,
             turn_strategy: &select_turn_strategy(&input),
+            browser_engine_preference: browser_strategy_state.preferred_engine.as_deref(),
+            browser_use_health: browser_strategy_state.browser_use_health.as_deref(),
+            browser_tool_families: &browser_tool_families,
+            browser_page_mode: workbench_web_context.and_then(|web| web.page_mode.as_deref()),
+            focus_atlas_status,
+            active_widget_id: workbench_web_context.and_then(|web| web.active_widget_id.as_deref()),
+            active_item_id: workbench_web_context.and_then(|web| web.active_item_id.as_deref()),
+            active_focus_region_id: workbench_web_context
+                .and_then(|web| web.active_focus_region_id.as_deref()),
+            current_browser_subgoal: workbench_web_context
+                .and_then(|web| web.current_browser_subgoal.as_deref()),
+            last_reveal_observed: workbench_web_context.map(|web| {
+                if web.last_reveal_observed {
+                    "yes"
+                } else {
+                    "no"
+                }
+            }),
+            last_workflow_failure: workbench_web_context
+                .and_then(|web| web.last_workflow_failure.as_deref()),
         },
         Some(&plan_state),
         &reentry_guidance,
@@ -3371,7 +4224,8 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
 
     let secrets = resolve_secret_values(&profile.secret_refs, None, &KeyringSecretStore)?;
     let tool_ranking_context = build_tool_ranking_context(&storage_root, &session_id)?;
-    let tools = readonly_tool_definitions_for_input_with_context(&input, Some(&tool_ranking_context));
+    let tools =
+        readonly_tool_definitions_for_input_with_context(&input, Some(&tool_ranking_context));
     let turn_strategy = select_turn_strategy(&input);
     let terminal_policy = select_terminal_interaction_policy();
     let explicit_max_steps = request.max_steps.filter(|value| *value > 0);
@@ -3387,6 +4241,20 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
     let turn_number = registry_db::list_agent_turns(&storage_root, &session_id)?.len();
     let activated_skill_prompts = render_activated_skill_prompts();
     let mcp_tools_json = render_mcp_tools_prompt_json();
+    let browser_strategy_state = get_browser_strategy_runtime_state();
+    let browser_tool_families = browser_tool_families_prompt();
+    let workbench_web_context = tool_ranking_context.workbench_web.as_ref();
+    let focus_atlas_status = workbench_web_context.map(|web| {
+        if web.focus_atlas_ready {
+            if web.last_focus_probe_verified {
+                "ready (probe_verified)"
+            } else {
+                "ready"
+            }
+        } else {
+            "not_ready"
+        }
+    });
     let prompt_result = build_system_prompt(&PromptBuildInput {
         session_id: &session_id,
         turn_number,
@@ -3398,6 +4266,26 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
         execution_profile: None,
         approval_profile: None,
         turn_strategy: &turn_strategy,
+        browser_engine_preference: browser_strategy_state.preferred_engine.as_deref(),
+        browser_use_health: browser_strategy_state.browser_use_health.as_deref(),
+        browser_tool_families: &browser_tool_families,
+        browser_page_mode: workbench_web_context.and_then(|web| web.page_mode.as_deref()),
+        focus_atlas_status,
+        active_widget_id: workbench_web_context.and_then(|web| web.active_widget_id.as_deref()),
+        active_item_id: workbench_web_context.and_then(|web| web.active_item_id.as_deref()),
+        active_focus_region_id: workbench_web_context
+            .and_then(|web| web.active_focus_region_id.as_deref()),
+        current_browser_subgoal: workbench_web_context
+            .and_then(|web| web.current_browser_subgoal.as_deref()),
+        last_reveal_observed: workbench_web_context.map(|web| {
+            if web.last_reveal_observed {
+                "yes"
+            } else {
+                "no"
+            }
+        }),
+        last_workflow_failure: workbench_web_context
+            .and_then(|web| web.last_workflow_failure.as_deref()),
     });
     let system_message = AgentInferenceMessage {
         role: AgentInferenceMessageRole::System,
@@ -3468,6 +4356,8 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
     let mut current_round: u32 = 0;
     let mut error_withholding = ErrorWithholdingBuffer::new();
     let mut strategy_reminder_injected = false;
+    let mut browser_action_retry_injected = false;
+    let mut browser_workflow_retry_injected = false;
 
     // --- Planning step ---
     let planning_min_chars = request.planning_min_chars.unwrap_or(100);
@@ -3505,7 +4395,7 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
             None::<&mut dyn FnMut(&str)>,
         ) {
             apply_usage(&mut usage_accumulator, &plan_inference.usage);
-            let plan_text = plan_inference.assistant_text.trim();
+            let plan_text = sanitize_planning_output(plan_inference.assistant_text.trim());
             if !plan_text.is_empty() {
                 // Inject plan as a user hint into provider messages
                 provider_messages.push(AgentInferenceMessage {
@@ -3683,11 +4573,24 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
                 Some(request.enable_context_collapse.unwrap_or(true)),
             );
 
+            let browser_action_enforcement_active =
+                browser_action_retry_injected && browser_observed_without_local_action(&tool_trace);
+            let browser_local_workflow_restricted =
+                local_browser_workflow_ready(&tool_trace)
+                    && browser_observed_without_local_action(&tool_trace);
+            let available_tools = if browser_action_enforcement_active
+                || browser_local_workflow_restricted
+            {
+                restricted_browser_action_tools(&tools)
+            } else {
+                tools.clone()
+            };
+
             let inference = provider::run_agent_inference(
                 &profile.to_public(),
                 &secrets,
                 &inference_messages,
-                &tools,
+                &available_tools,
                 Some(&mut |delta| {
                     if delta.is_empty() {
                         return;
@@ -3723,6 +4626,10 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
             })?;
 
             apply_usage(&mut usage_accumulator, &inference.usage);
+
+            if missing_provider_output(&inference.assistant_text, &inference.tool_calls) {
+                return Err(provider_invalid_response_error());
+            }
 
             if !inference.tool_calls.is_empty() {
                 if let Some(reason) =
@@ -3838,6 +4745,155 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
             }
 
             let mut assistant_text = inference.assistant_text.trim().to_string();
+            if !browser_workflow_retry_injected
+                && !assistant_text.is_empty()
+                && browser_action_failure_requires_retry(&tool_trace)
+            {
+                browser_workflow_retry_injected = true;
+                provider_messages.push(AgentInferenceMessage {
+                    role: AgentInferenceMessageRole::User,
+                    content: browser_workflow_retry_message(),
+                    tool_call_id: None,
+                    tool_calls: Vec::new(),
+                });
+                emit_event(
+                    &storage_root,
+                    &session_id,
+                    &running_turn.id,
+                    "browser_workflow_retry_injected",
+                    json!({
+                        "reason": "retryable_browser_workflow_failure",
+                        "toolTraceCount": tool_trace.len(),
+                    }),
+                )?;
+                step_index = step_index.saturating_add(1);
+                continue;
+            }
+
+            if !browser_action_retry_injected
+                && !assistant_text.is_empty()
+                && browser_observed_without_local_action(&tool_trace)
+            {
+                browser_action_retry_injected = true;
+                provider_messages.push(AgentInferenceMessage {
+                    role: AgentInferenceMessageRole::User,
+                    content: browser_action_retry_message(),
+                    tool_call_id: None,
+                    tool_calls: Vec::new(),
+                });
+                emit_event(
+                    &storage_root,
+                    &session_id,
+                    &running_turn.id,
+                    "browser_action_retry_injected",
+                    json!({
+                        "reason": "observation_only_browser_turn",
+                        "observationOnly": true,
+                        "toolTraceCount": tool_trace.len(),
+                    }),
+                )?;
+                step_index = step_index.saturating_add(1);
+                continue;
+            }
+
+            if browser_workflow_retry_injected
+                && !assistant_text.is_empty()
+                && browser_action_failure_requires_retry(&tool_trace)
+            {
+                let assistant_text = build_turn_paused_assistant_message(
+                    &browser_workflow_unmet_message(),
+                    &assistant_text,
+                );
+                let (assistant_message, memory_events) = append_assistant_message_to_stores(
+                    &storage_root,
+                    &session_id,
+                    &running_turn.id,
+                    &assistant_text,
+                    effective_project_root.as_deref(),
+                )?;
+                emit_memory_events(&storage_root, &session_id, &running_turn.id, memory_events)?;
+                let usage = usage_from_accumulator(
+                    usage_accumulator.0,
+                    usage_accumulator.1,
+                    usage_accumulator.2,
+                    usage_accumulator.3,
+                );
+                emit_event(
+                    &storage_root,
+                    &session_id,
+                    &running_turn.id,
+                    "browser_workflow_required_unmet",
+                    json!({
+                        "reason": "retryable_browser_workflow_failure",
+                        "toolTraceCount": tool_trace.len(),
+                    }),
+                )?;
+                let paused_turn = finalize_paused_turn(
+                    &storage_root,
+                    &session_id,
+                    &running_turn.id,
+                    AGENT_TURN_PAUSED_NO_PROGRESS,
+                    &browser_workflow_unmet_message(),
+                    usage.as_ref(),
+                )?;
+                kick_memory_pipeline(
+                    &storage_root,
+                    &session_id,
+                    &running_turn.id,
+                    effective_project_root.clone(),
+                )?;
+                return Ok((paused_turn, Some(assistant_message), tool_trace.clone(), usage));
+            }
+
+            if browser_action_retry_injected
+                && !assistant_text.is_empty()
+                && browser_observed_without_local_action(&tool_trace)
+            {
+                let assistant_text = build_turn_paused_assistant_message(
+                    &browser_action_unmet_message(),
+                    &assistant_text,
+                );
+                let (assistant_message, memory_events) = append_assistant_message_to_stores(
+                    &storage_root,
+                    &session_id,
+                    &running_turn.id,
+                    &assistant_text,
+                    effective_project_root.as_deref(),
+                )?;
+                emit_memory_events(&storage_root, &session_id, &running_turn.id, memory_events)?;
+                let usage = usage_from_accumulator(
+                    usage_accumulator.0,
+                    usage_accumulator.1,
+                    usage_accumulator.2,
+                    usage_accumulator.3,
+                );
+                emit_event(
+                    &storage_root,
+                    &session_id,
+                    &running_turn.id,
+                    "browser_action_required_unmet",
+                    json!({
+                        "reason": "observation_only_browser_turn",
+                        "toolTraceCount": tool_trace.len(),
+                    }),
+                )?;
+                let paused_turn = finalize_paused_turn(
+                    &storage_root,
+                    &session_id,
+                    &running_turn.id,
+                    AGENT_TURN_PAUSED_NO_PROGRESS,
+                    &browser_action_unmet_message(),
+                    usage.as_ref(),
+                )?;
+                kick_memory_pipeline(
+                    &storage_root,
+                    &session_id,
+                    &running_turn.id,
+                    effective_project_root.clone(),
+                )?;
+                return Ok((paused_turn, Some(assistant_message), tool_trace.clone(), usage));
+            }
+
             let assistant_text = if assistant_text.is_empty() {
                 "".to_string()
             } else {

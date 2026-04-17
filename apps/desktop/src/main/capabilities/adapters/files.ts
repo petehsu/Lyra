@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type { LyraAppManifest } from "@lyra/capability-protocol";
 import type { FilesNativeBindings } from "../../files/types";
+import type { LyraRuntimeClient } from "../../runtime-client";
 import type { CapabilityRegistry } from "../registry";
 import {
   previewFilesystemApplyPatch,
@@ -122,7 +123,9 @@ const buildPreparedMutationError = (result: Extract<FilePreparedMutationResult, 
 export const registerFilesystemCapabilities = (
   registry: CapabilityRegistry,
   bindings: FilesNativeBindings,
-  storageRoot: string
+  storageRoot: string,
+  runtimeClient: LyraRuntimeClient,
+  codeIntelStorageRoot: string
 ): LyraAppManifest => {
   registry.register(
     {
@@ -240,16 +243,47 @@ export const registerFilesystemCapabilities = (
       const glob = optionalString(payload, "glob");
       const limit = optionalNumber(payload, "limit");
       const caseSensitive = optionalBoolean(payload, "caseSensitive");
-      return await runFilesystemSearch(bindings, {
-        pattern: requireString(payload, "pattern"),
-        path: resolveScopedWorkspacePath(
-          optionalString(payload, "path") ?? workspaceRoot,
-          workspaceRoot
-        ),
-        ...(glob === undefined ? {} : { glob }),
-        ...(limit === undefined ? {} : { limit }),
-        ...(caseSensitive === undefined ? {} : { caseSensitive })
-      });
+      const pattern = requireString(payload, "pattern");
+      const path = resolveScopedWorkspacePath(
+        optionalString(payload, "path") ?? workspaceRoot,
+        workspaceRoot
+      );
+      try {
+        const indexed = await runtimeClient.request<{
+          readonly truncated: boolean;
+          readonly matches: readonly {
+            readonly path: string;
+            readonly relativePath: string;
+            readonly line: number;
+            readonly excerpt: string;
+          }[];
+        }>("code.search.text", {
+          storageRoot: codeIntelStorageRoot,
+          query: pattern,
+          path,
+          ...(glob === undefined ? {} : { glob }),
+          ...(limit === undefined ? {} : { limit }),
+          ...(caseSensitive === undefined ? {} : { caseSensitive }),
+          ...(request.context?.projectRoot === undefined
+            ? {}
+            : { projectRoot: request.context.projectRoot })
+        });
+        return {
+          rootPath: path,
+          pattern,
+          caseSensitive: caseSensitive === true,
+          truncated: indexed.truncated,
+          matches: indexed.matches
+        };
+      } catch {
+        return await runFilesystemSearch(bindings, {
+          pattern,
+          path,
+          ...(glob === undefined ? {} : { glob }),
+          ...(limit === undefined ? {} : { limit }),
+          ...(caseSensitive === undefined ? {} : { caseSensitive })
+        });
+      }
     }
   );
 

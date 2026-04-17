@@ -1,4 +1,10 @@
 use super::*;
+use lyra_code_intel_core::{CodeIntelService, CodeSearchTextParams};
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock, RwLock};
+
+static CODE_INTEL_SERVICES: OnceLock<RwLock<HashMap<String, Arc<CodeIntelService>>>> =
+    OnceLock::new();
 
 pub(super) fn run_filesystem_list(
     input: &Value,
@@ -117,6 +123,7 @@ pub(super) fn run_filesystem_glob(
 pub(super) fn run_filesystem_search(
     input: &Value,
     scope_root: Option<&Path>,
+    storage_root: Option<&str>,
 ) -> Result<Value, AgentToolError> {
     let object = as_object(input)?;
     let pattern = required_string(object, "pattern")?;
@@ -126,8 +133,77 @@ pub(super) fn run_filesystem_search(
         .unwrap_or(current_dir_path(scope_root)?);
     let limit = clamp_limit(optional_usize(object, "limit"), DEFAULT_SEARCH_LIMIT);
     let case_sensitive = optional_bool(object, "caseSensitive").unwrap_or(false);
-
     let glob_pattern = optional_string(object, "glob");
+
+    if let Ok(service) = resolve_code_intel_service(storage_root) {
+        if let Ok(response) = service.search_text(CodeSearchTextParams {
+            query: pattern.clone(),
+            roots: vec![root_path.clone()],
+            include_hidden: false,
+            glob: glob_pattern.clone(),
+            limit,
+            case_sensitive,
+        }) {
+            let matches = response
+                .matches
+                .into_iter()
+                .map(|item| {
+                    json!({
+                        "path": item.path,
+                        "relativePath": item.relative_path,
+                        "line": item.line,
+                        "excerpt": item.excerpt,
+                    })
+                })
+                .collect::<Vec<_>>();
+            return Ok(json!({
+                "rootPath": root_path.to_string_lossy(),
+                "pattern": pattern,
+                "caseSensitive": case_sensitive,
+                "truncated": response.truncated,
+                "matches": matches,
+            }));
+        }
+    }
+
+    run_filesystem_search_legacy(pattern, root_path, limit, case_sensitive, glob_pattern)
+}
+
+fn resolve_code_intel_service(
+    storage_root: Option<&str>,
+) -> Result<Arc<CodeIntelService>, AgentToolError> {
+    let base_storage = storage_root
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("lyra-agent"));
+    let service_root = base_storage.join("code-intel");
+    std::fs::create_dir_all(&service_root).map_err(|error| {
+        AgentToolError::exec_failed(format!(
+            "failed to initialize code index storage {}: {error}",
+            service_root.display()
+        ))
+    })?;
+    let key = service_root.to_string_lossy().to_string();
+    let services = CODE_INTEL_SERVICES.get_or_init(|| RwLock::new(HashMap::new()));
+    if let Ok(guard) = services.read() {
+        if let Some(service) = guard.get(&key) {
+            return Ok(service.clone());
+        }
+    }
+    let service = Arc::new(CodeIntelService::new(&service_root));
+    let mut guard = services
+        .write()
+        .map_err(|_| AgentToolError::exec_failed("code intel service lock poisoned"))?;
+    let entry = guard.entry(key).or_insert_with(|| service.clone());
+    Ok(entry.clone())
+}
+
+fn run_filesystem_search_legacy(
+    pattern: String,
+    root_path: PathBuf,
+    limit: usize,
+    case_sensitive: bool,
+    glob_pattern: Option<String>,
+) -> Result<Value, AgentToolError> {
     let glob = glob_pattern
         .as_ref()
         .map(|pattern| build_glob(pattern))

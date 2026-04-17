@@ -1,14 +1,11 @@
 import {
   Asterisk,
   BookText,
-  Brain,
-  Clock3,
   FileCode,
   Files,
   FolderTree,
   Pencil,
   Search,
-  Settings2,
   Wrench
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -84,6 +81,27 @@ type AgentRuntimeFeedItem = {
   readonly status: AgentRuntimeFeedStatus;
   readonly timestamp: number;
   readonly liveOutput?: string;
+};
+
+type AgentTurnTimelineItem =
+  | {
+      readonly kind: "tool";
+      readonly id: string;
+      readonly timestamp: number;
+      readonly tool: AgentRuntimeFeedItem;
+    }
+  | {
+      readonly kind: "assistant";
+      readonly id: string;
+      readonly timestamp: number;
+      readonly content: string;
+    };
+
+type StreamStatusTone = "running" | "waiting" | "completed" | "failed";
+
+type StreamStatusItem = {
+  readonly label: string;
+  readonly tone: StreamStatusTone;
 };
 
 type PendingInteractionPanel =
@@ -163,6 +181,76 @@ const truncateDisplayText = (value: string, maxLength: number): string => {
     return chars.join("");
   }
   return `${chars.slice(0, maxLength).join("")}…`;
+};
+
+const normalizeStreamingStatusLabel = (label: string): string =>
+  label.replace(/(?:\.\.\.|…)+\s*$/g, "").trim();
+
+const internalReflectionHeadingPattern = /(?:^|\n)\s{0,3}(?:#{1,6}\s*)?(?:reflection|反思)[\s\S]*$/i;
+
+const sanitizeAssistantDisplayContent = (content: string): string => {
+  if (content.length === 0) {
+    return content;
+  }
+  const normalized = content.replace(/\r\n/g, "\n");
+  const withoutTaggedThinking = normalized
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/gi, "");
+  const withoutTaggedReflection = withoutTaggedThinking
+    .replace(/<reflection>[\s\S]*?<\/reflection>/gi, "")
+    .replace(/<reflection>[\s\S]*$/gi, "");
+  const headingMatch = internalReflectionHeadingPattern.exec(withoutTaggedReflection);
+  if (headingMatch === null) {
+    return withoutTaggedReflection;
+  }
+  const cutIndex = headingMatch.index + (headingMatch[0].startsWith("\n") ? 1 : 0);
+  return withoutTaggedReflection.slice(0, cutIndex).trimEnd();
+};
+
+const runtimeEventPhasePriority = (phase: string): number => {
+  if (phase === "failed") {
+    return 8;
+  }
+  if (phase === "completed") {
+    return 7;
+  }
+  if (phase === "paused" || phase === "interaction_pending") {
+    return 6;
+  }
+  if (phase === "tool_finished") {
+    return 5;
+  }
+  if (phase === "tool_started" || phase === "tool_progress") {
+    return 4;
+  }
+  if (phase === "started") {
+    return 3;
+  }
+  if (phase === "accepted") {
+    return 2;
+  }
+  if (phase === "assistant_delta") {
+    return 1;
+  }
+  return 0;
+};
+
+const pickMostRecentRuntimeEvent = (
+  persisted: AgentRuntimeEvent | null,
+  live: AgentRuntimeEvent | null
+): AgentRuntimeEvent | null => {
+  if (persisted === null) {
+    return live;
+  }
+  if (live === null) {
+    return persisted;
+  }
+  if (live.timestamp !== persisted.timestamp) {
+    return live.timestamp > persisted.timestamp ? live : persisted;
+  }
+  return runtimeEventPhasePriority(live.phase) >= runtimeEventPhasePriority(persisted.phase)
+    ? live
+    : persisted;
 };
 
 const extractFolderName = (pathText: string): string => {
@@ -600,6 +688,182 @@ const mergeRuntimeFeedItem = (
   return current;
 };
 
+const appendOrMergeTimelineText = (
+  items: AgentTurnTimelineItem[],
+  turnId: string,
+  kind: "assistant",
+  timestamp: number,
+  content: string
+): void => {
+  if (content.length === 0) {
+    return;
+  }
+  const lastItem = items[items.length - 1];
+  if (lastItem !== undefined && lastItem.kind === kind) {
+    const nextContent = `${lastItem.content}${content}`;
+    items[items.length - 1] = {
+      ...lastItem,
+      timestamp: Math.max(lastItem.timestamp, timestamp),
+      content: nextContent
+    };
+    return;
+  }
+  items.push({
+    kind,
+    id: `${turnId}-${kind}-${String(items.length + 1)}`,
+    timestamp,
+    content
+  });
+};
+
+const resolveTimelineEventPriority = (event: AgentRuntimeEvent): number => {
+  if (event.phase === "assistant_delta") {
+    return 0;
+  }
+  if (
+    event.phase === "tool_started"
+    || event.phase === "tool_progress"
+    || event.phase === "tool_finished"
+  ) {
+    return 1;
+  }
+  return 2;
+};
+
+const buildTurnTimelineItems = ({
+  turnId,
+  messageContent,
+  messageCreatedAt,
+  runtimeEvents,
+  runtimeFeedItems,
+  toolNameLabels,
+  runtimeToolFallbackLabel
+}: {
+  readonly turnId: string;
+  readonly messageContent: string;
+  readonly messageCreatedAt: number;
+  readonly runtimeEvents: readonly AgentRuntimeEvent[];
+  readonly runtimeFeedItems: readonly AgentRuntimeFeedItem[];
+  readonly toolNameLabels: ToolNameLabelMap;
+  readonly runtimeToolFallbackLabel: string;
+}): readonly AgentTurnTimelineItem[] => {
+  const timelineItems: AgentTurnTimelineItem[] = [];
+  const toolIndexById = new Map<string, number>();
+  let hasNarrativeTimeline = false;
+  const sortedEvents = runtimeEvents
+    .map((event, index) => ({ event, index }))
+    .sort((left, right) => {
+      if (left.event.timestamp !== right.event.timestamp) {
+        return left.event.timestamp - right.event.timestamp;
+      }
+      const priorityDiff = resolveTimelineEventPriority(left.event) - resolveTimelineEventPriority(right.event);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.event);
+
+  for (const event of sortedEvents) {
+    const payload = isRecord(event.payload) ? event.payload : {};
+    if (event.phase === "assistant_delta") {
+      const delta = pickRawString(payload, "delta") ?? "";
+      appendOrMergeTimelineText(timelineItems, turnId, "assistant", event.timestamp, delta);
+      if (delta.length > 0) {
+        hasNarrativeTimeline = true;
+      }
+    }
+
+    const runtimeItem = toRuntimeFeedItem(event, toolNameLabels, runtimeToolFallbackLabel);
+    if (runtimeItem === null) {
+      continue;
+    }
+
+    const existingIndex = toolIndexById.get(runtimeItem.id);
+    if (existingIndex === undefined) {
+      toolIndexById.set(runtimeItem.id, timelineItems.length);
+      timelineItems.push({
+        kind: "tool",
+        id: `tool-${runtimeItem.id}`,
+        timestamp: runtimeItem.timestamp,
+        tool: runtimeItem
+      });
+      continue;
+    }
+
+    const existing = timelineItems[existingIndex];
+    if (existing === undefined || existing.kind !== "tool") {
+      continue;
+    }
+    timelineItems[existingIndex] = {
+      ...existing,
+      timestamp: Math.max(existing.timestamp, runtimeItem.timestamp),
+      tool: mergeRuntimeFeedItem(existing.tool, runtimeItem)
+    };
+  }
+
+  for (const runtimeItem of runtimeFeedItems) {
+    if (toolIndexById.has(runtimeItem.id)) {
+      continue;
+    }
+    toolIndexById.set(runtimeItem.id, timelineItems.length);
+    timelineItems.push({
+      kind: "tool",
+      id: `tool-${runtimeItem.id}`,
+      timestamp: runtimeItem.timestamp,
+      tool: runtimeItem
+    });
+  }
+
+  const trimmedMessage = messageContent.trim();
+  const assistantSegments = timelineItems.filter(
+    (item): item is Extract<AgentTurnTimelineItem, { kind: "assistant" }> =>
+      item.kind === "assistant"
+  );
+  const aggregatedAssistantContent = assistantSegments
+    .map((item) => item.content)
+    .join("")
+    .trim();
+  const shouldAppendMessage =
+    trimmedMessage.length > 0
+    && (
+      assistantSegments.length === 0
+      || !aggregatedAssistantContent.includes(trimmedMessage)
+    );
+  if (shouldAppendMessage) {
+    const finalAssistantItem: AgentTurnTimelineItem = {
+      kind: "assistant",
+      id: `${turnId}-assistant-final`,
+      timestamp: messageCreatedAt,
+      content: messageContent
+    };
+    const hasToolItems = timelineItems.some((item) => item.kind === "tool");
+    if (!hasNarrativeTimeline && hasToolItems) {
+      timelineItems.unshift(finalAssistantItem);
+    } else {
+      timelineItems.push(finalAssistantItem);
+    }
+  } else if (
+    assistantSegments.length > 0
+    && trimmedMessage.length > aggregatedAssistantContent.length
+  ) {
+    for (let index = timelineItems.length - 1; index >= 0; index -= 1) {
+      const item = timelineItems[index];
+      if (item?.kind !== "assistant") {
+        continue;
+      }
+      timelineItems[index] = {
+        ...item,
+        timestamp: Math.max(item.timestamp, messageCreatedAt),
+        content: messageContent
+      };
+      break;
+    }
+  }
+
+  return timelineItems;
+};
+
 const isOptimisticUserMessage = (message: DisplayMessage): message is OptimisticUserMessage =>
   "optimistic" in message && message.optimistic === true;
 
@@ -793,10 +1057,10 @@ export const AiPanelSurface = ({
   newSessionTitle,
   defaultProfileId,
   defaultProfileName,
-  defaultModelName,
+  defaultModelNames,
   profileLabel,
   modelLabel,
-  openSettingsLabel,
+  modelsLabel,
   openHistoryLabel,
   openMcpLabel,
   openSkillsLabel,
@@ -826,12 +1090,15 @@ export const AiPanelSurface = ({
   onOpenHistory,
   onOpenMcp,
   onOpenSkills,
-  onRequestProjectBind,
-  onOpenSettings
+  onRequestProjectBind
 }: AiPanelSurfaceProps) => {
   const t = useMemo(() => createTranslator(locale), [locale]);
+  const isZhLocale = (locale ?? "en-US").startsWith("zh");
   const hasDefaultProfile = defaultProfileName !== null && defaultProfileName.trim().length > 0;
-  const hasDefaultModel = defaultModelName !== null && defaultModelName.trim().length > 0;
+  const resolvedModelNames = defaultModelNames
+    .map((entry) => entry.trim())
+    .filter((entry, index, entries) => entry.length > 0 && entries.indexOf(entry) === index);
+  const hasDefaultModels = resolvedModelNames.length > 0;
   const agentApi = desktopApi?.agent;
   const resolvedComposeAriaLabel =
     composeAriaLabel !== undefined && composeAriaLabel.trim().length > 0
@@ -892,14 +1159,19 @@ export const AiPanelSurface = ({
   const [streamingTurnId, setStreamingTurnId] = useState<string | null>(null);
   const streamingTurnIdRef = useRef<string | null>(null);
   const [streamingAssistantText, setStreamingAssistantText] = useState("");
-  const [streamingThinkingBlocks, setStreamingThinkingBlocks] = useState<readonly string[]>([]);
   const [isStreamActive, setIsStreamActive] = useState(false);
+  const [latestRuntimeEventByTurn, setLatestRuntimeEventByTurn] =
+    useState<Readonly<Record<string, AgentRuntimeEvent>>>({});
+  const sanitizedStreamingAssistantText = useMemo(
+    () => sanitizeAssistantDisplayContent(streamingAssistantText),
+    [streamingAssistantText]
+  );
   // During active streaming, show text directly — deltas already provide
   // incremental appearance. Typewriter effect is only used after streaming
   // ends (isStreamActive = false) to animate any remaining buffered text.
   // We always call the hook to respect Rules of Hooks, but pass instant=true
   // during streaming to bypass buffering.
-  const typewriterText = useTypewriter(streamingAssistantText, isStreamActive, {
+  const typewriterText = useTypewriter(sanitizedStreamingAssistantText, isStreamActive, {
     charsPerSecond: 45,
     minChunkSize: 4,
     instant: isStreamActive
@@ -1124,6 +1396,7 @@ export const AiPanelSurface = ({
   useEffect(() => {
     setActiveInteractionId(null);
     setTransientInteractionPanel(null);
+    setLatestRuntimeEventByTurn({});
     sessionDetailRequestSeqRef.current += 1;
   }, [activeSessionId]);
 
@@ -1167,6 +1440,11 @@ export const AiPanelSurface = ({
         setActiveSessionId(sessionId);
         setRuntimeError(null);
         setRuntimeFeed([]);
+        setLatestRuntimeEventByTurn({});
+        setIsStreamActive(false);
+        setStreamingAssistantText("");
+        streamingTurnIdRef.current = null;
+        setStreamingTurnId(null);
         setOptimisticUserMessages([]);
         if (agentApi !== undefined) {
           void loadSessionDetail(sessionId);
@@ -1246,15 +1524,31 @@ export const AiPanelSurface = ({
       if (event.sessionId !== activeSessionIdRef.current) {
         return;
       }
+      if (event.phase !== "assistant_delta" && event.phase !== "reasoning_thought") {
+        setLatestRuntimeEventByTurn((current) => {
+          const previous = current[event.turnId];
+          if (previous !== undefined) {
+            if (previous.timestamp > event.timestamp) {
+              return current;
+            }
+            if (
+              previous.timestamp === event.timestamp
+              && runtimeEventPhasePriority(previous.phase) > runtimeEventPhasePriority(event.phase)
+            ) {
+              return current;
+            }
+          }
+          return {
+            ...current,
+            [event.turnId]: event
+          };
+        });
+      }
       if (event.phase === "assistant_delta") {
         const delta = pickRawString(payload, "delta") ?? "";
         if (delta.length > 0) {
           const currentTurnId = streamingTurnIdRef.current;
           const isSameTurn = currentTurnId === event.turnId;
-          if (!isSameTurn) {
-            // Turn switched — clear thinking blocks for the new turn.
-            setStreamingThinkingBlocks([]);
-          }
           setStreamingAssistantText(isSameTurn
             ? (current) => `${current}${delta}`
             : delta
@@ -1262,32 +1556,6 @@ export const AiPanelSurface = ({
           streamingTurnIdRef.current = event.turnId;
           setIsStreamActive(true);
           setStreamingTurnId(event.turnId);
-        }
-        return;
-      }
-      if (event.phase === "reasoning_thought") {
-        const payload = isRecord(event.payload) ? event.payload : {};
-        const thought = pickRawString(payload, "thought") ?? "";
-        if (thought.length > 0) {
-          const currentTurnId = streamingTurnIdRef.current;
-          const isSameTurn = currentTurnId === event.turnId;
-          if (!isSameTurn) {
-            // Turn switched — reset thinking blocks for the new turn.
-            setStreamingThinkingBlocks([thought]);
-            streamingTurnIdRef.current = event.turnId;
-            setStreamingTurnId(event.turnId);
-            setIsStreamActive(true);
-          } else {
-            setIsStreamActive(true);
-            setStreamingThinkingBlocks((current) => {
-              if (current.length === 0) {
-                return [thought];
-              }
-              const merged = [...current];
-              merged[merged.length - 1] = merged[merged.length - 1] + thought;
-              return merged;
-            });
-          }
         }
         return;
       }
@@ -1614,6 +1882,7 @@ export const AiPanelSurface = ({
 
       if (event.phase === "accepted") {
         setOptimisticUserMessages([]);
+        setIsStreamActive(true);
         // Only clear streaming state if we haven't started streaming for this
         // turn yet. If assistant_delta already arrived for this turn, preserve
         // the accumulated text.
@@ -1621,7 +1890,6 @@ export const AiPanelSurface = ({
           streamingTurnIdRef.current = event.turnId;
           setStreamingTurnId(event.turnId);
           setStreamingAssistantText("");
-          setStreamingThinkingBlocks([]);
         }
       }
       if (
@@ -1635,7 +1903,6 @@ export const AiPanelSurface = ({
         // Using the ref (not state) avoids race conditions with React batching.
         if (streamingTurnIdRef.current === event.turnId) {
           setStreamingAssistantText("");
-          setStreamingThinkingBlocks([]);
           streamingTurnIdRef.current = null;
           setStreamingTurnId(null);
         }
@@ -1687,7 +1954,6 @@ export const AiPanelSurface = ({
     toolNameLabels
   ]);
 
-  const activePlan = activeDetail?.plan ?? null;
   const mergedPendingInteractions = useMemo<readonly AgentPendingInteraction[]>(
     () => {
       const persisted = activeDetail?.pendingInteractions ?? [];
@@ -1852,7 +2118,7 @@ export const AiPanelSurface = ({
           : { profileId: defaultProfileId }),
         enablePlanning: true,
         planningMinChars: 100,
-        enableReflection: true,
+        enableReflection: false,
         reflectionMinToolCalls: 3,
         enableContextCollapse: true
       });
@@ -2026,6 +2292,18 @@ export const AiPanelSurface = ({
     () => sortByTime([...persistedMessages, ...optimisticUserMessages]),
     [optimisticUserMessages, persistedMessages]
   );
+  const assistantMessageOrderById = useMemo(() => {
+    const map = new Map<string, number>();
+    let assistantIndex = 0;
+    for (const message of sortedMessages) {
+      if (message.role !== "assistant") {
+        continue;
+      }
+      assistantIndex += 1;
+      map.set(message.id, assistantIndex);
+    }
+    return map;
+  }, [sortedMessages]);
 
   const topbarTitle = useMemo(() => {
     const firstUserMessage = sortedMessages.find(
@@ -2037,42 +2315,7 @@ export const AiPanelSurface = ({
     return truncateDisplayText(firstUserMessage.content, 6);
   }, [sortedMessages]);
 
-  const resolvePlanStatusLabel = useCallback(
-    (status: string): string => {
-      if (status === "draft") {
-        return t("ai.planStatusDraft");
-      }
-      if (status === "submitted") {
-        return t("ai.planStatusSubmitted");
-      }
-      if (status === "approved") {
-        return t("ai.planStatusApproved");
-      }
-      if (status === "rejected") {
-        return t("ai.planStatusRejected");
-      }
-      return status;
-    },
-    [t]
-  );
-
-  const planStatusLabel = useMemo(() => {
-    if (activeDetail?.session.collaborationMode !== "plan") {
-      return activePlan === null
-        ? null
-        : `${t("ai.planLabel")} v${String(activePlan.version)} · ${resolvePlanStatusLabel(activePlan.status)}`;
-    }
-    if (activePlan === null) {
-      return t("ai.planMode");
-    }
-    return `${t("ai.planMode")} · v${String(activePlan.version)} · ${resolvePlanStatusLabel(activePlan.status)}`;
-  }, [activeDetail?.session.collaborationMode, activePlan, resolvePlanStatusLabel, t]);
-
-  const composerPlanLabel = isPlanModeActive
-    ? (planStatusLabel ?? t("ai.planMode"))
-    : isPlanModeArmed
-      ? t("ai.planModeArmed")
-      : t("ai.planMode");
+  const composerPlanLabel = t("ai.planLabel");
 
   const turnsById = useMemo(() => {
     const map = new Map<string, AgentTurn>();
@@ -2097,6 +2340,22 @@ export const AiPanelSurface = ({
     }
     return map;
   }, [activeDetail?.toolCalls]);
+
+  const runtimeEventsByTurn = useMemo(() => {
+    const map = new Map<string, AgentRuntimeEvent[]>();
+    for (const event of activeDetail?.runtimeEvents ?? []) {
+      const current = map.get(event.turnId);
+      if (current === undefined) {
+        map.set(event.turnId, [event]);
+      } else {
+        current.push(event);
+      }
+    }
+    for (const events of map.values()) {
+      events.sort((left, right) => left.timestamp - right.timestamp);
+    }
+    return map;
+  }, [activeDetail?.runtimeEvents]);
 
   const persistedRuntimeFeed = useMemo<readonly AgentRuntimeFeedItem[]>(
     () => {
@@ -2151,12 +2410,177 @@ export const AiPanelSurface = ({
     return map;
   }, [displayRuntimeFeed]);
 
+  const turnTimelineByTurn = useMemo(() => {
+    const map = new Map<string, readonly AgentTurnTimelineItem[]>();
+    for (const message of persistedMessages) {
+      if (message.role !== "assistant" || typeof message.turnId !== "string") {
+        continue;
+      }
+      if (map.has(message.turnId)) {
+        continue;
+      }
+      map.set(
+        message.turnId,
+        buildTurnTimelineItems({
+          turnId: message.turnId,
+          messageContent: message.content,
+          messageCreatedAt: message.createdAt,
+          runtimeEvents: runtimeEventsByTurn.get(message.turnId) ?? [],
+          runtimeFeedItems: runtimeFeedByTurn.get(message.turnId) ?? [],
+          toolNameLabels,
+          runtimeToolFallbackLabel
+        })
+      );
+    }
+    return map;
+  }, [
+    persistedMessages,
+    runtimeEventsByTurn,
+    runtimeFeedByTurn,
+    runtimeToolFallbackLabel,
+    toolNameLabels
+  ]);
+
   const streamingTurnRuntimeFeed = useMemo<readonly AgentRuntimeFeedItem[]>(
     () =>
       streamingTurnId === null
         ? []
         : (runtimeFeedByTurn.get(streamingTurnId) ?? []),
     [runtimeFeedByTurn, streamingTurnId]
+  );
+
+  const streamingRuntimeEvent = useMemo<AgentRuntimeEvent | null>(
+    () => {
+      if (streamingTurnId === null) {
+        return null;
+      }
+      const events = runtimeEventsByTurn.get(streamingTurnId) ?? [];
+      const persistedLatest = events[events.length - 1] ?? null;
+      const liveLatest = latestRuntimeEventByTurn[streamingTurnId] ?? null;
+      return pickMostRecentRuntimeEvent(persistedLatest, liveLatest);
+    },
+    [latestRuntimeEventByTurn, runtimeEventsByTurn, streamingTurnId]
+  );
+
+  const streamingStatus = useMemo<StreamStatusItem | null>(
+    () => {
+      const runningTool = [...streamingTurnRuntimeFeed]
+        .reverse()
+        .find((item) => item.status === "running") ?? null;
+      if (runningTool !== null) {
+        return {
+          label: normalizeStreamingStatusLabel(
+            `${t("ai.runtimeRunningPrefix")} ${runningTool.toolLabel}`
+          ),
+          tone: "running"
+        };
+      }
+
+      const hasWaitingInteraction =
+        activeInteractionPanel !== null && (streamingTurnId !== null || isSending);
+      if (hasWaitingInteraction) {
+        return {
+          label: normalizeStreamingStatusLabel(t("ai.pendingInteractions")),
+          tone: "waiting"
+        };
+      }
+
+      const phase = streamingRuntimeEvent?.phase ?? null;
+      if (phase === "failed") {
+        return {
+          label: normalizeStreamingStatusLabel(t("ai.runtimeFailedTurn")),
+          tone: "failed"
+        };
+      }
+      if (phase === "completed") {
+        return {
+          label: normalizeStreamingStatusLabel(t("ai.runtimeCompletedTurn")),
+          tone: "completed"
+        };
+      }
+      if (
+        phase === "paused"
+        || phase === "interaction_pending"
+        || phase === "command_approval_request"
+        || phase === "plan_question_requested"
+        || phase === "plan_approval_requested"
+      ) {
+        return {
+          label: normalizeStreamingStatusLabel(t("ai.pendingInteractions")),
+          tone: "waiting"
+        };
+      }
+
+      if (phase === "accepted") {
+        return {
+          label: normalizeStreamingStatusLabel(t("ai.runtimeQueued")),
+          tone: "running"
+        };
+      }
+      if (phase === "started") {
+        return {
+          label: normalizeStreamingStatusLabel(t("ai.runtimeStarted")),
+          tone: "running"
+        };
+      }
+      if (phase === "tool_started" || phase === "tool_progress") {
+        const payload = isRecord(streamingRuntimeEvent?.payload) ? streamingRuntimeEvent.payload : {};
+        const phaseToolName = pickString(payload, "toolName");
+        const phaseToolLabel =
+          phaseToolName === null
+            ? null
+            : normalizeToolName(phaseToolName, toolNameLabels);
+        return {
+          label: normalizeStreamingStatusLabel(
+            phaseToolLabel === null
+              ? t("ai.runtimePhaseToolStarted")
+              : `${t("ai.runtimeRunningPrefix")} ${phaseToolLabel}`
+          ),
+          tone: "running"
+        };
+      }
+      if (phase === "tool_finished") {
+        return {
+          label: normalizeStreamingStatusLabel(t("ai.runtimePhaseToolFinished")),
+          tone: "running"
+        };
+      }
+
+      if (
+        streamingAssistantText.length > 0
+        || isStreamActive
+        || phase === "assistant_delta"
+      ) {
+        return {
+          label: normalizeStreamingStatusLabel(t("ai.generatingReply")),
+          tone: "running"
+        };
+      }
+      if (isSending) {
+        return {
+          label: normalizeStreamingStatusLabel(t("ai.runtimeQueued")),
+          tone: "running"
+        };
+      }
+      if (streamingTurnId !== null) {
+        return {
+          label: normalizeStreamingStatusLabel(t("ai.runtimeStarted")),
+          tone: "running"
+        };
+      }
+      return null;
+    },
+    [
+      activeInteractionPanel,
+      isSending,
+      isStreamActive,
+      streamingAssistantText.length,
+      streamingRuntimeEvent,
+      streamingTurnId,
+      streamingTurnRuntimeFeed,
+      t,
+      toolNameLabels
+    ]
   );
 
   const assistantTurnIds = useMemo(() => {
@@ -2177,8 +2601,8 @@ export const AiPanelSurface = ({
       streamingTurnId !== null
       && (
         streamingAssistantText.length > 0
-        || streamingThinkingBlocks.length > 0
         || isStreamActive
+        || streamingStatus !== null
       )
     ) {
       ids.add(streamingTurnId);
@@ -2188,7 +2612,7 @@ export const AiPanelSurface = ({
     isStreamActive,
     sortedMessages,
     streamingAssistantText.length,
-    streamingThinkingBlocks.length,
+    streamingStatus,
     streamingTurnId
   ]);
 
@@ -2302,7 +2726,8 @@ export const AiPanelSurface = ({
     activeSessionId,
     displayRuntimeFeed.length,
     sortedMessages.length,
-    streamingAssistantText.length
+    streamingAssistantText.length,
+    streamingStatus?.label
   ]);
 
   useEffect(() => {
@@ -2323,6 +2748,7 @@ export const AiPanelSurface = ({
 
   const hasPendingInteraction =
     pendingInteractionQueue.length > 0 || transientInteractionPanel !== null;
+  const isComposerSurfaceDimmed = activeSessionId === null;
   const isComposerInputDisabled =
     isSending || activeSessionId === null || hasPendingInteraction;
   const isComposerSendDisabled =
@@ -2331,6 +2757,7 @@ export const AiPanelSurface = ({
     sortedMessages.length === 0
     && streamingAssistantText.length === 0
     && orphanRuntimeFeed.length === 0
+    && streamingStatus === null
     && runtimeError === null
     && !isSending;
 
@@ -2402,6 +2829,24 @@ export const AiPanelSurface = ({
     </div>
   );
 
+  const renderStreamStatusBlock = (status: StreamStatusItem) => {
+    return (
+      <div
+        className={
+          status.tone === "failed"
+            ? "lyra-ai-agent-message-content lyra-ai-stream-status lyra-ai-stream-status-failed"
+            : status.tone === "completed"
+              ? "lyra-ai-agent-message-content lyra-ai-stream-status lyra-ai-stream-status-completed"
+              : status.tone === "waiting"
+                ? "lyra-ai-agent-message-content lyra-ai-stream-status lyra-ai-stream-status-waiting"
+                : "lyra-ai-agent-message-content lyra-ai-stream-status lyra-ai-stream-status-running"
+        }
+      >
+        <span className="lyra-ai-stream-status-label">{status.label}</span>
+      </div>
+    );
+  };
+
   const topbarActions = (
     <div className="lyra-ai-panel-topbar-actions">
       {onOpenHistory === undefined || openHistoryLabel === undefined ? null : (
@@ -2437,15 +2882,6 @@ export const AiPanelSurface = ({
           {renderAiPanelTopbarIcon("skills")}
         </button>
       )}
-      <button
-        type="button"
-        className="lyra-ai-panel-topbar-action"
-        onClick={onOpenSettings}
-        aria-label={openSettingsLabel}
-        title={openSettingsLabel}
-      >
-        <Settings2 size={13} />
-      </button>
     </div>
   );
 
@@ -2466,7 +2902,7 @@ export const AiPanelSurface = ({
             <section className="lyra-ai-panel-static-card">
               <strong>{title}</strong>
               <p>{description}</p>
-              {hasDefaultProfile || hasDefaultModel ? (
+              {hasDefaultProfile || hasDefaultModels ? (
                 <div className="lyra-ai-panel-static-summary">
                   {hasDefaultProfile ? (
                     <div className="lyra-ai-panel-static-summary-row">
@@ -2474,10 +2910,16 @@ export const AiPanelSurface = ({
                       <strong>{defaultProfileName}</strong>
                     </div>
                   ) : null}
-                  {hasDefaultModel ? (
+                  {hasDefaultModels ? (
                     <div className="lyra-ai-panel-static-summary-row">
-                      <span>{modelLabel}</span>
-                      <strong>{defaultModelName}</strong>
+                      <span>{resolvedModelNames.length > 1 ? modelsLabel : modelLabel}</span>
+                      <div className="lyra-ai-panel-static-model-list">
+                        {resolvedModelNames.map((entry) => (
+                          <span key={entry} className="lyra-ai-panel-static-model-chip">
+                            {entry}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -2487,9 +2929,6 @@ export const AiPanelSurface = ({
                   <span>{emptyStateDescription}</span>
                 </div>
               )}
-              <button type="button" className="lyra-ai-panel-project-bind" onClick={onOpenSettings}>
-                {openSettingsLabel}
-              </button>
               <div className="lyra-ai-panel-static-composer">
                 <textarea
                   aria-label={resolvedComposeAriaLabel}
@@ -2557,10 +2996,67 @@ export const AiPanelSurface = ({
                     : null;
                   const turn = turnId === null ? null : (turnsById.get(turnId) ?? null);
                   const turnToolCalls = turnId === null ? [] : (toolCallsByTurn.get(turnId) ?? []);
+                  const assistantOrder = assistantMessageOrderById.get(message.id) ?? null;
+                  const turnDurationLabel =
+                    turn === null ? null : resolveTurnDurationLabel(turn, turnWorkingLabel, turnWorkedForPrefix);
+                  const turnToolSummaryLabel =
+                    turn === null
+                      ? null
+                      : resolveTurnSecondaryLabel(
+                          turn,
+                          turnToolCalls,
+                          toolNameLabels,
+                          turnNoToolCallsLabel,
+                          turnFailedLabel
+                        );
+                  const showToolSummary = turnToolCalls.length > 0 && turnToolSummaryLabel !== null;
                   const turnRuntimeFeed =
                     turnId !== null && message.role === "assistant"
                       ? (runtimeFeedByTurn.get(turnId) ?? [])
                       : [];
+                  const turnTimeline =
+                    turnId !== null && message.role === "assistant"
+                      ? (turnTimelineByTurn.get(turnId) ?? [])
+                      : [];
+                  const fallbackTimeline =
+                    turnTimeline.length === 0
+                      ? [
+                          {
+                            kind: "assistant" as const,
+                            id: `${message.id}-assistant-fallback`,
+                            timestamp: message.createdAt,
+                            content: message.content
+                          },
+                          ...turnRuntimeFeed.map((item) => ({
+                            kind: "tool" as const,
+                            id: `tool-${item.id}`,
+                            timestamp: item.timestamp,
+                            tool: item
+                          }))
+                        ]
+                      : turnTimeline;
+                  const displayTimeline: AgentTurnTimelineItem[] = [];
+                  for (const entry of fallbackTimeline) {
+                    if (entry.kind !== "assistant") {
+                      displayTimeline.push(entry);
+                      continue;
+                    }
+                    const content = sanitizeAssistantDisplayContent(entry.content);
+                    if (content.length === 0) {
+                      continue;
+                    }
+                    displayTimeline.push({
+                      ...entry,
+                      content
+                    });
+                  }
+                  const lastAssistantTimelineIndex = displayTimeline.reduce(
+                    (lastIndex, entry, index) => (entry.kind === "assistant" ? index : lastIndex),
+                    -1
+                  );
+                  const displayMessageContent = isUserMessage
+                    ? message.content
+                    : sanitizeAssistantDisplayContent(message.content);
                   const messagePlanApprovalRequest =
                     turnId === null
                       ? null
@@ -2587,86 +3083,136 @@ export const AiPanelSurface = ({
                       }
                     >
                       {isUserMessage || !richRenderingEnabled ? (
-                        <div className="lyra-ai-agent-message-content">{message.content}</div>
+                        <div className="lyra-ai-agent-message-content">{displayMessageContent}</div>
                       ) : (
                         <>
-                          {turn === null ? null : (
-                            <div className="lyra-ai-agent-turn-summary">
-                              <span className="lyra-ai-agent-turn-chip">
-                                <Clock3 size={11} />
-                                {resolveTurnDurationLabel(turn, turnWorkingLabel, turnWorkedForPrefix)}
+                          <div className="lyra-ai-agent-turn-timeline">
+                            {(() => {
+                              const nodes: JSX.Element[] = [];
+                              for (let timelineIndex = 0; timelineIndex < displayTimeline.length; timelineIndex += 1) {
+                                const timelineEntry = displayTimeline[timelineIndex];
+                                if (timelineEntry === undefined) {
+                                  continue;
+                                }
+                                if (timelineEntry.kind === "tool") {
+                                  const groupedTools: AgentRuntimeFeedItem[] = [timelineEntry.tool];
+                                  let groupEndIndex = timelineIndex;
+                                  while (groupEndIndex + 1 < displayTimeline.length) {
+                                    const nextEntry = displayTimeline[groupEndIndex + 1];
+                                    if (nextEntry === undefined || nextEntry.kind !== "tool") {
+                                      break;
+                                    }
+                                    groupedTools.push(nextEntry.tool);
+                                    groupEndIndex += 1;
+                                  }
+                                  const firstToolId = groupedTools[0]?.id ?? `${message.id}-tool-group-${String(timelineIndex)}`;
+                                  const lastToolId = groupedTools[groupedTools.length - 1]?.id ?? firstToolId;
+                                  nodes.push(
+                                    <div
+                                      key={`tool-group-${firstToolId}-${lastToolId}`}
+                                      className="lyra-ai-agent-turn-timeline-item lyra-ai-agent-turn-timeline-item-tool"
+                                    >
+                                      {renderRuntimeFeedBlock(groupedTools)}
+                                    </div>
+                                  );
+                                  timelineIndex = groupEndIndex;
+                                  continue;
+                                }
+                                const shouldAttachPlanActions =
+                                  hasPlanActions
+                                  && timelineIndex === lastAssistantTimelineIndex;
+                                nodes.push(
+                                  <div
+                                    key={timelineEntry.id}
+                                    className="lyra-ai-agent-turn-timeline-item lyra-ai-agent-turn-timeline-item-assistant"
+                                  >
+                                    {richRenderingEnabled ? (
+                                      <AiPanelRichContent
+                                        content={timelineEntry.content}
+                                        locale={locale}
+                                        {...(shouldAttachPlanActions
+                                          ? {
+                                              planActions: {
+                                                onApprove: () => {
+                                                  void handlePlanApprovalDecision({
+                                                    requestId: messagePlanApprovalRequest!.id,
+                                                    decision: "approve_and_implement",
+                                                  }, messagePlanApprovalRequest!);
+                                                },
+                                                onKeepPlanning: () => {
+                                                  void handlePlanApprovalDecision({
+                                                    requestId: messagePlanApprovalRequest!.id,
+                                                    decision: "keep_planning",
+                                                  }, messagePlanApprovalRequest!);
+                                                },
+                                                onReject: () => {
+                                                  void handlePlanApprovalDecision({
+                                                    requestId: messagePlanApprovalRequest!.id,
+                                                    decision: "reject",
+                                                  }, messagePlanApprovalRequest!);
+                                                },
+                                                onOpenInPanel: () => {
+                                                  setActiveInteractionId(messagePlanApprovalRequest!.id);
+                                                }
+                                              }
+                                            }
+                                          : {})}
+                                        {...(themeSignature === undefined ? {} : { themeSignature })}
+                                      />
+                                    ) : (
+                                      <div className="lyra-ai-agent-message-content">{timelineEntry.content}</div>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              return nodes;
+                            })()}
+                          </div>
+                          {assistantOrder === null || turnDurationLabel === null ? null : (
+                            <div className="lyra-ai-agent-turn-footer">
+                              <span className="lyra-ai-agent-turn-footer-index">
+                                {(isZhLocale ? "消息" : "Message")}
+                                ·
+                                {String(assistantOrder)}
                               </span>
-                              <span className="lyra-ai-agent-turn-summary-text">
-                                {resolveTurnSecondaryLabel(
-                                  turn,
-                                  turnToolCalls,
-                                  toolNameLabels,
-                                  turnNoToolCallsLabel,
-                                  turnFailedLabel
-                                )}
+                              <span className="lyra-ai-agent-turn-footer-duration">
+                                {turnDurationLabel}
                               </span>
                             </div>
                           )}
-                          {turnRuntimeFeed.length === 0 ? null : renderRuntimeFeedBlock(turnRuntimeFeed)}
-                          <AiPanelRichContent
-                            content={message.content}
-                            locale={locale}
-                            {...(hasPlanActions
-                              ? {
-                                planActions: {
-                                  onApprove: () => {
-                                    void handlePlanApprovalDecision({
-                                      requestId: messagePlanApprovalRequest.id,
-                                      decision: "approve_and_implement",
-                                    }, messagePlanApprovalRequest);
-                                  },
-                                  onKeepPlanning: () => {
-                                    void handlePlanApprovalDecision({
-                                      requestId: messagePlanApprovalRequest.id,
-                                      decision: "keep_planning",
-                                    }, messagePlanApprovalRequest);
-                                  },
-                                  onReject: () => {
-                                    void handlePlanApprovalDecision({
-                                      requestId: messagePlanApprovalRequest.id,
-                                      decision: "reject",
-                                    }, messagePlanApprovalRequest);
-                                  },
-                                  onOpenInPanel: () => {
-                                    setActiveInteractionId(messagePlanApprovalRequest.id);
-                                  }
-                                }
-                              }
-                              : {})}
-                            {...(themeSignature === undefined ? {} : { themeSignature })}
-                          />
+                          {!showToolSummary ? null : (
+                            <details className="lyra-ai-agent-turn-tools-details">
+                              <summary className="lyra-ai-agent-turn-tools-summary">
+                                {(isZhLocale ? "工具总结" : "Tool Summary")}
+                              </summary>
+                              <div className="lyra-ai-agent-turn-tools-content">
+                                {turnToolSummaryLabel}
+                              </div>
+                            </details>
+                          )}
                         </>
                       )}
                     </div>
                   );
                 })
                 )}
-              {streamingAssistantText.length === 0 && streamingThinkingBlocks.length === 0 && streamingTurnRuntimeFeed.length === 0 ? null : (
+              {typewriterText.length === 0 && streamingTurnRuntimeFeed.length === 0 && streamingStatus === null ? null : (
                 <div className="lyra-ai-agent-message lyra-ai-agent-message-assistant">
+                  {typewriterText.length > 0 || streamingStatus === null
+                    ? null
+                    : renderStreamStatusBlock(streamingStatus)}
+                  {typewriterText.length === 0 ? null : (
+                    richRenderingEnabled ? (
+                      <AiPanelRichContent
+                        content={typewriterText}
+                        locale={locale}
+                        {...(themeSignature === undefined ? {} : { themeSignature })}
+                      />
+                    ) : (
+                      <div className="lyra-ai-agent-message-content">{typewriterText}</div>
+                    )
+                  )}
                   {streamingTurnRuntimeFeed.length === 0 ? null : renderRuntimeFeedBlock(streamingTurnRuntimeFeed)}
-                  {streamingThinkingBlocks.map((thought, idx) => (
-                    <div key={`thinking-${idx}`} className="lyra-ai-thinking-output">{thought}</div>
-                  ))}
-                  {richRenderingEnabled ? (
-                    <AiPanelRichContent
-                      content={typewriterText}
-                      locale={locale}
-                      {...(themeSignature === undefined ? {} : { themeSignature })}
-                    />
-                  ) : (
-                    <div className="lyra-ai-agent-message-content">{typewriterText}</div>
-                  )}
-                  {isStreamActive && (
-                    <div className="lyra-ai-stream-indicator">
-                      <span className="lyra-ai-stream-dot" />
-                      <span>{t("ai.generatingReply")}</span>
-                    </div>
-                  )}
                 </div>
               )}
               {orphanRuntimeFeed.length === 0 ? null : (
@@ -2747,6 +3293,8 @@ export const AiPanelSurface = ({
 
             <AgentComposer
               locale={locale}
+              modelLabel={resolvedModelNames.length > 1 ? modelsLabel : modelLabel}
+              modelNames={resolvedModelNames}
               value={draftInput}
               ariaLabel={resolvedComposeAriaLabel}
               placeholder={resolvedComposePlaceholder}
@@ -2754,6 +3302,7 @@ export const AiPanelSurface = ({
               inputDisabled={isComposerInputDisabled}
               sendDisabled={isComposerSendDisabled}
               sending={isSending}
+              surfaceDimmed={isComposerSurfaceDimmed}
               {...(bindProjectLabel === undefined ? {} : { bindProjectLabel })}
               boundProjectName={activeBoundProjectName}
               planModeEnabled={isPlanModeEnabled}

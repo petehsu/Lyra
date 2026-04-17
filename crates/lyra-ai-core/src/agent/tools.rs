@@ -43,6 +43,12 @@ pub use host_bridge::{
 };
 pub use ranking::ToolRankingContext;
 #[allow(unused_imports)]
+pub use routing::browser_strategy::{
+    derive_browser_strategy_routing_context, get_browser_strategy_runtime_state,
+    merge_browser_strategy_runtime_state, set_browser_strategy_runtime_state,
+    BrowserStrategyRoutingContext, BrowserStrategyRuntimeState,
+};
+#[allow(unused_imports)]
 pub use routing::web_context::{derive_workbench_web_routing_context, WorkbenchWebRoutingContext};
 pub use skill_prompts::{render_activated_skill_prompts, set_skill_prompts, SkillPromptEntry};
 
@@ -251,7 +257,9 @@ where
     match name {
         "filesystem.list" => run_filesystem_list(input, scope_root.as_deref()),
         "filesystem.glob" => run_filesystem_glob(input, scope_root.as_deref()),
-        "filesystem.search" => run_filesystem_search(input, scope_root.as_deref()),
+        "filesystem.search" => {
+            run_filesystem_search(input, scope_root.as_deref(), context.storage_root)
+        }
         "filesystem.read_range" => run_filesystem_read_range(input, scope_root.as_deref()),
         "filesystem.write" => run_filesystem_write(input, scope_root.as_deref(), &mut on_progress),
         "filesystem.edit" => run_filesystem_edit(input, scope_root.as_deref(), &mut on_progress),

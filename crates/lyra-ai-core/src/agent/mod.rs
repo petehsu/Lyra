@@ -5,6 +5,7 @@ pub mod error_recovery;
 pub mod file_state_cache;
 pub mod interaction_manager;
 pub mod micro_compact;
+pub mod persona_runtime;
 pub mod prefetch;
 pub mod prompt_pipeline;
 pub mod prompt_repetition;

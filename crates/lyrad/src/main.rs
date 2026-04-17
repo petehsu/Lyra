@@ -19,11 +19,12 @@ use lyra_ai_core::{
     refresh_ai_models_json, register_host_tools_bridge, register_mcp_server_tools_bridge,
     register_rust_event_callback as register_agent_event_callback,
     resolve_agent_plan_approval_json, run_ai_memory_scheduler_tick, send_agent_turn_json,
-    set_default_ai_profile_json, set_skill_prompts, submit_command_approval_json,
-    unregister_host_tool_set, unregister_mcp_server_tools, update_ai_memory_config_json,
-    upsert_ai_profile_json, validate_ai_profile_json, ExternalToolApprovalMode,
+    set_browser_strategy_runtime_state, set_default_ai_profile_json, set_persona_runtime_state,
+    set_skill_prompts, submit_command_approval_json, unregister_host_tool_set,
+    unregister_mcp_server_tools, update_ai_memory_config_json, upsert_ai_profile_json,
+    validate_ai_profile_json, BrowserStrategyRuntimeState, ExternalToolApprovalMode,
     ExternalToolSideEffectLevel, ExternalToolSideEffects, HostToolDescriptor,
-    McpServerToolDescriptor, SkillPromptEntry, ToolExecutionMode,
+    McpServerToolDescriptor, PersonaRuntimeState, SkillPromptEntry, ToolExecutionMode,
 };
 use lyra_lsp_core::{
     change_document as lsp_change_document, clear_rust_event_callback as clear_lsp_event_callback,
@@ -57,6 +58,10 @@ use lyra_terminal_core::{
     shutdown as shutdown_terminal, write_session as write_terminal_session, TerminalCloseRequest,
     TerminalCreateRequest, TerminalReadRequest, TerminalResizeRequest, TerminalRestoreRequest,
     TerminalWriteRequest,
+};
+use modules::code_intel::{
+    expand_code_graph_json, read_code_index_status_json, rebuild_code_index_json,
+    search_code_symbol_json, search_code_text_json,
 };
 use modules::fs::{
     read_search_index_status_json, rebuild_search_index_json, search_local_json,
@@ -662,6 +667,7 @@ fn handle_agent_request(
         "agent.command_approval.submit" => call_agent_void(payload, submit_command_approval_json),
         "agent.memory.getConfig" => call_agent_json(payload, get_ai_memory_config_json),
         "agent.memory.updateConfig" => call_agent_json(payload, update_ai_memory_config_json),
+        "agent.persona_context.sync" => handle_persona_context_sync(payload),
         "agent.mcp_bridge.sync" => handle_mcp_bridge_sync(payload),
         "agent.mcp_bridge.remove" => handle_mcp_bridge_remove(payload),
         "agent.host_tools.sync" => handle_host_tools_sync(
@@ -674,6 +680,7 @@ fn handle_agent_request(
             })?,
         ),
         "agent.host_tools.remove" => handle_host_tools_remove(payload),
+        "agent.browser_strategy.sync" => handle_browser_strategy_sync(payload),
         "agent.skills.set_prompts" => handle_set_skill_prompts(payload),
         _ => Err(runtime_error(
             "METHOD_NOT_FOUND",
@@ -696,6 +703,20 @@ fn handle_search_request(method: &str, payload: Value) -> Result<Value, RuntimeE
         _ => Err(runtime_error(
             "METHOD_NOT_FOUND",
             format!("unknown search runtime method: {method}"),
+        )),
+    }
+}
+
+fn handle_code_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
+    match method {
+        "code.index.status" => call_json(payload, read_code_index_status_json),
+        "code.index.rebuild" => call_json(payload, rebuild_code_index_json),
+        "code.search.text" => call_json(payload, search_code_text_json),
+        "code.search.symbol" => call_json(payload, search_code_symbol_json),
+        "code.graph.expand" => call_json(payload, expand_code_graph_json),
+        _ => Err(runtime_error(
+            "METHOD_NOT_FOUND",
+            format!("unknown code runtime method: {method}"),
         )),
     }
 }
@@ -915,6 +936,14 @@ struct HostToolsRemoveRequest {
     tool_set_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserStrategySyncRequest {
+    preferred_engine: Option<String>,
+    browser_use_health: Option<String>,
+    browser_use_tool_exposed: Option<bool>,
+}
+
 fn handle_host_tools_sync(payload: Value, host_rpc: &HostRpcClient) -> Result<Value, RuntimeError> {
     let request: HostToolsSyncRequest =
         serde_json::from_value(payload).map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
@@ -990,6 +1019,30 @@ fn handle_host_tools_remove(payload: Value) -> Result<Value, RuntimeError> {
     Ok(json!({ "removed": true, "toolSetId": request.tool_set_id }))
 }
 
+fn handle_browser_strategy_sync(payload: Value) -> Result<Value, RuntimeError> {
+    let request: BrowserStrategySyncRequest =
+        serde_json::from_value(payload).map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
+    set_browser_strategy_runtime_state(BrowserStrategyRuntimeState {
+        preferred_engine: request
+            .preferred_engine
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        browser_use_health: request
+            .browser_use_health
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        browser_use_tool_exposed: request.browser_use_tool_exposed.unwrap_or(false),
+    });
+    Ok(json!({ "ok": true }))
+}
+
+fn handle_persona_context_sync(payload: Value) -> Result<Value, RuntimeError> {
+    let state: PersonaRuntimeState =
+        serde_json::from_value(payload).map_err(|e| runtime_error("BAD_REQUEST", e.to_string()))?;
+    set_persona_runtime_state(state);
+    Ok(json!({ "ok": true }))
+}
+
 // --- Skill Prompt Bridge ---
 
 #[derive(Debug, Deserialize)]
@@ -1054,6 +1107,7 @@ fn handle_runtime_request(method: &str, payload: Value) -> Result<Value, Runtime
         "profiles.validate" => call_json(payload, validate_ai_profile_json),
         "models.discover" => call_json(payload, discover_ai_models_json),
         "models.refresh" => call_json(payload, refresh_ai_models_json),
+        method if method.starts_with("code.") => handle_code_request(method, payload),
         method if method.starts_with("search.") => handle_search_request(method, payload),
         method if method.starts_with("terminal.") => handle_terminal_request(method, payload),
         method if method.starts_with("agent.") => handle_agent_request(method, payload, None),

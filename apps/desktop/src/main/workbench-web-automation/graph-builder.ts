@@ -177,6 +177,36 @@ export const buildWebGraphSnapshot = async ({
         });
         snapshot = normalizeFrameExtractSnapshot(frame.frameTreeNodeId, frame.url, raw);
       } catch {
+        // Cross-origin or crashed frame — create a synthetic placeholder node
+        // so the Agent knows this frame exists and can attempt targeted actions on it.
+        if (!frame.isMainFrame) {
+          const placeholderNodeId = `${frame.frameTreeNodeId}:cross-origin-frame`;
+          if (!nodeMap.has(placeholderNodeId)) {
+            nodeMap.set(placeholderNodeId, {
+              nodeId: placeholderNodeId,
+              frameTreeNodeId: frame.frameTreeNodeId,
+              tagName: "iframe",
+              selectorAddress: {
+                frameTreeNodeId: frame.frameTreeNodeId,
+                path: "r"
+              },
+              stableSignature: {
+                tagName: "iframe"
+              },
+              interactable: {
+                clickable: true,
+                typable: false,
+                selectable: false,
+                focusable: true,
+                scrollable: false
+              },
+              visibilityState: "visible",
+              bounds: { x: 0, y: 0, width: 0, height: 0 },
+              textSnippet: `[cross-origin frame: ${frame.url}]`,
+              frameUrl: frame.url
+            });
+          }
+        }
         continue;
       }
 

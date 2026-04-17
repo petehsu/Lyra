@@ -12,6 +12,9 @@ import type {
   AiValidateProfileRequest
 } from "./ai";
 import type {
+  BrowserUseRuntimeStatus,
+} from "./browser-use";
+import type {
   AiMemoryConfig,
   AgentAnswerQuestionRequest,
   AgentAnswerPlanQuestionRequest,
@@ -110,6 +113,7 @@ import type {
   WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
+  WorkbenchBrowserElementPickerMode,
   WorkbenchBrowserElementPickerOwner,
   WorkbenchBrowserElementPickerPhase,
   WorkbenchBrowserElementPickerState,
@@ -152,6 +156,11 @@ export type {
   AiUpsertProfileRequest,
   AiValidateProfileRequest
 } from "./ai";
+export type {
+  BrowserUseRuntimeHealthState,
+  BrowserUseRuntimeStatus,
+  BrowserUseRuntimeUnavailableReason,
+} from "./browser-use";
 export type {
   AiMemoryConfig,
   AgentAnswerQuestionRequest,
@@ -266,6 +275,7 @@ export type {
   WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
+  WorkbenchBrowserElementPickerMode,
   WorkbenchBrowserElementPickerOwner,
   WorkbenchBrowserElementPickerPhase,
   WorkbenchBrowserElementPickerState,
@@ -383,6 +393,8 @@ export const LYRA_CHANNELS = {
   workbenchBrowserReadPageState: "lyra:workbench-browser/read-page-state",
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
   workbenchBrowserEvent: "lyra:workbench-browser/event",
+  browserUseReadRuntimeStatus: "lyra:browser-use/read-runtime-status",
+  browserUseRuntimeStatusEvent: "lyra:browser-use/runtime-status",
   mcpReadCatalog: "lyra:mcp/read-catalog",
   mcpReadServers: "lyra:mcp/read-servers",
   mcpReadEffectiveServers: "lyra:mcp/read-effective-servers",
@@ -1301,6 +1313,11 @@ export type WorkbenchObservationBridgeApi = {
   ) => () => void;
 };
 
+export type BrowserUseApi = {
+  readonly readRuntimeStatus: () => Promise<BrowserUseRuntimeStatus>;
+  readonly onRuntimeStatus: (listener: (status: BrowserUseRuntimeStatus) => void) => () => void;
+};
+
 export type LyraDesktopApi = {
   readonly windowControls: WindowControlsApi;
   readonly appMeta: AppMetaPayload;
@@ -1312,6 +1329,7 @@ export type LyraDesktopApi = {
   readonly ai: AiApi;
   readonly agent?: AgentApi;
   readonly workbenchBrowser: WorkbenchBrowserApi;
+  readonly browserUse: BrowserUseApi;
   readonly mcp: McpApi;
   readonly skills: SkillsApi;
   readonly lsp: LspApi;

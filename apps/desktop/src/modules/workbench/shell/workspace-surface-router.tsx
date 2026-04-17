@@ -210,7 +210,6 @@ export type WorkspaceSurfaceRouterProps = {
     readonly locale: string;
     readonly title: string;
     readonly newSessionTitle: string;
-    readonly openSettingsLabel: string;
     readonly newConversationLabel: string;
     readonly openConversationLabel: string;
     readonly deleteConversationLabel: string;
@@ -220,7 +219,6 @@ export type WorkspaceSurfaceRouterProps = {
     readonly emptyStateTitle: string;
     readonly emptyStateDescription: string;
     readonly defaultProfileId?: string | null;
-    readonly onOpenSettings: () => void;
   };
   readonly notifications: {
     readonly model: WorkbenchNotificationModel;
@@ -565,7 +563,6 @@ export const WorkspaceSurfaceRouter = ({
           locale={aiHistory.locale}
           title={aiHistory.title}
           newSessionTitle={aiHistory.newSessionTitle}
-          openSettingsLabel={aiHistory.openSettingsLabel}
           newConversationLabel={aiHistory.newConversationLabel}
           openConversationLabel={aiHistory.openConversationLabel}
           deleteConversationLabel={aiHistory.deleteConversationLabel}
@@ -577,7 +574,6 @@ export const WorkspaceSurfaceRouter = ({
           {...(aiHistory.defaultProfileId === undefined
             ? {}
             : { defaultProfileId: aiHistory.defaultProfileId })}
-          onOpenSettings={aiHistory.onOpenSettings}
         />
       );
     }

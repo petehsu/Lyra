@@ -63,6 +63,13 @@ export type WorkbenchBrowserSessionFetchRequest = {
   readonly maxBytes?: number;
 };
 
+export type WorkbenchBrowserFrameGlobalBounds = {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+};
+
 export type WorkbenchBrowserSessionFetchResult = {
   readonly finalUrl: string;
   readonly status: number;
@@ -87,6 +94,33 @@ export type WorkbenchBrowserNativeInputEvent =
       readonly modifiers?: readonly ("shift" | "control" | "alt" | "meta")[];
       readonly delayMs?: number;
     };
+
+export type WorkbenchBrowserDebuggerEvent =
+  | {
+      readonly kind: "message";
+      readonly method: string;
+      readonly params: unknown;
+      readonly sessionId?: string;
+    }
+  | {
+      readonly kind: "detached";
+      readonly reason: string;
+    };
+
+export type WorkbenchBrowserDebuggerSession = {
+  readonly tabId: string;
+  readonly pageAddress?: string;
+  readonly sendCommand: (
+    method: string,
+    commandParams?: Record<string, unknown>,
+    sessionId?: string,
+  ) => Promise<Record<string, unknown>>;
+  readonly subscribe: (
+    listener: (event: WorkbenchBrowserDebuggerEvent) => void,
+  ) => () => void;
+  readonly focus: () => void;
+  readonly close: () => Promise<void>;
+};
 
 export type WorkbenchBrowserViewManager = {
   readonly dispose: () => void;
@@ -125,12 +159,14 @@ export type WorkbenchBrowserViewManager = {
       readonly script: string;
       readonly frameTreeNodeId?: number;
       readonly userGesture?: boolean;
+      readonly timeoutMs?: number;
     }
   ) => Promise<unknown>;
   readonly dispatchNativeInput: (
     tabId: string,
     events: readonly WorkbenchBrowserNativeInputEvent[]
   ) => Promise<void>;
+  readonly openDebuggerSession: (tabId: string) => Promise<WorkbenchBrowserDebuggerSession>;
   readonly fetchWithTabSession: (
     tabId: string,
     request: WorkbenchBrowserSessionFetchRequest
@@ -144,6 +180,10 @@ export type WorkbenchBrowserViewManager = {
     options?: BrowserTextExtractOptions
   ) => Promise<WorkbenchTabExtractTextResult>;
   readonly capturePage: (tabId: string) => Promise<WorkbenchVisualCaptureResult>;
+  readonly resolveFrameGlobalBounds: (
+    tabId: string,
+    frameTreeNodeId: number
+  ) => Promise<WorkbenchBrowserFrameGlobalBounds | null>;
   readonly reapplyLayout: () => void;
   readonly toggleDevToolsForActivePage: () => boolean;
 };

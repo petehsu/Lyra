@@ -650,6 +650,14 @@ const createDesktopApi = (): {
       writeSync: () => undefined,
       removeSync: () => undefined
     },
+    browserUse: {
+      readRuntimeStatus: async () => ({
+        state: "unavailable" as const,
+        checkedAt: Date.now(),
+        reason: "missing_bundle" as const,
+      }),
+      onRuntimeStatus: () => () => undefined
+    },
     workbenchObservation: {
       registerHandler: () => () => undefined
     }

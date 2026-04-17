@@ -1,6 +1,7 @@
 import type {
   WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerAppearance,
+  WorkbenchBrowserElementPickerMode,
   WorkbenchBrowserElementPickerDisableCause,
   WorkbenchBrowserElementPickerState,
   WorkbenchBrowserSetElementPickerModeRequest
@@ -59,6 +60,7 @@ const normalizeAppearance = (
 type RestorableManualState = {
   readonly tabId: string;
   readonly appearance: WorkbenchBrowserElementPickerAppearance;
+  readonly mode: WorkbenchBrowserElementPickerMode;
 };
 
 export const createWorkbenchBrowserElementPickerController = ({
@@ -67,6 +69,7 @@ export const createWorkbenchBrowserElementPickerController = ({
   let queue = Promise.resolve<void>(undefined);
   let manualSession: WorkbenchManualElementPickerSession | null = null;
   let manualAppearance: WorkbenchBrowserElementPickerAppearance | null = null;
+  let manualMode: WorkbenchBrowserElementPickerMode = "inspect";
   let agentSession: WorkbenchAgentElementPickerSession | null = null;
   let restoreManualState: RestorableManualState | null = null;
   let lastState: WorkbenchBrowserElementPickerState | null = null;
@@ -86,11 +89,16 @@ export const createWorkbenchBrowserElementPickerController = ({
     return queue;
   };
 
-  const createManualSession = (tabId: string, appearance: WorkbenchBrowserElementPickerAppearance) =>
+  const createManualSession = (
+    tabId: string,
+    appearance: WorkbenchBrowserElementPickerAppearance,
+    mode: WorkbenchBrowserElementPickerMode
+  ) =>
     createWorkbenchManualElementPickerSession({
       host: publishTrackingHost,
       tabId,
       appearance,
+      mode,
       onDisableRequested: (cause) => {
         void enqueue(async () => {
           if (manualSession?.tabId !== tabId) {
@@ -150,7 +158,8 @@ export const createWorkbenchBrowserElementPickerController = ({
     const next = restoreManualState;
     restoreManualState = null;
     manualAppearance = next.appearance;
-    manualSession = createManualSession(tabId, next.appearance);
+    manualMode = next.mode;
+    manualSession = createManualSession(tabId, next.appearance, next.mode);
     await manualSession.enable();
   };
 
@@ -176,7 +185,8 @@ export const createWorkbenchBrowserElementPickerController = ({
         if (agentSession?.tabId === request.tabId) {
           restoreManualState = {
             tabId: request.tabId,
-            appearance
+            appearance,
+            mode: request.mode ?? "inspect"
           };
           return;
         }
@@ -185,12 +195,16 @@ export const createWorkbenchBrowserElementPickerController = ({
           await disableManual("tab_switched");
         }
 
+        manualMode = request.mode ?? "inspect";
         if (manualSession?.tabId === request.tabId) {
-          return;
+          if (lastState?.enabled === true && lastState.mode === manualMode) {
+            return;
+          }
+          await disableManual("user_toggle", request.tabId, false);
         }
 
         manualAppearance = appearance;
-        manualSession = createManualSession(request.tabId, appearance);
+        manualSession = createManualSession(request.tabId, appearance, manualMode);
         await manualSession.enable();
       });
     },
@@ -200,7 +214,8 @@ export const createWorkbenchBrowserElementPickerController = ({
         if (manualSession?.tabId === target.tabId) {
           restoreManualState = {
             tabId: target.tabId,
-            appearance: manualAppearance ?? DEFAULT_APPEARANCE
+            appearance: manualAppearance ?? DEFAULT_APPEARANCE,
+            mode: manualMode
           };
           await disableManual("user_toggle", target.tabId, false);
         }

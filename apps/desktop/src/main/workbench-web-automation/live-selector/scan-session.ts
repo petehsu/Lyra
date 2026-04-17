@@ -87,6 +87,87 @@ export class LiveSelectorScanRegistry {
     return null;
   }
 
+  findRecentCandidate(
+    options: {
+      readonly tabId?: string;
+      readonly preferredScanSessionId?: string;
+      readonly match: (
+        candidate: LiveSelectorScanCandidateRecord,
+        session: LiveSelectorScanSession
+      ) => number;
+    }
+  ): {
+    readonly scanSessionId: string;
+    readonly candidate: LiveSelectorScanCandidateRecord;
+  } | null {
+    this.compact();
+
+    let best:
+      | {
+          readonly scanSessionId: string;
+          readonly candidate: LiveSelectorScanCandidateRecord;
+          readonly score: number;
+        }
+      | null = null;
+
+    const considerSession = (session: LiveSelectorScanSession) => {
+      for (const candidate of session.candidates) {
+        const score = options.match(candidate, session);
+        if (!Number.isFinite(score) || score <= 0) {
+          continue;
+        }
+        if (best === null || score > best.score) {
+          best = {
+            scanSessionId: session.scanSessionId,
+            candidate,
+            score
+          };
+        }
+      }
+    };
+
+    const preferredScanSessionId = options.preferredScanSessionId?.trim();
+    if (preferredScanSessionId) {
+      const preferredSession = this.read(preferredScanSessionId);
+      if (preferredSession !== null && (options.tabId === undefined || preferredSession.tabId === options.tabId)) {
+        considerSession(preferredSession);
+      }
+    }
+
+    const sessions = Array.from(this.sessions.values())
+      .filter((session) =>
+        (options.tabId === undefined || session.tabId === options.tabId)
+        && session.scanSessionId !== preferredScanSessionId
+      )
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+
+    for (const session of sessions) {
+      considerSession(session);
+    }
+
+    const resolved = best as {
+      readonly scanSessionId: string;
+      readonly candidate: LiveSelectorScanCandidateRecord;
+      readonly score: number;
+    } | null;
+    if (resolved === null) {
+      return null;
+    }
+
+    const session = this.sessions.get(resolved.scanSessionId);
+    if (session !== undefined) {
+      this.sessions.set(resolved.scanSessionId, {
+        ...session,
+        updatedAt: Date.now()
+      });
+    }
+
+    return {
+      scanSessionId: resolved.scanSessionId,
+      candidate: resolved.candidate
+    };
+  }
+
   clearForTab(tabId: string): void {
     for (const [scanSessionId, session] of this.sessions.entries()) {
       if (session.tabId === tabId) {

@@ -325,7 +325,7 @@
   min-width: var(--lyra-size-browser-nav-slot);
   border: 0;
   border-left: var(--lyra-unit-0-5) solid var(--lyra-line-default);
-  background: var(--lyra-browser-tabs-bg);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 92%, var(--lyra-bg-editor) 8%);
   color: var(--lyra-text-muted);
   opacity: 0.56;
   cursor: pointer;
@@ -338,7 +338,7 @@
 }
 
 .lyra-browser-tab-add:hover {
-  background: transparent;
+  background: color-mix(in srgb, var(--lyra-bg-surface) 80%, var(--lyra-line-focused) 20%);
   opacity: 1;
   color: var(--lyra-text-primary);
 }

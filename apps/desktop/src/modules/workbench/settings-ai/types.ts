@@ -6,12 +6,18 @@ import type {
   AiProviderPreset,
   AiProviderProfile
 } from "../../../shared/ai";
+import type { BrowserUseRuntimeStatus } from "../../../shared/browser-use";
+import type {
+  WorkbenchBrowserAutomationEngine,
+  WorkbenchLyraDirectMicroExecutorBudget,
+} from "../preferences";
 
 export type SettingsAiLabels = {
   readonly categoryLabel: string;
   readonly profilesTitle: string;
   readonly providerTitle: string;
   readonly connectionTitle: string;
+  readonly additionalFieldsTitle: string;
   readonly statusTitle: string;
   readonly addProfile: string;
   readonly saveProfile: string;
@@ -25,12 +31,15 @@ export type SettingsAiLabels = {
   readonly authorizeChatGptDeviceCode: string;
   readonly profileNameLabel: string;
   readonly profileNamePlaceholder: string;
+  readonly urlLabel: string;
+  readonly urlPlaceholder: string;
+  readonly keyLabel: string;
+  readonly keyPlaceholder: string;
   readonly modelLabel: string;
   readonly modelPlaceholder: string;
+  readonly modelsHelp: string;
   readonly headersLabel: string;
   readonly headersPlaceholder: string;
-  readonly customModelsLabel: string;
-  readonly customModelsPlaceholder: string;
   readonly defaultBadge: string;
   readonly defaultProfileLabel: string;
   readonly statusIdle: string;
@@ -63,6 +72,31 @@ export type SettingsAiLabels = {
   readonly memoryConfigStatusLoaded: string;
   readonly memoryConfigStatusSaved: string;
   readonly memoryConfigStatusInvalidJson: string;
+  readonly browserAutomationTitle: string;
+  readonly browserAutomationDescription: string;
+  readonly browserAutomationOptionLyraDirect: string;
+  readonly browserAutomationOptionLyraDirectDescription: string;
+  readonly browserAutomationOptionBrowserUse: string;
+  readonly browserAutomationOptionBrowserUseDescription: string;
+  readonly browserAutomationOptionSmart: string;
+  readonly browserAutomationOptionSmartDescription: string;
+  readonly browserAutomationStatusChecking: string;
+  readonly browserAutomationStatusHealthy: string;
+  readonly browserAutomationStatusUnavailable: string;
+  readonly browserAutomationStatusReasonMissingBundle: string;
+  readonly browserAutomationStatusReasonIntegrityFailed: string;
+  readonly browserAutomationStatusReasonDaemonLaunchFailed: string;
+  readonly browserAutomationStatusReasonBridgeUnavailable: string;
+  readonly browserAutomationStatusReasonUnsupportedPlatform: string;
+  readonly lyraDirectAdvancedTitle: string;
+  readonly lyraDirectAdvancedDescription: string;
+  readonly lyraDirectMicroExecutorBudgetLabel: string;
+  readonly lyraDirectMicroExecutorBudgetConservative: string;
+  readonly lyraDirectMicroExecutorBudgetConservativeDescription: string;
+  readonly lyraDirectMicroExecutorBudgetBalanced: string;
+  readonly lyraDirectMicroExecutorBudgetBalancedDescription: string;
+  readonly lyraDirectMicroExecutorBudgetAggressive: string;
+  readonly lyraDirectMicroExecutorBudgetAggressiveDescription: string;
 };
 
 export type SettingsAiDraft = {
@@ -77,8 +111,7 @@ export type SettingsAiDraft = {
   readonly clearSecretFields: readonly string[];
   readonly configuredSecretFields: readonly string[];
   readonly headersText: string;
-  readonly model: string;
-  readonly customModelsText: string;
+  readonly modelsText: string;
   readonly isDefault: boolean;
 };
 
@@ -101,18 +134,23 @@ export type SettingsAiModel = {
   readonly memoryConfigText: string;
   readonly memoryConfigStatus: string;
   readonly memoryConfigStatusTone: "neutral" | "success" | "error";
+  readonly browserAutomationEngine: WorkbenchBrowserAutomationEngine;
+  readonly lyraDirectMicroExecutorBudget: WorkbenchLyraDirectMicroExecutorBudget;
+  readonly browserUseRuntimeStatus: BrowserUseRuntimeStatus;
   readonly selectProfile: (profileId: string) => void;
   readonly createProfileDraft: () => void;
   readonly selectPreset: (presetId: string) => void;
   readonly updateName: (value: string) => void;
-  readonly updateModel: (value: string) => void;
+  readonly updateUrl: (value: string) => void;
+  readonly updateKey: (value: string) => void;
+  readonly updateModelsText: (value: string) => void;
+  readonly toggleModelOption: (modelId: string) => void;
   readonly updateDraftField: (
     target: "connection" | "auth" | "secret",
     fieldId: string,
     value: string
   ) => void;
   readonly updateHeadersText: (value: string) => void;
-  readonly updateCustomModelsText: (value: string) => void;
   readonly clearSecretField: (fieldId: string) => void;
   readonly authorizeOpenAiChatGpt: () => Promise<void>;
   readonly authorizeOpenAiChatGptDeviceCode: () => Promise<void>;
@@ -125,4 +163,8 @@ export type SettingsAiModel = {
   readonly loadMemoryConfig: () => Promise<void>;
   readonly saveMemoryConfig: () => Promise<void>;
   readonly updateMemoryConfigText: (value: string) => void;
+  readonly setBrowserAutomationEngine: (value: WorkbenchBrowserAutomationEngine) => void;
+  readonly setLyraDirectMicroExecutorBudget: (
+    value: WorkbenchLyraDirectMicroExecutorBudget
+  ) => void;
 };

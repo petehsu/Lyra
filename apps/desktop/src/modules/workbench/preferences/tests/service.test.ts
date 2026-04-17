@@ -31,7 +31,9 @@ const defaults: WorkbenchPreferences = {
   deepSearchProactiveDomainGuessingEnabled: true,
   deepSearchCrawlPolicy: "accessibility_only",
   searchResultsSourceFilter: "all",
-  omniboxNonBrowserSubmitTarget: "new_tab"
+  omniboxNonBrowserSubmitTarget: "new_tab",
+  browserAutomationEngine: "lyra_direct",
+  lyraDirectMicroExecutorBudget: "3-5"
 };
 
 describe("workbench preferences", () => {
@@ -144,6 +146,7 @@ describe("workbench preferences", () => {
       result.current.setDeepSearchLocalOpenBehavior("reveal_in_manager");
       result.current.setSearchResultsSourceFilter("local");
       result.current.setOmniboxNonBrowserSubmitTarget("replace_active_tab");
+      result.current.setLyraDirectMicroExecutorBudget("6-8");
     });
 
     expect(result.current.preferences).toEqual({
@@ -160,7 +163,8 @@ describe("workbench preferences", () => {
       deepSearchRestoreViewport: true,
       deepSearchLocalOpenBehavior: "reveal_in_manager",
       searchResultsSourceFilter: "local",
-      omniboxNonBrowserSubmitTarget: "replace_active_tab"
+      omniboxNonBrowserSubmitTarget: "replace_active_tab",
+      lyraDirectMicroExecutorBudget: "6-8"
     });
     expect(readWorkbenchPreferences(defaults)).toEqual({
       ...defaults,
@@ -176,7 +180,8 @@ describe("workbench preferences", () => {
       deepSearchRestoreViewport: true,
       deepSearchLocalOpenBehavior: "reveal_in_manager",
       searchResultsSourceFilter: "local",
-      omniboxNonBrowserSubmitTarget: "replace_active_tab"
+      omniboxNonBrowserSubmitTarget: "replace_active_tab",
+      lyraDirectMicroExecutorBudget: "6-8"
     });
   });
 });

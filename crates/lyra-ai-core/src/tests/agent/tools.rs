@@ -15,9 +15,10 @@ use crate::agent::tools::{
     plan_mode_tool_definitions_for_input, readonly_tool_definitions_for_input,
     readonly_tool_definitions_for_input_with_context, register_external_tool,
     register_host_tools_bridge, render_mcp_tools_prompt_json, tool_executes_serially,
-    unregister_host_tool_set, AgentToolError, ExternalToolApprovalMode, ExternalToolMetadata,
-    ExternalToolSideEffects, HostToolDescriptor, RegisteredExternalTool, ToolExecutionContext,
-    ToolExecutionMode, ToolRankingContext, WorkbenchWebRoutingContext,
+    unregister_host_tool_set, AgentToolError, BrowserStrategyRoutingContext,
+    ExternalToolApprovalMode, ExternalToolMetadata, ExternalToolSideEffects, HostToolDescriptor,
+    RegisteredExternalTool, ToolExecutionContext, ToolExecutionMode, ToolRankingContext,
+    WorkbenchWebRoutingContext,
 };
 use crate::agent::types::{
     AgentCreateSessionRequest, AgentToolCall, AGENT_PLAN_APPROVAL_REQUIRED,
@@ -498,7 +499,8 @@ fn workbench_tool_ranking_prefers_structured_read_for_summary_requests() {
 
     let ranked = readonly_tool_definitions_for_input("summarize the current webpage");
     assert!(
-        tool_rank(&ranked, "workbench.tabs.list") < tool_rank(&ranked, "workbench.document.inspect")
+        tool_rank(&ranked, "workbench.tabs.list")
+            < tool_rank(&ranked, "workbench.document.inspect")
     );
     assert!(
         tool_rank(&ranked, "workbench.document.inspect")
@@ -555,7 +557,8 @@ fn workbench_tool_ranking_uses_the_same_default_observation_order_for_full_text_
         "copy the full text of this article so I can read the entire page",
     );
     assert!(
-        tool_rank(&ranked, "workbench.tabs.list") < tool_rank(&ranked, "workbench.document.inspect")
+        tool_rank(&ranked, "workbench.tabs.list")
+            < tool_rank(&ranked, "workbench.document.inspect")
     );
     assert!(
         tool_rank(&ranked, "workbench.document.inspect")
@@ -606,7 +609,8 @@ fn workbench_tool_ranking_does_not_change_with_language_specific_phrasing() {
 
     let ranked = readonly_tool_definitions_for_input("再看一下现在这页标签内容是什么");
     assert!(
-        tool_rank(&ranked, "workbench.tabs.list") < tool_rank(&ranked, "workbench.document.inspect")
+        tool_rank(&ranked, "workbench.tabs.list")
+            < tool_rank(&ranked, "workbench.document.inspect")
     );
     assert!(
         tool_rank(&ranked, "workbench.document.inspect")
@@ -657,7 +661,8 @@ fn workbench_tool_ranking_keeps_visual_capture_as_an_expensive_fallback() {
 
     let ranked = readonly_tool_definitions_for_input("show me what this webpage layout looks like");
     assert!(
-        tool_rank(&ranked, "workbench.tabs.list") < tool_rank(&ranked, "workbench.document.inspect")
+        tool_rank(&ranked, "workbench.tabs.list")
+            < tool_rank(&ranked, "workbench.document.inspect")
     );
     assert!(
         tool_rank(&ranked, "workbench.document.inspect")
@@ -685,7 +690,19 @@ fn workbench_web_tool_ranking_prefers_live_scan_before_graph_fallbacks() {
     clear_external_tools();
 
     register_test_external_tool(
-        "workbench.web_target.scan",
+        "workbench.web_skeleton.read",
+        "read the current page's human-operable map",
+    );
+    register_test_external_tool(
+        "workbench.web_focus.probe",
+        "probe keyboard focus on the current page",
+    );
+    register_test_external_tool(
+        "workbench.web_context.read",
+        "scan widgets from the current page",
+    );
+    register_test_external_tool(
+        "workbench.web_query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
@@ -697,6 +714,10 @@ fn workbench_web_tool_ranking_prefers_live_scan_before_graph_fallbacks() {
         "extract readable text from the current page tab",
     );
     register_test_external_tool(
+        "workbench.web_context.read",
+        "scan widgets from the current page",
+    );
+    register_test_external_tool(
         "workbench.web_graph.build",
         "build selector-addressable graph for current webpage",
     );
@@ -704,10 +725,7 @@ fn workbench_web_tool_ranking_prefers_live_scan_before_graph_fallbacks() {
         "workbench.web_graph.query",
         "query interactable nodes from page graph",
     );
-    register_test_external_tool(
-        "workbench.web_action.safe",
-        "run safe web action in page",
-    );
+    register_test_external_tool("workbench.web_action.safe", "run safe web action in page");
     register_test_external_tool_with_metadata(
         "workbench.web_action.mutate",
         "run mutating web action in page",
@@ -720,25 +738,26 @@ fn workbench_web_tool_ranking_prefers_live_scan_before_graph_fallbacks() {
         ExternalToolApprovalMode::Ask,
         ExternalToolSideEffects::network_read(),
     );
-    register_test_external_tool(
-        "workbench.web_action.wait",
-        "wait for target state in page",
-    );
+    register_test_external_tool("workbench.web_action.wait", "wait for target state in page");
 
     let ranked_english = readonly_tool_definitions_for_input("open this page and click a button");
     let ranked_chinese = readonly_tool_definitions_for_input("帮我在当前网页里点按钮并输入内容");
 
     for ranked in [&ranked_english, &ranked_chinese] {
         assert!(
-            tool_rank(ranked, "workbench.web_target.scan")
+            tool_rank(ranked, "workbench.web_skeleton.read")
                 < tool_rank(ranked, "workbench.web_graph.build")
         );
         assert!(
-            tool_rank(ranked, "workbench.web_target.scan")
+            tool_rank(ranked, "workbench.web_query.find")
+                < tool_rank(ranked, "workbench.web_graph.build")
+        );
+        assert!(
+            tool_rank(ranked, "workbench.web_query.find")
                 < tool_rank(ranked, "workbench.web_action.safe")
         );
         assert!(
-            tool_rank(ranked, "workbench.web_target.scan")
+            tool_rank(ranked, "workbench.web_query.find")
                 < tool_rank(ranked, "workbench.web_graph.query")
         );
         assert!(
@@ -759,6 +778,45 @@ fn workbench_web_tool_ranking_prefers_live_scan_before_graph_fallbacks() {
 }
 
 #[test]
+fn workbench_web_tool_ranking_prefers_operability_before_probe_and_graph_fallback() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_test_external_tool(
+        "workbench.web_skeleton.read",
+        "read the current page's human-operable map",
+    );
+    register_test_external_tool(
+        "workbench.web_focus.probe",
+        "probe keyboard focus on the current page",
+    );
+    register_test_external_tool(
+        "workbench.web_query.find",
+        "scan the visible page for likely interactive targets",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.build",
+        "build selector-addressable graph for current webpage",
+    );
+
+    let ranked =
+        readonly_tool_definitions_for_input("inspect the current page and find the next control");
+
+    assert!(
+        tool_rank(&ranked, "workbench.web_skeleton.read")
+            < tool_rank(&ranked, "workbench.web_focus.probe")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_focus.probe")
+            < tool_rank(&ranked, "workbench.web_graph.build")
+    );
+
+    clear_external_tools();
+}
+
+#[test]
 fn workbench_web_tool_ranking_prefers_actions_after_successful_live_scan() {
     let _guard = EXTERNAL_TOOL_TEST_GUARD
         .lock()
@@ -766,7 +824,11 @@ fn workbench_web_tool_ranking_prefers_actions_after_successful_live_scan() {
     clear_external_tools();
 
     register_test_external_tool(
-        "workbench.web_target.scan",
+        "workbench.web_skeleton.read",
+        "scan widgets from the current page",
+    );
+    register_test_external_tool(
+        "workbench.web_query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
@@ -785,20 +847,14 @@ fn workbench_web_tool_ranking_prefers_actions_after_successful_live_scan() {
         "workbench.web_graph.query",
         "query interactable nodes from page graph",
     );
-    register_test_external_tool(
-        "workbench.web_action.safe",
-        "run safe web action in page",
-    );
+    register_test_external_tool("workbench.web_action.safe", "run safe web action in page");
     register_test_external_tool_with_metadata(
         "workbench.web_action.mutate",
         "run mutating web action in page",
         ExternalToolApprovalMode::Ask,
         ExternalToolSideEffects::session_mutation(),
     );
-    register_test_external_tool(
-        "workbench.web_action.wait",
-        "wait for target state in page",
-    );
+    register_test_external_tool("workbench.web_action.wait", "wait for target state in page");
 
     let ranked = readonly_tool_definitions_for_input_with_context(
         "continue the current webpage interaction",
@@ -808,12 +864,26 @@ fn workbench_web_tool_ranking_prefers_actions_after_successful_live_scan() {
                 has_live_candidates: true,
                 ..WorkbenchWebRoutingContext::default()
             }),
+            browser_strategy: None,
         }),
     );
 
-    assert!(tool_rank(&ranked, "workbench.web_action.safe") < tool_rank(&ranked, "workbench.web_target.scan"));
-    assert!(tool_rank(&ranked, "workbench.web_action.wait") < tool_rank(&ranked, "workbench.web_graph.query"));
-    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.web_graph.build"));
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.safe")
+            < tool_rank(&ranked, "workbench.web_query.find")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_skeleton.read")
+            < tool_rank(&ranked, "workbench.web_graph.build")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.wait")
+            < tool_rank(&ranked, "workbench.web_graph.query")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.mutate")
+            < tool_rank(&ranked, "workbench.web_graph.build")
+    );
 
     clear_external_tools();
 }
@@ -822,20 +892,34 @@ fn workbench_web_tool_ranking_prefers_actions_after_successful_live_scan() {
 fn workbench_web_tool_routing_context_reads_recent_scan_results() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[
         test_tool_call(
-            "workbench.web_target.scan",
+            "workbench.web_skeleton.read",
+            Some(json!({
+                "pageMode": "chat",
+                "nodes": [{
+                    "nodeId": "node-1",
+                    "widgetId": "widget-1",
+                    "widgetKind": "chat-composer"
+                }]
+            })),
+            None,
+            "completed",
+        ),
+        test_tool_call(
+            "workbench.web_query.find",
             Some(json!({
                 "scanSessionId": "scan-1",
-                "bestCandidate": {
-                    "candidateId": "cand-1",
-                    "interactable": {
-                        "typable": true,
+                "pageMode": "chat",
+                "bestMatch": {
+                    "nodeId": "cand-1",
+                    "capabilities": {
+                        "editable": true,
                         "clickable": false
                     }
                 },
-                "candidates": [{
-                    "candidateId": "cand-1",
-                    "interactable": {
-                        "typable": true,
+                "matches": [{
+                    "nodeId": "cand-1",
+                    "capabilities": {
+                        "editable": true,
                         "clickable": false
                     }
                 }]
@@ -856,7 +940,13 @@ fn workbench_web_tool_routing_context_reads_recent_scan_results() {
     assert!(context.has_live_candidates);
     assert!(context.has_typable_candidate);
     assert!(!context.has_clickable_candidate);
-    assert_eq!(context.last_failure_code.as_deref(), Some("candidate_stale"));
+    assert_eq!(context.page_mode.as_deref(), Some("chat"));
+    assert!(context.widget_graph_ready);
+    assert!(context.native_widget_ready);
+    assert_eq!(
+        context.last_failure_code.as_deref(),
+        Some("candidate_stale")
+    );
     assert_eq!(
         context.last_web_tool_name.as_deref(),
         Some("workbench.web_action.mutate")
@@ -864,15 +954,89 @@ fn workbench_web_tool_routing_context_reads_recent_scan_results() {
 }
 
 #[test]
-fn workbench_web_tool_routing_context_tracks_draft_only_mutations() {
+fn workbench_web_tool_routing_context_reads_scan_and_act_output() {
+    let context = crate::agent::tools::derive_workbench_web_routing_context(&[test_tool_call(
+        "workbench.web_scan_and_act",
+        Some(json!({
+            "scanSessionId": "scan-atomic-1",
+            "pageMode": "chat",
+            "ok": true,
+            "verified": true,
+            "goalSatisfied": true,
+            "selectedCandidate": {
+                "nodeId": "cand-atomic-1",
+                "widgetId": "composer-widget",
+                "widgetKind": "chat-composer",
+                "role": "textbox",
+                "tagName": "textarea",
+                "interactable": {
+                    "typable": true,
+                    "clickable": true
+                }
+            },
+            "actionResult": {
+                "verification": {
+                    "stateTransition": "message_submitted",
+                    "widgetId": "composer-widget",
+                    "widgetKind": "chat-composer"
+                }
+            }
+        })),
+        None,
+        "completed",
+    )])
+    .expect("routing context");
+
+    assert!(context.has_live_scan_session);
+    assert!(context.has_live_candidates);
+    assert!(context.has_typable_candidate);
+    assert!(context.has_clickable_candidate);
+    assert!(context.last_action_verified);
+    assert_eq!(context.active_widget_id.as_deref(), Some("composer-widget"));
+}
+
+#[test]
+fn workbench_web_tool_routing_context_reads_focus_atlas_state() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[
         test_tool_call(
-            "workbench.web_action.mutate",
+            "workbench.web_skeleton.read",
             Some(json!({
-                "actionKind": "type",
-                "submitted": false,
-                "draftOnly": true,
-                "submissionMethod": "none"
+                "pageMode": "chat",
+                "skeletonVersion": "atlas-v1",
+                "activeRegionId": "region:sidebar",
+                "regions": [{
+                    "regionId": "region:sidebar",
+                    "kind": "sidebar"
+                }],
+                "nodes": [{
+                    "nodeId": "focus:sidebar-toggle"
+                }]
+            })),
+            None,
+            "completed",
+        ),
+        test_tool_call(
+            "workbench.web_query.find",
+            Some(json!({
+                "scanSessionId": "scan-2",
+                "skeletonVersion": "atlas-v1",
+                "activeRegionId": "region:sidebar",
+                "bestMatch": {
+                    "nodeId": "cand-1",
+                    "widgetId": "sidebar",
+                    "capabilities": {
+                        "editable": false,
+                        "clickable": true
+                    }
+                },
+                "matches": [{
+                    "nodeId": "cand-1",
+                    "widgetId": "sidebar",
+                    "capabilities": {
+                        "editable": false,
+                        "clickable": true
+                    }
+                }]
             })),
             None,
             "completed",
@@ -880,24 +1044,184 @@ fn workbench_web_tool_routing_context_tracks_draft_only_mutations() {
     ])
     .expect("routing context");
 
-    assert!(context.last_mutate_draft_only);
-    assert!(!context.last_mutate_submitted);
+    assert!(context.focus_atlas_ready);
+    assert_eq!(
+        context.active_focus_region_id.as_deref(),
+        Some("region:sidebar")
+    );
 }
 
 #[test]
-fn workbench_web_tool_routing_context_treats_unconfirmed_enter_as_draft_only() {
+fn workbench_web_tool_routing_context_reads_operability_and_probe_state() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[
         test_tool_call(
-            "workbench.web_action.mutate",
+            "workbench.web_query.find",
             Some(json!({
-                "actionKind": "press_key",
-                "submitted": false,
-                "submissionMethod": "enter"
+                "pageMode": "chat",
+                "skeletonVersion": "atlas-v2",
+                "activeRegionId": "region:composer",
+                "bestMatch": {
+                    "nodeId": "cand-1",
+                    "widgetId": "composer",
+                    "capabilities": {
+                        "editable": true,
+                        "clickable": true
+                    }
+                },
+                "matches": [{
+                    "nodeId": "cand-1",
+                    "widgetId": "composer",
+                    "capabilities": {
+                        "editable": true,
+                        "clickable": true
+                    }
+                }]
+            })),
+            None,
+            "completed",
+        ),
+        test_tool_call(
+            "workbench.web_focus.probe",
+            Some(json!({
+                "focusProbeVerified": true,
+                "focusDeltaObserved": true,
+                "activeFocusRegionId": "region:composer",
+                "atlas": {
+                    "pageMode": "chat",
+                    "activeFocusRegionId": "region:composer"
+                }
             })),
             None,
             "completed",
         ),
     ])
+    .expect("routing context");
+
+    assert!(context.focus_atlas_ready);
+    assert!(context.has_live_candidates);
+    assert!(context.has_typable_candidate);
+    assert!(context.last_focus_probe_verified);
+    assert!(context.last_focus_delta_observed);
+    assert_eq!(
+        context.active_focus_region_id.as_deref(),
+        Some("region:composer")
+    );
+}
+
+#[test]
+fn workbench_web_tool_routing_context_tracks_reveal_subgoals() {
+    let context = crate::agent::tools::derive_workbench_web_routing_context(&[
+        test_tool_call(
+            "workbench.web_query.find",
+            Some(json!({
+                "scanSessionId": "scan-1",
+                "pageMode": "chat",
+                "bestMatch": {
+                    "nodeId": "cand-1",
+                    "widgetId": "row-1",
+                    "widgetKind": "menu-trigger",
+                    "discoveryMode": "hover_revealed",
+                    "capabilities": {
+                        "editable": false,
+                        "clickable": true
+                    }
+                },
+                "matches": [{
+                    "nodeId": "cand-1",
+                    "widgetId": "row-1",
+                    "widgetKind": "menu-trigger",
+                    "discoveryMode": "hover_revealed",
+                    "capabilities": {
+                        "editable": false,
+                        "clickable": true
+                    }
+                }]
+            })),
+            None,
+            "completed",
+        ),
+        test_tool_call(
+            "workbench.web_action.safe",
+            None,
+            Some("reveal_not_observed"),
+            "failed",
+        ),
+    ])
+    .expect("routing context");
+
+    assert_eq!(context.active_widget_id.as_deref(), Some("row-1"));
+    assert_eq!(context.active_item_id.as_deref(), Some("row-1"));
+    assert!(context.last_reveal_observed);
+    assert_eq!(
+        context.current_browser_subgoal.as_deref(),
+        Some("reveal item actions")
+    );
+    assert_eq!(
+        context.last_workflow_failure.as_deref(),
+        Some("reveal_not_observed")
+    );
+}
+
+#[test]
+fn workbench_web_tool_routing_context_tracks_draft_only_mutations() {
+    let context = crate::agent::tools::derive_workbench_web_routing_context(&[test_tool_call(
+        "workbench.web_action.mutate",
+        Some(json!({
+            "actionKind": "type",
+            "submitted": false,
+            "draftOnly": true,
+            "submissionMethod": "none",
+            "verified": true,
+            "verification": {
+                "reason": "target field value changed"
+            }
+        })),
+        None,
+        "completed",
+    )])
+    .expect("routing context");
+
+    assert!(context.last_mutate_draft_only);
+    assert!(!context.last_mutate_submitted);
+    assert!(context.last_action_verified);
+    assert_eq!(
+        context.last_verification_failure.as_deref(),
+        Some("target field value changed")
+    );
+}
+
+#[test]
+fn workbench_web_tool_routing_context_ignores_cross_origin_graph_placeholder() {
+    let context = crate::agent::tools::derive_workbench_web_routing_context(&[test_tool_call(
+        "workbench.web_graph.build",
+        Some(json!({
+            "nodeCount": 1,
+            "highlights": {
+                "clickable": [{
+                    "tagName": "iframe",
+                    "textSnippet": "[cross-origin frame: about:blank]"
+                }]
+            }
+        })),
+        None,
+        "completed",
+    )]);
+
+    assert!(context.is_none());
+}
+
+#[test]
+fn workbench_web_tool_routing_context_treats_unconfirmed_enter_as_draft_only() {
+    let context = crate::agent::tools::derive_workbench_web_routing_context(&[test_tool_call(
+        "workbench.web_action.mutate",
+        Some(json!({
+            "actionKind": "press_key",
+            "submitted": false,
+            "submissionMethod": "enter"
+        })),
+        None,
+        "completed",
+    )])
     .expect("routing context");
 
     assert!(context.last_mutate_draft_only);
@@ -911,7 +1235,11 @@ fn workbench_web_tool_ranking_avoids_wait_after_draft_only_type() {
         .expect("external tool test guard");
     clear_external_tools();
     register_test_external_tool(
-        "workbench.web_target.scan",
+        "workbench.web_skeleton.read",
+        "scan widgets from the current page",
+    );
+    register_test_external_tool(
+        "workbench.web_query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
@@ -930,20 +1258,14 @@ fn workbench_web_tool_ranking_avoids_wait_after_draft_only_type() {
         "workbench.web_graph.query",
         "query interactable nodes from page graph",
     );
-    register_test_external_tool(
-        "workbench.web_action.safe",
-        "run safe web action in page",
-    );
+    register_test_external_tool("workbench.web_action.safe", "run safe web action in page");
     register_test_external_tool_with_metadata(
         "workbench.web_action.mutate",
         "run mutating web action in page",
         ExternalToolApprovalMode::Ask,
         ExternalToolSideEffects::session_mutation(),
     );
-    register_test_external_tool(
-        "workbench.web_action.wait",
-        "wait for target state in page",
-    );
+    register_test_external_tool("workbench.web_action.wait", "wait for target state in page");
 
     let ranked = readonly_tool_definitions_for_input_with_context(
         "continue the current webpage interaction",
@@ -952,16 +1274,35 @@ fn workbench_web_tool_ranking_avoids_wait_after_draft_only_type() {
                 has_live_scan_session: true,
                 has_live_candidates: true,
                 has_typable_candidate: true,
+                widget_graph_ready: true,
+                native_widget_ready: true,
                 last_mutate_draft_only: true,
                 ..WorkbenchWebRoutingContext::default()
             }),
+            browser_strategy: None,
         }),
     );
 
-    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.web_action.wait"));
-    assert!(tool_rank(&ranked, "workbench.web_target.scan") < tool_rank(&ranked, "workbench.web_action.wait"));
-    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.tab.extract_text"));
-    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.tab.read"));
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.mutate")
+            < tool_rank(&ranked, "workbench.web_action.wait")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.mutate")
+            < tool_rank(&ranked, "workbench.web_skeleton.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_query.find")
+            < tool_rank(&ranked, "workbench.web_action.wait")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.mutate")
+            < tool_rank(&ranked, "workbench.tab.extract_text")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.mutate")
+            < tool_rank(&ranked, "workbench.tab.read")
+    );
 
     clear_external_tools();
 }
@@ -974,7 +1315,11 @@ fn workbench_web_tool_ranking_prefers_mutate_over_reads_after_typable_scan() {
     clear_external_tools();
 
     register_test_external_tool(
-        "workbench.web_target.scan",
+        "workbench.web_skeleton.read",
+        "scan widgets from the current page",
+    );
+    register_test_external_tool(
+        "workbench.web_query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
@@ -993,20 +1338,14 @@ fn workbench_web_tool_ranking_prefers_mutate_over_reads_after_typable_scan() {
         "workbench.web_graph.query",
         "query interactable nodes from page graph",
     );
-    register_test_external_tool(
-        "workbench.web_action.safe",
-        "run safe web action in page",
-    );
+    register_test_external_tool("workbench.web_action.safe", "run safe web action in page");
     register_test_external_tool_with_metadata(
         "workbench.web_action.mutate",
         "run mutating web action in page",
         ExternalToolApprovalMode::Ask,
         ExternalToolSideEffects::session_mutation(),
     );
-    register_test_external_tool(
-        "workbench.web_action.wait",
-        "wait for target state in page",
-    );
+    register_test_external_tool("workbench.web_action.wait", "wait for target state in page");
 
     let ranked = readonly_tool_definitions_for_input_with_context(
         "continue the current webpage interaction",
@@ -1015,14 +1354,201 @@ fn workbench_web_tool_ranking_prefers_mutate_over_reads_after_typable_scan() {
                 has_live_scan_session: true,
                 has_live_candidates: true,
                 has_typable_candidate: true,
+                widget_graph_ready: true,
+                native_widget_ready: true,
+                last_action_verified: true,
                 ..WorkbenchWebRoutingContext::default()
+            }),
+            browser_strategy: None,
+        }),
+    );
+
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.mutate")
+            < tool_rank(&ranked, "workbench.tab.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.mutate")
+            < tool_rank(&ranked, "workbench.web_skeleton.read")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.mutate")
+            < tool_rank(&ranked, "workbench.tab.extract_text")
+    );
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.mutate")
+            < tool_rank(&ranked, "workbench.web_graph.build")
+    );
+
+    clear_external_tools();
+}
+
+#[test]
+fn workbench_web_tool_ranking_prefers_hover_reveal_over_terminal_escape() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_test_external_tool(
+        "workbench.web_skeleton.read",
+        "scan widgets from the current page",
+    );
+    register_test_external_tool(
+        "workbench.web_query.find",
+        "scan the visible page for likely interactive targets",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.build",
+        "build selector-addressable graph for current webpage",
+    );
+    register_test_external_tool(
+        "workbench.web_graph.query",
+        "query interactable nodes from page graph",
+    );
+    register_test_external_tool("workbench.web_action.safe", "run safe web action in page");
+    register_test_external_tool_with_metadata(
+        "workbench.web_action.mutate",
+        "run mutating web action in page",
+        ExternalToolApprovalMode::Ask,
+        ExternalToolSideEffects::session_mutation(),
+    );
+
+    let ranked = readonly_tool_definitions_for_input_with_context(
+        "continue the current webpage interaction",
+        Some(&ToolRankingContext {
+            workbench_web: Some(WorkbenchWebRoutingContext {
+                page_mode: Some("chat".to_string()),
+                widget_graph_ready: true,
+                native_widget_ready: true,
+                active_widget_id: Some("row-1".to_string()),
+                active_item_id: Some("row-1".to_string()),
+                current_browser_subgoal: Some("reveal item actions".to_string()),
+                last_workflow_failure: Some("hover_reveal_required".to_string()),
+                ..WorkbenchWebRoutingContext::default()
+            }),
+            browser_strategy: None,
+        }),
+    );
+
+    assert!(tool_rank(&ranked, "workbench.web_action.safe") < tool_rank(&ranked, "terminal.exec"));
+    assert!(
+        tool_rank(&ranked, "workbench.web_action.safe")
+            < tool_rank(&ranked, "workbench.web_graph.build")
+    );
+    assert!(tool_rank(&ranked, "workbench.web_query.find") < tool_rank(&ranked, "terminal.exec"));
+
+    clear_external_tools();
+}
+
+#[test]
+fn browser_strategy_context_tracks_browser_use_readiness_and_native_failure() {
+    let context = crate::agent::tools::derive_browser_strategy_routing_context(&[
+        test_tool_call(
+            "browser_use.session.prepare",
+            Some(json!({
+                "session": {
+                    "sessionId": "browser-use-1",
+                    "ready": true
+                }
+            })),
+            None,
+            "completed",
+        ),
+        test_tool_call(
+            "workbench.web_query.find",
+            Some(json!({
+                "scanSessionId": "scan-1",
+                "bestMatch": {
+                    "nodeId": "cand-1",
+                    "capabilities": {
+                        "editable": false,
+                        "clickable": true
+                    }
+                },
+                "matches": [{
+                    "nodeId": "cand-1",
+                    "capabilities": {
+                        "editable": false,
+                        "clickable": true
+                    }
+                }]
+            })),
+            None,
+            "completed",
+        ),
+        test_tool_call(
+            "workbench.web_action.mutate",
+            None,
+            Some("pointer_intercepted"),
+            "failed",
+        ),
+    ])
+    .expect("browser strategy context");
+
+    assert!(context.browser_use_session_ready);
+    assert!(context.native_live_candidate_ready);
+    assert_eq!(
+        context.last_browser_failure_family.as_deref(),
+        Some("native")
+    );
+}
+
+#[test]
+fn browser_strategy_prefers_browser_use_after_native_failure_when_session_is_ready() {
+    let _guard = EXTERNAL_TOOL_TEST_GUARD
+        .lock()
+        .expect("external tool test guard");
+    clear_external_tools();
+
+    register_test_external_tool(
+        "workbench.web_action.mutate",
+        "run mutating web action in page",
+    );
+    register_test_external_tool(
+        "workbench.web_query.find",
+        "scan the visible page for likely interactive targets",
+    );
+    register_test_external_tool(
+        "browser_use.session.prepare",
+        "prepare a browser-use session",
+    );
+    register_test_external_tool("browser_use.page.state", "read browser-use state");
+    register_test_external_tool_with_metadata(
+        "browser_use.page.mutate",
+        "run browser-use mutating page action",
+        ExternalToolApprovalMode::Ask,
+        ExternalToolSideEffects::session_mutation(),
+    );
+
+    let ranked = readonly_tool_definitions_for_input_with_context(
+        "continue the browser task",
+        Some(&ToolRankingContext {
+            workbench_web: None,
+            browser_strategy: Some(BrowserStrategyRoutingContext {
+                last_browser_strategy: Some("browser_use".to_string()),
+                browser_use_session_ready: true,
+                native_live_candidate_ready: true,
+                native_widget_ready: true,
+                last_action_verified: true,
+                strategy_lease_active: true,
+                last_browser_failure_family: Some("native".to_string()),
+                in_long_running_flow: false,
+                preferred_engine: Some("smart".to_string()),
+                browser_use_health: Some("healthy".to_string()),
+                browser_use_tool_exposed: true,
             }),
         }),
     );
 
-    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.tab.read"));
-    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.tab.extract_text"));
-    assert!(tool_rank(&ranked, "workbench.web_action.mutate") < tool_rank(&ranked, "workbench.web_graph.build"));
+    assert!(
+        tool_rank(&ranked, "browser_use.page.mutate")
+            < tool_rank(&ranked, "workbench.web_action.mutate")
+    );
+    assert!(
+        tool_rank(&ranked, "browser_use.page.state")
+            < tool_rank(&ranked, "workbench.web_query.find")
+    );
 
     clear_external_tools();
 }

@@ -804,11 +804,15 @@ export const BrowserSettingsSurface = ({
               />
             </section>
 
-            <section className="lyra-settings-group">
+            <section className="lyra-settings-group lyra-settings-group-cluster">
               <header className="lyra-settings-group-header">
                 <h3>{searchEnableContentLabel}</h3>
               </header>
-              <div className="lyra-settings-choice-grid" role="group" aria-label={searchEnableContentLabel}>
+              <div
+                className="lyra-settings-choice-grid lyra-settings-choice-grid-flags"
+                role="group"
+                aria-label={searchEnableContentLabel}
+              >
                 <button
                   className={
                     searchEnableFuzzyValue
@@ -870,27 +874,18 @@ export const BrowserSettingsSurface = ({
                   </span>
                 </button>
               </div>
-            </section>
-
-            <section className="lyra-settings-group">
-              <header className="lyra-settings-group-header">
-                <h3>{searchIndexStatusLabel}</h3>
-              </header>
-              <div className="lyra-settings-choice-grid" role="group" aria-label={searchIndexStatusLabel}>
-                <div className="lyra-settings-choice">
-                  <span className="lyra-settings-choice-main">
-                    <strong>{searchIndexStatusValue}</strong>
-                  </span>
+              <div className="lyra-settings-inline-status-row" role="group" aria-label={searchIndexStatusLabel}>
+                <div className="lyra-settings-inline-status-copy">
+                  <small>{searchIndexStatusLabel}</small>
+                  <strong>{searchIndexStatusValue}</strong>
                 </div>
                 <button
-                  className="lyra-settings-choice"
+                  className="lyra-settings-ai-action"
                   type="button"
                   disabled={searchRebuildIndexPending}
                   onClick={onSearchRebuildIndex}
                 >
-                  <span className="lyra-settings-choice-main">
-                    <strong>{searchRebuildIndexPending ? `${searchRebuildIndexLabel}...` : searchRebuildIndexLabel}</strong>
-                  </span>
+                  {searchRebuildIndexPending ? `${searchRebuildIndexLabel}...` : searchRebuildIndexLabel}
                 </button>
               </div>
             </section>

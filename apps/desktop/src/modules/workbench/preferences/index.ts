@@ -5,6 +5,8 @@ export {
   writeWorkbenchPreferences
 } from "./service";
 export type {
+  WorkbenchBrowserAutomationEngine,
+  WorkbenchLyraDirectMicroExecutorBudget,
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchPreferences,
   WorkbenchPreferencesModel,

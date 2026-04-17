@@ -21,14 +21,14 @@ const pushUniqueModels = (
 export const buildModelOptions = (
   preset: AiProviderPreset | null,
   discoveryResult: AiModelDiscoveryResult | null,
-  customModelsText: string
+  modelsText: string
 ): readonly AiProviderModelEntry[] => {
   const result = new Map<string, AiProviderModelEntry>();
   pushUniqueModels(result, discoveryResult?.models ?? []);
   pushUniqueModels(result, preset?.recommendedModels ?? []);
   pushUniqueModels(
     result,
-    parseCustomModels(customModelsText)
+    parseCustomModels(modelsText)
   );
   return [...result.values()];
 };

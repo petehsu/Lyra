@@ -2,6 +2,7 @@ import type {
   WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
+  WorkbenchBrowserElementPickerMode,
   WorkbenchBrowserElementPickerOwner,
   WorkbenchBrowserElementPickerPhase,
   WorkbenchBrowserElementPickerState,
@@ -30,6 +31,14 @@ export type WorkbenchElementPickerConsoleHoverMessage = {
   readonly textSnippet?: string;
   readonly selectorPreview: string;
   readonly bounds: WorkbenchBrowserHoveredElementInfo["bounds"];
+  readonly containerBounds?: WorkbenchBrowserHoveredElementInfo["containerBounds"];
+  readonly widgetKind?: string;
+  readonly widgetLabel?: string;
+  readonly affordanceLabel?: string;
+  readonly affordanceAction?: string;
+  readonly cursorStyle?: string;
+  readonly tooltipText?: string;
+  readonly stateHint?: string;
   readonly frameUrl?: string;
   readonly crossOriginBoundary?: boolean;
 };
@@ -112,6 +121,7 @@ export type WorkbenchElementPickerSessionDeps = {
   readonly host: WorkbenchElementPickerSessionHost;
   readonly tabId: string;
   readonly appearance: WorkbenchBrowserElementPickerAppearance;
+  readonly mode: WorkbenchBrowserElementPickerMode;
   readonly onDisableRequested: (cause: WorkbenchBrowserElementPickerDisableCause) => void;
 };
 
@@ -127,7 +137,8 @@ export type WorkbenchElementPickerOverlayRuntime = {
     readonly hadUnavailableFrame: boolean;
   }>;
   readonly enableManualMode: (
-    appearance: WorkbenchBrowserElementPickerAppearance
+    appearance: WorkbenchBrowserElementPickerAppearance,
+    mode: WorkbenchBrowserElementPickerMode
   ) => Promise<{
     readonly mainFrameSucceeded: boolean;
     readonly hadUnavailableFrame: boolean;

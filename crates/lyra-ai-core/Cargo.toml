@@ -9,6 +9,7 @@ node-api = []
 
 [dependencies]
 napi = { version = "2.16.13", default-features = false, features = ["napi8"] }
+lyra-code-intel-core = { path = "../lyra-code-intel-core" }
 lyra-lsp-core = { path = "../lyra-lsp-core", default-features = false }
 lyra-sandbox = { path = "../lyra-sandbox" }
 lyra-terminal-core = { path = "../lyra-terminal-core", default-features = false }

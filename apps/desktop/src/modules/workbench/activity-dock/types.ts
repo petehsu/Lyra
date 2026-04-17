@@ -1,4 +1,4 @@
-export type ActivityDockItemId = "explorer" | "search" | "plugins" | "settings";
+export type ActivityDockItemId = "explorer" | "search" | "plugins";
 
 export type ActivityDockItem = {
   readonly id: ActivityDockItemId;

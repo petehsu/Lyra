@@ -76,11 +76,19 @@ export const parseElementPickerConsoleMessage = (
     const tagName = readString(record.tagName, 64);
     const selectorPreview = readString(record.selectorPreview, 120);
     const bounds = readBounds(record.bounds);
+    const containerBounds = readBounds(record.containerBounds);
     const role = readString(record.role, 64);
     const inputType = readString(record.inputType, 64);
     const ariaLabel = readString(record.ariaLabel, 160);
     const placeholder = readString(record.placeholder, 160);
     const textSnippet = readString(record.textSnippet, 160);
+    const widgetKind = readString(record.widgetKind, 64);
+    const widgetLabel = readString(record.widgetLabel, 160);
+    const affordanceLabel = readString(record.affordanceLabel, 160);
+    const affordanceAction = readString(record.affordanceAction, 160);
+    const cursorStyle = readString(record.cursorStyle, 64);
+    const tooltipText = readString(record.tooltipText, 200);
+    const stateHint = readString(record.stateHint, 160);
     const frameUrl = readString(record.frameUrl, 400);
     if (
       frameTreeNodeId === undefined
@@ -102,6 +110,14 @@ export const parseElementPickerConsoleMessage = (
       ...(ariaLabel === undefined ? {} : { ariaLabel }),
       ...(placeholder === undefined ? {} : { placeholder }),
       ...(textSnippet === undefined ? {} : { textSnippet }),
+      ...(containerBounds === undefined ? {} : { containerBounds }),
+      ...(widgetKind === undefined ? {} : { widgetKind }),
+      ...(widgetLabel === undefined ? {} : { widgetLabel }),
+      ...(affordanceLabel === undefined ? {} : { affordanceLabel }),
+      ...(affordanceAction === undefined ? {} : { affordanceAction }),
+      ...(cursorStyle === undefined ? {} : { cursorStyle }),
+      ...(tooltipText === undefined ? {} : { tooltipText }),
+      ...(stateHint === undefined ? {} : { stateHint }),
       ...(frameUrl === undefined ? {} : { frameUrl }),
       ...(record.crossOriginBoundary === true ? { crossOriginBoundary: true } : {})
     };

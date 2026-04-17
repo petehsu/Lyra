@@ -377,6 +377,14 @@ describe("aggregated search service", () => {
           writeSync: vi.fn(),
           removeSync: vi.fn()
         },
+        browserUse: {
+          readRuntimeStatus: vi.fn(async () => ({
+            state: "unavailable" as const,
+            checkedAt: Date.now(),
+            reason: "missing_bundle" as const,
+          })),
+          onRuntimeStatus: vi.fn(() => () => undefined)
+        },
         workbenchObservation: {
           registerHandler: vi.fn(() => () => undefined)
         }

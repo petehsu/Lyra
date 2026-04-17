@@ -74,10 +74,10 @@ export type AiPanelSurfaceProps = {
   readonly newSessionTitle: string;
   readonly defaultProfileId?: string | null;
   readonly defaultProfileName: string | null;
-  readonly defaultModelName: string | null;
+  readonly defaultModelNames: readonly string[];
   readonly profileLabel: string;
   readonly modelLabel: string;
-  readonly openSettingsLabel: string;
+  readonly modelsLabel: string;
   readonly openHistoryLabel?: string;
   readonly openMcpLabel?: string;
   readonly openSkillsLabel?: string;
@@ -140,5 +140,4 @@ export type AiPanelSurfaceProps = {
   readonly onOpenMcp?: () => void;
   readonly onOpenSkills?: () => void;
   readonly onRequestProjectBind?: (currentPath?: string) => Promise<string | null>;
-  readonly onOpenSettings: () => void;
 };

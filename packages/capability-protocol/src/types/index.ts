@@ -1,4 +1,4 @@
-export const CAPABILITY_DOMAINS = ["filesystem", "terminal", "browser", "mcp", "workbench"] as const;
+export const CAPABILITY_DOMAINS = ["filesystem", "terminal", "browser", "mcp", "workbench", "code"] as const;
 export const CAPABILITY_KINDS = ["action", "resource", "event"] as const;
 export const CAPABILITY_RISKS = ["read", "write", "command", "network"] as const;
 export const CAPABILITY_APPROVAL_MODES = ["auto", "ask", "deny"] as const;

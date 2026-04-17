@@ -48,7 +48,7 @@ export const scoreSignatureMatch = (
 export const findBestSignatureMatch = (
   nodes: readonly WorkbenchWebElementNode[],
   target: WorkbenchWebElementSignature,
-  minimumScore = 8
+  minimumScore = 6
 ): WorkbenchWebElementNode | null => {
   let best: WorkbenchWebElementNode | null = null;
   let bestScore = minimumScore;

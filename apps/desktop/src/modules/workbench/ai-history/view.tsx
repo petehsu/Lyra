@@ -1,4 +1,4 @@
-import { ArrowRight, Plus, Settings2, Trash2 } from "lucide-react";
+import { ArrowRight, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AgentSession } from "../../../shared/desktop-bridge";
@@ -18,7 +18,6 @@ export const AiHistorySurface = ({
   locale,
   title,
   newSessionTitle,
-  openSettingsLabel,
   newConversationLabel,
   openConversationLabel,
   deleteConversationLabel,
@@ -27,8 +26,7 @@ export const AiHistorySurface = ({
   loadingSessionsLabel,
   emptyStateTitle,
   emptyStateDescription,
-  defaultProfileId,
-  onOpenSettings
+  defaultProfileId
 }: AiHistorySurfaceProps) => {
   const agentApi = desktopApi?.agent;
   const [sessions, setSessions] = useState<readonly AgentSession[]>([]);
@@ -135,15 +133,6 @@ export const AiHistorySurface = ({
       <section className="lyra-ai-history-surface" aria-label={title}>
         <header className="lyra-ai-history-topbar">
           <div className="lyra-ai-history-topbar-title">{title}</div>
-          <button
-            type="button"
-            className="lyra-ai-history-topbar-action"
-            onClick={onOpenSettings}
-            aria-label={openSettingsLabel}
-            title={openSettingsLabel}
-          >
-            <Settings2 size={14} />
-          </button>
         </header>
         <div className="lyra-ai-history-empty">
           <strong>{emptyStateTitle}</strong>
@@ -169,15 +158,6 @@ export const AiHistorySurface = ({
             disabled={isCreating}
           >
             <Plus size={14} />
-          </button>
-          <button
-            type="button"
-            className="lyra-ai-history-topbar-action"
-            onClick={onOpenSettings}
-            aria-label={openSettingsLabel}
-            title={openSettingsLabel}
-          >
-            <Settings2 size={14} />
           </button>
         </div>
       </header>

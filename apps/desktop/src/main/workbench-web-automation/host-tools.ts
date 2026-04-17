@@ -33,7 +33,7 @@ type WorkbenchWebAutomationHostToolsBridge = {
 
 const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
   {
-    capabilityId: "workbench.web_target.scan",
+    capabilityId: "workbench.web_skeleton.read",
     approvalMode: "auto",
     sideEffects: {
       level: "read_only",
@@ -46,7 +46,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
     }
   },
   {
-    capabilityId: "workbench.web_graph.build",
+    capabilityId: "workbench.web_query.find",
     approvalMode: "auto",
     sideEffects: {
       level: "read_only",
@@ -59,7 +59,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
     }
   },
   {
-    capabilityId: "workbench.web_graph.query",
+    capabilityId: "workbench.web_context.read",
     approvalMode: "auto",
     sideEffects: {
       level: "read_only",
@@ -69,6 +69,32 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
       mutatesSessionState: false,
       opensInteractiveSession: false,
       readsNetwork: false
+    }
+  },
+  {
+    capabilityId: "workbench.web_focus.probe",
+    approvalMode: "auto",
+    sideEffects: {
+      level: "read_only",
+      mutatesWorkspace: false,
+      mutatesMemory: false,
+      mutatesExternalSystems: false,
+      mutatesSessionState: false,
+      opensInteractiveSession: false,
+      readsNetwork: false
+    }
+  },
+  {
+    capabilityId: "workbench.web_scan_and_act",
+    approvalMode: "auto",
+    sideEffects: {
+      level: "session_mutation",
+      mutatesWorkspace: false,
+      mutatesMemory: false,
+      mutatesExternalSystems: false,
+      mutatesSessionState: true,
+      opensInteractiveSession: false,
+      readsNetwork: true
     }
   },
   {
@@ -86,7 +112,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
   },
   {
     capabilityId: "workbench.web_action.mutate",
-    approvalMode: "ask",
+    approvalMode: "auto",
     sideEffects: {
       level: "session_mutation",
       mutatesWorkspace: false,
@@ -99,7 +125,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
   },
   {
     capabilityId: "workbench.web_action.navigate",
-    approvalMode: "ask",
+    approvalMode: "auto",
     sideEffects: {
       level: "network_read",
       mutatesWorkspace: false,

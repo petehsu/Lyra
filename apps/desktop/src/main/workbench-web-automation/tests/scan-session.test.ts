@@ -32,6 +32,18 @@ const makeCandidate = (candidateId: string): LiveSelectorScanCandidateRecord => 
   }
 });
 
+const withSignature = (
+  candidate: LiveSelectorScanCandidateRecord,
+  overrides: Partial<LiveSelectorScanCandidateRecord>
+): LiveSelectorScanCandidateRecord => ({
+  ...candidate,
+  ...overrides,
+  stableSignature: {
+    ...candidate.stableSignature,
+    ...(overrides.stableSignature ?? {})
+  }
+});
+
 describe("live selector scan registry", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -43,12 +55,18 @@ describe("live selector scan registry", () => {
       tabId: "browser-tab-1",
       scope: "visible",
       intent: { operation: "type" },
+      pageMode: "chat",
+      widgets: [],
+      containerNodes: [],
       candidates: [makeCandidate("older-candidate")]
     });
     const newer = registry.write({
       tabId: "browser-tab-1",
       scope: "nearby",
       intent: { operation: "type" },
+      pageMode: "chat",
+      widgets: [],
+      containerNodes: [],
       candidates: [makeCandidate("newer-candidate")]
     });
 
@@ -68,12 +86,18 @@ describe("live selector scan registry", () => {
       tabId: "browser-tab-2",
       scope: "visible",
       intent: { operation: "click" },
+      pageMode: "form",
+      widgets: [],
+      containerNodes: [],
       candidates: [makeCandidate("shared-candidate")]
     });
     registry.write({
       tabId: "browser-tab-2",
       scope: "nearby",
       intent: { operation: "click" },
+      pageMode: "form",
+      widgets: [],
+      containerNodes: [],
       candidates: [makeCandidate("shared-candidate")]
     });
 
@@ -93,6 +117,9 @@ describe("live selector scan registry", () => {
       tabId: "browser-tab-3",
       scope: "visible",
       intent: { operation: "type" },
+      pageMode: "chat",
+      widgets: [],
+      containerNodes: [],
       candidates: [makeCandidate("approval-candidate")]
     });
 
@@ -104,5 +131,58 @@ describe("live selector scan registry", () => {
 
     expect(resolved).not.toBeNull();
     expect(resolved?.candidate.candidateId).toBe("approval-candidate");
+  });
+
+  test("finds the best recent candidate by semantic matcher and preferred session", () => {
+    const registry = new LiveSelectorScanRegistry();
+    const older = registry.write({
+      tabId: "browser-tab-4",
+      scope: "visible",
+      intent: { operation: "click" },
+      pageMode: "chat",
+      widgets: [],
+      containerNodes: [],
+      candidates: [
+        withSignature(makeCandidate("profile-button"), {
+          tagName: "button",
+          ariaLabel: "Open profile menu",
+          stableSignature: {
+            tagName: "button",
+            testId: "accounts-profile-button",
+            ariaLabel: "Open profile menu"
+          }
+        })
+      ]
+    });
+    const preferred = registry.write({
+      tabId: "browser-tab-4",
+      scope: "visible",
+      intent: { operation: "click" },
+      pageMode: "chat",
+      widgets: [],
+      containerNodes: [],
+      candidates: [
+        withSignature(makeCandidate("model-selector"), {
+          tagName: "button",
+          ariaLabel: "Model selector",
+          stableSignature: {
+            tagName: "button",
+            testId: "model-switcher-dropdown-button",
+            ariaLabel: "Model selector"
+          }
+        })
+      ]
+    });
+
+    const resolved = registry.findRecentCandidate({
+      tabId: "browser-tab-4",
+      preferredScanSessionId: preferred.scanSessionId,
+      match: (candidate) => candidate.stableSignature.testId === "model-switcher-dropdown-button" ? 100 : -100
+    });
+
+    expect(resolved).not.toBeNull();
+    expect(resolved?.scanSessionId).toBe(preferred.scanSessionId);
+    expect(resolved?.candidate.candidateId).toBe("model-selector");
+    expect(resolved?.scanSessionId).not.toBe(older.scanSessionId);
   });
 });

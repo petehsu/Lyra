@@ -5,7 +5,6 @@ export type AiHistorySurfaceProps = {
   readonly locale: string;
   readonly title: string;
   readonly newSessionTitle: string;
-  readonly openSettingsLabel: string;
   readonly newConversationLabel: string;
   readonly openConversationLabel: string;
   readonly deleteConversationLabel: string;
@@ -15,5 +14,4 @@ export type AiHistorySurfaceProps = {
   readonly emptyStateTitle: string;
   readonly emptyStateDescription: string;
   readonly defaultProfileId?: string | null;
-  readonly onOpenSettings: () => void;
 };

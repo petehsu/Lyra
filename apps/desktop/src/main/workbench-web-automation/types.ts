@@ -1,13 +1,29 @@
 import type {
   WorkbenchWebActionRequest,
   WorkbenchWebActionResult,
+  WorkbenchWebContextReadRequest,
+  WorkbenchWebContextReadResult,
   WorkbenchWebAutomationError,
+  WorkbenchWebScanAndActRequest,
+  WorkbenchWebScanAndActResult,
   WorkbenchWebGraphBuildRequest,
   WorkbenchWebGraphBuildResult,
   WorkbenchWebGraphEdge,
   WorkbenchWebGraphQueryRequest,
   WorkbenchWebGraphQueryResult,
   WorkbenchWebElementNode,
+  WorkbenchWebFocusProbeRequest,
+  WorkbenchWebFocusProbeResult,
+  WorkbenchWebFocusReadRequest,
+  WorkbenchWebFocusReadResult,
+  WorkbenchWebOperabilityReadRequest,
+  WorkbenchWebOperabilityReadResult,
+  WorkbenchWebQueryRequest,
+  WorkbenchWebQueryResult,
+  WorkbenchWebSkeletonReadRequest,
+  WorkbenchWebSkeletonReadResult,
+  WorkbenchWebWidgetScanRequest,
+  WorkbenchWebWidgetScanResult,
   WorkbenchWebTargetScanRequest,
   WorkbenchWebTargetScanResult,
   WorkbenchWebWaitRequest,
@@ -33,10 +49,42 @@ export type WorkbenchWebAutomationService = {
   readonly dispose: () => void;
   readonly buildGraph: (request?: WorkbenchWebGraphBuildRequest) => Promise<WorkbenchWebGraphBuildResult>;
   readonly queryGraph: (request?: WorkbenchWebGraphQueryRequest) => Promise<WorkbenchWebGraphQueryResult>;
+  readonly readFocusAtlas: (
+    request?: WorkbenchWebFocusReadRequest,
+    context?: WorkbenchWebAutomationCallContext
+  ) => Promise<WorkbenchWebFocusReadResult>;
+  readonly readSkeleton: (
+    request?: WorkbenchWebSkeletonReadRequest,
+    context?: WorkbenchWebAutomationCallContext
+  ) => Promise<WorkbenchWebSkeletonReadResult>;
+  readonly querySkeleton: (
+    request?: WorkbenchWebQueryRequest,
+    context?: WorkbenchWebAutomationCallContext
+  ) => Promise<WorkbenchWebQueryResult>;
+  readonly readContext: (
+    request?: WorkbenchWebContextReadRequest,
+    context?: WorkbenchWebAutomationCallContext
+  ) => Promise<WorkbenchWebContextReadResult>;
+  readonly readOperability: (
+    request?: WorkbenchWebOperabilityReadRequest,
+    context?: WorkbenchWebAutomationCallContext
+  ) => Promise<WorkbenchWebOperabilityReadResult>;
+  readonly probeFocus: (
+    request?: WorkbenchWebFocusProbeRequest,
+    context?: WorkbenchWebAutomationCallContext
+  ) => Promise<WorkbenchWebFocusProbeResult>;
+  readonly scanWidgets: (
+    request?: WorkbenchWebWidgetScanRequest,
+    context?: WorkbenchWebAutomationCallContext
+  ) => Promise<WorkbenchWebWidgetScanResult>;
   readonly scanTargets: (
     request: WorkbenchWebTargetScanRequest,
     context?: WorkbenchWebAutomationCallContext
   ) => Promise<WorkbenchWebTargetScanResult>;
+  readonly scanAndAct: (
+    request: WorkbenchWebScanAndActRequest,
+    context?: WorkbenchWebAutomationCallContext
+  ) => Promise<WorkbenchWebScanAndActResult>;
   readonly runSafeAction: (
     request: WorkbenchWebActionRequest,
     context?: WorkbenchWebAutomationCallContext
@@ -58,6 +106,7 @@ export type WorkbenchWebAutomationService = {
 export type WorkbenchWebAutomationServiceDeps = {
   readonly browserBridge: WorkbenchBrowserIpcBridge;
   readonly storageRoot: string;
+  readonly readLyraDirectMicroExecutorBudget?: () => "1-2" | "3-5" | "6-8";
 };
 
 export type WorkbenchWebAutomationErrorLike = WorkbenchWebAutomationError & {

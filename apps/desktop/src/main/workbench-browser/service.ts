@@ -23,8 +23,10 @@ import type {
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import { createWorkbenchBrowserViewManager } from "./view-manager";
 import type {
+  WorkbenchBrowserDebuggerSession,
   WorkbenchBrowserFrameDescriptor,
   WorkbenchBrowserFrameDomProbeResult,
+  WorkbenchBrowserFrameGlobalBounds,
   WorkbenchBrowserNativeInputEvent,
   WorkbenchBrowserSessionFetchRequest,
   WorkbenchBrowserSessionFetchResult,
@@ -79,12 +81,14 @@ export type WorkbenchBrowserIpcBridge = {
       readonly script: string;
       readonly frameTreeNodeId?: number;
       readonly userGesture?: boolean;
+      readonly timeoutMs?: number;
     }
   ) => Promise<unknown>;
   readonly dispatchNativeInput: (
     tabId: string,
     events: readonly WorkbenchBrowserNativeInputEvent[]
   ) => Promise<void>;
+  readonly openDebuggerSession: (tabId: string) => Promise<WorkbenchBrowserDebuggerSession>;
   readonly fetchWithTabSession: (
     tabId: string,
     request: WorkbenchBrowserSessionFetchRequest
@@ -98,6 +102,10 @@ export type WorkbenchBrowserIpcBridge = {
     options?: BrowserTextExtractOptions
   ) => Promise<WorkbenchTabExtractTextResult>;
   readonly capturePage: (tabId: string) => Promise<WorkbenchVisualCaptureResult>;
+  readonly resolveFrameGlobalBounds: (
+    tabId: string,
+    frameTreeNodeId: number
+  ) => Promise<WorkbenchBrowserFrameGlobalBounds | null>;
   readonly reapplyLayout: () => void;
   readonly toggleDevToolsForActivePage: () => boolean;
 };
@@ -183,10 +191,12 @@ export const createWorkbenchBrowserIpcBridge = ({
     probeFrameDom: manager.probeFrameDom,
     executeFrameScript: manager.executeFrameScript,
     dispatchNativeInput: manager.dispatchNativeInput,
+    openDebuggerSession: manager.openDebuggerSession,
     fetchWithTabSession: manager.fetchWithTabSession,
     readPageDomSummary: manager.readPageDomSummary,
     extractPageText: manager.extractPageText,
     capturePage: manager.capturePage,
+    resolveFrameGlobalBounds: manager.resolveFrameGlobalBounds,
     reapplyLayout: manager.reapplyLayout,
     toggleDevToolsForActivePage: manager.toggleDevToolsForActivePage
   };

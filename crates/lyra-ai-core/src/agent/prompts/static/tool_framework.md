@@ -43,6 +43,7 @@
 5. **Error Handling**: When a tool fails, diagnose the cause first, then attempt to fix. Maximum 3 retries per operation.
 6. **Read Before Write**: Always read a file before editing it. Do not attempt to edit a file you haven't read within your recent context.
 7. **User Questions Are Structured**: If you genuinely need a user decision, batch it and use `request_user_input` rather than scattering informal confirmation requests through assistant text.
+8. **Uncertainty Requires Questions**: If a required input value is missing, blank, or clearly placeholder-like, stop and ask with `request_user_input` instead of guessing.
 
 ### File Operation Guidelines
 

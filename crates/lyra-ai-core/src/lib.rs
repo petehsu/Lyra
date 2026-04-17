@@ -185,12 +185,15 @@ pub fn clear_rust_event_callback() {
 
 // --- MCP / External Tool Bridge ---
 
+pub use crate::agent::persona_runtime::{set_persona_runtime_state, PersonaRuntimeState};
 pub use crate::agent::tools::{
-    clear_external_tools, register_external_tool, register_host_tools_bridge, set_skill_prompts,
-    unregister_external_tool, unregister_host_tool_set, unregister_mcp_server_tools,
-    AgentToolError, ExternalToolApprovalMode, ExternalToolExecutor, ExternalToolMetadata,
-    ExternalToolSideEffectLevel, ExternalToolSideEffects, HostToolCallContext, HostToolDescriptor,
-    RegisteredExternalTool, SkillPromptEntry, ToolExecutionMode,
+    clear_external_tools, register_external_tool, register_host_tools_bridge,
+    set_browser_strategy_runtime_state, set_skill_prompts, unregister_external_tool,
+    unregister_host_tool_set, unregister_mcp_server_tools, AgentToolError,
+    BrowserStrategyRuntimeState, ExternalToolApprovalMode, ExternalToolExecutor,
+    ExternalToolMetadata, ExternalToolSideEffectLevel, ExternalToolSideEffects,
+    HostToolCallContext, HostToolDescriptor, RegisteredExternalTool, SkillPromptEntry,
+    ToolExecutionMode,
 };
 pub use crate::provider::types::AgentToolDefinition;
 

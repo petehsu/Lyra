@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "source": "rust-lang/rust-analyzer",
-  "releaseTag": "2026-03-23",
-  "generatedAt": "2026-03-28T03:50:18.230Z",
+  "releaseTag": "2026-04-13",
+  "generatedAt": "2026-04-13T11:58:39.464Z",
   "targets": [
     {
       "id": "linux-x64",
@@ -11,8 +11,58 @@
       "assetName": "rust-analyzer-x86_64-unknown-linux-gnu.gz",
       "binaryFileName": "rust-analyzer",
       "relativePath": "linux-x64/rust-analyzer",
-      "sha256": "1f566af0f261001fb23cae38105da19b324f6d6774f0168f426b1f6da2889154",
-      "sizeBytes": 50623736
+      "sha256": "9faaf99da0b22d3416e040e423b0591a6fa98f63e3b3f9f9f0984be89165e747",
+      "sizeBytes": 50898944
+    },
+    {
+      "id": "linux-arm64",
+      "platform": "linux",
+      "arch": "arm64",
+      "assetName": "rust-analyzer-aarch64-unknown-linux-gnu.gz",
+      "binaryFileName": "rust-analyzer",
+      "relativePath": "linux-arm64/rust-analyzer",
+      "sha256": "438e0593c3981da3d0c32573600da285b0e1b601b3bce9ac8e39f881b6fe436b",
+      "sizeBytes": 50794344
+    },
+    {
+      "id": "darwin-x64",
+      "platform": "darwin",
+      "arch": "x64",
+      "assetName": "rust-analyzer-x86_64-apple-darwin.gz",
+      "binaryFileName": "rust-analyzer",
+      "relativePath": "darwin-x64/rust-analyzer",
+      "sha256": "6a11d75b84be8087bf119c9f23a6aa471b981ccc37eeac77bf5e29e1543d7562",
+      "sizeBytes": 45308160
+    },
+    {
+      "id": "darwin-arm64",
+      "platform": "darwin",
+      "arch": "arm64",
+      "assetName": "rust-analyzer-aarch64-apple-darwin.gz",
+      "binaryFileName": "rust-analyzer",
+      "relativePath": "darwin-arm64/rust-analyzer",
+      "sha256": "8818e66068c02be8039d161a3574a2e0c1a8a19c18fe52ead9b027eeb6d85afc",
+      "sizeBytes": 45245920
+    },
+    {
+      "id": "win32-x64",
+      "platform": "win32",
+      "arch": "x64",
+      "assetName": "rust-analyzer-x86_64-pc-windows-msvc.zip",
+      "binaryFileName": "rust-analyzer.exe",
+      "relativePath": "win32-x64/rust-analyzer.exe",
+      "sha256": "778f9479ba36a8c6f99abf727849efcf0ec92519c5e242f3b3d96303a0a35b50",
+      "sizeBytes": 41052160
+    },
+    {
+      "id": "win32-arm64",
+      "platform": "win32",
+      "arch": "arm64",
+      "assetName": "rust-analyzer-aarch64-pc-windows-msvc.zip",
+      "binaryFileName": "rust-analyzer.exe",
+      "relativePath": "win32-arm64/rust-analyzer.exe",
+      "sha256": "0ebb4d8284cd53f6495508010c2baab1c51d8f765a26a83dd20421943c7852e8",
+      "sizeBytes": 40251392
     }
   ]
 }

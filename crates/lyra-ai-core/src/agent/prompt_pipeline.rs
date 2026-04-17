@@ -5,6 +5,7 @@ use std::process::Command;
 use once_cell::sync::Lazy;
 use regex::{Captures, Regex};
 
+use crate::agent::persona_runtime::get_persona_runtime_state;
 use crate::agent::prompt_repetition::build_task_anchor_excerpt;
 use crate::agent::turn_strategy::TurnStrategy;
 use crate::agent::types::AgentPlanState;
@@ -20,6 +21,7 @@ const STATIC_TOOL_FRAMEWORK: &str = include_str!("prompts/static/tool_framework.
 const STATIC_OUTPUT_FORMAT: &str = include_str!("prompts/static/output_format.md");
 
 const DYNAMIC_SESSION_CONTEXT: &str = include_str!("prompts/dynamic/session_context.md");
+const DYNAMIC_PERSONA_RUNTIME: &str = include_str!("prompts/dynamic/persona_runtime.md");
 const DYNAMIC_ENV_INFO: &str = include_str!("prompts/dynamic/env_info.md");
 const DYNAMIC_TASK_PROGRESS: &str = include_str!("prompts/dynamic/task_progress.md");
 const DYNAMIC_TURN_STRATEGY: &str = include_str!("prompts/dynamic/turn_strategy.md");
@@ -29,6 +31,10 @@ const DYNAMIC_MEMORY_SNAPSHOT: &str = include_str!("prompts/dynamic/memory_snaps
 const DYNAMIC_USER_PREFERENCES: &str = include_str!("prompts/dynamic/user_preferences.md");
 const DYNAMIC_ACTIVE_SKILLS: &str = include_str!("prompts/dynamic/active_skills.md");
 const DYNAMIC_MCP_TOOLS: &str = include_str!("prompts/dynamic/mcp_tools.md");
+const DYNAMIC_BROWSER_ENGINE_CONTEXT: &str =
+    include_str!("prompts/dynamic/browser_engine_context.md");
+const DYNAMIC_BROWSER_WORKFLOW_CONTEXT: &str =
+    include_str!("prompts/dynamic/browser_workflow_context.md");
 
 const RESPONSE_LANGUAGE_RULES: &str = r#"## Response Language
 
@@ -66,6 +72,17 @@ pub struct PromptBuildInput<'a> {
     pub execution_profile: Option<&'a str>,
     pub approval_profile: Option<&'a str>,
     pub turn_strategy: &'a TurnStrategy,
+    pub browser_engine_preference: Option<&'a str>,
+    pub browser_use_health: Option<&'a str>,
+    pub browser_tool_families: &'a str,
+    pub browser_page_mode: Option<&'a str>,
+    pub focus_atlas_status: Option<&'a str>,
+    pub active_widget_id: Option<&'a str>,
+    pub active_item_id: Option<&'a str>,
+    pub active_focus_region_id: Option<&'a str>,
+    pub current_browser_subgoal: Option<&'a str>,
+    pub last_reveal_observed: Option<&'a str>,
+    pub last_workflow_failure: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -151,6 +168,136 @@ pub fn build_system_prompt(input: &PromptBuildInput<'_>) -> PromptBuildResult {
             .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
     );
     vars.insert(
+        "browser_engine_preference".to_string(),
+        input
+            .browser_engine_preference
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "browser_use_health".to_string(),
+        input
+            .browser_use_health
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "browser_tool_families".to_string(),
+        non_empty(input.browser_tool_families),
+    );
+    vars.insert(
+        "browser_page_mode".to_string(),
+        input
+            .browser_page_mode
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "focus_atlas_status".to_string(),
+        input
+            .focus_atlas_status
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "active_widget_id".to_string(),
+        input
+            .active_widget_id
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "active_item_id".to_string(),
+        input
+            .active_item_id
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "active_focus_region_id".to_string(),
+        input
+            .active_focus_region_id
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "current_browser_subgoal".to_string(),
+        input
+            .current_browser_subgoal
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "last_reveal_observed".to_string(),
+        input
+            .last_reveal_observed
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "last_workflow_failure".to_string(),
+        input
+            .last_workflow_failure
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "browser_page_mode".to_string(),
+        input
+            .browser_page_mode
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "focus_atlas_status".to_string(),
+        input
+            .focus_atlas_status
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "active_widget_id".to_string(),
+        input
+            .active_widget_id
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "active_item_id".to_string(),
+        input
+            .active_item_id
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "active_focus_region_id".to_string(),
+        input
+            .active_focus_region_id
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "current_browser_subgoal".to_string(),
+        input
+            .current_browser_subgoal
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "last_reveal_observed".to_string(),
+        input
+            .last_reveal_observed
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "last_workflow_failure".to_string(),
+        input
+            .last_workflow_failure
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
         "current_task_description".to_string(),
         current_task_description,
     );
@@ -195,6 +342,7 @@ pub fn build_system_prompt(input: &PromptBuildInput<'_>) -> PromptBuildResult {
         detect_project_stacks(input.project_root),
     );
     vars.insert("mcp_tools_json".to_string(), mcp_tools_json);
+    insert_persona_runtime_vars(&mut vars);
 
     let runtime_cwd = std::env::current_dir()
         .ok()
@@ -248,6 +396,10 @@ pub fn build_system_prompt(input: &PromptBuildInput<'_>) -> PromptBuildResult {
     let sections = vec![
         ("identity", STATIC_IDENTITY.to_string()),
         (
+            "persona_runtime",
+            render_template(DYNAMIC_PERSONA_RUNTIME, &vars),
+        ),
+        (
             "task_progress",
             render_template(DYNAMIC_TASK_PROGRESS, &vars),
         ),
@@ -278,6 +430,14 @@ pub fn build_system_prompt(input: &PromptBuildInput<'_>) -> PromptBuildResult {
         (
             "active_skills",
             render_template(DYNAMIC_ACTIVE_SKILLS, &vars),
+        ),
+        (
+            "browser_engine_context",
+            render_template(DYNAMIC_BROWSER_ENGINE_CONTEXT, &vars),
+        ),
+        (
+            "browser_workflow_context",
+            render_template(DYNAMIC_BROWSER_WORKFLOW_CONTEXT, &vars),
         ),
         ("mcp_tools", render_template(DYNAMIC_MCP_TOOLS, &vars)),
         ("task_reread", render_template(DYNAMIC_TASK_REREAD, &vars)),
@@ -404,6 +564,7 @@ pub fn build_plan_mode_system_prompt(
         detect_project_stacks(input.project_root),
     );
     vars.insert("mcp_tools_json".to_string(), mcp_tools_json);
+    insert_persona_runtime_vars(&mut vars);
     vars.insert(
         "plan_status".to_string(),
         format!("{:?}", plan.status).to_lowercase(),
@@ -434,6 +595,24 @@ pub fn build_plan_mode_system_prompt(
             MAX_CURRENT_TASK_TOKENS,
             &mut truncated_sections,
         ),
+    );
+    vars.insert(
+        "browser_engine_preference".to_string(),
+        input
+            .browser_engine_preference
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "browser_use_health".to_string(),
+        input
+            .browser_use_health
+            .map(non_empty)
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "browser_tool_families".to_string(),
+        non_empty(input.browser_tool_families),
     );
 
     let runtime_cwd = std::env::current_dir()
@@ -482,6 +661,10 @@ pub fn build_plan_mode_system_prompt(
 
     let sections = vec![
         ("identity", STATIC_IDENTITY.to_string()),
+        (
+            "persona_runtime",
+            render_template(DYNAMIC_PERSONA_RUNTIME, &vars),
+        ),
         ("plan_mode", STATIC_PLAN_MODE.to_string()),
         (
             "task_progress",
@@ -508,6 +691,14 @@ pub fn build_plan_mode_system_prompt(
         (
             "active_skills",
             render_template(DYNAMIC_ACTIVE_SKILLS, &vars),
+        ),
+        (
+            "browser_engine_context",
+            render_template(DYNAMIC_BROWSER_ENGINE_CONTEXT, &vars),
+        ),
+        (
+            "browser_workflow_context",
+            render_template(DYNAMIC_BROWSER_WORKFLOW_CONTEXT, &vars),
         ),
         ("mcp_tools", render_template(DYNAMIC_MCP_TOOLS, &vars)),
     ];
@@ -546,6 +737,152 @@ fn non_empty(value: &str) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+fn insert_persona_runtime_vars(vars: &mut BTreeMap<String, String>) {
+    let runtime = get_persona_runtime_state();
+    let persona_name = runtime.persona_name.unwrap_or_else(|| "Lyra".to_string());
+    let company_name = runtime.company_name.unwrap_or_else(|| "Lyra".to_string());
+    let company_description = runtime.company_description.unwrap_or_else(|| {
+        "Lyra is a cross-functional company where teams handle engineering, operations, product delivery, and business execution.".to_string()
+    });
+    let coworker_label = runtime
+        .coworker_label
+        .unwrap_or_else(|| "coworker".to_string());
+
+    vars.insert("persona_name".to_string(), non_empty(&persona_name));
+    vars.insert("company_name".to_string(), non_empty(&company_name));
+    vars.insert(
+        "company_description".to_string(),
+        non_empty(&company_description),
+    );
+    vars.insert("coworker_label".to_string(), non_empty(&coworker_label));
+    vars.insert(
+        "local_time".to_string(),
+        runtime
+            .local_time
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "timezone".to_string(),
+        runtime
+            .timezone
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "locale".to_string(),
+        runtime
+            .locale
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "location_display".to_string(),
+        runtime
+            .location_display
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "location_source".to_string(),
+        runtime
+            .location_source
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "location_confidence".to_string(),
+        runtime
+            .location_confidence
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "location_detail".to_string(),
+        runtime
+            .location_detail
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "physical_location_display".to_string(),
+        runtime
+            .physical_location_display
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "ip_location_display".to_string(),
+        runtime
+            .ip_location_display
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "ip_address".to_string(),
+        runtime
+            .ip_address
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "device_name".to_string(),
+        runtime
+            .device_name
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "device_profile".to_string(),
+        runtime
+            .device_profile
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "persona_os_name".to_string(),
+        runtime
+            .os_name
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "persona_os_version".to_string(),
+        runtime
+            .os_version
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "persona_architecture".to_string(),
+        runtime
+            .architecture
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "persona_cpu_model".to_string(),
+        runtime
+            .cpu_model
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "persona_cpu_cores".to_string(),
+        runtime
+            .cpu_cores
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
+    vars.insert(
+        "persona_memory_gb".to_string(),
+        runtime
+            .memory_gb
+            .map(|value| non_empty(&value))
+            .unwrap_or_else(|| UNKNOWN_VALUE.to_string()),
+    );
 }
 
 fn clamp_tokens(
@@ -682,8 +1019,19 @@ mod tests {
             execution_profile: Some("standard"),
             approval_profile: Some("ask-on-risk"),
             turn_strategy: &strategy,
+            browser_engine_preference: None,
+            browser_use_health: None,
+            browser_tool_families: "workbench.web_*",
+            browser_page_mode: None,
+            focus_atlas_status: None,
+            active_widget_id: None,
+            active_item_id: None,
+            active_focus_region_id: None,
+            current_browser_subgoal: None,
+            last_reveal_observed: None,
+            last_workflow_failure: None,
         });
-        assert!(result.prompt.contains("You are Lyra"));
+        assert!(result.prompt.contains("in-house execution specialist"));
         assert!(!result.prompt.contains("{session_id}"));
         assert!(result.total_tokens > 0);
     }
@@ -708,6 +1056,17 @@ mod tests {
             execution_profile: None,
             approval_profile: None,
             turn_strategy: &strategy,
+            browser_engine_preference: None,
+            browser_use_health: None,
+            browser_tool_families: "workbench.web_*",
+            browser_page_mode: None,
+            focus_atlas_status: None,
+            active_widget_id: None,
+            active_item_id: None,
+            active_focus_region_id: None,
+            current_browser_subgoal: None,
+            last_reveal_observed: None,
+            last_workflow_failure: None,
         });
         assert!(result
             .truncated_sections
@@ -739,6 +1098,17 @@ mod tests {
             execution_profile: None,
             approval_profile: None,
             turn_strategy: &strategy,
+            browser_engine_preference: None,
+            browser_use_health: None,
+            browser_tool_families: "workbench.web_*",
+            browser_page_mode: None,
+            focus_atlas_status: None,
+            active_widget_id: None,
+            active_item_id: None,
+            active_focus_region_id: None,
+            current_browser_subgoal: None,
+            last_reveal_observed: None,
+            last_workflow_failure: None,
         });
 
         assert!(result.prompt.contains("Cargo.toml"));
@@ -766,6 +1136,17 @@ mod tests {
             execution_profile: None,
             approval_profile: None,
             turn_strategy: &strategy,
+            browser_engine_preference: None,
+            browser_use_health: None,
+            browser_tool_families: "workbench.web_*",
+            browser_page_mode: None,
+            focus_atlas_status: None,
+            active_widget_id: None,
+            active_item_id: None,
+            active_focus_region_id: None,
+            current_browser_subgoal: None,
+            last_reveal_observed: None,
+            last_workflow_failure: None,
         });
 
         assert!(result
@@ -798,6 +1179,17 @@ mod tests {
             execution_profile: None,
             approval_profile: None,
             turn_strategy: &strategy,
+            browser_engine_preference: None,
+            browser_use_health: None,
+            browser_tool_families: "workbench.web_*",
+            browser_page_mode: None,
+            focus_atlas_status: None,
+            active_widget_id: None,
+            active_item_id: None,
+            active_focus_region_id: None,
+            current_browser_subgoal: None,
+            last_reveal_observed: None,
+            last_workflow_failure: None,
         });
         assert!(result.prompt.contains("## Active Skills"));
         assert!(result.prompt.contains("- none"));
@@ -819,6 +1211,17 @@ mod tests {
             execution_profile: None,
             approval_profile: None,
             turn_strategy: &strategy,
+            browser_engine_preference: None,
+            browser_use_health: None,
+            browser_tool_families: "workbench.web_*",
+            browser_page_mode: None,
+            focus_atlas_status: None,
+            active_widget_id: None,
+            active_item_id: None,
+            active_focus_region_id: None,
+            current_browser_subgoal: None,
+            last_reveal_observed: None,
+            last_workflow_failure: None,
         });
 
         let current_task_index = result.prompt.find("## Current Task").expect("current task");
@@ -864,6 +1267,17 @@ mod tests {
             execution_profile: None,
             approval_profile: None,
             turn_strategy: &strategy,
+            browser_engine_preference: None,
+            browser_use_health: None,
+            browser_tool_families: "workbench.web_*",
+            browser_page_mode: None,
+            focus_atlas_status: None,
+            active_widget_id: None,
+            active_item_id: None,
+            active_focus_region_id: None,
+            current_browser_subgoal: None,
+            last_reveal_observed: None,
+            last_workflow_failure: None,
         });
 
         assert!(result
@@ -893,6 +1307,17 @@ mod tests {
             execution_profile: None,
             approval_profile: None,
             turn_strategy: &strategy,
+            browser_engine_preference: None,
+            browser_use_health: None,
+            browser_tool_families: "workbench.web_*",
+            browser_page_mode: None,
+            focus_atlas_status: None,
+            active_widget_id: None,
+            active_item_id: None,
+            active_focus_region_id: None,
+            current_browser_subgoal: None,
+            last_reveal_observed: None,
+            last_workflow_failure: None,
         });
 
         assert!(result.prompt.contains("standard execution"));

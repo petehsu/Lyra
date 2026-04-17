@@ -1,17 +1,22 @@
 import type {
+  WorkbenchWebContainerNode,
+  WorkbenchWebPageMode,
   WorkbenchWebElementSignature,
   WorkbenchWebSelectorAddress,
   WorkbenchWebTargetCandidate,
   WorkbenchWebTargetIntent,
   WorkbenchWebTargetScanRequest,
   WorkbenchWebTargetScanScope,
+  WorkbenchWebWidgetDescriptor,
 } from "../../../shared/workbench-web-automation";
+import type { LayoutContainerHint } from "../layout-intelligence/types";
 
 export type LiveSelectorScanCandidateRecord = WorkbenchWebTargetCandidate & {
   readonly selectorAddress: WorkbenchWebSelectorAddress;
   readonly stableSignature: WorkbenchWebElementSignature;
   readonly disabled?: boolean;
   readonly frameUrl?: string;
+  readonly containerHint?: LayoutContainerHint;
 };
 
 export type LiveSelectorFrameScanCandidate = {
@@ -38,6 +43,7 @@ export type LiveSelectorFrameScanCandidate = {
   };
   readonly selectorAddress: WorkbenchWebSelectorAddress;
   readonly stableSignature: WorkbenchWebElementSignature;
+  readonly containerHint?: LayoutContainerHint;
 };
 
 export type LiveSelectorFrameScanResult = {
@@ -57,6 +63,9 @@ export type LiveSelectorScanSession = {
   readonly updatedAt: number;
   readonly scope: WorkbenchWebTargetScanScope;
   readonly intent: WorkbenchWebTargetIntent;
+  readonly pageMode: WorkbenchWebPageMode;
+  readonly widgets: readonly WorkbenchWebWidgetDescriptor[];
+  readonly containerNodes: readonly WorkbenchWebContainerNode[];
   readonly candidates: readonly LiveSelectorScanCandidateRecord[];
 };
 

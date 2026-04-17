@@ -17,6 +17,7 @@ export type WorkbenchBrowserReadPageStateRequest = {
 export type WorkbenchBrowserSetElementPickerModeRequest = {
   readonly tabId: string;
   readonly enabled: boolean;
+  readonly mode?: WorkbenchBrowserElementPickerMode;
   readonly appearance?: WorkbenchBrowserElementPickerAppearance;
 };
 
@@ -84,9 +85,12 @@ export type WorkbenchBrowserElementPickerPhase =
   | "act"
   | "wait";
 
+export type WorkbenchBrowserElementPickerMode = "inspect" | "layout";
+
 export type WorkbenchBrowserElementPickerState = {
   readonly tabId: string;
   readonly enabled: boolean;
+  readonly mode?: WorkbenchBrowserElementPickerMode;
   readonly owner?: WorkbenchBrowserElementPickerOwner;
   readonly phase?: WorkbenchBrowserElementPickerPhase;
   readonly toolCallId?: string;
@@ -128,6 +132,20 @@ export type WorkbenchBrowserHoveredElementInfo = {
     readonly width: number;
     readonly height: number;
   };
+  readonly widgetId?: string;
+  readonly widgetKind?: string;
+  readonly widgetLabel?: string;
+  readonly affordanceLabel?: string;
+  readonly affordanceAction?: string;
+  readonly cursorStyle?: string;
+  readonly tooltipText?: string;
+  readonly stateHint?: string;
+  readonly containerBounds?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
   readonly frameUrl?: string;
   readonly crossOriginBoundary?: boolean;
 };
@@ -149,6 +167,22 @@ export type WorkbenchBrowserAgentTargetInfo = {
     readonly width: number;
     readonly height: number;
   };
+  readonly widgetId?: string;
+  readonly widgetKind?: string;
+  readonly widgetLabel?: string;
+  readonly widgetBounds?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  readonly affordanceLabel?: string;
+  readonly affordanceAction?: string;
+  readonly cursorStyle?: string;
+  readonly tooltipText?: string;
+  readonly stateHint?: string;
+  readonly discoveryMode?: "static" | "hover_revealed" | "action_revealed";
+  readonly pageMode?: string;
 };
 
 export type WorkbenchBrowserEvent =

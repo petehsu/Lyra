@@ -15,6 +15,7 @@ import type {
   FileWriteResult
 } from "../../../shared/file-manager";
 import type { FilesNativeBindings } from "../../files/types";
+import type { LyraRuntimeClient } from "../../runtime-client";
 import { registerFilesystemCapabilities } from "../adapters/files";
 import { CapabilityRegistry } from "../registry";
 
@@ -132,13 +133,29 @@ const createFakeBindings = (): FilesNativeBindings => {
   };
 };
 
+const createFakeRuntimeClient = (): LyraRuntimeClient => ({
+  request: vi.fn(async () => {
+    throw new Error("runtime unavailable");
+  }),
+  registerRequestHandler: vi.fn(),
+  unregisterRequestHandler: vi.fn(),
+  subscribe: vi.fn(() => () => undefined),
+  dispose: vi.fn()
+});
+
 const createRegistry = (
   bindings: FilesNativeBindings,
   storageRoot: string,
   publishEvent = vi.fn()
 ): CapabilityRegistry => {
   const registry = new CapabilityRegistry(publishEvent);
-  registerFilesystemCapabilities(registry, bindings, storageRoot);
+  registerFilesystemCapabilities(
+    registry,
+    bindings,
+    storageRoot,
+    createFakeRuntimeClient(),
+    storageRoot
+  );
   return registry;
 };
 

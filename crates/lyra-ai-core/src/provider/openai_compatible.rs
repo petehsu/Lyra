@@ -652,6 +652,8 @@ pub fn run_agent_inference(
     on_assistant_delta: Option<&mut AgentInferenceDeltaCallback<'_>>,
     on_reasoning_delta: Option<&mut AgentReasoningDeltaCallback<'_>>,
 ) -> Result<AgentInferenceResponse> {
+    const MAX_INTERACTIVE_RETRY_DELAY_MS: u64 = 12_000;
+
     let mut on_assistant_delta = on_assistant_delta;
     let mut on_reasoning_delta = on_reasoning_delta;
     let has_delta_listener = on_assistant_delta.is_some();
@@ -679,18 +681,32 @@ pub fn run_agent_inference(
             on_reasoning_delta.as_deref_mut(),
         ) {
             Ok(response) => return Ok(response),
-            Err(error) if !emitted_delta.get() => {
+            Err(_error) if !emitted_delta.get() => {
                 // Stream failed before emitting any content — try non-stream fallback
-                return run_agent_inference_non_stream(profile, secrets, messages, tools).map(
-                    |response| {
+                match run_agent_inference_non_stream(profile, secrets, messages, tools) {
+                    Ok(response) => {
                         if !response.assistant_text.is_empty() {
                             if let Some(callback) = on_assistant_delta.as_deref_mut() {
                                 callback(&response.assistant_text);
                             }
                         }
-                        response
-                    },
-                );
+                        return Ok(response);
+                    }
+                    Err(non_stream_error) => {
+                        let error_msg = non_stream_error.to_string();
+                        let severity = classify_network_error(&error_msg);
+
+                        if !severity.is_recoverable() || attempt >= max_retries {
+                            return Err(non_stream_error);
+                        }
+
+                        let delay = backoff
+                            .delay_ms(attempt)
+                            .max(severity.retry_after_ms())
+                            .min(MAX_INTERACTIVE_RETRY_DELAY_MS);
+                        std::thread::sleep(std::time::Duration::from_millis(delay));
+                    }
+                }
             }
             Err(error) => {
                 let error_msg = error.to_string();
@@ -700,7 +716,10 @@ pub fn run_agent_inference(
                     return Err(error);
                 }
 
-                let delay = backoff.delay_ms(attempt).max(severity.retry_after_ms());
+                let delay = backoff
+                    .delay_ms(attempt)
+                    .max(severity.retry_after_ms())
+                    .min(MAX_INTERACTIVE_RETRY_DELAY_MS);
                 std::thread::sleep(std::time::Duration::from_millis(delay));
             }
         }

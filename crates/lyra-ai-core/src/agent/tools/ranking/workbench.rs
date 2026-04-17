@@ -8,9 +8,11 @@ const DOCUMENT_SEARCH: &str = "workbench.document.search";
 const TAB_EXTRACT_TEXT: &str = "workbench.tab.extract_text";
 const WORKSPACE_READ: &str = "workbench.workspace.read";
 const TAB_CAPTURE_VISUAL: &str = "workbench.tab.capture_visual";
-const WEB_TARGET_SCAN: &str = "workbench.web_target.scan";
-const WEB_GRAPH_BUILD: &str = "workbench.web_graph.build";
-const WEB_GRAPH_QUERY: &str = "workbench.web_graph.query";
+const WEB_SKELETON_READ: &str = "workbench.web_skeleton.read";
+const WEB_QUERY_FIND: &str = "workbench.web_query.find";
+const WEB_CONTEXT_READ: &str = "workbench.web_context.read";
+const WEB_FOCUS_PROBE: &str = "workbench.web_focus.probe";
+const WEB_SCAN_AND_ACT: &str = "workbench.web_scan_and_act";
 const WEB_ACTION_SAFE: &str = "workbench.web_action.safe";
 const WEB_ACTION_MUTATE: &str = "workbench.web_action.mutate";
 const WEB_ACTION_NAVIGATE: &str = "workbench.web_action.navigate";
@@ -18,9 +20,11 @@ const WEB_ACTION_WAIT: &str = "workbench.web_action.wait";
 
 pub(super) fn tool_priority(tool: &ToolPlanningProfile) -> i32 {
     match tool.definition.name.as_str() {
-        WEB_TARGET_SCAN => 42,
-        WEB_GRAPH_BUILD => 34,
-        WEB_GRAPH_QUERY => 32,
+        WEB_SCAN_AND_ACT => 62,
+        WEB_SKELETON_READ => 58,
+        WEB_QUERY_FIND => 56,
+        WEB_CONTEXT_READ => 52,
+        WEB_FOCUS_PROBE => 42,
         TABS_LIST => 36,
         WEB_ACTION_SAFE => 35,
         WEB_ACTION_WAIT => 34,

@@ -2,6 +2,7 @@ import type {
   WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerAppearance
 } from "../../../shared/desktop-bridge";
+import type { WorkbenchBrowserElementPickerMode } from "../../../shared/workbench-browser";
 import type { WorkbenchBrowserFrameDescriptor } from "../types";
 import {
   buildElementPickerClearAgentTargetScript,
@@ -103,7 +104,10 @@ export const createWorkbenchElementPickerOverlayRuntime = ({
       scriptBuilder: (frameTreeNodeId) => buildElementPickerPrimeScript(frameTreeNodeId, appearance)
     });
   },
-  enableManualMode: async (appearance: WorkbenchBrowserElementPickerAppearance) => {
+  enableManualMode: async (
+    appearance: WorkbenchBrowserElementPickerAppearance,
+    mode: WorkbenchBrowserElementPickerMode
+  ) => {
     const primed = await runScriptAcrossFrames({
       host,
       tabId,
@@ -115,7 +119,7 @@ export const createWorkbenchElementPickerOverlayRuntime = ({
     await runScriptAcrossFrames({
       host,
       tabId,
-      scriptBuilder: () => buildElementPickerSetManualModeScript(true)
+      scriptBuilder: () => buildElementPickerSetManualModeScript(true, mode)
     });
     return primed;
   },

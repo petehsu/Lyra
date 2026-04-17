@@ -78,7 +78,10 @@ import { useTitlebarElementPickerModel } from "./use-titlebar-element-picker-mod
 import { useTitlebarNavigationModel } from "./use-titlebar-navigation-model";
 import { WorkspaceSurfaceRouter } from "./workspace-surface-router";
 import { attachWorkbenchObservationBridge } from "../observation/service";
-import type { WorkbenchBrowserPageRuntimeState } from "../../../shared/desktop-bridge";
+import type {
+  BrowserUseRuntimeStatus,
+  WorkbenchBrowserPageRuntimeState
+} from "../../../shared/desktop-bridge";
 
 type PageNavigationState = {
   readonly canGoBack: boolean;
@@ -114,7 +117,9 @@ export const WorkbenchShell = () => {
     deepSearchProactiveDomainGuessingEnabled: true,
     deepSearchCrawlPolicy: "accessibility_only",
     searchResultsSourceFilter: "all",
-    omniboxNonBrowserSubmitTarget: "new_tab"
+    omniboxNonBrowserSubmitTarget: "new_tab",
+    browserAutomationEngine: "lyra_direct",
+    lyraDirectMicroExecutorBudget: "3-5"
   });
 
   const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() =>
@@ -127,6 +132,10 @@ export const WorkbenchShell = () => {
   const [pageRuntimeStateByTabId, setPageRuntimeStateByTabId] = useState<
     Readonly<Record<string, WorkbenchBrowserPageRuntimeState>>
   >({});
+  const [browserUseRuntimeStatus, setBrowserUseRuntimeStatus] = useState<BrowserUseRuntimeStatus>({
+    state: "checking",
+    checkedAt: Date.now()
+  });
 
   const t = useMemo(
     () => createTranslator(preferencesModel.preferences.locale),
@@ -283,6 +292,7 @@ export const WorkbenchShell = () => {
       profilesTitle: t("settings.aiProfilesTitle"),
       providerTitle: t("settings.aiProviderTitle"),
       connectionTitle: t("settings.aiConnectionTitle"),
+      additionalFieldsTitle: t("settings.aiAdditionalFieldsTitle"),
       statusTitle: t("settings.aiStatusTitle"),
       addProfile: t("settings.aiAddProfile"),
       saveProfile: t("settings.aiSaveProfile"),
@@ -296,12 +306,15 @@ export const WorkbenchShell = () => {
       authorizeChatGptDeviceCode: t("settings.aiAuthorizeChatGptDeviceCode"),
       profileNameLabel: t("settings.aiProfileNameLabel"),
       profileNamePlaceholder: t("settings.aiProfileNamePlaceholder"),
+      urlLabel: t("settings.aiBaseUrlLabel"),
+      urlPlaceholder: t("settings.aiBaseUrlPlaceholder"),
+      keyLabel: t("settings.aiApiKeyLabel"),
+      keyPlaceholder: t("settings.aiApiKeyPlaceholder"),
       modelLabel: t("settings.aiModelLabel"),
       modelPlaceholder: t("settings.aiModelPlaceholder"),
+      modelsHelp: t("settings.aiModelsHelp"),
       headersLabel: t("settings.aiHeadersLabel"),
       headersPlaceholder: t("settings.aiHeadersPlaceholder"),
-      customModelsLabel: t("settings.aiCustomModelsLabel"),
-      customModelsPlaceholder: t("settings.aiCustomModelsPlaceholder"),
       defaultBadge: t("settings.aiDefaultBadge"),
       defaultProfileLabel: t("settings.aiDefaultProfileLabel"),
       statusIdle: t("settings.aiStatusIdle"),
@@ -333,7 +346,32 @@ export const WorkbenchShell = () => {
       memoryConfigStatusIdle: t("settings.aiMemoryConfigStatusIdle"),
       memoryConfigStatusLoaded: t("settings.aiMemoryConfigStatusLoaded"),
       memoryConfigStatusSaved: t("settings.aiMemoryConfigStatusSaved"),
-      memoryConfigStatusInvalidJson: t("settings.aiMemoryConfigStatusInvalidJson")
+      memoryConfigStatusInvalidJson: t("settings.aiMemoryConfigStatusInvalidJson"),
+      browserAutomationTitle: t("settings.browserAutomationTitle"),
+      browserAutomationDescription: t("settings.browserAutomationDescription"),
+      browserAutomationOptionLyraDirect: t("settings.browserAutomationLyraDirectLabel"),
+      browserAutomationOptionLyraDirectDescription: t("settings.browserAutomationLyraDirectDescription"),
+      browserAutomationOptionBrowserUse: t("settings.browserAutomationBrowserUseLabel"),
+      browserAutomationOptionBrowserUseDescription: t("settings.browserAutomationBrowserUseDescription"),
+      browserAutomationOptionSmart: t("settings.browserAutomationSmartLabel"),
+      browserAutomationOptionSmartDescription: t("settings.browserAutomationSmartDescription"),
+      browserAutomationStatusChecking: t("settings.browserAutomationStatusChecking"),
+      browserAutomationStatusHealthy: t("settings.browserAutomationStatusHealthy"),
+      browserAutomationStatusUnavailable: t("settings.browserAutomationStatusUnavailable"),
+      browserAutomationStatusReasonMissingBundle: t("settings.browserAutomationReasonMissingBundle"),
+      browserAutomationStatusReasonIntegrityFailed: t("settings.browserAutomationReasonIntegrityFailed"),
+      browserAutomationStatusReasonDaemonLaunchFailed: t("settings.browserAutomationReasonDaemonLaunchFailed"),
+      browserAutomationStatusReasonBridgeUnavailable: t("settings.browserAutomationReasonBridgeUnavailable"),
+      browserAutomationStatusReasonUnsupportedPlatform: t("settings.browserAutomationReasonUnsupportedPlatform"),
+      lyraDirectAdvancedTitle: t("settings.lyraDirectAdvancedTitle"),
+      lyraDirectAdvancedDescription: t("settings.lyraDirectAdvancedDescription"),
+      lyraDirectMicroExecutorBudgetLabel: t("settings.lyraDirectMicroExecutorBudgetLabel"),
+      lyraDirectMicroExecutorBudgetConservative: t("settings.lyraDirectMicroExecutorBudgetConservative"),
+      lyraDirectMicroExecutorBudgetConservativeDescription: t("settings.lyraDirectMicroExecutorBudgetConservativeDescription"),
+      lyraDirectMicroExecutorBudgetBalanced: t("settings.lyraDirectMicroExecutorBudgetBalanced"),
+      lyraDirectMicroExecutorBudgetBalancedDescription: t("settings.lyraDirectMicroExecutorBudgetBalancedDescription"),
+      lyraDirectMicroExecutorBudgetAggressive: t("settings.lyraDirectMicroExecutorBudgetAggressive"),
+      lyraDirectMicroExecutorBudgetAggressiveDescription: t("settings.lyraDirectMicroExecutorBudgetAggressiveDescription")
     }),
     [t]
   );
@@ -851,6 +889,39 @@ export const WorkbenchShell = () => {
     desktopApi,
     labels: settingsAiLabels
   });
+  useEffect(() => {
+    if (desktopApi === null || desktopApi.browserUse === undefined) {
+      setBrowserUseRuntimeStatus({
+        state: "unavailable",
+        checkedAt: Date.now(),
+        reason: "unsupported_platform",
+        detail: desktopApi === null ? "desktop api unavailable" : "browser-use runtime status unavailable"
+      });
+      return;
+    }
+    let cancelled = false;
+    void desktopApi.browserUse.readRuntimeStatus().then((status) => {
+      if (!cancelled) {
+        setBrowserUseRuntimeStatus(status);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setBrowserUseRuntimeStatus({
+          state: "unavailable",
+          checkedAt: Date.now(),
+          reason: "unsupported_platform",
+          detail: "browser-use runtime status unavailable"
+        });
+      }
+    });
+    const unsubscribe = desktopApi.browserUse.onRuntimeStatus((status) => {
+      setBrowserUseRuntimeStatus(status);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [desktopApi]);
   const defaultAiProfile = useMemo(
     () =>
       settingsAiModel.profiles.find((profile) => profile.isDefault)
@@ -955,10 +1026,14 @@ export const WorkbenchShell = () => {
       newSessionTitle: t("ai.sessionDefaultTitle"),
       defaultProfileId: defaultAiProfile?.id ?? null,
       defaultProfileName: defaultAiProfile?.name ?? null,
-      defaultModelName: defaultAiProfile?.model ?? null,
+      defaultModelNames: defaultAiProfile === undefined || defaultAiProfile === null
+        ? []
+        : [defaultAiProfile.model, ...defaultAiProfile.customModels.map((entry) => entry.id)]
+            .map((entry) => entry.trim())
+            .filter((entry, index, entries) => entry.length > 0 && entries.indexOf(entry) === index),
       profileLabel: t("ai.profileLabel"),
       modelLabel: t("ai.modelLabel"),
-      openSettingsLabel: t("settings.tabTitle"),
+      modelsLabel: t("ai.modelsLabel"),
       openHistoryLabel: t("ai.openHistory"),
       openMcpLabel: t("ai.openMcp"),
       openSkillsLabel: t("ai.openSkills"),
@@ -1010,10 +1085,7 @@ export const WorkbenchShell = () => {
       onOpenSkills: () => {
         tabsModel.openAppTab(createAiSkillsAppRequest(t("ai.skillsTabTitle")));
       },
-      onRequestProjectBind: requestProjectBind,
-      onOpenSettings: () => {
-        tabsModel.openSettingsTab();
-      }
+      onRequestProjectBind: requestProjectBind
     };
   }, [
     defaultAiProfile,
@@ -1490,7 +1562,9 @@ export const WorkbenchShell = () => {
     activeTab,
     enableLabel: t("navigation.elementPickerEnable"),
     disableLabel: t("navigation.elementPickerDisable"),
-    activeLabel: t("navigation.elementPickerActive")
+    activeLabel: t("navigation.elementPickerActive"),
+    inspectLabel: t("navigation.elementPickerInspect"),
+    layoutLabel: t("navigation.elementPickerLayout")
   });
 
   const activeEditorReviewIndex = useMemo(
@@ -2101,6 +2175,7 @@ export const WorkbenchShell = () => {
             titlebarElementPicker.visible ? (
               <TitlebarElementPickerButton
                 active={titlebarElementPicker.enabled}
+                mode={titlebarElementPicker.mode}
                 ariaLabel={titlebarElementPicker.ariaLabel}
                 activeDescription={titlebarElementPicker.activeDescription}
                 onToggle={titlebarElementPicker.onToggle}
@@ -2350,7 +2425,18 @@ export const WorkbenchShell = () => {
                 omniboxNonBrowserSubmitTargetOptions:
                   settingOmniboxNonBrowserSubmitTargetOptions,
                 aiLabels: settingsAiLabels,
-                aiModel: settingsAiModel,
+                aiModel: {
+                  ...settingsAiModel,
+                  browserAutomationEngine:
+                    preferencesModel.preferences.browserAutomationEngine,
+                  lyraDirectMicroExecutorBudget:
+                    preferencesModel.preferences.lyraDirectMicroExecutorBudget,
+                  browserUseRuntimeStatus,
+                  setBrowserAutomationEngine:
+                    preferencesModel.setBrowserAutomationEngine,
+                  setLyraDirectMicroExecutorBudget:
+                    preferencesModel.setLyraDirectMicroExecutorBudget
+                },
                 onLocaleChange: preferencesModel.setLocale,
                 onThemeChange: preferencesModel.setTheme,
                 onTerminalThemeChange: preferencesModel.setTerminalThemePreset,
@@ -2495,7 +2581,6 @@ export const WorkbenchShell = () => {
                 locale: preferencesModel.preferences.locale,
                 title: t("ai.historyTitle"),
                 newSessionTitle: t("ai.sessionDefaultTitle"),
-                openSettingsLabel: t("settings.tabTitle"),
                 newConversationLabel: t("ai.newConversation"),
                 openConversationLabel: t("ai.openConversation"),
                 deleteConversationLabel: t("ai.deleteConversation"),
@@ -2504,10 +2589,7 @@ export const WorkbenchShell = () => {
                 loadingSessionsLabel: t("ai.historyLoadingSessions"),
                 emptyStateTitle: t("settings.aiEmptyTitle"),
                 emptyStateDescription: t("settings.aiEmptyDescription"),
-                defaultProfileId: defaultAiProfile?.id ?? null,
-                onOpenSettings: () => {
-                  tabsModel.openSettingsTab();
-                }
+                defaultProfileId: defaultAiProfile?.id ?? null
               }}
               notifications={{
                 model: notificationModel,

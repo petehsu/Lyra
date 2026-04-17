@@ -25,12 +25,15 @@ describe("browser element picker controller", () => {
 
     await controller.setMode({ tabId: "browser-tab-1", enabled: true });
 
-    expect(executeFrameScript).toHaveBeenCalledTimes(1);
+    expect(executeFrameScript).toHaveBeenCalledTimes(2);
     expect(publishEvent).toHaveBeenCalledWith({
       kind: "element-picker-state",
       state: {
         tabId: "browser-tab-1",
-        enabled: true
+        enabled: true,
+        mode: "inspect",
+        owner: "manual",
+        phase: "idle"
       }
     });
   });
@@ -77,11 +80,12 @@ describe("browser element picker controller", () => {
     expect(injectedFrameIds).toContain(1);
     expect(injectedFrameIds).toContain(2);
     expect(injectedFrameIds).not.toContain(3);
-    expect(publishEvent).toHaveBeenCalledWith({
+    expect(publishEvent).toHaveBeenLastCalledWith({
       kind: "element-picker-state",
       state: {
         tabId: "browser-tab-2",
         enabled: false,
+        mode: "inspect",
         cause: "tab_switched"
       }
     });

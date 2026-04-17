@@ -91,6 +91,91 @@ export const buildElementPickerPrimeScript = (
     );
   };
 
+  const readDescribedByText = (element) => {
+    if (!(element instanceof Element)) {
+      return '';
+    }
+    return String(element.getAttribute('aria-describedby') || '')
+      .split(/\s+/)
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .map((id) => document.getElementById(id))
+      .filter((entry) => entry instanceof HTMLElement)
+      .map((entry) => normalizeText(entry.innerText || entry.textContent || '', 80))
+      .find((value) => value.length > 0) || '';
+  };
+
+  const readTooltipText = (element) => {
+    const direct = normalizeText(
+      element instanceof Element
+        ? element.getAttribute?.('title')
+          || readDescribedByText(element)
+          || ''
+        : '',
+      80
+    );
+    if (direct.length > 0) {
+      return direct;
+    }
+    return Array.from(document.querySelectorAll("[role='tooltip'], [data-radix-tooltip-content], [data-tooltip], [data-state='delayed-open']"))
+      .filter((entry) => entry instanceof HTMLElement)
+      .map((entry) => normalizeText(entry.innerText || entry.textContent || '', 80))
+      .find((value) => value.length > 0) || '';
+  };
+
+  const readCursorStyle = (element) => {
+    if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
+      return '';
+    }
+    return normalizeText(window.getComputedStyle(element).cursor || '', 32);
+  };
+
+  const readStateHint = (element) => {
+    if (!(element instanceof Element)) {
+      return '';
+    }
+    const expanded = element.getAttribute('aria-expanded');
+    if (expanded === 'true') return 'expanded';
+    if (expanded === 'false') return 'collapsed';
+    const selected = element.getAttribute('aria-selected');
+    if (selected === 'true') return 'selected';
+    if (selected === 'false') return 'unselected';
+    const pressed = element.getAttribute('aria-pressed');
+    if (pressed === 'true') return 'pressed';
+    if (pressed === 'false') return 'unpressed';
+    return normalizeText(element.getAttribute('data-state') || '', 32);
+  };
+
+  const inferAffordanceLabel = (element) => normalizeText(
+    element instanceof Element
+      ? element.getAttribute?.('aria-label')
+        || element.getAttribute?.('title')
+        || ''
+      : '',
+    80
+  );
+
+  const inferAffordanceAction = (element) => {
+    if (!(element instanceof Element)) {
+      return '';
+    }
+    const hasPopup = normalizeText(element.getAttribute?.('aria-haspopup') || '', 24);
+    if (hasPopup.length > 0) {
+      return 'open ' + hasPopup;
+    }
+    if (
+      element instanceof HTMLInputElement
+      || element instanceof HTMLTextAreaElement
+      || (element instanceof HTMLElement && element.isContentEditable)
+    ) {
+      return 'type';
+    }
+    if (readCursorStyle(element) === 'pointer') {
+      return 'click';
+    }
+    return '';
+  };
+
   const toBounds = (rect) => ({
     x: Math.round(rect.left),
     y: Math.round(rect.top),
@@ -115,7 +200,56 @@ export const buildElementPickerPrimeScript = (
     shadow.innerHTML = [
       '<style>',
       ':host { all: initial; }',
-      '.frame {',
+      '.intervention-glow {',
+      '  position: fixed;',
+      '  inset: 8px;',
+      '  border-radius: 22px;',
+      '  border: 1px solid color-mix(in srgb, ' + APPEARANCE.accentColor + ' 52%, white);',
+      '  box-shadow:',
+      '    0 0 0 1px color-mix(in srgb, ' + APPEARANCE.accentColor + ' 24%, transparent),',
+      '    0 0 48px color-mix(in srgb, ' + APPEARANCE.accentColor + ' 24%, transparent),',
+      '    inset 0 0 32px color-mix(in srgb, ' + APPEARANCE.accentColor + ' 8%, transparent);',
+      '  background: linear-gradient(180deg, color-mix(in srgb, ' + APPEARANCE.accentColor + ' 8%, transparent), transparent 24%, transparent 76%, color-mix(in srgb, ' + APPEARANCE.accentColor + ' 6%, transparent));',
+      '  display: none;',
+      '}',
+      '.intervention-pill {',
+      '  position: fixed;',
+      '  left: 50%;',
+      '  bottom: 18px;',
+      '  transform: translateX(-50%);',
+      '  display: none;',
+      '  align-items: center;',
+      '  gap: 8px;',
+      '  padding: 10px 14px;',
+      '  max-width: min(560px, calc(100vw - 28px));',
+      '  border-radius: 999px;',
+      '  border: 1px solid color-mix(in srgb, ' + APPEARANCE.accentColor + ' 22%, ' + APPEARANCE.surfaceBorder + ');',
+      '  background: color-mix(in srgb, ' + APPEARANCE.surfaceBackground + ' 90%, white);',
+      '  color: ' + APPEARANCE.textPrimary + ';',
+      '  font-family: ' + APPEARANCE.fontFamily + ';',
+      '  font-size: 12px;',
+      '  line-height: 1.2;',
+      '  box-shadow: ' + APPEARANCE.surfaceShadow + ';',
+      '  -webkit-backdrop-filter: ' + APPEARANCE.surfaceBackdropFilter + ';',
+      '  backdrop-filter: ' + APPEARANCE.surfaceBackdropFilter + ';',
+      '}',
+      '.intervention-dot {',
+      '  width: 8px;',
+      '  height: 8px;',
+      '  border-radius: 999px;',
+      '  background: ' + APPEARANCE.accentColor + ';',
+      '  box-shadow: 0 0 12px color-mix(in srgb, ' + APPEARANCE.accentColor + ' 48%, transparent);',
+      '}',
+      '.intervention-copy {',
+      '  display: inline-flex;',
+      '  gap: 6px;',
+      '  min-width: 0;',
+      '  overflow: hidden;',
+      '  text-overflow: ellipsis;',
+      '  white-space: nowrap;',
+      '}',
+      '.intervention-quiet { color: ' + APPEARANCE.textMuted + '; }',
+      '.frame, .container-frame {',
       '  position: fixed;',
       '  border: ' + APPEARANCE.strokeWidth + ' solid ' + APPEARANCE.accentColor + ';',
       '  background: ' + APPEARANCE.accentFill + ';',
@@ -123,6 +257,11 @@ export const buildElementPickerPrimeScript = (
       '  border-radius: ' + APPEARANCE.frameRadius + ';',
       '  pointer-events: none;',
       '  display: none;',
+      '}',
+      '.container-frame {',
+      '  border-style: dashed;',
+      '  background: color-mix(in srgb, ' + APPEARANCE.accentColor + ' 5%, transparent);',
+      '  box-shadow: none;',
       '}',
       '.bubble {',
       '  position: fixed;',
@@ -151,7 +290,7 @@ export const buildElementPickerPrimeScript = (
       '  min-width: 0;',
       '  margin-bottom: 4px;',
       '}',
-      '.tag, .phase {',
+      '.tag, .phase, .reveal {',
       '  display: inline-flex;',
       '  align-items: center;',
       '  min-height: 18px;',
@@ -168,6 +307,11 @@ export const buildElementPickerPrimeScript = (
       '  color: ' + APPEARANCE.textSecondary + ';',
       '  display: none;',
       '}',
+      '.reveal {',
+      '  background: color-mix(in srgb, ' + APPEARANCE.accentColor + ' 10%, transparent);',
+      '  color: ' + APPEARANCE.textMuted + ';',
+      '  display: none;',
+      '}',
       '.meta { color: ' + APPEARANCE.textSecondary + '; }',
       '.text, .selector, .size {',
       '  display: block;',
@@ -180,12 +324,16 @@ export const buildElementPickerPrimeScript = (
       '.selector { color: ' + APPEARANCE.textSecondary + '; margin-top: 2px; }',
       '.size { color: ' + APPEARANCE.textMuted + '; margin-top: 2px; }',
       '</style>',
+      '<div class="intervention-glow"></div>',
+      '<div class="intervention-pill"><span class="intervention-dot"></span><span class="intervention-copy"></span></div>',
+      '<div class="container-frame"></div>',
       '<div class="frame"></div>',
       '<div class="bubble">',
       '  <div class="row">',
       '    <span class="tag"></span>',
       '    <span class="meta"></span>',
       '    <span class="phase"></span>',
+      '    <span class="reveal"></span>',
       '  </div>',
       '  <span class="text"></span>',
       '  <span class="selector"></span>',
@@ -193,11 +341,16 @@ export const buildElementPickerPrimeScript = (
       '</div>'
     ].join('');
 
+    const interventionGlow = shadow.querySelector('.intervention-glow');
+    const interventionPill = shadow.querySelector('.intervention-pill');
+    const interventionCopy = shadow.querySelector('.intervention-copy');
+    const containerFrame = shadow.querySelector('.container-frame');
     const frame = shadow.querySelector('.frame');
     const bubble = shadow.querySelector('.bubble');
     const tag = shadow.querySelector('.tag');
     const meta = shadow.querySelector('.meta');
     const phase = shadow.querySelector('.phase');
+    const reveal = shadow.querySelector('.reveal');
     const text = shadow.querySelector('.text');
     const selector = shadow.querySelector('.selector');
     const size = shadow.querySelector('.size');
@@ -205,17 +358,23 @@ export const buildElementPickerPrimeScript = (
 
     const session = {
       root,
+      interventionGlow,
+      interventionPill,
+      interventionCopy,
+      containerFrame,
       frame,
       bubble,
       tag,
       meta,
       phase,
+      reveal,
       text,
       selector,
       size,
       previousCursor,
       mounted: false,
       manualEnabled: false,
+      manualMode: 'inspect',
       currentElement: null,
       currentSnapshot: null,
       agentTarget: null,
@@ -237,8 +396,32 @@ export const buildElementPickerPrimeScript = (
     };
 
     session.hideOverlay = () => {
+      session.interventionGlow.style.display = 'none';
+      session.interventionPill.style.display = 'none';
+      session.containerFrame.style.display = 'none';
       session.frame.style.display = 'none';
       session.bubble.style.display = 'none';
+    };
+
+    const renderIntervention = (snapshot) => {
+      const isActiveIntervention = snapshot
+        && typeof snapshot === 'object'
+        && snapshot.owner
+        && snapshot.owner !== 'agent_scan';
+      if (!isActiveIntervention) {
+        session.interventionGlow.style.display = 'none';
+        session.interventionPill.style.display = 'none';
+        session.interventionCopy.textContent = '';
+        return;
+      }
+      const phase = normalizeText(String(snapshot.phase || ''), 40);
+      const phaseLabel = phase.length > 0 ? ' · ' + phase : '';
+      const copy = snapshot.owner === 'agent_wait'
+        ? 'Lyra is monitoring this page' + phaseLabel
+        : 'Lyra is interacting with this page · avoid typing';
+      session.interventionGlow.style.display = 'block';
+      session.interventionPill.style.display = 'inline-flex';
+      session.interventionCopy.textContent = copy;
     };
 
     const placeBubble = (rect) => {
@@ -260,10 +443,21 @@ export const buildElementPickerPrimeScript = (
         session.hideOverlay();
         return;
       }
+      renderIntervention(snapshot);
       const bounds = snapshot.bounds;
       if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
         session.hideOverlay();
         return;
+      }
+      const outerBounds = snapshot.containerBounds || snapshot.widgetBounds || null;
+      if (outerBounds && outerBounds.width > 0 && outerBounds.height > 0) {
+        session.containerFrame.style.display = 'block';
+        session.containerFrame.style.left = String(outerBounds.x) + 'px';
+        session.containerFrame.style.top = String(outerBounds.y) + 'px';
+        session.containerFrame.style.width = String(outerBounds.width) + 'px';
+        session.containerFrame.style.height = String(outerBounds.height) + 'px';
+      } else {
+        session.containerFrame.style.display = 'none';
       }
       session.frame.style.display = 'block';
       session.frame.style.left = String(bounds.x) + 'px';
@@ -278,9 +472,22 @@ export const buildElementPickerPrimeScript = (
       if (typeof snapshot.inputType === 'string' && snapshot.inputType.trim().length > 0) {
         metaParts.push(snapshot.inputType.trim());
       }
+      if (typeof snapshot.widgetKind === 'string' && snapshot.widgetKind.trim().length > 0) {
+        metaParts.push(snapshot.widgetKind.trim());
+      }
+      if (typeof snapshot.cursorStyle === 'string' && snapshot.cursorStyle.trim().length > 0) {
+        metaParts.push('cursor:' + snapshot.cursorStyle.trim());
+      }
       session.meta.textContent = metaParts.join(' · ');
       const preferredText = normalizeText(
-        snapshot.ariaLabel || snapshot.placeholder || snapshot.textSnippet || '',
+        snapshot.affordanceLabel
+          || snapshot.tooltipText
+          || snapshot.stateHint
+          || snapshot.widgetLabel
+          || snapshot.ariaLabel
+          || snapshot.placeholder
+          || snapshot.textSnippet
+          || '',
         80
       );
       session.text.textContent = preferredText;
@@ -293,6 +500,18 @@ export const buildElementPickerPrimeScript = (
       } else {
         session.phase.textContent = '';
         session.phase.style.display = 'none';
+      }
+      const revealLabel = snapshot.discoveryMode === 'hover_revealed'
+        ? 'hover reveal'
+        : snapshot.discoveryMode === 'action_revealed'
+          ? 'action reveal'
+          : '';
+      if (revealLabel.length > 0) {
+        session.reveal.textContent = revealLabel;
+        session.reveal.style.display = 'inline-flex';
+      } else {
+        session.reveal.textContent = '';
+        session.reveal.style.display = 'none';
       }
       session.bubble.style.display = 'block';
       placeBubble({
@@ -333,6 +552,64 @@ export const buildElementPickerPrimeScript = (
       return event.target instanceof Element ? event.target : null;
     };
 
+    const resolveLayoutContainer = (element) => {
+      let cursor = element instanceof HTMLElement ? element : null;
+      while (cursor instanceof HTMLElement) {
+        const role = normalizeText(cursor.getAttribute?.('role') || '', 40);
+        const tag = cursor.tagName.toLowerCase();
+        const label = normalizeText([
+          cursor.id || '',
+          cursor.getAttribute?.('name') || '',
+          cursor.getAttribute?.('aria-label') || '',
+          Array.from(cursor.classList || []).join(' ')
+        ].join(' '), 200);
+        const semantic = tag === 'form'
+          || tag === 'dialog'
+          || tag === 'nav'
+          || tag === 'section'
+          || tag === 'article'
+          || role === 'dialog'
+          || role === 'toolbar'
+          || role === 'navigation'
+          || role === 'search'
+          || label.includes('composer')
+          || label.includes('chat')
+          || label.includes('search')
+          || label.includes('login')
+          || label.includes('captcha')
+          || label.includes('challenge');
+        if (semantic) {
+          return cursor;
+        }
+        cursor = cursor.parentElement;
+      }
+      return element instanceof HTMLElement ? element.parentElement : null;
+    };
+
+    const inferWidgetKind = (container, element) => {
+      if (!(container instanceof HTMLElement)) {
+        return undefined;
+      }
+      const label = normalizeText([
+        container.id || '',
+        container.getAttribute?.('name') || '',
+        container.getAttribute?.('aria-label') || '',
+        Array.from(container.classList || []).join(' ')
+      ].join(' '), 240);
+      const tag = container.tagName.toLowerCase();
+      const textboxes = container.querySelectorAll('textarea, input, [contenteditable=\"true\"], [role=\"textbox\"], [role=\"searchbox\"]');
+      const buttons = container.querySelectorAll('button, [role=\"button\"], a[href]');
+      if (label.includes('captcha') || label.includes('challenge') || label.includes('verification')) return 'protected';
+      if (label.includes('chat') || label.includes('composer') || (textboxes.length >= 1 && buttons.length >= 1 && element.getBoundingClientRect().top >= window.innerHeight * 0.45)) return 'chat-composer';
+      if (tag === 'form' && container.querySelector('input[type=\"password\"]')) return 'login-form';
+      if (label.includes('search') || container.getAttribute?.('role') === 'search') return 'search-bar';
+      if (container.getAttribute?.('role') === 'toolbar') return 'toolbar';
+      if (container.getAttribute?.('role') === 'navigation' || tag === 'nav') return 'navigation';
+      if (tag === 'dialog' || container.getAttribute?.('role') === 'dialog') return 'dialog';
+      if (tag === 'form') return 'form';
+      return 'panel';
+    };
+
     const toManualSnapshot = (element) => {
       if (!(element instanceof Element)) {
         return null;
@@ -355,6 +632,24 @@ export const buildElementPickerPrimeScript = (
       const selectorPreview = readSelectorPreview(element);
       const bounds = toBounds(rect);
       const crossOriginBoundary = tagName === 'iframe';
+      const affordanceLabel = inferAffordanceLabel(element);
+      const affordanceAction = inferAffordanceAction(element);
+      const cursorStyle = readCursorStyle(element);
+      const tooltipText = readTooltipText(element);
+      const stateHint = readStateHint(element);
+      const container = session.manualMode === 'layout' ? resolveLayoutContainer(element) : null;
+      const containerRect = container instanceof HTMLElement ? container.getBoundingClientRect() : null;
+      const widgetKind = session.manualMode === 'layout' ? inferWidgetKind(container, element) : undefined;
+      const widgetLabel = session.manualMode === 'layout' && container instanceof HTMLElement
+        ? normalizeText(
+            container.getAttribute?.('aria-label')
+              || container.getAttribute?.('name')
+              || container.id
+              || container.innerText
+              || '',
+            80
+          )
+        : '';
       return {
         kind: 'hover',
         frameTreeNodeId: FRAME_TREE_NODE_ID,
@@ -367,6 +662,16 @@ export const buildElementPickerPrimeScript = (
         ...(ariaLabel.length === 0 ? {} : { ariaLabel }),
         ...(placeholder.length === 0 ? {} : { placeholder }),
         ...(textSnippet.length === 0 ? {} : { textSnippet }),
+        ...(containerRect && containerRect.width > 0 && containerRect.height > 0
+          ? { containerBounds: toBounds(containerRect) }
+          : {}),
+        ...(widgetKind === undefined ? {} : { widgetKind }),
+        ...(widgetLabel.length === 0 ? {} : { widgetLabel }),
+        ...(affordanceLabel.length === 0 ? {} : { affordanceLabel }),
+        ...(affordanceAction.length === 0 ? {} : { affordanceAction }),
+        ...(cursorStyle.length === 0 ? {} : { cursorStyle }),
+        ...(tooltipText.length === 0 ? {} : { tooltipText }),
+        ...(stateHint.length === 0 ? {} : { stateHint }),
         ...(crossOriginBoundary ? { crossOriginBoundary: true } : {})
       };
     };
@@ -430,8 +735,9 @@ export const buildElementPickerPrimeScript = (
       session.refresh();
     };
 
-    session.setManualMode = (enabled) => {
+    session.setManualMode = (enabled, mode = 'inspect') => {
       session.manualEnabled = enabled === true;
+      session.manualMode = mode === 'layout' ? 'layout' : 'inspect';
       document.documentElement.style.cursor = session.manualEnabled ? 'crosshair' : session.previousCursor;
       session.renderActive();
     };
@@ -492,14 +798,17 @@ export const buildElementPickerPrimeScript = (
 })();
 `;
 
-export const buildElementPickerSetManualModeScript = (enabled: boolean): string => `
+export const buildElementPickerSetManualModeScript = (
+  enabled: boolean,
+  mode: "inspect" | "layout" = "inspect"
+): string => `
 (() => {
   const SESSION_KEY = ${quote(SESSION_KEY)};
   const session = window[SESSION_KEY];
   if (!session || typeof session.setManualMode !== 'function') {
     return false;
   }
-  session.setManualMode(${enabled ? "true" : "false"});
+  session.setManualMode(${enabled ? "true" : "false"}, ${quote(mode)});
   return true;
 })();
 `;

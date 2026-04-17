@@ -21,8 +21,12 @@ import type { WorkbenchObservationService } from "../workbench-observation/types
 import type { WorkbenchDocumentsService } from "../workbench-documents/types";
 import type { WorkbenchWebAutomationService } from "../workbench-web-automation/types";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
+import type { BrowserUseService } from "../browser-use/types";
+import type { LyraRuntimeClient } from "../runtime-client";
 import { registerBrowserCapabilities } from "./adapters/browser";
 import { registerDocumentCapabilities } from "./adapters/documents";
+import { registerBrowserUseCapabilities } from "./adapters/browser-use";
+import { registerCodeIntelCapabilities } from "./adapters/code-intel";
 import { registerFilesystemCapabilities } from "./adapters/files";
 import { registerMcpCapabilities } from "./adapters/mcp";
 import { registerTerminalCapabilities } from "./adapters/terminal";
@@ -44,22 +48,28 @@ const publishToWindow = (
 export const createCapabilitiesIpcBridge = ({
   filesNativeBindings,
   filesStorageRoot,
+  codeIntelStorageRoot,
+  runtimeClient,
   terminalBridge,
   mcpBridge,
   workbenchBrowserBridge,
   workbenchObservationService,
   workbenchDocumentsService,
   workbenchWebAutomationService,
+  browserUseService,
   getWindow
 }: {
   readonly filesNativeBindings: FilesNativeBindings;
   readonly filesStorageRoot: string;
+  readonly codeIntelStorageRoot: string;
+  readonly runtimeClient: LyraRuntimeClient;
   readonly terminalBridge: TerminalIpcBridge;
   readonly mcpBridge: McpIpcBridge;
   readonly workbenchBrowserBridge: WorkbenchBrowserIpcBridge;
   readonly workbenchObservationService: WorkbenchObservationService;
   readonly workbenchDocumentsService: WorkbenchDocumentsService;
   readonly workbenchWebAutomationService: WorkbenchWebAutomationService;
+  readonly browserUseService: BrowserUseService;
   readonly getWindow: () => BrowserWindow | null;
 }): CapabilitiesIpcBridge => {
   const appRegistry = new AppRegistry();
@@ -72,10 +82,20 @@ export const createCapabilitiesIpcBridge = ({
   });
 
   appRegistry.register(
-    registerFilesystemCapabilities(capabilityRegistry, filesNativeBindings, filesStorageRoot)
+    registerFilesystemCapabilities(
+      capabilityRegistry,
+      filesNativeBindings,
+      filesStorageRoot,
+      runtimeClient,
+      codeIntelStorageRoot
+    )
+  );
+  appRegistry.register(
+    registerCodeIntelCapabilities(capabilityRegistry, runtimeClient, codeIntelStorageRoot)
   );
   appRegistry.register(registerTerminalCapabilities(capabilityRegistry, terminalBridge));
   appRegistry.register(registerBrowserCapabilities(capabilityRegistry, workbenchBrowserBridge));
+  appRegistry.register(registerBrowserUseCapabilities(capabilityRegistry, browserUseService));
   appRegistry.register(registerMcpCapabilities(capabilityRegistry, mcpBridge));
   appRegistry.register(
     registerWorkbenchCapabilities(

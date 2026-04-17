@@ -33,10 +33,13 @@ import {
   buildFrameDomProbeScript,
   normalizeFrameDomProbeResult
 } from "./frame-probe";
+import { createWorkbenchBrowserSharedDebuggerSession } from "./debugger";
 import { createWorkbenchBrowserElementPickerController } from "./element-picker/controller";
 import { extractTextFromPage } from "./page-text-extractor";
 import type {
+  WorkbenchBrowserDebuggerSession,
   WorkbenchBrowserElementPickerController,
+  WorkbenchBrowserFrameGlobalBounds,
   WorkbenchBrowserNativeInputEvent,
   WorkbenchBrowserPublishEvent,
   WorkbenchBrowserViewManager
@@ -227,6 +230,36 @@ const delay = async (ms: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
+const normalizeExecuteScriptTimeoutMs = (value: unknown, fallback = 8_000): number => {
+  if (typeof value !== "number" || Number.isFinite(value) === false) {
+    return fallback;
+  }
+  return Math.max(250, Math.min(30_000, Math.round(value)));
+};
+
+const runFrameScriptWithTimeout = async <T>(
+  execute: () => Promise<T>,
+  timeoutMs: number
+): Promise<T> => {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeoutHandle = setTimeout(() => {
+      const error = new Error(`frame script timed out after ${timeoutMs}ms`) as Error & {
+        readonly code?: string;
+      };
+      (error as { code: string }).code = "script_execution_timeout";
+      reject(error);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([execute(), timeoutPromise]);
+  } finally {
+    if (timeoutHandle !== null) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+};
+
 const toNativeInputEvent = (event: WorkbenchBrowserNativeInputEvent):
   | Electron.MouseInputEvent
   | Electron.MouseWheelInputEvent
@@ -261,6 +294,10 @@ export const createWorkbenchBrowserViewManager = ({
   readonly publishEvent: WorkbenchBrowserPublishEvent;
 }): WorkbenchBrowserViewManager => {
   const entries = new Map<string, BrowserPageEntry>();
+  const debuggerSessions = new Map<
+    string,
+    ReturnType<typeof createWorkbenchBrowserSharedDebuggerSession>
+  >();
   const overlayView = new View();
   let overlayAttached = false;
   let topology: WorkbenchBrowserTopologySnapshot = {
@@ -438,6 +475,8 @@ export const createWorkbenchBrowserViewManager = ({
       return;
     }
     entry.isDestroyed = true;
+    void debuggerSessions.get(entry.tabId)?.dispose().catch(() => undefined);
+    debuggerSessions.delete(entry.tabId);
     elementPickerController.handlePageClosed(entry.tabId);
     const window = getWindow();
     if (window !== null && window.isDestroyed() === false && entry.attached) {
@@ -724,17 +763,25 @@ export const createWorkbenchBrowserViewManager = ({
             readonly script: string;
             readonly frameTreeNodeId?: number;
             readonly userGesture?: boolean;
+            readonly timeoutMs?: number;
           }
         ) => {
           const entry = requireEntry(tabId);
+          const timeoutMs = normalizeExecuteScriptTimeoutMs(request.timeoutMs);
           if (typeof request.frameTreeNodeId === "number" && Number.isFinite(request.frameTreeNodeId)) {
             const frame = findFrame(entry, Math.round(request.frameTreeNodeId));
             if (frame === null) {
               throw new Error(`Unknown browser frame: ${request.frameTreeNodeId}`);
             }
-            return await frame.executeJavaScript(request.script, request.userGesture === true);
+            return await runFrameScriptWithTimeout(
+              () => frame.executeJavaScript(request.script, request.userGesture === true),
+              timeoutMs
+            );
           }
-          return await entry.webContents.executeJavaScript(request.script, request.userGesture === true);
+          return await runFrameScriptWithTimeout(
+            () => entry.webContents.executeJavaScript(request.script, request.userGesture === true),
+            timeoutMs
+          );
         }
       }
     });
@@ -911,6 +958,10 @@ export const createWorkbenchBrowserViewManager = ({
   return {
     dispose: () => {
       void elementPickerController.dispose();
+      for (const session of debuggerSessions.values()) {
+        void session.dispose().catch(() => undefined);
+      }
+      debuggerSessions.clear();
       for (const entry of entries.values()) {
         destroyEntry(entry, false);
       }
@@ -1018,7 +1069,12 @@ export const createWorkbenchBrowserViewManager = ({
       await elementPickerController.setMode({
         tabId,
         enabled: request.enabled === true,
-        ...(request.enabled === true ? { appearance: request.appearance } : {})
+        ...(request.enabled === true
+          ? {
+              appearance: request.appearance,
+              mode: request.mode
+            }
+          : {})
       });
     },
     showAgentElementPickerTarget: async (target: WorkbenchBrowserAgentTargetInfo) => {
@@ -1094,20 +1150,28 @@ export const createWorkbenchBrowserViewManager = ({
         readonly script: string;
         readonly frameTreeNodeId?: number;
         readonly userGesture?: boolean;
+        readonly timeoutMs?: number;
       }
     ) => {
       if (typeof request.script !== "string" || request.script.trim().length === 0) {
         throw new Error("script is required");
       }
       const entry = requireEntry(tabId);
+      const timeoutMs = normalizeExecuteScriptTimeoutMs(request.timeoutMs);
       if (typeof request.frameTreeNodeId === "number" && Number.isFinite(request.frameTreeNodeId)) {
         const frame = findFrame(entry, Math.round(request.frameTreeNodeId));
         if (frame === null) {
           throw new Error(`Unknown browser frame: ${request.frameTreeNodeId}`);
         }
-        return await frame.executeJavaScript(request.script, request.userGesture === true);
+        return await runFrameScriptWithTimeout(
+          () => frame.executeJavaScript(request.script, request.userGesture === true),
+          timeoutMs
+        );
       }
-      return await entry.webContents.executeJavaScript(request.script, request.userGesture === true);
+      return await runFrameScriptWithTimeout(
+        () => entry.webContents.executeJavaScript(request.script, request.userGesture === true),
+        timeoutMs
+      );
     },
     dispatchNativeInput: async (
       tabId: string,
@@ -1119,6 +1183,20 @@ export const createWorkbenchBrowserViewManager = ({
         entry.webContents.sendInputEvent(toNativeInputEvent(event));
         await delay(Math.max(0, Math.min(2_000, Math.round(event.delayMs ?? 0))));
       }
+    },
+    openDebuggerSession: async (tabId: string): Promise<WorkbenchBrowserDebuggerSession> => {
+      const entry = requireEntry(tabId);
+      const existing = debuggerSessions.get(tabId);
+      if (existing !== undefined) {
+        return await existing.acquire();
+      }
+      const created = createWorkbenchBrowserSharedDebuggerSession({
+        tabId,
+        webContents: entry.webContents,
+        readPageAddress: () => entries.get(tabId)?.runtime.address,
+      });
+      debuggerSessions.set(tabId, created);
+      return await created.acquire();
     },
     fetchWithTabSession: async (tabId, request) => {
       const entry = requireEntry(tabId);
@@ -1151,6 +1229,95 @@ export const createWorkbenchBrowserViewManager = ({
     readPageDomSummary,
     extractPageText,
     capturePage,
+    resolveFrameGlobalBounds: async (
+      tabId: string,
+      frameTreeNodeId: number
+    ): Promise<WorkbenchBrowserFrameGlobalBounds | null> => {
+      const entry = entries.get(tabId);
+      if (entry === undefined || entry.isDestroyed) {
+        return null;
+      }
+      const targetFrame = findFrame(entry, frameTreeNodeId);
+      if (targetFrame === null) {
+        return null;
+      }
+      // If this is the main frame, the bounds come from the view layout directly.
+      if (targetFrame.frameTreeNodeId === entry.webContents.mainFrame.frameTreeNodeId) {
+        const layout = findLayout(tabId);
+        if (layout === null) {
+          return null;
+        }
+        return { x: layout.x, y: layout.y, width: layout.width, height: layout.height };
+      }
+      // Walk up the frame tree, accumulating iframe element bounds.
+      // Each parent frame runs a script to find the child iframe element's position.
+      try {
+        let currentFrame = targetFrame;
+        let accumulatedX = 0;
+        let accumulatedY = 0;
+        let boundsWidth = 0;
+        let boundsHeight = 0;
+        let firstIteration = true;
+        while (currentFrame.parent !== null && !currentFrame.parent.isDestroyed()) {
+          const parentFrame = currentFrame.parent;
+          const childFrameTreeNodeId = currentFrame.frameTreeNodeId;
+          // Ask parent frame where the child iframe element is located.
+          const result = await parentFrame.executeJavaScript(`
+            (() => {
+              const childFrameId = ${childFrameTreeNodeId};
+              const iframes = Array.from(document.querySelectorAll("iframe, frame"));
+              for (const iframe of iframes) {
+                // Match by name or by iterating WebFrameMain.framesInSubtree
+                const rect = iframe.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) {
+                  continue;
+                }
+                // We return the first visible iframe that could match.
+                // Electron's contentFrame matching is done by the parent having
+                // called executeJavaScript on the correct parent WebFrameMain.
+                return {
+                  x: Math.round(rect.left),
+                  y: Math.round(rect.top),
+                  width: Math.round(rect.width),
+                  height: Math.round(rect.height),
+                  count: iframes.length
+                };
+              }
+              return null;
+            })()
+          `, false) as { x: number; y: number; width: number; height: number; count: number } | null;
+          if (result === null) {
+            return null;
+          }
+          accumulatedX += result.x;
+          accumulatedY += result.y;
+          if (firstIteration) {
+            boundsWidth = result.width;
+            boundsHeight = result.height;
+            firstIteration = false;
+          }
+          // If the parent is the main frame, we're done traversing frames.
+          if (parentFrame.frameTreeNodeId === entry.webContents.mainFrame.frameTreeNodeId) {
+            break;
+          }
+          currentFrame = parentFrame;
+        }
+        // Add the WebContentsView layout offset (view position within the Electron window).
+        const layout = findLayout(tabId);
+        if (layout !== null) {
+          accumulatedX += layout.x;
+          accumulatedY += layout.y;
+        }
+        return {
+          x: accumulatedX,
+          y: accumulatedY,
+          width: boundsWidth,
+          height: boundsHeight
+        };
+      } catch {
+        return null;
+      }
+    },
     reapplyLayout: () => {
       applyLayout();
     },

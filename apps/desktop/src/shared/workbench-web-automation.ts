@@ -59,6 +59,10 @@ export type WorkbenchWebElementNode = {
   readonly checked?: boolean | undefined;
   readonly disabled?: boolean | undefined;
   readonly frameUrl?: string | undefined;
+  readonly widgetId?: string | undefined;
+  readonly ownerWidgetId?: string | undefined;
+  readonly widgetKind?: WorkbenchWebWidgetKind | undefined;
+  readonly itemLabel?: string | undefined;
 };
 
 export type WorkbenchWebGraphEdge = {
@@ -146,7 +150,7 @@ export type WorkbenchWebGraphQueryResult = {
 };
 
 export type WorkbenchWebTargetIntent = {
-  readonly operation: "click" | "type" | "focus" | "select" | "submit";
+  readonly operation: "click" | "hover" | "type" | "focus" | "select" | "submit";
   readonly desiredRoles?: readonly string[] | undefined;
   readonly desiredTags?: readonly string[] | undefined;
   readonly textHints?: readonly string[] | undefined;
@@ -155,6 +159,435 @@ export type WorkbenchWebTargetIntent = {
 };
 
 export type WorkbenchWebTargetScanScope = "visible" | "nearby" | "expanded";
+
+export type WorkbenchWebPageMode =
+  | "chat"
+  | "form"
+  | "search"
+  | "login"
+  | "navigation"
+  | "reader"
+  | "settings"
+  | "feed"
+  | "unknown";
+
+export type WorkbenchWebLayoutNode = {
+  readonly nodeId: string;
+  readonly frameTreeNodeId: number;
+  readonly kind: "interactive" | "container";
+  readonly tagName: string;
+  readonly role?: string | undefined;
+  readonly label?: string | undefined;
+  readonly selectorPreview: string;
+  readonly bounds: WorkbenchWebElementBounds;
+  readonly widgetId?: string | undefined;
+};
+
+export type WorkbenchWebContainerNode = {
+  readonly containerId: string;
+  readonly frameTreeNodeId: number;
+  readonly tagName: string;
+  readonly role?: string | undefined;
+  readonly label?: string | undefined;
+  readonly selectorAddress: WorkbenchWebSelectorAddress;
+  readonly selectorPreview: string;
+  readonly bounds: WorkbenchWebElementBounds;
+  readonly memberNodeIds: readonly string[];
+  readonly protected?: boolean | undefined;
+};
+
+export type WorkbenchWebWidgetKind =
+  | "sidebar"
+  | "history-list"
+  | "history-item"
+  | "composer"
+  | "chat-composer"
+  | "search-bar"
+  | "login-form"
+  | "toolbar"
+  | "toggle-group"
+  | "mode-switcher"
+  | "pagination"
+  | "menu"
+  | "menu-trigger"
+  | "menu-panel"
+  | "dialog"
+  | "form"
+  | "navigation"
+  | "list"
+  | "list-item"
+  | "card"
+  | "panel"
+  | "protected"
+  | "unknown";
+
+export type WorkbenchWebTargetDiscoveryMode =
+  | "static"
+  | "hover_revealed"
+  | "action_revealed";
+
+export type WorkbenchWebItemIdentity = {
+  readonly label?: string | undefined;
+  readonly title?: string | undefined;
+};
+
+export type WorkbenchWebSurfaceAffordanceHintKind =
+  | "reveal"
+  | "tooltip"
+  | "cursor"
+  | "state"
+  | "focus";
+
+export type WorkbenchWebSurfaceAffordanceHint = {
+  readonly kind: WorkbenchWebSurfaceAffordanceHintKind;
+  readonly label: string;
+  readonly detail?: string | undefined;
+};
+
+export type WorkbenchWebSurfaceRegion = {
+  readonly kind: "workflow" | "reveal";
+  readonly label: string;
+  readonly bounds: WorkbenchWebElementBounds;
+};
+
+export type WorkbenchWebFocusDiscoveryMode = "computed" | "probe_verified";
+
+export type WorkbenchWebFocusRegionKind =
+  | "navigation"
+  | "history"
+  | "workflow"
+  | "composer"
+  | "toolbar"
+  | "menu"
+  | "panel"
+  | "unknown";
+
+export type WorkbenchWebFocusNode = {
+  readonly focusNodeId: string;
+  readonly candidateId?: string | undefined;
+  readonly widgetId?: string | undefined;
+  readonly ownerWidgetId?: string | undefined;
+  readonly widgetKind?: WorkbenchWebWidgetKind | undefined;
+  readonly itemIdentity?: WorkbenchWebItemIdentity | undefined;
+  readonly label: string;
+  readonly actionLabel?: string | undefined;
+  readonly selectorPreview: string;
+  readonly bounds: WorkbenchWebElementBounds;
+  readonly focusOrder: number;
+  readonly focusRegionId: string;
+  readonly discoveryMode: WorkbenchWebFocusDiscoveryMode;
+  readonly confidence: number;
+  readonly focusable: boolean;
+  readonly clickable: boolean;
+  readonly humanOperable: boolean;
+  readonly pointerOnly?: boolean | undefined;
+};
+
+export type WorkbenchWebFocusRegion = {
+  readonly regionId: string;
+  readonly kind: WorkbenchWebFocusRegionKind;
+  readonly label: string;
+  readonly bounds: WorkbenchWebElementBounds;
+  readonly nodeIds: readonly string[];
+  readonly widgetIds: readonly string[];
+  readonly primaryControlId?: string | undefined;
+  readonly collapsed?: boolean | undefined;
+  readonly confidence: number;
+};
+
+export type WorkbenchWebFocusAtlas = {
+  readonly tabId: string;
+  readonly pageMode: WorkbenchWebPageMode;
+  readonly version: string;
+  readonly builtAt: number;
+  readonly activeFocusRegionId?: string | undefined;
+  readonly nodes: readonly WorkbenchWebFocusNode[];
+  readonly regions: readonly WorkbenchWebFocusRegion[];
+  readonly skeleton: readonly string[];
+};
+
+export type WorkbenchWebFocusReadRequest = {
+  readonly tabId?: string | undefined;
+  readonly refresh?: boolean | undefined;
+};
+
+export type WorkbenchWebFocusReadResult = {
+  readonly tabId: string;
+  readonly refreshed: boolean;
+  readonly cached: boolean;
+  readonly atlas: WorkbenchWebFocusAtlas;
+  readonly diagnostics: {
+    readonly durationMs: number;
+    readonly candidateCount: number;
+    readonly widgetCount: number;
+  };
+};
+
+export type WorkbenchWebInterventionMode = "none" | "watch" | "active";
+
+export type WorkbenchWebInterventionState = {
+  readonly mode: WorkbenchWebInterventionMode;
+  readonly label: string;
+  readonly detail?: string | undefined;
+};
+
+export type WorkbenchWebNodeRef = {
+  readonly nodeId: string;
+  readonly revision: string;
+  readonly scanSessionId?: string | undefined;
+  readonly stableFingerprint?: WorkbenchWebElementSignature | undefined;
+};
+
+export type WorkbenchWebSkeletonRegionKind =
+  | "header"
+  | "sidebar"
+  | "content"
+  | "dialog"
+  | "form"
+  | "table"
+  | "menu"
+  | "list"
+  | "composer"
+  | "toolbar"
+  | "unknown";
+
+export type WorkbenchWebSkeletonRegion = {
+  readonly regionId: string;
+  readonly kind: WorkbenchWebSkeletonRegionKind;
+  readonly label: string;
+  readonly bounds: WorkbenchWebElementBounds;
+  readonly nodeIds: readonly string[];
+  readonly primaryNodeId?: string | undefined;
+  readonly widgetIds: readonly string[];
+  readonly revision: string;
+  readonly confidence?: number | undefined;
+};
+
+export type WorkbenchWebSkeletonNodeCapabilities = {
+  readonly clickable: boolean;
+  readonly editable: boolean;
+  readonly selectable: boolean;
+  readonly checkable: boolean;
+  readonly expandable: boolean;
+  readonly uploadable: boolean;
+  readonly downloadable: boolean;
+  readonly keyboardReachable: boolean;
+};
+
+export type WorkbenchWebSkeletonNodeState = {
+  readonly visible: boolean;
+  readonly enabled: boolean;
+  readonly readonly: boolean;
+  readonly checked?: boolean | undefined;
+  readonly selected?: boolean | undefined;
+  readonly expanded?: boolean | undefined;
+  readonly required?: boolean | undefined;
+  readonly invalid?: boolean | undefined;
+};
+
+export type WorkbenchWebSkeletonNode = {
+  readonly nodeRef: WorkbenchWebNodeRef;
+  readonly nodeId: string;
+  readonly role?: string | undefined;
+  readonly name?: string | undefined;
+  readonly text?: string | undefined;
+  readonly label?: string | undefined;
+  readonly placeholder?: string | undefined;
+  readonly tag?: string | undefined;
+  readonly selectorPreview: string;
+  readonly capabilities: WorkbenchWebSkeletonNodeCapabilities;
+  readonly state: WorkbenchWebSkeletonNodeState;
+  readonly parentId?: string | undefined;
+  readonly childrenIds?: readonly string[] | undefined;
+  readonly groupId?: string | undefined;
+  readonly regionId?: string | undefined;
+  readonly labelFor?: string | undefined;
+  readonly describedBy?: readonly string[] | undefined;
+  readonly formOwner?: string | undefined;
+  readonly stableFingerprint: WorkbenchWebElementSignature;
+  readonly revision: string;
+  readonly rect: WorkbenchWebElementBounds;
+  readonly semanticallyActionable: boolean;
+  readonly actuallyVisible: boolean;
+  readonly hitTestPassed?: boolean | undefined;
+  readonly interactableNow: boolean;
+  readonly widgetId?: string | undefined;
+  readonly widgetKind?: WorkbenchWebWidgetKind | undefined;
+  readonly ownerWidgetId?: string | undefined;
+  readonly focusOrder?: number | undefined;
+  readonly humanOperableScore?: number | undefined;
+  readonly withinCurrentWorkflow?: boolean | undefined;
+};
+
+export type WorkbenchWebSkeletonReadRequest = {
+  readonly tabId?: string | undefined;
+  readonly scope?: WorkbenchWebTargetScanScope | undefined;
+  readonly maxNodes?: number | undefined;
+  readonly refresh?: boolean | undefined;
+};
+
+export type WorkbenchWebSkeletonReadResult = {
+  readonly tabId: string;
+  readonly scanSessionId: string;
+  readonly pageMode: WorkbenchWebPageMode;
+  readonly skeletonVersion: string;
+  readonly activeRegionId?: string | undefined;
+  readonly regions: readonly WorkbenchWebSkeletonRegion[];
+  readonly nodes: readonly WorkbenchWebSkeletonNode[];
+  readonly bestNode?: WorkbenchWebSkeletonNode | undefined;
+  readonly intervention: WorkbenchWebInterventionState;
+  readonly diagnostics: {
+    readonly durationMs: number;
+    readonly candidateCount: number;
+    readonly regionCount: number;
+    readonly scannedFrames: number;
+    readonly scannedCandidates: number;
+    readonly expanded: boolean;
+    readonly scrolled: boolean;
+  };
+};
+
+export type WorkbenchWebQueryStateFilter = {
+  readonly checked?: boolean | undefined;
+  readonly selected?: boolean | undefined;
+  readonly expanded?: boolean | undefined;
+  readonly disabled?: boolean | undefined;
+  readonly invalid?: boolean | undefined;
+  readonly required?: boolean | undefined;
+  readonly readonly?: boolean | undefined;
+  readonly visible?: boolean | undefined;
+};
+
+export type WorkbenchWebQueryRequest = {
+  readonly tabId?: string | undefined;
+  readonly role?: string | readonly string[] | undefined;
+  readonly name?: string | undefined;
+  readonly text?: string | undefined;
+  readonly state?: WorkbenchWebQueryStateFilter | undefined;
+  readonly within?: string | undefined;
+  readonly near?: string | undefined;
+  readonly regionId?: string | undefined;
+  readonly groupId?: string | undefined;
+  readonly index?: number | undefined;
+  readonly maxResults?: number | undefined;
+  readonly inDialog?: boolean | undefined;
+  readonly underMenu?: boolean | undefined;
+  readonly inTableRow?: boolean | undefined;
+  readonly before?: string | undefined;
+  readonly after?: string | undefined;
+  readonly currentSubgoal?: string | undefined;
+  readonly refresh?: boolean | undefined;
+};
+
+export type WorkbenchWebQueryResult = {
+  readonly tabId: string;
+  readonly scanSessionId: string;
+  readonly pageMode: WorkbenchWebPageMode;
+  readonly skeletonVersion: string;
+  readonly activeRegionId?: string | undefined;
+  readonly matches: readonly WorkbenchWebSkeletonNode[];
+  readonly bestMatch?: WorkbenchWebSkeletonNode | undefined;
+  readonly ambiguous: boolean;
+  readonly querySatisfied: boolean;
+  readonly diagnostics: {
+    readonly durationMs: number;
+    readonly candidateCount: number;
+  };
+};
+
+export type WorkbenchWebContextReadScope = "node" | "neighborhood" | "region" | "page";
+
+export type WorkbenchWebContextReadRequest = {
+  readonly tabId?: string | undefined;
+  readonly nodeRef?: WorkbenchWebNodeRef | undefined;
+  readonly regionId?: string | undefined;
+  readonly scope?: WorkbenchWebContextReadScope | undefined;
+  readonly maxNodes?: number | undefined;
+  readonly currentSubgoal?: string | undefined;
+  readonly refresh?: boolean | undefined;
+};
+
+export type WorkbenchWebContextReadResult = {
+  readonly tabId: string;
+  readonly scanSessionId: string;
+  readonly pageMode: WorkbenchWebPageMode;
+  readonly skeletonVersion: string;
+  readonly activeRegionId?: string | undefined;
+  readonly scope: WorkbenchWebContextReadScope;
+  readonly node?: WorkbenchWebSkeletonNode | undefined;
+  readonly region?: WorkbenchWebSkeletonRegion | undefined;
+  readonly nodes: readonly WorkbenchWebSkeletonNode[];
+  readonly diagnostics: {
+    readonly durationMs: number;
+    readonly candidateCount: number;
+    readonly regionCount: number;
+  };
+};
+
+export type WorkbenchWebOperabilityReadRequest = {
+  readonly tabId?: string | undefined;
+  readonly scope?: WorkbenchWebTargetScanScope | undefined;
+  readonly maxTargets?: number | undefined;
+  readonly refresh?: boolean | undefined;
+};
+
+export type WorkbenchWebSurfaceControl = {
+  readonly controlId: string;
+  readonly widgetId?: string | undefined;
+  readonly ownerWidgetId?: string | undefined;
+  readonly widgetKind?: WorkbenchWebWidgetKind | undefined;
+  readonly itemIdentity?: WorkbenchWebItemIdentity | undefined;
+  readonly label: string;
+  readonly actionLabel?: string | undefined;
+  readonly description?: string | undefined;
+  readonly bounds: WorkbenchWebElementBounds;
+  readonly hovered?: boolean | undefined;
+  readonly active?: boolean | undefined;
+  readonly revealed?: boolean | undefined;
+  readonly humanOperable: boolean;
+  readonly cursorStyle?: string | undefined;
+  readonly tooltipText?: string | undefined;
+  readonly focusOrder?: number | undefined;
+  readonly focusRegionId?: string | undefined;
+  readonly atlasConfidence?: number | undefined;
+  readonly inActiveFocusRegion?: boolean | undefined;
+};
+
+export type WorkbenchWebSurfaceModel = {
+  readonly pointerTargetId?: string | undefined;
+  readonly hoverTargetId?: string | undefined;
+  readonly activeWidgetId?: string | undefined;
+  readonly activeItemId?: string | undefined;
+  readonly controls: readonly WorkbenchWebSurfaceControl[];
+  readonly hints: readonly WorkbenchWebSurfaceAffordanceHint[];
+  readonly workflowRegion?: WorkbenchWebSurfaceRegion | undefined;
+  readonly revealRegion?: WorkbenchWebSurfaceRegion | undefined;
+};
+
+export type WorkbenchWebWidgetDescriptor = {
+  readonly widgetId: string;
+  readonly kind: WorkbenchWebWidgetKind;
+  readonly frameTreeNodeId: number;
+  readonly containerId?: string | undefined;
+  readonly parentWidgetId?: string | undefined;
+  readonly ownerWidgetId?: string | undefined;
+  readonly label?: string | undefined;
+  readonly description?: string | undefined;
+  readonly selectorPreview: string;
+  readonly bounds: WorkbenchWebElementBounds;
+  readonly memberNodeIds: readonly string[];
+  readonly primaryFieldNodeId?: string | undefined;
+  readonly primaryActionNodeId?: string | undefined;
+  readonly secondaryActionNodeIds?: readonly string[] | undefined;
+  readonly requiresHoverReveal?: boolean | undefined;
+  readonly opensPanel?: boolean | undefined;
+  readonly transientRevealed?: boolean | undefined;
+  readonly stateHint?: string | undefined;
+  readonly itemIdentity?: WorkbenchWebItemIdentity | undefined;
+  readonly protected?: boolean | undefined;
+  readonly focusRegionId?: string | undefined;
+  readonly atlasConfidence?: number | undefined;
+};
 
 export type WorkbenchWebTargetCandidateInteractable = {
   readonly clickable: boolean;
@@ -181,12 +614,34 @@ export type WorkbenchWebTargetCandidate = {
     readonly width: number;
     readonly height: number;
   };
+  readonly affordanceLabel?: string | undefined;
+  readonly affordanceAction?: string | undefined;
+  readonly cursorStyle?: string | undefined;
+  readonly tooltipText?: string | undefined;
+  readonly stateHint?: string | undefined;
+  readonly isHumanOperable?: boolean | undefined;
+  readonly discoveryMode?: WorkbenchWebTargetDiscoveryMode | undefined;
+  readonly widgetId?: string | undefined;
+  readonly ownerWidgetId?: string | undefined;
+  readonly widgetKind?: WorkbenchWebWidgetKind | undefined;
+  readonly itemIdentity?: WorkbenchWebItemIdentity | undefined;
+  readonly focusOrder?: number | undefined;
+  readonly focusRegionId?: string | undefined;
+  readonly atlasConfidence?: number | undefined;
+  readonly inActiveFocusRegion?: boolean | undefined;
   readonly score: number;
+  readonly humanOperableScore?: number | undefined;
+  readonly keyboardReachable?: boolean | undefined;
+  readonly withinCurrentWorkflow?: boolean | undefined;
 };
 
 export type WorkbenchWebTargetScanRequest = {
   readonly tabId?: string | undefined;
   readonly intent: WorkbenchWebTargetIntent;
+  readonly readOnly?: boolean | undefined;
+  readonly widgetId?: string | undefined;
+  readonly regionId?: string | undefined;
+  readonly currentSubgoal?: string | undefined;
   readonly scope?: WorkbenchWebTargetScanScope | undefined;
   readonly maxCandidates?: number | undefined;
   readonly continuationToken?: string | undefined;
@@ -196,10 +651,80 @@ export type WorkbenchWebTargetScanResult = {
   readonly tabId: string;
   readonly scanSessionId: string;
   readonly scope: WorkbenchWebTargetScanScope;
+  readonly pageMode: WorkbenchWebPageMode;
+  readonly focusAtlasReady?: boolean | undefined;
+  readonly focusAtlasVersion?: string | undefined;
+  readonly activeFocusRegionId?: string | undefined;
+  readonly surface?: WorkbenchWebSurfaceModel | undefined;
+  readonly widgets?: readonly WorkbenchWebWidgetDescriptor[] | undefined;
   readonly bestCandidate?: WorkbenchWebTargetCandidate | undefined;
   readonly candidates: readonly WorkbenchWebTargetCandidate[];
   readonly truncated: boolean;
   readonly continuationToken?: string | undefined;
+  readonly diagnostics: {
+    readonly scannedFrames: number;
+    readonly scannedCandidates: number;
+    readonly expanded: boolean;
+    readonly scrolled: boolean;
+    readonly durationMs: number;
+  };
+};
+
+export type WorkbenchWebOperabilityReadResult = {
+  readonly tabId: string;
+  readonly scanSessionId: string;
+  readonly scope: WorkbenchWebTargetScanScope;
+  readonly pageMode: WorkbenchWebPageMode;
+  readonly focusAtlasReady: true;
+  readonly focusAtlasVersion: string;
+  readonly activeFocusRegionId?: string | undefined;
+  readonly atlas: WorkbenchWebFocusAtlas;
+  readonly regions: readonly WorkbenchWebFocusRegion[];
+  readonly surface?: WorkbenchWebSurfaceModel | undefined;
+  readonly widgets: readonly WorkbenchWebWidgetDescriptor[];
+  readonly bestCandidate?: WorkbenchWebTargetCandidate | undefined;
+  readonly primaryTarget?: WorkbenchWebTargetCandidate | undefined;
+  readonly topTargets: readonly WorkbenchWebTargetCandidate[];
+  readonly candidates: readonly WorkbenchWebTargetCandidate[];
+  readonly truncated: boolean;
+  readonly continuationToken?: string | undefined;
+  readonly intervention: WorkbenchWebInterventionState;
+  readonly diagnostics: {
+    readonly scannedFrames: number;
+    readonly scannedCandidates: number;
+    readonly expanded: boolean;
+    readonly scrolled: boolean;
+    readonly durationMs: number;
+  };
+};
+
+export type WorkbenchWebFocusProbeRequest = {
+  readonly tabId?: string | undefined;
+  readonly widgetId?: string | undefined;
+  readonly focusRegionId?: string | undefined;
+  readonly target?: WorkbenchWebActionTarget | undefined;
+  readonly refresh?: boolean | undefined;
+};
+
+export type WorkbenchWebWidgetScanRequest = {
+  readonly tabId?: string | undefined;
+  readonly scope?: WorkbenchWebTargetScanScope | undefined;
+  readonly maxWidgets?: number | undefined;
+};
+
+export type WorkbenchWebWidgetScanResult = {
+  readonly tabId: string;
+  readonly scanSessionId: string;
+  readonly scope: WorkbenchWebTargetScanScope;
+  readonly pageMode: WorkbenchWebPageMode;
+  readonly focusAtlasReady?: boolean | undefined;
+  readonly focusAtlasVersion?: string | undefined;
+  readonly activeFocusRegionId?: string | undefined;
+  readonly surface?: WorkbenchWebSurfaceModel | undefined;
+  readonly widgets: readonly WorkbenchWebWidgetDescriptor[];
+  readonly layoutNodes: readonly WorkbenchWebLayoutNode[];
+  readonly containerNodes: readonly WorkbenchWebContainerNode[];
+  readonly truncated: boolean;
   readonly diagnostics: {
     readonly scannedFrames: number;
     readonly scannedCandidates: number;
@@ -235,9 +760,23 @@ export type WorkbenchWebActionTarget = {
   readonly candidateId?: string | undefined;
   readonly scanSessionId?: string | undefined;
   readonly nodeId?: string | undefined;
+  readonly index?: number | undefined;
+  readonly nodeRef?: WorkbenchWebNodeRef | undefined;
   readonly cssSelector?: string | undefined;
   readonly selectorAddress?: WorkbenchWebSelectorAddress | undefined;
   readonly stableSignature?: WorkbenchWebElementSignature | undefined;
+  readonly tagName?: string | undefined;
+  readonly role?: string | undefined;
+  readonly inputType?: string | undefined;
+  readonly id?: string | undefined;
+  readonly name?: string | undefined;
+  readonly testId?: string | undefined;
+  readonly ariaLabel?: string | undefined;
+  readonly text?: string | undefined;
+  readonly textContains?: string | undefined;
+  readonly textSnippet?: string | undefined;
+  readonly placeholder?: string | undefined;
+  readonly label?: string | undefined;
 };
 
 export type WorkbenchWebAction =
@@ -309,10 +848,28 @@ export type WorkbenchWebActionExecution = {
   readonly method: string;
 };
 
+export type WorkbenchWebVerificationStateTransition =
+  | "value_changed"
+  | "menu_opened"
+  | "region_expanded"
+  | "state_changed"
+  | "validation_changed"
+  | "navigation_changed"
+  | "model_changed"
+  | "conversation_deleted"
+  | "message_submitted"
+  | "response_started"
+  | "focus_changed"
+  | "none";
+
 export type WorkbenchWebActionResult = {
   readonly tabId: string;
   readonly graphId?: string | undefined;
   readonly scanSessionId?: string | undefined;
+  readonly focusAtlasVersion?: string | undefined;
+  readonly activeFocusRegionId?: string | undefined;
+  readonly focusProbeVerified?: boolean | undefined;
+  readonly focusDeltaObserved?: boolean | undefined;
   readonly actionKind: WorkbenchWebAction["kind"];
   readonly ok: boolean;
   readonly overlayShown?: boolean | undefined;
@@ -321,6 +878,98 @@ export type WorkbenchWebActionResult = {
   readonly submitted?: boolean | undefined;
   readonly draftOnly?: boolean | undefined;
   readonly submissionMethod?: "click" | "enter" | "none" | undefined;
+  readonly verified?: boolean | undefined;
+  readonly verification?: {
+    readonly pageMode?: WorkbenchWebPageMode | undefined;
+    readonly widgetId?: string | undefined;
+    readonly widgetKind?: WorkbenchWebWidgetKind | undefined;
+    readonly stateTransition?: WorkbenchWebVerificationStateTransition | undefined;
+    readonly reason?: string | undefined;
+    readonly cursorStyle?: string | undefined;
+    readonly tooltipText?: string | undefined;
+    readonly affordanceHints?: readonly WorkbenchWebSurfaceAffordanceHint[] | undefined;
+  } | undefined;
+};
+
+export type WorkbenchWebScanAndActTargetHints = {
+  readonly role?: string | readonly string[] | undefined;
+  readonly name?: string | undefined;
+  readonly text?: string | undefined;
+  readonly textContains?: string | undefined;
+  readonly textSnippet?: string | undefined;
+  readonly ariaLabel?: string | undefined;
+  readonly label?: string | undefined;
+  readonly placeholder?: string | undefined;
+  readonly within?: string | undefined;
+  readonly near?: string | undefined;
+  readonly regionId?: string | undefined;
+  readonly groupId?: string | undefined;
+  readonly index?: number | undefined;
+  readonly state?: WorkbenchWebQueryStateFilter | undefined;
+};
+
+export type WorkbenchWebScanAndActGoal = {
+  readonly expectedTransitions?: readonly WorkbenchWebVerificationStateTransition[] | undefined;
+  readonly mustAdvance?: boolean | undefined;
+};
+
+export type WorkbenchWebScanAndActRequest = {
+  readonly tabId?: string | undefined;
+  readonly graphId?: string | undefined;
+  readonly action: WorkbenchWebAction;
+  readonly timeoutMs?: number | undefined;
+  readonly waitForNavigationMs?: number | undefined;
+  readonly targetHints?: WorkbenchWebScanAndActTargetHints | undefined;
+  readonly scope?: WorkbenchWebTargetScanScope | undefined;
+  readonly maxCandidates?: number | undefined;
+  readonly maxLatencyMs?: number | undefined;
+  readonly followThroughSteps?: 0 | 1 | 2 | undefined;
+  readonly goal?: WorkbenchWebScanAndActGoal | undefined;
+};
+
+export type WorkbenchWebScanAndActResult = {
+  readonly tabId: string;
+  readonly ok: boolean;
+  readonly verified: boolean;
+  readonly goalSatisfied: boolean;
+  readonly actionResult: WorkbenchWebActionResult;
+  readonly selectedCandidate?: WorkbenchWebTargetCandidate | undefined;
+  readonly scanSessionId?: string | undefined;
+  readonly cacheHit: boolean;
+  readonly continuationApplied: boolean;
+  readonly diagnostics: {
+    readonly durationMs: number;
+    readonly scanCount: number;
+    readonly gateRetryCount: number;
+    readonly actionAttempts: number;
+    readonly maxLatencyMs: number;
+    readonly scope: WorkbenchWebTargetScanScope;
+    readonly maxCandidates: number;
+    readonly goalGateSoftFailed: boolean;
+    readonly scanSkipped: boolean;
+  };
+};
+
+export type WorkbenchWebFocusProbeResult = {
+  readonly tabId: string;
+  readonly scanSessionId: string;
+  readonly pageMode: WorkbenchWebPageMode;
+  readonly focusAtlasReady: true;
+  readonly focusAtlasVersion: string;
+  readonly activeFocusRegionId?: string | undefined;
+  readonly atlas: WorkbenchWebFocusAtlas;
+  readonly probedTarget: WorkbenchWebTargetCandidate;
+  readonly focusProbeVerified: boolean;
+  readonly focusDeltaObserved: boolean;
+  readonly intervention: WorkbenchWebInterventionState;
+  readonly action: WorkbenchWebActionResult;
+  readonly diagnostics: {
+    readonly scannedFrames: number;
+    readonly scannedCandidates: number;
+    readonly durationMs: number;
+    readonly refreshed: boolean;
+    readonly strategy: "best_candidate" | "focus_region" | "widget" | "target";
+  };
 };
 
 export type WorkbenchWebWaitRequest = {
@@ -348,6 +997,7 @@ export type WorkbenchWebAutomationErrorCode =
   | "tab_not_found"
   | "frame_not_found"
   | "node_not_found"
+  | "widget_not_found"
   | "scan_session_not_found"
   | "candidate_not_found"
   | "candidate_stale"
@@ -358,6 +1008,18 @@ export type WorkbenchWebAutomationErrorCode =
   | "cross_origin_frame_blocked"
   | "action_blocked_by_policy"
   | "postcondition_timeout"
+  | "wrong_widget_target"
+  | "no_state_transition"
+  | "action_unverified"
+  | "hover_reveal_required"
+  | "reveal_not_observed"
+  | "menu_not_opened"
+  | "list_item_not_changed"
+  | "mode_not_switched"
+  | "workflow_not_advanced"
+  | "goal_gate_soft_failed"
+  | "page_mode_unknown"
+  | "protected_verification_widget"
   | "overlay_unavailable"
   | "no_interactable_candidates"
   | "selector_budget_exhausted"
