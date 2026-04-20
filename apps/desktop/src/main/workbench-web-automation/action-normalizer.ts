@@ -1,5 +1,6 @@
 import type {
   WorkbenchWebAction,
+  WorkbenchWebActionExecutionConstraints,
   WorkbenchWebActionRequest,
   WorkbenchWebActionTarget,
   WorkbenchWebElementSignature,
@@ -482,6 +483,44 @@ const normalizeAction = (value: unknown): WorkbenchWebAction => {
   throw new Error(`unsupported action kind: ${kind}`);
 };
 
+const parseActionExecutionConstraints = (
+  payload: Record<string, unknown>
+): WorkbenchWebActionExecutionConstraints | undefined => {
+  const rawConstraints = asRecord(payload.constraints ?? payload.execution);
+  const timeoutMs = readNumber(rawConstraints.timeoutMs) ?? readNumber(payload.timeoutMs);
+  const waitForNavigationMs =
+    readNumber(rawConstraints.waitForNavigationMs) ?? readNumber(payload.waitForNavigationMs);
+  const strictnessRaw = readString(rawConstraints.strictness);
+  const strictness =
+    strictnessRaw === "strict" || strictnessRaw === "balanced" || strictnessRaw === "best_effort"
+      ? strictnessRaw
+      : undefined;
+  const retryRecord = asRecord(rawConstraints.retry);
+  const retryMaxAttempts = readNumber(retryRecord.maxAttempts);
+  const retryBackoffMs = readNumber(retryRecord.backoffMs);
+  const retry =
+    retryMaxAttempts === undefined && retryBackoffMs === undefined
+      ? undefined
+      : {
+          ...(retryMaxAttempts === undefined ? {} : { maxAttempts: Math.max(0, Math.round(retryMaxAttempts)) }),
+          ...(retryBackoffMs === undefined ? {} : { backoffMs: Math.max(0, Math.round(retryBackoffMs)) })
+        };
+  if (
+    timeoutMs === undefined
+    && waitForNavigationMs === undefined
+    && strictness === undefined
+    && retry === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(waitForNavigationMs === undefined ? {} : { waitForNavigationMs }),
+    ...(strictness === undefined ? {} : { strictness }),
+    ...(retry === undefined ? {} : { retry }),
+  };
+};
+
 export const parseWorkbenchWebActionRequestPayload = (
   payload: Record<string, unknown>
 ): WorkbenchWebActionRequest => {
@@ -490,14 +529,17 @@ export const parseWorkbenchWebActionRequestPayload = (
       ? payload.action
       : payload;
   const action = normalizeAction(actionInput);
+  const constraints = parseActionExecutionConstraints(payload);
+  const timeoutMs = constraints?.timeoutMs ?? readNumber(payload.timeoutMs);
+  const waitForNavigationMs =
+    constraints?.waitForNavigationMs ?? readNumber(payload.waitForNavigationMs);
   return {
     ...(readString(payload.tabId) === undefined ? {} : { tabId: readString(payload.tabId) }),
     ...(readString(payload.graphId) === undefined ? {} : { graphId: readString(payload.graphId) }),
     action,
-    ...(readNumber(payload.timeoutMs) === undefined ? {} : { timeoutMs: readNumber(payload.timeoutMs) }),
-    ...(readNumber(payload.waitForNavigationMs) === undefined
-      ? {}
-      : { waitForNavigationMs: readNumber(payload.waitForNavigationMs) }),
+    ...(constraints === undefined ? {} : { constraints }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(waitForNavigationMs === undefined ? {} : { waitForNavigationMs }),
   };
 };
 
@@ -602,6 +644,40 @@ const baseActionInputSchema = (actionSchema: Record<string, unknown>) => ({
     action: actionSchema,
     timeoutMs: { type: "number" },
     waitForNavigationMs: { type: "number" },
+    constraints: {
+      type: "object",
+      properties: {
+        timeoutMs: { type: "number" },
+        waitForNavigationMs: { type: "number" },
+        strictness: { enum: ["strict", "balanced", "best_effort"] },
+        retry: {
+          type: "object",
+          properties: {
+            maxAttempts: { type: "number" },
+            backoffMs: { type: "number" },
+          },
+          additionalProperties: false,
+        }
+      },
+      additionalProperties: false,
+    },
+    execution: {
+      type: "object",
+      properties: {
+        timeoutMs: { type: "number" },
+        waitForNavigationMs: { type: "number" },
+        strictness: { enum: ["strict", "balanced", "best_effort"] },
+        retry: {
+          type: "object",
+          properties: {
+            maxAttempts: { type: "number" },
+            backoffMs: { type: "number" },
+          },
+          additionalProperties: false,
+        }
+      },
+      additionalProperties: false,
+    },
   },
   additionalProperties: false,
 });

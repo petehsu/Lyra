@@ -1,4 +1,5 @@
 import type { AiProviderFieldSchema } from "../../../shared/ai";
+import { LyraListPicker } from "../list-picker";
 import type { SettingsAiLabels, SettingsAiModel } from "./types";
 
 type SettingsAiFieldRendererProps = {
@@ -56,20 +57,34 @@ export const SettingsAiFieldRenderer = ({
   }
 
   if (field.kind === "select") {
+    const availableOptions = field.options ?? [];
+    const hasCurrentValue = availableOptions.some((option) => option.value === value);
+    const resolvedOptions = value.trim().length > 0 && !hasCurrentValue
+      ? [{ value, label: value }, ...availableOptions]
+      : availableOptions;
+    const fallbackLabel = field.placeholder ?? field.label;
+    const pickerOptions = resolvedOptions.length > 0
+      ? resolvedOptions
+      : [{ value: "", label: fallbackLabel, disabled: true }];
+    const resolvedValue = pickerOptions.some((option) => option.value === value)
+      ? value
+      : pickerOptions[0]?.value ?? "";
+
     return (
       <label key={field.id} className="lyra-settings-ai-field">
         <span>{field.label}</span>
-        <select
-          className="lyra-settings-ai-input"
-          value={value}
-          onChange={(event) => {
-            model.updateDraftField(target, field.id, event.target.value);
+        <LyraListPicker
+          className="lyra-settings-ai-list-picker"
+          ariaLabel={field.label}
+          listAriaLabel={field.label}
+          value={resolvedValue}
+          shape="rounded"
+          options={pickerOptions}
+          disabled={resolvedOptions.length === 0}
+          onChange={(nextValue) => {
+            model.updateDraftField(isSecret ? "secret" : target, field.id, nextValue);
           }}
-        >
-          {(field.options ?? []).map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
+        />
         {helperText ? <small>{helperText}</small> : null}
       </label>
     );

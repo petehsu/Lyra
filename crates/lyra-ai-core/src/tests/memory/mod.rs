@@ -265,6 +265,76 @@ fn scheduler_uses_memory_analysis_profile_for_shared_updates() {
 }
 
 #[test]
+fn scheduler_enqueues_semantic_memory_candidates_without_regex_trigger() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let response = format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({
+            "choices": [{
+                "delta": {
+                    "content": "{\"accepted\":true,\"layer\":\"shared\",\"scope\":\"global\",\"content\":\"Keep transport adapters behind a stable interface and use deterministic capped-jitter retries.\",\"score\":0.93,\"updateMode\":\"merge\"}"
+                }
+            }]
+        })
+    );
+    let server = MockOpenAiServer::start(vec![response]);
+    let analysis_profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let default_config = get_config(GetAiMemoryConfigRequest {
+        storage_root: storage_root.clone(),
+    })
+    .expect("load default config");
+    update_config(UpdateAiMemoryConfigRequest {
+        storage_root: storage_root.clone(),
+        config: crate::memory::AiMemoryConfig {
+            memory_analysis_profile_id: Some(analysis_profile_id.clone()),
+            ..default_config
+        },
+    })
+    .expect("update memory config");
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Semantic Candidate Session".to_string()),
+        profile_id: Some(analysis_profile_id.clone()),
+    })
+    .expect("create session");
+    let turn = registry_db::create_agent_turn(&storage_root, &session.id, &analysis_profile_id)
+        .expect("create agent turn");
+
+    append_session_dialog_message(
+        &storage_root,
+        &session.id,
+        "memory-semantic-1",
+        "user",
+        "Keep transport adapters behind one stable interface and keep retry behavior deterministic with capped jitter for reliability.",
+        Some(&turn.id),
+        None,
+    )
+    .expect("append semantic candidate dialog message");
+
+    let processed = run_scheduler_tick(&storage_root).expect("run scheduler");
+    let requests = server.finish();
+    assert_eq!(processed, 1);
+    assert_eq!(
+        requests.len(),
+        1,
+        "expected one semantic memory analysis request"
+    );
+
+    let paths = resolve_ai_paths(&storage_root).expect("resolve ai paths");
+    let shared_memory = read_to_string(paths.shared_root.join("shared_memory.md"))
+        .expect("read shared memory markdown");
+    assert!(
+        shared_memory.contains(
+            "Keep transport adapters behind a stable interface and use deterministic capped-jitter retries."
+        ),
+        "shared memory should include the model-accepted semantic candidate: {shared_memory}"
+    );
+}
+
+#[test]
 fn scheduler_runs_model_guided_compaction_and_writes_deprecations() {
     let temp = TempStorageRoot::new();
     let storage_root = temp.as_string();

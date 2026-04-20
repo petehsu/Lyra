@@ -64,6 +64,18 @@ impl ToolResultBudgetState {
             seen_truncations: self.seen_truncations.clone(),
         }
     }
+
+    /// Export truncation map for checkpoint persistence.
+    pub fn to_map(&self) -> HashMap<String, String> {
+        self.seen_truncations.clone()
+    }
+
+    /// Restore truncation map from checkpoint.
+    pub fn from_map(map: HashMap<String, String>) -> Self {
+        Self {
+            seen_truncations: map,
+        }
+    }
 }
 
 /// Get the per-result character budget. Can be overridden via env var.

@@ -16,6 +16,7 @@ import {
   type AgentPendingInteraction,
   type AgentPlanState,
   type AgentResolvePlanApprovalRequest,
+  type AgentResumeExecutionRequest,
   type AgentRuntimeEvent,
   type AgentSendTurnRequest,
   type AgentSendTurnResult,
@@ -52,6 +53,7 @@ import type {
   NativeAgentListSessionsRequest,
   NativeAgentMemoryConfigRequest,
   NativeAgentResolvePlanApprovalRequest,
+  NativeAgentResumeExecutionRequest,
   NativeAgentSendTurnRequest,
   NativeAgentUpdateMemoryConfigRequest,
   NativeCommandApprovalSubmitRequest,
@@ -476,7 +478,7 @@ export const createAiIpcBridge = (
   ipcMain.handle(
     LYRA_CHANNELS.agentAnswerQuestion,
     async (_event, request: AgentAnswerQuestionRequest) => {
-      await requestRuntime<void>("agent.questions.answer", {
+      return await requestRuntime<AgentSendTurnResult | null>("agent.questions.answer", {
         storageRoot,
         ...request
       } satisfies NativeAgentAnswerQuestionRequest);
@@ -486,7 +488,7 @@ export const createAiIpcBridge = (
   ipcMain.handle(
     LYRA_CHANNELS.agentAnswerPlanQuestion,
     async (_event, request: AgentAnswerPlanQuestionRequest) => {
-      await requestRuntime<void>("agent.plan.answer_question", {
+      return await requestRuntime<AgentSendTurnResult | null>("agent.plan.answer_question", {
         storageRoot,
         ...request
       } satisfies NativeAgentAnswerPlanQuestionRequest);
@@ -520,9 +522,20 @@ export const createAiIpcBridge = (
   );
 
   ipcMain.handle(
+    LYRA_CHANNELS.agentResumeExecution,
+    async (_event, request: AgentResumeExecutionRequest) => {
+      await syncPersonaContext();
+      return await requestRuntime<AgentSendTurnResult | null>("agent.execution.resume", {
+        storageRoot,
+        ...request
+      } satisfies NativeAgentResumeExecutionRequest);
+    }
+  );
+
+  ipcMain.handle(
     LYRA_CHANNELS.agentSubmitCommandApproval,
     async (_event, request: CommandApprovalSubmitRequest) =>
-      await requestRuntime<void>("agent.command_approval.submit", {
+      await requestRuntime<AgentSendTurnResult | null>("agent.command_approval.submit", {
         storageRoot,
         ...request
       } satisfies NativeCommandApprovalSubmitRequest)
@@ -565,6 +578,7 @@ export const createAiIpcBridge = (
       ipcMain.removeHandler(LYRA_CHANNELS.agentGetPlan);
       ipcMain.removeHandler(LYRA_CHANNELS.agentAnswerPlanQuestion);
       ipcMain.removeHandler(LYRA_CHANNELS.agentResolvePlanApproval);
+      ipcMain.removeHandler(LYRA_CHANNELS.agentResumeExecution);
       ipcMain.removeHandler(LYRA_CHANNELS.agentGetMemoryConfig);
       ipcMain.removeHandler(LYRA_CHANNELS.agentUpdateMemoryConfig);
       ipcMain.removeHandler(LYRA_CHANNELS.agentSubmitCommandApproval);

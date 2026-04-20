@@ -46,6 +46,65 @@ export type AgentPendingInteraction = {
   readonly updatedAt: number;
 };
 
+export type AgentExecutionPhase =
+  | "idle"
+  | "running"
+  | "waiting_interaction"
+  | "resumable"
+  | "completed"
+  | "failed"
+  | "abandoned";
+
+export type AgentExecutionCheckpointKind =
+  | "turn_started"
+  | "interaction_wait"
+  | "interaction_resolved"
+  | "turn_completed"
+  | "turn_failed"
+  | "manual_resume_anchor";
+
+export type AgentGoalStatus = "pending" | "in_progress" | "blocked" | "completed" | "failed";
+
+export type AgentGoalNode = {
+  readonly id: string;
+  readonly parentId?: string;
+  readonly title: string;
+  readonly status: AgentGoalStatus;
+  readonly progressPercent: number;
+  readonly blockingReason?: string;
+  readonly updatedAt: number;
+};
+
+export type AgentExecutionState = {
+  readonly id: string;
+  readonly runId: string;
+  readonly threadId: string;
+  readonly sessionId: AgentSessionId;
+  readonly collaborationMode: AgentCollaborationMode;
+  readonly phase: AgentExecutionPhase;
+  readonly activeTurnId?: AgentTurnId;
+  readonly waitingInteractionId?: string;
+  readonly waitingInteractionKind?: AgentPendingInteractionKind;
+  readonly activeGoalNodeId?: string;
+  readonly goalTreeJson: unknown;
+  readonly latestCheckpointId?: string;
+  readonly version: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
+export type AgentExecutionCheckpointSummary = {
+  readonly id: string;
+  readonly executionId: string;
+  readonly threadId: string;
+  readonly sessionId: AgentSessionId;
+  readonly turnId: AgentTurnId;
+  readonly kind: AgentExecutionCheckpointKind;
+  readonly phaseBefore: AgentExecutionPhase;
+  readonly phaseAfter: AgentExecutionPhase;
+  readonly createdAt: number;
+};
+
 export type AgentTurnStatus = "running" | "completed" | "failed" | "paused";
 
 export type AgentTurn = {
@@ -68,6 +127,7 @@ export type AgentMessage = {
   readonly turnId?: AgentTurnId;
   readonly role: AgentMessageRole | string;
   readonly content: string;
+  readonly displayContent?: string;
   readonly createdAt: number;
 };
 
@@ -90,6 +150,8 @@ export type AgentToolCall = {
 export type AgentSessionDetail = {
   readonly session: AgentSession;
   readonly plan?: AgentPlanState;
+  readonly executionState?: AgentExecutionState;
+  readonly executionCheckpoints: readonly AgentExecutionCheckpointSummary[];
   readonly pendingInteractions: readonly AgentPendingInteraction[];
   readonly turns: readonly AgentTurn[];
   readonly messages: readonly AgentMessage[];
@@ -119,6 +181,7 @@ export type AgentSendTurnRequest = {
   readonly sessionId: AgentSessionId;
   readonly input: string;
   readonly profileId?: string;
+  readonly model?: string;
   readonly projectRoot?: string;
   readonly maxSteps?: number;
   readonly enablePlanning?: boolean;
@@ -204,6 +267,11 @@ export type AgentResolvePlanApprovalRequest = {
   readonly feedback?: string;
 };
 
+export type AgentResumeExecutionRequest = {
+  readonly sessionId: AgentSessionId;
+  readonly checkpointId?: string;
+};
+
 export type AiMemoryConfig = {
   readonly version: number;
   readonly defaultContextWindow: number;
@@ -268,16 +336,41 @@ export type AgentRuntimePhase =
   | "plan_rejected"
   | "plan_mode_exited"
   | "interaction_pending"
+  | "interaction_submitted"
   | "interaction_resolved"
-  | "interaction_queue_updated";
+  | "interaction_queue_updated"
+  | "execution_state_transition"
+  | "execution_checkpoint_saved"
+  | "execution_resume_triggered"
+  | "execution_conflict_prompted"
+  | "execution_abandoned"
+  | "goal_tree_updated";
 
-export type AgentRuntimeEvent = {
+export type AgentInteractionKind =
+  | "user_question"
+  | "plan_approval"
+  | "command_approval";
+
+export type AgentInteractionSubmittedPayload = {
+  readonly requestId?: string;
+  readonly toolCallId?: string;
+  readonly interactionKind: AgentInteractionKind;
+  readonly decision?: string;
+  readonly feedback?: string;
+};
+
+type AgentRuntimeEventBase<Phase extends string, Payload> = {
   readonly sessionId: AgentSessionId;
   readonly turnId: AgentTurnId;
-  readonly phase: AgentRuntimePhase | string;
-  readonly payload: unknown;
+  readonly phase: Phase;
+  readonly payload: Payload;
   readonly timestamp: number;
 };
+
+export type AgentRuntimeEvent =
+  | AgentRuntimeEventBase<"interaction_submitted", AgentInteractionSubmittedPayload>
+  | AgentRuntimeEventBase<Exclude<AgentRuntimePhase, "interaction_submitted">, unknown>
+  | AgentRuntimeEventBase<string, unknown>;
 
 export type CommandApprovalDecision = "allow_once" | "allow_always" | "deny";
 

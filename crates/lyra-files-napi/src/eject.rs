@@ -1,6 +1,7 @@
 use std::process::Command;
 
 use napi::Result;
+#[cfg(target_os = "linux")]
 use serde::Deserialize;
 
 use crate::failure;

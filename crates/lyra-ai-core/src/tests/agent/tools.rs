@@ -29,6 +29,7 @@ use crate::tests::support::TempStorageRoot;
 use lyra_sandbox::permissions::{PermissionDecision, PermissionsStore};
 
 static EXTERNAL_TOOL_TEST_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+static TERMINAL_SESSION_TEST_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 fn create_workspace_root(temp: &TempStorageRoot) -> PathBuf {
     let root = PathBuf::from(temp.as_string()).join("workspace");
@@ -690,19 +691,19 @@ fn workbench_web_tool_ranking_prefers_live_scan_before_graph_fallbacks() {
     clear_external_tools();
 
     register_test_external_tool(
-        "workbench.web_skeleton.read",
+        "lyra.web.skeleton.read",
         "read the current page's human-operable map",
     );
     register_test_external_tool(
-        "workbench.web_focus.probe",
+        "lyra.web.focus.probe",
         "probe keyboard focus on the current page",
     );
     register_test_external_tool(
-        "workbench.web_context.read",
+        "lyra.web.context.read",
         "scan widgets from the current page",
     );
     register_test_external_tool(
-        "workbench.web_query.find",
+        "lyra.web.query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
@@ -714,63 +715,57 @@ fn workbench_web_tool_ranking_prefers_live_scan_before_graph_fallbacks() {
         "extract readable text from the current page tab",
     );
     register_test_external_tool(
-        "workbench.web_context.read",
+        "lyra.web.context.read",
         "scan widgets from the current page",
     );
     register_test_external_tool(
-        "workbench.web_graph.build",
+        "lyra.web.graph.build",
         "build selector-addressable graph for current webpage",
     );
     register_test_external_tool(
-        "workbench.web_graph.query",
+        "lyra.web.graph.query",
         "query interactable nodes from page graph",
     );
-    register_test_external_tool("workbench.web_action.safe", "run safe web action in page");
+    register_test_external_tool("lyra.web.action.safe", "run safe web action in page");
     register_test_external_tool_with_metadata(
-        "workbench.web_action.mutate",
+        "lyra.web.action.mutate",
         "run mutating web action in page",
         ExternalToolApprovalMode::Ask,
         ExternalToolSideEffects::session_mutation(),
     );
     register_test_external_tool_with_metadata(
-        "workbench.web_action.navigate",
+        "lyra.web.action.navigate",
         "run navigation action in page",
         ExternalToolApprovalMode::Ask,
         ExternalToolSideEffects::network_read(),
     );
-    register_test_external_tool("workbench.web_action.wait", "wait for target state in page");
+    register_test_external_tool("lyra.web.action.wait", "wait for target state in page");
 
     let ranked_english = readonly_tool_definitions_for_input("open this page and click a button");
     let ranked_chinese = readonly_tool_definitions_for_input("帮我在当前网页里点按钮并输入内容");
 
     for ranked in [&ranked_english, &ranked_chinese] {
         assert!(
-            tool_rank(ranked, "workbench.web_skeleton.read")
-                < tool_rank(ranked, "workbench.web_graph.build")
+            tool_rank(ranked, "lyra.web.skeleton.read") < tool_rank(ranked, "lyra.web.graph.build")
         );
         assert!(
-            tool_rank(ranked, "workbench.web_query.find")
-                < tool_rank(ranked, "workbench.web_graph.build")
+            tool_rank(ranked, "lyra.web.query.find") < tool_rank(ranked, "lyra.web.graph.build")
         );
         assert!(
-            tool_rank(ranked, "workbench.web_query.find")
-                < tool_rank(ranked, "workbench.web_action.safe")
+            tool_rank(ranked, "lyra.web.query.find") < tool_rank(ranked, "lyra.web.action.safe")
         );
         assert!(
-            tool_rank(ranked, "workbench.web_query.find")
-                < tool_rank(ranked, "workbench.web_graph.query")
+            tool_rank(ranked, "lyra.web.query.find") < tool_rank(ranked, "lyra.web.graph.query")
         );
         assert!(
-            tool_rank(ranked, "workbench.web_action.safe")
-                < tool_rank(ranked, "workbench.web_action.wait")
+            tool_rank(ranked, "lyra.web.action.safe") < tool_rank(ranked, "lyra.web.action.wait")
         );
         assert!(
-            tool_rank(ranked, "workbench.web_action.wait")
-                < tool_rank(ranked, "workbench.web_action.mutate")
+            tool_rank(ranked, "lyra.web.action.wait") < tool_rank(ranked, "lyra.web.action.mutate")
         );
         assert!(
-            tool_rank(ranked, "workbench.web_action.wait")
-                < tool_rank(ranked, "workbench.web_action.navigate")
+            tool_rank(ranked, "lyra.web.action.wait")
+                < tool_rank(ranked, "lyra.web.action.navigate")
         );
     }
 
@@ -785,19 +780,19 @@ fn workbench_web_tool_ranking_prefers_operability_before_probe_and_graph_fallbac
     clear_external_tools();
 
     register_test_external_tool(
-        "workbench.web_skeleton.read",
+        "lyra.web.skeleton.read",
         "read the current page's human-operable map",
     );
     register_test_external_tool(
-        "workbench.web_focus.probe",
+        "lyra.web.focus.probe",
         "probe keyboard focus on the current page",
     );
     register_test_external_tool(
-        "workbench.web_query.find",
+        "lyra.web.query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
-        "workbench.web_graph.build",
+        "lyra.web.graph.build",
         "build selector-addressable graph for current webpage",
     );
 
@@ -805,12 +800,10 @@ fn workbench_web_tool_ranking_prefers_operability_before_probe_and_graph_fallbac
         readonly_tool_definitions_for_input("inspect the current page and find the next control");
 
     assert!(
-        tool_rank(&ranked, "workbench.web_skeleton.read")
-            < tool_rank(&ranked, "workbench.web_focus.probe")
+        tool_rank(&ranked, "lyra.web.skeleton.read") < tool_rank(&ranked, "lyra.web.focus.probe")
     );
     assert!(
-        tool_rank(&ranked, "workbench.web_focus.probe")
-            < tool_rank(&ranked, "workbench.web_graph.build")
+        tool_rank(&ranked, "lyra.web.focus.probe") < tool_rank(&ranked, "lyra.web.graph.build")
     );
 
     clear_external_tools();
@@ -824,11 +817,11 @@ fn workbench_web_tool_ranking_prefers_actions_after_successful_live_scan() {
     clear_external_tools();
 
     register_test_external_tool(
-        "workbench.web_skeleton.read",
+        "lyra.web.skeleton.read",
         "scan widgets from the current page",
     );
     register_test_external_tool(
-        "workbench.web_query.find",
+        "lyra.web.query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
@@ -840,21 +833,21 @@ fn workbench_web_tool_ranking_prefers_actions_after_successful_live_scan() {
         "extract readable text from the current page tab",
     );
     register_test_external_tool(
-        "workbench.web_graph.build",
+        "lyra.web.graph.build",
         "build selector-addressable graph for current webpage",
     );
     register_test_external_tool(
-        "workbench.web_graph.query",
+        "lyra.web.graph.query",
         "query interactable nodes from page graph",
     );
-    register_test_external_tool("workbench.web_action.safe", "run safe web action in page");
+    register_test_external_tool("lyra.web.action.safe", "run safe web action in page");
     register_test_external_tool_with_metadata(
-        "workbench.web_action.mutate",
+        "lyra.web.action.mutate",
         "run mutating web action in page",
         ExternalToolApprovalMode::Ask,
         ExternalToolSideEffects::session_mutation(),
     );
-    register_test_external_tool("workbench.web_action.wait", "wait for target state in page");
+    register_test_external_tool("lyra.web.action.wait", "wait for target state in page");
 
     let ranked = readonly_tool_definitions_for_input_with_context(
         "continue the current webpage interaction",
@@ -868,21 +861,15 @@ fn workbench_web_tool_ranking_prefers_actions_after_successful_live_scan() {
         }),
     );
 
+    assert!(tool_rank(&ranked, "lyra.web.action.safe") < tool_rank(&ranked, "lyra.web.query.find"));
     assert!(
-        tool_rank(&ranked, "workbench.web_action.safe")
-            < tool_rank(&ranked, "workbench.web_query.find")
+        tool_rank(&ranked, "lyra.web.skeleton.read") < tool_rank(&ranked, "lyra.web.graph.build")
     );
     assert!(
-        tool_rank(&ranked, "workbench.web_skeleton.read")
-            < tool_rank(&ranked, "workbench.web_graph.build")
+        tool_rank(&ranked, "lyra.web.action.wait") < tool_rank(&ranked, "lyra.web.graph.query")
     );
     assert!(
-        tool_rank(&ranked, "workbench.web_action.wait")
-            < tool_rank(&ranked, "workbench.web_graph.query")
-    );
-    assert!(
-        tool_rank(&ranked, "workbench.web_action.mutate")
-            < tool_rank(&ranked, "workbench.web_graph.build")
+        tool_rank(&ranked, "lyra.web.action.mutate") < tool_rank(&ranked, "lyra.web.graph.build")
     );
 
     clear_external_tools();
@@ -892,7 +879,7 @@ fn workbench_web_tool_ranking_prefers_actions_after_successful_live_scan() {
 fn workbench_web_tool_routing_context_reads_recent_scan_results() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[
         test_tool_call(
-            "workbench.web_skeleton.read",
+            "lyra.web.skeleton.read",
             Some(json!({
                 "pageMode": "chat",
                 "nodes": [{
@@ -905,7 +892,7 @@ fn workbench_web_tool_routing_context_reads_recent_scan_results() {
             "completed",
         ),
         test_tool_call(
-            "workbench.web_query.find",
+            "lyra.web.query.find",
             Some(json!({
                 "scanSessionId": "scan-1",
                 "pageMode": "chat",
@@ -928,7 +915,7 @@ fn workbench_web_tool_routing_context_reads_recent_scan_results() {
             "completed",
         ),
         test_tool_call(
-            "workbench.web_action.mutate",
+            "lyra.web.action.mutate",
             None,
             Some("candidate_stale"),
             "failed",
@@ -949,14 +936,14 @@ fn workbench_web_tool_routing_context_reads_recent_scan_results() {
     );
     assert_eq!(
         context.last_web_tool_name.as_deref(),
-        Some("workbench.web_action.mutate")
+        Some("lyra.web.action.mutate")
     );
 }
 
 #[test]
 fn workbench_web_tool_routing_context_reads_scan_and_act_output() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[test_tool_call(
-        "workbench.web_scan_and_act",
+        "lyra.web.scan.act",
         Some(json!({
             "scanSessionId": "scan-atomic-1",
             "pageMode": "chat",
@@ -999,7 +986,7 @@ fn workbench_web_tool_routing_context_reads_scan_and_act_output() {
 fn workbench_web_tool_routing_context_reads_focus_atlas_state() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[
         test_tool_call(
-            "workbench.web_skeleton.read",
+            "lyra.web.skeleton.read",
             Some(json!({
                 "pageMode": "chat",
                 "skeletonVersion": "atlas-v1",
@@ -1016,7 +1003,7 @@ fn workbench_web_tool_routing_context_reads_focus_atlas_state() {
             "completed",
         ),
         test_tool_call(
-            "workbench.web_query.find",
+            "lyra.web.query.find",
             Some(json!({
                 "scanSessionId": "scan-2",
                 "skeletonVersion": "atlas-v1",
@@ -1055,7 +1042,7 @@ fn workbench_web_tool_routing_context_reads_focus_atlas_state() {
 fn workbench_web_tool_routing_context_reads_operability_and_probe_state() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[
         test_tool_call(
-            "workbench.web_query.find",
+            "lyra.web.query.find",
             Some(json!({
                 "pageMode": "chat",
                 "skeletonVersion": "atlas-v2",
@@ -1081,7 +1068,7 @@ fn workbench_web_tool_routing_context_reads_operability_and_probe_state() {
             "completed",
         ),
         test_tool_call(
-            "workbench.web_focus.probe",
+            "lyra.web.focus.probe",
             Some(json!({
                 "focusProbeVerified": true,
                 "focusDeltaObserved": true,
@@ -1112,7 +1099,7 @@ fn workbench_web_tool_routing_context_reads_operability_and_probe_state() {
 fn workbench_web_tool_routing_context_tracks_reveal_subgoals() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[
         test_tool_call(
-            "workbench.web_query.find",
+            "lyra.web.query.find",
             Some(json!({
                 "scanSessionId": "scan-1",
                 "pageMode": "chat",
@@ -1141,7 +1128,7 @@ fn workbench_web_tool_routing_context_tracks_reveal_subgoals() {
             "completed",
         ),
         test_tool_call(
-            "workbench.web_action.safe",
+            "lyra.web.action.safe",
             None,
             Some("reveal_not_observed"),
             "failed",
@@ -1165,7 +1152,7 @@ fn workbench_web_tool_routing_context_tracks_reveal_subgoals() {
 #[test]
 fn workbench_web_tool_routing_context_tracks_draft_only_mutations() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[test_tool_call(
-        "workbench.web_action.mutate",
+        "lyra.web.action.mutate",
         Some(json!({
             "actionKind": "type",
             "submitted": false,
@@ -1193,7 +1180,7 @@ fn workbench_web_tool_routing_context_tracks_draft_only_mutations() {
 #[test]
 fn workbench_web_tool_routing_context_ignores_cross_origin_graph_placeholder() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[test_tool_call(
-        "workbench.web_graph.build",
+        "lyra.web.graph.build",
         Some(json!({
             "nodeCount": 1,
             "highlights": {
@@ -1213,7 +1200,7 @@ fn workbench_web_tool_routing_context_ignores_cross_origin_graph_placeholder() {
 #[test]
 fn workbench_web_tool_routing_context_treats_unconfirmed_enter_as_draft_only() {
     let context = crate::agent::tools::derive_workbench_web_routing_context(&[test_tool_call(
-        "workbench.web_action.mutate",
+        "lyra.web.action.mutate",
         Some(json!({
             "actionKind": "press_key",
             "submitted": false,
@@ -1235,11 +1222,11 @@ fn workbench_web_tool_ranking_avoids_wait_after_draft_only_type() {
         .expect("external tool test guard");
     clear_external_tools();
     register_test_external_tool(
-        "workbench.web_skeleton.read",
+        "lyra.web.skeleton.read",
         "scan widgets from the current page",
     );
     register_test_external_tool(
-        "workbench.web_query.find",
+        "lyra.web.query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
@@ -1251,21 +1238,21 @@ fn workbench_web_tool_ranking_avoids_wait_after_draft_only_type() {
         "extract readable text from the current page tab",
     );
     register_test_external_tool(
-        "workbench.web_graph.build",
+        "lyra.web.graph.build",
         "build selector-addressable graph for current webpage",
     );
     register_test_external_tool(
-        "workbench.web_graph.query",
+        "lyra.web.graph.query",
         "query interactable nodes from page graph",
     );
-    register_test_external_tool("workbench.web_action.safe", "run safe web action in page");
+    register_test_external_tool("lyra.web.action.safe", "run safe web action in page");
     register_test_external_tool_with_metadata(
-        "workbench.web_action.mutate",
+        "lyra.web.action.mutate",
         "run mutating web action in page",
         ExternalToolApprovalMode::Ask,
         ExternalToolSideEffects::session_mutation(),
     );
-    register_test_external_tool("workbench.web_action.wait", "wait for target state in page");
+    register_test_external_tool("lyra.web.action.wait", "wait for target state in page");
 
     let ranked = readonly_tool_definitions_for_input_with_context(
         "continue the current webpage interaction",
@@ -1284,24 +1271,18 @@ fn workbench_web_tool_ranking_avoids_wait_after_draft_only_type() {
     );
 
     assert!(
-        tool_rank(&ranked, "workbench.web_action.mutate")
-            < tool_rank(&ranked, "workbench.web_action.wait")
+        tool_rank(&ranked, "lyra.web.action.mutate") < tool_rank(&ranked, "lyra.web.action.wait")
     );
     assert!(
-        tool_rank(&ranked, "workbench.web_action.mutate")
-            < tool_rank(&ranked, "workbench.web_skeleton.read")
+        tool_rank(&ranked, "lyra.web.action.mutate") < tool_rank(&ranked, "lyra.web.skeleton.read")
     );
+    assert!(tool_rank(&ranked, "lyra.web.query.find") < tool_rank(&ranked, "lyra.web.action.wait"));
     assert!(
-        tool_rank(&ranked, "workbench.web_query.find")
-            < tool_rank(&ranked, "workbench.web_action.wait")
-    );
-    assert!(
-        tool_rank(&ranked, "workbench.web_action.mutate")
+        tool_rank(&ranked, "lyra.web.action.mutate")
             < tool_rank(&ranked, "workbench.tab.extract_text")
     );
     assert!(
-        tool_rank(&ranked, "workbench.web_action.mutate")
-            < tool_rank(&ranked, "workbench.tab.read")
+        tool_rank(&ranked, "lyra.web.action.mutate") < tool_rank(&ranked, "workbench.tab.read")
     );
 
     clear_external_tools();
@@ -1315,11 +1296,11 @@ fn workbench_web_tool_ranking_prefers_mutate_over_reads_after_typable_scan() {
     clear_external_tools();
 
     register_test_external_tool(
-        "workbench.web_skeleton.read",
+        "lyra.web.skeleton.read",
         "scan widgets from the current page",
     );
     register_test_external_tool(
-        "workbench.web_query.find",
+        "lyra.web.query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
@@ -1331,21 +1312,21 @@ fn workbench_web_tool_ranking_prefers_mutate_over_reads_after_typable_scan() {
         "extract readable text from the current page tab",
     );
     register_test_external_tool(
-        "workbench.web_graph.build",
+        "lyra.web.graph.build",
         "build selector-addressable graph for current webpage",
     );
     register_test_external_tool(
-        "workbench.web_graph.query",
+        "lyra.web.graph.query",
         "query interactable nodes from page graph",
     );
-    register_test_external_tool("workbench.web_action.safe", "run safe web action in page");
+    register_test_external_tool("lyra.web.action.safe", "run safe web action in page");
     register_test_external_tool_with_metadata(
-        "workbench.web_action.mutate",
+        "lyra.web.action.mutate",
         "run mutating web action in page",
         ExternalToolApprovalMode::Ask,
         ExternalToolSideEffects::session_mutation(),
     );
-    register_test_external_tool("workbench.web_action.wait", "wait for target state in page");
+    register_test_external_tool("lyra.web.action.wait", "wait for target state in page");
 
     let ranked = readonly_tool_definitions_for_input_with_context(
         "continue the current webpage interaction",
@@ -1364,20 +1345,17 @@ fn workbench_web_tool_ranking_prefers_mutate_over_reads_after_typable_scan() {
     );
 
     assert!(
-        tool_rank(&ranked, "workbench.web_action.mutate")
-            < tool_rank(&ranked, "workbench.tab.read")
+        tool_rank(&ranked, "lyra.web.action.mutate") < tool_rank(&ranked, "workbench.tab.read")
     );
     assert!(
-        tool_rank(&ranked, "workbench.web_action.mutate")
-            < tool_rank(&ranked, "workbench.web_skeleton.read")
+        tool_rank(&ranked, "lyra.web.action.mutate") < tool_rank(&ranked, "lyra.web.skeleton.read")
     );
     assert!(
-        tool_rank(&ranked, "workbench.web_action.mutate")
+        tool_rank(&ranked, "lyra.web.action.mutate")
             < tool_rank(&ranked, "workbench.tab.extract_text")
     );
     assert!(
-        tool_rank(&ranked, "workbench.web_action.mutate")
-            < tool_rank(&ranked, "workbench.web_graph.build")
+        tool_rank(&ranked, "lyra.web.action.mutate") < tool_rank(&ranked, "lyra.web.graph.build")
     );
 
     clear_external_tools();
@@ -1391,24 +1369,24 @@ fn workbench_web_tool_ranking_prefers_hover_reveal_over_terminal_escape() {
     clear_external_tools();
 
     register_test_external_tool(
-        "workbench.web_skeleton.read",
+        "lyra.web.skeleton.read",
         "scan widgets from the current page",
     );
     register_test_external_tool(
-        "workbench.web_query.find",
+        "lyra.web.query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
-        "workbench.web_graph.build",
+        "lyra.web.graph.build",
         "build selector-addressable graph for current webpage",
     );
     register_test_external_tool(
-        "workbench.web_graph.query",
+        "lyra.web.graph.query",
         "query interactable nodes from page graph",
     );
-    register_test_external_tool("workbench.web_action.safe", "run safe web action in page");
+    register_test_external_tool("lyra.web.action.safe", "run safe web action in page");
     register_test_external_tool_with_metadata(
-        "workbench.web_action.mutate",
+        "lyra.web.action.mutate",
         "run mutating web action in page",
         ExternalToolApprovalMode::Ask,
         ExternalToolSideEffects::session_mutation(),
@@ -1431,12 +1409,11 @@ fn workbench_web_tool_ranking_prefers_hover_reveal_over_terminal_escape() {
         }),
     );
 
-    assert!(tool_rank(&ranked, "workbench.web_action.safe") < tool_rank(&ranked, "terminal.exec"));
+    assert!(tool_rank(&ranked, "lyra.web.action.safe") < tool_rank(&ranked, "terminal.exec"));
     assert!(
-        tool_rank(&ranked, "workbench.web_action.safe")
-            < tool_rank(&ranked, "workbench.web_graph.build")
+        tool_rank(&ranked, "lyra.web.action.safe") < tool_rank(&ranked, "lyra.web.graph.build")
     );
-    assert!(tool_rank(&ranked, "workbench.web_query.find") < tool_rank(&ranked, "terminal.exec"));
+    assert!(tool_rank(&ranked, "lyra.web.query.find") < tool_rank(&ranked, "terminal.exec"));
 
     clear_external_tools();
 }
@@ -1456,7 +1433,7 @@ fn browser_strategy_context_tracks_browser_use_readiness_and_native_failure() {
             "completed",
         ),
         test_tool_call(
-            "workbench.web_query.find",
+            "lyra.web.query.find",
             Some(json!({
                 "scanSessionId": "scan-1",
                 "bestMatch": {
@@ -1478,7 +1455,7 @@ fn browser_strategy_context_tracks_browser_use_readiness_and_native_failure() {
             "completed",
         ),
         test_tool_call(
-            "workbench.web_action.mutate",
+            "lyra.web.action.mutate",
             None,
             Some("pointer_intercepted"),
             "failed",
@@ -1501,12 +1478,9 @@ fn browser_strategy_prefers_browser_use_after_native_failure_when_session_is_rea
         .expect("external tool test guard");
     clear_external_tools();
 
+    register_test_external_tool("lyra.web.action.mutate", "run mutating web action in page");
     register_test_external_tool(
-        "workbench.web_action.mutate",
-        "run mutating web action in page",
-    );
-    register_test_external_tool(
-        "workbench.web_query.find",
+        "lyra.web.query.find",
         "scan the visible page for likely interactive targets",
     );
     register_test_external_tool(
@@ -1543,11 +1517,10 @@ fn browser_strategy_prefers_browser_use_after_native_failure_when_session_is_rea
 
     assert!(
         tool_rank(&ranked, "browser_use.page.mutate")
-            < tool_rank(&ranked, "workbench.web_action.mutate")
+            < tool_rank(&ranked, "lyra.web.action.mutate")
     );
     assert!(
-        tool_rank(&ranked, "browser_use.page.state")
-            < tool_rank(&ranked, "workbench.web_query.find")
+        tool_rank(&ranked, "browser_use.page.state") < tool_rank(&ranked, "lyra.web.query.find")
     );
 
     clear_external_tools();
@@ -2012,6 +1985,9 @@ fn filesystem_multi_edit_allows_partial_application() {
 
 #[test]
 fn terminal_exec_returns_interactive_advisory_for_tui_commands() {
+    let _guard = TERMINAL_SESSION_TEST_GUARD
+        .lock()
+        .expect("terminal session test guard");
     let temp = TempStorageRoot::new();
     let root = create_workspace_root(&temp);
     let root_string = root.to_string_lossy().to_string();
@@ -2056,6 +2032,9 @@ fn terminal_exec_returns_interactive_advisory_for_tui_commands() {
 
 #[test]
 fn terminal_session_shell_mode_requires_approval_without_text_based_policy_inference() {
+    let _guard = TERMINAL_SESSION_TEST_GUARD
+        .lock()
+        .expect("terminal session test guard");
     let temp = TempStorageRoot::new();
     let root = create_workspace_root(&temp);
     let root_string = root.to_string_lossy().to_string();
@@ -2082,6 +2061,9 @@ fn terminal_session_shell_mode_requires_approval_without_text_based_policy_infer
 
 #[test]
 fn terminal_session_command_mode_can_start_and_read_output() {
+    let _guard = TERMINAL_SESSION_TEST_GUARD
+        .lock()
+        .expect("terminal session test guard");
     let temp = TempStorageRoot::new();
     let root = create_workspace_root(&temp);
     let root_string = root.to_string_lossy().to_string();
@@ -2154,7 +2136,236 @@ fn terminal_session_command_mode_can_start_and_read_output() {
 }
 
 #[test]
+fn terminal_session_command_mode_write_defaults_to_newline() {
+    let _guard = TERMINAL_SESSION_TEST_GUARD
+        .lock()
+        .expect("terminal session test guard");
+    let temp = TempStorageRoot::new();
+    let root = create_workspace_root(&temp);
+    let root_string = root.to_string_lossy().to_string();
+    let policy = select_terminal_interaction_policy();
+    let command = "printf 'confirm? '; read answer; printf 'captured=%s\\n' \"$answer\"";
+
+    grant_approval_once(
+        "terminal-session-default-newline",
+        &json!({
+            "command": command,
+        }),
+    );
+
+    let started = execute_tool_with_progress(
+        "terminal.session.start",
+        &json!({
+            "mode": "command",
+            "command": command,
+            "cwd": root_string,
+        }),
+        tool_context(
+            None,
+            Some(root_string.as_str()),
+            Some("terminal-session-default-newline"),
+            Some(&policy),
+            false,
+        ),
+        |_| {},
+    )
+    .expect("start command session");
+
+    let session_id = started
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .expect("session id")
+        .to_string();
+
+    execute_tool_with_progress(
+        "terminal.session.write",
+        &json!({
+            "sessionId": session_id,
+            "text": "yes",
+        }),
+        tool_context(None, Some(root_string.as_str()), None, Some(&policy), false),
+        |_| {},
+    )
+    .expect("write command response without explicit newline");
+
+    let mut cursor: Option<String> = None;
+    let mut observed_output = String::new();
+    let deadline = Instant::now() + Duration::from_secs(4);
+    let mut running = true;
+    while Instant::now() < deadline && running {
+        let read = execute_tool_with_progress(
+            "terminal.session.read",
+            &json!({
+                "sessionId": session_id,
+                "waitMs": 250,
+                "cursor": cursor,
+            }),
+            tool_context(None, Some(root_string.as_str()), None, Some(&policy), false),
+            |_| {},
+        )
+        .expect("read command session");
+
+        if let Some(chunk) = read.get("output").and_then(Value::as_str) {
+            observed_output.push_str(chunk);
+        }
+        cursor = read
+            .get("cursor")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        running = read.get("running").and_then(Value::as_bool).unwrap_or(true);
+        if observed_output.contains("captured=yes") && !running {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    assert!(
+        observed_output.contains("captured=yes"),
+        "expected command response to be submitted by default newline behavior"
+    );
+
+    execute_tool_with_progress(
+        "terminal.session.close",
+        &json!({
+            "sessionId": session_id,
+        }),
+        tool_context(None, Some(root_string.as_str()), None, Some(&policy), false),
+        |_| {},
+    )
+    .expect("close command session");
+}
+
+#[test]
+fn terminal_blocks_new_exec_while_command_session_is_running() {
+    let _guard = TERMINAL_SESSION_TEST_GUARD
+        .lock()
+        .expect("terminal session test guard");
+    let temp = TempStorageRoot::new();
+    let root = create_workspace_root(&temp);
+    let root_string = root.to_string_lossy().to_string();
+    let policy = select_terminal_interaction_policy();
+    let command = "printf 'blocked-check\\n'; read answer; printf 'done=%s\\n' \"$answer\"";
+
+    grant_approval_once(
+        "terminal-command-barrier",
+        &json!({
+            "command": command,
+        }),
+    );
+
+    let started = execute_tool_with_progress(
+        "terminal.session.start",
+        &json!({
+            "mode": "command",
+            "command": command,
+            "cwd": root_string,
+        }),
+        tool_context(
+            None,
+            Some(root_string.as_str()),
+            Some("terminal-command-barrier"),
+            Some(&policy),
+            false,
+        ),
+        |_| {},
+    )
+    .expect("start blocking command session");
+
+    let session_id = started
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .expect("session id")
+        .to_string();
+
+    let blocked_exec = execute_tool_with_progress(
+        "terminal.exec",
+        &json!({
+            "command": "pwd",
+        }),
+        tool_context(None, Some(root_string.as_str()), None, Some(&policy), false),
+        |_| {},
+    )
+    .expect("terminal.exec should return in-flight session barrier");
+    assert_eq!(
+        blocked_exec.get("kind").and_then(Value::as_str),
+        Some("interactive_policy_blocked")
+    );
+    assert_eq!(
+        blocked_exec.get("activeSessionId").and_then(Value::as_str),
+        Some(session_id.as_str())
+    );
+
+    let blocked_start = execute_tool_with_progress(
+        "terminal.session.start",
+        &json!({
+            "mode": "command",
+            "command": "printf 'second\\n'",
+            "cwd": root_string,
+        }),
+        tool_context(None, Some(root_string.as_str()), None, Some(&policy), false),
+        |_| {},
+    )
+    .expect("second command session should be blocked");
+    assert_eq!(
+        blocked_start.get("kind").and_then(Value::as_str),
+        Some("interactive_policy_blocked")
+    );
+    assert_eq!(
+        blocked_start.get("activeSessionId").and_then(Value::as_str),
+        Some(session_id.as_str())
+    );
+
+    execute_tool_with_progress(
+        "terminal.session.write",
+        &json!({
+            "sessionId": session_id,
+            "text": "ok",
+            "appendNewline": true,
+        }),
+        tool_context(None, Some(root_string.as_str()), None, Some(&policy), false),
+        |_| {},
+    )
+    .expect("unblock command session");
+
+    let mut cursor: Option<String> = None;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut running = true;
+    while Instant::now() < deadline && running {
+        let read = execute_tool_with_progress(
+            "terminal.session.read",
+            &json!({
+                "sessionId": session_id,
+                "waitMs": 250,
+                "cursor": cursor,
+            }),
+            tool_context(None, Some(root_string.as_str()), None, Some(&policy), false),
+            |_| {},
+        )
+        .expect("read command session");
+        cursor = read
+            .get("cursor")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        running = read.get("running").and_then(Value::as_bool).unwrap_or(true);
+        thread::sleep(Duration::from_millis(25));
+    }
+
+    execute_tool_with_progress(
+        "terminal.session.close",
+        &json!({
+            "sessionId": session_id,
+        }),
+        tool_context(None, Some(root_string.as_str()), None, Some(&policy), false),
+        |_| {},
+    )
+    .expect("close command session");
+}
+
+#[test]
 fn terminal_session_shell_mode_honors_one_time_approval() {
+    let _guard = TERMINAL_SESSION_TEST_GUARD
+        .lock()
+        .expect("terminal session test guard");
     let temp = TempStorageRoot::new();
     let root = create_workspace_root(&temp);
     let root_string = root.to_string_lossy().to_string();
@@ -2444,6 +2655,9 @@ fn plan_update_and_submit_persist_plan_state() {
 
 #[test]
 fn plan_mode_blocks_mutating_terminal_exec_commands() {
+    let _guard = TERMINAL_SESSION_TEST_GUARD
+        .lock()
+        .expect("terminal session test guard");
     let temp = TempStorageRoot::new();
     let root = create_workspace_root(&temp);
     let root_string = root.to_string_lossy().to_string();

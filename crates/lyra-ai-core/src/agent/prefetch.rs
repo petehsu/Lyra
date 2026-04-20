@@ -1,10 +1,11 @@
 use crate::provider::types::AgentToolInvocation;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// Cached prefetch result keyed by a composite key.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PrefetchEntry {
     pub data: Value,
     pub timestamp_ms: u64,
@@ -60,6 +61,21 @@ impl PrefetchCache {
     pub fn clear(&self) {
         if let Ok(mut cache) = self.inner.lock() {
             cache.clear();
+        }
+    }
+
+    /// Export cache entries for checkpoint persistence.
+    pub fn to_map(&self) -> HashMap<String, PrefetchEntry> {
+        let Ok(cache) = self.inner.lock() else {
+            return HashMap::new();
+        };
+        cache.clone()
+    }
+
+    /// Restore cache entries from checkpoint.
+    pub fn restore_from_map(&self, map: HashMap<String, PrefetchEntry>) {
+        if let Ok(mut cache) = self.inner.lock() {
+            *cache = map;
         }
     }
 }

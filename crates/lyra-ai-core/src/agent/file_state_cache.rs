@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -15,7 +16,7 @@ pub struct FileStateCache {
     entries: HashMap<String, FileStateEntry>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FileStateEntry {
     /// Content that was read (None if this was a partial read with offset/limit).
     pub content: Option<String>,

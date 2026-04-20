@@ -1,8 +1,28 @@
 import type {
   WorkbenchWebAutomationError,
+  WorkbenchWebAutomationErrorCategory,
   WorkbenchWebAutomationErrorCode,
   WorkbenchWebAutomationErrorStage
 } from "../../shared/workbench-web-automation";
+
+const categoryFromStage = (
+  stage: WorkbenchWebAutomationErrorStage
+): WorkbenchWebAutomationErrorCategory => {
+  switch (stage) {
+    case "scan":
+      return "scan";
+    case "resolve_node":
+      return "target_resolution";
+    case "precondition":
+      return "precondition";
+    case "execute":
+      return "execution";
+    case "wait_postcondition":
+      return "postcondition";
+    default:
+      return "unknown";
+  }
+};
 
 export const createWebAutomationError = (
   code: WorkbenchWebAutomationErrorCode,
@@ -11,12 +31,15 @@ export const createWebAutomationError = (
   retryable: boolean,
   diagnostics?: WorkbenchWebAutomationError["diagnostics"]
 ): Error & WorkbenchWebAutomationError => {
+  const category = categoryFromStage(stage);
   return Object.assign(new Error(message), {
     code,
+    category,
     stage,
     retryable,
     ...(diagnostics === undefined ? {} : { diagnostics }),
     details: {
+      category,
       stage,
       retryable,
       ...(diagnostics === undefined ? {} : { diagnostics })
@@ -34,6 +57,9 @@ export const toCapabilityError = (error: unknown): Error => {
     return Object.assign(new Error((error as { message: string }).message), {
       code: (error as { code: string }).code,
       message: (error as { message: string }).message,
+      ...(typeof (error as { category?: unknown }).category === "string"
+        ? { category: (error as { category: string }).category }
+        : {}),
       ...(typeof (error as { stage?: unknown }).stage === "string"
         ? { stage: (error as { stage: string }).stage }
         : {}),

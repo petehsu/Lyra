@@ -1167,7 +1167,19 @@ fn detect_volume_os_flavor(
 }
 
 fn system_reference_paths() -> Vec<PathBuf> {
+    #[cfg(target_os = "linux")]
     let mut paths = vec![
+        std::env::current_exe().ok(),
+        dirs::home_dir(),
+        dirs::data_dir(),
+        dirs::config_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+
+    #[cfg(not(target_os = "linux"))]
+    let paths = vec![
         std::env::current_exe().ok(),
         dirs::home_dir(),
         dirs::data_dir(),

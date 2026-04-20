@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
@@ -16,12 +16,12 @@ use crate::agent::service::{
 use crate::agent::tools::{set_skill_prompts, SkillPromptEntry};
 use crate::agent::types::{
     AgentAnswerQuestionRequest, AgentBindSessionProjectRequest, AgentCreateSessionRequest,
-    AgentEnterPlanModeRequest, AgentGetSessionRequest, AgentPendingInteractionKind,
-    AgentPendingInteractionStatus, AgentPlanState, AgentPlanStatus, AgentSendTurnRequest,
-    CommandApprovalSubmitRequest, AGENT_PROVIDER_INVALID_RESPONSE,
+    AgentEnterPlanModeRequest, AgentExecutionCheckpointKind, AgentGetSessionRequest,
+    AgentPendingInteractionKind, AgentPendingInteractionStatus, AgentPlanState, AgentPlanStatus,
+    AgentSendTurnRequest, CommandApprovalSubmitRequest, AGENT_PROVIDER_INVALID_RESPONSE,
 };
 use crate::profile::service::upsert_profile;
-use crate::profile::types::UpsertAiProfileRequest;
+use crate::profile::types::{AiProviderModelEntry, UpsertAiProfileRequest};
 use crate::storage::registry_db;
 use crate::tests::support::TempStorageRoot;
 
@@ -122,6 +122,33 @@ fn create_openai_compatible_profile(storage_root: &str, base_url: &str) -> Strin
     profile.id
 }
 
+fn create_openai_compatible_profile_with_models(
+    storage_root: &str,
+    base_url: &str,
+    model: &str,
+    custom_models: Vec<AiProviderModelEntry>,
+) -> String {
+    let profile = upsert_profile(UpsertAiProfileRequest {
+        storage_root: storage_root.to_string(),
+        id: None,
+        name: "Test OpenAI Compatible".to_string(),
+        provider_id: "custom_openai_compatible".to_string(),
+        protocol_id: "openai_compatible".to_string(),
+        preset_id: None,
+        connection_config: [("baseUrl".to_string(), base_url.to_string())]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
+        auth_config: BTreeMap::new(),
+        secret_values: None,
+        clear_secret_fields: None,
+        headers: None,
+        model: model.to_string(),
+        custom_models: Some(custom_models),
+    })
+    .expect("upsert test profile");
+    profile.id
+}
+
 fn simple_stream_response(content: &str) -> String {
     format!(
         "data: {}\n\ndata: [DONE]\n\n",
@@ -154,6 +181,17 @@ fn empty_stream_response() -> String {
             }
         })
     )
+}
+
+fn execution_checkpoints_for_session(
+    storage_root: &str,
+    session_id: &str,
+) -> Vec<crate::agent::types::AgentExecutionCheckpoint> {
+    let execution = registry_db::read_agent_execution_state_by_session(storage_root, session_id)
+        .expect("read execution state by session")
+        .expect("execution state should exist");
+    registry_db::list_agent_execution_checkpoints_by_execution(storage_root, &execution.id, 80)
+        .expect("list execution checkpoints by execution")
 }
 
 struct EnvVarReset {
@@ -240,6 +278,7 @@ fn old_text_not_found_returns_no_match_and_turn_completes() {
         session_id: session.id.clone(),
         input: "replace the old snippet".to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(4),
         enable_planning: false,
@@ -247,6 +286,12 @@ fn old_text_not_found_returns_no_match_and_turn_completes() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn with no-match edit");
 
@@ -335,6 +380,63 @@ fn old_text_not_found_returns_no_match_and_turn_completes() {
 }
 
 #[test]
+fn send_turn_uses_requested_model_override_from_profile_models() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let server = MockOpenAiServer::start(vec![simple_stream_response("done")]);
+    let profile_id = create_openai_compatible_profile_with_models(
+        &storage_root,
+        &server.base_url,
+        "test-model",
+        vec![AiProviderModelEntry {
+            id: "alt-model".to_string(),
+            name: "Alt Model".to_string(),
+            description: None,
+            context_window: None,
+            supports_images: None,
+            supports_tools: None,
+            source: "custom".to_string(),
+        }],
+    );
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Model Override".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "say done".to_string(),
+        profile_id: None,
+        model: Some("alt-model".to_string()),
+        project_root: None,
+        max_steps: Some(2),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .expect("send turn");
+
+    let requests = server.finish();
+    let first_request = requests.first().expect("first request");
+    assert_eq!(
+        first_request.get("model").and_then(Value::as_str),
+        Some("alt-model")
+    );
+}
+
+#[test]
 fn empty_provider_completion_fails_turn_instead_of_completing() {
     let temp = TempStorageRoot::new();
     let storage_root = temp.as_string();
@@ -353,6 +455,7 @@ fn empty_provider_completion_fails_turn_instead_of_completing() {
         session_id: session.id.clone(),
         input: "say hello".to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(2),
         enable_planning: false,
@@ -360,6 +463,12 @@ fn empty_provider_completion_fails_turn_instead_of_completing() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn");
 
@@ -438,6 +547,7 @@ fn assistant_delta_events_are_transient_and_not_persisted() {
         session_id: session.id.clone(),
         input: "say hello".to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(2),
         enable_planning: false,
@@ -445,6 +555,12 @@ fn assistant_delta_events_are_transient_and_not_persisted() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn");
     let _requests = server.finish();
@@ -491,6 +607,7 @@ fn latest_user_message_is_repeated_only_for_provider_input() {
         session_id: session.id.clone(),
         input: "abc".to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(2),
         enable_planning: false,
@@ -498,11 +615,17 @@ fn latest_user_message_is_repeated_only_for_provider_input() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn");
 
-    assert_eq!(result.turn.status, "completed");
     let requests = server.finish();
+    assert_eq!(result.turn.status, "completed");
     let first_request = requests.first().expect("first request");
     let last_message = first_request
         .get("messages")
@@ -569,6 +692,7 @@ fn planning_request_uses_repeated_input() {
         session_id: session.id.clone(),
         input: input.to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(2),
         enable_planning: true,
@@ -576,11 +700,17 @@ fn planning_request_uses_repeated_input() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn");
 
-    assert_eq!(result.turn.status, "completed");
     let requests = server.finish();
+    assert_eq!(result.turn.status, "completed");
     assert_eq!(requests.len(), 2, "expected planning + main requests");
     let planning_request = requests.first().expect("planning request");
     let planning_message = planning_request
@@ -610,6 +740,58 @@ fn planning_request_uses_repeated_input() {
 }
 
 #[test]
+fn planning_threshold_uses_strategy_hint_when_request_threshold_is_higher() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let plan_response =
+        simple_stream_response("1. Inspect current behavior\n2. Apply focused edits");
+    let final_response = simple_stream_response("done");
+    let server = MockOpenAiServer::start(vec![plan_response, final_response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Adaptive Planning Threshold".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let input = "Please patch the runtime behavior to reduce regressions while preserving existing APIs and verify critical flows end to end.";
+    assert!(input.chars().count() > 96);
+    assert!(input.chars().count() < 140);
+
+    let result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: input.to_string(),
+        profile_id: None,
+        model: None,
+        project_root: None,
+        max_steps: Some(2),
+        enable_planning: true,
+        planning_min_chars: Some(140),
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .expect("send turn");
+
+    assert_eq!(result.turn.status, "completed");
+    let requests = server.finish();
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected adaptive strategy hint to keep planning active under a too-high request threshold"
+    );
+}
+
+#[test]
 fn planning_injects_only_structured_steps_into_main_request() {
     let temp = TempStorageRoot::new();
     let storage_root = temp.as_string();
@@ -632,6 +814,7 @@ fn planning_injects_only_structured_steps_into_main_request() {
         session_id: session.id.clone(),
         input: "请在我打开的网页里执行操作".to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(2),
         enable_planning: true,
@@ -639,11 +822,17 @@ fn planning_injects_only_structured_steps_into_main_request() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn");
 
-    assert_eq!(result.turn.status, "completed");
     let requests = server.finish();
+    assert_eq!(result.turn.status, "completed");
     assert_eq!(requests.len(), 2, "expected planning + main requests");
     let main_request = requests.get(1).expect("main request");
     let plan_message = main_request
@@ -669,9 +858,11 @@ fn planning_injects_only_structured_steps_into_main_request() {
     assert!(!plan_content.contains("模拟界面"));
 }
 
+#[test]
 fn long_input_degrades_repetition_under_tight_budget() {
     let _guard = ENV_TEST_GUARD.lock().expect("lock env test guard");
     let _window = EnvVarReset::set("LYRA_CONTEXT_WINDOW", "40000");
+    let _auto_compact = EnvVarReset::set("LYRA_DISABLE_AUTO_COMPACT", "1");
 
     let temp = TempStorageRoot::new();
     let storage_root = temp.as_string();
@@ -685,12 +876,13 @@ fn long_input_degrades_repetition_under_tight_budget() {
     })
     .expect("create session");
 
-    let input = "long log line ".repeat(3_200);
+    let input = "long log line ".repeat(2_800);
     let result = send_turn(AgentSendTurnRequest {
         storage_root: storage_root.clone(),
         session_id: session.id.clone(),
         input: input.clone(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(2),
         enable_planning: false,
@@ -698,11 +890,17 @@ fn long_input_degrades_repetition_under_tight_budget() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn");
 
-    assert_eq!(result.turn.status, "completed");
     let requests = server.finish();
+    assert_eq!(result.turn.status, "completed");
     let first_request = requests.first().expect("first request");
     let last_message = first_request
         .get("messages")
@@ -728,6 +926,541 @@ fn long_input_degrades_repetition_under_tight_budget() {
                 && event.payload.get("mode").and_then(Value::as_str) == Some("anchor_only")
         }),
         "expected anchor_only main input_postprocessed event"
+    );
+}
+
+#[test]
+fn grounding_retry_is_injected_for_unverified_definitive_question_answer() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let first_response = simple_stream_response("Mars has two moons. They are Phobos and Deimos.");
+    let quality_gate_response = simple_stream_response(
+        &json!({
+            "decision": "accept",
+            "goalModel": {
+                "objective": "answer moon question accurately",
+                "constraints": [],
+                "unknowns": []
+            },
+            "contradictions": [],
+            "correctionPatterns": [],
+            "finalAnswer": ""
+        })
+        .to_string(),
+    );
+    let second_response =
+        simple_stream_response("Can you confirm whether you mean planet Mars in our solar system?");
+    let server =
+        MockOpenAiServer::start(vec![first_response, quality_gate_response, second_response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Grounding Retry".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "What moons does Mars have?".to_string(),
+        profile_id: None,
+        model: None,
+        project_root: None,
+        max_steps: Some(3),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .expect("send turn");
+
+    assert_eq!(result.turn.status, "completed");
+    let requests = server.finish();
+    assert_eq!(
+        requests.len(),
+        3,
+        "expected quality gate + retry inference after grounding gate"
+    );
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root,
+        session_id: session.id,
+    })
+    .expect("get session detail");
+    assert!(
+        detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "grounding_retry_injected"),
+        "expected grounding_retry_injected runtime event"
+    );
+}
+
+#[test]
+fn grounding_guard_pauses_when_unverified_definitive_answer_repeats() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let first_response = simple_stream_response("Saturn has exactly 100 rings. This is certain.");
+    let quality_gate_response = simple_stream_response(
+        &json!({
+            "decision": "accept",
+            "goalModel": {
+                "objective": "answer ring-count question",
+                "constraints": [],
+                "unknowns": []
+            },
+            "contradictions": [],
+            "correctionPatterns": [],
+            "finalAnswer": ""
+        })
+        .to_string(),
+    );
+    let second_response = simple_stream_response("Saturn has exactly 100 rings. This is certain.");
+    let second_quality_gate_response = simple_stream_response(
+        &json!({
+            "decision": "accept",
+            "goalModel": {
+                "objective": "answer ring-count question",
+                "constraints": [],
+                "unknowns": []
+            },
+            "contradictions": [],
+            "correctionPatterns": [],
+            "finalAnswer": ""
+        })
+        .to_string(),
+    );
+    let server = MockOpenAiServer::start(vec![
+        first_response,
+        quality_gate_response,
+        second_response,
+        second_quality_gate_response,
+    ]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Grounding Pause".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "How many rings does Saturn have?".to_string(),
+        profile_id: None,
+        model: None,
+        project_root: None,
+        max_steps: Some(3),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .expect("send turn");
+
+    assert_eq!(result.turn.status, "paused");
+    assert_eq!(
+        result.turn.error_code.as_deref(),
+        Some("AGENT_TURN_PAUSED_NO_PROGRESS")
+    );
+    let requests = server.finish();
+    assert_eq!(
+        requests.len(),
+        4,
+        "expected quality gates around one retry before pause when grounding remains unmet"
+    );
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root,
+        session_id: session.id,
+    })
+    .expect("get session detail");
+    assert!(
+        detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "grounding_required_unmet"),
+        "expected grounding_required_unmet runtime event"
+    );
+}
+
+#[test]
+fn quality_gate_runs_for_question_turn_with_multistep_scenario() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let first_response = simple_stream_response("It should still work.");
+    let quality_gate_payload = json!({
+        "decision": "accept",
+        "goalModel": {
+            "objective": "resolve assumption-sensitive outcome",
+            "constraints": [],
+            "unknowns": ["transport/object availability assumptions"]
+        },
+        "contradictions": [
+            "Draft answer assumes one branch without locking assumptions."
+        ],
+        "correctionPatterns": [
+            "When scenario outcome depends on unstated assumptions, ask before committing."
+        ],
+        "finalAnswer": ""
+    })
+    .to_string();
+    let second_response = simple_stream_response(&quality_gate_payload);
+    let server = MockOpenAiServer::start(vec![first_response, second_response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Question Quality Gate".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "I am going to wash my car, and I will walk there. Is that fine?".to_string(),
+        profile_id: None,
+        model: None,
+        project_root: None,
+        max_steps: Some(2),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .expect("send turn");
+
+    assert_eq!(result.turn.status, "completed");
+    let requests = server.finish();
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected answer + quality gate inference"
+    );
+    assert!(
+        requests.iter().any(|request| {
+            request
+                .get("messages")
+                .and_then(Value::as_array)
+                .and_then(|messages| messages.last())
+                .and_then(|message| message.get("content"))
+                .and_then(Value::as_str)
+                .map(|content| content.contains("[Lyra Goal Modeling + Quality Gate]"))
+                .unwrap_or(false)
+        }),
+        "expected one provider request to be the quality gate prompt"
+    );
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root,
+        session_id: session.id,
+    })
+    .expect("get session detail");
+    assert!(
+        detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "goal_model_built"),
+        "expected quality gate goal model event"
+    );
+}
+
+#[test]
+fn quality_gate_does_not_pause_after_user_resolves_assumption_clarification() {
+    let _guard = ENV_TEST_GUARD.lock().expect("lock env test guard");
+    let _enable_intent_gate =
+        EnvVarReset::set("LYRA_ENABLE_INTENT_CLARIFICATION_GATE_IN_TESTS", "1");
+
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let first_response = simple_stream_response("建议走路去。");
+    let second_response = simple_stream_response("按脑筋急转弯场景：走路去。");
+    let third_response = simple_stream_response(
+        &json!({
+            "decision": "accept",
+            "goalModel": {
+                "objective": "answer with selected puzzle framing",
+                "constraints": ["use coworker selected assumption branch"],
+                "unknowns": []
+            },
+            "contradictions": [],
+            "correctionPatterns": [],
+            "finalAnswer": ""
+        })
+        .to_string(),
+    );
+    let server = MockOpenAiServer::start(vec![first_response, second_response, third_response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Quality Clarification Loop Guard".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let storage_root_for_turn = storage_root.clone();
+    let session_id_for_turn = session.id.clone();
+    let turn_handle = thread::spawn(move || {
+        send_turn(AgentSendTurnRequest {
+            storage_root: storage_root_for_turn,
+            session_id: session_id_for_turn,
+            input: "我要去距离我家大概50米左右的地方洗车，你建议我走路去还是开车去".to_string(),
+            profile_id: None,
+            model: None,
+            project_root: None,
+            max_steps: Some(3),
+            enable_planning: false,
+            planning_min_chars: None,
+            enable_reflection: false,
+            reflection_min_tool_calls: None,
+            enable_context_collapse: None,
+            strategy_preset: None,
+            request_user_input_enabled: None,
+            ui_style_profile: None,
+            ui_style_plugin: None,
+            ui_style_user: None,
+            ui_style_project: None,
+        })
+    });
+
+    let wait_started = Instant::now();
+    let (turn_id, request_id) = loop {
+        let detail = get_session(AgentGetSessionRequest {
+            storage_root: storage_root.clone(),
+            session_id: session.id.clone(),
+        })
+        .expect("get session detail");
+        if let Some(interaction) = detail.pending_interactions.iter().find(|interaction| {
+            interaction.kind == AgentPendingInteractionKind::UserQuestion
+                && interaction.status == AgentPendingInteractionStatus::Pending
+        }) {
+            break (interaction.turn_id.clone(), interaction.id.clone());
+        }
+        assert!(
+            wait_started.elapsed() < Duration::from_secs(10),
+            "timed out waiting for quality clarification interaction"
+        );
+        thread::sleep(Duration::from_millis(25));
+    };
+
+    answer_question(AgentAnswerQuestionRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        turn_id,
+        request_id,
+        answers: json!({
+            "quality_blocking_detail": {
+                "label": "按脑筋急转弯场景"
+            }
+        }),
+        note: None,
+    })
+    .expect("answer quality clarification");
+
+    let result = turn_handle
+        .join()
+        .expect("join send turn thread")
+        .expect("send turn result");
+    assert_eq!(result.turn.status, "completed");
+
+    let requests = server.finish();
+    assert_eq!(
+        requests.len(),
+        3,
+        "expected follow-up inference and quality gate after clarification without pausing"
+    );
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root,
+        session_id: session.id,
+    })
+    .expect("get session detail");
+    assert!(
+        detail.pending_interactions.iter().all(|interaction| {
+            interaction.kind != AgentPendingInteractionKind::UserQuestion
+                || interaction.status != AgentPendingInteractionStatus::Pending
+        }),
+        "quality clarification interaction should be fully resolved"
+    );
+}
+
+#[test]
+fn quality_gate_fallback_balanced_continues_with_explicit_assumptions() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let first_response =
+        simple_stream_response("It should be 4. Tell me if you want a full derivation?");
+    let malformed_gate_response = simple_stream_response("gate output unavailable");
+    let server = MockOpenAiServer::start(vec![first_response, malformed_gate_response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Quality Fallback Balanced".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "What is 2 + 2?".to_string(),
+        profile_id: None,
+        model: None,
+        project_root: None,
+        max_steps: Some(2),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .expect("send turn");
+
+    assert_eq!(result.turn.status, "completed");
+    assert!(
+        result.assistant_message.as_ref().is_some_and(|message| {
+            message
+                .content
+                .contains("Tell me if you want a full derivation")
+        }),
+        "balanced fallback should keep the original assistant answer"
+    );
+
+    let requests = server.finish();
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected one inference + one quality gate attempt"
+    );
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root,
+        session_id: session.id,
+    })
+    .expect("get session detail");
+    assert!(
+        detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "quality_gate_fallback"),
+        "expected quality_gate_fallback event"
+    );
+    assert!(
+        detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "quality_gate_assumptions_recorded"),
+        "expected assumptions-recorded event when balanced fallback continues"
+    );
+}
+
+#[test]
+fn quality_gate_fallback_strict_pauses_without_silent_continue() {
+    let _guard = ENV_TEST_GUARD.lock().expect("lock env test guard");
+    let _policy = EnvVarReset::set("LYRA_QUALITY_GATE_FALLBACK_POLICY", "strict");
+
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let first_response = simple_stream_response("The result is 4.");
+    let malformed_gate_response = simple_stream_response("gate output unavailable");
+    let server = MockOpenAiServer::start(vec![first_response, malformed_gate_response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Quality Fallback Strict".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "What is 2 + 2?".to_string(),
+        profile_id: None,
+        model: None,
+        project_root: None,
+        max_steps: Some(2),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .expect("send turn");
+
+    assert_eq!(result.turn.status, "paused");
+    assert_eq!(
+        result.turn.error_code.as_deref(),
+        Some("AGENT_TURN_PAUSED_NO_PROGRESS")
+    );
+    assert!(
+        result.assistant_message.as_ref().is_some_and(|message| {
+            message
+                .content
+                .contains("Quality verification is unavailable")
+        }),
+        "strict fallback should pause with explicit uncertainty"
+    );
+
+    let requests = server.finish();
+    assert_eq!(
+        requests.len(),
+        2,
+        "expected one inference + one failed quality gate before pausing"
+    );
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root,
+        session_id: session.id,
+    })
+    .expect("get session detail");
+    assert!(
+        detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "quality_gate_fallback"),
+        "expected quality_gate_fallback event"
     );
 }
 
@@ -758,6 +1491,7 @@ fn auto_compact_rebuilds_current_task_anchor_after_summary() {
         session_id: session.id.clone(),
         input,
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(2),
         enable_planning: false,
@@ -765,6 +1499,12 @@ fn auto_compact_rebuilds_current_task_anchor_after_summary() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn");
 
@@ -858,6 +1598,7 @@ fn repeated_tool_loop_pauses_turn_without_fixed_step_limit() {
         session_id: session.id.clone(),
         input: "keep searching forever".to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: None,
         enable_planning: false,
@@ -865,6 +1606,12 @@ fn repeated_tool_loop_pauses_turn_without_fixed_step_limit() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn");
 
@@ -918,6 +1665,7 @@ fn simple_observation_turn_uses_standard_strategy_without_language_routing() {
         session_id: session.id.clone(),
         input: "看一下电脑现在状态怎么样".to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: None,
         enable_planning: false,
@@ -925,6 +1673,12 @@ fn simple_observation_turn_uses_standard_strategy_without_language_routing() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn");
 
@@ -1012,6 +1766,7 @@ fn oversized_active_skills_are_truncated_but_turn_succeeds() {
         session_id: session.id.clone(),
         input: "say done".to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(2),
         enable_planning: false,
@@ -1019,6 +1774,12 @@ fn oversized_active_skills_are_truncated_but_turn_succeeds() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send turn");
 
@@ -1071,6 +1832,75 @@ fn oversized_active_skills_are_truncated_but_turn_succeeds() {
             .any(|section| section == "activated_skill_prompts"),
         "expected activated_skill_prompts in truncated sections: {truncated_sections:?}"
     );
+}
+
+#[test]
+fn ui_requests_emit_ui_prompt_sections_in_runtime_event() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let response = simple_stream_response("done");
+    let server = MockOpenAiServer::start(vec![response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("UI Prompt Sections".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "Design a bold responsive landing page UI.".to_string(),
+        profile_id: None,
+        model: None,
+        project_root: None,
+        max_steps: Some(2),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .expect("send turn");
+
+    assert_eq!(result.turn.status, "completed");
+    let requests = server.finish();
+    let first_request = requests.first().expect("first request");
+    let system_prompt = first_request
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| messages.first())
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .expect("system prompt");
+    assert!(system_prompt.contains("## UI Design Capability"));
+    assert!(system_prompt.contains("## UI Design Context"));
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root,
+        session_id: session.id,
+    })
+    .expect("get session detail");
+    let prompt_compiled = detail
+        .runtime_events
+        .iter()
+        .find(|event| event.phase == "prompt_compiled")
+        .expect("prompt_compiled event");
+    let section_tokens = prompt_compiled
+        .payload
+        .get("sectionTokens")
+        .and_then(Value::as_object)
+        .expect("sectionTokens object");
+    assert!(section_tokens.contains_key("ui_design_capability"));
+    assert!(section_tokens.contains_key("ui_design_context"));
 }
 
 #[test]
@@ -1127,6 +1957,7 @@ fn plan_mode_resets_stale_draft_when_project_root_changes() {
         session_id: session.id.clone(),
         input: "帮我做一个公司官网".to_string(),
         profile_id: None,
+        model: None,
         project_root: Some(new_root.to_string_lossy().to_string()),
         max_steps: Some(2),
         enable_planning: false,
@@ -1134,6 +1965,12 @@ fn plan_mode_resets_stale_draft_when_project_root_changes() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send plan turn");
 
@@ -1188,6 +2025,7 @@ fn proposed_plan_text_creates_pending_plan_approval() {
         session_id: session.id.clone(),
         input: "帮我做一个公司官网".to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(2),
         enable_planning: false,
@@ -1195,6 +2033,12 @@ fn proposed_plan_text_creates_pending_plan_approval() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send plan turn");
 
@@ -1298,6 +2142,7 @@ fn request_user_input_round_trips_through_pending_interaction() {
             session_id: session_id_for_turn,
             input: "帮我规划一个官网".to_string(),
             profile_id: None,
+            model: None,
             project_root: None,
             max_steps: Some(3),
             enable_planning: false,
@@ -1305,6 +2150,12 @@ fn request_user_input_round_trips_through_pending_interaction() {
             enable_reflection: false,
             reflection_min_tool_calls: None,
             enable_context_collapse: None,
+            strategy_preset: None,
+            request_user_input_enabled: None,
+            ui_style_profile: None,
+            ui_style_plugin: None,
+            ui_style_user: None,
+            ui_style_project: None,
         })
     });
 
@@ -1362,8 +2213,373 @@ fn request_user_input_round_trips_through_pending_interaction() {
         }),
         "question interaction should be resolved after answering"
     );
+    assert!(
+        detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "interaction_submitted"),
+        "answering a blocking question should emit interaction_submitted"
+    );
 
     let _requests = server.finish();
+}
+
+#[test]
+fn runtime_optimization_state_round_trip_for_user_question_resume() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let cached_file = std::path::PathBuf::from(&storage_root).join("resume-cache-question.txt");
+    write(&cached_file, "line-1\nline-2\nline-3\n").expect("seed cached file");
+
+    let read_arguments = json!({
+        "path": cached_file.to_string_lossy(),
+        "startLine": 1,
+        "endLine": 2,
+    })
+    .to_string();
+    let question_arguments = json!({
+        "questions": [{
+            "id": "site_style",
+            "header": "Style",
+            "question": "Which visual direction should the company site use?",
+            "options": [
+                {
+                    "label": "Corporate (Recommended)",
+                    "description": "Structured, sober, and credibility-first."
+                },
+                {
+                    "label": "Bold",
+                    "description": "More expressive and marketing-driven."
+                }
+            ]
+        }],
+        "allowNote": true
+    })
+    .to_string();
+    let first_response = format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_read_range_1",
+                        "type": "function",
+                        "function": {
+                            "name": "filesystem_read_range",
+                            "arguments": read_arguments,
+                        }
+                    }]
+                }
+            }]
+        })
+    );
+    let second_response = format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_question_1",
+                        "type": "function",
+                        "function": {
+                            "name": "request_user_input",
+                            "arguments": question_arguments,
+                        }
+                    }]
+                }
+            }]
+        })
+    );
+    let third_response = simple_stream_response("收到，我会按 Corporate 风格继续执行。");
+    let server = MockOpenAiServer::start(vec![first_response, second_response, third_response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Runtime optimization question resume".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let initial_result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "帮我规划一个官网".to_string(),
+        profile_id: None,
+        model: None,
+        project_root: None,
+        max_steps: Some(3),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .expect("send initial turn");
+    assert_eq!(initial_result.turn.status, "paused");
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+    })
+    .expect("get session detail");
+    let interaction = detail
+        .pending_interactions
+        .iter()
+        .find(|interaction| {
+            interaction.kind == AgentPendingInteractionKind::UserQuestion
+                && interaction.status == AgentPendingInteractionStatus::Pending
+        })
+        .expect("pending user question interaction should exist");
+
+    let resumed_result = answer_question(AgentAnswerQuestionRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        turn_id: interaction.turn_id.clone(),
+        request_id: interaction.id.clone(),
+        answers: json!({
+            "site_style": {
+                "label": "Corporate (Recommended)"
+            }
+        }),
+        note: Some("偏稳重".to_string()),
+    })
+    .expect("answer question")
+    .expect("answer_question should trigger resume result");
+    assert_eq!(resumed_result.turn.status, "completed");
+
+    let checkpoints = execution_checkpoints_for_session(&storage_root, &session.id);
+    let interaction_wait = checkpoints
+        .iter()
+        .find(|checkpoint| checkpoint.kind == AgentExecutionCheckpointKind::InteractionWait)
+        .expect("interaction_wait checkpoint should exist");
+    let interaction_wait_runtime_state = interaction_wait
+        .continuation_payload_json
+        .get("runtimeOptimizationState")
+        .and_then(Value::as_object)
+        .expect("interaction_wait checkpoint should include runtimeOptimizationState");
+    assert!(
+        interaction_wait_runtime_state
+            .get("currentRound")
+            .and_then(Value::as_u64)
+            .is_some_and(|round| round >= 1),
+        "runtimeOptimizationState.currentRound should preserve pre-pause progress"
+    );
+
+    let interaction_resolved = checkpoints
+        .iter()
+        .find(|checkpoint| checkpoint.kind == AgentExecutionCheckpointKind::InteractionResolved)
+        .expect("interaction_resolved checkpoint should exist");
+    assert!(
+        interaction_resolved
+            .continuation_payload_json
+            .get("runtimeOptimizationState")
+            .is_some(),
+        "interaction_resolved checkpoint should carry runtimeOptimizationState"
+    );
+
+    let manual_resume_anchor = checkpoints
+        .iter()
+        .find(|checkpoint| checkpoint.kind == AgentExecutionCheckpointKind::ManualResumeAnchor)
+        .expect("manual_resume_anchor checkpoint should exist");
+    assert!(
+        manual_resume_anchor
+            .continuation_payload_json
+            .get("runtimeOptimizationState")
+            .is_some(),
+        "manual_resume_anchor checkpoint should carry runtimeOptimizationState"
+    );
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+    })
+    .expect("get session detail");
+    assert!(
+        detail.runtime_events.iter().any(|event| {
+            event.phase == "runtime_optimization_state_restored"
+                && event.payload.get("restored").and_then(Value::as_bool) == Some(true)
+        }),
+        "resume turn should emit runtime_optimization_state_restored"
+    );
+
+    let requests = server.finish();
+    assert_eq!(
+        requests.len(),
+        3,
+        "expected prefetch + pause + resume requests"
+    );
+}
+
+#[test]
+fn runtime_optimization_state_round_trip_for_command_approval_resume() {
+    let temp = TempStorageRoot::new();
+    let storage_root = temp.as_string();
+    let cached_file = std::path::PathBuf::from(&storage_root).join("resume-cache-approval.txt");
+    write(&cached_file, "alpha\nbeta\ngamma\n").expect("seed cached file");
+
+    let read_arguments = json!({
+        "path": cached_file.to_string_lossy(),
+        "startLine": 1,
+        "endLine": 2,
+    })
+    .to_string();
+    let command_arguments = json!({
+        "command": "printf 'approval-runtime-cache\\n'"
+    })
+    .to_string();
+    let first_response = format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_read_range_1",
+                        "type": "function",
+                        "function": {
+                            "name": "filesystem_read_range",
+                            "arguments": read_arguments,
+                        }
+                    }]
+                }
+            }]
+        })
+    );
+    let second_response = format!(
+        "data: {}\n\ndata: [DONE]\n\n",
+        json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_terminal_1",
+                        "type": "function",
+                        "function": {
+                            "name": "terminal_exec",
+                            "arguments": command_arguments,
+                        }
+                    }]
+                }
+            }]
+        })
+    );
+    let third_response = simple_stream_response("command completed after approval");
+    let server = MockOpenAiServer::start(vec![first_response, second_response, third_response]);
+    let profile_id = create_openai_compatible_profile(&storage_root, &server.base_url);
+
+    let session = create_session(AgentCreateSessionRequest {
+        storage_root: storage_root.clone(),
+        title: Some("Runtime optimization approval resume".to_string()),
+        profile_id: Some(profile_id),
+    })
+    .expect("create session");
+
+    let initial_result = send_turn(AgentSendTurnRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        input: "run a simple terminal command".to_string(),
+        profile_id: None,
+        model: None,
+        project_root: None,
+        max_steps: Some(3),
+        enable_planning: false,
+        planning_min_chars: None,
+        enable_reflection: false,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .expect("send initial turn");
+    assert_eq!(initial_result.turn.status, "paused");
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+    })
+    .expect("get session detail");
+    let interaction = detail
+        .pending_interactions
+        .iter()
+        .find(|interaction| {
+            interaction.kind == AgentPendingInteractionKind::CommandApproval
+                && interaction.status == AgentPendingInteractionStatus::Pending
+        })
+        .expect("pending command approval interaction should exist");
+
+    let resumed_result = submit_command_approval(CommandApprovalSubmitRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+        turn_id: interaction.turn_id.clone(),
+        tool_call_id: interaction.id.clone(),
+        decision: "allow_once".to_string(),
+    })
+    .expect("submit command approval")
+    .expect("submit_command_approval should trigger resume result");
+    assert_eq!(resumed_result.turn.status, "completed");
+
+    let checkpoints = execution_checkpoints_for_session(&storage_root, &session.id);
+    let interaction_wait = checkpoints
+        .iter()
+        .find(|checkpoint| checkpoint.kind == AgentExecutionCheckpointKind::InteractionWait)
+        .expect("interaction_wait checkpoint should exist");
+    let interaction_wait_runtime_state = interaction_wait
+        .continuation_payload_json
+        .get("runtimeOptimizationState")
+        .and_then(Value::as_object)
+        .expect("interaction_wait checkpoint should include runtimeOptimizationState");
+    assert!(
+        interaction_wait_runtime_state
+            .get("currentRound")
+            .and_then(Value::as_u64)
+            .is_some_and(|round| round >= 1),
+        "runtimeOptimizationState.currentRound should preserve pre-pause progress"
+    );
+
+    let manual_resume_anchor = checkpoints
+        .iter()
+        .find(|checkpoint| checkpoint.kind == AgentExecutionCheckpointKind::ManualResumeAnchor)
+        .expect("manual_resume_anchor checkpoint should exist");
+    assert!(
+        manual_resume_anchor
+            .continuation_payload_json
+            .get("runtimeOptimizationState")
+            .is_some(),
+        "manual_resume_anchor checkpoint should carry runtimeOptimizationState"
+    );
+
+    let detail = get_session(AgentGetSessionRequest {
+        storage_root: storage_root.clone(),
+        session_id: session.id.clone(),
+    })
+    .expect("get session detail");
+    assert!(
+        detail.runtime_events.iter().any(|event| {
+            event.phase == "runtime_optimization_state_restored"
+                && event.payload.get("restored").and_then(Value::as_bool) == Some(true)
+        }),
+        "resume turn should emit runtime_optimization_state_restored"
+    );
+
+    let requests = server.finish();
+    assert_eq!(
+        requests.len(),
+        3,
+        "expected prefetch + pause + resume requests"
+    );
 }
 
 #[test]
@@ -1411,6 +2627,7 @@ fn command_approval_allow_always_unblocks_current_turn_without_project_root() {
             session_id: session_id_for_turn,
             input: "run a simple terminal command".to_string(),
             profile_id: None,
+            model: None,
             project_root: None,
             max_steps: Some(3),
             enable_planning: false,
@@ -1418,6 +2635,12 @@ fn command_approval_allow_always_unblocks_current_turn_without_project_root() {
             enable_reflection: false,
             reflection_min_tool_calls: None,
             enable_context_collapse: None,
+            strategy_preset: None,
+            request_user_input_enabled: None,
+            ui_style_profile: None,
+            ui_style_plugin: None,
+            ui_style_user: None,
+            ui_style_project: None,
         })
     });
 
@@ -1491,6 +2714,13 @@ fn command_approval_allow_always_unblocks_current_turn_without_project_root() {
             .all(|event| event.phase != "paused"),
         "turn should not pause after allow_always"
     );
+    assert!(
+        detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "interaction_submitted"),
+        "command approval submission should emit interaction_submitted"
+    );
 
     let _requests = server.finish();
 }
@@ -1523,6 +2753,7 @@ fn plan_mode_plain_text_without_structured_interaction_pauses_after_retry() {
         session_id: session.id.clone(),
         input: "帮我做一个公司官网".to_string(),
         profile_id: None,
+        model: None,
         project_root: None,
         max_steps: Some(3),
         enable_planning: false,
@@ -1530,6 +2761,12 @@ fn plan_mode_plain_text_without_structured_interaction_pauses_after_retry() {
         enable_reflection: false,
         reflection_min_tool_calls: None,
         enable_context_collapse: None,
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
     })
     .expect("send plan turn");
 

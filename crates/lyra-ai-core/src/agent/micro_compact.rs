@@ -98,6 +98,18 @@ impl MicroCompactTracker {
 
         compacted
     }
+
+    /// Export tracked creation timestamps for checkpoint persistence.
+    pub fn to_map(&self) -> HashMap<String, (u64, u32)> {
+        self.creation_times.clone()
+    }
+
+    /// Restore tracked creation timestamps from checkpoint.
+    pub fn from_map(map: HashMap<String, (u64, u32)>) -> Self {
+        Self {
+            creation_times: map,
+        }
+    }
 }
 
 /// Compact a large text by keeping head + tail lines.

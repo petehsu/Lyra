@@ -59,31 +59,39 @@ export const SettingsAiModelPicker = ({
     />
     <small>{helpText}</small>
     {models.length > 0 ? (
-      <div className="lyra-settings-ai-model-list" role="listbox" aria-label={labels.modelLabel}>
+      <ul
+        className="lyra-settings-ai-model-list"
+        role="listbox"
+        aria-label={labels.modelLabel}
+        aria-multiselectable="true"
+      >
         {models.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className={selectedModelIds.includes(entry.id)
-              ? "lyra-settings-ai-model-option lyra-settings-ai-model-option-active"
-              : "lyra-settings-ai-model-option"}
-            onClick={() => {
-              onToggleModel(entry.id);
-            }}
-          >
-            <span className="lyra-settings-ai-model-option-copy">
-              <strong>{entry.name}</strong>
-              <small>{entry.id}</small>
-              {entry.description ? <small>{entry.description}</small> : null}
-            </span>
-            <span className="lyra-settings-ai-model-option-meta">
-              <span className="lyra-settings-ai-badge lyra-settings-ai-badge-subtle">
-                {modelSourceLabel(labels, entry.source)}
+          <li key={entry.id} className="lyra-settings-ai-model-list-item">
+            <button
+              type="button"
+              role="option"
+              aria-selected={selectedModelIds.includes(entry.id)}
+              className={selectedModelIds.includes(entry.id)
+                ? "lyra-settings-ai-model-option lyra-settings-ai-model-option-active"
+                : "lyra-settings-ai-model-option"}
+              onClick={() => {
+                onToggleModel(entry.id);
+              }}
+            >
+              <span className="lyra-settings-ai-model-option-copy">
+                <strong>{entry.name}</strong>
+                <small>{entry.id}</small>
+                {entry.description ? <small>{entry.description}</small> : null}
               </span>
-            </span>
-          </button>
+              <span className="lyra-settings-ai-model-option-meta">
+                <span className="lyra-settings-ai-badge lyra-settings-ai-badge-subtle">
+                  {modelSourceLabel(labels, entry.source)}
+                </span>
+              </span>
+            </button>
+          </li>
         ))}
-      </div>
+      </ul>
     ) : null}
   </label>
 );

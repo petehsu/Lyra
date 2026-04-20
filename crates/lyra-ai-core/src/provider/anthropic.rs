@@ -189,7 +189,7 @@ pub fn run_agent_inference(
             on_reasoning_delta.as_deref_mut(),
         ) {
             Ok(response) => return Ok(response),
-            Err(error) if !emitted_delta.get() => {
+            Err(_error) if !emitted_delta.get() => {
                 // Stream failed before emitting any content — try non-stream fallback
                 return run_agent_inference_non_stream(profile, secrets, messages, tools).map(
                     |response| {

@@ -19,18 +19,26 @@ use std::sync::Arc;
 
 use crate::agent::service::{
     answer_plan_question as answer_agent_plan_question, answer_question as answer_agent_question,
-    bind_session_project as bind_agent_session_project, create_session as create_agent_session,
-    delete_session as delete_agent_session, enter_plan_mode as enter_agent_plan_mode,
-    get_pending_interactions as get_agent_pending_interactions, get_plan as get_agent_plan,
-    get_session as get_agent_session, list_sessions as list_agent_sessions,
-    resolve_plan_approval as resolve_agent_plan_approval, send_turn as send_agent_turn,
+    archive_thread as archive_agent_thread, bind_session_project as bind_agent_session_project,
+    create_session as create_agent_session, delete_session as delete_agent_session,
+    ensure_thread as ensure_agent_thread, enter_plan_mode as enter_agent_plan_mode,
+    fork_thread as fork_agent_thread, get_pending_interactions as get_agent_pending_interactions,
+    get_plan as get_agent_plan, get_session as get_agent_session, get_thread as get_agent_thread,
+    list_sessions as list_agent_sessions, list_threads as list_agent_threads,
+    resolve_plan_approval as resolve_agent_plan_approval,
+    resume_execution as resume_agent_execution, resume_thread as resume_agent_thread,
+    rollback_thread as rollback_agent_thread, send_thread_turn as send_agent_thread_turn,
+    send_turn as send_agent_turn, unarchive_thread as unarchive_agent_thread,
 };
 use crate::agent::types::{
-    AgentAnswerPlanQuestionRequest, AgentAnswerQuestionRequest, AgentBindSessionProjectRequest,
-    AgentCreateSessionRequest, AgentDeleteSessionRequest, AgentEnterPlanModeRequest,
+    AgentAnswerPlanQuestionRequest, AgentAnswerQuestionRequest, AgentArchiveThreadRequest,
+    AgentBindSessionProjectRequest, AgentCreateSessionRequest, AgentDeleteSessionRequest,
+    AgentEnsureThreadRequest, AgentEnterPlanModeRequest, AgentForkThreadRequest,
     AgentGetPendingInteractionsRequest, AgentGetPlanRequest, AgentGetSessionRequest,
-    AgentListSessionsRequest, AgentResolvePlanApprovalRequest, AgentSendTurnRequest,
-    CommandApprovalSubmitRequest,
+    AgentGetThreadRequest, AgentListSessionsRequest, AgentListThreadsRequest,
+    AgentResolvePlanApprovalRequest, AgentResumeExecutionRequest, AgentResumeThreadRequest,
+    AgentRollbackThreadRequest, AgentSendThreadTurnRequest, AgentSendTurnRequest,
+    AgentUnarchiveThreadRequest, CommandApprovalSubmitRequest,
 };
 use crate::error::{parse_json, to_json};
 use crate::memory::{
@@ -111,6 +119,46 @@ pub fn get_agent_session_json(request_json: String) -> Result<String> {
     to_json(&get_agent_session(request)?)
 }
 
+pub fn ensure_agent_thread_json(request_json: String) -> Result<String> {
+    let request: AgentEnsureThreadRequest = parse_json(&request_json)?;
+    to_json(&ensure_agent_thread(request)?)
+}
+
+pub fn get_agent_thread_json(request_json: String) -> Result<String> {
+    let request: AgentGetThreadRequest = parse_json(&request_json)?;
+    to_json(&get_agent_thread(request)?)
+}
+
+pub fn list_agent_threads_json(request_json: String) -> Result<String> {
+    let request: AgentListThreadsRequest = parse_json(&request_json)?;
+    to_json(&list_agent_threads(request)?)
+}
+
+pub fn fork_agent_thread_json(request_json: String) -> Result<String> {
+    let request: AgentForkThreadRequest = parse_json(&request_json)?;
+    to_json(&fork_agent_thread(request)?)
+}
+
+pub fn archive_agent_thread_json(request_json: String) -> Result<String> {
+    let request: AgentArchiveThreadRequest = parse_json(&request_json)?;
+    to_json(&archive_agent_thread(request)?)
+}
+
+pub fn unarchive_agent_thread_json(request_json: String) -> Result<String> {
+    let request: AgentUnarchiveThreadRequest = parse_json(&request_json)?;
+    to_json(&unarchive_agent_thread(request)?)
+}
+
+pub fn resume_agent_thread_json(request_json: String) -> Result<String> {
+    let request: AgentResumeThreadRequest = parse_json(&request_json)?;
+    to_json(&resume_agent_thread(request)?)
+}
+
+pub fn rollback_agent_thread_json(request_json: String) -> Result<String> {
+    let request: AgentRollbackThreadRequest = parse_json(&request_json)?;
+    to_json(&rollback_agent_thread(request)?)
+}
+
 pub fn bind_agent_session_project_json(request_json: String) -> Result<String> {
     let request: AgentBindSessionProjectRequest = parse_json(&request_json)?;
     to_json(&bind_agent_session_project(request)?)
@@ -124,6 +172,11 @@ pub fn delete_agent_session_json(request_json: String) -> Result<()> {
 pub fn send_agent_turn_json(request_json: String) -> Result<String> {
     let request: AgentSendTurnRequest = parse_json(&request_json)?;
     to_json(&send_agent_turn(request)?)
+}
+
+pub fn send_agent_thread_turn_json(request_json: String) -> Result<String> {
+    let request: AgentSendThreadTurnRequest = parse_json(&request_json)?;
+    to_json(&send_agent_thread_turn(request)?)
 }
 
 pub fn enter_agent_plan_mode_json(request_json: String) -> Result<String> {
@@ -141,19 +194,24 @@ pub fn get_agent_pending_interactions_json(request_json: String) -> Result<Strin
     to_json(&get_agent_pending_interactions(request)?)
 }
 
-pub fn answer_agent_question_json(request_json: String) -> Result<()> {
+pub fn answer_agent_question_json(request_json: String) -> Result<String> {
     let request: AgentAnswerQuestionRequest = parse_json(&request_json)?;
-    answer_agent_question(request)
+    to_json(&answer_agent_question(request)?)
 }
 
-pub fn answer_agent_plan_question_json(request_json: String) -> Result<()> {
+pub fn answer_agent_plan_question_json(request_json: String) -> Result<String> {
     let request: AgentAnswerPlanQuestionRequest = parse_json(&request_json)?;
-    answer_agent_plan_question(request)
+    to_json(&answer_agent_plan_question(request)?)
 }
 
 pub fn resolve_agent_plan_approval_json(request_json: String) -> Result<String> {
     let request: AgentResolvePlanApprovalRequest = parse_json(&request_json)?;
     to_json(&resolve_agent_plan_approval(request)?)
+}
+
+pub fn resume_agent_execution_json(request_json: String) -> Result<String> {
+    let request: AgentResumeExecutionRequest = parse_json(&request_json)?;
+    to_json(&resume_agent_execution(request)?)
 }
 
 pub fn get_ai_memory_config_json(request_json: String) -> Result<String> {
@@ -170,9 +228,9 @@ pub fn run_ai_memory_scheduler_tick(storage_root: &str) -> Result<usize> {
     run_memory_scheduler_tick(storage_root)
 }
 
-pub fn submit_command_approval_json(request_json: String) -> Result<()> {
+pub fn submit_command_approval_json(request_json: String) -> Result<String> {
     let request: CommandApprovalSubmitRequest = parse_json(&request_json)?;
-    agent::service::submit_command_approval(request)
+    to_json(&agent::service::submit_command_approval(request)?)
 }
 
 pub fn register_rust_event_callback(callback: Arc<dyn Fn(String) + Send + Sync + 'static>) {

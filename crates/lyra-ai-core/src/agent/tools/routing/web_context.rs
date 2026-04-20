@@ -2,15 +2,15 @@ use serde_json::Value;
 
 use crate::agent::types::AgentToolCall;
 
-const WEB_SKELETON_READ: &str = "workbench.web_skeleton.read";
-const WEB_QUERY_FIND: &str = "workbench.web_query.find";
-const WEB_CONTEXT_READ: &str = "workbench.web_context.read";
-const WEB_FOCUS_PROBE: &str = "workbench.web_focus.probe";
-const WEB_SCAN_AND_ACT: &str = "workbench.web_scan_and_act";
-const WEB_ACTION_SAFE: &str = "workbench.web_action.safe";
-const WEB_ACTION_MUTATE: &str = "workbench.web_action.mutate";
-const WEB_ACTION_NAVIGATE: &str = "workbench.web_action.navigate";
-const WEB_ACTION_WAIT: &str = "workbench.web_action.wait";
+const WEB_SKELETON_READ: &str = "lyra.web.skeleton.read";
+const WEB_QUERY_FIND: &str = "lyra.web.query.find";
+const WEB_CONTEXT_READ: &str = "lyra.web.context.read";
+const WEB_FOCUS_PROBE: &str = "lyra.web.focus.probe";
+const WEB_SCAN_AND_ACT: &str = "lyra.web.scan.act";
+const WEB_ACTION_SAFE: &str = "lyra.web.action.safe";
+const WEB_ACTION_MUTATE: &str = "lyra.web.action.mutate";
+const WEB_ACTION_NAVIGATE: &str = "lyra.web.action.navigate";
+const WEB_ACTION_WAIT: &str = "lyra.web.action.wait";
 
 #[derive(Clone, Debug, Default)]
 pub struct WorkbenchWebRoutingContext {

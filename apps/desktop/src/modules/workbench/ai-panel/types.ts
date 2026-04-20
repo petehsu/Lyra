@@ -17,7 +17,7 @@ export type AiPanelAppOpenRequest = {
   readonly iconKey: AiPanelAppIconKey;
 };
 
-export type AiPanelSurfaceVariant = "sidebar";
+export type AiPanelSurfaceVariant = "sidebar" | "workspace" | "detached";
 
 export type AiPanelWriteStreamEvent =
   | {

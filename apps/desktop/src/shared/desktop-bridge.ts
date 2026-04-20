@@ -27,6 +27,7 @@ import type {
   AgentGetSessionRequest,
   AgentPlanState,
   AgentPendingInteraction,
+  AgentResumeExecutionRequest,
   AgentResolvePlanApprovalRequest,
   AgentRuntimeEvent,
   AgentSendTurnRequest,
@@ -176,6 +177,7 @@ export type {
   AgentPendingInteraction,
   AgentPendingInteractionKind,
   AgentPendingInteractionStatus,
+  AgentResumeExecutionRequest,
   AgentResolvePlanApprovalRequest,
   AgentMessage,
   AgentRuntimeEvent,
@@ -379,6 +381,7 @@ export const LYRA_CHANNELS = {
   agentAnswerQuestion: "lyra:agent/answer-question",
   agentAnswerPlanQuestion: "lyra:agent/answer-plan-question",
   agentResolvePlanApproval: "lyra:agent/resolve-plan-approval",
+  agentResumeExecution: "lyra:agent/resume-execution",
   agentGetMemoryConfig: "lyra:agent/get-memory-config",
   agentUpdateMemoryConfig: "lyra:agent/update-memory-config",
   agentEvent: "lyra:agent/event",
@@ -1152,14 +1155,23 @@ export type AgentApi = {
   readonly getPendingInteractions: (
     request: AgentGetPendingInteractionsRequest
   ) => Promise<readonly AgentPendingInteraction[]>;
-  readonly answerQuestion: (request: AgentAnswerQuestionRequest) => Promise<void>;
-  readonly answerPlanQuestion: (request: AgentAnswerPlanQuestionRequest) => Promise<void>;
+  readonly answerQuestion: (
+    request: AgentAnswerQuestionRequest
+  ) => Promise<AgentSendTurnResult | null>;
+  readonly answerPlanQuestion: (
+    request: AgentAnswerPlanQuestionRequest
+  ) => Promise<AgentSendTurnResult | null>;
   readonly resolvePlanApproval: (
     request: AgentResolvePlanApprovalRequest
   ) => Promise<AgentSendTurnResult | null>;
+  readonly resumeExecution: (
+    request: AgentResumeExecutionRequest
+  ) => Promise<AgentSendTurnResult | null>;
   readonly getMemoryConfig: () => Promise<AiMemoryConfig>;
   readonly updateMemoryConfig: (config: AiMemoryConfig) => Promise<AiMemoryConfig>;
-  readonly submitCommandApproval: (request: CommandApprovalSubmitRequest) => Promise<void>;
+  readonly submitCommandApproval: (
+    request: CommandApprovalSubmitRequest
+  ) => Promise<AgentSendTurnResult | null>;
   readonly onEvent: (listener: (event: AgentRuntimeEvent) => void) => () => void;
 };
 

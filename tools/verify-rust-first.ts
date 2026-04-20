@@ -268,8 +268,28 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
 
 const tsOwnedMainModules = new Map<string, string>([
   [
+    "browser-use",
+    "TypeScript-owned shell module: browser-use runtime coordination, bundle lifecycle, and host-tool bridging."
+  ],
+  [
     "capabilities",
     "TypeScript-owned shell module: unified capability registry, app manifests, and invoke/event orchestration."
+  ],
+  [
+    "workbench-browser",
+    "TypeScript-owned shell module: embedded browser tab/view orchestration in Electron."
+  ],
+  [
+    "workbench-documents",
+    "TypeScript-owned shell module: document detection/fetch/view coordination above native parsers."
+  ],
+  [
+    "workbench-observation",
+    "TypeScript-owned shell module: renderer/browser observation aggregation and cache."
+  ],
+  [
+    "workbench-web-automation",
+    "TypeScript-owned shell module: deterministic web action planning, execution, and verification."
   ],
   ["search", "TypeScript-owned shell module: provider composition and lightweight search routing."],
   ["linux-compat", "TypeScript-owned shell module: Electron/Linux startup environment integration."],
@@ -278,6 +298,18 @@ const tsOwnedMainModules = new Map<string, string>([
 ]);
 
 const bridgeOnlyMainModules = new Map<string, string>([
+  [
+    "code-intel",
+    "Bridge-only module: host tool registration and runtime wiring for native code intelligence."
+  ],
+  [
+    "documents",
+    "Bridge-only module: native document parser loader/types exposed to shell services."
+  ],
+  [
+    "runtime-host-rpc",
+    "Bridge-only module: registers host RPC handlers onto the shared runtime client."
+  ],
   ["runtime", "Bridge-only utilities. Runtime ports must stay thin and native-backed where declared."]
 ]);
 

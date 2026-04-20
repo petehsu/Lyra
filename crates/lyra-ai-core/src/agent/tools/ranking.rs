@@ -166,14 +166,14 @@ fn browser_workflow_escape_penalty(tool_name: &str, context: Option<&ToolRanking
         | "terminal.session.close" => -120,
         "memory.recall" => -96,
         "workbench.tab.capture_visual" => -72,
-        "workbench.web_graph.build" => {
+        "lyra.web.graph.build" => {
             if web.focus_atlas_ready || web.widget_graph_ready || web.native_widget_ready {
                 -96
             } else {
                 0
             }
         }
-        "workbench.web_graph.query" => {
+        "lyra.web.graph.query" => {
             if web.focus_atlas_ready || web.widget_graph_ready || web.native_widget_ready {
                 -72
             } else {

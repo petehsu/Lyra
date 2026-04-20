@@ -10,6 +10,7 @@ pub const AGENT_TOOL_APPROVAL_REQUIRED: &str = "AGENT_TOOL_APPROVAL_REQUIRED";
 pub const AGENT_PLAN_QUESTION_REQUIRED: &str = "AGENT_PLAN_QUESTION_REQUIRED";
 pub const AGENT_PLAN_APPROVAL_REQUIRED: &str = "AGENT_PLAN_APPROVAL_REQUIRED";
 pub const AGENT_TURN_FAILED: &str = "AGENT_TURN_FAILED";
+pub const AGENT_WAITING_INTERACTION: &str = "AGENT_WAITING_INTERACTION";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +68,108 @@ pub struct AgentPendingInteraction {
     pub updated_at: i64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentExecutionPhase {
+    Idle,
+    Running,
+    WaitingInteraction,
+    Resumable,
+    Completed,
+    Failed,
+    Abandoned,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentExecutionCheckpointKind {
+    TurnStarted,
+    InteractionWait,
+    InteractionResolved,
+    TurnCompleted,
+    TurnFailed,
+    ManualResumeAnchor,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentGoalStatus {
+    Pending,
+    InProgress,
+    Blocked,
+    Completed,
+    Failed,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentGoalNode {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    pub title: String,
+    pub status: AgentGoalStatus,
+    pub progress_percent: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocking_reason: Option<String>,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExecutionState {
+    pub id: String,
+    pub run_id: String,
+    pub thread_id: String,
+    pub session_id: String,
+    pub collaboration_mode: AgentCollaborationMode,
+    pub phase: AgentExecutionPhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_turn_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting_interaction_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting_interaction_kind: Option<AgentPendingInteractionKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_goal_node_id: Option<String>,
+    pub goal_tree_json: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_checkpoint_id: Option<String>,
+    pub version: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExecutionCheckpoint {
+    pub id: String,
+    pub execution_id: String,
+    pub thread_id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub kind: AgentExecutionCheckpointKind,
+    pub phase_before: AgentExecutionPhase,
+    pub phase_after: AgentExecutionPhase,
+    pub goal_snapshot_json: Value,
+    pub continuation_payload_json: Value,
+    pub created_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExecutionCheckpointSummary {
+    pub id: String,
+    pub execution_id: String,
+    pub thread_id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub kind: AgentExecutionCheckpointKind,
+    pub phase_before: AgentExecutionPhase,
+    pub phase_after: AgentExecutionPhase,
+    pub created_at: i64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentCollaborationMode {
@@ -100,6 +203,33 @@ pub struct AgentSession {
     pub updated_at: i64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentThreadLifecycleState {
+    #[default]
+    Active,
+    Archived,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentThread {
+    pub id: String,
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forked_from_turn_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rollback_from_thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rollback_from_turn_id: Option<String>,
+    pub lifecycle_state: AgentThreadLifecycleState,
+    pub elicitation_counter: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentTurn {
@@ -126,6 +256,8 @@ pub struct AgentMessage {
     pub turn_id: Option<String>,
     pub role: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_content: Option<String>,
     pub created_at: i64,
 }
 
@@ -155,6 +287,10 @@ pub struct AgentSessionDetail {
     pub session: AgentSession,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<AgentPlanState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_state: Option<AgentExecutionState>,
+    #[serde(default)]
+    pub execution_checkpoints: Vec<AgentExecutionCheckpointSummary>,
     pub pending_interactions: Vec<AgentPendingInteraction>,
     pub turns: Vec<AgentTurn>,
     pub messages: Vec<AgentMessage>,
@@ -181,6 +317,61 @@ pub struct AgentCreateSessionRequest {
 pub struct AgentGetSessionRequest {
     pub storage_root: String,
     pub session_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentEnsureThreadRequest {
+    pub storage_root: String,
+    pub session_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentGetThreadRequest {
+    pub storage_root: String,
+    pub thread_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentListThreadsRequest {
+    pub storage_root: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_archived: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentForkThreadRequest {
+    pub storage_root: String,
+    pub thread_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_turn_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentArchiveThreadRequest {
+    pub storage_root: String,
+    pub thread_id: String,
+}
+
+pub type AgentUnarchiveThreadRequest = AgentArchiveThreadRequest;
+pub type AgentResumeThreadRequest = AgentArchiveThreadRequest;
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRollbackThreadRequest {
+    pub storage_root: String,
+    pub thread_id: String,
+    pub turn_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -247,11 +438,52 @@ pub struct AgentResolvePlanApprovalRequest {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentResumeExecutionRequest {
+    pub storage_root: String,
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSendThreadTurnRequest {
+    pub storage_root: String,
+    pub thread_id: String,
+    pub input: String,
+    pub profile_id: Option<String>,
+    pub model: Option<String>,
+    pub project_root: Option<String>,
+    pub max_steps: Option<u32>,
+    #[serde(default = "default_true")]
+    pub enable_planning: bool,
+    pub planning_min_chars: Option<usize>,
+    #[serde(default = "default_true")]
+    pub enable_reflection: bool,
+    pub reflection_min_tool_calls: Option<usize>,
+    pub enable_context_collapse: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategy_preset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_user_input_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_style_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_style_plugin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_style_user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_style_project: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentSendTurnRequest {
     pub storage_root: String,
     pub session_id: String,
     pub input: String,
     pub profile_id: Option<String>,
+    pub model: Option<String>,
     pub project_root: Option<String>,
     pub max_steps: Option<u32>,
     /// Enable a planning step before the tool loop (default: true)
@@ -266,6 +498,18 @@ pub struct AgentSendTurnRequest {
     pub reflection_min_tool_calls: Option<usize>,
     /// Enable context collapse for this turn (None = enabled by default)
     pub enable_context_collapse: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategy_preset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_user_input_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_style_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_style_plugin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_style_user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_style_project: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -282,6 +526,13 @@ pub struct AgentSendTurnResult {
     pub tool_calls: Vec<AgentToolCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<AgentUsage>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentThreadForkResult {
+    pub thread: AgentThread,
+    pub session: AgentSession,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

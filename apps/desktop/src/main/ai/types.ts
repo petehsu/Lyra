@@ -23,6 +23,7 @@ import type {
   AgentGetSessionRequest,
   AgentPlanState,
   AgentPendingInteraction,
+  AgentResumeExecutionRequest,
   AgentResolvePlanApprovalRequest,
   AgentRuntimeEvent,
   AgentSendTurnRequest,
@@ -107,6 +108,10 @@ export type NativeAgentAnswerPlanQuestionRequest = AgentAnswerPlanQuestionReques
 };
 
 export type NativeAgentResolvePlanApprovalRequest = AgentResolvePlanApprovalRequest & {
+  readonly storageRoot: string;
+};
+
+export type NativeAgentResumeExecutionRequest = AgentResumeExecutionRequest & {
   readonly storageRoot: string;
 };
 

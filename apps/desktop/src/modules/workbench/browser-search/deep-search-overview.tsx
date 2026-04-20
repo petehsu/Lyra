@@ -333,7 +333,7 @@ export const DeepSearchOverview = ({
                 <strong>{bucket.engine.label}</strong>
                 <small>{bucket.latencyMs ?? 0}ms</small>
               </header>
-              <ul>
+              <ul className="lyra-deep-search-engine-list">
                 {bucket.results.slice(0, 2).map((result) => (
                   <li key={`${bucket.engine.id}-${result.id}`}>{result.title}</li>
                 ))}
@@ -349,7 +349,7 @@ export const DeepSearchOverview = ({
               <strong>{labels.localStatusLabel}</strong>
               <small>{snapshot.local.elapsedMs}ms</small>
             </header>
-            <ul>
+            <ul className="lyra-deep-search-engine-list">
               <li>scope: {snapshot.local.scopePreset}</li>
               <li>files: {snapshot.local.stats.scannedFiles}</li>
               <li>dirs: {snapshot.local.stats.scannedDirs}</li>

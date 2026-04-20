@@ -135,21 +135,24 @@ fn round_trips_agent_session_turn_messages_and_tool_calls() {
     assert_eq!(completed_turn.status, "completed");
     assert_eq!(completed_turn.usage, Some(usage));
 
-    let assistant_message = registry_db::append_agent_message(
+    let assistant_message = registry_db::append_agent_message_with_display(
         &storage_root,
         &session.id,
         Some(created_turn.id.clone()),
         "assistant",
         "done",
+        Some("done"),
     )
     .expect("append assistant message");
     assert_eq!(assistant_message.role, "assistant");
+    assert_eq!(assistant_message.display_content.as_deref(), Some("done"));
 
     let turns = registry_db::list_agent_turns(&storage_root, &session.id).expect("list turns");
     assert_eq!(turns.len(), 1);
     let messages =
         registry_db::list_agent_messages(&storage_root, &session.id).expect("list messages");
     assert_eq!(messages.len(), 2);
+    assert_eq!(messages[1].display_content.as_deref(), Some("done"));
     let tool_calls =
         registry_db::list_agent_tool_calls(&storage_root, &session.id).expect("list tool calls");
     assert_eq!(tool_calls.len(), 1);

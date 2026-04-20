@@ -1,4 +1,5 @@
 use crate::provider::types::{AgentInferenceMessage, AgentInferenceMessageRole};
+use serde::{Deserialize, Serialize};
 
 /// Minimum fraction of messages to retain when snipping.
 /// 0.85 means we keep at least 85% of messages — very conservative.
@@ -17,7 +18,7 @@ const SNIP_MARKER: &str =
     "<snipped>{count} older tool results omitted to conserve context capacity</snipped>";
 
 /// State tracking snip history for the current session.
-#[derive(Default)]
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct SnipState {
     /// Total messages snipped across all passes.
     pub total_snipped: usize,

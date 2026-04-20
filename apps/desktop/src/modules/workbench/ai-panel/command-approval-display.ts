@@ -120,10 +120,10 @@ export const resolveCommandApprovalToolLabel = (
   if (toolName.startsWith("terminal.")) {
     return labels.toolTerminalExec;
   }
-  if (toolName.startsWith("workbench.web_action.")) {
+  if (toolName.startsWith("lyra.web.action.")) {
     return "Web Action";
   }
-  if (toolName.startsWith("workbench.web_graph.")) {
+  if (toolName.startsWith("lyra.web.graph.")) {
     return "Web Graph";
   }
   if (toolName.startsWith("workbench.document.")) {
@@ -151,14 +151,14 @@ export const resolveCommandApprovalCommandPreview = ({
     return explicitCommand;
   }
 
-  if (toolName.startsWith("workbench.web_action.")) {
+  if (toolName.startsWith("lyra.web.action.")) {
     const summary = summarizeWebAction(toolName, inputPayload);
     if (summary !== null) {
       return summary;
     }
   }
 
-  if (toolName.startsWith("workbench.web_graph.")) {
+  if (toolName.startsWith("lyra.web.graph.")) {
     return summarizeWebGraph(toolName, inputPayload);
   }
 

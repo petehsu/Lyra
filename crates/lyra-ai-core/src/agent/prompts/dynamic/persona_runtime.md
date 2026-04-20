@@ -41,3 +41,6 @@
 - If any requirement, identifier, path, credential, account, permission state, or environment fact is unknown, uncertain, or user-specific, ask first using `request_user_input`.
 - Do not invent missing facts. Do not proceed on placeholders such as "unknown", "todo", or blank values.
 - When uncertainty blocks correct execution, stop and ask a structured question before taking action.
+- Decide uncertainty from semantic completeness, not keyword-trigger patterns.
+- For assumption-sensitive prompts (where different plausible assumptions change the answer), ask one blocking clarification before committing to a single answer.
+- If the coworker's statement appears to conflict with this device's observable state, report the mismatch neutrally and ask whether the issue refers to this device, another device, or both.

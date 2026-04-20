@@ -447,7 +447,7 @@ export const BrowserResultSurface = ({
                       <strong>{bucket.engine.label}</strong>
                       <small>{bucket.latencyMs ?? 0}ms</small>
                     </header>
-                    <ul>
+                    <ul className="lyra-engine-panel-list">
                       {bucket.error ? <li className="lyra-engine-error">{engineErrorLabel}</li> : null}
                       {!bucket.error
                         ? bucket.results
@@ -465,7 +465,7 @@ export const BrowserResultSurface = ({
                 <strong>{localPanelTitleLabel}</strong>
                 <small>{localStatusLabel} · {payload.local.payload.elapsedMs}ms</small>
               </header>
-              <ul>
+              <ul className="lyra-engine-panel-list">
                 <li>{localScopeLabel}: {payload.local.payload.scopePreset}</li>
                 <li>{localScannedFilesLabel}: {payload.local.payload.stats.scannedFiles}</li>
                 <li>{localScannedDirsLabel}: {payload.local.payload.stats.scannedDirs}</li>

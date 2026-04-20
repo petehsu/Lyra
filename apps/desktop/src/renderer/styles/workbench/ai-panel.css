@@ -17,6 +17,15 @@
   border-right: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
 }
 
+.lyra-ai-panel-surface-workspace {
+  border-right: 0;
+}
+
+.lyra-ai-panel-surface-detached {
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  border-radius: var(--lyra-unit-10);
+}
+
 .lyra-ai-panel-surface-drop-active .lyra-ai-panel-topbar,
 .lyra-ai-panel-surface-drop-active .lyra-ai-panel-content,
 .lyra-ai-panel-surface-drop-active .lyra-ai-panel-history-shell {
@@ -175,6 +184,27 @@
 .lyra-ai-panel-topbar-action:hover {
   color: var(--lyra-text-primary);
   opacity: 1;
+}
+
+.lyra-ai-panel-topbar-action:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.lyra-ai-panel-topbar-action-active {
+  color: var(--lyra-text-primary);
+  opacity: 1;
+  background: color-mix(in srgb, var(--lyra-line-focused) 12%, transparent);
+}
+
+.lyra-ai-panel-topbar-action-pending {
+  color: var(--lyra-text-primary);
+  opacity: 1;
+  background: color-mix(in srgb, var(--lyra-line-focused) 16%, transparent);
+}
+
+.lyra-ai-panel-topbar-action-pending svg {
+  animation: lyra-ai-topbar-action-pulse 0.95s ease-in-out infinite;
 }
 
 .lyra-ai-panel-svg-icon {
@@ -1038,6 +1068,31 @@
   opacity: 1;
 }
 
+.lyra-ai-message-copy-button {
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--lyra-text-muted) 92%, transparent);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-unit-4);
+  cursor: pointer;
+  transition:
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.lyra-ai-message-copy-button:hover {
+  color: var(--lyra-text-primary);
+  opacity: 1;
+}
+
+.lyra-ai-message-copy-text {
+  font-size: var(--lyra-unit-10);
+  line-height: 1;
+}
+
 .lyra-ai-message-row-preconnect {
   padding-right: 0;
 }
@@ -1481,7 +1536,7 @@
   padding:
     var(--lyra-unit-12)
     var(--lyra-unit-14)
-    calc(var(--lyra-ai-composer-reserve, var(--lyra-unit-96)) + var(--lyra-unit-12));
+    calc(var(--lyra-ai-thread-bottom-reserve, var(--lyra-ai-composer-reserve, var(--lyra-unit-96))) + var(--lyra-unit-12));
   display: grid;
   gap: var(--lyra-unit-9);
   align-content: start;
@@ -1508,7 +1563,7 @@
   padding:
     var(--lyra-unit-12)
     var(--lyra-unit-16)
-    calc(var(--lyra-ai-composer-reserve, var(--lyra-unit-96)) + var(--lyra-unit-24));
+    calc(var(--lyra-ai-thread-bottom-reserve, var(--lyra-ai-composer-reserve, var(--lyra-unit-96))) + var(--lyra-unit-24));
   pointer-events: none;
 }
 
@@ -1831,45 +1886,12 @@
     );
   -webkit-backdrop-filter: blur(var(--lyra-unit-22)) saturate(1.12);
   backdrop-filter: blur(var(--lyra-unit-22)) saturate(1.12);
-  overflow: hidden;
+  overflow: visible;
   pointer-events: auto;
   transition:
     border-color var(--lyra-transition-fast),
     box-shadow var(--lyra-transition-fast),
     background-color var(--lyra-transition-fast);
-}
-
-.lyra-ai-agent-composer-models {
-  min-width: 0;
-  display: grid;
-  gap: var(--lyra-unit-6);
-  padding: var(--lyra-unit-8) var(--lyra-unit-12) 0;
-}
-
-.lyra-ai-agent-composer-models-label {
-  color: var(--lyra-text-muted);
-  font-size: var(--lyra-unit-10-5);
-  line-height: 1.35;
-}
-
-.lyra-ai-agent-composer-model-list {
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--lyra-unit-6);
-}
-
-.lyra-ai-agent-composer-model-chip {
-  min-height: var(--lyra-unit-20);
-  border-radius: var(--lyra-unit-999);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
-  background: color-mix(in srgb, var(--lyra-bg-surface) 88%, var(--lyra-bg-editor) 12%);
-  color: var(--lyra-text-secondary);
-  padding: 0 var(--lyra-unit-8);
-  display: inline-flex;
-  align-items: center;
-  font-size: var(--lyra-unit-10-5);
-  line-height: 1.2;
 }
 
 .lyra-ai-agent-composer:focus-within {
@@ -1922,57 +1944,88 @@
   background: transparent;
 }
 
-.lyra-ai-agent-bind-project {
-  min-width: var(--lyra-unit-28);
-  max-width: var(--lyra-unit-132);
-  height: var(--lyra-unit-28);
-  border: 0;
-  border-radius: var(--lyra-unit-8);
-  background: transparent;
-  color: var(--lyra-text-secondary);
-  padding: 0 var(--lyra-unit-7) 0 var(--lyra-unit-4);
+.lyra-ai-agent-composer-toolbar-leading {
+  min-width: 0;
+  flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: var(--lyra-unit-6);
-  cursor: pointer;
-  transition:
-    background-color var(--lyra-transition-fast),
-    color var(--lyra-transition-fast);
+  gap: var(--lyra-unit-8);
+  overflow: visible;
 }
 
-.lyra-ai-agent-bind-project:hover:enabled {
-  color: var(--lyra-text-primary);
-  background: color-mix(in srgb, var(--lyra-line-focused) 10%, transparent);
-}
-
-.lyra-ai-agent-bind-project:disabled {
-  opacity: 0.48;
-  cursor: not-allowed;
-}
-
-.lyra-ai-agent-bind-project-active {
-  color: var(--lyra-text-primary);
-  background: color-mix(in srgb, var(--lyra-line-focused) 12%, transparent);
-}
-
-.lyra-ai-agent-bind-project-pending {
-  color: var(--lyra-text-primary);
-  background: color-mix(in srgb, var(--lyra-line-focused) 16%, transparent);
-}
-
-.lyra-ai-agent-bind-project-pending svg {
-  animation: lyra-ai-agent-bind-project-pulse 0.95s ease-in-out infinite;
-}
-
-.lyra-ai-agent-bind-project-name {
+.lyra-ai-agent-composer-toolbar-trailing {
   min-width: 0;
-  max-width: var(--lyra-unit-88);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-6);
+}
+
+.lyra-ai-agent-composer-model-picker {
+  --lyra-ai-agent-model-picker-w: var(--lyra-unit-132);
+  width: var(--lyra-ai-agent-model-picker-w);
+  min-width: var(--lyra-ai-agent-model-picker-w);
+  max-width: var(--lyra-ai-agent-model-picker-w);
+  flex: 0 0 var(--lyra-ai-agent-model-picker-w);
+  --lyra-list-picker-width: var(--lyra-ai-agent-model-picker-w);
+  --lyra-list-picker-row-height: var(--lyra-unit-22);
+  --lyra-list-picker-option-height: var(--lyra-unit-24);
+  --lyra-list-picker-option-gap: var(--lyra-unit-2);
+  --lyra-list-picker-surface-padding: var(--lyra-unit-3);
+  --lyra-list-picker-expanded-radius: var(--lyra-unit-8);
+  --lyra-list-picker-font-size: var(--lyra-unit-10-5);
+  --lyra-list-picker-padding-inline: var(--lyra-unit-8);
+}
+
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-surface {
+  border-color: color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 94%, var(--lyra-bg-panel) 6%);
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(var(--lyra-unit-10)) saturate(1.08);
+  backdrop-filter: blur(var(--lyra-unit-10)) saturate(1.08);
+}
+
+.lyra-ai-agent-composer-model-picker:hover .lyra-list-picker-surface {
+  border-color: color-mix(in srgb, var(--lyra-line-focused) 46%, var(--lyra-line-default) 54%);
+}
+
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-trigger,
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-option {
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-trigger-label {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--lyra-unit-11);
-  line-height: 1;
+}
+
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-trigger::after {
+  flex: 0 0 auto;
+}
+
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-option {
+  overflow: hidden;
+}
+
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-option span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-trigger:hover:enabled,
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-option:hover,
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-option-active {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-ai-agent-composer-model-picker .lyra-list-picker-trigger:disabled {
+  opacity: 0.52;
 }
 
 .lyra-ai-agent-plan-toggle {
@@ -2312,9 +2365,27 @@
 }
 
 .lyra-ai-interaction-shell {
+  position: absolute;
+  left: var(--lyra-unit-12);
+  right: var(--lyra-unit-12);
+  bottom: calc(var(--lyra-ai-composer-reserve, var(--lyra-unit-96)) + var(--lyra-unit-10));
+  z-index: 7;
   display: grid;
   gap: var(--lyra-unit-8);
-  margin: 0 0 var(--lyra-unit-10);
+  max-height: min(42%, var(--lyra-unit-340));
+  overflow: auto;
+  padding: var(--lyra-unit-10);
+  border-radius: var(--lyra-unit-12);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-bg-surface) 94%, transparent) 0%,
+      color-mix(in srgb, var(--lyra-bg-panel) 90%, transparent) 100%
+    );
+  -webkit-backdrop-filter: blur(var(--lyra-unit-16)) saturate(1.08);
+  backdrop-filter: blur(var(--lyra-unit-16)) saturate(1.08);
+  box-shadow: 0 var(--lyra-unit-12) var(--lyra-unit-24) color-mix(in srgb, var(--lyra-bg-app) 24%, transparent);
 }
 
 .lyra-ai-interaction-shell__header {
@@ -2434,7 +2505,7 @@
   }
 }
 
-@keyframes lyra-ai-agent-bind-project-pulse {
+@keyframes lyra-ai-topbar-action-pulse {
   0%,
   100% {
     transform: scale(1);
@@ -2455,7 +2526,13 @@
     padding:
       var(--lyra-unit-10)
       var(--lyra-unit-9)
-      calc(var(--lyra-ai-composer-reserve, var(--lyra-unit-96)) + var(--lyra-unit-10));
+      calc(var(--lyra-ai-thread-bottom-reserve, var(--lyra-ai-composer-reserve, var(--lyra-unit-96))) + var(--lyra-unit-10));
+  }
+
+  .lyra-ai-interaction-shell {
+    left: var(--lyra-unit-8);
+    right: var(--lyra-unit-8);
+    padding: var(--lyra-unit-8);
   }
 
   .lyra-ai-agent-runtime-feed-shell {
@@ -2477,15 +2554,8 @@
     padding: var(--lyra-unit-4) var(--lyra-unit-5) var(--lyra-unit-5) var(--lyra-unit-8);
   }
 
-  .lyra-ai-agent-bind-project {
-    max-width: var(--lyra-unit-112);
-    padding-right: var(--lyra-unit-5);
-    gap: var(--lyra-unit-5);
-  }
-
-  .lyra-ai-agent-bind-project-name {
-    max-width: var(--lyra-unit-74);
-    font-size: var(--lyra-unit-10-5);
+  .lyra-ai-agent-composer-model-picker {
+    --lyra-ai-agent-model-picker-w: var(--lyra-unit-118);
   }
 
   .lyra-ai-plan-bar {

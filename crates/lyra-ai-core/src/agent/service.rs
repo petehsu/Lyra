@@ -1,1807 +1,71 @@
-use std::collections::{BTreeMap, HashSet};
-use std::path::PathBuf;
-use std::sync::Mutex;
-
 use napi::Result;
-use once_cell::sync::Lazy;
-use regex::Regex;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::agent::auto_compact::{
-    calculate_token_warning_state, get_auto_compact_threshold, get_effective_context_window,
-    run_auto_compact, CompactCircuitBreaker,
+use crate::agent::command_approval_runtime::submit_command_approval_decision;
+use crate::agent::default_turn_runtime::{execute_default_turn_runtime, DefaultTurnRuntimeParams};
+use crate::agent::execution_state::{
+    ensure_execution_state, transition_execution_state, ExecutionTransitionRequest,
 };
-use crate::agent::context_collapse::collapse_view_with_override;
-use crate::agent::context_snip::{try_snip, SnipState};
-use crate::agent::emit_runtime_event;
-use crate::agent::error_recovery::{classify_tool_error, ErrorWithholdingBuffer};
-use crate::agent::file_state_cache::FileStateCache;
-use crate::agent::interaction_manager::{
-    cancel_pending_interaction, create_pending_interaction, list_pending_interactions,
-    resolve_pending_interaction,
+use crate::agent::interaction_manager::create_pending_interaction;
+use crate::agent::plan_approval_runtime::execute_plan_approval_resolution;
+use crate::agent::plan_turn_runtime::execute_plan_turn;
+use crate::agent::project_scope::project_name_from_root;
+use crate::agent::prompt_pipeline::{build_system_prompt, PromptBuildInput};
+use crate::agent::prompt_repetition::build_live_repeated_user_input;
+use crate::agent::runtime_events::{emit_event, emit_transient_event};
+use crate::agent::runtime_events::{
+    emit_interaction_pending_event, emit_interaction_queue_updated,
 };
-use crate::agent::micro_compact::MicroCompactTracker;
-use crate::agent::prefetch::PrefetchCache;
-use crate::agent::prompt_pipeline::{
-    build_plan_mode_system_prompt, build_system_prompt, estimate_tokens, PromptBuildInput,
-};
-use crate::agent::prompt_repetition::{
-    build_live_repeated_user_input, build_post_compact_user_input, PromptRepetitionResult,
-};
-use crate::agent::terminal_policy::{
-    select_terminal_interaction_policy, terminal_policy_payload, TerminalInteractionPolicy,
-};
-use crate::agent::tool_budget::ToolResultBudgetState;
-use crate::agent::tool_diagnostics::build_tool_error_payload;
+use crate::agent::session_management::normalize_project_root;
+use crate::agent::terminal_policy::select_terminal_interaction_policy;
 use crate::agent::tools::{
-    cancel_plan_approval, cancel_plan_question, cleanup_transient_ai_sessions,
-    derive_browser_strategy_routing_context, derive_workbench_web_routing_context,
-    execute_tool_with_progress, get_browser_strategy_runtime_state, grant_approval_once,
-    merge_browser_strategy_runtime_state, plan_mode_tool_definitions_for_input_with_context,
-    readonly_tool_definitions_for_input_with_context, register_plan_approval_waiter,
-    register_plan_question_waiter, render_activated_skill_prompts, render_mcp_tools_prompt_json,
-    tool_executes_serially, ToolExecutionContext, ToolRankingContext,
+    get_browser_strategy_runtime_state, readonly_tool_definitions_for_input_with_context,
+    render_activated_skill_prompts, render_mcp_tools_prompt_json,
 };
-use crate::agent::turn_strategy::{select_turn_strategy, TurnStrategy};
+use crate::agent::turn_entry::{
+    acquire_turn_guard, agent_error, is_supported_protocol, resolve_profile_for_turn_with_model,
+};
+use crate::agent::turn_runner::{browser_tool_families_prompt, build_tool_ranking_context};
+use crate::agent::turn_runtime_helpers::{
+    emit_input_postprocessed, emit_memory_events, emit_terminal_interaction_policy_selected,
+    emit_turn_strategy_selected, replace_latest_user_message, total_message_tokens,
+};
+use crate::agent::turn_strategy::{
+    select_turn_strategy_with_options, TurnStrategySelectionOptions,
+};
 use crate::agent::types::{
-    AgentAnswerPlanQuestionRequest, AgentAnswerQuestionRequest, AgentBindSessionProjectRequest,
-    AgentCollaborationMode, AgentCreateSessionRequest, AgentDeleteSessionRequest,
-    AgentEnterPlanModeRequest, AgentGetPendingInteractionsRequest, AgentGetPlanRequest,
-    AgentGetSessionRequest, AgentListSessionsRequest, AgentMessage, AgentPendingInteraction,
-    AgentPendingInteractionKind, AgentPendingInteractionStatus, AgentPlanState, AgentPlanStatus,
-    AgentResolvePlanApprovalRequest, AgentRuntimeEvent, AgentSendTurnRequest, AgentSendTurnResult,
-    AgentSession, AgentSessionDetail, AgentToolCall, AgentTurn, AgentUsage,
-    CommandApprovalSubmitRequest, AGENT_PLAN_APPROVAL_REQUIRED, AGENT_PLAN_QUESTION_REQUIRED,
-    AGENT_PROFILE_NOT_FOUND, AGENT_PROVIDER_INVALID_RESPONSE, AGENT_PROVIDER_UNSUPPORTED,
-    AGENT_TOOL_APPROVAL_REQUIRED, AGENT_TOOL_EXEC_FAILED, AGENT_TURN_FAILED,
+    AgentAnswerPlanQuestionRequest, AgentAnswerQuestionRequest, AgentArchiveThreadRequest,
+    AgentCollaborationMode, AgentEnsureThreadRequest, AgentExecutionCheckpointKind,
+    AgentExecutionPhase, AgentForkThreadRequest, AgentGetThreadRequest, AgentListThreadsRequest,
+    AgentPendingInteractionKind, AgentPendingInteractionStatus, AgentResolvePlanApprovalRequest,
+    AgentResumeExecutionRequest, AgentResumeThreadRequest, AgentRollbackThreadRequest,
+    AgentSendThreadTurnRequest, AgentSendTurnRequest, AgentSendTurnResult, AgentThread,
+    AgentThreadForkResult, AgentThreadLifecycleState, AgentUnarchiveThreadRequest,
+    CommandApprovalSubmitRequest, AGENT_PROVIDER_UNSUPPORTED, AGENT_TURN_FAILED,
 };
+use crate::agent::ui_prompt_context::{derive_ui_prompt_context_with_layers, UiStyleContextLayers};
 use crate::auth::service::resolve_secret_values;
 use crate::auth::store::KeyringSecretStore;
-use crate::error::{normalize_optional_text, normalize_required_text, now_ms, to_error};
+use crate::error::{normalize_required_text, now_ms};
 use crate::memory::{
-    append_session_dialog_message, build_turn_context, delete_session_storage,
-    initialize_session_storage, kick_memory_pipeline, MemoryRuntimePhaseEvent,
+    append_session_dialog_message, build_turn_context, initialize_session_storage,
 };
-use crate::profile::types::StoredAiProviderProfile;
-use crate::provider;
-use crate::provider::types::{
-    AgentInferenceMessage, AgentInferenceMessageRole, AgentInferenceUsage, AgentToolDefinition,
-    AgentToolInvocation,
-};
+use crate::provider::types::{AgentInferenceMessage, AgentInferenceMessageRole};
 use crate::storage::registry_db;
 
-const AGENT_ERROR_PREFIX: &str = "AGENT_ERROR::";
-const AGENT_TURN_PAUSED_SOFT_CAP: &str = "AGENT_TURN_PAUSED_SOFT_CAP";
-const AGENT_TURN_PAUSED_NO_PROGRESS: &str = "AGENT_TURN_PAUSED_NO_PROGRESS";
-
-static ACTIVE_SESSION_TURNS: Lazy<Mutex<HashSet<String>>> =
-    Lazy::new(|| Mutex::new(HashSet::new()));
-static PROPOSED_PLAN_BLOCK_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?s)<proposed_plan>(.*?)</proposed_plan>").expect("valid proposed_plan regex")
-});
-
-struct TurnExecutionGuard {
-    session_id: String,
-}
-
-impl Drop for TurnExecutionGuard {
-    fn drop(&mut self) {
-        if let Ok(mut active) = ACTIVE_SESSION_TURNS.lock() {
-            active.remove(&self.session_id);
-        }
-    }
-}
-
-fn acquire_turn_guard(session_id: &str) -> Result<TurnExecutionGuard> {
-    let mut active = ACTIVE_SESSION_TURNS
-        .lock()
-        .map_err(|_| to_error("agent turn lock is poisoned"))?;
-    if active.contains(session_id) {
-        return Err(agent_error(
-            AGENT_TURN_FAILED,
-            "another turn is already running in this session",
-        ));
-    }
-    active.insert(session_id.to_string());
-    Ok(TurnExecutionGuard {
-        session_id: session_id.to_string(),
-    })
-}
-
-fn agent_error(code: &str, message: impl Into<String>) -> napi::Error {
-    to_error(format!("{AGENT_ERROR_PREFIX}{code}::{}", message.into()))
-}
-
-fn parse_agent_error_message(raw: &str) -> (&str, &str) {
-    let Some(prefix_index) = raw.find(AGENT_ERROR_PREFIX) else {
-        return (AGENT_TURN_FAILED, raw);
-    };
-    let rest = &raw[prefix_index + AGENT_ERROR_PREFIX.len()..];
-    let mut parts = rest.splitn(2, "::");
-    let code = parts.next().unwrap_or(AGENT_TURN_FAILED);
-    let message = parts.next().unwrap_or(raw);
-    if code.trim().is_empty() {
-        (AGENT_TURN_FAILED, message)
-    } else {
-        (code, message)
-    }
-}
-
-fn is_structured_plan_step(line: &str) -> bool {
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-    if matches!(trimmed.chars().next(), Some('-' | '*' | '•' | '1'..='9')) {
-        if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("• ") {
-            return true;
-        }
-        let digit_prefix_len = trimmed.chars().take_while(|ch| ch.is_ascii_digit()).count();
-        if digit_prefix_len > 0 {
-            let suffix = trimmed[digit_prefix_len..].trim_start();
-            return suffix.starts_with('.')
-                || suffix.starts_with(')')
-                || suffix.starts_with('、')
-                || suffix.starts_with(':')
-                || suffix.starts_with('-');
-        }
-    }
-    false
-}
-
-fn sanitize_planning_output(raw: &str) -> String {
-    let normalized = raw
-        .replace("<｜end▁of▁thinking｜>", "")
-        .replace("<|end_of_thinking|>", "")
-        .replace("<end_of_thinking>", "");
-    let steps = normalized
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .filter(|line| is_structured_plan_step(line))
-        .take(8)
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-
-    steps.join("\n")
-}
-
-fn has_browser_automation_tools(tools: &[AgentToolDefinition]) -> bool {
-    tools.iter().any(|tool| {
-        tool.name.starts_with("workbench.web_")
-            || tool.name.starts_with("browser_use.")
-            || matches!(
-                tool.name.as_str(),
-                "workbench.tabs.list"
-                    | "workbench.tab.read"
-                    | "workbench.tab.extract_text"
-                    | "workbench.web_skeleton.read"
-            )
-    })
-}
-
-fn is_browser_observation_tool_name(name: &str) -> bool {
-    (name.starts_with("workbench.web_")
-        && !name.starts_with("workbench.web_action.")
-        && name != "workbench.web_focus.probe"
-        && name != "workbench.web_scan_and_act")
-        || matches!(
-            name,
-            "workbench.tabs.list"
-                | "workbench.tab.read"
-                | "workbench.tab.extract_text"
-                | "workbench.tab.capture_visual"
-                | "browser_use.session.prepare"
-                | "browser_use.page.state"
-                | "browser_use.page.extract"
-        )
-}
-
-fn is_browser_interaction_observation_tool_name(name: &str) -> bool {
-    (name.starts_with("workbench.web_")
-        && !name.starts_with("workbench.web_action.")
-        && name != "workbench.web_focus.probe"
-        && name != "workbench.web_scan_and_act")
-        || matches!(
-            name,
-            "workbench.tab.capture_visual"
-                | "browser_use.session.prepare"
-                | "browser_use.page.state"
-                | "browser_use.page.extract"
-        )
-}
-
-fn is_browser_action_tool_name(name: &str) -> bool {
-    matches!(
-        name,
-        "workbench.web_focus.probe"
-            | "workbench.web_scan_and_act"
-            | "workbench.web_action.safe"
-            | "workbench.web_action.mutate"
-            | "workbench.web_action.navigate"
-            | "workbench.web_action.wait"
-            | "browser_use.page.safe"
-            | "browser_use.page.mutate"
-            | "browser_use.page.navigate"
-            | "browser_use.page.wait"
-            | "browser_use.agent.run"
-    )
-}
-
-fn is_local_browser_action_tool_name(name: &str) -> bool {
-    matches!(
-        name,
-        "workbench.web_focus.probe"
-            | "workbench.web_scan_and_act"
-            | "workbench.web_action.safe"
-            | "workbench.web_action.mutate"
-            | "workbench.web_action.wait"
-            | "browser_use.page.safe"
-            | "browser_use.page.mutate"
-            | "browser_use.page.wait"
-            | "browser_use.agent.run"
-    )
-}
-
-fn has_browser_observation_progress(tool_calls: &[AgentToolCall]) -> bool {
-    tool_calls
-        .iter()
-        .any(|call| call.status == "completed" && is_browser_observation_tool_name(&call.tool_name))
-}
-
-fn has_browser_interaction_observation_progress(tool_calls: &[AgentToolCall]) -> bool {
-    tool_calls.iter().any(|call| {
-        call.status == "completed" && is_browser_interaction_observation_tool_name(&call.tool_name)
-    })
-}
-
-fn has_browser_action_attempt(tool_calls: &[AgentToolCall]) -> bool {
-    tool_calls
-        .iter()
-        .any(|call| is_browser_action_tool_name(&call.tool_name))
-}
-
-fn has_local_browser_action_attempt(tool_calls: &[AgentToolCall]) -> bool {
-    tool_calls
-        .iter()
-        .any(|call| is_local_browser_action_tool_name(&call.tool_name))
-}
-
-fn browser_observed_without_action(tool_calls: &[AgentToolCall]) -> bool {
-    has_browser_interaction_observation_progress(tool_calls)
-        && !has_browser_action_attempt(tool_calls)
-}
-
-fn browser_observed_without_local_action(tool_calls: &[AgentToolCall]) -> bool {
-    has_browser_interaction_observation_progress(tool_calls)
-        && !has_local_browser_action_attempt(tool_calls)
-}
-
-fn browser_action_retry_message() -> String {
-    "[Execution Requirement] You already inspected the open webpage, so do not end the turn with an observation-only answer. Before you conclude that the task cannot be completed, you must attempt at least one local page action tool or obtain a structured local browser action error. A navigation attempt does not satisfy this requirement when the task still requires in-page interaction. Reuse page observations that already exist. Prefer the native workbench page tools first, starting with scan_and_act, then skeleton read, structured query, local context read, focus probe, hover/safe actions, mutate actions, and wait. If a control appears only after hover or menu reveal, perform the hover step before concluding the control is absent.".to_string()
-}
-
-fn browser_action_unmet_message() -> String {
-    "I paused because the browser task only used observation tools and still never attempted a local page action. I need at least one real local browser action attempt or a structured local action failure before I can honestly conclude the task.".to_string()
-}
-
-fn browser_workflow_retry_message() -> String {
-    "[Execution Requirement] The local browser workflow is still incomplete because the latest browser action failed with a retryable structured error. Continue from the current local workflow state, prefer skeleton/query/context reads and local focus probe state, and avoid broad fallback rebuilds unless the local workflow fails again.".to_string()
-}
-
-fn browser_workflow_unmet_message() -> String {
-    "I paused because the latest browser action failed with a retryable structured workflow error and I still have not advanced the local browser workflow.".to_string()
-}
-
-fn missing_provider_output(assistant_text: &str, tool_calls: &[AgentToolInvocation]) -> bool {
-    tool_calls.is_empty() && assistant_text.trim().is_empty()
-}
-
-fn provider_invalid_response_error() -> napi::Error {
-    agent_error(
-        AGENT_PROVIDER_INVALID_RESPONSE,
-        "provider returned neither tool calls nor assistant text",
-    )
-}
-
-fn restricted_browser_action_tools(tools: &[AgentToolDefinition]) -> Vec<AgentToolDefinition> {
-    let allowed_names = [
-        "workbench.tabs.list",
-        "workbench.tab.read",
-        "workbench.web_skeleton.read",
-        "workbench.web_query.find",
-        "workbench.web_context.read",
-        "workbench.web_focus.probe",
-        "workbench.web_scan_and_act",
-        "workbench.web_action.safe",
-        "workbench.web_action.mutate",
-        "workbench.web_action.navigate",
-        "workbench.web_action.wait",
-        "browser_use.session.prepare",
-        "browser_use.page.state",
-        "browser_use.page.safe",
-        "browser_use.page.mutate",
-        "browser_use.page.navigate",
-        "browser_use.page.wait",
-        "browser_use.agent.run",
-    ];
-    let filtered = tools
-        .iter()
-        .filter(|tool| allowed_names.contains(&tool.name.as_str()))
-        .cloned()
-        .collect::<Vec<_>>();
-    if filtered.is_empty() {
-        tools.to_vec()
-    } else {
-        filtered
-    }
-}
-
-fn local_browser_workflow_ready(tool_calls: &[AgentToolCall]) -> bool {
-    derive_workbench_web_routing_context(tool_calls)
-        .map(|web| {
-            web.focus_atlas_ready
-                || web.widget_graph_ready
-                || web.native_widget_ready
-                || web.has_live_candidates
-                || web.active_widget_id.is_some()
-                || web.active_item_id.is_some()
-                || web.active_focus_region_id.is_some()
-        })
-        .unwrap_or(false)
-}
-
-fn is_retryable_browser_workflow_failure_code(code: &str) -> bool {
-    matches!(
-        code,
-        "candidate_stale"
-            | "candidate_not_found"
-            | "scan_session_not_found"
-            | "node_not_found"
-            | "postcondition_timeout"
-            | "hover_reveal_required"
-            | "reveal_not_observed"
-            | "menu_not_opened"
-            | "list_item_not_changed"
-            | "mode_not_switched"
-            | "workflow_not_advanced"
-            | "wrong_widget_target"
-            | "no_state_transition"
-    )
-}
-
-fn browser_action_failure_requires_retry(tool_calls: &[AgentToolCall]) -> bool {
-    tool_calls
-        .iter()
-        .rev()
-        .find(|call| is_browser_action_tool_name(&call.tool_name))
-        .map(|call| {
-            call.status == "failed"
-                && call
-                    .error_code
-                    .as_deref()
-                    .map(is_retryable_browser_workflow_failure_code)
-                    .unwrap_or(false)
-        })
-        .unwrap_or(false)
-}
-
-fn emit_event(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    phase: &str,
-    payload: Value,
-) -> Result<()> {
-    let event = AgentRuntimeEvent {
-        session_id: session_id.to_string(),
-        turn_id: turn_id.to_string(),
-        phase: phase.to_string(),
-        payload,
-        timestamp: now_ms(),
-    };
-    let stored_event = registry_db::append_agent_runtime_event(storage_root, &event)?;
-    emit_runtime_event(stored_event);
-    Ok(())
-}
-
-fn emit_transient_event(
-    session_id: &str,
-    turn_id: &str,
-    phase: &str,
-    payload: Value,
-) -> Result<()> {
-    emit_runtime_event(AgentRuntimeEvent {
-        session_id: session_id.to_string(),
-        turn_id: turn_id.to_string(),
-        phase: phase.to_string(),
-        payload,
-        timestamp: now_ms(),
-    });
-    Ok(())
-}
-
-fn emit_interaction_pending_event(
-    storage_root: &str,
-    interaction: &AgentPendingInteraction,
-) -> Result<()> {
-    emit_event(
-        storage_root,
-        &interaction.session_id,
-        &interaction.turn_id,
-        "interaction_pending",
-        json!({ "interaction": interaction }),
-    )
-}
-
-fn emit_interaction_resolved_event(
-    storage_root: &str,
-    interaction: &AgentPendingInteraction,
-) -> Result<()> {
-    emit_event(
-        storage_root,
-        &interaction.session_id,
-        &interaction.turn_id,
-        "interaction_resolved",
-        json!({ "interaction": interaction }),
-    )
-}
-
-fn emit_interaction_queue_updated(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-) -> Result<()> {
-    let pending = list_pending_interactions(storage_root, session_id)?;
-    emit_event(
-        storage_root,
-        session_id,
-        turn_id,
-        "interaction_queue_updated",
-        json!({ "pendingInteractions": pending }),
-    )
-}
-
-fn emit_tool_failure_diagnosed_event(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    tool_name: &str,
-    error_payload: &Value,
-) -> Result<()> {
-    let diagnosis = error_payload
-        .as_object()
-        .and_then(|value| value.get("diagnosis"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    emit_event(
-        storage_root,
-        session_id,
-        turn_id,
-        "tool_failure_diagnosed",
-        json!({
-            "toolCallId": tool_call_id,
-            "toolName": tool_name,
-            "error": error_payload,
-            "diagnosis": diagnosis,
-        }),
-    )
-}
-
-fn build_tool_ranking_context(storage_root: &str, session_id: &str) -> Result<ToolRankingContext> {
-    let tool_calls = registry_db::list_agent_tool_calls(storage_root, session_id)?;
-    Ok(ToolRankingContext {
-        workbench_web: derive_workbench_web_routing_context(&tool_calls),
-        browser_strategy: merge_browser_strategy_runtime_state(
-            derive_browser_strategy_routing_context(&tool_calls),
-        ),
-    })
-}
-
-fn browser_tool_families_prompt() -> String {
-    let state = get_browser_strategy_runtime_state();
-    let mut families = vec!["workbench.web_*".to_string()];
-    if state.browser_use_tool_exposed {
-        families.push("browser_use.*".to_string());
-    }
-    families.join(", ")
-}
-
-fn normalize_project_root(value: &str) -> Result<String> {
-    let candidate = PathBuf::from(value.trim());
-    let resolved = if candidate.is_absolute() {
-        candidate
-    } else {
-        std::env::current_dir()
-            .map(|cwd| cwd.join(candidate))
-            .map_err(|error| {
-                agent_error(
-                    AGENT_TURN_FAILED,
-                    format!("failed to resolve project root: {error}"),
-                )
-            })?
-    };
-    let metadata = std::fs::metadata(&resolved).map_err(|error| {
-        agent_error(
-            AGENT_TURN_FAILED,
-            format!("project root is not accessible: {error}"),
-        )
-    })?;
-    if !metadata.is_dir() {
-        return Err(agent_error(
-            AGENT_TURN_FAILED,
-            "project root must be a directory",
-        ));
-    }
-    let normalized = resolved
-        .canonicalize()
-        .unwrap_or(resolved)
-        .to_string_lossy()
-        .to_string();
-    Ok(normalized)
-}
-
-fn project_name_from_root(project_root: &str) -> Option<String> {
-    let path = PathBuf::from(project_root);
-    path.file_name()
-        .map(|value| value.to_string_lossy().trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-
-fn non_empty_string_field(input: &Value, key: &str) -> bool {
-    input
-        .as_object()
-        .and_then(|object| object.get(key))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .map(|value| !value.is_empty())
-        .unwrap_or(false)
-}
-
-fn absolutize_tool_path(raw_path: &str, project_root: &str) -> String {
-    let candidate = PathBuf::from(raw_path.trim());
-    if candidate.is_absolute() {
-        return candidate.to_string_lossy().to_string();
-    }
-    PathBuf::from(project_root)
-        .join(candidate)
-        .to_string_lossy()
-        .to_string()
-}
-
-fn ensure_absolute_path_field(
-    input: &Value,
-    next: &mut serde_json::Map<String, Value>,
-    field: &str,
-    project_root: &str,
-) {
-    let maybe_value = input
-        .as_object()
-        .and_then(|object| object.get(field))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    if let Some(value) = maybe_value {
-        next.insert(
-            field.to_string(),
-            Value::String(absolutize_tool_path(value, project_root)),
-        );
-    }
-}
-
-fn apply_project_scope_to_tool_input(
-    tool_name: &str,
-    input: &Value,
-    project_root: Option<&str>,
-) -> Value {
-    let Some(project_root) = project_root else {
-        return input.clone();
-    };
-    let Some(object) = input.as_object() else {
-        return input.clone();
-    };
-    let mut next = object.clone();
-    match tool_name {
-        "filesystem.list" => {
-            if !non_empty_string_field(input, "path") {
-                next.insert("path".to_string(), Value::String(project_root.to_string()));
-            }
-        }
-        "filesystem.glob" => {
-            if !non_empty_string_field(input, "root") {
-                next.insert("root".to_string(), Value::String(project_root.to_string()));
-            }
-        }
-        "filesystem.search" => {
-            if !non_empty_string_field(input, "path") {
-                next.insert("path".to_string(), Value::String(project_root.to_string()));
-            }
-        }
-        "filesystem.read_range"
-        | "filesystem.write"
-        | "filesystem.edit"
-        | "filesystem.multi_edit" => {
-            ensure_absolute_path_field(input, &mut next, "path", project_root);
-        }
-        _ => {}
-    }
-    match tool_name {
-        "filesystem.list"
-        | "filesystem.search"
-        | "filesystem.read_range"
-        | "filesystem.write"
-        | "filesystem.edit"
-        | "filesystem.multi_edit" => {
-            ensure_absolute_path_field(input, &mut next, "path", project_root);
-        }
-        "filesystem.glob" => {
-            ensure_absolute_path_field(input, &mut next, "root", project_root);
-        }
-        _ => {}
-    }
-    Value::Object(next)
-}
-
-fn resolve_profile_for_turn(
-    storage_root: &str,
-    session: &AgentSession,
-    requested_profile_id: Option<&str>,
-) -> Result<StoredAiProviderProfile> {
-    let from_request = requested_profile_id
-        .map(|value| normalize_required_text(value, "profileId"))
-        .transpose()?;
-    let selected_profile = if let Some(profile_id) = from_request {
-        registry_db::read_profile_record(storage_root, &profile_id)?
-    } else if let Some(profile_id) = session.profile_id.as_deref() {
-        registry_db::read_profile_record(storage_root, profile_id)?
-    } else {
-        registry_db::read_default_profile_record(storage_root)?
-    };
-
-    selected_profile.ok_or_else(|| {
-        agent_error(
-            AGENT_PROFILE_NOT_FOUND,
-            "no AI profile is available for the current agent turn",
-        )
-    })
-}
-
-fn is_supported_protocol(protocol_id: &str) -> bool {
-    matches!(
-        protocol_id,
-        "openai_compatible"
-            | "lmstudio_openai"
-            | "anthropic_messages"
-            | "gemini_generate_content"
-            | "ollama_chat"
-            | "bedrock_converse"
-    )
-}
-
-fn usage_from_accumulator(
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    total_tokens: i64,
-    seen_any: bool,
-) -> Option<AgentUsage> {
-    if !seen_any {
-        return None;
-    }
-    Some(AgentUsage {
-        input_tokens: Some(prompt_tokens),
-        output_tokens: Some(completion_tokens),
-        total_tokens: Some(total_tokens),
-    })
-}
-
-fn apply_usage(accumulator: &mut (i64, i64, i64, bool), usage: &AgentInferenceUsage) {
-    if let Some(value) = usage.input_tokens {
-        accumulator.0 += value;
-        accumulator.3 = true;
-    }
-    if let Some(value) = usage.output_tokens {
-        accumulator.1 += value;
-        accumulator.3 = true;
-    }
-    if let Some(value) = usage.total_tokens {
-        accumulator.2 += value;
-        accumulator.3 = true;
-    }
-}
-
-fn build_turn_failed_assistant_message(code: &str, message: &str) -> String {
-    format!(
-        "This turn failed ({code}): {message}\n\nYou can continue right away by rephrasing the request or asking me to retry with a narrower scope."
-    )
-}
-
-fn build_turn_paused_assistant_message(reason: &str, assistant_text: &str) -> String {
-    let prefix = assistant_text.trim();
-    if prefix.is_empty() {
-        format!(
-            "I paused here: {reason}\n\nYou can continue from this point right away, or tighten the scope if you want me to be more targeted."
-        )
-    } else {
-        format!(
-            "{prefix}\n\nI paused here: {reason}\n\nYou can continue from this point right away, or tighten the scope if you want me to be more targeted."
-        )
-    }
-}
-
-fn emit_memory_events(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    events: Vec<MemoryRuntimePhaseEvent>,
-) -> Result<()> {
-    for event in events {
-        emit_event(
-            storage_root,
-            session_id,
-            turn_id,
-            &event.phase,
-            event.payload,
-        )?;
-    }
-    Ok(())
-}
-
-fn total_message_tokens(messages: &[AgentInferenceMessage]) -> usize {
-    messages
-        .iter()
-        .map(|message| estimate_tokens(&message.content))
-        .sum()
-}
-
-fn replace_latest_user_message(
-    messages: &mut [AgentInferenceMessage],
-    transformed_input: &str,
-) -> bool {
-    for message in messages.iter_mut().rev() {
-        if matches!(message.role, AgentInferenceMessageRole::User) {
-            message.content = transformed_input.to_string();
-            return true;
-        }
-    }
-    false
-}
-
-fn emit_input_postprocessed(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    target: &str,
-    result: &PromptRepetitionResult,
-) -> Result<()> {
-    emit_event(
-        storage_root,
-        session_id,
-        turn_id,
-        "input_postprocessed",
-        json!({
-            "target": target,
-            "mode": result.mode.as_str(),
-            "originalTokens": result.original_tokens,
-            "addedTokens": result.added_tokens,
-            "anchorTokens": result.anchor_tokens,
-        }),
-    )
-}
-
-fn emit_turn_strategy_selected(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    turn_strategy: &TurnStrategy,
-    planning_enabled: bool,
-    reflection_enabled: bool,
-    effective_max_steps: Option<u32>,
-) -> Result<()> {
-    emit_event(
-        storage_root,
-        session_id,
-        turn_id,
-        "turn_strategy_selected",
-        json!({
-            "strategy": turn_strategy.kind.as_str(),
-            "reasons": &turn_strategy.reasons,
-            "planningEnabled": planning_enabled,
-            "reflectionEnabled": reflection_enabled,
-            "maxSteps": effective_max_steps,
-        }),
-    )
-}
-
-fn emit_terminal_interaction_policy_selected(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    policy: &TerminalInteractionPolicy,
-) -> Result<()> {
-    emit_event(
-        storage_root,
-        session_id,
-        turn_id,
-        "terminal_interaction_policy_selected",
-        terminal_policy_payload(policy),
-    )
-}
-
-#[derive(Clone, Debug)]
-struct PauseReason {
-    code: String,
-    message: String,
-}
-
-#[derive(Default)]
-struct TurnProgressGuardState {
-    caller_soft_cap: Option<u32>,
-    soft_cap_message: Option<String>,
-    repeated_tool_fingerprint: Option<(String, u32)>,
-    repeated_failure_fingerprint: Option<(String, u32)>,
-    repeated_loop_fingerprint: Option<(String, u32)>,
-    repeated_zero_write: Option<(String, u32)>,
-    consecutive_browser_stall_batches: u32,
-    browser_workflow_advanced_once: bool,
-}
-
-impl TurnProgressGuardState {
-    fn new(caller_soft_cap: Option<u32>, soft_cap_message: Option<String>) -> Self {
-        Self {
-            caller_soft_cap,
-            soft_cap_message,
-            ..Self::default()
-        }
-    }
-
-    fn before_step(&self, step_index: u32) -> Option<PauseReason> {
-        let cap = self.caller_soft_cap?;
-        if step_index < cap {
-            return None;
-        }
-        Some(PauseReason {
-            code: AGENT_TURN_PAUSED_SOFT_CAP.to_string(),
-            message: self.soft_cap_message.clone().unwrap_or_else(|| {
-                format!(
-                    "the current request reached the caller-provided soft cap ({cap} tool steps)"
-                )
-            }),
-        })
-    }
-
-    fn observe_inference(
-        &mut self,
-        assistant_text: &str,
-        tool_calls: &[AgentToolInvocation],
-    ) -> Option<PauseReason> {
-        if tool_calls.is_empty() {
-            self.repeated_tool_fingerprint = None;
-            self.repeated_loop_fingerprint = None;
-            return None;
-        }
-
-        let tool_fingerprint = fingerprint_tool_invocations(tool_calls);
-        let tool_count =
-            bump_repeated_fingerprint(&mut self.repeated_tool_fingerprint, tool_fingerprint);
-
-        let loop_fingerprint = format!(
-            "{}::{}",
-            assistant_text.trim(),
-            fingerprint_tool_invocations(tool_calls)
-        );
-        let loop_count =
-            bump_repeated_fingerprint(&mut self.repeated_loop_fingerprint, loop_fingerprint);
-
-        if tool_count >= 3 || loop_count >= 3 {
-            return Some(PauseReason {
-                code: AGENT_TURN_PAUSED_NO_PROGRESS.to_string(),
-                message: "I detected a repeated tool loop with the same plan and inputs, so I paused instead of spinning.".to_string(),
-            });
-        }
-
-        None
-    }
-
-    fn observe_tool_results(&mut self, tool_calls: &[AgentToolCall]) -> Option<PauseReason> {
-        let batch_advanced = browser_workflow_batch_advanced(tool_calls);
-        if batch_advanced {
-            self.browser_workflow_advanced_once = true;
-        }
-
-        if browser_workflow_batch_stalled(tool_calls) {
-            self.consecutive_browser_stall_batches =
-                self.consecutive_browser_stall_batches.saturating_add(1);
-            let browser_stall_threshold = if self.browser_workflow_advanced_once {
-                6
-            } else {
-                4
-            };
-            if self.consecutive_browser_stall_batches >= browser_stall_threshold {
-                return Some(PauseReason {
-                    code: AGENT_TURN_PAUSED_NO_PROGRESS.to_string(),
-                    message: "the browser workflow retried several local actions without any verified state transition, so I paused to avoid looping".to_string(),
-                });
-            }
-        } else if batch_advanced {
-            self.consecutive_browser_stall_batches = 0;
-        }
-
-        if let Some(message) = interaction_timeout_message(tool_calls) {
-            return Some(PauseReason {
-                code: AGENT_TURN_PAUSED_NO_PROGRESS.to_string(),
-                message,
-            });
-        }
-
-        if let Some(fingerprint) = fingerprint_recoverable_failure(tool_calls) {
-            let count =
-                bump_repeated_fingerprint(&mut self.repeated_failure_fingerprint, fingerprint);
-            let repeated_failure_threshold = if has_browser_workflow_stall_failure(tool_calls) {
-                if self.browser_workflow_advanced_once {
-                    6
-                } else {
-                    4
-                }
-            } else {
-                3
-            };
-            if count >= repeated_failure_threshold {
-                return Some(PauseReason {
-                    code: AGENT_TURN_PAUSED_NO_PROGRESS.to_string(),
-                    message: "the same recoverable tool failure repeated several times without converging".to_string(),
-                });
-            }
-        } else {
-            self.repeated_failure_fingerprint = None;
-        }
-
-        if let Some(path) = fingerprint_zero_write(tool_calls) {
-            let count = bump_repeated_fingerprint(&mut self.repeated_zero_write, path);
-            if count >= 2 {
-                return Some(PauseReason {
-                    code: AGENT_TURN_PAUSED_NO_PROGRESS.to_string(),
-                    message: "the same file write loop produced no net change, so I paused to avoid thrashing".to_string(),
-                });
-            }
-        } else {
-            self.repeated_zero_write = None;
-        }
-
-        None
-    }
-}
-
-fn is_browser_workflow_tool_name(name: &str) -> bool {
-    name.starts_with("workbench.web_") || name.starts_with("browser_use.")
-}
-
-fn browser_action_has_verified_transition(tool_call: &AgentToolCall) -> bool {
-    if tool_call.status != "completed" || !is_local_browser_action_tool_name(&tool_call.tool_name) {
-        return false;
-    }
-    let Some(output) = tool_call.output.as_ref() else {
-        return false;
-    };
-    if tool_call.tool_name == "workbench.web_action.wait" {
-        return output
-            .get("satisfied")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-    }
-    if output
-        .get("verified")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        let state_transition = output
-            .pointer("/verification/stateTransition")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        return !state_transition.trim().is_empty()
-            && !state_transition.eq_ignore_ascii_case("none");
-    }
-    false
-}
-
-fn browser_workflow_batch_advanced(tool_calls: &[AgentToolCall]) -> bool {
-    tool_calls
-        .iter()
-        .any(browser_action_has_verified_transition)
-}
-
-fn browser_workflow_batch_stalled(tool_calls: &[AgentToolCall]) -> bool {
-    let has_browser_tool = tool_calls
-        .iter()
-        .any(|call| is_browser_workflow_tool_name(&call.tool_name));
-    if !has_browser_tool {
-        return false;
-    }
-    let has_local_action_attempt = tool_calls
-        .iter()
-        .any(|call| is_local_browser_action_tool_name(&call.tool_name));
-    if !has_local_action_attempt || browser_workflow_batch_advanced(tool_calls) {
-        return false;
-    }
-    tool_calls.iter().any(|call| {
-        call.status == "failed"
-            && call
-                .error_code
-                .as_deref()
-                .map(is_workflow_stall_failure_code)
-                .unwrap_or(false)
-    })
-}
-
-fn is_workflow_stall_failure_code(code: &str) -> bool {
-    matches!(
-        code,
-        "no_state_transition"
-            | "workflow_not_advanced"
-            | "wrong_widget_target"
-            | "list_item_not_changed"
-            | "mode_not_switched"
-            | "menu_not_opened"
-            | "reveal_not_observed"
-            | "hover_reveal_required"
-    )
-}
-
-fn has_browser_workflow_stall_failure(tool_calls: &[AgentToolCall]) -> bool {
-    tool_calls.iter().any(|call| {
-        call.status == "failed"
-            && is_local_browser_action_tool_name(&call.tool_name)
-            && call
-                .error_code
-                .as_deref()
-                .map(is_workflow_stall_failure_code)
-                .unwrap_or(false)
-    })
-}
-
-fn interaction_timeout_message(tool_calls: &[AgentToolCall]) -> Option<String> {
-    tool_calls.iter().find_map(|tool_call| {
-        if tool_call.status == "failed"
-            && tool_call.error_code.as_deref() == Some(AGENT_TOOL_APPROVAL_REQUIRED)
-        {
-            return Some(
-                "I paused because a tool action needs your approval before I can continue."
-                    .to_string(),
-            );
-        }
-        if tool_call.status == "failed"
-            && tool_call.error_code.as_deref() == Some("AGENT_TOOL_DENIED")
-        {
-            return Some(
-                "I paused because a required tool action was denied, so I cannot claim it completed."
-                    .to_string(),
-            );
-        }
-        let message = tool_call.error_message.as_deref()?;
-        if message.contains("timed out waiting for user input")
-            || message.contains("timed out waiting for user response")
-        {
-            return Some(
-                "I paused because the turn is waiting on a user decision that never reached the UI in time."
-                    .to_string(),
-            );
-        }
-        None
-    })
-}
+pub use crate::agent::session_management::{
+    bind_session_project, create_session, delete_session, enter_plan_mode,
+    get_pending_interactions, get_plan, get_session, list_sessions,
+};
 
 #[cfg(test)]
-mod interaction_guard_tests {
-    use super::{
-        browser_action_failure_requires_retry, browser_action_has_verified_transition,
-        browser_observed_without_action, browser_observed_without_local_action,
-        browser_workflow_batch_advanced, browser_workflow_batch_stalled,
-        has_browser_automation_tools, interaction_timeout_message, local_browser_workflow_ready,
-        restricted_browser_action_tools, sanitize_planning_output, TurnProgressGuardState,
-        AGENT_TURN_PAUSED_NO_PROGRESS,
-    };
-    use crate::agent::types::AgentToolCall;
-    use crate::provider::types::AgentToolDefinition;
-    use serde_json::json;
+#[path = "service_interaction_guard_tests.rs"]
+mod interaction_guard_tests;
 
-    fn failed_tool_call(message: &str) -> AgentToolCall {
-        AgentToolCall {
-            id: "tool-1".to_string(),
-            session_id: "session-1".to_string(),
-            turn_id: "turn-1".to_string(),
-            tool_name: "request_user_input".to_string(),
-            input: json!({}),
-            output: None,
-            status: "failed".to_string(),
-            error_code: Some("AGENT_TURN_FAILED".to_string()),
-            error_message: Some(message.to_string()),
-            started_at: 1,
-            finished_at: Some(2),
-        }
-    }
-
-    fn failed_tool_call_with_code(code: &str, message: &str) -> AgentToolCall {
-        AgentToolCall {
-            id: "tool-1".to_string(),
-            session_id: "session-1".to_string(),
-            turn_id: "turn-1".to_string(),
-            tool_name: "workbench.web_action.mutate".to_string(),
-            input: json!({}),
-            output: None,
-            status: "failed".to_string(),
-            error_code: Some(code.to_string()),
-            error_message: Some(message.to_string()),
-            started_at: 1,
-            finished_at: Some(2),
-        }
-    }
-
-    fn completed_tool_call(name: &str) -> AgentToolCall {
-        AgentToolCall {
-            id: "tool-2".to_string(),
-            session_id: "session-1".to_string(),
-            turn_id: "turn-1".to_string(),
-            tool_name: name.to_string(),
-            input: json!({}),
-            output: Some(json!({ "ok": true })),
-            status: "completed".to_string(),
-            error_code: None,
-            error_message: None,
-            started_at: 1,
-            finished_at: Some(2),
-        }
-    }
-
-    fn completed_verified_browser_action(name: &str, transition: &str) -> AgentToolCall {
-        AgentToolCall {
-            id: "tool-verified".to_string(),
-            session_id: "session-1".to_string(),
-            turn_id: "turn-1".to_string(),
-            tool_name: name.to_string(),
-            input: json!({}),
-            output: Some(json!({
-                "verified": true,
-                "verification": {
-                    "stateTransition": transition
-                }
-            })),
-            status: "completed".to_string(),
-            error_code: None,
-            error_message: None,
-            started_at: 1,
-            finished_at: Some(2),
-        }
-    }
-
-    #[test]
-    fn detects_interaction_timeout_failures() {
-        let message = interaction_timeout_message(&[failed_tool_call(
-            "plan question timed out waiting for user input",
-        )]);
-        assert!(message.is_some());
-    }
-
-    #[test]
-    fn progress_guard_pauses_on_interaction_timeout() {
-        let mut guard = TurnProgressGuardState::default();
-        let reason = guard.observe_tool_results(&[failed_tool_call(
-            "plan approval timed out waiting for user response",
-        )]);
-        assert!(reason.is_some());
-        let reason = reason.expect("pause reason");
-        assert_eq!(reason.code, AGENT_TURN_PAUSED_NO_PROGRESS);
-        assert!(reason.message.contains("waiting on a user decision"));
-    }
-
-    #[test]
-    fn progress_guard_pauses_on_approval_required_failure() {
-        let mut guard = TurnProgressGuardState::default();
-        let reason = guard.observe_tool_results(&[failed_tool_call_with_code(
-            "AGENT_TOOL_APPROVAL_REQUIRED",
-            "external tool requires user approval: workbench.web_action.mutate",
-        )]);
-        assert!(reason.is_some());
-        let reason = reason.expect("pause reason");
-        assert_eq!(reason.code, AGENT_TURN_PAUSED_NO_PROGRESS);
-        assert!(reason.message.contains("needs your approval"));
-    }
-
-    #[test]
-    fn planning_sanitizer_keeps_only_structured_steps() {
-        let sanitized = sanitize_planning_output(
-            "我会模拟这个过程。\n虽然我无法直接操作浏览器。\n\n计划：\n1. 读取页面状态\n2. 定位目标控件\n3. 执行动作",
-        );
-        assert_eq!(sanitized, "1. 读取页面状态\n2. 定位目标控件\n3. 执行动作");
-    }
-
-    #[test]
-    fn browser_workflow_retry_guard_requires_structured_retryable_failure() {
-        assert!(browser_action_failure_requires_retry(&[
-            failed_tool_call_with_code(
-                "workflow_not_advanced",
-                "the browser workflow did not advance",
-            )
-        ]));
-        assert!(browser_action_failure_requires_retry(&[
-            failed_tool_call_with_code("node_not_found", "unable to resolve target node",)
-        ]));
-        assert!(!browser_action_failure_requires_retry(&[
-            completed_tool_call("workbench.web_action.safe",)
-        ]));
-        assert!(!browser_action_failure_requires_retry(&[
-            failed_tool_call_with_code(
-                "protected_verification_widget",
-                "captcha challenge requires user handoff",
-            )
-        ]));
-    }
-
-    #[test]
-    fn browser_tool_guard_requires_actual_browser_tools() {
-        let browser_tools = vec![
-            AgentToolDefinition {
-                name: "workbench.web_query.find".to_string(),
-                description: "query the current page skeleton".to_string(),
-                input_schema: json!({"type": "object"}),
-            },
-            AgentToolDefinition {
-                name: "filesystem.read_range".to_string(),
-                description: "read a file range".to_string(),
-                input_schema: json!({"type": "object"}),
-            },
-        ];
-        assert!(has_browser_automation_tools(&browser_tools));
-
-        let non_browser_tools = vec![AgentToolDefinition {
-            name: "filesystem.read_range".to_string(),
-            description: "read a file range".to_string(),
-            input_schema: json!({"type": "object"}),
-        }];
-        assert!(!has_browser_automation_tools(&non_browser_tools));
-    }
-
-    #[test]
-    fn browser_observation_without_action_is_detected() {
-        assert!(browser_observed_without_action(&[
-            completed_tool_call("workbench.web_skeleton.read"),
-            completed_tool_call("workbench.tab.read"),
-        ]));
-        assert!(!browser_observed_without_action(&[
-            completed_tool_call("workbench.web_skeleton.read"),
-            completed_tool_call("workbench.web_action.safe"),
-        ]));
-    }
-
-    #[test]
-    fn simple_tab_observation_does_not_require_local_browser_action() {
-        assert!(!browser_observed_without_local_action(&[
-            completed_tool_call("workbench.tabs.list"),
-            completed_tool_call("workbench.tab.read"),
-        ]));
-    }
-
-    #[test]
-    fn browser_observation_without_local_action_treats_navigation_as_insufficient() {
-        assert!(browser_observed_without_local_action(&[
-            completed_tool_call("workbench.web_skeleton.read"),
-            completed_tool_call("workbench.web_action.navigate"),
-        ]));
-        assert!(!browser_observed_without_local_action(&[
-            completed_tool_call("workbench.web_skeleton.read"),
-            completed_tool_call("workbench.web_action.mutate"),
-        ]));
-    }
-
-    #[test]
-    fn local_browser_workflow_ready_requires_real_web_context() {
-        assert!(local_browser_workflow_ready(&[AgentToolCall {
-            id: "tool-widget".to_string(),
-            session_id: "session-1".to_string(),
-            turn_id: "turn-1".to_string(),
-            tool_name: "workbench.web_skeleton.read".to_string(),
-            input: json!({}),
-            output: Some(json!({
-                "nodes": [{
-                    "nodeId": "node-1",
-                    "widgetId": "widget-1",
-                    "widgetKind": "history-list"
-                }]
-            })),
-            status: "completed".to_string(),
-            error_code: None,
-            error_message: None,
-            started_at: 1,
-            finished_at: Some(2),
-        }]));
-        assert!(local_browser_workflow_ready(&[AgentToolCall {
-            id: "tool-scan".to_string(),
-            session_id: "session-1".to_string(),
-            turn_id: "turn-1".to_string(),
-            tool_name: "workbench.web_query.find".to_string(),
-            input: json!({}),
-            output: Some(json!({
-                "scanSessionId": "scan-1",
-                "bestMatch": {
-                    "nodeId": "cand-1"
-                }
-            })),
-            status: "completed".to_string(),
-            error_code: None,
-            error_message: None,
-            started_at: 1,
-            finished_at: Some(2),
-        }]));
-        assert!(!local_browser_workflow_ready(&[completed_tool_call(
-            "workbench.tabs.list",
-        )]));
-    }
-
-    #[test]
-    fn restricted_browser_action_tools_drop_observation_only_fallbacks() {
-        let tools = vec![
-            AgentToolDefinition {
-                name: "workbench.web_skeleton.read".to_string(),
-                description: "read page skeleton".to_string(),
-                input_schema: json!({"type": "object"}),
-            },
-            AgentToolDefinition {
-                name: "workbench.web_query.find".to_string(),
-                description: "query skeleton nodes".to_string(),
-                input_schema: json!({"type": "object"}),
-            },
-            AgentToolDefinition {
-                name: "workbench.tab.capture_visual".to_string(),
-                description: "capture screenshot".to_string(),
-                input_schema: json!({"type": "object"}),
-            },
-            AgentToolDefinition {
-                name: "workbench.web_action.mutate".to_string(),
-                description: "mutate page".to_string(),
-                input_schema: json!({"type": "object"}),
-            },
-        ];
-
-        let restricted = restricted_browser_action_tools(&tools);
-        let names = restricted
-            .iter()
-            .map(|tool| tool.name.as_str())
-            .collect::<Vec<_>>();
-        assert!(names.contains(&"workbench.web_skeleton.read"));
-        assert!(names.contains(&"workbench.web_query.find"));
-        assert!(names.contains(&"workbench.web_action.mutate"));
-        assert!(!names.contains(&"workbench.tab.capture_visual"));
-    }
-
-    #[test]
-    fn browser_workflow_stall_batch_detection_requires_stall_failure_family() {
-        let stalled = vec![failed_tool_call_with_code(
-            "workflow_not_advanced",
-            "expand/collapse did not change local region state",
-        )];
-        assert!(browser_workflow_batch_stalled(&stalled));
-        assert!(!browser_workflow_batch_advanced(&stalled));
-
-        let rebinding_failure = vec![failed_tool_call_with_code(
-            "candidate_stale",
-            "candidate target is no longer available in the active workflow context",
-        )];
-        assert!(!browser_workflow_batch_stalled(&rebinding_failure));
-
-        let advanced = vec![completed_verified_browser_action(
-            "workbench.web_action.mutate",
-            "workflow_advanced",
-        )];
-        assert!(browser_workflow_batch_advanced(&advanced));
-        assert!(!browser_workflow_batch_stalled(&advanced));
-        assert!(browser_action_has_verified_transition(&advanced[0]));
-    }
-
-    #[test]
-    fn progress_guard_pauses_after_consecutive_browser_stall_batches() {
-        let mut guard = TurnProgressGuardState::default();
-        let stalled_batch = vec![failed_tool_call_with_code(
-            "workflow_not_advanced",
-            "expand/collapse did not change local region state",
-        )];
-        assert!(guard.observe_tool_results(&stalled_batch).is_none());
-        assert!(guard.observe_tool_results(&stalled_batch).is_none());
-        assert!(guard.observe_tool_results(&stalled_batch).is_none());
-        let reason = guard.observe_tool_results(&stalled_batch);
-        assert!(reason.is_some());
-        let reason = reason.expect("pause reason");
-        assert_eq!(reason.code, AGENT_TURN_PAUSED_NO_PROGRESS);
-        assert!(reason.message.contains("browser workflow retried"));
-    }
-
-    #[test]
-    fn progress_guard_resets_browser_stall_counter_after_verified_advance() {
-        let mut guard = TurnProgressGuardState::default();
-        let stalled_batch = vec![failed_tool_call_with_code(
-            "workflow_not_advanced",
-            "expand/collapse did not change local region state",
-        )];
-        let advanced_batch = vec![completed_verified_browser_action(
-            "workbench.web_action.safe",
-            "workflow_advanced",
-        )];
-
-        assert!(guard.observe_tool_results(&stalled_batch).is_none());
-        assert!(guard.observe_tool_results(&advanced_batch).is_none());
-        assert!(guard.observe_tool_results(&stalled_batch).is_none());
-        assert!(guard.observe_tool_results(&stalled_batch).is_none());
-    }
-
-    #[test]
-    fn progress_guard_allows_more_retries_after_verified_browser_progress() {
-        let mut guard = TurnProgressGuardState::default();
-        let advanced_batch = vec![completed_verified_browser_action(
-            "workbench.web_action.mutate",
-            "workflow_advanced",
-        )];
-        let stalled_batch = vec![failed_tool_call_with_code(
-            "no_state_transition",
-            "submit did not produce a clear field change or widget transition",
-        )];
-
-        assert!(guard.observe_tool_results(&advanced_batch).is_none());
-        for _ in 0..5 {
-            assert!(guard.observe_tool_results(&stalled_batch).is_none());
-        }
-        let reason = guard.observe_tool_results(&stalled_batch);
-        assert!(reason.is_some());
-        let reason = reason.expect("pause reason");
-        assert_eq!(reason.code, AGENT_TURN_PAUSED_NO_PROGRESS);
-    }
-
-}
-
-fn bump_repeated_fingerprint(slot: &mut Option<(String, u32)>, fingerprint: String) -> u32 {
-    if let Some((current, count)) = slot.as_mut() {
-        if *current == fingerprint {
-            *count += 1;
-            return *count;
-        }
-    }
-    *slot = Some((fingerprint, 1));
-    1
-}
-
-fn fingerprint_tool_invocations(tool_calls: &[AgentToolInvocation]) -> String {
-    tool_calls
-        .iter()
-        .map(|tool_call| {
-            let normalized = normalize_json_value(&tool_call.input);
-            format!(
-                "{}:{}",
-                tool_call.name,
-                serde_json::to_string(&normalized).unwrap_or_else(|_| "{}".to_string())
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("|")
-}
-
-fn normalize_json_value(value: &Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.iter().map(normalize_json_value).collect()),
-        Value::Object(map) => {
-            let mut entries = map.iter().collect::<Vec<_>>();
-            entries.sort_by(|left, right| left.0.cmp(right.0));
-            let mut normalized = serde_json::Map::new();
-            for (key, value) in entries {
-                normalized.insert(key.clone(), normalize_json_value(value));
-            }
-            Value::Object(normalized)
-        }
-        _ => value.clone(),
-    }
-}
-
-fn fingerprint_recoverable_failure(tool_calls: &[AgentToolCall]) -> Option<String> {
-    let fingerprints = tool_calls
-        .iter()
-        .filter_map(|tool_call| {
-            if tool_call.status == "failed" {
-                let code = tool_call.error_code.clone().unwrap_or_default();
-                let message = tool_call.error_message.clone().unwrap_or_default();
-                return Some(format!(
-                    "failed:{}:{}:{}",
-                    tool_call.tool_name, code, message
-                ));
-            }
-            let kind = tool_call
-                .output
-                .as_ref()
-                .and_then(|output| output.get("kind"))
-                .and_then(Value::as_str)?;
-            if matches!(
-                kind,
-                "no_match" | "unchanged" | "interactive_advisory" | "interactive_policy_blocked"
-            ) {
-                let path = extract_tool_path(tool_call).unwrap_or_default();
-                return Some(format!(
-                    "recoverable:{}:{}:{}",
-                    tool_call.tool_name, kind, path
-                ));
-            }
-            None
-        })
-        .collect::<Vec<_>>();
-
-    if fingerprints.is_empty() {
-        None
-    } else {
-        Some(fingerprints.join("|"))
-    }
-}
-
-fn fingerprint_zero_write(tool_calls: &[AgentToolCall]) -> Option<String> {
-    let fingerprints = tool_calls
-        .iter()
-        .filter_map(|tool_call| {
-            if !matches!(
-                tool_call.tool_name.as_str(),
-                "filesystem.write" | "filesystem.edit" | "filesystem.multi_edit"
-            ) {
-                return None;
-            }
-            let kind = tool_call
-                .output
-                .as_ref()
-                .and_then(|output| output.get("kind"))
-                .and_then(Value::as_str)?;
-            if !matches!(kind, "unchanged" | "no_match") {
-                return None;
-            }
-            extract_tool_path(tool_call)
-        })
-        .collect::<Vec<_>>();
-    if fingerprints.is_empty() {
-        None
-    } else {
-        Some(fingerprints.join("|"))
-    }
-}
-
-fn extract_tool_path(tool_call: &AgentToolCall) -> Option<String> {
-    tool_call
-        .output
-        .as_ref()
-        .and_then(|output| output.get("path"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .or_else(|| {
-            tool_call
-                .input
-                .as_object()
-                .and_then(|input| input.get("path"))
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-}
-
-fn finalize_failed_turn(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    code: &str,
-    message: &str,
-) -> Result<AgentTurn> {
-    let turn = registry_db::fail_agent_turn(storage_root, turn_id, code, message)?;
-    emit_event(
-        storage_root,
-        session_id,
-        turn_id,
-        "failed",
-        json!({
-            "code": code,
-            "message": message,
-        }),
-    )?;
-    Ok(turn)
-}
-
-fn finalize_paused_turn(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    code: &str,
-    message: &str,
-    usage: Option<&AgentUsage>,
-) -> Result<AgentTurn> {
-    let turn = registry_db::pause_agent_turn(storage_root, turn_id, code, message, usage)?;
-    emit_event(
-        storage_root,
-        session_id,
-        turn_id,
-        "paused",
-        json!({
-            "code": code,
-            "message": message,
-            "usage": usage,
-        }),
-    )?;
-    Ok(turn)
-}
-
-pub fn list_sessions(request: AgentListSessionsRequest) -> Result<Vec<AgentSession>> {
-    registry_db::list_agent_sessions(&request.storage_root)
-}
-
-pub fn create_session(request: AgentCreateSessionRequest) -> Result<AgentSession> {
-    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
-    let title =
-        normalize_optional_text(request.title).unwrap_or_else(|| "New Agent Session".to_string());
-    let profile_id = request
-        .profile_id
-        .map(|value| normalize_required_text(&value, "profileId"))
-        .transpose()?;
-
-    let now = now_ms();
-    let session = AgentSession {
-        id: format!("agent-session-{}", Uuid::new_v4()),
-        title,
-        profile_id,
-        project_root: None,
-        project_name: None,
-        collaboration_mode: AgentCollaborationMode::Default,
-        created_at: now,
-        updated_at: now,
-    };
-    initialize_session_storage(&storage_root, &session.id)?;
-    let session = registry_db::create_agent_session(&storage_root, &session)?;
-    Ok(session)
-}
-
-pub fn bind_session_project(request: AgentBindSessionProjectRequest) -> Result<AgentSession> {
-    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
-    let session_id = normalize_required_text(&request.session_id, "sessionId")?;
-    let project_root = normalize_required_text(&request.project_root, "projectRoot")?;
-    let normalized_root = normalize_project_root(&project_root)?;
-    let project_name = project_name_from_root(&normalized_root);
-    registry_db::update_agent_session_project(
-        &storage_root,
-        &session_id,
-        Some(normalized_root),
-        project_name,
-    )
-}
-
-pub fn get_session(request: AgentGetSessionRequest) -> Result<AgentSessionDetail> {
-    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
-    let session_id = normalize_required_text(&request.session_id, "sessionId")?;
-    let session =
-        registry_db::read_agent_session(&storage_root, &session_id)?.ok_or_else(|| {
-            agent_error(
-                AGENT_TURN_FAILED,
-                format!("session not found: {session_id}"),
-            )
-        })?;
-    let plan = registry_db::read_agent_plan(&storage_root, &session_id)?;
-    let pending_interactions = list_pending_interactions(&storage_root, &session_id)?;
-    let turns = registry_db::list_agent_turns(&storage_root, &session_id)?;
-    let messages = registry_db::list_agent_messages(&storage_root, &session_id)?;
-    let tool_calls = registry_db::list_agent_tool_calls(&storage_root, &session_id)?;
-    let runtime_events = registry_db::list_agent_runtime_events(&storage_root, &session_id)?;
-    Ok(AgentSessionDetail {
-        session,
-        plan,
-        pending_interactions,
-        turns,
-        messages,
-        tool_calls,
-        runtime_events,
-    })
-}
-
-pub fn get_pending_interactions(
-    request: AgentGetPendingInteractionsRequest,
-) -> Result<Vec<AgentPendingInteraction>> {
-    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
-    let session_id = normalize_required_text(&request.session_id, "sessionId")?;
-    list_pending_interactions(&storage_root, &session_id)
-}
-
-fn blank_plan_state() -> AgentPlanState {
-    AgentPlanState {
-        status: AgentPlanStatus::Draft,
-        version: 0,
-        draft_markdown: String::new(),
-        proposed_markdown: None,
-        approved_markdown: None,
-        last_submitted_version: None,
-        updated_at: now_ms(),
-    }
-}
-
-fn ensure_plan_state(storage_root: &str, session_id: &str) -> Result<AgentPlanState> {
-    if let Some(plan) = registry_db::read_agent_plan(storage_root, session_id)? {
-        return Ok(plan);
-    }
-    let plan = blank_plan_state();
-    registry_db::upsert_agent_plan(storage_root, session_id, &plan)
-}
-
-pub fn enter_plan_mode(request: AgentEnterPlanModeRequest) -> Result<AgentSessionDetail> {
-    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
-    let session_id = normalize_required_text(&request.session_id, "sessionId")?;
-    let existing_session = registry_db::read_agent_session(&storage_root, &session_id)?
-        .ok_or_else(|| {
-            agent_error(
-                AGENT_TURN_FAILED,
-                format!("session not found: {session_id}"),
-            )
-        })?;
-    let phase = if existing_session.collaboration_mode == AgentCollaborationMode::Plan {
-        "plan_mode_reentered"
-    } else {
-        "plan_mode_entered"
-    };
-    let session = registry_db::set_agent_session_collaboration_mode(
-        &storage_root,
-        &session_id,
-        AgentCollaborationMode::Plan,
-    )?;
-    let plan = ensure_plan_state(&storage_root, &session_id)?;
-    emit_transient_event(
-        &session_id,
-        &format!("plan-mode-{}", Uuid::new_v4()),
-        phase,
-        json!({
-            "collaborationMode": "plan",
-            "status": plan.status,
-            "version": plan.version,
-        }),
-    )?;
-    let mut detail = get_session(AgentGetSessionRequest {
-        storage_root,
-        session_id,
-    })?;
-    detail.session = session;
-    detail.plan = Some(plan);
-    Ok(detail)
-}
-
-pub fn get_plan(request: AgentGetPlanRequest) -> Result<Option<AgentPlanState>> {
-    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
-    let session_id = normalize_required_text(&request.session_id, "sessionId")?;
-    registry_db::read_agent_plan(&storage_root, &session_id)
-}
-
-pub fn answer_question(request: AgentAnswerQuestionRequest) -> Result<()> {
-    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
-    let session_id = normalize_required_text(&request.session_id, "sessionId")?;
-    let turn_id = normalize_required_text(&request.turn_id, "turnId")?;
-    let request_id = normalize_required_text(&request.request_id, "requestId")?;
-    let note = request.note.clone();
-    crate::agent::tools::resolve_plan_question(&request_id, request.answers.clone(), note.clone());
-    if let Some(interaction) = resolve_pending_interaction(
-        &storage_root,
-        &request_id,
-        AgentPendingInteractionStatus::Resolved,
-        Some(json!({
-            "answers": request.answers,
-            "note": note,
-        })),
-    )? {
-        emit_interaction_resolved_event(&storage_root, &interaction)?;
-    }
-    emit_event(
-        &storage_root,
-        &session_id,
-        &turn_id,
-        "plan_question_answered",
-        json!({
-            "requestId": request_id,
-        }),
-    )?;
-    emit_interaction_queue_updated(&storage_root, &session_id, &turn_id)
-}
-
-pub fn answer_plan_question(request: AgentAnswerPlanQuestionRequest) -> Result<()> {
-    answer_question(request)
-}
+#[cfg(test)]
+#[path = "thread_lifecycle_tests.rs"]
+mod thread_lifecycle_tests;
 
 pub fn resolve_plan_approval(
     request: AgentResolvePlanApprovalRequest,
@@ -1810,2317 +74,448 @@ pub fn resolve_plan_approval(
     let session_id = normalize_required_text(&request.session_id, "sessionId")?;
     let turn_id = normalize_required_text(&request.turn_id, "turnId")?;
     let request_id = normalize_required_text(&request.request_id, "requestId")?;
-    let decision = normalize_required_text(&request.decision, "decision")?;
-    let feedback = request.feedback.clone();
-    let resolved_live_waiter =
-        crate::agent::tools::resolve_plan_approval(&request_id, &decision, feedback.clone());
-    let resolved_interaction = resolve_pending_interaction(
-        &storage_root,
-        &request_id,
-        AgentPendingInteractionStatus::Resolved,
-        Some(json!({
-            "decision": decision,
-            "feedback": feedback,
-        })),
-    )?;
-    if let Some(interaction) = resolved_interaction.as_ref() {
-        emit_interaction_resolved_event(&storage_root, interaction)?;
+    let result = execute_plan_approval_resolution(request)?;
+    if result.is_some() {
+        return Ok(result);
     }
-    let phase = if decision == "approve_and_implement" {
-        "plan_approved"
-    } else {
-        "plan_rejected"
-    };
-    emit_event(
+    mark_execution_resumable_after_interaction(
         &storage_root,
         &session_id,
-        &turn_id,
-        phase,
-        json!({
-            "requestId": request_id,
-            "decision": decision,
-            "feedback": request.feedback,
-        }),
-    )?;
-    emit_interaction_queue_updated(&storage_root, &session_id, &turn_id)?;
-
-    if resolved_live_waiter {
-        return Ok(None);
-    }
-
-    let Some(session) = registry_db::read_agent_session(&storage_root, &session_id)? else {
-        return Ok(None);
-    };
-    if decision != "approve_and_implement" {
-        return Ok(None);
-    }
-
-    let approved_plan = resolved_interaction
-        .as_ref()
-        .and_then(|interaction| interaction.payload.get("proposedMarkdown"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .or_else(|| {
-            registry_db::read_agent_plan(&storage_root, &session_id)
-                .ok()
-                .flatten()
-                .and_then(|plan| plan.proposed_markdown.or(plan.approved_markdown))
-        })
-        .unwrap_or_default();
-    if approved_plan.trim().is_empty() {
-        return Ok(None);
-    }
-
-    let requested_profile_id = session
-        .profile_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let profile = resolve_profile_for_turn(&storage_root, &session, requested_profile_id)?;
-    registry_db::set_agent_session_collaboration_mode(
-        &storage_root,
-        &session_id,
-        AgentCollaborationMode::Default,
-    )?;
-    emit_event(
-        &storage_root,
-        &session_id,
-        &turn_id,
-        "plan_mode_exited",
-        json!({
-            "reason": "approved_and_implement",
-            "source": "pending_interaction",
-        }),
-    )?;
-    let fallback_input = select_plan_handoff_input(&storage_root, &session_id, "")?;
-    run_plan_implementation_handoff(
-        &storage_root,
-        &session_id,
-        &fallback_input,
-        &AgentSendTurnRequest {
-            storage_root: storage_root.clone(),
-            session_id: session_id.clone(),
-            input: fallback_input.clone(),
-            profile_id: session.profile_id.clone(),
-            project_root: session.project_root.clone(),
-            max_steps: None,
-            enable_planning: true,
-            planning_min_chars: None,
-            enable_reflection: true,
-            reflection_min_tool_calls: None,
-            enable_context_collapse: Some(true),
-        },
-        &profile,
-        &session,
-        &approved_plan,
-    )
-    .map(Some)
-}
-
-pub fn delete_session(request: AgentDeleteSessionRequest) -> Result<()> {
-    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
-    let session_id = normalize_required_text(&request.session_id, "sessionId")?;
-    registry_db::delete_agent_session(&storage_root, &session_id)?;
-    delete_session_storage(&storage_root, &session_id)
-}
-
-fn execute_tool_calls(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    tool_calls: &[AgentToolInvocation],
-    project_root: Option<&str>,
-    terminal_policy: &TerminalInteractionPolicy,
-    plan_mode: bool,
-    provider_messages: &mut Vec<AgentInferenceMessage>,
-    budget: &mut ToolResultBudgetState,
-    file_cache: &mut FileStateCache,
-    error_withholding: &mut ErrorWithholdingBuffer,
-) -> Result<Vec<AgentToolCall>> {
-    // Partition tools into read-only (concurrent) and write (serial) batches.
-    // Mirrors Claude Code's StreamingToolExecutor: read-only tools execute
-    // concurrently in batches, write tools execute serially for safety.
-    let mut results = Vec::new();
-    let mut i = 0;
-
-    while i < tool_calls.len() {
-        if tool_executes_serially(&tool_calls[i].name) {
-            // Serial execution for write tools
-            let finished = execute_single_tool(
-                storage_root,
-                session_id,
-                turn_id,
-                &tool_calls[i],
-                project_root,
-                terminal_policy,
-                plan_mode,
-                provider_messages,
-                budget,
-                file_cache,
-                error_withholding,
-            )?;
-            results.push(finished);
-            i += 1;
-        } else {
-            // Collect consecutive read-only tools into a batch
-            let batch_start = i;
-            while i < tool_calls.len() && !tool_executes_serially(&tool_calls[i].name) {
-                i += 1;
-            }
-            let batch = &tool_calls[batch_start..i];
-
-            // Execute read-only batch concurrently
-            let batch_results =
-                execute_readonly_batch(storage_root, session_id, turn_id, batch, project_root)?;
-
-            // Push results in order with budget enforcement
-            for (idx, (finished_call, tool_content)) in batch_results.into_iter().enumerate() {
-                let inv = &batch[idx];
-                let budgeted_content = budget.enforce(&inv.id, &inv.name, &tool_content);
-                provider_messages.push(AgentInferenceMessage {
-                    role: AgentInferenceMessageRole::Tool,
-                    content: budgeted_content,
-                    tool_call_id: Some(inv.id.clone()),
-                    tool_calls: Vec::new(),
-                });
-                results.push(finished_call);
-            }
-        }
-    }
-
-    Ok(results)
-}
-
-fn complete_tool_call_and_push_result(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    invocation: &AgentToolInvocation,
-    started_call_id: &str,
-    tool_result: &Value,
-    provider_messages: &mut Vec<AgentInferenceMessage>,
-    budget: &mut ToolResultBudgetState,
-) -> Result<AgentToolCall> {
-    let finished_call =
-        registry_db::complete_agent_tool_call(storage_root, started_call_id, tool_result)?;
-    emit_event(
-        storage_root,
-        session_id,
-        turn_id,
-        "tool_finished",
-        json!({
-            "toolCallId": finished_call.id,
-            "toolName": finished_call.tool_name,
-            "status": "completed",
-            "output": finished_call.output,
-        }),
-    )?;
-    let tool_content = serde_json::to_string(tool_result).unwrap_or_else(|_| "{}".to_string());
-    let budgeted_content = budget.enforce(&invocation.id, &invocation.name, &tool_content);
-    provider_messages.push(AgentInferenceMessage {
-        role: AgentInferenceMessageRole::Tool,
-        content: budgeted_content,
-        tool_call_id: Some(invocation.id.clone()),
-        tool_calls: Vec::new(),
-    });
-    Ok(finished_call)
-}
-
-fn is_placeholder_like_value(raw: &str) -> bool {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return true;
-    }
-    let normalized = trimmed.to_lowercase();
-    matches!(
-        normalized.as_str(),
-        "unknown"
-            | "todo"
-            | "tbd"
-            | "n/a"
-            | "none"
-            | "null"
-            | "undefined"
-            | "?"
-            | "??"
-            | "待定"
-            | "不确定"
-    ) || normalized.contains("placeholder")
-        || normalized.contains("fill_me")
-}
-
-fn find_uncertain_input_path(value: &Value, path: &str) -> Option<String> {
-    match value {
-        Value::Null => None,
-        Value::String(raw) => {
-            if is_placeholder_like_value(raw) {
-                Some(path.to_string())
-            } else {
-                None
-            }
-        }
-        Value::Array(items) => items
-            .iter()
-            .enumerate()
-            .find_map(|(index, item)| find_uncertain_input_path(item, &format!("{path}[{index}]"))),
-        Value::Object(map) => map
-            .iter()
-            .find_map(|(key, item)| find_uncertain_input_path(item, &format!("{path}.{key}"))),
-        _ => None,
-    }
-}
-
-fn is_uncertainty_gate_exempt_tool(tool_name: &str) -> bool {
-    matches!(
-        tool_name,
-        "request_user_input" | "plan.update_draft" | "plan.submit_for_approval"
-    )
-}
-
-fn maybe_build_uncertain_input_error(
-    tool_name: &str,
-    input: &Value,
-) -> Option<crate::agent::tools::AgentToolError> {
-    if is_uncertainty_gate_exempt_tool(tool_name) {
-        return None;
-    }
-    let uncertain_path = find_uncertain_input_path(input, "$")?;
-    Some(crate::agent::tools::AgentToolError::plan_question_required(
-        "tool input contains unknown or placeholder values",
-        json!({
-            "questions": [
-                {
-                    "id": "missing_required_input",
-                    "header": "Need Exact Input",
-                    "question": format!(
-                        "Tool `{tool_name}` has an uncertain value at `{uncertain_path}`. What exact value should be used?"
-                    ),
-                    "options": [
-                        {
-                            "label": "Provide exact value (Recommended)",
-                            "description": "Use custom reply to provide the concrete value and continue."
-                        },
-                        {
-                            "label": "Skip this action",
-                            "description": "Do not run this tool and choose a different approach."
-                        }
-                    ]
-                }
-            ],
-            "allowNote": true
-        }),
-    ))
-}
-
-/// Execute a single tool call with full lifecycle management.
-fn execute_single_tool(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    invocation: &AgentToolInvocation,
-    project_root: Option<&str>,
-    terminal_policy: &TerminalInteractionPolicy,
-    plan_mode: bool,
-    provider_messages: &mut Vec<AgentInferenceMessage>,
-    budget: &mut ToolResultBudgetState,
-    file_cache: &mut FileStateCache,
-    error_withholding: &mut ErrorWithholdingBuffer,
-) -> Result<AgentToolCall> {
-    let effective_input =
-        apply_project_scope_to_tool_input(&invocation.name, &invocation.input, project_root);
-    let started_call = registry_db::create_agent_tool_call(
-        storage_root,
-        session_id,
-        turn_id,
-        &invocation.name,
-        &effective_input,
-    )?;
-    emit_event(
-        storage_root,
-        session_id,
-        turn_id,
-        "tool_started",
-        json!({
-            "toolCallId": started_call.id,
-            "toolName": invocation.name,
-            "input": effective_input.clone(),
-        }),
-    )?;
-
-    let mut progress_emit_error: Option<napi::Error> = None;
-    let execution_result = if let Some(error) =
-        maybe_build_uncertain_input_error(&invocation.name, &effective_input)
-    {
-        Err(error)
-    } else {
-        execute_tool_with_progress(
-            &invocation.name,
-            &effective_input,
-            ToolExecutionContext {
-                storage_root: Some(storage_root),
-                project_root,
-                agent_session_id: Some(session_id),
-                agent_turn_id: Some(turn_id),
-                tool_call_id: Some(&started_call.id),
-                terminal_policy: Some(terminal_policy),
-                plan_mode,
-            },
-            |progress_payload| {
-                if progress_emit_error.is_some() {
-                    return;
-                }
-                if let Err(error) = emit_event(
-                    storage_root,
-                    session_id,
-                    turn_id,
-                    "tool_progress",
-                    json!({
-                        "toolCallId": started_call.id,
-                        "toolName": invocation.name,
-                        "status": "running",
-                        "input": effective_input.clone(),
-                        "progress": progress_payload,
-                    }),
-                ) {
-                    progress_emit_error = Some(error);
-                }
-            },
-        )
-    };
-    let tool_result = match execution_result {
-        Ok(value) => value,
-        Err(error) => {
-            // Check if this is an approval-required error
-            if error.code == AGENT_TOOL_APPROVAL_REQUIRED {
-                let approval_metadata = error.metadata.clone().unwrap_or_else(|| json!({}));
-                let tool_call_id = started_call.id.clone();
-
-                // Register approval waiter before emitting the event
-                let rx = crate::agent::tools::register_approval_waiter(&tool_call_id);
-                let interaction = create_pending_interaction(
-                    storage_root,
-                    session_id,
-                    turn_id,
-                    &tool_call_id,
-                    AgentPendingInteractionKind::CommandApproval,
-                    json!({
-                        "requestId": tool_call_id,
-                        "toolCallId": started_call.id,
-                        "toolName": invocation.name,
-                        "input": effective_input.clone(),
-                        "metadata": approval_metadata.clone(),
-                        "message": error.message,
-                    }),
-                )?;
-                emit_interaction_pending_event(storage_root, &interaction)?;
-                emit_interaction_queue_updated(storage_root, session_id, turn_id)?;
-
-                // Emit approval request event to frontend
-                emit_event(
-                    storage_root,
-                    session_id,
-                    turn_id,
-                    "command_approval_request",
-                    json!({
-                        "toolCallId": tool_call_id,
-                        "toolName": invocation.name,
-                        "input": effective_input.clone(),
-                        "metadata": approval_metadata.clone(),
-                        "message": error.message,
-                    }),
-                )?;
-
-                // Block waiting for user decision until the user responds or the waiter is cancelled.
-                let decision = match rx.recv() {
-                    Ok(d) => d.decision,
-                    Err(_error) => {
-                        crate::agent::tools::cancel_approval(&tool_call_id);
-                        if let Some(interaction) = cancel_pending_interaction(
-                            storage_root,
-                            &tool_call_id,
-                            "command approval was cancelled before a response was received",
-                        )? {
-                            emit_interaction_resolved_event(storage_root, &interaction)?;
-                            emit_interaction_queue_updated(storage_root, session_id, turn_id)?;
-                        }
-                        "deny".to_string()
-                    }
-                };
-
-                // Handle the decision
-                if decision == "allow_once" || decision == "allow_always" {
-                    if let Some(interaction) = resolve_pending_interaction(
-                        storage_root,
-                        &tool_call_id,
-                        AgentPendingInteractionStatus::Resolved,
-                        Some(json!({ "decision": decision })),
-                    )? {
-                        emit_interaction_resolved_event(storage_root, &interaction)?;
-                        emit_interaction_queue_updated(storage_root, session_id, turn_id)?;
-                    }
-                    // Always grant current-call approval token. For allow_always this guarantees
-                    // immediate re-execution succeeds even when no project root is bound.
-                    if decision == "allow_once" || decision == "allow_always" {
-                        grant_approval_once(&tool_call_id, &approval_metadata);
-                    }
-                    // Persist "allow_always" rule if chosen
-                    if decision == "allow_always" {
-                        if let (Some(proj_root), Some(rule)) = (
-                            project_root,
-                            approval_metadata
-                                .get("approvalPattern")
-                                .and_then(Value::as_str)
-                                .or_else(|| {
-                                    approval_metadata.get("command").and_then(Value::as_str)
-                                }),
-                        ) {
-                            let mut perms = lyra_sandbox::PermissionsStore::load(proj_root);
-                            let _ = perms.add_rule(
-                                proj_root,
-                                rule,
-                                lyra_sandbox::PermissionDecision::AllowAlways,
-                            );
-                        }
-                    }
-
-                    // Re-execute the tool (approval satisfied)
-                    match execute_tool_with_progress(
-                        &invocation.name,
-                        &effective_input,
-                        ToolExecutionContext {
-                            storage_root: Some(storage_root),
-                            project_root,
-                            agent_session_id: Some(session_id),
-                            agent_turn_id: Some(turn_id),
-                            tool_call_id: Some(&started_call.id),
-                            terminal_policy: Some(terminal_policy),
-                            plan_mode,
-                        },
-                        |_| {},
-                    ) {
-                        Ok(value) => value,
-                        Err(retry_error) => {
-                            let failed_call = registry_db::fail_agent_tool_call(
-                                storage_root,
-                                &started_call.id,
-                                &retry_error.code,
-                                &retry_error.message,
-                            )?;
-                            let error_payload = build_tool_error_payload(
-                                &invocation.name,
-                                &retry_error.code,
-                                &retry_error.message,
-                                retry_error.metadata,
-                            );
-                            emit_event(
-                                storage_root,
-                                session_id,
-                                turn_id,
-                                "tool_finished",
-                                json!({
-                                    "toolCallId": failed_call.id,
-                                    "toolName": failed_call.tool_name,
-                                    "status": "failed",
-                                    "error": error_payload.clone(),
-                                }),
-                            )?;
-                            emit_tool_failure_diagnosed_event(
-                                storage_root,
-                                session_id,
-                                turn_id,
-                                &failed_call.id,
-                                &failed_call.tool_name,
-                                &error_payload,
-                            )?;
-                            let agent_error_result = json!({
-                                "ok": false,
-                                "recoverable": false,
-                                "error": error_payload,
-                            });
-                            provider_messages.push(AgentInferenceMessage {
-                                role: AgentInferenceMessageRole::Tool,
-                                content: serde_json::to_string(&agent_error_result)
-                                    .unwrap_or_else(|_| "{}".to_string()),
-                                tool_call_id: Some(invocation.id.clone()),
-                                tool_calls: Vec::new(),
-                            });
-                            return Ok(failed_call);
-                        }
-                    }
-                } else {
-                    if let Some(interaction) = resolve_pending_interaction(
-                        storage_root,
-                        &tool_call_id,
-                        AgentPendingInteractionStatus::Resolved,
-                        Some(json!({ "decision": "deny" })),
-                    )? {
-                        emit_interaction_resolved_event(storage_root, &interaction)?;
-                        emit_interaction_queue_updated(storage_root, session_id, turn_id)?;
-                    }
-                    // Deny — return failure to LLM
-                    let failed_call = registry_db::fail_agent_tool_call(
-                        storage_root,
-                        &started_call.id,
-                        "AGENT_TOOL_DENIED",
-                        "command execution denied by user",
-                    )?;
-                    let error_payload = build_tool_error_payload(
-                        &invocation.name,
-                        "AGENT_TOOL_DENIED",
-                        "command execution denied by user",
-                        None,
-                    );
-                    emit_event(
-                        storage_root,
-                        session_id,
-                        turn_id,
-                        "tool_finished",
-                        json!({
-                            "toolCallId": failed_call.id,
-                            "toolName": failed_call.tool_name,
-                            "status": "denied",
-                            "user_message": "Command execution was denied by the user.",
-                            "error": error_payload.clone(),
-                        }),
-                    )?;
-                    emit_tool_failure_diagnosed_event(
-                        storage_root,
-                        session_id,
-                        turn_id,
-                        &failed_call.id,
-                        &failed_call.tool_name,
-                        &error_payload,
-                    )?;
-                    let agent_error_result = json!({
-                        "ok": false,
-                        "recoverable": false,
-                        "error": error_payload,
-                    });
-                    provider_messages.push(AgentInferenceMessage {
-                        role: AgentInferenceMessageRole::Tool,
-                        content: serde_json::to_string(&agent_error_result)
-                            .unwrap_or_else(|_| "{}".to_string()),
-                        tool_call_id: Some(invocation.id.clone()),
-                        tool_calls: Vec::new(),
-                    });
-                    return Ok(failed_call);
-                }
-            } else if error.code == AGENT_PLAN_QUESTION_REQUIRED {
-                let question_metadata = error.metadata.clone().unwrap_or_else(|| json!({}));
-                let request_id = started_call.id.clone();
-                let rx = register_plan_question_waiter(&request_id);
-                let interaction = create_pending_interaction(
-                    storage_root,
-                    session_id,
-                    turn_id,
-                    &request_id,
-                    AgentPendingInteractionKind::UserQuestion,
-                    json!({
-                        "requestId": request_id,
-                        "toolCallId": started_call.id,
-                        "toolName": invocation.name,
-                        "questions": question_metadata.get("questions").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
-                        "allowNote": question_metadata.get("allowNote").and_then(Value::as_bool).unwrap_or(false),
-                    }),
-                )?;
-                emit_interaction_pending_event(storage_root, &interaction)?;
-                emit_interaction_queue_updated(storage_root, session_id, turn_id)?;
-                emit_event(
-                    storage_root,
-                    session_id,
-                    turn_id,
-                    "plan_question_requested",
-                    json!({
-                        "requestId": request_id,
-                        "toolCallId": started_call.id,
-                        "toolName": invocation.name,
-                        "questions": question_metadata.get("questions").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
-                        "allowNote": question_metadata.get("allowNote").and_then(Value::as_bool).unwrap_or(false),
-                    }),
-                )?;
-                let resolution = match rx.recv() {
-                    Ok(value) => value,
-                    Err(_error) => {
-                        cancel_plan_question(&request_id);
-                        if let Some(interaction) = cancel_pending_interaction(
-                            storage_root,
-                            &request_id,
-                            "question was cancelled before a response was received",
-                        )? {
-                            emit_interaction_resolved_event(storage_root, &interaction)?;
-                            emit_interaction_queue_updated(storage_root, session_id, turn_id)?;
-                        }
-                        let failed_call = registry_db::fail_agent_tool_call(
-                            storage_root,
-                            &started_call.id,
-                            AGENT_TURN_FAILED,
-                            "plan question was cancelled before a response was received",
-                        )?;
-                        let agent_error_result = json!({
-                            "ok": false,
-                            "recoverable": true,
-                            "error": {
-                                "code": AGENT_TURN_FAILED,
-                                "message": "plan question was cancelled before a response was received",
-                            }
-                        });
-                        provider_messages.push(AgentInferenceMessage {
-                            role: AgentInferenceMessageRole::Tool,
-                            content: serde_json::to_string(&agent_error_result)
-                                .unwrap_or_else(|_| "{}".to_string()),
-                            tool_call_id: Some(invocation.id.clone()),
-                            tool_calls: Vec::new(),
-                        });
-                        return Ok(failed_call);
-                    }
-                };
-                let tool_result = json!({
-                    "kind": "user_input_answered",
-                    "requestId": request_id,
-                    "answers": resolution.answers,
-                    "note": resolution.note,
-                });
-                return complete_tool_call_and_push_result(
-                    storage_root,
-                    session_id,
-                    turn_id,
-                    invocation,
-                    &started_call.id,
-                    &tool_result,
-                    provider_messages,
-                    budget,
-                );
-            } else if error.code == AGENT_PLAN_APPROVAL_REQUIRED {
-                let approval_metadata = error.metadata.clone().unwrap_or_else(|| json!({}));
-                let request_id = started_call.id.clone();
-                let rx = register_plan_approval_waiter(&request_id);
-                let interaction = create_pending_interaction(
-                    storage_root,
-                    session_id,
-                    turn_id,
-                    &request_id,
-                    AgentPendingInteractionKind::PlanApproval,
-                    json!({
-                        "requestId": request_id,
-                        "toolCallId": started_call.id,
-                        "toolName": invocation.name,
-                        "version": approval_metadata.get("version").cloned().unwrap_or(Value::Null),
-                        "status": approval_metadata.get("status").cloned().unwrap_or(Value::String("submitted".to_string())),
-                        "summary": approval_metadata.get("summary").cloned().unwrap_or(Value::String("Proposed plan".to_string())),
-                        "proposedMarkdown": approval_metadata.get("proposedMarkdown").cloned().unwrap_or(Value::String(String::new())),
-                        "draftMarkdown": approval_metadata.get("draftMarkdown").cloned().unwrap_or(Value::String(String::new())),
-                    }),
-                )?;
-                emit_interaction_pending_event(storage_root, &interaction)?;
-                emit_interaction_queue_updated(storage_root, session_id, turn_id)?;
-                emit_event(
-                    storage_root,
-                    session_id,
-                    turn_id,
-                    "plan_approval_requested",
-                    json!({
-                        "requestId": request_id,
-                        "toolCallId": started_call.id,
-                        "toolName": invocation.name,
-                        "version": approval_metadata.get("version").cloned().unwrap_or(Value::Null),
-                        "status": approval_metadata.get("status").cloned().unwrap_or(Value::String("submitted".to_string())),
-                        "summary": approval_metadata.get("summary").cloned().unwrap_or(Value::String("Proposed plan".to_string())),
-                        "proposedMarkdown": approval_metadata.get("proposedMarkdown").cloned().unwrap_or(Value::String(String::new())),
-                        "draftMarkdown": approval_metadata.get("draftMarkdown").cloned().unwrap_or(Value::String(String::new())),
-                    }),
-                )?;
-                let resolution = match rx.recv() {
-                    Ok(value) => value,
-                    Err(_error) => {
-                        cancel_plan_approval(&request_id);
-                        if let Some(interaction) = cancel_pending_interaction(
-                            storage_root,
-                            &request_id,
-                            "plan approval was cancelled before a response was received",
-                        )? {
-                            emit_interaction_resolved_event(storage_root, &interaction)?;
-                            emit_interaction_queue_updated(storage_root, session_id, turn_id)?;
-                        }
-                        let failed_call = registry_db::fail_agent_tool_call(
-                            storage_root,
-                            &started_call.id,
-                            AGENT_TURN_FAILED,
-                            "plan approval was cancelled before a response was received",
-                        )?;
-                        let agent_error_result = json!({
-                            "ok": false,
-                            "recoverable": false,
-                            "error": {
-                                "code": AGENT_TURN_FAILED,
-                                "message": "plan approval was cancelled before a response was received",
-                            }
-                        });
-                        provider_messages.push(AgentInferenceMessage {
-                            role: AgentInferenceMessageRole::Tool,
-                            content: serde_json::to_string(&agent_error_result)
-                                .unwrap_or_else(|_| "{}".to_string()),
-                            tool_call_id: Some(invocation.id.clone()),
-                            tool_calls: Vec::new(),
-                        });
-                        return Ok(failed_call);
-                    }
-                };
-                if let Some(mut plan) = registry_db::read_agent_plan(storage_root, session_id)? {
-                    match resolution.decision.as_str() {
-                        "approve_and_implement" => {
-                            plan.status = AgentPlanStatus::Approved;
-                            plan.approved_markdown = approval_metadata
-                                .get("proposedMarkdown")
-                                .and_then(Value::as_str)
-                                .map(str::to_string)
-                                .or_else(|| plan.proposed_markdown.clone());
-                        }
-                        "reject" => {
-                            plan.status = AgentPlanStatus::Rejected;
-                        }
-                        _ => {
-                            plan.status = AgentPlanStatus::Draft;
-                        }
-                    }
-                    plan.updated_at = now_ms();
-                    let _ = registry_db::upsert_agent_plan(storage_root, session_id, &plan)?;
-                }
-                let tool_result = json!({
-                    "kind": "plan_approval_resolved",
-                    "requestId": request_id,
-                    "decision": resolution.decision,
-                    "feedback": resolution.feedback,
-                    "proposedMarkdown": approval_metadata.get("proposedMarkdown").cloned().unwrap_or(Value::String(String::new())),
-                });
-                return complete_tool_call_and_push_result(
-                    storage_root,
-                    session_id,
-                    turn_id,
-                    invocation,
-                    &started_call.id,
-                    &tool_result,
-                    provider_messages,
-                    budget,
-                );
-            } else {
-                // Original non-approval error handling
-                let failed_call = registry_db::fail_agent_tool_call(
-                    storage_root,
-                    &started_call.id,
-                    &error.code,
-                    &error.message,
-                )?;
-                let error_metadata = error.metadata.clone();
-
-                // Classify the tool error for recovery strategy
-                let severity = classify_tool_error(
-                    &invocation.name,
-                    failed_call.error_code.as_deref(),
-                    failed_call
-                        .error_message
-                        .as_deref()
-                        .unwrap_or(&error.message),
-                );
-
-                // Emit runtime event with withholding — suppress transient errors
-                let withheld = error_withholding.process(severity.clone(), 0);
-                if let Some(user_msg) = withheld {
-                    let error_payload = build_tool_error_payload(
-                        &invocation.name,
-                        &error.code,
-                        &error.message,
-                        error_metadata.clone(),
-                    );
-                    emit_event(
-                        storage_root,
-                        session_id,
-                        turn_id,
-                        "tool_finished",
-                        json!({
-                            "toolCallId": failed_call.id,
-                            "toolName": failed_call.tool_name,
-                            "status": "failed",
-                            "user_message": user_msg,
-                            "error": error_payload,
-                        }),
-                    )?;
-                } else {
-                    // Error withheld — emit minimal event for diagnostics only
-                    emit_event(
-                        storage_root,
-                        session_id,
-                        turn_id,
-                        "tool_finished",
-                        json!({
-                            "toolCallId": failed_call.id,
-                            "toolName": failed_call.tool_name,
-                            "status": "failed",
-                            "suppressed": true,
-                        }),
-                    )?;
-                }
-
-                let code = failed_call
-                    .error_code
-                    .as_deref()
-                    .unwrap_or(AGENT_TOOL_EXEC_FAILED)
-                    .to_string();
-                let message = failed_call
-                    .error_message
-                    .clone()
-                    .unwrap_or_else(|| "tool execution failed".to_string());
-                let error_payload = build_tool_error_payload(
-                    &invocation.name,
-                    &code,
-                    &message,
-                    error_metadata.clone(),
-                );
-
-                // Build agent-facing error message — include recovery hints for recoverable errors
-                let agent_error_result = if severity.is_recoverable() {
-                    json!({
-                        "ok": false,
-                        "recoverable": true,
-                        "error": error_payload.clone(),
-                        "hint": format!("This error is recoverable. Consider reading the latest state and retrying with adjusted parameters."),
-                    })
-                } else {
-                    json!({
-                        "ok": false,
-                        "recoverable": false,
-                        "error": error_payload.clone(),
-                    })
-                };
-                emit_tool_failure_diagnosed_event(
-                    storage_root,
-                    session_id,
-                    turn_id,
-                    &failed_call.id,
-                    &failed_call.tool_name,
-                    &error_payload,
-                )?;
-
-                provider_messages.push(AgentInferenceMessage {
-                    role: AgentInferenceMessageRole::Tool,
-                    content: serde_json::to_string(&agent_error_result)
-                        .unwrap_or_else(|_| "{}".to_string()),
-                    tool_call_id: Some(invocation.id.clone()),
-                    tool_calls: Vec::new(),
-                });
-                return Ok(failed_call);
-            }
-        }
-    };
-    if let Some(error) = progress_emit_error {
-        return Err(error);
-    }
-
-    let finished_call =
-        registry_db::complete_agent_tool_call(storage_root, &started_call.id, &tool_result)?;
-    emit_event(
-        storage_root,
-        session_id,
-        turn_id,
-        "tool_finished",
-        json!({
-            "toolCallId": finished_call.id,
-            "toolName": finished_call.tool_name,
-            "status": "completed",
-            "output": finished_call.output,
-        }),
-    )?;
-    if invocation.name == "plan.update_draft" {
-        emit_event(
-            storage_root,
-            session_id,
-            turn_id,
-            "plan_draft_updated",
-            json!({
-                "toolCallId": finished_call.id,
-                "output": finished_call.output,
-            }),
-        )?;
-    }
-
-    // Record read in file state cache for read tools
-    let tool_content = serde_json::to_string(&tool_result).unwrap_or_else(|_| "{}".to_string());
-    if invocation.name == "filesystem.read_range" {
-        if let Some(path) = effective_input.get("path").and_then(Value::as_str) {
-            file_cache.record_read(path, &tool_content);
-        }
-    }
-
-    // Apply tool result budget enforcement
-    let budgeted_content = budget.enforce(&invocation.id, &invocation.name, &tool_content);
-
-    provider_messages.push(AgentInferenceMessage {
-        role: AgentInferenceMessageRole::Tool,
-        content: budgeted_content,
-        tool_call_id: Some(invocation.id.clone()),
-        tool_calls: Vec::new(),
-    });
-
-    Ok(finished_call)
-}
-
-/// Raw result from concurrent tool execution (no napi types).
-struct RawToolExecResult {
-    tool_result: Option<serde_json::Value>,
-    error_code: Option<String>,
-    error_message: Option<String>,
-    error_metadata: Option<serde_json::Value>,
-}
-
-/// Execute tools concurrently in a pure-Rust context (no napi errors).
-fn run_concurrent_tools(
-    invocations: Vec<(String, serde_json::Value, Option<String>)>,
-) -> Vec<RawToolExecResult> {
-    std::thread::scope(|s| {
-        let threads: Vec<_> = invocations
-            .iter()
-            .map(|(name, input, proj_root)| {
-                let name = name.clone();
-                let input = input.clone();
-                let proj_root = proj_root.clone();
-                s.spawn(move || {
-                    match crate::agent::tools::execute_readonly_tool(
-                        &name,
-                        &input,
-                        proj_root.as_deref(),
-                    ) {
-                        Ok(value) => RawToolExecResult {
-                            tool_result: Some(value),
-                            error_code: None,
-                            error_message: None,
-                            error_metadata: None,
-                        },
-                        Err(err) => RawToolExecResult {
-                            tool_result: None,
-                            error_code: Some(err.code),
-                            error_message: Some(err.message),
-                            error_metadata: err.metadata,
-                        },
-                    }
-                })
-            })
-            .collect();
-
-        threads
-            .into_iter()
-            .map(|t| {
-                t.join().unwrap_or_else(|_| RawToolExecResult {
-                    tool_result: None,
-                    error_code: Some("AGENT_TOOL_EXEC_FAILED".to_string()),
-                    error_message: Some("concurrent tool execution panicked".to_string()),
-                    error_metadata: None,
-                })
-            })
-            .collect()
-    })
-}
-
-/// Execute a batch of read-only tools concurrently using thread scopes.
-/// Returns (AgentToolCall, serialized_tool_result) pairs in original order.
-fn execute_readonly_batch(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    invocations: &[AgentToolInvocation],
-    project_root: Option<&str>,
-) -> napi::Result<Vec<(AgentToolCall, String)>> {
-    if invocations.len() == 1 {
-        let inv = &invocations[0];
-        let effective_input =
-            apply_project_scope_to_tool_input(&inv.name, &inv.input, project_root);
-        let started_call = registry_db::create_agent_tool_call(
-            storage_root,
-            session_id,
-            turn_id,
-            &inv.name,
-            &effective_input,
-        )?;
-        let _ = emit_event(
-            storage_root,
-            session_id,
-            turn_id,
-            "tool_started",
-            json!({"toolCallId": started_call.id, "toolName": inv.name, "input": effective_input.clone()}),
-        );
-
-        let tool_result = execute_tool_with_progress(
-            &inv.name,
-            &effective_input,
-            ToolExecutionContext::readonly(project_root),
-            |_| {},
-        )
-        .map_err(|e| agent_error(&e.code, &e.message))?;
-        let finished_call =
-            registry_db::complete_agent_tool_call(storage_root, &started_call.id, &tool_result)?;
-        let tool_content = serde_json::to_string(&tool_result).unwrap_or_else(|_| "{}".to_string());
-        let _ = emit_event(
-            storage_root,
-            session_id,
-            turn_id,
-            "tool_finished",
-            json!({"toolCallId": finished_call.id, "toolName": finished_call.tool_name, "status": "completed", "output": finished_call.output}),
-        );
-
-        return Ok(vec![(finished_call, tool_content)]);
-    }
-
-    // Prepare inputs for concurrent execution
-    let mut started_calls = Vec::new();
-    let mut tool_inputs = Vec::new();
-    for inv in invocations {
-        let effective_input =
-            apply_project_scope_to_tool_input(&inv.name, &inv.input, project_root);
-        let started_call = registry_db::create_agent_tool_call(
-            storage_root,
-            session_id,
-            turn_id,
-            &inv.name,
-            &effective_input,
-        )?;
-        let _ = emit_event(
-            storage_root,
-            session_id,
-            turn_id,
-            "tool_started",
-            json!({"toolCallId": started_call.id, "toolName": inv.name, "input": effective_input.clone()}),
-        );
-        started_calls.push(started_call);
-        tool_inputs.push((
-            inv.name.clone(),
-            effective_input,
-            project_root.map(String::from),
-        ));
-    }
-
-    // Execute concurrently in a separate function that avoids napi types
-    let exec_results = run_concurrent_tools(tool_inputs);
-
-    // Collect results
-    let mut results = Vec::new();
-    for (idx, raw) in exec_results.into_iter().enumerate() {
-        let started_id = &started_calls[idx].id;
-        if let Some(tool_result) = raw.tool_result {
-            let finished_call =
-                registry_db::complete_agent_tool_call(storage_root, started_id, &tool_result)?;
-            let tool_content =
-                serde_json::to_string(&tool_result).unwrap_or_else(|_| "{}".to_string());
-            let _ = emit_event(
-                storage_root,
-                session_id,
-                turn_id,
-                "tool_finished",
-                json!({"toolCallId": finished_call.id, "toolName": finished_call.tool_name, "status": "completed", "output": finished_call.output}),
-            );
-            results.push((finished_call, tool_content));
-        } else {
-            let error_code = raw
-                .error_code
-                .unwrap_or_else(|| "AGENT_TOOL_EXEC_FAILED".to_string());
-            let error_msg = raw
-                .error_message
-                .unwrap_or_else(|| "tool execution failed".to_string());
-            let error_metadata = raw.error_metadata;
-            let error_payload = build_tool_error_payload(
-                &invocations[idx].name,
-                &error_code,
-                &error_msg,
-                error_metadata.clone(),
-            );
-            let failed_call = registry_db::fail_agent_tool_call(
-                storage_root,
-                started_id,
-                &error_code,
-                &error_msg,
-            )?;
-            let _ = emit_event(
-                storage_root,
-                session_id,
-                turn_id,
-                "tool_finished",
-                json!({"toolCallId": failed_call.id, "toolName": failed_call.tool_name, "status": "failed",
-                    "error": error_payload.clone()}),
-            );
-            let _ = emit_tool_failure_diagnosed_event(
-                storage_root,
-                session_id,
-                turn_id,
-                &failed_call.id,
-                &failed_call.tool_name,
-                &error_payload,
-            );
-            let error_result = json!({
-                "ok": false,
-                "error": error_payload
-            });
-            let error_content =
-                serde_json::to_string(&error_result).unwrap_or_else(|_| "{}".to_string());
-            results.push((failed_call, error_content));
-        }
-    }
-
-    Ok(results)
-}
-
-fn append_assistant_message_to_stores(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    content: &str,
-    project_root: Option<&str>,
-) -> Result<(AgentMessage, Vec<MemoryRuntimePhaseEvent>)> {
-    let assistant_message = registry_db::append_agent_message(
-        storage_root,
-        session_id,
-        Some(turn_id.to_string()),
-        "assistant",
-        content,
-    )?;
-    let memory_events = append_session_dialog_message(
-        storage_root,
-        session_id,
-        &assistant_message.id,
-        "assistant",
-        content,
-        Some(turn_id),
-        project_root,
-    )?;
-    Ok((assistant_message, memory_events))
-}
-
-fn approved_plan_from_tool_calls(tool_calls: &[AgentToolCall]) -> Option<String> {
-    tool_calls.iter().find_map(|tool_call| {
-        let output = tool_call.output.as_ref()?;
-        if output.get("kind").and_then(Value::as_str) != Some("plan_approval_resolved") {
-            return None;
-        }
-        if output.get("decision").and_then(Value::as_str) != Some("approve_and_implement") {
-            return None;
-        }
-        output
-            .get("proposedMarkdown")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-    })
-}
-
-fn proposed_plan_from_content(content: &str) -> Option<String> {
-    let captures = PROPOSED_PLAN_BLOCK_RE.captures(content)?;
-    let body = captures.get(1)?.as_str().trim();
-    if body.is_empty() {
-        return None;
-    }
-    Some(body.to_string())
-}
-
-fn summarize_proposed_plan(plan_markdown: &str) -> String {
-    plan_markdown
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or("Proposed plan")
-        .to_string()
-}
-
-fn build_plan_mode_enforcement_prompt(previous_draft: &str) -> String {
-    let trimmed = previous_draft.trim();
-    if trimmed.is_empty() {
-        return "[Lyra Plan Mode Enforcement] You are still in Plan Mode. Do not continue with plain text. End this turn by doing exactly one of the following:\n1. Call `request_user_input` with 1-4 structured blocking questions and 2-4 options each.\n2. Call `plan.submit_for_approval` with a complete decision-ready plan.\nDo not implement, do not narrate intended implementation, and do not answer in plain text.".to_string();
-    }
-
-    format!(
-        "[Lyra Plan Mode Enforcement] Your previous draft reply did not satisfy Plan Mode because it ended in plain text.\n\nPrevious draft reply:\n{trimmed}\n\nNow correct this immediately. End this turn by doing exactly one of the following:\n1. Call `request_user_input` with 1-4 structured blocking questions and 2-4 options each.\n2. Call `plan.submit_for_approval` with a complete decision-ready plan.\nDo not implement, do not keep exploring, and do not answer in plain text."
-    )
-}
-
-fn synthesize_plan_approval_from_assistant_message(
-    storage_root: &str,
-    session_id: &str,
-    turn_id: &str,
-    assistant_message: &AgentMessage,
-) -> Result<()> {
-    let Some(proposed_markdown) = proposed_plan_from_content(&assistant_message.content) else {
-        return Ok(());
-    };
-
-    let has_pending_plan_approval = list_pending_interactions(storage_root, session_id)?
-        .into_iter()
-        .any(|interaction| {
-            interaction.turn_id == turn_id
-                && interaction.kind == AgentPendingInteractionKind::PlanApproval
-                && interaction.status == AgentPendingInteractionStatus::Pending
-        });
-    if has_pending_plan_approval {
-        return Ok(());
-    }
-
-    let mut plan = ensure_plan_state(storage_root, session_id)?;
-    if plan.version == 0 {
-        plan.version = 1;
-    }
-    if plan.draft_markdown.trim().is_empty() {
-        plan.draft_markdown = proposed_markdown.clone();
-    }
-    plan.status = AgentPlanStatus::Submitted;
-    plan.proposed_markdown = Some(proposed_markdown.clone());
-    plan.last_submitted_version = Some(plan.version);
-    plan.updated_at = now_ms();
-    let persisted_plan = registry_db::upsert_agent_plan(storage_root, session_id, &plan)?;
-    let request_id = format!("{turn_id}-proposed-plan");
-    let summary = summarize_proposed_plan(&proposed_markdown);
-    let interaction = create_pending_interaction(
-        storage_root,
-        session_id,
-        turn_id,
         &request_id,
         AgentPendingInteractionKind::PlanApproval,
-        json!({
-            "requestId": request_id.clone(),
-            "source": "assistant_proposed_plan",
-            "version": persisted_plan.version,
-            "status": "submitted",
-            "summary": summary.clone(),
-            "proposedMarkdown": proposed_markdown.clone(),
-            "draftMarkdown": persisted_plan.draft_markdown.clone(),
-        }),
+        &turn_id,
     )?;
-    emit_interaction_pending_event(storage_root, &interaction)?;
-    emit_event(
+    resume_execution(AgentResumeExecutionRequest {
         storage_root,
         session_id,
-        turn_id,
-        "plan_approval_requested",
-        json!({
-            "requestId": request_id,
-            "version": persisted_plan.version,
-            "status": "submitted",
-            "summary": summary,
-            "proposedMarkdown": interaction.payload.get("proposedMarkdown").cloned().unwrap_or(Value::String(String::new())),
-            "draftMarkdown": interaction.payload.get("draftMarkdown").cloned().unwrap_or(Value::String(String::new())),
-            "source": "assistant_proposed_plan",
-        }),
-    )?;
-    emit_interaction_queue_updated(storage_root, session_id, turn_id)
-}
-
-fn build_plan_reentry_guidance(plan: Option<&AgentPlanState>) -> String {
-    let Some(plan) = plan else {
-        return "No existing plan draft exists yet. Start by exploring and drafting a complete plan."
-            .to_string();
-    };
-    if plan.version == 0 || plan.draft_markdown.trim().is_empty() {
-        return "No existing plan draft exists yet. Start by exploring and drafting a complete plan."
-            .to_string();
-    }
-    match plan.status {
-        AgentPlanStatus::Submitted => {
-            "An existing submitted plan is present. Re-open it, verify whether the latest user input changes scope, and replace the full draft if needed."
-                .to_string()
-        }
-        AgentPlanStatus::Approved => {
-            "A previously approved plan exists. Only revise it if the user is clearly changing the task; otherwise continue from the approved context."
-                .to_string()
-        }
-        AgentPlanStatus::Rejected => {
-            "A previously rejected plan exists. Use it as historical context only and replace it with a corrected full draft."
-                .to_string()
-        }
-        AgentPlanStatus::Draft => {
-            "An existing draft is available. Continue refining it if the task is still the same, otherwise replace the full draft."
-                .to_string()
-        }
-    }
-}
-
-fn build_plan_scope_reset_guidance(project_root: Option<&str>) -> String {
-    let project_root = project_root.unwrap_or("unknown");
-    format!(
-        "The bound project root for this turn is now `{project_root}`. Treat this as a fresh planning scope unless the user explicitly says to continue older work. Ignore stale file paths, older project-specific assumptions, and replace any previous draft that targeted another root."
-    )
-}
-
-fn select_plan_handoff_input(
-    storage_root: &str,
-    session_id: &str,
-    fallback: &str,
-) -> Result<String> {
-    let messages = registry_db::list_agent_messages(storage_root, session_id)?;
-    let best = messages
-        .iter()
-        .rev()
-        .find(|message| message.role == "user" && message.content.trim().chars().count() >= 24)
-        .or_else(|| {
-            messages
-                .iter()
-                .rev()
-                .find(|message| message.role == "user" && !message.content.trim().is_empty())
-        })
-        .map(|message| message.content.trim().to_string());
-    Ok(best.unwrap_or_else(|| fallback.trim().to_string()))
-}
-
-fn run_provider_loop(
-    storage_root: &str,
-    session_id: &str,
-    running_turn: &AgentTurn,
-    current_input: &str,
-    profile: &StoredAiProviderProfile,
-    secrets: &BTreeMap<String, String>,
-    system_message: AgentInferenceMessage,
-    mut provider_messages: Vec<AgentInferenceMessage>,
-    tools: Vec<crate::provider::types::AgentToolDefinition>,
-    effective_project_root: Option<String>,
-    terminal_policy: &TerminalInteractionPolicy,
-    enable_context_collapse: bool,
-    plan_mode: bool,
-    enable_reflection: bool,
-    reflection_min_calls: usize,
-) -> Result<(
-    AgentTurn,
-    Option<AgentMessage>,
-    Vec<AgentToolCall>,
-    Option<AgentUsage>,
-    Option<String>,
-)> {
-    let mut tool_trace = Vec::new();
-    let mut usage_accumulator = (0_i64, 0_i64, 0_i64, false);
-    let mut progress_guard = TurnProgressGuardState::default();
-    let mut budget = ToolResultBudgetState::new();
-    let mut file_cache = FileStateCache::new();
-    let mut compact_breaker = CompactCircuitBreaker::new();
-    let mut snip_state = SnipState::default();
-    let mut micro_tracker = MicroCompactTracker::new();
-    let prefetch_cache = PrefetchCache::new();
-    let mut current_round: u32 = 0;
-    let mut error_withholding = ErrorWithholdingBuffer::new();
-    let mut plan_mode_enforcement_attempted = false;
-
-    let turn_result = (|| -> Result<(
-        AgentTurn,
-        Option<AgentMessage>,
-        Vec<AgentToolCall>,
-        Option<AgentUsage>,
-        Option<String>,
-    )> {
-        let mut step_index = 0_u32;
-        loop {
-            let model_hint = profile.model.as_str();
-            let effective_window = get_effective_context_window(model_hint);
-            let compact_threshold = get_auto_compact_threshold(model_hint);
-            let total_chars: usize = provider_messages.iter().map(|m| m.content.len()).sum();
-            let estimated_tokens = total_chars / 4;
-
-            if estimated_tokens > (compact_threshold as f64 * 0.82) as usize {
-                try_snip(&mut provider_messages, &mut snip_state, estimated_tokens, effective_window);
-            }
-
-            if estimated_tokens > compact_threshold {
-                let warning_state = calculate_token_warning_state(estimated_tokens, model_hint);
-                if warning_state.should_auto_compact && compact_breaker.can_compact() {
-                    match run_auto_compact(
-                        &profile.to_public(),
-                        secrets,
-                        &provider_messages,
-                        current_input,
-                    ) {
-                        Ok(summary) => {
-                            emit_event(
-                                storage_root,
-                                session_id,
-                                &running_turn.id,
-                                "auto_compact_completed",
-                                json!({
-                                    "summary_length": summary.len(),
-                                    "tokens_before": estimated_tokens,
-                                    "tokens_after": summary.len() / 4,
-                                }),
-                            )?;
-                            let boundary_marker = format!(
-                                "<context_boundary>\nPrevious conversation was compacted for brevity. Summary of prior work:\n{}\n</context_boundary>",
-                                summary
-                            );
-                            provider_messages.clear();
-                            provider_messages.push(system_message.clone());
-                            provider_messages.push(AgentInferenceMessage {
-                                role: AgentInferenceMessageRole::User,
-                                content: boundary_marker,
-                                tool_call_id: None,
-                                tool_calls: Vec::new(),
-                            });
-                            let post_compact_input = build_post_compact_user_input(
-                                current_input,
-                                total_message_tokens(&provider_messages),
-                                model_hint,
-                            );
-                            provider_messages.push(AgentInferenceMessage {
-                                role: AgentInferenceMessageRole::User,
-                                content: post_compact_input.transformed_input.clone(),
-                                tool_call_id: None,
-                                tool_calls: Vec::new(),
-                            });
-                            emit_input_postprocessed(
-                                storage_root,
-                                session_id,
-                                &running_turn.id,
-                                "post_compact_anchor",
-                                &post_compact_input,
-                            )?;
-                            file_cache.clear();
-                            compact_breaker.record_success();
-                        }
-                        Err(error) => {
-                            compact_breaker.record_failure(&error.to_string());
-                            emit_event(
-                                storage_root,
-                                session_id,
-                                &running_turn.id,
-                                "auto_compact_failed",
-                                json!({
-                                    "error": error.to_string(),
-                                    "consecutive_failures": compact_breaker.consecutive_failures,
-                                }),
-                            )?;
-                        }
-                    }
-                }
-            }
-
-            let inference_messages =
-                collapse_view_with_override(&provider_messages, Some(enable_context_collapse));
-
-            let inference = provider::run_agent_inference(
-                &profile.to_public(),
-                secrets,
-                &inference_messages,
-                &tools,
-                Some(&mut |delta| {
-                    if delta.is_empty() {
-                        return;
-                    }
-                    let _ = emit_transient_event(
-                        session_id,
-                        &running_turn.id,
-                        "assistant_delta",
-                        json!({ "delta": delta }),
-                    );
-                }),
-                Some(&mut |thought| {
-                    if thought.is_empty() {
-                        return;
-                    }
-                    let _ = emit_transient_event(
-                        session_id,
-                        &running_turn.id,
-                        "reasoning_thought",
-                        json!({ "thought": thought }),
-                    );
-                }),
-            )
-            .map_err(|error| {
-                agent_error(
-                    AGENT_TURN_FAILED,
-                    format!("provider inference failed: {error}"),
-                )
-            })?;
-
-            apply_usage(&mut usage_accumulator, &inference.usage);
-
-            if missing_provider_output(&inference.assistant_text, &inference.tool_calls) {
-                return Err(provider_invalid_response_error());
-            }
-
-            if !inference.tool_calls.is_empty() {
-                if let Some(reason) =
-                    progress_guard.observe_inference(&inference.assistant_text, &inference.tool_calls)
-                {
-                    let assistant_text =
-                        build_turn_paused_assistant_message(&reason.message, &inference.assistant_text);
-                    let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                        storage_root,
-                        session_id,
-                        &running_turn.id,
-                        &assistant_text,
-                        effective_project_root.as_deref(),
-                    )?;
-                    emit_memory_events(storage_root, session_id, &running_turn.id, memory_events)?;
-                    let usage = usage_from_accumulator(
-                        usage_accumulator.0,
-                        usage_accumulator.1,
-                        usage_accumulator.2,
-                        usage_accumulator.3,
-                    );
-                    let paused_turn = finalize_paused_turn(
-                        storage_root,
-                        session_id,
-                        &running_turn.id,
-                        AGENT_TURN_PAUSED_NO_PROGRESS,
-                        &reason.message,
-                        usage.as_ref(),
-                    )?;
-                    kick_memory_pipeline(
-                        storage_root,
-                        session_id,
-                        &running_turn.id,
-                        effective_project_root.clone(),
-                    )?;
-                    return Ok((paused_turn, Some(assistant_message), tool_trace.clone(), usage, None));
-                }
-
-                provider_messages.push(AgentInferenceMessage {
-                    role: AgentInferenceMessageRole::Assistant,
-                    content: inference.assistant_text.clone(),
-                    tool_call_id: None,
-                    tool_calls: inference.tool_calls.clone(),
-                });
-                let executed = execute_tool_calls(
-                    storage_root,
-                    session_id,
-                    &running_turn.id,
-                    &inference.tool_calls,
-                    effective_project_root.as_deref(),
-                    terminal_policy,
-                    plan_mode,
-                    &mut provider_messages,
-                    &mut budget,
-                    &mut file_cache,
-                    &mut error_withholding,
-                )?;
-                tool_trace.extend(executed.clone());
-                if plan_mode {
-                    if let Some(approved_plan) = approved_plan_from_tool_calls(&executed) {
-                        let assistant_text =
-                            "Plan approved. Exiting Plan Mode and starting implementation.";
-                        let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                            storage_root,
-                            session_id,
-                            &running_turn.id,
-                            assistant_text,
-                            effective_project_root.as_deref(),
-                        )?;
-                        emit_memory_events(storage_root, session_id, &running_turn.id, memory_events)?;
-                        let usage = usage_from_accumulator(
-                            usage_accumulator.0,
-                            usage_accumulator.1,
-                            usage_accumulator.2,
-                            usage_accumulator.3,
-                        );
-                        let completed_turn = registry_db::complete_agent_turn(
-                            storage_root,
-                            &running_turn.id,
-                            usage.as_ref(),
-                        )?;
-                        emit_event(
-                            storage_root,
-                            session_id,
-                            &running_turn.id,
-                            "completed",
-                            json!({
-                                "assistantMessageId": assistant_message.id,
-                                "toolCallCount": tool_trace.len(),
-                                "usage": usage,
-                                "planApproved": true,
-                            }),
-                        )?;
-                        kick_memory_pipeline(
-                            storage_root,
-                            session_id,
-                            &running_turn.id,
-                            effective_project_root.clone(),
-                        )?;
-                        return Ok((
-                            completed_turn,
-                            Some(assistant_message),
-                            tool_trace.clone(),
-                            usage,
-                            Some(approved_plan),
-                        ));
-                    }
-                }
-                current_round += 1;
-                for tool_call in &inference.tool_calls {
-                    micro_tracker.record_creation(&tool_call.id, &tool_call.name, current_round);
-                }
-                micro_tracker.try_compact(&mut provider_messages, current_round);
-                prefetch_cache.purge_stale(60_000);
-                crate::agent::prefetch::schedule_prefetch(
-                    &inference.tool_calls,
-                    effective_project_root.as_deref(),
-                    &prefetch_cache,
-                );
-                if let Some(reason) = progress_guard.observe_tool_results(&executed) {
-                    let assistant_text =
-                        build_turn_paused_assistant_message(&reason.message, &inference.assistant_text);
-                    let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                        storage_root,
-                        session_id,
-                        &running_turn.id,
-                        &assistant_text,
-                        effective_project_root.as_deref(),
-                    )?;
-                    emit_memory_events(storage_root, session_id, &running_turn.id, memory_events)?;
-                    let usage = usage_from_accumulator(
-                        usage_accumulator.0,
-                        usage_accumulator.1,
-                        usage_accumulator.2,
-                        usage_accumulator.3,
-                    );
-                    let paused_turn = finalize_paused_turn(
-                        storage_root,
-                        session_id,
-                        &running_turn.id,
-                        AGENT_TURN_PAUSED_NO_PROGRESS,
-                        &reason.message,
-                        usage.as_ref(),
-                    )?;
-                    kick_memory_pipeline(
-                        storage_root,
-                        session_id,
-                        &running_turn.id,
-                        effective_project_root.clone(),
-                    )?;
-                    return Ok((paused_turn, Some(assistant_message), tool_trace.clone(), usage, None));
-                }
-                step_index = step_index.saturating_add(1);
-                continue;
-            }
-
-            let mut assistant_text = inference.assistant_text.trim().to_string();
-            if plan_mode && proposed_plan_from_content(&assistant_text).is_none() {
-                if !plan_mode_enforcement_attempted {
-                    if !assistant_text.is_empty() {
-                        provider_messages.push(AgentInferenceMessage {
-                            role: AgentInferenceMessageRole::Assistant,
-                            content: assistant_text.clone(),
-                            tool_call_id: None,
-                            tool_calls: Vec::new(),
-                        });
-                    }
-                    provider_messages.push(AgentInferenceMessage {
-                        role: AgentInferenceMessageRole::User,
-                        content: build_plan_mode_enforcement_prompt(&assistant_text),
-                        tool_call_id: None,
-                        tool_calls: Vec::new(),
-                    });
-                    plan_mode_enforcement_attempted = true;
-                    emit_event(
-                        storage_root,
-                        session_id,
-                        &running_turn.id,
-                        "plan_mode_enforcement_retry",
-                        json!({
-                            "reason": "plain_text_without_structured_interaction",
-                            "hadDraftText": !assistant_text.is_empty(),
-                        }),
-                    )?;
-                    step_index = step_index.saturating_add(1);
-                    continue;
-                }
-
-                let pause_reason =
-                    "Plan Mode requires either `request_user_input` or `plan.submit_for_approval` before the turn can end.";
-                let paused_text =
-                    build_turn_paused_assistant_message(pause_reason, &assistant_text);
-                let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                    storage_root,
-                    session_id,
-                    &running_turn.id,
-                    &paused_text,
-                    effective_project_root.as_deref(),
-                )?;
-                emit_memory_events(storage_root, session_id, &running_turn.id, memory_events)?;
-                let usage = usage_from_accumulator(
-                    usage_accumulator.0,
-                    usage_accumulator.1,
-                    usage_accumulator.2,
-                    usage_accumulator.3,
-                );
-                let paused_turn = finalize_paused_turn(
-                    storage_root,
-                    session_id,
-                    &running_turn.id,
-                    AGENT_TURN_PAUSED_NO_PROGRESS,
-                    pause_reason,
-                    usage.as_ref(),
-                )?;
-                kick_memory_pipeline(
-                    storage_root,
-                    session_id,
-                    &running_turn.id,
-                    effective_project_root.clone(),
-                )?;
-                return Ok((paused_turn, Some(assistant_message), tool_trace.clone(), usage, None));
-            }
-
-            if enable_reflection && tool_trace.len() >= reflection_min_calls && !assistant_text.is_empty() {
-                let tool_summary: Vec<String> = tool_trace
-                    .iter()
-                    .map(|tc| {
-                        format!(
-                            "{}({})",
-                            tc.tool_name,
-                            tc.input.to_string().chars().take(80).collect::<String>()
-                        )
-                    })
-                    .collect();
-                let reflection_messages = vec![
-                    system_message.clone(),
-                    AgentInferenceMessage {
-                        role: AgentInferenceMessageRole::User,
-                        content: format!(
-                            "[Lyra Internal Reflection Module] Review the completed turn for correctness and completeness. If everything is sound, output LGTM. Otherwise provide concise corrective guidance.\n\nTools used: {}\n\nFinal answer:\n{}",
-                            tool_summary.join(", "),
-                            assistant_text
-                        ),
-                        tool_call_id: None,
-                        tool_calls: Vec::new(),
-                    },
-                ];
-                if let Ok(reflection) = provider::run_agent_inference(
-                    &profile.to_public(),
-                    secrets,
-                    &reflection_messages,
-                    &[],
-                    None::<&mut dyn FnMut(&str)>,
-                    None::<&mut dyn FnMut(&str)>,
-                ) {
-                    apply_usage(&mut usage_accumulator, &reflection.usage);
-                    let reflection_text = reflection.assistant_text.trim();
-                    if !reflection_text.is_empty() && !reflection_text.starts_with("LGTM") {
-                        assistant_text =
-                            format!("{assistant_text}\n\n---\n*Reflection*: {reflection_text}");
-                    }
-                    emit_event(
-                        storage_root,
-                        session_id,
-                        &running_turn.id,
-                        "reflection_completed",
-                        json!({ "reflection": reflection_text }),
-                    )?;
-                }
-            }
-
-            let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                storage_root,
-                session_id,
-                &running_turn.id,
-                &assistant_text,
-                effective_project_root.as_deref(),
-            )?;
-            emit_memory_events(storage_root, session_id, &running_turn.id, memory_events)?;
-            let usage = usage_from_accumulator(
-                usage_accumulator.0,
-                usage_accumulator.1,
-                usage_accumulator.2,
-                usage_accumulator.3,
-            );
-            let completed_turn =
-                registry_db::complete_agent_turn(storage_root, &running_turn.id, usage.as_ref())?;
-            emit_event(
-                storage_root,
-                session_id,
-                &running_turn.id,
-                "completed",
-                json!({
-                    "assistantMessageId": assistant_message.id,
-                    "toolCallCount": tool_trace.len(),
-                    "usage": usage,
-                }),
-            )?;
-            kick_memory_pipeline(
-                storage_root,
-                session_id,
-                &running_turn.id,
-                effective_project_root.clone(),
-            )?;
-            error_withholding.reset();
-            return Ok((completed_turn, Some(assistant_message), tool_trace.clone(), usage, None));
-        }
-    })();
-
-    match turn_result {
-        Ok(value) => Ok(value),
-        Err(error) => {
-            let error_display = error.to_string();
-            let (code, message) = parse_agent_error_message(&error_display);
-            let failed_turn =
-                finalize_failed_turn(storage_root, session_id, &running_turn.id, code, message)?;
-            let failure_message = build_turn_failed_assistant_message(code, message);
-            let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                storage_root,
-                session_id,
-                &running_turn.id,
-                &failure_message,
-                effective_project_root.as_deref(),
-            )?;
-            emit_memory_events(storage_root, session_id, &running_turn.id, memory_events)?;
-            let usage = usage_from_accumulator(
-                usage_accumulator.0,
-                usage_accumulator.1,
-                usage_accumulator.2,
-                usage_accumulator.3,
-            );
-            Ok((
-                failed_turn,
-                Some(assistant_message),
-                tool_trace.clone(),
-                usage,
-                None,
-            ))
-        }
-    }
-}
-
-fn run_plan_implementation_handoff(
-    storage_root: &str,
-    session_id: &str,
-    fallback_input: &str,
-    request: &AgentSendTurnRequest,
-    profile: &StoredAiProviderProfile,
-    session: &AgentSession,
-    approved_plan: &str,
-) -> Result<AgentSendTurnResult> {
-    let effective_project_root = session.project_root.clone();
-    let profile_id = session
-        .profile_id
-        .clone()
-        .unwrap_or_else(|| profile.id.clone());
-    let handoff_input = select_plan_handoff_input(storage_root, session_id, fallback_input)?;
-    let running_turn = registry_db::create_agent_turn(storage_root, session_id, &profile_id)?;
-    emit_event(
-        storage_root,
-        session_id,
-        &running_turn.id,
-        "accepted",
-        json!({
-            "profileId": profile.id,
-            "source": "plan_handoff",
-        }),
-    )?;
-    emit_event(
-        storage_root,
-        session_id,
-        &running_turn.id,
-        "started",
-        json!({
-            "profileId": profile.id,
-            "providerId": profile.provider_id,
-            "protocolId": profile.protocol_id,
-            "model": profile.model,
-            "source": "plan_handoff",
-        }),
-    )?;
-
-    let secrets = resolve_secret_values(&profile.secret_refs, None, &KeyringSecretStore)?;
-    let tool_ranking_context = build_tool_ranking_context(storage_root, session_id)?;
-    let tools = readonly_tool_definitions_for_input_with_context(
-        &handoff_input,
-        Some(&tool_ranking_context),
-    );
-    let turn_strategy = select_turn_strategy(&handoff_input);
-    let terminal_policy = select_terminal_interaction_policy();
-    let turn_context = build_turn_context(
-        storage_root,
-        session_id,
-        &profile.to_public(),
-        effective_project_root.as_deref(),
-    )?;
-    let turn_number = registry_db::list_agent_turns(storage_root, session_id)?.len();
-    let activated_skill_prompts = render_activated_skill_prompts();
-    let mcp_tools_json = render_mcp_tools_prompt_json();
-    let browser_strategy_state = get_browser_strategy_runtime_state();
-    let browser_tool_families = browser_tool_families_prompt();
-    let workbench_web_context = tool_ranking_context.workbench_web.as_ref();
-    let focus_atlas_status = workbench_web_context.map(|web| {
-        if web.focus_atlas_ready {
-            if web.last_focus_probe_verified {
-                "ready (probe_verified)"
-            } else {
-                "ready"
-            }
-        } else {
-            "not_ready"
-        }
-    });
-    let prompt_result = build_system_prompt(&PromptBuildInput {
-        session_id,
-        turn_number,
-        user_input: &handoff_input,
-        project_root: effective_project_root.as_deref(),
-        memory_snapshot: &turn_context.memory_snapshot,
-        activated_skill_prompts: &activated_skill_prompts,
-        mcp_tools_json: &mcp_tools_json,
-        execution_profile: None,
-        approval_profile: None,
-        turn_strategy: &turn_strategy,
-        browser_engine_preference: browser_strategy_state.preferred_engine.as_deref(),
-        browser_use_health: browser_strategy_state.browser_use_health.as_deref(),
-        browser_tool_families: &browser_tool_families,
-        browser_page_mode: workbench_web_context.and_then(|web| web.page_mode.as_deref()),
-        focus_atlas_status,
-        active_widget_id: workbench_web_context.and_then(|web| web.active_widget_id.as_deref()),
-        active_item_id: workbench_web_context.and_then(|web| web.active_item_id.as_deref()),
-        active_focus_region_id: workbench_web_context
-            .and_then(|web| web.active_focus_region_id.as_deref()),
-        current_browser_subgoal: workbench_web_context
-            .and_then(|web| web.current_browser_subgoal.as_deref()),
-        last_reveal_observed: workbench_web_context.map(|web| {
-            if web.last_reveal_observed {
-                "yes"
-            } else {
-                "no"
-            }
-        }),
-        last_workflow_failure: workbench_web_context
-            .and_then(|web| web.last_workflow_failure.as_deref()),
-    });
-    let system_message = AgentInferenceMessage {
-        role: AgentInferenceMessageRole::System,
-        content: prompt_result.prompt.clone(),
-        tool_call_id: None,
-        tool_calls: Vec::new(),
-    };
-    let mut provider_messages = turn_context.messages;
-    provider_messages.insert(0, system_message.clone());
-    provider_messages.push(AgentInferenceMessage {
-        role: AgentInferenceMessageRole::User,
-        content: format!("[Approved Plan]\n{approved_plan}"),
-        tool_call_id: None,
-        tool_calls: Vec::new(),
-    });
-    let repeated_main_input = build_live_repeated_user_input(
-        &format!(
-            "Implement the approved plan for the current task.\n\nOriginal task:\n{}",
-            handoff_input
-        ),
-        total_message_tokens(&provider_messages),
-        profile.model.as_str(),
-    );
-    provider_messages.push(AgentInferenceMessage {
-        role: AgentInferenceMessageRole::User,
-        content: repeated_main_input.transformed_input.clone(),
-        tool_call_id: None,
-        tool_calls: Vec::new(),
-    });
-    emit_event(
-        storage_root,
-        session_id,
-        &running_turn.id,
-        "prompt_compiled",
-        json!({
-            "turnStrategy": turn_strategy.kind.as_str(),
-            "totalTokens": prompt_result.total_tokens,
-            "sectionTokens": prompt_result.section_tokens,
-            "truncatedSections": prompt_result.truncated_sections,
-            "truncated": !prompt_result.truncated_sections.is_empty(),
-            "source": "plan_handoff",
-        }),
-    )?;
-    emit_input_postprocessed(
-        storage_root,
-        session_id,
-        &running_turn.id,
-        "main",
-        &repeated_main_input,
-    )?;
-    let (turn, assistant_message, tool_calls, usage, _) = run_provider_loop(
-        storage_root,
-        session_id,
-        &running_turn,
-        &handoff_input,
-        profile,
-        &secrets,
-        system_message,
-        provider_messages,
-        tools,
-        effective_project_root,
-        &terminal_policy,
-        request.enable_context_collapse.unwrap_or(true),
-        false,
-        true,
-        request.reflection_min_tool_calls.unwrap_or(3),
-    )?;
-    cleanup_transient_ai_sessions(session_id, &running_turn.id);
-    let next_session = registry_db::read_agent_session(storage_root, session_id)?
-        .unwrap_or_else(|| session.clone());
-    Ok(AgentSendTurnResult {
-        session: next_session,
-        turn,
-        assistant_message,
-        tool_calls,
-        usage,
+        checkpoint_id: None,
     })
 }
 
-fn send_plan_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
+fn collaboration_mode_label(mode: &AgentCollaborationMode) -> &'static str {
+    match mode {
+        AgentCollaborationMode::Default => "default",
+        AgentCollaborationMode::Plan => "plan",
+    }
+}
+
+fn normalize_optional_label(value: Option<String>) -> Option<String> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string)
+}
+
+fn emit_thread_transient_event(
+    session_id: &str,
+    phase: &str,
+    payload: serde_json::Value,
+) -> Result<()> {
+    emit_transient_event(
+        session_id,
+        &format!("thread-event-{}", Uuid::new_v4()),
+        phase,
+        payload,
+    )
+}
+
+pub fn ensure_thread(request: AgentEnsureThreadRequest) -> Result<AgentThread> {
     let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
     let session_id = normalize_required_text(&request.session_id, "sessionId")?;
-    let input = normalize_required_text(&request.input, "input")?;
-    let _turn_guard = acquire_turn_guard(&session_id)?;
-    initialize_session_storage(&storage_root, &session_id)?;
-    let mut session =
+    let session =
         registry_db::read_agent_session(&storage_root, &session_id)?.ok_or_else(|| {
             agent_error(
                 AGENT_TURN_FAILED,
                 format!("session not found: {session_id}"),
             )
         })?;
-    let previous_project_root = session.project_root.clone();
-    let requested_project_root = request
-        .project_root
+    let thread = registry_db::ensure_agent_thread_for_session(&storage_root, &session_id)?;
+    emit_thread_transient_event(
+        &session_id,
+        "thread_ensured",
+        json!({
+            "threadId": thread.id,
+            "sessionId": session_id,
+            "lifecycleState": thread.lifecycle_state,
+            "collaborationMode": collaboration_mode_label(&session.collaboration_mode),
+        }),
+    )?;
+    Ok(thread)
+}
+
+pub fn get_thread(request: AgentGetThreadRequest) -> Result<Option<AgentThread>> {
+    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
+    let thread_id = normalize_required_text(&request.thread_id, "threadId")?;
+    registry_db::read_agent_thread(&storage_root, &thread_id)
+}
+
+pub fn list_threads(request: AgentListThreadsRequest) -> Result<Vec<AgentThread>> {
+    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
+    let session_id = request
+        .session_id
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let mut project_scope_changed = false;
-    if let Some(project_root) = requested_project_root {
-        let normalized_root = normalize_project_root(project_root)?;
-        let project_name = project_name_from_root(&normalized_root);
-        if session.project_root.as_deref() != Some(normalized_root.as_str())
-            || session.project_name.as_deref() != project_name.as_deref()
-        {
-            project_scope_changed =
-                previous_project_root.as_deref() != Some(normalized_root.as_str());
-            session = registry_db::update_agent_session_project(
-                &storage_root,
-                &session_id,
-                Some(normalized_root.clone()),
-                project_name,
-            )?;
-        }
-    }
-    let effective_project_root = session.project_root.clone();
-    let requested_profile_id = request
-        .profile_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let profile = resolve_profile_for_turn(&storage_root, &session, requested_profile_id)?;
-    if session.profile_id.as_deref() != Some(profile.id.as_str()) {
-        session = registry_db::update_agent_session_profile(
-            &storage_root,
-            &session_id,
-            Some(profile.id.clone()),
-        )?;
-    }
-    let running_turn = registry_db::create_agent_turn(&storage_root, &session_id, &profile.id)?;
-    let user_message =
-        registry_db::append_agent_message(&storage_root, &session_id, None, "user", &input)?;
-    emit_event(
+    registry_db::list_agent_threads(
         &storage_root,
-        &session_id,
-        &running_turn.id,
-        "accepted",
-        json!({ "messageId": user_message.id, "profileId": profile.id, "collaborationMode": "plan" }),
+        session_id,
+        request.include_archived.unwrap_or(false),
+    )
+}
+
+pub fn archive_thread(request: AgentArchiveThreadRequest) -> Result<AgentThread> {
+    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
+    let thread_id = normalize_required_text(&request.thread_id, "threadId")?;
+    let thread = registry_db::set_agent_thread_lifecycle_state(
+        &storage_root,
+        &thread_id,
+        AgentThreadLifecycleState::Archived,
     )?;
-    emit_event(
-        &storage_root,
-        &session_id,
-        &running_turn.id,
-        "started",
+    emit_thread_transient_event(
+        &thread.session_id,
+        "thread_archived",
         json!({
-            "profileId": profile.id,
-            "providerId": profile.provider_id,
-            "protocolId": profile.protocol_id,
-            "model": profile.model,
-            "collaborationMode": "plan",
+            "threadId": thread.id,
+            "sessionId": thread.session_id,
+            "lifecycleState": thread.lifecycle_state,
         }),
     )?;
-    let user_memory_events = append_session_dialog_message(
+    Ok(thread)
+}
+
+pub fn unarchive_thread(request: AgentUnarchiveThreadRequest) -> Result<AgentThread> {
+    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
+    let thread_id = normalize_required_text(&request.thread_id, "threadId")?;
+    let thread = registry_db::set_agent_thread_lifecycle_state(
         &storage_root,
-        &session_id,
-        &user_message.id,
-        "user",
-        &input,
-        Some(&running_turn.id),
-        effective_project_root.as_deref(),
+        &thread_id,
+        AgentThreadLifecycleState::Active,
     )?;
-    emit_memory_events(
-        &storage_root,
-        &session_id,
-        &running_turn.id,
-        user_memory_events,
-    )?;
-    let secrets = resolve_secret_values(&profile.secret_refs, None, &KeyringSecretStore)?;
-    let tool_ranking_context = build_tool_ranking_context(&storage_root, &session_id)?;
-    let tools =
-        plan_mode_tool_definitions_for_input_with_context(&input, Some(&tool_ranking_context));
-    let terminal_policy = select_terminal_interaction_policy();
-    let turn_context = build_turn_context(
-        &storage_root,
-        &session_id,
-        &profile.to_public(),
-        effective_project_root.as_deref(),
-    )?;
-    let turn_number = registry_db::list_agent_turns(&storage_root, &session_id)?.len();
-    let activated_skill_prompts = render_activated_skill_prompts();
-    let mcp_tools_json = render_mcp_tools_prompt_json();
-    let plan_state = if project_scope_changed {
-        registry_db::upsert_agent_plan(&storage_root, &session_id, &blank_plan_state())?
-    } else {
-        ensure_plan_state(&storage_root, &session_id)?
-    };
-    let reentry_guidance = if project_scope_changed {
-        build_plan_scope_reset_guidance(effective_project_root.as_deref())
-    } else {
-        build_plan_reentry_guidance(Some(&plan_state))
-    };
-    let browser_strategy_state = get_browser_strategy_runtime_state();
-    let browser_tool_families = browser_tool_families_prompt();
-    let workbench_web_context = tool_ranking_context.workbench_web.as_ref();
-    let focus_atlas_status = workbench_web_context.map(|web| {
-        if web.focus_atlas_ready {
-            if web.last_focus_probe_verified {
-                "ready (probe_verified)"
-            } else {
-                "ready"
-            }
-        } else {
-            "not_ready"
-        }
-    });
-    let prompt_result = build_plan_mode_system_prompt(
-        &PromptBuildInput {
-            session_id: &session_id,
-            turn_number,
-            user_input: &input,
-            project_root: effective_project_root.as_deref(),
-            memory_snapshot: &turn_context.memory_snapshot,
-            activated_skill_prompts: &activated_skill_prompts,
-            mcp_tools_json: &mcp_tools_json,
-            execution_profile: None,
-            approval_profile: None,
-            turn_strategy: &select_turn_strategy(&input),
-            browser_engine_preference: browser_strategy_state.preferred_engine.as_deref(),
-            browser_use_health: browser_strategy_state.browser_use_health.as_deref(),
-            browser_tool_families: &browser_tool_families,
-            browser_page_mode: workbench_web_context.and_then(|web| web.page_mode.as_deref()),
-            focus_atlas_status,
-            active_widget_id: workbench_web_context.and_then(|web| web.active_widget_id.as_deref()),
-            active_item_id: workbench_web_context.and_then(|web| web.active_item_id.as_deref()),
-            active_focus_region_id: workbench_web_context
-                .and_then(|web| web.active_focus_region_id.as_deref()),
-            current_browser_subgoal: workbench_web_context
-                .and_then(|web| web.current_browser_subgoal.as_deref()),
-            last_reveal_observed: workbench_web_context.map(|web| {
-                if web.last_reveal_observed {
-                    "yes"
-                } else {
-                    "no"
-                }
-            }),
-            last_workflow_failure: workbench_web_context
-                .and_then(|web| web.last_workflow_failure.as_deref()),
-        },
-        Some(&plan_state),
-        &reentry_guidance,
-    );
-    let system_message = AgentInferenceMessage {
-        role: AgentInferenceMessageRole::System,
-        content: prompt_result.prompt.clone(),
-        tool_call_id: None,
-        tool_calls: Vec::new(),
-    };
-    let mut provider_messages = turn_context.messages;
-    provider_messages.insert(0, system_message.clone());
-    let repeated_main_input = build_live_repeated_user_input(
-        &input,
-        total_message_tokens(&provider_messages),
-        profile.model.as_str(),
-    );
-    let _ = replace_latest_user_message(
-        &mut provider_messages,
-        &repeated_main_input.transformed_input,
-    );
-    emit_event(
-        &storage_root,
-        &session_id,
-        &running_turn.id,
-        "prompt_compiled",
+    emit_thread_transient_event(
+        &thread.session_id,
+        "thread_unarchived",
         json!({
-            "collaborationMode": "plan",
-            "totalTokens": prompt_result.total_tokens,
-            "sectionTokens": prompt_result.section_tokens,
-            "truncatedSections": prompt_result.truncated_sections,
-            "truncated": !prompt_result.truncated_sections.is_empty(),
+            "threadId": thread.id,
+            "sessionId": thread.session_id,
+            "lifecycleState": thread.lifecycle_state,
         }),
     )?;
-    emit_input_postprocessed(
-        &storage_root,
-        &session_id,
-        &running_turn.id,
-        "main",
-        &repeated_main_input,
+    Ok(thread)
+}
+
+pub fn resume_thread(request: AgentResumeThreadRequest) -> Result<AgentThread> {
+    let thread = unarchive_thread(AgentUnarchiveThreadRequest {
+        storage_root: request.storage_root,
+        thread_id: request.thread_id,
+    })?;
+    emit_thread_transient_event(
+        &thread.session_id,
+        "thread_resumed",
+        json!({
+            "threadId": thread.id,
+            "sessionId": thread.session_id,
+            "lifecycleState": thread.lifecycle_state,
+            "elicitationCounter": thread.elicitation_counter,
+        }),
     )?;
-    let (turn, assistant_message, tool_calls, usage, approved_plan) = run_provider_loop(
+    Ok(thread)
+}
+
+fn create_forked_session_from_thread(
+    storage_root: &str,
+    thread: &AgentThread,
+    title: Option<String>,
+) -> Result<crate::agent::types::AgentSession> {
+    let source_session = registry_db::read_agent_session(storage_root, &thread.session_id)?
+        .ok_or_else(|| {
+            agent_error(
+                AGENT_TURN_FAILED,
+                format!("source session not found: {}", thread.session_id),
+            )
+        })?;
+    let now = now_ms();
+    let forked_title = title.unwrap_or_else(|| format!("{} (fork)", source_session.title));
+    let session = crate::agent::types::AgentSession {
+        id: format!("agent-session-{}", Uuid::new_v4()),
+        title: forked_title,
+        profile_id: source_session.profile_id.clone(),
+        project_root: source_session.project_root.clone(),
+        project_name: source_session.project_name.clone(),
+        collaboration_mode: source_session.collaboration_mode.clone(),
+        created_at: now,
+        updated_at: now,
+    };
+    initialize_session_storage(storage_root, &session.id)?;
+    registry_db::create_agent_session(storage_root, &session)
+}
+
+pub fn fork_thread(request: AgentForkThreadRequest) -> Result<AgentThreadForkResult> {
+    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
+    let thread_id = normalize_required_text(&request.thread_id, "threadId")?;
+    let source_thread = registry_db::read_agent_thread(&storage_root, &thread_id)?
+        .ok_or_else(|| agent_error(AGENT_TURN_FAILED, format!("thread not found: {thread_id}")))?;
+    let source_turn_id = normalize_optional_label(request.source_turn_id);
+    let session = create_forked_session_from_thread(
         &storage_root,
-        &session_id,
-        &running_turn,
-        &input,
-        &profile,
-        &secrets,
-        system_message,
-        provider_messages,
-        tools,
-        effective_project_root.clone(),
-        &terminal_policy,
-        false,
-        true,
-        false,
-        usize::MAX,
+        &source_thread,
+        normalize_optional_label(request.title),
     )?;
-    cleanup_transient_ai_sessions(&session_id, &running_turn.id);
-
-    if let Some(approved_plan) = approved_plan {
-        registry_db::set_agent_session_collaboration_mode(
-            &storage_root,
-            &session_id,
-            AgentCollaborationMode::Default,
-        )?;
-        emit_event(
-            &storage_root,
-            &session_id,
-            &running_turn.id,
-            "plan_mode_exited",
-            json!({
-                "reason": "approved_and_implement",
-            }),
-        )?;
-        return run_plan_implementation_handoff(
-            &storage_root,
-            &session_id,
-            &input,
-            &request,
-            &profile,
-            &session,
-            &approved_plan,
-        );
-    }
-
-    if let Some(message) = assistant_message.as_ref() {
-        synthesize_plan_approval_from_assistant_message(
-            &storage_root,
-            &session_id,
-            &running_turn.id,
-            message,
-        )?;
-    }
-
-    let next_session =
-        registry_db::read_agent_session(&storage_root, &session_id)?.unwrap_or(session);
-    Ok(AgentSendTurnResult {
-        session: next_session,
-        turn,
-        assistant_message,
-        tool_calls,
-        usage,
+    let forked_thread = registry_db::create_agent_thread_for_session(
+        &storage_root,
+        &session.id,
+        Some(source_thread.id.clone()),
+        source_turn_id.clone(),
+        None,
+        None,
+        AgentThreadLifecycleState::Active,
+    )?;
+    emit_thread_transient_event(
+        &source_thread.session_id,
+        "thread_forked",
+        json!({
+            "sourceThreadId": source_thread.id,
+            "sourceSessionId": source_thread.session_id,
+            "forkedThreadId": forked_thread.id,
+            "forkedSessionId": session.id,
+            "sourceTurnId": source_turn_id,
+        }),
+    )?;
+    Ok(AgentThreadForkResult {
+        thread: forked_thread,
+        session,
     })
+}
+
+pub fn rollback_thread(request: AgentRollbackThreadRequest) -> Result<AgentThreadForkResult> {
+    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
+    let thread_id = normalize_required_text(&request.thread_id, "threadId")?;
+    let rollback_turn_id = normalize_required_text(&request.turn_id, "turnId")?;
+    let source_thread = registry_db::read_agent_thread(&storage_root, &thread_id)?
+        .ok_or_else(|| agent_error(AGENT_TURN_FAILED, format!("thread not found: {thread_id}")))?;
+    let session = create_forked_session_from_thread(
+        &storage_root,
+        &source_thread,
+        normalize_optional_label(request.title),
+    )?;
+    let rollback_branch = registry_db::create_agent_thread_for_session(
+        &storage_root,
+        &session.id,
+        Some(source_thread.id.clone()),
+        Some(rollback_turn_id.clone()),
+        Some(source_thread.id.clone()),
+        Some(rollback_turn_id.clone()),
+        AgentThreadLifecycleState::Active,
+    )?;
+    emit_thread_transient_event(
+        &source_thread.session_id,
+        "thread_rolled_back",
+        json!({
+            "sourceThreadId": source_thread.id,
+            "sourceSessionId": source_thread.session_id,
+            "rollbackThreadId": rollback_branch.id,
+            "rollbackSessionId": session.id,
+            "rollbackTurnId": rollback_turn_id,
+        }),
+    )?;
+    Ok(AgentThreadForkResult {
+        thread: rollback_branch,
+        session,
+    })
+}
+
+pub fn send_thread_turn(request: AgentSendThreadTurnRequest) -> Result<AgentSendTurnResult> {
+    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
+    let thread_id = normalize_required_text(&request.thread_id, "threadId")?;
+    let thread = registry_db::read_agent_thread(&storage_root, &thread_id)?
+        .ok_or_else(|| agent_error(AGENT_TURN_FAILED, format!("thread not found: {thread_id}")))?;
+    if thread.lifecycle_state == AgentThreadLifecycleState::Archived {
+        return Err(agent_error(
+            AGENT_TURN_FAILED,
+            format!("thread is archived: {thread_id}"),
+        ));
+    }
+    send_turn(AgentSendTurnRequest {
+        storage_root,
+        session_id: thread.session_id,
+        input: request.input,
+        profile_id: request.profile_id,
+        model: request.model,
+        project_root: request.project_root,
+        max_steps: request.max_steps,
+        enable_planning: request.enable_planning,
+        planning_min_chars: request.planning_min_chars,
+        enable_reflection: request.enable_reflection,
+        reflection_min_tool_calls: request.reflection_min_tool_calls,
+        enable_context_collapse: request.enable_context_collapse,
+        strategy_preset: request.strategy_preset,
+        request_user_input_enabled: request.request_user_input_enabled,
+        ui_style_profile: request.ui_style_profile,
+        ui_style_plugin: request.ui_style_plugin,
+        ui_style_user: request.ui_style_user,
+        ui_style_project: request.ui_style_project,
+    })
+}
+
+fn build_execution_conflict_pause_result(
+    storage_root: &str,
+    session: &crate::agent::types::AgentSession,
+    thread_id: &str,
+    pending_execution_id: &str,
+    pending_turn_id: Option<&str>,
+    pending_interaction_id: Option<&str>,
+    input: &str,
+) -> Result<AgentSendTurnResult> {
+    let profile_id = session
+        .profile_id
+        .clone()
+        .unwrap_or_else(|| "system".to_string());
+    let running_turn = registry_db::create_agent_turn(storage_root, &session.id, &profile_id)?;
+    let request_id = format!("execution-conflict-{}", Uuid::new_v4());
+    let interaction = create_pending_interaction(
+        storage_root,
+        &session.id,
+        &running_turn.id,
+        &request_id,
+        AgentPendingInteractionKind::UserQuestion,
+        json!({
+            "requestId": request_id,
+            "toolCallId": request_id,
+            "toolName": "execution_conflict",
+            "questions": [{
+                "id": "execution_conflict_resolution",
+                "header": "执行冲突",
+                "question": "当前线程有未完成执行。请选择继续恢复旧执行，或放弃旧执行并开始新的请求。",
+                "options": [
+                    {
+                        "label": "继续恢复旧执行",
+                        "description": "先恢复并完成当前挂起执行。",
+                        "preview": "continue_previous_execution"
+                    },
+                    {
+                        "label": "放弃旧执行并开始新执行",
+                        "description": "中止当前挂起执行，直接处理新输入。",
+                        "preview": "abandon_and_start_new"
+                    }
+                ]
+            }],
+            "allowNote": false,
+            "conflict": {
+                "executionId": pending_execution_id,
+                "threadId": thread_id,
+                "pendingTurnId": pending_turn_id,
+                "pendingInteractionId": pending_interaction_id,
+                "pendingInput": input,
+            }
+        }),
+    )?;
+    emit_interaction_pending_event(storage_root, &interaction)?;
+    emit_interaction_queue_updated(storage_root, &session.id, &running_turn.id)?;
+    emit_event(
+        storage_root,
+        &session.id,
+        &running_turn.id,
+        "execution_conflict_prompted",
+        json!({
+            "executionId": pending_execution_id,
+            "threadId": thread_id,
+            "requestId": interaction.id,
+            "pendingTurnId": pending_turn_id,
+            "pendingInteractionId": pending_interaction_id,
+        }),
+    )?;
+    let assistant_text = "当前有一个挂起执行等待交互确认。我已暂停这次新请求，请先选择处理冲突。";
+    let assistant_message = registry_db::append_agent_message(
+        storage_root,
+        &session.id,
+        Some(running_turn.id.clone()),
+        "assistant",
+        assistant_text,
+    )?;
+    let paused_turn = registry_db::pause_agent_turn(
+        storage_root,
+        &running_turn.id,
+        "AGENT_EXECUTION_CONFLICT",
+        "existing execution is waiting for interaction",
+        None,
+    )?;
+    Ok(AgentSendTurnResult {
+        session: session.clone(),
+        turn: paused_turn,
+        assistant_message: Some(assistant_message),
+        tool_calls: Vec::new(),
+        usage: None,
+    })
+}
+
+fn extract_runtime_optimization_state_from_payload(payload: &Value) -> Option<Value> {
+    payload
+        .get("runtimeOptimizationState")
+        .cloned()
+        .filter(|value| value.is_object())
+}
+
+fn with_runtime_optimization_state(
+    mut payload: Value,
+    runtime_optimization_state: Option<Value>,
+) -> Value {
+    if let Some(runtime_optimization_state) = runtime_optimization_state {
+        if let Some(object) = payload.as_object_mut() {
+            object.insert(
+                "runtimeOptimizationState".to_string(),
+                runtime_optimization_state,
+            );
+        }
+    }
+    payload
+}
+
+fn resolve_resume_optimization_state_payload(
+    storage_root: &str,
+    latest_checkpoint_id: Option<&str>,
+) -> Result<Option<Value>> {
+    let Some(latest_checkpoint_id) = latest_checkpoint_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    let Some(checkpoint) =
+        registry_db::read_agent_execution_checkpoint(storage_root, latest_checkpoint_id)?
+    else {
+        return Ok(None);
+    };
+    if checkpoint.kind != AgentExecutionCheckpointKind::ManualResumeAnchor {
+        return Ok(None);
+    }
+    if let Some(payload) =
+        extract_runtime_optimization_state_from_payload(&checkpoint.continuation_payload_json)
+    {
+        return Ok(Some(payload));
+    }
+    let origin_checkpoint_id = checkpoint
+        .continuation_payload_json
+        .get("resumeFromCheckpointId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let Some(origin_checkpoint_id) = origin_checkpoint_id else {
+        return Ok(None);
+    };
+    let Some(origin_checkpoint) =
+        registry_db::read_agent_execution_checkpoint(storage_root, origin_checkpoint_id)?
+    else {
+        return Ok(None);
+    };
+    Ok(extract_runtime_optimization_state_from_payload(
+        &origin_checkpoint.continuation_payload_json,
+    ))
 }
 
 pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
     let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
     let session_id = normalize_required_text(&request.session_id, "sessionId")?;
+    let input = normalize_required_text(&request.input, "input")?;
     initialize_session_storage(&storage_root, &session_id)?;
     let session =
         registry_db::read_agent_session(&storage_root, &session_id)?.ok_or_else(|| {
@@ -4129,11 +524,131 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
                 format!("session not found: {session_id}"),
             )
         })?;
+    let session_thread = registry_db::ensure_agent_thread_for_session(&storage_root, &session_id)?;
+    if session_thread.lifecycle_state == AgentThreadLifecycleState::Archived {
+        return Err(agent_error(
+            AGENT_TURN_FAILED,
+            format!("thread is archived: {}", session_thread.id),
+        ));
+    }
+    let execution_state = ensure_execution_state(
+        &storage_root,
+        &session_id,
+        &session_thread.id,
+        &session.collaboration_mode,
+    )?;
+    let resume_optimization_state_payload = resolve_resume_optimization_state_payload(
+        &storage_root,
+        execution_state.latest_checkpoint_id.as_deref(),
+    )?;
+    if matches!(
+        execution_state.phase,
+        AgentExecutionPhase::WaitingInteraction | AgentExecutionPhase::Resumable
+    ) {
+        return build_execution_conflict_pause_result(
+            &storage_root,
+            &session,
+            &session_thread.id,
+            &execution_state.id,
+            execution_state.active_turn_id.as_deref(),
+            execution_state.waiting_interaction_id.as_deref(),
+            &input,
+        );
+    }
     if session.collaboration_mode == AgentCollaborationMode::Plan {
-        return send_plan_turn(request);
+        let plan_outcome = execute_plan_turn(request, resume_optimization_state_payload.clone())?;
+        let plan_runtime_optimization_state = plan_outcome.optimization_state.clone();
+        let plan_result = plan_outcome.result;
+        transition_execution_state(ExecutionTransitionRequest {
+            storage_root: storage_root.clone(),
+            session_id: session_id.clone(),
+            thread_id: session_thread.id.clone(),
+            collaboration_mode: AgentCollaborationMode::Plan,
+            event_turn_id: plan_result.turn.id.clone(),
+            to_phase: AgentExecutionPhase::Running,
+            active_turn_id: Some(plan_result.turn.id.clone()),
+            waiting_interaction_id: None,
+            waiting_interaction_kind: None,
+            checkpoint_kind: Some(AgentExecutionCheckpointKind::TurnStarted),
+            continuation_payload: json!({
+                "continuationInput": input.clone(),
+                "source": "plan_turn_started",
+                "threadId": session_thread.id.clone(),
+                "turnId": plan_result.turn.id.clone(),
+            }),
+            goal_tree_json: None,
+            active_goal_node_id: None,
+        })?;
+        let pending_after_plan =
+            registry_db::list_agent_pending_interactions(&storage_root, &session_id)?;
+        if plan_result.turn.status == "paused" && !pending_after_plan.is_empty() {
+            let waiting = pending_after_plan
+                .iter()
+                .find(|interaction| interaction.status == AgentPendingInteractionStatus::Pending)
+                .cloned();
+            transition_execution_state(ExecutionTransitionRequest {
+                storage_root: storage_root.clone(),
+                session_id: session_id.clone(),
+                thread_id: session_thread.id.clone(),
+                collaboration_mode: AgentCollaborationMode::Plan,
+                event_turn_id: plan_result.turn.id.clone(),
+                to_phase: AgentExecutionPhase::WaitingInteraction,
+                active_turn_id: Some(plan_result.turn.id.clone()),
+                waiting_interaction_id: waiting.as_ref().map(|entry| entry.id.clone()),
+                waiting_interaction_kind: waiting.as_ref().map(|entry| entry.kind.clone()),
+                checkpoint_kind: Some(AgentExecutionCheckpointKind::InteractionWait),
+                continuation_payload: with_runtime_optimization_state(
+                    json!({
+                        "continuationInput": input.clone(),
+                        "pausedTurnId": plan_result.turn.id.clone(),
+                    }),
+                    plan_runtime_optimization_state,
+                ),
+                goal_tree_json: None,
+                active_goal_node_id: None,
+            })?;
+        } else if plan_result.turn.status == "completed" {
+            transition_execution_state(ExecutionTransitionRequest {
+                storage_root: storage_root.clone(),
+                session_id: session_id.clone(),
+                thread_id: session_thread.id.clone(),
+                collaboration_mode: AgentCollaborationMode::Plan,
+                event_turn_id: plan_result.turn.id.clone(),
+                to_phase: AgentExecutionPhase::Completed,
+                active_turn_id: Some(plan_result.turn.id.clone()),
+                waiting_interaction_id: None,
+                waiting_interaction_kind: None,
+                checkpoint_kind: Some(AgentExecutionCheckpointKind::TurnCompleted),
+                continuation_payload: json!({
+                    "completedTurnId": plan_result.turn.id.clone(),
+                }),
+                goal_tree_json: None,
+                active_goal_node_id: None,
+            })?;
+        } else if plan_result.turn.status == "failed" {
+            transition_execution_state(ExecutionTransitionRequest {
+                storage_root: storage_root.clone(),
+                session_id: session_id.clone(),
+                thread_id: session_thread.id.clone(),
+                collaboration_mode: AgentCollaborationMode::Plan,
+                event_turn_id: plan_result.turn.id.clone(),
+                to_phase: AgentExecutionPhase::Failed,
+                active_turn_id: Some(plan_result.turn.id.clone()),
+                waiting_interaction_id: None,
+                waiting_interaction_kind: None,
+                checkpoint_kind: Some(AgentExecutionCheckpointKind::TurnFailed),
+                continuation_payload: json!({
+                    "failedTurnId": plan_result.turn.id.clone(),
+                    "errorCode": plan_result.turn.error_code.clone(),
+                    "errorMessage": plan_result.turn.error_message.clone(),
+                }),
+                goal_tree_json: None,
+                active_goal_node_id: None,
+            })?;
+        }
+        return Ok(plan_result);
     }
 
-    let input = normalize_required_text(&request.input, "input")?;
     let _turn_guard = acquire_turn_guard(&session_id)?;
     let mut session = session;
     let requested_project_root = request
@@ -4162,7 +677,17 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let profile = resolve_profile_for_turn(&storage_root, &session, requested_profile_id)?;
+    let requested_model = request
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let profile = resolve_profile_for_turn_with_model(
+        &storage_root,
+        &session,
+        requested_profile_id,
+        requested_model,
+    )?;
 
     if !is_supported_protocol(&profile.protocol_id) {
         return Err(agent_error(
@@ -4205,6 +730,71 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
             "model": profile.model,
         }),
     )?;
+    emit_event(
+        &storage_root,
+        &session_id,
+        &running_turn.id,
+        "thread_bound",
+        json!({
+            "threadId": session_thread.id,
+            "lifecycleState": session_thread.lifecycle_state,
+            "elicitationCounter": session_thread.elicitation_counter,
+        }),
+    )?;
+    if let Some(mut execution_state) =
+        registry_db::read_agent_execution_state_by_session(&storage_root, &session_id)?
+    {
+        if matches!(
+            execution_state.phase,
+            AgentExecutionPhase::Completed
+                | AgentExecutionPhase::Failed
+                | AgentExecutionPhase::Abandoned
+        ) {
+            execution_state.phase = AgentExecutionPhase::Idle;
+            execution_state.run_id = format!("agent-run-{}", Uuid::new_v4());
+            execution_state.active_turn_id = None;
+            execution_state.waiting_interaction_id = None;
+            execution_state.waiting_interaction_kind = None;
+            execution_state.latest_checkpoint_id = None;
+            execution_state.version += 1;
+            execution_state.updated_at = now_ms();
+            execution_state =
+                registry_db::upsert_agent_execution_state(&storage_root, &execution_state)?;
+            emit_event(
+                &storage_root,
+                &session_id,
+                &running_turn.id,
+                "execution_state_transition",
+                json!({
+                    "executionId": execution_state.id,
+                    "threadId": execution_state.thread_id,
+                    "from": "terminal",
+                    "to": "idle",
+                    "version": execution_state.version,
+                }),
+            )?;
+        }
+    }
+    transition_execution_state(ExecutionTransitionRequest {
+        storage_root: storage_root.clone(),
+        session_id: session_id.clone(),
+        thread_id: session_thread.id.clone(),
+        collaboration_mode: session.collaboration_mode.clone(),
+        event_turn_id: running_turn.id.clone(),
+        to_phase: AgentExecutionPhase::Running,
+        active_turn_id: Some(running_turn.id.clone()),
+        waiting_interaction_id: None,
+        waiting_interaction_kind: None,
+        checkpoint_kind: Some(AgentExecutionCheckpointKind::TurnStarted),
+        continuation_payload: json!({
+            "continuationInput": input.clone(),
+            "source": "turn_started",
+            "threadId": session_thread.id.clone(),
+            "turnId": running_turn.id.clone(),
+        }),
+        goal_tree_json: None,
+        active_goal_node_id: None,
+    })?;
 
     let user_memory_events = append_session_dialog_message(
         &storage_root,
@@ -4226,7 +816,14 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
     let tool_ranking_context = build_tool_ranking_context(&storage_root, &session_id)?;
     let tools =
         readonly_tool_definitions_for_input_with_context(&input, Some(&tool_ranking_context));
-    let turn_strategy = select_turn_strategy(&input);
+    let turn_strategy = select_turn_strategy_with_options(
+        &input,
+        TurnStrategySelectionOptions {
+            strategy_preset: request.strategy_preset.as_deref(),
+            collaboration_mode: Some(collaboration_mode_label(&session.collaboration_mode)),
+            request_user_input_enabled: request.request_user_input_enabled,
+        },
+    );
     let terminal_policy = select_terminal_interaction_policy();
     let explicit_max_steps = request.max_steps.filter(|value| *value > 0);
     let effective_max_steps = explicit_max_steps.or(turn_strategy.default_max_steps());
@@ -4255,6 +852,31 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
             "not_ready"
         }
     });
+    let ui_prompt_context = derive_ui_prompt_context_with_layers(
+        &input,
+        effective_project_root.as_deref(),
+        UiStyleContextLayers {
+            plugin_style: request.ui_style_plugin.as_deref(),
+            user_style: request.ui_style_user.as_deref(),
+            project_style: request.ui_style_project.as_deref(),
+            requested_profile: request.ui_style_profile.as_deref(),
+        },
+    );
+    emit_event(
+        &storage_root,
+        &session_id,
+        &running_turn.id,
+        "ui_style_context_selected",
+        json!({
+            "styleProfile": ui_prompt_context.style_profile.prompt_label(),
+            "styleSource": ui_prompt_context.style_profile_source,
+            "styleLayerPrecedence": ui_prompt_context.style_layer_precedence,
+            "styleLayerTrace": ui_prompt_context.style_layer_trace,
+            "styleConflictResolution": ui_prompt_context.style_conflict_resolution,
+            "targetSurface": ui_prompt_context.target_surface,
+            "stackPolicy": ui_prompt_context.stack_policy.prompt_label(),
+        }),
+    )?;
     let prompt_result = build_system_prompt(&PromptBuildInput {
         session_id: &session_id,
         turn_number,
@@ -4266,6 +888,10 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
         execution_profile: None,
         approval_profile: None,
         turn_strategy: &turn_strategy,
+        ui_style_profile: request.ui_style_profile.as_deref(),
+        ui_style_plugin: request.ui_style_plugin.as_deref(),
+        ui_style_user: request.ui_style_user.as_deref(),
+        ui_style_project: request.ui_style_project.as_deref(),
         browser_engine_preference: browser_strategy_state.preferred_engine.as_deref(),
         browser_use_health: browser_strategy_state.browser_use_health.as_deref(),
         browser_tool_families: &browser_tool_families,
@@ -4295,6 +921,31 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
     };
     let mut provider_messages = turn_context.messages;
     provider_messages.insert(0, system_message.clone());
+    if let Some(execution_state) =
+        registry_db::read_agent_execution_state_by_session(&storage_root, &session_id)?
+    {
+        let latest_checkpoint_summary =
+            registry_db::list_agent_execution_checkpoints(&storage_root, &session_id, 1)?
+                .into_iter()
+                .next();
+        let execution_context = json!({
+            "phase": execution_state.phase,
+            "activeGoalNodeId": execution_state.active_goal_node_id,
+            "waitingInteractionId": execution_state.waiting_interaction_id,
+            "latestCheckpoint": latest_checkpoint_summary,
+            "goalTree": execution_state.goal_tree_json,
+        });
+        provider_messages.push(AgentInferenceMessage {
+            role: AgentInferenceMessageRole::User,
+            content: format!(
+                "[Execution State Summary]\n{}",
+                serde_json::to_string_pretty(&execution_context)
+                    .unwrap_or_else(|_| "{}".to_string())
+            ),
+            tool_call_id: None,
+            tool_calls: Vec::new(),
+        });
+    }
     let repeated_main_input = build_live_repeated_user_input(
         &input,
         total_message_tokens(&provider_messages),
@@ -4339,704 +990,493 @@ pub fn send_turn(request: AgentSendTurnRequest) -> Result<AgentSendTurnResult> {
         "main",
         &repeated_main_input,
     )?;
-
-    let mut tool_trace = Vec::new();
-    let mut usage_accumulator = (0_i64, 0_i64, 0_i64, false);
-    let mut progress_guard = TurnProgressGuardState::new(
+    let running_turn_id = running_turn.id.clone();
+    let input_for_resume = input.clone();
+    let storage_root_for_thread = storage_root.clone();
+    let session_id_for_thread = session_id.clone();
+    let thread_id_for_execution = session_thread.id.clone();
+    let runtime_outcome = execute_default_turn_runtime(DefaultTurnRuntimeParams {
+        storage_root,
+        session_id,
+        request,
+        running_turn,
+        session,
+        input,
+        profile,
+        secrets,
+        system_message,
+        provider_messages,
+        effective_project_root,
+        turn_strategy,
+        explicit_max_steps,
         effective_max_steps,
-        effective_max_steps
-            .and_then(|cap| turn_strategy.soft_cap_message(cap, explicit_max_steps.is_some())),
-    );
-    let mut budget = ToolResultBudgetState::new();
-    let mut file_cache = FileStateCache::new();
-    let mut compact_breaker = CompactCircuitBreaker::new();
-    let mut snip_state = SnipState::default();
-    let mut micro_tracker = MicroCompactTracker::new();
-    let prefetch_cache = PrefetchCache::new();
-    let mut current_round: u32 = 0;
-    let mut error_withholding = ErrorWithholdingBuffer::new();
-    let mut strategy_reminder_injected = false;
-    let mut browser_action_retry_injected = false;
-    let mut browser_workflow_retry_injected = false;
+        effective_planning,
+        effective_reflection,
+        terminal_policy,
+        tools,
+        resume_optimization_state_payload,
+    })?;
+    let runtime_optimization_state = runtime_outcome.optimization_state.clone();
+    let result = runtime_outcome.result;
+    bump_thread_elicitation_counter_if_waiting(
+        &storage_root_for_thread,
+        &result.session.id,
+        &running_turn_id,
+    )?;
+    let pending_interactions =
+        registry_db::list_agent_pending_interactions(&storage_root_for_thread, &result.session.id)?;
+    if result.turn.status == "paused" && !pending_interactions.is_empty() {
+        let waiting = pending_interactions
+            .iter()
+            .find(|interaction| interaction.status == AgentPendingInteractionStatus::Pending)
+            .cloned();
+        let waiting_id = waiting.as_ref().map(|interaction| interaction.id.clone());
+        let waiting_kind = waiting.as_ref().map(|interaction| interaction.kind.clone());
+        transition_execution_state(ExecutionTransitionRequest {
+            storage_root: storage_root_for_thread.clone(),
+            session_id: session_id_for_thread.clone(),
+            thread_id: thread_id_for_execution.clone(),
+            collaboration_mode: result.session.collaboration_mode.clone(),
+            event_turn_id: result.turn.id.clone(),
+            to_phase: AgentExecutionPhase::WaitingInteraction,
+            active_turn_id: Some(result.turn.id.clone()),
+            waiting_interaction_id: waiting_id,
+            waiting_interaction_kind: waiting_kind,
+            checkpoint_kind: Some(AgentExecutionCheckpointKind::InteractionWait),
+            continuation_payload: with_runtime_optimization_state(
+                json!({
+                    "continuationInput": input_for_resume,
+                    "pausedTurnId": result.turn.id.clone(),
+                }),
+                runtime_optimization_state,
+            ),
+            goal_tree_json: None,
+            active_goal_node_id: None,
+        })?;
+    } else if result.turn.status == "completed" {
+        transition_execution_state(ExecutionTransitionRequest {
+            storage_root: storage_root_for_thread.clone(),
+            session_id: session_id_for_thread.clone(),
+            thread_id: thread_id_for_execution.clone(),
+            collaboration_mode: result.session.collaboration_mode.clone(),
+            event_turn_id: result.turn.id.clone(),
+            to_phase: AgentExecutionPhase::Completed,
+            active_turn_id: Some(result.turn.id.clone()),
+            waiting_interaction_id: None,
+            waiting_interaction_kind: None,
+            checkpoint_kind: Some(AgentExecutionCheckpointKind::TurnCompleted),
+            continuation_payload: json!({
+                "completedTurnId": result.turn.id.clone(),
+            }),
+            goal_tree_json: None,
+            active_goal_node_id: None,
+        })?;
+    } else if result.turn.status == "failed" {
+        transition_execution_state(ExecutionTransitionRequest {
+            storage_root: storage_root_for_thread.clone(),
+            session_id: session_id_for_thread.clone(),
+            thread_id: thread_id_for_execution.clone(),
+            collaboration_mode: result.session.collaboration_mode.clone(),
+            event_turn_id: result.turn.id.clone(),
+            to_phase: AgentExecutionPhase::Failed,
+            active_turn_id: Some(result.turn.id.clone()),
+            waiting_interaction_id: None,
+            waiting_interaction_kind: None,
+            checkpoint_kind: Some(AgentExecutionCheckpointKind::TurnFailed),
+            continuation_payload: json!({
+                "failedTurnId": result.turn.id.clone(),
+                "errorCode": result.turn.error_code.clone(),
+                "errorMessage": result.turn.error_message.clone(),
+            }),
+            goal_tree_json: None,
+            active_goal_node_id: None,
+        })?;
+    }
+    Ok(result)
+}
 
-    // --- Planning step ---
-    let planning_min_chars = request.planning_min_chars.unwrap_or(100);
-    if effective_planning && input.len() >= planning_min_chars {
-        let planning_prefix = "[Lyra Internal Planning Module] Analyze the request and produce a concise step-by-step plan. Do NOT execute tools. Output a practical plan with at most 8 steps.\n\nUser request:\n";
-        let planning_input = build_live_repeated_user_input(
-            &input,
-            estimate_tokens(&system_message.content)
-                + estimate_tokens(planning_prefix)
-                + estimate_tokens(&input),
-            profile.model.as_str(),
-        );
-        emit_input_postprocessed(
+fn bump_thread_elicitation_counter_if_waiting(
+    storage_root: &str,
+    session_id: &str,
+    turn_id: &str,
+) -> Result<()> {
+    let pending = registry_db::list_agent_pending_interactions(storage_root, session_id)?;
+    let waiting_count = pending
+        .iter()
+        .filter(|interaction| interaction.status == AgentPendingInteractionStatus::Pending)
+        .count();
+    if waiting_count == 0 {
+        return Ok(());
+    }
+    let Some(thread) = registry_db::read_agent_thread_by_session(storage_root, session_id)? else {
+        return Ok(());
+    };
+    let updated = registry_db::bump_agent_thread_elicitation_counter(storage_root, &thread.id, 1)?;
+    emit_event(
+        storage_root,
+        session_id,
+        turn_id,
+        "thread_elicitation_counter_updated",
+        json!({
+            "threadId": updated.id,
+            "elicitationCounter": updated.elicitation_counter,
+            "pendingInteractions": waiting_count,
+        }),
+    )
+}
+
+fn detect_conflict_resolution(answers: &Value) -> Option<&'static str> {
+    let object = answers.as_object()?;
+    let choice_value = object.get("execution_conflict_resolution")?;
+    let preview = choice_value
+        .as_object()
+        .and_then(|entry| entry.get("preview"))
+        .and_then(Value::as_str)?;
+    match preview {
+        "continue_previous_execution" => Some("continue_previous_execution"),
+        "abandon_and_start_new" => Some("abandon_and_start_new"),
+        _ => None,
+    }
+}
+
+fn mark_execution_resumable_after_interaction(
+    storage_root: &str,
+    session_id: &str,
+    interaction_id: &str,
+    interaction_kind: AgentPendingInteractionKind,
+    turn_id: &str,
+) -> Result<()> {
+    let Some(session) = registry_db::read_agent_session(storage_root, session_id)? else {
+        return Ok(());
+    };
+    let Some(thread) = registry_db::read_agent_thread_by_session(storage_root, session_id)? else {
+        return Ok(());
+    };
+    let Some(execution) =
+        registry_db::read_agent_execution_state_by_session(storage_root, session_id)?
+    else {
+        return Ok(());
+    };
+    if execution.phase != AgentExecutionPhase::WaitingInteraction {
+        return Ok(());
+    }
+    let latest_checkpoint = if let Some(checkpoint_id) = execution
+        .latest_checkpoint_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        registry_db::read_agent_execution_checkpoint(storage_root, checkpoint_id)?
+    } else {
+        None
+    };
+    let continuation_input = latest_checkpoint
+        .as_ref()
+        .and_then(|checkpoint| {
+            checkpoint
+                .continuation_payload_json
+                .get("continuationInput")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "请继续上一个被暂停的执行。".to_string());
+    let runtime_optimization_state = latest_checkpoint.as_ref().and_then(|checkpoint| {
+        extract_runtime_optimization_state_from_payload(&checkpoint.continuation_payload_json)
+    });
+    transition_execution_state(ExecutionTransitionRequest {
+        storage_root: storage_root.to_string(),
+        session_id: session_id.to_string(),
+        thread_id: thread.id,
+        collaboration_mode: session.collaboration_mode,
+        event_turn_id: turn_id.to_string(),
+        to_phase: AgentExecutionPhase::Resumable,
+        active_turn_id: execution.active_turn_id.clone(),
+        waiting_interaction_id: None,
+        waiting_interaction_kind: None,
+        checkpoint_kind: Some(AgentExecutionCheckpointKind::InteractionResolved),
+        continuation_payload: with_runtime_optimization_state(
+            json!({
+                "interactionId": interaction_id,
+                "interactionKind": interaction_kind,
+                "continuationInput": continuation_input,
+            }),
+            runtime_optimization_state,
+        ),
+        goal_tree_json: None,
+        active_goal_node_id: None,
+    })?;
+    emit_event(
+        storage_root,
+        session_id,
+        turn_id,
+        "execution_resume_triggered",
+        json!({
+            "interactionId": interaction_id,
+            "interactionKind": interaction_kind,
+            "mode": "auto",
+        }),
+    )?;
+    Ok(())
+}
+
+pub fn resume_execution(
+    request: AgentResumeExecutionRequest,
+) -> Result<Option<AgentSendTurnResult>> {
+    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
+    let session_id = normalize_required_text(&request.session_id, "sessionId")?;
+    let Some(session) = registry_db::read_agent_session(&storage_root, &session_id)? else {
+        return Ok(None);
+    };
+    let Some(thread) = registry_db::read_agent_thread_by_session(&storage_root, &session_id)?
+    else {
+        return Ok(None);
+    };
+    let Some(execution) =
+        registry_db::read_agent_execution_state_by_session(&storage_root, &session_id)?
+    else {
+        return Ok(None);
+    };
+    let checkpoint = if let Some(checkpoint_id) = request
+        .checkpoint_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        registry_db::read_agent_execution_checkpoint(&storage_root, checkpoint_id)?
+    } else {
+        registry_db::list_agent_execution_checkpoints_by_execution(
             &storage_root,
-            &session_id,
-            &running_turn.id,
-            "planning",
-            &planning_input,
-        )?;
-        let planning_messages = vec![
-            system_message.clone(),
-            AgentInferenceMessage {
-                role: AgentInferenceMessageRole::User,
-                content: format!("{planning_prefix}{}", planning_input.transformed_input),
-                tool_call_id: None,
-                tool_calls: Vec::new(),
-            },
-        ];
-        if let Ok(plan_inference) = provider::run_agent_inference(
-            &profile.to_public(),
-            &secrets,
-            &planning_messages,
-            &[], // No tools — pure reasoning
-            None::<&mut dyn FnMut(&str)>,
-            None::<&mut dyn FnMut(&str)>,
-        ) {
-            apply_usage(&mut usage_accumulator, &plan_inference.usage);
-            let plan_text = sanitize_planning_output(plan_inference.assistant_text.trim());
-            if !plan_text.is_empty() {
-                // Inject plan as a user hint into provider messages
-                provider_messages.push(AgentInferenceMessage {
-                    role: AgentInferenceMessageRole::User,
-                    content: format!("[Plan]\n{plan_text}"),
-                    tool_call_id: None,
-                    tool_calls: Vec::new(),
-                });
-                emit_event(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    "planning_completed",
-                    json!({ "plan": plan_text }),
-                )?;
+            &execution.id,
+            40,
+        )?
+        .into_iter()
+        .find(|entry| {
+            entry.phase_after == AgentExecutionPhase::Resumable
+                || entry.kind == AgentExecutionCheckpointKind::InteractionResolved
+                || entry.kind == AgentExecutionCheckpointKind::InteractionWait
+        })
+    };
+    let Some(checkpoint) = checkpoint else {
+        return Ok(None);
+    };
+    let continuation_input = checkpoint
+        .continuation_payload_json
+        .get("continuationInput")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| "请继续上一个被暂停的执行。".to_string());
+    let runtime_optimization_state =
+        extract_runtime_optimization_state_from_payload(&checkpoint.continuation_payload_json);
+
+    transition_execution_state(ExecutionTransitionRequest {
+        storage_root: storage_root.clone(),
+        session_id: session_id.clone(),
+        thread_id: thread.id.clone(),
+        collaboration_mode: session.collaboration_mode.clone(),
+        event_turn_id: checkpoint.turn_id.clone(),
+        to_phase: AgentExecutionPhase::Running,
+        active_turn_id: execution.active_turn_id.clone(),
+        waiting_interaction_id: None,
+        waiting_interaction_kind: None,
+        checkpoint_kind: Some(AgentExecutionCheckpointKind::ManualResumeAnchor),
+        continuation_payload: with_runtime_optimization_state(
+            json!({
+                "resumeFromCheckpointId": checkpoint.id,
+                "continuationInput": continuation_input,
+            }),
+            runtime_optimization_state,
+        ),
+        goal_tree_json: Some(checkpoint.goal_snapshot_json.clone()),
+        active_goal_node_id: execution.active_goal_node_id.clone(),
+    })?;
+
+    emit_event(
+        &storage_root,
+        &session_id,
+        &checkpoint.turn_id,
+        "execution_resume_triggered",
+        json!({
+            "executionId": execution.id,
+            "checkpointId": checkpoint.id,
+            "mode": if request.checkpoint_id.is_some() { "manual" } else { "auto" },
+        }),
+    )?;
+
+    send_turn(AgentSendTurnRequest {
+        storage_root,
+        session_id,
+        input: continuation_input,
+        profile_id: session.profile_id.clone(),
+        model: None,
+        project_root: session.project_root.clone(),
+        max_steps: None,
+        enable_planning: true,
+        planning_min_chars: None,
+        enable_reflection: true,
+        reflection_min_tool_calls: None,
+        enable_context_collapse: Some(true),
+        strategy_preset: None,
+        request_user_input_enabled: None,
+        ui_style_profile: None,
+        ui_style_plugin: None,
+        ui_style_user: None,
+        ui_style_project: None,
+    })
+    .map(Some)
+}
+
+pub fn answer_question(request: AgentAnswerQuestionRequest) -> Result<Option<AgentSendTurnResult>> {
+    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
+    let session_id = normalize_required_text(&request.session_id, "sessionId")?;
+    let turn_id = normalize_required_text(&request.turn_id, "turnId")?;
+    let request_id = normalize_required_text(&request.request_id, "requestId")?;
+    let interaction = registry_db::read_agent_pending_interaction(&storage_root, &request_id)?;
+    let answers = request.answers.clone();
+    crate::agent::session_management::answer_question(request)?;
+
+    let Some(interaction) = interaction else {
+        return Ok(None);
+    };
+
+    if interaction.kind == AgentPendingInteractionKind::UserQuestion {
+        let is_execution_conflict = interaction
+            .payload
+            .get("conflict")
+            .and_then(Value::as_object)
+            .is_some();
+        if is_execution_conflict {
+            match detect_conflict_resolution(&answers) {
+                Some("abandon_and_start_new") => {
+                    let pending_input = interaction
+                        .payload
+                        .get("conflict")
+                        .and_then(Value::as_object)
+                        .and_then(|entry| entry.get("pendingInput"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .unwrap_or_default();
+                    if let (Some(session), Some(thread), Some(execution)) = (
+                        registry_db::read_agent_session(&storage_root, &session_id)?,
+                        registry_db::read_agent_thread_by_session(&storage_root, &session_id)?,
+                        registry_db::read_agent_execution_state_by_session(
+                            &storage_root,
+                            &session_id,
+                        )?,
+                    ) {
+                        transition_execution_state(ExecutionTransitionRequest {
+                            storage_root: storage_root.clone(),
+                            session_id: session_id.clone(),
+                            thread_id: thread.id,
+                            collaboration_mode: session.collaboration_mode,
+                            event_turn_id: turn_id.clone(),
+                            to_phase: AgentExecutionPhase::Abandoned,
+                            active_turn_id: execution.active_turn_id,
+                            waiting_interaction_id: None,
+                            waiting_interaction_kind: None,
+                            checkpoint_kind: Some(AgentExecutionCheckpointKind::TurnFailed),
+                            continuation_payload: json!({
+                                "abandonReason": "user_selected_abandon_and_start_new",
+                                "interactionId": interaction.id,
+                            }),
+                            goal_tree_json: None,
+                            active_goal_node_id: execution.active_goal_node_id,
+                        })?;
+                    }
+                    emit_event(
+                        &storage_root,
+                        &session_id,
+                        &turn_id,
+                        "execution_abandoned",
+                        json!({
+                            "interactionId": interaction.id,
+                            "reason": "user_selected_abandon_and_start_new",
+                        }),
+                    )?;
+                    if pending_input.trim().is_empty() {
+                        return Ok(None);
+                    }
+                    return send_turn(AgentSendTurnRequest {
+                        storage_root: storage_root.clone(),
+                        session_id: session_id.clone(),
+                        input: pending_input,
+                        profile_id: None,
+                        model: None,
+                        project_root: None,
+                        max_steps: None,
+                        enable_planning: true,
+                        planning_min_chars: None,
+                        enable_reflection: true,
+                        reflection_min_tool_calls: None,
+                        enable_context_collapse: Some(true),
+                        strategy_preset: None,
+                        request_user_input_enabled: None,
+                        ui_style_profile: None,
+                        ui_style_plugin: None,
+                        ui_style_user: None,
+                        ui_style_project: None,
+                    })
+                    .map(Some);
+                }
+                _ => {
+                    mark_execution_resumable_after_interaction(
+                        &storage_root,
+                        &session_id,
+                        &interaction.id,
+                        interaction.kind,
+                        &turn_id,
+                    )?;
+                    return resume_execution(AgentResumeExecutionRequest {
+                        storage_root,
+                        session_id,
+                        checkpoint_id: None,
+                    });
+                }
             }
         }
     }
 
-    let turn_result = (|| -> Result<(AgentTurn, Option<AgentMessage>, Vec<AgentToolCall>, Option<AgentUsage>)> {
-        let mut step_index = 0_u32;
-        loop {
-            if let Some(reason) = progress_guard.before_step(step_index) {
-                let assistant_text = build_turn_paused_assistant_message(&reason.message, "");
-                let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    &assistant_text,
-                    effective_project_root.as_deref(),
-                )?;
-                emit_memory_events(&storage_root, &session_id, &running_turn.id, memory_events)?;
-                let usage = usage_from_accumulator(
-                    usage_accumulator.0,
-                    usage_accumulator.1,
-                    usage_accumulator.2,
-                    usage_accumulator.3,
-                );
-                let paused_turn = finalize_paused_turn(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    &reason.code,
-                    &reason.message,
-                    usage.as_ref(),
-                )?;
-                kick_memory_pipeline(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    effective_project_root.clone(),
-                )?;
-                return Ok((paused_turn, Some(assistant_message), tool_trace.clone(), usage));
-            }
-
-            if !strategy_reminder_injected {
-                if let Some(reminder_after_step) = turn_strategy.reminder_after_step() {
-                    if step_index >= reminder_after_step {
-                        if let Some(reminder) = turn_strategy.reminder_message() {
-                            provider_messages.push(AgentInferenceMessage {
-                                role: AgentInferenceMessageRole::User,
-                                content: reminder.to_string(),
-                                tool_call_id: None,
-                                tool_calls: Vec::new(),
-                            });
-                            strategy_reminder_injected = true;
-                            emit_event(
-                                &storage_root,
-                                &session_id,
-                                &running_turn.id,
-                                "turn_strategy_reminder",
-                                json!({
-                                    "strategy": turn_strategy.kind.as_str(),
-                                    "stepIndex": step_index,
-                                }),
-                            )?;
-                        }
-                    }
-                }
-            }
-
-            // --- Auto-Compact: check context window pressure before inference ---
-            let model_hint = profile.model.as_str();
-            let effective_window = get_effective_context_window(model_hint);
-            let compact_threshold = get_auto_compact_threshold(model_hint);
-
-            // Rough token count of current provider messages
-            let total_chars: usize = provider_messages.iter().map(|m| m.content.len()).sum();
-            let estimated_tokens = total_chars / 4;
-
-            // --- Snip: lightweight message trimming (zero LLM cost) ---
-            // Triggers earlier than auto-compact (70% vs ~85%) and removes only Tool messages
-            if estimated_tokens > (compact_threshold as f64 * 0.82) as usize {
-                try_snip(&mut provider_messages, &mut snip_state, estimated_tokens, effective_window);
-            }
-
-            if estimated_tokens > compact_threshold {
-                let warning_state = calculate_token_warning_state(estimated_tokens, model_hint);
-                if warning_state.should_auto_compact && compact_breaker.can_compact() {
-                    match run_auto_compact(
-                        &profile.to_public(),
-                        &secrets,
-                        &provider_messages,
-                        &input,
-                    ) {
-                        Ok(summary) => {
-                            emit_event(
-                                &storage_root,
-                                &session_id,
-                                &running_turn.id,
-                                "auto_compact_completed",
-                                json!({
-                                    "summary_length": summary.len(),
-                                    "tokens_before": estimated_tokens,
-                                    "tokens_after": summary.len() / 4,
-                                }),
-                            )?;
-
-                            // Replace provider messages with boundary marker + summary
-                            let boundary_marker = format!(
-                                "<context_boundary>\nPrevious conversation was compacted for brevity. Summary of prior work:\n{}\n</context_boundary>",
-                                summary
-                            );
-                            provider_messages.clear();
-                            provider_messages.push(system_message.clone());
-                            provider_messages.push(AgentInferenceMessage {
-                                role: AgentInferenceMessageRole::User,
-                                content: boundary_marker,
-                                tool_call_id: None,
-                                tool_calls: Vec::new(),
-                            });
-                            let post_compact_input = build_post_compact_user_input(
-                                &input,
-                                total_message_tokens(&provider_messages),
-                                model_hint,
-                            );
-                            provider_messages.push(AgentInferenceMessage {
-                                role: AgentInferenceMessageRole::User,
-                                content: post_compact_input.transformed_input.clone(),
-                                tool_call_id: None,
-                                tool_calls: Vec::new(),
-                            });
-                            emit_input_postprocessed(
-                                &storage_root,
-                                &session_id,
-                                &running_turn.id,
-                                "post_compact_anchor",
-                                &post_compact_input,
-                            )?;
-
-                            // Clear file state cache after compaction (context reset)
-                            file_cache.clear();
-                            compact_breaker.record_success();
-                        }
-                        Err(e) => {
-                            compact_breaker.record_failure(&e.to_string());
-                            emit_event(
-                                &storage_root,
-                                &session_id,
-                                &running_turn.id,
-                                "auto_compact_failed",
-                                json!({
-                                    "error": e.to_string(),
-                                    "consecutive_failures": compact_breaker.consecutive_failures,
-                                }),
-                            )?;
-                        }
-                    }
-                }
-            }
-
-            // --- Context Collapse: apply folded view before inference (experimental) ---
-            let inference_messages = collapse_view_with_override(
-                &provider_messages,
-                Some(request.enable_context_collapse.unwrap_or(true)),
-            );
-
-            let browser_action_enforcement_active =
-                browser_action_retry_injected && browser_observed_without_local_action(&tool_trace);
-            let browser_local_workflow_restricted =
-                local_browser_workflow_ready(&tool_trace)
-                    && browser_observed_without_local_action(&tool_trace);
-            let available_tools = if browser_action_enforcement_active
-                || browser_local_workflow_restricted
-            {
-                restricted_browser_action_tools(&tools)
-            } else {
-                tools.clone()
-            };
-
-            let inference = provider::run_agent_inference(
-                &profile.to_public(),
-                &secrets,
-                &inference_messages,
-                &available_tools,
-                Some(&mut |delta| {
-                    if delta.is_empty() {
-                        return;
-                    }
-                    let _ = emit_transient_event(
-                        &session_id,
-                        &running_turn.id,
-                        "assistant_delta",
-                        json!({
-                            "delta": delta,
-                        }),
-                    );
-                }),
-                Some(&mut |thought| {
-                    if thought.is_empty() {
-                        return;
-                    }
-                    let _ = emit_transient_event(
-                        &session_id,
-                        &running_turn.id,
-                        "reasoning_thought",
-                        json!({
-                            "thought": thought,
-                        }),
-                    );
-                }),
-            )
-            .map_err(|error| {
-                agent_error(
-                    AGENT_TURN_FAILED,
-                    format!("provider inference failed: {error}"),
-                )
-            })?;
-
-            apply_usage(&mut usage_accumulator, &inference.usage);
-
-            if missing_provider_output(&inference.assistant_text, &inference.tool_calls) {
-                return Err(provider_invalid_response_error());
-            }
-
-            if !inference.tool_calls.is_empty() {
-                if let Some(reason) =
-                    progress_guard.observe_inference(&inference.assistant_text, &inference.tool_calls)
-                {
-                    let assistant_text =
-                        build_turn_paused_assistant_message(&reason.message, &inference.assistant_text);
-                    let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                        &storage_root,
-                        &session_id,
-                        &running_turn.id,
-                        &assistant_text,
-                        effective_project_root.as_deref(),
-                    )?;
-                    emit_memory_events(&storage_root, &session_id, &running_turn.id, memory_events)?;
-                    let usage = usage_from_accumulator(
-                        usage_accumulator.0,
-                        usage_accumulator.1,
-                        usage_accumulator.2,
-                        usage_accumulator.3,
-                    );
-                    let paused_turn = finalize_paused_turn(
-                        &storage_root,
-                        &session_id,
-                        &running_turn.id,
-                        &reason.code,
-                        &reason.message,
-                        usage.as_ref(),
-                    )?;
-                    kick_memory_pipeline(
-                        &storage_root,
-                        &session_id,
-                        &running_turn.id,
-                        effective_project_root.clone(),
-                    )?;
-                    return Ok((paused_turn, Some(assistant_message), tool_trace.clone(), usage));
-                }
-
-                let assistant_tool_text = inference.assistant_text.clone();
-                provider_messages.push(AgentInferenceMessage {
-                    role: AgentInferenceMessageRole::Assistant,
-                    content: assistant_tool_text,
-                    tool_call_id: None,
-                    tool_calls: inference.tool_calls.clone(),
-                });
-
-                let executed = execute_tool_calls(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    &inference.tool_calls,
-                    effective_project_root.as_deref(),
-                    &terminal_policy,
-                    false,
-                    &mut provider_messages,
-                    &mut budget,
-                    &mut file_cache,
-                    &mut error_withholding,
-                )?;
-                tool_trace.extend(executed.clone());
-
-                // --- Micro-Compact: record creation times for new tool results ---
-                current_round += 1;
-                for tool_call in &inference.tool_calls {
-                    micro_tracker.record_creation(&tool_call.id, &tool_call.name, current_round);
-                }
-
-                // --- Micro-Compact: compress stale tool results ---
-                micro_tracker.try_compact(&mut provider_messages, current_round);
-
-                // --- Prefetch: schedule background prefetch for next round ---
-                prefetch_cache.purge_stale(60_000); // 60s TTL
-                crate::agent::prefetch::schedule_prefetch(
-                    &inference.tool_calls,
-                    effective_project_root.as_deref(),
-                    &prefetch_cache,
-                );
-                if let Some(reason) = progress_guard.observe_tool_results(&executed) {
-                    let assistant_text =
-                        build_turn_paused_assistant_message(&reason.message, &inference.assistant_text);
-                    let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                        &storage_root,
-                        &session_id,
-                        &running_turn.id,
-                        &assistant_text,
-                        effective_project_root.as_deref(),
-                    )?;
-                    emit_memory_events(&storage_root, &session_id, &running_turn.id, memory_events)?;
-                    let usage = usage_from_accumulator(
-                        usage_accumulator.0,
-                        usage_accumulator.1,
-                        usage_accumulator.2,
-                        usage_accumulator.3,
-                    );
-                    let paused_turn = finalize_paused_turn(
-                        &storage_root,
-                        &session_id,
-                        &running_turn.id,
-                        &reason.code,
-                        &reason.message,
-                        usage.as_ref(),
-                    )?;
-                    kick_memory_pipeline(
-                        &storage_root,
-                        &session_id,
-                        &running_turn.id,
-                        effective_project_root.clone(),
-                    )?;
-                    return Ok((paused_turn, Some(assistant_message), tool_trace.clone(), usage));
-                }
-                step_index = step_index.saturating_add(1);
-                continue;
-            }
-
-            let mut assistant_text = inference.assistant_text.trim().to_string();
-            if !browser_workflow_retry_injected
-                && !assistant_text.is_empty()
-                && browser_action_failure_requires_retry(&tool_trace)
-            {
-                browser_workflow_retry_injected = true;
-                provider_messages.push(AgentInferenceMessage {
-                    role: AgentInferenceMessageRole::User,
-                    content: browser_workflow_retry_message(),
-                    tool_call_id: None,
-                    tool_calls: Vec::new(),
-                });
-                emit_event(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    "browser_workflow_retry_injected",
-                    json!({
-                        "reason": "retryable_browser_workflow_failure",
-                        "toolTraceCount": tool_trace.len(),
-                    }),
-                )?;
-                step_index = step_index.saturating_add(1);
-                continue;
-            }
-
-            if !browser_action_retry_injected
-                && !assistant_text.is_empty()
-                && browser_observed_without_local_action(&tool_trace)
-            {
-                browser_action_retry_injected = true;
-                provider_messages.push(AgentInferenceMessage {
-                    role: AgentInferenceMessageRole::User,
-                    content: browser_action_retry_message(),
-                    tool_call_id: None,
-                    tool_calls: Vec::new(),
-                });
-                emit_event(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    "browser_action_retry_injected",
-                    json!({
-                        "reason": "observation_only_browser_turn",
-                        "observationOnly": true,
-                        "toolTraceCount": tool_trace.len(),
-                    }),
-                )?;
-                step_index = step_index.saturating_add(1);
-                continue;
-            }
-
-            if browser_workflow_retry_injected
-                && !assistant_text.is_empty()
-                && browser_action_failure_requires_retry(&tool_trace)
-            {
-                let assistant_text = build_turn_paused_assistant_message(
-                    &browser_workflow_unmet_message(),
-                    &assistant_text,
-                );
-                let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    &assistant_text,
-                    effective_project_root.as_deref(),
-                )?;
-                emit_memory_events(&storage_root, &session_id, &running_turn.id, memory_events)?;
-                let usage = usage_from_accumulator(
-                    usage_accumulator.0,
-                    usage_accumulator.1,
-                    usage_accumulator.2,
-                    usage_accumulator.3,
-                );
-                emit_event(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    "browser_workflow_required_unmet",
-                    json!({
-                        "reason": "retryable_browser_workflow_failure",
-                        "toolTraceCount": tool_trace.len(),
-                    }),
-                )?;
-                let paused_turn = finalize_paused_turn(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    AGENT_TURN_PAUSED_NO_PROGRESS,
-                    &browser_workflow_unmet_message(),
-                    usage.as_ref(),
-                )?;
-                kick_memory_pipeline(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    effective_project_root.clone(),
-                )?;
-                return Ok((paused_turn, Some(assistant_message), tool_trace.clone(), usage));
-            }
-
-            if browser_action_retry_injected
-                && !assistant_text.is_empty()
-                && browser_observed_without_local_action(&tool_trace)
-            {
-                let assistant_text = build_turn_paused_assistant_message(
-                    &browser_action_unmet_message(),
-                    &assistant_text,
-                );
-                let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    &assistant_text,
-                    effective_project_root.as_deref(),
-                )?;
-                emit_memory_events(&storage_root, &session_id, &running_turn.id, memory_events)?;
-                let usage = usage_from_accumulator(
-                    usage_accumulator.0,
-                    usage_accumulator.1,
-                    usage_accumulator.2,
-                    usage_accumulator.3,
-                );
-                emit_event(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    "browser_action_required_unmet",
-                    json!({
-                        "reason": "observation_only_browser_turn",
-                        "toolTraceCount": tool_trace.len(),
-                    }),
-                )?;
-                let paused_turn = finalize_paused_turn(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    AGENT_TURN_PAUSED_NO_PROGRESS,
-                    &browser_action_unmet_message(),
-                    usage.as_ref(),
-                )?;
-                kick_memory_pipeline(
-                    &storage_root,
-                    &session_id,
-                    &running_turn.id,
-                    effective_project_root.clone(),
-                )?;
-                return Ok((paused_turn, Some(assistant_message), tool_trace.clone(), usage));
-            }
-
-            let assistant_text = if assistant_text.is_empty() {
-                "".to_string()
-            } else {
-                // --- Reflection step ---
-                let reflection_min_calls = request.reflection_min_tool_calls.unwrap_or(3);
-                if effective_reflection && tool_trace.len() >= reflection_min_calls {
-                    let tool_summary: Vec<String> = tool_trace.iter().map(|tc| {
-                        format!("{}({})", tc.tool_name, tc.input.to_string().chars().take(80).collect::<String>())
-                    }).collect();
-                    let reflection_messages = vec![
-                        system_message.clone(),
-                        AgentInferenceMessage {
-                            role: AgentInferenceMessageRole::User,
-                            content: format!(
-                                "[Lyra Internal Reflection Module] Review the completed turn for correctness and completeness. If everything is sound, output LGTM. Otherwise provide concise corrective guidance.\n\nTools used: {}\n\nFinal answer:\n{}",
-                                tool_summary.join(", "),
-                                assistant_text
-                            ),
-                            tool_call_id: None,
-                            tool_calls: Vec::new(),
-                        },
-                    ];
-                    if let Ok(reflection) = provider::run_agent_inference(
-                        &profile.to_public(),
-                        &secrets,
-                        &reflection_messages,
-                        &[],
-                        None::<&mut dyn FnMut(&str)>,
-                        None::<&mut dyn FnMut(&str)>,
-                    ) {
-                        apply_usage(&mut usage_accumulator, &reflection.usage);
-                        let reflection_text = reflection.assistant_text.trim();
-                        if !reflection_text.is_empty() && !reflection_text.starts_with("LGTM") {
-                            // Append reflection note to the answer
-                            assistant_text = format!("{assistant_text}\n\n---\n*Reflection*: {reflection_text}");
-                        }
-                        emit_event(
-                            &storage_root,
-                            &session_id,
-                            &running_turn.id,
-                            "reflection_completed",
-                            json!({ "reflection": reflection_text }),
-                        )?;
-                    }
-                }
-                assistant_text
-            };
-            let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                &storage_root,
-                &session_id,
-                &running_turn.id,
-                &assistant_text,
-                effective_project_root.as_deref(),
-            )?;
-            emit_memory_events(&storage_root, &session_id, &running_turn.id, memory_events)?;
-
-            let usage = usage_from_accumulator(
-                usage_accumulator.0,
-                usage_accumulator.1,
-                usage_accumulator.2,
-                usage_accumulator.3,
-            );
-            let completed_turn =
-                registry_db::complete_agent_turn(&storage_root, &running_turn.id, usage.as_ref())?;
-
-            emit_event(
-                &storage_root,
-                &session_id,
-                &running_turn.id,
-                "completed",
-                json!({
-                    "assistantMessageId": assistant_message.id,
-                    "toolCallCount": tool_trace.len(),
-                    "usage": usage,
-                }),
-            )?;
-
-            kick_memory_pipeline(
-                &storage_root,
-                &session_id,
-                &running_turn.id,
-                effective_project_root.clone(),
-            )?;
-
-            // Reset error withholding buffer for next turn
-            error_withholding.reset();
-
-            return Ok((completed_turn, Some(assistant_message), tool_trace.clone(), usage));
-        }
-    })();
-
-    let (turn, assistant_message, tool_calls, usage) = match turn_result {
-        Ok(value) => value,
-        Err(error) => {
-            let error_display = error.to_string();
-            let (code, message) = parse_agent_error_message(&error_display);
-            let failed_turn =
-                finalize_failed_turn(&storage_root, &session_id, &running_turn.id, code, message)?;
-            let failure_message = build_turn_failed_assistant_message(code, message);
-            let (assistant_message, memory_events) = append_assistant_message_to_stores(
-                &storage_root,
-                &session_id,
-                &running_turn.id,
-                &failure_message,
-                effective_project_root.as_deref(),
-            )?;
-            emit_memory_events(&storage_root, &session_id, &running_turn.id, memory_events)?;
-            let usage = usage_from_accumulator(
-                usage_accumulator.0,
-                usage_accumulator.1,
-                usage_accumulator.2,
-                usage_accumulator.3,
-            );
-            (
-                failed_turn,
-                Some(assistant_message),
-                tool_trace.clone(),
-                usage,
-            )
-        }
-    };
-
-    cleanup_transient_ai_sessions(&session_id, &running_turn.id);
-
-    let next_session =
-        registry_db::read_agent_session(&storage_root, &session_id)?.unwrap_or(session);
-
-    Ok(AgentSendTurnResult {
-        session: next_session,
-        turn,
-        assistant_message,
-        tool_calls,
-        usage,
+    mark_execution_resumable_after_interaction(
+        &storage_root,
+        &session_id,
+        &interaction.id,
+        interaction.kind,
+        &turn_id,
+    )?;
+    resume_execution(AgentResumeExecutionRequest {
+        storage_root,
+        session_id,
+        checkpoint_id: None,
     })
+}
+
+pub fn answer_plan_question(
+    request: AgentAnswerPlanQuestionRequest,
+) -> Result<Option<AgentSendTurnResult>> {
+    answer_question(request)
 }
 
 /// Submit a user approval decision for a pending command execution.
 /// Called from the NAPI layer when the user responds to a command approval request.
-pub fn submit_command_approval(request: CommandApprovalSubmitRequest) -> Result<()> {
+pub fn submit_command_approval(
+    request: CommandApprovalSubmitRequest,
+) -> Result<Option<AgentSendTurnResult>> {
+    let storage_root = normalize_required_text(&request.storage_root, "storageRoot")?;
+    let session_id = normalize_required_text(&request.session_id, "sessionId")?;
+    let turn_id = normalize_required_text(&request.turn_id, "turnId")?;
     let tool_call_id = normalize_required_text(&request.tool_call_id, "toolCallId")?;
-    let decision = normalize_required_text(&request.decision, "decision")?;
-
-    crate::agent::tools::resolve_approval(&tool_call_id, &decision);
-
-    Ok(())
+    submit_command_approval_decision(request)?;
+    mark_execution_resumable_after_interaction(
+        &storage_root,
+        &session_id,
+        &tool_call_id,
+        AgentPendingInteractionKind::CommandApproval,
+        &turn_id,
+    )?;
+    resume_execution(AgentResumeExecutionRequest {
+        storage_root,
+        session_id,
+        checkpoint_id: None,
+    })
 }

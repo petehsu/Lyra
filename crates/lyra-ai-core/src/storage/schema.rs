@@ -113,6 +113,21 @@ fn create_v2_tables(connection: &Connection) -> Result<()> {
           created_at integer not null,
           updated_at integer not null
         );
+        create table if not exists agent_threads (
+          id text primary key,
+          session_id text not null unique,
+          parent_thread_id text,
+          forked_from_turn_id text,
+          rollback_from_thread_id text,
+          rollback_from_turn_id text,
+          lifecycle_state text not null default 'active',
+          elicitation_counter integer not null default 0,
+          created_at integer not null,
+          updated_at integer not null,
+          foreign key(session_id) references agent_sessions(id) on delete cascade,
+          foreign key(parent_thread_id) references agent_threads(id) on delete set null,
+          foreign key(rollback_from_thread_id) references agent_threads(id) on delete set null
+        );
         create table if not exists agent_plans (
           session_id text primary key,
           status text not null,
@@ -142,6 +157,7 @@ fn create_v2_tables(connection: &Connection) -> Result<()> {
           turn_id text,
           role text not null,
           content text not null,
+          display_content text,
           created_at integer not null,
           foreign key(session_id) references agent_sessions(id) on delete cascade,
           foreign key(turn_id) references agent_turns(id) on delete set null
@@ -183,7 +199,43 @@ fn create_v2_tables(connection: &Connection) -> Result<()> {
           foreign key(session_id) references agent_sessions(id) on delete cascade,
           foreign key(turn_id) references agent_turns(id) on delete cascade
         );
+        create table if not exists agent_execution_states (
+          id text primary key,
+          run_id text not null,
+          thread_id text not null unique,
+          session_id text not null,
+          collaboration_mode text not null default 'default',
+          phase text not null default 'idle',
+          active_turn_id text,
+          waiting_interaction_id text,
+          waiting_interaction_kind text,
+          active_goal_node_id text,
+          goal_tree_json text not null default '{}',
+          latest_checkpoint_id text,
+          version integer not null default 0,
+          created_at integer not null,
+          updated_at integer not null,
+          foreign key(session_id) references agent_sessions(id) on delete cascade,
+          foreign key(thread_id) references agent_threads(id) on delete cascade
+        );
+        create table if not exists agent_execution_checkpoints (
+          id text primary key,
+          execution_id text not null,
+          thread_id text not null,
+          session_id text not null,
+          turn_id text not null,
+          kind text not null,
+          phase_before text not null,
+          phase_after text not null,
+          goal_snapshot_json text not null,
+          continuation_payload_json text not null,
+          created_at integer not null,
+          foreign key(execution_id) references agent_execution_states(id) on delete cascade,
+          foreign key(session_id) references agent_sessions(id) on delete cascade,
+          foreign key(thread_id) references agent_threads(id) on delete cascade
+        );
         create index if not exists idx_agent_sessions_updated_at on agent_sessions(updated_at desc);
+        create index if not exists idx_agent_threads_state_updated_at on agent_threads(lifecycle_state, updated_at desc);
         create index if not exists idx_agent_plans_updated_at on agent_plans(updated_at desc);
         create index if not exists idx_agent_turns_session_created_at on agent_turns(session_id, created_at asc);
         create index if not exists idx_agent_messages_session_created_at on agent_messages(session_id, created_at asc);
@@ -191,6 +243,10 @@ fn create_v2_tables(connection: &Connection) -> Result<()> {
         create index if not exists idx_agent_runtime_events_session_timestamp on agent_runtime_events(session_id, timestamp asc);
         create index if not exists idx_agent_pending_interactions_session_updated_at on agent_pending_interactions(session_id, updated_at asc);
         create index if not exists idx_agent_pending_interactions_session_status on agent_pending_interactions(session_id, status, created_at asc);
+        create index if not exists idx_agent_execution_states_session_updated_at on agent_execution_states(session_id, updated_at desc);
+        create index if not exists idx_agent_execution_states_thread_phase on agent_execution_states(thread_id, phase);
+        create index if not exists idx_agent_execution_checkpoints_execution_created_at on agent_execution_checkpoints(execution_id, created_at desc);
+        create index if not exists idx_agent_execution_checkpoints_session_created_at on agent_execution_checkpoints(session_id, created_at desc);
         "#,
         )
         .map_err(|error| to_error(format!("failed to initialize ai registry schema: {error}")))?;
@@ -355,6 +411,7 @@ pub fn ensure_registry_schema(connection: &Connection) -> Result<()> {
         "collaboration_mode",
         "text not null default 'default'",
     )?;
+    ensure_column(connection, "agent_messages", "display_content", "text")?;
     ensure_column(connection, "turns", "created_at_iso", "text")?;
     ensure_column(connection, "turns", "updated_at_iso", "text")?;
     connection

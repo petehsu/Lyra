@@ -476,7 +476,8 @@ pub fn append_session_dialog_message(
 
     let char_count = content.chars().count() as i64;
     let token_count = estimate_token_count(content);
-    let syntax_hit = detect_syntax_trigger(role, content);
+    let syntax_hit = detect_syntax_trigger(role, content)
+        .or_else(|| detect_semantic_trigger_candidate(role, content, token_count, &config));
     let anchor_kind = syntax_hit.as_ref().map(|hit| hit.kind.clone());
     let anchor_score = compute_anchor_score(role, content, syntax_hit.as_ref());
     let created_at = now_ms();
@@ -1306,16 +1307,101 @@ fn detect_syntax_trigger(role: &str, content: &str) -> Option<SyntaxTriggerHit> 
     best
 }
 
+fn normalize_lexical_token(raw: &str) -> String {
+    raw.chars()
+        .filter(|ch| ch.is_alphanumeric() || !ch.is_ascii())
+        .collect::<String>()
+        .to_lowercase()
+}
+
+fn lexical_variety_score(text: &str) -> f64 {
+    let tokens = text
+        .split_whitespace()
+        .map(normalize_lexical_token)
+        .filter(|token| token.chars().count() >= 2)
+        .collect::<Vec<_>>();
+    if tokens.len() < 4 {
+        return 0.0;
+    }
+    let unique = tokens.iter().collect::<HashSet<_>>().len();
+    (unique as f64 / tokens.len() as f64).clamp(0.0, 1.0)
+}
+
+fn count_non_empty_lines(text: &str) -> usize {
+    text.lines().filter(|line| !line.trim().is_empty()).count()
+}
+
+fn count_sentence_breaks(text: &str) -> usize {
+    text.chars()
+        .filter(|ch| matches!(ch, '.' | '!' | '?' | '。' | '！' | '？' | ';' | '；'))
+        .count()
+}
+
+fn detect_semantic_trigger_candidate(
+    role: &str,
+    content: &str,
+    token_count: i64,
+    config: &AiMemoryConfig,
+) -> Option<SyntaxTriggerHit> {
+    if role != "user" || !config.syntax_model_refine_enabled {
+        return None;
+    }
+
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let non_whitespace_chars = trimmed.chars().filter(|ch| !ch.is_whitespace()).count();
+    if non_whitespace_chars < 28 {
+        return None;
+    }
+
+    let line_count = count_non_empty_lines(trimmed);
+    let sentence_breaks = count_sentence_breaks(trimmed);
+    let token_estimate = token_count.max(estimate_token_count(trimmed));
+    let has_structure = line_count >= 2 || sentence_breaks >= 1;
+    if token_estimate < 14 && !has_structure {
+        return None;
+    }
+
+    let lexical_variety = lexical_variety_score(trimmed);
+    let structural_score = if has_structure { 0.08 } else { 0.0 };
+    let score = (0.52
+        + ((token_estimate.min(80) as f64 / 80.0) * 0.18)
+        + ((line_count.min(4) as f64 / 4.0) * 0.10)
+        + (lexical_variety * 0.12)
+        + structural_score)
+        .clamp(0.55, 0.79);
+
+    Some(SyntaxTriggerHit {
+        kind: "semantic_candidate".to_string(),
+        score,
+    })
+}
+
 fn compute_anchor_score(role: &str, content: &str, syntax_hit: Option<&SyntaxTriggerHit>) -> f64 {
     let mut score = syntax_hit.map(|hit| hit.score).unwrap_or(0.0);
     if role == "user" {
-        score = score.max(0.25);
+        score = score.max(0.22);
     }
-    if content.contains("failed") || content.contains("error") || content.contains("暂停") {
-        score = score.max(0.7);
+    let token_estimate = estimate_token_count(content);
+    let line_count = count_non_empty_lines(content);
+    let sentence_breaks = count_sentence_breaks(content);
+    let non_whitespace_chars = content.chars().filter(|ch| !ch.is_whitespace()).count();
+    if line_count >= 3 {
+        score = score.max(0.66);
     }
-    if content.contains("plan") || content.contains("summary") || content.contains("总结") {
-        score = score.max(0.6);
+    if token_estimate >= 48 {
+        score = score.max(0.72);
+    } else if token_estimate >= 24 {
+        score = score.max(0.60);
+    }
+    if sentence_breaks >= 2 && token_estimate >= 14 {
+        score = score.max(0.57);
+    }
+    if non_whitespace_chars >= 160 {
+        score = score.max(0.62);
     }
     score.min(1.0)
 }
@@ -2660,6 +2746,19 @@ fn process_syntax_job(
         content,
         config,
     )?;
+    if !decision.accepted && payload.trigger_kind.as_deref() == Some("semantic_candidate") {
+        return Ok(vec![MemoryRuntimePhaseEvent {
+            phase: "memory_candidate_rejected".to_string(),
+            payload: json!({
+                "reason": "semantic_candidate_rejected",
+                "analysisMode": analysis_mode,
+                "scope": decision.scope,
+                "layer": decision.layer,
+                "score": decision.score,
+                "fallbackScope": fallback_scope,
+            }),
+        }]);
+    }
     let entry = upsert_shared_entry(
         storage_root,
         &decision.layer,

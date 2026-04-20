@@ -487,7 +487,7 @@ export const registerWorkbenchCapabilities = (
 
   registry.register(
     {
-      id: "workbench.web_skeleton.read",
+      id: "lyra.web.skeleton.read",
       domain: "workbench",
       kind: "resource",
       title: "Read Web Skeleton",
@@ -531,7 +531,7 @@ export const registerWorkbenchCapabilities = (
 
   registry.register(
     {
-      id: "workbench.web_query.find",
+      id: "lyra.web.query.find",
       domain: "workbench",
       kind: "resource",
       title: "Find Web Skeleton Nodes",
@@ -641,7 +641,7 @@ export const registerWorkbenchCapabilities = (
 
   registry.register(
     {
-      id: "workbench.web_context.read",
+      id: "lyra.web.context.read",
       domain: "workbench",
       kind: "resource",
       title: "Read Web Context",
@@ -697,7 +697,7 @@ export const registerWorkbenchCapabilities = (
 
   registry.register(
     {
-      id: "workbench.web_focus.probe",
+      id: "lyra.web.focus.probe",
       domain: "workbench",
       kind: "action",
       title: "Probe Web Focus Locally",
@@ -747,7 +747,7 @@ export const registerWorkbenchCapabilities = (
 
   registry.register(
     {
-      id: "workbench.web_scan_and_act",
+      id: "lyra.web.scan.act",
       domain: "workbench",
       kind: "action",
       title: "Scan And Run Web Action",
@@ -988,7 +988,7 @@ export const registerWorkbenchCapabilities = (
 
   registry.register(
     {
-      id: "workbench.web_action.safe",
+      id: "lyra.web.action.safe",
       domain: "workbench",
       kind: "action",
       title: "Run Safe Web Action",
@@ -1018,7 +1018,7 @@ export const registerWorkbenchCapabilities = (
 
   registry.register(
     {
-      id: "workbench.web_action.mutate",
+      id: "lyra.web.action.mutate",
       domain: "workbench",
       kind: "action",
       title: "Run Mutating Web Action",
@@ -1059,7 +1059,7 @@ export const registerWorkbenchCapabilities = (
 
   registry.register(
     {
-      id: "workbench.web_action.navigate",
+      id: "lyra.web.action.navigate",
       domain: "workbench",
       kind: "action",
       title: "Run Navigation Web Action",
@@ -1089,7 +1089,7 @@ export const registerWorkbenchCapabilities = (
 
   registry.register(
     {
-      id: "workbench.web_action.wait",
+      id: "lyra.web.action.wait",
       domain: "workbench",
       kind: "resource",
       title: "Wait for Web Target State",
@@ -1152,15 +1152,15 @@ export const registerWorkbenchCapabilities = (
       "workbench.tab.extract_text",
       "workbench.tab.read",
       "workbench.tab.capture_visual",
-      "workbench.web_skeleton.read",
-      "workbench.web_query.find",
-      "workbench.web_context.read",
-      "workbench.web_focus.probe",
-      "workbench.web_scan_and_act",
-      "workbench.web_action.safe",
-      "workbench.web_action.mutate",
-      "workbench.web_action.navigate",
-      "workbench.web_action.wait"
+      "lyra.web.skeleton.read",
+      "lyra.web.query.find",
+      "lyra.web.context.read",
+      "lyra.web.focus.probe",
+      "lyra.web.scan.act",
+      "lyra.web.action.safe",
+      "lyra.web.action.mutate",
+      "lyra.web.action.navigate",
+      "lyra.web.action.wait"
     ],
     compatibility: {
       minApiVersion: "0.1.0",

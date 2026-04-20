@@ -837,6 +837,7 @@ export type WorkbenchWebActionRequest = {
   readonly tabId?: string | undefined;
   readonly graphId?: string | undefined;
   readonly action: WorkbenchWebAction;
+  readonly constraints?: WorkbenchWebActionExecutionConstraints | undefined;
   readonly timeoutMs?: number | undefined;
   readonly waitForNavigationMs?: number | undefined;
 };
@@ -917,6 +918,7 @@ export type WorkbenchWebScanAndActRequest = {
   readonly tabId?: string | undefined;
   readonly graphId?: string | undefined;
   readonly action: WorkbenchWebAction;
+  readonly constraints?: WorkbenchWebActionExecutionConstraints | undefined;
   readonly timeoutMs?: number | undefined;
   readonly waitForNavigationMs?: number | undefined;
   readonly targetHints?: WorkbenchWebScanAndActTargetHints | undefined;
@@ -1034,7 +1036,27 @@ export type WorkbenchWebAutomationErrorStage =
   | "execute"
   | "wait_postcondition";
 
+export type WorkbenchWebAutomationErrorCategory =
+  | "scan"
+  | "target_resolution"
+  | "precondition"
+  | "execution"
+  | "postcondition"
+  | "policy"
+  | "unknown";
+
+export type WorkbenchWebActionExecutionConstraints = {
+  readonly timeoutMs?: number | undefined;
+  readonly waitForNavigationMs?: number | undefined;
+  readonly strictness?: "strict" | "balanced" | "best_effort" | undefined;
+  readonly retry?: {
+    readonly maxAttempts?: number | undefined;
+    readonly backoffMs?: number | undefined;
+  } | undefined;
+};
+
 export type WorkbenchWebAutomationError = {
+  readonly category: WorkbenchWebAutomationErrorCategory;
   readonly code: WorkbenchWebAutomationErrorCode;
   readonly message: string;
   readonly stage: WorkbenchWebAutomationErrorStage;

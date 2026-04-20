@@ -8,15 +8,15 @@ const BROWSER_USE_MUTATE: &str = "browser_use.page.mutate";
 const BROWSER_USE_NAVIGATE: &str = "browser_use.page.navigate";
 const BROWSER_USE_WAIT: &str = "browser_use.page.wait";
 const BROWSER_USE_AGENT_RUN: &str = "browser_use.agent.run";
-const NATIVE_SKELETON_READ: &str = "workbench.web_skeleton.read";
-const NATIVE_QUERY_FIND: &str = "workbench.web_query.find";
-const NATIVE_CONTEXT_READ: &str = "workbench.web_context.read";
-const NATIVE_FOCUS_PROBE: &str = "workbench.web_focus.probe";
-const NATIVE_SCAN_AND_ACT: &str = "workbench.web_scan_and_act";
-const NATIVE_SAFE: &str = "workbench.web_action.safe";
-const NATIVE_MUTATE: &str = "workbench.web_action.mutate";
-const NATIVE_NAVIGATE: &str = "workbench.web_action.navigate";
-const NATIVE_WAIT: &str = "workbench.web_action.wait";
+const NATIVE_SKELETON_READ: &str = "lyra.web.skeleton.read";
+const NATIVE_QUERY_FIND: &str = "lyra.web.query.find";
+const NATIVE_CONTEXT_READ: &str = "lyra.web.context.read";
+const NATIVE_FOCUS_PROBE: &str = "lyra.web.focus.probe";
+const NATIVE_SCAN_AND_ACT: &str = "lyra.web.scan.act";
+const NATIVE_SAFE: &str = "lyra.web.action.safe";
+const NATIVE_MUTATE: &str = "lyra.web.action.mutate";
+const NATIVE_NAVIGATE: &str = "lyra.web.action.navigate";
+const NATIVE_WAIT: &str = "lyra.web.action.wait";
 
 fn is_browser_use_tool(name: &str) -> bool {
     matches!(

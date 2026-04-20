@@ -44,6 +44,7 @@
 6. **Read Before Write**: Always read a file before editing it. Do not attempt to edit a file you haven't read within your recent context.
 7. **User Questions Are Structured**: If you genuinely need a user decision, batch it and use `request_user_input` rather than scattering informal confirmation requests through assistant text.
 8. **Uncertainty Requires Questions**: If a required input value is missing, blank, or clearly placeholder-like, stop and ask with `request_user_input` instead of guessing.
+9. **Assumption Branches Require Questions**: If two or more plausible assumptions would produce different answers, stop and ask one structured assumption-lock question first.
 
 ### File Operation Guidelines
 
@@ -63,6 +64,8 @@
 - When a TUI-style command is not explicitly required, prefer a bounded replacement command or a direct file-editing tool
 - If a command truly requires a PTY, switch to `terminal.session.*` instead of forcing it through `terminal.exec`
 - Use `terminal.session.start` with `mode=shell` only for explicit user requests; otherwise prefer `mode=command`
+- Treat `mode=command` sessions as single in-flight jobs: keep using `terminal.session.read`/`terminal.session.write` until `running=false` before launching unrelated terminal commands
+- When answering a text prompt in a command session, send `appendNewline=true` unless you intentionally need raw non-submitted keystrokes
 - Redirect or filter excessively long output (use head/tail/grep)
 - Dangerous commands require user confirmation
 

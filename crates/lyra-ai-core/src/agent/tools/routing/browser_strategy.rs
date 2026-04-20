@@ -5,14 +5,14 @@ use std::sync::RwLock;
 
 use crate::agent::types::AgentToolCall;
 
-const NATIVE_SKELETON_READ: &str = "workbench.web_skeleton.read";
-const NATIVE_QUERY_FIND: &str = "workbench.web_query.find";
-const NATIVE_CONTEXT_READ: &str = "workbench.web_context.read";
-const NATIVE_SCAN_AND_ACT: &str = "workbench.web_scan_and_act";
-const NATIVE_ACTION_SAFE: &str = "workbench.web_action.safe";
-const NATIVE_ACTION_MUTATE: &str = "workbench.web_action.mutate";
-const NATIVE_ACTION_NAVIGATE: &str = "workbench.web_action.navigate";
-const NATIVE_ACTION_WAIT: &str = "workbench.web_action.wait";
+const NATIVE_SKELETON_READ: &str = "lyra.web.skeleton.read";
+const NATIVE_QUERY_FIND: &str = "lyra.web.query.find";
+const NATIVE_CONTEXT_READ: &str = "lyra.web.context.read";
+const NATIVE_SCAN_AND_ACT: &str = "lyra.web.scan.act";
+const NATIVE_ACTION_SAFE: &str = "lyra.web.action.safe";
+const NATIVE_ACTION_MUTATE: &str = "lyra.web.action.mutate";
+const NATIVE_ACTION_NAVIGATE: &str = "lyra.web.action.navigate";
+const NATIVE_ACTION_WAIT: &str = "lyra.web.action.wait";
 const BROWSER_USE_PREPARE: &str = "browser_use.session.prepare";
 const BROWSER_USE_STATE: &str = "browser_use.page.state";
 const BROWSER_USE_EXTRACT: &str = "browser_use.page.extract";

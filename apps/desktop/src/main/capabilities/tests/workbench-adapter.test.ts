@@ -48,14 +48,14 @@ const createWebAutomationService = (): WorkbenchWebAutomationService => ({
 } as unknown as WorkbenchWebAutomationService);
 
 describe("workbench capability adapter", () => {
-  test("routes workbench.web_query.find into the new service method", async () => {
+  test("routes lyra.web.query.find into the new service method", async () => {
     const observationService = createObservationService();
     const webAutomationService = createWebAutomationService();
     const registry = new CapabilityRegistry(vi.fn());
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_query.find",
+      capabilityId: "lyra.web.query.find",
       payload: {
         tabId: "browser-tab-1",
         role: ["button", "menuitem"],
@@ -83,7 +83,7 @@ describe("workbench capability adapter", () => {
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_query.find",
+      capabilityId: "lyra.web.query.find",
       payload: {
         tabId: "browser-tab-1",
         role: "button",
@@ -105,14 +105,14 @@ describe("workbench capability adapter", () => {
     );
   });
 
-  test("routes workbench.web_skeleton.read into the new service method", async () => {
+  test("routes lyra.web.skeleton.read into the new service method", async () => {
     const observationService = createObservationService();
     const webAutomationService = createWebAutomationService();
     const registry = new CapabilityRegistry(vi.fn());
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_skeleton.read",
+      capabilityId: "lyra.web.skeleton.read",
       payload: {
         tabId: "browser-tab-1",
         scope: "visible",
@@ -133,14 +133,14 @@ describe("workbench capability adapter", () => {
     );
   });
 
-  test("routes workbench.web_context.read into the new service method", async () => {
+  test("routes lyra.web.context.read into the new service method", async () => {
     const observationService = createObservationService();
     const webAutomationService = createWebAutomationService();
     const registry = new CapabilityRegistry(vi.fn());
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_context.read",
+      capabilityId: "lyra.web.context.read",
       payload: {
         tabId: "browser-tab-1",
         scope: "neighborhood",
@@ -165,14 +165,14 @@ describe("workbench capability adapter", () => {
     );
   });
 
-  test("routes workbench.web_focus.probe into the new service method", async () => {
+  test("routes lyra.web.focus.probe into the new service method", async () => {
     const observationService = createObservationService();
     const webAutomationService = createWebAutomationService();
     const registry = new CapabilityRegistry(vi.fn());
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_focus.probe",
+      capabilityId: "lyra.web.focus.probe",
       payload: {
         tabId: "browser-tab-1",
         focusRegionId: "region:composer",
@@ -197,14 +197,14 @@ describe("workbench capability adapter", () => {
     );
   });
 
-  test("routes workbench.web_scan_and_act with structured hints", async () => {
+  test("routes lyra.web.scan.act with structured hints", async () => {
     const observationService = createObservationService();
     const webAutomationService = createWebAutomationService();
     const registry = new CapabilityRegistry(vi.fn());
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_scan_and_act",
+      capabilityId: "lyra.web.scan.act",
       payload: {
         tabId: "browser-tab-1",
         action: {
@@ -255,7 +255,7 @@ describe("workbench capability adapter", () => {
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_scan_and_act",
+      capabilityId: "lyra.web.scan.act",
       payload: {
         tabId: "browser-tab-76",
         action: {
@@ -295,7 +295,7 @@ describe("workbench capability adapter", () => {
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_scan_and_act",
+      capabilityId: "lyra.web.scan.act",
       payload: {
         tabId: "browser-tab-76",
         action: {
@@ -328,7 +328,7 @@ describe("workbench capability adapter", () => {
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_scan_and_act",
+      capabilityId: "lyra.web.scan.act",
       payload: {
         tabId: "browser-tab-76",
         action: {
@@ -359,7 +359,7 @@ describe("workbench capability adapter", () => {
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_scan_and_act",
+      capabilityId: "lyra.web.scan.act",
       payload: {
         tabId: "browser-tab-76",
         action: {
@@ -395,7 +395,7 @@ describe("workbench capability adapter", () => {
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_action.mutate",
+      capabilityId: "lyra.web.action.mutate",
       payload: {
         tabId: "browser-tab-1",
         action: JSON.stringify({
@@ -431,7 +431,7 @@ describe("workbench capability adapter", () => {
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_action.mutate",
+      capabilityId: "lyra.web.action.mutate",
       payload: {
         tabId: "browser-tab-1",
         action: {
@@ -463,7 +463,7 @@ describe("workbench capability adapter", () => {
     registerWorkbenchCapabilities(registry, observationService, webAutomationService);
 
     const result = await registry.invoke({
-      capabilityId: "workbench.web_action.navigate",
+      capabilityId: "lyra.web.action.navigate",
       payload: {
         tabId: "browser-tab-1",
         action: JSON.stringify({

@@ -33,7 +33,7 @@ type WorkbenchWebAutomationHostToolsBridge = {
 
 const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
   {
-    capabilityId: "workbench.web_skeleton.read",
+    capabilityId: "lyra.web.skeleton.read",
     approvalMode: "auto",
     sideEffects: {
       level: "read_only",
@@ -46,7 +46,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
     }
   },
   {
-    capabilityId: "workbench.web_query.find",
+    capabilityId: "lyra.web.query.find",
     approvalMode: "auto",
     sideEffects: {
       level: "read_only",
@@ -59,7 +59,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
     }
   },
   {
-    capabilityId: "workbench.web_context.read",
+    capabilityId: "lyra.web.context.read",
     approvalMode: "auto",
     sideEffects: {
       level: "read_only",
@@ -72,7 +72,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
     }
   },
   {
-    capabilityId: "workbench.web_focus.probe",
+    capabilityId: "lyra.web.focus.probe",
     approvalMode: "auto",
     sideEffects: {
       level: "read_only",
@@ -85,7 +85,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
     }
   },
   {
-    capabilityId: "workbench.web_scan_and_act",
+    capabilityId: "lyra.web.scan.act",
     approvalMode: "auto",
     sideEffects: {
       level: "session_mutation",
@@ -98,7 +98,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
     }
   },
   {
-    capabilityId: "workbench.web_action.safe",
+    capabilityId: "lyra.web.action.safe",
     approvalMode: "auto",
     sideEffects: {
       level: "read_only",
@@ -111,7 +111,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
     }
   },
   {
-    capabilityId: "workbench.web_action.mutate",
+    capabilityId: "lyra.web.action.mutate",
     approvalMode: "auto",
     sideEffects: {
       level: "session_mutation",
@@ -124,7 +124,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
     }
   },
   {
-    capabilityId: "workbench.web_action.navigate",
+    capabilityId: "lyra.web.action.navigate",
     approvalMode: "auto",
     sideEffects: {
       level: "network_read",
@@ -137,7 +137,7 @@ const HOST_TOOL_CONFIGS: readonly HostToolConfig[] = [
     }
   },
   {
-    capabilityId: "workbench.web_action.wait",
+    capabilityId: "lyra.web.action.wait",
     approvalMode: "auto",
     sideEffects: {
       level: "read_only",

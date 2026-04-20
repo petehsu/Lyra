@@ -44,32 +44,35 @@ const ProviderList = ({
   readonly selectedPresetId: string | null;
   readonly onSelect: (presetId: string) => void;
 }) => (
-  <div
+  <ul
     className="lyra-settings-ai-selection-list lyra-settings-ai-selection-list-grid"
     role="listbox"
     aria-label={labels.providerTitle}
   >
     {presets.map((preset) => (
-      <button
-        key={preset.id}
-        type="button"
-        className={preset.id === selectedPresetId
-          ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
-          : "lyra-settings-ai-selection-item"}
-        onClick={() => {
-          onSelect(preset.id);
-        }}
-      >
-        <span className="lyra-settings-ai-selection-copy">
-          <span className="lyra-settings-ai-selection-heading">
-            <SettingsAiProviderIcon iconKey={preset.iconKey} title={preset.label} />
-            <strong>{preset.label}</strong>
+      <li key={preset.id} className="lyra-settings-ai-selection-item-slot">
+        <button
+          type="button"
+          role="option"
+          aria-selected={preset.id === selectedPresetId}
+          className={preset.id === selectedPresetId
+            ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
+            : "lyra-settings-ai-selection-item"}
+          onClick={() => {
+            onSelect(preset.id);
+          }}
+        >
+          <span className="lyra-settings-ai-selection-copy">
+            <span className="lyra-settings-ai-selection-heading">
+              <SettingsAiProviderIcon iconKey={preset.iconKey} title={preset.label} />
+              <strong>{preset.label}</strong>
+            </span>
+            <small>{preset.description}</small>
           </span>
-          <small>{preset.description}</small>
-        </span>
-      </button>
+        </button>
+      </li>
     ))}
-  </div>
+  </ul>
 );
 
 export const SettingsAiView = ({
@@ -89,14 +92,10 @@ export const SettingsAiView = ({
         ? labels.browserAutomationStatusReasonDaemonLaunchFailed
         : model.browserUseRuntimeStatus.reason === "bridge_unavailable"
           ? labels.browserAutomationStatusReasonBridgeUnavailable
-          : model.browserUseRuntimeStatus.reason === "unsupported_platform"
+        : model.browserUseRuntimeStatus.reason === "unsupported_platform"
             ? labels.browserAutomationStatusReasonUnsupportedPlatform
             : null;
   const hasProfiles = model.profiles.length > 0;
-  const defaultProfile =
-    model.profiles.find((profile) => profile.isDefault)
-    ?? model.profiles[0]
-    ?? null;
   const selectedPreset = resolvePreset(
     model.presetCatalog,
     model.draft.presetId,
@@ -137,7 +136,7 @@ export const SettingsAiView = ({
         <div className="lyra-settings-ai-status-row-copy">
           <span>{labels.browserAutomationDescription}</span>
         </div>
-        <div
+        <ul
           className="lyra-settings-ai-selection-list lyra-settings-ai-selection-list-grid"
           role="radiogroup"
           aria-label={labels.browserAutomationTitle}
@@ -162,35 +161,36 @@ export const SettingsAiView = ({
               badge: browserUseStatusLabel,
             },
           ].map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={model.browserAutomationEngine === option.value}
-              className={model.browserAutomationEngine === option.value
-                ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
-                : "lyra-settings-ai-selection-item"}
-              onClick={() => {
-                model.setBrowserAutomationEngine(option.value);
-              }}
-            >
-              <span className="lyra-settings-ai-selection-copy">
-                <span className="lyra-settings-ai-selection-heading">
-                  <strong>{option.label}</strong>
+            <li key={option.value} className="lyra-settings-ai-selection-item-slot">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={model.browserAutomationEngine === option.value}
+                className={model.browserAutomationEngine === option.value
+                  ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
+                  : "lyra-settings-ai-selection-item"}
+                onClick={() => {
+                  model.setBrowserAutomationEngine(option.value);
+                }}
+              >
+                <span className="lyra-settings-ai-selection-copy">
+                  <span className="lyra-settings-ai-selection-heading">
+                    <strong>{option.label}</strong>
+                  </span>
+                  <small>{option.description}</small>
+                  {option.value === "browser_use" && browserUseStatusReason !== null ? (
+                    <small>{browserUseStatusReason}</small>
+                  ) : null}
                 </span>
-                <small>{option.description}</small>
-                {option.value === "browser_use" && browserUseStatusReason !== null ? (
-                  <small>{browserUseStatusReason}</small>
-                ) : null}
-              </span>
-              {option.badge === null ? null : (
-                <span className="lyra-settings-ai-selection-meta">
-                  <span className="lyra-settings-ai-badge">{option.badge}</span>
-                </span>
-              )}
-            </button>
+                {option.badge === null ? null : (
+                  <span className="lyra-settings-ai-selection-meta">
+                    <span className="lyra-settings-ai-badge">{option.badge}</span>
+                  </span>
+                )}
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       </section>
 
       <section className="lyra-settings-group">
@@ -204,7 +204,7 @@ export const SettingsAiView = ({
           <span className="lyra-settings-ai-selection-caption">
             {labels.lyraDirectMicroExecutorBudgetLabel}
           </span>
-          <div
+          <ul
             className="lyra-settings-ai-selection-list lyra-settings-ai-selection-list-grid"
             role="radiogroup"
             aria-label={labels.lyraDirectMicroExecutorBudgetLabel}
@@ -226,27 +226,28 @@ export const SettingsAiView = ({
                 description: labels.lyraDirectMicroExecutorBudgetAggressiveDescription
               }
             ].map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={model.lyraDirectMicroExecutorBudget === option.value}
-                className={model.lyraDirectMicroExecutorBudget === option.value
-                  ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
-                  : "lyra-settings-ai-selection-item"}
-                onClick={() => {
-                  model.setLyraDirectMicroExecutorBudget(option.value);
-                }}
-              >
-                <span className="lyra-settings-ai-selection-copy">
-                  <span className="lyra-settings-ai-selection-heading">
-                    <strong>{option.label}</strong>
+              <li key={option.value} className="lyra-settings-ai-selection-item-slot">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={model.lyraDirectMicroExecutorBudget === option.value}
+                  className={model.lyraDirectMicroExecutorBudget === option.value
+                    ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
+                    : "lyra-settings-ai-selection-item"}
+                  onClick={() => {
+                    model.setLyraDirectMicroExecutorBudget(option.value);
+                  }}
+                >
+                  <span className="lyra-settings-ai-selection-copy">
+                    <span className="lyra-settings-ai-selection-heading">
+                      <strong>{option.label}</strong>
+                    </span>
+                    <small>{option.description}</small>
                   </span>
-                  <small>{option.description}</small>
-                </span>
-              </button>
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </section>
 
@@ -288,16 +289,6 @@ export const SettingsAiView = ({
           </button>
           <button
             type="button"
-            className="lyra-settings-ai-action"
-            disabled={model.selectedProfileId === null || model.draft.isDefault}
-            onClick={() => {
-              void model.setDefaultProfile();
-            }}
-          >
-            {labels.setDefaultProfile}
-          </button>
-          <button
-            type="button"
             className="lyra-settings-ai-action lyra-settings-ai-action-danger"
             disabled={model.selectedProfileId === null}
             onClick={() => {
@@ -308,39 +299,42 @@ export const SettingsAiView = ({
           </button>
         </div>
         {hasProfiles ? (
-          <div
+          <ul
             className="lyra-settings-ai-selection-list lyra-settings-ai-selection-list-grid"
             role="listbox"
             aria-label={labels.profilesTitle}
           >
             {model.profiles.map((profile) => (
-              <button
-                key={profile.id}
-                type="button"
-                className={profile.id === model.selectedProfileId
-                  ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
-                  : "lyra-settings-ai-selection-item"}
-                onClick={() => {
-                  model.selectProfile(profile.id);
-                }}
-              >
-                <span className="lyra-settings-ai-selection-copy">
-                  <span className="lyra-settings-ai-selection-heading">
-                    <SettingsAiProviderIcon iconKey={profile.providerId} title={profile.name} />
-                    <strong>{profile.name}</strong>
+              <li key={profile.id} className="lyra-settings-ai-selection-item-slot">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={profile.id === model.selectedProfileId}
+                  className={profile.id === model.selectedProfileId
+                    ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
+                    : "lyra-settings-ai-selection-item"}
+                  onClick={() => {
+                    model.selectProfile(profile.id);
+                  }}
+                >
+                  <span className="lyra-settings-ai-selection-copy">
+                    <span className="lyra-settings-ai-selection-heading">
+                      <SettingsAiProviderIcon iconKey={profile.providerId} title={profile.name} />
+                      <strong>{profile.name}</strong>
+                    </span>
+                    <small>
+                      {profile.providerId}
+                      {" · "}
+                      {[profile.model, ...profile.customModels.map((entry) => entry.id)].join(", ")}
+                    </small>
                   </span>
-                  <small>
-                    {profile.providerId}
-                    {" · "}
-                    {[profile.model, ...profile.customModels.map((entry) => entry.id)].join(", ")}
-                  </small>
-                </span>
-                <span className="lyra-settings-ai-selection-meta">
-                  {profile.isDefault ? <span className="lyra-settings-ai-badge">{labels.defaultBadge}</span> : null}
-                </span>
-              </button>
+                  <span className="lyra-settings-ai-selection-meta">
+                    {profile.isDefault ? <span className="lyra-settings-ai-badge">{labels.defaultBadge}</span> : null}
+                  </span>
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
         ) : (
           <div className="lyra-settings-ai-empty">
             <strong>{labels.emptyTitle}</strong>
@@ -518,12 +512,6 @@ export const SettingsAiView = ({
           <h3>{labels.statusTitle}</h3>
         </header>
         <div className="lyra-settings-ai-status-list">
-          <div className="lyra-settings-ai-status-row">
-            <strong>{labels.defaultProfileLabel}</strong>
-            <span>
-              {defaultProfile === null ? labels.emptyTitle : defaultProfile.name}
-            </span>
-          </div>
           <div className="lyra-settings-ai-status-row">
             <strong>{labels.providerTitle}</strong>
             <span>{selectedPreset?.label ?? model.draft.providerId}</span>

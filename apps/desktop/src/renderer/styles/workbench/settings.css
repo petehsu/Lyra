@@ -709,6 +709,30 @@
   line-height: 1.45;
 }
 
+.lyra-settings-ai-list-picker {
+  --lyra-list-picker-row-height: var(--lyra-unit-34);
+  --lyra-list-picker-option-height: var(--lyra-unit-32);
+  --lyra-list-picker-option-gap: var(--lyra-unit-4);
+  --lyra-list-picker-surface-padding: var(--lyra-unit-4);
+  --lyra-list-picker-expanded-radius: var(--lyra-unit-10);
+  --lyra-list-picker-font-size: var(--lyra-unit-12);
+  --lyra-list-picker-padding-inline: var(--lyra-unit-10);
+  width: 100%;
+}
+
+.lyra-settings-ai-list-picker .lyra-list-picker-surface {
+  border-color: color-mix(in srgb, var(--lyra-line-default) 78%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 92%, var(--lyra-bg-editor) 8%);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.lyra-settings-ai-list-picker:focus-within .lyra-list-picker-surface {
+  border-color: color-mix(in srgb, var(--lyra-line-focused) 60%, transparent);
+  box-shadow: 0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-focused) 24%, transparent);
+}
+
 .lyra-settings-ai-model-input {
   min-height: var(--lyra-unit-78);
 }
@@ -722,6 +746,9 @@
 }
 
 .lyra-settings-ai-selection-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: grid;
   gap: var(--lyra-unit-4);
 }
@@ -729,6 +756,11 @@
 .lyra-settings-ai-selection-list-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--lyra-unit-280)), 1fr));
   gap: var(--lyra-unit-6);
+}
+
+.lyra-settings-ai-selection-item-slot {
+  min-width: 0;
+  display: block;
 }
 
 .lyra-settings-ai-selection-item {
@@ -850,12 +882,19 @@
 }
 
 .lyra-settings-ai-model-list {
+  margin: 0;
+  padding: 0 var(--lyra-unit-2) 0 0;
+  list-style: none;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--lyra-unit-260)), 1fr));
   gap: var(--lyra-unit-6);
   max-height: var(--lyra-unit-220);
   overflow: auto;
-  padding-right: var(--lyra-unit-2);
+}
+
+.lyra-settings-ai-model-list-item {
+  min-width: 0;
+  display: block;
 }
 
 .lyra-settings-ai-model-option {

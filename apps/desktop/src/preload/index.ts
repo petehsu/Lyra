@@ -15,6 +15,7 @@ import {
   type AgentPendingInteraction,
   type AgentPlanState,
   type AgentResolvePlanApprovalRequest,
+  type AgentResumeExecutionRequest,
   type AgentRuntimeEvent,
   type AgentSendTurnRequest,
   type AgentSendTurnResult,
@@ -556,11 +557,19 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         readonly AgentPendingInteraction[]
       >,
     answerQuestion: (request: AgentAnswerQuestionRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentAnswerQuestion, request) as Promise<void>,
+      ipcRenderer.invoke(LYRA_CHANNELS.agentAnswerQuestion, request) as Promise<
+        AgentSendTurnResult | null
+      >,
     answerPlanQuestion: (request: AgentAnswerPlanQuestionRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentAnswerPlanQuestion, request) as Promise<void>,
+      ipcRenderer.invoke(LYRA_CHANNELS.agentAnswerPlanQuestion, request) as Promise<
+        AgentSendTurnResult | null
+      >,
     resolvePlanApproval: (request: AgentResolvePlanApprovalRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentResolvePlanApproval, request) as Promise<
+        AgentSendTurnResult | null
+      >,
+    resumeExecution: (request: AgentResumeExecutionRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentResumeExecution, request) as Promise<
         AgentSendTurnResult | null
       >,
     getMemoryConfig: () =>
@@ -575,7 +584,9 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       };
     },
     submitCommandApproval: (request: CommandApprovalSubmitRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentSubmitCommandApproval, request) as Promise<void>,
+      ipcRenderer.invoke(LYRA_CHANNELS.agentSubmitCommandApproval, request) as Promise<
+        AgentSendTurnResult | null
+      >,
   },
   files: {
     readHome: () => ipcRenderer.invoke(LYRA_CHANNELS.filesReadHome) as Promise<FileManagerReadHomeResponse>,

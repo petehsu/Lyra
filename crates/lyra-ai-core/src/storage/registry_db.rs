@@ -1,11 +1,13 @@
 use napi::Result;
 use rusqlite::{params, OptionalExtension};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::agent::types::{
-    AgentCollaborationMode, AgentMessage, AgentPendingInteraction, AgentPendingInteractionKind,
-    AgentPendingInteractionStatus, AgentPlanState, AgentPlanStatus, AgentRuntimeEvent,
-    AgentSession, AgentToolCall, AgentTurn, AgentUsage,
+    AgentCollaborationMode, AgentExecutionCheckpoint, AgentExecutionCheckpointKind,
+    AgentExecutionCheckpointSummary, AgentExecutionPhase, AgentExecutionState, AgentMessage,
+    AgentPendingInteraction, AgentPendingInteractionKind, AgentPendingInteractionStatus,
+    AgentPlanState, AgentPlanStatus, AgentRuntimeEvent, AgentSession, AgentThread,
+    AgentThreadLifecycleState, AgentToolCall, AgentTurn, AgentUsage,
 };
 use crate::error::{normalize_required_text, now_ms, parse_json, to_error, to_json};
 use crate::paths::{ensure_ai_dirs, resolve_ai_paths};
@@ -294,6 +296,20 @@ fn collaboration_mode_as_str(mode: &AgentCollaborationMode) -> &'static str {
     }
 }
 
+fn parse_thread_lifecycle_state(value: String) -> AgentThreadLifecycleState {
+    match value.as_str() {
+        "archived" => AgentThreadLifecycleState::Archived,
+        _ => AgentThreadLifecycleState::Active,
+    }
+}
+
+fn thread_lifecycle_state_as_str(state: &AgentThreadLifecycleState) -> &'static str {
+    match state {
+        AgentThreadLifecycleState::Active => "active",
+        AgentThreadLifecycleState::Archived => "archived",
+    }
+}
+
 fn parse_pending_interaction_kind(value: String) -> AgentPendingInteractionKind {
     match value.as_str() {
         "command_approval" => AgentPendingInteractionKind::CommandApproval,
@@ -325,6 +341,52 @@ fn pending_interaction_status_as_str(status: &AgentPendingInteractionStatus) -> 
         AgentPendingInteractionStatus::Resolved => "resolved",
         AgentPendingInteractionStatus::Cancelled => "cancelled",
         AgentPendingInteractionStatus::Expired => "expired",
+    }
+}
+
+fn parse_execution_phase(value: String) -> AgentExecutionPhase {
+    match value.as_str() {
+        "running" => AgentExecutionPhase::Running,
+        "waiting_interaction" => AgentExecutionPhase::WaitingInteraction,
+        "resumable" => AgentExecutionPhase::Resumable,
+        "completed" => AgentExecutionPhase::Completed,
+        "failed" => AgentExecutionPhase::Failed,
+        "abandoned" => AgentExecutionPhase::Abandoned,
+        _ => AgentExecutionPhase::Idle,
+    }
+}
+
+fn execution_phase_as_str(phase: &AgentExecutionPhase) -> &'static str {
+    match phase {
+        AgentExecutionPhase::Idle => "idle",
+        AgentExecutionPhase::Running => "running",
+        AgentExecutionPhase::WaitingInteraction => "waiting_interaction",
+        AgentExecutionPhase::Resumable => "resumable",
+        AgentExecutionPhase::Completed => "completed",
+        AgentExecutionPhase::Failed => "failed",
+        AgentExecutionPhase::Abandoned => "abandoned",
+    }
+}
+
+fn parse_execution_checkpoint_kind(value: String) -> AgentExecutionCheckpointKind {
+    match value.as_str() {
+        "interaction_wait" => AgentExecutionCheckpointKind::InteractionWait,
+        "interaction_resolved" => AgentExecutionCheckpointKind::InteractionResolved,
+        "turn_completed" => AgentExecutionCheckpointKind::TurnCompleted,
+        "turn_failed" => AgentExecutionCheckpointKind::TurnFailed,
+        "manual_resume_anchor" => AgentExecutionCheckpointKind::ManualResumeAnchor,
+        _ => AgentExecutionCheckpointKind::TurnStarted,
+    }
+}
+
+fn execution_checkpoint_kind_as_str(kind: &AgentExecutionCheckpointKind) -> &'static str {
+    match kind {
+        AgentExecutionCheckpointKind::TurnStarted => "turn_started",
+        AgentExecutionCheckpointKind::InteractionWait => "interaction_wait",
+        AgentExecutionCheckpointKind::InteractionResolved => "interaction_resolved",
+        AgentExecutionCheckpointKind::TurnCompleted => "turn_completed",
+        AgentExecutionCheckpointKind::TurnFailed => "turn_failed",
+        AgentExecutionCheckpointKind::ManualResumeAnchor => "manual_resume_anchor",
     }
 }
 
@@ -362,6 +424,21 @@ fn map_agent_plan(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentPlanState> {
     })
 }
 
+fn map_agent_thread(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentThread> {
+    Ok(AgentThread {
+        id: row.get(0)?,
+        session_id: row.get(1)?,
+        parent_thread_id: row.get(2)?,
+        forked_from_turn_id: row.get(3)?,
+        rollback_from_thread_id: row.get(4)?,
+        rollback_from_turn_id: row.get(5)?,
+        lifecycle_state: parse_thread_lifecycle_state(row.get(6)?),
+        elicitation_counter: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
 fn map_agent_turn(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentTurn> {
     Ok(AgentTurn {
         id: row.get(0)?,
@@ -383,7 +460,8 @@ fn map_agent_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentMessage> 
         turn_id: row.get(2)?,
         role: row.get(3)?,
         content: row.get(4)?,
-        created_at: row.get(5)?,
+        display_content: row.get(5)?,
+        created_at: row.get(6)?,
     })
 }
 
@@ -428,6 +506,62 @@ fn map_agent_pending_interaction(
         payload: map_json::<Value>(row.get(5)?, "agent pending interaction payload")?,
         created_at: row.get(6)?,
         updated_at: row.get(7)?,
+    })
+}
+
+fn map_agent_execution_state(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentExecutionState> {
+    Ok(AgentExecutionState {
+        id: row.get(0)?,
+        run_id: row.get(1)?,
+        thread_id: row.get(2)?,
+        session_id: row.get(3)?,
+        collaboration_mode: parse_collaboration_mode(row.get(4)?),
+        phase: parse_execution_phase(row.get(5)?),
+        active_turn_id: row.get(6)?,
+        waiting_interaction_id: row.get(7)?,
+        waiting_interaction_kind: row
+            .get::<_, Option<String>>(8)?
+            .map(parse_pending_interaction_kind),
+        active_goal_node_id: row.get(9)?,
+        goal_tree_json: map_json::<Value>(row.get(10)?, "agent execution goal tree")?,
+        latest_checkpoint_id: row.get(11)?,
+        version: row.get(12)?,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
+    })
+}
+
+fn map_agent_execution_checkpoint(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<AgentExecutionCheckpoint> {
+    Ok(AgentExecutionCheckpoint {
+        id: row.get(0)?,
+        execution_id: row.get(1)?,
+        thread_id: row.get(2)?,
+        session_id: row.get(3)?,
+        turn_id: row.get(4)?,
+        kind: parse_execution_checkpoint_kind(row.get(5)?),
+        phase_before: parse_execution_phase(row.get(6)?),
+        phase_after: parse_execution_phase(row.get(7)?),
+        goal_snapshot_json: map_json::<Value>(row.get(8)?, "goal snapshot")?,
+        continuation_payload_json: map_json::<Value>(row.get(9)?, "continuation payload")?,
+        created_at: row.get(10)?,
+    })
+}
+
+fn map_agent_execution_checkpoint_summary(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<AgentExecutionCheckpointSummary> {
+    Ok(AgentExecutionCheckpointSummary {
+        id: row.get(0)?,
+        execution_id: row.get(1)?,
+        thread_id: row.get(2)?,
+        session_id: row.get(3)?,
+        turn_id: row.get(4)?,
+        kind: parse_execution_checkpoint_kind(row.get(5)?),
+        phase_before: parse_execution_phase(row.get(6)?),
+        phase_after: parse_execution_phase(row.get(7)?),
+        created_at: row.get(8)?,
     })
 }
 
@@ -583,6 +717,218 @@ pub fn set_agent_session_collaboration_mode(
         .ok_or_else(|| to_error("agent session not found after collaboration mode update"))
 }
 
+pub fn upsert_agent_thread(storage_root: &str, thread: &AgentThread) -> Result<AgentThread> {
+    let connection = open_registry(storage_root)?;
+    connection
+        .execute(
+            "insert into agent_threads(
+               id, session_id, parent_thread_id, forked_from_turn_id, rollback_from_thread_id, rollback_from_turn_id,
+               lifecycle_state, elicitation_counter, created_at, updated_at
+             ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             on conflict(id) do update set
+               session_id = excluded.session_id,
+               parent_thread_id = excluded.parent_thread_id,
+               forked_from_turn_id = excluded.forked_from_turn_id,
+               rollback_from_thread_id = excluded.rollback_from_thread_id,
+               rollback_from_turn_id = excluded.rollback_from_turn_id,
+               lifecycle_state = excluded.lifecycle_state,
+               elicitation_counter = excluded.elicitation_counter,
+               updated_at = excluded.updated_at",
+            params![
+                &thread.id,
+                &thread.session_id,
+                &thread.parent_thread_id,
+                &thread.forked_from_turn_id,
+                &thread.rollback_from_thread_id,
+                &thread.rollback_from_turn_id,
+                thread_lifecycle_state_as_str(&thread.lifecycle_state),
+                thread.elicitation_counter,
+                thread.created_at,
+                thread.updated_at,
+            ],
+        )
+        .map_err(|error| to_error(format!("failed to upsert agent thread: {error}")))?;
+    read_agent_thread(storage_root, &thread.id)?
+        .ok_or_else(|| to_error("agent thread not found after upsert"))
+}
+
+pub fn create_agent_thread_for_session(
+    storage_root: &str,
+    session_id: &str,
+    parent_thread_id: Option<String>,
+    forked_from_turn_id: Option<String>,
+    rollback_from_thread_id: Option<String>,
+    rollback_from_turn_id: Option<String>,
+    lifecycle_state: AgentThreadLifecycleState,
+) -> Result<AgentThread> {
+    let session_id = normalize_required_text(session_id, "session id")?;
+    let now = now_ms();
+    let thread = AgentThread {
+        id: format!("agent-thread-{}", uuid::Uuid::new_v4()),
+        session_id,
+        parent_thread_id,
+        forked_from_turn_id,
+        rollback_from_thread_id,
+        rollback_from_turn_id,
+        lifecycle_state,
+        elicitation_counter: 0,
+        created_at: now,
+        updated_at: now,
+    };
+    upsert_agent_thread(storage_root, &thread)
+}
+
+pub fn ensure_agent_thread_for_session(
+    storage_root: &str,
+    session_id: &str,
+) -> Result<AgentThread> {
+    if let Some(existing) = read_agent_thread_by_session(storage_root, session_id)? {
+        return Ok(existing);
+    }
+    create_agent_thread_for_session(
+        storage_root,
+        session_id,
+        None,
+        None,
+        None,
+        None,
+        AgentThreadLifecycleState::Active,
+    )
+}
+
+pub fn read_agent_thread(storage_root: &str, thread_id: &str) -> Result<Option<AgentThread>> {
+    let thread_id = normalize_required_text(thread_id, "thread id")?;
+    let connection = open_registry(storage_root)?;
+    connection
+        .query_row(
+            "select id, session_id, parent_thread_id, forked_from_turn_id, rollback_from_thread_id, rollback_from_turn_id,
+                    lifecycle_state, elicitation_counter, created_at, updated_at
+             from agent_threads
+             where id = ?1",
+            params![thread_id],
+            map_agent_thread,
+        )
+        .optional()
+        .map_err(|error| to_error(format!("failed to read agent thread: {error}")))
+}
+
+pub fn read_agent_thread_by_session(
+    storage_root: &str,
+    session_id: &str,
+) -> Result<Option<AgentThread>> {
+    let session_id = normalize_required_text(session_id, "session id")?;
+    let connection = open_registry(storage_root)?;
+    connection
+        .query_row(
+            "select id, session_id, parent_thread_id, forked_from_turn_id, rollback_from_thread_id, rollback_from_turn_id,
+                    lifecycle_state, elicitation_counter, created_at, updated_at
+             from agent_threads
+             where session_id = ?1",
+            params![session_id],
+            map_agent_thread,
+        )
+        .optional()
+        .map_err(|error| to_error(format!("failed to read agent thread by session: {error}")))
+}
+
+pub fn list_agent_threads(
+    storage_root: &str,
+    session_id: Option<&str>,
+    include_archived: bool,
+) -> Result<Vec<AgentThread>> {
+    let connection = open_registry(storage_root)?;
+    let mut statement = if session_id.is_some() {
+        connection.prepare(
+            "select id, session_id, parent_thread_id, forked_from_turn_id, rollback_from_thread_id, rollback_from_turn_id,
+                    lifecycle_state, elicitation_counter, created_at, updated_at
+             from agent_threads
+             where session_id = ?1
+             order by created_at asc",
+        )
+    } else if include_archived {
+        connection.prepare(
+            "select id, session_id, parent_thread_id, forked_from_turn_id, rollback_from_thread_id, rollback_from_turn_id,
+                    lifecycle_state, elicitation_counter, created_at, updated_at
+             from agent_threads
+             order by created_at asc",
+        )
+    } else {
+        connection.prepare(
+            "select id, session_id, parent_thread_id, forked_from_turn_id, rollback_from_thread_id, rollback_from_turn_id,
+                    lifecycle_state, elicitation_counter, created_at, updated_at
+             from agent_threads
+             where lifecycle_state != 'archived'
+             order by created_at asc",
+        )
+    }
+    .map_err(|error| to_error(format!("failed to prepare agent thread list query: {error}")))?;
+
+    let rows = if let Some(session_id) = session_id {
+        let normalized = normalize_required_text(session_id, "session id")?;
+        statement.query_map(params![normalized], map_agent_thread)
+    } else {
+        statement.query_map([], map_agent_thread)
+    }
+    .map_err(|error| to_error(format!("failed to query agent threads: {error}")))?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| to_error(format!("failed to collect agent threads: {error}")))
+}
+
+pub fn set_agent_thread_lifecycle_state(
+    storage_root: &str,
+    thread_id: &str,
+    lifecycle_state: AgentThreadLifecycleState,
+) -> Result<AgentThread> {
+    let thread_id = normalize_required_text(thread_id, "thread id")?;
+    let connection = open_registry(storage_root)?;
+    let updated_at = now_ms();
+    let changed = connection
+        .execute(
+            "update agent_threads
+             set lifecycle_state = ?2, updated_at = ?3
+             where id = ?1",
+            params![
+                thread_id,
+                thread_lifecycle_state_as_str(&lifecycle_state),
+                updated_at
+            ],
+        )
+        .map_err(|error| to_error(format!("failed to update agent thread state: {error}")))?;
+    if changed == 0 {
+        return Err(to_error("agent thread not found"));
+    }
+    read_agent_thread(storage_root, &thread_id)?
+        .ok_or_else(|| to_error("agent thread not found after state update"))
+}
+
+pub fn bump_agent_thread_elicitation_counter(
+    storage_root: &str,
+    thread_id: &str,
+    delta: i64,
+) -> Result<AgentThread> {
+    let thread_id = normalize_required_text(thread_id, "thread id")?;
+    let connection = open_registry(storage_root)?;
+    let updated_at = now_ms();
+    let changed = connection
+        .execute(
+            "update agent_threads
+             set elicitation_counter = max(0, elicitation_counter + ?2),
+                 updated_at = ?3
+             where id = ?1",
+            params![thread_id, delta, updated_at],
+        )
+        .map_err(|error| {
+            to_error(format!(
+                "failed to update agent thread elicitation counter: {error}"
+            ))
+        })?;
+    if changed == 0 {
+        return Err(to_error("agent thread not found"));
+    }
+    read_agent_thread(storage_root, &thread_id)?
+        .ok_or_else(|| to_error("agent thread not found after counter update"))
+}
+
 pub fn read_agent_plan(storage_root: &str, session_id: &str) -> Result<Option<AgentPlanState>> {
     let session_id = normalize_required_text(session_id, "session id")?;
     let connection = open_registry(storage_root)?;
@@ -717,6 +1063,413 @@ pub fn list_agent_pending_interactions(
     rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|error| {
         to_error(format!(
             "failed to collect agent pending interactions: {error}"
+        ))
+    })
+}
+
+pub fn read_agent_execution_state_by_thread(
+    storage_root: &str,
+    thread_id: &str,
+) -> Result<Option<AgentExecutionState>> {
+    let thread_id = normalize_required_text(thread_id, "thread id")?;
+    let connection = open_registry(storage_root)?;
+    connection
+        .query_row(
+            "select id, run_id, thread_id, session_id, collaboration_mode, phase,
+                    active_turn_id, waiting_interaction_id, waiting_interaction_kind,
+                    active_goal_node_id, goal_tree_json, latest_checkpoint_id, version,
+                    created_at, updated_at
+             from agent_execution_states
+             where thread_id = ?1",
+            params![thread_id],
+            map_agent_execution_state,
+        )
+        .optional()
+        .map_err(|error| to_error(format!("failed to read execution state by thread: {error}")))
+}
+
+pub fn read_agent_execution_state_by_session(
+    storage_root: &str,
+    session_id: &str,
+) -> Result<Option<AgentExecutionState>> {
+    let session_id = normalize_required_text(session_id, "session id")?;
+    let connection = open_registry(storage_root)?;
+    connection
+        .query_row(
+            "select id, run_id, thread_id, session_id, collaboration_mode, phase,
+                    active_turn_id, waiting_interaction_id, waiting_interaction_kind,
+                    active_goal_node_id, goal_tree_json, latest_checkpoint_id, version,
+                    created_at, updated_at
+             from agent_execution_states
+             where session_id = ?1
+             order by updated_at desc
+             limit 1",
+            params![session_id],
+            map_agent_execution_state,
+        )
+        .optional()
+        .map_err(|error| {
+            to_error(format!(
+                "failed to read execution state by session: {error}"
+            ))
+        })
+}
+
+pub fn read_agent_execution_state(
+    storage_root: &str,
+    execution_id: &str,
+) -> Result<Option<AgentExecutionState>> {
+    let execution_id = normalize_required_text(execution_id, "execution id")?;
+    let connection = open_registry(storage_root)?;
+    connection
+        .query_row(
+            "select id, run_id, thread_id, session_id, collaboration_mode, phase,
+                    active_turn_id, waiting_interaction_id, waiting_interaction_kind,
+                    active_goal_node_id, goal_tree_json, latest_checkpoint_id, version,
+                    created_at, updated_at
+             from agent_execution_states
+             where id = ?1",
+            params![execution_id],
+            map_agent_execution_state,
+        )
+        .optional()
+        .map_err(|error| to_error(format!("failed to read execution state: {error}")))
+}
+
+pub fn ensure_agent_execution_state(
+    storage_root: &str,
+    session_id: &str,
+    thread_id: &str,
+    collaboration_mode: &AgentCollaborationMode,
+) -> Result<AgentExecutionState> {
+    if let Some(existing) = read_agent_execution_state_by_thread(storage_root, thread_id)? {
+        return Ok(existing);
+    }
+    let now = now_ms();
+    let root_goal_id = format!("goal-root-{}", uuid::Uuid::new_v4());
+    let state = AgentExecutionState {
+        id: format!("agent-exec-{}", uuid::Uuid::new_v4()),
+        run_id: format!("agent-run-{}", uuid::Uuid::new_v4()),
+        thread_id: thread_id.to_string(),
+        session_id: session_id.to_string(),
+        collaboration_mode: collaboration_mode.clone(),
+        phase: AgentExecutionPhase::Idle,
+        active_turn_id: None,
+        waiting_interaction_id: None,
+        waiting_interaction_kind: None,
+        active_goal_node_id: Some(root_goal_id.clone()),
+        goal_tree_json: json!({
+            "nodes": [{
+                "id": root_goal_id,
+                "parentId": Value::Null,
+                "title": "Current execution",
+                "status": "in_progress",
+                "progressPercent": 0,
+                "updatedAt": now
+            }]
+        }),
+        latest_checkpoint_id: None,
+        version: 0,
+        created_at: now,
+        updated_at: now,
+    };
+    upsert_agent_execution_state(storage_root, &state)
+}
+
+pub fn upsert_agent_execution_state(
+    storage_root: &str,
+    state: &AgentExecutionState,
+) -> Result<AgentExecutionState> {
+    let connection = open_registry(storage_root)?;
+    connection
+        .execute(
+            "insert into agent_execution_states(
+               id, run_id, thread_id, session_id, collaboration_mode, phase,
+               active_turn_id, waiting_interaction_id, waiting_interaction_kind,
+               active_goal_node_id, goal_tree_json, latest_checkpoint_id, version,
+               created_at, updated_at
+             ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             on conflict(id) do update set
+               run_id = excluded.run_id,
+               thread_id = excluded.thread_id,
+               session_id = excluded.session_id,
+               collaboration_mode = excluded.collaboration_mode,
+               phase = excluded.phase,
+               active_turn_id = excluded.active_turn_id,
+               waiting_interaction_id = excluded.waiting_interaction_id,
+               waiting_interaction_kind = excluded.waiting_interaction_kind,
+               active_goal_node_id = excluded.active_goal_node_id,
+               goal_tree_json = excluded.goal_tree_json,
+               latest_checkpoint_id = excluded.latest_checkpoint_id,
+               version = excluded.version,
+               updated_at = excluded.updated_at",
+            params![
+                state.id,
+                state.run_id,
+                state.thread_id,
+                state.session_id,
+                collaboration_mode_as_str(&state.collaboration_mode),
+                execution_phase_as_str(&state.phase),
+                state.active_turn_id,
+                state.waiting_interaction_id,
+                state
+                    .waiting_interaction_kind
+                    .as_ref()
+                    .map(pending_interaction_kind_as_str),
+                state.active_goal_node_id,
+                to_json(&state.goal_tree_json)?,
+                state.latest_checkpoint_id,
+                state.version,
+                state.created_at,
+                state.updated_at,
+            ],
+        )
+        .map_err(|error| to_error(format!("failed to upsert execution state: {error}")))?;
+    read_agent_execution_state(storage_root, &state.id)?
+        .ok_or_else(|| to_error("execution state not found after upsert"))
+}
+
+pub fn update_agent_execution_state_with_version(
+    storage_root: &str,
+    state: &AgentExecutionState,
+    expected_version: i64,
+) -> Result<Option<AgentExecutionState>> {
+    let connection = open_registry(storage_root)?;
+    let changed = connection
+        .execute(
+            "update agent_execution_states
+             set run_id = ?2,
+                 thread_id = ?3,
+                 session_id = ?4,
+                 collaboration_mode = ?5,
+                 phase = ?6,
+                 active_turn_id = ?7,
+                 waiting_interaction_id = ?8,
+                 waiting_interaction_kind = ?9,
+                 active_goal_node_id = ?10,
+                 goal_tree_json = ?11,
+                 latest_checkpoint_id = ?12,
+                 version = ?13,
+                 updated_at = ?14
+             where id = ?1 and version = ?15",
+            params![
+                state.id,
+                state.run_id,
+                state.thread_id,
+                state.session_id,
+                collaboration_mode_as_str(&state.collaboration_mode),
+                execution_phase_as_str(&state.phase),
+                state.active_turn_id,
+                state.waiting_interaction_id,
+                state
+                    .waiting_interaction_kind
+                    .as_ref()
+                    .map(pending_interaction_kind_as_str),
+                state.active_goal_node_id,
+                to_json(&state.goal_tree_json)?,
+                state.latest_checkpoint_id,
+                state.version,
+                state.updated_at,
+                expected_version,
+            ],
+        )
+        .map_err(|error| {
+            to_error(format!(
+                "failed to update execution state by version: {error}"
+            ))
+        })?;
+    if changed == 0 {
+        return Ok(None);
+    }
+    read_agent_execution_state(storage_root, &state.id)
+}
+
+fn prune_execution_checkpoints(
+    connection: &rusqlite::Connection,
+    execution_id: &str,
+    limit: usize,
+) -> Result<()> {
+    let mut statement = connection
+        .prepare(
+            "select id, kind, created_at
+             from agent_execution_checkpoints
+             where execution_id = ?1
+             order by created_at desc, id desc",
+        )
+        .map_err(|error| {
+            to_error(format!(
+                "failed to prepare checkpoint pruning query: {error}"
+            ))
+        })?;
+    let rows = statement
+        .query_map(params![execution_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(|error| to_error(format!("failed to query checkpoints for pruning: {error}")))?;
+    let entries = rows
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| {
+            to_error(format!(
+                "failed to collect checkpoints for pruning: {error}"
+            ))
+        })?;
+
+    if entries.len() <= limit {
+        return Ok(());
+    }
+
+    let keep_latest_interaction_wait = entries
+        .iter()
+        .find(|(_, kind, _)| kind == "interaction_wait")
+        .map(|(id, _, _)| id.clone());
+    let keep_latest_terminal = entries
+        .iter()
+        .find(|(_, kind, _)| kind == "turn_completed" || kind == "turn_failed")
+        .map(|(id, _, _)| id.clone());
+
+    let mut kept = std::collections::BTreeSet::new();
+    if let Some(id) = keep_latest_interaction_wait {
+        kept.insert(id);
+    }
+    if let Some(id) = keep_latest_terminal {
+        kept.insert(id);
+    }
+    for (id, _, _) in entries.iter().take(limit) {
+        kept.insert(id.clone());
+    }
+
+    let delete_ids = entries
+        .into_iter()
+        .filter(|(id, _, _)| !kept.contains(id))
+        .map(|(id, _, _)| id)
+        .collect::<Vec<_>>();
+    for id in delete_ids {
+        connection
+            .execute(
+                "delete from agent_execution_checkpoints where id = ?1",
+                params![id],
+            )
+            .map_err(|error| to_error(format!("failed to prune execution checkpoint: {error}")))?;
+    }
+    Ok(())
+}
+
+pub fn append_agent_execution_checkpoint(
+    storage_root: &str,
+    checkpoint: &AgentExecutionCheckpoint,
+) -> Result<AgentExecutionCheckpoint> {
+    let connection = open_registry(storage_root)?;
+    connection
+        .execute(
+            "insert into agent_execution_checkpoints(
+               id, execution_id, thread_id, session_id, turn_id, kind, phase_before, phase_after,
+               goal_snapshot_json, continuation_payload_json, created_at
+             ) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                checkpoint.id,
+                checkpoint.execution_id,
+                checkpoint.thread_id,
+                checkpoint.session_id,
+                checkpoint.turn_id,
+                execution_checkpoint_kind_as_str(&checkpoint.kind),
+                execution_phase_as_str(&checkpoint.phase_before),
+                execution_phase_as_str(&checkpoint.phase_after),
+                to_json(&checkpoint.goal_snapshot_json)?,
+                to_json(&checkpoint.continuation_payload_json)?,
+                checkpoint.created_at,
+            ],
+        )
+        .map_err(|error| to_error(format!("failed to append execution checkpoint: {error}")))?;
+    prune_execution_checkpoints(&connection, &checkpoint.execution_id, 80)?;
+    read_agent_execution_checkpoint(storage_root, &checkpoint.id)?
+        .ok_or_else(|| to_error("execution checkpoint not found after append"))
+}
+
+pub fn read_agent_execution_checkpoint(
+    storage_root: &str,
+    checkpoint_id: &str,
+) -> Result<Option<AgentExecutionCheckpoint>> {
+    let checkpoint_id = normalize_required_text(checkpoint_id, "checkpoint id")?;
+    let connection = open_registry(storage_root)?;
+    connection
+        .query_row(
+            "select id, execution_id, thread_id, session_id, turn_id, kind, phase_before, phase_after,
+                    goal_snapshot_json, continuation_payload_json, created_at
+             from agent_execution_checkpoints
+             where id = ?1",
+            params![checkpoint_id],
+            map_agent_execution_checkpoint,
+        )
+        .optional()
+        .map_err(|error| to_error(format!("failed to read execution checkpoint: {error}")))
+}
+
+pub fn list_agent_execution_checkpoints(
+    storage_root: &str,
+    session_id: &str,
+    limit: usize,
+) -> Result<Vec<AgentExecutionCheckpointSummary>> {
+    let session_id = normalize_required_text(session_id, "session id")?;
+    let connection = open_registry(storage_root)?;
+    let max_limit = limit.clamp(1, 200) as i64;
+    let mut statement = connection
+        .prepare(
+            "select id, execution_id, thread_id, session_id, turn_id, kind, phase_before, phase_after, created_at
+             from agent_execution_checkpoints
+             where session_id = ?1
+             order by created_at desc, id desc
+             limit ?2",
+        )
+        .map_err(|error| {
+            to_error(format!(
+                "failed to prepare execution checkpoint list query: {error}"
+            ))
+        })?;
+    let rows = statement
+        .query_map(
+            params![session_id, max_limit],
+            map_agent_execution_checkpoint_summary,
+        )
+        .map_err(|error| to_error(format!("failed to query execution checkpoints: {error}")))?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| to_error(format!("failed to collect execution checkpoints: {error}")))
+}
+
+pub fn list_agent_execution_checkpoints_by_execution(
+    storage_root: &str,
+    execution_id: &str,
+    limit: usize,
+) -> Result<Vec<AgentExecutionCheckpoint>> {
+    let execution_id = normalize_required_text(execution_id, "execution id")?;
+    let connection = open_registry(storage_root)?;
+    let max_limit = limit.clamp(1, 200) as i64;
+    let mut statement = connection
+        .prepare(
+            "select id, execution_id, thread_id, session_id, turn_id, kind, phase_before, phase_after,
+                    goal_snapshot_json, continuation_payload_json, created_at
+             from agent_execution_checkpoints
+             where execution_id = ?1
+             order by created_at desc, id desc
+             limit ?2",
+        )
+        .map_err(|error| to_error(format!("failed to prepare execution checkpoint query: {error}")))?;
+    let rows = statement
+        .query_map(
+            params![execution_id, max_limit],
+            map_agent_execution_checkpoint,
+        )
+        .map_err(|error| {
+            to_error(format!(
+                "failed to query execution checkpoints by execution: {error}"
+            ))
+        })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|error| {
+        to_error(format!(
+            "failed to collect execution checkpoints by execution: {error}"
         ))
     })
 }
@@ -967,9 +1720,24 @@ pub fn append_agent_message(
     role: &str,
     content: &str,
 ) -> Result<AgentMessage> {
+    append_agent_message_with_display(storage_root, session_id, turn_id, role, content, None)
+}
+
+pub fn append_agent_message_with_display(
+    storage_root: &str,
+    session_id: &str,
+    turn_id: Option<String>,
+    role: &str,
+    content: &str,
+    display_content: Option<&str>,
+) -> Result<AgentMessage> {
     let session_id = normalize_required_text(session_id, "session id")?;
     let role = normalize_required_text(role, "message role")?;
     let content = content.to_string();
+    let display_content = display_content
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string);
     let connection = open_registry(storage_root)?;
     let now = now_ms();
     let message = AgentMessage {
@@ -978,18 +1746,20 @@ pub fn append_agent_message(
         turn_id,
         role,
         content,
+        display_content,
         created_at: now,
     };
     connection
         .execute(
-            "insert into agent_messages(id, session_id, turn_id, role, content, created_at)
-             values (?1, ?2, ?3, ?4, ?5, ?6)",
+            "insert into agent_messages(id, session_id, turn_id, role, content, display_content, created_at)
+             values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 &message.id,
                 &message.session_id,
                 &message.turn_id,
                 &message.role,
                 &message.content,
+                &message.display_content,
                 message.created_at,
             ],
         )
@@ -1012,7 +1782,7 @@ pub fn list_agent_messages(storage_root: &str, session_id: &str) -> Result<Vec<A
     let connection = open_registry(storage_root)?;
     let mut statement = connection
         .prepare(
-            "select id, session_id, turn_id, role, content, created_at
+            "select id, session_id, turn_id, role, content, display_content, created_at
              from agent_messages
              where session_id = ?1
              order by created_at asc",

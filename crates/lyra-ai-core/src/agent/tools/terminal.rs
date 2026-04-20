@@ -95,6 +95,7 @@ struct ManagedTerminalSession {
     source: String,
     mode: String,
     persist: bool,
+    running: bool,
 }
 
 static APPROVED_ONCE_GRANTS: Lazy<Mutex<HashMap<String, OneTimeApprovalGrant>>> =
@@ -119,6 +120,43 @@ fn remove_managed_terminal_session(session_id: &str) {
     if let Ok(mut guard) = MANAGED_TERMINAL_SESSIONS.lock() {
         guard.remove(session_id);
     }
+}
+
+fn mark_managed_terminal_session_running(session_id: &str, running: bool) {
+    if let Ok(mut guard) = MANAGED_TERMINAL_SESSIONS.lock() {
+        if let Some(session) = guard.get_mut(session_id) {
+            session.running = running;
+        }
+    }
+}
+
+fn active_command_session_for_owner(
+    owner_session_id: Option<&str>,
+    owner_turn_id: Option<&str>,
+) -> Option<String> {
+    let owner_session_id = owner_session_id?;
+    let owner_turn_id = owner_turn_id?;
+    MANAGED_TERMINAL_SESSIONS.lock().ok().and_then(|guard| {
+        guard
+            .iter()
+            .find(|(_, session)| {
+                session.source == "ai"
+                    && session.mode == "command"
+                    && session.running
+                    && session.owner_session_id.as_deref() == Some(owner_session_id)
+                    && session.owner_turn_id.as_deref() == Some(owner_turn_id)
+            })
+            .map(|(session_id, _)| session_id.clone())
+    })
+}
+
+fn command_session_barrier_value(active_session_id: &str, attempted_tool: &str) -> Value {
+    json!({
+        "kind": "interactive_policy_blocked",
+        "attemptedTool": attempted_tool,
+        "activeSessionId": active_session_id,
+        "message": "A command-mode terminal session is still running. Continue with terminal.session.read/write until running=false (or close the session) before starting another terminal command.",
+    })
 }
 
 pub fn cleanup_transient_ai_sessions(owner_session_id: &str, owner_turn_id: &str) {
@@ -374,6 +412,18 @@ where
             }),
     );
 
+    if let Some(active_session_id) =
+        active_command_session_for_owner(context.agent_session_id, context.agent_turn_id)
+    {
+        return TerminalExecResult {
+            output: Some(command_session_barrier_value(
+                &active_session_id,
+                "terminal.exec",
+            )),
+            evaluation,
+        };
+    }
+
     if interactive_category.requires_pty() {
         return TerminalExecResult {
             output: Some(interactive_advisory_value(
@@ -514,6 +564,15 @@ pub(super) fn run_terminal_session_start(
         .unwrap_or(TerminalCommandCategory::InteractivePrompt);
 
     if mode == "command" {
+        if let Some(active_session_id) =
+            active_command_session_for_owner(context.agent_session_id, context.agent_turn_id)
+        {
+            return Ok(command_session_barrier_value(
+                &active_session_id,
+                "terminal.session.start",
+            ));
+        }
+
         let command = command
             .clone()
             .ok_or_else(|| AgentToolError::exec_failed("command is required"))?;
@@ -597,6 +656,7 @@ pub(super) fn run_terminal_session_start(
             source: snapshot.source.clone(),
             mode: snapshot.mode.clone(),
             persist: snapshot.persist,
+            running: snapshot.running,
         },
     );
 
@@ -634,6 +694,7 @@ pub(super) fn run_terminal_session_read(input: &Value) -> Result<Value, AgentToo
         wait_ms,
     })
     .map_err(|error| AgentToolError::exec_failed(error.to_string()))?;
+    mark_managed_terminal_session_running(&session_id, response.running);
     Ok(json!({
         "kind": "read",
         "sessionId": response.session_id,
@@ -654,7 +715,8 @@ pub(super) fn run_terminal_session_write(
     let obj = as_object(input)?;
     let session_id = required_string(obj, "sessionId")?;
     let text = optional_string(obj, "text");
-    let append_newline = optional_bool(obj, "appendNewline").unwrap_or(false);
+    let append_newline_provided = obj.get("appendNewline").is_some();
+    let mut append_newline = optional_bool(obj, "appendNewline").unwrap_or(false);
     let keys = obj.get("keys").and_then(Value::as_array).map(|items| {
         items
             .iter()
@@ -673,6 +735,16 @@ pub(super) fn run_terminal_session_write(
         .as_ref()
         .map(|meta| meta.mode.as_str())
         .unwrap_or("command");
+
+    if !append_newline_provided
+        && session_mode == "command"
+        && text.as_ref().is_some_and(|value| !value.is_empty())
+        && keys.as_ref().is_none_or(|items| items.is_empty())
+    {
+        // Command-mode sessions are single-command workflows; text input without an explicit
+        // newline almost always means "submit this answer".
+        append_newline = true;
+    }
 
     if session_mode == "shell" {
         let command_candidate = text
