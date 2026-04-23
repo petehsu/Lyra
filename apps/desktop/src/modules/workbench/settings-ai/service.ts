@@ -1,164 +1,652 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import type { BrowserUseRuntimeStatus } from "../../../shared/browser-use";
+import type { LyraRuntimeHealth } from "../../../shared/lyra-runtime";
+import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type {
   AiDiscoverModelsRequest,
   AiModelDiscoveryResult,
-  AiProviderCatalogItem,
+  AiProfileValidationResult,
+  AiProviderModelEntry,
   AiProviderPreset,
   AiProviderProfile,
   AiUpsertProfileRequest,
-  AiValidateProfileRequest
+  AiValidateProfileRequest,
 } from "../../../shared/ai";
-import type { AiMemoryConfig } from "../../../shared/agent";
-import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
+import type {
+  WorkbenchBrowserAutomationEngine,
+  WorkbenchLyraDirectMicroExecutorBudget,
+} from "../preferences";
 import {
   findSelectedProfile,
   parseMap,
+  readPrimaryConnectionValue,
   resolveConfiguredModels,
   resolvePrimarySecretFieldId,
-  resolvePrimaryUrlFieldId,
   serializeConfiguredModels,
-  toDraft
+  toDraft,
 } from "./draft";
 import { buildModelOptions } from "./model-options";
 import { resolvePreset } from "./preset";
-import type { SettingsAiDraft, SettingsAiLabels, SettingsAiModel } from "./types";
+import type {
+  SettingsAiDraft,
+  SettingsAiLabels,
+  SettingsAiModel,
+  SettingsAiPresetSection,
+} from "./types";
 
 type UseSettingsAiModelOptions = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: SettingsAiLabels;
 };
 
+type ProfilesListResponse = {
+  readonly profiles?: readonly AiProviderProfile[];
+  readonly defaultProfileId?: string | null;
+};
+
+type ProviderCatalogResponse = {
+  readonly presets?: readonly AiProviderPreset[];
+};
+
+type ProfileUpsertResponse = {
+  readonly profile: AiProviderProfile;
+};
+
+type PreferencesRecord = Record<string, unknown>;
+
+const DEFAULT_BROWSER_AUTOMATION_ENGINE: WorkbenchBrowserAutomationEngine = "lyra_direct";
+const DEFAULT_LYRA_DIRECT_BUDGET: WorkbenchLyraDirectMicroExecutorBudget = "3-5";
+const DEFAULT_PROVIDER_ID = "lmstudio";
+const DEFAULT_PROTOCOL_ID = "lmstudio_chat_completions";
+
+const createRequestPayload = (
+  method: string,
+  params: Record<string, unknown> = {}
+): Record<string, unknown> => ({
+  method,
+  params,
+});
+
+const createUnavailableBrowserUseStatus = (detail: string): BrowserUseRuntimeStatus => ({
+  state: "unavailable",
+  checkedAt: Date.now(),
+  reason: "unsupported_platform",
+  detail,
+});
+
+const readPreferencesRecord = (): PreferencesRecord => {
+  const raw = readWorkbenchStateSync("preferences");
+  if (raw === null) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as PreferencesRecord
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+const writePreferencesField = (field: string, value: string): void => {
+  const next = {
+    ...readPreferencesRecord(),
+    [field]: value,
+  };
+  writeWorkbenchStateSync("preferences", JSON.stringify(next));
+};
+
+const readBrowserAutomationEnginePreference = (): WorkbenchBrowserAutomationEngine => {
+  const value = readPreferencesRecord().browserAutomationEngine;
+  return value === "browser_use" || value === "smart" || value === "lyra_direct"
+    ? value
+    : DEFAULT_BROWSER_AUTOMATION_ENGINE;
+};
+
+const readLyraDirectBudgetPreference = (): WorkbenchLyraDirectMicroExecutorBudget => {
+  const value = readPreferencesRecord().lyraDirectMicroExecutorBudget;
+  return value === "1-2" || value === "3-5" || value === "6-8"
+    ? value
+    : DEFAULT_LYRA_DIRECT_BUDGET;
+};
+
+const createDraftFromPreset = (
+  preset: AiProviderPreset | null,
+  previous?: SettingsAiDraft | null
+): SettingsAiDraft => ({
+  id: null,
+  name: previous?.name ?? "",
+  providerId: preset?.providerId ?? DEFAULT_PROVIDER_ID,
+  protocolId: preset?.protocolId ?? DEFAULT_PROTOCOL_ID,
+  presetId: preset?.id ?? null,
+  connectionConfig: { ...(preset?.defaultConnectionConfig ?? {}) },
+  authConfig: { ...(preset?.defaultAuthConfig ?? {}) },
+  secretValues: {},
+  clearSecretFields: [],
+  configuredSecretFields: [],
+  headersText: previous?.headersText ?? "",
+  modelsText: serializeConfiguredModels(preset?.defaultModel ?? "", []),
+  isDefault: false,
+});
+
+const createDefaultDraft = (presets: readonly AiProviderPreset[]): SettingsAiDraft =>
+  createDraftFromPreset(presets[0] ?? null);
+
+const toneFromStatus = (status: "ready" | "error"): SettingsAiModel["statusTone"] =>
+  status === "ready" ? "success" : "error";
+
+const validationTone = (
+  result: AiProfileValidationResult
+): SettingsAiModel["statusTone"] => (result.ok ? "success" : "error");
+
+const discoveryStateToResult = (
+  profile: AiProviderProfile | null
+): AiModelDiscoveryResult | null => {
+  if (
+    profile === null
+    || profile.discoveryState.status === "idle"
+    || profile.discoveryState.lastCheckedAt === null
+  ) {
+    return null;
+  }
+  return {
+    providerId: profile.providerId,
+    protocolId: profile.protocolId,
+    status: profile.discoveryState.status,
+    message: profile.discoveryState.errorMessage
+      ?? (profile.discoveryState.models.length > 0 ? "Models discovered" : "No models returned"),
+    checkedAt: profile.discoveryState.lastCheckedAt,
+    models: profile.discoveryState.models,
+  };
+};
+
+const presetSectionsFromCatalog = (
+  presets: readonly AiProviderPreset[],
+  labels: SettingsAiLabels
+): readonly SettingsAiPresetSection[] => {
+  const mainstream = presets.filter((preset) => preset.section === "mainstream");
+  const local = presets.filter((preset) => preset.section === "local");
+  const custom = presets.filter((preset) => preset.section === "custom");
+  const sections: SettingsAiPresetSection[] = [
+    { id: "mainstream" as const, label: labels.recommendedSection, presets: mainstream },
+    { id: "local" as const, label: labels.allSection, presets: local },
+    { id: "custom" as const, label: labels.customSection, presets: custom },
+  ];
+  return sections.filter((section) => section.presets.length > 0);
+};
+
+const mergeSecretFieldList = (
+  current: readonly string[],
+  fieldId: string,
+  configured: boolean
+): readonly string[] => {
+  const set = new Set(current);
+  if (configured) {
+    set.add(fieldId);
+  } else {
+    set.delete(fieldId);
+  }
+  return [...set].sort((left, right) => left.localeCompare(right));
+};
+
+const hasDraftSecretMutations = (draft: SettingsAiDraft): boolean =>
+  Object.values(draft.secretValues).some((value) => value.trim().length > 0)
+  || draft.clearSecretFields.length > 0;
+
 export const useSettingsAiModel = ({
   desktopApi,
-  labels
+  labels,
 }: UseSettingsAiModelOptions): SettingsAiModel => {
-  const [profiles, setProfiles] = useState<readonly AiProviderProfile[]>([]);
-  const [providerCatalog, setProviderCatalog] = useState<readonly AiProviderCatalogItem[]>([]);
-  const [presetCatalog, setPresetCatalog] = useState<readonly AiProviderPreset[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<SettingsAiDraft>(() => toDraft(null, []));
-  const [discoveryResult, setDiscoveryResult] = useState<AiModelDiscoveryResult | null>(null);
+  const lyraApi = desktopApi?.lyra ?? null;
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-  const [isDiscovering, setIsDiscovering] = useState(false);
+  const [isRefreshingModels, setIsRefreshingModels] = useState(false);
   const [statusMessage, setStatusMessage] = useState(labels.statusIdle);
-  const [statusTone, setStatusTone] = useState<"neutral" | "success" | "error">("neutral");
-  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
-  const [memoryConfigText, setMemoryConfigText] = useState("");
-  const [memoryConfigStatus, setMemoryConfigStatus] = useState(labels.memoryConfigStatusIdle);
-  const [memoryConfigStatusTone, setMemoryConfigStatusTone] = useState<"neutral" | "success" | "error">("neutral");
-  const [isMemoryConfigLoading, setIsMemoryConfigLoading] = useState(false);
-  const [isMemoryConfigSaving, setIsMemoryConfigSaving] = useState(false);
+  const [statusTone, setStatusTone] = useState<SettingsAiModel["statusTone"]>("neutral");
+  const [runtimeHealth, setRuntimeHealth] = useState<LyraRuntimeHealth | null>(null);
+  const [profiles, setProfiles] = useState<readonly AiProviderProfile[]>([]);
+  const [defaultProfileId, setDefaultProfileId] = useState<string | null>(null);
+  const [presets, setPresets] = useState<readonly AiProviderPreset[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const selectedProfileIdRef = useRef<string | null>(null);
+  const [draft, setDraft] = useState<SettingsAiDraft>(createDefaultDraft([]));
+  const [draftDiscoveryResult, setDraftDiscoveryResult] = useState<AiModelDiscoveryResult | null>(null);
+  const [browserAutomationEngine, setBrowserAutomationEngineState] = useState<WorkbenchBrowserAutomationEngine>(() =>
+    readBrowserAutomationEnginePreference()
+  );
+  const [lyraDirectMicroExecutorBudget, setLyraDirectMicroExecutorBudgetState] = useState<WorkbenchLyraDirectMicroExecutorBudget>(() =>
+    readLyraDirectBudgetPreference()
+  );
+  const [browserUseRuntimeStatus, setBrowserUseRuntimeStatus] = useState<BrowserUseRuntimeStatus>({
+    state: "checking",
+    checkedAt: Date.now(),
+  });
 
-  const syncProfiles = useCallback(async (): Promise<void> => {
-    if (desktopApi === null) {
+  const resetDraftForSelection = useCallback((
+    nextProfiles: readonly AiProviderProfile[],
+    nextPresets: readonly AiProviderPreset[],
+    nextSelectedProfileId: string | null,
+    previousDraft?: SettingsAiDraft
+  ): SettingsAiDraft => {
+    const selectedProfile = findSelectedProfile(nextProfiles, nextSelectedProfileId);
+    if (selectedProfile !== null) {
+      return toDraft(selectedProfile, nextPresets);
+    }
+    const currentPreset = previousDraft === undefined
+      ? null
+      : resolvePreset(
+          nextPresets,
+          previousDraft.presetId,
+          previousDraft.providerId,
+          previousDraft.protocolId
+        );
+    return createDraftFromPreset(currentPreset ?? nextPresets[0] ?? null, previousDraft);
+  }, []);
+
+  const syncConfig = useCallback(async (
+    preferredProfileId?: string | null
+  ): Promise<void> => {
+    if (lyraApi === null) {
+      setRuntimeHealth(null);
       setProfiles([]);
-      setProviderCatalog([]);
-      setPresetCatalog([]);
+      setDefaultProfileId(null);
+      setPresets([]);
       setSelectedProfileId(null);
-      setDraft(toDraft(null, []));
-      setDiscoveryResult(null);
+      selectedProfileIdRef.current = null;
+      setDraft(createDefaultDraft([]));
+      setDraftDiscoveryResult(null);
+      setStatusMessage(labels.statusIdle);
+      setStatusTone("neutral");
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
     try {
-      const [nextProfiles, nextProviderCatalog, nextPresetCatalog] = await Promise.all([
-        desktopApi.ai.readProfiles(),
-        desktopApi.ai.readProviderCatalog(),
-        desktopApi.ai.readPresetCatalog()
+      const [health, profilesResponse, catalogResponse] = await Promise.all([
+        lyraApi.health(),
+        lyraApi.request<ProfilesListResponse>(createRequestPayload("lyra/config/profiles/list")),
+        lyraApi.request<ProviderCatalogResponse>(createRequestPayload("lyra/config/providers/catalog/read")),
       ]);
+
+      const nextProfiles = Array.isArray(profilesResponse.profiles) ? profilesResponse.profiles : [];
+      const nextPresets = Array.isArray(catalogResponse.presets) ? catalogResponse.presets : [];
+      const nextDefaultProfileId = typeof profilesResponse.defaultProfileId === "string"
+        ? profilesResponse.defaultProfileId
+        : null;
+      const nextSelectedProfileId = preferredProfileId !== undefined
+        ? (nextProfiles.some((profile) => profile.id === preferredProfileId) ? preferredProfileId : null)
+        : (selectedProfileIdRef.current !== null && nextProfiles.some((profile) => profile.id === selectedProfileIdRef.current)
+          ? selectedProfileIdRef.current
+          : nextDefaultProfileId ?? nextProfiles[0]?.id ?? null);
+      setRuntimeHealth(health);
       setProfiles(nextProfiles);
-      setProviderCatalog(nextProviderCatalog);
-      setPresetCatalog(nextPresetCatalog);
-      setSelectedProfileId((currentId) => {
-        const fallbackId =
-          nextProfiles.find((profile) => profile.isDefault)?.id
-          ?? nextProfiles[0]?.id
-          ?? null;
-        const nextId =
-          currentId !== null && nextProfiles.some((profile) => profile.id === currentId)
-            ? currentId
-            : fallbackId;
-        setDraft(toDraft(findSelectedProfile(nextProfiles, nextId), nextPresetCatalog));
-        return nextId;
-      });
+      setDefaultProfileId(nextDefaultProfileId);
+      setPresets(nextPresets);
+      setSelectedProfileId(nextSelectedProfileId);
+      selectedProfileIdRef.current = nextSelectedProfileId;
+      setDraft((current) =>
+        resetDraftForSelection(nextProfiles, nextPresets, nextSelectedProfileId, current)
+      );
+      setDraftDiscoveryResult(null);
+      setStatusMessage(labels.statusIdle);
+      setStatusTone("neutral");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : String(error));
+      setStatusTone("error");
     } finally {
       setIsLoading(false);
     }
-  }, [desktopApi]);
+  }, [lyraApi, labels.statusIdle, resetDraftForSelection]);
 
   useEffect(() => {
-    setStatusMessage(labels.statusIdle);
-  }, [labels.statusIdle]);
+    void syncConfig();
+  }, [syncConfig]);
 
   useEffect(() => {
-    setMemoryConfigStatus(labels.memoryConfigStatusIdle);
-  }, [labels.memoryConfigStatusIdle]);
-
-  useEffect(() => {
-    void syncProfiles();
-  }, [syncProfiles]);
-
-  const selectProfile = useCallback((profileId: string): void => {
-    const nextProfile = findSelectedProfile(profiles, profileId);
-    setSelectedProfileId(profileId);
-    setDraft(toDraft(nextProfile, presetCatalog));
-    setDiscoveryResult(nextProfile?.discoveryState.status === "ready"
-      ? {
-          providerId: nextProfile.providerId,
-          protocolId: nextProfile.protocolId,
-          status: "ready",
-          message: labels.statusIdle,
-          checkedAt: nextProfile.discoveryState.lastCheckedAt ?? Date.now(),
-          models: nextProfile.discoveryState.models
-        }
-      : null);
-  }, [labels.statusIdle, presetCatalog, profiles]);
-
-  const createProfileDraft = useCallback((): void => {
-    setSelectedProfileId(null);
-    setDraft(toDraft(null, presetCatalog));
-    setDiscoveryResult(null);
-  }, [presetCatalog]);
-
-  const selectPreset = useCallback((presetId: string): void => {
-    const preset = resolvePreset(presetCatalog, presetId, draft.providerId, draft.protocolId);
-    if (preset === null) {
+    if (desktopApi?.browserUse === undefined) {
+      setBrowserUseRuntimeStatus(createUnavailableBrowserUseStatus("browser-use runtime status unavailable"));
       return;
     }
+
+    let cancelled = false;
+    void desktopApi.browserUse.readRuntimeStatus().then((status) => {
+      if (!cancelled) {
+        setBrowserUseRuntimeStatus(status);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setBrowserUseRuntimeStatus(createUnavailableBrowserUseStatus("browser-use runtime status unavailable"));
+      }
+    });
+
+    const unsubscribe = desktopApi.browserUse.onRuntimeStatus((status) => {
+      setBrowserUseRuntimeStatus(status);
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [desktopApi]);
+
+  const selectedProfile = useMemo(
+    () => findSelectedProfile(profiles, selectedProfileId),
+    [profiles, selectedProfileId]
+  );
+
+  const selectedPreset = useMemo(
+    () => resolvePreset(presets, draft.presetId, draft.providerId, draft.protocolId),
+    [draft.presetId, draft.providerId, draft.protocolId, presets]
+  );
+
+  const presetSections = useMemo(
+    () => presetSectionsFromCatalog(presets, labels),
+    [labels, presets]
+  );
+
+  const activeDiscoveryResult = useMemo(
+    () => draftDiscoveryResult ?? discoveryStateToResult(selectedProfile),
+    [draftDiscoveryResult, selectedProfile]
+  );
+
+  const availableModels = useMemo(
+    () => buildModelOptions(selectedPreset, activeDiscoveryResult, draft.modelsText),
+    [activeDiscoveryResult, draft.modelsText, selectedPreset]
+  );
+
+  const selectedModelIds = useMemo(
+    () => resolveConfiguredModels(
+      draft.modelsText,
+      availableModels,
+      selectedPreset?.defaultModel ?? selectedProfile?.model ?? ""
+    ).modelIds,
+    [availableModels, draft.modelsText, selectedPreset, selectedProfile]
+  );
+
+  const defaultProfileLabel = useMemo(
+    () => profiles.find((profile) => profile.id === defaultProfileId)?.name ?? null,
+    [defaultProfileId, profiles]
+  );
+
+  const defaultProviderId = useMemo(() => {
+    const defaultProfile = profiles.find((profile) => profile.id === defaultProfileId) ?? null;
+    const providerId = (defaultProfile?.runtimeProviderId ?? DEFAULT_PROVIDER_ID).trim();
+    return providerId.length > 0 ? providerId : DEFAULT_PROVIDER_ID;
+  }, [defaultProfileId, profiles]);
+
+  const defaultModelNames = useMemo(() => {
+    const defaultProfile = profiles.find((profile) => profile.id === defaultProfileId) ?? null;
+    if (defaultProfile !== null) {
+      return [defaultProfile.model, ...defaultProfile.customModels.map((entry) => entry.id)]
+        .map((entry) => entry.trim())
+        .filter((entry, index, entries) => entry.length > 0 && entries.indexOf(entry) === index);
+    }
+    const fallbackModel = selectedPreset?.defaultModel?.trim() ?? "";
+    return fallbackModel.length > 0 ? [fallbackModel] : [];
+  }, [defaultProfileId, profiles, selectedPreset]);
+
+  const buildValidateRequest = useCallback((): AiValidateProfileRequest => {
+    const { primaryModel } = resolveConfiguredModels(
+      draft.modelsText,
+      availableModels,
+      selectedPreset?.defaultModel ?? ""
+    );
+    return {
+      ...(draft.id === null ? {} : { id: draft.id }),
+      name: draft.name.trim(),
+      providerId: draft.providerId as AiValidateProfileRequest["providerId"],
+      protocolId: draft.protocolId as AiValidateProfileRequest["protocolId"],
+      presetId: draft.presetId,
+      connectionConfig: { ...draft.connectionConfig },
+      authConfig: { ...draft.authConfig },
+      secretValues: { ...draft.secretValues },
+      headers: parseMap(draft.headersText),
+      model: primaryModel,
+    };
+  }, [availableModels, draft, selectedPreset?.defaultModel]);
+
+  const buildUpsertRequest = useCallback((): AiUpsertProfileRequest => {
+    const { primaryModel, customModels } = resolveConfiguredModels(
+      draft.modelsText,
+      availableModels,
+      selectedPreset?.defaultModel ?? ""
+    );
+    return {
+      ...(draft.id === null ? {} : { id: draft.id }),
+      name: draft.name.trim(),
+      providerId: draft.providerId as AiUpsertProfileRequest["providerId"],
+      protocolId: draft.protocolId as AiUpsertProfileRequest["protocolId"],
+      presetId: draft.presetId,
+      connectionConfig: { ...draft.connectionConfig },
+      authConfig: { ...draft.authConfig },
+      secretValues: { ...draft.secretValues },
+      clearSecretFields: [...draft.clearSecretFields],
+      headers: parseMap(draft.headersText),
+      model: primaryModel,
+      customModels,
+    };
+  }, [availableModels, draft, selectedPreset?.defaultModel]);
+
+  const buildDiscoverRequest = useCallback((): AiDiscoverModelsRequest => ({
+    ...(draft.id === null ? {} : { id: draft.id }),
+    providerId: draft.providerId as AiDiscoverModelsRequest["providerId"],
+    protocolId: draft.protocolId as AiDiscoverModelsRequest["protocolId"],
+    presetId: draft.presetId,
+    connectionConfig: { ...draft.connectionConfig },
+    authConfig: { ...draft.authConfig },
+    secretValues: { ...draft.secretValues },
+    headers: parseMap(draft.headersText),
+    forceRefresh: true,
+  }), [draft]);
+
+  const persistDraftSecrets = useCallback(async (): Promise<void> => {
+    if (lyraApi === null || !hasDraftSecretMutations(draft)) {
+      return;
+    }
+
+    const secretFieldId = resolvePrimarySecretFieldId(selectedPreset);
+    if (secretFieldId === null) {
+      return;
+    }
+
+    const baseUrl = readPrimaryConnectionValue(selectedPreset, {
+      ...draft.connectionConfig,
+    }).trim();
+    if (baseUrl.length === 0) {
+      return;
+    }
+
+    const nextSecretValue = (draft.secretValues[secretFieldId] ?? "").trim();
+    const shouldDelete = draft.clearSecretFields.includes(secretFieldId) || nextSecretValue.length === 0;
+    if (shouldDelete) {
+      await lyraApi.request(createRequestPayload("lyra/secrets.ai.delete", { baseUrl }));
+      return;
+    }
+
+    await lyraApi.request(createRequestPayload("lyra/secrets.ai.write", {
+      baseUrl,
+      value: nextSecretValue,
+    }));
+  }, [lyraApi, draft, selectedPreset]);
+
+  const refreshModels = useCallback(async (): Promise<void> => {
+    if (lyraApi === null) {
+      return;
+    }
+
+    setIsRefreshingModels(true);
+    try {
+      const result = await lyraApi.request<AiModelDiscoveryResult>(
+        createRequestPayload("lyra/config/models/discover", buildDiscoverRequest() as Record<string, unknown>)
+      );
+      setDraftDiscoveryResult(result);
+      setStatusMessage(result.message);
+      setStatusTone(toneFromStatus(result.status));
+      if (draft.id !== null) {
+        await syncConfig(draft.id);
+      }
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : String(error));
+      setStatusTone("error");
+    } finally {
+      setIsRefreshingModels(false);
+    }
+  }, [buildDiscoverRequest, lyraApi, draft.id, syncConfig]);
+
+  const validateProfile = useCallback(async (): Promise<void> => {
+    if (lyraApi === null) {
+      return;
+    }
+    try {
+      const result = await lyraApi.request<AiProfileValidationResult>(
+        createRequestPayload("lyra/config/profiles/validate", buildValidateRequest() as Record<string, unknown>)
+      );
+      setStatusMessage(result.message);
+      setStatusTone(validationTone(result));
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : String(error));
+      setStatusTone("error");
+    }
+  }, [buildValidateRequest, lyraApi]);
+
+  const saveProfile = useCallback(async (): Promise<void> => {
+    if (lyraApi === null) {
+      return;
+    }
+
+    setIsSaving(true);
+    let savedProfile: AiProviderProfile | null = null;
+    try {
+      const response = await lyraApi.request<ProfileUpsertResponse>(
+        createRequestPayload("lyra/config/profiles/upsert", buildUpsertRequest() as Record<string, unknown>)
+      );
+      savedProfile = response.profile;
+      await persistDraftSecrets();
+      setStatusMessage(labels.statusSaved);
+      setStatusTone("success");
+      await syncConfig(savedProfile.id);
+    } catch (error) {
+      if (savedProfile !== null) {
+        await syncConfig(savedProfile.id);
+      }
+      setStatusMessage(error instanceof Error ? error.message : String(error));
+      setStatusTone("error");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [buildUpsertRequest, lyraApi, labels.statusSaved, persistDraftSecrets, syncConfig]);
+
+  const deleteProfile = useCallback(async (): Promise<void> => {
+    if (lyraApi === null || draft.id === null) {
+      return;
+    }
+
+    setIsSaving(true);
+    let deleted = false;
+    try {
+      await lyraApi.request(
+        createRequestPayload("lyra/config/profiles/delete", { id: draft.id })
+      );
+      deleted = true;
+      const baseUrl = readPrimaryConnectionValue(selectedPreset, {
+        ...draft.connectionConfig,
+      }).trim();
+      if (baseUrl.length > 0) {
+        await lyraApi.request(createRequestPayload("lyra/secrets.ai.delete", { baseUrl }));
+      }
+      setStatusMessage(labels.statusDeleted);
+      setStatusTone("success");
+      await syncConfig(null);
+    } catch (error) {
+      if (deleted) {
+        await syncConfig(null);
+      }
+      setStatusMessage(error instanceof Error ? error.message : String(error));
+      setStatusTone("error");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [lyraApi, draft.connectionConfig, draft.id, labels.statusDeleted, selectedPreset, syncConfig]);
+
+  const setDefaultProfile = useCallback(async (): Promise<void> => {
+    if (lyraApi === null || draft.id === null) {
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await lyraApi.request(
+        createRequestPayload("lyra/config/profiles/setDefault", { id: draft.id })
+      );
+      setStatusMessage(labels.statusDefaultUpdated);
+      setStatusTone("success");
+      await syncConfig(draft.id);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : String(error));
+      setStatusTone("error");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [lyraApi, draft.id, labels.statusDefaultUpdated, syncConfig]);
+
+  const selectProfile = useCallback((profileId: string | null): void => {
+    selectedProfileIdRef.current = profileId;
+    setSelectedProfileId(profileId);
+    setDraftDiscoveryResult(null);
+    setDraft((current) => resetDraftForSelection(profiles, presets, profileId, current));
+  }, [presets, profiles, resetDraftForSelection]);
+
+  const applyPreset = useCallback((presetId: string): void => {
+    const preset = presets.find((entry) => entry.id === presetId) ?? null;
+    setDraftDiscoveryResult(null);
+    selectedProfileIdRef.current = null;
+    setSelectedProfileId(null);
+    setDraft((current) => ({
+      ...createDraftFromPreset(preset, current),
+      name: current.name,
+    }));
+  }, [presets]);
+
+  const updateDraftName = useCallback((value: string): void => {
     setDraft((current) => ({
       ...current,
-      providerId: preset.providerId,
-      protocolId: preset.protocolId,
-      presetId: preset.id,
-      connectionConfig: { ...preset.defaultConnectionConfig },
-      authConfig: { ...preset.defaultAuthConfig },
-      secretValues: {},
-      clearSecretFields: [],
-      configuredSecretFields: [],
-      headersText: preset.customHeadersSupported ? current.headersText : "",
-      modelsText: serializeConfiguredModels(preset.defaultModel, [])
+      name: value,
     }));
-    setDiscoveryResult(null);
-  }, [draft.protocolId, draft.providerId, presetCatalog]);
+  }, []);
+
+  const updateDraftHeadersText = useCallback((value: string): void => {
+    setDraft((current) => ({
+      ...current,
+      headersText: value,
+    }));
+  }, []);
+
+  const updateDraftModelsText = useCallback((value: string): void => {
+    setDraftDiscoveryResult(null);
+    setDraft((current) => ({
+      ...current,
+      modelsText: value,
+    }));
+  }, []);
 
   const updateDraftField = useCallback((
     target: "connection" | "auth" | "secret",
     fieldId: string,
     value: string
   ): void => {
+    setDraftDiscoveryResult(null);
     setDraft((current) => {
       if (target === "connection") {
         return {
           ...current,
           connectionConfig: {
             ...current.connectionConfig,
-            [fieldId]: value
-          }
+            [fieldId]: value,
+          },
         };
       }
       if (target === "auth") {
@@ -166,509 +654,96 @@ export const useSettingsAiModel = ({
           ...current,
           authConfig: {
             ...current.authConfig,
-            [fieldId]: value
-          }
+            [fieldId]: value,
+          },
         };
       }
+
       return {
         ...current,
         secretValues: {
           ...current.secretValues,
-          [fieldId]: value
+          [fieldId]: value,
         },
-        clearSecretFields: current.clearSecretFields.filter((entry) => entry !== fieldId)
+        clearSecretFields: current.clearSecretFields.filter((entry) => entry !== fieldId),
+        configuredSecretFields: mergeSecretFieldList(
+          current.configuredSecretFields,
+          fieldId,
+          value.trim().length > 0
+        ),
       };
     });
-  }, []);
-
-  const updateName = useCallback((value: string): void => {
-    setDraft((current) => ({ ...current, name: value }));
-  }, []);
-
-  const updateUrl = useCallback((value: string): void => {
-    setDraft((current) => {
-      const preset = resolvePreset(presetCatalog, current.presetId, current.providerId, current.protocolId);
-      const fieldId = resolvePrimaryUrlFieldId(preset);
-      if (fieldId === null) {
-        return current;
-      }
-      return {
-        ...current,
-        connectionConfig: {
-          ...current.connectionConfig,
-          [fieldId]: value
-        }
-      };
-    });
-  }, [presetCatalog]);
-
-  const updateKey = useCallback((value: string): void => {
-    setDraft((current) => {
-      const preset = resolvePreset(presetCatalog, current.presetId, current.providerId, current.protocolId);
-      const fieldId = resolvePrimarySecretFieldId(preset);
-      if (fieldId === null) {
-        return current;
-      }
-      return {
-        ...current,
-        secretValues: {
-          ...current.secretValues,
-          [fieldId]: value
-        },
-        clearSecretFields: current.clearSecretFields.filter((entry) => entry !== fieldId)
-      };
-    });
-  }, [presetCatalog]);
-
-  const updateModelsText = useCallback((value: string): void => {
-    setDraft((current) => ({ ...current, modelsText: value }));
-  }, []);
-
-  const toggleModelOption = useCallback((modelId: string): void => {
-    setDraft((current) => {
-      const preset = resolvePreset(presetCatalog, current.presetId, current.providerId, current.protocolId);
-      const knownModels = buildModelOptions(preset, discoveryResult, current.modelsText);
-      const resolved = resolveConfiguredModels(current.modelsText, knownModels, preset?.defaultModel ?? "");
-      const alreadyIncluded = resolved.modelIds.includes(modelId);
-      const nextIds = alreadyIncluded
-        ? resolved.modelIds.filter((entry) => entry !== modelId)
-        : [...resolved.modelIds, modelId];
-      return {
-        ...current,
-        modelsText: nextIds.join("\n")
-      };
-    });
-  }, [discoveryResult, presetCatalog]);
-
-  const updateHeadersText = useCallback((value: string): void => {
-    setDraft((current) => ({ ...current, headersText: value }));
   }, []);
 
   const clearSecretField = useCallback((fieldId: string): void => {
+    setDraftDiscoveryResult(null);
     setDraft((current) => ({
       ...current,
       secretValues: {
         ...current.secretValues,
-        [fieldId]: ""
+        [fieldId]: "",
       },
-      configuredSecretFields: current.configuredSecretFields.filter((entry) => entry !== fieldId),
       clearSecretFields: current.clearSecretFields.includes(fieldId)
         ? current.clearSecretFields
-        : [...current.clearSecretFields, fieldId]
+        : [...current.clearSecretFields, fieldId],
+      configuredSecretFields: current.configuredSecretFields.filter((entry) => entry !== fieldId),
     }));
   }, []);
 
-  const buildResolvedModels = useCallback(() => {
-    const preset = resolvePreset(presetCatalog, draft.presetId, draft.providerId, draft.protocolId);
-    const knownModels = buildModelOptions(preset, discoveryResult, draft.modelsText);
-    return resolveConfiguredModels(draft.modelsText, knownModels, preset?.defaultModel ?? "");
-  }, [
-    discoveryResult,
-    draft.modelsText,
-    draft.presetId,
-    draft.protocolId,
-    draft.providerId,
-    presetCatalog
-  ]);
+  const toggleModelSelection = useCallback((modelId: string): void => {
+    const nextIds = selectedModelIds.includes(modelId)
+      ? selectedModelIds.filter((entry) => entry !== modelId)
+      : [...selectedModelIds, modelId];
+    updateDraftModelsText(nextIds.join("\n"));
+  }, [selectedModelIds, updateDraftModelsText]);
 
-  const authorizeOpenAiChatGpt = useCallback(async (): Promise<void> => {
-    if (desktopApi === null || draft.providerId !== "openai") {
-      return;
-    }
+  const updateBrowserAutomationEngine = useCallback((value: WorkbenchBrowserAutomationEngine): void => {
+    writePreferencesField("browserAutomationEngine", value);
+    setBrowserAutomationEngineState(value);
+  }, []);
 
-    setIsSaving(true);
-    setStatusTone("neutral");
-    try {
-      const result = await desktopApi.ai.authorizeOpenAiChatGpt();
-      const normalizedName = draft.name.trim().length > 0
-        ? draft.name.trim()
-        : "OpenAI ChatGPT OAuth";
-      const resolvedModels = buildResolvedModels();
-      const normalizedModel = resolvedModels.primaryModel.trim().length > 0
-        ? resolvedModels.primaryModel.trim()
-        : "gpt-5.4";
-      const saved = await desktopApi.ai.upsertProfile({
-        ...(draft.id === null ? {} : { id: draft.id }),
-        name: normalizedName,
-        providerId: draft.providerId,
-        protocolId: draft.protocolId,
-        presetId: draft.presetId,
-        connectionConfig: draft.connectionConfig,
-        authConfig: {
-          ...draft.authConfig,
-          authMode: "chatgpt_oauth",
-          ...(result.accountId === undefined ? {} : { chatgptAccountId: result.accountId })
-        },
-        headers: parseMap(draft.headersText),
-        model: normalizedModel,
-        customModels: resolvedModels.customModels,
-        secretValues: { refreshToken: result.refreshToken },
-        clearSecretFields: draft.clearSecretFields.filter((entry) => entry !== "refreshToken")
-      });
-      setSelectedProfileId(saved.id);
-      await syncProfiles();
-      setStatusMessage(labels.statusChatGptAuthorized);
-      setStatusTone("success");
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : String(error));
-      setStatusTone("error");
-    } finally {
-      setIsSaving(false);
-    }
-  }, [
-    desktopApi,
-    draft.authConfig,
-    buildResolvedModels,
-    draft.clearSecretFields,
-    draft.connectionConfig,
-    draft.headersText,
-    draft.id,
-    draft.name,
-    draft.presetId,
-    draft.protocolId,
-    draft.providerId,
-    labels.statusChatGptAuthorized,
-    syncProfiles
-  ]);
-
-  const authorizeOpenAiChatGptDeviceCode = useCallback(async (): Promise<void> => {
-    if (desktopApi === null || draft.providerId !== "openai") {
-      return;
-    }
-
-    setIsSaving(true);
-    setStatusTone("neutral");
-    try {
-      const result = await desktopApi.ai.authorizeOpenAiChatGptDeviceCode();
-      const normalizedName = draft.name.trim().length > 0
-        ? draft.name.trim()
-        : "OpenAI ChatGPT OAuth";
-      const resolvedModels = buildResolvedModels();
-      const normalizedModel = resolvedModels.primaryModel.trim().length > 0
-        ? resolvedModels.primaryModel.trim()
-        : "gpt-5.4";
-      const saved = await desktopApi.ai.upsertProfile({
-        ...(draft.id === null ? {} : { id: draft.id }),
-        name: normalizedName,
-        providerId: draft.providerId,
-        protocolId: draft.protocolId,
-        presetId: draft.presetId,
-        connectionConfig: draft.connectionConfig,
-        authConfig: {
-          ...draft.authConfig,
-          authMode: "chatgpt_oauth",
-          ...(result.accountId === undefined ? {} : { chatgptAccountId: result.accountId })
-        },
-        headers: parseMap(draft.headersText),
-        model: normalizedModel,
-        customModels: resolvedModels.customModels,
-        secretValues: { refreshToken: result.refreshToken },
-        clearSecretFields: draft.clearSecretFields.filter((entry) => entry !== "refreshToken")
-      });
-      setSelectedProfileId(saved.id);
-      await syncProfiles();
-      setStatusMessage(labels.statusChatGptAuthorized);
-      setStatusTone("success");
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : String(error));
-      setStatusTone("error");
-    } finally {
-      setIsSaving(false);
-    }
-  }, [
-    desktopApi,
-    draft.authConfig,
-    buildResolvedModels,
-    draft.clearSecretFields,
-    draft.connectionConfig,
-    draft.headersText,
-    draft.id,
-    draft.name,
-    draft.presetId,
-    draft.protocolId,
-    draft.providerId,
-    labels.statusChatGptAuthorized,
-    syncProfiles
-  ]);
-
-  const buildSecretValues = useCallback((): Record<string, string | null> | null => {
-    const secretEntries = Object.entries(draft.secretValues)
-      .filter(([, value]) => value.trim().length > 0);
-    return secretEntries.length > 0 ? Object.fromEntries(secretEntries) : null;
-  }, [draft.secretValues]);
-
-  const buildUpsertPayload = useCallback((): AiUpsertProfileRequest => {
-    const secretValues = buildSecretValues();
-    const resolvedModels = buildResolvedModels();
-    return {
-      ...(draft.id === null ? {} : { id: draft.id }),
-      name: draft.name,
-      providerId: draft.providerId,
-      protocolId: draft.protocolId,
-      presetId: draft.presetId,
-      connectionConfig: draft.connectionConfig,
-      authConfig: draft.authConfig,
-      headers: parseMap(draft.headersText),
-      model: resolvedModels.primaryModel,
-      customModels: resolvedModels.customModels,
-      ...(secretValues === null ? {} : { secretValues }),
-      ...(draft.clearSecretFields.length === 0 ? {} : { clearSecretFields: draft.clearSecretFields })
-    };
-  }, [buildResolvedModels, buildSecretValues, draft]);
-
-  const buildValidatePayload = useCallback((): AiValidateProfileRequest => {
-    const secretValues = buildSecretValues();
-    const resolvedModels = buildResolvedModels();
-    return {
-      ...(draft.id === null ? {} : { id: draft.id }),
-      providerId: draft.providerId,
-      protocolId: draft.protocolId,
-      presetId: draft.presetId,
-      connectionConfig: draft.connectionConfig,
-      authConfig: draft.authConfig,
-      headers: parseMap(draft.headersText),
-      model: resolvedModels.primaryModel,
-      ...(secretValues === null ? {} : { secretValues })
-    };
-  }, [buildResolvedModels, buildSecretValues, draft]);
-
-  const buildDiscoveryPayload = useCallback((forceRefresh: boolean): AiDiscoverModelsRequest => {
-    const secretValues = buildSecretValues();
-    return {
-      ...(draft.id === null ? {} : { id: draft.id }),
-      providerId: draft.providerId,
-      protocolId: draft.protocolId,
-      presetId: draft.presetId,
-      connectionConfig: draft.connectionConfig,
-      authConfig: draft.authConfig,
-      headers: parseMap(draft.headersText),
-      ...(secretValues === null ? {} : { secretValues }),
-      ...(forceRefresh ? { forceRefresh: true } : {})
-    };
-  }, [buildSecretValues, draft]);
-
-  const saveProfile = useCallback(async (): Promise<void> => {
-    if (desktopApi === null) {
-      return;
-    }
-
-    setIsSaving(true);
-    setStatusTone("neutral");
-    try {
-      const saved = await desktopApi.ai.upsertProfile(buildUpsertPayload());
-      setStatusMessage(labels.statusSaved);
-      setStatusTone("success");
-      setSelectedProfileId(saved.id);
-      await syncProfiles();
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : String(error));
-      setStatusTone("error");
-    } finally {
-      setIsSaving(false);
-    }
-  }, [buildUpsertPayload, desktopApi, labels.statusSaved, syncProfiles]);
-
-  const deleteProfile = useCallback(async (): Promise<void> => {
-    if (desktopApi === null || selectedProfileId === null) {
-      return;
-    }
-
-    setIsSaving(true);
-    setStatusTone("neutral");
-    try {
-      await desktopApi.ai.deleteProfile({ id: selectedProfileId });
-      setStatusMessage(labels.statusDeleted);
-      setStatusTone("success");
-      await syncProfiles();
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : String(error));
-      setStatusTone("error");
-    } finally {
-      setIsSaving(false);
-    }
-  }, [desktopApi, labels.statusDeleted, selectedProfileId, syncProfiles]);
-
-  const setDefaultProfile = useCallback(async (): Promise<void> => {
-    if (desktopApi === null || selectedProfileId === null) {
-      return;
-    }
-
-    setIsSaving(true);
-    setStatusTone("neutral");
-    try {
-      await desktopApi.ai.setDefaultProfile({ id: selectedProfileId });
-      setStatusMessage(labels.statusDefaultUpdated);
-      setStatusTone("success");
-      await syncProfiles();
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : String(error));
-      setStatusTone("error");
-    } finally {
-      setIsSaving(false);
-    }
-  }, [desktopApi, labels.statusDefaultUpdated, selectedProfileId, syncProfiles]);
-
-  const testConnection = useCallback(async (): Promise<void> => {
-    if (desktopApi === null) {
-      return;
-    }
-
-    setIsTesting(true);
-    setStatusTone("neutral");
-    try {
-      const validation = await desktopApi.ai.validateProfile(buildValidatePayload());
-      setStatusMessage(validation.message);
-      setStatusTone(validation.ok ? "success" : "error");
-      setLastCheckedAt(validation.checkedAt);
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : String(error));
-      setStatusTone("error");
-      setLastCheckedAt(Date.now());
-    } finally {
-      setIsTesting(false);
-    }
-  }, [buildValidatePayload, desktopApi]);
-
-  const runDiscovery = useCallback(async (forceRefresh: boolean): Promise<void> => {
-    if (desktopApi === null) {
-      return;
-    }
-
-    setIsDiscovering(true);
-    setStatusTone("neutral");
-    try {
-      const payload = buildDiscoveryPayload(forceRefresh);
-      const result = forceRefresh
-        ? await desktopApi.ai.refreshDiscoveredModels(payload)
-        : await desktopApi.ai.discoverModels(payload);
-      setDiscoveryResult(result);
-      setStatusMessage(result.message);
-      setStatusTone(result.status === "ready" ? "success" : "error");
-      setLastCheckedAt(result.checkedAt);
-      setDraft((current) => result.models.length === 0
-        ? current
-        : {
-            ...current,
-            modelsText: serializeConfiguredModels(result.models[0]?.id ?? "", result.models.slice(1))
-          });
-    } catch (error) {
-      setDiscoveryResult(null);
-      setStatusMessage(error instanceof Error ? error.message : String(error));
-      setStatusTone("error");
-      setLastCheckedAt(Date.now());
-    } finally {
-      setIsDiscovering(false);
-    }
-  }, [buildDiscoveryPayload, desktopApi]);
-
-  const discoverModels = useCallback(async (): Promise<void> => {
-    await runDiscovery(false);
-  }, [runDiscovery]);
-
-  const refreshDiscoveredModels = useCallback(async (): Promise<void> => {
-    await runDiscovery(true);
-  }, [runDiscovery]);
-
-  const loadMemoryConfig = useCallback(async (): Promise<void> => {
-    if (desktopApi === null || desktopApi.agent === undefined) {
-      return;
-    }
-    setIsMemoryConfigLoading(true);
-    setMemoryConfigStatusTone("neutral");
-    try {
-      const config = await desktopApi.agent.getMemoryConfig();
-      setMemoryConfigText(JSON.stringify(config, null, 2));
-      setMemoryConfigStatus(labels.memoryConfigStatusLoaded);
-      setMemoryConfigStatusTone("success");
-    } catch (error) {
-      setMemoryConfigStatus(error instanceof Error ? error.message : String(error));
-      setMemoryConfigStatusTone("error");
-    } finally {
-      setIsMemoryConfigLoading(false);
-    }
-  }, [desktopApi, labels.memoryConfigStatusLoaded]);
-
-  const saveMemoryConfig = useCallback(async (): Promise<void> => {
-    if (desktopApi === null || desktopApi.agent === undefined) {
-      return;
-    }
-    let parsed: AiMemoryConfig;
-    try {
-      parsed = JSON.parse(memoryConfigText) as AiMemoryConfig;
-    } catch {
-      setMemoryConfigStatus(labels.memoryConfigStatusInvalidJson);
-      setMemoryConfigStatusTone("error");
-      return;
-    }
-
-    setIsMemoryConfigSaving(true);
-    setMemoryConfigStatusTone("neutral");
-    try {
-      const updated = await desktopApi.agent.updateMemoryConfig(parsed);
-      setMemoryConfigText(JSON.stringify(updated, null, 2));
-      setMemoryConfigStatus(labels.memoryConfigStatusSaved);
-      setMemoryConfigStatusTone("success");
-    } catch (error) {
-      setMemoryConfigStatus(error instanceof Error ? error.message : String(error));
-      setMemoryConfigStatusTone("error");
-    } finally {
-      setIsMemoryConfigSaving(false);
-    }
-  }, [
-    desktopApi,
-    labels.memoryConfigStatusInvalidJson,
-    labels.memoryConfigStatusSaved,
-    memoryConfigText
-  ]);
+  const updateLyraDirectMicroExecutorBudget = useCallback((value: WorkbenchLyraDirectMicroExecutorBudget): void => {
+    writePreferencesField("lyraDirectMicroExecutorBudget", value);
+    setLyraDirectMicroExecutorBudgetState(value);
+  }, []);
 
   return {
-    profiles,
-    providerCatalog,
-    presetCatalog,
-    selectedProfileId,
-    draft,
-    discoveryResult,
     isLoading,
     isSaving,
-    isTesting,
-    isDiscovering,
-    isMemoryConfigLoading,
-    isMemoryConfigSaving,
+    isRefreshingModels,
     statusMessage,
     statusTone,
-    lastCheckedAt,
-    memoryConfigText,
-    memoryConfigStatus,
-    memoryConfigStatusTone,
-    browserAutomationEngine: "lyra_direct",
-    lyraDirectMicroExecutorBudget: "3-5",
-    browserUseRuntimeStatus: {
-      state: "checking",
-      checkedAt: Date.now()
-    },
+    runtimeHealth,
+    profiles,
+    presetSections,
+    selectedProfileId,
+    defaultProfileId,
+    defaultProviderId,
+    defaultProfileLabel,
+    defaultModelNames,
+    selectedPresetId: selectedPreset?.id ?? null,
+    selectedPreset,
+    draft,
+    availableModels,
+    selectedModelIds,
+    browserAutomationEngine,
+    lyraDirectMicroExecutorBudget,
+    browserUseRuntimeStatus,
     selectProfile,
-    createProfileDraft,
-    selectPreset,
-    updateName,
-    updateUrl,
-    updateKey,
-    updateModelsText,
-    toggleModelOption,
+    applyPreset,
+    updateDraftName,
+    updateDraftHeadersText,
+    updateDraftModelsText,
     updateDraftField,
-    updateHeadersText,
     clearSecretField,
-    authorizeOpenAiChatGpt,
-    authorizeOpenAiChatGptDeviceCode,
+    toggleModelSelection,
+    refreshConfig: syncConfig,
+    refreshModels,
+    validateProfile,
     saveProfile,
     deleteProfile,
     setDefaultProfile,
-    testConnection,
-    discoverModels,
-    refreshDiscoveredModels,
-    loadMemoryConfig,
-    saveMemoryConfig,
-    updateMemoryConfigText: setMemoryConfigText,
-    setBrowserAutomationEngine: () => {},
-    setLyraDirectMicroExecutorBudget: () => {}
+    setBrowserAutomationEngine: updateBrowserAutomationEngine,
+    setLyraDirectMicroExecutorBudget: updateLyraDirectMicroExecutorBudget,
   };
 };

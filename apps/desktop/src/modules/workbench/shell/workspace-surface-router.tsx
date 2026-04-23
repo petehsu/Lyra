@@ -36,7 +36,7 @@ import {
 } from "../skills-center";
 import { TerminalWorkspaceSurface } from "../terminal-dock";
 import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/types";
-import type { TerminalThemePresetId } from "../terminal-theme";
+import type { TerminalThemeMode } from "../terminal-theme";
 import type { WorkbenchThemeId } from "../theme";
 import {
   isAiHistoryAppId,
@@ -54,10 +54,6 @@ type ChoiceOption<T extends string> = {
   readonly value: T;
   readonly label: string;
   readonly description?: string;
-};
-
-type TerminalThemeChoiceOption = ChoiceOption<TerminalThemePresetId> & {
-  readonly swatches: readonly string[];
 };
 
 export type WorkspaceSurfaceSettingsProps = BrowserSettingsSurfaceProps;
@@ -166,7 +162,7 @@ export type WorkspaceSurfaceRouterProps = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly terminalLabels: TerminalDockLabels;
   readonly terminalThemeSignature: string;
-  readonly terminalThemePreset: TerminalThemePresetId;
+  readonly terminalThemePreset: TerminalThemeMode;
   readonly resolvedThemeId: string;
   readonly fileManagerModel: FileManagerModel;
   readonly fileManagerLabels: FileManagerSurfaceLabels;
@@ -219,6 +215,7 @@ export type WorkspaceSurfaceRouterProps = {
     readonly emptyStateTitle: string;
     readonly emptyStateDescription: string;
     readonly defaultProfileId?: string | null;
+    readonly defaultProviderId?: string | null;
   };
   readonly notifications: {
     readonly model: WorkbenchNotificationModel;
@@ -574,6 +571,9 @@ export const WorkspaceSurfaceRouter = ({
           {...(aiHistory.defaultProfileId === undefined
             ? {}
             : { defaultProfileId: aiHistory.defaultProfileId })}
+          {...(aiHistory.defaultProviderId === undefined
+            ? {}
+            : { defaultProviderId: aiHistory.defaultProviderId })}
         />
       );
     }

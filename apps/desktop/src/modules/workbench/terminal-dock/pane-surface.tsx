@@ -39,9 +39,11 @@ export const TerminalPaneSurface = ({
   const sessionReadyRef = useRef(false);
   const sessionDisposedRef = useRef(false);
   const initialThemePresetRef = useRef(themePresetId);
+  const appliedPromptSignatureRef = useRef(`${themePresetId}:${uiThemeId}`);
   const unavailableMessageRef = useRef(labels.unavailable);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [readyToPaint, setReadyToPaint] = useState(false);
+  const [promptSessionReady, setPromptSessionReady] = useState(false);
 
   const applyTheme = useCallback((): void => {
     if (sessionDisposedRef.current) {
@@ -68,6 +70,7 @@ export const TerminalPaneSurface = ({
     sessionReadyRef.current = false;
     sessionDisposedRef.current = false;
     setReadyToPaint(false);
+    setPromptSessionReady(false);
     let frameId: number | null = null;
     let resizeFrameId: number | null = null;
     let lastSyncedCols = -1;
@@ -248,12 +251,15 @@ export const TerminalPaneSurface = ({
           return;
         }
         sessionReadyRef.current = true;
+        setPromptSessionReady(true);
+        appliedPromptSignatureRef.current = `${initialThemePresetRef.current}:${uiThemeId}`;
         lastSyncedCols = -1;
         lastSyncedRows = -1;
         scheduleResizeAndSync();
       })
       .catch((error: unknown) => {
         sessionReadyRef.current = false;
+        setPromptSessionReady(false);
         setStatusMessage(error instanceof Error ? error.message : unavailableMessageRef.current);
       });
 
@@ -286,6 +292,29 @@ export const TerminalPaneSurface = ({
       cancelAnimationFrame(frameId);
     };
   }, [applyTheme, themeSignature]);
+
+  useEffect(() => {
+    const nextPromptSignature = `${themePresetId}:${uiThemeId}`;
+    if (active === false) {
+      return;
+    }
+    if (desktopApi === null || sessionReadyRef.current === false) {
+      return;
+    }
+    if (appliedPromptSignatureRef.current === nextPromptSignature) {
+      return;
+    }
+
+    appliedPromptSignatureRef.current = nextPromptSignature;
+    void desktopApi.terminal.reloadPrompt({
+      sessionId: pane.sessionId,
+      terminalThemePreset: themePresetId,
+      uiThemeId,
+      source: "user"
+    }).catch((_error) => {
+      // prompt refresh is best-effort; xterm theme still updates locally.
+    });
+  }, [active, desktopApi, pane.sessionId, promptSessionReady, themePresetId, uiThemeId]);
 
   return (
     <section

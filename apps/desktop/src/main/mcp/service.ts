@@ -911,31 +911,11 @@ export const createMcpIpcBridge = (
   // --- MCP ↔ Agent tool bridge ---
 
   const syncMcpToolsToAgent = async (server: PersistedMcpServerConfig): Promise<void> => {
-    try {
-      const snapshot = await readRuntimeIntrospectionPort(server);
-      await requestRuntime("agent.mcp_bridge.sync", {
-        server,
-        tools: snapshot.tools.map((t) => ({
-          name: t.name,
-          description: t.description ?? "",
-          ...(t.inputSchema === undefined ? {} : { inputSchema: t.inputSchema }),
-          ...(t.outputSchema === undefined ? {} : { outputSchema: t.outputSchema }),
-          ...(t.executionMode === undefined ? {} : { executionMode: t.executionMode }),
-          ...(t.approvalMode === undefined ? {} : { approvalMode: t.approvalMode }),
-          ...(t.sideEffects === undefined ? {} : { sideEffects: t.sideEffects })
-        }))
-      });
-    } catch {
-      // Non-fatal: agent bridge sync failure should not break MCP lifecycle.
-    }
+    void server;
   };
 
   const removeMcpToolsFromAgent = async (serverId: string): Promise<void> => {
-    try {
-      await requestRuntime("agent.mcp_bridge.remove", { serverId });
-    } catch {
-      // Non-fatal.
-    }
+    void serverId;
   };
 
   const callToolPort = async (

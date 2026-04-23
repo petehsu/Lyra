@@ -1,4 +1,5 @@
 export type {
+  TerminalThemeMode,
   TerminalPromptProfile,
   TerminalThemePreset,
   TerminalThemePresetId

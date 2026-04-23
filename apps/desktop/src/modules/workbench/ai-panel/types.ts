@@ -73,6 +73,7 @@ export type AiPanelSurfaceProps = {
   readonly richRenderingEnabled?: boolean;
   readonly newSessionTitle: string;
   readonly defaultProfileId?: string | null;
+  readonly defaultProviderId?: string | null;
   readonly defaultProfileName: string | null;
   readonly defaultModelNames: readonly string[];
   readonly profileLabel: string;

@@ -132,6 +132,8 @@ flowchart TB
         task.manifest.json
   
   shared/
+    shared_truth.sqlite
+    frozen_truth.sqlite
     shared_memory.md
     shared_memory.audit.jsonl
     frozen_memory.md
@@ -313,13 +315,13 @@ CREATE TABLE conflict_resolution (
    - 可读：所属任务的 `task_context`
    - 可读：参与的 `meeting_record`
    - 可读：相关的 `conflict_resolution`
-   - 可读：`shared_memory` 和 `frozen_memory`
+   - 可读：`shared_truth` / `frozen_truth`（及其 Markdown 投影视图）
 
 2. **角色写入权限**:
    - 可写：自己的 `role_work`
    - 可写：所属任务的 `task_context`（追加模式）
    - 可写：参与的 `meeting_record`（追加模式）
-   - 受限写：`shared_memory`（需触发器验证）
+   - 受限写：`shared_truth` / `frozen_truth`（需触发器验证，Markdown 由投影器生成）
 
 3. **Integrator 特权**:
    - 可读：所有相关角色的 `role_work`
@@ -410,7 +412,8 @@ interface DelegationMemoryScope {
 
 1. **任务级**: 写入 `task_context`
 2. **项目级**: 写入 `project_memory`
-3. **共享级**: 写入 `shared_memory`（需触发器验证）
+3. **共享级**: 写入 `shared_truth`（需触发器验证）
+   - `shared_memory.md` 仅作为同步投影视图
 
 ---
 
@@ -542,7 +545,7 @@ Context =
 
 ### 12.1 Oma 特有触发器
 
-除了原有的语法触发和 token 检查点触发，新增：
+除了原有的事件触发和 token 检查点触发，新增：
 
 1. **任务完成触发**:
    - 任务状态变为 `done` 时触发
@@ -735,7 +738,7 @@ interface OmaMemoryConfig {
 | 上下文组装 | 单一线性历史 | 多角色 + 任务上下文 |
 | 裁剪策略 | 会话级 Head/Middle/Tail | 角色级 + 任务级 |
 | 共享记忆 | 用户级 | 用户级 + 项目级 |
-| 触发器 | 语法 + Token 检查点 | + 任务完成 + 会议 + 冲突 |
+| 触发器 | 事件 + 语义打分 + Token 检查点 | + 任务完成 + 会议 + 冲突 |
 | 可见性 | 会话私有 | 角色私有 + 任务共享 |
 | 记忆传递 | 无 | 委派协议 |
 | 收敛机制 | 无 | Integrator 收敛 |
@@ -754,7 +757,7 @@ Oma 模式下的记忆架构本质上是：
 2. **可见性**: 从会话私有到分层可见性控制
 3. **传递**: 从无传递到显式委派协议
 4. **收敛**: 从单体结果到 Integrator 多角色收敛
-5. **触发**: 从对话触发到任务生命周期触发
+5. **触发**: 从事件 + 语义打分触发到任务生命周期触发
 
 同时保持：
 

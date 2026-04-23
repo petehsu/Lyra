@@ -381,37 +381,6 @@ const createDesktopApi = (): {
         accepted: true
       })
     },
-    ai: {
-      readProfiles: async () => [],
-      readProviderCatalog: async () => [],
-      readPresetCatalog: async () => [],
-      authorizeOpenAiChatGpt: async () => ({
-        refreshToken: "refresh-token",
-        accessToken: "access-token",
-        expiresAt: Date.now()
-      }),
-      authorizeOpenAiChatGptDeviceCode: async () => ({
-        refreshToken: "refresh-token",
-        accessToken: "access-token",
-        expiresAt: Date.now()
-      }),
-      upsertProfile: async () => {
-        throw new Error("not implemented");
-      },
-      deleteProfile: async () => undefined,
-      setDefaultProfile: async () => {
-        throw new Error("not implemented");
-      },
-      validateProfile: async () => {
-        throw new Error("not implemented");
-      },
-      discoverModels: async () => {
-        throw new Error("not implemented");
-      },
-      refreshDiscoveredModels: async () => {
-        throw new Error("not implemented");
-      }
-    },
     workbenchBrowser: {
       syncTopology: async () => undefined,
       syncLayout: async () => undefined,

@@ -14,7 +14,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createAiIpcBridge } from "./ai";
+import { createAgentCoreIpcBridge } from "./agent-core";
 import { createCapabilitiesIpcBridge } from "./capabilities";
 import { createCodeIntelHostToolsBridge } from "./code-intel";
 import {
@@ -80,7 +80,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
-let disposeAiBridge: (() => void) | null = null;
+let disposeAgentCoreBridge: (() => void) | null = null;
 let disposeCapabilitiesBridge: (() => void) | null = null;
 let disposeTerminalBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
@@ -747,12 +747,9 @@ const registerIpcHandlers = (): void => {
   });
   browserUseRuntimeCoordinator.start();
 
-  const aiBridge = createAiIpcBridge(
-    storageRoots.modules.ai,
-    runtimeClient
-  );
-  console.info(`[lyra-ai] runtime bridge ready`);
-  disposeAiBridge = aiBridge.dispose;
+  const agentCoreBridge = createAgentCoreIpcBridge(runtimeClient);
+  console.info(`[lyra-agent-core] runtime bridge ready`);
+  disposeAgentCoreBridge = agentCoreBridge.dispose;
 
   ipcMain.handle(LYRA_CHANNELS.minimizeWindow, () => {
     mainWindow?.minimize();
@@ -859,9 +856,9 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  if (disposeAiBridge !== null) {
-    disposeAiBridge();
-    disposeAiBridge = null;
+  if (disposeAgentCoreBridge !== null) {
+    disposeAgentCoreBridge();
+    disposeAgentCoreBridge = null;
   }
   if (disposeCapabilitiesBridge !== null) {
     disposeCapabilitiesBridge();

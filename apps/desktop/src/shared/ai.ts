@@ -4,38 +4,41 @@ export const AI_PROVIDER_IDS = [
   "openrouter",
   "anthropic",
   "google_ai",
-  "vertex_ai",
-  "amazon_bedrock",
-  "ollama",
-  "lmstudio",
   "deepseek",
   "xai",
   "mistral",
-  "moonshot",
   "groq",
   "together",
   "fireworks",
-  "siliconflow",
-  "nebius",
-  "cerebras",
   "vercel_ai_gateway",
+  "ollama",
+  "lmstudio",
   "custom_openai_compatible"
 ] as const;
 
 export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
 
 export const AI_PROTOCOL_IDS = [
-  "openai_compatible",
+  "openai_chat_completions",
+  "azure_openai_chat_completions",
+  "openrouter_chat_completions",
   "anthropic_messages",
   "gemini_generate_content",
-  "bedrock_converse",
+  "deepseek_chat_completions",
+  "xai_chat_completions",
+  "mistral_chat_completions",
+  "groq_chat_completions",
+  "together_chat_completions",
+  "fireworks_chat_completions",
+  "vercel_ai_gateway_chat_completions",
   "ollama_chat",
-  "lmstudio_openai"
+  "lmstudio_chat_completions",
+  "custom_chat_completions",
 ] as const;
 
 export type AiProtocolId = (typeof AI_PROTOCOL_IDS)[number];
 
-export type AiProviderCatalogSection = "recommended" | "all" | "custom";
+export type AiProviderCatalogSection = "mainstream" | "local" | "custom";
 export type AiProviderFieldScope = "connection" | "auth" | "advanced";
 export type AiProviderFieldKind = "text" | "password" | "url" | "textarea" | "select" | "file";
 export type AiModelDiscoveryMode = "dynamic" | "static" | "mixed";
@@ -100,6 +103,8 @@ export type AiProviderPreset = {
   readonly modelDiscoverySupported: boolean;
   readonly customHeadersSupported: boolean;
   readonly customModelsSupported: boolean;
+  readonly runtimeSupported: boolean;
+  readonly simpleFields: readonly string[];
   readonly connectionFields: readonly AiProviderFieldSchema[];
   readonly authFields: readonly AiProviderFieldSchema[];
   readonly defaultConnectionConfig: AiProfileConnectionConfig;
@@ -119,6 +124,9 @@ export type AiProviderProfile = {
   readonly name: string;
   readonly providerId: AiProviderId;
   readonly protocolId: AiProtocolId;
+  readonly runtimeProviderId: string;
+  readonly runtimeSupported: boolean;
+  readonly secretStatus: "configured" | "missing" | "env";
   readonly presetId: AiProviderPresetId | null;
   readonly connectionConfig: AiProfileConnectionConfig;
   readonly authConfig: AiProfileAuthConfig;
@@ -187,17 +195,15 @@ export type AiModelDiscoveryResult = {
   readonly message: string;
   readonly checkedAt: number;
   readonly models: readonly AiProviderModelEntry[];
+  readonly code?: string;
 };
 
 export type AiProfileValidationResult = {
   readonly ok: boolean;
   readonly message: string;
   readonly checkedAt: number;
+  readonly code?: string;
 };
 
-export type AiOpenAiChatGptAuthResult = {
-  readonly refreshToken: string;
-  readonly accessToken: string;
-  readonly expiresAt: number;
-  readonly accountId?: string;
-};
+// TODO(lyra): AiOpenAiChatGptAuthResult was removed — managed OAuth is not supported.
+// If external OAuth re-auth is needed in the future, define a provider-neutral type here.

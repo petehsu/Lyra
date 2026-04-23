@@ -1,11 +1,11 @@
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchThemeId } from "../theme";
-import type { TerminalThemePresetId } from "../terminal-theme";
+import type { TerminalThemeMode } from "../terminal-theme";
 
 export const WORKBENCH_CONFIG = {
   locale: "zh-CN" as WorkbenchLocale,
   theme: "one-system" as WorkbenchThemeId,
-  terminalThemePreset: "glacier-blocks" as TerminalThemePresetId,
+  terminalThemePreset: "follow-app" as TerminalThemeMode,
   browser: {
     homeSearchAddress: "lyra://search",
     docsEntryAddress: "http://localhost:5174/docs",

@@ -1,0 +1,11 @@
+[package]
+name = "lyra-connectors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lyra-app-server-protocol = { workspace = true }

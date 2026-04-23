@@ -25,6 +25,8 @@ type AgentComposerProps = {
   readonly onHeightChange?: (height: number) => void;
   readonly onValueChange: (value: string) => void;
   readonly onSend: () => void;
+  readonly onStop?: () => void;
+  readonly stopDisabled?: boolean;
 };
 
 const MIN_HEIGHT = 44;
@@ -51,7 +53,9 @@ export const AgentComposer = ({
   onPlanModeToggle,
   onHeightChange,
   onValueChange,
-  onSend
+  onSend,
+  onStop,
+  stopDisabled = false
 }: AgentComposerProps) => {
   const t = useMemo(() => createTranslator(locale), [locale]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -206,11 +210,17 @@ export const AgentComposer = ({
           <button
             type="button"
             className={`lyra-ai-agent-send lyra-ai-agent-send-${sendVisualState}`}
-            disabled={sendDisabled && !sending}
+            disabled={sending ? stopDisabled : sendDisabled}
             aria-label={sendLabel}
             title={sendLabel}
             onClick={() => {
-              if (sendDisabled || sending) {
+              if (sending) {
+                if (!stopDisabled) {
+                  onStop?.();
+                }
+                return;
+              }
+              if (sendDisabled) {
                 return;
               }
               onSend();

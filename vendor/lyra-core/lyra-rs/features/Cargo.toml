@@ -1,0 +1,24 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "lyra-features"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "lyra_features"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+lyra-otel = { workspace = true }
+lyra-protocol = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+toml = { workspace = true }
+tracing = { workspace = true, features = ["log"] }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

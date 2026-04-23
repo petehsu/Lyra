@@ -7,8 +7,6 @@ import {
 } from "lucide-react";
 import {
   useCallback,
-  useEffect,
-  useRef,
   useState,
   type DragEvent as ReactDragEvent
 } from "react";
@@ -34,7 +32,6 @@ export const TerminalDock = ({
   onRequestTabContextMenu,
   onDropWorkspaceTerminalTab
 }: TerminalDockProps) => {
-  const previousPresetRef = useRef(themePresetId);
   const activeDockTab = model.activeDockTab;
   const [isWorkspaceDropActive, setIsWorkspaceDropActive] = useState(false);
   const [dockDropIndex, setDockDropIndex] = useState<number | null>(null);
@@ -178,48 +175,6 @@ export const TerminalDock = ({
       resolveDockDropIndex
     ]
   );
-
-  useEffect(() => {
-    if (previousPresetRef.current === themePresetId) {
-      return;
-    }
-    previousPresetRef.current = themePresetId;
-
-    if (desktopApi === null) {
-      return;
-    }
-
-    const activeSessionIds = Array.from(
-      new Set(Object.values(model.state.panes).map((pane) => pane.sessionId))
-    );
-
-    if (activeSessionIds.length === 0) {
-      return;
-    }
-
-    void Promise.all(
-      activeSessionIds.map((sessionId) =>
-        desktopApi.terminal
-          .reloadPrompt({
-            sessionId,
-            terminalThemePreset: themePresetId,
-            uiThemeId,
-            source: "user"
-          })
-          .catch((_error: unknown) => ({
-            applied: false,
-            deferred: true
-          }))
-      )
-    ).catch((_error: unknown) => {
-      // best effort theme/prompt refresh
-    });
-  }, [
-    desktopApi,
-    model.state.panes,
-    themePresetId,
-    uiThemeId
-  ]);
 
   return (
     <section

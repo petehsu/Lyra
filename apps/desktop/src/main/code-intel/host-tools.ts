@@ -5,6 +5,11 @@ import type { LyraRuntimeClient } from "../runtime-client";
 import type { RuntimeHostRpcService } from "../runtime-host-rpc/types";
 
 const CODE_INTEL_TOOL_SET_ID = "desktop.code_intel";
+type HostToolsSyncResult = {
+  readonly acceptedCount: number;
+  readonly droppedAsCodexOwnedCount: number;
+  readonly droppedToolNames: readonly string[];
+};
 
 type HostToolInvocationPayload = {
   readonly toolName?: unknown;
@@ -94,6 +99,8 @@ export const createCodeIntelHostToolsBridge = ({
   readonly runtimeClient: LyraRuntimeClient;
   readonly runtimeHostRpc: RuntimeHostRpcService;
 }) => {
+  const requestLyraRuntime = async <T>(method: string, params: unknown): Promise<T> =>
+    await runtimeClient.request<T>("lyra.runtime.request", { method, params });
   const disposers = HOST_TOOL_CONFIGS.map((config) =>
     runtimeHostRpc.registerHandler(config.capabilityId, async (payload: unknown) => {
       const request = asRecord(payload) as HostToolInvocationPayload;
@@ -117,12 +124,15 @@ export const createCodeIntelHostToolsBridge = ({
       for (const dispose of disposers) {
         dispose();
       }
-      void runtimeClient.request("agent.host_tools.remove", {
+      void requestLyraRuntime("lyra/runtime/hostTools/remove", {
         toolSetId: CODE_INTEL_TOOL_SET_ID
       }).catch(() => undefined);
     },
     sync: async () => {
-      await runtimeClient.request("agent.host_tools.sync", buildPayload(capabilitiesBridge));
+      await requestLyraRuntime<HostToolsSyncResult>(
+        "lyra/runtime/hostTools/sync",
+        buildPayload(capabilitiesBridge)
+      );
     }
   };
 };

@@ -6,6 +6,7 @@ export {
   resolveTerminalThemeVars
 } from "./service";
 export type {
+  TerminalThemeMode,
   TerminalPromptProfile,
   TerminalThemePreset,
   TerminalThemePresetId

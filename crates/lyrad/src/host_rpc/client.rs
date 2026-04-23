@@ -40,6 +40,7 @@ impl HostRpcClient {
         let request_id = self.create_request_id();
         let (sender, receiver) = oneshot::channel::<HostRpcResult>();
         self.pending.lock().await.insert(request_id.clone(), sender);
+
         if self
             .outgoing
             .send(RuntimeEnvelope::Request {
@@ -72,46 +73,6 @@ impl HostRpcClient {
         }
     }
 
-    pub fn call_json_blocking(
-        &self,
-        method: &str,
-        payload: Value,
-        _timeout: Duration,
-    ) -> HostRpcResult {
-        let request_id = self.create_request_id();
-        let (sender, receiver) = oneshot::channel::<HostRpcResult>();
-        {
-            let mut pending = self.pending.blocking_lock();
-            pending.insert(request_id.clone(), sender);
-        }
-        if self
-            .outgoing
-            .send(RuntimeEnvelope::Request {
-                id: request_id.clone(),
-                method: method.to_string(),
-                payload,
-            })
-            .is_err()
-        {
-            self.pending.blocking_lock().remove(&request_id);
-            return Err(RuntimeError::new(
-                "HOST_RPC_SEND_FAILED",
-                format!("failed to send host RPC request: {method}"),
-            ));
-        }
-
-        match receiver.blocking_recv() {
-            Ok(result) => result,
-            Err(_) => {
-                self.pending.blocking_lock().remove(&request_id);
-                Err(RuntimeError::new(
-                    "HOST_RPC_CHANNEL_CLOSED",
-                    format!("host RPC response channel closed: {method}"),
-                ))
-            }
-        }
-    }
-
     pub async fn resolve_response(
         &self,
         id: String,
@@ -123,6 +84,7 @@ impl HostRpcClient {
         let Some(sender) = sender else {
             return false;
         };
+
         let response = if ok {
             Ok(result.unwrap_or(Value::Null))
         } else {

@@ -8,8 +8,7 @@ import {
 } from "../theme";
 import {
   WORKBENCH_TERMINAL_THEME_PRESET_IDS,
-  resolveTerminalThemePreviewSwatches,
-  type TerminalThemePresetId
+  type TerminalThemeMode
 } from "../terminal-theme";
 import type {
   WorkbenchSplitOverflowPolicy,
@@ -252,11 +251,11 @@ export const createSettingThemeOptions = (
 
 export const createSettingTerminalThemeOptions = (
   t: (key: I18nKey) => string
-): readonly (Option<TerminalThemePresetId> & { readonly swatches: readonly string[] })[] =>
+): readonly Option<TerminalThemeMode>[] =>
   WORKBENCH_TERMINAL_THEME_PRESET_IDS.map((presetId) => ({
     value: presetId,
     label: t(`settings.terminalTheme.${presetId}` as I18nKey),
-    swatches: resolveTerminalThemePreviewSwatches(presetId)
+    description: t(`settings.terminalThemeDescription.${presetId}` as I18nKey)
   }));
 
 const WORKBENCH_SPLIT_TRIGGER_MODES = [

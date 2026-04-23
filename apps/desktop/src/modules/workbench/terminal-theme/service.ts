@@ -1,30 +1,30 @@
 import {
-  TERMINAL_THEME_PRESET_IDS,
-  isTerminalThemePresetId,
+  TERMINAL_THEME_MODE_IDS,
+  isTerminalThemeModeId,
+  normalizeTerminalThemeMode,
   resolveTerminalThemePreset
 } from "../../../shared/terminal-theme";
-import type { TerminalThemePresetId } from "./types";
+import type { TerminalThemeMode } from "./types";
 
-const FALLBACK_PRESET: TerminalThemePresetId = "glacier-blocks";
+const FALLBACK_PRESET: TerminalThemeMode = "follow-app";
 
 export const isWorkbenchTerminalThemePresetId = (
   value: unknown
-): value is TerminalThemePresetId => isTerminalThemePresetId(value);
+): value is TerminalThemeMode => isTerminalThemeModeId(value);
 
 export const resolveTerminalThemeVars = (
-  presetId: TerminalThemePresetId
+  presetId: TerminalThemeMode
 ): Record<`--${string}`, string> => {
   void presetId;
   return {};
 };
 
 export const resolveTerminalThemePreviewSwatches = (
-  presetId: TerminalThemePresetId
+  presetId: TerminalThemeMode
 ): readonly string[] => resolveTerminalThemePreset(presetId).previewSwatches;
 
 export const resolveTerminalThemePresetId = (
   value: unknown
-): TerminalThemePresetId =>
-  isTerminalThemePresetId(value) ? value : FALLBACK_PRESET;
+): TerminalThemeMode => normalizeTerminalThemeMode(value, FALLBACK_PRESET);
 
-export const WORKBENCH_TERMINAL_THEME_PRESET_IDS = TERMINAL_THEME_PRESET_IDS;
+export const WORKBENCH_TERMINAL_THEME_PRESET_IDS = TERMINAL_THEME_MODE_IDS;

@@ -12,7 +12,7 @@ import type { WorkbenchPreferences } from "../types";
 const defaults: WorkbenchPreferences = {
   locale: "zh-CN",
   theme: "one-light",
-  terminalThemePreset: "glacier-blocks",
+  terminalThemePreset: "follow-app",
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",
   splitOverflowPolicy: "block_with_notice",
@@ -50,7 +50,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "en-US",
       theme: "one-dark",
-      terminalThemePreset: "ocean-matrix",
+      terminalThemePreset: "lyra-rich",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
@@ -61,7 +61,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "en-US",
       theme: "one-dark",
-      terminalThemePreset: "ocean-matrix",
+      terminalThemePreset: "lyra-rich",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
@@ -74,7 +74,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "zh-CN",
       theme: "gruvbox-system",
-      terminalThemePreset: "mono-signal",
+      terminalThemePreset: "lyra-standard",
       splitTriggerMode: "ctrl_left_drag",
       splitThreePaneLayout: "top_two_bottom_one",
       splitOverflowPolicy: "replace_oldest",
@@ -85,12 +85,21 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "zh-CN",
       theme: "gruvbox-system",
-      terminalThemePreset: "mono-signal",
+      terminalThemePreset: "lyra-standard",
       splitTriggerMode: "ctrl_left_drag",
       splitThreePaneLayout: "top_two_bottom_one",
       splitOverflowPolicy: "replace_oldest",
       aiRichRenderingEnabled: true
     });
+  });
+
+  test("migrates legacy terminal preset values to lyra-rich", () => {
+    writeWorkbenchPreferences({
+      ...defaults,
+      terminalThemePreset: "ocean-matrix" as unknown as WorkbenchPreferences["terminalThemePreset"]
+    });
+
+    expect(readWorkbenchPreferences(defaults).terminalThemePreset).toBe("lyra-rich");
   });
 
   test("updates via model and writes to storage", () => {
@@ -99,7 +108,7 @@ describe("workbench preferences", () => {
     act(() => {
       result.current.setLocale("en-US");
       result.current.setTheme("one-dark");
-      result.current.setTerminalThemePreset("amber-forge");
+      result.current.setTerminalThemePreset("lyra-developer");
       result.current.setSplitTriggerMode("right_drag");
       result.current.setSplitThreePaneLayout("left_two_right_one");
       result.current.setSplitOverflowPolicy("replace_target");
@@ -110,7 +119,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "en-US",
       theme: "one-dark",
-      terminalThemePreset: "amber-forge",
+      terminalThemePreset: "lyra-developer",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
@@ -121,7 +130,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "en-US",
       theme: "one-dark",
-      terminalThemePreset: "amber-forge",
+      terminalThemePreset: "lyra-developer",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",

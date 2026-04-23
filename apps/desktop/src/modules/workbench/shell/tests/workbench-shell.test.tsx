@@ -457,49 +457,6 @@ const setDesktopApiPlatform = (platform: NodeJS.Platform) => {
         accepted: true
       }))
     },
-    ai: {
-      readProfiles: vi.fn(async () => []),
-      readProviderCatalog: vi.fn(async () => []),
-      readPresetCatalog: vi.fn(async () => []),
-      authorizeOpenAiChatGpt: vi.fn(async () => ({
-        refreshToken: "refresh-token",
-        accessToken: "access-token",
-        expiresAt: now
-      })),
-      authorizeOpenAiChatGptDeviceCode: vi.fn(async () => ({
-        refreshToken: "refresh-token",
-        accessToken: "access-token",
-        expiresAt: now
-      })),
-      upsertProfile: vi.fn(async () => {
-        throw new Error("not implemented");
-      }),
-      deleteProfile: vi.fn(async () => undefined),
-      setDefaultProfile: vi.fn(async () => {
-        throw new Error("not implemented");
-      }),
-      validateProfile: vi.fn(async () => ({
-        ok: true,
-        message: "ok",
-        checkedAt: now
-      })),
-      discoverModels: vi.fn(async () => ({
-        providerId: "openai" as const,
-        protocolId: "openai_compatible" as const,
-        status: "ready" as const,
-        message: "ok",
-        checkedAt: now,
-        models: []
-      })),
-      refreshDiscoveredModels: vi.fn(async () => ({
-        providerId: "openai" as const,
-        protocolId: "openai_compatible" as const,
-        status: "ready" as const,
-        message: "ok",
-        checkedAt: now,
-        models: []
-      }))
-    },
     files: {
       readHome: vi.fn(),
       readDirectory: vi.fn(),
@@ -745,11 +702,11 @@ describe("workbench shell", () => {
     render(<WorkbenchShell />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
-    fireEvent.click(screen.getByRole("radio", { name: "Ocean Matrix" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Lyra 开发者" }));
 
     const raw = readWorkbenchStateSync("preferences");
     expect(raw).not.toBeNull();
-    expect(raw).toContain("\"terminalThemePreset\":\"ocean-matrix\"");
+    expect(raw).toContain("\"terminalThemePreset\":\"lyra-developer\"");
   });
 
   test("hides custom macOS window buttons when platform is darwin", () => {

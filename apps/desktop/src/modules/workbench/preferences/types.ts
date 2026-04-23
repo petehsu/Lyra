@@ -1,6 +1,6 @@
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchThemeId } from "../theme";
-import type { TerminalThemePresetId } from "../terminal-theme";
+import type { TerminalThemeMode } from "../terminal-theme";
 import type {
   SearchDeepCrawlPolicy,
   SearchDeepBudgetPreset,
@@ -29,7 +29,7 @@ export type WorkbenchLyraDirectMicroExecutorBudget = "1-2" | "3-5" | "6-8";
 export type WorkbenchPreferences = {
   readonly locale: WorkbenchLocale;
   readonly theme: WorkbenchThemeId;
-  readonly terminalThemePreset: TerminalThemePresetId;
+  readonly terminalThemePreset: TerminalThemeMode;
   readonly splitTriggerMode: WorkbenchSplitTriggerMode;
   readonly splitThreePaneLayout: WorkbenchSplitThreePaneLayout;
   readonly splitOverflowPolicy: WorkbenchSplitOverflowPolicy;
@@ -58,7 +58,7 @@ export type WorkbenchPreferencesModel = {
   readonly preferences: WorkbenchPreferences;
   readonly setLocale: (locale: WorkbenchLocale) => void;
   readonly setTheme: (theme: WorkbenchThemeId) => void;
-  readonly setTerminalThemePreset: (preset: TerminalThemePresetId) => void;
+  readonly setTerminalThemePreset: (preset: TerminalThemeMode) => void;
   readonly setSplitTriggerMode: (mode: WorkbenchSplitTriggerMode) => void;
   readonly setSplitThreePaneLayout: (layout: WorkbenchSplitThreePaneLayout) => void;
   readonly setSplitOverflowPolicy: (policy: WorkbenchSplitOverflowPolicy) => void;

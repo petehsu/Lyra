@@ -1,12 +1,10 @@
-import type {
-  AiModelDiscoveryResult,
-  AiProviderCatalogItem,
-  AiProviderId,
-  AiProtocolId,
-  AiProviderPreset,
-  AiProviderProfile
-} from "../../../shared/ai";
 import type { BrowserUseRuntimeStatus } from "../../../shared/browser-use";
+import type { LyraRuntimeHealth } from "../../../shared/lyra-runtime";
+import type {
+  AiProviderModelEntry,
+  AiProviderPreset,
+  AiProviderProfile,
+} from "../../../shared/ai";
 import type {
   WorkbenchBrowserAutomationEngine,
   WorkbenchLyraDirectMicroExecutorBudget,
@@ -102,12 +100,12 @@ export type SettingsAiLabels = {
 export type SettingsAiDraft = {
   readonly id: string | null;
   readonly name: string;
-  readonly providerId: AiProviderId;
-  readonly protocolId: AiProtocolId;
+  readonly providerId: string;
+  readonly protocolId: string;
   readonly presetId: string | null;
-  readonly connectionConfig: Record<string, string>;
-  readonly authConfig: Record<string, string>;
-  readonly secretValues: Record<string, string>;
+  readonly connectionConfig: Readonly<Record<string, string>>;
+  readonly authConfig: Readonly<Record<string, string>>;
+  readonly secretValues: Readonly<Record<string, string>>;
   readonly clearSecretFields: readonly string[];
   readonly configuredSecretFields: readonly string[];
   readonly headersText: string;
@@ -115,55 +113,55 @@ export type SettingsAiDraft = {
   readonly isDefault: boolean;
 };
 
+export type SettingsAiPresetSection = {
+  readonly id: "mainstream" | "local" | "custom";
+  readonly label: string;
+  readonly presets: readonly AiProviderPreset[];
+};
+
 export type SettingsAiModel = {
-  readonly profiles: readonly AiProviderProfile[];
-  readonly providerCatalog: readonly AiProviderCatalogItem[];
-  readonly presetCatalog: readonly AiProviderPreset[];
-  readonly selectedProfileId: string | null;
-  readonly draft: SettingsAiDraft;
-  readonly discoveryResult: AiModelDiscoveryResult | null;
   readonly isLoading: boolean;
   readonly isSaving: boolean;
-  readonly isTesting: boolean;
-  readonly isDiscovering: boolean;
-  readonly isMemoryConfigLoading: boolean;
-  readonly isMemoryConfigSaving: boolean;
+  readonly isRefreshingModels: boolean;
   readonly statusMessage: string;
   readonly statusTone: "neutral" | "success" | "error";
-  readonly lastCheckedAt: number | null;
-  readonly memoryConfigText: string;
-  readonly memoryConfigStatus: string;
-  readonly memoryConfigStatusTone: "neutral" | "success" | "error";
+  readonly runtimeHealth: LyraRuntimeHealth | null;
+  readonly profiles: readonly AiProviderProfile[];
+  readonly presetSections: readonly SettingsAiPresetSection[];
+  readonly selectedProfileId: string | null;
+  readonly defaultProfileId: string | null;
+  readonly defaultProviderId: string | null;
+  readonly defaultProfileLabel: string | null;
+  readonly defaultModelNames: readonly string[];
+  readonly selectedPresetId: string | null;
+  readonly selectedPreset: AiProviderPreset | null;
+  readonly draft: SettingsAiDraft;
+  readonly availableModels: readonly AiProviderModelEntry[];
+  readonly selectedModelIds: readonly string[];
   readonly browserAutomationEngine: WorkbenchBrowserAutomationEngine;
   readonly lyraDirectMicroExecutorBudget: WorkbenchLyraDirectMicroExecutorBudget;
   readonly browserUseRuntimeStatus: BrowserUseRuntimeStatus;
-  readonly selectProfile: (profileId: string) => void;
-  readonly createProfileDraft: () => void;
-  readonly selectPreset: (presetId: string) => void;
-  readonly updateName: (value: string) => void;
-  readonly updateUrl: (value: string) => void;
-  readonly updateKey: (value: string) => void;
-  readonly updateModelsText: (value: string) => void;
-  readonly toggleModelOption: (modelId: string) => void;
+  readonly selectProfile: (profileId: string | null) => void;
+  readonly applyPreset: (presetId: string) => void;
+  readonly updateDraftName: (value: string) => void;
+  readonly updateDraftHeadersText: (value: string) => void;
+  readonly updateDraftModelsText: (value: string) => void;
   readonly updateDraftField: (
     target: "connection" | "auth" | "secret",
     fieldId: string,
     value: string
   ) => void;
-  readonly updateHeadersText: (value: string) => void;
   readonly clearSecretField: (fieldId: string) => void;
-  readonly authorizeOpenAiChatGpt: () => Promise<void>;
-  readonly authorizeOpenAiChatGptDeviceCode: () => Promise<void>;
+  readonly toggleModelSelection: (modelId: string) => void;
+  readonly refreshConfig: () => Promise<void>;
+  readonly refreshModels: () => Promise<void>;
+  readonly validateProfile: () => Promise<void>;
   readonly saveProfile: () => Promise<void>;
   readonly deleteProfile: () => Promise<void>;
   readonly setDefaultProfile: () => Promise<void>;
-  readonly testConnection: () => Promise<void>;
-  readonly discoverModels: () => Promise<void>;
-  readonly refreshDiscoveredModels: () => Promise<void>;
-  readonly loadMemoryConfig: () => Promise<void>;
-  readonly saveMemoryConfig: () => Promise<void>;
-  readonly updateMemoryConfigText: (value: string) => void;
-  readonly setBrowserAutomationEngine: (value: WorkbenchBrowserAutomationEngine) => void;
+  readonly setBrowserAutomationEngine: (
+    value: WorkbenchBrowserAutomationEngine
+  ) => void;
   readonly setLyraDirectMicroExecutorBudget: (
     value: WorkbenchLyraDirectMicroExecutorBudget
   ) => void;

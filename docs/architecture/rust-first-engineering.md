@@ -22,11 +22,11 @@ These modules must route core behavior to the matching Rust crate:
 | lsp | `apps/desktop/src/main/lsp` | `crates/lyra-lsp-core` |
 | skills | `apps/desktop/src/main/skills` | `crates/lyra-skills-napi` |
 | mcp | `apps/desktop/src/main/mcp` | `crates/lyra-mcp-core` |
-| ai | `apps/desktop/src/main/ai` | `crates/lyra-ai-core` |
+| ai | `apps/desktop/src/main/ai` | `vendor/lyra-core/lyra-rs` |
 
 Requirements:
 
-1. Rust crate must exist and be in workspace `Cargo.toml`.
+1. Rust crate or vendored native workspace must exist.
 2. Main process wiring must call the module bridge factory in `apps/desktop/src/main/index.ts`.
 3. `apps/desktop/package.json` `scripts.native:build` must include `-p <crate>`.
 4. TypeScript services must not keep fallback implementations for native-owned behavior.

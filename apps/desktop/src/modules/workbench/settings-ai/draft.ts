@@ -15,6 +15,8 @@ export const serializeMap = (value: Record<string, string>): string =>
 const MODEL_VALUE_DELIMITER = /[\r\n,，、;；]+/;
 const PRIMARY_URL_FIELD_IDS = ["baseUrl", "endpointOverride"] as const;
 const PRIMARY_SECRET_FIELD_IDS = ["apiKey", "refreshToken"] as const;
+const DEFAULT_PROVIDER_ID = "lmstudio";
+const DEFAULT_PROTOCOL_ID = "lmstudio_chat_completions";
 
 export const parseMap = (value: string): Record<string, string> =>
   value
@@ -202,16 +204,16 @@ export const toDraft = (
   const preset = resolvePreset(
     presets,
     profile?.presetId ?? null,
-    profile?.providerId ?? "openai",
-    profile?.protocolId ?? "openai_compatible"
+    profile?.providerId ?? DEFAULT_PROVIDER_ID,
+    profile?.protocolId ?? DEFAULT_PROTOCOL_ID
   );
 
   if (profile === null) {
     return {
       id: null,
       name: "",
-      providerId: preset?.providerId ?? "openai",
-      protocolId: preset?.protocolId ?? "openai_compatible",
+      providerId: preset?.providerId ?? DEFAULT_PROVIDER_ID,
+      protocolId: preset?.protocolId ?? DEFAULT_PROTOCOL_ID,
       presetId: preset?.id ?? null,
       connectionConfig: { ...(preset?.defaultConnectionConfig ?? {}) },
       authConfig: { ...(preset?.defaultAuthConfig ?? {}) },

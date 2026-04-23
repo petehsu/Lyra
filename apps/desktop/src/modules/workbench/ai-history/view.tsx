@@ -1,9 +1,54 @@
 import { ArrowRight, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { AgentSession } from "../../../shared/desktop-bridge";
-import { emitAgentSessionSelected } from "../agent-session-events";
+import { emitThreadSelected } from "../thread-selection-events";
 import type { AiHistorySurfaceProps } from "./types";
+
+type JsonRecord = Record<string, unknown>;
+
+type LyraThreadSummary = {
+  readonly id: string;
+  readonly name?: string | null;
+  readonly preview: string;
+  readonly updatedAt?: number | null;
+  readonly modelProvider?: string | null;
+};
+
+const isRecord = (value: unknown): value is JsonRecord =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readString = (value: unknown): string | null =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+const readNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const createRequestPayload = (
+  method: string,
+  params: JsonRecord
+): Readonly<Record<string, unknown>> => ({
+  method,
+  params
+});
+
+const toThreadSummary = (value: unknown): LyraThreadSummary | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = readString(value.id);
+  if (id === null) {
+    return null;
+  }
+
+  return {
+    id,
+    name: readString(value.name),
+    preview: readString(value.preview) ?? "",
+    updatedAt: readNumber(value.updatedAt),
+    modelProvider: readString(value.modelProvider)
+  };
+};
 
 const formatSessionTime = (timestampMs: number, locale: string): string => {
   try {
@@ -26,26 +71,37 @@ export const AiHistorySurface = ({
   loadingSessionsLabel,
   emptyStateTitle,
   emptyStateDescription,
-  defaultProfileId
+  defaultProfileId: _defaultProfileId,
+  defaultProviderId
 }: AiHistorySurfaceProps) => {
-  const agentApi = desktopApi?.agent;
-  const [sessions, setSessions] = useState<readonly AgentSession[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const lyraApi = desktopApi?.lyra;
+  const [threads, setThreads] = useState<readonly LyraThreadSummary[]>([]);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const loadSessions = useCallback(async (): Promise<void> => {
-    if (agentApi === undefined) {
+  const loadThreads = useCallback(async (): Promise<void> => {
+    if (lyraApi === undefined) {
       return;
     }
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const listed = await agentApi.listSessions();
-      setSessions(listed);
-      setSelectedSessionId((current) => {
-        if (current !== null && listed.some((session) => session.id === current)) {
+      const response = await lyraApi.request<{ data?: readonly unknown[] }>(
+        createRequestPayload("thread/list", {
+          limit: 100,
+          sortKey: "updated_at",
+          sortDirection: "desc",
+          archived: false
+        })
+      );
+      const listed = Array.isArray(response.data)
+        ? response.data.map(toThreadSummary).filter((entry): entry is LyraThreadSummary => entry !== null)
+        : [];
+      setThreads(listed);
+      setSelectedThreadId((current) => {
+        if (current !== null && listed.some((thread) => thread.id === current)) {
           return current;
         }
         return listed[0]?.id ?? null;
@@ -55,80 +111,110 @@ export const AiHistorySurface = ({
     } finally {
       setIsLoading(false);
     }
-  }, [agentApi]);
+  }, [lyraApi]);
 
   useEffect(() => {
-    if (agentApi === undefined) {
+    if (lyraApi === undefined) {
       return;
     }
-    void loadSessions();
-  }, [agentApi, loadSessions]);
+    void loadThreads();
+  }, [lyraApi, loadThreads]);
 
   useEffect(() => {
-    if (agentApi === undefined) {
+    if (lyraApi === undefined) {
       return;
     }
-    return agentApi.onEvent((_event) => {
-      void loadSessions();
+
+    return lyraApi.onEvent((event) => {
+      if (event.kind !== "notification" || !isRecord(event.notification)) {
+        return;
+      }
+      const method = readString(event.notification.method);
+      if (
+        method === "thread/started"
+        || method === "thread/archived"
+        || method === "thread/name/updated"
+        || method === "turn/completed"
+      ) {
+        void loadThreads();
+      }
     });
-  }, [agentApi, loadSessions]);
+  }, [lyraApi, loadThreads]);
 
-  const createSession = useCallback(async (): Promise<void> => {
-    if (agentApi === undefined || isCreating) {
+  const createThread = useCallback(async (): Promise<void> => {
+    if (lyraApi === undefined || isCreating) {
       return;
     }
     setIsCreating(true);
     setErrorMessage(null);
     try {
-      const created = await agentApi.createSession({
-        title: newSessionTitle,
-        ...(defaultProfileId === null || defaultProfileId === undefined
-          ? {}
-          : { profileId: defaultProfileId })
-      });
-      await loadSessions();
-      setSelectedSessionId(created.id);
-      emitAgentSessionSelected(created.id);
+      const response = await lyraApi.request<{ thread?: unknown }>(
+        createRequestPayload("thread/start", {
+          ...(defaultProviderId === null || defaultProviderId === undefined
+            ? {}
+            : { modelProvider: defaultProviderId })
+        })
+      );
+      const created = toThreadSummary(response.thread);
+      if (created === null) {
+        throw new Error("Lyra thread/start did not return a thread");
+      }
+      const normalizedName = newSessionTitle.trim();
+      if (normalizedName.length > 0) {
+        await lyraApi.request(
+          createRequestPayload("thread/name/set", {
+            threadId: created.id,
+            name: normalizedName
+          })
+        );
+      }
+      await loadThreads();
+      setSelectedThreadId(created.id);
+      emitThreadSelected(created.id);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsCreating(false);
     }
-  }, [agentApi, defaultProfileId, isCreating, loadSessions, newSessionTitle]);
+  }, [lyraApi, defaultProviderId, isCreating, loadThreads, newSessionTitle]);
 
-  const deleteSession = useCallback(
-    async (sessionId: string): Promise<void> => {
-      if (agentApi === undefined) {
+  const archiveThread = useCallback(
+    async (threadId: string): Promise<void> => {
+      if (lyraApi === undefined) {
         return;
       }
       setErrorMessage(null);
       try {
-        await agentApi.deleteSession({ sessionId });
-        const next = sessions.filter((session) => session.id !== sessionId);
-        setSessions(next);
+        await lyraApi.request(
+          createRequestPayload("thread/archive", {
+            threadId
+          })
+        );
+        const next = threads.filter((thread) => thread.id !== threadId);
+        setThreads(next);
         const fallbackId = next[0]?.id ?? null;
-        setSelectedSessionId((current) => {
-          if (current !== sessionId) {
+        setSelectedThreadId((current) => {
+          if (current !== threadId) {
             return current;
           }
           return fallbackId;
         });
         if (fallbackId !== null) {
-          emitAgentSessionSelected(fallbackId);
+          emitThreadSelected(fallbackId);
         }
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : String(error));
       }
     },
-    [agentApi, sessions]
+    [lyraApi, threads]
   );
 
-  const selectedSession = useMemo(
-    () => sessions.find((session) => session.id === selectedSessionId) ?? null,
-    [selectedSessionId, sessions]
+  const selectedThread = useMemo(
+    () => threads.find((thread) => thread.id === selectedThreadId) ?? null,
+    [selectedThreadId, threads]
   );
 
-  if (agentApi === undefined) {
+  if (lyraApi === undefined) {
     return (
       <section className="lyra-ai-history-surface" aria-label={title}>
         <header className="lyra-ai-history-topbar">
@@ -151,7 +237,7 @@ export const AiHistorySurface = ({
             type="button"
             className="lyra-ai-history-topbar-action"
             onClick={() => {
-              void createSession();
+              void createThread();
             }}
             aria-label={newConversationLabel}
             title={newConversationLabel}
@@ -164,27 +250,27 @@ export const AiHistorySurface = ({
 
       <div className="lyra-ai-history-shell">
         <aside className="lyra-ai-history-list-pane">
-          {sessions.length === 0 ? (
+          {threads.length === 0 ? (
             <div className="lyra-ai-history-empty-list">
               {isLoading ? loadingSessionsLabel : emptyStateTitle}
             </div>
           ) : (
             <div className="lyra-ai-history-list">
-              {sessions.map((session) => (
+              {threads.map((thread) => (
                 <button
-                  key={session.id}
+                  key={thread.id}
                   type="button"
                   className={
-                    session.id === selectedSessionId
+                    thread.id === selectedThreadId
                       ? "lyra-ai-history-item lyra-ai-history-item-active"
                       : "lyra-ai-history-item"
                   }
                   onClick={() => {
-                    setSelectedSessionId(session.id);
+                    setSelectedThreadId(thread.id);
                   }}
                 >
-                  <strong>{session.title}</strong>
-                  <small>{formatSessionTime(session.updatedAt, locale)}</small>
+                  <strong>{thread.name?.trim() || thread.preview.trim() || thread.id}</strong>
+                  <small>{formatSessionTime(thread.updatedAt ?? Date.now(), locale)}</small>
                 </button>
               ))}
             </div>
@@ -192,7 +278,7 @@ export const AiHistorySurface = ({
         </aside>
 
         <section className="lyra-ai-history-detail-pane">
-          {selectedSession === null ? (
+          {selectedThread === null ? (
             <div className="lyra-ai-history-empty">
               <strong>{emptyStateTitle}</strong>
               <span>{emptyStateDescription}</span>
@@ -200,17 +286,17 @@ export const AiHistorySurface = ({
           ) : (
             <div className="lyra-ai-history-detail-card">
               <header className="lyra-ai-history-detail-header">
-                <strong>{selectedSession.title}</strong>
-                <span>{formatSessionTime(selectedSession.updatedAt, locale)}</span>
+                <strong>{selectedThread.name?.trim() || selectedThread.preview.trim() || selectedThread.id}</strong>
+                <span>{formatSessionTime(selectedThread.updatedAt ?? Date.now(), locale)}</span>
               </header>
               <div className="lyra-ai-history-detail-meta">
                 <div>
                   <span>{sessionIdLabel}</span>
-                  <strong>{selectedSession.id}</strong>
+                  <strong>{selectedThread.id}</strong>
                 </div>
                 <div>
                   <span>{profileLabel}</span>
-                  <strong>{selectedSession.profileId ?? "-"}</strong>
+                  <strong>{selectedThread.modelProvider ?? "-"}</strong>
                 </div>
               </div>
               <div className="lyra-ai-history-detail-actions">
@@ -218,7 +304,7 @@ export const AiHistorySurface = ({
                   type="button"
                   className="lyra-ai-history-button"
                   onClick={() => {
-                    emitAgentSessionSelected(selectedSession.id);
+                    emitThreadSelected(selectedThread.id);
                   }}
                 >
                   <ArrowRight size={13} />
@@ -228,7 +314,7 @@ export const AiHistorySurface = ({
                   type="button"
                   className="lyra-ai-history-button lyra-ai-history-button-danger"
                   onClick={() => {
-                    void deleteSession(selectedSession.id);
+                    void archiveThread(selectedThread.id);
                   }}
                 >
                   <Trash2 size={13} />

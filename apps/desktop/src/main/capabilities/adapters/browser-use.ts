@@ -1,7 +1,6 @@
 import type { LyraAppManifest } from "@lyra/capability-protocol";
 
 import type {
-  BrowserUseAgentRunRequest,
   BrowserUseNavigateRequest,
   BrowserUsePageActionRequest,
   BrowserUsePageExtractRequest,
@@ -391,51 +390,6 @@ export const registerBrowserUseCapabilities = (
     }
   );
 
-  registry.register(
-    {
-      id: "browser_use.agent.run",
-      domain: "browser",
-      kind: "action",
-      title: "Run Bounded browser-use Agent Task",
-      appId: APP_ID,
-      operation: "agent.run",
-      description: "Run a bounded browser_use agent task inside an already prepared browser_use session.",
-      permissions: ["browser:read", "browser:navigate", "network:http"],
-      risk: "network",
-      approvalMode: "ask",
-      aiExposure: "full",
-      inputSchema: {
-        type: "object",
-        required: ["sessionId", "task"],
-        properties: {
-          sessionId: { type: "string" },
-          task: { type: "string" },
-          maxSteps: { type: "number" },
-          model: { type: "string" },
-        },
-        additionalProperties: false,
-      },
-      outputSchema: { type: "object" },
-    },
-    async (request) => {
-      const payload = asRecord(request.payload);
-      const sessionId = readString(payload.sessionId);
-      const task = readString(payload.task);
-      if (sessionId === undefined || task === undefined) {
-        throw new Error("sessionId and task are required");
-      }
-      const maxSteps = readNumber(payload.maxSteps);
-      const model = readString(payload.model);
-      const nextRequest: BrowserUseAgentRunRequest = {
-        sessionId,
-        task,
-        ...(maxSteps === undefined ? {} : { maxSteps: Math.round(maxSteps) }),
-        ...(model === undefined ? {} : { model }),
-      };
-      return await service.runAgentTask(nextRequest);
-    }
-  );
-
   return {
     id: APP_ID,
     title: "browser-use",
@@ -451,7 +405,6 @@ export const registerBrowserUseCapabilities = (
       "browser_use.page.mutate",
       "browser_use.page.navigate",
       "browser_use.page.wait",
-      "browser_use.agent.run",
     ],
     compatibility: {},
     contributes: { surfaces: ["workspace"] },

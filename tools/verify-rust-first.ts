@@ -228,41 +228,6 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
         message: "MCP runtime registry and lifecycle must stay in Rust."
       }
     ]
-  },
-  {
-    name: "ai",
-    dirName: "ai",
-    crateDir: "crates/lyra-ai-core",
-    cratePackageName: "lyra-ai-core",
-    servicePath: "apps/desktop/src/main/ai/service.ts",
-    loaderPath: "apps/desktop/src/main/runtime-client.ts",
-    typesPath: "apps/desktop/src/main/ai/types.ts",
-    indexPath: "apps/desktop/src/main/ai/index.ts",
-    mainBridgeFactoryName: "createAiIpcBridge",
-    requiredServiceRules: [
-      {
-        pattern: /from\s+["']\.\.\/runtime-client["']/,
-        message: "AI service must import the shared runtime client."
-      },
-      {
-        pattern: /\bruntimeClient\.request\b/,
-        message: "AI service must issue daemon requests through the shared runtime client."
-      }
-    ],
-    forbiddenServiceRules: [
-      {
-        pattern: /from\s+["']node:child_process["']/,
-        message: "AI runtime lifecycle belongs in Rust, not TypeScript child_process handlers."
-      },
-      {
-        pattern: /safeStorage/,
-        message: "AI secret handling must stay native."
-      },
-      {
-        pattern: /Fall through to the existing TypeScript implementation/,
-        message: "AI service must not keep TypeScript fallback implementation notes or branches."
-      }
-    ]
   }
 ] as const;
 

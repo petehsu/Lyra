@@ -1,0 +1,34 @@
+[package]
+name = "lyra-app-server-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lyra_app_server_client"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+lyra-app-server = { workspace = true }
+lyra-app-server-protocol = { workspace = true }
+lyra-arg0 = { workspace = true }
+lyra-core = { workspace = true }
+lyra-exec-server = { workspace = true }
+lyra-protocol = { workspace = true }
+lyra-utils-rustls-provider = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+tokio-tungstenite = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

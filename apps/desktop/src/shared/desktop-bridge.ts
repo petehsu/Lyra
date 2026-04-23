@@ -1,46 +1,14 @@
 import type {
-  AiDiscoverModelsRequest,
-  AiDeleteProfileRequest,
-  AiModelDiscoveryResult,
-  AiOpenAiChatGptAuthResult,
-  AiProviderCatalogItem,
-  AiProviderPreset,
-  AiProfileValidationResult,
-  AiProviderProfile,
-  AiSetDefaultProfileRequest,
-  AiUpsertProfileRequest,
-  AiValidateProfileRequest
-} from "./ai";
-import type {
   BrowserUseRuntimeStatus,
 } from "./browser-use";
 import type {
-  AiMemoryConfig,
-  AgentAnswerQuestionRequest,
-  AgentAnswerPlanQuestionRequest,
-  AgentBindSessionProjectRequest,
-  AgentEnterPlanModeRequest,
-  AgentCreateSessionRequest,
-  AgentDeleteSessionRequest,
-  AgentGetPendingInteractionsRequest,
-  AgentGetPlanRequest,
-  AgentGetSessionRequest,
-  AgentPlanState,
-  AgentPendingInteraction,
-  AgentResumeExecutionRequest,
-  AgentResolvePlanApprovalRequest,
-  AgentRuntimeEvent,
-  AgentSendTurnRequest,
-  AgentSendTurnResult,
-  AgentSession,
-  AgentSessionDetail,
-  CommandApprovalSubmitRequest,
-  PlanApprovalRequest,
-  PlanInteractionResponse,
-  PlanQuestionItem,
-  PlanQuestionOption,
-  PlanQuestionRequest
-} from "./agent";
+  LyraClientNotificationPayload,
+  LyraClientRequestPayload,
+  LyraRejectServerRequestPayload,
+  LyraResolveServerRequestPayload,
+  LyraRuntimeEvent,
+  LyraRuntimeHealth
+} from "./lyra-runtime";
 import type {
   FileManagerCreateFileRequest,
   FileManagerCreateFolderRequest,
@@ -137,7 +105,6 @@ export type {
   AiDiscoverModelsRequest,
   AiDeleteProfileRequest,
   AiModelDiscoveryResult,
-  AiOpenAiChatGptAuthResult,
   AiProfileId,
   AiProfileValidationResult,
   AiProviderCatalogItem,
@@ -163,6 +130,22 @@ export type {
   BrowserUseRuntimeUnavailableReason,
 } from "./browser-use";
 export type {
+  LyraClientNotificationPayload,
+  LyraClientRequestPayload,
+  LyraRejectServerRequestPayload,
+  LyraResolveServerRequestPayload,
+  LyraRuntimeDisconnectedEvent,
+  LyraRuntimeErrorPayload,
+  LyraRuntimeEvent,
+  LyraRuntimeHealth,
+  LyraRuntimeLaggedEvent,
+  LyraRuntimeNotificationEvent,
+  LyraRuntimeReadyEvent,
+  LyraRuntimeRequestEvent,
+  LyraRuntimeRequestId,
+  LyraRuntimeStartupFailedEvent
+} from "./lyra-runtime";
+export type {
   AiMemoryConfig,
   AgentAnswerQuestionRequest,
   AgentAnswerPlanQuestionRequest,
@@ -175,8 +158,10 @@ export type {
   AgentGetSessionRequest,
   AgentPlanState,
   AgentPendingInteraction,
+  AgentSubmitInteractionRequest,
   AgentPendingInteractionKind,
   AgentPendingInteractionStatus,
+  AgentToolOwner,
   AgentResumeExecutionRequest,
   AgentResolvePlanApprovalRequest,
   AgentMessage,
@@ -358,34 +343,12 @@ export const LYRA_CHANNELS = {
   filesReadTextFile: "lyra:files/read-text-file",
   filesWriteTextFile: "lyra:files/write-text-file",
   filesStatFile: "lyra:files/stat-file",
-  aiReadProfiles: "lyra:ai/read-profiles",
-  aiReadProviderCatalog: "lyra:ai/read-provider-catalog",
-  aiReadPresetCatalog: "lyra:ai/read-preset-catalog",
-  aiAuthorizeOpenAiChatGpt: "lyra:ai/authorize-openai-chatgpt",
-  aiAuthorizeOpenAiChatGptDeviceCode: "lyra:ai/authorize-openai-chatgpt-device-code",
-  aiUpsertProfile: "lyra:ai/upsert-profile",
-  aiDeleteProfile: "lyra:ai/delete-profile",
-  aiSetDefaultProfile: "lyra:ai/set-default-profile",
-  aiValidateProfile: "lyra:ai/validate-profile",
-  aiDiscoverModels: "lyra:ai/discover-models",
-  aiRefreshDiscoveredModels: "lyra:ai/refresh-discovered-models",
-  agentListSessions: "lyra:agent/list-sessions",
-  agentCreateSession: "lyra:agent/create-session",
-  agentGetSession: "lyra:agent/get-session",
-  agentBindSessionProject: "lyra:agent/bind-session-project",
-  agentDeleteSession: "lyra:agent/delete-session",
-  agentSendTurn: "lyra:agent/send-turn",
-  agentEnterPlanMode: "lyra:agent/enter-plan-mode",
-  agentGetPlan: "lyra:agent/get-plan",
-  agentGetPendingInteractions: "lyra:agent/get-pending-interactions",
-  agentAnswerQuestion: "lyra:agent/answer-question",
-  agentAnswerPlanQuestion: "lyra:agent/answer-plan-question",
-  agentResolvePlanApproval: "lyra:agent/resolve-plan-approval",
-  agentResumeExecution: "lyra:agent/resume-execution",
-  agentGetMemoryConfig: "lyra:agent/get-memory-config",
-  agentUpdateMemoryConfig: "lyra:agent/update-memory-config",
-  agentEvent: "lyra:agent/event",
-  agentSubmitCommandApproval: "lyra:agent/submit-command-approval",
+  lyraRuntimeHealth: "lyra:lyra/runtime/health",
+  lyraRuntimeRequest: "lyra:lyra/runtime/request",
+  lyraRuntimeNotify: "lyra:lyra/runtime/notify",
+  lyraRuntimeResolveServerRequest: "lyra:lyra/runtime/resolve-server-request",
+  lyraRuntimeRejectServerRequest: "lyra:lyra/runtime/reject-server-request",
+  lyraEvent: "lyra:lyra/event",
   workbenchBrowserSyncTopology: "lyra:workbench-browser/sync-topology",
   workbenchBrowserSyncLayout: "lyra:workbench-browser/sync-layout",
   workbenchBrowserNavigate: "lyra:workbench-browser/navigate",
@@ -1121,58 +1084,17 @@ export type SearchApi = {
   ) => Promise<SearchDeepExpandResponse>;
 };
 
-export type AiApi = {
-  readonly readProfiles: () => Promise<readonly AiProviderProfile[]>;
-  readonly readProviderCatalog: () => Promise<readonly AiProviderCatalogItem[]>;
-  readonly readPresetCatalog: () => Promise<readonly AiProviderPreset[]>;
-  readonly authorizeOpenAiChatGpt: () => Promise<AiOpenAiChatGptAuthResult>;
-  readonly authorizeOpenAiChatGptDeviceCode: () => Promise<AiOpenAiChatGptAuthResult>;
-  readonly upsertProfile: (request: AiUpsertProfileRequest) => Promise<AiProviderProfile>;
-  readonly deleteProfile: (request: AiDeleteProfileRequest) => Promise<void>;
-  readonly setDefaultProfile: (request: AiSetDefaultProfileRequest) => Promise<AiProviderProfile>;
-  readonly validateProfile: (
-    request: AiValidateProfileRequest
-  ) => Promise<AiProfileValidationResult>;
-  readonly discoverModels: (
-    request: AiDiscoverModelsRequest
-  ) => Promise<AiModelDiscoveryResult>;
-  readonly refreshDiscoveredModels: (
-    request: AiDiscoverModelsRequest
-  ) => Promise<AiModelDiscoveryResult>;
-};
-
-export type AgentApi = {
-  readonly listSessions: () => Promise<readonly AgentSession[]>;
-  readonly createSession: (request?: AgentCreateSessionRequest) => Promise<AgentSession>;
-  readonly getSession: (request: AgentGetSessionRequest) => Promise<AgentSessionDetail>;
-  readonly bindSessionProject: (
-    request: AgentBindSessionProjectRequest
-  ) => Promise<AgentSession>;
-  readonly deleteSession: (request: AgentDeleteSessionRequest) => Promise<void>;
-  readonly sendTurn: (request: AgentSendTurnRequest) => Promise<AgentSendTurnResult>;
-  readonly enterPlanMode: (request: AgentEnterPlanModeRequest) => Promise<AgentSessionDetail>;
-  readonly getPlan: (request: AgentGetPlanRequest) => Promise<AgentPlanState | null>;
-  readonly getPendingInteractions: (
-    request: AgentGetPendingInteractionsRequest
-  ) => Promise<readonly AgentPendingInteraction[]>;
-  readonly answerQuestion: (
-    request: AgentAnswerQuestionRequest
-  ) => Promise<AgentSendTurnResult | null>;
-  readonly answerPlanQuestion: (
-    request: AgentAnswerPlanQuestionRequest
-  ) => Promise<AgentSendTurnResult | null>;
-  readonly resolvePlanApproval: (
-    request: AgentResolvePlanApprovalRequest
-  ) => Promise<AgentSendTurnResult | null>;
-  readonly resumeExecution: (
-    request: AgentResumeExecutionRequest
-  ) => Promise<AgentSendTurnResult | null>;
-  readonly getMemoryConfig: () => Promise<AiMemoryConfig>;
-  readonly updateMemoryConfig: (config: AiMemoryConfig) => Promise<AiMemoryConfig>;
-  readonly submitCommandApproval: (
-    request: CommandApprovalSubmitRequest
-  ) => Promise<AgentSendTurnResult | null>;
-  readonly onEvent: (listener: (event: AgentRuntimeEvent) => void) => () => void;
+export type LyraRuntimeApi = {
+  readonly health: () => Promise<LyraRuntimeHealth>;
+  readonly request: <T = unknown>(payload: LyraClientRequestPayload) => Promise<T>;
+  readonly notify: (payload: LyraClientNotificationPayload) => Promise<void>;
+  readonly resolveServerRequest: (
+    payload: LyraResolveServerRequestPayload
+  ) => Promise<void>;
+  readonly rejectServerRequest: (
+    payload: LyraRejectServerRequestPayload
+  ) => Promise<void>;
+  readonly onEvent: (listener: (event: LyraRuntimeEvent) => void) => () => void;
 };
 
 export type McpApi = {
@@ -1338,8 +1260,7 @@ export type LyraDesktopApi = {
   readonly linuxCompat: LinuxCompatApi;
   readonly search: SearchApi;
   readonly files: FilesApi;
-  readonly ai: AiApi;
-  readonly agent?: AgentApi;
+  readonly lyra?: LyraRuntimeApi;
   readonly workbenchBrowser: WorkbenchBrowserApi;
   readonly browserUse: BrowserUseApi;
   readonly mcp: McpApi;

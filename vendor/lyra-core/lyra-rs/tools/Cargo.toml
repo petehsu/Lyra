@@ -1,0 +1,28 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "lyra-tools"
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lyra-app-server-protocol = { workspace = true }
+lyra-code-mode = { workspace = true }
+lyra-features = { workspace = true }
+lyra-protocol = { workspace = true }
+lyra-utils-absolute-path = { workspace = true }
+lyra-utils-pty = { workspace = true }
+rmcp = { workspace = true, default-features = false, features = [
+    "base64",
+    "macros",
+    "schemars",
+    "server",
+] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

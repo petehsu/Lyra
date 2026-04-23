@@ -13,7 +13,7 @@ import type {
   WorkbenchSplitTriggerMode
 } from "../preferences";
 import type { WorkbenchThemeId } from "../theme";
-import type { TerminalThemePresetId } from "../terminal-theme";
+import type { TerminalThemeMode } from "../terminal-theme";
 import { SettingsAiView, type SettingsAiLabels, type SettingsAiModel } from "../settings-ai";
 
 type Option<T extends string> = {
@@ -56,7 +56,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly omniboxNonBrowserSubmitTargetLabel: string;
   readonly localeValue: WorkbenchLocale;
   readonly themeValue: WorkbenchThemeId;
-  readonly terminalThemeValue: TerminalThemePresetId;
+  readonly terminalThemeValue: TerminalThemeMode;
   readonly splitTriggerModeValue: WorkbenchSplitTriggerMode;
   readonly splitThreePaneLayoutValue: WorkbenchSplitThreePaneLayout;
   readonly splitOverflowPolicyValue: WorkbenchSplitOverflowPolicy;
@@ -80,7 +80,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly omniboxNonBrowserSubmitTargetValue: WorkbenchOmniboxNonBrowserSubmitTarget;
   readonly localeOptions: readonly Option<WorkbenchLocale>[];
   readonly themeOptions: readonly Option<WorkbenchThemeId>[];
-  readonly terminalThemeOptions: readonly (Option<TerminalThemePresetId> & { readonly swatches: readonly string[] })[];
+  readonly terminalThemeOptions: readonly Option<TerminalThemeMode>[];
   readonly splitTriggerModeOptions: readonly Option<WorkbenchSplitTriggerMode>[];
   readonly splitThreePaneLayoutOptions: readonly Option<WorkbenchSplitThreePaneLayout>[];
   readonly splitOverflowPolicyOptions: readonly Option<WorkbenchSplitOverflowPolicy>[];
@@ -94,7 +94,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly aiModel: SettingsAiModel;
   readonly onLocaleChange: (value: WorkbenchLocale) => void;
   readonly onThemeChange: (value: WorkbenchThemeId) => void;
-  readonly onTerminalThemeChange: (value: TerminalThemePresetId) => void;
+  readonly onTerminalThemeChange: (value: TerminalThemeMode) => void;
   readonly onSplitTriggerModeChange: (value: WorkbenchSplitTriggerMode) => void;
   readonly onSplitThreePaneLayoutChange: (
     value: WorkbenchSplitThreePaneLayout
@@ -124,7 +124,7 @@ export type BrowserSettingsSurfaceProps = {
 const buildThemePreviewClassName = (value: WorkbenchThemeId): string =>
   `lyra-settings-theme-preview-${value}`;
 
-const buildTerminalPreviewClassName = (value: TerminalThemePresetId): string =>
+const buildTerminalThemePreviewClassName = (value: TerminalThemeMode): string =>
   `lyra-settings-terminal-preview-${value}`;
 
 const buildSplitLayoutPreviewClassName = (value: WorkbenchSplitThreePaneLayout): string =>
@@ -369,7 +369,11 @@ export const BrowserSettingsSurface = ({
               <header className="lyra-settings-group-header">
                 <h3>{terminalThemeLabel}</h3>
               </header>
-              <div className="lyra-settings-choice-grid lyra-settings-choice-grid-themes" role="radiogroup" aria-label={terminalThemeLabel}>
+              <div
+                className="lyra-settings-choice-grid lyra-settings-choice-grid-themes"
+                role="radiogroup"
+                aria-label={terminalThemeLabel}
+              >
                 {terminalThemeOptions.map((option) => (
                   <button
                     key={option.value}
@@ -385,24 +389,20 @@ export const BrowserSettingsSurface = ({
                     }}
                   >
                     <span
-                      className={`lyra-settings-terminal-preview ${buildTerminalPreviewClassName(option.value)}`}
+                      className={`lyra-settings-terminal-preview ${buildTerminalThemePreviewClassName(option.value)}`}
                       aria-hidden="true"
                     >
                       <i className="lyra-settings-terminal-preview-line">
-                        {option.swatches.map((swatch) => (
-                          <em
-                            key={`${option.value}-${swatch}`}
-                            style={{ backgroundColor: swatch }}
-                          />
-                        ))}
+                        <em />
+                        <em />
+                        <em />
+                        <em />
                       </i>
-                      <i className="lyra-settings-terminal-preview-line">
-                        {option.swatches.map((swatch) => (
-                          <em
-                            key={`${option.value}-${swatch}-line-2`}
-                            style={{ backgroundColor: swatch }}
-                          />
-                        ))}
+                      <i className="lyra-settings-terminal-preview-line lyra-settings-terminal-preview-line-secondary">
+                        <em />
+                        <em />
+                        <em />
+                        <em />
                       </i>
                     </span>
                     <span className="lyra-settings-choice-main">

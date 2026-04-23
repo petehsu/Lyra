@@ -5,6 +5,11 @@ import type { LyraRuntimeClient } from "../runtime-client";
 import type { RuntimeHostRpcService } from "../runtime-host-rpc/types";
 
 const WORKBENCH_HOST_TOOL_SET_ID = "desktop.workbench";
+type HostToolsSyncResult = {
+  readonly acceptedCount: number;
+  readonly droppedAsCodexOwnedCount: number;
+  readonly droppedToolNames: readonly string[];
+};
 
 type HostToolInvocationPayload = {
   readonly toolName?: unknown;
@@ -125,6 +130,8 @@ export const createWorkbenchObservationHostToolsBridge = ({
   readonly runtimeClient: LyraRuntimeClient;
   readonly runtimeHostRpc: RuntimeHostRpcService;
 }): WorkbenchHostToolsBridge => {
+  const requestLyraRuntime = async <T>(method: string, params: unknown): Promise<T> =>
+    await runtimeClient.request<T>("lyra.runtime.request", { method, params });
   const disposers = HOST_TOOL_CONFIGS.map((config) =>
     runtimeHostRpc.registerHandler(config.capabilityId, async (payload: unknown) => {
       const request = asRecord(payload) as HostToolInvocationPayload;
@@ -148,12 +155,15 @@ export const createWorkbenchObservationHostToolsBridge = ({
       for (const dispose of disposers) {
         dispose();
       }
-      void runtimeClient.request("agent.host_tools.remove", {
+      void requestLyraRuntime("lyra/runtime/hostTools/remove", {
         toolSetId: WORKBENCH_HOST_TOOL_SET_ID
       }).catch(() => undefined);
     },
     sync: async () => {
-      await runtimeClient.request("agent.host_tools.sync", buildHostToolsPayload(capabilitiesBridge));
+      await requestLyraRuntime<HostToolsSyncResult>(
+        "lyra/runtime/hostTools/sync",
+        buildHostToolsPayload(capabilitiesBridge)
+      );
     }
   };
 };

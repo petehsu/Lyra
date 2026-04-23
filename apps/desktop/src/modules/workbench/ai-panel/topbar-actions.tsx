@@ -1,8 +1,10 @@
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, Plus } from "lucide-react";
 
 import { renderAiPanelTopbarIcon } from "./icon-registry";
 
 type AiPanelTopbarActionsProps = {
+  readonly onCreateThread?: (() => void) | undefined;
+  readonly createThreadLabel?: string | undefined;
   readonly onRequestProjectBind?: (() => void) | undefined;
   readonly activeBoundProjectName: string | null;
   readonly isBindingProject: boolean;
@@ -17,6 +19,8 @@ type AiPanelTopbarActionsProps = {
 };
 
 export const AiPanelTopbarActions = ({
+  onCreateThread,
+  createThreadLabel,
   onRequestProjectBind,
   activeBoundProjectName,
   isBindingProject,
@@ -30,6 +34,18 @@ export const AiPanelTopbarActions = ({
   openSkillsLabel,
 }: AiPanelTopbarActionsProps) => (
   <div className="lyra-ai-panel-topbar-actions">
+    {onCreateThread === undefined || createThreadLabel === undefined ? null : (
+      <button
+        type="button"
+        className="lyra-ai-panel-topbar-action"
+        disabled={!isAgentAvailable}
+        onClick={onCreateThread}
+        aria-label={createThreadLabel}
+        title={createThreadLabel}
+      >
+        <Plus size={13} aria-hidden="true" />
+      </button>
+    )}
     {onRequestProjectBind === undefined ? null : (
       <button
         type="button"

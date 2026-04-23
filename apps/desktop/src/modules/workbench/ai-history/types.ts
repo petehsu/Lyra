@@ -14,4 +14,5 @@ export type AiHistorySurfaceProps = {
   readonly emptyStateTitle: string;
   readonly emptyStateDescription: string;
   readonly defaultProfileId?: string | null;
+  readonly defaultProviderId?: string | null;
 };

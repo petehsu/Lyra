@@ -1,0 +1,15 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "lyra-utils-output-truncation"
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lyra-protocol = { workspace = true }
+lyra-utils-string = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

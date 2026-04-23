@@ -1,0 +1,25 @@
+[package]
+name = "lyra-arg0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lyra_arg0"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+lyra-apply-patch = { workspace = true }
+lyra-exec-server = { workspace = true }
+lyra-linux-sandbox = { workspace = true }
+lyra-sandboxing = { workspace = true }
+lyra-shell-escalation = { workspace = true }
+lyra-utils-absolute-path = { workspace = true }
+lyra-utils-home-dir = { workspace = true }
+dotenvy = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }

@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "LyraAiProviderModelEntry": {
+      "properties": {
+        "contextWindow": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "supportsImages": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supportsTools": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "source"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "authConfig": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "clearSecretFields": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "connectionConfig": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "customModels": {
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/LyraAiProviderModelEntry"
+      },
+      "type": "array"
+    },
+    "headers": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "presetId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "protocolId": {
+      "type": "string"
+    },
+    "providerId": {
+      "type": "string"
+    },
+    "secretValues": {
+      "additionalProperties": true,
+      "default": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "model",
+    "name",
+    "protocolId",
+    "providerId"
+  ],
+  "title": "LyraConfigProfileUpsertParams",
+  "type": "object"
+}

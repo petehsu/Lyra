@@ -1,0 +1,14 @@
+[package]
+name = "lyra-utils-oss"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lyra-core = { workspace = true }
+lyra-lmstudio = { workspace = true }
+lyra-model-provider-info = { workspace = true }
+lyra-ollama = { workspace = true }

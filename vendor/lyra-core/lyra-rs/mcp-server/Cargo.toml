@@ -1,0 +1,51 @@
+[package]
+name = "lyra-mcp-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "lyra-mcp-server"
+path = "src/main.rs"
+
+[lib]
+name = "lyra_mcp_server"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+lyra-arg0 = { workspace = true }
+lyra-config = { workspace = true }
+lyra-core = { workspace = true }
+lyra-exec-server = { workspace = true }
+lyra-features = { workspace = true }
+lyra-login = { workspace = true }
+lyra-models-manager = { workspace = true }
+lyra-protocol = { workspace = true }
+lyra-utils-cli = { workspace = true }
+lyra-utils-json-to-toml = { workspace = true }
+rmcp = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+shlex = { workspace = true }
+tokio = { workspace = true, features = [
+    "io-std",
+    "macros",
+    "process",
+    "rt-multi-thread",
+    "signal",
+] }
+tracing = { workspace = true, features = ["log"] }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+lyra-utils-absolute-path = { workspace = true }
+lyra-shell-command = { workspace = true }
+os_info = { workspace = true }
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }
+wiremock = { workspace = true }

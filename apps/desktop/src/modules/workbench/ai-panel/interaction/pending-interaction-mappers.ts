@@ -1,5 +1,6 @@
 import type {
   AgentPendingInteraction,
+  AgentPendingInteractionKind,
   PlanApprovalRequest,
   PlanQuestionRequest,
 } from "../../../../shared/desktop-bridge";
@@ -11,10 +12,24 @@ import {
   resolveCommandApprovalToolLabel,
 } from "../command-approval-display";
 
+type InteractionPanelRequestMeta = {
+  readonly interactionId?: string;
+  readonly interactionKind?: AgentPendingInteractionKind;
+};
+
+type InteractionCommandApprovalRequest = CommandApprovalRequest
+  & InteractionPanelRequestMeta
+  & {
+    readonly requestedPermissions?: unknown;
+  };
+
+type InteractionPlanQuestionRequest = PlanQuestionRequest & InteractionPanelRequestMeta;
+type InteractionPlanApprovalRequest = PlanApprovalRequest & InteractionPanelRequestMeta;
+
 export type PendingInteractionPanel =
-  | { readonly kind: "commandApproval"; readonly request: CommandApprovalRequest }
-  | { readonly kind: "planQuestion"; readonly request: PlanQuestionRequest }
-  | { readonly kind: "planApproval"; readonly request: PlanApprovalRequest };
+  | { readonly kind: "commandApproval"; readonly request: InteractionCommandApprovalRequest }
+  | { readonly kind: "planQuestion"; readonly request: InteractionPlanQuestionRequest }
+  | { readonly kind: "planApproval"; readonly request: InteractionPlanApprovalRequest };
 
 export type ActiveInteractionPanel = PendingInteractionPanel | null;
 
@@ -34,27 +49,21 @@ const pickString = (value: Record<string, unknown>, key: string): string | null 
   return typeof next === "string" && next.trim().length > 0 ? next : null;
 };
 
-const pickRawString = (value: Record<string, unknown>, key: string): string | null => {
-  const next = value[key];
-  return typeof next === "string" ? next : null;
-};
-
-const pickNumber = (value: Record<string, unknown>, key: string): number | null => {
-  const next = value[key];
-  return typeof next === "number" ? next : null;
-};
-
 const toCommandApprovalRequest = (
   interaction: AgentPendingInteraction,
   labels: InteractionTextBundle
-): CommandApprovalRequest | null => {
+): InteractionCommandApprovalRequest | null => {
   if (!isRecord(interaction.payload)) {
     return null;
   }
   const payload = interaction.payload;
-  const inputPayload = isRecord(payload.input) ? payload.input : {};
-  const metadataPayload = isRecord(payload.metadata) ? payload.metadata : {};
-  const toolCallId = pickString(payload, "toolCallId") ?? interaction.id;
+  const rawPayload = isRecord(payload.raw) ? payload.raw : payload;
+  const inputPayload = isRecord(rawPayload.input) ? rawPayload.input : {};
+  const metadataPayload = isRecord(rawPayload.metadata) ? rawPayload.metadata : {};
+  const toolCallId =
+    pickString(rawPayload, "itemId")
+    ?? pickString(rawPayload, "approvalId")
+    ?? interaction.id;
   const riskLevelCandidate = pickString(metadataPayload, "riskLevel");
   const riskLevel: CommandApprovalRequest["riskLevel"] =
     riskLevelCandidate === "safe"
@@ -64,97 +73,124 @@ const toCommandApprovalRequest = (
     || riskLevelCandidate === "critical"
       ? riskLevelCandidate
       : "medium";
-  const toolName = pickString(payload, "toolName") ?? "terminal.exec";
+  const defaultToolName =
+    interaction.kind === "file_change_approval"
+      ? "filesystem.write"
+      : interaction.kind === "permissions_approval"
+        ? "permissions.request"
+        : "terminal.exec";
+  const toolName = pickString(rawPayload, "toolName") ?? defaultToolName;
+  const commandPreview =
+    interaction.kind === "command_execution_approval"
+      ? resolveCommandApprovalCommandPreview({
+        toolName,
+        inputPayload,
+        metadataPayload,
+      })
+      : interaction.kind === "file_change_approval"
+        ? "Approve file changes"
+        : "Approve permission request";
+  const requestedPermissions =
+    interaction.kind === "permissions_approval" && isRecord(rawPayload)
+      ? rawPayload.permissions
+      : undefined;
   return {
     id: interaction.id,
+    interactionId: interaction.id,
+    interactionKind: interaction.kind,
     sessionId: interaction.sessionId,
     turnId: interaction.turnId,
     toolCallId,
     toolName,
     toolLabel: resolveCommandApprovalToolLabel(toolName, labels),
-    command: resolveCommandApprovalCommandPreview({
-      toolName,
-      inputPayload,
-      metadataPayload,
-    }),
+    command: commandPreview,
     riskLevel,
-    riskDescription: pickString(payload, "message") ?? labels.commandNeedsApproval,
+    riskDescription:
+      pickString(rawPayload, "reason")
+      ?? pickString(rawPayload, "message")
+      ?? labels.commandNeedsApproval,
     ...(pickString(inputPayload, "cwd") === null ? {} : { cwd: pickString(inputPayload, "cwd")! }),
     ...(pickString(metadataPayload, "mode") === "command"
-      || pickString(metadataPayload, "mode") === "shell"
+    || pickString(metadataPayload, "mode") === "shell"
         ? { mode: pickString(metadataPayload, "mode") as "command" | "shell" }
         : {}),
     ...(pickString(metadataPayload, "interactiveCategory") === null
-      ? {}
-      : { interactiveCategory: pickString(metadataPayload, "interactiveCategory")! }),
+        ? {}
+        : { interactiveCategory: pickString(metadataPayload, "interactiveCategory")! }),
     isRepeat: metadataPayload.wasPreApproved === true,
+    ...(requestedPermissions === undefined ? {} : { requestedPermissions }),
   };
 };
 
 const toPlanQuestionRequest = (
   interaction: AgentPendingInteraction
-): PlanQuestionRequest | null => {
+): InteractionPlanQuestionRequest | null => {
   if (!isRecord(interaction.payload)) {
     return null;
   }
   const payload = interaction.payload;
-  const questions = Array.isArray(payload.questions) ? payload.questions : null;
-  if (questions === null || questions.length === 0) {
-    return null;
-  }
-  return {
-    id: pickString(payload, "requestId") ?? interaction.id,
-    sessionId: interaction.sessionId,
-    turnId: interaction.turnId,
-    questions: questions as PlanQuestionRequest["questions"],
-    ...(typeof payload.allowNote === "boolean" ? { allowNote: payload.allowNote } : {}),
-  };
-};
+  const rawPayload = isRecord(payload.raw) ? payload.raw : payload;
 
-const toPlanApprovalRequest = (
-  interaction: AgentPendingInteraction,
-  labels: InteractionTextBundle
-): PlanApprovalRequest | null => {
-  if (!isRecord(interaction.payload)) {
-    return null;
+  if (interaction.kind === "tool_user_input") {
+    const questions = Array.isArray(rawPayload.questions) ? rawPayload.questions : null;
+    if (questions === null || questions.length === 0) {
+      return null;
+    }
+    return {
+      id: interaction.id,
+      interactionId: interaction.id,
+      interactionKind: interaction.kind,
+      sessionId: interaction.sessionId,
+      turnId: interaction.turnId,
+      questions: questions as PlanQuestionRequest["questions"],
+      allowNote: true,
+    };
   }
-  const payload = interaction.payload;
-  const proposedMarkdown = pickRawString(payload, "proposedMarkdown");
-  if (proposedMarkdown === null) {
-    return null;
+
+  if (interaction.kind === "mcp_elicitation") {
+    const header = pickString(rawPayload, "serverName") ?? "MCP";
+    const question =
+      pickString(rawPayload, "message")
+      ?? pickString(rawPayload, "title")
+      ?? pickString(rawPayload, "prompt")
+      ?? "Provide input for MCP request";
+    return {
+      id: interaction.id,
+      interactionId: interaction.id,
+      interactionKind: interaction.kind,
+      sessionId: interaction.sessionId,
+      turnId: interaction.turnId,
+      questions: [
+        {
+          id: "response",
+          header,
+          question,
+          options: [],
+          allowOther: true,
+        },
+      ],
+      allowNote: true,
+    };
   }
-  return {
-    id: pickString(payload, "requestId") ?? interaction.id,
-    sessionId: interaction.sessionId,
-    turnId: interaction.turnId,
-    version: pickNumber(payload, "version") ?? 0,
-    status: "submitted",
-    summary:
-      pickString(payload, "summary")
-      ?? proposedMarkdown.split("\n").find((line) => line.trim().length > 0)
-      ?? labels.proposedPlanSummaryFallback,
-    proposedMarkdown,
-    ...(pickRawString(payload, "draftMarkdown") === null
-      ? {}
-      : { draftMarkdown: pickRawString(payload, "draftMarkdown")! }),
-  };
+
+  return null;
 };
 
 export const toPendingInteractionPanel = (
   interaction: AgentPendingInteraction,
   labels: InteractionTextBundle
 ): PendingInteractionPanel | null => {
-  if (interaction.kind === "command_approval") {
+  if (
+    interaction.kind === "command_execution_approval"
+    || interaction.kind === "file_change_approval"
+    || interaction.kind === "permissions_approval"
+  ) {
     const request = toCommandApprovalRequest(interaction, labels);
     return request === null ? null : { kind: "commandApproval", request };
   }
-  if (interaction.kind === "user_question") {
+  if (interaction.kind === "tool_user_input" || interaction.kind === "mcp_elicitation") {
     const request = toPlanQuestionRequest(interaction);
     return request === null ? null : { kind: "planQuestion", request };
-  }
-  if (interaction.kind === "plan_approval") {
-    const request = toPlanApprovalRequest(interaction, labels);
-    return request === null ? null : { kind: "planApproval", request };
   }
   return null;
 };

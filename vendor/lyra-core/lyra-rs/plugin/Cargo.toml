@@ -1,0 +1,18 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "lyra-plugin"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "lyra_plugin"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+lyra-utils-absolute-path = { workspace = true }
+lyra-utils-plugins = { workspace = true }
+thiserror = { workspace = true }

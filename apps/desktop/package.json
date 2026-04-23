@@ -5,7 +5,7 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad -p lyra-ai-core -p lyra-files-napi -p lyra-skills-napi -p lyra-docs-napi",
+    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad -p lyra-files-napi -p lyra-skills-napi -p lyra-docs-napi",
     "browser-use:build-current-bundle": "node --import tsx ../../tools/browser-use/build-current-bundle.ts",
     "browser-use:build-bundles": "node --import tsx ../../tools/browser-use/build-current-bundle.ts --all-targets",
     "browser-use:verify-bundles": "node --import tsx ../../tools/browser-use/verify-browser-use-bundles.ts",

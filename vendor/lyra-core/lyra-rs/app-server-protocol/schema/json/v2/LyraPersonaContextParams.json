@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "architecture": {
+      "type": "string"
+    },
+    "companyDescription": {
+      "type": "string"
+    },
+    "companyName": {
+      "type": "string"
+    },
+    "coworkerLabel": {
+      "type": "string"
+    },
+    "cpuCores": {
+      "type": "string"
+    },
+    "cpuModel": {
+      "type": "string"
+    },
+    "deviceName": {
+      "type": "string"
+    },
+    "deviceProfile": {
+      "type": "string"
+    },
+    "ipAddress": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ipLocationDisplay": {
+      "type": "string"
+    },
+    "localTime": {
+      "type": "string"
+    },
+    "locale": {
+      "type": "string"
+    },
+    "locationConfidence": {
+      "type": "string"
+    },
+    "locationDetail": {
+      "type": "string"
+    },
+    "locationDisplay": {
+      "type": "string"
+    },
+    "locationSource": {
+      "type": "string"
+    },
+    "memoryGb": {
+      "type": "string"
+    },
+    "osName": {
+      "type": "string"
+    },
+    "osVersion": {
+      "type": "string"
+    },
+    "personaName": {
+      "type": "string"
+    },
+    "physicalLocationDisplay": {
+      "type": "string"
+    },
+    "timezone": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "architecture",
+    "companyDescription",
+    "companyName",
+    "coworkerLabel",
+    "cpuCores",
+    "cpuModel",
+    "deviceName",
+    "deviceProfile",
+    "ipLocationDisplay",
+    "localTime",
+    "locale",
+    "locationConfidence",
+    "locationDetail",
+    "locationDisplay",
+    "locationSource",
+    "memoryGb",
+    "osName",
+    "osVersion",
+    "personaName",
+    "physicalLocationDisplay",
+    "timezone"
+  ],
+  "title": "LyraPersonaContextParams",
+  "type": "object"
+}

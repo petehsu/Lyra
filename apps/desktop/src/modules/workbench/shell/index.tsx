@@ -181,7 +181,6 @@ export const WorkbenchShell = () => {
     readonly error?: string;
   } | null>(null);
   const [searchRebuildIndexPending, setSearchRebuildIndexPending] = useState(false);
-
   const browserTabsConfig = useMemo(
     () => ({
       homeTabTitle: t("browser.homeTabTitle"),
@@ -244,8 +243,7 @@ export const WorkbenchShell = () => {
     [preferencesModel.preferences.theme, systemPrefersDark]
   );
   const terminalThemeVars = useMemo(
-    () =>
-      resolveTerminalThemeVars(preferencesModel.preferences.terminalThemePreset),
+    () => resolveTerminalThemeVars(preferencesModel.preferences.terminalThemePreset),
     [preferencesModel.preferences.terminalThemePreset]
   );
   const terminalThemeSignature = `${preferencesModel.preferences.theme}:${systemPrefersDark ? "dark" : "light"}:${preferencesModel.preferences.terminalThemePreset}`;
@@ -922,13 +920,6 @@ export const WorkbenchShell = () => {
       unsubscribe();
     };
   }, [desktopApi]);
-  const defaultAiProfile = useMemo(
-    () =>
-      settingsAiModel.profiles.find((profile) => profile.isDefault)
-      ?? settingsAiModel.profiles[0]
-      ?? null,
-    [settingsAiModel.profiles]
-  );
   const requestProjectBind = useCallback(
     (currentPath?: string): Promise<string | null> =>
       new Promise((resolve) => {
@@ -1024,13 +1015,10 @@ export const WorkbenchShell = () => {
       themeSignature: resolvedThemeId,
       richRenderingEnabled: preferencesModel.preferences.aiRichRenderingEnabled,
       newSessionTitle: t("ai.sessionDefaultTitle"),
-      defaultProfileId: defaultAiProfile?.id ?? null,
-      defaultProfileName: defaultAiProfile?.name ?? null,
-      defaultModelNames: defaultAiProfile === undefined || defaultAiProfile === null
-        ? []
-        : [defaultAiProfile.model, ...defaultAiProfile.customModels.map((entry) => entry.id)]
-            .map((entry) => entry.trim())
-            .filter((entry, index, entries) => entry.length > 0 && entries.indexOf(entry) === index),
+      defaultProfileId: settingsAiModel.defaultProfileId,
+      defaultProviderId: settingsAiModel.defaultProviderId,
+      defaultProfileName: settingsAiModel.defaultProfileLabel,
+      defaultModelNames: settingsAiModel.defaultModelNames,
       profileLabel: t("ai.profileLabel"),
       modelLabel: t("ai.modelLabel"),
       modelsLabel: t("ai.modelsLabel"),
@@ -1088,12 +1076,15 @@ export const WorkbenchShell = () => {
       onRequestProjectBind: requestProjectBind
     };
   }, [
-    defaultAiProfile,
     desktopApi,
     requestProjectBind,
     resolvedThemeId,
     preferencesModel.preferences.aiRichRenderingEnabled,
     preferencesModel.preferences.locale,
+    settingsAiModel.defaultModelNames,
+    settingsAiModel.defaultProfileId,
+    settingsAiModel.defaultProviderId,
+    settingsAiModel.defaultProfileLabel,
     t,
     tabsModel
   ]);
@@ -2589,7 +2580,8 @@ export const WorkbenchShell = () => {
                 loadingSessionsLabel: t("ai.historyLoadingSessions"),
                 emptyStateTitle: t("settings.aiEmptyTitle"),
                 emptyStateDescription: t("settings.aiEmptyDescription"),
-                defaultProfileId: defaultAiProfile?.id ?? null
+                defaultProfileId: settingsAiModel.defaultProfileId,
+                defaultProviderId: settingsAiModel.defaultProviderId
               }}
               notifications={{
                 model: notificationModel,

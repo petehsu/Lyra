@@ -1,0 +1,41 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "lyra-core-skills"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "lyra_core_skills"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+lyra-app-server-protocol = { workspace = true }
+lyra-config = { workspace = true }
+lyra-exec-server = { workspace = true }
+lyra-instructions = { workspace = true }
+lyra-login = { workspace = true }
+lyra-otel = { workspace = true }
+lyra-protocol = { workspace = true }
+lyra-skills = { workspace = true }
+lyra-utils-absolute-path = { workspace = true }
+lyra-utils-output-truncation = { workspace = true }
+lyra-utils-plugins = { workspace = true }
+dirs = { workspace = true }
+dunce = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+shlex = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "rt"] }
+toml = { workspace = true }
+tracing = { workspace = true }
+zip = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

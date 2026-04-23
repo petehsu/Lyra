@@ -234,27 +234,6 @@ describe("aggregated search service", () => {
             accepted: true
           }))
         },
-        ai: {
-          readProfiles: vi.fn(async () => []),
-          readProviderCatalog: vi.fn(async () => []),
-          readPresetCatalog: vi.fn(async () => []),
-          authorizeOpenAiChatGpt: vi.fn(async () => ({
-            refreshToken: "refresh-token",
-            accessToken: "access-token",
-            expiresAt: Date.now()
-          })),
-          authorizeOpenAiChatGptDeviceCode: vi.fn(async () => ({
-            refreshToken: "refresh-token",
-            accessToken: "access-token",
-            expiresAt: Date.now()
-          })),
-          upsertProfile: vi.fn(),
-          deleteProfile: vi.fn(),
-          setDefaultProfile: vi.fn(),
-          validateProfile: vi.fn(),
-          discoverModels: vi.fn(),
-          refreshDiscoveredModels: vi.fn()
-        },
         files: {
           readHome: vi.fn(),
           readDirectory: vi.fn(),

@@ -32,8 +32,20 @@ export type AgentPlanState = {
   readonly updatedAt: number;
 };
 
-export type AgentPendingInteractionKind = "command_approval" | "user_question" | "plan_approval";
+export type AgentPendingInteractionKind =
+  | "command_execution_approval"
+  | "file_change_approval"
+  | "permissions_approval"
+  | "tool_user_input"
+  | "mcp_elicitation";
 export type AgentPendingInteractionStatus = "pending" | "resolved" | "cancelled" | "expired";
+
+export type AgentPendingInteractionPayload = {
+  readonly requestId?: string;
+  readonly codexMethod?: string;
+  readonly raw?: Record<string, unknown>;
+  readonly [key: string]: unknown;
+};
 
 export type AgentPendingInteraction = {
   readonly id: string;
@@ -41,7 +53,7 @@ export type AgentPendingInteraction = {
   readonly turnId: AgentTurnId;
   readonly kind: AgentPendingInteractionKind;
   readonly status: AgentPendingInteractionStatus;
-  readonly payload: unknown;
+  readonly payload: AgentPendingInteractionPayload;
   readonly createdAt: number;
   readonly updatedAt: number;
 };
@@ -203,6 +215,13 @@ export type AgentGetPendingInteractionsRequest = {
   readonly sessionId: AgentSessionId;
 };
 
+export type AgentSubmitInteractionRequest = {
+  readonly sessionId: AgentSessionId;
+  readonly turnId: AgentTurnId;
+  readonly interactionId: string;
+  readonly response: unknown;
+};
+
 export type AgentQuestionOption = {
   readonly label: string;
   readonly description: string;
@@ -346,10 +365,14 @@ export type AgentRuntimePhase =
   | "execution_abandoned"
   | "goal_tree_updated";
 
+export type AgentToolOwner = "codex" | "lyra";
+
 export type AgentInteractionKind =
-  | "user_question"
-  | "plan_approval"
-  | "command_approval";
+  | "command_execution_approval"
+  | "file_change_approval"
+  | "permissions_approval"
+  | "tool_user_input"
+  | "mcp_elicitation";
 
 export type AgentInteractionSubmittedPayload = {
   readonly requestId?: string;
@@ -365,6 +388,7 @@ type AgentRuntimeEventBase<Phase extends string, Payload> = {
   readonly phase: Phase;
   readonly payload: Payload;
   readonly timestamp: number;
+  readonly toolOwner?: AgentToolOwner;
 };
 
 export type AgentRuntimeEvent =

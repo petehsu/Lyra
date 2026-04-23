@@ -23,19 +23,21 @@ describe("pending interaction mappers", () => {
       id: "ia-1",
       sessionId: "s-1",
       turnId: "t-1",
-      kind: "command_approval",
+      kind: "command_execution_approval",
       status: "pending",
       payload: {
-        toolName: "terminal.exec",
-        toolCallId: "tc-1",
-        message: "approve this command",
-        input: {
-          command: "ls -la",
-          cwd: "/repo"
-        },
-        metadata: {
-          riskLevel: "high",
-          mode: "command"
+        raw: {
+          toolName: "terminal.exec",
+          toolCallId: "tc-1",
+          message: "approve this command",
+          input: {
+            command: "ls -la",
+            cwd: "/repo"
+          },
+          metadata: {
+            riskLevel: "high",
+            mode: "command"
+          }
         }
       },
       createdAt: now,
@@ -53,12 +55,12 @@ describe("pending interaction mappers", () => {
     expect(panel.request.cwd).toBe("/repo");
   });
 
-  test("maps plan question and plan approval interactions", () => {
+  test("maps tool input and mcp elicitation interactions", () => {
     const questionPanel = toPendingInteractionPanel({
       id: "ia-q",
       sessionId: "s-1",
       turnId: "t-2",
-      kind: "user_question",
+      kind: "tool_user_input",
       status: "pending",
       payload: {
         questions: [
@@ -78,23 +80,24 @@ describe("pending interaction mappers", () => {
     } as any, LABELS);
     expect(questionPanel?.kind).toBe("planQuestion");
 
-    const approvalPanel = toPendingInteractionPanel({
-      id: "ia-p",
+    const mcpPanel = toPendingInteractionPanel({
+      id: "ia-m",
       sessionId: "s-1",
       turnId: "t-3",
-      kind: "plan_approval",
+      kind: "mcp_elicitation",
       status: "pending",
       payload: {
-        proposedMarkdown: "## Plan\n- step1"
+        message: "Need a value from user",
+        serverName: "Filesystem MCP"
       },
       createdAt: now + 2,
       updatedAt: now + 2
     } as any, LABELS);
-    expect(approvalPanel?.kind).toBe("planApproval");
-    if (approvalPanel?.kind !== "planApproval") {
-      throw new Error("expected planApproval panel");
+    expect(mcpPanel?.kind).toBe("planQuestion");
+    if (mcpPanel?.kind !== "planQuestion") {
+      throw new Error("expected planQuestion panel");
     }
-    expect(approvalPanel.request.summary).toBe("## Plan");
+    expect(mcpPanel.request.questions[0]?.header).toBe("Filesystem MCP");
   });
 
   test("sorts and merges pending interactions by timestamp and update version", () => {

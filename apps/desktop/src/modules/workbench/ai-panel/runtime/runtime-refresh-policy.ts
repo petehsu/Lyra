@@ -15,6 +15,10 @@ const shouldRefreshSessionDetail = (phase: string): boolean =>
   || phase === "plan_approved"
   || phase === "plan_rejected"
   || phase === "plan_mode_exited"
+  || phase === "memory_trimmed"
+  || phase === "memory_shared_updated"
+  || phase === "memory_frozen_updated"
+  || phase === "memory_prompt_cache_updated"
   || phase === "paused"
   || phase === "completed"
   || phase === "failed";
@@ -24,6 +28,10 @@ const shouldRefreshSessions = (phase: string): boolean =>
   || phase === "plan_mode_entered"
   || phase === "plan_mode_reentered"
   || phase === "plan_mode_exited"
+  || phase === "memory_trimmed"
+  || phase === "memory_shared_updated"
+  || phase === "memory_frozen_updated"
+  || phase === "memory_prompt_cache_updated"
   || phase === "paused"
   || phase === "completed"
   || phase === "failed";

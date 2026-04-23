@@ -9,8 +9,7 @@ import type {
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
 import { isWorkbenchThemeId } from "../theme";
 import type { WorkbenchThemeId } from "../theme";
-import { isWorkbenchTerminalThemePresetId } from "../terminal-theme";
-import type { TerminalThemePresetId } from "../terminal-theme";
+import { resolveTerminalThemePresetId } from "../terminal-theme";
 import type {
   WorkbenchBrowserAutomationEngine,
   WorkbenchLyraDirectMicroExecutorBudget,
@@ -30,8 +29,6 @@ const isLocale = (value: unknown): value is WorkbenchLocale =>
   typeof value === "string" && WORKBENCH_LOCALES.includes(value as WorkbenchLocale);
 
 const isTheme = (value: unknown): value is WorkbenchThemeId => isWorkbenchThemeId(value);
-const isTerminalThemePreset = (value: unknown): value is TerminalThemePresetId =>
-  isWorkbenchTerminalThemePresetId(value);
 const isSplitTriggerMode = (value: unknown): value is WorkbenchSplitTriggerMode =>
   value === "ctrl_left_drag" || value === "right_drag";
 const isSplitThreePaneLayout = (value: unknown): value is WorkbenchSplitThreePaneLayout =>
@@ -123,9 +120,10 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
     return {
       locale: isLocale(parsed.locale) ? parsed.locale : defaults.locale,
       theme: isTheme(parsed.theme) ? parsed.theme : defaults.theme,
-      terminalThemePreset: isTerminalThemePreset(parsed.terminalThemePreset)
-        ? parsed.terminalThemePreset
-        : defaults.terminalThemePreset,
+      terminalThemePreset:
+        parsed.terminalThemePreset === undefined
+          ? defaults.terminalThemePreset
+          : resolveTerminalThemePresetId(parsed.terminalThemePreset),
       splitTriggerMode: isSplitTriggerMode(parsed.splitTriggerMode)
         ? parsed.splitTriggerMode
         : defaults.splitTriggerMode,

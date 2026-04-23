@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import {
   LYRA_CHANNELS,
@@ -14,15 +17,22 @@ import {
   type TerminalWriteRequest
 } from "../../shared/desktop-bridge";
 import {
-  isTerminalThemePresetId,
-  type TerminalThemePresetId
+  normalizeTerminalThemeMode,
+  type TerminalThemeMode
 } from "../../shared/terminal-theme";
 import type { LyraRuntimeClient } from "../runtime-client";
 import {
-  buildStarshipPromptInjection,
-  createStarshipRuntime,
-  describeStarshipRuntime
-} from "./starship";
+  createPromptReloadCommand,
+  resolvePromptShellFamily,
+  type PromptShellFamily
+} from "./fallback-prompt";
+import {
+  createPromptStreamState,
+  filterPromptRuntimeData,
+  notePromptUserInput,
+  queuePromptEchoSuppression,
+  type PromptStreamState
+} from "./prompt-stream";
 import type {
   TerminalCapabilitySessionCloseRequest,
   TerminalCapabilitySessionReadRequest,
@@ -32,12 +42,7 @@ import type {
   TerminalExecResult,
   TerminalIpcBridge
 } from "./types";
-const DEFAULT_TERMINAL_THEME_PRESET: TerminalThemePresetId = "glacier-blocks";
-type SessionMeta = {
-  readonly shell: string;
-  readonly presetId: TerminalThemePresetId;
-  readonly uiThemeId: string;
-};
+
 const sanitizeSize = (value: number, fallback: number): number => {
   if (!Number.isFinite(value)) return fallback;
   const rounded = Math.round(value);
@@ -45,8 +50,7 @@ const sanitizeSize = (value: number, fallback: number): number => {
   if (rounded > 300) return 300;
   return rounded;
 };
-const normalizeTerminalPreset = (value: unknown): TerminalThemePresetId =>
-  isTerminalThemePresetId(value) ? value : DEFAULT_TERMINAL_THEME_PRESET;
+
 const normalizeRequestedShell = (value: unknown): string | undefined => {
   if (typeof value === "string" && value.trim().length > 0) {
     return value.trim();
@@ -60,8 +64,12 @@ const normalizeRequestedShell = (value: unknown): string | undefined => {
   }
   return "bash";
 };
+
 const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateRequest => {
   const normalizedShell = normalizeRequestedShell(request.shell);
+  const normalizedTerminalThemePreset = normalizeTerminalThemeMode(
+    request.terminalThemePreset
+  );
   const normalizedUiThemeId =
     typeof request.uiThemeId === "string" && request.uiThemeId.trim().length > 0
       ? request.uiThemeId.trim()
@@ -70,7 +78,7 @@ const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateR
     cols: sanitizeSize(request.cols, 80),
     rows: sanitizeSize(request.rows, 24),
     source: request.source ?? "user",
-    terminalThemePreset: normalizeTerminalPreset(request.terminalThemePreset),
+    terminalThemePreset: normalizedTerminalThemePreset,
     uiThemeId: normalizedUiThemeId,
     ...(request.sessionId !== undefined ? { sessionId: request.sessionId } : {}),
     ...(request.title !== undefined ? { title: request.title } : {}),
@@ -81,9 +89,11 @@ const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateR
     ...(typeof request.persist === "boolean" ? { persist: request.persist } : {})
   };
 };
+
 const normalizeRestoreRequest = (request: TerminalRestoreRequest): TerminalRestoreRequest => ({
   sessions: request.sessions.map((session) => normalizeCreateRequest(session))
 });
+
 const normalizeWriteRequest = (request: TerminalWriteRequest): TerminalWriteRequest => ({
   source: request.source ?? "user",
   sessionId: request.sessionId,
@@ -92,57 +102,53 @@ const normalizeWriteRequest = (request: TerminalWriteRequest): TerminalWriteRequ
   ...(Array.isArray(request.keys) ? { keys: request.keys } : {}),
   ...(typeof request.appendNewline === "boolean" ? { appendNewline: request.appendNewline } : {})
 });
+
 const normalizeResizeRequest = (request: TerminalResizeRequest): TerminalResizeRequest => ({
   ...request,
   cols: sanitizeSize(request.cols, 80),
   rows: sanitizeSize(request.rows, 24)
 });
+
 const normalizeReloadPromptRequest = (
   request: TerminalReloadPromptRequest
 ): TerminalReloadPromptRequest => ({
   ...request,
+  terminalThemePreset: normalizeTerminalThemeMode(request.terminalThemePreset),
   uiThemeId:
     typeof request.uiThemeId === "string" && request.uiThemeId.trim().length > 0
       ? request.uiThemeId.trim()
       : "one-dark",
-  terminalThemePreset: normalizeTerminalPreset(request.terminalThemePreset),
   source: request.source ?? "user"
 });
-const parseEventMeta = (value: unknown): { readonly kind: string; readonly sessionId: string } | null => {
-  if (value === null || typeof value !== "object") {
-    return null;
-  }
-  const candidate = value as Record<string, unknown>;
-  if (typeof candidate.kind !== "string" || typeof candidate.sessionId !== "string") {
-    return null;
-  }
-  return {
-    kind: candidate.kind,
-    sessionId: candidate.sessionId
-  };
-};
+
 const createDeferredResult = (reason: string): TerminalReloadPromptResult => ({
   applied: false,
   deferred: true,
   reason
 });
-const createFallbackCreateRequest = (
-  snapshot: TerminalSessionSnapshot
-): TerminalCreateRequest => ({
-  sessionId: snapshot.sessionId,
-  title: snapshot.title,
-  ...(snapshot.cwd !== undefined ? { cwd: snapshot.cwd } : {}),
-  shell: snapshot.shell,
-  uiThemeId: "one-dark",
-  terminalThemePreset: DEFAULT_TERMINAL_THEME_PRESET,
-  cols: snapshot.cols,
-  rows: snapshot.rows,
-  source: "user"
+
+const createAppliedResult = (): TerminalReloadPromptResult => ({
+  applied: true,
+  deferred: false
 });
 
 const CAPABILITY_EXIT_PREFIX = "__LYRA_CAPABILITY_EXIT__";
+const TERMINAL_PROMPT_SCRIPT_DIR = "prompt-scripts";
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const quotePosixShellLiteral = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`;
+
+const createPromptSourceCommand = (scriptPath: string): string =>
+  `. ${quotePosixShellLiteral(scriptPath)} 2>/dev/null || true`;
+
+const createPromptScriptHash = (shellFamily: PromptShellFamily, script: string): string =>
+  createHash("sha256")
+    .update(shellFamily)
+    .update("\u0000")
+    .update(script)
+    .digest("hex")
+    .slice(0, 24);
 
 const stripCommandMarker = (
   output: string,
@@ -163,106 +169,141 @@ export const createTerminalIpcBridge = (
   runtimeClient: LyraRuntimeClient,
   getWindow: () => BrowserWindow | null
 ): TerminalIpcBridge => {
-  const runtime = createStarshipRuntime(storageRoot);
-  const runtimeStatus = describeStarshipRuntime(runtime);
-  const sessionMetaById = new Map<string, SessionMeta>();
-  if (runtimeStatus.available) {
-    console.info(
-      `[lyra-terminal] starship runtime ${runtimeStatus.source}: ${runtimeStatus.binaryPath}`
-    );
-  } else {
-    console.warn(
-      `[lyra-terminal] starship runtime unavailable: ${runtimeStatus.reason ?? "unknown reason"}`
-    );
-  }
   const requestRuntime = async <T>(method: string, payload: unknown): Promise<T> =>
     await runtimeClient.request<T>(method, payload);
-  const publishEvent = (event: TerminalEvent): void => {
-    const meta = parseEventMeta(event);
-    if (meta?.kind === "exit") {
-      sessionMetaById.delete(meta.sessionId);
+
+  const sessionShellById = new Map<string, string>();
+  const sessionPromptModeById = new Map<string, TerminalThemeMode>();
+  const sessionPromptStreamById = new Map<string, PromptStreamState>();
+  const sessionPendingReloadById = new Map<
+    string,
+    {
+      readonly terminalThemePreset: TerminalThemeMode;
+      readonly uiThemeId: string;
+      readonly source: "user" | "ai" | "capability";
     }
+  >();
+  const promptScriptRoot = join(storageRoot, TERMINAL_PROMPT_SCRIPT_DIR);
+
+  const ensurePromptStreamState = (sessionId: string): PromptStreamState => {
+    const existing = sessionPromptStreamById.get(sessionId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const created = createPromptStreamState();
+    sessionPromptStreamById.set(sessionId, created);
+    return created;
+  };
+
+  const ensurePromptScriptFile = async (
+    shellFamily: PromptShellFamily,
+    script: string
+  ): Promise<string> => {
+    const hash = createPromptScriptHash(shellFamily, script);
+    const scriptPath = join(promptScriptRoot, `${shellFamily}-${hash}.sh`);
+    await mkdir(promptScriptRoot, { recursive: true });
+    try {
+      await access(scriptPath);
+      return scriptPath;
+    } catch {
+      await writeFile(scriptPath, `${script}\n`, {
+        encoding: "utf8",
+        mode: 0o600
+      });
+      return scriptPath;
+    }
+  };
+
+  const applyPromptToSession = async (input: {
+    readonly sessionId: string;
+    readonly shell: string;
+    readonly terminalThemePreset: TerminalThemeMode;
+    readonly uiThemeId: string;
+    readonly source: "user" | "ai" | "capability";
+    readonly resetInteractiveState?: boolean;
+  }): Promise<TerminalReloadPromptResult> => {
+    const shellFamily = resolvePromptShellFamily(input.shell);
+    if (shellFamily === null) {
+      return createDeferredResult(`shell does not support prompt reload: ${input.shell}`);
+    }
+
+    const command = createPromptReloadCommand(
+      shellFamily,
+      input.uiThemeId,
+      input.terminalThemePreset
+    );
+    if (command === null) {
+      return createDeferredResult(`shell does not support prompt reload: ${input.shell}`);
+    }
+
+    try {
+      const scriptPath = await ensurePromptScriptFile(shellFamily, command);
+      const sourceCommand = createPromptSourceCommand(scriptPath);
+      queuePromptEchoSuppression(ensurePromptStreamState(input.sessionId), sourceCommand);
+      await requestRuntime<void>("terminal.sessions.write", {
+        sessionId: input.sessionId,
+        data: `${input.resetInteractiveState === true ? "\u0003\r" : ""}${sourceCommand}\n`,
+        source: input.source
+      });
+      sessionPromptModeById.set(input.sessionId, input.terminalThemePreset);
+      return createAppliedResult();
+    } catch (error) {
+      if (error instanceof Error && /session not found/i.test(error.message)) {
+        return createDeferredResult("session not found");
+      }
+      throw error;
+    }
+  };
+
+  const publishEvent = (event: TerminalEvent): void => {
     const window = getWindow();
     if (window === null || window.isDestroyed()) {
       return;
     }
     window.webContents.send(LYRA_CHANNELS.terminalEvent, event);
   };
+
   const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
     if (eventName !== "terminal.runtime") {
       return;
     }
     const event = payload as TerminalEvent;
+    if (event.kind === "data") {
+      const streamState = ensurePromptStreamState(event.sessionId);
+      const filteredData = filterPromptRuntimeData(streamState, event.data);
+      if (streamState.atPrompt) {
+        const pendingReload = sessionPendingReloadById.get(event.sessionId);
+        if (pendingReload !== undefined) {
+          sessionPendingReloadById.delete(event.sessionId);
+          const shell = sessionShellById.get(event.sessionId);
+          if (shell !== undefined) {
+            void applyPromptToSession({
+              sessionId: event.sessionId,
+              shell,
+              terminalThemePreset: pendingReload.terminalThemePreset,
+              uiThemeId: pendingReload.uiThemeId,
+              source: pendingReload.source
+            }).catch((error) => {
+              console.warn(
+                `[lyra-terminal] deferred prompt apply failed for session ${event.sessionId}:`,
+                error
+              );
+            });
+          }
+        }
+      }
+      if (filteredData.length === 0) {
+        return;
+      }
+      publishEvent({
+        ...event,
+        data: filteredData
+      });
+      return;
+    }
     publishEvent(event);
   });
-  const applyPromptInjection = (
-    sessionId: string,
-    shell: string,
-    presetId: TerminalThemePresetId,
-    uiThemeId: string
-  ): Promise<TerminalReloadPromptResult> => (async () => {
-    const injection = buildStarshipPromptInjection(runtime, {
-      shell,
-      presetId,
-      uiThemeId
-    });
-    if (!injection.applied || injection.command === undefined) {
-      return createDeferredResult(
-        injection.reason ?? "prompt reload skipped for this shell/runtime"
-      );
-    }
-    try {
-      await requestRuntime<void>("terminal.sessions.write", {
-        sessionId,
-        data: injection.command,
-        source: "user"
-      });
-      return {
-        applied: true,
-        deferred: false
-      };
-    } catch (error) {
-      if (error instanceof Error && /session not found/i.test(error.message)) {
-        return createDeferredResult("session not found");
-      }
-      return createDeferredResult(
-        error instanceof Error ? error.message : String(error)
-      );
-    }
-  })();
-  const rememberSessionMeta = (
-    snapshot: TerminalSessionSnapshot,
-    request: TerminalCreateRequest
-  ): SessionMeta => {
-    const meta: SessionMeta = {
-      shell: snapshot.shell,
-      presetId: normalizeTerminalPreset(request.terminalThemePreset),
-      uiThemeId: request.uiThemeId ?? "one-dark"
-    };
-    sessionMetaById.set(snapshot.sessionId, meta);
-    return meta;
-  };
-  const createTrackedSession = async (request: TerminalCreateRequest): Promise<TerminalSessionSnapshot> => {
-    const snapshot = await requestRuntime<TerminalSessionSnapshot>(
-      "terminal.sessions.create",
-      request
-    );
-    const meta = rememberSessionMeta(snapshot, request);
-    if (request.source === "user") {
-      const promptResult = await applyPromptInjection(
-        snapshot.sessionId,
-        meta.shell,
-        meta.presetId,
-        meta.uiThemeId
-      );
-      if (!promptResult.applied && promptResult.reason !== undefined) {
-        console.info(
-          `[lyra-terminal] prompt injection deferred id=${snapshot.sessionId} reason=${promptResult.reason}`
-        );
-      }
-    }
-    return snapshot;
-  };
+
   const handlers: Array<
     readonly [string, (event: IpcMainInvokeEvent, payload: unknown) => unknown]
   > = [
@@ -270,7 +311,29 @@ export const createTerminalIpcBridge = (
       LYRA_CHANNELS.terminalCreateSession,
       async (_event, payload) => {
         const normalized = normalizeCreateRequest(payload as TerminalCreateRequest);
-        const snapshot = await createTrackedSession(normalized);
+        const snapshot = await requestRuntime<TerminalSessionSnapshot>(
+          "terminal.sessions.create",
+          normalized
+        );
+        sessionShellById.set(snapshot.sessionId, snapshot.shell);
+        sessionPromptModeById.set(snapshot.sessionId, "follow-app");
+        sessionPromptStreamById.set(snapshot.sessionId, createPromptStreamState());
+        if (snapshot.mode !== "command") {
+          try {
+            await applyPromptToSession({
+              sessionId: snapshot.sessionId,
+              shell: snapshot.shell,
+              terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
+              uiThemeId: normalized.uiThemeId ?? "one-dark",
+              source: normalized.source
+            });
+          } catch (error) {
+            console.warn(
+              `[lyra-terminal] prompt apply failed for session ${snapshot.sessionId}:`,
+              error
+            );
+          }
+        }
         console.info(
           `[lyra-terminal] session ready id=${snapshot.sessionId} shell=${snapshot.shell} cols=${snapshot.cols} rows=${snapshot.rows}`
         );
@@ -285,57 +348,60 @@ export const createTerminalIpcBridge = (
           "terminal.sessions.restore",
           normalized
         );
-        const requestBySessionId = new Map(
-          normalized.sessions
-            .filter((session) => typeof session.sessionId === "string")
-            .map((session) => [session.sessionId as string, session])
+        await Promise.all(
+          snapshots.map(async (snapshot, index) => {
+            sessionShellById.set(snapshot.sessionId, snapshot.shell);
+            sessionPromptModeById.set(snapshot.sessionId, "follow-app");
+            sessionPromptStreamById.set(snapshot.sessionId, createPromptStreamState());
+            if (snapshot.mode === "command") {
+              return;
+            }
+            const requestedSession = normalized.sessions[index];
+            try {
+              await applyPromptToSession({
+                sessionId: snapshot.sessionId,
+                shell: snapshot.shell,
+                terminalThemePreset: normalizeTerminalThemeMode(
+                  requestedSession?.terminalThemePreset
+                ),
+                uiThemeId: requestedSession?.uiThemeId ?? "one-dark",
+                source: requestedSession?.source ?? "user"
+              });
+            } catch (error) {
+              console.warn(
+                `[lyra-terminal] prompt restore apply failed for session ${snapshot.sessionId}:`,
+                error
+              );
+            }
+          })
         );
-        for (const snapshot of snapshots) {
-          const sourceRequest =
-            requestBySessionId.get(snapshot.sessionId) ??
-            normalized.sessions[0] ??
-            createFallbackCreateRequest(snapshot);
-          const meta = rememberSessionMeta(snapshot, sourceRequest);
-          const promptResult = await applyPromptInjection(
-            snapshot.sessionId,
-            meta.shell,
-            meta.presetId,
-            meta.uiThemeId
-          );
-          if (!promptResult.applied && promptResult.reason !== undefined) {
-            console.info(
-              `[lyra-terminal] prompt restore deferred id=${snapshot.sessionId} reason=${promptResult.reason}`
-            );
-          }
-        }
         return snapshots;
       }
     ],
     [
       LYRA_CHANNELS.terminalReloadPrompt,
       async (_event, payload) => {
-        const normalized = normalizeReloadPromptRequest(
-          payload as TerminalReloadPromptRequest
-        );
-        const knownMeta = sessionMetaById.get(normalized.sessionId);
-        if (knownMeta === undefined) {
-          return createDeferredResult("session metadata unavailable");
+        const normalized = normalizeReloadPromptRequest(payload as TerminalReloadPromptRequest);
+        const shell = sessionShellById.get(normalized.sessionId);
+        if (shell === undefined) {
+          return createDeferredResult("session shell metadata unavailable");
         }
-        const presetId = normalizeTerminalPreset(normalized.terminalThemePreset);
-        const result = await applyPromptInjection(
-          normalized.sessionId,
-          knownMeta.shell,
-          presetId,
-          normalized.uiThemeId ?? knownMeta.uiThemeId
-        );
-        if (result.applied) {
-          sessionMetaById.set(normalized.sessionId, {
-            ...knownMeta,
-            presetId,
-            uiThemeId: normalized.uiThemeId ?? knownMeta.uiThemeId
+        const streamState = ensurePromptStreamState(normalized.sessionId);
+        if (!streamState.atPrompt) {
+          sessionPendingReloadById.set(normalized.sessionId, {
+            terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
+            uiThemeId: normalized.uiThemeId ?? "one-dark",
+            source: normalized.source
           });
+          return createDeferredResult("session is busy; prompt reload deferred until next prompt");
         }
-        return result;
+        return await applyPromptToSession({
+          sessionId: normalized.sessionId,
+          shell,
+          terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
+          uiThemeId: normalized.uiThemeId ?? "one-dark",
+          source: normalized.source
+        });
       }
     ],
     [
@@ -343,6 +409,7 @@ export const createTerminalIpcBridge = (
       (_event, payload) =>
         (async () => {
           const normalized = normalizeWriteRequest(payload as TerminalWriteRequest);
+          notePromptUserInput(ensurePromptStreamState(normalized.sessionId));
           try {
             await requestRuntime<void>("terminal.sessions.write", normalized);
           } catch (error) {
@@ -383,21 +450,30 @@ export const createTerminalIpcBridge = (
       (_event, payload) =>
         (async () => {
           const request = payload as TerminalCloseRequest;
-          sessionMetaById.delete(request.sessionId);
           try {
             await requestRuntime<void>("terminal.sessions.close", request);
           } catch (error) {
             if (error instanceof Error && /session not found/i.test(error.message)) {
+              sessionShellById.delete(request.sessionId);
+              sessionPromptModeById.delete(request.sessionId);
+              sessionPromptStreamById.delete(request.sessionId);
+              sessionPendingReloadById.delete(request.sessionId);
               return;
             }
             throw error;
           }
+          sessionShellById.delete(request.sessionId);
+          sessionPromptModeById.delete(request.sessionId);
+          sessionPromptStreamById.delete(request.sessionId);
+          sessionPendingReloadById.delete(request.sessionId);
         })()
     ]
   ];
+
   for (const [channel, handler] of handlers) {
     ipcMain.handle(channel, async (event, payload) => handler(event, payload));
   }
+
   const executeCommand = async (
     request: TerminalExecRequest
   ): Promise<TerminalExecResult> => {
@@ -411,30 +487,41 @@ export const createTerminalIpcBridge = (
       timeoutMs: request.timeoutMs
     });
   };
+
   const startCapabilitySession = (
     request: TerminalCapabilitySessionStartRequest
   ): Promise<TerminalSessionSnapshot> =>
-    createTrackedSession(
-      normalizeCreateRequest({
-        title: request.title ?? "Capability Terminal Session",
-        ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
-        cols: request.cols ?? 120,
-        rows: request.rows ?? 40,
-        ...(request.shell === undefined ? {} : { shell: request.shell }),
-        ...(request.mode === undefined ? {} : { mode: request.mode }),
-        ...(request.command === undefined ? {} : { command: request.command }),
-        ...(typeof request.persist === "boolean" ? { persist: request.persist } : {}),
-        source: "capability"
-      })
-    );
+    (async () => {
+      const snapshot = await requestRuntime<TerminalSessionSnapshot>(
+        "terminal.sessions.create",
+        normalizeCreateRequest({
+          title: request.title ?? "Capability Terminal Session",
+          ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+          cols: request.cols ?? 120,
+          rows: request.rows ?? 40,
+          ...(request.shell === undefined ? {} : { shell: request.shell }),
+          ...(request.mode === undefined ? {} : { mode: request.mode }),
+          ...(request.command === undefined ? {} : { command: request.command }),
+          ...(typeof request.persist === "boolean" ? { persist: request.persist } : {}),
+          source: "capability"
+        })
+      );
+      sessionShellById.set(snapshot.sessionId, snapshot.shell);
+      sessionPromptModeById.set(snapshot.sessionId, "follow-app");
+      sessionPromptStreamById.set(snapshot.sessionId, createPromptStreamState());
+      return snapshot;
+    })();
+
   const readCapabilitySession = (
     request: TerminalCapabilitySessionReadRequest
   ): Promise<TerminalReadResponse> =>
     requestRuntime<TerminalReadResponse>("terminal.sessions.read", request);
+
   const writeCapabilitySession = (
     request: TerminalCapabilitySessionWriteRequest
   ): Promise<void> =>
     (async () => {
+      notePromptUserInput(ensurePromptStreamState(request.sessionId));
       await requestRuntime<void>("terminal.sessions.write", {
         sessionId: request.sessionId,
         ...(typeof request.data === "string" ? { data: request.data } : {}),
@@ -446,13 +533,21 @@ export const createTerminalIpcBridge = (
         source: "capability"
       });
     })();
+
   const closeCapabilitySession = (
     request: TerminalCapabilitySessionCloseRequest
   ): Promise<void> =>
     (async () => {
-      sessionMetaById.delete(request.sessionId);
-      await requestRuntime<void>("terminal.sessions.close", request);
+      try {
+        await requestRuntime<void>("terminal.sessions.close", request);
+      } finally {
+        sessionShellById.delete(request.sessionId);
+        sessionPromptModeById.delete(request.sessionId);
+        sessionPromptStreamById.delete(request.sessionId);
+        sessionPendingReloadById.delete(request.sessionId);
+      }
     })();
+
   return {
     loadResult: {
       loadedFrom: "lyrad"
@@ -467,7 +562,6 @@ export const createTerminalIpcBridge = (
         ipcMain.removeHandler(channel);
       }
       unsubscribeRuntimeEvents();
-      sessionMetaById.clear();
     }
   };
 };

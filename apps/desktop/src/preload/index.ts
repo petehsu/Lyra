@@ -2,38 +2,13 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import {
   LYRA_CHANNELS,
-  type AiMemoryConfig,
-  type AgentAnswerQuestionRequest,
-  type AgentAnswerPlanQuestionRequest,
-  type AgentBindSessionProjectRequest,
-  type AgentEnterPlanModeRequest,
-  type AgentCreateSessionRequest,
-  type AgentDeleteSessionRequest,
-  type AgentGetPendingInteractionsRequest,
-  type AgentGetPlanRequest,
-  type AgentGetSessionRequest,
-  type AgentPendingInteraction,
-  type AgentPlanState,
-  type AgentResolvePlanApprovalRequest,
-  type AgentResumeExecutionRequest,
-  type AgentRuntimeEvent,
-  type AgentSendTurnRequest,
-  type AgentSendTurnResult,
-  type AgentSession,
-  type AgentSessionDetail,
-  type CommandApprovalSubmitRequest,
-  type AiDeleteProfileRequest,
-  type AiDiscoverModelsRequest,
-  type AiModelDiscoveryResult,
-  type AiOpenAiChatGptAuthResult,
   type BrowserUseRuntimeStatus,
-  type AiProfileValidationResult,
-  type AiProviderCatalogItem,
-  type AiProviderPreset,
-  type AiProviderProfile,
-  type AiSetDefaultProfileRequest,
-  type AiUpsertProfileRequest,
-  type AiValidateProfileRequest,
+  type LyraClientNotificationPayload,
+  type LyraClientRequestPayload,
+  type LyraRejectServerRequestPayload,
+  type LyraResolveServerRequestPayload,
+  type LyraRuntimeEvent,
+  type LyraRuntimeHealth,
   type AppMetaPayload,
   type CapabilityCallResult,
   type CapabilityDescriptor,
@@ -161,8 +136,8 @@ const workbenchBrowserEventListeners = new Set<(event: WorkbenchBrowserEvent) =>
 let workbenchBrowserEventBridgeReady = false;
 const browserUseRuntimeStatusListeners = new Set<(status: BrowserUseRuntimeStatus) => void>();
 let browserUseRuntimeStatusBridgeReady = false;
-const agentEventListeners = new Set<(event: AgentRuntimeEvent) => void>();
-let agentEventBridgeReady = false;
+const lyraEventListeners = new Set<(event: LyraRuntimeEvent) => void>();
+let lyraEventBridgeReady = false;
 const mcpEventListeners = new Set<(event: McpRuntimeEvent) => void>();
 let mcpEventBridgeReady = false;
 const skillsEventListeners = new Set<(event: SkillRuntimeEvent) => void>();
@@ -257,25 +232,19 @@ const ensureBrowserUseRuntimeStatusBridge = (): void => {
   );
 };
 
-const ensureAgentEventBridge = (): void => {
-  if (agentEventBridgeReady) {
+const ensureLyraEventBridge = (): void => {
+  if (lyraEventBridgeReady) {
     return;
   }
-  agentEventBridgeReady = true;
+  lyraEventBridgeReady = true;
 
   ipcRenderer.on(
-    LYRA_CHANNELS.agentEvent,
-    (_event: Electron.IpcRendererEvent, payload: AgentRuntimeEvent): void => {
-      if (
-        payload === null ||
-        typeof payload !== "object" ||
-        typeof payload.phase !== "string" ||
-        typeof payload.sessionId !== "string" ||
-        typeof payload.turnId !== "string"
-      ) {
+    LYRA_CHANNELS.lyraEvent,
+    (_event: Electron.IpcRendererEvent, payload: LyraRuntimeEvent): void => {
+      if (payload === null || typeof payload !== "object" || typeof payload.kind !== "string") {
         return;
       }
-      for (const listener of agentEventListeners) {
+      for (const listener of lyraEventListeners) {
         listener(payload);
       }
     }
@@ -508,85 +477,24 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         request
       ) as Promise<SearchDeepExpandResponse>
   },
-  ai: {
-    readProfiles: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiReadProfiles) as Promise<readonly AiProviderProfile[]>,
-    readProviderCatalog: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiReadProviderCatalog) as Promise<readonly AiProviderCatalogItem[]>,
-    readPresetCatalog: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiReadPresetCatalog) as Promise<readonly AiProviderPreset[]>,
-    authorizeOpenAiChatGpt: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiAuthorizeOpenAiChatGpt) as Promise<AiOpenAiChatGptAuthResult>,
-    authorizeOpenAiChatGptDeviceCode: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiAuthorizeOpenAiChatGptDeviceCode) as Promise<AiOpenAiChatGptAuthResult>,
-    upsertProfile: (request: AiUpsertProfileRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiUpsertProfile, request) as Promise<AiProviderProfile>,
-    deleteProfile: (request: AiDeleteProfileRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiDeleteProfile, request) as Promise<void>,
-    setDefaultProfile: (request: AiSetDefaultProfileRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiSetDefaultProfile, request) as Promise<AiProviderProfile>,
-    validateProfile: (request: AiValidateProfileRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiValidateProfile, request) as Promise<AiProfileValidationResult>,
-    discoverModels: (request: AiDiscoverModelsRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiDiscoverModels, request) as Promise<AiModelDiscoveryResult>,
-    refreshDiscoveredModels: (request: AiDiscoverModelsRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aiRefreshDiscoveredModels, request) as Promise<AiModelDiscoveryResult>
-  },
-  agent: {
-    listSessions: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentListSessions) as Promise<readonly AgentSession[]>,
-    createSession: (request?: AgentCreateSessionRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentCreateSession,
-        request ?? {}
-      ) as Promise<AgentSession>,
-    getSession: (request: AgentGetSessionRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentGetSession, request) as Promise<AgentSessionDetail>,
-    bindSessionProject: (request: AgentBindSessionProjectRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentBindSessionProject, request) as Promise<AgentSession>,
-    deleteSession: (request: AgentDeleteSessionRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentDeleteSession, request) as Promise<void>,
-    sendTurn: (request: AgentSendTurnRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentSendTurn, request) as Promise<AgentSendTurnResult>,
-    enterPlanMode: (request: AgentEnterPlanModeRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentEnterPlanMode, request) as Promise<AgentSessionDetail>,
-    getPlan: (request: AgentGetPlanRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentGetPlan, request) as Promise<AgentPlanState | null>,
-    getPendingInteractions: (request: AgentGetPendingInteractionsRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentGetPendingInteractions, request) as Promise<
-        readonly AgentPendingInteraction[]
-      >,
-    answerQuestion: (request: AgentAnswerQuestionRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentAnswerQuestion, request) as Promise<
-        AgentSendTurnResult | null
-      >,
-    answerPlanQuestion: (request: AgentAnswerPlanQuestionRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentAnswerPlanQuestion, request) as Promise<
-        AgentSendTurnResult | null
-      >,
-    resolvePlanApproval: (request: AgentResolvePlanApprovalRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentResolvePlanApproval, request) as Promise<
-        AgentSendTurnResult | null
-      >,
-    resumeExecution: (request: AgentResumeExecutionRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentResumeExecution, request) as Promise<
-        AgentSendTurnResult | null
-      >,
-    getMemoryConfig: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentGetMemoryConfig) as Promise<AiMemoryConfig>,
-    updateMemoryConfig: (config: AiMemoryConfig) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentUpdateMemoryConfig, config) as Promise<AiMemoryConfig>,
-    onEvent: (listener: (event: AgentRuntimeEvent) => void) => {
-      ensureAgentEventBridge();
-      agentEventListeners.add(listener);
+  lyra: {
+    health: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.lyraRuntimeHealth) as Promise<LyraRuntimeHealth>,
+    request: <T = unknown>(payload: LyraClientRequestPayload) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.lyraRuntimeRequest, payload) as Promise<T>,
+    notify: (payload: LyraClientNotificationPayload) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.lyraRuntimeNotify, payload) as Promise<void>,
+    resolveServerRequest: (payload: LyraResolveServerRequestPayload) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.lyraRuntimeResolveServerRequest, payload) as Promise<void>,
+    rejectServerRequest: (payload: LyraRejectServerRequestPayload) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.lyraRuntimeRejectServerRequest, payload) as Promise<void>,
+    onEvent: (listener: (event: LyraRuntimeEvent) => void) => {
+      ensureLyraEventBridge();
+      lyraEventListeners.add(listener);
       return () => {
-        agentEventListeners.delete(listener);
+        lyraEventListeners.delete(listener);
       };
     },
-    submitCommandApproval: (request: CommandApprovalSubmitRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentSubmitCommandApproval, request) as Promise<
-        AgentSendTurnResult | null
-      >,
   },
   files: {
     readHome: () => ipcRenderer.invoke(LYRA_CHANNELS.filesReadHome) as Promise<FileManagerReadHomeResponse>,

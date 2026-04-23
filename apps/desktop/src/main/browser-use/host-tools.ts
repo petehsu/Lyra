@@ -5,6 +5,11 @@ import type { LyraRuntimeClient } from "../runtime-client";
 import type { RuntimeHostRpcService } from "../runtime-host-rpc/types";
 
 const BROWSER_USE_TOOL_SET_ID = "desktop.browser_use";
+type HostToolsSyncResult = {
+  readonly acceptedCount: number;
+  readonly droppedAsCodexOwnedCount: number;
+  readonly droppedToolNames: readonly string[];
+};
 
 type HostToolSideEffectLevel =
   | "read_only"
@@ -105,19 +110,6 @@ const HOST_TOOL_CONFIGS = [
       readsNetwork: false,
     },
   },
-  {
-    capabilityId: "browser_use.agent.run",
-    approvalMode: "ask" as const,
-    sideEffects: {
-      level: "external_mutation" as const,
-      mutatesWorkspace: false,
-      mutatesMemory: false,
-      mutatesExternalSystems: true,
-      mutatesSessionState: true,
-      opensInteractiveSession: true,
-      readsNetwork: true,
-    },
-  },
 ] as const;
 
 type HostToolInvocationPayload = {
@@ -197,6 +189,8 @@ export const createBrowserUseHostToolsBridge = ({
   readonly runtimeClient: LyraRuntimeClient;
   readonly runtimeHostRpc: RuntimeHostRpcService;
 }) => {
+  const requestLyraRuntime = async <T>(method: string, params: unknown): Promise<T> =>
+    await runtimeClient.request<T>("lyra.runtime.request", { method, params });
   const disposers = HOST_TOOL_CONFIGS.map((config) =>
     runtimeHostRpc.registerHandler(config.capabilityId, async (payload: unknown) => {
       const request = asRecord(payload) as HostToolInvocationPayload;
@@ -220,17 +214,20 @@ export const createBrowserUseHostToolsBridge = ({
       for (const dispose of disposers) {
         dispose();
       }
-      void runtimeClient.request("agent.host_tools.remove", {
+      void requestLyraRuntime("lyra/runtime/hostTools/remove", {
         toolSetId: BROWSER_USE_TOOL_SET_ID,
       }).catch(() => undefined);
     },
     remove: async () => {
-      await runtimeClient.request("agent.host_tools.remove", {
+      await requestLyraRuntime("lyra/runtime/hostTools/remove", {
         toolSetId: BROWSER_USE_TOOL_SET_ID,
       });
     },
     sync: async () => {
-      await runtimeClient.request("agent.host_tools.sync", buildPayload(capabilitiesBridge));
+      await requestLyraRuntime<HostToolsSyncResult>(
+        "lyra/runtime/hostTools/sync",
+        buildPayload(capabilitiesBridge)
+      );
     },
   };
 };

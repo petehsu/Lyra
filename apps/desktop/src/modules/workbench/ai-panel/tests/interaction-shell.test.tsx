@@ -7,6 +7,8 @@ import type { PendingInteractionPanel } from "../interaction/pending-interaction
 
 const commandRequest = (id: string, turnId: string) => ({
   id,
+  interactionId: id,
+  interactionKind: "command_execution_approval" as const,
   sessionId: "s-1",
   turnId,
   toolCallId: `${id}-tc`,

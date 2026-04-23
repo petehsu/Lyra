@@ -5,6 +5,7 @@ import { AiPanelTopbarActions } from "../topbar-actions";
 
 describe("ai panel topbar actions", () => {
   test("renders actions and dispatches callbacks", () => {
+    const onCreateThread = vi.fn();
     const onBind = vi.fn();
     const onHistory = vi.fn();
     const onMcp = vi.fn();
@@ -12,6 +13,8 @@ describe("ai panel topbar actions", () => {
 
     render(
       <AiPanelTopbarActions
+        onCreateThread={onCreateThread}
+        createThreadLabel="New Session"
         onRequestProjectBind={onBind}
         activeBoundProjectName="lyra"
         isBindingProject={false}
@@ -26,11 +29,13 @@ describe("ai panel topbar actions", () => {
       />
     );
 
+    fireEvent.click(screen.getByLabelText("New Session"));
     fireEvent.click(screen.getByLabelText("Bind Project"));
     fireEvent.click(screen.getByLabelText("History"));
     fireEvent.click(screen.getByLabelText("MCP"));
     fireEvent.click(screen.getByLabelText("Skills"));
 
+    expect(onCreateThread).toHaveBeenCalledTimes(1);
     expect(onBind).toHaveBeenCalledTimes(1);
     expect(onHistory).toHaveBeenCalledTimes(1);
     expect(onMcp).toHaveBeenCalledTimes(1);

@@ -72,6 +72,8 @@ export const handleInteractionPanels = (context: RuntimeEventProcessingContext):
       kind: "commandApproval",
       request: {
         id: toolCallId,
+        interactionId: toolCallId,
+        interactionKind: "command_execution_approval",
         sessionId: event.sessionId,
         turnId: event.turnId,
         toolCallId,
@@ -102,8 +104,10 @@ export const handleInteractionPanels = (context: RuntimeEventProcessingContext):
   if (event.phase === "plan_question_requested") {
     const requestId = pickString(payload, "requestId") ?? `${event.turnId}-plan-question`;
     stopStreamingForInteraction(context);
-    const request: PlanQuestionRequest = {
+    const request = {
       id: requestId,
+      interactionId: requestId,
+      interactionKind: "tool_user_input" as const,
       sessionId: event.sessionId,
       turnId: event.turnId,
       questions: Array.isArray(payload.questions)
@@ -129,6 +133,8 @@ export const handleInteractionPanels = (context: RuntimeEventProcessingContext):
         kind: "planApproval",
         request: {
           id: requestId,
+          interactionId: requestId,
+          interactionKind: "tool_user_input" as const,
           sessionId: event.sessionId,
           turnId: event.turnId,
           version: pickNumber(payload, "version") ?? 0,
