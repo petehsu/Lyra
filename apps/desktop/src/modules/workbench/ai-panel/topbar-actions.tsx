@@ -43,7 +43,7 @@ export const AiPanelTopbarActions = ({
         aria-label={createThreadLabel}
         title={createThreadLabel}
       >
-        <Plus size={13} aria-hidden="true" />
+        <Plus size={14} aria-hidden="true" />
       </button>
     )}
     {onRequestProjectBind === undefined ? null : (
@@ -69,7 +69,7 @@ export const AiPanelTopbarActions = ({
           : `${bindProjectLabel}: ${activeBoundProjectName}`}
         onClick={onRequestProjectBind}
       >
-        <FolderOpen size={13} aria-hidden="true" />
+        <FolderOpen size={14} aria-hidden="true" />
       </button>
     )}
     {onOpenHistory === undefined || openHistoryLabel === undefined ? null : (

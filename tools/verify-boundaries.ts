@@ -27,7 +27,7 @@ type ForbiddenDependencyRule = {
 const ROOT = process.cwd();
 const SOURCE_EXT = new Set([".ts", ".tsx", ".mts", ".cts", ".py", ".rs"]);
 const IGNORE_DIRS = new Set(["node_modules", ".git", "dist", "coverage", "target", ".venv"]);
-const SCAN_ROOTS = ["apps", "services", "packages", "crates", "tools"];
+const SCAN_ROOTS = ["apps", "services", "packages", "crates", "tools", "crates/lyra-agent-core"];
 
 const importRules: readonly ImportRule[] = [
   {
@@ -223,13 +223,93 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
       "defaultProfileName=[\"']Co" + "dex[\"']"
     ].join("|")),
     message:
-      "Desktop Agent integration must use Lyra Agent Core naming, not Codex compatibility naming."
+      "Desktop Agent integration must use Lyra Agent Core naming, not legacy compatibility naming."
   },
   {
     scopePrefix: "crates/lyrad/src/",
     pattern: new RegExp("\\bCO" + "DEX_REQUEST|\\bCO" + "DEX_EVENT"),
     message:
       "lyrad Agent runtime errors must use Lyra Agent error codes."
+  },
+  {
+    scopePrefix: "crates/lyra-agent-core/",
+    pattern: new RegExp([
+      "\\bCo" + "dexHttpClient\\b",
+      "\\bCo" + "dexRequestBuilder\\b",
+      "\\bCo" + "dexAuth\\b",
+      "\\bCo" + "dexErr\\b",
+      "\\bCo" + "dexConversation\\b",
+      "\\bCo" + "dexErrorInfo\\b",
+      "\\bCo" + "dexCompactionEvent\\b",
+      "\\bCo" + "dexHooks\\b",
+      "\\bmanaged_by_co" + "dex\\b",
+      "\\bCo" + "dexSandbox",
+      "\\bCo" + "dexHome\\b"
+    ].join("|")),
+    excludePathPattern: /\/(schema\/json|schema\/typescript|models\.json|Cargo\.lock|deny\.toml)\b/,
+    message:
+      "Agent Core internals must use Lyra-owned names, not legacy compatibility symbols."
+  },
+  {
+    scopePrefix: "crates/lyra-agent-core/",
+    pattern: new RegExp("\\bCO" + "DEX_[A-Z0-9_]+\\b"),
+    excludePathPattern: /\/(Cargo\.lock|deny\.toml)\b/,
+    message:
+      "Agent Core runtime/env/helper symbols must use LYRA_* names."
+  },
+  {
+    scopePrefix: "crates/lyra-agent-core/",
+    pattern: new RegExp("gpt-5\\.[0-9][A-Za-z0-9._-]*co" + "dex"),
+    excludePathPattern: /\/(Cargo\.lock|deny\.toml)\b/,
+    message:
+      "Agent Core examples and tests must use current Lyra model slugs, not old model examples."
+  },
+  {
+    scopePrefix: "crates/lyra-agent-core/",
+    pattern: new RegExp([
+      "Context" + "Compaction",
+      "context" + "Compaction",
+      "Context" + "Compacted",
+      "RolloutItem::" + "Compacted",
+      "ResponseItem::" + "Compaction",
+      "Compacted" + "Item",
+      "SubAgentSource::" + "Compact",
+      "SubAgent" + "Compact",
+      "auto-" + "compact",
+      "responses/" + "compact",
+      "compact_" + "prompt",
+      "model_auto_" + "compact_token_limit",
+      "auto_" + "compact_token_limit",
+      "experimental_" + "compact_" + "prompt"
+    ].join("|")),
+    excludePathPattern: /\/(Cargo\.lock|deny\.toml)\b/,
+    message:
+      "Agent Core must not reintroduce legacy model-guided context compaction APIs, schema, config, or rollout items."
+  },
+  {
+    scopePrefix: "crates/lyra-agent-core/",
+    pattern: new RegExp([
+      "co" + "dex-rollout-trace",
+      "co" + "dex_rollout_trace",
+      "CO" + "DEX_ROLLOUT_TRACE_ROOT",
+      "Compaction" + "TraceContext",
+      "Compaction" + "RequestStarted",
+      "Compaction" + "Installed",
+      "RawPayloadKind::" + "Compaction"
+    ].join("|")),
+    excludePathPattern: /\/(Cargo\.lock|deny\.toml)\b/,
+    message:
+      "Agent rollout tracing must use Lyra-owned names and must not reintroduce old compaction trace paths."
+  },
+  {
+    scopePrefix: "apps/desktop/src/",
+    pattern: new RegExp([
+      "aiContext" + "Collapse",
+      "enableModelGuided" + "Compaction",
+      "Context " + "Collapse"
+    ].join("|")),
+    message:
+      "Desktop settings must not expose the removed model-guided context compaction UI."
   }
 ];
 
@@ -316,7 +396,19 @@ for (const rule of forbiddenFileRules) {
 }
 
 if (fs.existsSync(path.join(ROOT, "vendor", "lyra-core"))) {
-  violations.push("Old Agent Core vendor path is forbidden; first-party runtime code must live under agent-core/rust.");
+  violations.push("Old Agent Core vendor path is forbidden; first-party runtime code must live under crates/lyra-agent-core.");
+}
+
+if (fs.existsSync(path.join(ROOT, "vendor", "portable-pty"))) {
+  violations.push("Vendored PTY source must live under third-party/rust/portable-pty, not the old vendor PTY path.");
+}
+
+if (fs.existsSync(path.join(ROOT, "agent-core", "rust"))) {
+  violations.push("Old Agent Core workspace path is forbidden; first-party Agent Core code must live under crates/lyra-agent-core.");
+}
+
+if (fs.existsSync(path.join(ROOT, "agent-core", "rust", "vendor", "bubblewrap"))) {
+  violations.push("Bubblewrap source must live under third-party/native/bubblewrap, not inside Agent Core vendor paths.");
 }
 
 for (const file of files) {

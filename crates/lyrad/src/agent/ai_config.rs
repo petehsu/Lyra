@@ -160,12 +160,17 @@ pub(crate) async fn handle_request(
         }
         "lyra/secrets.ai.read" => {
             let request: ReadSecretsRequest = from_value(payload)?;
-            let configured = read_secret_for_base_url(storage_root, request.base_url.as_deref())?.is_some();
+            let configured =
+                read_secret_for_base_url(storage_root, request.base_url.as_deref())?.is_some();
             to_value(&SecretReadResult { configured })
         }
         "lyra/secrets.ai.write" => {
             let request: WriteSecretsRequest = from_value(payload)?;
-            write_secret_for_base_url(storage_root, request.base_url.as_deref(), request.value.as_deref())?;
+            write_secret_for_base_url(
+                storage_root,
+                request.base_url.as_deref(),
+                request.value.as_deref(),
+            )?;
             Ok(Value::Null)
         }
         "lyra/secrets.ai.delete" => {
@@ -296,7 +301,9 @@ fn canonical_model_secrets_path(storage_root: &Path) -> PathBuf {
         .join(MODEL_SECRETS_FILENAME)
 }
 
-fn read_model_secrets_document_from_path(path: &Path) -> Result<ModelSecretsDocument, RuntimeError> {
+fn read_model_secrets_document_from_path(
+    path: &Path,
+) -> Result<ModelSecretsDocument, RuntimeError> {
     if !path.exists() {
         return Ok(ModelSecretsDocument {
             version: 1,
@@ -339,13 +346,17 @@ fn write_model_secrets_document(
     Ok(())
 }
 
-fn read_secret_for_base_url(storage_root: &Path, base_url: Option<&str>) -> Result<Option<String>, RuntimeError> {
+fn read_secret_for_base_url(
+    storage_root: &Path,
+    base_url: Option<&str>,
+) -> Result<Option<String>, RuntimeError> {
     let Some(base_url) = base_url.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
     let account = canonical_base_url_account(base_url)
         .ok_or_else(|| runtime_error("AI_SECRET_STORAGE_FAILED", "baseUrl is required"))?;
-    let document = read_model_secrets_document_from_path(&canonical_model_secrets_path(storage_root))?;
+    let document =
+        read_model_secrets_document_from_path(&canonical_model_secrets_path(storage_root))?;
 
     Ok(document
         .secrets
@@ -371,20 +382,25 @@ fn write_secret_for_base_url(
 
     let account = canonical_base_url_account(base_url)
         .ok_or_else(|| runtime_error("AI_SECRET_STORAGE_FAILED", "baseUrl is required"))?;
-    let mut document = read_model_secrets_document_from_path(&canonical_model_secrets_path(storage_root))?;
+    let mut document =
+        read_model_secrets_document_from_path(&canonical_model_secrets_path(storage_root))?;
     document.version = 1;
     document.secrets.insert(account, value.to_string());
     write_model_secrets_document(storage_root, &document)
 }
 
-fn delete_secret_for_base_url(storage_root: &Path, base_url: Option<&str>) -> Result<(), RuntimeError> {
+fn delete_secret_for_base_url(
+    storage_root: &Path,
+    base_url: Option<&str>,
+) -> Result<(), RuntimeError> {
     let Some(base_url) = base_url.map(str::trim).filter(|entry| !entry.is_empty()) else {
         return Ok(());
     };
 
     let account = canonical_base_url_account(base_url)
         .ok_or_else(|| runtime_error("AI_SECRET_STORAGE_FAILED", "baseUrl is required"))?;
-    let mut document = read_model_secrets_document_from_path(&canonical_model_secrets_path(storage_root))?;
+    let mut document =
+        read_model_secrets_document_from_path(&canonical_model_secrets_path(storage_root))?;
     document.secrets.remove(&account);
     write_model_secrets_document(storage_root, &document)
 }
@@ -538,8 +554,7 @@ async fn resolve_request_context(
         &protocol_id,
         &base_url,
         explicit_api_key,
-    )?
-    {
+    )? {
         resolved_secrets.insert("apiKey".to_string(), api_key);
     }
 

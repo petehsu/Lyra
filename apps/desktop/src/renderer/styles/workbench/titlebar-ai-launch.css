@@ -27,7 +27,7 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--lyra-stroke-emphasis);
+  padding: var(--lyra-stroke-thin);
   background: linear-gradient(
     90deg,
     var(--lyra-pill-rainbow-red, #eaa0b7) 0%,

@@ -76,8 +76,8 @@
 }
 
 .lyra-ai-panel-topbar {
-  min-height: var(--lyra-size-browser-tab-h);
-  height: var(--lyra-size-browser-tab-h);
+  min-height: var(--lyra-size-titlebar-h);
+  height: var(--lyra-size-titlebar-h);
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -208,8 +208,8 @@
 }
 
 .lyra-ai-panel-svg-icon {
-  --lyra-ai-panel-svg-icon-size-w: var(--lyra-unit-13);
-  --lyra-ai-panel-svg-icon-size-h: var(--lyra-unit-13);
+  --lyra-ai-panel-svg-icon-size-w: var(--lyra-icon-size-14);
+  --lyra-ai-panel-svg-icon-size-h: var(--lyra-icon-size-14);
   --lyra-ai-panel-svg-icon-mask-size: contain;
   width: var(--lyra-ai-panel-svg-icon-size-w);
   height: var(--lyra-ai-panel-svg-icon-size-h);
@@ -226,28 +226,28 @@
 }
 
 .lyra-ai-panel-svg-icon-topbar {
-  --lyra-ai-panel-svg-icon-size-w: var(--lyra-unit-13);
-  --lyra-ai-panel-svg-icon-size-h: var(--lyra-unit-13);
+  --lyra-ai-panel-svg-icon-size-w: var(--lyra-icon-size-14);
+  --lyra-ai-panel-svg-icon-size-h: var(--lyra-icon-size-14);
 }
 
 .lyra-ai-panel-svg-icon-topbar-mcp {
-  --lyra-ai-panel-svg-icon-size-w: var(--lyra-unit-12-75);
-  --lyra-ai-panel-svg-icon-size-h: var(--lyra-unit-12-75);
+  --lyra-ai-panel-svg-icon-size-w: var(--lyra-icon-size-14);
+  --lyra-ai-panel-svg-icon-size-h: var(--lyra-icon-size-14);
 }
 
 .lyra-ai-panel-svg-icon-topbar-skills {
-  --lyra-ai-panel-svg-icon-size-w: var(--lyra-unit-13-75);
-  --lyra-ai-panel-svg-icon-size-h: var(--lyra-unit-13-75);
+  --lyra-ai-panel-svg-icon-size-w: var(--lyra-icon-size-14);
+  --lyra-ai-panel-svg-icon-size-h: var(--lyra-icon-size-14);
 }
 
 .lyra-ai-panel-svg-icon-app {
-  --lyra-ai-panel-svg-icon-size-w: var(--lyra-unit-13);
-  --lyra-ai-panel-svg-icon-size-h: var(--lyra-unit-13);
+  --lyra-ai-panel-svg-icon-size-w: var(--lyra-icon-size-14);
+  --lyra-ai-panel-svg-icon-size-h: var(--lyra-icon-size-14);
 }
 
 .lyra-ai-panel-svg-icon-app-skills {
-  --lyra-ai-panel-svg-icon-size-w: var(--lyra-unit-14);
-  --lyra-ai-panel-svg-icon-size-h: var(--lyra-unit-14);
+  --lyra-ai-panel-svg-icon-size-w: var(--lyra-icon-size-14);
+  --lyra-ai-panel-svg-icon-size-h: var(--lyra-icon-size-14);
 }
 
 .lyra-ai-panel-content {
@@ -1873,7 +1873,7 @@
   display: grid;
   grid-template-rows: auto auto;
   margin: 0;
-  border-radius: var(--lyra-unit-14) var(--lyra-unit-14) 0 0;
+  border-radius: var(--lyra-radius-14) var(--lyra-radius-14) 0 0;
   border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
   border-left: 0;
   border-right: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
@@ -1908,17 +1908,17 @@
 .lyra-ai-agent-composer-input {
   min-width: 0;
   width: 100%;
-  min-height: var(--lyra-unit-44);
+  min-height: var(--lyra-size-titlebar-h);
   max-height: var(--lyra-unit-184);
   resize: none;
   border: 0;
   background: transparent;
   color: var(--lyra-text-primary);
-  font-size: var(--lyra-unit-12);
+  font-size: var(--lyra-text-size-12);
   line-height: 1.5;
-  padding: var(--lyra-unit-10) var(--lyra-unit-12) var(--lyra-unit-8);
+  padding: var(--lyra-space-8) var(--lyra-space-12);
   margin: 0;
-  border-radius: var(--lyra-unit-14) var(--lyra-unit-14) 0 0;
+  border-radius: var(--lyra-radius-14) var(--lyra-radius-14) 0 0;
 }
 
 .lyra-ai-agent-composer-input:focus {
@@ -1934,13 +1934,13 @@
 
 .lyra-ai-agent-composer-toolbar {
   min-width: 0;
-  min-height: var(--lyra-unit-34);
+  min-height: var(--lyra-size-titlebar-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--lyra-unit-8);
-  padding: var(--lyra-unit-4) var(--lyra-unit-6) var(--lyra-unit-6) var(--lyra-unit-9);
-  border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  gap: var(--lyra-space-8);
+  padding: var(--lyra-space-4) var(--lyra-space-6) var(--lyra-space-6) var(--lyra-space-10);
+  border-top: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
   background: transparent;
 }
 
@@ -1968,13 +1968,13 @@
   max-width: var(--lyra-ai-agent-model-picker-w);
   flex: 0 0 var(--lyra-ai-agent-model-picker-w);
   --lyra-list-picker-width: var(--lyra-ai-agent-model-picker-w);
-  --lyra-list-picker-row-height: var(--lyra-unit-22);
-  --lyra-list-picker-option-height: var(--lyra-unit-24);
-  --lyra-list-picker-option-gap: var(--lyra-unit-2);
-  --lyra-list-picker-surface-padding: var(--lyra-unit-3);
-  --lyra-list-picker-expanded-radius: var(--lyra-unit-8);
-  --lyra-list-picker-font-size: var(--lyra-unit-10-5);
-  --lyra-list-picker-padding-inline: var(--lyra-unit-8);
+  --lyra-list-picker-row-height: var(--lyra-control-h-compact);
+  --lyra-list-picker-option-height: var(--lyra-control-h-24);
+  --lyra-list-picker-option-gap: var(--lyra-space-2);
+  --lyra-list-picker-surface-padding: var(--lyra-space-4);
+  --lyra-list-picker-expanded-radius: var(--lyra-radius-md);
+  --lyra-list-picker-font-size: var(--lyra-text-size-11);
+  --lyra-list-picker-padding-inline: var(--lyra-space-8);
 }
 
 .lyra-ai-agent-composer-model-picker .lyra-list-picker-surface {
@@ -2031,15 +2031,15 @@
 .lyra-ai-agent-plan-toggle {
   min-width: var(--lyra-unit-74);
   max-width: var(--lyra-unit-120);
-  height: var(--lyra-unit-28);
+  height: var(--lyra-control-h-compact);
   border: 0;
-  border-radius: var(--lyra-unit-999);
+  border-radius: var(--lyra-radius-pill);
   background: color-mix(in srgb, var(--lyra-bg-app) 22%, transparent);
   color: var(--lyra-text-secondary);
-  padding: 0 var(--lyra-unit-8) 0 var(--lyra-unit-6);
+  padding: 0 var(--lyra-space-8) 0 var(--lyra-space-6);
   display: inline-flex;
   align-items: center;
-  gap: var(--lyra-unit-8);
+  gap: var(--lyra-space-8);
   cursor: pointer;
   transition:
     background-color var(--lyra-transition-fast),
@@ -2441,10 +2441,17 @@
 }
 
 .lyra-ai-agent-send {
-  width: var(--lyra-unit-30);
-  height: var(--lyra-unit-30);
-  border: var(--lyra-unit-0-5) solid transparent;
-  border-radius: var(--lyra-unit-999);
+  width: var(--lyra-size-icon-button-w);
+  min-width: var(--lyra-size-icon-button-w);
+  max-width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
+  min-height: var(--lyra-size-icon-button-h);
+  max-height: var(--lyra-size-icon-button-h);
+  flex: 0 0 var(--lyra-size-icon-button-w);
+  box-sizing: border-box;
+  padding: 0;
+  border: var(--lyra-stroke-hairline) solid transparent;
+  border-radius: var(--lyra-radius-pill);
   background: color-mix(in srgb, var(--lyra-bg-surface) 18%, transparent);
   color: color-mix(in srgb, var(--lyra-text-muted) 88%, var(--lyra-text-secondary) 12%);
   display: inline-flex;
@@ -2561,12 +2568,12 @@
   }
 
   .lyra-ai-agent-composer-input {
-    padding: var(--lyra-unit-9) var(--lyra-unit-10) var(--lyra-unit-7);
+    padding: var(--lyra-space-8) var(--lyra-space-10);
   }
 
   .lyra-ai-agent-composer-toolbar {
-    min-height: var(--lyra-unit-32);
-    padding: var(--lyra-unit-4) var(--lyra-unit-5) var(--lyra-unit-5) var(--lyra-unit-8);
+    min-height: var(--lyra-size-titlebar-h);
+    padding: var(--lyra-space-4) var(--lyra-space-6);
   }
 
   .lyra-ai-agent-composer-model-picker {
@@ -2582,9 +2589,13 @@
   }
 
   .lyra-ai-agent-send {
-    width: var(--lyra-unit-28);
-    height: var(--lyra-unit-28);
-    border-radius: var(--lyra-unit-999);
+    width: var(--lyra-size-icon-button-w);
+    min-width: var(--lyra-size-icon-button-w);
+    max-width: var(--lyra-size-icon-button-w);
+    height: var(--lyra-size-icon-button-h);
+    min-height: var(--lyra-size-icon-button-h);
+    max-height: var(--lyra-size-icon-button-h);
+    flex: 0 0 var(--lyra-size-icon-button-w);
   }
 }
 
@@ -2604,7 +2615,7 @@
 }
 
 .lyra-ai-history-topbar {
-  min-height: var(--lyra-unit-38);
+  min-height: var(--lyra-size-titlebar-h);
   border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
   display: flex;
   align-items: center;
@@ -2625,8 +2636,8 @@
 }
 
 .lyra-ai-history-topbar-action {
-  width: var(--lyra-unit-26);
-  height: var(--lyra-unit-26);
+  width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
   border: 0;
   border-radius: var(--lyra-unit-7);
   background: transparent;

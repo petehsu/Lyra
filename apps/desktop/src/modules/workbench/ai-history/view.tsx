@@ -501,7 +501,7 @@ export const AiHistorySurface = ({
             aria-label={openConversationLabel}
             title={openConversationLabel}
           >
-            <ExternalLink size={13} />
+            <ExternalLink size={14} />
           </button>
           <button
             type="button"
@@ -516,7 +516,7 @@ export const AiHistorySurface = ({
             aria-label={isArchivedScope ? deleteConversationLabel : archiveConversationLabel}
             title={isArchivedScope ? deleteConversationLabel : archiveConversationLabel}
           >
-            {isArchivedScope ? <Trash2 size={13} /> : <Archive size={13} />}
+            {isArchivedScope ? <Trash2 size={14} /> : <Archive size={14} />}
           </button>
         </div>
       </div>
@@ -579,7 +579,7 @@ export const AiHistorySurface = ({
                 clearPreview();
               }}
             >
-              <ArrowLeft size={13} />
+              <ArrowLeft size={14} />
               <span>{backToProjectsLabel}</span>
             </button>
             <div className="lyra-ai-history-project-detail-meta">
@@ -709,7 +709,7 @@ export const AiHistorySurface = ({
             aria-label={openConversationLabel}
             title={openConversationLabel}
           >
-            <ExternalLink size={13} />
+            <ExternalLink size={14} />
             <span>{openConversationLabel}</span>
           </button>
         </header>

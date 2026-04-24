@@ -11,11 +11,12 @@
 
 .lyra-file-manager-toolbar {
   min-width: 0;
+  min-height: var(--lyra-size-titlebar-h);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--lyra-unit-12);
-  padding: var(--lyra-unit-8) var(--lyra-unit-12);
+  padding: 0 var(--lyra-unit-12);
   border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
   background: color-mix(in srgb, var(--lyra-bg-surface) 90%, var(--lyra-bg-editor) 10%);
 }

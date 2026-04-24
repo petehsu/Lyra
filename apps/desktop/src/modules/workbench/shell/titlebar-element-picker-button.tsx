@@ -33,6 +33,6 @@ export const TitlebarElementPickerButton = ({
     title={ariaLabel}
     onClick={onToggle}
   >
-    <Crosshair size={12} />
+    <Crosshair size={14} />
   </button>
 );

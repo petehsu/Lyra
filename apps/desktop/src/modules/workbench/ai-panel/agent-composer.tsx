@@ -194,7 +194,7 @@ export const AgentComposer = ({
             <LyraListPicker
               className="lyra-ai-agent-composer-model-picker"
               variant="compact"
-              shape="rounded"
+              shape="pill"
               ariaLabel={resolvedModelAriaLabel}
               listAriaLabel={resolvedModelAriaLabel}
               value={resolvedSelectedModelName ?? resolvedModelNames[0] ?? ""}
@@ -227,9 +227,9 @@ export const AgentComposer = ({
             }}
           >
             {sending ? (
-              <Square className="lyra-ai-agent-send-icon" size={10} />
+              <Square className="lyra-ai-agent-send-icon" size={12} />
             ) : (
-              <ArrowRight className="lyra-ai-agent-send-icon" size={13} />
+              <ArrowRight className="lyra-ai-agent-send-icon" size={14} />
             )}
           </button>
         </div>

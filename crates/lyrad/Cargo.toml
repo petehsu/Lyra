@@ -9,12 +9,12 @@ lyra-lsp-core = { path = "../lyra-lsp-core", default-features = false }
 lyra-mcp-core = { path = "../lyra-mcp-core", default-features = false }
 lyra-runtime-protocol = { path = "../lyra-runtime-protocol" }
 lyra-terminal-core = { path = "../lyra-terminal-core", default-features = false }
-lyra-app-server-client = { path = "../../agent-core/rust/app-server-client" }
-lyra-app-server-protocol = { path = "../../agent-core/rust/app-server-protocol" }
-lyra-arg0 = { path = "../../agent-core/rust/arg0" }
-lyra-core = { path = "../../agent-core/rust/core" }
-lyra-exec-server = { path = "../../agent-core/rust/exec-server" }
-lyra-protocol = { path = "../../agent-core/rust/protocol" }
+lyra-app-server-client = { path = "../lyra-agent-core/app-server-client" }
+lyra-app-server-protocol = { path = "../lyra-agent-core/app-server-protocol" }
+lyra-arg0 = { path = "../lyra-agent-core/arg0" }
+lyra-core = { path = "../lyra-agent-core/core" }
+lyra-exec-server = { path = "../lyra-agent-core/exec-server" }
+lyra-protocol = { path = "../lyra-agent-core/protocol" }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
 rayon = "1.10.0"

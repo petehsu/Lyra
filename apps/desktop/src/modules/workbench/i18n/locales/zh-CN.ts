@@ -608,8 +608,6 @@ export const ZH_CN_DICTIONARY: WorkbenchDictionary = {
   "settings.aiAdvancedTitle": "高级 Agent 控制",
   "settings.aiPlanningReflectionLabel": "Planning + Reflection",
   "settings.aiPlanningReflectionDescription": "开启后发送请求时启用 Lyra 内部规划与反思。",
-  "settings.aiContextCollapseLabel": "Context Collapse",
-  "settings.aiContextCollapseDescription": "开启后发送模型前先启用上下文折叠视图。",
   "settings.aiFeatureEnabled": "开启",
   "settings.aiFeatureDisabled": "关闭",
   "settings.aiCategoryLabel": "AI",

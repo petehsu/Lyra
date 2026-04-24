@@ -320,7 +320,6 @@ export type AiMemoryConfig = {
   readonly cutsSizeTriggerBytes: number;
   readonly cutsSizeTargetBytes: number;
   readonly sharedClassifyScoreThreshold: number;
-  readonly enableModelGuidedCompaction: boolean;
 };
 
 export type AgentSendTurnResult = {

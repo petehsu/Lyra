@@ -141,7 +141,7 @@
 }
 
 .lyra-list-picker-shape-rounded {
-  --lyra-list-picker-closed-radius: var(--lyra-list-picker-expanded-radius);
+  --lyra-list-picker-closed-radius: var(--lyra-radius-8);
 }
 
 .lyra-list-picker-open {
@@ -403,8 +403,8 @@
   background: transparent;
   color: var(--lyra-text-primary);
   font-family: var(--lyra-font-ui);
-  font-size: var(--lyra-text-size-body);
-  line-height: var(--lyra-text-line-body);
+  font-size: var(--lyra-text-size-12);
+  line-height: 1.5;
   outline: none;
 }
 
@@ -417,8 +417,8 @@
 }
 
 .lyra-titlebar-navigation-action {
-  width: var(--lyra-control-h-24);
-  height: var(--lyra-control-h-24);
+  width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
   border: 0;
   border-radius: var(--lyra-radius-pill);
   background: transparent;

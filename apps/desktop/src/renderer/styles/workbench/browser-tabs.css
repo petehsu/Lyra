@@ -174,9 +174,9 @@
 }
 
 .lyra-browser-tab-icon {
-  width: var(--lyra-unit-14);
-  height: var(--lyra-unit-14);
-  flex: 0 0 var(--lyra-unit-14);
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  flex: 0 0 var(--lyra-icon-size-14);
   display: inline-flex;
   align-items: center;
   justify-content: center;

@@ -242,7 +242,7 @@
   --lyra-size-browser-tab-h: var(--lyra-shell-browser-tabbar-h);
   --lyra-size-terminal-tab-h: var(--lyra-shell-terminal-tabbar-h);
   --lyra-size-icon-button-w: var(--lyra-control-h-26);
-  --lyra-size-icon-button-h: var(--lyra-control-h-22);
+  --lyra-size-icon-button-h: var(--lyra-control-h-26);
   --lyra-size-browser-nav-slot: var(--lyra-tab-nav-slot-w);
   --lyra-size-browser-pill-h: var(--lyra-control-h-52);
   --lyra-size-browser-pill-compact-h: var(--lyra-control-h-40);

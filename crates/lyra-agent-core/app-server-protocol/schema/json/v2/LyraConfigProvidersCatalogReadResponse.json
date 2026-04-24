@@ -1,0 +1,272 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "LyraAiProviderCatalogItem": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "iconKey": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "protocolId": {
+          "type": "string"
+        },
+        "recommended": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "description",
+        "iconKey",
+        "id",
+        "label",
+        "protocolId",
+        "recommended"
+      ],
+      "type": "object"
+    },
+    "LyraAiProviderFieldOption": {
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "type": "object"
+    },
+    "LyraAiProviderFieldSchema": {
+      "properties": {
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/definitions/LyraAiProviderFieldOption"
+          },
+          "type": "array"
+        },
+        "placeholder": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "scope": {
+          "type": "string"
+        },
+        "secret": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "LyraAiProviderModelEntry": {
+      "properties": {
+        "contextWindow": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "supportsImages": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supportsTools": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "source"
+      ],
+      "type": "object"
+    },
+    "LyraAiProviderPreset": {
+      "properties": {
+        "authFields": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/LyraAiProviderFieldSchema"
+          },
+          "type": "array"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "connectionFields": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/LyraAiProviderFieldSchema"
+          },
+          "type": "array"
+        },
+        "customHeadersSupported": {
+          "type": "boolean"
+        },
+        "customModelsSupported": {
+          "type": "boolean"
+        },
+        "defaultAuthConfig": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "defaultConnectionConfig": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "defaultModel": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "discoveryMode": {
+          "type": "string"
+        },
+        "iconKey": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "modelDiscoverySupported": {
+          "type": "boolean"
+        },
+        "protocolId": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "recommendedModels": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/LyraAiProviderModelEntry"
+          },
+          "type": "array"
+        },
+        "runtimeSupported": {
+          "type": "boolean"
+        },
+        "section": {
+          "type": "string"
+        },
+        "simpleFields": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "capability",
+        "customHeadersSupported",
+        "customModelsSupported",
+        "defaultModel",
+        "description",
+        "discoveryMode",
+        "iconKey",
+        "id",
+        "label",
+        "modelDiscoverySupported",
+        "protocolId",
+        "providerId",
+        "runtimeSupported",
+        "section"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "presets": {
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/LyraAiProviderPreset"
+      },
+      "type": "array"
+    },
+    "providers": {
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/LyraAiProviderCatalogItem"
+      },
+      "type": "array"
+    }
+  },
+  "title": "LyraConfigProvidersCatalogReadResponse",
+  "type": "object"
+}

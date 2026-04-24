@@ -608,8 +608,6 @@ export type I18nKey =
   | "settings.aiAdvancedTitle"
   | "settings.aiPlanningReflectionLabel"
   | "settings.aiPlanningReflectionDescription"
-  | "settings.aiContextCollapseLabel"
-  | "settings.aiContextCollapseDescription"
   | "settings.aiFeatureEnabled"
   | "settings.aiFeatureDisabled"
   | "settings.aiCategoryLabel"

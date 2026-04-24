@@ -43,7 +43,7 @@ export const TitlebarNavigation = ({
         }
       >
         <span className="lyra-titlebar-navigation-icon" aria-hidden="true">
-          <Search size={12} />
+          <Search size={14} />
         </span>
         <input
           className="lyra-titlebar-navigation-input"
@@ -68,7 +68,7 @@ export const TitlebarNavigation = ({
               onChange("");
             }}
           >
-            <X size={12} />
+            <X size={14} />
           </button>
         ) : null}
         <button
@@ -76,7 +76,7 @@ export const TitlebarNavigation = ({
           className="lyra-titlebar-navigation-action"
           aria-label={ariaLabel}
         >
-          <ArrowRight size={12} />
+          <ArrowRight size={14} />
         </button>
       </div>
     </form>

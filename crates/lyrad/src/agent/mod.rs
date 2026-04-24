@@ -1,12 +1,6 @@
 mod ai_config;
 
-use std::io::ErrorKind;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::time::Duration;
-use lyra_app_server_client::{
-    AppServerEvent, EmbeddedClientDefaults, InProcessAppServerClient,
-};
+use lyra_app_server_client::{AppServerEvent, EmbeddedClientDefaults, InProcessAppServerClient};
 use lyra_app_server_protocol::{
     ClientNotification, ClientRequest, DynamicToolCallOutputContentItem, DynamicToolCallParams,
     DynamicToolCallResponse, JSONRPCErrorError, RequestId, ServerNotification, ServerRequest,
@@ -14,6 +8,10 @@ use lyra_app_server_protocol::{
 use lyra_runtime_protocol::{RuntimeEnvelope, RuntimeError};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::io::ErrorKind;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::host_rpc::HostRpcClient;
@@ -59,7 +57,12 @@ impl AgentRuntime {
                 reply: reply_tx,
             })
             .await
-            .map_err(|_| runtime_error("LYRA_RUNTIME_UNAVAILABLE", "agent core runtime command channel closed"))?;
+            .map_err(|_| {
+                runtime_error(
+                    "LYRA_RUNTIME_UNAVAILABLE",
+                    "agent core runtime command channel closed",
+                )
+            })?;
 
         reply_rx.await.map_err(|_| {
             runtime_error(
@@ -261,10 +264,9 @@ impl AgentActor {
         }
 
         let request: ClientRequest = from_value(normalize_runtime_client_request_payload(payload))?;
-        let result = client
-            .request(request)
-            .await
-            .map_err(|error| runtime_error("LYRA_AGENT_REQUEST_TRANSPORT_FAILED", error.to_string()))?;
+        let result = client.request(request).await.map_err(|error| {
+            runtime_error("LYRA_AGENT_REQUEST_TRANSPORT_FAILED", error.to_string())
+        })?;
         match result {
             Ok(value) => Ok(value),
             Err(error) => Err(runtime_error_with_details(
@@ -292,8 +294,13 @@ impl AgentActor {
         client: &InProcessAppServerClient,
         event: AppServerEvent,
     ) -> Result<(), RuntimeError> {
-        if let AppServerEvent::ServerRequest(ServerRequest::DynamicToolCall { request_id, params }) = event {
-            self.handle_dynamic_tool_call(client, request_id, params).await?;
+        if let AppServerEvent::ServerRequest(ServerRequest::DynamicToolCall {
+            request_id,
+            params,
+        }) = event
+        {
+            self.handle_dynamic_tool_call(client, request_id, params)
+                .await?;
             return Ok(());
         }
         self.forward_app_server_event(event)
@@ -331,7 +338,9 @@ impl AgentActor {
         client
             .resolve_server_request(request_id, to_value(&response)?)
             .await
-            .map_err(|error| runtime_error("LYRA_SERVER_REQUEST_RESOLVE_FAILED", error.to_string()))?;
+            .map_err(|error| {
+                runtime_error("LYRA_SERVER_REQUEST_RESOLVE_FAILED", error.to_string())
+            })?;
         Ok(())
     }
 
@@ -363,7 +372,12 @@ impl AgentActor {
                 event: AGENT_CORE_RUNTIME_EVENT_NAME.to_string(),
                 payload,
             })
-            .map_err(|_| runtime_error("LYRA_AGENT_EVENT_SEND_FAILED", "failed to forward agent core runtime event"))
+            .map_err(|_| {
+                runtime_error(
+                    "LYRA_AGENT_EVENT_SEND_FAILED",
+                    "failed to forward agent core runtime event",
+                )
+            })
     }
 }
 
@@ -391,9 +405,9 @@ struct RejectServerRequestPayload {
 }
 
 async fn start_agent_core_client() -> Result<InProcessAppServerClient, RuntimeError> {
-    InProcessAppServerClient::start_with_embedded_defaults(EmbeddedClientDefaults::lyra(
-        env!("CARGO_PKG_VERSION"),
-    ))
+    InProcessAppServerClient::start_with_embedded_defaults(EmbeddedClientDefaults::lyra(env!(
+        "CARGO_PKG_VERSION"
+    )))
     .await
     .map_err(|error| {
         let code = match error.kind() {
@@ -408,7 +422,11 @@ fn runtime_error(code: &str, message: impl Into<String>) -> RuntimeError {
     RuntimeError::new(code, message.into())
 }
 
-fn runtime_error_with_details(code: &str, message: impl Into<String>, details: Value) -> RuntimeError {
+fn runtime_error_with_details(
+    code: &str,
+    message: impl Into<String>,
+    details: Value,
+) -> RuntimeError {
     RuntimeError::with_details(code, message.into(), details)
 }
 
@@ -450,17 +468,14 @@ fn dynamic_tool_error_response(message: String) -> DynamicToolCallResponse {
 fn value_to_text(value: Value) -> String {
     match value {
         Value::String(text) => text,
-        other => serde_json::to_string_pretty(&other)
-            .unwrap_or_else(|_| other.to_string()),
+        other => serde_json::to_string_pretty(&other).unwrap_or_else(|_| other.to_string()),
     }
 }
 
 fn is_retired_runtime_request_method(method: &str) -> bool {
     matches!(
         method,
-        "lyra/config/profileWrite"
-            | "externalAgentConfig/detect"
-            | "externalAgentConfig/import"
+        "lyra/config/profileWrite" | "externalAgentConfig/detect" | "externalAgentConfig/import"
     )
 }
 
@@ -484,11 +499,7 @@ fn next_runtime_request_id() -> i64 {
 }
 
 #[allow(dead_code)]
-fn _keep_protocol_types_linked(
-    _notification: ServerNotification,
-    _request: ServerRequest,
-) {
-}
+fn _keep_protocol_types_linked(_notification: ServerNotification, _request: ServerRequest) {}
 
 #[cfg(test)]
 mod tests {
@@ -502,7 +513,10 @@ mod tests {
             "params": {}
         });
         let normalized = normalize_runtime_client_request_payload(payload);
-        assert_eq!(normalized.get("method"), Some(&json!("lyra/config/providers/catalog/read")));
+        assert_eq!(
+            normalized.get("method"),
+            Some(&json!("lyra/config/providers/catalog/read"))
+        );
         assert!(normalized
             .get("id")
             .and_then(serde_json::Value::as_i64)

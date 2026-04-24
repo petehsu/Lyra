@@ -608,8 +608,6 @@ export const EN_US_DICTIONARY: WorkbenchDictionary = {
   "settings.aiAdvancedTitle": "Advanced Agent Controls",
   "settings.aiPlanningReflectionLabel": "Planning + Reflection",
   "settings.aiPlanningReflectionDescription": "Enable Lyra internal planning/reflection before final responses.",
-  "settings.aiContextCollapseLabel": "Context Collapse",
-  "settings.aiContextCollapseDescription": "Enable compacted context view before sending model messages.",
   "settings.aiFeatureEnabled": "Enabled",
   "settings.aiFeatureDisabled": "Disabled",
   "settings.aiCategoryLabel": "AI",
