@@ -7,7 +7,7 @@ import type { RuntimeHostRpcService } from "../runtime-host-rpc/types";
 const BROWSER_USE_TOOL_SET_ID = "desktop.browser_use";
 type HostToolsSyncResult = {
   readonly acceptedCount: number;
-  readonly droppedAsCodexOwnedCount: number;
+  readonly droppedAsLyraOwnedCount: number;
   readonly droppedToolNames: readonly string[];
 };
 

@@ -192,7 +192,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             <strong>{labels.statusTitle}</strong>
             <small>
               {model.runtimeHealth === null
-                ? "Codex runtime unavailable"
+                ? "Lyra Agent runtime unavailable"
                 : `${model.runtimeHealth.backend} · ${model.runtimeHealth.transport} · ${model.runtimeHealth.version}`}
             </small>
             <small>{model.statusMessage}</small>

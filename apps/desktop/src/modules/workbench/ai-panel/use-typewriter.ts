@@ -11,6 +11,8 @@ type UseTypewriterOptions = {
   minChunkSize?: number;
   /** Whether to skip animation and show all text immediately. */
   instant?: boolean;
+  /** Reset buffered output immediately when a new stream identity is observed. */
+  resetKey?: string | null;
 };
 
 export const useTypewriter = (
@@ -21,7 +23,8 @@ export const useTypewriter = (
   const {
     charsPerSecond = 40,
     minChunkSize = 3,
-    instant = false
+    instant = false,
+    resetKey = null
   } = options;
 
   const [displayText, setDisplayText] = useState("");
@@ -44,9 +47,23 @@ export const useTypewriter = (
     };
   }, []);
 
+  useEffect(() => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    bufferRef.current = "";
+    sourceLengthRef.current = 0;
+    setDisplayText("");
+  }, [resetKey]);
+
   // Reset when source text shrinks (new turn started)
   useEffect(() => {
     if (sourceText.length < sourceLengthRef.current) {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       bufferRef.current = "";
       sourceLengthRef.current = 0;
       setDisplayText("");

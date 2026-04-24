@@ -73,7 +73,7 @@ const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateR
   const normalizedUiThemeId =
     typeof request.uiThemeId === "string" && request.uiThemeId.trim().length > 0
       ? request.uiThemeId.trim()
-      : "one-dark";
+      : "lyra-dark";
   return {
     cols: sanitizeSize(request.cols, 80),
     rows: sanitizeSize(request.rows, 24),
@@ -117,7 +117,7 @@ const normalizeReloadPromptRequest = (
   uiThemeId:
     typeof request.uiThemeId === "string" && request.uiThemeId.trim().length > 0
       ? request.uiThemeId.trim()
-      : "one-dark",
+      : "lyra-dark",
   source: request.source ?? "user"
 });
 
@@ -324,7 +324,7 @@ export const createTerminalIpcBridge = (
               sessionId: snapshot.sessionId,
               shell: snapshot.shell,
               terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
-              uiThemeId: normalized.uiThemeId ?? "one-dark",
+              uiThemeId: normalized.uiThemeId ?? "lyra-dark",
               source: normalized.source
             });
           } catch (error) {
@@ -364,7 +364,7 @@ export const createTerminalIpcBridge = (
                 terminalThemePreset: normalizeTerminalThemeMode(
                   requestedSession?.terminalThemePreset
                 ),
-                uiThemeId: requestedSession?.uiThemeId ?? "one-dark",
+                uiThemeId: requestedSession?.uiThemeId ?? "lyra-dark",
                 source: requestedSession?.source ?? "user"
               });
             } catch (error) {
@@ -390,7 +390,7 @@ export const createTerminalIpcBridge = (
         if (!streamState.atPrompt) {
           sessionPendingReloadById.set(normalized.sessionId, {
             terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
-            uiThemeId: normalized.uiThemeId ?? "one-dark",
+            uiThemeId: normalized.uiThemeId ?? "lyra-dark",
             source: normalized.source
           });
           return createDeferredResult("session is busy; prompt reload deferred until next prompt");
@@ -399,7 +399,7 @@ export const createTerminalIpcBridge = (
           sessionId: normalized.sessionId,
           shell,
           terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
-          uiThemeId: normalized.uiThemeId ?? "one-dark",
+          uiThemeId: normalized.uiThemeId ?? "lyra-dark",
           source: normalized.source
         });
       }

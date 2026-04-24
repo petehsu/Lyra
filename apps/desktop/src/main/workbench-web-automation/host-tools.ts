@@ -7,7 +7,7 @@ import type { RuntimeHostRpcService } from "../runtime-host-rpc/types";
 const WEB_AUTOMATION_TOOL_SET_ID = "desktop.web_automation";
 type HostToolsSyncResult = {
   readonly acceptedCount: number;
-  readonly droppedAsCodexOwnedCount: number;
+  readonly droppedAsLyraOwnedCount: number;
   readonly droppedToolNames: readonly string[];
 };
 

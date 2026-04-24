@@ -11,7 +11,7 @@ import type { WorkbenchPreferences } from "../types";
 
 const defaults: WorkbenchPreferences = {
   locale: "zh-CN",
-  theme: "one-light",
+  theme: "lyra-light",
   terminalThemePreset: "follow-app",
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",
@@ -49,7 +49,7 @@ describe("workbench preferences", () => {
     writeWorkbenchPreferences({
       ...defaults,
       locale: "en-US",
-      theme: "one-dark",
+      theme: "lyra-dark",
       terminalThemePreset: "lyra-rich",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
@@ -60,7 +60,7 @@ describe("workbench preferences", () => {
     expect(readWorkbenchPreferences(defaults)).toEqual({
       ...defaults,
       locale: "en-US",
-      theme: "one-dark",
+      theme: "lyra-dark",
       terminalThemePreset: "lyra-rich",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
@@ -73,7 +73,7 @@ describe("workbench preferences", () => {
     writeWorkbenchPreferences({
       ...defaults,
       locale: "zh-CN",
-      theme: "gruvbox-system",
+      theme: "terra-system",
       terminalThemePreset: "lyra-standard",
       splitTriggerMode: "ctrl_left_drag",
       splitThreePaneLayout: "top_two_bottom_one",
@@ -84,7 +84,7 @@ describe("workbench preferences", () => {
     expect(readWorkbenchPreferences(defaults)).toEqual({
       ...defaults,
       locale: "zh-CN",
-      theme: "gruvbox-system",
+      theme: "terra-system",
       terminalThemePreset: "lyra-standard",
       splitTriggerMode: "ctrl_left_drag",
       splitThreePaneLayout: "top_two_bottom_one",
@@ -107,7 +107,7 @@ describe("workbench preferences", () => {
 
     act(() => {
       result.current.setLocale("en-US");
-      result.current.setTheme("one-dark");
+      result.current.setTheme("lyra-dark");
       result.current.setTerminalThemePreset("lyra-developer");
       result.current.setSplitTriggerMode("right_drag");
       result.current.setSplitThreePaneLayout("left_two_right_one");
@@ -118,7 +118,7 @@ describe("workbench preferences", () => {
     expect(result.current.preferences).toEqual({
       ...defaults,
       locale: "en-US",
-      theme: "one-dark",
+      theme: "lyra-dark",
       terminalThemePreset: "lyra-developer",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
@@ -129,7 +129,7 @@ describe("workbench preferences", () => {
     expect(readWorkbenchPreferences(defaults)).toEqual({
       ...defaults,
       locale: "en-US",
-      theme: "one-dark",
+      theme: "lyra-dark",
       terminalThemePreset: "lyra-developer",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",

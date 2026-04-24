@@ -315,11 +315,11 @@
 }
 
 .lyra-settings-terminal-preview {
-  --lyra-terminal-preview-bg: color-mix(in srgb, var(--lyra-bg-editor) 92%, var(--lyra-bg-surface) 8%);
-  --lyra-terminal-preview-segment-1: #80a8ff;
-  --lyra-terminal-preview-segment-2: #9cd67e;
-  --lyra-terminal-preview-segment-3: #f4bd76;
-  --lyra-terminal-preview-segment-4: #8fc8ff;
+  --lyra-terminal-preview-bg: color-mix(in srgb, var(--lyra-terminal-bg) 92%, var(--lyra-bg-surface) 8%);
+  --lyra-terminal-preview-segment-1: var(--lyra-terminal-blue);
+  --lyra-terminal-preview-segment-2: var(--lyra-terminal-green);
+  --lyra-terminal-preview-segment-3: var(--lyra-terminal-yellow);
+  --lyra-terminal-preview-segment-4: var(--lyra-terminal-cyan);
   display: grid;
   align-content: center;
   gap: var(--lyra-unit-5);
@@ -418,207 +418,187 @@
 }
 
 .lyra-settings-terminal-preview-line {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--lyra-unit-4);
-}
-
-.lyra-settings-terminal-preview-line em {
-  display: inline-flex;
-  width: var(--lyra-unit-18);
-  height: var(--lyra-unit-7);
-  border-radius: var(--lyra-unit-3);
-  opacity: 0.92;
-  background: var(--lyra-terminal-preview-segment-2);
-}
-
-.lyra-settings-terminal-preview-line em:nth-child(1) {
-  width: var(--lyra-unit-12);
-  background: var(--lyra-terminal-preview-segment-1);
-}
-
-.lyra-settings-terminal-preview-line em:nth-child(2) {
-  width: var(--lyra-unit-24);
-  background: var(--lyra-terminal-preview-segment-2);
-}
-
-.lyra-settings-terminal-preview-line em:nth-child(3) {
-  width: var(--lyra-unit-16);
-  background: var(--lyra-terminal-preview-segment-3);
-}
-
-.lyra-settings-terminal-preview-line em:nth-child(4) {
-  width: var(--lyra-unit-22);
-  background: var(--lyra-terminal-preview-segment-4);
+  display: flex;
+  align-items: baseline;
+  gap: var(--lyra-unit-6);
+  font-family: var(--lyra-font-mono);
+  font-size: var(--lyra-unit-11);
+  line-height: var(--lyra-text-line-16);
+  white-space: pre;
 }
 
 .lyra-settings-terminal-preview-line-secondary {
-  opacity: 0.76;
+  opacity: 0.82;
 }
 
-.lyra-settings-theme-preview-one-light,
-.lyra-settings-theme-preview-ayu-light,
-.lyra-settings-theme-preview-gruvbox-light {
+.lyra-term-seg-1 { color: var(--lyra-terminal-preview-segment-1); }
+.lyra-term-seg-2 { color: var(--lyra-terminal-preview-segment-2); }
+.lyra-term-seg-3 { color: var(--lyra-terminal-preview-segment-3); }
+.lyra-term-seg-4 { color: var(--lyra-terminal-preview-segment-4); }
+
+.lyra-settings-theme-preview-lyra-light,
+.lyra-settings-theme-preview-nova-light,
+.lyra-settings-theme-preview-terra-light,
+.lyra-settings-theme-preview-ocean-light,
+.lyra-settings-theme-preview-eclipse-light {
   color: #4a4f5f;
 }
 
-.lyra-settings-theme-preview-one-light .lyra-settings-theme-preview-titlebar {
+.lyra-settings-theme-preview-lyra-light .lyra-settings-theme-preview-titlebar {
   background: #dadde4;
 }
 
-.lyra-settings-theme-preview-one-light .lyra-settings-theme-preview-sidebar {
+.lyra-settings-theme-preview-lyra-light .lyra-settings-theme-preview-sidebar {
   background: #eceef3;
 }
 
-.lyra-settings-theme-preview-one-light .lyra-settings-theme-preview-content {
+.lyra-settings-theme-preview-lyra-light .lyra-settings-theme-preview-content {
   background: #f5f6f9;
 }
 
-.lyra-settings-theme-preview-ayu-light .lyra-settings-theme-preview-titlebar {
+.lyra-settings-theme-preview-nova-light .lyra-settings-theme-preview-titlebar {
   background: #f0e7d6;
 }
 
-.lyra-settings-theme-preview-ayu-light .lyra-settings-theme-preview-sidebar {
+.lyra-settings-theme-preview-nova-light .lyra-settings-theme-preview-sidebar {
   background: #f8f1e1;
 }
 
-.lyra-settings-theme-preview-ayu-light .lyra-settings-theme-preview-content {
+.lyra-settings-theme-preview-nova-light .lyra-settings-theme-preview-content {
   background: #fbf6ea;
 }
 
-.lyra-settings-theme-preview-gruvbox-light .lyra-settings-theme-preview-titlebar {
+.lyra-settings-theme-preview-terra-light .lyra-settings-theme-preview-titlebar {
   background: #e3d9c0;
 }
 
-.lyra-settings-theme-preview-gruvbox-light .lyra-settings-theme-preview-sidebar {
+.lyra-settings-theme-preview-terra-light .lyra-settings-theme-preview-sidebar {
   background: #efe4c9;
 }
 
-.lyra-settings-theme-preview-gruvbox-light .lyra-settings-theme-preview-content {
+.lyra-settings-theme-preview-terra-light .lyra-settings-theme-preview-content {
   background: #f7ecd2;
 }
 
-.lyra-settings-theme-preview-one-dark,
-.lyra-settings-theme-preview-ayu-dark,
-.lyra-settings-theme-preview-gruvbox-dark {
+.lyra-settings-theme-preview-ocean-light .lyra-settings-theme-preview-titlebar {
+  background: #d8dee9;
+}
+
+.lyra-settings-theme-preview-ocean-light .lyra-settings-theme-preview-sidebar {
+  background: #e5e9f0;
+}
+
+.lyra-settings-theme-preview-ocean-light .lyra-settings-theme-preview-content {
+  background: #eceff4;
+}
+
+.lyra-settings-theme-preview-eclipse-light .lyra-settings-theme-preview-titlebar {
+  background: #e8e8e8;
+}
+
+.lyra-settings-theme-preview-eclipse-light .lyra-settings-theme-preview-sidebar {
+  background: #f4f4f4;
+}
+
+.lyra-settings-theme-preview-eclipse-light .lyra-settings-theme-preview-content {
+  background: #ffffff;
+}
+
+.lyra-settings-theme-preview-lyra-dark,
+.lyra-settings-theme-preview-nova-dark,
+.lyra-settings-theme-preview-terra-dark,
+.lyra-settings-theme-preview-ocean-dark,
+.lyra-settings-theme-preview-eclipse-dark {
   color: #c3c9d6;
 }
 
-.lyra-settings-theme-preview-one-dark .lyra-settings-theme-preview-titlebar {
+.lyra-settings-theme-preview-lyra-dark .lyra-settings-theme-preview-titlebar {
   background: #2f333d;
 }
 
-.lyra-settings-theme-preview-one-dark .lyra-settings-theme-preview-sidebar {
+.lyra-settings-theme-preview-lyra-dark .lyra-settings-theme-preview-sidebar {
   background: #252a33;
 }
 
-.lyra-settings-theme-preview-one-dark .lyra-settings-theme-preview-content {
+.lyra-settings-theme-preview-lyra-dark .lyra-settings-theme-preview-content {
   background: #1d222b;
 }
 
-.lyra-settings-theme-preview-ayu-dark .lyra-settings-theme-preview-titlebar {
+.lyra-settings-theme-preview-nova-dark .lyra-settings-theme-preview-titlebar {
   background: #2c3340;
 }
 
-.lyra-settings-theme-preview-ayu-dark .lyra-settings-theme-preview-sidebar {
+.lyra-settings-theme-preview-nova-dark .lyra-settings-theme-preview-sidebar {
   background: #202734;
 }
 
-.lyra-settings-theme-preview-ayu-dark .lyra-settings-theme-preview-content {
+.lyra-settings-theme-preview-nova-dark .lyra-settings-theme-preview-content {
   background: #151d2a;
 }
 
-.lyra-settings-theme-preview-gruvbox-dark .lyra-settings-theme-preview-titlebar {
+.lyra-settings-theme-preview-terra-dark .lyra-settings-theme-preview-titlebar {
   background: #473c31;
 }
 
-.lyra-settings-theme-preview-gruvbox-dark .lyra-settings-theme-preview-sidebar {
+.lyra-settings-theme-preview-terra-dark .lyra-settings-theme-preview-sidebar {
   background: #392f27;
 }
 
-.lyra-settings-theme-preview-gruvbox-dark .lyra-settings-theme-preview-content {
+.lyra-settings-theme-preview-terra-dark .lyra-settings-theme-preview-content {
   background: #2b241f;
 }
 
-.lyra-settings-theme-preview-one-system,
-.lyra-settings-theme-preview-ayu-system,
-.lyra-settings-theme-preview-gruvbox-system {
+.lyra-settings-theme-preview-ocean-dark .lyra-settings-theme-preview-titlebar {
+  background: #2e3440;
+}
+
+.lyra-settings-theme-preview-ocean-dark .lyra-settings-theme-preview-sidebar {
+  background: #3b4252;
+}
+
+.lyra-settings-theme-preview-ocean-dark .lyra-settings-theme-preview-content {
+  background: #434c5e;
+}
+
+.lyra-settings-theme-preview-eclipse-dark .lyra-settings-theme-preview-titlebar {
+  background: #000000;
+}
+
+.lyra-settings-theme-preview-eclipse-dark .lyra-settings-theme-preview-sidebar {
+  background: #0a0a0a;
+}
+
+.lyra-settings-theme-preview-eclipse-dark .lyra-settings-theme-preview-content {
+  background: #111111;
+}
+
+.lyra-settings-theme-preview-lyra-system,
+.lyra-settings-theme-preview-nova-system,
+.lyra-settings-theme-preview-terra-system,
+.lyra-settings-theme-preview-ocean-system,
+.lyra-settings-theme-preview-eclipse-system {
   color: #aeb4c2;
 }
 
-.lyra-settings-theme-preview-one-system .lyra-settings-theme-preview-titlebar,
-.lyra-settings-theme-preview-ayu-system .lyra-settings-theme-preview-titlebar,
-.lyra-settings-theme-preview-gruvbox-system .lyra-settings-theme-preview-titlebar {
-  background: linear-gradient(90deg, #d8dce3 0%, #d8dce3 50%, #313643 50%, #313643 100%);
-}
+.lyra-settings-theme-preview-lyra-system .lyra-settings-theme-preview-titlebar { background: linear-gradient(90deg, #dadde4 0%, #dadde4 50%, #2f333d 50%, #2f333d 100%); }
+.lyra-settings-theme-preview-lyra-system .lyra-settings-theme-preview-sidebar { background: linear-gradient(180deg, #eceef3 0%, #eceef3 50%, #252a33 50%, #252a33 100%); }
+.lyra-settings-theme-preview-lyra-system .lyra-settings-theme-preview-content { background: linear-gradient(135deg, #f5f6f9 0%, #f5f6f9 50%, #1d222b 50%, #1d222b 100%); }
 
-.lyra-settings-theme-preview-one-system .lyra-settings-theme-preview-sidebar,
-.lyra-settings-theme-preview-ayu-system .lyra-settings-theme-preview-sidebar,
-.lyra-settings-theme-preview-gruvbox-system .lyra-settings-theme-preview-sidebar {
-  background: linear-gradient(180deg, #eceff4 0%, #eceff4 50%, #222935 50%, #222935 100%);
-}
+.lyra-settings-theme-preview-nova-system .lyra-settings-theme-preview-titlebar { background: linear-gradient(90deg, #f0e7d6 0%, #f0e7d6 50%, #2c3340 50%, #2c3340 100%); }
+.lyra-settings-theme-preview-nova-system .lyra-settings-theme-preview-sidebar { background: linear-gradient(180deg, #f8f1e1 0%, #f8f1e1 50%, #202734 50%, #202734 100%); }
+.lyra-settings-theme-preview-nova-system .lyra-settings-theme-preview-content { background: linear-gradient(135deg, #fbf6ea 0%, #fbf6ea 50%, #151d2a 50%, #151d2a 100%); }
 
-.lyra-settings-theme-preview-one-system .lyra-settings-theme-preview-content,
-.lyra-settings-theme-preview-ayu-system .lyra-settings-theme-preview-content,
-.lyra-settings-theme-preview-gruvbox-system .lyra-settings-theme-preview-content {
-  background: linear-gradient(135deg, #f5f6f9 0%, #f5f6f9 50%, #1a1f28 50%, #1a1f28 100%);
-}
+.lyra-settings-theme-preview-terra-system .lyra-settings-theme-preview-titlebar { background: linear-gradient(90deg, #e3d9c0 0%, #e3d9c0 50%, #473c31 50%, #473c31 100%); }
+.lyra-settings-theme-preview-terra-system .lyra-settings-theme-preview-sidebar { background: linear-gradient(180deg, #efe4c9 0%, #efe4c9 50%, #392f27 50%, #392f27 100%); }
+.lyra-settings-theme-preview-terra-system .lyra-settings-theme-preview-content { background: linear-gradient(135deg, #f7ecd2 0%, #f7ecd2 50%, #2b241f 50%, #2b241f 100%); }
 
-.lyra-settings-terminal-preview-follow-app {
-  --lyra-terminal-preview-bg: color-mix(in srgb, var(--lyra-bg-editor) 90%, var(--lyra-bg-surface) 10%);
-  --lyra-terminal-preview-segment-1: #94a3b8;
-  --lyra-terminal-preview-segment-2: #8b9fb6;
-  --lyra-terminal-preview-segment-3: #7f8ea3;
-  --lyra-terminal-preview-segment-4: #9aa7ba;
-}
+.lyra-settings-theme-preview-ocean-system .lyra-settings-theme-preview-titlebar { background: linear-gradient(90deg, #d8dee9 0%, #d8dee9 50%, #2e3440 50%, #2e3440 100%); }
+.lyra-settings-theme-preview-ocean-system .lyra-settings-theme-preview-sidebar { background: linear-gradient(180deg, #e5e9f0 0%, #e5e9f0 50%, #3b4252 50%, #3b4252 100%); }
+.lyra-settings-theme-preview-ocean-system .lyra-settings-theme-preview-content { background: linear-gradient(135deg, #eceff4 0%, #eceff4 50%, #434c5e 50%, #434c5e 100%); }
 
-.lyra-settings-terminal-preview-follow-app .lyra-settings-terminal-preview-line-secondary em:nth-child(3),
-.lyra-settings-terminal-preview-follow-app .lyra-settings-terminal-preview-line-secondary em:nth-child(4) {
-  opacity: 0.35;
-}
-
-.lyra-settings-terminal-preview-lyra-minimal {
-  --lyra-terminal-preview-bg: #1a232f;
-  --lyra-terminal-preview-segment-1: #7aa2f7;
-  --lyra-terminal-preview-segment-2: #8ad18f;
-  --lyra-terminal-preview-segment-3: #f4bd76;
-  --lyra-terminal-preview-segment-4: #7dcfff;
-}
-
-.lyra-settings-terminal-preview-lyra-minimal .lyra-settings-terminal-preview-line em:nth-child(1),
-.lyra-settings-terminal-preview-lyra-minimal .lyra-settings-terminal-preview-line-secondary em:nth-child(1),
-.lyra-settings-terminal-preview-lyra-minimal .lyra-settings-terminal-preview-line-secondary em:nth-child(3),
-.lyra-settings-terminal-preview-lyra-minimal .lyra-settings-terminal-preview-line-secondary em:nth-child(4) {
-  opacity: 0.2;
-}
-
-.lyra-settings-terminal-preview-lyra-standard {
-  --lyra-terminal-preview-bg: #182430;
-  --lyra-terminal-preview-segment-1: #82aaff;
-  --lyra-terminal-preview-segment-2: #9ece6a;
-  --lyra-terminal-preview-segment-3: #e0af68;
-  --lyra-terminal-preview-segment-4: #89ddff;
-}
-
-.lyra-settings-terminal-preview-lyra-standard .lyra-settings-terminal-preview-line-secondary em:nth-child(4) {
-  opacity: 0.3;
-}
-
-.lyra-settings-terminal-preview-lyra-rich {
-  --lyra-terminal-preview-bg: #16212b;
-  --lyra-terminal-preview-segment-1: #7dcfff;
-  --lyra-terminal-preview-segment-2: #a6e3a1;
-  --lyra-terminal-preview-segment-3: #f9e2af;
-  --lyra-terminal-preview-segment-4: #89b4fa;
-}
-
-.lyra-settings-terminal-preview-lyra-developer {
-  --lyra-terminal-preview-bg: #131d26;
-  --lyra-terminal-preview-segment-1: #89b4fa;
-  --lyra-terminal-preview-segment-2: #a6e3a1;
-  --lyra-terminal-preview-segment-3: #f38ba8;
-  --lyra-terminal-preview-segment-4: #f9e2af;
-}
+.lyra-settings-theme-preview-eclipse-system .lyra-settings-theme-preview-titlebar { background: linear-gradient(90deg, #e8e8e8 0%, #e8e8e8 50%, #000000 50%, #000000 100%); }
+.lyra-settings-theme-preview-eclipse-system .lyra-settings-theme-preview-sidebar { background: linear-gradient(180deg, #f4f4f4 0%, #f4f4f4 50%, #0a0a0a 50%, #0a0a0a 100%); }
+.lyra-settings-theme-preview-eclipse-system .lyra-settings-theme-preview-content { background: linear-gradient(135deg, #ffffff 0%, #ffffff 50%, #111111 50%, #111111 100%); }
 
 .lyra-settings-choice strong {
   font-size: var(--lyra-unit-12);

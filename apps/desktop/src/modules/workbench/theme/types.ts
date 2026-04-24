@@ -1,4 +1,4 @@
-export type WorkbenchThemeFamily = "one" | "ayu" | "gruvbox";
+export type WorkbenchThemeFamily = "lyra" | "nova" | "terra" | "ocean" | "eclipse";
 
 export type WorkbenchThemeMode = "light" | "dark" | "system";
 

@@ -7,7 +7,7 @@ import type { RuntimeHostRpcService } from "../runtime-host-rpc/types";
 const WORKBENCH_HOST_TOOL_SET_ID = "desktop.workbench";
 type HostToolsSyncResult = {
   readonly acceptedCount: number;
-  readonly droppedAsCodexOwnedCount: number;
+  readonly droppedAsLyraOwnedCount: number;
   readonly droppedToolNames: readonly string[];
 };
 

@@ -4,15 +4,14 @@ import { describe, expect, test } from "vitest";
 import { useAiPanelThreadViewModel } from "../use-ai-panel-thread-view-model";
 
 const labels = {
-  runtimeRunningPrefix: "Running",
-  pendingInteractions: "Pending",
-  waitingPhraseFinalizingReply: "Finalizing",
-  runtimeFailedTurn: "Failed",
   runtimeQueued: "Queued",
   runtimeStarted: "Started",
-  runtimePhaseToolStarted: "Tool Started",
-  runtimePhaseToolFinished: "Tool Finished",
-  generatingReply: "Generating",
+  runtimeCompletedTurn: "Completed",
+  runtimeFailedTurn: "Failed",
+  runtimePhaseToolStarted: "Tool running",
+  runtimePhaseToolFinished: "Tool finished",
+  generatingReply: "Generating reply",
+  pendingInteractions: "Pending interactions",
 } as const;
 
 const toolNameLabels = {
@@ -76,9 +75,83 @@ describe("useAiPanelThreadViewModel", () => {
     );
 
     expect(result.current.streamingStatus).not.toBeNull();
-    expect(result.current.streamingStatus?.label).toBe("Running List");
+    expect(result.current.streamingStatus?.label).toBe("Tool running");
     expect(result.current.streamingStatus?.tone).toBe("running");
     expect(result.current.streamingTurnRuntimeFeed).toHaveLength(1);
+  });
+
+  test("does not surface a streaming status when nothing is active", () => {
+    const { result } = renderHook(() =>
+      useAiPanelThreadViewModel({
+        activeDetail: {
+          messages: [],
+          turns: [],
+          toolCalls: [],
+          runtimeEvents: [],
+        } as any,
+        optimisticUserMessages: [],
+        runtimeFeed: [],
+        streamingTurnId: null,
+        latestRuntimeEventByTurn: {},
+        activeInteractionPanel: null,
+        isInteractionSubmitting: false,
+        isSending: false,
+        isStreamActive: false,
+        streamingAssistantText: "",
+        finalizingTurnId: null,
+        toolNameLabels,
+        runtimeToolFallbackLabel: "Tool",
+        labels,
+      })
+    );
+
+    expect(result.current.streamingStatus).toBeNull();
+  });
+
+  test("hides optimistic user message after the same turn is persisted", () => {
+    const { result } = renderHook(() =>
+      useAiPanelThreadViewModel({
+        activeDetail: {
+          messages: [
+            {
+              id: "persisted-user",
+              role: "user",
+              content: "Hello",
+              turnId: "turn-1",
+              createdAt: 1,
+            },
+          ],
+          turns: [],
+          toolCalls: [],
+          runtimeEvents: [],
+        } as any,
+        optimisticUserMessages: [
+          {
+            id: "optimistic-user",
+            sessionId: "thread-1",
+            turnId: "turn-1",
+            role: "user",
+            content: "Hello",
+            createdAt: 2,
+            optimistic: true,
+          },
+        ],
+        runtimeFeed: [],
+        streamingTurnId: null,
+        latestRuntimeEventByTurn: {},
+        activeInteractionPanel: null,
+        isInteractionSubmitting: false,
+        isSending: false,
+        isStreamActive: false,
+        streamingAssistantText: "",
+        finalizingTurnId: null,
+        toolNameLabels,
+        runtimeToolFallbackLabel: "Tool",
+        labels,
+      })
+    );
+
+    expect(result.current.sortedMessages.map((message) => message.id)).toEqual(["persisted-user"]);
   });
 
   test("keeps only non-assistant-turn entries in orphan runtime feed", () => {

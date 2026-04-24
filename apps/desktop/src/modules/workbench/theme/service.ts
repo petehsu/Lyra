@@ -1,7 +1,7 @@
 import { WORKBENCH_RESOLVED_THEMES, WORKBENCH_THEME_IDS } from "./config";
 import type { WorkbenchResolvedThemeId, WorkbenchThemeId, WorkbenchThemeVars } from "./types";
 
-const FALLBACK_THEME: WorkbenchResolvedThemeId = "one-light";
+const FALLBACK_THEME: WorkbenchResolvedThemeId = "lyra-light";
 const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
 
 const toResolvedThemeId = (

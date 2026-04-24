@@ -4,7 +4,7 @@ import type { TerminalThemeMode } from "../terminal-theme";
 
 export const WORKBENCH_CONFIG = {
   locale: "zh-CN" as WorkbenchLocale,
-  theme: "one-system" as WorkbenchThemeId,
+  theme: "lyra-system" as WorkbenchThemeId,
   terminalThemePreset: "follow-app" as TerminalThemeMode,
   browser: {
     homeSearchAddress: "lyra://search",

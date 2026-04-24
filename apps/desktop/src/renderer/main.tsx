@@ -6,6 +6,7 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/workbench/core.css";
 import "./styles/workbench/browser-search.css";
+import "./styles/workbench/titlebar-ai-launch.css";
 import "./styles/workbench/settings.css";
 import "./styles/workbench/context-menu.css";
 import "./styles/workbench/browser-tabs.css";

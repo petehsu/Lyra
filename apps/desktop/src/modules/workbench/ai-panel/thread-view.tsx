@@ -32,6 +32,7 @@ import {
   AiPanelRuntimeFeedBlock,
   AiPanelStreamStatusBlock,
 } from "./runtime-feed-block";
+import { StatusEmptyState } from "./status-primitives";
 
 type AiPanelThreadViewProps = {
   readonly logoUrl: string;
@@ -57,6 +58,9 @@ type AiPanelThreadViewProps = {
   readonly turnNoToolCallsLabel: string;
   readonly turnFailedLabel: string;
   readonly toolNameLabels: ToolNameLabelMap;
+  readonly toolStatusRunningLabel: string;
+  readonly toolStatusCompletedLabel: string;
+  readonly toolStatusFailedLabel: string;
   readonly pendingInteractionQueue: readonly PendingInteractionPanel[];
   readonly canOpenFilePath: boolean;
   readonly openRuntimeTargetPath: (
@@ -103,6 +107,9 @@ export const AiPanelThreadView = ({
   turnNoToolCallsLabel,
   turnFailedLabel,
   toolNameLabels,
+  toolStatusRunningLabel,
+  toolStatusCompletedLabel,
+  toolStatusFailedLabel,
   pendingInteractionQueue,
   canOpenFilePath,
   openRuntimeTargetPath,
@@ -116,15 +123,19 @@ export const AiPanelThreadView = ({
 }: AiPanelThreadViewProps) => (
   <>
     {showEmptySessionScene ? (
-      <div className="lyra-ai-agent-empty-scene" aria-hidden="true">
+      <div className="lyra-ai-agent-empty-scene">
         <div className="lyra-ai-agent-empty-hero">
           <LyraBrandLogo
             logoUrl={logoUrl}
             className="lyra-ai-agent-empty-logo"
           />
-          <span className="lyra-ai-agent-empty-copy">
-            {isLoading ? loadingSessionLabel : emptyThreadLabel}
-          </span>
+          <StatusEmptyState
+            title={isLoading ? loadingSessionLabel : emptyThreadLabel}
+            loading={isLoading}
+            spinnerVariant={isLoading ? "sand" : "dots"}
+            tone={isLoading ? "info" : "muted"}
+            className="lyra-ai-agent-empty-state-card"
+          />
         </div>
       </div>
     ) : null}
@@ -268,6 +279,11 @@ export const AiPanelThreadView = ({
                               <AiPanelRuntimeFeedBlock
                                 items={groupedTools}
                                 canOpenPath={canOpenFilePath}
+                                statusLabels={{
+                                  running: toolStatusRunningLabel,
+                                  completed: toolStatusCompletedLabel,
+                                  failed: toolStatusFailedLabel,
+                                }}
                                 openRuntimeTargetPath={openRuntimeTargetPath}
                               />
                             </div>
@@ -372,6 +388,11 @@ export const AiPanelThreadView = ({
             <AiPanelRuntimeFeedBlock
               items={streamingTurnRuntimeFeed}
               canOpenPath={canOpenFilePath}
+              statusLabels={{
+                running: toolStatusRunningLabel,
+                completed: toolStatusCompletedLabel,
+                failed: toolStatusFailedLabel,
+              }}
               openRuntimeTargetPath={openRuntimeTargetPath}
             />
           )}
@@ -382,6 +403,11 @@ export const AiPanelThreadView = ({
           <AiPanelRuntimeFeedBlock
             items={orphanRuntimeFeed}
             canOpenPath={canOpenFilePath}
+            statusLabels={{
+              running: toolStatusRunningLabel,
+              completed: toolStatusCompletedLabel,
+              failed: toolStatusFailedLabel,
+            }}
             openRuntimeTargetPath={openRuntimeTargetPath}
           />
         </div>

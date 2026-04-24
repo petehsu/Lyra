@@ -24,9 +24,9 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     emptyDock: "empty",
     unavailable: "unavailable"
   },
-  themeSignature: "one-dark:dark:follow-app",
+  themeSignature: "lyra-dark:dark:follow-app",
   themePresetId: "follow-app",
-  uiThemeId: "one-dark",
+  uiThemeId: "lyra-dark",
   model: {
     state: {
       activeTabId: "tab-1",
@@ -105,9 +105,9 @@ describe("terminal dock view", () => {
     rerender(
       <TerminalDock
         {...props}
-        themeSignature="one-dark:dark:lyra-rich"
+        themeSignature="lyra-dark:dark:lyra-rich"
         themePresetId="lyra-rich"
-        uiThemeId="one-dark"
+        uiThemeId="lyra-dark"
       />
     );
 

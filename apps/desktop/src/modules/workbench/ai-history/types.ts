@@ -1,4 +1,5 @@
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { GlobalDialogOpenRequest } from "../global-dialog";
 
 export type AiHistorySurfaceProps = {
   readonly desktopApi: LyraDesktopApi | null;
@@ -8,11 +9,30 @@ export type AiHistorySurfaceProps = {
   readonly newConversationLabel: string;
   readonly openConversationLabel: string;
   readonly deleteConversationLabel: string;
+  readonly archiveConversationLabel: string;
+  readonly archivedConversationLabel: string;
+  readonly archivedProjectLabel: string;
+  readonly deleteArchivedConversationTitle: string;
+  readonly deleteArchivedConversationDescription: string;
+  readonly deleteArchivedConversationConfirm: string;
+  readonly deleteArchivedConversationCancel: string;
   readonly profileLabel: string;
   readonly sessionIdLabel: string;
   readonly loadingSessionsLabel: string;
   readonly emptyStateTitle: string;
   readonly emptyStateDescription: string;
+  readonly scopeGlobalLabel: string;
+  readonly scopeProjectLabel: string;
+  readonly noProjectSessionsEmptyLabel: string;
+  readonly noProjectsEmptyLabel: string;
+  readonly projectSessionCountLabel: string;
+  readonly backToProjectsLabel: string;
+  readonly projectPathLabel: string;
+  readonly threadPreviewEmptyLabel: string;
+  readonly previewEmptyTitle: string;
+  readonly previewEmptyDescription: string;
+  readonly previewLoadingLabel: string;
   readonly defaultProfileId?: string | null;
   readonly defaultProviderId?: string | null;
+  readonly openDialog?: (request: GlobalDialogOpenRequest) => void;
 };

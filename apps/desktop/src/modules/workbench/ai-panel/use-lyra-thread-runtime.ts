@@ -96,12 +96,6 @@ const readNumber = (value: unknown): number | null =>
 const normalizeStatus = (value: unknown): string =>
   readString(value)?.replace(/[_\s-]+/g, "").toLowerCase() ?? "";
 
-const isThreadNotMaterializedError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error);
-  return /not materialized yet/i.test(message)
-    || /includeTurns is unavailable before first user message/i.test(message);
-};
-
 const requestKeyOf = (requestId: string | number): string => String(requestId);
 
 const createRequestPayload = (
@@ -125,7 +119,7 @@ const toRuntimeEvent = ({
   phase,
   payload,
   timestamp: Date.now(),
-  toolOwner: "codex",
+  toolOwner: "agent_core",
 });
 
 const requestKindFromMethod = (method: string): AgentPendingInteraction["kind"] | null => {
@@ -213,7 +207,7 @@ const interactionFromServerRequest = (
     status: "pending",
     payload: {
       requestId: key,
-      codexMethod: method,
+      agentCoreMethod: method,
       raw: normalizeRequestPayload(method, params),
     },
     createdAt: now,
@@ -227,6 +221,32 @@ const findThreadTurn = (
 ): LyraTurn | null =>
   thread?.turns.find((turn) => turn.id === turnId) ?? null;
 
+const persistedUserTurnIds = (thread: LyraThread): ReadonlySet<string> => {
+  const turnIds = new Set<string>();
+  for (const turn of thread.turns) {
+    if (turn.items.some((item) => item.type === "userMessage")) {
+      turnIds.add(turn.id);
+    }
+  }
+  return turnIds;
+};
+
+const dropPersistedOptimisticMessages = (
+  optimisticMessages: readonly OptimisticUserMessage[],
+  thread: LyraThread
+): readonly OptimisticUserMessage[] => {
+  const userTurnIds = persistedUserTurnIds(thread);
+  if (userTurnIds.size === 0) {
+    return optimisticMessages;
+  }
+  return optimisticMessages.filter((message) => {
+    if (message.sessionId !== undefined && message.sessionId !== thread.id) {
+      return true;
+    }
+    return message.turnId === undefined || !userTurnIds.has(message.turnId);
+  });
+};
+
 const responseValueToAnswerStrings = (value: unknown): readonly string[] => {
   if (isRecord(value)) {
     const optionLabel = readString(value.label);
@@ -237,7 +257,7 @@ const responseValueToAnswerStrings = (value: unknown): readonly string[] => {
   return direct === null ? [] : [direct];
 };
 
-const commandDecisionToCodex = (decision: CommandApprovalResponse["decision"]): string => {
+const commandDecisionToAgentCore = (decision: CommandApprovalResponse["decision"]): string => {
   if (decision === "allow_always") {
     return "acceptForSession";
   }
@@ -277,6 +297,17 @@ export const useLyraThreadRuntime = ({
   const activeThreadIdRef = useRef<string | null>(null);
   const streamingTurnIdRef = useRef<string | null>(null);
 
+  const resetRuntimeStreamState = useCallback((): void => {
+    setOptimisticUserMessages([]);
+    setStreamingAssistantText("");
+    setStreamingTurnId(null);
+    setFinalizingTurnId(null);
+    setLiveToolCalls([]);
+    setIsStreamActive(false);
+    setIsSending(false);
+    setLatestRuntimeEventByTurn({});
+  }, []);
+
   useEffect(() => {
     activeThreadRef.current = activeThread;
   }, [activeThread]);
@@ -314,7 +345,12 @@ export const useLyraThreadRuntime = ({
         ? response.data.map(readLyraThread).filter((thread): thread is LyraThread => thread !== null)
         : [];
       setThreads(nextThreads);
-      setActiveThreadId((current) => current ?? nextThreads[0]?.id ?? null);
+      setActiveThreadId((current) => {
+        if (current !== null && nextThreads.some((thread) => thread.id === current)) {
+          return current;
+        }
+        return nextThreads[0]?.id ?? null;
+      });
       setRuntimeError(null);
     } catch (error) {
       setRuntimeError(error instanceof Error ? error.message : String(error));
@@ -335,6 +371,7 @@ export const useLyraThreadRuntime = ({
       }));
       const nextThread = readLyraThread(response.thread);
       if (nextThread !== null) {
+        setOptimisticUserMessages((current) => dropPersistedOptimisticMessages(current, nextThread));
         setActiveThread(nextThread);
         setThreads((current) => {
           const next = current.some((thread) => thread.id === nextThread.id)
@@ -345,10 +382,6 @@ export const useLyraThreadRuntime = ({
       }
       setRuntimeError(null);
     } catch (error) {
-      if (isThreadNotMaterializedError(error)) {
-        setRuntimeError(null);
-        return;
-      }
       setRuntimeError(error instanceof Error ? error.message : String(error));
     } finally {
       setIsLoadingThread(false);
@@ -356,15 +389,17 @@ export const useLyraThreadRuntime = ({
   }, [lyraApi]);
 
   const selectThread = useCallback((threadId: string | null): void => {
+    resetRuntimeStreamState();
     setActiveThreadId(threadId);
-    setOptimisticUserMessages([]);
-    setStreamingAssistantText("");
-    setStreamingTurnId(null);
-    setFinalizingTurnId(null);
-    setLiveToolCalls([]);
-  }, []);
+    if (threadId === null) {
+      setActiveThread(null);
+    }
+  }, [resetRuntimeStreamState]);
 
-  const createThread = useCallback(async (options: RuntimeThreadOptions = {}): Promise<string> => {
+  const startThread = useCallback(async (
+    options: RuntimeThreadOptions = {},
+    resetRuntime = true
+  ): Promise<string> => {
     if (lyraApi === null) {
       throw new Error("Lyra runtime unavailable");
     }
@@ -382,12 +417,19 @@ export const useLyraThreadRuntime = ({
     if (thread === null) {
       throw new Error("thread/start did not return a thread");
     }
+    if (resetRuntime) {
+      resetRuntimeStreamState();
+    }
     setThreads((current) => [thread, ...current.filter((entry) => entry.id !== thread.id)]);
-    setActiveThreadId(thread.id);
     setActiveThread(thread);
+    setActiveThreadId(thread.id);
     setRuntimeError(null);
     return thread.id;
-  }, [lyraApi]);
+  }, [lyraApi, resetRuntimeStreamState]);
+
+  const createThread = useCallback(async (options: RuntimeThreadOptions = {}): Promise<string> =>
+    startThread(options, true),
+  [startThread]);
 
   const sendTurn = useCallback(async (
     input: string,
@@ -402,6 +444,8 @@ export const useLyraThreadRuntime = ({
     }
     setIsSending(true);
     setRuntimeError(null);
+    setStreamingAssistantText("");
+    setFinalizingTurnId(null);
     const createdAt = Date.now();
     const optimisticId = `optimistic:${createdAt.toString()}`;
     setOptimisticUserMessages((current) => [
@@ -415,7 +459,14 @@ export const useLyraThreadRuntime = ({
       },
     ]);
     try {
-      const threadId = activeThreadIdRef.current ?? await createThread(options);
+      const threadId = activeThreadIdRef.current ?? await startThread(options, false);
+      setOptimisticUserMessages((current) =>
+        current.map((message) =>
+          message.id === optimisticId
+            ? { ...message, sessionId: threadId }
+            : message
+        )
+      );
       const response = await lyraApi.request<{ turn?: unknown }>(createRequestPayload("turn/start", {
         threadId,
         input: [
@@ -432,12 +483,20 @@ export const useLyraThreadRuntime = ({
       }));
       const turnId = isRecord(response.turn) ? readString(response.turn.id) : null;
       if (turnId !== null) {
+        setOptimisticUserMessages((current) =>
+          current.map((message) =>
+            message.id === optimisticId
+              ? { ...message, sessionId: threadId, turnId }
+              : message
+          )
+        );
         const event = toRuntimeEvent({
           sessionId: threadId,
           turnId,
           phase: "accepted",
           payload: { threadId, turnId },
         });
+        setStreamingAssistantText("");
         setStreamingTurnId(turnId);
         setIsStreamActive(true);
         setLatestRuntimeEventByTurn((current) => ({ ...current, [turnId]: event }));
@@ -449,7 +508,7 @@ export const useLyraThreadRuntime = ({
       setRuntimeError(error instanceof Error ? error.message : String(error));
       throw error;
     }
-  }, [createThread, lyraApi]);
+  }, [lyraApi, startThread]);
 
   const interruptTurn = useCallback(async (): Promise<void> => {
     if (lyraApi === null || activeThreadIdRef.current === null || streamingTurnIdRef.current === null) {
@@ -529,7 +588,7 @@ export const useLyraThreadRuntime = ({
       return;
     }
     if (interaction.kind === "file_change_approval") {
-      await resolveInteraction(interaction.id, { decision: commandDecisionToCodex(response.decision) });
+      await resolveInteraction(interaction.id, { decision: commandDecisionToAgentCore(response.decision) });
       return;
     }
     if (interaction.kind === "permissions_approval") {
@@ -544,7 +603,7 @@ export const useLyraThreadRuntime = ({
       });
       return;
     }
-    await resolveInteraction(interaction.id, { decision: commandDecisionToCodex(response.decision) });
+    await resolveInteraction(interaction.id, { decision: commandDecisionToAgentCore(response.decision) });
   }, [pendingInteractions, rejectInteraction, resolveInteraction]);
 
   const respondToPlanQuestion = useCallback(async (
@@ -642,6 +701,21 @@ export const useLyraThreadRuntime = ({
         }
         return;
       }
+      if (method === "thread/archived" || method === "thread/deleted") {
+        const threadId = readString(params.threadId);
+        if (threadId === null) {
+          void loadThreads();
+          return;
+        }
+        setThreads((current) => current.filter((thread) => thread.id !== threadId));
+        if (threadId === activeThreadIdRef.current) {
+          resetRuntimeStreamState();
+          setActiveThreadId(null);
+          setActiveThread(null);
+        }
+        void loadThreads();
+        return;
+      }
       if (method === "turn/started") {
         const threadId = readString(params.threadId);
         const turn = isRecord(params.turn) ? params.turn : null;
@@ -661,10 +735,6 @@ export const useLyraThreadRuntime = ({
               payload: params,
             }),
           }));
-          setOptimisticUserMessages([]);
-          if (threadId === activeThreadIdRef.current) {
-            void loadThread(threadId);
-          }
         }
         return;
       }
@@ -767,7 +837,7 @@ export const useLyraThreadRuntime = ({
         void loadThreads();
       }
     });
-  }, [loadThread, loadThreads, lyraApi]);
+  }, [loadThread, loadThreads, lyraApi, resetRuntimeStreamState]);
 
   const pendingInteractionQueue = useMemo(
     () =>

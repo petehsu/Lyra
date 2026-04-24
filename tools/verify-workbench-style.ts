@@ -14,7 +14,7 @@ const ROOT = path.resolve(SCRIPT_DIR, "..");
 const RENDERER_WORKBENCH_STYLES_DIR = path.join(ROOT, "apps/desktop/src/renderer/styles/workbench");
 const MODULES_WORKBENCH_DIR = path.join(ROOT, "apps/desktop/src/modules/workbench");
 const LEGACY_CSS_PATH = path.join(ROOT, "apps/desktop/src/renderer/styles/workbench.css");
-const APPROVED_BREAKPOINTS = new Set(["980px", "1180px"]);
+const APPROVED_BREAKPOINTS = new Set(["860px", "980px", "1180px"]);
 const VISUAL_STYLE_KEYS = new Set([
   "fontSize",
   "lineHeight",

@@ -264,11 +264,11 @@ impl AgentActor {
         let result = client
             .request(request)
             .await
-            .map_err(|error| runtime_error("CODEX_REQUEST_TRANSPORT_FAILED", error.to_string()))?;
+            .map_err(|error| runtime_error("LYRA_AGENT_REQUEST_TRANSPORT_FAILED", error.to_string()))?;
         match result {
             Ok(value) => Ok(value),
             Err(error) => Err(runtime_error_with_details(
-                "CODEX_REQUEST_REJECTED",
+                "LYRA_AGENT_REQUEST_REJECTED",
                 error.message.clone(),
                 json!({
                     "code": error.code,
@@ -363,7 +363,7 @@ impl AgentActor {
                 event: AGENT_CORE_RUNTIME_EVENT_NAME.to_string(),
                 payload,
             })
-            .map_err(|_| runtime_error("CODEX_EVENT_SEND_FAILED", "failed to forward agent core runtime event"))
+            .map_err(|_| runtime_error("LYRA_AGENT_EVENT_SEND_FAILED", "failed to forward agent core runtime event"))
     }
 }
 

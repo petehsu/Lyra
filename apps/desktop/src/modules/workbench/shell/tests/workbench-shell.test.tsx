@@ -658,28 +658,34 @@ describe("workbench shell", () => {
 
     expect(screen.getByRole("button", { name: "Open Settings" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("radio", { name: "One Dark" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Lyra Dark" }));
 
     const root = document.querySelector(".lyra-root");
     expect(root).not.toBeNull();
     expect((root as HTMLElement).style.getPropertyValue("--lyra-bg-app")).toBe("#3b414d");
   });
 
-  test("renders 9 theme options including system-follow variants", () => {
+  test("renders 15 theme options including system-follow variants", () => {
     render(<WorkbenchShell />);
 
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
     const themeOptions = [
-      "One Light",
-      "One Dark",
-      "One 跟随系统",
-      "Ayu Light",
-      "Ayu Dark",
-      "Ayu 跟随系统",
-      "Gruvbox Light",
-      "Gruvbox Dark",
-      "Gruvbox 跟随系统"
+      "Lyra Light",
+      "Lyra Dark",
+      "Lyra 跟随系统",
+      "Nova Light",
+      "Nova Dark",
+      "Nova 跟随系统",
+      "Terra Light",
+      "Terra Dark",
+      "Terra 跟随系统",
+      "Ocean Light",
+      "Ocean Dark",
+      "Ocean 跟随系统",
+      "Eclipse Light",
+      "Eclipse Dark",
+      "Eclipse 跟随系统"
     ];
 
     for (const option of themeOptions) {
@@ -691,11 +697,11 @@ describe("workbench shell", () => {
     render(<WorkbenchShell />);
     fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
 
-    fireEvent.click(screen.getByRole("radio", { name: "One 跟随系统" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Lyra 跟随系统" }));
 
     const raw = readWorkbenchStateSync("preferences");
     expect(raw).not.toBeNull();
-    expect(raw).toContain("\"theme\":\"one-system\"");
+    expect(raw).toContain("\"theme\":\"lyra-system\"");
   });
 
   test("persists terminal theme selection", () => {

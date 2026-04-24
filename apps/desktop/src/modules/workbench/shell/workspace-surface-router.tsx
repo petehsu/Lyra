@@ -8,7 +8,7 @@ import {
   BrowserSettingsSurface
 } from "../browser-tabs";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
-import { AiHistorySurface } from "../ai-history";
+import { AiHistorySurface, type AiHistorySurfaceProps } from "../ai-history";
 import {
   FileManagerSurface,
   type FileManagerChooserMode,
@@ -209,13 +209,32 @@ export type WorkspaceSurfaceRouterProps = {
     readonly newConversationLabel: string;
     readonly openConversationLabel: string;
     readonly deleteConversationLabel: string;
+    readonly archiveConversationLabel: string;
+    readonly archivedConversationLabel: string;
+    readonly archivedProjectLabel: string;
+    readonly deleteArchivedConversationTitle: string;
+    readonly deleteArchivedConversationDescription: string;
+    readonly deleteArchivedConversationConfirm: string;
+    readonly deleteArchivedConversationCancel: string;
     readonly profileLabel: string;
     readonly sessionIdLabel: string;
     readonly loadingSessionsLabel: string;
     readonly emptyStateTitle: string;
     readonly emptyStateDescription: string;
+    readonly scopeGlobalLabel: string;
+    readonly scopeProjectLabel: string;
+    readonly noProjectSessionsEmptyLabel: string;
+    readonly noProjectsEmptyLabel: string;
+    readonly projectSessionCountLabel: string;
+    readonly backToProjectsLabel: string;
+    readonly projectPathLabel: string;
+    readonly threadPreviewEmptyLabel: string;
+    readonly previewEmptyTitle: string;
+    readonly previewEmptyDescription: string;
+    readonly previewLoadingLabel: string;
     readonly defaultProfileId?: string | null;
     readonly defaultProviderId?: string | null;
+    readonly openDialog?: AiHistorySurfaceProps["openDialog"];
   };
   readonly notifications: {
     readonly model: WorkbenchNotificationModel;
@@ -563,17 +582,38 @@ export const WorkspaceSurfaceRouter = ({
           newConversationLabel={aiHistory.newConversationLabel}
           openConversationLabel={aiHistory.openConversationLabel}
           deleteConversationLabel={aiHistory.deleteConversationLabel}
+          archiveConversationLabel={aiHistory.archiveConversationLabel}
+          archivedConversationLabel={aiHistory.archivedConversationLabel}
+          archivedProjectLabel={aiHistory.archivedProjectLabel}
+          deleteArchivedConversationTitle={aiHistory.deleteArchivedConversationTitle}
+          deleteArchivedConversationDescription={aiHistory.deleteArchivedConversationDescription}
+          deleteArchivedConversationConfirm={aiHistory.deleteArchivedConversationConfirm}
+          deleteArchivedConversationCancel={aiHistory.deleteArchivedConversationCancel}
           profileLabel={aiHistory.profileLabel}
           sessionIdLabel={aiHistory.sessionIdLabel}
           loadingSessionsLabel={aiHistory.loadingSessionsLabel}
           emptyStateTitle={aiHistory.emptyStateTitle}
           emptyStateDescription={aiHistory.emptyStateDescription}
+          scopeGlobalLabel={aiHistory.scopeGlobalLabel}
+          scopeProjectLabel={aiHistory.scopeProjectLabel}
+          noProjectSessionsEmptyLabel={aiHistory.noProjectSessionsEmptyLabel}
+          noProjectsEmptyLabel={aiHistory.noProjectsEmptyLabel}
+          projectSessionCountLabel={aiHistory.projectSessionCountLabel}
+          backToProjectsLabel={aiHistory.backToProjectsLabel}
+          projectPathLabel={aiHistory.projectPathLabel}
+          threadPreviewEmptyLabel={aiHistory.threadPreviewEmptyLabel}
+          previewEmptyTitle={aiHistory.previewEmptyTitle}
+          previewEmptyDescription={aiHistory.previewEmptyDescription}
+          previewLoadingLabel={aiHistory.previewLoadingLabel}
           {...(aiHistory.defaultProfileId === undefined
             ? {}
             : { defaultProfileId: aiHistory.defaultProfileId })}
           {...(aiHistory.defaultProviderId === undefined
             ? {}
             : { defaultProviderId: aiHistory.defaultProviderId })}
+          {...(aiHistory.openDialog === undefined
+            ? {}
+            : { openDialog: aiHistory.openDialog })}
         />
       );
     }

@@ -58,7 +58,7 @@ impl CommandRiskLevel {
     }
 }
 
-/// Three-tier sandbox mode, inspired by Codex's sandbox classification.
+/// Three-tier sandbox mode used by Lyra's local agent runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SandboxMode {
     /// Only read-only commands allowed. Write operations require approval.

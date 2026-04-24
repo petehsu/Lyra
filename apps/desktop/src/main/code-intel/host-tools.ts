@@ -7,7 +7,7 @@ import type { RuntimeHostRpcService } from "../runtime-host-rpc/types";
 const CODE_INTEL_TOOL_SET_ID = "desktop.code_intel";
 type HostToolsSyncResult = {
   readonly acceptedCount: number;
-  readonly droppedAsCodexOwnedCount: number;
+  readonly droppedAsLyraOwnedCount: number;
   readonly droppedToolNames: readonly string[];
 };
 

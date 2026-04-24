@@ -597,8 +597,7 @@ const registerIpcHandlers = (): void => {
   const skillsBridge = createSkillsIpcBridge({
     storageRoot: storageRoots.modules.skills,
     getWindow: () => mainWindow,
-    filesNativeBindings: filesBridge.nativeBindings,
-    runtimeClient
+    filesNativeBindings: filesBridge.nativeBindings
   });
   disposeSkillsBridge = skillsBridge.dispose;
 
@@ -705,7 +704,6 @@ const registerIpcHandlers = (): void => {
   };
   const browserUseRuntimeCoordinator = createBrowserUseRuntimeCoordinator({
     runtime: browserUseService.runtime,
-    runtimeClient,
     hostTools: browserUseHostTools,
     readPreferredEngine: () =>
       readBrowserAutomationEnginePreference(

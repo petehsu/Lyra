@@ -6,11 +6,11 @@ describe("resolveDocsEntryUrl", () => {
   it("appends host, locale and theme query params", () => {
     const url = resolveDocsEntryUrl("http://localhost:5174/", {
       locale: "zh-CN",
-      themeId: "one-dark"
+      themeId: "lyra-dark"
     });
     expect(url).toContain("host=lyra");
     expect(url).toContain("locale=zh-CN");
-    expect(url).toContain("theme=one-dark");
+    expect(url).toContain("theme=lyra-dark");
   });
 
   it("keeps base address when url is invalid", () => {
@@ -18,7 +18,7 @@ describe("resolveDocsEntryUrl", () => {
     expect(
       resolveDocsEntryUrl(broken, {
         locale: "en-US",
-        themeId: "gruvbox-light"
+        themeId: "terra-light"
       })
     ).toBe(broken);
   });

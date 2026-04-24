@@ -13,6 +13,7 @@ import type {
 import { PlanApprovalBar } from "./plan-approval-bar";
 import { PlanQuestionBar } from "./plan-question-bar";
 import type { WorkbenchLocale } from "../i18n";
+import { SpinnerLabel, StatusBadge } from "./status-primitives";
 import type {
   ActiveInteractionPanel,
   PendingInteractionPanel,
@@ -55,15 +56,28 @@ export const AiPanelInteractionShell = ({
     return null;
   }
 
+  const queueSize = activePendingInteraction === null ? 1 : pendingInteractionQueue.length;
+
   return (
     <div ref={panelRef} className="lyra-ai-interaction-shell">
       <div className="lyra-ai-interaction-shell__header">
-        <span className="lyra-ai-interaction-shell__label">
-          {pendingInteractionsLabel} {activeInteractionPosition}/
-          {activePendingInteraction === null ? 1 : pendingInteractionQueue.length}
-        </span>
+        <div className="lyra-ai-interaction-shell__status">
+          <SpinnerLabel
+            variant="sand"
+            tone="warning"
+            size="sm"
+            ariaLabel={pendingInteractionsLabel}
+            className="lyra-ai-interaction-shell__spinner"
+          />
+          <span className="lyra-ai-interaction-shell__label">{pendingInteractionsLabel}</span>
+          <StatusBadge
+            tone="warning"
+            label={`${String(activeInteractionPosition)}/${String(queueSize)}`}
+            className="lyra-ai-interaction-shell__badge"
+          />
+        </div>
         <div className="lyra-ai-interaction-shell__actions">
-          {activePendingInteraction !== null && pendingInteractionQueue.length > 1 ? (
+          {activePendingInteraction !== null && queueSize > 1 ? (
             <>
               <button
                 type="button"
@@ -79,7 +93,7 @@ export const AiPanelInteractionShell = ({
               <button
                 type="button"
                 className="lyra-ai-interaction-shell__button"
-                disabled={activeInteractionPosition >= pendingInteractionQueue.length}
+                disabled={activeInteractionPosition >= queueSize}
                 onClick={() => {
                   const next = pendingInteractionQueue[activeInteractionPosition];
                   onSelectInteractionId(next?.request.id ?? null);

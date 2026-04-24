@@ -5,7 +5,6 @@ import type {
   BrowserUseRuntimeUnavailableReason,
 } from "../../../shared/browser-use";
 import { createWorkbenchBrowserSharedDebuggerSession } from "../../workbench-browser/debugger";
-import type { LyraRuntimeClient } from "../../runtime-client";
 import type { BrowserUseRuntimeCoordinator, BrowserUseRuntimeManager } from "../types";
 
 type BrowserAutomationEngine = "lyra_direct" | "browser_use" | "smart";
@@ -24,13 +23,11 @@ const createStatus = (
 
 export const createBrowserUseRuntimeCoordinator = ({
   runtime,
-  runtimeClient,
   hostTools,
   readPreferredEngine,
   bridgeSmoke,
 }: {
   readonly runtime: BrowserUseRuntimeManager;
-  readonly runtimeClient: LyraRuntimeClient;
   readonly hostTools: HostToolsBridge;
   readonly readPreferredEngine: () => BrowserAutomationEngine;
   readonly bridgeSmoke?: () => Promise<void>;
@@ -48,23 +45,12 @@ export const createBrowserUseRuntimeCoordinator = ({
     }
   };
 
-  const syncRuntimeStrategy = async (): Promise<void> => {
-    const browserUseExposed =
-      status.state === "healthy" && currentEngine !== "lyra_direct";
-    await runtimeClient.request("agent.browser_strategy.sync", {
-      preferredEngine: currentEngine,
-      browserUseHealth: status.state,
-      browserUseToolExposed: browserUseExposed,
-    });
-  };
-
   const applyExposure = async (): Promise<void> => {
     if (status.state === "healthy" && currentEngine !== "lyra_direct") {
       await hostTools.sync();
     } else {
       await hostTools.remove();
     }
-    await syncRuntimeStrategy();
   };
 
   const runBridgeSmoke = async (): Promise<void> => {

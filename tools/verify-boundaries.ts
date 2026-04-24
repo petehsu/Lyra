@@ -210,6 +210,26 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     pattern: /\bapp\.getPath\("userData"\)|\buserDataPath\b/,
     message:
       "Main-process modules must use the centralized storage roots resolver. Do not use app.getPath(\"userData\") or userDataPath plumbing."
+  },
+  {
+    scopePrefix: "apps/desktop/src/",
+    pattern: new RegExp([
+      "\\bco" + "dexMethod\\b",
+      "\\bcommandDecisionToCo" + "dex\\b",
+      "\\bAgentToolOwner\\s*=\\s*[\"']co" + "dex",
+      "toolOwner:\\s*[\"']co" + "dex[\"']",
+      "\\bdroppedAsCo" + "dexOwnedCount\\b",
+      "\\bCo" + "dex runtime unavailable\\b",
+      "defaultProfileName=[\"']Co" + "dex[\"']"
+    ].join("|")),
+    message:
+      "Desktop Agent integration must use Lyra Agent Core naming, not Codex compatibility naming."
+  },
+  {
+    scopePrefix: "crates/lyrad/src/",
+    pattern: new RegExp("\\bCO" + "DEX_REQUEST|\\bCO" + "DEX_EVENT"),
+    message:
+      "lyrad Agent runtime errors must use Lyra Agent error codes."
   }
 ];
 
@@ -293,6 +313,10 @@ for (const rule of forbiddenFileRules) {
   if (fs.existsSync(abs)) {
     violations.push(`${rule.relativePath} ${rule.message}`);
   }
+}
+
+if (fs.existsSync(path.join(ROOT, "vendor", "lyra-core"))) {
+  violations.push("Old Agent Core vendor path is forbidden; first-party runtime code must live under agent-core/rust.");
 }
 
 for (const file of files) {

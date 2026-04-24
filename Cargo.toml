@@ -12,7 +12,7 @@ members = [
   "crates/lyra-docs-napi",
   "crates/lyra-mcp-core"
 ]
-exclude = ["vendor/lyra-core"]
+exclude = ["agent-core/rust"]
 resolver = "2"
 
 [patch.crates-io]

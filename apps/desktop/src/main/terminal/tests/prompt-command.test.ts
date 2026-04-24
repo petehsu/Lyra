@@ -4,7 +4,7 @@ import { createPromptReloadCommand } from "../fallback-prompt";
 
 describe("terminal prompt reload command", () => {
   test("returns follow-app reset script for bash", () => {
-    const command = createPromptReloadCommand("bash", "one-dark", "follow-app");
+    const command = createPromptReloadCommand("bash", "lyra-dark", "follow-app");
 
     expect(command).toContain("\\u@\\h:\\w\\$ '");
     expect(command).toContain("LyraPrompt");
@@ -14,42 +14,42 @@ describe("terminal prompt reload command", () => {
   });
 
   test("builds lyra-minimal prompt for bash", () => {
-    const command = createPromptReloadCommand("bash", "one-dark", "lyra-minimal");
+    const command = createPromptReloadCommand("bash", "lyra-dark", "lyra-minimal");
 
     expect(command).toContain("\\w");
     expect(command).not.toContain("code:${exit_code}");
   });
 
   test("builds lyra-standard prompt for bash", () => {
-    const command = createPromptReloadCommand("bash", "one-dark", "lyra-standard");
+    const command = createPromptReloadCommand("bash", "lyra-dark", "lyra-standard");
 
     expect(command).toContain("\\u");
     expect(command).not.toContain("code:${exit_code}");
   });
 
   test("builds lyra-rich prompt for bash", () => {
-    const command = createPromptReloadCommand("bash", "one-dark", "lyra-rich");
+    const command = createPromptReloadCommand("bash", "lyra-dark", "lyra-rich");
 
     expect(command).toContain("\\t");
     expect(command).not.toContain("code:${exit_code}");
   });
 
   test("builds lyra-developer prompt with duration and exit code", () => {
-    const command = createPromptReloadCommand("bash", "one-dark", "lyra-developer");
+    const command = createPromptReloadCommand("bash", "lyra-dark", "lyra-developer");
 
     expect(command).toContain("code:${exit_code}");
     expect(command).toContain("__lyra_prompt_duration");
   });
 
   test("does not emit legacy starship env injection", () => {
-    const command = createPromptReloadCommand("bash", "one-dark", "lyra-rich");
+    const command = createPromptReloadCommand("bash", "lyra-dark", "lyra-rich");
 
     expect(command).not.toContain("STARSHIP_CONFIG");
     expect(command).not.toContain("LYRA_STARSHIP_BIN");
   });
 
   test("keeps delete/backspace bindings for zsh prompt scripts", () => {
-    const command = createPromptReloadCommand("zsh", "one-dark", "lyra-rich");
+    const command = createPromptReloadCommand("zsh", "lyra-dark", "lyra-rich");
 
     expect(command).toContain("bindkey -M emacs '^?' backward-delete-char");
     expect(command).toContain("bindkey -M viins '^[[3~' delete-char");
@@ -66,7 +66,7 @@ describe("terminal prompt reload command", () => {
   });
 
   test("returns null for powershell", () => {
-    const command = createPromptReloadCommand("powershell", "one-dark", "lyra-standard");
+    const command = createPromptReloadCommand("powershell", "lyra-dark", "lyra-standard");
 
     expect(command).toBeNull();
   });

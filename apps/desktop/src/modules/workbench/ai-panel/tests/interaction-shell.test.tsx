@@ -51,7 +51,8 @@ describe("ai panel interaction shell", () => {
       />
     );
 
-    expect(screen.getByText("Pending 2/2")).toBeDefined();
+    expect(screen.getByText("Pending")).toBeDefined();
+    expect(screen.getByText("2/2")).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
 

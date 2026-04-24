@@ -24,6 +24,8 @@ import {
 
 export type OptimisticUserMessage = {
   readonly id: string;
+  readonly sessionId?: string;
+  readonly turnId?: string;
   readonly role: "user";
   readonly content: string;
   readonly createdAt: number;

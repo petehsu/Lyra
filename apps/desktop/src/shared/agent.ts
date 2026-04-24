@@ -42,7 +42,7 @@ export type AgentPendingInteractionStatus = "pending" | "resolved" | "cancelled"
 
 export type AgentPendingInteractionPayload = {
   readonly requestId?: string;
-  readonly codexMethod?: string;
+  readonly agentCoreMethod?: string;
   readonly raw?: Record<string, unknown>;
   readonly [key: string]: unknown;
 };
@@ -365,7 +365,7 @@ export type AgentRuntimePhase =
   | "execution_abandoned"
   | "goal_tree_updated";
 
-export type AgentToolOwner = "codex" | "lyra";
+export type AgentToolOwner = "agent_core" | "lyra";
 
 export type AgentInteractionKind =
   | "command_execution_approval"

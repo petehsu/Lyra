@@ -37,9 +37,6 @@ describe("browser-use runtime coordinator", () => {
       sync: vi.fn(async () => undefined),
       remove: vi.fn(async () => undefined),
     };
-    const runtimeClient = {
-      request: vi.fn(async () => undefined),
-    };
     const coordinator = createBrowserUseRuntimeCoordinator({
       runtime: createRuntime(async () => ({
         ok: true,
@@ -52,7 +49,6 @@ describe("browser-use runtime coordinator", () => {
           manifestPath: "/tmp/runtime/manifest.json",
         },
       })),
-      runtimeClient: runtimeClient as never,
       hostTools,
       readPreferredEngine: () => "smart",
       bridgeSmoke: async () => undefined,
@@ -64,11 +60,6 @@ describe("browser-use runtime coordinator", () => {
     expect(coordinator.readStatus().state).toBe("healthy");
     expect(hostTools.sync).toHaveBeenCalledTimes(1);
     expect(hostTools.remove).not.toHaveBeenCalled();
-    expect(runtimeClient.request).toHaveBeenCalledWith("agent.browser_strategy.sync", {
-      preferredEngine: "smart",
-      browserUseHealth: "healthy",
-      browserUseToolExposed: true,
-    });
   });
 
   test("removes browser_use tools when preflight is unavailable or engine is lyra_direct", async () => {
@@ -76,16 +67,12 @@ describe("browser-use runtime coordinator", () => {
       sync: vi.fn(async () => undefined),
       remove: vi.fn(async () => undefined),
     };
-    const runtimeClient = {
-      request: vi.fn(async () => undefined),
-    };
     const coordinator = createBrowserUseRuntimeCoordinator({
       runtime: createRuntime(async () => ({
         ok: false,
         code: "missing_bundle",
         detail: "missing bundle",
       })),
-      runtimeClient: runtimeClient as never,
       hostTools,
       readPreferredEngine: () => "browser_use",
       bridgeSmoke: async () => undefined,
@@ -96,24 +83,13 @@ describe("browser-use runtime coordinator", () => {
 
     expect(coordinator.readStatus().state).toBe("unavailable");
     expect(hostTools.remove).toHaveBeenCalledTimes(1);
-    expect(runtimeClient.request).toHaveBeenCalledWith("agent.browser_strategy.sync", {
-      preferredEngine: "browser_use",
-      browserUseHealth: "unavailable",
-      browserUseToolExposed: false,
-    });
 
     hostTools.sync.mockClear();
     hostTools.remove.mockClear();
-    runtimeClient.request.mockClear();
 
     await coordinator.applyEnginePreference("lyra_direct");
 
     expect(hostTools.sync).not.toHaveBeenCalled();
     expect(hostTools.remove).toHaveBeenCalledTimes(1);
-    expect(runtimeClient.request).toHaveBeenCalledWith("agent.browser_strategy.sync", {
-      preferredEngine: "lyra_direct",
-      browserUseHealth: "unavailable",
-      browserUseToolExposed: false,
-    });
   });
 });

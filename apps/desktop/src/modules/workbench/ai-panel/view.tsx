@@ -46,8 +46,9 @@ export const AiPanelSurface = ({
   turnWorkedForPrefix,
   runtimeQueuedLabel,
   runtimeStartedLabel,
-  runtimeRunningPrefix,
+  runtimeRunningPrefix: _runtimeRunningPrefix,
   runtimeFailedTurnLabel,
+  runtimeCompletedTurnLabel,
   runtimePhaseToolStartedLabel,
   runtimePhaseToolFinishedLabel,
   runtimeToolFallbackLabel,
@@ -58,6 +59,9 @@ export const AiPanelSurface = ({
   toolNameWriteLabel,
   toolNameEditLabel,
   toolNameMultiEditLabel,
+  toolStatusRunningLabel,
+  toolStatusCompletedLabel,
+  toolStatusFailedLabel,
   onOpenFilePath,
   onWriteStreamEvent: _onWriteStreamEvent,
   onTerminalExecStarted: _onTerminalExecStarted,
@@ -70,7 +74,10 @@ export const AiPanelSurface = ({
   const [draftInput, setDraftInput] = useState("");
   const [selectedModel, setSelectedModel] = useState(defaultModelNames[0] ?? "");
   const [availableModels, setAvailableModels] = useState<readonly string[]>(defaultModelNames);
-  const [cwdOverride, setCwdOverride] = useState<string | null>(null);
+  const [cwdOverrideByThread, setCwdOverrideByThread] = useState<
+    ReadonlyMap<string, string>
+  >(() => new Map());
+  const [pendingCwdOverride, setPendingCwdOverride] = useState<string | null>(null);
   const [isBindingProject, setIsBindingProject] = useState(false);
   const threadViewportRef = useRef<HTMLDivElement>(null);
   const interactionPanelRef = useRef<HTMLDivElement>(null);
@@ -91,7 +98,6 @@ export const AiPanelSurface = ({
     interactionTextLabels,
   });
   const {
-    createThread: createRuntimeThread,
     interruptTurn,
     respondToCommandApproval,
     respondToPlanQuestion,
@@ -99,6 +105,20 @@ export const AiPanelSurface = ({
     sendTurn: sendRuntimeTurn,
     setActiveInteractionId,
   } = actions;
+  const activeThreadId = state.activeThreadId;
+  const activeThreadCwd = state.activeThread?.cwd ?? null;
+  const boundCwdForActiveThread = useMemo(() => {
+    if (activeThreadId !== null) {
+      const mapped = cwdOverrideByThread.get(activeThreadId);
+      if (mapped !== undefined && mapped.length > 0) {
+        return mapped;
+      }
+    }
+    if (pendingCwdOverride !== null && pendingCwdOverride.length > 0) {
+      return pendingCwdOverride;
+    }
+    return activeThreadCwd;
+  }, [activeThreadCwd, activeThreadId, cwdOverrideByThread, pendingCwdOverride]);
 
   const toolNameLabels = useMemo<ToolNameLabelMap>(
     () => ({
@@ -138,7 +158,11 @@ export const AiPanelSurface = ({
   const typewriterText = useTypewriter(
     state.streamingAssistantText,
     state.isStreamActive,
-    { charsPerSecond: 72, minChunkSize: 4 }
+    {
+      charsPerSecond: 72,
+      minChunkSize: 4,
+      resetKey: state.streamingTurnId,
+    }
   );
 
   const viewModel = useAiPanelThreadViewModel({
@@ -156,15 +180,14 @@ export const AiPanelSurface = ({
     toolNameLabels,
     runtimeToolFallbackLabel,
     labels: {
-      runtimeRunningPrefix,
-      pendingInteractions: t("ai.pendingInteractions"),
-      waitingPhraseFinalizingReply: t("ai.waitingPhraseFinalizingReply"),
-      runtimeFailedTurn: runtimeFailedTurnLabel,
       runtimeQueued: runtimeQueuedLabel,
       runtimeStarted: runtimeStartedLabel,
+      runtimeCompletedTurn: runtimeCompletedTurnLabel,
+      runtimeFailedTurn: runtimeFailedTurnLabel,
       runtimePhaseToolStarted: runtimePhaseToolStartedLabel,
       runtimePhaseToolFinished: runtimePhaseToolFinishedLabel,
       generatingReply: t("ai.generatingReply"),
+      pendingInteractions: t("ai.pendingInteractions"),
     },
   });
 
@@ -178,6 +201,26 @@ export const AiPanelSurface = ({
       selectThread(threadId);
     });
   }, [selectThread]);
+
+  useEffect(() => {
+    if (activeThreadId === null || pendingCwdOverride === null) {
+      return;
+    }
+    const trimmed = pendingCwdOverride.trim();
+    if (trimmed.length === 0) {
+      setPendingCwdOverride(null);
+      return;
+    }
+    setCwdOverrideByThread((current) => {
+      if (current.get(activeThreadId) === trimmed) {
+        return current;
+      }
+      const next = new Map(current);
+      next.set(activeThreadId, trimmed);
+      return next;
+    });
+    setPendingCwdOverride(null);
+  }, [activeThreadId, pendingCwdOverride]);
 
   useEffect(() => {
     const viewport = threadViewportRef.current;
@@ -213,14 +256,27 @@ export const AiPanelSurface = ({
     }
     setIsBindingProject(true);
     try {
-      const nextPath = await onRequestProjectBind(cwdOverride ?? state.activeThread?.cwd ?? undefined);
-      if (typeof nextPath === "string" && nextPath.trim().length > 0) {
-        setCwdOverride(nextPath.trim());
+      const nextPath = await onRequestProjectBind(boundCwdForActiveThread ?? undefined);
+      if (typeof nextPath !== "string") {
+        return;
       }
+      const trimmed = nextPath.trim();
+      if (trimmed.length === 0) {
+        return;
+      }
+      if (activeThreadId === null) {
+        setPendingCwdOverride(trimmed);
+        return;
+      }
+      setCwdOverrideByThread((current) => {
+        const next = new Map(current);
+        next.set(activeThreadId, trimmed);
+        return next;
+      });
     } finally {
       setIsBindingProject(false);
     }
-  }, [cwdOverride, isBindingProject, onRequestProjectBind, state.activeThread?.cwd]);
+  }, [activeThreadId, boundCwdForActiveThread, isBindingProject, onRequestProjectBind]);
 
   const sendTurn = useCallback(async (): Promise<void> => {
     const text = draftInput.trim();
@@ -232,20 +288,20 @@ export const AiPanelSurface = ({
       await sendRuntimeTurn(text, {
         model: selectedModel,
         modelProvider: defaultProviderId,
-        cwd: cwdOverride,
+        cwd: boundCwdForActiveThread,
       });
     } catch {
       setDraftInput(text);
     }
-  }, [cwdOverride, defaultProviderId, draftInput, selectedModel, sendRuntimeTurn]);
+  }, [boundCwdForActiveThread, defaultProviderId, draftInput, selectedModel, sendRuntimeTurn]);
 
-  const createThread = useCallback(async (): Promise<void> => {
-    await createRuntimeThread({
-      model: selectedModel,
-      modelProvider: defaultProviderId,
-      cwd: cwdOverride,
-    });
-  }, [createRuntimeThread, cwdOverride, defaultProviderId, selectedModel]);
+  const createThread = useCallback((): void => {
+    const requestedCwd = boundCwdForActiveThread;
+    if (requestedCwd !== null && requestedCwd.length > 0) {
+      setPendingCwdOverride(requestedCwd);
+    }
+    selectThread(null);
+  }, [boundCwdForActiveThread, selectThread]);
 
   const handlePlanApprovalDecision = useCallback(async (
     _response: PlanInteractionResponse
@@ -264,7 +320,7 @@ export const AiPanelSurface = ({
         : () => {
             void handleBindProject();
           }}
-      activeBoundProjectName={cwdOverride ?? state.activeThread?.cwd ?? null}
+      activeBoundProjectName={boundCwdForActiveThread}
       isBindingProject={isBindingProject}
       bindProjectLabel={bindProjectLabel ?? ""}
       isAgentAvailable={desktopApi?.lyra !== null && desktopApi?.lyra !== undefined}
@@ -320,6 +376,9 @@ export const AiPanelSurface = ({
             turnNoToolCallsLabel={turnNoToolCallsLabel}
             turnFailedLabel={turnFailedLabel}
             toolNameLabels={toolNameLabels}
+            toolStatusRunningLabel={toolStatusRunningLabel}
+            toolStatusCompletedLabel={toolStatusCompletedLabel}
+            toolStatusFailedLabel={toolStatusFailedLabel}
             pendingInteractionQueue={state.pendingInteractionQueue}
             canOpenFilePath={onOpenFilePath !== undefined}
             openRuntimeTargetPath={openRuntimeTargetPath}

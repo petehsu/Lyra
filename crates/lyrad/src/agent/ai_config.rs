@@ -13,6 +13,7 @@ use url::Url;
 const DEFAULT_DISCOVERY_TIMEOUT_MS: u64 = 10_000;
 const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
 const MODEL_SECRETS_FILENAME: &str = "model-secrets.v1.json";
+const LYRA_CONFIG_DIRNAME: &str = "lyra-config";
 
 type StringMap = BTreeMap<String, String>;
 
@@ -269,12 +270,33 @@ fn canonical_base_url_account(base_url: &str) -> Option<String> {
     Some(trimmed.trim_end_matches('/').to_string())
 }
 
-fn model_secrets_path(storage_root: &Path) -> PathBuf {
-    storage_root.join("lyra-config").join(MODEL_SECRETS_FILENAME)
+fn lyra_home_from_storage_root(storage_root: &Path) -> PathBuf {
+    let is_ai_module_root = storage_root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value == "ai")
+        && storage_root
+            .parent()
+            .and_then(|value| value.file_name())
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value == "modules");
+    if is_ai_module_root {
+        return storage_root
+            .parent()
+            .and_then(|value| value.parent())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| storage_root.to_path_buf());
+    }
+    storage_root.to_path_buf()
 }
 
-fn read_model_secrets_document(storage_root: &Path) -> Result<ModelSecretsDocument, RuntimeError> {
-    let path = model_secrets_path(storage_root);
+fn canonical_model_secrets_path(storage_root: &Path) -> PathBuf {
+    lyra_home_from_storage_root(storage_root)
+        .join(LYRA_CONFIG_DIRNAME)
+        .join(MODEL_SECRETS_FILENAME)
+}
+
+fn read_model_secrets_document_from_path(path: &Path) -> Result<ModelSecretsDocument, RuntimeError> {
     if !path.exists() {
         return Ok(ModelSecretsDocument {
             version: 1,
@@ -304,7 +326,7 @@ fn write_model_secrets_document(
     storage_root: &Path,
     document: &ModelSecretsDocument,
 ) -> Result<(), RuntimeError> {
-    let path = model_secrets_path(storage_root);
+    let path = canonical_model_secrets_path(storage_root);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| runtime_error("AI_SECRET_STORAGE_FAILED", error.to_string()))?;
@@ -323,7 +345,7 @@ fn read_secret_for_base_url(storage_root: &Path, base_url: Option<&str>) -> Resu
     };
     let account = canonical_base_url_account(base_url)
         .ok_or_else(|| runtime_error("AI_SECRET_STORAGE_FAILED", "baseUrl is required"))?;
-    let document = read_model_secrets_document(storage_root)?;
+    let document = read_model_secrets_document_from_path(&canonical_model_secrets_path(storage_root))?;
 
     Ok(document
         .secrets
@@ -349,7 +371,7 @@ fn write_secret_for_base_url(
 
     let account = canonical_base_url_account(base_url)
         .ok_or_else(|| runtime_error("AI_SECRET_STORAGE_FAILED", "baseUrl is required"))?;
-    let mut document = read_model_secrets_document(storage_root)?;
+    let mut document = read_model_secrets_document_from_path(&canonical_model_secrets_path(storage_root))?;
     document.version = 1;
     document.secrets.insert(account, value.to_string());
     write_model_secrets_document(storage_root, &document)
@@ -362,7 +384,7 @@ fn delete_secret_for_base_url(storage_root: &Path, base_url: Option<&str>) -> Re
 
     let account = canonical_base_url_account(base_url)
         .ok_or_else(|| runtime_error("AI_SECRET_STORAGE_FAILED", "baseUrl is required"))?;
-    let mut document = read_model_secrets_document(storage_root)?;
+    let mut document = read_model_secrets_document_from_path(&canonical_model_secrets_path(storage_root))?;
     document.secrets.remove(&account);
     write_model_secrets_document(storage_root, &document)
 }

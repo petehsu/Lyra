@@ -1,4 +1,4 @@
-import { BookText, Folder, Minus, PanelBottom, PanelLeft, Settings2, Square, X } from "lucide-react";
+import { BookText, Folder, Minus, PanelBottom, Settings2, Square, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -68,6 +68,7 @@ import {
   syncCssVarsToDocumentRoot
 } from "./service";
 import { useWorkbenchBrowserLayoutSync } from "./browser-layout-sync";
+import { TitlebarAiLaunchPill } from "./titlebar-ai-launch-pill";
 import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "./use-browser-search-model";
@@ -1558,6 +1559,20 @@ export const WorkbenchShell = () => {
     layoutLabel: t("navigation.elementPickerLayout")
   });
 
+  const aiLaunchVerbs = useMemo<readonly string[]>(
+    () => [
+      t("ai.launchVerbDiscuss"),
+      t("ai.launchVerbCode"),
+      t("ai.launchVerbThink"),
+      t("ai.launchVerbExplore"),
+      t("ai.launchVerbBuild"),
+      t("ai.launchVerbDebug"),
+      t("ai.launchVerbCollaborate"),
+      t("ai.launchVerbChat")
+    ],
+    [t]
+  );
+
   const activeEditorReviewIndex = useMemo(
     () => editorReviewItems.findIndex((item) => item.id === activeEditorReviewId),
     [activeEditorReviewId, editorReviewItems]
@@ -2185,13 +2200,6 @@ export const WorkbenchShell = () => {
           />
           <button
             className="lyra-window-button"
-            aria-label={t("panel.toggleLeft")}
-            onClick={panelLayoutModel.toggleLeftPanel}
-          >
-            <PanelLeft size={14} />
-          </button>
-          <button
-            className="lyra-window-button"
             aria-label={t("panel.toggleBottom")}
             onClick={panelLayoutModel.toggleBottomPanel}
           >
@@ -2236,6 +2244,14 @@ export const WorkbenchShell = () => {
           >
             <BookText size={14} />
           </button>
+          <TitlebarAiLaunchPill
+            isOpen={panelLayoutModel.isLeftPanelVisible}
+            onToggle={panelLayoutModel.toggleLeftPanel}
+            logoUrl={LOGO_URL}
+            prefix={t("ai.launchPrefix")}
+            verbs={aiLaunchVerbs}
+            ariaLabel={t("panel.toggleLeft")}
+          />
           {isMac ? null : (
             <>
               <button
@@ -2575,13 +2591,32 @@ export const WorkbenchShell = () => {
                 newConversationLabel: t("ai.newConversation"),
                 openConversationLabel: t("ai.openConversation"),
                 deleteConversationLabel: t("ai.deleteConversation"),
+                archiveConversationLabel: t("ai.archiveConversation"),
+                archivedConversationLabel: t("ai.historyArchivedConversations"),
+                archivedProjectLabel: t("ai.historyArchivedProjects"),
+                deleteArchivedConversationTitle: t("ai.deleteArchivedConversationTitle"),
+                deleteArchivedConversationDescription: t("ai.deleteArchivedConversationDescription"),
+                deleteArchivedConversationConfirm: t("ai.deleteArchivedConversationConfirm"),
+                deleteArchivedConversationCancel: t("ai.deleteArchivedConversationCancel"),
                 profileLabel: t("ai.profileLabel"),
                 sessionIdLabel: t("ai.historySessionIdLabel"),
                 loadingSessionsLabel: t("ai.historyLoadingSessions"),
                 emptyStateTitle: t("settings.aiEmptyTitle"),
                 emptyStateDescription: t("settings.aiEmptyDescription"),
+                scopeGlobalLabel: t("ai.historyScopeGlobal"),
+                scopeProjectLabel: t("ai.historyScopeProject"),
+                noProjectSessionsEmptyLabel: t("ai.historyNoProjectSessionsEmpty"),
+                noProjectsEmptyLabel: t("ai.historyNoProjectsEmpty"),
+                projectSessionCountLabel: t("ai.historyProjectSessionCount"),
+                backToProjectsLabel: t("ai.historyBackToProjects"),
+                projectPathLabel: t("ai.historyProjectPathLabel"),
+                threadPreviewEmptyLabel: t("ai.historyThreadPreviewEmpty"),
+                previewEmptyTitle: t("ai.historyPreviewEmptyTitle"),
+                previewEmptyDescription: t("ai.historyPreviewEmptyDescription"),
+                previewLoadingLabel: t("ai.historyPreviewLoading"),
                 defaultProfileId: settingsAiModel.defaultProfileId,
-                defaultProviderId: settingsAiModel.defaultProviderId
+                defaultProviderId: settingsAiModel.defaultProviderId,
+                openDialog: globalDialogModel.openDialog
               }}
               notifications={{
                 model: notificationModel,

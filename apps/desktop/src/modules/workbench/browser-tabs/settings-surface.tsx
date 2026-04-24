@@ -392,18 +392,65 @@ export const BrowserSettingsSurface = ({
                       className={`lyra-settings-terminal-preview ${buildTerminalThemePreviewClassName(option.value)}`}
                       aria-hidden="true"
                     >
-                      <i className="lyra-settings-terminal-preview-line">
-                        <em />
-                        <em />
-                        <em />
-                        <em />
-                      </i>
-                      <i className="lyra-settings-terminal-preview-line lyra-settings-terminal-preview-line-secondary">
-                        <em />
-                        <em />
-                        <em />
-                        <em />
-                      </i>
+                      {option.value === "follow-app" ? (
+                        <>
+                          <div className="lyra-settings-terminal-preview-line">
+                            <span className="lyra-term-seg-1">petehsu</span>
+                            <span className="lyra-term-seg-2">~/Documents/Lyra</span>
+                          </div>
+                          <div className="lyra-settings-terminal-preview-line lyra-settings-terminal-preview-line-secondary">
+                            <span className="lyra-term-seg-3">❯</span>
+                            <span className="lyra-term-seg-4">npm run build</span>
+                          </div>
+                        </>
+                      ) : option.value === "lyra-minimal" ? (
+                        <>
+                          <div className="lyra-settings-terminal-preview-line">
+                            <span className="lyra-term-seg-1">~/Lyra</span>
+                            <span className="lyra-term-seg-2">❯</span>
+                          </div>
+                        </>
+                      ) : option.value === "lyra-standard" ? (
+                        <>
+                          <div className="lyra-settings-terminal-preview-line">
+                            <span className="lyra-term-seg-1">petehsu</span>
+                            <span className="lyra-term-seg-2"> ~/Lyra</span>
+                            <span className="lyra-term-seg-3"> main</span>
+                          </div>
+                          <div className="lyra-settings-terminal-preview-line lyra-settings-terminal-preview-line-secondary">
+                            <span className="lyra-term-seg-4">❯</span>
+                          </div>
+                        </>
+                      ) : option.value === "lyra-rich" ? (
+                        <>
+                          <div className="lyra-settings-terminal-preview-line">
+                            <span className="lyra-term-seg-1">petehsu</span>
+                            <span className="lyra-term-seg-2"> ~/Lyra</span>
+                            <span className="lyra-term-seg-3"> main</span>
+                          </div>
+                          <div className="lyra-settings-terminal-preview-line lyra-settings-terminal-preview-line-secondary">
+                            <span className="lyra-term-seg-4"> 10:26:03</span>
+                          </div>
+                          <div className="lyra-settings-terminal-preview-line">
+                            <span className="lyra-term-seg-2">❯</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="lyra-settings-terminal-preview-line">
+                            <span className="lyra-term-seg-1">petehsu</span>
+                            <span className="lyra-term-seg-2"> ~/Lyra</span>
+                            <span className="lyra-term-seg-3"> main</span>
+                          </div>
+                          <div className="lyra-settings-terminal-preview-line lyra-settings-terminal-preview-line-secondary">
+                            <span className="lyra-term-seg-4"> 10:26:03</span>
+                            <span className="lyra-term-seg-1">[code:0 dur:0s]</span>
+                          </div>
+                          <div className="lyra-settings-terminal-preview-line">
+                            <span className="lyra-term-seg-2">❯</span>
+                          </div>
+                        </>
+                      )}
                     </span>
                     <span className="lyra-settings-choice-main">
                       <strong>{option.label}</strong>

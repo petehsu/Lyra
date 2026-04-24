@@ -10,7 +10,6 @@ import type { ActiveInteractionPanel } from "./interaction/pending-interaction-m
 import {
   buildTurnTimelineItems,
   mergeRuntimeFeedItem,
-  normalizeToolName,
   toPersistedRuntimeFeedItem,
   toRuntimeFeedItem,
   type AgentRuntimeFeedItem,
@@ -18,10 +17,8 @@ import {
   type ToolNameLabelMap,
 } from "./runtime/feed-utils";
 import {
-  isRecord,
   normalizeStreamingStatusLabel,
   pickMostRecentRuntimeEvent,
-  pickString,
   resolveAssistantDisplayContent,
   sortByTime,
   type DisplayMessage,
@@ -32,15 +29,14 @@ import {
 const FEED_ITEM_LIMIT = 48;
 
 type RuntimeStatusLabels = {
-  readonly runtimeRunningPrefix: string;
-  readonly pendingInteractions: string;
-  readonly waitingPhraseFinalizingReply: string;
-  readonly runtimeFailedTurn: string;
   readonly runtimeQueued: string;
   readonly runtimeStarted: string;
+  readonly runtimeCompletedTurn: string;
+  readonly runtimeFailedTurn: string;
   readonly runtimePhaseToolStarted: string;
   readonly runtimePhaseToolFinished: string;
   readonly generatingReply: string;
+  readonly pendingInteractions: string;
 };
 
 type UseAiPanelThreadViewModelParams = {
@@ -109,9 +105,24 @@ export const useAiPanelThreadViewModel = ({
     return visible;
   }, [persistedMessages]);
 
+  const displayOptimisticUserMessages = useMemo(() => {
+    const persistedUserTurnIds = new Set<string>();
+    for (const message of persistedMessages) {
+      if (message.role === "user" && typeof message.turnId === "string") {
+        persistedUserTurnIds.add(message.turnId);
+      }
+    }
+    if (persistedUserTurnIds.size === 0) {
+      return optimisticUserMessages;
+    }
+    return optimisticUserMessages.filter(
+      (message) => message.turnId === undefined || !persistedUserTurnIds.has(message.turnId)
+    );
+  }, [optimisticUserMessages, persistedMessages]);
+
   const sortedMessages = useMemo<readonly DisplayMessage[]>(
-    () => sortByTime([...persistedMessages, ...optimisticUserMessages]),
-    [optimisticUserMessages, persistedMessages]
+    () => sortByTime([...persistedMessages, ...displayOptimisticUserMessages]),
+    [displayOptimisticUserMessages, persistedMessages]
   );
 
   const assistantMessageOrderById = useMemo(() => {
@@ -279,9 +290,7 @@ export const useAiPanelThreadViewModel = ({
         .find((item) => item.status === "running") ?? null;
       if (runningTool !== null) {
         return {
-          label: normalizeStreamingStatusLabel(
-            `${labels.runtimeRunningPrefix} ${runningTool.toolLabel}`
-          ),
+          label: normalizeStreamingStatusLabel(labels.runtimePhaseToolStarted),
           tone: "running",
         };
       }
@@ -299,7 +308,7 @@ export const useAiPanelThreadViewModel = ({
         && !persistedAssistantDisplayByTurn.has(finalizingTurnId)
       ) {
         return {
-          label: normalizeStreamingStatusLabel(labels.waitingPhraseFinalizingReply),
+          label: normalizeStreamingStatusLabel(labels.generatingReply),
           tone: "running",
         };
       }
@@ -313,8 +322,8 @@ export const useAiPanelThreadViewModel = ({
       }
       if (phase === "completed") {
         return {
-          label: normalizeStreamingStatusLabel(labels.waitingPhraseFinalizingReply),
-          tone: "running",
+          label: normalizeStreamingStatusLabel(labels.runtimeCompletedTurn),
+          tone: "completed",
         };
       }
       if (
@@ -334,7 +343,7 @@ export const useAiPanelThreadViewModel = ({
       if (phase === "accepted") {
         return {
           label: normalizeStreamingStatusLabel(labels.runtimeQueued),
-          tone: "running",
+          tone: "waiting",
         };
       }
       if (phase === "started") {
@@ -344,18 +353,8 @@ export const useAiPanelThreadViewModel = ({
         };
       }
       if (phase === "tool_started" || phase === "tool_progress") {
-        const payload = isRecord(streamingRuntimeEvent?.payload) ? streamingRuntimeEvent.payload : {};
-        const phaseToolName = pickString(payload, "toolName");
-        const phaseToolLabel =
-          phaseToolName === null
-            ? null
-            : normalizeToolName(phaseToolName, toolNameLabels);
         return {
-          label: normalizeStreamingStatusLabel(
-            phaseToolLabel === null
-              ? labels.runtimePhaseToolStarted
-              : `${labels.runtimeRunningPrefix} ${phaseToolLabel}`
-          ),
+          label: normalizeStreamingStatusLabel(labels.runtimePhaseToolStarted),
           tone: "running",
         };
       }
@@ -379,12 +378,12 @@ export const useAiPanelThreadViewModel = ({
       if (isSending) {
         return {
           label: normalizeStreamingStatusLabel(labels.runtimeQueued),
-          tone: "running",
+          tone: "waiting",
         };
       }
       if (streamingTurnId !== null) {
         return {
-          label: normalizeStreamingStatusLabel(labels.runtimeStarted),
+          label: normalizeStreamingStatusLabel(labels.generatingReply),
           tone: "running",
         };
       }
@@ -398,19 +397,17 @@ export const useAiPanelThreadViewModel = ({
       isStreamActive,
       labels.generatingReply,
       labels.pendingInteractions,
-      labels.runtimeFailedTurn,
+      labels.runtimeCompletedTurn,
       labels.runtimePhaseToolFinished,
       labels.runtimePhaseToolStarted,
       labels.runtimeQueued,
-      labels.runtimeRunningPrefix,
+      labels.runtimeFailedTurn,
       labels.runtimeStarted,
-      labels.waitingPhraseFinalizingReply,
       persistedAssistantDisplayByTurn,
       streamingAssistantText.length,
       streamingRuntimeEvent,
       streamingTurnId,
       streamingTurnRuntimeFeed,
-      toolNameLabels,
     ]
   );
 

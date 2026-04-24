@@ -28,16 +28,16 @@ afterEach(() => {
 
 describe("workbench theme service", () => {
   test("validates supported theme ids", () => {
-    expect(isWorkbenchThemeId("one-dark")).toBe(true);
-    expect(isWorkbenchThemeId("ayu-system")).toBe(true);
+    expect(isWorkbenchThemeId("lyra-dark")).toBe(true);
+    expect(isWorkbenchThemeId("nova-system")).toBe(true);
     expect(isWorkbenchThemeId("foo-theme")).toBe(false);
   });
 
   test("resolves *-system themes by prefersDark", () => {
-    expect(resolveWorkbenchThemeId("one-system", true)).toBe("one-dark");
-    expect(resolveWorkbenchThemeId("one-system", false)).toBe("one-light");
-    expect(resolveWorkbenchThemeId("gruvbox-system", true)).toBe("gruvbox-dark");
-    expect(resolveWorkbenchThemeId("gruvbox-system", false)).toBe("gruvbox-light");
+    expect(resolveWorkbenchThemeId("lyra-system", true)).toBe("lyra-dark");
+    expect(resolveWorkbenchThemeId("lyra-system", false)).toBe("lyra-light");
+    expect(resolveWorkbenchThemeId("terra-system", true)).toBe("terra-dark");
+    expect(resolveWorkbenchThemeId("terra-system", false)).toBe("terra-light");
   });
 
   test("readSystemPrefersDark returns false when matchMedia is unavailable", () => {
@@ -101,15 +101,15 @@ describe("workbench theme service", () => {
     expect(listeners).toHaveLength(0);
   });
 
-  test("resolveThemeVars falls back to one-light vars for unknown theme", () => {
-    const fallback = resolveThemeVars("one-light", false);
+  test("resolveThemeVars falls back to lyra-light vars for unknown theme", () => {
+    const fallback = resolveThemeVars("lyra-light", false);
     const unknown = resolveThemeVars("unknown-theme" as never, false);
     expect(unknown).toEqual(fallback);
     expect(Object.keys(unknown).length).toBeGreaterThan(0);
   });
 
   test("resolveThemeVars includes foundation and semantic tokens", () => {
-    const vars = resolveThemeVars("one-light", false);
+    const vars = resolveThemeVars("lyra-light", false);
     expect(vars["--lyra-shell-titlebar-h"]).toBe("var(--lyra-control-h-34)");
     expect(vars["--lyra-control-h-default"]).toBe("var(--lyra-control-h-32)");
     expect(vars["--lyra-font-sans"]).toContain("IBM Plex Sans");
