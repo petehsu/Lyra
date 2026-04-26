@@ -4,11 +4,9 @@ use crate::session::turn_context::TurnContext;
 use crate::shell::Shell;
 use lyra_execpolicy::Policy;
 use lyra_features::Feature;
-use lyra_protocol::config_types::Personality;
 use lyra_protocol::models::ContentItem;
 use lyra_protocol::models::DeveloperInstructions;
 use lyra_protocol::models::ResponseItem;
-use lyra_protocol::openai_models::ModelInfo;
 use lyra_protocol::protocol::TurnContextItem;
 
 fn build_environment_update_item(
@@ -86,11 +84,7 @@ pub(crate) fn build_realtime_update_item(
     ) {
         (Some(true), false) => Some(DeveloperInstructions::realtime_end_message("inactive")),
         (Some(false), true) | (None, true) => Some(
-            if let Some(instructions) = next
-                .config
-                .experimental_realtime_start_instructions
-                .as_deref()
-            {
+            if let Some(instructions) = next.config.realtime_start_instructions.as_deref() {
                 DeveloperInstructions::realtime_start_message_with_instructions(instructions)
             } else {
                 DeveloperInstructions::realtime_start_message()
@@ -112,41 +106,6 @@ pub(crate) fn build_initial_realtime_item(
     build_realtime_update_item(previous, previous_turn_settings, next)
 }
 
-fn build_personality_update_item(
-    previous: Option<&TurnContextItem>,
-    next: &TurnContext,
-    personality_feature_enabled: bool,
-) -> Option<DeveloperInstructions> {
-    if !personality_feature_enabled {
-        return None;
-    }
-    let previous = previous?;
-    if next.model_info.slug != previous.model {
-        return None;
-    }
-
-    if let Some(personality) = next.personality
-        && next.personality != previous.personality
-    {
-        let model_info = &next.model_info;
-        let personality_message = personality_message_for(model_info, personality);
-        personality_message.map(DeveloperInstructions::personality_spec_message)
-    } else {
-        None
-    }
-}
-
-pub(crate) fn personality_message_for(
-    model_info: &ModelInfo,
-    personality: Personality,
-) -> Option<String> {
-    model_info
-        .model_messages
-        .as_ref()
-        .and_then(|spec| spec.get_personality_message(Some(personality)))
-        .filter(|message| !message.is_empty())
-}
-
 pub(crate) fn build_model_instructions_update_item(
     previous_turn_settings: Option<&PreviousTurnSettings>,
     next: &TurnContext,
@@ -156,7 +115,7 @@ pub(crate) fn build_model_instructions_update_item(
         return None;
     }
 
-    let model_instructions = next.model_info.get_model_instructions(next.personality);
+    let model_instructions = next.model_info.get_model_instructions();
     if model_instructions.is_empty() {
         return None;
     }
@@ -199,7 +158,6 @@ pub(crate) fn build_settings_update_items(
     next: &TurnContext,
     shell: &Shell,
     exec_policy: &Policy,
-    personality_feature_enabled: bool,
 ) -> Vec<ResponseItem> {
     // TODO(ccunningham): build_settings_update_items still does not cover every
     // model-visible item emitted by build_initial_context. Persist the remaining
@@ -213,7 +171,6 @@ pub(crate) fn build_settings_update_items(
         build_permissions_update_item(previous, next, exec_policy),
         build_collaboration_mode_update_item(previous, next),
         build_realtime_update_item(previous, previous_turn_settings, next),
-        build_personality_update_item(previous, next, personality_feature_enabled),
     ]
     .into_iter()
     .flatten()

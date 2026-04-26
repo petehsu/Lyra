@@ -127,10 +127,21 @@ export const useAiPanelThreadViewModel = ({
 
   const assistantMessageOrderById = useMemo(() => {
     const map = new Map<string, number>();
+    const countedTurns = new Set<string>();
     let assistantIndex = 0;
     for (const message of sortedMessages) {
       if (message.role !== "assistant") {
         continue;
+      }
+      const turnId =
+        "turnId" in message && typeof message.turnId === "string"
+          ? message.turnId
+          : null;
+      if (turnId !== null) {
+        if (countedTurns.has(turnId)) {
+          continue;
+        }
+        countedTurns.add(turnId);
       }
       assistantIndex += 1;
       map.set(message.id, assistantIndex);
@@ -233,25 +244,72 @@ export const useAiPanelThreadViewModel = ({
 
   const turnTimelineByTurn = useMemo(() => {
     const map = new Map<string, readonly AgentTurnTimelineItem[]>();
+    const assistantMessagesByTurn = new Map<string, DisplayMessage[]>();
     for (const message of persistedMessages) {
       if (message.role !== "assistant" || typeof message.turnId !== "string") {
         continue;
       }
-      if (map.has(message.turnId)) {
+      const current = assistantMessagesByTurn.get(message.turnId);
+      if (current === undefined) {
+        assistantMessagesByTurn.set(message.turnId, [message]);
+      } else {
+        current.push(message);
+      }
+    }
+    for (const [turnId, messages] of assistantMessagesByTurn.entries()) {
+      const runtimeEvents = runtimeEventsByTurn.get(turnId) ?? [];
+      const runtimeFeedItems = runtimeFeedByTurn.get(turnId) ?? [];
+      const hasAssistantDeltaEvents = runtimeEvents.some((event) => event.phase === "assistant_delta");
+      const sortedAssistantMessages = sortByTime(messages);
+
+      if (hasAssistantDeltaEvents) {
+        const finalMessage = sortedAssistantMessages.at(-1);
+        map.set(
+          turnId,
+          buildTurnTimelineItems({
+            turnId,
+            messageContent: finalMessage === undefined ? "" : resolveAssistantDisplayContent(finalMessage),
+            messageCreatedAt: finalMessage?.createdAt ?? Date.now(),
+            runtimeEvents,
+            runtimeFeedItems,
+            toolNameLabels,
+            runtimeToolFallbackLabel,
+          })
+        );
         continue;
       }
-      map.set(
-        message.turnId,
-        buildTurnTimelineItems({
-          turnId: message.turnId,
-          messageContent: resolveAssistantDisplayContent(message),
-          messageCreatedAt: message.createdAt,
-          runtimeEvents: runtimeEventsByTurn.get(message.turnId) ?? [],
-          runtimeFeedItems: runtimeFeedByTurn.get(message.turnId) ?? [],
-          toolNameLabels,
-          runtimeToolFallbackLabel,
-        })
-      );
+
+      const timelineItems: AgentTurnTimelineItem[] = [];
+      for (const message of sortedAssistantMessages) {
+        const content = resolveAssistantDisplayContent(message);
+        if (content.trim().length === 0) {
+          continue;
+        }
+        timelineItems.push({
+          kind: "assistant",
+          id: message.id,
+          timestamp: message.createdAt,
+          content,
+        });
+      }
+      for (const item of runtimeFeedItems) {
+        timelineItems.push({
+          kind: "tool",
+          id: `tool-${item.id}`,
+          timestamp: item.timestamp,
+          tool: item,
+        });
+      }
+      timelineItems.sort((left, right) => {
+        if (left.timestamp !== right.timestamp) {
+          return left.timestamp - right.timestamp;
+        }
+        if (left.kind === right.kind) {
+          return left.id.localeCompare(right.id);
+        }
+        return left.kind === "assistant" ? -1 : 1;
+      });
+      map.set(turnId, timelineItems);
     }
     return map;
   }, [
@@ -263,11 +321,19 @@ export const useAiPanelThreadViewModel = ({
   ]);
 
   const streamingTurnRuntimeFeed = useMemo<readonly AgentRuntimeFeedItem[]>(
-    () =>
-      streamingTurnId === null
-        ? []
-        : (runtimeFeedByTurn.get(streamingTurnId) ?? []),
-    [runtimeFeedByTurn, streamingTurnId]
+    () => {
+      if (streamingTurnId === null) {
+        return [];
+      }
+      if (
+        streamingAssistantText.length === 0
+        && persistedAssistantDisplayByTurn.has(streamingTurnId)
+      ) {
+        return [];
+      }
+      return runtimeFeedByTurn.get(streamingTurnId) ?? [];
+    },
+    [persistedAssistantDisplayByTurn, runtimeFeedByTurn, streamingAssistantText.length, streamingTurnId]
   );
 
   const streamingRuntimeEvent = useMemo<AgentRuntimeEvent | null>(
@@ -285,6 +351,13 @@ export const useAiPanelThreadViewModel = ({
 
   const streamingStatus = useMemo<StreamStatusItem | null>(
     () => {
+      if (
+        streamingTurnId !== null
+        && streamingAssistantText.length === 0
+        && persistedAssistantDisplayByTurn.has(streamingTurnId)
+      ) {
+        return null;
+      }
       const runningTool = [...streamingTurnRuntimeFeed]
         .reverse()
         .find((item) => item.status === "running") ?? null;

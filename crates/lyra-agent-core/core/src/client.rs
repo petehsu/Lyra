@@ -79,6 +79,7 @@ use lyra_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use lyra_protocol::config_types::ServiceTier;
 use lyra_protocol::config_types::Verbosity as VerbosityConfig;
 use lyra_protocol::models::ContentItem;
+use lyra_protocol::models::ReasoningItemContent;
 use lyra_protocol::models::ResponseItem;
 use lyra_protocol::openai_models::ModelInfo;
 use lyra_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -133,7 +134,6 @@ pub const X_LYRA_TURN_STATE_HEADER: &str = "x-lyra-turn-state";
 pub const X_LYRA_TURN_METADATA_HEADER: &str = "x-lyra-turn-metadata";
 pub const X_LYRA_PARENT_THREAD_ID_HEADER: &str = "x-lyra-parent-thread-id";
 pub const X_LYRA_WINDOW_ID_HEADER: &str = "x-lyra-window-id";
-pub const X_LYRA_BETA_FEATURES_HEADER: &str = "x-lyra-beta-features";
 pub const X_LYRA_SUBAGENT_HEADER: &str = "x-lyra-subagent";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
@@ -159,7 +159,6 @@ struct ModelClientState {
     model_verbosity: Option<VerbosityConfig>,
     enable_request_compression: bool,
     include_timing_metrics: bool,
-    beta_features_header: Option<String>,
     disable_websockets: AtomicBool,
     cached_websocket_session: StdMutex<WebsocketSession>,
 }
@@ -279,6 +278,7 @@ struct ProviderFunctionCall {
 #[derive(Debug, Clone, Default)]
 struct ProviderResponsePayload {
     assistant_text: String,
+    reasoning_content: Option<String>,
     function_calls: Vec<ProviderFunctionCall>,
     token_usage: Option<TokenUsage>,
     response_id: String,
@@ -318,6 +318,23 @@ fn response_stream_from_provider_payload(payload: ProviderResponsePayload) -> Re
     let (tx, rx_event) = mpsc::channel::<Result<ResponseEvent>>(64);
     tokio::spawn(async move {
         if tx.send(Ok(ResponseEvent::Created)).await.is_err() {
+            return;
+        }
+
+        if let Some(reasoning_content) = payload.reasoning_content
+            && !reasoning_content.trim().is_empty()
+            && tx
+                .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Reasoning {
+                    id: format!("{}-reasoning", payload.response_id),
+                    summary: Vec::new(),
+                    content: Some(vec![ReasoningItemContent::ReasoningText {
+                        text: reasoning_content,
+                    }]),
+                    encrypted_content: None,
+                })))
+                .await
+                .is_err()
+        {
             return;
         }
 
@@ -409,6 +426,20 @@ fn default_tool_input_schema() -> JsonValue {
         "type": "object",
         "properties": {},
         "additionalProperties": true
+    })
+}
+
+fn freeform_tool_input_schema() -> JsonValue {
+    json!({
+        "type": "object",
+        "properties": {
+            "input": {
+                "type": "string",
+                "description": "Raw freeform tool input. For apply_patch this must be the complete patch text, starting with *** Begin Patch and ending with *** End Patch."
+            }
+        },
+        "required": ["input"],
+        "additionalProperties": false
     })
 }
 
@@ -513,8 +544,11 @@ fn build_tool_mappings(tools: &[ToolSpec]) -> ToolMappings {
                 register_descriptor(
                     tool.name.clone(),
                     None,
-                    tool.description.clone(),
-                    default_tool_input_schema(),
+                    format!(
+                        "{} For this Chat Completions provider, call it as a JSON function with exactly one string field: input.",
+                        tool.description
+                    ),
+                    freeform_tool_input_schema(),
                 );
             }
         }
@@ -660,59 +694,161 @@ fn gemini_generate_content_endpoint(base_url: &str, model: &str) -> String {
     }
 }
 
+fn reasoning_content_text(content: &[ReasoningItemContent]) -> Option<String> {
+    let text = content
+        .iter()
+        .filter_map(|item| match item {
+            ReasoningItemContent::ReasoningText { text } | ReasoningItemContent::Text { text } => {
+                Some(text.trim())
+            }
+        })
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.is_empty() { None } else { Some(text) }
+}
+
+fn push_pending_reasoning_content(
+    pending_reasoning_content: &mut Option<String>,
+    content: &[ReasoningItemContent],
+) {
+    let Some(text) = reasoning_content_text(content) else {
+        return;
+    };
+    match pending_reasoning_content {
+        Some(existing) if !existing.trim().is_empty() => {
+            existing.push('\n');
+            existing.push_str(&text);
+        }
+        _ => *pending_reasoning_content = Some(text),
+    }
+}
+
+fn chat_tool_call_item(item: &ResponseItem) -> Option<JsonValue> {
+    match item {
+        ResponseItem::FunctionCall {
+            name,
+            namespace,
+            call_id,
+            arguments,
+            ..
+        } => Some(json!({
+            "id": call_id,
+            "type": "function",
+            "function": {
+                "name": canonical_tool_key(namespace.as_deref(), name).replace(':', "_"),
+                "arguments": arguments,
+            },
+        })),
+        ResponseItem::CustomToolCall {
+            call_id,
+            name,
+            input,
+            ..
+        } => Some(json!({
+            "id": call_id,
+            "type": "function",
+            "function": {
+                "name": sanitize_tool_name(name),
+                "arguments": input,
+            },
+        })),
+        _ => None,
+    }
+}
+
+fn push_chat_assistant_message(
+    messages: &mut Vec<JsonValue>,
+    content: Option<String>,
+    tool_calls: Vec<JsonValue>,
+    pending_reasoning_content: &mut Option<String>,
+) {
+    let content_value = content
+        .filter(|content| !content.trim().is_empty())
+        .map(JsonValue::String)
+        .unwrap_or(JsonValue::Null);
+    let mut message = json!({
+        "role": "assistant",
+        "content": content_value,
+    });
+    if let Some(object) = message.as_object_mut() {
+        if !tool_calls.is_empty() {
+            object.insert("tool_calls".to_string(), JsonValue::Array(tool_calls));
+        }
+        if let Some(reasoning_content) = pending_reasoning_content
+            .take()
+            .filter(|value| !value.trim().is_empty())
+        {
+            object.insert(
+                "reasoning_content".to_string(),
+                JsonValue::String(reasoning_content),
+            );
+        }
+    }
+    messages.push(message);
+}
+
 fn build_chat_messages(input: &[ResponseItem]) -> Vec<JsonValue> {
     let mut messages = Vec::new();
+    let mut pending_reasoning_content: Option<String> = None;
+    let mut index = 0;
 
-    for item in input {
-        match item {
-            ResponseItem::Message { role, content, .. } if role == "system" => {}
-            ResponseItem::Message { role, content, .. }
-                if role == "user" || role == "assistant" =>
-            {
+    while index < input.len() {
+        match &input[index] {
+            ResponseItem::Reasoning {
+                content: Some(content),
+                ..
+            } => {
+                push_pending_reasoning_content(&mut pending_reasoning_content, content);
+                index += 1;
+            }
+            ResponseItem::Message { role, .. } if role == "system" => {
+                index += 1;
+            }
+            ResponseItem::Message { role, content, .. } if role == "user" => {
                 let text = crate::content_items::content_items_to_text(content).unwrap_or_default();
                 messages.push(json!({
                     "role": role,
                     "content": text,
                 }));
+                index += 1;
             }
-            ResponseItem::FunctionCall {
-                name,
-                namespace,
-                call_id,
-                arguments,
-                ..
-            } => {
-                messages.push(json!({
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": call_id,
-                        "type": "function",
-                        "function": {
-                            "name": canonical_tool_key(namespace.as_deref(), name).replace(':', "_"),
-                            "arguments": arguments,
-                        },
-                    }],
-                }));
+            ResponseItem::Message { role, content, .. } if role == "assistant" => {
+                let text = crate::content_items::content_items_to_text(content).unwrap_or_default();
+                let mut tool_calls = Vec::new();
+                let mut cursor = index + 1;
+                while cursor < input.len() {
+                    if let Some(tool_call) = chat_tool_call_item(&input[cursor]) {
+                        tool_calls.push(tool_call);
+                        cursor += 1;
+                    } else {
+                        break;
+                    }
+                }
+                push_chat_assistant_message(
+                    &mut messages,
+                    Some(text),
+                    tool_calls,
+                    &mut pending_reasoning_content,
+                );
+                index = cursor;
             }
-            ResponseItem::CustomToolCall {
-                call_id,
-                name,
-                input,
-                ..
-            } => {
-                messages.push(json!({
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": call_id,
-                        "type": "function",
-                        "function": {
-                            "name": sanitize_tool_name(name),
-                            "arguments": input,
-                        },
-                    }],
-                }));
+            item if chat_tool_call_item(item).is_some() => {
+                let mut tool_calls = Vec::new();
+                while index < input.len() {
+                    if let Some(tool_call) = chat_tool_call_item(&input[index]) {
+                        tool_calls.push(tool_call);
+                        index += 1;
+                    } else {
+                        break;
+                    }
+                }
+                push_chat_assistant_message(
+                    &mut messages,
+                    None,
+                    tool_calls,
+                    &mut pending_reasoning_content,
+                );
             }
             ResponseItem::FunctionCallOutput { call_id, output }
             | ResponseItem::CustomToolCallOutput {
@@ -723,8 +859,11 @@ fn build_chat_messages(input: &[ResponseItem]) -> Vec<JsonValue> {
                     "tool_call_id": call_id,
                     "content": function_output_text(output),
                 }));
+                index += 1;
             }
-            _ => {}
+            _ => {
+                index += 1;
+            }
         }
     }
 
@@ -758,6 +897,11 @@ fn parse_chat_completions_payload(
         .and_then(JsonValue::as_str)
         .unwrap_or_default()
         .to_string();
+    let reasoning_content = message
+        .and_then(|message| message.get("reasoning_content"))
+        .and_then(JsonValue::as_str)
+        .map(ToOwned::to_owned)
+        .filter(|content| !content.trim().is_empty());
     let mut function_calls = Vec::new();
 
     if let Some(tool_calls) = message
@@ -802,6 +946,7 @@ fn parse_chat_completions_payload(
 
     ProviderResponsePayload {
         assistant_text,
+        reasoning_content,
         function_calls,
         token_usage,
         response_id,
@@ -973,6 +1118,7 @@ fn parse_anthropic_response_payload(
         .unwrap_or_else(|| "anthropic-response".to_string());
     ProviderResponsePayload {
         assistant_text,
+        reasoning_content: None,
         function_calls,
         token_usage,
         response_id,
@@ -1157,6 +1303,7 @@ fn parse_gemini_response_payload(
         .unwrap_or_else(|| "gemini-response".to_string());
     ProviderResponsePayload {
         assistant_text,
+        reasoning_content: None,
         function_calls,
         token_usage,
         response_id,
@@ -1198,7 +1345,6 @@ impl ModelClient {
         model_verbosity: Option<VerbosityConfig>,
         enable_request_compression: bool,
         include_timing_metrics: bool,
-        beta_features_header: Option<String>,
     ) -> Self {
         let model_provider = create_model_provider(provider_info, auth_manager);
         let lyra_api_key_env_enabled = model_provider
@@ -1218,7 +1364,6 @@ impl ModelClient {
                 model_verbosity,
                 enable_request_compression,
                 include_timing_metrics,
-                beta_features_header,
                 disable_websockets: AtomicBool::new(false),
                 cached_websocket_session: StdMutex::new(WebsocketSession::default()),
             }),
@@ -1564,11 +1709,7 @@ impl ModelClient {
     ) -> ApiHeaderMap {
         let turn_metadata_header = parse_turn_metadata_header(turn_metadata_header);
         let conversation_id = self.state.conversation_id.to_string();
-        let mut headers = build_responses_headers(
-            self.state.beta_features_header.as_deref(),
-            turn_state,
-            turn_metadata_header.as_ref(),
-        );
+        let mut headers = build_responses_headers(turn_state, turn_metadata_header.as_ref());
         if let Ok(header_value) = HeaderValue::from_str(&conversation_id) {
             headers.insert("x-client-request-id", header_value);
         }
@@ -1662,11 +1803,7 @@ impl ModelClientSession {
             store: provider.is_azure_responses_endpoint(),
             stream: true,
             include,
-            service_tier: match service_tier {
-                Some(ServiceTier::Fast) => Some("priority".to_string()),
-                Some(service_tier) => Some(service_tier.to_string()),
-                None => None,
-            },
+            service_tier: service_tier.map(|service_tier| service_tier.to_string()),
             prompt_cache_key,
             text,
             client_metadata: Some(HashMap::from([(
@@ -1693,11 +1830,8 @@ impl ModelClientSession {
             conversation_id: Some(conversation_id),
             session_source: Some(self.client.state.session_source.clone()),
             extra_headers: {
-                let mut headers = build_responses_headers(
-                    self.client.state.beta_features_header.as_deref(),
-                    Some(&self.turn_state),
-                    turn_metadata_header.as_ref(),
-                );
+                let mut headers =
+                    build_responses_headers(Some(&self.turn_state), turn_metadata_header.as_ref());
                 headers.extend(self.client.build_responses_identity_headers());
                 headers
             },
@@ -2635,21 +2769,13 @@ fn parse_turn_metadata_header(turn_metadata_header: Option<&str>) -> Option<Head
 ///
 /// These headers implement Lyra-specific conventions:
 ///
-/// - `x-lyra-beta-features`: comma-separated beta feature keys enabled for the session.
 /// - `x-lyra-turn-state`: sticky routing token captured earlier in the turn.
 /// - `x-lyra-turn-metadata`: optional per-turn metadata for observability.
 fn build_responses_headers(
-    beta_features_header: Option<&str>,
     turn_state: Option<&Arc<OnceLock<String>>>,
     turn_metadata_header: Option<&HeaderValue>,
 ) -> ApiHeaderMap {
     let mut headers = ApiHeaderMap::new();
-    if let Some(value) = beta_features_header
-        && !value.is_empty()
-        && let Ok(header_value) = HeaderValue::from_str(value)
-    {
-        headers.insert(X_LYRA_BETA_FEATURES_HEADER, header_value);
-    }
     if let Some(turn_state) = turn_state
         && let Some(state) = turn_state.get()
         && let Ok(header_value) = HeaderValue::from_str(state)

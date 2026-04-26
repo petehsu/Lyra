@@ -119,6 +119,7 @@ pub(super) fn stored_thread_from_rollout_item(
         updated_at,
         archived_at,
         cwd: item.cwd.unwrap_or_default(),
+        bound_project_root: None,
         cli_version: item.cli_version.unwrap_or_default(),
         source,
         agent_nickname: item.agent_nickname,

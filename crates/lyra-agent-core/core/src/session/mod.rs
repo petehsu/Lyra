@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -14,6 +15,7 @@ use crate::agent::MailboxReceiver;
 use crate::agent::agent_status_from_event;
 use crate::agent::status::is_final;
 use crate::apps::render_apps_section;
+use crate::build_available_skills;
 use crate::commit_attribution::commit_message_trailer_instruction;
 use crate::config::ManagedFeatures;
 use crate::connectors;
@@ -23,7 +25,6 @@ use crate::installation_id::resolve_installation_id;
 use crate::parse_turn_item;
 use crate::path_utils::normalize_for_native_workdir;
 use crate::realtime_conversation::RealtimeConversationManager;
-use crate::render_skills_section;
 use crate::rollout::find_thread_name_by_id;
 use crate::session_prefix::format_subagent_notification_message;
 use crate::skills::SkillRenderSideEffects;
@@ -44,9 +45,7 @@ use lyra_config::types::OAuthCredentialsStoreMode;
 use lyra_exec_server::Environment;
 use lyra_exec_server::EnvironmentManager;
 use lyra_exec_server::FileSystemSandboxContext;
-use lyra_features::FEATURES;
 use lyra_features::Feature;
-use lyra_features::unstable_features_warning_event;
 use lyra_hooks::Hooks;
 use lyra_hooks::HooksConfig;
 use lyra_login::AuthManager;
@@ -86,7 +85,7 @@ use lyra_protocol::openai_models::ModelInfo;
 use lyra_protocol::permissions::FileSystemSandboxPolicy;
 use lyra_protocol::permissions::NetworkSandboxPolicy;
 use lyra_protocol::protocol::FileChange;
-use lyra_protocol::protocol::HasLegacyEvent;
+use lyra_protocol::protocol::HasRuntimeEvent;
 use lyra_protocol::protocol::InterAgentCommunication;
 use lyra_protocol::protocol::ItemCompletedEvent;
 use lyra_protocol::protocol::ItemStartedEvent;
@@ -112,6 +111,7 @@ use lyra_rollout::state_db;
 use lyra_rollout_trace::AgentResultTracePayload;
 use lyra_rollout_trace::ThreadStartedTraceMetadata;
 use lyra_rollout_trace::ThreadTraceContext;
+use lyra_sandboxing::policy_transforms::intersect_permission_profiles;
 use lyra_shell_command::parse_command::parse_command;
 use lyra_terminal_detection::user_agent;
 use lyra_thread_store::LocalThreadStore;
@@ -129,7 +129,6 @@ use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use toml::Value as TomlValue;
 use tracing::Instrument;
 use tracing::debug;
 use tracing::error;
@@ -231,8 +230,8 @@ use crate::SkillLoadOutcome;
 use crate::SkillMetadata;
 use crate::SkillsManager;
 use crate::agents_md::AgentsMdManager;
+use crate::auto_review::AutoReviewSessionManager;
 use crate::exec_policy::ExecPolicyUpdateError;
-use crate::guardian::GuardianReviewSessionManager;
 use crate::instructions::UserInstructions;
 use crate::mcp::McpManager;
 use crate::memories;
@@ -251,6 +250,7 @@ use crate::skills_watcher::SkillsWatcher;
 use crate::skills_watcher::SkillsWatcherEvent;
 use crate::state::ActiveTurn;
 use crate::state::MailboxDeliveryPhase;
+use crate::state::PendingRequestPermissions;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 use crate::tasks::GhostSnapshotTask;
@@ -273,7 +273,6 @@ use lyra_otel::SessionTelemetry;
 use lyra_otel::THREAD_STARTED_METRIC;
 use lyra_otel::TelemetryAuthMode;
 use lyra_protocol::config_types::CollaborationMode;
-use lyra_protocol::config_types::Personality;
 use lyra_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use lyra_protocol::config_types::ServiceTier;
 use lyra_protocol::config_types::WindowsSandboxLevel;
@@ -285,7 +284,6 @@ use lyra_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use lyra_protocol::protocol::ApplyPatchApprovalRequestEvent;
 use lyra_protocol::protocol::AskForApproval;
 use lyra_protocol::protocol::BackgroundEventEvent;
-use lyra_protocol::protocol::DeprecationNoticeEvent;
 use lyra_protocol::protocol::ErrorEvent;
 use lyra_protocol::protocol::Event;
 use lyra_protocol::protocol::EventMsg;
@@ -336,8 +334,6 @@ pub struct LyraSessionHandle {
 }
 
 pub(crate) type SessionLoopTermination = Shared<BoxFuture<'static, ()>>;
-
-pub(crate) const THREAD_START_SKILLS_TRIMMED_WARNING_MESSAGE: &str = "Some enabled skills were not included in the model-visible skills list for this session. Mention a skill by name or path if you need it.";
 
 /// Wrapper returned by [`LyraSessionHandle::spawn`] containing the spawned
 /// session handle and the unique thread id.
@@ -484,8 +480,8 @@ impl LyraSessionHandle {
             .user_instructions(environment.as_deref())
             .await;
 
-        let exec_policy = if crate::guardian::is_guardian_reviewer_source(&session_source) {
-            // Guardian review should rely on the built-in shell safety checks,
+        let exec_policy = if crate::auto_review::is_auto_reviewer_source(&session_source) {
+            // AutoReview review should rely on the built-in shell safety checks,
             // not on caller-provided exec-policy rules that could shape the
             // reviewer or silently auto-approve commands.
             Arc::new(ExecPolicyManager::default())
@@ -513,7 +509,12 @@ impl LyraSessionHandle {
             let _ = models_manager.list_models(refresh_strategy).await;
         }
         let model = models_manager
-            .get_default_model(&config.model, refresh_strategy)
+            .get_default_model_for_provider(
+                &config.model,
+                Some(config.model_provider_id.as_str()),
+                &config.to_models_manager_config(),
+                refresh_strategy,
+            )
             .await;
 
         // Resolve base instructions for the session. Priority order:
@@ -521,13 +522,17 @@ impl LyraSessionHandle {
         // 2. conversation history => session_meta.base_instructions
         // 3. base_instructions for current model
         let model_info = models_manager
-            .get_model_info(model.as_str(), &config.to_models_manager_config())
+            .get_model_info_for_provider(
+                model.as_str(),
+                Some(config.model_provider_id.as_str()),
+                &config.to_models_manager_config(),
+            )
             .await;
         let base_instructions = config
             .base_instructions
             .clone()
             .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
-            .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
+            .unwrap_or_else(|| model_info.get_model_instructions());
 
         // Respect thread-start tools. When missing (resumed/forked threads), read from the db
         // first, then fall back to rollout-file tools.
@@ -573,7 +578,6 @@ impl LyraSessionHandle {
             service_tier: config.service_tier,
             developer_instructions: config.developer_instructions.clone(),
             user_instructions,
-            personality: config.personality,
             base_instructions,
             approval_policy: config.permissions.approval_policy.clone(),
             approvals_reviewer: config.approvals_reviewer,
@@ -802,33 +806,6 @@ impl Session {
 
     fn managed_network_proxy_active_for_sandbox_policy(sandbox_policy: &SandboxPolicy) -> bool {
         !matches!(sandbox_policy, SandboxPolicy::DangerFullAccess)
-    }
-
-    /// Builds the `x-lyra-beta-features` header value for this session.
-    ///
-    /// `ModelClient` is session-scoped and intentionally does not depend on the full `Config`, so
-    /// we precompute the comma-separated list of enabled experimental feature keys at session
-    /// creation time and thread it into the client.
-    fn build_model_client_beta_features_header(config: &Config) -> Option<String> {
-        let beta_features_header = FEATURES
-            .iter()
-            .filter_map(|spec| {
-                if spec.stage.experimental_menu_description().is_some()
-                    && config.features.enabled(spec.id)
-                {
-                    Some(spec.key)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(",");
-
-        if beta_features_header.is_empty() {
-            None
-        } else {
-            Some(beta_features_header)
-        }
     }
 
     async fn start_managed_network_proxy(
@@ -1121,9 +1098,13 @@ impl Session {
                     state.set_token_info(Some(info));
                 }
 
-                // If persisting, persist all rollout items as-is (recorder filters)
                 if !rollout_items.is_empty() {
-                    self.persist_rollout_items(&rollout_items).await;
+                    let imported_rollout_items = rollout_items
+                        .iter()
+                        .filter(|item| !matches!(item, RolloutItem::SessionMeta(_)))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    self.persist_rollout_items(&imported_rollout_items).await;
                 }
 
                 // Forked threads should remain file-backed immediately after startup.
@@ -1342,38 +1323,37 @@ impl Session {
             current_context,
             shell.as_ref(),
             exec_policy.as_ref(),
-            self.features.enabled(Feature::Personality),
         )
     }
 
     /// Persist the event to rollout and send it to clients.
     pub(crate) async fn send_event(&self, turn_context: &TurnContext, msg: EventMsg) {
-        let legacy_source = msg.clone();
+        let runtime_source = msg.clone();
         self.services
             .rollout_thread_trace
-            .record_lyra_turn_event(&turn_context.sub_id, &legacy_source);
+            .record_lyra_turn_event(&turn_context.sub_id, &runtime_source);
         self.services
             .rollout_thread_trace
-            .record_tool_call_event(turn_context.sub_id.clone(), &legacy_source);
+            .record_tool_call_event(turn_context.sub_id.clone(), &runtime_source);
         let event = Event {
             id: turn_context.sub_id.clone(),
             msg,
         };
         self.send_event_raw(event).await;
-        self.maybe_notify_parent_of_terminal_turn(turn_context, &legacy_source)
+        self.maybe_notify_parent_of_terminal_turn(turn_context, &runtime_source)
             .await;
-        self.maybe_mirror_event_text_to_realtime(&legacy_source)
+        self.maybe_mirror_event_text_to_realtime(&runtime_source)
             .await;
-        self.maybe_clear_realtime_handoff_for_event(&legacy_source)
+        self.maybe_clear_realtime_handoff_for_event(&runtime_source)
             .await;
 
         let show_raw_agent_reasoning = self.show_raw_agent_reasoning();
-        for legacy in legacy_source.as_legacy_events(show_raw_agent_reasoning) {
-            let legacy_event = Event {
+        for legacy in runtime_source.as_runtime_events(show_raw_agent_reasoning) {
+            let runtime_event = Event {
                 id: turn_context.sub_id.clone(),
                 msg: legacy,
             };
-            self.send_event_raw(legacy_event).await;
+            self.send_event_raw(runtime_event).await;
         }
     }
 
@@ -1834,12 +1814,32 @@ impl Session {
         turn_context: &TurnContext,
         call_id: String,
         args: RequestPermissionsArgs,
+        cancellation_token: CancellationToken,
+    ) -> Option<RequestPermissionsResponse> {
+        self.request_permissions_for_cwd(
+            turn_context,
+            call_id,
+            args,
+            turn_context.cwd.clone(),
+            cancellation_token,
+        )
+        .await
+    }
+
+    pub async fn request_permissions_for_cwd(
+        &self,
+        turn_context: &TurnContext,
+        call_id: String,
+        args: RequestPermissionsArgs,
+        cwd: AbsolutePathBuf,
+        cancellation_token: CancellationToken,
     ) -> Option<RequestPermissionsResponse> {
         match turn_context.approval_policy.value() {
             AskForApproval::Never => {
                 return Some(RequestPermissionsResponse {
                     permissions: RequestPermissionProfile::default(),
                     scope: PermissionGrantScope::Turn,
+                    strict_auto_review: false,
                 });
             }
             AskForApproval::Granular(granular_config)
@@ -1848,6 +1848,7 @@ impl Session {
                 return Some(RequestPermissionsResponse {
                     permissions: RequestPermissionProfile::default(),
                     scope: PermissionGrantScope::Turn,
+                    strict_auto_review: false,
                 });
             }
             AskForApproval::OnFailure
@@ -1857,12 +1858,20 @@ impl Session {
         }
 
         let (tx_response, rx_response) = oneshot::channel();
+        let requested_permissions = args.permissions.clone();
         let prev_entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_request_permissions(call_id.clone(), tx_response)
+                    ts.insert_pending_request_permissions(
+                        call_id.clone(),
+                        PendingRequestPermissions {
+                            tx_response,
+                            requested_permissions: requested_permissions.clone(),
+                            cwd: cwd.clone(),
+                        },
+                    )
                 }
                 None => None,
             }
@@ -1871,17 +1880,26 @@ impl Session {
             warn!("Overwriting existing pending request_permissions for call_id: {call_id}");
         }
 
-        // TODO(ccunningham): Support auto-review for request_permissions /
-        // with_additional_permissions. V0 still routes this surface through
-        // the existing manual RequestPermissions event flow.
         let event = EventMsg::RequestPermissions(RequestPermissionsEvent {
-            call_id,
+            call_id: call_id.clone(),
             turn_id: turn_context.sub_id.clone(),
             reason: args.reason,
-            permissions: args.permissions,
+            permissions: requested_permissions,
+            cwd: Some(cwd),
         });
         self.send_event(turn_context, event).await;
-        rx_response.await.ok()
+        tokio::select! {
+            biased;
+            _ = cancellation_token.cancelled() => {
+                let mut active = self.active_turn.lock().await;
+                if let Some(at) = active.as_mut() {
+                    let mut ts = at.turn_state.lock().await;
+                    let _ = ts.remove_pending_request_permissions(&call_id);
+                }
+                None
+            }
+            response = rx_response => response.ok(),
+        }
     }
 
     pub async fn request_user_input(
@@ -1946,38 +1964,88 @@ impl Session {
         call_id: &str,
         response: RequestPermissionsResponse,
     ) {
-        let mut granted_for_session = None;
-        let entry = {
+        let (entry, originating_turn_state) = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
                     let entry = ts.remove_pending_request_permissions(call_id);
-                    if entry.is_some() && !response.permissions.is_empty() {
-                        match response.scope {
-                            PermissionGrantScope::Turn => {
-                                ts.record_granted_permissions(response.permissions.clone().into());
-                            }
-                            PermissionGrantScope::Session => {
-                                granted_for_session = Some(response.permissions.clone());
-                            }
-                        }
-                    }
-                    entry
+                    let originating_turn_state = entry.as_ref().map(|_| Arc::clone(&at.turn_state));
+                    (entry, originating_turn_state)
                 }
-                None => None,
+                None => (None, None),
             }
         };
-        if let Some(permissions) = granted_for_session {
-            let mut state = self.state.lock().await;
-            state.record_granted_permissions(permissions.into());
-        }
         match entry {
-            Some(tx_response) => {
-                tx_response.send(response).ok();
+            Some(entry) => {
+                let response = Self::normalize_request_permissions_response(
+                    entry.requested_permissions,
+                    response,
+                    entry.cwd.as_path(),
+                );
+                self.record_granted_request_permissions_for_turn(
+                    &response,
+                    originating_turn_state.as_ref(),
+                )
+                .await;
+                entry.tx_response.send(response).ok();
             }
             None => {
                 warn!("No pending request_permissions found for call_id: {call_id}");
+            }
+        }
+    }
+
+    fn normalize_request_permissions_response(
+        requested_permissions: RequestPermissionProfile,
+        response: RequestPermissionsResponse,
+        _cwd: &Path,
+    ) -> RequestPermissionsResponse {
+        if response.strict_auto_review && matches!(response.scope, PermissionGrantScope::Session) {
+            return RequestPermissionsResponse {
+                permissions: RequestPermissionProfile::default(),
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: false,
+            };
+        }
+
+        if response.permissions.is_empty() {
+            return response;
+        }
+
+        RequestPermissionsResponse {
+            permissions: intersect_permission_profiles(
+                requested_permissions.into(),
+                response.permissions.into(),
+            )
+            .into(),
+            scope: response.scope,
+            strict_auto_review: response.strict_auto_review,
+        }
+    }
+
+    async fn record_granted_request_permissions_for_turn(
+        &self,
+        response: &RequestPermissionsResponse,
+        originating_turn_state: Option<&Arc<Mutex<crate::state::TurnState>>>,
+    ) {
+        if response.permissions.is_empty() {
+            return;
+        }
+        match response.scope {
+            PermissionGrantScope::Turn => {
+                if let Some(turn_state) = originating_turn_state {
+                    let mut ts = turn_state.lock().await;
+                    let permissions: PermissionProfile = response.permissions.clone().into();
+                    ts.record_granted_permissions(permissions);
+                    if response.strict_auto_review {
+                        ts.enable_strict_auto_review();
+                    }
+                }
+            }
+            PermissionGrantScope::Session => {
+                let mut state = self.state.lock().await;
+                state.record_granted_permissions(response.permissions.clone().into());
             }
         }
     }
@@ -1987,6 +2055,15 @@ impl Session {
         let active = active.as_ref()?;
         let ts = active.turn_state.lock().await;
         ts.granted_permissions()
+    }
+
+    pub(crate) async fn strict_auto_review_enabled_for_turn(&self) -> bool {
+        let active = self.active_turn.lock().await;
+        let Some(active) = active.as_ref() else {
+            return false;
+        };
+        let ts = active.turn_state.lock().await;
+        ts.strict_auto_review_enabled()
     }
 
     pub(crate) async fn granted_session_permissions(&self) -> Option<PermissionProfile> {
@@ -2164,19 +2241,12 @@ impl Session {
         let mut developer_sections = Vec::<String>::with_capacity(8);
         let mut contextual_user_sections = Vec::<String>::with_capacity(2);
         let shell = self.user_shell();
-        let (
-            reference_context_item,
-            previous_turn_settings,
-            collaboration_mode,
-            base_instructions,
-            session_source,
-        ) = {
+        let (reference_context_item, previous_turn_settings, collaboration_mode, session_source) = {
             let state = self.state.lock().await;
             (
                 state.reference_context_item(),
                 state.previous_turn_settings(),
                 state.session_configuration.collaboration_mode.clone(),
-                state.session_configuration.base_instructions.clone(),
                 state.session_configuration.session_source.clone(),
             )
         };
@@ -2206,20 +2276,18 @@ impl Session {
                 .into_text(),
             );
         }
-        let separate_guardian_developer_message =
-            crate::guardian::is_guardian_reviewer_source(&session_source);
-        // Keep the guardian policy prompt out of the aggregated developer bundle so it
-        // stays isolated as its own top-level developer message for guardian subagents.
-        if !separate_guardian_developer_message
+        let separate_auto_review_developer_message =
+            crate::auto_review::is_auto_reviewer_source(&session_source);
+        // Keep the auto_review policy prompt out of the aggregated developer bundle so it
+        // stays isolated as its own top-level developer message for auto_review subagents.
+        if !separate_auto_review_developer_message
             && let Some(developer_instructions) = turn_context.developer_instructions.as_deref()
             && !developer_instructions.is_empty()
         {
             developer_sections.push(developer_instructions.to_string());
         }
         // Add developer instructions for memories.
-        if turn_context.features.enabled(Feature::MemoryTool)
-            && turn_context.config.memories.use_memories
-        {
+        if turn_context.config.memories.use_memories {
             let memory_thread_id = self.conversation_id.to_string();
             if let Some(memory_prompt) = build_memory_tool_developer_instructions(
                 &turn_context.config.lyra_home,
@@ -2243,25 +2311,6 @@ impl Session {
         ) {
             developer_sections.push(realtime_update.into_text());
         }
-        if self.features.enabled(Feature::Personality)
-            && let Some(personality) = turn_context.personality
-        {
-            let model_info = turn_context.model_info.clone();
-            let has_baked_personality = model_info.supports_personality()
-                && base_instructions == model_info.get_model_instructions(Some(personality));
-            if !has_baked_personality
-                && let Some(personality_message) =
-                    crate::context_manager::updates::personality_message_for(
-                        &model_info,
-                        personality,
-                    )
-            {
-                developer_sections.push(
-                    DeveloperInstructions::personality_spec_message(personality_message)
-                        .into_text(),
-                );
-            }
-        }
         if turn_context.config.include_apps_instructions && turn_context.apps_enabled() {
             let mcp_connection_manager = self.services.mcp_connection_manager.read().await;
             let accessible_and_enabled_connectors =
@@ -2279,24 +2328,24 @@ impl Session {
                 .turn_skills
                 .outcome
                 .allowed_skills_for_implicit_invocation();
-            let rendered_skills = render_skills_section(
+            let available_skills = build_available_skills(
                 &implicit_skills,
                 default_skill_metadata_budget(turn_context.model_info.context_window),
                 SkillRenderSideEffects::ThreadStart {
                     session_telemetry: &self.services.session_telemetry,
                 },
             );
-            if let Some(rendered_skills) = rendered_skills {
-                if rendered_skills.emit_warning {
+            if let Some(available_skills) = available_skills {
+                if let Some(warning_message) = available_skills.warning_message.clone() {
                     self.send_event_raw(Event {
                         id: String::new(),
                         msg: EventMsg::Warning(WarningEvent {
-                            message: THREAD_START_SKILLS_TRIMMED_WARNING_MESSAGE.to_string(),
+                            message: warning_message,
                         }),
                     })
                     .await;
                 }
-                developer_sections.push(rendered_skills.text);
+                developer_sections.push(available_skills.render_instructions());
             }
         }
         let loaded_plugins = self
@@ -2348,17 +2397,17 @@ impl Session {
         {
             items.push(contextual_user_message);
         }
-        // Emit the guardian policy prompt as a separate developer item so the guardian
+        // Emit the auto_review policy prompt as a separate developer item so the auto_review
         // subagent sees a distinct, easy-to-audit instruction block.
-        if separate_guardian_developer_message
+        if separate_auto_review_developer_message
             && let Some(developer_instructions) = turn_context.developer_instructions.as_deref()
             && !developer_instructions.is_empty()
-            && let Some(guardian_developer_message) =
+            && let Some(auto_review_developer_message) =
                 crate::context_manager::updates::build_developer_update_item(vec![
                     developer_instructions.to_string(),
                 ])
         {
-            items.push(guardian_developer_message);
+            items.push(auto_review_developer_message);
         }
         items
     }

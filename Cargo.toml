@@ -90,7 +90,6 @@ members = [
   "crates/lyra-agent-core/terminal-detection",
   "crates/lyra-agent-core/test-binary-support",
   "crates/lyra-agent-core/thread-store",
-  "crates/lyra-agent-core/lyra-experimental-api-macros",
   "crates/lyra-agent-core/plugin",
   "crates/lyra-agent-core/model-provider",
 ]
@@ -126,7 +125,6 @@ lyra-core-plugins = { path = "crates/lyra-agent-core/core-plugins" }
 lyra-core-skills = { path = "crates/lyra-agent-core/core-skills" }
 lyra-exec-server = { path = "crates/lyra-agent-core/exec-server" }
 lyra-execpolicy = { path = "crates/lyra-agent-core/execpolicy" }
-lyra-experimental-api-macros = { path = "crates/lyra-agent-core/lyra-experimental-api-macros" }
 lyra-features = { path = "crates/lyra-agent-core/features" }
 lyra-install-context = { path = "crates/lyra-agent-core/install-context" }
 lyra-file-search = { path = "crates/lyra-agent-core/file-search" }

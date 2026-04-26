@@ -10,7 +10,8 @@ import {
   type WorkbenchBrowserPageRuntimeState,
   type WorkbenchBrowserReadPageStateRequest,
   type WorkbenchBrowserSetElementPickerModeRequest,
-  type WorkbenchBrowserTopologySnapshot
+  type WorkbenchBrowserTopologySnapshot,
+  type WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/desktop-bridge";
 import type {
   WorkbenchTabExtractTextResult,
@@ -60,6 +61,9 @@ export type WorkbenchBrowserIpcBridge = {
   ) => WorkbenchBrowserPageRuntimeState | null;
   readonly setElementPickerMode: (
     request: WorkbenchBrowserSetElementPickerModeRequest
+  ) => Promise<void>;
+  readonly applyWebTheme: (
+    snapshot: WorkbenchBrowserWebThemeSnapshot
   ) => Promise<void>;
   readonly showAgentElementPickerTarget: (
     target: WorkbenchBrowserAgentTargetInfo
@@ -161,6 +165,12 @@ export const createWorkbenchBrowserIpcBridge = ({
       await manager.setElementPickerMode(request as WorkbenchBrowserSetElementPickerModeRequest);
     }
   );
+  ipcMain.handle(
+    LYRA_CHANNELS.workbenchBrowserApplyWebTheme,
+    async (_event, request: unknown) => {
+      await manager.applyWebTheme(request as WorkbenchBrowserWebThemeSnapshot);
+    }
+  );
 
   return {
     dispose: () => {
@@ -173,6 +183,7 @@ export const createWorkbenchBrowserIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserStop);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserReadPageState);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetElementPickerMode);
+      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserApplyWebTheme);
       manager.dispose();
     },
     syncTopology: manager.syncTopology,
@@ -184,6 +195,7 @@ export const createWorkbenchBrowserIpcBridge = ({
     stop: manager.stop,
     readPageState: manager.readPageState,
     setElementPickerMode: manager.setElementPickerMode,
+    applyWebTheme: manager.applyWebTheme,
     showAgentElementPickerTarget: manager.showAgentElementPickerTarget,
     clearAgentElementPickerTarget: manager.clearAgentElementPickerTarget,
     readActiveTabId: manager.readActiveTabId,

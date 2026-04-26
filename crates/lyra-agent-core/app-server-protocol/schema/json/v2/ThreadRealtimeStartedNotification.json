@@ -9,7 +9,7 @@
       "type": "string"
     }
   },
-  "description": "EXPERIMENTAL - emitted when thread realtime startup is accepted.",
+  "description": "emitted when thread realtime startup is accepted.",
   "properties": {
     "sessionId": {
       "type": [

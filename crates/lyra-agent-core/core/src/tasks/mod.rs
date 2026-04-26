@@ -50,7 +50,6 @@ use lyra_protocol::protocol::WarningEvent;
 use lyra_protocol::user_input::UserInput;
 
 pub(crate) use ghost_snapshot::GhostSnapshotTask;
-use lyra_features::Feature;
 pub(crate) use regular::RegularTask;
 pub(crate) use review::ReviewTask;
 pub(crate) use undo::UndoTask;
@@ -374,8 +373,6 @@ impl Session {
         }
 
         let turn_context = self.new_default_turn_with_sub_id(sub_id).await;
-        self.maybe_emit_unknown_model_warning_for_turn(turn_context.as_ref())
-            .await;
         self.start_task(turn_context, Vec::new(), RegularTask::new())
             .await;
     }
@@ -444,15 +441,6 @@ impl Session {
         }
         // Emit token usage metrics.
         if let Some(token_usage_at_turn_start) = token_usage_at_turn_start {
-            // TODO(jif): drop this
-            let tmp_mem = (
-                "tmp_mem_enabled",
-                if self.enabled(Feature::MemoryTool) {
-                    "true"
-                } else {
-                    "false"
-                },
-            );
             let network_proxy_active = match self.services.network_proxy.as_ref() {
                 Some(started_network_proxy) => {
                     match started_network_proxy.proxy().current_cfg().await {
@@ -467,15 +455,16 @@ impl Session {
                 }
                 None => false,
             };
+            let memory_metric = ("memory_v2_enabled", "true");
             emit_turn_network_proxy_metric(
                 &self.services.session_telemetry,
                 network_proxy_active,
-                tmp_mem,
+                memory_metric,
             );
             self.services.session_telemetry.histogram(
                 TURN_TOOL_CALL_METRIC,
                 i64::try_from(turn_tool_calls).unwrap_or(i64::MAX),
-                &[tmp_mem],
+                &[memory_metric],
             );
             let total_token_usage = self.total_token_usage().await.unwrap_or_default();
             let turn_token_usage = TokenUsage {
@@ -505,27 +494,27 @@ impl Session {
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.total_tokens,
-                &[("token_type", "total"), tmp_mem],
+                &[("token_type", "total"), memory_metric],
             );
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.input_tokens,
-                &[("token_type", "input"), tmp_mem],
+                &[("token_type", "input"), memory_metric],
             );
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.cached_input(),
-                &[("token_type", "cached_input"), tmp_mem],
+                &[("token_type", "cached_input"), memory_metric],
             );
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.output_tokens,
-                &[("token_type", "output"), tmp_mem],
+                &[("token_type", "output"), memory_metric],
             );
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.reasoning_output_tokens,
-                &[("token_type", "reasoning_output"), tmp_mem],
+                &[("token_type", "reasoning_output"), memory_metric],
             );
         }
         let (completed_at, duration_ms) = turn_context

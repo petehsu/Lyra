@@ -11,26 +11,26 @@
 //! - The projection is presentation-specific. Core protocol events stay generic, while the
 //!   app-server protocol decides how to surface those events as `ThreadItem`s for clients.
 use crate::protocol::common::ServerNotification;
+use crate::protocol::v2::AutoApprovalReview;
+use crate::protocol::v2::AutoApprovalReviewStatus;
 use crate::protocol::v2::AutoReviewDecisionSource;
 use crate::protocol::v2::CommandAction;
 use crate::protocol::v2::CommandExecutionSource;
 use crate::protocol::v2::CommandExecutionStatus;
 use crate::protocol::v2::FileUpdateChange;
-use crate::protocol::v2::GuardianApprovalReview;
-use crate::protocol::v2::GuardianApprovalReviewStatus;
-use crate::protocol::v2::ItemGuardianApprovalReviewCompletedNotification;
-use crate::protocol::v2::ItemGuardianApprovalReviewStartedNotification;
+use crate::protocol::v2::ItemAutoApprovalReviewCompletedNotification;
+use crate::protocol::v2::ItemAutoApprovalReviewStartedNotification;
 use crate::protocol::v2::PatchApplyStatus;
 use crate::protocol::v2::PatchChangeKind;
 use crate::protocol::v2::ThreadItem;
 use lyra_protocol::ThreadId;
 use lyra_protocol::protocol::ApplyPatchApprovalRequestEvent;
+use lyra_protocol::protocol::AutoReviewAssessmentAction;
+use lyra_protocol::protocol::AutoReviewAssessmentEvent;
 use lyra_protocol::protocol::ExecApprovalRequestEvent;
 use lyra_protocol::protocol::ExecCommandBeginEvent;
 use lyra_protocol::protocol::ExecCommandEndEvent;
 use lyra_protocol::protocol::FileChange;
-use lyra_protocol::protocol::GuardianAssessmentAction;
-use lyra_protocol::protocol::GuardianAssessmentEvent;
 use lyra_protocol::protocol::PatchApplyBeginEvent;
 use lyra_protocol::protocol::PatchApplyEndEvent;
 use lyra_shell_command::parse_command::parse_command;
@@ -133,16 +133,16 @@ pub fn build_command_execution_end_item(payload: &ExecCommandEndEvent) -> Thread
     }
 }
 
-/// Build a guardian-derived [`ThreadItem`].
+/// Build a auto_review-derived [`ThreadItem`].
 ///
 /// Currently this only synthesizes [`ThreadItem::CommandExecution`] for
-/// [`GuardianAssessmentAction::Command`] and [`GuardianAssessmentAction::Execve`].
-pub fn build_item_from_guardian_event(
-    assessment: &GuardianAssessmentEvent,
+/// [`AutoReviewAssessmentAction::Command`] and [`AutoReviewAssessmentAction::Execve`].
+pub fn build_item_from_auto_review_event(
+    assessment: &AutoReviewAssessmentEvent,
     status: CommandExecutionStatus,
 ) -> Option<ThreadItem> {
     match &assessment.action {
-        GuardianAssessmentAction::Command { command, cwd, .. } => {
+        AutoReviewAssessmentAction::Command { command, cwd, .. } => {
             let id = assessment.target_item_id.as_ref()?;
             let command = command.clone();
             let command_actions = vec![CommandAction::Unknown {
@@ -161,7 +161,7 @@ pub fn build_item_from_guardian_event(
                 duration_ms: None,
             })
         }
-        GuardianAssessmentAction::Execve {
+        AutoReviewAssessmentAction::Execve {
             program, argv, cwd, ..
         } => {
             let id = assessment.target_item_id.as_ref()?;
@@ -197,38 +197,38 @@ pub fn build_item_from_guardian_event(
                 duration_ms: None,
             })
         }
-        GuardianAssessmentAction::ApplyPatch { .. }
-        | GuardianAssessmentAction::NetworkAccess { .. }
-        | GuardianAssessmentAction::McpToolCall { .. } => None,
+        AutoReviewAssessmentAction::ApplyPatch { .. }
+        | AutoReviewAssessmentAction::NetworkAccess { .. }
+        | AutoReviewAssessmentAction::McpToolCall { .. } => None,
     }
 }
 
-pub fn guardian_auto_approval_review_notification(
+pub fn auto_review_auto_approval_review_notification(
     conversation_id: &ThreadId,
     event_turn_id: &str,
-    assessment: &GuardianAssessmentEvent,
+    assessment: &AutoReviewAssessmentEvent,
 ) -> ServerNotification {
     let turn_id = if assessment.turn_id.is_empty() {
         event_turn_id.to_string()
     } else {
         assessment.turn_id.clone()
     };
-    let review = GuardianApprovalReview {
+    let review = AutoApprovalReview {
         status: match assessment.status {
-            lyra_protocol::protocol::GuardianAssessmentStatus::InProgress => {
-                GuardianApprovalReviewStatus::InProgress
+            lyra_protocol::protocol::AutoReviewAssessmentStatus::InProgress => {
+                AutoApprovalReviewStatus::InProgress
             }
-            lyra_protocol::protocol::GuardianAssessmentStatus::Approved => {
-                GuardianApprovalReviewStatus::Approved
+            lyra_protocol::protocol::AutoReviewAssessmentStatus::Approved => {
+                AutoApprovalReviewStatus::Approved
             }
-            lyra_protocol::protocol::GuardianAssessmentStatus::Denied => {
-                GuardianApprovalReviewStatus::Denied
+            lyra_protocol::protocol::AutoReviewAssessmentStatus::Denied => {
+                AutoApprovalReviewStatus::Denied
             }
-            lyra_protocol::protocol::GuardianAssessmentStatus::TimedOut => {
-                GuardianApprovalReviewStatus::TimedOut
+            lyra_protocol::protocol::AutoReviewAssessmentStatus::TimedOut => {
+                AutoApprovalReviewStatus::TimedOut
             }
-            lyra_protocol::protocol::GuardianAssessmentStatus::Aborted => {
-                GuardianApprovalReviewStatus::Aborted
+            lyra_protocol::protocol::AutoReviewAssessmentStatus::Aborted => {
+                AutoApprovalReviewStatus::Aborted
             }
         },
         risk_level: assessment.risk_level.map(Into::into),
@@ -237,9 +237,9 @@ pub fn guardian_auto_approval_review_notification(
     };
     let action = assessment.action.clone().into();
     match assessment.status {
-        lyra_protocol::protocol::GuardianAssessmentStatus::InProgress => {
-            ServerNotification::ItemGuardianApprovalReviewStarted(
-                ItemGuardianApprovalReviewStartedNotification {
+        lyra_protocol::protocol::AutoReviewAssessmentStatus::InProgress => {
+            ServerNotification::ItemAutoApprovalReviewStarted(
+                ItemAutoApprovalReviewStartedNotification {
                     thread_id: conversation_id.to_string(),
                     turn_id,
                     review_id: assessment.id.clone(),
@@ -249,12 +249,12 @@ pub fn guardian_auto_approval_review_notification(
                 },
             )
         }
-        lyra_protocol::protocol::GuardianAssessmentStatus::Approved
-        | lyra_protocol::protocol::GuardianAssessmentStatus::Denied
-        | lyra_protocol::protocol::GuardianAssessmentStatus::TimedOut
-        | lyra_protocol::protocol::GuardianAssessmentStatus::Aborted => {
-            ServerNotification::ItemGuardianApprovalReviewCompleted(
-                ItemGuardianApprovalReviewCompletedNotification {
+        lyra_protocol::protocol::AutoReviewAssessmentStatus::Approved
+        | lyra_protocol::protocol::AutoReviewAssessmentStatus::Denied
+        | lyra_protocol::protocol::AutoReviewAssessmentStatus::TimedOut
+        | lyra_protocol::protocol::AutoReviewAssessmentStatus::Aborted => {
+            ServerNotification::ItemAutoApprovalReviewCompleted(
+                ItemAutoApprovalReviewCompletedNotification {
                     thread_id: conversation_id.to_string(),
                     turn_id,
                     review_id: assessment.id.clone(),

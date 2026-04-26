@@ -306,7 +306,11 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
         let selected_model_info = session
             .services
             .models_manager
-            .get_model_info(&selected_model_name, &config.to_models_manager_config())
+            .get_model_info_for_provider(
+                &selected_model_name,
+                Some(config.model_provider_id.as_str()),
+                &config.to_models_manager_config(),
+            )
             .await;
 
         config.model = Some(selected_model_name.clone());

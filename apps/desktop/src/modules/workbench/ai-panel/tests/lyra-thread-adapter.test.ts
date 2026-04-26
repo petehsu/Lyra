@@ -13,6 +13,7 @@ describe("lyra thread adapter", () => {
       name: "Panel work",
       modelProvider: "lp-openai",
       cwd: "/repo",
+      boundProjectRoot: "/repo",
       createdAt: 100,
       updatedAt: 120,
       turns: [
@@ -83,10 +84,11 @@ describe("lyra thread adapter", () => {
     const detail = lyraThreadToAgentDetail(thread!);
 
     expect(detail.session.title).toBe("Panel work");
+    expect(detail.session.projectRoot).toBe("/repo");
+    expect(detail.session.projectName).toBe("repo");
     expect(detail.messages.map((message) => [message.role, message.content])).toEqual([
       ["user", "Implement this"],
       ["assistant", "Checked the failing path"],
-      ["assistant", "1. Fix the runtime chain"],
       ["assistant", "Implemented."],
     ]);
     expect(detail.toolCalls.map((call) => [call.toolName, call.status])).toEqual([
@@ -95,5 +97,22 @@ describe("lyra thread adapter", () => {
       ["workbench.document.read", "completed"],
       ["mcp.github.list_issues", "completed"],
     ]);
+  });
+
+  test("does not treat runtime cwd as a project binding", () => {
+    const thread = readLyraThread({
+      id: "thread-global",
+      preview: "Global task",
+      modelProvider: "lp-openai",
+      cwd: "/Users/dev/Lyra",
+      createdAt: 100,
+      updatedAt: 120,
+      turns: [],
+    });
+
+    expect(thread).not.toBeNull();
+    const detail = lyraThreadToAgentDetail(thread!);
+    expect(detail.session.projectRoot).toBeUndefined();
+    expect(detail.session.projectName).toBeUndefined();
   });
 });

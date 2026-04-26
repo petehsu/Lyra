@@ -292,10 +292,31 @@
     },
     "CommandExecutionRequestApprovalParams": {
       "properties": {
+        "additionalPermissions": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AdditionalPermissionProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional additional permissions requested for this command."
+        },
         "approvalId": {
           "description": "Unique identifier for this specific approval callback.\n\nFor regular shell/unified_exec approvals, this is null.\n\nFor zsh-exec-bridge subcommand approvals, multiple callbacks can belong to one parent `itemId`, so `approvalId` is a distinct opaque callback id (a UUID) used to disambiguate routing.",
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "availableDecisions": {
+          "description": "Ordered list of decisions the client may present for this prompt.",
+          "items": {
+            "$ref": "#/definitions/CommandExecutionApprovalDecision"
+          },
+          "type": [
+            "array",
             "null"
           ]
         },
@@ -1321,6 +1342,9 @@
     },
     "PermissionsRequestApprovalParams": {
       "properties": {
+        "cwd": {
+          "$ref": "#/definitions/AbsolutePathBuf"
+        },
         "itemId": {
           "type": "string"
         },
@@ -1341,6 +1365,7 @@
         }
       },
       "required": [
+        "cwd",
         "itemId",
         "permissions",
         "threadId",
@@ -1389,7 +1414,7 @@
       "type": "string"
     },
     "ToolRequestUserInputOption": {
-      "description": "EXPERIMENTAL. Defines a single selectable option for request_user_input.",
+      "description": "Defines a single selectable option for request_user_input.",
       "properties": {
         "description": {
           "type": "string"
@@ -1405,7 +1430,7 @@
       "type": "object"
     },
     "ToolRequestUserInputParams": {
-      "description": "EXPERIMENTAL. Params sent with a request_user_input event.",
+      "description": "Params sent with a request_user_input event.",
       "properties": {
         "itemId": {
           "type": "string"
@@ -1432,7 +1457,7 @@
       "type": "object"
     },
     "ToolRequestUserInputQuestion": {
-      "description": "EXPERIMENTAL. Represents one request_user_input question and its required options.",
+      "description": "Represents one request_user_input question and its required options.",
       "properties": {
         "header": {
           "type": "string"
@@ -1522,7 +1547,7 @@
       "type": "object"
     },
     {
-      "description": "EXPERIMENTAL - Request input from the user for a tool call.",
+      "description": "Request input from the user for a tool call.",
       "properties": {
         "id": {
           "$ref": "#/definitions/RequestId"

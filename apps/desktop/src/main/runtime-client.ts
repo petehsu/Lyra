@@ -112,6 +112,10 @@ const resolveRuntimeBinaryPath = (): string => {
   throw new Error(`lyrad binary not found; tried paths:\n${candidates.join("\n")}`);
 };
 
+const resolveRuntimeWorkingDirectory = (): string => {
+  return os.homedir();
+};
+
 const toError = (error: RuntimeError | undefined, fallback: string): Error =>
   Object.assign(new Error(error?.message ?? fallback), {
     ...(error?.code === undefined ? {} : { code: error.code }),
@@ -295,10 +299,13 @@ export const createLyraRuntimeClient = (
     }
 
     child = spawn(binaryPath, ["--socket", socketPath], {
+      cwd: resolveRuntimeWorkingDirectory(),
       stdio: "pipe",
       env: {
         ...process.env,
-        ELECTRON_RUN_AS_NODE: ""
+        ELECTRON_RUN_AS_NODE: "",
+        LYRA_JS_REPL_NODE_PATH: process.execPath,
+        LYRA_JS_REPL_NODE_RUN_AS_NODE: "1"
       }
     });
     child.stdout.on("data", (chunk) => {

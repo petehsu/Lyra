@@ -122,6 +122,7 @@ impl ToolCallRuntime {
                             .dispatch_tool_call_with_code_mode_result(
                                 session,
                                 turn,
+                                cancellation_token.clone(),
                                 tracker,
                                 call.clone(),
                                 source,
@@ -176,6 +177,7 @@ impl ToolCallRuntime {
             result: Box::new(AbortedToolOutput {
                 message: Self::abort_message(call, secs),
             }),
+            post_tool_use_payload: None,
         }
     }
 

@@ -8,7 +8,8 @@ import type {
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserReadPageStateRequest,
   WorkbenchBrowserSetElementPickerModeRequest,
-  WorkbenchBrowserTopologySnapshot
+  WorkbenchBrowserTopologySnapshot,
+  WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/desktop-bridge";
 import type {
   WorkbenchTabExtractTextResult,
@@ -138,6 +139,9 @@ export type WorkbenchBrowserViewManager = {
   ) => WorkbenchBrowserPageRuntimeState | null;
   readonly setElementPickerMode: (
     request: WorkbenchBrowserSetElementPickerModeRequest
+  ) => Promise<void>;
+  readonly applyWebTheme: (
+    snapshot: WorkbenchBrowserWebThemeSnapshot
   ) => Promise<void>;
   readonly showAgentElementPickerTarget: (
     target: WorkbenchBrowserAgentTargetInfo

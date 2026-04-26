@@ -3,12 +3,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::RequestId;
-use lyra_experimental_api_macros::ExperimentalApi;
+use lyra_protocol::approvals::AutoReviewAssessmentAction as CoreAutoReviewAssessmentAction;
+use lyra_protocol::approvals::AutoReviewAssessmentDecisionSource as CoreAutoReviewAssessmentDecisionSource;
+use lyra_protocol::approvals::AutoReviewCommandSource as CoreAutoReviewCommandSource;
 use lyra_protocol::approvals::ElicitationRequest as CoreElicitationRequest;
 use lyra_protocol::approvals::ExecPolicyAmendment as CoreExecPolicyAmendment;
-use lyra_protocol::approvals::GuardianAssessmentAction as CoreGuardianAssessmentAction;
-use lyra_protocol::approvals::GuardianAssessmentDecisionSource as CoreGuardianAssessmentDecisionSource;
-use lyra_protocol::approvals::GuardianCommandSource as CoreGuardianCommandSource;
 use lyra_protocol::approvals::NetworkApprovalContext as CoreNetworkApprovalContext;
 use lyra_protocol::approvals::NetworkApprovalProtocol as CoreNetworkApprovalProtocol;
 use lyra_protocol::approvals::NetworkPolicyAmendment as CoreNetworkPolicyAmendment;
@@ -17,7 +16,6 @@ use lyra_protocol::config_types::ApprovalsReviewer as CoreApprovalsReviewer;
 use lyra_protocol::config_types::CollaborationMode;
 use lyra_protocol::config_types::CollaborationModeMask as CoreCollaborationModeMask;
 use lyra_protocol::config_types::ModeKind;
-use lyra_protocol::config_types::Personality;
 use lyra_protocol::config_types::ReasoningSummary;
 use lyra_protocol::config_types::SandboxMode as CoreSandboxMode;
 use lyra_protocol::config_types::ServiceTier;
@@ -46,11 +44,11 @@ use lyra_protocol::plan_tool::PlanItemArg as CorePlanItemArg;
 use lyra_protocol::plan_tool::StepStatus as CorePlanStepStatus;
 use lyra_protocol::protocol::AgentStatus as CoreAgentStatus;
 use lyra_protocol::protocol::AskForApproval as CoreAskForApproval;
+use lyra_protocol::protocol::AutoReviewRiskLevel as CoreAutoReviewRiskLevel;
+use lyra_protocol::protocol::AutoReviewUserAuthorization as CoreAutoReviewUserAuthorization;
 use lyra_protocol::protocol::ExecCommandSource as CoreExecCommandSource;
 use lyra_protocol::protocol::ExecCommandStatus as CoreExecCommandStatus;
 use lyra_protocol::protocol::GranularApprovalConfig as CoreGranularApprovalConfig;
-use lyra_protocol::protocol::GuardianRiskLevel as CoreGuardianRiskLevel;
-use lyra_protocol::protocol::GuardianUserAuthorization as CoreGuardianUserAuthorization;
 use lyra_protocol::protocol::HookEventName as CoreHookEventName;
 use lyra_protocol::protocol::HookExecutionMode as CoreHookExecutionMode;
 use lyra_protocol::protocol::HookHandlerType as CoreHookHandlerType;
@@ -223,9 +221,7 @@ impl From<CoreNonSteerableTurnKind> for NonSteerableTurnKind {
     }
 }
 
-#[derive(
-    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS, ExperimentalApi,
-)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "kebab-case")]
 #[ts(rename_all = "kebab-case", export_to = "v2/")]
 pub enum AskForApproval {
@@ -234,7 +230,6 @@ pub enum AskForApproval {
     UnlessTrusted,
     OnFailure,
     OnRequest,
-    #[experimental("askForApproval.granular")]
     Granular {
         sandbox_approval: bool,
         rules: bool,
@@ -294,19 +289,19 @@ impl From<CoreAskForApproval> for AskForApproval {
 #[ts(rename_all = "snake_case", export_to = "v2/")]
 /// Configures who approval requests are routed to for review. Examples
 /// include sandbox escapes, blocked network access, MCP approval prompts, and
-/// ARC escalations. Defaults to `user`. `guardian_subagent` uses a carefully
+/// ARC escalations. Defaults to `user`. `auto_review` uses a carefully
 /// prompted subagent to gather relevant context and apply a risk-based
 /// decision framework before approving or denying the request.
 pub enum ApprovalsReviewer {
     User,
-    GuardianSubagent,
+    AutoReview,
 }
 
 impl ApprovalsReviewer {
     pub fn to_core(self) -> CoreApprovalsReviewer {
         match self {
             ApprovalsReviewer::User => CoreApprovalsReviewer::User,
-            ApprovalsReviewer::GuardianSubagent => CoreApprovalsReviewer::GuardianSubagent,
+            ApprovalsReviewer::AutoReview => CoreApprovalsReviewer::AutoReview,
         }
     }
 }
@@ -315,7 +310,7 @@ impl From<CoreApprovalsReviewer> for ApprovalsReviewer {
     fn from(value: CoreApprovalsReviewer) -> Self {
         match value {
             CoreApprovalsReviewer::User => ApprovalsReviewer::User,
-            CoreApprovalsReviewer::GuardianSubagent => ApprovalsReviewer::GuardianSubagent,
+            CoreApprovalsReviewer::AutoReview => ApprovalsReviewer::AutoReview,
         }
     }
 }
@@ -598,6 +593,7 @@ pub struct ToolsV2 {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct DynamicToolSpec {
+    pub namespace: Option<String>,
     pub name: String,
     pub description: String,
     pub input_schema: JsonValue,
@@ -608,6 +604,7 @@ pub struct DynamicToolSpec {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DynamicToolSpecDe {
+    namespace: Option<String>,
     name: String,
     description: String,
     input_schema: JsonValue,
@@ -621,6 +618,7 @@ impl<'de> Deserialize<'de> for DynamicToolSpec {
         D: serde::Deserializer<'de>,
     {
         let DynamicToolSpecDe {
+            namespace,
             name,
             description,
             input_schema,
@@ -629,6 +627,7 @@ impl<'de> Deserialize<'de> for DynamicToolSpec {
         } = DynamicToolSpecDe::deserialize(deserializer)?;
 
         Ok(Self {
+            namespace,
             name,
             description,
             input_schema,
@@ -638,18 +637,16 @@ impl<'de> Deserialize<'de> for DynamicToolSpec {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export_to = "v2/")]
 pub struct ProfileV2 {
     pub model: Option<String>,
     pub model_provider: Option<String>,
-    #[experimental(nested)]
     pub approval_policy: Option<AskForApproval>,
     /// [UNSTABLE] Optional profile-level override for where approval requests
     /// are routed for review. If omitted, the enclosing config default is
     /// used.
-    #[experimental("config/read.approvalsReviewer")]
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub service_tier: Option<ServiceTier>,
     pub model_reasoning_effort: Option<ReasoningEffort>,
@@ -738,7 +735,7 @@ const fn default_include_platform_defaults() -> bool {
     true
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export_to = "v2/")]
 pub struct Config {
@@ -746,18 +743,15 @@ pub struct Config {
     pub review_model: Option<String>,
     pub model_context_window: Option<i64>,
     pub model_provider: Option<String>,
-    #[experimental(nested)]
     pub approval_policy: Option<AskForApproval>,
     /// [UNSTABLE] Optional default for where approval requests are routed for
     /// review.
-    #[experimental("config/read.approvalsReviewer")]
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub sandbox_mode: Option<SandboxMode>,
     pub sandbox_workspace_write: Option<SandboxWorkspaceWrite>,
     pub web_search: Option<WebSearchMode>,
     pub tools: Option<ToolsV2>,
     pub profile: Option<String>,
-    #[experimental(nested)]
     #[serde(default)]
     pub profiles: HashMap<String, ProfileV2>,
     pub instructions: Option<String>,
@@ -767,7 +761,6 @@ pub struct Config {
     pub model_verbosity: Option<Verbosity>,
     pub service_tier: Option<ServiceTier>,
     pub analytics: Option<AnalyticsConfig>,
-    #[experimental("config/read.apps")]
     #[serde(default)]
     pub apps: Option<AppsConfig>,
     #[serde(default, flatten)]
@@ -854,30 +847,26 @@ pub struct ConfigReadParams {
     pub cwd: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ConfigReadResponse {
-    #[experimental(nested)]
     pub config: Config,
     pub origins: HashMap<String, ConfigLayerMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layers: Option<Vec<ConfigLayer>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ConfigRequirements {
-    #[experimental(nested)]
     pub allowed_approval_policies: Option<Vec<AskForApproval>>,
-    #[experimental("configRequirements/read.allowedApprovalsReviewers")]
     pub allowed_approvals_reviewers: Option<Vec<ApprovalsReviewer>>,
     pub allowed_sandbox_modes: Option<Vec<SandboxMode>>,
     pub allowed_web_search_modes: Option<Vec<WebSearchMode>>,
     pub feature_requirements: Option<BTreeMap<String, bool>>,
     pub enforce_residency: Option<ResidencyRequirement>,
-    #[experimental("configRequirements/read.network")]
     pub network: Option<NetworkRequirements>,
 }
 
@@ -891,7 +880,7 @@ pub struct NetworkRequirements {
     pub allow_upstream_proxy: Option<bool>,
     pub dangerously_allow_non_loopback_proxy: Option<bool>,
     pub dangerously_allow_all_unix_sockets: Option<bool>,
-    /// Canonical network permission map for `experimental_network`.
+    /// Canonical network permission map for `network`.
     pub domains: Option<BTreeMap<String, NetworkDomainPermission>>,
     /// When true, only managed allowlist entries are respected while managed
     /// network enforcement is active.
@@ -900,7 +889,7 @@ pub struct NetworkRequirements {
     pub allowed_domains: Option<Vec<String>>,
     /// Legacy compatibility view derived from `domains`.
     pub denied_domains: Option<Vec<String>>,
-    /// Canonical unix socket permission map for `experimental_network`.
+    /// Canonical unix socket permission map for `network`.
     pub unix_sockets: Option<BTreeMap<String, NetworkUnixSocketPermission>>,
     /// Legacy compatibility view derived from `unix_sockets`.
     pub allow_unix_sockets: Option<Vec<String>>,
@@ -930,12 +919,11 @@ pub enum ResidencyRequirement {
     Us,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ConfigRequirementsReadResponse {
     /// Null if no requirements are configured (e.g. no requirements.toml/MDM entries).
-    #[experimental(nested)]
     pub requirements: Option<ConfigRequirements>,
 }
 
@@ -984,13 +972,9 @@ pub struct LyraAiProviderFieldSchema {
     pub label: String,
     pub kind: String,
     pub scope: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub required: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<LyraAiProviderFieldOption>,
@@ -999,17 +983,35 @@ pub struct LyraAiProviderFieldSchema {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+pub struct LyraAiModelRuntimeMetadata {
+    pub shell_type: Option<String>,
+    pub apply_patch_tool_type: Option<String>,
+    pub supports_search_tool: Option<bool>,
+    pub supports_parallel_tool_calls: Option<bool>,
+    pub supports_reasoning_summaries: Option<bool>,
+    pub support_verbosity: Option<bool>,
+    pub web_search_tool_type: Option<String>,
+    pub supports_image_detail_original: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_modalities: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supported_tools: Vec<String>,
+    pub context_window: Option<u64>,
+    pub max_context_window: Option<u64>,
+    pub effective_context_window_percent: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
 pub struct LyraAiProviderModelEntry {
     pub id: String,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supports_images: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supports_tools: Option<bool>,
+    pub runtime_metadata: Option<LyraAiModelRuntimeMetadata>,
     pub source: String,
 }
 
@@ -1018,9 +1020,7 @@ pub struct LyraAiProviderModelEntry {
 #[ts(export_to = "v2/")]
 pub struct LyraAiModelDiscoveryState {
     pub status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_checked_at: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
     #[serde(default)]
     pub models: Vec<LyraAiProviderModelEntry>,
@@ -1037,7 +1037,6 @@ pub struct LyraAiProviderProfile {
     pub runtime_provider_id: String,
     pub runtime_supported: bool,
     pub secret_status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset_id: Option<String>,
     #[serde(default)]
     pub connection_config: BTreeMap<String, String>,
@@ -1062,7 +1061,6 @@ pub struct LyraAiProviderProfile {
 pub struct LyraConfigProfilesListResponse {
     #[serde(default)]
     pub profiles: Vec<LyraAiProviderProfile>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_profile_id: Option<String>,
 }
 
@@ -1090,6 +1088,8 @@ pub struct LyraConfigProfileUpsertParams {
     pub model: String,
     #[serde(default)]
     pub custom_models: Vec<LyraAiProviderModelEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovery_state: Option<LyraAiModelDiscoveryState>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1122,7 +1122,6 @@ pub struct LyraConfigProfileSetDefaultParams {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct LyraConfigProfileSetDefaultResponse {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<LyraAiProviderProfile>,
 }
 
@@ -1854,8 +1853,6 @@ pub struct Model {
     #[serde(default = "default_input_modalities")]
     pub input_modalities: Vec<InputModality>,
     #[serde(default)]
-    pub supports_personality: bool,
-    #[serde(default)]
     pub additional_speed_tiers: Vec<String>,
     // Only one model should be marked as default.
     pub is_default: bool,
@@ -1889,13 +1886,13 @@ pub struct ModelListResponse {
     pub next_cursor: Option<String>,
 }
 
-/// EXPERIMENTAL - list collaboration mode presets.
+/// list collaboration mode presets.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct CollaborationModeListParams {}
 
-/// EXPERIMENTAL - collaboration mode preset metadata for clients.
+/// collaboration mode preset metadata for clients.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -1919,92 +1916,12 @@ impl From<CoreCollaborationModeMask> for CollaborationModeMask {
     }
 }
 
-/// EXPERIMENTAL - collaboration mode presets response.
+/// collaboration mode presets response.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct CollaborationModeListResponse {
     pub data: Vec<CollaborationModeMask>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ExperimentalFeatureListParams {
-    /// Opaque pagination cursor returned by a previous call.
-    #[ts(optional = nullable)]
-    pub cursor: Option<String>,
-    /// Optional page size; defaults to a reasonable server-side value.
-    #[ts(optional = nullable)]
-    pub limit: Option<u32>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub enum ExperimentalFeatureStage {
-    /// Feature is available for user testing and feedback.
-    Beta,
-    /// Feature is still being built and not ready for broad use.
-    UnderDevelopment,
-    /// Feature is production-ready.
-    Stable,
-    /// Feature is deprecated and should be avoided.
-    Deprecated,
-    /// Feature flag is retained only for backwards compatibility.
-    Removed,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ExperimentalFeature {
-    /// Stable key used in config.toml and CLI flag toggles.
-    pub name: String,
-    /// Lifecycle stage of this feature flag.
-    pub stage: ExperimentalFeatureStage,
-    /// User-facing display name shown in the experimental features UI.
-    /// Null when this feature is not in beta.
-    pub display_name: Option<String>,
-    /// Short summary describing what the feature does.
-    /// Null when this feature is not in beta.
-    pub description: Option<String>,
-    /// Announcement copy shown to users when the feature is introduced.
-    /// Null when this feature is not in beta.
-    pub announcement: Option<String>,
-    /// Whether this feature is currently enabled in the loaded config.
-    pub enabled: bool,
-    /// Whether this feature is enabled by default.
-    pub default_enabled: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ExperimentalFeatureListResponse {
-    pub data: Vec<ExperimentalFeature>,
-    /// Opaque cursor to pass to the next call to continue after the last item.
-    /// If None, there are no more items to return.
-    pub next_cursor: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ExperimentalFeatureEnablementSetParams {
-    /// Process-wide runtime feature enablement keyed by canonical feature name.
-    ///
-    /// Only named features are updated. Omitted features are left unchanged.
-    /// Send an empty map for a no-op.
-    pub enablement: std::collections::BTreeMap<String, bool>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ExperimentalFeatureEnablementSetResponse {
-    /// Feature enablement entries updated by this request.
-    pub enablement: std::collections::BTreeMap<String, bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -2113,7 +2030,7 @@ impl From<CoreMcpCallToolResult> for McpServerToolCallResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// EXPERIMENTAL - app metadata returned by app-list APIs.
+/// app metadata returned by app-list APIs.
 pub struct AppBranding {
     pub category: Option<String>,
     pub developer: Option<String>,
@@ -2162,7 +2079,7 @@ pub struct AppMetadata {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// EXPERIMENTAL - app metadata returned by app-list APIs.
+/// app metadata returned by app-list APIs.
 pub struct AppInfo {
     pub id: String,
     pub name: String,
@@ -2191,7 +2108,7 @@ pub struct AppInfo {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// EXPERIMENTAL - app metadata summary for plugin responses.
+/// app metadata summary for plugin responses.
 pub struct AppSummary {
     pub id: String,
     pub name: String,
@@ -2621,9 +2538,7 @@ pub enum CommandExecOutputStream {
 
 // === Threads, Turns, and Items ===
 // Thread APIs
-#[derive(
-    Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS, ExperimentalApi,
-)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadStartParams {
@@ -2641,7 +2556,6 @@ pub struct ThreadStartParams {
     pub service_tier: Option<Option<ServiceTier>>,
     #[ts(optional = nullable)]
     pub cwd: Option<String>,
-    #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
     /// Override where approval requests are routed for review on this thread
@@ -2659,49 +2573,22 @@ pub struct ThreadStartParams {
     #[ts(optional = nullable)]
     pub developer_instructions: Option<String>,
     #[ts(optional = nullable)]
-    pub personality: Option<Personality>,
-    #[ts(optional = nullable)]
     pub ephemeral: Option<bool>,
     #[ts(optional = nullable)]
     pub session_start_source: Option<ThreadStartSource>,
-    #[experimental("thread/start.dynamicTools")]
     #[ts(optional = nullable)]
     pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
-    /// Test-only experimental field used to validate experimental gating and
-    /// schema filtering behavior in a stable way.
-    #[experimental("thread/start.mockExperimentalField")]
-    #[ts(optional = nullable)]
-    pub mock_experimental_field: Option<String>,
     /// If true, opt into emitting raw Responses API items on the event stream.
     /// This is for internal use only (e.g. Lyra Cloud).
-    #[experimental("thread/start.experimentalRawEvents")]
     #[serde(default)]
-    pub experimental_raw_events: bool,
+    pub raw_events: bool,
     /// If true, persist additional rollout EventMsg variants required to
     /// reconstruct a richer thread history on resume/fork/read.
-    #[experimental("thread/start.persistFullHistory")]
     #[serde(default)]
     pub persist_extended_history: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct MockExperimentalMethodParams {
-    /// Test-only payload field.
-    #[ts(optional = nullable)]
-    pub value: Option<String>,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct MockExperimentalMethodResponse {
-    /// Echoes the input `value`.
-    pub echoed: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadStartResponse {
@@ -2713,7 +2600,6 @@ pub struct ThreadStartResponse {
     /// Instruction source files currently loaded for this thread.
     #[serde(default)]
     pub instruction_sources: Vec<AbsolutePathBuf>,
-    #[experimental(nested)]
     pub approval_policy: AskForApproval,
     /// Reviewer currently used for approval requests on this thread.
     pub approvals_reviewer: ApprovalsReviewer,
@@ -2721,9 +2607,7 @@ pub struct ThreadStartResponse {
     pub reasoning_effort: Option<ReasoningEffort>,
 }
 
-#[derive(
-    Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS, ExperimentalApi,
-)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 /// There are three ways to resume a thread:
@@ -2739,7 +2623,6 @@ pub struct ThreadResumeParams {
 
     /// [UNSTABLE] Specify the rollout path to resume from.
     /// If specified, the thread_id param will be ignored.
-    #[experimental("thread/resume.path")]
     #[ts(optional = nullable)]
     pub path: Option<PathBuf>,
 
@@ -2758,7 +2641,6 @@ pub struct ThreadResumeParams {
     pub service_tier: Option<Option<ServiceTier>>,
     #[ts(optional = nullable)]
     pub cwd: Option<String>,
-    #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
     /// Override where approval requests are routed for review on this thread
@@ -2773,16 +2655,13 @@ pub struct ThreadResumeParams {
     pub base_instructions: Option<String>,
     #[ts(optional = nullable)]
     pub developer_instructions: Option<String>,
-    #[ts(optional = nullable)]
-    pub personality: Option<Personality>,
     /// If true, persist additional rollout EventMsg variants required to
     /// reconstruct a richer thread history on subsequent resume/fork/read.
-    #[experimental("thread/resume.persistFullHistory")]
     #[serde(default)]
     pub persist_extended_history: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadResumeResponse {
@@ -2794,7 +2673,6 @@ pub struct ThreadResumeResponse {
     /// Instruction source files currently loaded for this thread.
     #[serde(default)]
     pub instruction_sources: Vec<AbsolutePathBuf>,
-    #[experimental(nested)]
     pub approval_policy: AskForApproval,
     /// Reviewer currently used for approval requests on this thread.
     pub approvals_reviewer: ApprovalsReviewer,
@@ -2802,9 +2680,7 @@ pub struct ThreadResumeResponse {
     pub reasoning_effort: Option<ReasoningEffort>,
 }
 
-#[derive(
-    Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS, ExperimentalApi,
-)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 /// There are two ways to fork a thread:
@@ -2819,7 +2695,6 @@ pub struct ThreadForkParams {
 
     /// [UNSTABLE] Specify the rollout path to fork from.
     /// If specified, the thread_id param will be ignored.
-    #[experimental("thread/fork.path")]
     #[ts(optional = nullable)]
     pub path: Option<PathBuf>,
 
@@ -2838,7 +2713,6 @@ pub struct ThreadForkParams {
     pub service_tier: Option<Option<ServiceTier>>,
     #[ts(optional = nullable)]
     pub cwd: Option<String>,
-    #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
     /// Override where approval requests are routed for review on this thread
@@ -2857,12 +2731,11 @@ pub struct ThreadForkParams {
     pub ephemeral: bool,
     /// If true, persist additional rollout EventMsg variants required to
     /// reconstruct a richer thread history on subsequent resume/fork/read.
-    #[experimental("thread/fork.persistFullHistory")]
     #[serde(default)]
     pub persist_extended_history: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadForkResponse {
@@ -2874,7 +2747,6 @@ pub struct ThreadForkResponse {
     /// Instruction source files currently loaded for this thread.
     #[serde(default)]
     pub instruction_sources: Vec<AbsolutePathBuf>,
-    #[experimental(nested)]
     pub approval_policy: AskForApproval,
     /// Reviewer currently used for approval requests on this thread.
     pub approvals_reviewer: ApprovalsReviewer,
@@ -2994,6 +2866,14 @@ pub struct ThreadSetNameResponse {}
 #[ts(export_to = "v2/")]
 pub struct ThreadMetadataUpdateParams {
     pub thread_id: String,
+    #[serde(
+        default,
+        deserialize_with = "super::serde_helpers::deserialize_double_option",
+        serialize_with = "super::serde_helpers::serialize_double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional = nullable)]
+    pub bound_project_root: Option<Option<String>>,
     /// Patch the stored Git metadata for this thread.
     /// Omit a field to leave it unchanged, set it to `null` to clear it, or
     /// provide a string to replace the stored value.
@@ -3122,11 +3002,13 @@ pub struct ThreadBackgroundTerminalsCleanResponse {}
 #[ts(export_to = "v2/")]
 pub struct ThreadRollbackParams {
     pub thread_id: String,
-    /// The number of turns to drop from the end of the thread. Must be >= 1.
+    /// The turn to roll back from. This turn and all newer turns are removed.
+    pub turn_id: String,
+    /// Restore local file changes to the checkpoint captured before `turn_id`.
     ///
-    /// This only modifies the thread's history and does not revert local file changes
-    /// that have been made by the agent. Clients are responsible for reverting these changes.
-    pub num_turns: u32,
+    /// When true, rollback fails before mutating history if Lyra cannot prove the
+    /// file state can be restored safely.
+    pub restore_files: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -3134,11 +3016,11 @@ pub struct ThreadRollbackParams {
 #[ts(export_to = "v2/")]
 pub struct ThreadRollbackResponse {
     /// The updated thread after applying the rollback, with `turns` populated.
-    ///
-    /// The ThreadItems stored in each Turn are lossy since we explicitly do not
-    /// persist all agent interactions, such as command executions. This is the same
-    /// behavior as `thread/resume`.
     pub thread: Thread,
+    /// The user text from the rolled-back turn, when available.
+    pub restored_input: Option<String>,
+    /// Paths that were covered by the rollback file-restore operation.
+    pub reverted_files: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -3792,6 +3674,8 @@ pub struct Thread {
     pub path: Option<PathBuf>,
     /// Working directory captured for the thread.
     pub cwd: AbsolutePathBuf,
+    /// Project root explicitly bound by the user, if any.
+    pub bound_project_root: Option<AbsolutePathBuf>,
     /// Version of the CLI that created the thread.
     pub cli_version: String,
     /// Origin of the thread (CLI, VSCode, lyra exec, lyra app-server, etc.).
@@ -3953,7 +3837,7 @@ pub struct ErrorNotification {
     pub turn_id: String,
 }
 
-/// EXPERIMENTAL - thread realtime audio chunk.
+/// thread realtime audio chunk.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4003,7 +3887,7 @@ impl From<ThreadRealtimeAudioChunk> for CoreRealtimeAudioFrame {
     }
 }
 
-/// EXPERIMENTAL - start a thread-scoped realtime session.
+/// start a thread-scoped realtime session.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4028,7 +3912,7 @@ pub struct ThreadRealtimeStartParams {
     pub voice: Option<RealtimeVoice>,
 }
 
-/// EXPERIMENTAL - transport used by thread realtime.
+/// transport used by thread realtime.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(export_to = "v2/", tag = "type")]
@@ -4041,13 +3925,13 @@ pub enum ThreadRealtimeStartTransport {
     },
 }
 
-/// EXPERIMENTAL - response for starting thread realtime.
+/// response for starting thread realtime.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadRealtimeStartResponse {}
 
-/// EXPERIMENTAL - append audio input to thread realtime.
+/// append audio input to thread realtime.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4056,13 +3940,13 @@ pub struct ThreadRealtimeAppendAudioParams {
     pub audio: ThreadRealtimeAudioChunk,
 }
 
-/// EXPERIMENTAL - response for appending realtime audio input.
+/// response for appending realtime audio input.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadRealtimeAppendAudioResponse {}
 
-/// EXPERIMENTAL - append text input to thread realtime.
+/// append text input to thread realtime.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4071,13 +3955,13 @@ pub struct ThreadRealtimeAppendTextParams {
     pub text: String,
 }
 
-/// EXPERIMENTAL - response for appending realtime text input.
+/// response for appending realtime text input.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadRealtimeAppendTextResponse {}
 
-/// EXPERIMENTAL - stop thread realtime.
+/// stop thread realtime.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4085,19 +3969,19 @@ pub struct ThreadRealtimeStopParams {
     pub thread_id: String,
 }
 
-/// EXPERIMENTAL - response for stopping thread realtime.
+/// response for stopping thread realtime.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadRealtimeStopResponse {}
 
-/// EXPERIMENTAL - list voices supported by thread realtime.
+/// list voices supported by thread realtime.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadRealtimeListVoicesParams {}
 
-/// EXPERIMENTAL - response for listing supported realtime voices.
+/// response for listing supported realtime voices.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4105,7 +3989,7 @@ pub struct ThreadRealtimeListVoicesResponse {
     pub voices: RealtimeVoicesList,
 }
 
-/// EXPERIMENTAL - emitted when thread realtime startup is accepted.
+/// emitted when thread realtime startup is accepted.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4115,7 +3999,7 @@ pub struct ThreadRealtimeStartedNotification {
     pub version: RealtimeConversationVersion,
 }
 
-/// EXPERIMENTAL - raw non-audio thread realtime item emitted by the backend.
+/// raw non-audio thread realtime item emitted by the backend.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4124,7 +4008,7 @@ pub struct ThreadRealtimeItemAddedNotification {
     pub item: JsonValue,
 }
 
-/// EXPERIMENTAL - flat transcript delta emitted whenever realtime
+/// flat transcript delta emitted whenever realtime
 /// transcript text changes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -4136,7 +4020,7 @@ pub struct ThreadRealtimeTranscriptDeltaNotification {
     pub delta: String,
 }
 
-/// EXPERIMENTAL - final transcript text emitted when realtime completes
+/// final transcript text emitted when realtime completes
 /// a transcript part.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -4148,7 +4032,7 @@ pub struct ThreadRealtimeTranscriptDoneNotification {
     pub text: String,
 }
 
-/// EXPERIMENTAL - streamed output audio emitted by thread realtime.
+/// streamed output audio emitted by thread realtime.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4157,7 +4041,7 @@ pub struct ThreadRealtimeOutputAudioDeltaNotification {
     pub audio: ThreadRealtimeAudioChunk,
 }
 
-/// EXPERIMENTAL - emitted with the remote SDP for a WebRTC realtime session.
+/// emitted with the remote SDP for a WebRTC realtime session.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4166,7 +4050,7 @@ pub struct ThreadRealtimeSdpNotification {
     pub sdp: String,
 }
 
-/// EXPERIMENTAL - emitted when thread realtime encounters an error.
+/// emitted when thread realtime encounters an error.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4175,7 +4059,7 @@ pub struct ThreadRealtimeErrorNotification {
     pub message: String,
 }
 
-/// EXPERIMENTAL - emitted when thread realtime transport closes.
+/// emitted when thread realtime transport closes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4195,23 +4079,19 @@ pub enum TurnStatus {
 }
 
 // Turn APIs
-#[derive(
-    Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS, ExperimentalApi,
-)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct TurnStartParams {
     pub thread_id: String,
     pub input: Vec<UserInput>,
     /// Optional turn-scoped Responses API client metadata.
-    #[experimental("turn/start.responsesapiClientMetadata")]
     #[ts(optional = nullable)]
     pub responsesapi_client_metadata: Option<HashMap<String, String>>,
     /// Override the working directory for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub cwd: Option<PathBuf>,
     /// Override the approval policy for this turn and subsequent turns.
-    #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
     /// Override where approval requests are routed for review on this turn and
@@ -4239,20 +4119,16 @@ pub struct TurnStartParams {
     /// Override the reasoning summary for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub summary: Option<ReasoningSummary>,
-    /// Override the personality for this turn and subsequent turns.
-    #[ts(optional = nullable)]
-    pub personality: Option<Personality>,
     /// Optional JSON Schema used to constrain the final assistant message for
     /// this turn.
     #[ts(optional = nullable)]
     pub output_schema: Option<JsonValue>,
 
-    /// EXPERIMENTAL - Set a pre-set collaboration mode.
+    /// Set a pre-set collaboration mode.
     /// Takes precedence over model, reasoning_effort, and developer instructions if set.
     ///
     /// For `collaboration_mode.settings.developer_instructions`, `null` means
     /// "use the built-in instructions for the selected mode".
-    #[experimental("turn/start.collaborationMode")]
     #[ts(optional = nullable)]
     pub collaboration_mode: Option<CollaborationMode>,
 }
@@ -4331,16 +4207,13 @@ pub struct ThreadInjectItemsParams {
 #[ts(export_to = "v2/")]
 pub struct ThreadInjectItemsResponse {}
 
-#[derive(
-    Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS, ExperimentalApi,
-)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct TurnSteerParams {
     pub thread_id: String,
     pub input: Vec<UserInput>,
     /// Optional turn-scoped Responses API client metadata.
-    #[experimental("turn/steer.responsesapiClientMetadata")]
     #[ts(optional = nullable)]
     pub responsesapi_client_metadata: Option<HashMap<String, String>>,
     /// Required active turn id precondition. The request fails when it does not
@@ -4539,7 +4412,7 @@ pub enum ThreadItem {
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
-    /// EXPERIMENTAL - proposed plan item content. The completed plan item is
+    /// proposed plan item content. The completed plan item is
     /// authoritative and may not match the concatenation of `PlanDelta` text.
     Plan { id: String, text: String },
     #[serde(rename_all = "camelCase")]
@@ -4699,7 +4572,7 @@ impl ThreadItem {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 /// [UNSTABLE] Lifecycle state for an approval auto-review.
-pub enum GuardianApprovalReviewStatus {
+pub enum AutoApprovalReviewStatus {
     InProgress,
     Approved,
     Denied,
@@ -4715,10 +4588,10 @@ pub enum AutoReviewDecisionSource {
     Agent,
 }
 
-impl From<CoreGuardianAssessmentDecisionSource> for AutoReviewDecisionSource {
-    fn from(value: CoreGuardianAssessmentDecisionSource) -> Self {
+impl From<CoreAutoReviewAssessmentDecisionSource> for AutoReviewDecisionSource {
+    fn from(value: CoreAutoReviewAssessmentDecisionSource) -> Self {
         match value {
-            CoreGuardianAssessmentDecisionSource::Agent => Self::Agent,
+            CoreAutoReviewAssessmentDecisionSource::Agent => Self::Agent,
         }
     }
 }
@@ -4727,20 +4600,20 @@ impl From<CoreGuardianAssessmentDecisionSource> for AutoReviewDecisionSource {
 #[serde(rename_all = "lowercase")]
 #[ts(export_to = "v2/")]
 /// [UNSTABLE] Risk level assigned by approval auto-review.
-pub enum GuardianRiskLevel {
+pub enum AutoReviewRiskLevel {
     Low,
     Medium,
     High,
     Critical,
 }
 
-impl From<CoreGuardianRiskLevel> for GuardianRiskLevel {
-    fn from(value: CoreGuardianRiskLevel) -> Self {
+impl From<CoreAutoReviewRiskLevel> for AutoReviewRiskLevel {
+    fn from(value: CoreAutoReviewRiskLevel) -> Self {
         match value {
-            CoreGuardianRiskLevel::Low => Self::Low,
-            CoreGuardianRiskLevel::Medium => Self::Medium,
-            CoreGuardianRiskLevel::High => Self::High,
-            CoreGuardianRiskLevel::Critical => Self::Critical,
+            CoreAutoReviewRiskLevel::Low => Self::Low,
+            CoreAutoReviewRiskLevel::Medium => Self::Medium,
+            CoreAutoReviewRiskLevel::High => Self::High,
+            CoreAutoReviewRiskLevel::Critical => Self::Critical,
         }
     }
 }
@@ -4749,20 +4622,20 @@ impl From<CoreGuardianRiskLevel> for GuardianRiskLevel {
 #[serde(rename_all = "lowercase")]
 #[ts(export_to = "v2/")]
 /// [UNSTABLE] Authorization level assigned by approval auto-review.
-pub enum GuardianUserAuthorization {
+pub enum AutoReviewUserAuthorization {
     Unknown,
     Low,
     Medium,
     High,
 }
 
-impl From<CoreGuardianUserAuthorization> for GuardianUserAuthorization {
-    fn from(value: CoreGuardianUserAuthorization) -> Self {
+impl From<CoreAutoReviewUserAuthorization> for AutoReviewUserAuthorization {
+    fn from(value: CoreAutoReviewUserAuthorization) -> Self {
         match value {
-            CoreGuardianUserAuthorization::Unknown => Self::Unknown,
-            CoreGuardianUserAuthorization::Low => Self::Low,
-            CoreGuardianUserAuthorization::Medium => Self::Medium,
-            CoreGuardianUserAuthorization::High => Self::High,
+            CoreAutoReviewUserAuthorization::Unknown => Self::Unknown,
+            CoreAutoReviewUserAuthorization::Low => Self::Low,
+            CoreAutoReviewUserAuthorization::Medium => Self::Medium,
+            CoreAutoReviewUserAuthorization::High => Self::High,
         }
     }
 }
@@ -4773,10 +4646,10 @@ impl From<CoreGuardianUserAuthorization> for GuardianUserAuthorization {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct GuardianApprovalReview {
-    pub status: GuardianApprovalReviewStatus,
-    pub risk_level: Option<GuardianRiskLevel>,
-    pub user_authorization: Option<GuardianUserAuthorization>,
+pub struct AutoApprovalReview {
+    pub status: AutoApprovalReviewStatus,
+    pub risk_level: Option<AutoReviewRiskLevel>,
+    pub user_authorization: Option<AutoReviewUserAuthorization>,
     pub rationale: Option<String>,
 }
 
@@ -4784,25 +4657,25 @@ pub struct GuardianApprovalReview {
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub enum GuardianCommandSource {
+pub enum AutoReviewCommandSource {
     Shell,
     UnifiedExec,
 }
 
-impl From<CoreGuardianCommandSource> for GuardianCommandSource {
-    fn from(value: CoreGuardianCommandSource) -> Self {
+impl From<CoreAutoReviewCommandSource> for AutoReviewCommandSource {
+    fn from(value: CoreAutoReviewCommandSource) -> Self {
         match value {
-            CoreGuardianCommandSource::Shell => Self::Shell,
-            CoreGuardianCommandSource::UnifiedExec => Self::UnifiedExec,
+            CoreAutoReviewCommandSource::Shell => Self::Shell,
+            CoreAutoReviewCommandSource::UnifiedExec => Self::UnifiedExec,
         }
     }
 }
 
-impl From<GuardianCommandSource> for CoreGuardianCommandSource {
-    fn from(value: GuardianCommandSource) -> Self {
+impl From<AutoReviewCommandSource> for CoreAutoReviewCommandSource {
+    fn from(value: AutoReviewCommandSource) -> Self {
         match value {
-            GuardianCommandSource::Shell => Self::Shell,
-            GuardianCommandSource::UnifiedExec => Self::UnifiedExec,
+            AutoReviewCommandSource::Shell => Self::Shell,
+            AutoReviewCommandSource::UnifiedExec => Self::UnifiedExec,
         }
     }
 }
@@ -4810,8 +4683,8 @@ impl From<GuardianCommandSource> for CoreGuardianCommandSource {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct GuardianCommandReviewAction {
-    pub source: GuardianCommandSource,
+pub struct AutoReviewCommandReviewAction {
+    pub source: AutoReviewCommandSource,
     pub command: String,
     pub cwd: AbsolutePathBuf,
 }
@@ -4819,8 +4692,8 @@ pub struct GuardianCommandReviewAction {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct GuardianExecveReviewAction {
-    pub source: GuardianCommandSource,
+pub struct AutoReviewExecveReviewAction {
+    pub source: AutoReviewCommandSource,
     pub program: String,
     pub argv: Vec<String>,
     pub cwd: AbsolutePathBuf,
@@ -4829,7 +4702,7 @@ pub struct GuardianExecveReviewAction {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct GuardianApplyPatchReviewAction {
+pub struct AutoReviewApplyPatchReviewAction {
     pub cwd: AbsolutePathBuf,
     pub files: Vec<AbsolutePathBuf>,
 }
@@ -4837,7 +4710,7 @@ pub struct GuardianApplyPatchReviewAction {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct GuardianNetworkAccessReviewAction {
+pub struct AutoReviewNetworkAccessReviewAction {
     pub target: String,
     pub host: String,
     pub protocol: NetworkApprovalProtocol,
@@ -4847,7 +4720,7 @@ pub struct GuardianNetworkAccessReviewAction {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct GuardianMcpToolCallReviewAction {
+pub struct AutoReviewMcpToolCallReviewAction {
     pub server: String,
     pub tool_name: String,
     pub connector_id: Option<String>,
@@ -4859,18 +4732,18 @@ pub struct GuardianMcpToolCallReviewAction {
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(tag = "type", rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub enum GuardianApprovalReviewAction {
+pub enum AutoApprovalReviewAction {
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     Command {
-        source: GuardianCommandSource,
+        source: AutoReviewCommandSource,
         command: String,
         cwd: AbsolutePathBuf,
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     Execve {
-        source: GuardianCommandSource,
+        source: AutoReviewCommandSource,
         program: String,
         argv: Vec<String>,
         cwd: AbsolutePathBuf,
@@ -4900,10 +4773,10 @@ pub enum GuardianApprovalReviewAction {
     },
 }
 
-impl From<CoreGuardianAssessmentAction> for GuardianApprovalReviewAction {
-    fn from(value: CoreGuardianAssessmentAction) -> Self {
+impl From<CoreAutoReviewAssessmentAction> for AutoApprovalReviewAction {
+    fn from(value: CoreAutoReviewAssessmentAction) -> Self {
         match value {
-            CoreGuardianAssessmentAction::Command {
+            CoreAutoReviewAssessmentAction::Command {
                 source,
                 command,
                 cwd,
@@ -4912,7 +4785,7 @@ impl From<CoreGuardianAssessmentAction> for GuardianApprovalReviewAction {
                 command,
                 cwd,
             },
-            CoreGuardianAssessmentAction::Execve {
+            CoreAutoReviewAssessmentAction::Execve {
                 source,
                 program,
                 argv,
@@ -4923,10 +4796,10 @@ impl From<CoreGuardianAssessmentAction> for GuardianApprovalReviewAction {
                 argv,
                 cwd,
             },
-            CoreGuardianAssessmentAction::ApplyPatch { cwd, files } => {
+            CoreAutoReviewAssessmentAction::ApplyPatch { cwd, files } => {
                 Self::ApplyPatch { cwd, files }
             }
-            CoreGuardianAssessmentAction::NetworkAccess {
+            CoreAutoReviewAssessmentAction::NetworkAccess {
                 target,
                 host,
                 protocol,
@@ -4937,7 +4810,7 @@ impl From<CoreGuardianAssessmentAction> for GuardianApprovalReviewAction {
                 protocol: protocol.into(),
                 port,
             },
-            CoreGuardianAssessmentAction::McpToolCall {
+            CoreAutoReviewAssessmentAction::McpToolCall {
                 server,
                 tool_name,
                 connector_id,
@@ -4954,10 +4827,10 @@ impl From<CoreGuardianAssessmentAction> for GuardianApprovalReviewAction {
     }
 }
 
-impl From<GuardianApprovalReviewAction> for CoreGuardianAssessmentAction {
-    fn from(value: GuardianApprovalReviewAction) -> Self {
+impl From<AutoApprovalReviewAction> for CoreAutoReviewAssessmentAction {
+    fn from(value: AutoApprovalReviewAction) -> Self {
         match value {
-            GuardianApprovalReviewAction::Command {
+            AutoApprovalReviewAction::Command {
                 source,
                 command,
                 cwd,
@@ -4966,7 +4839,7 @@ impl From<GuardianApprovalReviewAction> for CoreGuardianAssessmentAction {
                 command,
                 cwd,
             },
-            GuardianApprovalReviewAction::Execve {
+            AutoApprovalReviewAction::Execve {
                 source,
                 program,
                 argv,
@@ -4977,10 +4850,8 @@ impl From<GuardianApprovalReviewAction> for CoreGuardianAssessmentAction {
                 argv,
                 cwd,
             },
-            GuardianApprovalReviewAction::ApplyPatch { cwd, files } => {
-                Self::ApplyPatch { cwd, files }
-            }
-            GuardianApprovalReviewAction::NetworkAccess {
+            AutoApprovalReviewAction::ApplyPatch { cwd, files } => Self::ApplyPatch { cwd, files },
+            AutoApprovalReviewAction::NetworkAccess {
                 target,
                 host,
                 protocol,
@@ -4991,7 +4862,7 @@ impl From<GuardianApprovalReviewAction> for CoreGuardianAssessmentAction {
                 protocol: protocol.to_core(),
                 port,
             },
-            GuardianApprovalReviewAction::McpToolCall {
+            AutoApprovalReviewAction::McpToolCall {
                 server,
                 tool_name,
                 connector_id,
@@ -5486,7 +5357,7 @@ pub struct ItemStartedNotification {
 #[ts(export_to = "v2/")]
 /// [UNSTABLE] Temporary notification payload for approval auto-review. This
 /// shape is expected to change soon.
-pub struct ItemGuardianApprovalReviewStartedNotification {
+pub struct ItemAutoApprovalReviewStartedNotification {
     pub thread_id: String,
     pub turn_id: String,
     /// Stable identifier for this review.
@@ -5503,8 +5374,8 @@ pub struct ItemGuardianApprovalReviewStartedNotification {
     /// because the review is about the network call, not the command execution.
     /// Therefore, target_item_id is set to None for network policy reviews.
     pub target_item_id: Option<String>,
-    pub review: GuardianApprovalReview,
-    pub action: GuardianApprovalReviewAction,
+    pub review: AutoApprovalReview,
+    pub action: AutoApprovalReviewAction,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -5512,7 +5383,7 @@ pub struct ItemGuardianApprovalReviewStartedNotification {
 #[ts(export_to = "v2/")]
 /// [UNSTABLE] Temporary notification payload for approval auto-review. This
 /// shape is expected to change soon.
-pub struct ItemGuardianApprovalReviewCompletedNotification {
+pub struct ItemAutoApprovalReviewCompletedNotification {
     pub thread_id: String,
     pub turn_id: String,
     /// Stable identifier for this review.
@@ -5530,8 +5401,8 @@ pub struct ItemGuardianApprovalReviewCompletedNotification {
     /// Therefore, target_item_id is set to None for network policy reviews.
     pub target_item_id: Option<String>,
     pub decision_source: AutoReviewDecisionSource,
-    pub review: GuardianApprovalReview,
-    pub action: GuardianApprovalReviewAction,
+    pub review: AutoApprovalReview,
+    pub action: AutoApprovalReviewAction,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -5557,7 +5428,7 @@ pub struct AgentMessageDeltaNotification {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// EXPERIMENTAL - proposed plan streaming deltas for plan items. Clients should
+/// proposed plan streaming deltas for plan items. Clients should
 /// not assume concatenated deltas match the completed plan item content.
 pub struct PlanDeltaNotification {
     pub thread_id: String,
@@ -5775,7 +5646,7 @@ pub struct MemoryPromptCacheUpdatedNotification {
     pub turn_id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct CommandExecutionRequestApprovalParams {
@@ -5813,7 +5684,6 @@ pub struct CommandExecutionRequestApprovalParams {
     #[ts(optional = nullable)]
     pub command_actions: Option<Vec<CommandAction>>,
     /// Optional additional permissions requested for this command.
-    #[experimental("item/commandExecution/requestApproval.additionalPermissions")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub additional_permissions: Option<AdditionalPermissionProfile>,
@@ -5826,19 +5696,9 @@ pub struct CommandExecutionRequestApprovalParams {
     #[ts(optional = nullable)]
     pub proposed_network_policy_amendments: Option<Vec<NetworkPolicyAmendment>>,
     /// Ordered list of decisions the client may present for this prompt.
-    #[experimental("item/commandExecution/requestApproval.availableDecisions")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub available_decisions: Option<Vec<CommandExecutionApprovalDecision>>,
-}
-
-impl CommandExecutionRequestApprovalParams {
-    pub fn strip_experimental_fields(&mut self) {
-        // TODO: Avoid hardcoding individual experimental fields here.
-        // We need a generic outbound compatibility design for stripping or
-        // otherwise handling experimental server->client payloads.
-        self.additional_permissions = None;
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -6354,6 +6214,7 @@ pub struct PermissionsRequestApprovalParams {
     pub thread_id: String,
     pub turn_id: String,
     pub item_id: String,
+    pub cwd: AbsolutePathBuf,
     pub reason: Option<String>,
     pub permissions: RequestPermissionProfile,
 }
@@ -6374,6 +6235,10 @@ pub struct PermissionsRequestApprovalResponse {
     pub permissions: GrantedPermissionProfile,
     #[serde(default)]
     pub scope: PermissionGrantScope,
+    /// Review every subsequent command in this turn before normal sandboxed execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub strict_auto_review: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -6411,7 +6276,7 @@ impl From<DynamicToolCallOutputContentItem>
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// EXPERIMENTAL. Defines a single selectable option for request_user_input.
+/// Defines a single selectable option for request_user_input.
 pub struct ToolRequestUserInputOption {
     pub label: String,
     pub description: String,
@@ -6420,7 +6285,7 @@ pub struct ToolRequestUserInputOption {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// EXPERIMENTAL. Represents one request_user_input question and its required options.
+/// Represents one request_user_input question and its required options.
 pub struct ToolRequestUserInputQuestion {
     pub id: String,
     pub header: String,
@@ -6435,7 +6300,7 @@ pub struct ToolRequestUserInputQuestion {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// EXPERIMENTAL. Params sent with a request_user_input event.
+/// Params sent with a request_user_input event.
 pub struct ToolRequestUserInputParams {
     pub thread_id: String,
     pub turn_id: String,
@@ -6446,7 +6311,7 @@ pub struct ToolRequestUserInputParams {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// EXPERIMENTAL. Captures a user's answer to a request_user_input question.
+/// Captures a user's answer to a request_user_input question.
 pub struct ToolRequestUserInputAnswer {
     pub answers: Vec<String>,
 }
@@ -6454,7 +6319,7 @@ pub struct ToolRequestUserInputAnswer {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// EXPERIMENTAL. Response payload mapping question ids to answers.
+/// Response payload mapping question ids to answers.
 pub struct ToolRequestUserInputResponse {
     pub answers: HashMap<String, ToolRequestUserInputAnswer>,
 }
@@ -6616,6 +6481,7 @@ mod tests {
             "threadId": "thr_123",
             "turnId": "turn_123",
             "itemId": "call_123",
+            "cwd": "/tmp",
             "reason": "Select a workspace root",
             "permissions": {
                 "network": {
@@ -6674,6 +6540,7 @@ mod tests {
             "threadId": "thr_123",
             "turnId": "turn_123",
             "itemId": "call_123",
+            "cwd": "/tmp",
             "reason": "Select a workspace root",
             "permissions": {
                 "network": null,
@@ -7377,320 +7244,6 @@ mod tests {
     }
 
     #[test]
-    fn ask_for_approval_granular_is_marked_experimental() {
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(
-            &AskForApproval::Granular {
-                sandbox_approval: true,
-                rules: false,
-                skill_approval: false,
-                request_permissions: false,
-                mcp_elicitations: true,
-            },
-        );
-
-        assert_eq!(reason, Some("askForApproval.granular"));
-        assert_eq!(
-            crate::experimental_api::ExperimentalApi::experimental_reason(
-                &AskForApproval::OnRequest,
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn profile_v2_granular_approval_policy_is_marked_experimental() {
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&ProfileV2 {
-            model: None,
-            model_provider: None,
-            approval_policy: Some(AskForApproval::Granular {
-                sandbox_approval: true,
-                rules: false,
-                skill_approval: false,
-                request_permissions: true,
-                mcp_elicitations: false,
-            }),
-            approvals_reviewer: None,
-            service_tier: None,
-            model_reasoning_effort: None,
-            model_reasoning_summary: None,
-            model_verbosity: None,
-            web_search: None,
-            tools: None,
-            additional: HashMap::new(),
-        });
-
-        assert_eq!(reason, Some("askForApproval.granular"));
-    }
-
-    #[test]
-    fn config_granular_approval_policy_is_marked_experimental() {
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&Config {
-            model: None,
-            review_model: None,
-            model_context_window: None,
-            model_provider: None,
-            approval_policy: Some(AskForApproval::Granular {
-                sandbox_approval: false,
-                rules: true,
-                skill_approval: false,
-                request_permissions: false,
-                mcp_elicitations: true,
-            }),
-            approvals_reviewer: None,
-            sandbox_mode: None,
-            sandbox_workspace_write: None,
-            web_search: None,
-            tools: None,
-            profile: None,
-            profiles: HashMap::new(),
-            instructions: None,
-            developer_instructions: None,
-            model_reasoning_effort: None,
-            model_reasoning_summary: None,
-            model_verbosity: None,
-            service_tier: None,
-            analytics: None,
-            apps: None,
-            additional: HashMap::new(),
-        });
-
-        assert_eq!(reason, Some("askForApproval.granular"));
-    }
-
-    #[test]
-    fn config_approvals_reviewer_is_marked_experimental() {
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&Config {
-            model: None,
-            review_model: None,
-            model_context_window: None,
-            model_provider: None,
-            approval_policy: None,
-            approvals_reviewer: Some(ApprovalsReviewer::GuardianSubagent),
-            sandbox_mode: None,
-            sandbox_workspace_write: None,
-            web_search: None,
-            tools: None,
-            profile: None,
-            profiles: HashMap::new(),
-            instructions: None,
-            developer_instructions: None,
-            model_reasoning_effort: None,
-            model_reasoning_summary: None,
-            model_verbosity: None,
-            service_tier: None,
-            analytics: None,
-            apps: None,
-            additional: HashMap::new(),
-        });
-
-        assert_eq!(reason, Some("config/read.approvalsReviewer"));
-    }
-
-    #[test]
-    fn config_nested_profile_granular_approval_policy_is_marked_experimental() {
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&Config {
-            model: None,
-            review_model: None,
-            model_context_window: None,
-            model_provider: None,
-            approval_policy: None,
-            approvals_reviewer: None,
-            sandbox_mode: None,
-            sandbox_workspace_write: None,
-            web_search: None,
-            tools: None,
-            profile: None,
-            profiles: HashMap::from([(
-                "default".to_string(),
-                ProfileV2 {
-                    model: None,
-                    model_provider: None,
-                    approval_policy: Some(AskForApproval::Granular {
-                        sandbox_approval: true,
-                        rules: false,
-                        skill_approval: false,
-                        request_permissions: false,
-                        mcp_elicitations: true,
-                    }),
-                    approvals_reviewer: None,
-                    service_tier: None,
-                    model_reasoning_effort: None,
-                    model_reasoning_summary: None,
-                    model_verbosity: None,
-                    web_search: None,
-                    tools: None,
-                    additional: HashMap::new(),
-                },
-            )]),
-            instructions: None,
-            developer_instructions: None,
-            model_reasoning_effort: None,
-            model_reasoning_summary: None,
-            model_verbosity: None,
-            service_tier: None,
-            analytics: None,
-            apps: None,
-            additional: HashMap::new(),
-        });
-
-        assert_eq!(reason, Some("askForApproval.granular"));
-    }
-
-    #[test]
-    fn config_nested_profile_approvals_reviewer_is_marked_experimental() {
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&Config {
-            model: None,
-            review_model: None,
-            model_context_window: None,
-            model_provider: None,
-            approval_policy: None,
-            approvals_reviewer: None,
-            sandbox_mode: None,
-            sandbox_workspace_write: None,
-            web_search: None,
-            tools: None,
-            profile: None,
-            profiles: HashMap::from([(
-                "default".to_string(),
-                ProfileV2 {
-                    model: None,
-                    model_provider: None,
-                    approval_policy: None,
-                    approvals_reviewer: Some(ApprovalsReviewer::GuardianSubagent),
-                    service_tier: None,
-                    model_reasoning_effort: None,
-                    model_reasoning_summary: None,
-                    model_verbosity: None,
-                    web_search: None,
-                    tools: None,
-                    additional: HashMap::new(),
-                },
-            )]),
-            instructions: None,
-            developer_instructions: None,
-            model_reasoning_effort: None,
-            model_reasoning_summary: None,
-            model_verbosity: None,
-            service_tier: None,
-            analytics: None,
-            apps: None,
-            additional: HashMap::new(),
-        });
-
-        assert_eq!(reason, Some("config/read.approvalsReviewer"));
-    }
-
-    #[test]
-    fn config_requirements_granular_allowed_approval_policy_is_marked_experimental() {
-        let reason =
-            crate::experimental_api::ExperimentalApi::experimental_reason(&ConfigRequirements {
-                allowed_approval_policies: Some(vec![AskForApproval::Granular {
-                    sandbox_approval: true,
-                    rules: true,
-                    skill_approval: false,
-                    request_permissions: false,
-                    mcp_elicitations: false,
-                }]),
-                allowed_approvals_reviewers: None,
-                allowed_sandbox_modes: None,
-                allowed_web_search_modes: None,
-                feature_requirements: None,
-                enforce_residency: None,
-                network: None,
-            });
-
-        assert_eq!(reason, Some("askForApproval.granular"));
-    }
-
-    #[test]
-    fn client_request_thread_start_granular_approval_policy_is_marked_experimental() {
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(
-            &crate::ClientRequest::ThreadStart {
-                request_id: crate::RequestId::Integer(1),
-                params: ThreadStartParams {
-                    approval_policy: Some(AskForApproval::Granular {
-                        sandbox_approval: true,
-                        rules: false,
-                        skill_approval: false,
-                        request_permissions: true,
-                        mcp_elicitations: false,
-                    }),
-                    ..Default::default()
-                },
-            },
-        );
-
-        assert_eq!(reason, Some("askForApproval.granular"));
-    }
-
-    #[test]
-    fn client_request_thread_resume_granular_approval_policy_is_marked_experimental() {
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(
-            &crate::ClientRequest::ThreadResume {
-                request_id: crate::RequestId::Integer(2),
-                params: ThreadResumeParams {
-                    thread_id: "thr_123".to_string(),
-                    approval_policy: Some(AskForApproval::Granular {
-                        sandbox_approval: false,
-                        rules: true,
-                        skill_approval: false,
-                        request_permissions: false,
-                        mcp_elicitations: true,
-                    }),
-                    ..Default::default()
-                },
-            },
-        );
-
-        assert_eq!(reason, Some("askForApproval.granular"));
-    }
-
-    #[test]
-    fn client_request_thread_fork_granular_approval_policy_is_marked_experimental() {
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(
-            &crate::ClientRequest::ThreadFork {
-                request_id: crate::RequestId::Integer(3),
-                params: ThreadForkParams {
-                    thread_id: "thr_456".to_string(),
-                    approval_policy: Some(AskForApproval::Granular {
-                        sandbox_approval: true,
-                        rules: false,
-                        skill_approval: false,
-                        request_permissions: false,
-                        mcp_elicitations: true,
-                    }),
-                    ..Default::default()
-                },
-            },
-        );
-
-        assert_eq!(reason, Some("askForApproval.granular"));
-    }
-
-    #[test]
-    fn client_request_turn_start_granular_approval_policy_is_marked_experimental() {
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(
-            &crate::ClientRequest::TurnStart {
-                request_id: crate::RequestId::Integer(4),
-                params: TurnStartParams {
-                    thread_id: "thr_123".to_string(),
-                    input: Vec::new(),
-                    approval_policy: Some(AskForApproval::Granular {
-                        sandbox_approval: false,
-                        rules: true,
-                        skill_approval: false,
-                        request_permissions: false,
-                        mcp_elicitations: true,
-                    }),
-                    ..Default::default()
-                },
-            },
-        );
-
-        assert_eq!(reason, Some("askForApproval.granular"));
-    }
-
-    #[test]
     fn mcp_server_elicitation_response_round_trips_rmcp_result() {
         let rmcp_result = rmcp::model::CreateElicitationResult {
             action: rmcp::model::ElicitationAction::Accept,
@@ -7993,7 +7546,7 @@ mod tests {
 
     #[test]
     fn automatic_approval_review_deserializes_aborted_status() {
-        let review: GuardianApprovalReview = serde_json::from_value(json!({
+        let review: AutoApprovalReview = serde_json::from_value(json!({
             "status": "aborted",
             "riskLevel": null,
             "userAuthorization": null,
@@ -8002,8 +7555,8 @@ mod tests {
         .expect("aborted automatic review should deserialize");
         assert_eq!(
             review,
-            GuardianApprovalReview {
-                status: GuardianApprovalReviewStatus::Aborted,
+            AutoApprovalReview {
+                status: AutoApprovalReviewStatus::Aborted,
                 risk_level: None,
                 user_authorization: None,
                 rationale: None,
@@ -8012,26 +7565,26 @@ mod tests {
     }
 
     #[test]
-    fn guardian_approval_review_action_round_trips_command_shape() {
+    fn auto_review_approval_review_action_round_trips_command_shape() {
         let value = json!({
             "type": "command",
             "source": "shell",
             "command": "rm -rf /tmp/example.sqlite",
             "cwd": absolute_path_string("tmp"),
         });
-        let action: GuardianApprovalReviewAction =
-            serde_json::from_value(value.clone()).expect("guardian review action");
+        let action: AutoApprovalReviewAction =
+            serde_json::from_value(value.clone()).expect("auto_review review action");
 
         assert_eq!(
             action,
-            GuardianApprovalReviewAction::Command {
-                source: GuardianCommandSource::Shell,
+            AutoApprovalReviewAction::Command {
+                source: AutoReviewCommandSource::Shell,
                 command: "rm -rf /tmp/example.sqlite".to_string(),
                 cwd: absolute_path("tmp"),
             }
         );
         assert_eq!(
-            serde_json::to_value(&action).expect("serialize guardian review action"),
+            serde_json::to_value(&action).expect("serialize auto_review review action"),
             value
         );
     }
@@ -8710,6 +8263,7 @@ mod tests {
         assert_eq!(
             actual,
             DynamicToolSpec {
+                namespace: None,
                 name: "lookup_ticket".to_string(),
                 description: "Fetch a ticket".to_string(),
                 input_schema: json!({
@@ -8831,7 +8385,6 @@ mod tests {
             summary: None,
             output_schema: None,
             collaboration_mode: None,
-            personality: None,
         };
         let serialized_without_override =
             serde_json::to_value(&without_override).expect("params should serialize");

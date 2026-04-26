@@ -56,6 +56,8 @@ use crate::util::error_or_panic;
 use futures::future::BoxFuture;
 use futures::prelude::*;
 use futures::stream::FuturesOrdered;
+use lyra_analytics::AppInvocation;
+use lyra_analytics::InvocationType;
 use lyra_analytics::TurnResolvedConfigFact;
 use lyra_analytics::build_track_events_context;
 use lyra_async_utils::OrCancelExt;
@@ -218,7 +220,14 @@ pub(crate) async fn run_turn(
     let SkillInjections {
         items: skill_items,
         warnings: skill_warnings,
-    } = build_skill_injections(&mentioned_skills, skills_outcome, Some(&session_telemetry)).await;
+    } = build_skill_injections(
+        &mentioned_skills,
+        skills_outcome,
+        Some(&session_telemetry),
+        &sess.services.analytics_events_client,
+        tracking.clone(),
+    )
+    .await;
 
     for message in skill_warnings {
         sess.send_event(&turn_context, EventMsg::Warning(WarningEvent { message }))
@@ -238,6 +247,20 @@ pub(crate) async fn run_turn(
         &available_connectors,
         &skill_name_counts_lower,
     ));
+    let connector_names_by_id = available_connectors
+        .iter()
+        .map(|connector| (connector.id.as_str(), connector.name.as_str()))
+        .collect::<HashMap<&str, &str>>();
+    let mentioned_app_invocations = explicitly_enabled_connectors
+        .iter()
+        .map(|connector_id| AppInvocation {
+            connector_id: Some(connector_id.clone()),
+            app_name: connector_names_by_id
+                .get(connector_id.as_str())
+                .map(|name| (*name).to_string()),
+            invocation_type: Some(InvocationType::Explicit),
+        })
+        .collect::<Vec<_>>();
 
     if run_pending_session_start_hooks(&sess, &turn_context).await {
         return None;
@@ -266,6 +289,9 @@ pub(crate) async fn run_turn(
             .await;
         user_prompt_submit_outcome.additional_contexts
     };
+    sess.services
+        .analytics_events_client
+        .track_app_mentioned(tracking.clone(), mentioned_app_invocations);
     for plugin in mentioned_plugin_metadata {
         sess.services
             .analytics_events_client
@@ -616,7 +642,6 @@ async fn track_turn_resolved_config_analytics(
             approvals_reviewer: turn_context.config.approvals_reviewer,
             sandbox_network_access: turn_context.network_sandbox_policy.is_enabled(),
             collaboration_mode: turn_context.collaboration_mode.mode,
-            personality: turn_context.personality,
             is_first_turn,
         });
 }
@@ -775,7 +800,6 @@ pub(crate) fn build_prompt(
         tools,
         parallel_tool_calls: turn_context.model_info.supports_parallel_tool_calls,
         base_instructions,
-        personality: turn_context.personality,
         output_schema: turn_context.final_output_json_schema.clone(),
     }
 }
@@ -1292,7 +1316,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::RequestUserInput(_)
         | EventMsg::DynamicToolCallRequest(_)
         | EventMsg::DynamicToolCallResponse(_)
-        | EventMsg::GuardianAssessment(_)
+        | EventMsg::AutoReviewAssessment(_)
         | EventMsg::ElicitationRequest(_)
         | EventMsg::ApplyPatchApprovalRequest(_)
         | EventMsg::DeprecationNotice(_)

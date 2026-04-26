@@ -96,44 +96,6 @@ pub enum InvocationType {
     Implicit,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CompactionImplementation {
-    Responses,
-    ResponsesCompact,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CompactionPhase {
-    PreTurn,
-    MidTurn,
-    StandaloneTurn,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CompactionReason {
-    ContextLimit,
-    ModelDownshift,
-    UserRequested,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CompactionStatus {
-    Completed,
-    Failed,
-    Interrupted,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CompactionStrategy {
-    Memento,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CompactionTrigger {
-    Auto,
-    Manual,
-}
-
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TrackEventsContext {
     pub model: String,
@@ -189,17 +151,7 @@ pub struct SubAgentThreadStartedInput<A = (), B = (), C = (), D = (), E = ()> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TurnResolvedConfigFact<
-    A = (),
-    B = (),
-    C = (),
-    D = (),
-    E = (),
-    F = (),
-    G = (),
-    H = (),
-    I = (),
-> {
+pub struct TurnResolvedConfigFact<A = (), B = (), C = (), D = (), E = (), F = (), G = (), H = ()> {
     pub turn_id: String,
     pub thread_id: String,
     pub num_input_images: usize,
@@ -216,7 +168,6 @@ pub struct TurnResolvedConfigFact<
     pub approvals_reviewer: G,
     pub sandbox_network_access: bool,
     pub collaboration_mode: H,
-    pub personality: I,
     pub is_first_turn: bool,
 }
 
@@ -232,22 +183,4 @@ pub struct HookRunFact<A = (), B = (), C = ()> {
     pub event_name: A,
     pub hook_source: B,
     pub status: C,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LyraCompactionEvent<A = (), B = (), C = (), D = (), E = ()> {
-    pub thread_id: String,
-    pub turn_id: String,
-    pub trigger: A,
-    pub reason: B,
-    pub implementation: C,
-    pub phase: D,
-    pub strategy: CompactionStrategy,
-    pub status: E,
-    pub error: Option<String>,
-    pub active_context_tokens_before: i64,
-    pub active_context_tokens_after: i64,
-    pub started_at: u64,
-    pub completed_at: u64,
-    pub duration_ms: Option<u64>,
 }

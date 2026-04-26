@@ -3,8 +3,8 @@ use lyra_model_provider::SharedModelProvider;
 use lyra_model_provider::create_model_provider;
 
 pub(super) fn image_generation_tool_auth_allowed(auth_manager: Option<&AuthManager>) -> bool {
-    let _ = auth_manager;
-    false
+    auth_manager
+        .is_some_and(|manager| manager.auth_cached().is_some() || manager.has_external_auth())
 }
 
 #[derive(Clone, Debug)]
@@ -47,7 +47,6 @@ pub(crate) struct TurnContext {
     pub(crate) developer_instructions: Option<String>,
     pub(crate) user_instructions: Option<String>,
     pub(crate) collaboration_mode: CollaborationMode,
-    pub(crate) personality: Option<Personality>,
     pub(crate) approval_policy: Constrained<AskForApproval>,
     pub(crate) sandbox_policy: Constrained<SandboxPolicy>,
     pub(crate) file_system_sandbox_policy: FileSystemSandboxPolicy,
@@ -87,7 +86,11 @@ impl TurnContext {
         let mut config = (*self.config).clone();
         config.model = Some(model.clone());
         let model_info = models_manager
-            .get_model_info(model.as_str(), &config.to_models_manager_config())
+            .get_model_info_for_provider(
+                model.as_str(),
+                Some(config.model_provider_id.as_str()),
+                &config.to_models_manager_config(),
+            )
             .await;
         let truncation_policy = model_info.truncation_policy.into();
         let supported_reasoning_levels = model_info
@@ -127,6 +130,7 @@ impl TurnContext {
             image_generation_tool_auth_allowed: image_generation_tool_auth_allowed(
                 self.auth_manager.as_deref(),
             ),
+            wire_api: self.provider.info().wire_api,
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
             sandbox_policy: self.sandbox_policy.get(),
@@ -166,7 +170,6 @@ impl TurnContext {
             developer_instructions: self.developer_instructions.clone(),
             user_instructions: self.user_instructions.clone(),
             collaboration_mode,
-            personality: self.personality,
             approval_policy: self.approval_policy.clone(),
             sandbox_policy: self.sandbox_policy.clone(),
             file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
@@ -202,27 +205,25 @@ impl TurnContext {
         FileSystemSandboxContext {
             sandbox_policy: self.sandbox_policy.get().clone(),
             sandbox_policy_cwd: Some(self.cwd.clone()),
-            file_system_sandbox_policy: self.non_legacy_file_system_sandbox_policy(),
+            file_system_sandbox_policy: self.explicit_file_system_sandbox_policy(),
             windows_sandbox_level: self.windows_sandbox_level,
             windows_sandbox_private_desktop: self
                 .config
                 .permissions
                 .windows_sandbox_private_desktop,
-            use_legacy_landlock: self.features.use_legacy_landlock(),
+            use_classic_landlock: self.features.use_classic_landlock(),
             additional_permissions,
         }
     }
 
-    fn non_legacy_file_system_sandbox_policy(&self) -> Option<FileSystemSandboxPolicy> {
+    fn explicit_file_system_sandbox_policy(&self) -> Option<FileSystemSandboxPolicy> {
         // Omit the derived split filesystem policy when it is equivalent to
-        // the legacy sandbox policy. This keeps turn-context payloads stable
+        // the base sandbox policy. This keeps turn-context payloads stable
         // while both fields exist; once callers consume only the split policy,
-        // this comparison and the legacy projection should go away.
-        let legacy_file_system_sandbox_policy = FileSystemSandboxPolicy::from_legacy_sandbox_policy(
-            self.sandbox_policy.get(),
-            &self.cwd,
-        );
-        (self.file_system_sandbox_policy != legacy_file_system_sandbox_policy)
+        // this comparison and the sandbox projection should go away.
+        let projected_file_system_sandbox_policy =
+            FileSystemSandboxPolicy::from_sandbox_policy(self.sandbox_policy.get(), &self.cwd);
+        (self.file_system_sandbox_policy != projected_file_system_sandbox_policy)
             .then(|| self.file_system_sandbox_policy.clone())
     }
 
@@ -236,9 +237,8 @@ impl TurnContext {
             approval_policy: self.approval_policy.value(),
             sandbox_policy: self.sandbox_policy.get().clone(),
             network: self.turn_context_network_item(),
-            file_system_sandbox_policy: self.non_legacy_file_system_sandbox_policy(),
+            file_system_sandbox_policy: self.explicit_file_system_sandbox_policy(),
             model: self.model_info.slug.clone(),
-            personality: self.personality,
             collaboration_mode: Some(self.collaboration_mode.clone()),
             realtime_active: Some(self.realtime_active),
             effort: self.reasoning_effort,
@@ -293,7 +293,6 @@ impl Session {
             session_configuration.collaboration_mode.reasoning_effort();
         per_turn_config.model_reasoning_summary = session_configuration.model_reasoning_summary;
         per_turn_config.service_tier = session_configuration.service_tier;
-        per_turn_config.personality = session_configuration.personality;
         per_turn_config.approvals_reviewer = session_configuration.approvals_reviewer;
         let resolved_web_search_mode = resolve_web_search_mode_for_turn(
             &per_turn_config.web_search_mode,
@@ -346,6 +345,7 @@ impl Session {
         let image_generation_tool_auth_allowed =
             image_generation_tool_auth_allowed(auth_manager.as_deref());
         let auth_manager_for_context = auth_manager.clone();
+        let provider_wire_api = provider.wire_api;
         let provider_for_context = create_model_provider(provider, auth_manager);
         let session_telemetry_for_context = session_telemetry;
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -353,6 +353,7 @@ impl Session {
             available_models: &models_manager.try_list_models().unwrap_or_default(),
             features: &per_turn_config.features,
             image_generation_tool_auth_allowed,
+            wire_api: provider_wire_api,
             web_search_mode: Some(per_turn_config.web_search_mode.value()),
             session_source: session_source.clone(),
             sandbox_policy: session_configuration.sandbox_policy.get(),
@@ -405,7 +406,6 @@ impl Session {
             developer_instructions: session_configuration.developer_instructions.clone(),
             user_instructions: session_configuration.user_instructions.clone(),
             collaboration_mode: session_configuration.collaboration_mode.clone(),
-            personality: session_configuration.personality,
             approval_policy: session_configuration.approval_policy.clone(),
             sandbox_policy: session_configuration.sandbox_policy.clone(),
             file_system_sandbox_policy: session_configuration.file_system_sandbox_policy.clone(),
@@ -515,8 +515,9 @@ impl Session {
         let model_info = self
             .services
             .models_manager
-            .get_model_info(
+            .get_model_info_for_provider(
                 session_configuration.collaboration_mode.model(),
+                Some(per_turn_config.model_provider_id.as_str()),
                 &per_turn_config.to_models_manager_config(),
             )
             .await;
@@ -572,21 +573,6 @@ impl Session {
         let turn_context = Arc::new(turn_context);
         turn_context.turn_metadata_state.spawn_git_enrichment_task();
         turn_context
-    }
-
-    pub(crate) async fn maybe_emit_unknown_model_warning_for_turn(&self, tc: &TurnContext) {
-        if tc.model_info.used_fallback_model_metadata {
-            self.send_event(
-                tc,
-                EventMsg::Warning(WarningEvent {
-                    message: format!(
-                        "Model metadata for `{}` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
-                        tc.model_info.slug
-                    ),
-                }),
-            )
-            .await;
-        }
     }
 
     pub(crate) async fn new_default_turn(&self) -> Arc<TurnContext> {

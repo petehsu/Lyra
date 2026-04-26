@@ -28,7 +28,7 @@ pub async fn spawn_command_under_linux_sandbox<P>(
     command_cwd: AbsolutePathBuf,
     sandbox_policy: &SandboxPolicy,
     sandbox_policy_cwd: &AbsolutePathBuf,
-    use_legacy_landlock: bool,
+    use_classic_landlock: bool,
     stdio_policy: StdioPolicy,
     network: Option<&NetworkProxy>,
     env: HashMap<String, String>,
@@ -37,7 +37,7 @@ where
     P: AsRef<Path>,
 {
     let file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
+        FileSystemSandboxPolicy::from_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
     let network_sandbox_policy = NetworkSandboxPolicy::from(sandbox_policy);
     let args = create_linux_sandbox_command_args_for_policies(
         command,
@@ -46,7 +46,7 @@ where
         &file_system_sandbox_policy,
         network_sandbox_policy,
         sandbox_policy_cwd,
-        use_legacy_landlock,
+        use_classic_landlock,
         allow_network_for_proxy(/*enforce_managed_network*/ false),
     );
     let lyra_linux_sandbox_exe = lyra_linux_sandbox_exe.as_ref();

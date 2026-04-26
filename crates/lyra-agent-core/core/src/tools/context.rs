@@ -15,8 +15,8 @@ use lyra_protocol::models::ResponseInputItem;
 use lyra_protocol::models::SearchToolCallParams;
 use lyra_protocol::models::ShellToolCallParams;
 use lyra_protocol::models::function_call_output_content_items_to_text;
+use lyra_tools::LoadableToolSpec;
 use lyra_tools::ToolName;
-use lyra_tools::ToolSearchOutputTool;
 use lyra_utils_output_truncation::TruncationPolicy;
 use lyra_utils_output_truncation::formatted_truncate_text;
 use lyra_utils_string::take_bytes_at_char_boundary;
@@ -26,6 +26,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
 pub type SharedTurnDiffTracker = Arc<Mutex<TurnDiffTracker>>;
 
@@ -40,6 +41,7 @@ pub enum ToolCallSource {
 pub struct ToolInvocation {
     pub session: Arc<Session>,
     pub turn: Arc<TurnContext>,
+    pub cancellation_token: CancellationToken,
     pub tracker: SharedTurnDiffTracker,
     pub source: ToolCallSource,
     pub call_id: String,
@@ -185,7 +187,7 @@ impl McpToolOutput {
 
 #[derive(Clone)]
 pub struct ToolSearchOutput {
-    pub tools: Vec<ToolSearchOutputTool>,
+    pub tools: Vec<LoadableToolSpec>,
 }
 
 impl ToolOutput for ToolSearchOutput {
@@ -362,7 +364,7 @@ pub struct ExecCommandToolOutput {
     pub process_id: Option<i32>,
     pub exit_code: Option<i32>,
     pub original_token_count: Option<usize>,
-    pub session_command: Option<Vec<String>>,
+    pub hook_command: Option<String>,
 }
 
 impl ToolOutput for ExecCommandToolOutput {
@@ -386,7 +388,7 @@ impl ToolOutput for ExecCommandToolOutput {
     }
 
     fn post_tool_use_response(&self, _call_id: &str, _payload: &ToolPayload) -> Option<JsonValue> {
-        if self.process_id.is_some() || self.session_command.is_none() {
+        if self.process_id.is_some() || self.hook_command.is_none() {
             return None;
         }
 

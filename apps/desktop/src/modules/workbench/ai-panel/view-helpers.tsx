@@ -151,6 +151,9 @@ export const runtimeEventPhasePriority = (phase: string): number => {
   if (phase === "completed") {
     return 7;
   }
+  if (phase === "rolled_back") {
+    return 7;
+  }
   if (phase === "paused" || phase === "interaction_pending") {
     return 6;
   }
@@ -160,13 +163,13 @@ export const runtimeEventPhasePriority = (phase: string): number => {
   if (phase === "tool_started" || phase === "tool_progress") {
     return 4;
   }
-  if (phase === "started") {
+  if (phase === "started" || phase === "review_started") {
     return 3;
   }
-  if (phase === "accepted") {
+  if (phase === "accepted" || phase === "steer_submitted") {
     return 2;
   }
-  if (phase === "assistant_delta") {
+  if (phase === "assistant_delta" || phase === "plan_delta" || phase === "plan_updated") {
     return 1;
   }
   return 0;

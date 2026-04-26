@@ -1,5 +1,17 @@
 import { useCallback, useMemo, useState } from "react";
-import { Terminal, Shield, ShieldAlert, ShieldCheck, Wrench } from "lucide-react";
+import {
+  Check,
+  CheckCheck,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  Terminal,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Wrench,
+  X,
+} from "lucide-react";
 import type {
   CommandApprovalRequest,
   CommandApprovalResponse,
@@ -91,34 +103,44 @@ export function CommandApprovalBar({
           </span>
           <button
             className="lyra-command-approval-bar__details-btn"
+            type="button"
             onClick={() => setExpanded(!expanded)}
+            aria-label={expanded ? t("permission.hideDetails") : t("permission.showDetails")}
+            title={expanded ? t("permission.hideDetails") : t("permission.showDetails")}
           >
-            {expanded ? t("permission.hideDetails") : t("permission.showDetails")}
+            <Info size={14} aria-hidden="true" />
+            {expanded ? <ChevronUp size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
           </button>
         </div>
 
         {/* Right: action buttons */}
         <div className="lyra-command-approval-bar__actions">
           <button
-            className="lyra-command-approval-bar__btn lyra-command-approval-bar__btn--allow"
+            type="button"
+            className="lyra-command-approval-bar__icon-action lyra-command-approval-bar__icon-action--allow"
             onClick={() => handleDecision("allow_always")}
+            aria-label={t("permission.allowAlways")}
             title={t("permission.allowAlways")}
           >
-            {t("permission.allowAlways")}
+            <CheckCheck size={17} aria-hidden="true" />
           </button>
           <button
-            className="lyra-command-approval-bar__btn lyra-command-approval-bar__btn--allow-once"
+            type="button"
+            className="lyra-command-approval-bar__icon-action lyra-command-approval-bar__icon-action--allow-once"
             onClick={() => handleDecision("allow_once")}
+            aria-label={t("permission.allowOnce")}
             title={t("permission.allowOnce")}
           >
-            {t("permission.allowOnce")}
+            <Check size={17} aria-hidden="true" />
           </button>
           <button
-            className="lyra-command-approval-bar__btn lyra-command-approval-bar__btn--deny"
+            type="button"
+            className="lyra-command-approval-bar__icon-action lyra-command-approval-bar__icon-action--deny"
             onClick={() => handleDecision("deny")}
+            aria-label={t("permission.deny")}
             title={t("permission.deny")}
           >
-            {t("permission.deny")}
+            <X size={17} aria-hidden="true" />
           </button>
         </div>
       </div>

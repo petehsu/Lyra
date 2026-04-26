@@ -24,6 +24,7 @@ pub use lyra_core_skills::SkillPolicy;
 pub use lyra_core_skills::SkillRenderReport;
 pub use lyra_core_skills::SkillsLoadInput;
 pub use lyra_core_skills::SkillsManager;
+pub use lyra_core_skills::build_available_skills;
 pub use lyra_core_skills::build_skill_name_counts;
 pub use lyra_core_skills::collect_env_var_dependencies;
 pub use lyra_core_skills::config_rules;
@@ -39,7 +40,6 @@ pub use lyra_core_skills::manager;
 pub use lyra_core_skills::model;
 pub use lyra_core_skills::render;
 pub use lyra_core_skills::render::SkillRenderSideEffects;
-pub use lyra_core_skills::render_skills_section;
 pub use lyra_core_skills::system;
 
 pub(crate) fn skills_load_input_from_config(
@@ -122,7 +122,7 @@ async fn request_skill_dependencies(
                 id: dependency.name.clone(),
                 header: "Skill requires environment variable".to_string(),
                 question: format!(
-                    "{requirement} This is an experimental internal feature. The value is stored in memory for this session only."
+                    "{requirement} The value is stored in memory for this session only."
                 ),
                 is_other: false,
                 is_secret: true,

@@ -66,9 +66,12 @@ use lyra_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
 use lyra_model_provider_info::WireApi;
 use lyra_model_provider_info::built_in_model_providers;
 use lyra_models_manager::ModelsManagerConfig;
+use lyra_models_manager::ProviderModelCatalog;
+use lyra_models_manager::model_info_from_provider_model_entry;
+use lyra_models_manager::normalize_provider_model_entry;
+use lyra_models_manager::provider_model_entry_from_id;
 use lyra_protocol::config_types::AltScreenMode;
 use lyra_protocol::config_types::ForcedLoginMethod;
-use lyra_protocol::config_types::Personality;
 use lyra_protocol::config_types::ReasoningSummary;
 use lyra_protocol::config_types::SandboxMode;
 use lyra_protocol::config_types::ServiceTier;
@@ -154,17 +157,82 @@ struct LyraStoredProfile {
     #[serde(default)]
     protocol_id: String,
     #[serde(default)]
+    model: String,
+    #[serde(default)]
     connection_config: HashMap<String, String>,
     #[serde(default)]
     auth_config: HashMap<String, String>,
     #[serde(default)]
     headers: HashMap<String, String>,
+    #[serde(default)]
+    custom_models: Vec<LyraStoredModelEntry>,
+    #[serde(default)]
+    discovery_state: LyraStoredModelDiscoveryState,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct LyraStoredModelDiscoveryState {
+    #[serde(default)]
+    models: Vec<LyraStoredModelEntry>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct LyraStoredModelEntry {
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    context_window: Option<u64>,
+    #[serde(default)]
+    supports_images: Option<bool>,
+    #[serde(default)]
+    supports_tools: Option<bool>,
+    #[serde(default)]
+    runtime_metadata: Option<LyraStoredModelRuntimeMetadata>,
+    #[serde(default)]
+    source: String,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct LyraStoredModelRuntimeMetadata {
+    #[serde(default)]
+    shell_type: Option<String>,
+    #[serde(default)]
+    apply_patch_tool_type: Option<String>,
+    #[serde(default)]
+    supports_search_tool: Option<bool>,
+    #[serde(default)]
+    supports_parallel_tool_calls: Option<bool>,
+    #[serde(default)]
+    supports_reasoning_summaries: Option<bool>,
+    #[serde(default)]
+    support_verbosity: Option<bool>,
+    #[serde(default)]
+    web_search_tool_type: Option<String>,
+    #[serde(default)]
+    supports_image_detail_original: Option<bool>,
+    #[serde(default)]
+    input_modalities: Vec<String>,
+    #[serde(default)]
+    supported_tools: Vec<String>,
+    #[serde(default)]
+    context_window: Option<u64>,
+    #[serde(default)]
+    max_context_window: Option<u64>,
+    #[serde(default)]
+    effective_context_window_percent: Option<u64>,
 }
 
 #[derive(Debug, Default)]
 struct LyraProfileProviderProjection {
     providers: HashMap<String, ModelProviderInfo>,
     default_runtime_provider_id: Option<String>,
+    provider_model_catalogs: HashMap<String, ProviderModelCatalog>,
 }
 
 async fn load_lyra_profile_provider_projection(lyra_home: &Path) -> LyraProfileProviderProjection {
@@ -207,28 +275,34 @@ async fn load_lyra_profile_provider_projection(lyra_home: &Path) -> LyraProfileP
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
     let mut default_runtime_provider_id = None;
+    let mut provider_model_catalogs = HashMap::new();
 
     for profile in document.profiles {
         if profile.id.trim().is_empty() {
             continue;
         }
         let runtime_provider_id = format!("{LYRA_PROFILE_RUNTIME_PREFIX}{}", profile.id.trim());
-        let Some(provider_info) = model_provider_info_from_lyra_profile(&profile) else {
+        let Some((provider_info, model_catalog)) = model_provider_info_from_lyra_profile(&profile)
+        else {
             continue;
         };
         if default_profile_id.as_deref() == Some(profile.id.trim()) {
             default_runtime_provider_id = Some(runtime_provider_id.clone());
         }
+        provider_model_catalogs.insert(runtime_provider_id.clone(), model_catalog);
         providers.insert(runtime_provider_id, provider_info);
     }
 
     LyraProfileProviderProjection {
         providers,
         default_runtime_provider_id,
+        provider_model_catalogs,
     }
 }
 
-fn model_provider_info_from_lyra_profile(profile: &LyraStoredProfile) -> Option<ModelProviderInfo> {
+fn model_provider_info_from_lyra_profile(
+    profile: &LyraStoredProfile,
+) -> Option<(ModelProviderInfo, ProviderModelCatalog)> {
     let protocol_id = profile.protocol_id.trim();
     let provider_id = profile.provider_id.trim();
     let wire_api = match protocol_id {
@@ -266,6 +340,8 @@ fn model_provider_info_from_lyra_profile(profile: &LyraStoredProfile) -> Option<
         );
         return None;
     };
+
+    let model_catalog = provider_model_catalog_from_lyra_profile(profile, provider_id, protocol_id);
 
     let mut headers = sanitize_profile_headers(&profile.headers);
     if protocol_id == "anthropic_messages" {
@@ -307,24 +383,115 @@ fn model_provider_info_from_lyra_profile(profile: &LyraStoredProfile) -> Option<
 
     let env_key = env_key_for_profile_provider(provider_id, protocol_id);
 
-    Some(ModelProviderInfo {
-        name: format!("Lyra Profile ({provider_id})"),
-        base_url: Some(base_url),
-        env_key,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        wire_api,
-        query_params,
-        http_headers: (!headers.is_empty()).then_some(headers),
-        env_http_headers,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        websocket_connect_timeout_ms: None,
-        requires_managed_auth: false,
-        supports_websockets: false,
-    })
+    Some((
+        ModelProviderInfo {
+            name: format!("Lyra Profile ({provider_id})"),
+            base_url: Some(base_url),
+            env_key,
+            env_key_instructions: None,
+            bearer_token: None,
+            auth: None,
+            wire_api,
+            query_params,
+            http_headers: (!headers.is_empty()).then_some(headers),
+            env_http_headers,
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            websocket_connect_timeout_ms: None,
+            requires_managed_auth: false,
+            supports_websockets: matches!(protocol_id, "openai_chat_completions"),
+        },
+        model_catalog,
+    ))
+}
+
+fn provider_model_catalog_from_lyra_profile(
+    profile: &LyraStoredProfile,
+    provider_id: &str,
+    protocol_id: &str,
+) -> ProviderModelCatalog {
+    let mut models = Vec::new();
+    let selected_model = profile.model.trim();
+    if !selected_model.is_empty() {
+        let selected =
+            provider_model_entry_from_id(provider_id, protocol_id, selected_model, "profile");
+        models.push(model_info_from_provider_model_entry(
+            provider_id,
+            protocol_id,
+            &selected,
+        ));
+    }
+    for entry in profile
+        .discovery_state
+        .models
+        .iter()
+        .cloned()
+        .map(lyra_provider_model_entry_from_stored)
+        .chain(
+            profile
+                .custom_models
+                .iter()
+                .cloned()
+                .map(lyra_provider_model_entry_from_stored),
+        )
+    {
+        let normalized = normalize_provider_model_entry(provider_id, protocol_id, entry);
+        if models.iter().any(|model| model.slug == normalized.id) {
+            continue;
+        }
+        models.push(model_info_from_provider_model_entry(
+            provider_id,
+            protocol_id,
+            &normalized,
+        ));
+    }
+
+    ProviderModelCatalog {
+        protocol_id: Some(protocol_id.to_string()),
+        models,
+    }
+}
+
+fn lyra_provider_model_entry_from_stored(
+    entry: LyraStoredModelEntry,
+) -> lyra_app_server_protocol::LyraAiProviderModelEntry {
+    let id = entry.id;
+    let name = if entry.name.trim().is_empty() {
+        id.clone()
+    } else {
+        entry.name
+    };
+    lyra_app_server_protocol::LyraAiProviderModelEntry {
+        id,
+        name,
+        description: entry.description,
+        context_window: entry.context_window,
+        supports_images: entry.supports_images,
+        supports_tools: entry.supports_tools,
+        runtime_metadata: entry.runtime_metadata.map(|metadata| {
+            lyra_app_server_protocol::LyraAiModelRuntimeMetadata {
+                shell_type: metadata.shell_type,
+                apply_patch_tool_type: metadata.apply_patch_tool_type,
+                supports_search_tool: metadata.supports_search_tool,
+                supports_parallel_tool_calls: metadata.supports_parallel_tool_calls,
+                supports_reasoning_summaries: metadata.supports_reasoning_summaries,
+                support_verbosity: metadata.support_verbosity,
+                web_search_tool_type: metadata.web_search_tool_type,
+                supports_image_detail_original: metadata.supports_image_detail_original,
+                input_modalities: metadata.input_modalities,
+                supported_tools: metadata.supported_tools,
+                context_window: metadata.context_window,
+                max_context_window: metadata.max_context_window,
+                effective_context_window_percent: metadata.effective_context_window_percent,
+            }
+        }),
+        source: if entry.source.trim().is_empty() {
+            "dynamic".to_string()
+        } else {
+            entry.source
+        },
+    }
 }
 
 fn profile_base_url(profile: &LyraStoredProfile, protocol_id: &str) -> Option<String> {
@@ -518,9 +685,6 @@ pub struct Config {
     /// Info needed to make an API request to the model.
     pub model_provider: ModelProviderInfo,
 
-    /// Optionally specify the personality of the model
-    pub personality: Option<Personality>,
-
     /// Effective permission configuration for shell tool execution.
     pub permissions: Permissions,
 
@@ -552,11 +716,11 @@ pub struct Config {
     /// Developer instructions override injected as a separate message.
     pub developer_instructions: Option<String>,
 
-    /// Guardian-specific tenant policy config override from requirements.toml.
-    /// This is inserted into the fixed guardian prompt template under the
+    /// AutoReview-specific tenant policy config override from requirements.toml.
+    /// This is inserted into the fixed auto_review prompt template under the
     /// `# Policy Configuration` section rather than replacing the whole
-    /// guardian developer prompt.
-    pub guardian_policy_config: Option<String>,
+    /// auto_review developer prompt.
+    pub auto_review_policy_config: Option<String>,
 
     /// Whether to inject the `<permissions instructions>` developer block.
     pub include_permissions_instructions: bool,
@@ -570,35 +734,11 @@ pub struct Config {
     /// Whether to inject the `<environment_context>` user block.
     pub include_environment_context: bool,
 
-    /// Compact prompt override.
-
     /// Optional commit attribution text for commit message co-author trailers.
     ///
     /// - `None` or whitespace-only: disable commit attribution
     /// - `Some("...")`: use the provided attribution text verbatim
     pub commit_attribution: Option<String>,
-
-    /// Optional external notifier command. When set, Lyra will spawn this
-    /// program after each completed *turn* (i.e. when the agent finishes
-    /// processing a user submission). The value must be the full command
-    /// broken into argv tokens **without** the trailing JSON argument - Lyra
-    /// appends one extra argument containing a JSON payload describing the
-    /// event.
-    ///
-    /// Example `~/.lyra/config.toml` snippet:
-    ///
-    /// ```toml
-    /// notify = ["notify-send", "Lyra"]
-    /// ```
-    ///
-    /// which will be invoked as:
-    ///
-    /// ```shell
-    /// notify-send Lyra '{"type":"agent-turn-complete","turn-id":"12345"}'
-    /// ```
-    ///
-    /// If unset the feature is disabled.
-    pub notify: Option<Vec<String>>,
 
     /// TUI notification settings, including enabled events, delivery method, and focus condition.
     pub tui_notifications: TuiNotificationSettings,
@@ -763,35 +903,38 @@ pub struct Config {
     /// When set, this replaces the bundled catalog for the current process.
     pub model_catalog: Option<ModelsResponse>,
 
+    /// Provider-scoped model catalogs projected from Lyra AI profiles.
+    pub provider_model_catalogs: HashMap<String, ProviderModelCatalog>,
+
     /// Optional verbosity control for GPT-5 models (Responses API `text.verbosity`).
     pub model_verbosity: Option<Verbosity>,
 
     /// Machine-local realtime audio device preferences used by realtime voice.
     pub realtime_audio: RealtimeAudioConfig,
 
-    /// Experimental / do not use. Overrides only the realtime conversation
+    /// Overrides only the realtime conversation
     /// websocket transport base URL (the `Op::RealtimeConversation`
     /// `/v1/realtime`
     /// connection) without changing normal provider HTTP requests.
-    pub experimental_realtime_ws_base_url: Option<String>,
-    /// Experimental / do not use. Selects the realtime websocket model/snapshot
+    pub realtime_ws_base_url: Option<String>,
+    /// Selects the realtime websocket model/snapshot
     /// used for the `Op::RealtimeConversation` connection.
-    pub experimental_realtime_ws_model: Option<String>,
-    /// Experimental / do not use. Realtime websocket session selection.
+    pub realtime_ws_model: Option<String>,
+    /// Realtime websocket session selection.
     /// `version` controls v1/v2 and `type` controls conversational/transcription.
     pub realtime: RealtimeConfig,
-    /// Experimental / do not use. Overrides only the realtime conversation
+    /// Overrides only the realtime conversation
     /// websocket transport instructions (the `Op::RealtimeConversation`
     /// `/ws` session.update instructions) without changing normal prompts.
-    pub experimental_realtime_ws_backend_prompt: Option<String>,
-    /// Experimental / do not use. Replaces the synthesized realtime startup
+    pub realtime_ws_backend_prompt: Option<String>,
+    /// Replaces the synthesized realtime startup
     /// context appended to websocket session instructions. An empty string
     /// disables startup context injection entirely.
-    pub experimental_realtime_ws_startup_context: Option<String>,
-    /// Experimental / do not use. Replaces the built-in realtime start
+    pub realtime_ws_startup_context: Option<String>,
+    /// Replaces the built-in realtime start
     /// instructions inserted into developer messages when realtime becomes
     /// active.
-    pub experimental_realtime_start_instructions: Option<String>,
+    pub realtime_start_instructions: Option<String>,
     /// When set, restricts the login mechanism users may use.
     pub forced_login_method: Option<ForcedLoginMethod>,
 
@@ -806,8 +949,8 @@ pub struct Config {
     /// Additional parameters for the web search tool when it is enabled.
     pub web_search_config: Option<WebSearchConfig>,
 
-    /// If set to `true`, used only the experimental unified exec tool.
-    pub use_experimental_unified_exec_tool: bool,
+    /// If set to `true`, used only the unified exec tool.
+    pub use_unified_exec_tool: bool,
 
     /// Maximum poll window for background terminal output (`write_stdin`), in milliseconds.
     /// Default: `300000` (5 minutes).
@@ -821,9 +964,6 @@ pub struct Config {
 
     /// Centralized feature flags; source of truth for feature gating.
     pub features: ManagedFeatures,
-
-    /// When `true`, suppress warnings about unstable (under development) features.
-    pub suppress_unstable_features_warning: bool,
 
     /// The active profile name used to derive this `Config` (if any).
     pub active_profile: Option<String>,
@@ -1005,9 +1145,9 @@ impl Config {
             model_context_window: self.model_context_window,
             tool_output_token_limit: self.tool_output_token_limit,
             base_instructions: self.base_instructions.clone(),
-            personality_enabled: self.features.enabled(Feature::Personality),
             model_supports_reasoning_summaries: self.model_supports_reasoning_summaries,
             model_catalog: self.model_catalog.clone(),
+            provider_model_catalogs: self.provider_model_catalogs.clone(),
         }
     }
 
@@ -1031,7 +1171,7 @@ impl Config {
                 .enabled(Feature::SkillMcpDependencyInstall),
             approval_policy: self.permissions.approval_policy.clone(),
             lyra_linux_sandbox_exe: self.lyra_linux_sandbox_exe.clone(),
-            use_legacy_landlock: self.features.use_legacy_landlock(),
+            use_classic_landlock: self.features.use_classic_landlock(),
             apps_enabled: self.features.enabled(Feature::Apps),
             configured_mcp_servers,
             plugin_capability_summaries: loaded_plugins.capability_summaries().to_vec(),
@@ -1558,7 +1698,6 @@ pub struct ConfigOverrides {
     pub zsh_path: Option<PathBuf>,
     pub base_instructions: Option<String>,
     pub developer_instructions: Option<String>,
-    pub personality: Option<Personality>,
     pub include_apply_patch_tool: Option<bool>,
     pub show_raw_agent_reasoning: Option<bool>,
     pub tools_web_search_request: Option<bool>,
@@ -1774,7 +1913,6 @@ impl Config {
             zsh_path: zsh_path_override,
             base_instructions,
             developer_instructions,
-            personality,
             include_apply_patch_tool: include_apply_patch_tool_override,
             show_raw_agent_reasoning,
             tools_web_search_request: override_tools_web_search_request,
@@ -1808,17 +1946,9 @@ impl Config {
         let configured_features = Features::from_sources(
             FeatureConfigSource {
                 features: cfg.features.as_ref(),
-                include_apply_patch_tool: None,
-                experimental_use_freeform_apply_patch: cfg.experimental_use_freeform_apply_patch,
-                experimental_use_unified_exec_tool: cfg.experimental_use_unified_exec_tool,
             },
             FeatureConfigSource {
                 features: config_profile.features.as_ref(),
-                include_apply_patch_tool: config_profile.include_apply_patch_tool,
-                experimental_use_freeform_apply_patch: config_profile
-                    .experimental_use_freeform_apply_patch,
-                experimental_use_unified_exec_tool: config_profile
-                    .experimental_use_unified_exec_tool,
             },
             feature_overrides,
         );
@@ -1926,7 +2056,7 @@ impl Config {
                     &mut startup_warnings,
                 )?;
             let mut sandbox_policy = file_system_sandbox_policy
-                .to_legacy_sandbox_policy(network_sandbox_policy, resolved_cwd.as_path())?;
+                .to_sandbox_policy(network_sandbox_policy, resolved_cwd.as_path())?;
             if matches!(sandbox_policy, SandboxPolicy::WorkspaceWrite { .. }) {
                 file_system_sandbox_policy = file_system_sandbox_policy
                     .with_additional_writable_roots(
@@ -1934,7 +2064,7 @@ impl Config {
                         &additional_writable_roots,
                     );
                 sandbox_policy = file_system_sandbox_policy
-                    .to_legacy_sandbox_policy(network_sandbox_policy, resolved_cwd.as_path())?;
+                    .to_sandbox_policy(network_sandbox_policy, resolved_cwd.as_path())?;
             }
             (
                 configured_network_proxy_config,
@@ -1960,7 +2090,7 @@ impl Config {
                     }
                 }
             }
-            let file_system_sandbox_policy = FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+            let file_system_sandbox_policy = FileSystemSandboxPolicy::from_sandbox_policy(
                 &sandbox_policy,
                 resolved_cwd.as_path(),
             );
@@ -2036,6 +2166,7 @@ impl Config {
         for (runtime_provider_id, provider) in lyra_profile_projection.providers {
             model_providers.insert(runtime_provider_id, provider);
         }
+        let provider_model_catalogs = lyra_profile_projection.provider_model_catalogs;
         let lyra_default_profile_provider = lyra_profile_projection
             .default_runtime_provider_id
             .filter(|provider_id| model_providers.contains_key(provider_id));
@@ -2134,7 +2265,7 @@ impl Config {
         };
 
         let include_apply_patch_tool_flag = features.enabled(Feature::ApplyPatchFreeform);
-        let use_experimental_unified_exec_tool = features.enabled(Feature::UnifiedExec);
+        let use_unified_exec_tool = features.enabled(Feature::UnifiedExec);
 
         let forced_login_method = cfg.forced_login_method;
 
@@ -2142,9 +2273,6 @@ impl Config {
         let service_tier = service_tier_override
             .unwrap_or_else(|| config_profile.service_tier.or(cfg.service_tier));
         let service_tier = match service_tier {
-            Some(ServiceTier::Fast) if features.enabled(Feature::FastMode) => {
-                Some(ServiceTier::Fast)
-            }
             Some(ServiceTier::Flex) => Some(ServiceTier::Flex),
             _ => None,
         };
@@ -2183,17 +2311,8 @@ impl Config {
             .include_environment_context
             .or(cfg.include_environment_context)
             .unwrap_or(true);
-        let guardian_policy_config =
-            guardian_policy_config_from_requirements(config_layer_stack.requirements_toml());
-        let personality = personality
-            .or(config_profile.personality)
-            .or(cfg.personality)
-            .or_else(|| {
-                features
-                    .enabled(Feature::Personality)
-                    .then_some(Personality::Pragmatic)
-            });
-
+        let auto_review_policy_config =
+            auto_review_policy_config_from_requirements(config_layer_stack.requirements_toml());
         let js_repl_node_path = js_repl_node_path_override
             .or(config_profile.js_repl_node_path.map(Into::into))
             .or(cfg.js_repl_node_path.map(Into::into));
@@ -2326,7 +2445,7 @@ impl Config {
             if effective_sandbox_policy == original_sandbox_policy {
                 file_system_sandbox_policy
             } else {
-                FileSystemSandboxPolicy::from_legacy_sandbox_policy_preserving_deny_entries(
+                FileSystemSandboxPolicy::from_sandbox_policy_preserving_deny_entries(
                     &effective_sandbox_policy,
                     resolved_cwd.as_path(),
                     &file_system_sandbox_policy,
@@ -2372,10 +2491,8 @@ impl Config {
             },
             approvals_reviewer: constrained_approvals_reviewer.value(),
             enforce_residency: enforce_residency.value,
-            notify: cfg.notify,
             user_instructions,
             base_instructions,
-            personality,
             developer_instructions,
             commit_attribution,
             include_permissions_instructions,
@@ -2437,7 +2554,7 @@ impl Config {
                 .show_raw_agent_reasoning
                 .or(show_raw_agent_reasoning)
                 .unwrap_or(false),
-            guardian_policy_config,
+            auto_review_policy_config,
             model_reasoning_effort: config_profile
                 .model_reasoning_effort
                 .or(cfg.model_reasoning_effort),
@@ -2449,6 +2566,7 @@ impl Config {
                 .or(cfg.model_reasoning_summary),
             model_supports_reasoning_summaries: cfg.model_supports_reasoning_summaries,
             model_catalog,
+            provider_model_catalogs,
             model_verbosity: config_profile.model_verbosity.or(cfg.model_verbosity),
             realtime_audio: cfg
                 .audio
@@ -2456,8 +2574,8 @@ impl Config {
                     microphone: audio.microphone,
                     speaker: audio.speaker,
                 }),
-            experimental_realtime_ws_base_url: cfg.experimental_realtime_ws_base_url,
-            experimental_realtime_ws_model: cfg.experimental_realtime_ws_model,
+            realtime_ws_base_url: cfg.realtime_ws_base_url,
+            realtime_ws_model: cfg.realtime_ws_model,
             realtime: cfg
                 .realtime
                 .map_or_else(RealtimeConfig::default, |realtime| {
@@ -2469,21 +2587,18 @@ impl Config {
                         voice: realtime.voice,
                     }
                 }),
-            experimental_realtime_ws_backend_prompt: cfg.experimental_realtime_ws_backend_prompt,
-            experimental_realtime_ws_startup_context: cfg.experimental_realtime_ws_startup_context,
-            experimental_realtime_start_instructions: cfg.experimental_realtime_start_instructions,
+            realtime_ws_backend_prompt: cfg.realtime_ws_backend_prompt,
+            realtime_ws_startup_context: cfg.realtime_ws_startup_context,
+            realtime_start_instructions: cfg.realtime_start_instructions,
             forced_login_method,
             include_apply_patch_tool: include_apply_patch_tool_flag,
             web_search_mode: constrained_web_search_mode.value,
             web_search_config,
-            use_experimental_unified_exec_tool,
+            use_unified_exec_tool,
             background_terminal_max_timeout,
             ghost_snapshot,
             multi_agent_v2,
             features,
-            suppress_unstable_features_warning: cfg
-                .suppress_unstable_features_warning
-                .unwrap_or(false),
             active_profile: active_profile_name,
             active_project,
             windows_wsl_setup_acknowledged: cfg.windows_wsl_setup_acknowledged.unwrap_or(false),
@@ -2619,40 +2734,16 @@ impl Config {
     }
 }
 
-pub(crate) fn uses_deprecated_instructions_file(config_layer_stack: &ConfigLayerStack) -> bool {
-    config_layer_stack
-        .layers_high_to_low()
-        .into_iter()
-        .any(|layer| toml_uses_deprecated_instructions_file(&layer.config))
-}
-
-fn guardian_policy_config_from_requirements(
+fn auto_review_policy_config_from_requirements(
     requirements_toml: &ConfigRequirementsToml,
 ) -> Option<String> {
     requirements_toml
-        .guardian_policy_config
+        .auto_review_policy_config
         .as_deref()
         .and_then(|value| {
             let trimmed = value.trim();
             (!trimmed.is_empty()).then(|| trimmed.to_string())
         })
-}
-
-fn toml_uses_deprecated_instructions_file(value: &TomlValue) -> bool {
-    let Some(table) = value.as_table() else {
-        return false;
-    };
-    if table.contains_key("experimental_instructions_file") {
-        return true;
-    }
-    let Some(profiles) = table.get("profiles").and_then(TomlValue::as_table) else {
-        return false;
-    };
-    profiles.values().any(|profile| {
-        profile.as_table().is_some_and(|profile_table| {
-            profile_table.contains_key("experimental_instructions_file")
-        })
-    })
 }
 
 /// Returns the path to the Lyra runtime home, which can be specified by the

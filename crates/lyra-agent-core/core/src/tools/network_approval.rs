@@ -1,9 +1,9 @@
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::guardian_rejection_message;
-use crate::guardian::guardian_timeout_message;
-use crate::guardian::new_guardian_review_id;
-use crate::guardian::review_approval_request;
-use crate::guardian::routes_approval_to_guardian;
+use crate::auto_review::AutoReviewApprovalRequest;
+use crate::auto_review::auto_review_rejection_message;
+use crate::auto_review::auto_review_timeout_message;
+use crate::auto_review::new_auto_review_id;
+use crate::auto_review::review_approval_request;
+use crate::auto_review::routes_approval_to_auto_review;
 use crate::hook_runtime::run_permission_request_hooks;
 use crate::network_policy_decision::denied_network_policy_message;
 use crate::session::session::Session;
@@ -374,7 +374,7 @@ impl NetworkApprovalService {
             protocol,
         };
         let owner_call = self.resolve_single_active_call().await;
-        let guardian_approval_id = Self::approval_id_for_key(&key);
+        let auto_review_approval_id = Self::approval_id_for_key(&key);
         let prompt_command = vec!["network-access".to_string(), target.clone()];
         let command = owner_call
             .as_ref()
@@ -382,7 +382,7 @@ impl NetworkApprovalService {
         if let Some(permission_request_decision) = run_permission_request_hooks(
             &session,
             &turn_context,
-            &guardian_approval_id,
+            &auto_review_approval_id,
             PermissionRequestPayload {
                 tool_name: HookToolName::bash(),
                 tool_input: serde_json::json!({
@@ -417,15 +417,15 @@ impl NetworkApprovalService {
                 }
             }
         }
-        let use_guardian = routes_approval_to_guardian(&turn_context);
-        let guardian_review_id = use_guardian.then(new_guardian_review_id);
-        let approval_decision = if let Some(review_id) = guardian_review_id.clone() {
+        let use_auto_review = routes_approval_to_auto_review(&turn_context);
+        let auto_review_id = use_auto_review.then(new_auto_review_id);
+        let approval_decision = if let Some(review_id) = auto_review_id.clone() {
             review_approval_request(
                 &session,
                 &turn_context,
                 review_id,
-                GuardianApprovalRequest::NetworkAccess {
-                    id: guardian_approval_id.clone(),
+                AutoReviewApprovalRequest::NetworkAccess {
+                    id: auto_review_approval_id.clone(),
                     turn_id: owner_call
                         .as_ref()
                         .map_or_else(|| turn_context.sub_id.clone(), |call| call.turn_id.clone()),
@@ -442,7 +442,7 @@ impl NetworkApprovalService {
             session
                 .request_command_approval(
                     turn_context.as_ref(),
-                    guardian_approval_id,
+                    auto_review_approval_id,
                     /*approval_id*/ None,
                     prompt_command,
                     turn_context.cwd.clone(),
@@ -534,9 +534,10 @@ impl NetworkApprovalService {
                 }
             },
             ReviewDecision::Denied | ReviewDecision::Abort => {
-                if let Some(review_id) = guardian_review_id.as_deref() {
+                if let Some(review_id) = auto_review_id.as_deref() {
                     if let Some(owner_call) = owner_call.as_ref() {
-                        let message = guardian_rejection_message(session.as_ref(), review_id).await;
+                        let message =
+                            auto_review_rejection_message(session.as_ref(), review_id).await;
                         self.record_call_outcome(
                             &owner_call.registration_id,
                             NetworkApprovalOutcome::DeniedByPolicy(message),
@@ -556,7 +557,7 @@ impl NetworkApprovalService {
                 if let Some(owner_call) = owner_call.as_ref() {
                     self.record_call_outcome(
                         &owner_call.registration_id,
-                        NetworkApprovalOutcome::DeniedByPolicy(guardian_timeout_message()),
+                        NetworkApprovalOutcome::DeniedByPolicy(auto_review_timeout_message()),
                     )
                     .await;
                 }

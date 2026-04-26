@@ -1,5 +1,7 @@
 import type { ITheme } from "xterm";
 
+const HIDDEN_CURSOR_COLOR = "rgba(0, 0, 0, 0)";
+
 const readCssVar = (target: HTMLElement, name: string, fallback: string): string => {
   const value = getComputedStyle(target).getPropertyValue(name).trim();
   if (value.length === 0) {
@@ -11,8 +13,8 @@ const readCssVar = (target: HTMLElement, name: string, fallback: string): string
 export const resolveTerminalTheme = (target: HTMLElement): ITheme => ({
   background: readCssVar(target, "--lyra-terminal-bg", "#1f232b"),
   foreground: readCssVar(target, "--lyra-terminal-fg", "#dce0e5"),
-  cursor: readCssVar(target, "--lyra-terminal-cursor", "#5c78e2"),
-  cursorAccent: readCssVar(target, "--lyra-terminal-cursor-accent", "#ffffff"),
+  cursor: HIDDEN_CURSOR_COLOR,
+  cursorAccent: HIDDEN_CURSOR_COLOR,
   selectionBackground: readCssVar(target, "--lyra-terminal-selection-bg", "#47679e"),
   black: readCssVar(target, "--lyra-terminal-black", "#282c33"),
   red: readCssVar(target, "--lyra-terminal-red", "#d36151"),

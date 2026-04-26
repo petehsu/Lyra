@@ -78,7 +78,7 @@ unified_exec = true
     service
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "features.personality".to_string(),
+            key_path: "features.apps".to_string(),
             value: serde_json::json!(true),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
@@ -97,7 +97,7 @@ hide_full_access_warning = true
 
 [features]
 unified_exec = true
-personality = true
+apps = true
 "#;
     assert_eq!(updated, expected);
     Ok(())
@@ -502,7 +502,7 @@ async fn write_value_rejects_feature_requirement_conflict() {
         CloudRequirementsLoader::new(async {
             Ok(Some(ConfigRequirementsToml {
                 feature_requirements: Some(crate::config_loader::FeatureRequirementsToml {
-                    entries: BTreeMap::from([("personality".to_string(), true)]),
+                    entries: BTreeMap::from([("apps".to_string(), true)]),
                 }),
                 ..Default::default()
             }))
@@ -512,7 +512,7 @@ async fn write_value_rejects_feature_requirement_conflict() {
     let error = service
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "features.personality".to_string(),
+            key_path: "features.apps".to_string(),
             value: serde_json::json!(false),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
@@ -527,7 +527,7 @@ async fn write_value_rejects_feature_requirement_conflict() {
     assert!(
         error
             .to_string()
-            .contains("invalid value for `features`: `features.personality=false`"),
+            .contains("invalid value for `features`: `features.apps=false`"),
         "{error}"
     );
     assert_eq!(
@@ -548,7 +548,7 @@ async fn write_value_rejects_profile_feature_requirement_conflict() {
         CloudRequirementsLoader::new(async {
             Ok(Some(ConfigRequirementsToml {
                 feature_requirements: Some(crate::config_loader::FeatureRequirementsToml {
-                    entries: BTreeMap::from([("personality".to_string(), true)]),
+                    entries: BTreeMap::from([("apps".to_string(), true)]),
                 }),
                 ..Default::default()
             }))
@@ -558,7 +558,7 @@ async fn write_value_rejects_profile_feature_requirement_conflict() {
     let error = service
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "profiles.enterprise.features.personality".to_string(),
+            key_path: "profiles.enterprise.features.apps".to_string(),
             value: serde_json::json!(false),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
@@ -571,9 +571,9 @@ async fn write_value_rejects_profile_feature_requirement_conflict() {
         Some(ConfigWriteErrorCode::ConfigValidationError)
     );
     assert!(
-        error.to_string().contains(
-            "invalid value for `features`: `profiles.enterprise.features.personality=false`"
-        ),
+        error
+            .to_string()
+            .contains("invalid value for `features`: `profiles.enterprise.features.apps=false`"),
         "{error}"
     );
     assert_eq!(

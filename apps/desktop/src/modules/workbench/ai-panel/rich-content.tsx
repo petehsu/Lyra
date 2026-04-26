@@ -1,6 +1,6 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { createTranslator, type WorkbenchLocale } from "../i18n";
 
 type AiPanelRichContentProps = {
@@ -173,7 +173,7 @@ const compileRichContent = (
   };
 };
 
-export const AiPanelRichContent = ({
+export const AiPanelRichContent = memo(({
   locale = "en-US",
   content,
   themeSignature,
@@ -335,4 +335,6 @@ export const AiPanelRichContent = ({
       ) : null}
     </>
   );
-};
+});
+
+AiPanelRichContent.displayName = "AiPanelRichContent";

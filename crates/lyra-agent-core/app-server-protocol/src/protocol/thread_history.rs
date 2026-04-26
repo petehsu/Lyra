@@ -3,7 +3,7 @@ use crate::protocol::item_builders::build_command_execution_end_item;
 use crate::protocol::item_builders::build_file_change_approval_request_item;
 use crate::protocol::item_builders::build_file_change_begin_item;
 use crate::protocol::item_builders::build_file_change_end_item;
-use crate::protocol::item_builders::build_item_from_guardian_event;
+use crate::protocol::item_builders::build_item_from_auto_review_event;
 use crate::protocol::v2::CollabAgentState;
 use crate::protocol::v2::CollabAgentTool;
 use crate::protocol::v2::CollabAgentToolCallStatus;
@@ -26,13 +26,13 @@ use lyra_protocol::protocol::AgentReasoningEvent;
 use lyra_protocol::protocol::AgentReasoningRawContentEvent;
 use lyra_protocol::protocol::AgentStatus;
 use lyra_protocol::protocol::ApplyPatchApprovalRequestEvent;
+use lyra_protocol::protocol::AutoReviewAssessmentEvent;
+use lyra_protocol::protocol::AutoReviewAssessmentStatus;
 use lyra_protocol::protocol::DynamicToolCallResponseEvent;
 use lyra_protocol::protocol::ErrorEvent;
 use lyra_protocol::protocol::EventMsg;
 use lyra_protocol::protocol::ExecCommandBeginEvent;
 use lyra_protocol::protocol::ExecCommandEndEvent;
-use lyra_protocol::protocol::GuardianAssessmentEvent;
-use lyra_protocol::protocol::GuardianAssessmentStatus;
 use lyra_protocol::protocol::ImageGenerationBeginEvent;
 use lyra_protocol::protocol::ImageGenerationEndEvent;
 use lyra_protocol::protocol::ItemCompletedEvent;
@@ -173,7 +173,7 @@ impl ThreadHistoryBuilder {
             EventMsg::WebSearchEnd(payload) => self.handle_web_search_end(payload),
             EventMsg::ExecCommandBegin(payload) => self.handle_exec_command_begin(payload),
             EventMsg::ExecCommandEnd(payload) => self.handle_exec_command_end(payload),
-            EventMsg::GuardianAssessment(payload) => self.handle_guardian_assessment(payload),
+            EventMsg::AutoReviewAssessment(payload) => self.handle_auto_review_assessment(payload),
             EventMsg::ApplyPatchApprovalRequest(payload) => {
                 self.handle_apply_patch_approval_request(payload)
             }
@@ -369,9 +369,24 @@ impl ThreadHistoryBuilder {
                     ThreadItem::from(payload.item.clone()),
                 );
             }
+            lyra_protocol::items::TurnItem::AgentMessage(agent_message) => {
+                let text = agent_message
+                    .content
+                    .iter()
+                    .map(|entry| match entry {
+                        lyra_protocol::items::AgentMessageContent::Text { text } => text.as_str(),
+                    })
+                    .collect::<String>();
+                if text.trim().is_empty() {
+                    return;
+                }
+                self.upsert_item_in_turn_id(
+                    &payload.turn_id,
+                    ThreadItem::from(payload.item.clone()),
+                );
+            }
             lyra_protocol::items::TurnItem::UserMessage(_)
             | lyra_protocol::items::TurnItem::HookPrompt(_)
-            | lyra_protocol::items::TurnItem::AgentMessage(_)
             | lyra_protocol::items::TurnItem::Reasoning(_)
             | lyra_protocol::items::TurnItem::WebSearch(_)
             | lyra_protocol::items::TurnItem::ImageGeneration(_) => {}
@@ -411,16 +426,16 @@ impl ThreadHistoryBuilder {
         self.upsert_item_in_turn_id(&payload.turn_id, item);
     }
 
-    fn handle_guardian_assessment(&mut self, payload: &GuardianAssessmentEvent) {
+    fn handle_auto_review_assessment(&mut self, payload: &AutoReviewAssessmentEvent) {
         let status = match payload.status {
-            GuardianAssessmentStatus::InProgress => CommandExecutionStatus::InProgress,
-            GuardianAssessmentStatus::Denied | GuardianAssessmentStatus::Aborted => {
+            AutoReviewAssessmentStatus::InProgress => CommandExecutionStatus::InProgress,
+            AutoReviewAssessmentStatus::Denied | AutoReviewAssessmentStatus::Aborted => {
                 CommandExecutionStatus::Declined
             }
-            GuardianAssessmentStatus::TimedOut => CommandExecutionStatus::Failed,
-            GuardianAssessmentStatus::Approved => return,
+            AutoReviewAssessmentStatus::TimedOut => CommandExecutionStatus::Failed,
+            AutoReviewAssessmentStatus::Approved => return,
         };
-        let Some(item) = build_item_from_guardian_event(payload, status) else {
+        let Some(item) = build_item_from_auto_review_event(payload, status) else {
             return;
         };
         if payload.turn_id.is_empty() {
@@ -1163,6 +1178,8 @@ mod tests {
     use crate::protocol::v2::CommandExecutionSource;
     use lyra_protocol::ThreadId;
     use lyra_protocol::dynamic_tools::DynamicToolCallOutputContentItem as CoreDynamicToolCallOutputContentItem;
+    use lyra_protocol::items::AgentMessageContent as CoreAgentMessageContent;
+    use lyra_protocol::items::AgentMessageItem as CoreAgentMessageItem;
     use lyra_protocol::items::HookPromptFragment as CoreHookPromptFragment;
     use lyra_protocol::items::TurnItem as CoreTurnItem;
     use lyra_protocol::items::UserMessageItem as CoreUserMessageItem;
@@ -1178,6 +1195,7 @@ mod tests {
     use lyra_protocol::protocol::DynamicToolCallResponseEvent;
     use lyra_protocol::protocol::ExecCommandEndEvent;
     use lyra_protocol::protocol::ExecCommandSource;
+    use lyra_protocol::protocol::ItemCompletedEvent;
     use lyra_protocol::protocol::ItemStartedEvent;
     use lyra_protocol::protocol::LyraErrorInfo;
     use lyra_protocol::protocol::McpInvocation;
@@ -1373,6 +1391,63 @@ mod tests {
                 phase: Some(MessagePhase::FinalAnswer),
                 memory_citation: None,
             }
+        );
+    }
+
+    #[test]
+    fn replays_completed_agent_message_items_as_history_truth() {
+        let items = vec![
+            RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: "turn-agent".into(),
+                started_at: None,
+                model_context_window: None,
+                collaboration_mode_kind: Default::default(),
+            })),
+            RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
+                message: "hello".into(),
+                images: None,
+                text_elements: Vec::new(),
+                local_images: Vec::new(),
+            })),
+            RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {
+                thread_id: ThreadId::new(),
+                turn_id: "turn-agent".into(),
+                item: CoreTurnItem::AgentMessage(CoreAgentMessageItem {
+                    id: "agent-final".into(),
+                    content: vec![CoreAgentMessageContent::Text {
+                        text: "Final reply".into(),
+                    }],
+                    phase: Some(CoreMessagePhase::FinalAnswer),
+                    memory_citation: None,
+                }),
+            })),
+            RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id: "turn-agent".into(),
+                last_agent_message: Some("Final reply".into()),
+                completed_at: None,
+                duration_ms: None,
+            })),
+        ];
+
+        let turns = build_turns_from_rollout_items(&items);
+        assert_eq!(turns.len(), 1);
+        assert_eq!(
+            turns[0].items,
+            vec![
+                ThreadItem::UserMessage {
+                    id: "item-1".into(),
+                    content: vec![UserInput::Text {
+                        text: "hello".into(),
+                        text_elements: Vec::new(),
+                    }],
+                },
+                ThreadItem::AgentMessage {
+                    id: "agent-final".into(),
+                    text: "Final reply".into(),
+                    phase: Some(MessagePhase::FinalAnswer),
+                    memory_citation: None,
+                },
+            ]
         );
     }
 
@@ -1947,6 +2022,7 @@ mod tests {
                 lyra_protocol::dynamic_tools::DynamicToolCallRequest {
                     call_id: "dyn-1".into(),
                     turn_id: "turn-1".into(),
+                    namespace: None,
                     tool: "lookup_ticket".into(),
                     arguments: serde_json::json!({"id":"ABC-123"}),
                 },
@@ -2077,7 +2153,7 @@ mod tests {
     }
 
     #[test]
-    fn reconstructs_declined_guardian_command_item() {
+    fn reconstructs_declined_auto_review_command_item() {
         let events = vec![
             EventMsg::TurnStarted(TurnStartedEvent {
                 turn_id: "turn-1".into(),
@@ -2091,11 +2167,11 @@ mod tests {
                 text_elements: Vec::new(),
                 local_images: Vec::new(),
             }),
-            EventMsg::GuardianAssessment(GuardianAssessmentEvent {
-                id: "review-guardian-exec".into(),
-                target_item_id: Some("guardian-exec".into()),
+            EventMsg::AutoReviewAssessment(AutoReviewAssessmentEvent {
+                id: "review-auto_review-exec".into(),
+                target_item_id: Some("auto_review-exec".into()),
                 turn_id: "turn-1".into(),
-                status: GuardianAssessmentStatus::InProgress,
+                status: AutoReviewAssessmentStatus::InProgress,
                 risk_level: None,
                 user_authorization: None,
                 rationale: None,
@@ -2103,29 +2179,29 @@ mod tests {
                 action: serde_json::from_value(serde_json::json!({
                     "type": "command",
                     "source": "shell",
-                    "command": "rm -rf /tmp/guardian",
+                    "command": "rm -rf /tmp/auto_review",
                     "cwd": test_path_buf("/tmp"),
                 }))
-                .expect("guardian action"),
+                .expect("auto_review action"),
             }),
-            EventMsg::GuardianAssessment(GuardianAssessmentEvent {
-                id: "review-guardian-exec".into(),
-                target_item_id: Some("guardian-exec".into()),
+            EventMsg::AutoReviewAssessment(AutoReviewAssessmentEvent {
+                id: "review-auto_review-exec".into(),
+                target_item_id: Some("auto_review-exec".into()),
                 turn_id: "turn-1".into(),
-                status: GuardianAssessmentStatus::Denied,
-                risk_level: Some(lyra_protocol::protocol::GuardianRiskLevel::High),
-                user_authorization: Some(lyra_protocol::protocol::GuardianUserAuthorization::Low),
+                status: AutoReviewAssessmentStatus::Denied,
+                risk_level: Some(lyra_protocol::protocol::AutoReviewRiskLevel::High),
+                user_authorization: Some(lyra_protocol::protocol::AutoReviewUserAuthorization::Low),
                 rationale: Some("Would delete user data.".into()),
                 decision_source: Some(
-                    lyra_protocol::protocol::GuardianAssessmentDecisionSource::Agent,
+                    lyra_protocol::protocol::AutoReviewAssessmentDecisionSource::Agent,
                 ),
                 action: serde_json::from_value(serde_json::json!({
                     "type": "command",
                     "source": "shell",
-                    "command": "rm -rf /tmp/guardian",
+                    "command": "rm -rf /tmp/auto_review",
                     "cwd": test_path_buf("/tmp"),
                 }))
-                .expect("guardian action"),
+                .expect("auto_review action"),
             }),
         ];
 
@@ -2139,14 +2215,14 @@ mod tests {
         assert_eq!(
             turns[0].items[1],
             ThreadItem::CommandExecution {
-                id: "guardian-exec".into(),
-                command: "rm -rf /tmp/guardian".into(),
+                id: "auto_review-exec".into(),
+                command: "rm -rf /tmp/auto_review".into(),
                 cwd: test_path_buf("/tmp").abs(),
                 process_id: None,
                 source: CommandExecutionSource::Agent,
                 status: CommandExecutionStatus::Declined,
                 command_actions: vec![CommandAction::Unknown {
-                    command: "rm -rf /tmp/guardian".into(),
+                    command: "rm -rf /tmp/auto_review".into(),
                 }],
                 aggregated_output: None,
                 exit_code: None,
@@ -2156,7 +2232,7 @@ mod tests {
     }
 
     #[test]
-    fn reconstructs_in_progress_guardian_execve_item() {
+    fn reconstructs_in_progress_auto_review_execve_item() {
         let events = vec![
             EventMsg::TurnStarted(TurnStartedEvent {
                 turn_id: "turn-1".into(),
@@ -2170,11 +2246,11 @@ mod tests {
                 text_elements: Vec::new(),
                 local_images: Vec::new(),
             }),
-            EventMsg::GuardianAssessment(GuardianAssessmentEvent {
-                id: "review-guardian-execve".into(),
-                target_item_id: Some("guardian-execve".into()),
+            EventMsg::AutoReviewAssessment(AutoReviewAssessmentEvent {
+                id: "review-auto_review-execve".into(),
+                target_item_id: Some("auto_review-execve".into()),
                 turn_id: "turn-1".into(),
-                status: GuardianAssessmentStatus::InProgress,
+                status: AutoReviewAssessmentStatus::InProgress,
                 risk_level: None,
                 user_authorization: None,
                 rationale: None,
@@ -2186,7 +2262,7 @@ mod tests {
                     "argv": ["/usr/bin/rm", "-f", "/tmp/file.sqlite"],
                     "cwd": test_path_buf("/tmp"),
                 }))
-                .expect("guardian action"),
+                .expect("auto_review action"),
             }),
         ];
 
@@ -2200,7 +2276,7 @@ mod tests {
         assert_eq!(
             turns[0].items[1],
             ThreadItem::CommandExecution {
-                id: "guardian-execve".into(),
+                id: "auto_review-execve".into(),
                 command: "/bin/rm -f /tmp/file.sqlite".into(),
                 cwd: test_path_buf("/tmp").abs(),
                 process_id: None,

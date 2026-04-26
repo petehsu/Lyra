@@ -108,7 +108,7 @@ pub struct ModelProviderInfo {
     /// Value to use with `Authorization: Bearer <token>` header. Use of this
     /// config is discouraged in favor of `env_key` for security reasons, but
     /// this may be necessary when using this programmatically.
-    pub experimental_bearer_token: Option<String>,
+    pub bearer_token: Option<String>,
     /// Command-backed bearer-token configuration for this provider.
     pub auth: Option<ModelProviderAuthInfo>,
     /// Which wire protocol this provider expects.
@@ -232,8 +232,8 @@ impl ModelProviderInfo {
         if self.env_key.is_some() {
             conflicts.push("env_key");
         }
-        if self.experimental_bearer_token.is_some() {
-            conflicts.push("experimental_bearer_token");
+        if self.bearer_token.is_some() {
+            conflicts.push("bearer_token");
         }
         if self.requires_managed_auth {
             conflicts.push("requires_managed_auth");
@@ -357,7 +357,7 @@ impl ModelProviderInfo {
             base_url,
             env_key: None,
             env_key_instructions: None,
-            experimental_bearer_token: None,
+            bearer_token: None,
             auth: None,
             wire_api: WireApi::Responses,
             query_params: None,
@@ -423,8 +423,7 @@ pub fn built_in_model_providers(
 }
 
 pub fn create_oss_provider(default_provider_port: u16, wire_api: WireApi) -> ModelProviderInfo {
-    // These LYRA_OSS_ environment variables are experimental: we may
-    // switch to reading values from config.toml instead.
+    // These LYRA_OSS_ environment variables provide local model discovery defaults.
     let default_lyra_oss_base_url = format!(
         "http://localhost:{lyra_oss_port}/v1",
         lyra_oss_port = std::env::var("LYRA_OSS_PORT")
@@ -447,7 +446,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         base_url: Some(base_url.into()),
         env_key: None,
         env_key_instructions: None,
-        experimental_bearer_token: None,
+        bearer_token: None,
         auth: None,
         wire_api,
         query_params: None,

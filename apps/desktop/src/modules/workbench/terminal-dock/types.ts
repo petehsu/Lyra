@@ -21,6 +21,8 @@ export type TerminalDockLabels = {
   readonly newTab: string;
   readonly splitHorizontal: string;
   readonly splitVertical: string;
+  readonly moveTerminalToTop: string;
+  readonly moveTerminalToBottom: string;
   readonly closeTab: string;
   readonly emptyDock: string;
   readonly unavailable: string;
@@ -63,7 +65,9 @@ export type TerminalDockProps = {
   readonly themePresetId: TerminalThemePresetId;
   readonly uiThemeId: string;
   readonly model: TerminalDockModel;
+  readonly terminalPanelSide: "top" | "bottom";
   readonly onRequestCloseTab: (tabId: string) => void;
   readonly onRequestTabContextMenu: (request: TerminalTabContextMenuRequest) => void;
+  readonly onToggleTerminalPanelSide: () => void;
   readonly onDropWorkspaceTerminalTab?: (tabId: string, targetIndex: number) => void;
 };

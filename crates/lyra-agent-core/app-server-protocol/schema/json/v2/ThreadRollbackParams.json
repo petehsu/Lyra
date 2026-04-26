@@ -1,19 +1,22 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "properties": {
-    "numTurns": {
-      "description": "The number of turns to drop from the end of the thread. Must be >= 1.\n\nThis only modifies the thread's history and does not revert local file changes that have been made by the agent. Clients are responsible for reverting these changes.",
-      "format": "uint32",
-      "minimum": 0.0,
-      "type": "integer"
+    "restoreFiles": {
+      "description": "Restore local file changes to the checkpoint captured before `turn_id`.\n\nWhen true, rollback fails before mutating history if Lyra cannot prove the file state can be restored safely.",
+      "type": "boolean"
     },
     "threadId": {
+      "type": "string"
+    },
+    "turnId": {
+      "description": "The turn to roll back from. This turn and all newer turns are removed.",
       "type": "string"
     }
   },
   "required": [
-    "numTurns",
-    "threadId"
+    "restoreFiles",
+    "threadId",
+    "turnId"
   ],
   "title": "ThreadRollbackParams",
   "type": "object"

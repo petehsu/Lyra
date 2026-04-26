@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { LyraBrandLogo } from "../brand";
+import { AnimatedMagicBorder } from "./animated-magic-border";
 
 type PillPhase = "idle" | "exit" | "enter";
 
@@ -208,6 +209,7 @@ export const TitlebarAiLaunchPill = ({
       onClick={onToggle}
       data-phase={phase}
     >
+      <AnimatedMagicBorder isOpen={isOpen} />
       <LyraBrandLogo logoUrl={logoUrl} className="lyra-titlebar-ai-launch-logo" />
       <span className="lyra-titlebar-ai-launch-text">
         <span className="lyra-titlebar-ai-launch-prefix">{prefix}</span>

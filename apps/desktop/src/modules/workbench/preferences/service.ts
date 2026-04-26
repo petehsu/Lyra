@@ -11,6 +11,7 @@ import { isWorkbenchThemeId } from "../theme";
 import type { WorkbenchThemeId } from "../theme";
 import { resolveTerminalThemePresetId } from "../terminal-theme";
 import type {
+  WorkbenchAiStopBehavior,
   WorkbenchBrowserAutomationEngine,
   WorkbenchLyraDirectMicroExecutorBudget,
   WorkbenchOmniboxNonBrowserSubmitTarget,
@@ -42,6 +43,8 @@ const isSplitOverflowPolicy = (value: unknown): value is WorkbenchSplitOverflowP
   value === "replace_oldest" ||
   value === "replace_target";
 const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
+const isWorkbenchAiStopBehavior = (value: unknown): value is WorkbenchAiStopBehavior =>
+  value === "turn_only" || value === "turn_and_background";
 const isSearchScopePreset = (value: unknown): value is SearchLocalScopePreset =>
   value === "home" || value === "full_system" || value === "workspace" || value === "custom";
 const isSearchDeepBudgetPreset = (value: unknown): value is SearchDeepBudgetPreset =>
@@ -92,6 +95,9 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly splitThreePaneLayout?: unknown;
       readonly splitOverflowPolicy?: unknown;
       readonly aiRichRenderingEnabled?: unknown;
+      readonly aiStopBehavior?: unknown;
+      readonly preventSleepEnabled?: unknown;
+      readonly forceWebPageThemingEnabled?: unknown;
       readonly searchScopePreset?: unknown;
       readonly searchCustomRoots?: unknown;
       readonly searchEnableFuzzy?: unknown;
@@ -136,6 +142,15 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       aiRichRenderingEnabled: isBoolean(parsed.aiRichRenderingEnabled)
         ? parsed.aiRichRenderingEnabled
         : defaults.aiRichRenderingEnabled,
+      aiStopBehavior: isWorkbenchAiStopBehavior(parsed.aiStopBehavior)
+        ? parsed.aiStopBehavior
+        : defaults.aiStopBehavior,
+      preventSleepEnabled: isBoolean(parsed.preventSleepEnabled)
+        ? parsed.preventSleepEnabled
+        : defaults.preventSleepEnabled,
+      forceWebPageThemingEnabled: isBoolean(parsed.forceWebPageThemingEnabled)
+        ? parsed.forceWebPageThemingEnabled
+        : defaults.forceWebPageThemingEnabled,
       searchScopePreset: isSearchScopePreset(parsed.searchScopePreset)
         ? parsed.searchScopePreset
         : defaults.searchScopePreset,
@@ -258,6 +273,24 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         aiRichRenderingEnabled
+      }));
+    },
+    setAiStopBehavior: (aiStopBehavior) => {
+      commit((current) => ({
+        ...current,
+        aiStopBehavior
+      }));
+    },
+    setPreventSleepEnabled: (preventSleepEnabled) => {
+      commit((current) => ({
+        ...current,
+        preventSleepEnabled
+      }));
+    },
+    setForceWebPageThemingEnabled: (forceWebPageThemingEnabled) => {
+      commit((current) => ({
+        ...current,
+        forceWebPageThemingEnabled
       }));
     },
     setSearchScopePreset: (searchScopePreset) => {

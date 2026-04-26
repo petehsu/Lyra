@@ -270,10 +270,44 @@ impl ModelsManager {
     pub async fn get_default_model(
         &self,
         model: &Option<String>,
+        config: &ModelsManagerConfig,
+        refresh_strategy: RefreshStrategy,
+    ) -> String {
+        self.get_default_model_for_provider(model, None, config, refresh_strategy)
+            .await
+    }
+
+    #[instrument(
+        level = "info",
+        skip(self, model),
+        fields(
+            model.provided = model.is_some(),
+            provider_id = provider_id.unwrap_or_default(),
+            refresh_strategy = %refresh_strategy
+        )
+    )]
+    pub async fn get_default_model_for_provider(
+        &self,
+        model: &Option<String>,
+        provider_id: Option<&str>,
+        config: &ModelsManagerConfig,
         refresh_strategy: RefreshStrategy,
     ) -> String {
         if let Some(model) = model.as_ref() {
             return model.to_string();
+        }
+        if let Some(provider_id) = provider_id
+            && let Some(provider_catalog) = config.provider_model_catalogs.get(provider_id)
+        {
+            let available = self.build_available_models(provider_catalog.models.clone());
+            if let Some(model) = available
+                .iter()
+                .find(|candidate| candidate.is_default)
+                .or_else(|| available.first())
+                .map(|candidate| candidate.model.clone())
+            {
+                return model;
+            }
         }
         if let Err(err) = self.refresh_available_models(refresh_strategy).await {
             error!("failed to refresh available models: {err}");
@@ -292,8 +326,32 @@ impl ModelsManager {
     /// Look up model metadata, applying remote overrides and config adjustments.
     #[instrument(level = "info", skip(self, config), fields(model = model))]
     pub async fn get_model_info(&self, model: &str, config: &ModelsManagerConfig) -> ModelInfo {
+        self.get_model_info_for_provider(model, None, config).await
+    }
+
+    #[instrument(
+        level = "info",
+        skip(self, config),
+        fields(model = model, provider_id = provider_id.unwrap_or_default())
+    )]
+    pub async fn get_model_info_for_provider(
+        &self,
+        model: &str,
+        provider_id: Option<&str>,
+        config: &ModelsManagerConfig,
+    ) -> ModelInfo {
+        let provider_catalog = provider_id.and_then(|id| config.provider_model_catalogs.get(id));
+        if let Some(provider_catalog) = provider_catalog {
+            return Self::construct_model_info_from_candidates(
+                model,
+                provider_catalog.models.as_slice(),
+                provider_id,
+                provider_catalog.protocol_id.as_deref(),
+                config,
+            );
+        }
         let remote_models = self.get_remote_models().await;
-        Self::construct_model_info_from_candidates(model, &remote_models, config)
+        Self::construct_model_info_from_candidates(model, &remote_models, provider_id, None, config)
     }
 
     fn find_model_by_longest_prefix(model: &str, candidates: &[ModelInfo]) -> Option<ModelInfo> {
@@ -335,6 +393,8 @@ impl ModelsManager {
     fn construct_model_info_from_candidates(
         model: &str,
         candidates: &[ModelInfo],
+        provider_id: Option<&str>,
+        protocol_id: Option<&str>,
         config: &ModelsManagerConfig,
     ) -> ModelInfo {
         // First use the normal longest-prefix match. If that misses, allow a narrowly scoped
@@ -344,11 +404,20 @@ impl ModelsManager {
         let model_info = if let Some(remote) = remote {
             ModelInfo {
                 slug: model.to_string(),
-                used_fallback_model_metadata: false,
                 ..remote
             }
         } else {
-            model_info::model_info_from_slug(model)
+            crate::runtime_metadata::model_info_for_provider_protocol(
+                provider_id,
+                protocol_id,
+                model,
+            )
+            .unwrap_or_else(|| {
+                panic!(
+                    "Model metadata not resolved for `{}`. Configure a supported provider/profile or add discovery metadata before starting a turn.",
+                    model
+                )
+            })
         };
         model_info::with_config_overrides(model_info, config)
     }
@@ -561,7 +630,7 @@ impl ModelsManager {
         } else {
             &[]
         };
-        Self::construct_model_info_from_candidates(model, candidates, config)
+        Self::construct_model_info_from_candidates(model, candidates, None, None, config)
     }
 }
 

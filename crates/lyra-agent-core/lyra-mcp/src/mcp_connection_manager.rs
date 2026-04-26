@@ -433,7 +433,7 @@ pub struct SandboxState {
     pub lyra_linux_sandbox_exe: Option<PathBuf>,
     pub sandbox_cwd: PathBuf,
     #[serde(default)]
-    pub use_legacy_landlock: bool,
+    pub use_classic_landlock: bool,
 }
 
 /// A thin wrapper around a set of running [`RmcpClient`] instances.
@@ -1149,15 +1149,15 @@ async fn make_rmcp_client(
 ) -> Result<RmcpClient, StartupOutcomeError> {
     let McpServerConfig {
         transport,
-        experimental_environment,
+        environment,
         ..
     } = config;
-    let remote_environment = match experimental_environment.as_deref() {
+    let remote_environment = match environment.as_deref() {
         None | Some("local") => false,
         Some("remote") => true,
         Some(environment) => {
             return Err(StartupOutcomeError::from(anyhow!(
-                "unsupported experimental_environment `{environment}` for MCP server `{server_name}`"
+                "unsupported environment `{environment}` for MCP server `{server_name}`"
             )));
         }
     };

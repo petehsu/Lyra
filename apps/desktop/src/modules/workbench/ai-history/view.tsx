@@ -1,4 +1,4 @@
-import { Archive, ArrowLeft, ExternalLink, FolderOpen, Plus, Trash2 } from "lucide-react";
+import { Archive, ArrowLeft, Check, ExternalLink, FolderOpen, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentSessionDetail } from "../../../shared/desktop-bridge";
@@ -12,7 +12,9 @@ import {
   lyraThreadToAgentDetail,
   readLyraThread,
 } from "../ai-panel/lyra-thread-adapter";
+import { AiPanelRichContent } from "../ai-panel/rich-content";
 import { emitThreadSelected } from "../thread-selection-events";
+import { resolveAssistantDisplayContent } from "../ai-panel/view-helpers";
 import type { AiHistorySurfaceProps } from "./types";
 
 type JsonRecord = Record<string, unknown>;
@@ -23,15 +25,22 @@ type LyraThreadSummary = {
   readonly preview: string;
   readonly updatedAt: number | null;
   readonly modelProvider: string | null;
-  readonly cwd: string | null;
+  readonly boundProjectRoot: string | null;
 };
 
 type HistoryScope = "global" | "project" | "archivedGlobal" | "archivedProject";
 
 type ProjectGroup = {
-  readonly cwd: string;
+  readonly projectRoot: string;
   readonly displayName: string;
   readonly threads: readonly LyraThreadSummary[];
+};
+
+type LivePreviewEntry = {
+  readonly threadId: string;
+  readonly turnId: string;
+  readonly text: string;
+  readonly updatedAt: number;
 };
 
 const isRecord = (value: unknown): value is JsonRecord =>
@@ -43,7 +52,7 @@ const readString = (value: unknown): string | null =>
 const readNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
-const readCwd = (value: unknown): string | null => {
+const readPath = (value: unknown): string | null => {
   const direct = readString(value);
   if (direct !== null) {
     return direct;
@@ -54,10 +63,10 @@ const readCwd = (value: unknown): string | null => {
   return null;
 };
 
-const normalizeCwd = (value: string): string => value.replace(/\\/g, "/").replace(/\/+$/g, "");
+const normalizeProjectRoot = (value: string): string => value.replace(/\\/g, "/").replace(/\/+$/g, "");
 
-const projectDisplayName = (cwd: string): string => {
-  const normalized = normalizeCwd(cwd);
+const projectDisplayName = (projectRoot: string): string => {
+  const normalized = normalizeProjectRoot(projectRoot);
   const segments = normalized.split("/").filter((segment) => segment.length > 0);
   return segments.at(-1) ?? normalized;
 };
@@ -90,7 +99,7 @@ const toThreadSummary = (value: unknown): LyraThreadSummary | null => {
           ? rawUpdatedAt * 1000
           : rawUpdatedAt,
     modelProvider: readString(value.modelProvider),
-    cwd: readCwd(value.cwd)
+    boundProjectRoot: readPath(value.boundProjectRoot)
   };
 };
 
@@ -112,10 +121,10 @@ const groupThreadsByProject = (
 ): readonly ProjectGroup[] => {
   const buckets = new Map<string, LyraThreadSummary[]>();
   for (const thread of threads) {
-    if (thread.cwd === null) {
+    if (thread.boundProjectRoot === null) {
       continue;
     }
-    const key = normalizeCwd(thread.cwd);
+    const key = normalizeProjectRoot(thread.boundProjectRoot);
     if (key.length === 0) {
       continue;
     }
@@ -127,10 +136,10 @@ const groupThreadsByProject = (
     }
   }
   const groups: ProjectGroup[] = [];
-  for (const [cwd, bucket] of buckets) {
+  for (const [projectRoot, bucket] of buckets) {
     groups.push({
-      cwd,
-      displayName: projectDisplayName(cwd),
+      projectRoot,
+      displayName: projectDisplayName(projectRoot),
       threads: sortThreadsByRecency(bucket)
     });
   }
@@ -148,6 +157,7 @@ export const AiHistorySurface = ({
   newSessionTitle,
   newConversationLabel,
   openConversationLabel,
+  renameConversationLabel = "Rename conversation",
   deleteConversationLabel,
   archiveConversationLabel,
   archivedConversationLabel,
@@ -169,6 +179,8 @@ export const AiHistorySurface = ({
   previewEmptyTitle,
   previewEmptyDescription,
   previewLoadingLabel,
+  richRenderingEnabled = true,
+  themeSignature,
   defaultProfileId: _defaultProfileId,
   defaultProviderId,
   openDialog
@@ -177,15 +189,22 @@ export const AiHistorySurface = ({
   const [activeThreads, setActiveThreads] = useState<readonly LyraThreadSummary[]>([]);
   const [archivedThreads, setArchivedThreads] = useState<readonly LyraThreadSummary[]>([]);
   const [scope, setScope] = useState<HistoryScope>("global");
-  const [selectedProjectCwd, setSelectedProjectCwd] = useState<string | null>(null);
+  const [selectedProjectRoot, setSelectedProjectRoot] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [previewDetail, setPreviewDetail] = useState<AgentSessionDetail | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [livePreviewByThread, setLivePreviewByThread] = useState<ReadonlyMap<string, LivePreviewEntry>>(
+    () => new Map()
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
+  const [editingThreadName, setEditingThreadName] = useState("");
+  const [isRenamingThread, setIsRenamingThread] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const previewRequestSeq = useRef(0);
+  const livePreviewByThreadRef = useRef<Map<string, LivePreviewEntry>>(new Map());
   const isArchivedScope = scope === "archivedGlobal" || scope === "archivedProject";
   const isProjectScope = scope === "project" || scope === "archivedProject";
   const threads = isArchivedScope ? archivedThreads : activeThreads;
@@ -236,6 +255,68 @@ export const AiHistorySurface = ({
     }
   }, [lyraApi]);
 
+  const patchThreadPreview = useCallback((threadId: string, preview: string, updatedAt: number): void => {
+    const patch = (current: readonly LyraThreadSummary[]): readonly LyraThreadSummary[] =>
+      sortThreadsByRecency(
+        current.map((thread) =>
+          thread.id === threadId
+            ? {
+                ...thread,
+                preview,
+                updatedAt,
+              }
+            : thread
+        )
+      );
+    setActiveThreads(patch);
+    setArchivedThreads(patch);
+  }, []);
+
+  const patchThreadName = useCallback((threadId: string, name: string): void => {
+    const patch = (current: readonly LyraThreadSummary[]): readonly LyraThreadSummary[] =>
+      current.map((thread) => thread.id === threadId ? { ...thread, name } : thread);
+    setActiveThreads(patch);
+    setArchivedThreads(patch);
+    setPreviewDetail((current) =>
+      current === null || current.session.id !== threadId
+        ? current
+        : {
+            ...current,
+            session: {
+              ...current.session,
+              title: name,
+            },
+          }
+    );
+  }, []);
+
+  const writeLivePreview = useCallback((entry: LivePreviewEntry): void => {
+    livePreviewByThreadRef.current.set(entry.threadId, entry);
+    setLivePreviewByThread(new Map(livePreviewByThreadRef.current));
+  }, []);
+
+  const clearLivePreview = useCallback((threadId: string): void => {
+    if (!livePreviewByThreadRef.current.delete(threadId)) {
+      return;
+    }
+    setLivePreviewByThread(new Map(livePreviewByThreadRef.current));
+  }, []);
+
+  const appendLivePreview = useCallback((threadId: string, turnId: string, delta: string): void => {
+    const previous = livePreviewByThreadRef.current.get(threadId);
+    const text = `${previous?.turnId === turnId ? previous.text : ""}${delta}`;
+    const updatedAt = Date.now();
+    writeLivePreview({
+      threadId,
+      turnId,
+      text,
+      updatedAt,
+    });
+    if (text.trim().length > 0) {
+      patchThreadPreview(threadId, text, updatedAt);
+    }
+  }, [patchThreadPreview, writeLivePreview]);
+
   useEffect(() => {
     if (lyraApi === undefined) {
       return;
@@ -243,43 +324,21 @@ export const AiHistorySurface = ({
     void loadThreads();
   }, [lyraApi, loadThreads]);
 
-  useEffect(() => {
-    if (lyraApi === undefined) {
-      return;
-    }
-    return lyraApi.onEvent((event) => {
-      if (event.kind !== "notification" || !isRecord(event.notification)) {
-        return;
-      }
-      const method = readString(event.notification.method);
-      if (
-        method === "thread/started"
-        || method === "thread/archived"
-        || method === "thread/deleted"
-        || method === "thread/unarchived"
-        || method === "thread/name/updated"
-        || method === "turn/completed"
-      ) {
-        void loadThreads();
-      }
-    });
-  }, [lyraApi, loadThreads]);
-
   const projectGroups = useMemo(() => groupThreadsByProject(threads), [threads]);
 
   const selectedProject = useMemo<ProjectGroup | null>(() => {
-    if (selectedProjectCwd === null) {
+    if (selectedProjectRoot === null) {
       return null;
     }
-    return projectGroups.find((group) => group.cwd === selectedProjectCwd) ?? null;
-  }, [projectGroups, selectedProjectCwd]);
+    return projectGroups.find((group) => group.projectRoot === selectedProjectRoot) ?? null;
+  }, [projectGroups, selectedProjectRoot]);
 
   useEffect(() => {
-    if (selectedProjectCwd === null || selectedProject !== null) {
+    if (selectedProjectRoot === null || selectedProject !== null) {
       return;
     }
-    setSelectedProjectCwd(null);
-  }, [selectedProject, selectedProjectCwd]);
+    setSelectedProjectRoot(null);
+  }, [selectedProject, selectedProjectRoot]);
 
   const clearPreview = useCallback((): void => {
     previewRequestSeq.current += 1;
@@ -290,16 +349,19 @@ export const AiHistorySurface = ({
   }, []);
 
   const previewThread = useCallback(
-    async (threadId: string): Promise<void> => {
+    async (threadId: string, options: { readonly silent?: boolean } = {}): Promise<void> => {
       if (lyraApi === undefined) {
         return;
       }
+      const silent = options.silent === true;
       const requestSeq = previewRequestSeq.current + 1;
       previewRequestSeq.current = requestSeq;
       setActiveThreadId(threadId);
-      setPreviewDetail(null);
-      setPreviewError(null);
-      setIsPreviewLoading(true);
+      if (!silent) {
+        setPreviewDetail(null);
+        setPreviewError(null);
+        setIsPreviewLoading(true);
+      }
       try {
         const response = await lyraApi.request<{ thread?: unknown }>(
           createRequestPayload("thread/read", {
@@ -315,19 +377,91 @@ export const AiHistorySurface = ({
           throw new Error("Lyra thread/read did not return a readable thread");
         }
         setPreviewDetail(lyraThreadToAgentDetail(thread));
+        setPreviewError(null);
       } catch (error) {
         if (previewRequestSeq.current !== requestSeq) {
           return;
         }
-        setPreviewError(error instanceof Error ? error.message : String(error));
+        if (!silent) {
+          setPreviewError(error instanceof Error ? error.message : String(error));
+        }
       } finally {
-        if (previewRequestSeq.current === requestSeq) {
+        if (!silent && previewRequestSeq.current === requestSeq) {
           setIsPreviewLoading(false);
         }
       }
     },
     [lyraApi]
   );
+
+  useEffect(() => {
+    if (lyraApi === undefined) {
+      return;
+    }
+    return lyraApi.onEvent((event) => {
+      if (event.kind !== "notification" || !isRecord(event.notification)) {
+        return;
+      }
+      const method = readString(event.notification.method);
+      const params = isRecord(event.notification.params) ? event.notification.params : {};
+      if (
+        method === "thread/started"
+        || method === "thread/archived"
+        || method === "thread/deleted"
+        || method === "thread/unarchived"
+        || method === "thread/name/updated"
+        || method === "turn/completed"
+      ) {
+        void loadThreads();
+      }
+      if (method === "thread/deleted" || method === "thread/archived") {
+        const threadId = readString(params.threadId);
+        if (threadId !== null) {
+          clearLivePreview(threadId);
+        }
+        return;
+      }
+      if (method === "turn/started") {
+        const threadId = readString(params.threadId);
+        const turn = isRecord(params.turn) ? params.turn : null;
+        const turnId = turn === null ? null : readString(turn.id);
+        if (threadId !== null && turnId !== null) {
+          writeLivePreview({
+            threadId,
+            turnId,
+            text: "",
+            updatedAt: Date.now(),
+          });
+        }
+        return;
+      }
+      if (method === "item/agentMessage/delta") {
+        const threadId = readString(params.threadId);
+        const turnId = readString(params.turnId);
+        const delta = typeof params.delta === "string" ? params.delta : "";
+        if (threadId !== null && turnId !== null && delta.length > 0) {
+          appendLivePreview(threadId, turnId, delta);
+        }
+        return;
+      }
+      if (method === "item/completed" || method === "turn/completed") {
+        const threadId = readString(params.threadId);
+        if (threadId !== null && threadId === activeThreadId) {
+          void previewThread(threadId, { silent: true }).finally(() => {
+            clearLivePreview(threadId);
+          });
+        }
+      }
+    });
+  }, [
+    activeThreadId,
+    appendLivePreview,
+    clearLivePreview,
+    loadThreads,
+    lyraApi,
+    previewThread,
+    writeLivePreview,
+  ]);
 
   const createThread = useCallback(async (): Promise<void> => {
     if (lyraApi === undefined || isCreating) {
@@ -419,6 +553,51 @@ export const AiHistorySurface = ({
     emitThreadSelected(threadId);
   }, []);
 
+  const beginRenameThread = useCallback((thread: LyraThreadSummary): void => {
+    setEditingThreadId(thread.id);
+    setEditingThreadName(thread.name?.trim() || thread.preview.trim() || threadPreviewEmptyLabel);
+  }, [threadPreviewEmptyLabel]);
+
+  const cancelRenameThread = useCallback((): void => {
+    setEditingThreadId(null);
+    setEditingThreadName("");
+  }, []);
+
+  const submitRenameThread = useCallback(async (threadId: string): Promise<void> => {
+    if (lyraApi === undefined || isRenamingThread) {
+      return;
+    }
+    const name = editingThreadName.trim();
+    if (name.length === 0) {
+      cancelRenameThread();
+      return;
+    }
+    setIsRenamingThread(true);
+    setErrorMessage(null);
+    try {
+      await lyraApi.request(
+        createRequestPayload("thread/name/set", {
+          threadId,
+          name
+        })
+      );
+      patchThreadName(threadId, name);
+      cancelRenameThread();
+      void loadThreads();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRenamingThread(false);
+    }
+  }, [
+    cancelRenameThread,
+    editingThreadName,
+    isRenamingThread,
+    loadThreads,
+    lyraApi,
+    patchThreadName
+  ]);
+
   const requestDeleteThread = useCallback((thread: LyraThreadSummary): void => {
     const previewText = thread.name?.trim() || thread.preview.trim() || threadPreviewEmptyLabel;
     if (openDialog === undefined) {
@@ -472,6 +651,58 @@ export const AiHistorySurface = ({
       activeThreadId === thread.id
         ? "lyra-ai-history-row lyra-ai-history-row-active"
         : "lyra-ai-history-row";
+    if (editingThreadId === thread.id) {
+      return (
+        <form
+          key={thread.id}
+          className={`${rowClassName} lyra-ai-history-row-editing`}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitRenameThread(thread.id);
+          }}
+        >
+          <label className="lyra-ai-history-row-edit">
+            <input
+              className="lyra-ai-history-row-edit-input"
+              aria-label={renameConversationLabel}
+              value={editingThreadName}
+              autoFocus
+              disabled={isRenamingThread}
+              onChange={(event) => {
+                setEditingThreadName(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  cancelRenameThread();
+                }
+              }}
+            />
+          </label>
+          <div className="lyra-ai-history-row-actions">
+            <button
+              type="submit"
+              className="lyra-ai-history-row-action lyra-ai-history-row-action-open"
+              disabled={isRenamingThread}
+              aria-label={renameConversationLabel}
+              title={renameConversationLabel}
+            >
+              <Check size={14} />
+            </button>
+            <button
+              type="button"
+              className="lyra-ai-history-row-action"
+              disabled={isRenamingThread}
+              aria-label={deleteArchivedConversationCancel}
+              title={deleteArchivedConversationCancel}
+              onClick={cancelRenameThread}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </form>
+      );
+    }
     return (
       <div key={thread.id} className={rowClassName}>
         <button
@@ -492,6 +723,17 @@ export const AiHistorySurface = ({
           <small>{formatSessionTime(updatedAtMs, locale)}</small>
         </button>
         <div className="lyra-ai-history-row-actions">
+          <button
+            type="button"
+            className="lyra-ai-history-row-action lyra-ai-history-row-action-open"
+            onClick={() => {
+              beginRenameThread(thread);
+            }}
+            aria-label={renameConversationLabel}
+            title={renameConversationLabel}
+          >
+            <Pencil size={14} />
+          </button>
           <button
             type="button"
             className="lyra-ai-history-row-action lyra-ai-history-row-action-open"
@@ -575,7 +817,7 @@ export const AiHistorySurface = ({
               type="button"
               className="lyra-ai-history-back-button"
               onClick={() => {
-                setSelectedProjectCwd(null);
+                setSelectedProjectRoot(null);
                 clearPreview();
               }}
             >
@@ -584,10 +826,10 @@ export const AiHistorySurface = ({
             </button>
             <div className="lyra-ai-history-project-detail-meta">
               <strong>{selectedProject.displayName}</strong>
-              <span title={selectedProject.cwd}>
+              <span title={selectedProject.projectRoot}>
                 {projectPathLabel}
                 ：
-                {selectedProject.cwd}
+                {selectedProject.projectRoot}
               </span>
             </div>
           </div>
@@ -623,21 +865,21 @@ export const AiHistorySurface = ({
       <div className="lyra-ai-history-project-grid">
         {projectGroups.map((group) => (
           <button
-            key={group.cwd}
+            key={group.projectRoot}
             type="button"
             className={
-              selectedProjectCwd === group.cwd
+              selectedProjectRoot === group.projectRoot
                 ? "lyra-ai-history-project-card lyra-ai-history-project-card-active"
                 : "lyra-ai-history-project-card"
             }
             onClick={() => {
-              setSelectedProjectCwd(group.cwd);
+              setSelectedProjectRoot(group.projectRoot);
               clearPreview();
             }}
           >
             <span className="lyra-ai-history-project-card-head">
               <StatusIndicator
-                tone={selectedProjectCwd === group.cwd ? "success" : "info"}
+                tone={selectedProjectRoot === group.projectRoot ? "success" : "info"}
                 variant="bar"
                 ariaLabel={group.displayName}
               />
@@ -647,10 +889,10 @@ export const AiHistorySurface = ({
             </span>
             <span className="lyra-ai-history-project-card-main">
               <strong>{group.displayName}</strong>
-              <small title={group.cwd}>{group.cwd}</small>
+              <small title={group.projectRoot}>{group.projectRoot}</small>
             </span>
             <StatusBadge
-              tone={selectedProjectCwd === group.cwd ? "info" : "muted"}
+              tone={selectedProjectRoot === group.projectRoot ? "info" : "muted"}
               label={`${String(group.threads.length)} ${projectSessionCountLabel}`}
               className="lyra-ai-history-project-card-count"
             />
@@ -691,7 +933,28 @@ export const AiHistorySurface = ({
       );
     }
 
+    const livePreview = activeThreadId === null ? null : (livePreviewByThread.get(activeThreadId) ?? null);
     const sortedMessages = [...previewDetail.messages].sort((left, right) => left.createdAt - right.createdAt);
+    const hasPersistedLivePreview =
+      livePreview !== null
+      && sortedMessages.some(
+        (message) => message.role === "assistant" && message.turnId === livePreview.turnId
+      );
+    const displayMessages =
+      livePreview !== null && livePreview.text.trim().length > 0 && !hasPersistedLivePreview
+        ? [
+            ...sortedMessages,
+            {
+              id: `live-preview:${livePreview.threadId}:${livePreview.turnId}`,
+              sessionId: livePreview.threadId,
+              turnId: livePreview.turnId,
+              role: "assistant" as const,
+              content: livePreview.text,
+              displayContent: livePreview.text,
+              createdAt: livePreview.updatedAt,
+            },
+          ]
+        : sortedMessages;
     const updatedAtMs = previewDetail.session.updatedAt;
     return (
       <article className="lyra-ai-history-preview-card">
@@ -700,18 +963,43 @@ export const AiHistorySurface = ({
             <strong>{previewDetail.session.title || threadPreviewEmptyLabel}</strong>
             <small>{formatSessionTime(updatedAtMs, locale)}</small>
           </div>
-          <button
-            type="button"
-            className="lyra-ai-history-preview-open"
-            onClick={() => {
-              openThread(previewDetail.session.id);
-            }}
-            aria-label={openConversationLabel}
-            title={openConversationLabel}
-          >
-            <ExternalLink size={14} />
-            <span>{openConversationLabel}</span>
-          </button>
+          <div className="lyra-ai-history-preview-actions">
+            <button
+              type="button"
+              className="lyra-ai-history-preview-open"
+              onClick={() => {
+                const sourceThread =
+                  activeThreads.find((thread) => thread.id === previewDetail.session.id)
+                  ?? archivedThreads.find((thread) => thread.id === previewDetail.session.id)
+                  ?? null;
+                beginRenameThread(sourceThread ?? {
+                  id: previewDetail.session.id,
+                  name: previewDetail.session.title,
+                  preview: "",
+                  updatedAt: previewDetail.session.updatedAt,
+                  modelProvider: null,
+                  boundProjectRoot: previewDetail.session.projectRoot ?? null,
+                });
+              }}
+              aria-label={renameConversationLabel}
+              title={renameConversationLabel}
+            >
+              <Pencil size={14} />
+              <span>{renameConversationLabel}</span>
+            </button>
+            <button
+              type="button"
+              className="lyra-ai-history-preview-open"
+              onClick={() => {
+                openThread(previewDetail.session.id);
+              }}
+              aria-label={openConversationLabel}
+              title={openConversationLabel}
+            >
+              <ExternalLink size={14} />
+              <span>{openConversationLabel}</span>
+            </button>
+          </div>
         </header>
         {previewDetail.session.projectRoot === undefined ? null : (
           <div className="lyra-ai-history-preview-meta" title={previewDetail.session.projectRoot}>
@@ -720,29 +1008,40 @@ export const AiHistorySurface = ({
             {previewDetail.session.projectRoot}
           </div>
         )}
-        {sortedMessages.length === 0 ? (
+        {displayMessages.length === 0 ? (
           <StatusEmptyState
             title={threadPreviewEmptyLabel}
             className="lyra-ai-history-preview-empty"
           />
         ) : (
           <div className="lyra-ai-history-preview-messages">
-            {sortedMessages.map((message) => (
-              <div
-                key={message.id}
-                className={
-                  message.role === "user"
-                    ? "lyra-ai-history-preview-message lyra-ai-history-preview-message-user"
-                    : "lyra-ai-history-preview-message lyra-ai-history-preview-message-assistant"
-                }
-              >
-                <div className="lyra-ai-history-preview-message-content">
-                  {"displayContent" in message && typeof message.displayContent === "string"
-                    ? message.displayContent
-                    : message.content}
+            {displayMessages.map((message) => {
+              const displayContent = message.role === "assistant"
+                ? resolveAssistantDisplayContent(message)
+                : message.content;
+              return (
+                <div
+                  key={message.id}
+                  className={
+                    message.role === "user"
+                      ? "lyra-ai-history-preview-message lyra-ai-history-preview-message-user"
+                      : "lyra-ai-history-preview-message lyra-ai-history-preview-message-assistant"
+                  }
+                >
+                  <div className="lyra-ai-history-preview-message-content">
+                    {message.role === "assistant" && richRenderingEnabled ? (
+                      <AiPanelRichContent
+                        content={displayContent}
+                        locale={locale === "zh-CN" ? "zh-CN" : "en-US"}
+                        {...(themeSignature === undefined ? {} : { themeSignature })}
+                      />
+                    ) : (
+                      displayContent
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </article>
@@ -781,7 +1080,7 @@ export const AiHistorySurface = ({
           }
           onClick={() => {
             setScope("global");
-            setSelectedProjectCwd(null);
+            setSelectedProjectRoot(null);
             clearPreview();
           }}
         >
@@ -799,7 +1098,7 @@ export const AiHistorySurface = ({
           }
           onClick={() => {
             setScope("project");
-            setSelectedProjectCwd(null);
+            setSelectedProjectRoot(null);
             clearPreview();
           }}
         >
@@ -817,7 +1116,7 @@ export const AiHistorySurface = ({
           }
           onClick={() => {
             setScope("archivedGlobal");
-            setSelectedProjectCwd(null);
+            setSelectedProjectRoot(null);
             clearPreview();
           }}
         >
@@ -835,7 +1134,7 @@ export const AiHistorySurface = ({
           }
           onClick={() => {
             setScope("archivedProject");
-            setSelectedProjectCwd(null);
+            setSelectedProjectRoot(null);
             clearPreview();
           }}
         >

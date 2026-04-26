@@ -9,10 +9,7 @@ use tempfile::tempdir;
 #[test]
 fn memory_root_points_at_lyra_truth_root() {
     let lyra_home = AbsolutePathBuf::current_dir().expect("cwd").join("lyra");
-    let expected = AbsolutePathBuf::current_dir()
-        .expect("cwd")
-        .join("modules")
-        .join("ai");
+    let expected = lyra_home.join("modules").join("ai");
     assert_eq!(memory_root(&lyra_home), expected);
 }
 

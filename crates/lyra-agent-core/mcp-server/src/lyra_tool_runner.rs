@@ -264,7 +264,7 @@ async fn run_lyra_tool_session_inner(
                     EventMsg::Warning(_) => {
                         continue;
                     }
-                    EventMsg::GuardianAssessment(_) => {
+                    EventMsg::AutoReviewAssessment(_) => {
                         continue;
                     }
                     EventMsg::ElicitationRequest(_) => {

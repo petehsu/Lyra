@@ -84,7 +84,7 @@ pub enum NetworkPolicyRuleAction {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
-pub enum GuardianRiskLevel {
+pub enum AutoReviewRiskLevel {
     Low,
     Medium,
     High,
@@ -93,7 +93,7 @@ pub enum GuardianRiskLevel {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
-pub enum GuardianUserAuthorization {
+pub enum AutoReviewUserAuthorization {
     Unknown,
     Low,
     Medium,
@@ -102,7 +102,7 @@ pub enum GuardianUserAuthorization {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
-pub enum GuardianAssessmentStatus {
+pub enum AutoReviewAssessmentStatus {
     InProgress,
     Approved,
     Denied,
@@ -112,13 +112,13 @@ pub enum GuardianAssessmentStatus {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
-pub enum GuardianAssessmentDecisionSource {
+pub enum AutoReviewAssessmentDecisionSource {
     Agent,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
-pub enum GuardianCommandSource {
+pub enum AutoReviewCommandSource {
     Shell,
     UnifiedExec,
 }
@@ -126,14 +126,14 @@ pub enum GuardianCommandSource {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(tag = "type", rename_all = "snake_case")]
-pub enum GuardianAssessmentAction {
+pub enum AutoReviewAssessmentAction {
     Command {
-        source: GuardianCommandSource,
+        source: AutoReviewCommandSource,
         command: String,
         cwd: AbsolutePathBuf,
     },
     Execve {
-        source: GuardianCommandSource,
+        source: AutoReviewCommandSource,
         program: String,
         argv: Vec<String>,
         cwd: AbsolutePathBuf,
@@ -164,8 +164,8 @@ pub struct NetworkPolicyAmendment {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct GuardianAssessmentEvent {
-    /// Stable identifier for this guardian review lifecycle.
+pub struct AutoReviewAssessmentEvent {
+    /// Stable identifier for this auto_review review lifecycle.
     pub id: String,
     /// Thread item being reviewed, when the review maps to a concrete item.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -175,15 +175,15 @@ pub struct GuardianAssessmentEvent {
     /// Uses `#[serde(default)]` for backwards compatibility.
     #[serde(default)]
     pub turn_id: String,
-    pub status: GuardianAssessmentStatus,
+    pub status: AutoReviewAssessmentStatus,
     /// Coarse risk label. Omitted while the assessment is in progress.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub risk_level: Option<GuardianRiskLevel>,
+    pub risk_level: Option<AutoReviewRiskLevel>,
     /// How directly the transcript authorizes the reviewed action.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub user_authorization: Option<GuardianUserAuthorization>,
+    pub user_authorization: Option<AutoReviewUserAuthorization>,
     /// Human-readable explanation of the final assessment. Omitted while in progress.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -191,9 +191,9 @@ pub struct GuardianAssessmentEvent {
     /// Source that produced the terminal assessment decision.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub decision_source: Option<GuardianAssessmentDecisionSource>,
+    pub decision_source: Option<AutoReviewAssessmentDecisionSource>,
     /// Canonical action payload that was reviewed.
-    pub action: GuardianAssessmentAction,
+    pub action: AutoReviewAssessmentAction,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
@@ -375,20 +375,20 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn guardian_assessment_action_deserializes_command_shape() {
-        let action: GuardianAssessmentAction = serde_json::from_value(serde_json::json!({
+    fn auto_review_assessment_action_deserializes_command_shape() {
+        let action: AutoReviewAssessmentAction = serde_json::from_value(serde_json::json!({
             "type": "command",
             "source": "shell",
-            "command": "rm -rf /tmp/guardian",
+            "command": "rm -rf /tmp/auto_review",
             "cwd": test_path_buf("/tmp"),
         }))
-        .expect("guardian action");
+        .expect("auto_review action");
 
         assert_eq!(
             action,
-            GuardianAssessmentAction::Command {
-                source: GuardianCommandSource::Shell,
-                command: "rm -rf /tmp/guardian".to_string(),
+            AutoReviewAssessmentAction::Command {
+                source: AutoReviewCommandSource::Shell,
+                command: "rm -rf /tmp/auto_review".to_string(),
                 cwd: test_path_buf("/tmp").abs(),
             }
         );
@@ -396,7 +396,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn guardian_assessment_action_round_trips_execve_shape() {
+    fn auto_review_assessment_action_round_trips_execve_shape() {
         let value = serde_json::json!({
             "type": "execve",
             "source": "shell",
@@ -404,18 +404,18 @@ mod tests {
             "argv": ["/usr/bin/rm", "-f", "/tmp/file.sqlite"],
             "cwd": "/tmp",
         });
-        let action: GuardianAssessmentAction =
-            serde_json::from_value(value.clone()).expect("guardian action");
+        let action: AutoReviewAssessmentAction =
+            serde_json::from_value(value.clone()).expect("auto_review action");
 
         assert_eq!(
-            serde_json::to_value(&action).expect("serialize guardian action"),
+            serde_json::to_value(&action).expect("serialize auto_review action"),
             value
         );
 
         assert_eq!(
             action,
-            GuardianAssessmentAction::Execve {
-                source: GuardianCommandSource::Shell,
+            AutoReviewAssessmentAction::Execve {
+                source: AutoReviewCommandSource::Shell,
                 program: "/bin/rm".to_string(),
                 argv: vec![
                     "/usr/bin/rm".to_string(),

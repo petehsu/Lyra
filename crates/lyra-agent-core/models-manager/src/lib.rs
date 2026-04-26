@@ -4,13 +4,20 @@ pub(crate) mod config;
 pub mod manager;
 pub mod model_info;
 pub mod model_presets;
+pub mod runtime_metadata;
 
 pub use config::ModelsManagerConfig;
+pub use config::ProviderModelCatalog;
 pub use lyra_app_server_protocol::AuthMode;
 pub use lyra_login::AuthManager;
 pub use lyra_login::LyraAuth;
 pub use lyra_model_provider_info::ModelProviderInfo;
 pub use lyra_model_provider_info::WireApi;
+pub use runtime_metadata::model_info_for_provider_protocol;
+pub use runtime_metadata::model_info_from_provider_model_entry;
+pub use runtime_metadata::normalize_provider_model_entry;
+pub use runtime_metadata::provider_model_entry_from_id;
+pub use runtime_metadata::runtime_metadata_from_model_info;
 
 /// Load the bundled model catalog shipped with `lyra-models-manager`.
 pub fn bundled_models_response()

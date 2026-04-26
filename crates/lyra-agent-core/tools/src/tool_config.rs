@@ -1,6 +1,7 @@
 use crate::can_request_original_image_detail;
 use lyra_features::Feature;
 use lyra_features::Features;
+use lyra_model_provider_info::WireApi;
 use lyra_protocol::config_types::WebSearchConfig;
 use lyra_protocol::config_types::WebSearchMode;
 use lyra_protocol::config_types::WindowsSandboxLevel;
@@ -108,7 +109,7 @@ pub struct ToolsConfig {
     pub spawn_agent_usage_hint: bool,
     pub spawn_agent_usage_hint_text: Option<String>,
     pub default_mode_request_user_input: bool,
-    pub experimental_supported_tools: Vec<String>,
+    pub supported_tools: Vec<String>,
     pub agent_jobs_tools: bool,
     pub agent_jobs_worker_tools: bool,
     pub agent_type_description: String,
@@ -119,6 +120,7 @@ pub struct ToolsConfigParams<'a> {
     pub available_models: &'a [ModelPreset],
     pub features: &'a Features,
     pub image_generation_tool_auth_allowed: bool,
+    pub wire_api: WireApi,
     pub web_search_mode: Option<WebSearchMode>,
     pub session_source: SessionSource,
     pub sandbox_policy: &'a SandboxPolicy,
@@ -132,6 +134,7 @@ impl ToolsConfig {
             available_models,
             features,
             image_generation_tool_auth_allowed,
+            wire_api,
             web_search_mode,
             session_source,
             sandbox_policy,
@@ -148,8 +151,10 @@ impl ToolsConfig {
         let include_agent_jobs = features.enabled(Feature::SpawnCsv);
         let include_default_mode_request_user_input =
             features.enabled(Feature::DefaultModeRequestUserInput);
-        let include_search_tool =
-            model_info.supports_search_tool && features.enabled(Feature::ToolSearch);
+        let supports_provider_builtin_tools = *wire_api == WireApi::Responses;
+        let include_search_tool = supports_provider_builtin_tools
+            && model_info.supports_search_tool
+            && features.enabled(Feature::ToolSearch);
         let include_tool_suggest = features.enabled(Feature::ToolSuggest)
             && features.enabled(Feature::Apps)
             && features.enabled(Feature::Plugins);
@@ -157,6 +162,7 @@ impl ToolsConfig {
         // API-key auth bypasses backend entitlement/tool normalization, so
         // callers must confirm host-side auth before exposing the built-in tool.
         let include_image_gen_tool = *image_generation_tool_auth_allowed
+            && supports_provider_builtin_tools
             && features.enabled(Feature::ImageGeneration)
             && supports_image_generation(model_info);
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
@@ -229,7 +235,7 @@ impl ToolsConfig {
             spawn_agent_usage_hint: true,
             spawn_agent_usage_hint_text: None,
             default_mode_request_user_input: include_default_mode_request_user_input,
-            experimental_supported_tools: model_info.experimental_supported_tools.clone(),
+            supported_tools: model_info.supported_tools.clone(),
             agent_jobs_tools: include_agent_jobs,
             agent_jobs_worker_tools,
             agent_type_description: String::new(),

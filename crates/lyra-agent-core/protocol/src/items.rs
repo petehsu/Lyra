@@ -3,7 +3,6 @@ use crate::models::ContentItem;
 use crate::models::MessagePhase;
 use crate::models::ResponseItem;
 use crate::models::WebSearchAction;
-use crate::protocol::AgentMessageEvent;
 use crate::protocol::AgentReasoningEvent;
 use crate::protocol::AgentReasoningRawContentEvent;
 use crate::protocol::EventMsg;
@@ -74,7 +73,7 @@ pub enum AgentMessageContent {
 /// Assistant-authored message payload used in turn-item streams.
 ///
 /// `phase` is optional because not all providers/models emit it. Consumers
-/// should use it when present, but retain legacy completion semantics when it
+/// should use it when present, but retain runtime completion semantics when it
 /// is `None`.
 pub struct AgentMessageItem {
     pub id: String,
@@ -133,7 +132,7 @@ impl UserMessageItem {
         }
     }
 
-    pub fn as_legacy_event(&self) -> EventMsg {
+    pub fn as_runtime_event(&self) -> EventMsg {
         // Legacy user-message events flatten only text inputs into `message` and
         // rebase text element ranges onto that concatenated text.
         EventMsg::UserMessage(UserMessageEvent {
@@ -298,22 +297,13 @@ impl AgentMessageItem {
         }
     }
 
-    pub fn as_legacy_events(&self) -> Vec<EventMsg> {
-        self.content
-            .iter()
-            .map(|c| match c {
-                AgentMessageContent::Text { text } => EventMsg::AgentMessage(AgentMessageEvent {
-                    message: text.clone(),
-                    phase: self.phase.clone(),
-                    memory_citation: self.memory_citation.clone(),
-                }),
-            })
-            .collect()
+    pub fn as_runtime_events(&self) -> Vec<EventMsg> {
+        Vec::new()
     }
 }
 
 impl ReasoningItem {
-    pub fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
+    pub fn as_runtime_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
         let mut events = Vec::new();
         for summary in &self.summary_text {
             events.push(EventMsg::AgentReasoning(AgentReasoningEvent {
@@ -336,7 +326,7 @@ impl ReasoningItem {
 }
 
 impl WebSearchItem {
-    pub fn as_legacy_event(&self) -> EventMsg {
+    pub fn as_runtime_event(&self) -> EventMsg {
         EventMsg::WebSearchEnd(WebSearchEndEvent {
             call_id: self.id.clone(),
             query: self.query.clone(),
@@ -346,7 +336,7 @@ impl WebSearchItem {
 }
 
 impl ImageGenerationItem {
-    pub fn as_legacy_event(&self) -> EventMsg {
+    pub fn as_runtime_event(&self) -> EventMsg {
         EventMsg::ImageGenerationEnd(ImageGenerationEndEvent {
             call_id: self.id.clone(),
             status: self.status.clone(),
@@ -370,15 +360,15 @@ impl TurnItem {
         }
     }
 
-    pub fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
+    pub fn as_runtime_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
         match self {
-            TurnItem::UserMessage(item) => vec![item.as_legacy_event()],
+            TurnItem::UserMessage(item) => vec![item.as_runtime_event()],
             TurnItem::HookPrompt(_) => Vec::new(),
-            TurnItem::AgentMessage(item) => item.as_legacy_events(),
+            TurnItem::AgentMessage(item) => item.as_runtime_events(),
             TurnItem::Plan(_) => Vec::new(),
-            TurnItem::WebSearch(item) => vec![item.as_legacy_event()],
-            TurnItem::ImageGeneration(item) => vec![item.as_legacy_event()],
-            TurnItem::Reasoning(item) => item.as_legacy_events(show_raw_agent_reasoning),
+            TurnItem::WebSearch(item) => vec![item.as_runtime_event()],
+            TurnItem::ImageGeneration(item) => vec![item.as_runtime_event()],
+            TurnItem::Reasoning(item) => item.as_runtime_events(show_raw_agent_reasoning),
         }
     }
 }
@@ -405,11 +395,11 @@ mod tests {
     }
 
     #[test]
-    fn hook_prompt_parses_legacy_single_hook_run_id() {
+    fn hook_prompt_parses_single_hook_run_id() {
         let parsed = parse_hook_prompt_fragment(
             r#"<hook_prompt hook_run_id="hook-run-1">Retry with tests.</hook_prompt>"#,
         )
-        .expect("legacy hook prompt");
+        .expect("runtime hook prompt");
 
         assert_eq!(
             parsed,

@@ -6,6 +6,7 @@ import {
   type WebContents,
   type MenuItemConstructorOptions,
   ipcMain,
+  powerSaveBlocker,
   protocol,
   shell
 } from "electron";
@@ -102,6 +103,7 @@ let disposeCodeIntelHostTools: (() => void) | null = null;
 let disposeBrowserUseService: (() => void) | null = null;
 let disposeBrowserUseHostTools: (() => void) | null = null;
 let disposeBrowserUseRuntimeCoordinator: (() => void) | null = null;
+let disposePowerSaveBlocker: (() => void) | null = null;
 let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
 
 const storageRoots = resolveLyraStorageRoots();
@@ -498,6 +500,53 @@ const readLyraDirectMicroExecutorBudgetPreference = (
   }
 };
 
+const readPreventSleepEnabledPreference = (
+  rawPreferencesJson: string | null,
+): boolean => {
+  if (typeof rawPreferencesJson !== "string" || rawPreferencesJson.trim().length === 0) {
+    return true;
+  }
+  try {
+    const parsed = JSON.parse(rawPreferencesJson) as { readonly preventSleepEnabled?: unknown };
+    return typeof parsed.preventSleepEnabled === "boolean"
+      ? parsed.preventSleepEnabled
+      : true;
+  } catch {
+    return true;
+  }
+};
+
+const createPowerSaveBlockerController = (): {
+  readonly setEnabled: (enabled: boolean) => void;
+  readonly dispose: () => void;
+} => {
+  let blockerId: number | null = null;
+
+  const stop = (): void => {
+    if (blockerId === null) {
+      return;
+    }
+    if (powerSaveBlocker.isStarted(blockerId)) {
+      powerSaveBlocker.stop(blockerId);
+    }
+    blockerId = null;
+  };
+
+  return {
+    setEnabled: (enabled) => {
+      if (!enabled) {
+        stop();
+        return;
+      }
+      if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
+        return;
+      }
+      blockerId = powerSaveBlocker.start("prevent-display-sleep");
+    },
+    dispose: stop
+  };
+};
+
 const createMainWindow = (): BrowserWindow => {
   const isMac = process.platform === "darwin";
   const iconPath = resolveLyraAppIconPath();
@@ -609,6 +658,11 @@ const registerIpcHandlers = (): void => {
     storageRoots.modules.workbenchState
   );
   disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
+  const powerSaveBlockerController = createPowerSaveBlockerController();
+  powerSaveBlockerController.setEnabled(
+    readPreventSleepEnabledPreference(workbenchStateBridge.readState("preferences"))
+  );
+  disposePowerSaveBlocker = powerSaveBlockerController.dispose;
   const workbenchWebAutomationService = createWorkbenchWebAutomationService({
     browserBridge: workbenchBrowserBridge,
     storageRoot: storageRoots.modules.webAutomation,
@@ -727,6 +781,7 @@ const registerIpcHandlers = (): void => {
     if (event.key !== "preferences") {
       return;
     }
+    powerSaveBlockerController.setEnabled(readPreventSleepEnabledPreference(event.json));
     void browserUseRuntimeCoordinator.applyEnginePreference(
       readBrowserAutomationEnginePreference(event.json)
     ).catch((error: unknown) => {
@@ -925,6 +980,10 @@ app.on("before-quit", () => {
   if (disposeBrowserUseService !== null) {
     disposeBrowserUseService();
     disposeBrowserUseService = null;
+  }
+  if (disposePowerSaveBlocker !== null) {
+    disposePowerSaveBlocker();
+    disposePowerSaveBlocker = null;
   }
   workbenchBrowserBridge = null;
   if (disposeWorkbenchStateBridge !== null) {

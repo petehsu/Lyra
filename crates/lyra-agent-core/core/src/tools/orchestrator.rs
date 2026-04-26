@@ -6,10 +6,10 @@ simple sequence for any ToolRuntime: approval → select sandbox → attempt →
 retry with an escalated sandbox strategy on denial (no re‑approval thanks to
 caching).
 */
-use crate::guardian::guardian_rejection_message;
-use crate::guardian::guardian_timeout_message;
-use crate::guardian::new_guardian_review_id;
-use crate::guardian::routes_approval_to_guardian;
+use crate::auto_review::auto_review_rejection_message;
+use crate::auto_review::auto_review_timeout_message;
+use crate::auto_review::new_auto_review_id;
+use crate::auto_review::routes_approval_to_auto_review;
 use crate::hook_runtime::run_permission_request_hooks;
 use crate::network_policy_decision::network_approval_context_from_payload;
 use crate::tools::network_approval::DeferredNetworkApproval;
@@ -116,7 +116,8 @@ impl ToolOrchestrator {
         let otel = turn_ctx.session_telemetry.clone();
         let otel_tn = &tool_ctx.tool_name;
         let otel_ci = &tool_ctx.call_id;
-        let use_guardian = routes_approval_to_guardian(turn_ctx);
+        let strict_auto_review = tool_ctx.session.strict_auto_review_enabled_for_turn().await;
+        let use_auto_review = routes_approval_to_auto_review(turn_ctx) || strict_auto_review;
 
         // 1) Approval
         let mut already_approved = false;
@@ -126,23 +127,48 @@ impl ToolOrchestrator {
         });
         match requirement {
             ExecApprovalRequirement::Skip { .. } => {
-                otel.tool_decision(
-                    otel_tn,
-                    otel_ci,
-                    &ReviewDecision::Approved,
-                    ToolDecisionSource::Config,
-                );
+                if strict_auto_review {
+                    let auto_review_id = Some(new_auto_review_id());
+                    let approval_ctx = ApprovalCtx {
+                        session: &tool_ctx.session,
+                        turn: &tool_ctx.turn,
+                        call_id: &tool_ctx.call_id,
+                        auto_review_id: auto_review_id.clone(),
+                        retry_reason: None,
+                        network_approval_context: None,
+                    };
+                    let decision = Self::request_approval(
+                        tool,
+                        req,
+                        tool_ctx.call_id.as_str(),
+                        approval_ctx,
+                        tool_ctx,
+                        /*evaluate_permission_request_hooks*/ false,
+                        &otel,
+                    )
+                    .await?;
+                    Self::reject_if_not_approved(tool_ctx, auto_review_id.as_deref(), decision)
+                        .await?;
+                    already_approved = true;
+                } else {
+                    otel.tool_decision(
+                        otel_tn,
+                        otel_ci,
+                        &ReviewDecision::Approved,
+                        ToolDecisionSource::Config,
+                    );
+                }
             }
             ExecApprovalRequirement::Forbidden { reason } => {
                 return Err(ToolError::Rejected(reason));
             }
             ExecApprovalRequirement::NeedsApproval { reason, .. } => {
-                let guardian_review_id = use_guardian.then(new_guardian_review_id);
+                let auto_review_id = use_auto_review.then(new_auto_review_id);
                 let approval_ctx = ApprovalCtx {
                     session: &tool_ctx.session,
                     turn: &tool_ctx.turn,
                     call_id: &tool_ctx.call_id,
-                    guardian_review_id: guardian_review_id.clone(),
+                    auto_review_id: auto_review_id.clone(),
                     retry_reason: reason,
                     network_approval_context: None,
                 };
@@ -152,35 +178,12 @@ impl ToolOrchestrator {
                     tool_ctx.call_id.as_str(),
                     approval_ctx,
                     tool_ctx,
-                    use_guardian,
+                    /*evaluate_permission_request_hooks*/ !strict_auto_review,
                     &otel,
                 )
                 .await?;
 
-                match decision {
-                    ReviewDecision::Denied | ReviewDecision::Abort => {
-                        let reason = if let Some(review_id) = guardian_review_id.as_deref() {
-                            guardian_rejection_message(tool_ctx.session.as_ref(), review_id).await
-                        } else {
-                            "rejected by user".to_string()
-                        };
-                        return Err(ToolError::Rejected(reason));
-                    }
-                    ReviewDecision::TimedOut => {
-                        return Err(ToolError::Rejected(guardian_timeout_message()));
-                    }
-                    ReviewDecision::Approved
-                    | ReviewDecision::ApprovedExecpolicyAmendment { .. }
-                    | ReviewDecision::ApprovedForSession => {}
-                    ReviewDecision::NetworkPolicyAmendment {
-                        network_policy_amendment,
-                    } => match network_policy_amendment.action {
-                        NetworkPolicyRuleAction::Allow => {}
-                        NetworkPolicyRuleAction::Deny => {
-                            return Err(ToolError::Rejected("rejected by user".to_string()));
-                        }
-                    },
-                }
+                Self::reject_if_not_approved(tool_ctx, auto_review_id.as_deref(), decision).await?;
                 already_approved = true;
             }
         }
@@ -199,7 +202,7 @@ impl ToolOrchestrator {
         };
 
         // Platform-specific flag gating is handled by SandboxManager::select_initial.
-        let use_legacy_landlock = turn_ctx.features.use_legacy_landlock();
+        let use_classic_landlock = turn_ctx.features.use_classic_landlock();
         let initial_attempt = SandboxAttempt {
             sandbox: initial_sandbox,
             policy: &turn_ctx.sandbox_policy,
@@ -209,7 +212,7 @@ impl ToolOrchestrator {
             manager: &self.sandbox,
             sandbox_cwd: &turn_ctx.cwd,
             lyra_linux_sandbox_exe: turn_ctx.lyra_linux_sandbox_exe.as_ref(),
-            use_legacy_landlock,
+            use_classic_landlock,
             windows_sandbox_level: turn_ctx.windows_sandbox_level,
             windows_sandbox_private_desktop: turn_ctx
                 .config
@@ -287,17 +290,18 @@ impl ToolOrchestrator {
                         build_denial_reason_from_output(output.as_ref())
                     };
 
-                // Ask for approval before retrying with the escalated sandbox.
-                let bypass_retry_approval = tool
-                    .should_bypass_approval(approval_policy, already_approved)
+                // Strict auto-review approval covers the sandboxed attempt only;
+                // retrying without the sandbox requires a fresh auto_review review.
+                let bypass_retry_approval = !strict_auto_review
+                    && tool.should_bypass_approval(approval_policy, already_approved)
                     && network_approval_context.is_none();
                 if !bypass_retry_approval {
-                    let guardian_review_id = use_guardian.then(new_guardian_review_id);
+                    let auto_review_id = use_auto_review.then(new_auto_review_id);
                     let approval_ctx = ApprovalCtx {
                         session: &tool_ctx.session,
                         turn: &tool_ctx.turn,
                         call_id: &tool_ctx.call_id,
-                        guardian_review_id: guardian_review_id.clone(),
+                        auto_review_id: auto_review_id.clone(),
                         retry_reason: Some(retry_reason),
                         network_approval_context: network_approval_context.clone(),
                     };
@@ -309,36 +313,13 @@ impl ToolOrchestrator {
                         &permission_request_run_id,
                         approval_ctx,
                         tool_ctx,
-                        use_guardian,
+                        /*evaluate_permission_request_hooks*/ !strict_auto_review,
                         &otel,
                     )
                     .await?;
 
-                    match decision {
-                        ReviewDecision::Denied | ReviewDecision::Abort => {
-                            let reason = if let Some(review_id) = guardian_review_id.as_deref() {
-                                guardian_rejection_message(tool_ctx.session.as_ref(), review_id)
-                                    .await
-                            } else {
-                                "rejected by user".to_string()
-                            };
-                            return Err(ToolError::Rejected(reason));
-                        }
-                        ReviewDecision::TimedOut => {
-                            return Err(ToolError::Rejected(guardian_timeout_message()));
-                        }
-                        ReviewDecision::Approved
-                        | ReviewDecision::ApprovedExecpolicyAmendment { .. }
-                        | ReviewDecision::ApprovedForSession => {}
-                        ReviewDecision::NetworkPolicyAmendment {
-                            network_policy_amendment,
-                        } => match network_policy_amendment.action {
-                            NetworkPolicyRuleAction::Allow => {}
-                            NetworkPolicyRuleAction::Deny => {
-                                return Err(ToolError::Rejected("rejected by user".to_string()));
-                            }
-                        },
-                    }
+                    Self::reject_if_not_approved(tool_ctx, auto_review_id.as_deref(), decision)
+                        .await?;
                 }
 
                 let escalated_attempt = SandboxAttempt {
@@ -350,7 +331,7 @@ impl ToolOrchestrator {
                     manager: &self.sandbox,
                     sandbox_cwd: &turn_ctx.cwd,
                     lyra_linux_sandbox_exe: None,
-                    use_legacy_landlock,
+                    use_classic_landlock,
                     windows_sandbox_level: turn_ctx.windows_sandbox_level,
                     windows_sandbox_private_desktop: turn_ctx
                         .config
@@ -378,20 +359,22 @@ impl ToolOrchestrator {
 
     // PermissionRequest hooks take top precedence for answering approval
     // prompts. If no matching hook returns a decision, fall back to the
-    // normal guardian or user approval path.
+    // normal auto_review or user approval path.
     async fn request_approval<Rq, Out, T>(
         tool: &mut T,
         req: &Rq,
         permission_request_run_id: &str,
         approval_ctx: ApprovalCtx<'_>,
         tool_ctx: &ToolCtx,
-        use_guardian: bool,
+        evaluate_permission_request_hooks: bool,
         otel: &lyra_otel::SessionTelemetry,
     ) -> Result<ReviewDecision, ToolError>
     where
         T: ToolRuntime<Rq, Out>,
     {
-        if let Some(permission_request) = tool.permission_request_payload(req) {
+        if evaluate_permission_request_hooks
+            && let Some(permission_request) = tool.permission_request_payload(req)
+        {
             match run_permission_request_hooks(
                 approval_ctx.session,
                 approval_ctx.turn,
@@ -424,12 +407,12 @@ impl ToolOrchestrator {
             }
         }
 
-        let decision = tool.start_approval_async(req, approval_ctx).await;
-        let otel_source = if use_guardian {
+        let otel_source = if approval_ctx.auto_review_id.is_some() {
             ToolDecisionSource::AutomatedReviewer
         } else {
             ToolDecisionSource::User
         };
+        let decision = tool.start_approval_async(req, approval_ctx).await;
         otel.tool_decision(
             &tool_ctx.tool_name,
             &tool_ctx.call_id,
@@ -437,6 +420,35 @@ impl ToolOrchestrator {
             otel_source,
         );
         Ok(decision)
+    }
+
+    async fn reject_if_not_approved(
+        tool_ctx: &ToolCtx,
+        auto_review_id: Option<&str>,
+        decision: ReviewDecision,
+    ) -> Result<(), ToolError> {
+        match decision {
+            ReviewDecision::Denied | ReviewDecision::Abort => {
+                let reason = if let Some(review_id) = auto_review_id {
+                    auto_review_rejection_message(tool_ctx.session.as_ref(), review_id).await
+                } else {
+                    "rejected by user".to_string()
+                };
+                Err(ToolError::Rejected(reason))
+            }
+            ReviewDecision::TimedOut => Err(ToolError::Rejected(auto_review_timeout_message())),
+            ReviewDecision::Approved
+            | ReviewDecision::ApprovedExecpolicyAmendment { .. }
+            | ReviewDecision::ApprovedForSession => Ok(()),
+            ReviewDecision::NetworkPolicyAmendment {
+                network_policy_amendment,
+            } => match network_policy_amendment.action {
+                NetworkPolicyRuleAction::Allow => Ok(()),
+                NetworkPolicyRuleAction::Deny => {
+                    Err(ToolError::Rejected("rejected by user".to_string()))
+                }
+            },
+        }
     }
 }
 

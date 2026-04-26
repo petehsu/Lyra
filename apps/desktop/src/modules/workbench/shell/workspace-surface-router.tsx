@@ -208,6 +208,7 @@ export type WorkspaceSurfaceRouterProps = {
     readonly newSessionTitle: string;
     readonly newConversationLabel: string;
     readonly openConversationLabel: string;
+    readonly renameConversationLabel?: string;
     readonly deleteConversationLabel: string;
     readonly archiveConversationLabel: string;
     readonly archivedConversationLabel: string;
@@ -232,6 +233,8 @@ export type WorkspaceSurfaceRouterProps = {
     readonly previewEmptyTitle: string;
     readonly previewEmptyDescription: string;
     readonly previewLoadingLabel: string;
+    readonly richRenderingEnabled?: boolean;
+    readonly themeSignature?: string;
     readonly defaultProfileId?: string | null;
     readonly defaultProviderId?: string | null;
     readonly openDialog?: AiHistorySurfaceProps["openDialog"];
@@ -581,6 +584,9 @@ export const WorkspaceSurfaceRouter = ({
           newSessionTitle={aiHistory.newSessionTitle}
           newConversationLabel={aiHistory.newConversationLabel}
           openConversationLabel={aiHistory.openConversationLabel}
+          {...(aiHistory.renameConversationLabel === undefined
+            ? {}
+            : { renameConversationLabel: aiHistory.renameConversationLabel })}
           deleteConversationLabel={aiHistory.deleteConversationLabel}
           archiveConversationLabel={aiHistory.archiveConversationLabel}
           archivedConversationLabel={aiHistory.archivedConversationLabel}
@@ -605,6 +611,12 @@ export const WorkspaceSurfaceRouter = ({
           previewEmptyTitle={aiHistory.previewEmptyTitle}
           previewEmptyDescription={aiHistory.previewEmptyDescription}
           previewLoadingLabel={aiHistory.previewLoadingLabel}
+          {...(aiHistory.richRenderingEnabled === undefined
+            ? {}
+            : { richRenderingEnabled: aiHistory.richRenderingEnabled })}
+          {...(aiHistory.themeSignature === undefined
+            ? {}
+            : { themeSignature: aiHistory.themeSignature })}
           {...(aiHistory.defaultProfileId === undefined
             ? {}
             : { defaultProfileId: aiHistory.defaultProfileId })}

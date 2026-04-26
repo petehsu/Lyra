@@ -169,6 +169,8 @@ pub struct StoredThread {
     pub archived_at: Option<DateTime<Utc>>,
     /// Working directory captured for the thread.
     pub cwd: PathBuf,
+    /// Project root explicitly bound by the user, if any.
+    pub bound_project_root: Option<PathBuf>,
     /// CLI version captured for the thread.
     pub cli_version: String,
     /// Runtime source for the thread.

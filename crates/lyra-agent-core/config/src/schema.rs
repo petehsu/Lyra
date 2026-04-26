@@ -1,7 +1,6 @@
 use crate::config_toml::ConfigToml;
 use crate::types::RawMcpServerConfig;
 use lyra_features::FEATURES;
-use lyra_features::legacy_feature_keys;
 use schemars::r#gen::SchemaGenerator;
 use schemars::r#gen::SchemaSettings;
 use schemars::schema::InstanceType;
@@ -13,7 +12,7 @@ use serde_json::Map;
 use serde_json::Value;
 use std::path::Path;
 
-/// Schema for the `[features]` map with known + legacy keys only.
+/// Schema for the `[features]` map with known Lyra feature keys only.
 pub fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
     let mut object = SchemaObject {
         instance_type: Some(InstanceType::Object.into()),
@@ -37,11 +36,6 @@ pub fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
         validation
             .properties
             .insert(feature.key.to_string(), schema_gen.subschema_for::<bool>());
-    }
-    for legacy_key in legacy_feature_keys() {
-        validation
-            .properties
-            .insert(legacy_key.to_string(), schema_gen.subschema_for::<bool>());
     }
     validation.additional_properties = Some(Box::new(Schema::Bool(false)));
     object.object = Some(Box::new(validation));

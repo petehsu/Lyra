@@ -1,13 +1,13 @@
 use super::ShellRequest;
+use crate::auto_review::AutoReviewApprovalRequest;
+use crate::auto_review::auto_review_rejection_message;
+use crate::auto_review::auto_review_timeout_message;
+use crate::auto_review::new_auto_review_id;
+use crate::auto_review::review_approval_request;
+use crate::auto_review::routes_approval_to_auto_review;
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecExpiration;
 use crate::exec::is_likely_sandbox_denied;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::guardian_rejection_message;
-use crate::guardian::guardian_timeout_message;
-use crate::guardian::new_guardian_review_id;
-use crate::guardian::review_approval_request;
-use crate::guardian::routes_approval_to_guardian;
 use crate::hook_runtime::run_permission_request_hooks;
 use crate::sandboxing::ExecOptions;
 use crate::sandboxing::ExecRequest;
@@ -35,7 +35,7 @@ use lyra_protocol::models::PermissionProfile;
 use lyra_protocol::permissions::FileSystemSandboxPolicy;
 use lyra_protocol::permissions::NetworkSandboxPolicy;
 use lyra_protocol::protocol::AskForApproval;
-use lyra_protocol::protocol::GuardianCommandSource;
+use lyra_protocol::protocol::AutoReviewCommandSource;
 use lyra_protocol::protocol::NetworkPolicyRuleAction;
 use lyra_protocol::protocol::ReviewDecision;
 use lyra_protocol::protocol::SandboxPolicy;
@@ -164,7 +164,7 @@ pub(super) async fn try_run_zsh_fork(
         arg0,
         sandbox_policy_cwd: ctx.turn.cwd.clone(),
         lyra_linux_sandbox_exe: ctx.turn.lyra_linux_sandbox_exe.clone(),
-        use_legacy_landlock: ctx.turn.features.use_legacy_landlock(),
+        use_classic_landlock: ctx.turn.features.use_classic_landlock(),
     };
     let main_execve_wrapper_exe = ctx
         .session
@@ -197,7 +197,7 @@ pub(super) async fn try_run_zsh_fork(
         session: Arc::clone(&ctx.session),
         turn: Arc::clone(&ctx.turn),
         call_id: ctx.call_id.clone(),
-        tool_name: GuardianCommandSource::Shell,
+        tool_name: AutoReviewCommandSource::Shell,
         approval_policy: ctx.turn.approval_policy.value(),
         sandbox_policy: command_executor.sandbox_policy.clone(),
         file_system_sandbox_policy: command_executor.file_system_sandbox_policy.clone(),
@@ -262,14 +262,14 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
         arg0: exec_request.arg0.clone(),
         sandbox_policy_cwd: ctx.turn.cwd.clone(),
         lyra_linux_sandbox_exe: ctx.turn.lyra_linux_sandbox_exe.clone(),
-        use_legacy_landlock: ctx.turn.features.use_legacy_landlock(),
+        use_classic_landlock: ctx.turn.features.use_classic_landlock(),
     };
     let escalation_policy = CoreShellActionProvider {
         policy: Arc::clone(&exec_policy),
         session: Arc::clone(&ctx.session),
         turn: Arc::clone(&ctx.turn),
         call_id: ctx.call_id.clone(),
-        tool_name: GuardianCommandSource::UnifiedExec,
+        tool_name: AutoReviewCommandSource::UnifiedExec,
         approval_policy: ctx.turn.approval_policy.value(),
         sandbox_policy: exec_request.sandbox_policy.clone(),
         file_system_sandbox_policy: exec_request.file_system_sandbox_policy.clone(),
@@ -304,7 +304,7 @@ struct CoreShellActionProvider {
     session: Arc<crate::session::session::Session>,
     turn: Arc<crate::session::turn_context::TurnContext>,
     call_id: String,
-    tool_name: GuardianCommandSource,
+    tool_name: AutoReviewCommandSource,
     approval_policy: AskForApproval,
     sandbox_policy: SandboxPolicy,
     file_system_sandbox_policy: FileSystemSandboxPolicy,
@@ -324,7 +324,7 @@ enum DecisionSource {
 
 struct PromptDecision {
     decision: ReviewDecision,
-    guardian_review_id: Option<String>,
+    auto_review_id: Option<String>,
     rejection_message: Option<String>,
 }
 
@@ -397,7 +397,7 @@ impl CoreShellActionProvider {
         let call_id = self.call_id.clone();
         let approval_id = Some(Uuid::new_v4().to_string());
         let source = self.tool_name;
-        let guardian_review_id = routes_approval_to_guardian(&turn).then(new_guardian_review_id);
+        let auto_review_id = routes_approval_to_auto_review(&turn).then(new_auto_review_id);
         Ok(stopwatch
             .pause_for(async move {
                 // 1) Run PermissionRequest hooks
@@ -419,27 +419,27 @@ impl CoreShellActionProvider {
                     Some(PermissionRequestDecision::Allow) => {
                         return PromptDecision {
                             decision: ReviewDecision::Approved,
-                            guardian_review_id: None,
+                            auto_review_id: None,
                             rejection_message: None,
                         };
                     }
                     Some(PermissionRequestDecision::Deny { message }) => {
                         return PromptDecision {
                             decision: ReviewDecision::Denied,
-                            guardian_review_id: None,
+                            auto_review_id: None,
                             rejection_message: Some(message),
                         };
                     }
                     None => {}
                 }
 
-                // 2) Route to Guardian if configured
-                if let Some(review_id) = guardian_review_id.clone() {
+                // 2) Route to AutoReview if configured
+                if let Some(review_id) = auto_review_id.clone() {
                     let decision = review_approval_request(
                         &session,
                         &turn,
                         review_id.clone(),
-                        GuardianApprovalRequest::Execve {
+                        AutoReviewApprovalRequest::Execve {
                             id: call_id.clone(),
                             source,
                             program: program.to_string_lossy().into_owned(),
@@ -452,7 +452,7 @@ impl CoreShellActionProvider {
                     .await;
                     return PromptDecision {
                         decision,
-                        guardian_review_id,
+                        auto_review_id,
                         rejection_message: None,
                     };
                 }
@@ -474,7 +474,7 @@ impl CoreShellActionProvider {
                     .await;
                 PromptDecision {
                     decision,
-                    guardian_review_id: None,
+                    auto_review_id: None,
                     rejection_message: None,
                 }
             })
@@ -531,21 +531,21 @@ impl CoreShellActionProvider {
                             }
                         },
                         ReviewDecision::Denied => {
-                            let message = if let Some(message) =
-                                prompt_decision.rejection_message.clone()
-                            {
-                                message
-                            } else if let Some(review_id) =
-                                prompt_decision.guardian_review_id.as_deref()
-                            {
-                                guardian_rejection_message(self.session.as_ref(), review_id).await
-                            } else {
-                                "User denied execution".to_string()
-                            };
+                            let message =
+                                if let Some(message) = prompt_decision.rejection_message.clone() {
+                                    message
+                                } else if let Some(review_id) =
+                                    prompt_decision.auto_review_id.as_deref()
+                                {
+                                    auto_review_rejection_message(self.session.as_ref(), review_id)
+                                        .await
+                                } else {
+                                    "User denied execution".to_string()
+                                };
                             EscalationDecision::deny(Some(message))
                         }
                         ReviewDecision::TimedOut => {
-                            EscalationDecision::deny(Some(guardian_timeout_message()))
+                            EscalationDecision::deny(Some(auto_review_timeout_message()))
                         }
                         ReviewDecision::Abort => {
                             EscalationDecision::deny(Some("User cancelled execution".to_string()))
@@ -745,7 +745,7 @@ struct CoreShellCommandExecutor {
     arg0: Option<String>,
     sandbox_policy_cwd: AbsolutePathBuf,
     lyra_linux_sandbox_exe: Option<PathBuf>,
-    use_legacy_landlock: bool,
+    use_classic_landlock: bool,
 }
 
 struct PrepareSandboxedExecParams<'a> {
@@ -922,7 +922,7 @@ impl CoreShellCommandExecutor {
             network: self.network.as_ref(),
             sandbox_policy_cwd: &self.sandbox_policy_cwd,
             lyra_linux_sandbox_exe: self.lyra_linux_sandbox_exe.as_deref(),
-            use_legacy_landlock: self.use_legacy_landlock,
+            use_classic_landlock: self.use_classic_landlock,
             windows_sandbox_level: self.windows_sandbox_level,
             windows_sandbox_private_desktop: false,
         })?;

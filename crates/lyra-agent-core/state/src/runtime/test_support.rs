@@ -55,6 +55,7 @@ pub(super) fn test_thread_metadata(
         model: Some("gpt-5".to_string()),
         reasoning_effort: Some(ReasoningEffort::Medium),
         cwd,
+        bound_project_root: None,
         cli_version: "0.0.0".to_string(),
         title: String::new(),
         sandbox_policy: crate::extract::enum_to_string(&SandboxPolicy::new_read_only_policy()),

@@ -36,7 +36,6 @@ use lyra_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
 use lyra_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use lyra_model_provider_info::OPENAI_PROVIDER_ID;
 use lyra_protocol::config_types::ForcedLoginMethod;
-use lyra_protocol::config_types::Personality;
 use lyra_protocol::config_types::ReasoningSummary;
 use lyra_protocol::config_types::SandboxMode;
 use lyra_protocol::config_types::ServiceTier;
@@ -112,10 +111,6 @@ pub struct ConfigToml {
     #[serde(default)]
     pub permissions: Option<PermissionsToml>,
 
-    /// Optional external command to spawn for end-user notifications.
-    #[serde(default)]
-    pub notify: Option<Vec<String>>,
-
     /// System instructions.
     pub instructions: Option<String>,
 
@@ -137,8 +132,6 @@ pub struct ConfigToml {
     /// DISCOURAGED from using this field, as deviating from the instructions
     /// sanctioned by Lyra will likely degrade model performance.
     pub model_instructions_file: Option<AbsolutePathBuf>,
-
-    /// Compact prompt used for history compaction.
 
     /// Optional commit attribution text for commit message co-author trailers.
     ///
@@ -253,9 +246,6 @@ pub struct ConfigToml {
     /// Per-thread `config` overrides are accepted but do not reapply this (no-ops).
     pub model_catalog_json: Option<AbsolutePathBuf>,
 
-    /// Optionally specify a personality for the model
-    pub personality: Option<Personality>,
-
     /// Optional explicit service tier preference for new turns (`fast` or `flex`).
     pub service_tier: Option<ServiceTier>,
 
@@ -266,30 +256,30 @@ pub struct ConfigToml {
     #[serde(default)]
     pub audio: Option<RealtimeAudioToml>,
 
-    /// Experimental / do not use. Overrides only the realtime conversation
+    /// Overrides only the realtime conversation
     /// websocket transport base URL (the `Op::RealtimeConversation`
     /// `/v1/realtime`
     /// connection) without changing normal provider HTTP requests.
-    pub experimental_realtime_ws_base_url: Option<String>,
-    /// Experimental / do not use. Selects the realtime websocket model/snapshot
+    pub realtime_ws_base_url: Option<String>,
+    /// Selects the realtime websocket model/snapshot
     /// used for the `Op::RealtimeConversation` connection.
-    pub experimental_realtime_ws_model: Option<String>,
-    /// Experimental / do not use. Realtime websocket session selection.
+    pub realtime_ws_model: Option<String>,
+    /// Realtime websocket session selection.
     /// `version` controls v1/v2 and `type` controls conversational/transcription.
     #[serde(default)]
     pub realtime: Option<RealtimeToml>,
-    /// Experimental / do not use. Overrides only the realtime conversation
+    /// Overrides only the realtime conversation
     /// websocket transport instructions (the `Op::RealtimeConversation`
     /// `/ws` session.update instructions) without changing normal prompts.
-    pub experimental_realtime_ws_backend_prompt: Option<String>,
-    /// Experimental / do not use. Replaces the synthesized realtime startup
+    pub realtime_ws_backend_prompt: Option<String>,
+    /// Replaces the synthesized realtime startup
     /// context appended to websocket session instructions. An empty string
     /// disables startup context injection entirely.
-    pub experimental_realtime_ws_startup_context: Option<String>,
-    /// Experimental / do not use. Replaces the built-in realtime start
+    pub realtime_ws_startup_context: Option<String>,
+    /// Replaces the built-in realtime start
     /// instructions inserted into developer messages when realtime becomes
     /// active.
-    pub experimental_realtime_start_instructions: Option<String>,
+    pub realtime_start_instructions: Option<String>,
     pub projects: Option<HashMap<String, ProjectConfig>>,
 
     /// Controls the web search tool mode: disabled, cached, or live.
@@ -323,9 +313,6 @@ pub struct ConfigToml {
     // Injects known feature keys into the schema and forbids unknown keys.
     #[schemars(schema_with = "crate::schema::features_schema")]
     pub features: Option<FeaturesToml>,
-
-    /// Suppress warnings about unstable (under development) features.
-    pub suppress_unstable_features_warning: Option<bool>,
 
     /// Settings for ghost snapshots (used for undo).
     #[serde(default)]
@@ -372,12 +359,6 @@ pub struct ConfigToml {
     /// See [`crate::types::Notice`] for more details
     pub notice: Option<Notice>,
 
-    /// Legacy, now use features
-    /// Deprecated: ignored. Use `model_instructions_file`.
-    #[schemars(skip)]
-    pub experimental_instructions_file: Option<AbsolutePathBuf>,
-    pub experimental_use_unified_exec_tool: Option<bool>,
-    pub experimental_use_freeform_apply_patch: Option<bool>,
     /// Preferred OSS provider for local models, e.g. "lmstudio" or "ollama".
     pub oss_provider: Option<String>,
 }
@@ -637,7 +618,7 @@ impl ConfigToml {
         };
         let downgrade_workspace_write_if_unsupported = |policy: &mut SandboxPolicy| {
             if cfg!(target_os = "windows")
-                // If the experimental Windows sandbox is enabled, do not force a downgrade.
+                // If the Windows sandbox is enabled, do not force a downgrade.
                 && windows_sandbox_level == WindowsSandboxLevel::Disabled
                 && matches!(&*policy, SandboxPolicy::WorkspaceWrite { .. })
             {

@@ -267,6 +267,7 @@ describe("aggregated search service", () => {
           stop: vi.fn(async () => undefined),
           readPageState: vi.fn(async () => null),
           setElementPickerMode: vi.fn(async () => undefined),
+          applyWebTheme: vi.fn(async () => undefined),
           onEvent: vi.fn(() => () => undefined)
         },
         mcp: {

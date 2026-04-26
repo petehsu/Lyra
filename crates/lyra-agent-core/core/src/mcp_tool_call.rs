@@ -10,17 +10,17 @@ use lyra_app_server_protocol::McpServerElicitationRequest;
 use lyra_app_server_protocol::McpServerElicitationRequestParams;
 use tracing::error;
 
+use crate::auto_review::AutoReviewApprovalRequest;
+use crate::auto_review::AutoReviewMcpAnnotations;
+use crate::auto_review::auto_review_rejection_message;
+use crate::auto_review::auto_review_timeout_message;
+use crate::auto_review::new_auto_review_id;
+use crate::auto_review::review_approval_request;
+use crate::auto_review::routes_approval_to_auto_review;
 use crate::config::Config;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::load_global_mcp_servers;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::GuardianMcpAnnotations;
-use crate::guardian::guardian_rejection_message;
-use crate::guardian::guardian_timeout_message;
-use crate::guardian::new_guardian_review_id;
-use crate::guardian::review_approval_request;
-use crate::guardian::routes_approval_to_guardian;
 use crate::mcp_tool_approval_templates::RenderedMcpToolApprovalParam;
 use crate::mcp_tool_approval_templates::render_mcp_tool_approval_template;
 use crate::session::session::Session;
@@ -435,7 +435,7 @@ async fn augment_mcp_tool_request_meta_with_sandbox_state(
         sandbox_policy: turn_context.sandbox_policy.get().clone(),
         lyra_linux_sandbox_exe: turn_context.lyra_linux_sandbox_exe.clone(),
         sandbox_cwd: turn_context.cwd.to_path_buf(),
-        use_legacy_landlock: turn_context.features.use_legacy_landlock(),
+        use_classic_landlock: turn_context.features.use_classic_landlock(),
     })?;
 
     match meta.as_mut() {
@@ -592,9 +592,9 @@ struct McpToolApprovalElicitationRequest<'a> {
 pub(crate) const MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX: &str = "mcp_tool_call_approval";
 pub(crate) const MCP_TOOL_APPROVAL_ACCEPT: &str = "Allow";
 pub(crate) const MCP_TOOL_APPROVAL_ACCEPT_FOR_SESSION: &str = "Allow for this session";
-// Internal-only token used when guardian auto-reviews delegated MCP approvals on the
+// Internal-only token used when auto_review auto-reviews delegated MCP approvals on the
 // RequestUserInput compatibility path. That legacy MCP prompt has allow/cancel labels but no
-// real "Decline" answer, so this lets guardian denials round-trip distinctly from user cancel.
+// real "Decline" answer, so this lets auto_review denials round-trip distinctly from user cancel.
 // This is not a user-facing option.
 pub(crate) const MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC: &str = "__lyra_mcp_decline__";
 const MCP_TOOL_APPROVAL_ACCEPT_AND_REMEMBER: &str = "Allow and don't ask me again";
@@ -678,17 +678,18 @@ async fn maybe_request_mcp_tool_approval(
         .features
         .enabled(Feature::ToolCallMcpElicitation);
 
-    if routes_approval_to_guardian(turn_context) {
-        let review_id = new_guardian_review_id();
+    if routes_approval_to_auto_review(turn_context) {
+        let review_id = new_auto_review_id();
         let decision = review_approval_request(
             sess,
             turn_context,
             review_id.clone(),
-            build_guardian_mcp_tool_review_request(call_id, invocation, metadata),
+            build_auto_review_mcp_tool_review_request(call_id, invocation, metadata),
             None,
         )
         .await;
-        let decision = mcp_tool_approval_decision_from_guardian(sess, &review_id, decision).await;
+        let decision =
+            mcp_tool_approval_decision_from_auto_review(sess, &review_id, decision).await;
         apply_mcp_tool_approval_decision(
             sess,
             turn_context,
@@ -813,12 +814,12 @@ fn persistent_mcp_tool_approval_key(
     session_mcp_tool_approval_key(invocation, metadata, approval_mode)
 }
 
-pub(crate) fn build_guardian_mcp_tool_review_request(
+pub(crate) fn build_auto_review_mcp_tool_review_request(
     call_id: &str,
     invocation: &McpInvocation,
     metadata: Option<&McpToolApprovalMetadata>,
-) -> GuardianApprovalRequest {
-    GuardianApprovalRequest::McpToolCall {
+) -> AutoReviewApprovalRequest {
+    AutoReviewApprovalRequest::McpToolCall {
         id: call_id.to_string(),
         server: invocation.server.clone(),
         tool_name: invocation.tool.clone(),
@@ -830,7 +831,7 @@ pub(crate) fn build_guardian_mcp_tool_review_request(
         tool_description: metadata.and_then(|metadata| metadata.tool_description.clone()),
         annotations: metadata
             .and_then(|metadata| metadata.annotations.as_ref())
-            .map(|annotations| GuardianMcpAnnotations {
+            .map(|annotations| AutoReviewMcpAnnotations {
                 destructive_hint: annotations.destructive_hint,
                 open_world_hint: annotations.open_world_hint,
                 read_only_hint: annotations.read_only_hint,
@@ -838,7 +839,7 @@ pub(crate) fn build_guardian_mcp_tool_review_request(
     }
 }
 
-async fn mcp_tool_approval_decision_from_guardian(
+async fn mcp_tool_approval_decision_from_auto_review(
     sess: &Session,
     review_id: &str,
     decision: ReviewDecision,
@@ -849,10 +850,10 @@ async fn mcp_tool_approval_decision_from_guardian(
         | ReviewDecision::NetworkPolicyAmendment { .. } => McpToolApprovalDecision::Accept,
         ReviewDecision::ApprovedForSession => McpToolApprovalDecision::AcceptForSession,
         ReviewDecision::Denied => McpToolApprovalDecision::Decline {
-            message: Some(guardian_rejection_message(sess, review_id).await),
+            message: Some(auto_review_rejection_message(sess, review_id).await),
         },
         ReviewDecision::TimedOut => McpToolApprovalDecision::Decline {
-            message: Some(guardian_timeout_message()),
+            message: Some(auto_review_timeout_message()),
         },
         ReviewDecision::Abort => McpToolApprovalDecision::Decline { message: None },
     }

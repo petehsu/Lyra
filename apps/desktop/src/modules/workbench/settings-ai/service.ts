@@ -5,6 +5,7 @@ import type { LyraRuntimeHealth } from "../../../shared/lyra-runtime";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type {
   AiDiscoverModelsRequest,
+  AiModelDiscoveryState,
   AiModelDiscoveryResult,
   AiProfileValidationResult,
   AiProviderModelEntry,
@@ -160,6 +161,20 @@ const discoveryStateToResult = (
       ?? (profile.discoveryState.models.length > 0 ? "Models discovered" : "No models returned"),
     checkedAt: profile.discoveryState.lastCheckedAt,
     models: profile.discoveryState.models,
+  };
+};
+
+const discoveryResultToState = (
+  result: AiModelDiscoveryResult | null
+): AiModelDiscoveryState | undefined => {
+  if (result === null) {
+    return undefined;
+  }
+  return {
+    status: result.status,
+    lastCheckedAt: result.checkedAt,
+    ...(result.status === "error" ? { errorMessage: result.message } : {}),
+    models: result.models,
   };
 };
 
@@ -381,7 +396,11 @@ export const useSettingsAiModel = ({
   const defaultModelNames = useMemo(() => {
     const defaultProfile = profiles.find((profile) => profile.id === defaultProfileId) ?? null;
     if (defaultProfile !== null) {
-      return [defaultProfile.model, ...defaultProfile.customModels.map((entry) => entry.id)]
+      return [
+        defaultProfile.model,
+        ...defaultProfile.customModels.map((entry) => entry.id),
+        ...defaultProfile.discoveryState.models.map((entry) => entry.id),
+      ]
         .map((entry) => entry.trim())
         .filter((entry, index, entries) => entry.length > 0 && entries.indexOf(entry) === index);
     }
@@ -415,6 +434,10 @@ export const useSettingsAiModel = ({
       availableModels,
       selectedPreset?.defaultModel ?? ""
     );
+    const discoveryState = discoveryResultToState(
+      draftDiscoveryResult
+      ?? (selectedProfile === null ? null : discoveryStateToResult(selectedProfile))
+    );
     return {
       ...(draft.id === null ? {} : { id: draft.id }),
       name: draft.name.trim(),
@@ -428,8 +451,9 @@ export const useSettingsAiModel = ({
       headers: parseMap(draft.headersText),
       model: primaryModel,
       customModels,
+      ...(discoveryState === undefined ? {} : { discoveryState }),
     };
-  }, [availableModels, draft, selectedPreset?.defaultModel]);
+  }, [availableModels, draft, draftDiscoveryResult, selectedPreset?.defaultModel, selectedProfile]);
 
   const buildDiscoverRequest = useCallback((): AiDiscoverModelsRequest => ({
     ...(draft.id === null ? {} : { id: draft.id }),
@@ -487,6 +511,27 @@ export const useSettingsAiModel = ({
       setStatusMessage(result.message);
       setStatusTone(toneFromStatus(result.status));
       if (draft.id !== null) {
+        const { primaryModel, customModels } = resolveConfiguredModels(
+          draft.modelsText,
+          buildModelOptions(selectedPreset, result, draft.modelsText),
+          selectedPreset?.defaultModel ?? ""
+        );
+        const discoveryState = discoveryResultToState(result);
+        await lyraApi.request<ProfileUpsertResponse>(
+          createRequestPayload("lyra/config/profiles/upsert", {
+            id: draft.id,
+            name: draft.name.trim(),
+            providerId: draft.providerId as AiUpsertProfileRequest["providerId"],
+            protocolId: draft.protocolId as AiUpsertProfileRequest["protocolId"],
+            presetId: draft.presetId,
+            connectionConfig: { ...draft.connectionConfig },
+            authConfig: { ...draft.authConfig },
+            headers: parseMap(draft.headersText),
+            model: primaryModel,
+            customModels,
+            ...(discoveryState === undefined ? {} : { discoveryState }),
+          } satisfies AiUpsertProfileRequest as Record<string, unknown>)
+        );
         await syncConfig(draft.id);
       }
     } catch (error) {
@@ -495,7 +540,7 @@ export const useSettingsAiModel = ({
     } finally {
       setIsRefreshingModels(false);
     }
-  }, [buildDiscoverRequest, lyraApi, draft.id, syncConfig]);
+  }, [buildDiscoverRequest, lyraApi, draft, selectedPreset, syncConfig]);
 
   const validateProfile = useCallback(async (): Promise<void> => {
     if (lyraApi === null) {

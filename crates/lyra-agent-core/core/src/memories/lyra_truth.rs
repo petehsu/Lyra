@@ -3327,20 +3327,7 @@ fn session_dialog_entry(
             format!("[plan]\n{text}"),
             stream_id,
         )),
-        ThreadItem::Reasoning {
-            id,
-            summary,
-            content,
-        } => {
-            let mut sections = Vec::new();
-            if !summary.is_empty() {
-                sections.push(format!("[reasoning-summary]\n{}", summary.join("\n")));
-            }
-            if !content.is_empty() {
-                sections.push(format!("[reasoning]\n{}", content.join("\n")));
-            }
-            Some(("assistant", id.clone(), sections.join("\n\n"), stream_id))
-        }
+        ThreadItem::Reasoning { .. } => None,
         ThreadItem::CommandExecution {
             id,
             command,
@@ -3588,5 +3575,36 @@ fn render_user_input(input: &UserInput) -> String {
         UserInput::LocalImage { path } => format!("[local_image] {}", path.display()),
         UserInput::Skill { name, path } => format!("[skill] {name} ({})", path.display()),
         UserInput::Mention { name, path } => format!("[mention] {name} ({path})"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_dialog_entry_skips_reasoning_items() {
+        let item = ThreadItem::Reasoning {
+            id: "reasoning-1".to_string(),
+            summary: vec!["summary".to_string()],
+            content: vec!["raw thought".to_string()],
+        };
+
+        assert!(session_dialog_entry("thread-1", "turn-1", &item).is_none());
+    }
+
+    #[test]
+    fn session_dialog_entry_persists_agent_messages() {
+        let item = ThreadItem::AgentMessage {
+            id: "message-1".to_string(),
+            text: "visible answer".to_string(),
+            phase: None,
+            memory_citation: None,
+        };
+
+        let entry = session_dialog_entry("thread-1", "turn-1", &item).expect("entry");
+        assert_eq!(entry.0, "assistant");
+        assert_eq!(entry.1, "message-1");
+        assert_eq!(entry.2, "visible answer");
     }
 }

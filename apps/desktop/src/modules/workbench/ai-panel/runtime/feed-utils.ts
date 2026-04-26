@@ -389,7 +389,7 @@ export const toPersistedRuntimeFeedItem = (
     ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
     icon: resolveRuntimeToolIconKind(call.toolName),
     status: call.status,
-    timestamp: call.finishedAt ?? call.startedAt
+    timestamp: call.startedAt
   };
 };
 

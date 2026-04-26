@@ -611,7 +611,7 @@ async fn prepare_realtime_start(
         .transport
         .unwrap_or(ConversationStartTransport::Websocket);
     let mut api_provider = provider.to_api_provider(Some(AuthMode::ApiKey))?;
-    if let Some(realtime_ws_base_url) = &config.experimental_realtime_ws_base_url {
+    if let Some(realtime_ws_base_url) = &config.realtime_ws_base_url {
         api_provider.base_url = realtime_ws_base_url.clone();
     }
     let version = config.realtime.version;
@@ -654,11 +654,8 @@ pub(crate) async fn build_realtime_session_config(
     voice: Option<RealtimeVoice>,
 ) -> LyraResult<RealtimeSessionConfig> {
     let config = sess.get_config().await;
-    let prompt = prepare_realtime_backend_prompt(
-        prompt,
-        config.experimental_realtime_ws_backend_prompt.clone(),
-    );
-    let startup_context = match config.experimental_realtime_ws_startup_context.clone() {
+    let prompt = prepare_realtime_backend_prompt(prompt, config.realtime_ws_backend_prompt.clone());
+    let startup_context = match config.realtime_ws_startup_context.clone() {
         Some(startup_context) => startup_context,
         None => {
             build_realtime_startup_context(sess.as_ref(), REALTIME_STARTUP_CONTEXT_TOKEN_BUDGET)
@@ -674,7 +671,7 @@ pub(crate) async fn build_realtime_session_config(
     };
     let model = Some(
         config
-            .experimental_realtime_ws_model
+            .realtime_ws_model
             .clone()
             .unwrap_or_else(|| DEFAULT_REALTIME_MODEL.to_string()),
     );
@@ -919,7 +916,7 @@ fn realtime_api_key(auth: Option<&LyraAuth>, provider: &ModelProviderInfo) -> Ly
         return Ok(api_key);
     }
 
-    if let Some(token) = provider.experimental_bearer_token.clone() {
+    if let Some(token) = provider.bearer_token.clone() {
         return Ok(token);
     }
 

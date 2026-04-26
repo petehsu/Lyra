@@ -154,7 +154,7 @@ export const AiPanelStreamStatusBlock = ({ status }: AiPanelStreamStatusBlockPro
           variant={status.tone === "waiting" ? "sand" : "dots"}
           tone={status.tone === "waiting" ? "warning" : "info"}
           size="sm"
-          {...(status.label.length > 0 ? { ariaLabel: status.label, label: status.label } : {})}
+          {...(status.label.length > 0 ? { ariaLabel: status.label } : {})}
         />
       </div>
     );

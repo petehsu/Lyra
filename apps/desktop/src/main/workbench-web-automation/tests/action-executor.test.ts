@@ -82,6 +82,7 @@ const createBridge = (results: readonly unknown[]): WorkbenchBrowserIpcBridge =>
   stop: vi.fn(),
   readPageState: vi.fn(),
   setElementPickerMode: vi.fn(),
+  applyWebTheme: vi.fn().mockResolvedValue(undefined),
   showAgentElementPickerTarget: vi.fn(),
   clearAgentElementPickerTarget: vi.fn(),
   readActiveTabId: vi.fn(),

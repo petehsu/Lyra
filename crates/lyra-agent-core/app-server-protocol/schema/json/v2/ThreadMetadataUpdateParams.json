@@ -29,6 +29,12 @@
     }
   },
   "properties": {
+    "boundProjectRoot": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "gitInfo": {
       "anyOf": [
         {

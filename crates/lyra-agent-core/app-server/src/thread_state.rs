@@ -54,13 +54,20 @@ pub(crate) struct TurnSummary {
     pub(crate) last_error: Option<TurnError>,
 }
 
+#[derive(Clone)]
+pub(crate) struct PendingRollbackRequest {
+    pub(crate) request_id: ConnectionRequestId,
+    pub(crate) restored_input: Option<String>,
+    pub(crate) reverted_files: Vec<String>,
+}
+
 #[derive(Default)]
 pub(crate) struct ThreadState {
     pub(crate) pending_interrupts: PendingInterruptQueue,
-    pub(crate) pending_rollbacks: Option<ConnectionRequestId>,
+    pub(crate) pending_rollbacks: Option<PendingRollbackRequest>,
     pub(crate) turn_summary: TurnSummary,
     pub(crate) cancel_tx: Option<oneshot::Sender<()>>,
-    pub(crate) experimental_raw_events: bool,
+    pub(crate) raw_events: bool,
     pub(crate) listener_generation: u64,
     listener_command_tx: Option<mpsc::UnboundedSender<ThreadListenerCommand>>,
     current_turn_history: ThreadHistoryBuilder,
@@ -99,8 +106,8 @@ impl ThreadState {
         self.listener_thread = None;
     }
 
-    pub(crate) fn set_experimental_raw_events(&mut self, enabled: bool) {
-        self.experimental_raw_events = enabled;
+    pub(crate) fn set_raw_events(&mut self, enabled: bool) {
+        self.raw_events = enabled;
     }
 
     pub(crate) fn listener_command_tx(
@@ -321,7 +328,7 @@ impl ThreadStateManager {
         &self,
         thread_id: ThreadId,
         connection_id: ConnectionId,
-        experimental_raw_events: bool,
+        raw_events: bool,
     ) -> Option<Arc<Mutex<ThreadState>>> {
         let thread_state = {
             let mut state = self.state.lock().await;
@@ -340,8 +347,8 @@ impl ThreadStateManager {
         };
         {
             let mut thread_state_guard = thread_state.lock().await;
-            if experimental_raw_events {
-                thread_state_guard.set_experimental_raw_events(/*enabled*/ true);
+            if raw_events {
+                thread_state_guard.set_raw_events(/*enabled*/ true);
             }
         }
         Some(thread_state)

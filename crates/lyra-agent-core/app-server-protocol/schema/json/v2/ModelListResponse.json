@@ -76,10 +76,6 @@
           },
           "type": "array"
         },
-        "supportsPersonality": {
-          "default": false,
-          "type": "boolean"
-        },
         "upgrade": {
           "type": [
             "string",

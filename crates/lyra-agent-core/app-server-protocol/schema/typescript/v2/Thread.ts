@@ -45,6 +45,10 @@ path: string | null,
  */
 cwd: AbsolutePathBuf,
 /**
+ * Project root explicitly bound by the user, if any.
+ */
+boundProjectRoot: AbsolutePathBuf | null,
+/**
  * Version of the CLI that created the thread.
  */
 cliVersion: string,

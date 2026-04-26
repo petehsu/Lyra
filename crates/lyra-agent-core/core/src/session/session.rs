@@ -21,7 +21,7 @@ pub(crate) struct Session {
     pub(super) mailbox: Mailbox,
     pub(super) mailbox_rx: Mutex<MailboxReceiver>,
     pub(super) idle_pending_input: Mutex<Vec<ResponseInputItem>>, // TODO (jif) merge with mailbox!
-    pub(crate) guardian_review_session: GuardianReviewSessionManager,
+    pub(crate) auto_review_session: AutoReviewSessionManager,
     pub(crate) services: SessionServices,
     pub(super) js_repl: Arc<JsReplHandle>,
     pub(super) next_internal_sub_id: AtomicU64,
@@ -41,9 +41,6 @@ pub(crate) struct SessionConfiguration {
 
     /// Model instructions that are appended to the base instructions.
     pub(super) user_instructions: Option<String>,
-
-    /// Personality preference for the model.
-    pub(super) personality: Option<Personality>,
 
     /// Base instructions for the session.
     pub(super) base_instructions: String,
@@ -97,18 +94,14 @@ impl SessionConfiguration {
             cwd: self.cwd.clone(),
             ephemeral: self.original_config_do_not_use.ephemeral,
             reasoning_effort: self.collaboration_mode.reasoning_effort(),
-            personality: self.personality,
             session_source: self.session_source.clone(),
         }
     }
 
     pub(crate) fn apply(&self, updates: &SessionSettingsUpdate) -> ConstraintResult<Self> {
         let mut next_configuration = self.clone();
-        let file_system_policy_matches_legacy = self.file_system_sandbox_policy
-            == FileSystemSandboxPolicy::from_legacy_sandbox_policy(
-                self.sandbox_policy.get(),
-                &self.cwd,
-            );
+        let file_system_policy_matches_projection = self.file_system_sandbox_policy
+            == FileSystemSandboxPolicy::from_sandbox_policy(self.sandbox_policy.get(), &self.cwd);
         if let Some(collaboration_mode) = updates.collaboration_mode.clone() {
             next_configuration.collaboration_mode = collaboration_mode;
         }
@@ -117,9 +110,6 @@ impl SessionConfiguration {
         }
         if let Some(service_tier) = updates.service_tier {
             next_configuration.service_tier = service_tier;
-        }
-        if let Some(personality) = updates.personality {
-            next_configuration.personality = Some(personality);
         }
         if let Some(developer_instructions) = updates.developer_instructions.clone() {
             next_configuration.developer_instructions = Some(developer_instructions);
@@ -162,16 +152,16 @@ impl SessionConfiguration {
         next_configuration.cwd = absolute_cwd;
         if sandbox_policy_changed {
             next_configuration.file_system_sandbox_policy =
-                FileSystemSandboxPolicy::from_legacy_sandbox_policy_preserving_deny_entries(
+                FileSystemSandboxPolicy::from_sandbox_policy_preserving_deny_entries(
                     next_configuration.sandbox_policy.get(),
                     &next_configuration.cwd,
                     &self.file_system_sandbox_policy,
                 );
-        } else if cwd_changed && file_system_policy_matches_legacy {
+        } else if cwd_changed && file_system_policy_matches_projection {
             // Preserve richer split policies across cwd-only updates; only
-            // rederive when the session is already using the legacy bridge.
+            // rederive when the session is already using the sandbox projection.
             next_configuration.file_system_sandbox_policy =
-                FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+                FileSystemSandboxPolicy::from_sandbox_policy(
                     next_configuration.sandbox_policy.get(),
                     &next_configuration.cwd,
                 );
@@ -199,7 +189,6 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) developer_instructions: Option<String>,
     pub(crate) dynamic_tools: Option<Vec<DynamicToolSpec>>,
     pub(crate) final_output_json_schema: Option<Option<Value>>,
-    pub(crate) personality: Option<Personality>,
     pub(crate) app_server_client_name: Option<String>,
     pub(crate) app_server_client_version: Option<String>,
 }
@@ -392,28 +381,6 @@ impl Session {
 
         let mut post_session_configured_events = Vec::<Event>::new();
 
-        for usage in config.features.legacy_feature_usages() {
-            post_session_configured_events.push(Event {
-                id: INITIAL_SUBMIT_ID.to_owned(),
-                msg: EventMsg::DeprecationNotice(DeprecationNoticeEvent {
-                    summary: usage.summary.clone(),
-                    details: usage.details.clone(),
-                }),
-            });
-        }
-        if crate::config::uses_deprecated_instructions_file(&config.config_layer_stack) {
-            post_session_configured_events.push(Event {
-                id: INITIAL_SUBMIT_ID.to_owned(),
-                msg: EventMsg::DeprecationNotice(DeprecationNoticeEvent {
-                    summary: "`experimental_instructions_file` is deprecated and ignored. Use `model_instructions_file` instead."
-                        .to_string(),
-                    details: Some(
-                        "Move the setting to `model_instructions_file` in config.toml (or under a profile) to load instructions from a file."
-                            .to_string(),
-                    ),
-                }),
-            });
-        }
         for message in &config.startup_warnings {
             post_session_configured_events.push(Event {
                 id: "".to_owned(),
@@ -421,19 +388,6 @@ impl Session {
                     message: message.clone(),
                 }),
             });
-        }
-        let config_path = config.lyra_home.join(CONFIG_TOML_FILE);
-        if let Some(event) = unstable_features_warning_event(
-            config
-                .config_layer_stack
-                .effective_config()
-                .get("features")
-                .and_then(TomlValue::as_table),
-            config.suppress_unstable_features_warning,
-            &config.features,
-            &config_path.display().to_string(),
-        ) {
-            post_session_configured_events.push(event);
         }
         if config.permissions.approval_policy.value() == AskForApproval::OnFailure {
             post_session_configured_events.push(Event {
@@ -623,7 +577,6 @@ impl Session {
         let hook_shell_program = hook_shell_argv.remove(0);
         let _ = hook_shell_argv.pop();
         let hooks = Hooks::new(HooksConfig {
-            legacy_notify_argv: config.notify.clone(),
             feature_enabled: config.features.enabled(Feature::LyraHooks),
             config_layer_stack: Some(config.config_layer_stack.clone()),
             shell_program: Some(hook_shell_program),
@@ -672,7 +625,7 @@ impl Session {
             session_telemetry,
             models_manager: Arc::clone(&models_manager),
             tool_approvals: Mutex::new(ApprovalStore::default()),
-            guardian_rejections: Mutex::new(HashMap::new()),
+            auto_review_rejections: Mutex::new(HashMap::new()),
             skills_manager,
             plugins_manager: Arc::clone(&plugins_manager),
             mcp_manager: Arc::clone(&mcp_manager),
@@ -691,7 +644,6 @@ impl Session {
                 config.model_verbosity,
                 config.features.enabled(Feature::EnableRequestCompression),
                 config.features.enabled(Feature::RuntimeMetrics),
-                Self::build_model_client_beta_features_header(config.as_ref()),
             ),
             code_mode_service: crate::tools::code_mode::CodeModeService::new(
                 config.js_repl_node_path.clone(),
@@ -723,7 +675,7 @@ impl Session {
             mailbox,
             mailbox_rx: Mutex::new(mailbox_rx),
             idle_pending_input: Mutex::new(Vec::new()),
-            guardian_review_session: GuardianReviewSessionManager::default(),
+            auto_review_session: AutoReviewSessionManager::default(),
             services,
             js_repl,
             next_internal_sub_id: AtomicU64::new(0),

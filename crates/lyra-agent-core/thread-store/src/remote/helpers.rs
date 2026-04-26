@@ -133,6 +133,7 @@ pub(super) fn stored_thread_from_proto(
         updated_at: datetime_from_unix(thread.updated_at)?,
         archived_at: thread.archived_at.map(datetime_from_unix).transpose()?,
         cwd: PathBuf::from(thread.cwd),
+        bound_project_root: None,
         cli_version: thread.cli_version,
         source,
         agent_nickname: thread.agent_nickname,

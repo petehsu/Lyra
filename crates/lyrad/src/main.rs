@@ -65,6 +65,7 @@ const RUNTIME_NAME: &str = "lyrad";
 const TERMINAL_RUNTIME_EVENT_NAME: &str = "terminal.runtime";
 const MCP_RUNTIME_EVENT_NAME: &str = "mcp.runtime";
 const LSP_RUNTIME_EVENT_NAME: &str = "lsp.runtime";
+const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone)]
 struct ConnectionContext {
@@ -854,8 +855,24 @@ async fn serve_connection(stream: UnixStream) -> Result<(), RuntimeError> {
 }
 
 #[cfg(unix)]
-#[tokio::main(flavor = "multi_thread")]
-async fn main() {
+fn main() {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(TOKIO_WORKER_STACK_SIZE_BYTES)
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("failed to initialize {RUNTIME_NAME} runtime: {error}");
+            std::process::exit(1);
+        }
+    };
+
+    runtime.block_on(run_unix_runtime());
+}
+
+#[cfg(unix)]
+async fn run_unix_runtime() {
     let socket_path = resolve_socket_path();
     if let Some(parent) = socket_path.parent() {
         if let Err(error) = std::fs::create_dir_all(parent) {

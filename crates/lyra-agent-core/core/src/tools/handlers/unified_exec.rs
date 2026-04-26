@@ -145,11 +145,10 @@ impl ToolHandler for UnifiedExecHandler {
 
     fn post_tool_use_payload(
         &self,
-        call_id: &str,
-        payload: &ToolPayload,
-        result: &dyn ToolOutput,
+        invocation: &ToolInvocation,
+        result: &Self::Output,
     ) -> Option<PostToolUsePayload> {
-        let ToolPayload::Function { arguments } = payload else {
+        let ToolPayload::Function { arguments } = &invocation.payload else {
             return None;
         };
 
@@ -158,10 +157,16 @@ impl ToolHandler for UnifiedExecHandler {
             return None;
         }
 
-        let tool_response = result.post_tool_use_response(call_id, payload)?;
-        let command = args.cmd;
+        let tool_use_id = if result.event_call_id.is_empty() {
+            invocation.call_id.clone()
+        } else {
+            result.event_call_id.clone()
+        };
+        let tool_response = result.post_tool_use_response(&tool_use_id, &invocation.payload)?;
+        let command = result.hook_command.clone().unwrap_or(args.cmd);
         Some(PostToolUsePayload {
             tool_name: HookToolName::bash(),
+            tool_use_id,
             tool_input: serde_json::json!({ "command": command }),
             tool_response,
         })
@@ -313,17 +318,17 @@ impl ToolHandler for UnifiedExecHandler {
                         process_id: None,
                         exit_code: None,
                         original_token_count: None,
-                        session_command: None,
+                        hook_command: None,
                     });
                 }
 
                 emit_unified_exec_tty_metric(&turn.session_telemetry, tty);
-                let session_command = command.clone();
+                let hook_command = args.cmd;
                 match manager
                     .exec_command(
                         ExecCommandRequest {
                             command,
-                            hook_command: args.cmd,
+                            hook_command: hook_command.clone(),
                             process_id,
                             yield_time_ms,
                             max_output_tokens,
@@ -357,7 +362,7 @@ impl ToolHandler for UnifiedExecHandler {
                             process_id: None,
                             exit_code: Some(output.exit_code),
                             original_token_count: Some(original_token_count),
-                            session_command: Some(session_command),
+                            hook_command: Some(hook_command),
                         }
                     }
                     Err(err) => {

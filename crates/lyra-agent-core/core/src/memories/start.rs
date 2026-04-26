@@ -1,6 +1,5 @@
 use crate::config::Config;
 use crate::session::session::Session;
-use lyra_features::Feature;
 use lyra_protocol::protocol::SessionSource;
 use std::sync::Arc;
 use tracing::warn;
@@ -14,10 +13,7 @@ pub(crate) fn start_memories_startup_task(
     config: Arc<Config>,
     source: &SessionSource,
 ) {
-    if config.ephemeral
-        || !config.features.enabled(Feature::MemoryTool)
-        || matches!(source, SessionSource::SubAgent(_))
-    {
+    if config.ephemeral || matches!(source, SessionSource::SubAgent(_)) {
         return;
     }
 

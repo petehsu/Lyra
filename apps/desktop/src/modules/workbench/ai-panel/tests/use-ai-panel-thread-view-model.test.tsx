@@ -34,15 +34,7 @@ describe("useAiPanelThreadViewModel", () => {
     const { result } = renderHook(() =>
       useAiPanelThreadViewModel({
         activeDetail: {
-          messages: [
-            {
-              id: "m-1",
-              role: "assistant",
-              content: "Done",
-              turnId: "t-1",
-              createdAt: 1,
-            },
-          ],
+          messages: [],
           turns: [],
           toolCalls: [],
           runtimeEvents: [],

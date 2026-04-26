@@ -4,6 +4,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use lyra_models_manager::provider_model_entry_from_id;
 use lyra_runtime_protocol::RuntimeError;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -81,7 +82,48 @@ struct WriteSecretsRequest {
 struct AiProviderModelEntry {
     id: String,
     name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context_window: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supports_images: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supports_tools: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtime_metadata: Option<AiModelRuntimeMetadata>,
     source: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiModelRuntimeMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shell_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    apply_patch_tool_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supports_search_tool: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supports_parallel_tool_calls: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supports_reasoning_summaries: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    support_verbosity: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_search_tool_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supports_image_detail_original: Option<bool>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    input_modalities: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    supported_tools: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context_window: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_context_window: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effective_context_window_percent: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -618,11 +660,7 @@ fn parse_openai_like_models(payload: Value) -> Vec<AiProviderModelEntry> {
                 .and_then(Value::as_str)
                 .map(trim_string)
                 .filter(|value| !value.is_empty())?;
-            Some(AiProviderModelEntry {
-                id: id.clone(),
-                name: id,
-                source: "dynamic",
-            })
+            Some(normalized_discovered_model_entry("", "", &id, "dynamic"))
         })
         .collect()
 }
@@ -640,11 +678,7 @@ fn parse_anthropic_models(payload: Value) -> Vec<AiProviderModelEntry> {
                 .and_then(Value::as_str)
                 .map(trim_string)
                 .filter(|value| !value.is_empty())?;
-            Some(AiProviderModelEntry {
-                id: id.clone(),
-                name: id,
-                source: "dynamic",
-            })
+            Some(normalized_discovered_model_entry("", "", &id, "dynamic"))
         })
         .collect()
 }
@@ -663,11 +697,7 @@ fn parse_gemini_models(payload: Value) -> Vec<AiProviderModelEntry> {
                 .map(trim_string)
                 .filter(|value| !value.is_empty())?;
             let id = raw_id.trim_start_matches("models/").to_string();
-            Some(AiProviderModelEntry {
-                id: id.clone(),
-                name: id,
-                source: "dynamic",
-            })
+            Some(normalized_discovered_model_entry("", "", &id, "dynamic"))
         })
         .collect()
 }
@@ -684,13 +714,44 @@ fn parse_ollama_models(payload: Value) -> Vec<AiProviderModelEntry> {
                 .and_then(Value::as_str)
                 .map(trim_string)
                 .filter(|value| !value.is_empty())?;
-            Some(AiProviderModelEntry {
-                id: id.clone(),
-                name: id,
-                source: "dynamic",
-            })
+            Some(normalized_discovered_model_entry("", "", &id, "dynamic"))
         })
         .collect()
+}
+
+fn normalized_discovered_model_entry(
+    provider_id: &str,
+    protocol_id: &str,
+    model_id: &str,
+    source: &'static str,
+) -> AiProviderModelEntry {
+    let entry = provider_model_entry_from_id(provider_id, protocol_id, model_id, source);
+    AiProviderModelEntry {
+        id: entry.id,
+        name: entry.name,
+        description: entry.description,
+        context_window: entry.context_window,
+        supports_images: entry.supports_images,
+        supports_tools: entry.supports_tools,
+        runtime_metadata: entry
+            .runtime_metadata
+            .map(|metadata| AiModelRuntimeMetadata {
+                shell_type: metadata.shell_type,
+                apply_patch_tool_type: metadata.apply_patch_tool_type,
+                supports_search_tool: metadata.supports_search_tool,
+                supports_parallel_tool_calls: metadata.supports_parallel_tool_calls,
+                supports_reasoning_summaries: metadata.supports_reasoning_summaries,
+                support_verbosity: metadata.support_verbosity,
+                web_search_tool_type: metadata.web_search_tool_type,
+                supports_image_detail_original: metadata.supports_image_detail_original,
+                input_modalities: metadata.input_modalities,
+                supported_tools: metadata.supported_tools,
+                context_window: metadata.context_window,
+                max_context_window: metadata.max_context_window,
+                effective_context_window_percent: metadata.effective_context_window_percent,
+            }),
+        source,
+    }
 }
 
 fn build_headers(headers: &StringMap) -> Result<HeaderMap, RuntimeError> {
@@ -888,9 +949,19 @@ async fn discover_openai_like_models(
             );
         }
     }
-    let models = parse_openai_like_models(
+    let models: Vec<AiProviderModelEntry> = parse_openai_like_models(
         fetch_json(&format!("{base_url}/models"), reqwest::Method::GET, headers).await?,
-    );
+    )
+    .into_iter()
+    .map(|entry| {
+        normalized_discovered_model_entry(
+            context.provider_id.as_str(),
+            context.protocol_id.as_str(),
+            entry.id.as_str(),
+            "dynamic",
+        )
+    })
+    .collect();
     let message = if models.is_empty() {
         "No models were returned by the provider"
     } else {
@@ -938,7 +1009,7 @@ async fn discover_azure_models(
         HeaderValue::from_str(&api_key)
             .map_err(|error| runtime_error("AI_CONFIG_HEADER_INVALID", error.to_string()))?,
     );
-    let models = parse_openai_like_models(
+    let models: Vec<AiProviderModelEntry> = parse_openai_like_models(
         fetch_json(
             &format!(
                 "{}/openai/models?api-version={}",
@@ -949,7 +1020,17 @@ async fn discover_azure_models(
             headers,
         )
         .await?,
-    );
+    )
+    .into_iter()
+    .map(|entry| {
+        normalized_discovered_model_entry(
+            context.provider_id.as_str(),
+            context.protocol_id.as_str(),
+            entry.id.as_str(),
+            "dynamic",
+        )
+    })
+    .collect();
     let message = if models.is_empty() {
         "No models were returned by Azure OpenAI"
     } else {
@@ -993,14 +1074,24 @@ async fn discover_anthropic_models(
             .map_err(|error| runtime_error("AI_CONFIG_HEADER_INVALID", error.to_string()))?,
     );
     let base_url = context.base_url.trim_end_matches('/');
-    let models = parse_anthropic_models(
+    let models: Vec<AiProviderModelEntry> = parse_anthropic_models(
         fetch_json(
             &format!("{base_url}/v1/models"),
             reqwest::Method::GET,
             headers,
         )
         .await?,
-    );
+    )
+    .into_iter()
+    .map(|entry| {
+        normalized_discovered_model_entry(
+            context.provider_id.as_str(),
+            context.protocol_id.as_str(),
+            entry.id.as_str(),
+            "dynamic",
+        )
+    })
+    .collect();
     let message = if models.is_empty() {
         "No models were returned by Anthropic"
     } else {
@@ -1027,7 +1118,7 @@ async fn discover_gemini_models(
         ));
     }
     let base_url = context.base_url.trim_end_matches('/');
-    let models = parse_gemini_models(
+    let models: Vec<AiProviderModelEntry> = parse_gemini_models(
         fetch_json(
             &format!(
                 "{base_url}/v1beta/models?key={}",
@@ -1037,7 +1128,17 @@ async fn discover_gemini_models(
             build_headers(&context.headers)?,
         )
         .await?,
-    );
+    )
+    .into_iter()
+    .map(|entry| {
+        normalized_discovered_model_entry(
+            context.provider_id.as_str(),
+            context.protocol_id.as_str(),
+            entry.id.as_str(),
+            "dynamic",
+        )
+    })
+    .collect();
     let message = if models.is_empty() {
         "No models were returned by Gemini"
     } else {
@@ -1050,14 +1151,24 @@ async fn discover_ollama_models(
     context: &ResolvedProfile,
 ) -> Result<AiModelDiscoveryResult, RuntimeError> {
     let base_url = context.base_url.trim_end_matches('/');
-    let models = parse_ollama_models(
+    let models: Vec<AiProviderModelEntry> = parse_ollama_models(
         fetch_json(
             &format!("{base_url}/api/tags"),
             reqwest::Method::GET,
             build_headers(&context.headers)?,
         )
         .await?,
-    );
+    )
+    .into_iter()
+    .map(|entry| {
+        normalized_discovered_model_entry(
+            context.provider_id.as_str(),
+            context.protocol_id.as_str(),
+            entry.id.as_str(),
+            "dynamic",
+        )
+    })
+    .collect();
     let message = if models.is_empty() {
         "No models were returned by Ollama"
     } else {

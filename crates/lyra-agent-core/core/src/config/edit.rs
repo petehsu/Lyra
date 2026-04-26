@@ -4,7 +4,6 @@ use anyhow::Context;
 use lyra_config::CONFIG_TOML_FILE;
 use lyra_config::types::McpServerConfig;
 use lyra_features::FEATURES;
-use lyra_protocol::config_types::Personality;
 use lyra_protocol::config_types::ServiceTier;
 use lyra_protocol::config_types::TrustLevel;
 use lyra_protocol::openai_models::ReasoningEffort;
@@ -31,8 +30,6 @@ pub enum ConfigEdit {
     },
     /// Update the service tier preference for future turns.
     SetServiceTier { service_tier: Option<ServiceTier> },
-    /// Update the active (or default) model personality.
-    SetModelPersonality { personality: Option<Personality> },
     /// Toggle the acknowledgement flag under `[notice]`.
     SetNoticeHideFullAccessWarning(bool),
     /// Toggle the Windows world-writable directories warning acknowledgement flag.
@@ -43,14 +40,6 @@ pub enum ConfigEdit {
     SetWindowsWslSetupAcknowledged(bool),
     /// Toggle the model migration prompt acknowledgement flag.
     SetNoticeHideModelMigrationPrompt(String, bool),
-    /// Toggle the home external config migration prompt acknowledgement flag.
-    SetNoticeHideExternalConfigMigrationPromptHome(bool),
-    /// Record when the home external config migration prompt was last shown.
-    SetNoticeExternalConfigMigrationPromptHomeLastPromptedAt(i64),
-    /// Toggle the project external config migration prompt acknowledgement flag.
-    SetNoticeHideExternalConfigMigrationPromptProject(String, bool),
-    /// Record when the project external config migration prompt was last shown.
-    SetNoticeExternalConfigMigrationPromptProjectLastPromptedAt(String, i64),
     /// Record that a migration prompt was shown for an old->new model mapping.
     RecordModelMigrationSeen { from: String, to: String },
     /// Replace the entire `[mcp_servers]` table.
@@ -231,8 +220,8 @@ mod document_helpers {
         if !config.enabled {
             entry["enabled"] = value(false);
         }
-        if let Some(environment) = &config.experimental_environment {
-            entry["experimental_environment"] = value(environment.clone());
+        if let Some(environment) = &config.environment {
+            entry["environment"] = value(environment.clone());
         }
         if config.required {
             entry["required"] = value(true);
@@ -422,10 +411,6 @@ impl ConfigDocument {
                 &["service_tier"],
                 service_tier.map(|service_tier| value(service_tier.to_string())),
             )),
-            ConfigEdit::SetModelPersonality { personality } => Ok(self.write_profile_value(
-                &["personality"],
-                personality.map(|personality| value(personality.to_string())),
-            )),
             ConfigEdit::SetNoticeHideFullAccessWarning(acknowledged) => Ok(self.write_value(
                 Scope::Global,
                 &[NOTICE_TABLE_KEY, "hide_full_access_warning"],
@@ -448,53 +433,6 @@ impl ConfigDocument {
                     value(*acknowledged),
                 ))
             }
-            ConfigEdit::SetNoticeHideExternalConfigMigrationPromptHome(acknowledged) => Ok(self
-                .write_value(
-                    Scope::Global,
-                    &[
-                        NOTICE_TABLE_KEY,
-                        "external_config_migration_prompts",
-                        "home",
-                    ],
-                    value(*acknowledged),
-                )),
-            ConfigEdit::SetNoticeExternalConfigMigrationPromptHomeLastPromptedAt(timestamp) => {
-                Ok(self.write_value(
-                    Scope::Global,
-                    &[
-                        NOTICE_TABLE_KEY,
-                        "external_config_migration_prompts",
-                        "home_last_prompted_at",
-                    ],
-                    value(*timestamp),
-                ))
-            }
-            ConfigEdit::SetNoticeHideExternalConfigMigrationPromptProject(
-                project,
-                acknowledged,
-            ) => Ok(self.write_value(
-                Scope::Global,
-                &[
-                    NOTICE_TABLE_KEY,
-                    "external_config_migration_prompts",
-                    "projects",
-                    project.as_str(),
-                ],
-                value(*acknowledged),
-            )),
-            ConfigEdit::SetNoticeExternalConfigMigrationPromptProjectLastPromptedAt(
-                project,
-                timestamp,
-            ) => Ok(self.write_value(
-                Scope::Global,
-                &[
-                    NOTICE_TABLE_KEY,
-                    "external_config_migration_prompts",
-                    "project_last_prompted_at",
-                    project.as_str(),
-                ],
-                value(*timestamp),
-            )),
             ConfigEdit::RecordModelMigrationSeen { from, to } => Ok(self.write_value(
                 Scope::Global,
                 &[NOTICE_TABLE_KEY, "model_migrations", from.as_str()],
@@ -960,12 +898,6 @@ impl ConfigEditsBuilder {
         self
     }
 
-    pub fn set_personality(mut self, personality: Option<Personality>) -> Self {
-        self.edits
-            .push(ConfigEdit::SetModelPersonality { personality });
-        self
-    }
-
     pub fn set_hide_full_access_warning(mut self, acknowledged: bool) -> Self {
         self.edits
             .push(ConfigEdit::SetNoticeHideFullAccessWarning(acknowledged));
@@ -990,28 +922,6 @@ impl ConfigEditsBuilder {
                 model.to_string(),
                 acknowledged,
             ));
-        self
-    }
-
-    pub fn set_hide_external_config_migration_prompt_home(mut self, acknowledged: bool) -> Self {
-        self.edits
-            .push(ConfigEdit::SetNoticeHideExternalConfigMigrationPromptHome(
-                acknowledged,
-            ));
-        self
-    }
-
-    pub fn set_hide_external_config_migration_prompt_project(
-        mut self,
-        project: &str,
-        acknowledged: bool,
-    ) -> Self {
-        self.edits.push(
-            ConfigEdit::SetNoticeHideExternalConfigMigrationPromptProject(
-                project.to_string(),
-                acknowledged,
-            ),
-        );
         self
     }
 
@@ -1136,26 +1046,6 @@ impl ConfigEditsBuilder {
                 value: value(voice),
             }),
             None => self.edits.push(ConfigEdit::ClearPath { segments }),
-        }
-        self
-    }
-
-    pub fn clear_legacy_windows_sandbox_keys(mut self) -> Self {
-        for key in [
-            "experimental_windows_sandbox",
-            "elevated_windows_sandbox",
-            "enable_experimental_windows_sandbox",
-        ] {
-            let mut segments = vec!["features".to_string(), key.to_string()];
-            if let Some(profile) = self.profile.as_ref() {
-                segments = vec![
-                    "profiles".to_string(),
-                    profile.clone(),
-                    "features".to_string(),
-                    key.to_string(),
-                ];
-            }
-            self.edits.push(ConfigEdit::ClearPath { segments });
         }
         self
     }

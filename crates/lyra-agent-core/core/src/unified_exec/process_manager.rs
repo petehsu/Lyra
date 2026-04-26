@@ -57,7 +57,7 @@ use lyra_protocol::protocol::ExecCommandSource;
 use lyra_utils_absolute_path::AbsolutePathBuf;
 use lyra_utils_output_truncation::approx_token_count;
 
-const UNIFIED_EXEC_ENV: [(&str, &str); 10] = [
+const UNIFIED_EXEC_ENV: [(&str, &str); 14] = [
     ("NO_COLOR", "1"),
     ("TERM", "dumb"),
     ("LANG", "C.UTF-8"),
@@ -68,6 +68,10 @@ const UNIFIED_EXEC_ENV: [(&str, &str); 10] = [
     ("GIT_PAGER", "cat"),
     ("GH_PAGER", "cat"),
     ("LYRA_CI", "1"),
+    ("npm_config_fetch_retries", "0"),
+    ("npm_config_fetch_retry_maxtimeout", "10000"),
+    ("npm_config_fetch_retry_mintimeout", "1000"),
+    ("npm_config_fetch_timeout", "15000"),
 ];
 
 /// Test-only override for deterministic unified exec process IDs.
@@ -169,7 +173,7 @@ struct PreparedProcessHandles {
     output_closed_notify: Arc<Notify>,
     cancellation_token: CancellationToken,
     pause_state: Option<watch::Receiver<bool>>,
-    command: Vec<String>,
+    hook_command: String,
     process_id: i32,
     tty: bool,
 }
@@ -279,6 +283,7 @@ impl UnifiedExecProcessManager {
                 Arc::clone(&process),
                 context,
                 &request.command,
+                request.hook_command.clone(),
                 cwd.clone(),
                 start,
                 request.process_id,
@@ -398,7 +403,7 @@ impl UnifiedExecProcessManager {
             process_id: response_process_id,
             exit_code,
             original_token_count: Some(original_token_count),
-            session_command: Some(request.command.clone()),
+            hook_command: Some(request.hook_command.clone()),
         };
 
         Ok(response)
@@ -418,7 +423,7 @@ impl UnifiedExecProcessManager {
             output_closed_notify,
             cancellation_token,
             pause_state,
-            command: session_command,
+            hook_command,
             process_id,
             tty,
             ..
@@ -517,7 +522,7 @@ impl UnifiedExecProcessManager {
             process_id,
             exit_code,
             original_token_count: Some(original_token_count),
-            session_command: Some(session_command.clone()),
+            hook_command: Some(hook_command),
         };
 
         Ok(response)
@@ -585,7 +590,7 @@ impl UnifiedExecProcessManager {
             output_closed_notify,
             cancellation_token,
             pause_state,
-            command: entry.command.clone(),
+            hook_command: entry.hook_command.clone(),
             process_id: entry.process_id,
             tty: entry.tty,
         })
@@ -597,6 +602,7 @@ impl UnifiedExecProcessManager {
         process: Arc<UnifiedExecProcess>,
         context: &UnifiedExecContext,
         command: &[String],
+        hook_command: String,
         cwd: AbsolutePathBuf,
         started_at: Instant,
         process_id: i32,
@@ -608,7 +614,7 @@ impl UnifiedExecProcessManager {
             process: Arc::clone(&process),
             call_id: context.call_id.clone(),
             process_id,
-            command: command.to_vec(),
+            hook_command,
             tty,
             network_approval_id,
             session: Arc::downgrade(&context.session),

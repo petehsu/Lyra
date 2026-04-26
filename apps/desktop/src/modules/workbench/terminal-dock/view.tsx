@@ -1,4 +1,6 @@
 import {
+  PanelBottom,
+  PanelTop,
   Plus,
   SplitSquareHorizontal,
   SplitSquareVertical,
@@ -28,8 +30,10 @@ export const TerminalDock = ({
   themePresetId,
   uiThemeId,
   model,
+  terminalPanelSide,
   onRequestCloseTab,
   onRequestTabContextMenu,
+  onToggleTerminalPanelSide,
   onDropWorkspaceTerminalTab
 }: TerminalDockProps) => {
   const activeDockTab = model.activeDockTab;
@@ -285,6 +289,20 @@ export const TerminalDock = ({
             }}
           >
             <SplitSquareVertical size={14} />
+          </button>
+          <button
+            aria-label={
+              terminalPanelSide === "top"
+                ? labels.moveTerminalToBottom
+                : labels.moveTerminalToTop
+            }
+            onClick={onToggleTerminalPanelSide}
+          >
+            {terminalPanelSide === "top" ? (
+              <PanelBottom size={14} />
+            ) : (
+              <PanelTop size={14} />
+            )}
           </button>
         </div>
       </aside>

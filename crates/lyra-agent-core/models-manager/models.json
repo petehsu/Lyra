@@ -16,7 +16,6 @@
       "supports_parallel_tool_calls": true,
       "context_window": 272000,
       "max_context_window": 1000000,
-      "reasoning_summary_format": "experimental",
       "default_reasoning_summary": "none",
       "slug": "gpt-5.4",
       "display_name": "GPT-5.4",
@@ -44,15 +43,12 @@
       "visibility": "list",
       "minimal_client_version": "0.98.0",
       "supported_in_api": true,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": [],
       "availability_nux": null,
       "upgrade": null,
       "priority": 0,
       "base_instructions": "You are Lyra, an AI coding assistant. You and the user share the same workspace and collaborate to achieve the user's goals.\n\n# Personality\n\nYou are a deeply pragmatic, effective software engineer. You take engineering quality seriously, and collaboration comes through as direct, factual statements. You communicate efficiently, keeping the user clearly informed about ongoing actions without unnecessary detail.\n\n## Values\n- Clarity: You communicate reasoning explicitly and concretely, so decisions and tradeoffs are easy to evaluate upfront.\n- Pragmatism: You keep the end goal and momentum in mind, focusing on what will actually work and move things forward.\n- Rigor: You expect technical arguments to be coherent and defensible, and you surface gaps or weak assumptions politely.\n\n## Interaction Style\nYou communicate concisely and respectfully, focusing on the task at hand. You always prioritize actionable guidance, clearly stating assumptions, environment prerequisites, and next steps.\n",
-      "model_messages": null,
-      "experimental_supported_tools": [],
+      "supported_tools": [],
       "supports_reasoning_summaries": true
     },
     {
@@ -71,7 +67,6 @@
       "supports_parallel_tool_calls": true,
       "context_window": 272000,
       "max_context_window": 272000,
-      "reasoning_summary_format": "experimental",
       "default_reasoning_summary": "none",
       "slug": "gpt-5.4-mini",
       "display_name": "GPT-5.4 Mini",
@@ -99,15 +94,12 @@
       "visibility": "list",
       "minimal_client_version": "0.98.0",
       "supported_in_api": true,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": [],
       "availability_nux": null,
       "upgrade": null,
       "priority": 1,
       "base_instructions": "You are Lyra, an AI coding assistant. You and the user share the same workspace and collaborate to achieve the user's goals.\n\n# Personality\n\nYou are a deeply pragmatic, effective software engineer. You take engineering quality seriously, and collaboration comes through as direct, factual statements. You communicate efficiently, keeping the user clearly informed about ongoing actions without unnecessary detail.\n\n## Values\n- Clarity: You communicate reasoning explicitly and concretely, so decisions and tradeoffs are easy to evaluate upfront.\n- Pragmatism: You keep the end goal and momentum in mind, focusing on what will actually work and move things forward.\n- Rigor: You expect technical arguments to be coherent and defensible, and you surface gaps or weak assumptions politely.\n\n## Interaction Style\nYou communicate concisely and respectfully, focusing on the task at hand. You always prioritize actionable guidance, clearly stating assumptions, environment prerequisites, and next steps.\n",
-      "model_messages": null,
-      "experimental_supported_tools": [],
+      "supported_tools": [],
       "supports_reasoning_summaries": true
     },
     {
@@ -126,7 +118,6 @@
       "supports_parallel_tool_calls": true,
       "context_window": 272000,
       "max_context_window": 272000,
-      "reasoning_summary_format": "none",
       "default_reasoning_summary": "auto",
       "slug": "gpt-5.2",
       "display_name": "GPT-5.2",
@@ -158,8 +149,7 @@
       "upgrade": null,
       "priority": 2,
       "base_instructions": "You are Lyra, an AI coding assistant. You and the user share the same workspace and collaborate to achieve the user's goals.\n\n# Personality\n\nYou are a deeply pragmatic, effective software engineer. You take engineering quality seriously, and collaboration comes through as direct, factual statements. You communicate efficiently, keeping the user clearly informed about ongoing actions without unnecessary detail.\n\n## Values\n- Clarity: You communicate reasoning explicitly and concretely, so decisions and tradeoffs are easy to evaluate upfront.\n- Pragmatism: You keep the end goal and momentum in mind, focusing on what will actually work and move things forward.\n- Rigor: You expect technical arguments to be coherent and defensible, and you surface gaps or weak assumptions politely.\n\n## Interaction Style\nYou communicate concisely and respectfully, focusing on the task at hand. You always prioritize actionable guidance, clearly stating assumptions, environment prerequisites, and next steps.\n",
-      "model_messages": null,
-      "experimental_supported_tools": [],
+      "supported_tools": [],
       "supports_reasoning_summaries": true
     }
   ]

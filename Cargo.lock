@@ -5041,7 +5041,6 @@ dependencies = [
  "anyhow",
  "clap",
  "inventory",
- "lyra-experimental-api-macros",
  "lyra-protocol",
  "lyra-shell-command",
  "lyra-utils-absolute-path",
@@ -5369,6 +5368,7 @@ dependencies = [
  "anyhow",
  "dirs 6.0.0",
  "dunce",
+ "lyra-analytics",
  "lyra-app-server-protocol",
  "lyra-config",
  "lyra-exec-server",
@@ -5480,15 +5480,6 @@ dependencies = [
  "serde_with",
  "starlark",
  "tempfile",
-]
-
-[[package]]
-name = "lyra-experimental-api-macros"
-version = "0.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -6296,6 +6287,7 @@ dependencies = [
  "lyra-app-server-protocol",
  "lyra-code-mode",
  "lyra-features",
+ "lyra-model-provider-info",
  "lyra-protocol",
  "lyra-utils-absolute-path",
  "lyra-utils-pty",
@@ -6581,6 +6573,7 @@ dependencies = [
  "lyra-exec-server",
  "lyra-lsp-core",
  "lyra-mcp-core",
+ "lyra-models-manager",
  "lyra-protocol",
  "lyra-runtime-protocol",
  "lyra-terminal-core",

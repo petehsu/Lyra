@@ -7,7 +7,6 @@ use crate::export::GeneratedSchema;
 use crate::export::write_json_schema;
 use crate::protocol::v1;
 use crate::protocol::v2;
-use lyra_experimental_api_macros::ExperimentalApi;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -22,42 +21,6 @@ pub enum AuthMode {
     ApiKey,
 }
 
-macro_rules! experimental_reason_expr {
-    // If a request variant is explicitly marked experimental, that reason wins.
-    (variant $variant:ident, #[experimental($reason:expr)] $params:ident $(, $inspect_params:tt)?) => {
-        Some($reason)
-    };
-    // `inspect_params: true` is used when a method is mostly stable but needs
-    // field-level gating from its params type (for example, ThreadStart).
-    (variant $variant:ident, $params:ident, true) => {
-        crate::experimental_api::ExperimentalApi::experimental_reason($params)
-    };
-    (variant $variant:ident, $params:ident $(, $inspect_params:tt)?) => {
-        None
-    };
-}
-
-macro_rules! experimental_method_entry {
-    (#[experimental($reason:expr)] => $wire:literal) => {
-        $wire
-    };
-    (#[experimental($reason:expr)]) => {
-        $reason
-    };
-    ($($tt:tt)*) => {
-        ""
-    };
-}
-
-macro_rules! experimental_type_entry {
-    (#[experimental($reason:expr)] $ty:ty) => {
-        stringify!($ty)
-    };
-    ($ty:ty) => {
-        ""
-    };
-}
-
 /// Generates an `enum ClientRequest` where each variant is a request that the
 /// client can send to the server. Each variant has associated `params` and
 /// `response` types. Also generates a `export_client_responses()` function to
@@ -65,7 +28,6 @@ macro_rules! experimental_type_entry {
 macro_rules! client_request_definitions {
     (
         $(
-            $(#[experimental($reason:expr)])?
             $(#[doc = $variant_doc:literal])*
             $variant:ident $(=> $wire:literal)? {
                 params: $(#[$params_meta:meta])* $params:ty,
@@ -145,39 +107,6 @@ macro_rules! client_request_definitions {
             }
         }
 
-        impl crate::experimental_api::ExperimentalApi for ClientRequest {
-            fn experimental_reason(&self) -> Option<&'static str> {
-                match self {
-                    $(
-                        Self::$variant { params: _params, .. } => {
-                            experimental_reason_expr!(
-                                variant $variant,
-                                $(#[experimental($reason)])?
-                                _params
-                                $(, $inspect_params)?
-                            )
-                        }
-                    )*
-                }
-            }
-        }
-
-        pub(crate) const EXPERIMENTAL_CLIENT_METHODS: &[&str] = &[
-            $(
-                experimental_method_entry!($(#[experimental($reason)])? $(=> $wire)?),
-            )*
-        ];
-        pub(crate) const EXPERIMENTAL_CLIENT_METHOD_PARAM_TYPES: &[&str] = &[
-            $(
-                experimental_type_entry!($(#[experimental($reason)])? $params),
-            )*
-        ];
-        pub(crate) const EXPERIMENTAL_CLIENT_METHOD_RESPONSE_TYPES: &[&str] = &[
-            $(
-                experimental_type_entry!($(#[experimental($reason)])? $response),
-            )*
-        ];
-
         pub fn export_client_responses(
             out_dir: &::std::path::Path,
         ) -> ::std::result::Result<(), ::ts_rs::ExportError> {
@@ -225,20 +154,16 @@ client_request_definitions! {
 
     /// NEW APIs
     // Thread lifecycle
-    // Uses `inspect_params` because only some fields are experimental.
     ThreadStart => "thread/start" {
         params: v2::ThreadStartParams,
-        inspect_params: true,
         response: v2::ThreadStartResponse,
     },
     ThreadResume => "thread/resume" {
         params: v2::ThreadResumeParams,
-        inspect_params: true,
         response: v2::ThreadResumeResponse,
     },
     ThreadFork => "thread/fork" {
         params: v2::ThreadForkParams,
-        inspect_params: true,
         response: v2::ThreadForkResponse,
     },
     ThreadArchive => "thread/archive" {
@@ -253,7 +178,6 @@ client_request_definitions! {
         params: v2::ThreadUnsubscribeParams,
         response: v2::ThreadUnsubscribeResponse,
     },
-    #[experimental("thread/increment_elicitation")]
     /// Increment the thread-local out-of-band elicitation counter.
     ///
     /// This is used by external helpers to pause timeout accounting while a user
@@ -262,7 +186,6 @@ client_request_definitions! {
         params: v2::ThreadIncrementElicitationParams,
         response: v2::ThreadIncrementElicitationResponse,
     },
-    #[experimental("thread/decrement_elicitation")]
     /// Decrement the thread-local out-of-band elicitation counter.
     ///
     /// When the count reaches zero, timeout accounting resumes for the thread.
@@ -278,7 +201,6 @@ client_request_definitions! {
         params: v2::ThreadMetadataUpdateParams,
         response: v2::ThreadMetadataUpdateResponse,
     },
-    #[experimental("thread/memoryMode/set")]
     ThreadMemoryModeSet => "thread/memoryMode/set" {
         params: v2::ThreadMemoryModeSetParams,
         response: v2::ThreadMemoryModeSetResponse,
@@ -291,7 +213,6 @@ client_request_definitions! {
         params: v2::ThreadShellCommandParams,
         response: v2::ThreadShellCommandResponse,
     },
-    #[experimental("thread/backgroundTerminals/clean")]
     ThreadBackgroundTerminalsClean => "thread/backgroundTerminals/clean" {
         params: v2::ThreadBackgroundTerminalsCleanParams,
         response: v2::ThreadBackgroundTerminalsCleanResponse,
@@ -387,39 +308,32 @@ client_request_definitions! {
     },
     TurnStart => "turn/start" {
         params: v2::TurnStartParams,
-        inspect_params: true,
         response: v2::TurnStartResponse,
     },
     TurnSteer => "turn/steer" {
         params: v2::TurnSteerParams,
-        inspect_params: true,
         response: v2::TurnSteerResponse,
     },
     TurnInterrupt => "turn/interrupt" {
         params: v2::TurnInterruptParams,
         response: v2::TurnInterruptResponse,
     },
-    #[experimental("thread/realtime/start")]
     ThreadRealtimeStart => "thread/realtime/start" {
         params: v2::ThreadRealtimeStartParams,
         response: v2::ThreadRealtimeStartResponse,
     },
-    #[experimental("thread/realtime/appendAudio")]
     ThreadRealtimeAppendAudio => "thread/realtime/appendAudio" {
         params: v2::ThreadRealtimeAppendAudioParams,
         response: v2::ThreadRealtimeAppendAudioResponse,
     },
-    #[experimental("thread/realtime/appendText")]
     ThreadRealtimeAppendText => "thread/realtime/appendText" {
         params: v2::ThreadRealtimeAppendTextParams,
         response: v2::ThreadRealtimeAppendTextResponse,
     },
-    #[experimental("thread/realtime/stop")]
     ThreadRealtimeStop => "thread/realtime/stop" {
         params: v2::ThreadRealtimeStopParams,
         response: v2::ThreadRealtimeStopResponse,
     },
-    #[experimental("thread/realtime/listVoices")]
     ThreadRealtimeListVoices => "thread/realtime/listVoices" {
         params: v2::ThreadRealtimeListVoicesParams,
         response: v2::ThreadRealtimeListVoicesResponse,
@@ -433,25 +347,10 @@ client_request_definitions! {
         params: v2::ModelListParams,
         response: v2::ModelListResponse,
     },
-    ExperimentalFeatureList => "experimentalFeature/list" {
-        params: v2::ExperimentalFeatureListParams,
-        response: v2::ExperimentalFeatureListResponse,
-    },
-    ExperimentalFeatureEnablementSet => "experimentalFeature/enablement/set" {
-        params: v2::ExperimentalFeatureEnablementSetParams,
-        response: v2::ExperimentalFeatureEnablementSetResponse,
-    },
-    #[experimental("collaborationMode/list")]
     /// Lists collaboration mode presets.
     CollaborationModeList => "collaborationMode/list" {
         params: v2::CollaborationModeListParams,
         response: v2::CollaborationModeListResponse,
-    },
-    #[experimental("mock/experimentalMethod")]
-    /// Test-only method used to validate experimental gating.
-    MockExperimentalMethod => "mock/experimentalMethod" {
-        params: v2::MockExperimentalMethodParams,
-        response: v2::MockExperimentalMethodResponse,
     },
 
     McpServerOauthLogin => "mcpServer/oauth/login" {
@@ -559,17 +458,14 @@ client_request_definitions! {
         params: FuzzyFileSearchParams,
         response: FuzzyFileSearchResponse,
     },
-    #[experimental("fuzzyFileSearch/sessionStart")]
     FuzzyFileSearchSessionStart => "fuzzyFileSearch/sessionStart" {
         params: FuzzyFileSearchSessionStartParams,
         response: FuzzyFileSearchSessionStartResponse,
     },
-    #[experimental("fuzzyFileSearch/sessionUpdate")]
     FuzzyFileSearchSessionUpdate => "fuzzyFileSearch/sessionUpdate" {
         params: FuzzyFileSearchSessionUpdateParams,
         response: FuzzyFileSearchSessionUpdateResponse,
     },
-    #[experimental("fuzzyFileSearch/sessionStop")]
     FuzzyFileSearchSessionStop => "fuzzyFileSearch/sessionStop" {
         params: FuzzyFileSearchSessionStopParams,
         response: FuzzyFileSearchSessionStopResponse,
@@ -726,7 +622,6 @@ macro_rules! server_notification_definitions {
             JsonSchema,
             TS,
             Display,
-            ExperimentalApi,
         )]
         #[allow(clippy::large_enum_variant)]
         #[serde(tag = "method", content = "params", rename_all = "camelCase")]
@@ -817,7 +712,7 @@ server_request_definitions! {
         response: v2::FileChangeRequestApprovalResponse,
     },
 
-    /// EXPERIMENTAL - Request input from the user for a tool call.
+    /// Request input from the user for a tool call.
     ToolRequestUserInput => "item/tool/requestUserInput" {
         params: v2::ToolRequestUserInputParams,
         response: v2::ToolRequestUserInputResponse,
@@ -957,11 +852,11 @@ server_notification_definitions! {
     TurnDiffUpdated => "turn/diff/updated" (v2::TurnDiffUpdatedNotification),
     TurnPlanUpdated => "turn/plan/updated" (v2::TurnPlanUpdatedNotification),
     ItemStarted => "item/started" (v2::ItemStartedNotification),
-    ItemGuardianApprovalReviewStarted => "item/autoApprovalReview/started" (v2::ItemGuardianApprovalReviewStartedNotification),
-    ItemGuardianApprovalReviewCompleted => "item/autoApprovalReview/completed" (v2::ItemGuardianApprovalReviewCompletedNotification),
+    ItemAutoApprovalReviewStarted => "item/autoApprovalReview/started" (v2::ItemAutoApprovalReviewStartedNotification),
+    ItemAutoApprovalReviewCompleted => "item/autoApprovalReview/completed" (v2::ItemAutoApprovalReviewCompletedNotification),
     ItemCompleted => "item/completed" (v2::ItemCompletedNotification),
     AgentMessageDelta => "item/agentMessage/delta" (v2::AgentMessageDeltaNotification),
-    /// EXPERIMENTAL - proposed plan streaming deltas for plan items.
+    /// proposed plan streaming deltas for plan items.
     PlanDelta => "item/plan/delta" (v2::PlanDeltaNotification),
     /// Stream base64-encoded stdout/stderr chunks for a running `command/exec` session.
     CommandExecOutputDelta => "command/exec/outputDelta" (v2::CommandExecOutputDeltaNotification),
@@ -986,21 +881,13 @@ server_notification_definitions! {
     ConfigWarning => "configWarning" (v2::ConfigWarningNotification),
     FuzzyFileSearchSessionUpdated => "fuzzyFileSearch/sessionUpdated" (FuzzyFileSearchSessionUpdatedNotification),
     FuzzyFileSearchSessionCompleted => "fuzzyFileSearch/sessionCompleted" (FuzzyFileSearchSessionCompletedNotification),
-    #[experimental("thread/realtime/started")]
     ThreadRealtimeStarted => "thread/realtime/started" (v2::ThreadRealtimeStartedNotification),
-    #[experimental("thread/realtime/itemAdded")]
     ThreadRealtimeItemAdded => "thread/realtime/itemAdded" (v2::ThreadRealtimeItemAddedNotification),
-    #[experimental("thread/realtime/transcript/delta")]
     ThreadRealtimeTranscriptDelta => "thread/realtime/transcript/delta" (v2::ThreadRealtimeTranscriptDeltaNotification),
-    #[experimental("thread/realtime/transcript/done")]
     ThreadRealtimeTranscriptDone => "thread/realtime/transcript/done" (v2::ThreadRealtimeTranscriptDoneNotification),
-    #[experimental("thread/realtime/outputAudio/delta")]
     ThreadRealtimeOutputAudioDelta => "thread/realtime/outputAudio/delta" (v2::ThreadRealtimeOutputAudioDeltaNotification),
-    #[experimental("thread/realtime/sdp")]
     ThreadRealtimeSdp => "thread/realtime/sdp" (v2::ThreadRealtimeSdpNotification),
-    #[experimental("thread/realtime/error")]
     ThreadRealtimeError => "thread/realtime/error" (v2::ThreadRealtimeErrorNotification),
-    #[experimental("thread/realtime/closed")]
     ThreadRealtimeClosed => "thread/realtime/closed" (v2::ThreadRealtimeClosedNotification),
 
     /// Notifies the user of world-writable directories on Windows, which cannot be protected by the sandbox.
@@ -1020,7 +907,6 @@ mod tests {
     use anyhow::Result;
     use lyra_protocol::ThreadId;
     use lyra_protocol::parse_command::ParsedCommand;
-    use lyra_protocol::protocol::RealtimeConversationVersion;
     use lyra_protocol::protocol::RealtimeOutputModality;
     use lyra_protocol::protocol::RealtimeVoice;
     use lyra_utils_absolute_path::AbsolutePathBuf;
@@ -1051,7 +937,6 @@ mod tests {
                     version: "0.1.0".to_string(),
                 },
                 capabilities: Some(v1::InitializeCapabilities {
-                    experimental_api: true,
                     opt_out_notification_methods: Some(vec![
                         "thread/started".to_string(),
                         "item/agentMessage/delta".to_string(),
@@ -1071,7 +956,6 @@ mod tests {
                         "version": "0.1.0"
                     },
                     "capabilities": {
-                        "experimentalApi": true,
                         "optOutNotificationMethods": [
                             "thread/started",
                             "item/agentMessage/delta"
@@ -1096,7 +980,6 @@ mod tests {
                     "version": "0.1.0"
                 },
                 "capabilities": {
-                    "experimentalApi": true,
                     "optOutNotificationMethods": [
                         "thread/started",
                         "item/agentMessage/delta"
@@ -1116,7 +999,6 @@ mod tests {
                         version: "0.1.0".to_string(),
                     },
                     capabilities: Some(v1::InitializeCapabilities {
-                        experimental_api: true,
                         opt_out_notification_methods: Some(vec![
                             "thread/started".to_string(),
                             "item/agentMessage/delta".to_string(),
@@ -1307,6 +1189,7 @@ mod tests {
                     status: v2::ThreadStatus::Idle,
                     path: None,
                     cwd: absolute_path("/tmp"),
+                    bound_project_root: None,
                     cli_version: "0.0.0".to_string(),
                     source: v2::SessionSource::Exec,
                     agent_nickname: None,
@@ -1347,6 +1230,7 @@ mod tests {
                         },
                         "path": null,
                         "cwd": absolute_path_string("tmp"),
+                        "boundProjectRoot": null,
                         "cliVersion": "0.0.0",
                         "source": "exec",
                         "agentNickname": null,
@@ -1464,26 +1348,6 @@ mod tests {
                 "params": {
                     "watchId": "watch-git",
                     "path": absolute_path_string("tmp/repo/.git")
-                }
-            }),
-            serde_json::to_value(&request)?,
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn serialize_list_experimental_features() -> Result<()> {
-        let request = ClientRequest::ExperimentalFeatureList {
-            request_id: RequestId::Integer(8),
-            params: v2::ExperimentalFeatureListParams::default(),
-        };
-        assert_eq!(
-            json!({
-                "method": "experimentalFeature/list",
-                "id": 8,
-                "params": {
-                    "cursor": null,
-                    "limit": null
                 }
             }),
             serde_json::to_value(&request)?,
@@ -1687,90 +1551,5 @@ mod tests {
             serde_json::to_value(&notification)?,
         );
         Ok(())
-    }
-
-    #[test]
-    fn mock_experimental_method_is_marked_experimental() {
-        let request = ClientRequest::MockExperimentalMethod {
-            request_id: RequestId::Integer(1),
-            params: v2::MockExperimentalMethodParams::default(),
-        };
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&request);
-        assert_eq!(reason, Some("mock/experimentalMethod"));
-    }
-    #[test]
-    fn thread_realtime_start_is_marked_experimental() {
-        let request = ClientRequest::ThreadRealtimeStart {
-            request_id: RequestId::Integer(1),
-            params: v2::ThreadRealtimeStartParams {
-                thread_id: "thr_123".to_string(),
-                output_modality: RealtimeOutputModality::Audio,
-                prompt: Some(Some("You are on a call".to_string())),
-                session_id: None,
-                transport: None,
-                voice: None,
-            },
-        };
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&request);
-        assert_eq!(reason, Some("thread/realtime/start"));
-    }
-    #[test]
-    fn thread_realtime_started_notification_is_marked_experimental() {
-        let notification =
-            ServerNotification::ThreadRealtimeStarted(v2::ThreadRealtimeStartedNotification {
-                thread_id: "thr_123".to_string(),
-                session_id: Some("sess_456".to_string()),
-                version: RealtimeConversationVersion::V1,
-            });
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&notification);
-        assert_eq!(reason, Some("thread/realtime/started"));
-    }
-
-    #[test]
-    fn thread_realtime_output_audio_delta_notification_is_marked_experimental() {
-        let notification = ServerNotification::ThreadRealtimeOutputAudioDelta(
-            v2::ThreadRealtimeOutputAudioDeltaNotification {
-                thread_id: "thr_123".to_string(),
-                audio: v2::ThreadRealtimeAudioChunk {
-                    data: "AQID".to_string(),
-                    sample_rate: 24_000,
-                    num_channels: 1,
-                    samples_per_channel: Some(512),
-                    item_id: None,
-                },
-            },
-        );
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&notification);
-        assert_eq!(reason, Some("thread/realtime/outputAudio/delta"));
-    }
-
-    #[test]
-    fn command_execution_request_approval_additional_permissions_is_marked_experimental() {
-        let params = v2::CommandExecutionRequestApprovalParams {
-            thread_id: "thr_123".to_string(),
-            turn_id: "turn_123".to_string(),
-            item_id: "call_123".to_string(),
-            approval_id: None,
-            reason: None,
-            network_approval_context: None,
-            command: Some("cat file".to_string()),
-            cwd: None,
-            command_actions: None,
-            additional_permissions: Some(v2::AdditionalPermissionProfile {
-                network: None,
-                file_system: Some(v2::AdditionalFileSystemPermissions {
-                    read: Some(vec![absolute_path("/tmp/allowed")]),
-                    write: None,
-                }),
-            }),
-            proposed_execpolicy_amendment: None,
-            proposed_network_policy_amendments: None,
-            available_decisions: None,
-        };
-        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&params);
-        assert_eq!(
-            reason,
-            Some("item/commandExecution/requestApproval.additionalPermissions")
-        );
     }
 }

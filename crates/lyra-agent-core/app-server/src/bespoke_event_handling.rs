@@ -103,14 +103,14 @@ use lyra_app_server_protocol::TurnPlanUpdatedNotification;
 use lyra_app_server_protocol::TurnStartedNotification;
 use lyra_app_server_protocol::TurnStatus;
 use lyra_app_server_protocol::WarningNotification;
+use lyra_app_server_protocol::auto_review_auto_approval_review_notification;
 use lyra_app_server_protocol::build_command_execution_end_item;
 use lyra_app_server_protocol::build_file_change_approval_request_item;
 use lyra_app_server_protocol::build_file_change_begin_item;
 use lyra_app_server_protocol::build_file_change_end_item;
-use lyra_app_server_protocol::build_item_from_guardian_event;
+use lyra_app_server_protocol::build_item_from_auto_review_event;
 use lyra_app_server_protocol::build_turns_from_rollout_items;
 use lyra_app_server_protocol::convert_patch_changes;
-use lyra_app_server_protocol::guardian_auto_approval_review_notification;
 use lyra_core::LyraThread;
 use lyra_core::ThreadManager;
 use lyra_core::find_thread_name_by_id;
@@ -286,9 +286,9 @@ pub(crate) async fn apply_bespoke_event_handling(
                     .await;
             }
         }
-        EventMsg::GuardianAssessment(assessment) => {
+        EventMsg::AutoReviewAssessment(assessment) => {
             if let ApiVersion::V2 = api_version {
-                let pending_command_execution = match build_item_from_guardian_event(
+                let pending_command_execution = match build_item_from_auto_review_event(
                     &assessment,
                     CommandExecutionStatus::InProgress,
                 ) {
@@ -314,7 +314,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                     assessment.turn_id.clone()
                 };
                 if assessment.status
-                    == lyra_protocol::protocol::GuardianAssessmentStatus::InProgress
+                    == lyra_protocol::protocol::AutoReviewAssessmentStatus::InProgress
                     && let Some((target_item_id, completion_item)) =
                         pending_command_execution.as_ref()
                 {
@@ -331,22 +331,22 @@ pub(crate) async fn apply_bespoke_event_handling(
                     )
                     .await;
                 }
-                let notification = guardian_auto_approval_review_notification(
+                let notification = auto_review_auto_approval_review_notification(
                     &conversation_id,
                     &event_turn_id,
                     &assessment,
                 );
                 outgoing.send_server_notification(notification).await;
                 let completion_status = match assessment.status {
-                    lyra_protocol::protocol::GuardianAssessmentStatus::Denied
-                    | lyra_protocol::protocol::GuardianAssessmentStatus::Aborted => {
+                    lyra_protocol::protocol::AutoReviewAssessmentStatus::Denied
+                    | lyra_protocol::protocol::AutoReviewAssessmentStatus::Aborted => {
                         Some(CommandExecutionStatus::Declined)
                     }
-                    lyra_protocol::protocol::GuardianAssessmentStatus::TimedOut => {
+                    lyra_protocol::protocol::AutoReviewAssessmentStatus::TimedOut => {
                         Some(CommandExecutionStatus::Failed)
                     }
-                    lyra_protocol::protocol::GuardianAssessmentStatus::InProgress
-                    | lyra_protocol::protocol::GuardianAssessmentStatus::Approved => None,
+                    lyra_protocol::protocol::AutoReviewAssessmentStatus::InProgress
+                    | lyra_protocol::protocol::AutoReviewAssessmentStatus::Approved => None,
                 };
                 if let Some(completion_status) = completion_status
                     && let Some((target_item_id, completion_item)) = pending_command_execution
@@ -908,10 +908,15 @@ pub(crate) async fn apply_bespoke_event_handling(
                     .note_permission_requested(&conversation_id.to_string())
                     .await;
                 let requested_permissions = request.permissions.clone();
+                let request_cwd = match request.cwd.clone() {
+                    Some(cwd) => cwd,
+                    None => conversation.config_snapshot().await.cwd,
+                };
                 let params = PermissionsRequestApprovalParams {
                     thread_id: conversation_id.to_string(),
                     turn_id: request.turn_id.clone(),
                     item_id: request.call_id.clone(),
+                    cwd: request_cwd.clone(),
                     reason: request.reason,
                     permissions: request.permissions.into(),
                 };
@@ -922,6 +927,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                     on_request_permissions_response(
                         request.call_id,
                         requested_permissions,
+                        request_cwd,
                         pending_request_id,
                         rx,
                         conversation,
@@ -938,6 +944,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                 let empty = CoreRequestPermissionsResponse {
                     permissions: Default::default(),
                     scope: CorePermissionGrantScope::Turn,
+                    strict_auto_review: false,
                 };
                 if let Err(err) = conversation
                     .submit(Op::RequestPermissionsResponse {
@@ -1874,7 +1881,8 @@ pub(crate) async fn apply_bespoke_event_handling(
                 state.pending_rollbacks.take()
             };
 
-            if let Some(request_id) = pending {
+            if let Some(pending_rollback) = pending {
+                let request_id = pending_rollback.request_id;
                 let Some(rollout_path) = conversation.rollout_path() else {
                     let error = JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
@@ -1909,7 +1917,11 @@ pub(crate) async fn apply_bespoke_event_handling(
                                         );
                                     }
                                 }
-                                ThreadRollbackResponse { thread }
+                                ThreadRollbackResponse {
+                                    thread,
+                                    restored_input: pending_rollback.restored_input.clone(),
+                                    reverted_files: pending_rollback.reverted_files.clone(),
+                                }
                             }
                             Err(err) => {
                                 let error = JSONRPCErrorError {
@@ -2295,10 +2307,10 @@ async fn handle_thread_rollback_failed(
 ) {
     let pending_rollback = thread_state.lock().await.pending_rollbacks.take();
 
-    if let Some(request_id) = pending_rollback {
+    if let Some(pending_rollback) = pending_rollback {
         outgoing
             .send_error(
-                request_id,
+                pending_rollback.request_id,
                 JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
                     message: message.clone(),
@@ -2590,6 +2602,7 @@ fn mcp_server_elicitation_response_from_client_result(
 async fn on_request_permissions_response(
     call_id: String,
     requested_permissions: CoreRequestPermissionProfile,
+    request_cwd: AbsolutePathBuf,
     pending_request_id: RequestId,
     receiver: oneshot::Receiver<ClientRequestResult>,
     conversation: Arc<LyraThread>,
@@ -2599,9 +2612,11 @@ async fn on_request_permissions_response(
     let response = receiver.await;
     resolve_server_request_on_thread_listener(&thread_state, pending_request_id).await;
     drop(request_permissions_guard);
-    let Some(response) =
-        request_permissions_response_from_client_result(requested_permissions, response)
-    else {
+    let Some(response) = request_permissions_response_from_client_result(
+        requested_permissions,
+        response,
+        request_cwd.as_path(),
+    ) else {
         return;
     };
 
@@ -2619,6 +2634,7 @@ async fn on_request_permissions_response(
 fn request_permissions_response_from_client_result(
     requested_permissions: CoreRequestPermissionProfile,
     response: std::result::Result<ClientRequestResult, oneshot::error::RecvError>,
+    _cwd: &std::path::Path,
 ) -> Option<CoreRequestPermissionsResponse> {
     let value = match response {
         Ok(Ok(value)) => value,
@@ -2628,6 +2644,7 @@ fn request_permissions_response_from_client_result(
             return Some(CoreRequestPermissionsResponse {
                 permissions: Default::default(),
                 scope: CorePermissionGrantScope::Turn,
+                strict_auto_review: false,
             });
         }
         Err(err) => {
@@ -2635,6 +2652,7 @@ fn request_permissions_response_from_client_result(
             return Some(CoreRequestPermissionsResponse {
                 permissions: Default::default(),
                 scope: CorePermissionGrantScope::Turn,
+                strict_auto_review: false,
             });
         }
     };
@@ -2645,8 +2663,23 @@ fn request_permissions_response_from_client_result(
             PermissionsRequestApprovalResponse {
                 permissions: V2GrantedPermissionProfile::default(),
                 scope: lyra_app_server_protocol::PermissionGrantScope::Turn,
+                strict_auto_review: None,
             }
         });
+    let strict_auto_review = response.strict_auto_review.unwrap_or(false);
+    if strict_auto_review
+        && matches!(
+            response.scope,
+            lyra_app_server_protocol::PermissionGrantScope::Session
+        )
+    {
+        error!("strict auto review is only supported for turn-scoped permission grants");
+        return Some(CoreRequestPermissionsResponse {
+            permissions: Default::default(),
+            scope: CorePermissionGrantScope::Turn,
+            strict_auto_review: false,
+        });
+    }
     Some(CoreRequestPermissionsResponse {
         permissions: intersect_permission_profiles(
             requested_permissions.into(),
@@ -2654,6 +2687,7 @@ fn request_permissions_response_from_client_result(
         )
         .into(),
         scope: response.scope.to_core(),
+        strict_auto_review,
     })
 }
 
@@ -3014,8 +3048,8 @@ mod tests {
     use anyhow::Result;
     use anyhow::anyhow;
     use anyhow::bail;
+    use lyra_app_server_protocol::AutoApprovalReviewStatus;
     use lyra_app_server_protocol::AutoReviewDecisionSource;
-    use lyra_app_server_protocol::GuardianApprovalReviewStatus;
     use lyra_app_server_protocol::JSONRPCErrorError;
     use lyra_app_server_protocol::TurnPlanStepStatus;
     use lyra_protocol::items::HookPromptFragment;
@@ -3025,10 +3059,10 @@ mod tests {
     use lyra_protocol::models::NetworkPermissions as CoreNetworkPermissions;
     use lyra_protocol::plan_tool::PlanItemArg;
     use lyra_protocol::plan_tool::StepStatus;
+    use lyra_protocol::protocol::AutoReviewAssessmentEvent;
     use lyra_protocol::protocol::CollabResumeBeginEvent;
     use lyra_protocol::protocol::CollabResumeEndEvent;
     use lyra_protocol::protocol::CreditsSnapshot;
-    use lyra_protocol::protocol::GuardianAssessmentEvent;
     use lyra_protocol::protocol::McpInvocation;
     use lyra_protocol::protocol::RateLimitSnapshot;
     use lyra_protocol::protocol::RateLimitWindow;
@@ -3093,21 +3127,21 @@ mod tests {
     }
 
     #[test]
-    fn guardian_assessment_started_uses_event_turn_id_fallback() {
+    fn auto_review_assessment_started_uses_event_turn_id_fallback() {
         let conversation_id = ThreadId::new();
-        let action = lyra_protocol::protocol::GuardianAssessmentAction::Command {
-            source: lyra_protocol::protocol::GuardianCommandSource::Shell,
+        let action = lyra_protocol::protocol::AutoReviewAssessmentAction::Command {
+            source: lyra_protocol::protocol::AutoReviewCommandSource::Shell,
             command: "rm -rf /tmp/example.sqlite".to_string(),
             cwd: test_path_buf("/tmp").abs(),
         };
-        let notification = guardian_auto_approval_review_notification(
+        let notification = auto_review_auto_approval_review_notification(
             &conversation_id,
             "turn-from-event",
-            &GuardianAssessmentEvent {
+            &AutoReviewAssessmentEvent {
                 id: "review-1".to_string(),
                 target_item_id: Some("item-1".to_string()),
                 turn_id: String::new(),
-                status: lyra_protocol::protocol::GuardianAssessmentStatus::InProgress,
+                status: lyra_protocol::protocol::AutoReviewAssessmentStatus::InProgress,
                 risk_level: None,
                 user_authorization: None,
                 rationale: None,
@@ -3117,15 +3151,12 @@ mod tests {
         );
 
         match notification {
-            ServerNotification::ItemGuardianApprovalReviewStarted(payload) => {
+            ServerNotification::ItemAutoApprovalReviewStarted(payload) => {
                 assert_eq!(payload.thread_id, conversation_id.to_string());
                 assert_eq!(payload.turn_id, "turn-from-event");
                 assert_eq!(payload.review_id, "review-1");
                 assert_eq!(payload.target_item_id.as_deref(), Some("item-1"));
-                assert_eq!(
-                    payload.review.status,
-                    GuardianApprovalReviewStatus::InProgress
-                );
+                assert_eq!(payload.review.status, AutoApprovalReviewStatus::InProgress);
                 assert_eq!(payload.review.risk_level, None);
                 assert_eq!(payload.review.user_authorization, None);
                 assert_eq!(payload.review.rationale, None);
@@ -3136,46 +3167,46 @@ mod tests {
     }
 
     #[test]
-    fn guardian_assessment_completed_emits_review_payload() {
+    fn auto_review_assessment_completed_emits_review_payload() {
         let conversation_id = ThreadId::new();
-        let action = lyra_protocol::protocol::GuardianAssessmentAction::Command {
-            source: lyra_protocol::protocol::GuardianCommandSource::Shell,
+        let action = lyra_protocol::protocol::AutoReviewAssessmentAction::Command {
+            source: lyra_protocol::protocol::AutoReviewCommandSource::Shell,
             command: "rm -rf /tmp/example.sqlite".to_string(),
             cwd: test_path_buf("/tmp").abs(),
         };
-        let notification = guardian_auto_approval_review_notification(
+        let notification = auto_review_auto_approval_review_notification(
             &conversation_id,
             "turn-from-event",
-            &GuardianAssessmentEvent {
+            &AutoReviewAssessmentEvent {
                 id: "review-2".to_string(),
                 target_item_id: Some("item-2".to_string()),
                 turn_id: "turn-from-assessment".to_string(),
-                status: lyra_protocol::protocol::GuardianAssessmentStatus::Denied,
-                risk_level: Some(lyra_protocol::protocol::GuardianRiskLevel::High),
-                user_authorization: Some(lyra_protocol::protocol::GuardianUserAuthorization::Low),
+                status: lyra_protocol::protocol::AutoReviewAssessmentStatus::Denied,
+                risk_level: Some(lyra_protocol::protocol::AutoReviewRiskLevel::High),
+                user_authorization: Some(lyra_protocol::protocol::AutoReviewUserAuthorization::Low),
                 rationale: Some("too risky".to_string()),
                 decision_source: Some(
-                    lyra_protocol::protocol::GuardianAssessmentDecisionSource::Agent,
+                    lyra_protocol::protocol::AutoReviewAssessmentDecisionSource::Agent,
                 ),
                 action: action.clone(),
             },
         );
 
         match notification {
-            ServerNotification::ItemGuardianApprovalReviewCompleted(payload) => {
+            ServerNotification::ItemAutoApprovalReviewCompleted(payload) => {
                 assert_eq!(payload.thread_id, conversation_id.to_string());
                 assert_eq!(payload.turn_id, "turn-from-assessment");
                 assert_eq!(payload.review_id, "review-2");
                 assert_eq!(payload.target_item_id.as_deref(), Some("item-2"));
                 assert_eq!(payload.decision_source, AutoReviewDecisionSource::Agent);
-                assert_eq!(payload.review.status, GuardianApprovalReviewStatus::Denied);
+                assert_eq!(payload.review.status, AutoApprovalReviewStatus::Denied);
                 assert_eq!(
                     payload.review.risk_level,
-                    Some(lyra_app_server_protocol::GuardianRiskLevel::High)
+                    Some(lyra_app_server_protocol::AutoReviewRiskLevel::High)
                 );
                 assert_eq!(
                     payload.review.user_authorization,
-                    Some(lyra_app_server_protocol::GuardianUserAuthorization::Low)
+                    Some(lyra_app_server_protocol::AutoReviewUserAuthorization::Low)
                 );
                 assert_eq!(payload.review.rationale.as_deref(), Some("too risky"));
                 assert_eq!(payload.action, action.into());
@@ -3185,40 +3216,40 @@ mod tests {
     }
 
     #[test]
-    fn guardian_assessment_aborted_emits_completed_review_payload() {
+    fn auto_review_assessment_aborted_emits_completed_review_payload() {
         let conversation_id = ThreadId::new();
-        let action = lyra_protocol::protocol::GuardianAssessmentAction::NetworkAccess {
+        let action = lyra_protocol::protocol::AutoReviewAssessmentAction::NetworkAccess {
             target: "api.example.test:443".to_string(),
             host: "api.example.test".to_string(),
             protocol: lyra_protocol::protocol::NetworkApprovalProtocol::Https,
             port: 443,
         };
-        let notification = guardian_auto_approval_review_notification(
+        let notification = auto_review_auto_approval_review_notification(
             &conversation_id,
             "turn-from-event",
-            &GuardianAssessmentEvent {
+            &AutoReviewAssessmentEvent {
                 id: "review-3".to_string(),
                 target_item_id: None,
                 turn_id: "turn-from-assessment".to_string(),
-                status: lyra_protocol::protocol::GuardianAssessmentStatus::Aborted,
+                status: lyra_protocol::protocol::AutoReviewAssessmentStatus::Aborted,
                 risk_level: None,
                 user_authorization: None,
                 rationale: None,
                 decision_source: Some(
-                    lyra_protocol::protocol::GuardianAssessmentDecisionSource::Agent,
+                    lyra_protocol::protocol::AutoReviewAssessmentDecisionSource::Agent,
                 ),
                 action: action.clone(),
             },
         );
 
         match notification {
-            ServerNotification::ItemGuardianApprovalReviewCompleted(payload) => {
+            ServerNotification::ItemAutoApprovalReviewCompleted(payload) => {
                 assert_eq!(payload.thread_id, conversation_id.to_string());
                 assert_eq!(payload.turn_id, "turn-from-assessment");
                 assert_eq!(payload.review_id, "review-3");
                 assert_eq!(payload.target_item_id, None);
                 assert_eq!(payload.decision_source, AutoReviewDecisionSource::Agent);
-                assert_eq!(payload.review.status, GuardianApprovalReviewStatus::Aborted);
+                assert_eq!(payload.review.status, AutoApprovalReviewStatus::Aborted);
                 assert_eq!(payload.review.risk_level, None);
                 assert_eq!(payload.review.user_authorization, None);
                 assert_eq!(payload.review.rationale, None);
@@ -3411,6 +3442,7 @@ mod tests {
         let response = request_permissions_response_from_client_result(
             CoreRequestPermissionProfile::default(),
             Ok(Err(error)),
+            test_path_buf("/tmp").abs().as_path(),
         );
 
         assert_eq!(response, None);
@@ -3503,6 +3535,7 @@ mod tests {
                 Ok(Ok(serde_json::json!({
                     "permissions": granted_permissions,
                 }))),
+                test_path_buf("/tmp").abs().as_path(),
             )
             .expect("response should be accepted");
 
@@ -3511,6 +3544,7 @@ mod tests {
                 CoreRequestPermissionsResponse {
                     permissions: expected_permissions,
                     scope: CorePermissionGrantScope::Turn,
+                    strict_auto_review: false,
                 }
             );
         }
@@ -3524,6 +3558,7 @@ mod tests {
                 "scope": "session",
                 "permissions": {},
             }))),
+            test_path_buf("/tmp").abs().as_path(),
         )
         .expect("response should be accepted");
 
@@ -3532,6 +3567,7 @@ mod tests {
             CoreRequestPermissionsResponse {
                 permissions: CoreRequestPermissionProfile::default(),
                 scope: CorePermissionGrantScope::Session,
+                strict_auto_review: false,
             }
         );
     }

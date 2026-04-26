@@ -238,7 +238,7 @@ pub const DEFAULT_IMAGE_DETAIL: ImageDetail = ImageDetail::High;
 /// Classifies an assistant message as interim commentary or final answer text.
 ///
 /// Providers do not emit this consistently, so callers must treat `None` as
-/// "phase unknown" and keep compatibility behavior for legacy models.
+/// "phase unknown" and keep compatibility behavior for base models.
 pub enum MessagePhase {
     /// Mid-turn assistant text (for example preamble/progress narration).
     ///
@@ -506,7 +506,7 @@ impl DeveloperInstructions {
             ),
         };
 
-        let text = if approvals_reviewer == ApprovalsReviewer::GuardianSubagent
+        let text = if approvals_reviewer == ApprovalsReviewer::AutoReview
             && approval_policy != AskForApproval::Never
         {
             format!("{text}\n\n{AUTO_REVIEW_APPROVAL_SUFFIX}")
@@ -551,13 +551,6 @@ impl DeveloperInstructions {
             "{REALTIME_CONVERSATION_OPEN_TAG}\n{}\n\nReason: {reason}\n{REALTIME_CONVERSATION_CLOSE_TAG}",
             REALTIME_END_INSTRUCTIONS.trim()
         ))
-    }
-
-    pub fn personality_spec_message(spec: String) -> Self {
-        let message = format!(
-            "<personality_spec> The user has requested a new communication style. Future messages should adhere to the following personality: \n{spec} </personality_spec>"
-        );
-        DeveloperInstructions::new(message)
     }
 
     pub fn from_policy(
@@ -1949,10 +1942,10 @@ mod tests {
     }
 
     #[test]
-    fn guardian_subagent_approvals_append_guardian_specific_guidance() {
+    fn auto_review_approvals_append_auto_review_guidance() {
         let text = DeveloperInstructions::from(
             AskForApproval::OnRequest,
-            ApprovalsReviewer::GuardianSubagent,
+            ApprovalsReviewer::AutoReview,
             &Policy::empty(),
             /*exec_permission_approvals_enabled*/ false,
             /*request_permissions_tool_enabled*/ false,
@@ -1960,15 +1953,14 @@ mod tests {
         .into_text();
 
         assert!(text.contains("`approvals_reviewer` is `auto_review`"));
-        assert!(!text.contains("`approvals_reviewer` is `guardian_subagent`"));
         assert!(text.contains("materially safer alternative"));
     }
 
     #[test]
-    fn guardian_subagent_approvals_omit_guardian_specific_guidance_when_approval_is_never() {
+    fn auto_review_approvals_omit_auto_review_guidance_when_approval_is_never() {
         let text = DeveloperInstructions::from(
             AskForApproval::Never,
-            ApprovalsReviewer::GuardianSubagent,
+            ApprovalsReviewer::AutoReview,
             &Policy::empty(),
             /*exec_permission_approvals_enabled*/ false,
             /*request_permissions_tool_enabled*/ false,
@@ -1976,7 +1968,6 @@ mod tests {
         .into_text();
 
         assert!(!text.contains("`approvals_reviewer` is `auto_review`"));
-        assert!(!text.contains("`approvals_reviewer` is `guardian_subagent`"));
     }
 
     fn granular_categories_section(title: &str, categories: &[&str]) -> String {

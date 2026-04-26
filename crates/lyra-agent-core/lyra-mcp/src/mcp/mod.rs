@@ -116,7 +116,7 @@ pub struct McpConfig {
     /// Optional path to `lyra-linux-sandbox` for sandboxed MCP tool execution.
     pub lyra_linux_sandbox_exe: Option<PathBuf>,
     /// Whether to use legacy Landlock behavior in the MCP sandbox state.
-    pub use_legacy_landlock: bool,
+    pub use_classic_landlock: bool,
     /// Whether app-style MCP integrations are enabled by config.
     pub apps_enabled: bool,
     /// User-configured and plugin-provided MCP servers keyed by server name.

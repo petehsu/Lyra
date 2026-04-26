@@ -20,6 +20,7 @@ SELECT
     threads.model,
     threads.reasoning_effort,
     threads.cwd,
+    threads.bound_project_root,
     threads.cli_version,
     threads.title,
     threads.sandbox_policy,
@@ -73,6 +74,7 @@ ORDER BY position ASC
             let input_schema: String = row.try_get("input_schema")?;
             let input_schema = serde_json::from_str::<Value>(input_schema.as_str())?;
             tools.push(DynamicToolSpec {
+                namespace: None,
                 name: row.try_get("name")?,
                 description: row.try_get("description")?,
                 input_schema,
@@ -470,6 +472,7 @@ INSERT INTO threads (
     model,
     reasoning_effort,
     cwd,
+    bound_project_root,
     cli_version,
     title,
     sandbox_policy,
@@ -482,7 +485,7 @@ INSERT INTO threads (
     git_branch,
     git_origin_url,
     memory_mode
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO NOTHING
             "#,
         )
@@ -505,6 +508,12 @@ ON CONFLICT(id) DO NOTHING
                 .map(crate::extract::enum_to_string),
         )
         .bind(metadata.cwd.display().to_string())
+        .bind(
+            metadata
+                .bound_project_root
+                .as_ref()
+                .map(|path| path.display().to_string()),
+        )
         .bind(metadata.cli_version.as_str())
         .bind(metadata.title.as_str())
         .bind(metadata.sandbox_policy.as_str())
@@ -641,6 +650,31 @@ WHERE id = ?
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn update_thread_bound_project_root(
+        &self,
+        thread_id: ThreadId,
+        bound_project_root: Option<Option<&Path>>,
+    ) -> anyhow::Result<bool> {
+        let result = sqlx::query(
+            r#"
+UPDATE threads
+SET
+    bound_project_root = CASE WHEN ? THEN ? ELSE bound_project_root END
+WHERE id = ?
+            "#,
+        )
+        .bind(bound_project_root.is_some())
+        .bind(
+            bound_project_root
+                .flatten()
+                .map(|path| path.display().to_string()),
+        )
+        .bind(thread_id.to_string())
+        .execute(self.pool.as_ref())
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn upsert_thread_with_creation_memory_mode(
         &self,
         metadata: &crate::ThreadMetadata,
@@ -664,6 +698,7 @@ INSERT INTO threads (
     model,
     reasoning_effort,
     cwd,
+    bound_project_root,
     cli_version,
     title,
     sandbox_policy,
@@ -676,7 +711,7 @@ INSERT INTO threads (
     git_branch,
     git_origin_url,
     memory_mode
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     rollout_path = excluded.rollout_path,
     created_at = excluded.created_at,
@@ -691,6 +726,10 @@ ON CONFLICT(id) DO UPDATE SET
     model = excluded.model,
     reasoning_effort = excluded.reasoning_effort,
     cwd = excluded.cwd,
+    bound_project_root = CASE
+        WHEN excluded.bound_project_root IS NOT NULL THEN excluded.bound_project_root
+        ELSE threads.bound_project_root
+    END,
     cli_version = excluded.cli_version,
     title = excluded.title,
     sandbox_policy = excluded.sandbox_policy,
@@ -723,6 +762,12 @@ ON CONFLICT(id) DO UPDATE SET
                 .map(crate::extract::enum_to_string),
         )
         .bind(metadata.cwd.display().to_string())
+        .bind(
+            metadata
+                .bound_project_root
+                .as_ref()
+                .map(|path| path.display().to_string()),
+        )
         .bind(metadata.cli_version.as_str())
         .bind(metadata.title.as_str())
         .bind(metadata.sandbox_policy.as_str())

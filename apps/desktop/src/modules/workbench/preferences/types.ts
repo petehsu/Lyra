@@ -25,6 +25,7 @@ export type WorkbenchSearchResultsSourceFilter = "all" | "web" | "local";
 export type WorkbenchOmniboxNonBrowserSubmitTarget = "new_tab" | "replace_active_tab";
 export type WorkbenchBrowserAutomationEngine = "lyra_direct" | "browser_use" | "smart";
 export type WorkbenchLyraDirectMicroExecutorBudget = "1-2" | "3-5" | "6-8";
+export type WorkbenchAiStopBehavior = "turn_only" | "turn_and_background";
 
 export type WorkbenchPreferences = {
   readonly locale: WorkbenchLocale;
@@ -34,6 +35,9 @@ export type WorkbenchPreferences = {
   readonly splitThreePaneLayout: WorkbenchSplitThreePaneLayout;
   readonly splitOverflowPolicy: WorkbenchSplitOverflowPolicy;
   readonly aiRichRenderingEnabled: boolean;
+  readonly aiStopBehavior: WorkbenchAiStopBehavior;
+  readonly preventSleepEnabled: boolean;
+  readonly forceWebPageThemingEnabled: boolean;
   readonly searchScopePreset: SearchLocalScopePreset;
   readonly searchCustomRoots: readonly string[];
   readonly searchEnableFuzzy: boolean;
@@ -63,6 +67,9 @@ export type WorkbenchPreferencesModel = {
   readonly setSplitThreePaneLayout: (layout: WorkbenchSplitThreePaneLayout) => void;
   readonly setSplitOverflowPolicy: (policy: WorkbenchSplitOverflowPolicy) => void;
   readonly setAiRichRenderingEnabled: (enabled: boolean) => void;
+  readonly setAiStopBehavior: (value: WorkbenchAiStopBehavior) => void;
+  readonly setPreventSleepEnabled: (enabled: boolean) => void;
+  readonly setForceWebPageThemingEnabled: (enabled: boolean) => void;
   readonly setSearchScopePreset: (value: SearchLocalScopePreset) => void;
   readonly setSearchCustomRoots: (value: readonly string[]) => void;
   readonly setSearchEnableFuzzy: (value: boolean) => void;

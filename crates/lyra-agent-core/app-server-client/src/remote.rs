@@ -63,7 +63,6 @@ pub struct RemoteAppServerConnectArgs {
     pub auth_token: Option<String>,
     pub client_name: String,
     pub client_version: String,
-    pub experimental_api: bool,
     pub opt_out_notification_methods: Vec<String>,
     pub channel_capacity: usize,
 }
@@ -71,7 +70,6 @@ pub struct RemoteAppServerConnectArgs {
 impl RemoteAppServerConnectArgs {
     fn initialize_params(&self) -> InitializeParams {
         let capabilities = InitializeCapabilities {
-            experimental_api: self.experimental_api,
             opt_out_notification_methods: if self.opt_out_notification_methods.is_empty() {
                 None
             } else {

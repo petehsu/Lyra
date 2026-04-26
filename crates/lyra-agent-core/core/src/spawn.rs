@@ -9,14 +9,12 @@ use tracing::trace;
 
 use lyra_protocol::permissions::NetworkSandboxPolicy;
 
-/// Experimental environment variable that will be set to some non-empty value
+/// Environment variable that will be set to some non-empty value
 /// if both of the following are true:
 ///
 /// 1. The process was spawned by Lyra as part of a shell tool call.
 /// 2. NetworkSandboxPolicy is restricted for the tool call.
 ///
-/// We may try to have just one environment variable for all sandboxing
-/// attributes, so this may change in the future.
 pub const LYRA_SANDBOX_NETWORK_DISABLED_ENV_VAR: &str = "LYRA_SANDBOX_NETWORK_DISABLED";
 
 /// Should be set when the process is spawned under a sandbox. Currently, the

@@ -32,6 +32,95 @@
       ],
       "type": "object"
     },
+    "LyraAiModelRuntimeMetadata": {
+      "properties": {
+        "applyPatchToolType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contextWindow": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "effectiveContextWindowPercent": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "inputModalities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "maxContextWindow": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "shellType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "supportVerbosity": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supportedTools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "supportsImageDetailOriginal": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supportsParallelToolCalls": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supportsReasoningSummaries": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "supportsSearchTool": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "webSearchToolType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "LyraAiProviderModelEntry": {
       "properties": {
         "contextWindow": {
@@ -53,6 +142,16 @@
         },
         "name": {
           "type": "string"
+        },
+        "runtimeMetadata": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LyraAiModelRuntimeMetadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "source": {
           "type": "string"

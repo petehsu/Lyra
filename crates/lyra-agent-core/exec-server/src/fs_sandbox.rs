@@ -97,7 +97,7 @@ impl FileSystemSandboxRunner {
             env: self.helper_env.clone(),
             additional_permissions: self.helper_permissions(
                 sandbox_context.additional_permissions.as_ref(),
-                /*include_helper_read_root*/ !sandbox_context.use_legacy_landlock,
+                /*include_helper_read_root*/ !sandbox_context.use_classic_landlock,
             ),
         };
         sandbox_manager
@@ -111,7 +111,7 @@ impl FileSystemSandboxRunner {
                 network: None,
                 sandbox_policy_cwd: cwd.as_path(),
                 lyra_linux_sandbox_exe: self.runtime_paths.lyra_linux_sandbox_exe.as_deref(),
-                use_legacy_landlock: sandbox_context.use_legacy_landlock,
+                use_classic_landlock: sandbox_context.use_classic_landlock,
                 windows_sandbox_level: sandbox_context.windows_sandbox_level,
                 windows_sandbox_private_desktop: sandbox_context.windows_sandbox_private_desktop,
             })
@@ -173,7 +173,7 @@ fn helper_sandbox_inputs(
         .file_system_sandbox_policy
         .clone()
         .unwrap_or_else(|| {
-            FileSystemSandboxPolicy::from_legacy_sandbox_policy(&sandbox_policy, cwd.as_path())
+            FileSystemSandboxPolicy::from_sandbox_policy(&sandbox_policy, cwd.as_path())
         });
     Ok(HelperSandboxInputs {
         sandbox_policy,
@@ -442,7 +442,7 @@ mod tests {
             .expect("absolute temp dir");
         let sandbox_policy = SandboxPolicy::new_workspace_write_policy();
         let file_system_policy =
-            lyra_protocol::permissions::FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+            lyra_protocol::permissions::FileSystemSandboxPolicy::from_sandbox_policy(
                 &sandbox_policy,
                 cwd.as_path(),
             );
@@ -464,7 +464,7 @@ mod tests {
             .expect("absolute temp dir");
         let sandbox_policy = SandboxPolicy::new_workspace_write_policy();
         let file_system_policy =
-            lyra_protocol::permissions::FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+            lyra_protocol::permissions::FileSystemSandboxPolicy::from_sandbox_policy(
                 &sandbox_policy,
                 cwd.as_path(),
             );
@@ -606,7 +606,7 @@ mod tests {
         let cwd = AbsolutePathBuf::current_dir().expect("cwd");
         let sandbox_policy = SandboxPolicy::new_workspace_write_policy();
         let file_system_policy =
-            FileSystemSandboxPolicy::from_legacy_sandbox_policy(&sandbox_policy, cwd.as_path());
+            FileSystemSandboxPolicy::from_sandbox_policy(&sandbox_policy, cwd.as_path());
         let sandbox_context = crate::FileSystemSandboxContext::new(sandbox_policy.clone());
 
         let request = runner
@@ -653,7 +653,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_landlock_helper_permissions_do_not_add_helper_read_root() {
+    fn classic_landlock_helper_permissions_do_not_add_helper_read_root() {
         let lyra_self_exe = std::env::current_exe().expect("current exe");
         let runtime_paths =
             ExecServerRuntimePaths::new(lyra_self_exe, /*lyra_linux_sandbox_exe*/ None)

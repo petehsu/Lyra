@@ -1,10 +1,20 @@
 use super::*;
 use crate::ModelsManagerConfig;
+use crate::runtime_metadata::model_info_for_provider_protocol;
 use pretty_assertions::assert_eq;
+
+fn test_model() -> ModelInfo {
+    model_info_for_provider_protocol(
+        Some("custom_openai_compatible"),
+        Some("custom_chat_completions"),
+        "test-model",
+    )
+    .expect("supported provider baseline")
+}
 
 #[test]
 fn reasoning_summaries_override_true_enables_support() {
-    let model = model_info_from_slug("unknown-model");
+    let model = test_model();
     let config = ModelsManagerConfig {
         model_supports_reasoning_summaries: Some(true),
         ..Default::default()
@@ -19,7 +29,7 @@ fn reasoning_summaries_override_true_enables_support() {
 
 #[test]
 fn reasoning_summaries_override_false_does_not_disable_support() {
-    let mut model = model_info_from_slug("unknown-model");
+    let mut model = test_model();
     model.supports_reasoning_summaries = true;
     let config = ModelsManagerConfig {
         model_supports_reasoning_summaries: Some(false),
@@ -33,7 +43,7 @@ fn reasoning_summaries_override_false_does_not_disable_support() {
 
 #[test]
 fn reasoning_summaries_override_false_is_noop_when_model_is_false() {
-    let model = model_info_from_slug("unknown-model");
+    let model = test_model();
     let config = ModelsManagerConfig {
         model_supports_reasoning_summaries: Some(false),
         ..Default::default()
@@ -46,7 +56,7 @@ fn reasoning_summaries_override_false_is_noop_when_model_is_false() {
 
 #[test]
 fn model_context_window_override_clamps_to_max_context_window() {
-    let mut model = model_info_from_slug("unknown-model");
+    let mut model = test_model();
     model.context_window = Some(273_000);
     model.max_context_window = Some(400_000);
     let config = ModelsManagerConfig {
@@ -63,7 +73,7 @@ fn model_context_window_override_clamps_to_max_context_window() {
 
 #[test]
 fn model_context_window_uses_model_value_without_override() {
-    let mut model = model_info_from_slug("unknown-model");
+    let mut model = test_model();
     model.context_window = Some(273_000);
     model.max_context_window = Some(400_000);
     let config = ModelsManagerConfig::default();

@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useLayoutEffect, type RefObject } from "react";
 
 const LYRA_SCROLLBAR_HIDDEN_ATTR = "data-lyra-scrollbar-hidden";
 const SCROLLBAR_VISIBILITY_THRESHOLD_PX = 40;
@@ -33,7 +33,7 @@ const syncElementScrollbarVisibility = (element: HTMLElement): void => {
 };
 
 export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): void => {
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = rootRef.current;
     if (root === null) {
       return;
@@ -97,7 +97,7 @@ export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): vo
     window.addEventListener("resize", scheduleSync);
     root.addEventListener("scroll", scheduleSync, true);
 
-    scheduleSync();
+    runSync();
 
     return () => {
       mutationObserver.disconnect();
@@ -110,4 +110,3 @@ export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): vo
     };
   }, [rootRef]);
 };
-

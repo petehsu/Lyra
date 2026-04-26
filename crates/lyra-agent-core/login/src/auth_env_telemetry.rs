@@ -59,7 +59,7 @@ mod tests {
             base_url: None,
             env_key: Some("sk-should-not-leak".to_string()),
             env_key_instructions: None,
-            experimental_bearer_token: None,
+            bearer_token: None,
             auth: None,
             wire_api: WireApi::Responses,
             query_params: None,

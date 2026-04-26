@@ -395,6 +395,7 @@ const createDesktopApi = (): {
       stop: async () => undefined,
       readPageState: async () => null,
       setElementPickerMode: async () => undefined,
+      applyWebTheme: async () => undefined,
       onEvent: () => () => undefined
     },
     mcp: {

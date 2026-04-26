@@ -7,6 +7,7 @@ use lyra_tools::ToolSuggestArgs;
 use lyra_tools::ToolSuggestResult;
 use lyra_tools::build_tool_suggestion_elicitation_request;
 use lyra_tools::filter_tool_suggest_discoverable_tools_for_client;
+use lyra_tools::verified_connector_suggestion_completed;
 use rmcp::model::RequestId;
 
 use crate::connectors;
@@ -67,20 +68,33 @@ impl ToolHandler for ToolSuggestHandler {
             ));
         }
 
-        let discoverable_tools =
-            connectors::list_tool_suggest_discoverable_tools_with_auth(&turn.config, None, &[])
-                .await
-                .map(|discoverable_tools| {
-                    filter_tool_suggest_discoverable_tools_for_client(
-                        discoverable_tools,
-                        turn.app_server_client_name.as_deref(),
-                    )
-                })
-                .map_err(|err| {
-                    FunctionCallError::RespondToModel(format!(
-                        "tool suggestions are unavailable right now: {err}"
-                    ))
-                })?;
+        let auth = session.services.auth_manager.auth().await;
+        let accessible_connectors = {
+            let mcp_connection_manager = session.services.mcp_connection_manager.read().await;
+            connectors::with_app_enabled_state(
+                connectors::accessible_connectors_from_mcp_tools(
+                    &mcp_connection_manager.list_all_tools().await,
+                ),
+                &turn.config,
+            )
+        };
+        let discoverable_tools = connectors::list_tool_suggest_discoverable_tools_with_auth(
+            &turn.config,
+            auth.as_ref(),
+            &accessible_connectors,
+        )
+        .await
+        .map(|discoverable_tools| {
+            filter_tool_suggest_discoverable_tools_for_client(
+                discoverable_tools,
+                turn.app_server_client_name.as_deref(),
+            )
+        })
+        .map_err(|err| {
+            FunctionCallError::RespondToModel(format!(
+                "tool suggestions are unavailable right now: {err}"
+            ))
+        })?;
 
         let tool = discoverable_tools
             .into_iter()
@@ -108,7 +122,7 @@ impl ToolHandler for ToolSuggestHandler {
             .is_some_and(|response| response.action == ElicitationAction::Accept);
 
         let completed = if user_confirmed {
-            verify_tool_suggestion_completed(&session, &tool).await
+            verify_tool_suggestion_completed(&session, &tool, &accessible_connectors).await
         } else {
             false
         };
@@ -135,9 +149,12 @@ impl ToolHandler for ToolSuggestHandler {
 async fn verify_tool_suggestion_completed(
     session: &crate::session::session::Session,
     tool: &DiscoverableTool,
+    accessible_connectors: &[connectors::AppInfo],
 ) -> bool {
     match tool {
-        DiscoverableTool::Connector(_) => false,
+        DiscoverableTool::Connector(connector) => {
+            verified_connector_suggestion_completed(connector.id.as_str(), accessible_connectors)
+        }
         DiscoverableTool::Plugin(plugin) => {
             session.reload_user_config_layer().await;
             let config = session.get_config().await;

@@ -14,6 +14,7 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+lyra-analytics = { workspace = true }
 lyra-app-server-protocol = { workspace = true }
 lyra-config = { workspace = true }
 lyra-exec-server = { workspace = true }

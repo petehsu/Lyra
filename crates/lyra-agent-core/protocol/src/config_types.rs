@@ -5,7 +5,6 @@ use serde::Serialize;
 use std::num::NonZeroU64;
 use std::time::Duration;
 use strum_macros::Display;
-use strum_macros::EnumIter;
 use ts_rs::TS;
 
 use crate::openai_models::ReasoningEffort;
@@ -76,13 +75,13 @@ pub enum SandboxMode {
 #[strum(serialize_all = "snake_case")]
 /// Configures who approval requests are routed to for review. Examples
 /// include sandbox escapes, blocked network access, MCP approval prompts, and
-/// ARC escalations. Defaults to `user`. `guardian_subagent` uses a carefully
+/// ARC escalations. Defaults to `user`. `auto_review` uses a carefully
 /// prompted subagent to gather relevant context and apply a risk-based
 /// decision framework before approving or denying the request.
 pub enum ApprovalsReviewer {
     #[default]
     User,
-    GuardianSubagent,
+    AutoReview,
 }
 
 #[derive(
@@ -95,29 +94,6 @@ pub enum WindowsSandboxLevel {
     Disabled,
     RestrictedToken,
     Elevated,
-}
-
-#[derive(
-    Debug,
-    Serialize,
-    Deserialize,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Display,
-    JsonSchema,
-    TS,
-    PartialOrd,
-    Ord,
-    EnumIter,
-)]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-pub enum Personality {
-    None,
-    Friendly,
-    Pragmatic,
 }
 
 #[derive(
@@ -252,7 +228,6 @@ impl From<WebSearchToolConfig> for WebSearchConfig {
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum ServiceTier {
-    Fast,
     Flex,
 }
 

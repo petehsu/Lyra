@@ -47,7 +47,6 @@ use std::io::Result as IoResult;
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use crate::error_code::INTERNAL_ERROR_CODE;
@@ -361,7 +360,6 @@ fn start_uninitialized(args: InProcessStartArgs) -> InProcessClientHandle {
 
         let (writer_tx, mut writer_rx) = mpsc::channel::<QueuedOutgoingMessage>(channel_capacity);
         let outbound_initialized = Arc::new(AtomicBool::new(false));
-        let outbound_experimental_api_enabled = Arc::new(AtomicBool::new(false));
         let outbound_opted_out_notification_methods = Arc::new(RwLock::new(HashSet::new()));
 
         let mut outbound_connections = HashMap::<ConnectionId, OutboundConnectionState>::new();
@@ -370,7 +368,6 @@ fn start_uninitialized(args: InProcessStartArgs) -> InProcessClientHandle {
             OutboundConnectionState::new(
                 writer_tx,
                 Arc::clone(&outbound_initialized),
-                Arc::clone(&outbound_experimental_api_enabled),
                 Arc::clone(&outbound_opted_out_notification_methods),
                 /*disconnect_sender*/ None,
             ),
@@ -420,8 +417,6 @@ fn start_uninitialized(args: InProcessStartArgs) -> InProcessClientHandle {
                                     .await;
                                 let opted_out_notification_methods_snapshot =
                                     session.opted_out_notification_methods();
-                                let experimental_api_enabled =
-                                    session.experimental_api_enabled();
                                 let is_initialized = session.initialized();
                                 if let Ok(mut opted_out_notification_methods) =
                                     outbound_opted_out_notification_methods.write()
@@ -431,10 +426,6 @@ fn start_uninitialized(args: InProcessStartArgs) -> InProcessClientHandle {
                                 } else {
                                     warn!("failed to update outbound opted-out notifications");
                                 }
-                                outbound_experimental_api_enabled.store(
-                                    experimental_api_enabled,
-                                    Ordering::Release,
-                                );
                                 if !was_initialized && is_initialized {
                                     processor.send_initialize_notifications().await;
                                 }

@@ -64,6 +64,7 @@ const JS_REPL_EXEC_ID_LOG_LIMIT: usize = 8;
 const JS_REPL_MODEL_DIAG_STDERR_MAX_BYTES: usize = 1_024;
 const JS_REPL_MODEL_DIAG_ERROR_MAX_BYTES: usize = 256;
 const JS_REPL_TOOL_RESPONSE_TEXT_PREVIEW_MAX_BYTES: usize = 512;
+const LYRA_JS_REPL_NODE_RUN_AS_NODE: &str = "LYRA_JS_REPL_NODE_RUN_AS_NODE";
 
 /// Per-task js_repl handle stored on the turn context.
 pub(crate) struct JsReplHandle {
@@ -1016,6 +1017,9 @@ impl JsReplManager {
         if !dependency_env.is_empty() {
             env.extend(dependency_env.clone());
         }
+        if should_run_node_as_electron_node() {
+            env.insert("ELECTRON_RUN_AS_NODE".to_string(), "1".to_string());
+        }
         env.insert(
             "LYRA_JS_TMP_DIR".to_string(),
             self.tmp_dir.path().to_string_lossy().to_string(),
@@ -1064,7 +1068,7 @@ impl JsReplManager {
                 network: None,
                 sandbox_policy_cwd: &turn.cwd,
                 lyra_linux_sandbox_exe: turn.lyra_linux_sandbox_exe.as_deref(),
-                use_legacy_landlock: turn.features.use_legacy_landlock(),
+                use_classic_landlock: turn.features.use_classic_landlock(),
                 windows_sandbox_level: turn.windows_sandbox_level,
                 windows_sandbox_private_desktop: turn
                     .config
@@ -1646,6 +1650,7 @@ impl JsReplManager {
             .dispatch_tool_call_with_code_mode_result(
                 session,
                 turn,
+                CancellationToken::new(),
                 tracker,
                 call,
                 crate::tools::router::ToolCallSource::JsRepl,
@@ -1914,11 +1919,15 @@ fn required_node_version() -> Result<NodeVersion, String> {
 }
 
 async fn read_node_version(node_path: &Path) -> Result<NodeVersion, String> {
-    let output = tokio::process::Command::new(node_path)
-        .arg("--version")
+    let mut command = tokio::process::Command::new(node_path);
+    command.arg("--version");
+    if should_run_node_as_electron_node() {
+        command.env("ELECTRON_RUN_AS_NODE", "1");
+    }
+    let output = command
         .output()
         .await
-        .map_err(|err| format!("failed to execute Node: {err}"))?;
+        .map_err(|err| format!("failed to execute Node runtime: {err}"))?;
 
     if !output.status.success() {
         let mut details = String::new();
@@ -1956,7 +1965,7 @@ async fn ensure_node_version(node_path: &Path) -> Result<(), String> {
     let found = read_node_version(node_path).await?;
     if found < required {
         return Err(format!(
-            "Node runtime too old for js_repl (resolved {node_path}): found v{found}, requires >= v{required}. Install/update Node or set js_repl_node_path to a newer runtime.",
+            "Node runtime too old for js_repl (resolved {node_path}): found v{found}, requires >= v{required}. Configure js_repl_node_path to a newer runtime.",
             node_path = node_path.display()
         ));
     }
@@ -1965,10 +1974,18 @@ async fn ensure_node_version(node_path: &Path) -> Result<(), String> {
 
 pub(crate) async fn resolve_compatible_node(config_path: Option<&Path>) -> Result<PathBuf, String> {
     let node_path = resolve_node(config_path).ok_or_else(|| {
-        "Node runtime not found; install Node or set LYRA_JS_REPL_NODE_PATH".to_string()
+        "Node runtime not found; set LYRA_JS_REPL_NODE_PATH or configure js_repl_node_path"
+            .to_string()
     })?;
     ensure_node_version(&node_path).await?;
     Ok(node_path)
+}
+
+fn should_run_node_as_electron_node() -> bool {
+    matches!(
+        std::env::var(LYRA_JS_REPL_NODE_RUN_AS_NODE).as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
 }
 
 pub(crate) fn resolve_node(config_path: Option<&Path>) -> Option<PathBuf> {

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { TerminalDock } from "../view";
@@ -20,6 +20,8 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     newTab: "new",
     splitHorizontal: "split-horizontal",
     splitVertical: "split-vertical",
+    moveTerminalToTop: "move-top",
+    moveTerminalToBottom: "move-bottom",
     closeTab: "close",
     emptyDock: "empty",
     unavailable: "unavailable"
@@ -27,6 +29,7 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
   themeSignature: "lyra-dark:dark:follow-app",
   themePresetId: "follow-app",
   uiThemeId: "lyra-dark",
+  terminalPanelSide: "top",
   model: {
     state: {
       activeTabId: "tab-1",
@@ -91,6 +94,7 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
   },
   onRequestCloseTab: vi.fn(),
   onRequestTabContextMenu: vi.fn(),
+  onToggleTerminalPanelSide: vi.fn(),
   onDropWorkspaceTerminalTab: vi.fn()
 });
 
@@ -112,5 +116,14 @@ describe("terminal dock view", () => {
     );
 
     expect(reloadPrompt).not.toHaveBeenCalled();
+  });
+
+  test("renders terminal side placement control with toolbar actions", () => {
+    const props = createProps();
+    render(<TerminalDock {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "move-bottom" }));
+
+    expect(props.onToggleTerminalPanelSide).toHaveBeenCalledTimes(1);
   });
 });

@@ -80,14 +80,47 @@ vi.mock("@xterm/addon-fit", () => ({
 }));
 
 vi.mock("xterm", () => {
+  const terminalInstances: TerminalMock[] = [];
+
   class TerminalMock {
     cols = 80;
     rows = 24;
     options: Record<string, unknown> = {};
+    element: HTMLElement | undefined;
+    helperTextarea: HTMLTextAreaElement | undefined;
+
+    constructor(options: Record<string, unknown> = {}) {
+      this.options = { ...options };
+      terminalInstances.push(this);
+    }
 
     loadAddon(): void {}
-    open(): void {}
-    dispose(): void {}
+    open(element?: HTMLElement): void {
+      if (element === undefined) {
+        return;
+      }
+
+      const terminalElement = document.createElement("div");
+      terminalElement.className = "terminal xterm";
+      const helpersElement = document.createElement("div");
+      helpersElement.className = "xterm-helpers";
+      const helperTextarea = document.createElement("textarea");
+      helperTextarea.className = "xterm-helper-textarea";
+      helperTextarea.style.left = "12px";
+      helperTextarea.style.top = "10px";
+      helperTextarea.style.width = "8px";
+      helperTextarea.style.height = "18px";
+      helpersElement.append(helperTextarea);
+      terminalElement.append(helpersElement);
+      element.append(terminalElement);
+      this.element = terminalElement;
+      this.helperTextarea = helperTextarea;
+    }
+    dispose(): void {
+      this.element?.remove();
+      this.element = undefined;
+      this.helperTextarea = undefined;
+    }
     refresh(): void {}
     write(): void {}
     writeln(): void {}
@@ -98,6 +131,7 @@ vi.mock("xterm", () => {
   }
 
   return {
-    Terminal: TerminalMock
+    Terminal: TerminalMock,
+    __terminalInstances: terminalInstances
   };
 });

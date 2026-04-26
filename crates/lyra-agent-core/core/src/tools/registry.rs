@@ -24,6 +24,7 @@ use lyra_hooks::HookResult;
 use lyra_hooks::HookToolInput;
 use lyra_hooks::HookToolInputLocalShell;
 use lyra_hooks::HookToolKind;
+use lyra_protocol::config_types::ModeKind;
 use lyra_protocol::models::ResponseInputItem;
 use lyra_protocol::protocol::EventMsg;
 use lyra_protocol::protocol::SandboxPolicy;
@@ -71,9 +72,8 @@ pub trait ToolHandler: Send + Sync {
 
     fn post_tool_use_payload(
         &self,
-        _call_id: &str,
-        _payload: &ToolPayload,
-        _result: &dyn ToolOutput,
+        _invocation: &ToolInvocation,
+        _result: &Self::Output,
     ) -> Option<PostToolUsePayload> {
         None
     }
@@ -107,6 +107,7 @@ pub(crate) struct AnyToolResult {
     pub(crate) call_id: String,
     pub(crate) payload: ToolPayload,
     pub(crate) result: Box<dyn ToolOutput>,
+    pub(crate) post_tool_use_payload: Option<PostToolUsePayload>,
 }
 
 impl AnyToolResult {
@@ -137,6 +138,7 @@ pub(crate) struct PreToolUsePayload {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PostToolUsePayload {
     pub(crate) tool_name: HookToolName,
+    pub(crate) tool_use_id: String,
     pub(crate) tool_input: Value,
     pub(crate) tool_response: Value,
 }
@@ -147,13 +149,6 @@ trait AnyToolHandler: Send + Sync {
     fn is_mutating<'a>(&'a self, invocation: &'a ToolInvocation) -> BoxFuture<'a, bool>;
 
     fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload>;
-
-    fn post_tool_use_payload(
-        &self,
-        call_id: &str,
-        payload: &ToolPayload,
-        result: &dyn ToolOutput,
-    ) -> Option<PostToolUsePayload>;
 
     fn create_diff_consumer(&self) -> Option<Box<dyn ToolArgumentDiffConsumer>>;
 
@@ -179,15 +174,6 @@ where
         ToolHandler::pre_tool_use_payload(self, invocation)
     }
 
-    fn post_tool_use_payload(
-        &self,
-        call_id: &str,
-        payload: &ToolPayload,
-        result: &dyn ToolOutput,
-    ) -> Option<PostToolUsePayload> {
-        ToolHandler::post_tool_use_payload(self, call_id, payload, result)
-    }
-
     fn create_diff_consumer(&self) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
         ToolHandler::create_diff_consumer(self)
     }
@@ -199,11 +185,14 @@ where
         Box::pin(async move {
             let call_id = invocation.call_id.clone();
             let payload = invocation.payload.clone();
-            let output = self.handle(invocation).await?;
+            let output = self.handle(invocation.clone()).await?;
+            let post_tool_use_payload =
+                ToolHandler::post_tool_use_payload(self, &invocation, &output);
             Ok(AnyToolResult {
                 call_id,
                 payload,
                 result: Box::new(output),
+                post_tool_use_payload,
             })
         })
     }
@@ -330,6 +319,15 @@ impl ToolRegistry {
             return Err(err);
         }
 
+        let is_mutating = handler.is_mutating(&invocation).await;
+        if is_mutating && invocation.turn.collaboration_mode.mode == ModeKind::Plan {
+            let err = FunctionCallError::RespondToModel(
+                "Plan Mode is active, so mutating tool calls are blocked. Use read-only exploration only, then finish with a <proposed_plan>...</proposed_plan> block for user approval before implementation.".to_string(),
+            );
+            dispatch_trace.record_failed(&err);
+            return Err(err);
+        }
+
         if let Some(pre_tool_use_payload) = handler.pre_tool_use_payload(&invocation)
             && let Some(reason) = run_pre_tool_use_hooks(
                 &invocation.session,
@@ -349,7 +347,6 @@ impl ToolRegistry {
             return Err(err);
         }
 
-        let is_mutating = handler.is_mutating(&invocation).await;
         let response_cell = tokio::sync::Mutex::new(None);
         let invocation_for_tool = invocation.clone();
 
@@ -393,13 +390,9 @@ impl ToolRegistry {
         emit_metric_for_tool_read(&invocation, success).await;
         let post_tool_use_payload = if success {
             let guard = response_cell.lock().await;
-            guard.as_ref().and_then(|result| {
-                handler.post_tool_use_payload(
-                    &result.call_id,
-                    &result.payload,
-                    result.result.as_ref(),
-                )
-            })
+            guard
+                .as_ref()
+                .and_then(|result| result.post_tool_use_payload.clone())
         } else {
             None
         };
@@ -408,7 +401,7 @@ impl ToolRegistry {
                 run_post_tool_use_hooks(
                     &invocation.session,
                     &invocation.turn,
-                    invocation.call_id.clone(),
+                    post_tool_use_payload.tool_use_id,
                     post_tool_use_payload.tool_name,
                     post_tool_use_payload.tool_input,
                     post_tool_use_payload.tool_response,

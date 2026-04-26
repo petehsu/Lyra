@@ -244,7 +244,45 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
       "\\bCo" + "dexHooks\\b",
       "\\bmanaged_by_co" + "dex\\b",
       "\\bCo" + "dexSandbox",
-      "\\bCo" + "dexHome\\b"
+      "\\bCo" + "dexHome\\b",
+      "\\bGuardian[A-Za-z_]*\\b",
+      "\\bguardian_[A-Za-z0-9_]*\\b",
+      "\\bGUARDIAN_[A-Z0-9_]+\\b",
+      "\\blegacy_feature[A-Za-z0-9_]*\\b",
+      "\\bLegacyFeature[A-Za-z0-9_]*\\b",
+      "\\blegacy_notify[A-Za-z0-9_]*\\b",
+      "\\bnotify_hook\\b",
+      "\\blegacy_notify_argv\\b",
+      "Stage::" + "Experimental",
+      "\\bExperimental" + "Feature\\b",
+      "experimental" + "Feature\\/",
+      "\\bexperimental" + "Api\\b",
+      "\\bExternal" + "Migration\\b",
+      "\\bexternal_" + "migration\\b",
+      "\\bExternal" + "ConfigMigration\\b",
+      "\\bexternal_" + "config_" + "migration\\b",
+      "\\bPrevent" + "IdleSleep\\b",
+      "\\bprevent_" + "idle_sleep\\b",
+      "\\bMemory" + "Tool\\b",
+      "\\bStage::UnderDevelopment\\b",
+      "\\bUnderDevelopment\\b",
+      "\\bsuppress_unstable_features_warning\\b",
+      "\\bunstable_features_warning_event\\b",
+      "\\bexperimental_windows_sandbox\\b",
+      "\\benable_experimental_windows_sandbox\\b",
+      "\\bexperimental_instructions_file\\b",
+      "\\bexperimental_environment\\b",
+      "\\bexperimental_realtime",
+      "\\bexperimental_network\\b",
+      "\\bexperimental_bearer_token\\b",
+      "\\bexperimental_use_profile\\b",
+      "\\bexperimental_supported_tools\\b",
+      "\\bexperimentalSupportedTools\\b",
+      "\\breasoning_summary_format\\b",
+      "\\bbeta_features_header\\b",
+      "\\bx-lyra-beta-features\\b",
+      "\\bexperimental_use_unified_exec_tool\\b",
+      "\\bexperimental_use_freeform_apply_patch\\b"
     ].join("|")),
     excludePathPattern: /\/(schema\/json|schema\/typescript|models\.json|Cargo\.lock|deny\.toml)\b/,
     message:
@@ -252,10 +290,46 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
   },
   {
     scopePrefix: "crates/lyra-agent-core/",
+    pattern: /used_fallback_model_metadata|model_info_from_slug|fallback model metadata|fallback metadata/,
+    excludePathPattern: /\/(Cargo\.lock|deny\.toml)\b/,
+    message:
+      "Agent model resolution must use provider/protocol runtime metadata or fail clearly; generic fallback metadata is not allowed."
+  },
+  {
+    scopePrefix: "crates/lyra-agent-core/",
     pattern: new RegExp("\\bCO" + "DEX_[A-Z0-9_]+\\b"),
     excludePathPattern: /\/(Cargo\.lock|deny\.toml)\b/,
     message:
       "Agent Core runtime/env/helper symbols must use LYRA_* names."
+  },
+  {
+    scopePrefix: "crates/lyra-agent-core/",
+    pattern: new RegExp([
+      "Fast" + "Mode",
+      "fast_" + "mode",
+      "supports_" + "fast_mode",
+      "ServiceTier::" + "Fast",
+      "SPEED_TIER_" + "FAST",
+      "\\/fast"
+    ].join("|")),
+    excludePathPattern: /\/(Cargo\.lock|deny\.toml)\b/,
+    message:
+      "Agent Core must not reintroduce Codex/OpenAI Fast Mode; use explicit provider configuration instead."
+  },
+  {
+    scopePrefix: "crates/lyra-agent-core/",
+    pattern: new RegExp([
+      "\\bPersonality\\b",
+      "personality_" + "spec",
+      "supports" + "Personality",
+      "supports_" + "personality",
+      "model_" + "messages",
+      "features\\." + "personality",
+      "\\bpersonality\\s*:"
+    ].join("|")),
+    excludePathPattern: /\/(Cargo\.lock|deny\.toml|schema\/json|schema\/typescript)\b/,
+    message:
+      "Agent Core must not reintroduce dynamic personality switching; Lyra uses a fixed pragmatic base prompt."
   },
   {
     scopePrefix: "crates/lyra-agent-core/",
@@ -310,6 +384,41 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     ].join("|")),
     message:
       "Desktop settings must not expose the removed model-guided context compaction UI."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/",
+    pattern: new RegExp([
+      "[\"'`]\\/status\\b",
+      "[\"'`]\\/clear\\b",
+      "[\"'`]\\/fast\\b",
+      "[\"'`]\\/experimental\\b",
+      "[\"'`]\\/memories\\b",
+      "[\"'`]\\/personality\\b",
+      "[\"'`]\\/compact\\b",
+      "[\"'`]\\/debug-m-",
+      "[\"'`]\\/rollout\\b",
+      "[\"'`]\\/test-approval\\b",
+      "[\"'`]\\/debug-config\\b",
+      "[\"'`]\\/title\\b",
+      "[\"'`]\\/statusline\\b",
+      "[\"'`]\\/theme\\b",
+      "[\"'`]\\/quit\\b",
+      "[\"'`]\\/exit\\b",
+      "[\"'`]\\/logout\\b",
+      "[\"'`]\\/feedback\\b",
+      "[\"'`]\\/apps\\b",
+      "[\"'`]\\/plugins\\b",
+      "[\"'`]\\/collab\\b",
+      "[\"'`]\\/agent\\b",
+      "[\"'`]\\/side\\b",
+      "[\"'`]\\/subagents\\b",
+      "[\"'`]\\/realtime\\b",
+      "[\"'`]\\/settings\\b",
+      "[\"'`]\\/mention\\b"
+    ].join("|")),
+    excludePathPattern: /\/tests\//,
+    message:
+      "AI panel must not expose unsupported Codex-style slash commands. Keep only explicit Lyra UI actions and the approved permissions aliases."
   }
 ];
 

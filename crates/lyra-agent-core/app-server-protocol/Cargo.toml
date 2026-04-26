@@ -14,7 +14,6 @@ workspace = true
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-lyra-experimental-api-macros = { workspace = true }
 lyra-protocol = { workspace = true }
 lyra-shell-command = { workspace = true }
 lyra-utils-absolute-path = { workspace = true }

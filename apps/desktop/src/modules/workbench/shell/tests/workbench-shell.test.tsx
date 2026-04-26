@@ -6,7 +6,25 @@ vi.mock("../../browser-tabs", () => ({
 }));
 
 vi.mock("../../terminal-dock", () => ({
-  TerminalDock: () => <div aria-label="terminal-dock" />,
+  TerminalDock: (props: {
+    readonly labels: {
+      readonly moveTerminalToTop: string;
+      readonly moveTerminalToBottom: string;
+    };
+    readonly terminalPanelSide: "top" | "bottom";
+    readonly onToggleTerminalPanelSide: () => void;
+  }) => (
+    <div aria-label="terminal-dock">
+      <button
+        aria-label={
+          props.terminalPanelSide === "top"
+            ? props.labels.moveTerminalToBottom
+            : props.labels.moveTerminalToTop
+        }
+        onClick={props.onToggleTerminalPanelSide}
+      />
+    </div>
+  ),
   TerminalWorkspaceSurface: () => <div aria-label="terminal-workspace-surface" />,
   useTerminalDockModel: () => ({
     state: { panes: {} },
@@ -490,6 +508,7 @@ const setDesktopApiPlatform = (platform: NodeJS.Platform) => {
       stop: vi.fn(async () => undefined),
       readPageState: vi.fn(async () => null),
       setElementPickerMode: vi.fn(async () => undefined),
+      applyWebTheme: vi.fn(async () => undefined),
       onEvent: vi.fn(() => () => undefined)
     },
     mcp: {
@@ -603,9 +622,27 @@ describe("workbench shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "切换左侧面板" }));
     fireEvent.click(screen.getByRole("button", { name: "切换终端面板" }));
 
-    expect(screen.queryByLabelText("left-panel")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("左侧输入框")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("left-panel")).toHaveClass("lyra-panel-left-hidden");
+    expect(screen.getByLabelText("left-panel")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByLabelText("左侧输入框")).toBeInTheDocument();
     expect(screen.queryByLabelText("bottom-panel")).not.toBeInTheDocument();
+  });
+
+  test("moves the terminal panel between top and bottom from the titlebar button", () => {
+    render(<WorkbenchShell />);
+
+    const centerStack = document.querySelector(".lyra-center-stack");
+    expect(centerStack).not.toBeNull();
+    expect(centerStack).toHaveClass("lyra-center-stack-terminal-top");
+
+    fireEvent.click(screen.getByRole("button", { name: "移到底部" }));
+
+    expect(centerStack).toHaveClass("lyra-center-stack-terminal-bottom");
+    expect(screen.getByRole("button", { name: "移到顶部" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "移到顶部" }));
+
+    expect(centerStack).toHaveClass("lyra-center-stack-terminal-top");
   });
 
   test("opens settings surface from titlebar button", () => {
@@ -635,11 +672,31 @@ describe("workbench shell", () => {
   test("opens mcp and skills tabs from ai topbar buttons", () => {
     render(<WorkbenchShell />);
 
-    fireEvent.click(screen.getByRole("button", { name: "打开 MCP" }));
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "打开 MCP" }));
     expect(screen.getByLabelText("ai-mcp-surface")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "打开 Skills" }));
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "打开 Skills" }));
     expect(screen.getByLabelText("ai-skills-surface")).toBeInTheDocument();
+  });
+
+  test("moves the ai panel between left and right from the more menu", () => {
+    render(<WorkbenchShell />);
+
+    const main = document.querySelector(".lyra-main");
+    expect(main).not.toBeNull();
+    expect(main).toHaveClass("lyra-main-ai-panel-left");
+
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "移到右侧" }));
+
+    expect(main).toHaveClass("lyra-main-ai-panel-right");
+
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "移到左侧" }));
+
+    expect(main).toHaveClass("lyra-main-ai-panel-left");
   });
 
   test("opens history tab from ai topbar button", () => {

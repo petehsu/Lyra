@@ -24,6 +24,10 @@ use crate::realtime_conversation::prefix_realtime_v2_text;
 use crate::session::spawn_review_thread;
 use lyra_exec_server::LOCAL_FS;
 use lyra_features::Feature;
+use lyra_git_utils::RestoreGhostCommitOptions;
+use lyra_git_utils::restore_ghost_commit_with_options;
+use lyra_protocol::models::GhostCommit;
+use lyra_protocol::models::ResponseItem;
 use lyra_utils_absolute_path::AbsolutePathBuf;
 
 use crate::review_prompts::resolve_review_request;
@@ -137,7 +141,6 @@ pub(super) async fn user_input_or_turn_inner(
             final_output_json_schema,
             items,
             collaboration_mode,
-            personality,
         } => {
             let collaboration_mode = collaboration_mode.or_else(|| {
                 Some(CollaborationMode {
@@ -163,7 +166,6 @@ pub(super) async fn user_input_or_turn_inner(
                     developer_instructions: None,
                     dynamic_tools: None,
                     final_output_json_schema: Some(final_output_json_schema),
-                    personality,
                     app_server_client_name: None,
                     app_server_client_version: None,
                 },
@@ -189,8 +191,6 @@ pub(super) async fn user_input_or_turn_inner(
         // new_turn_with_sub_id already emits the error event.
         return;
     };
-    sess.maybe_emit_unknown_model_warning_for_turn(current_context.as_ref())
-        .await;
     let accepted_items = match sess
         .steer_input(
             items.clone(),
@@ -588,7 +588,119 @@ pub async fn undo(sess: &Arc<Session>, sub_id: String) {
         .await;
 }
 
-pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32) {
+#[derive(Debug, Default)]
+struct RollbackFileCheckpoint {
+    ghost_commit: Option<GhostCommit>,
+    cwd: Option<AbsolutePathBuf>,
+    affected_paths: Vec<String>,
+    requires_restore: bool,
+}
+
+fn rollback_file_checkpoint(items: &[RolloutItem], turn_id: &str) -> RollbackFileCheckpoint {
+    let mut current_turn_id: Option<&str> = None;
+    let mut seen_target = false;
+    let mut checkpoint = RollbackFileCheckpoint::default();
+
+    for item in items {
+        match item {
+            RolloutItem::EventMsg(EventMsg::TurnStarted(event)) => {
+                current_turn_id = Some(event.turn_id.as_str());
+                if event.turn_id == turn_id {
+                    seen_target = true;
+                }
+            }
+            RolloutItem::TurnContext(ctx) => {
+                if ctx.turn_id.as_deref() == Some(turn_id) {
+                    checkpoint.cwd = AbsolutePathBuf::from_absolute_path(ctx.cwd.clone()).ok();
+                }
+            }
+            RolloutItem::ResponseItem(ResponseItem::GhostSnapshot { ghost_commit }) => {
+                if current_turn_id == Some(turn_id) {
+                    checkpoint.ghost_commit = Some(ghost_commit.clone());
+                }
+            }
+            RolloutItem::EventMsg(EventMsg::PatchApplyBegin(event)) if seen_target => {
+                checkpoint.requires_restore = true;
+                for (path, change) in &event.changes {
+                    checkpoint
+                        .affected_paths
+                        .push(path.to_string_lossy().into_owned());
+                    if let lyra_protocol::protocol::FileChange::Update {
+                        move_path: Some(move_path),
+                        ..
+                    } = change
+                    {
+                        checkpoint
+                            .affected_paths
+                            .push(move_path.to_string_lossy().into_owned());
+                    }
+                }
+            }
+            RolloutItem::EventMsg(EventMsg::ExecCommandBegin(_)) if seen_target => {
+                checkpoint.requires_restore = true;
+            }
+            _ => {}
+        }
+    }
+
+    checkpoint.affected_paths.sort();
+    checkpoint.affected_paths.dedup();
+    checkpoint
+}
+
+fn rollout_contains_turn(items: &[RolloutItem], turn_id: &str) -> bool {
+    items.iter().any(|item| {
+        matches!(
+            item,
+            RolloutItem::EventMsg(EventMsg::TurnStarted(event)) if event.turn_id == turn_id
+        )
+    })
+}
+
+async fn restore_files_for_rollback(
+    sess: &Arc<Session>,
+    turn_context: &Arc<crate::session::turn_context::TurnContext>,
+    rollout_items: &[RolloutItem],
+    turn_id: &str,
+) -> Result<Vec<String>, String> {
+    let checkpoint = rollback_file_checkpoint(rollout_items, turn_id);
+    if !checkpoint.requires_restore {
+        return Ok(Vec::new());
+    }
+    let Some(ghost_commit) = checkpoint.ghost_commit else {
+        return Err(format!(
+            "Cannot safely rollback turn {turn_id}: no filesystem checkpoint was captured before this turn."
+        ));
+    };
+
+    let repo_path = checkpoint
+        .cwd
+        .clone()
+        .unwrap_or_else(|| turn_context.cwd.clone());
+    let ghost_snapshot = turn_context.ghost_snapshot.clone();
+    let restore_result = tokio::task::spawn_blocking(move || {
+        let options = RestoreGhostCommitOptions::new(&repo_path).ghost_snapshot(ghost_snapshot);
+        restore_ghost_commit_with_options(&options, &ghost_commit)
+    })
+    .await
+    .map_err(|err| format!("failed to join rollback restore task: {err}"))?;
+
+    restore_result.map_err(|err| format!("failed to restore files for rollback: {err}"))?;
+    sess.services.session_telemetry.counter(
+        "lyra.thread_rollback.files_restored",
+        /*inc*/ 1,
+        &[],
+    );
+    Ok(checkpoint.affected_paths)
+}
+
+pub async fn thread_rollback(
+    sess: &Arc<Session>,
+    sub_id: String,
+    turn_id: String,
+    num_turns: u32,
+    restore_files: bool,
+) {
     if num_turns == 0 {
         sess.send_event_raw(Event {
             id: sub_id,
@@ -670,10 +782,39 @@ pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32
         }
     };
 
+    let rollout_items = initial_history.get_rollout_items();
+    if !rollout_contains_turn(&rollout_items, &turn_id) {
+        sess.send_event_raw(Event {
+            id: turn_context.sub_id.clone(),
+            msg: EventMsg::Error(ErrorEvent {
+                message: format!("turn not found for rollback: {turn_id}"),
+                lyra_error_info: Some(LyraErrorInfo::ThreadRollbackFailed),
+            }),
+        })
+        .await;
+        return;
+    }
+
+    if restore_files {
+        match restore_files_for_rollback(sess, &turn_context, &rollout_items, &turn_id).await {
+            Ok(_) => {}
+            Err(message) => {
+                sess.send_event_raw(Event {
+                    id: turn_context.sub_id.clone(),
+                    msg: EventMsg::Error(ErrorEvent {
+                        message,
+                        lyra_error_info: Some(LyraErrorInfo::ThreadRollbackFailed),
+                    }),
+                })
+                .await;
+                return;
+            }
+        }
+    }
+
     let rollback_event = ThreadRolledBackEvent { num_turns };
     let rollback_msg = EventMsg::ThreadRolledBack(rollback_event.clone());
-    let replay_items = initial_history
-        .get_rollout_items()
+    let replay_items = rollout_items
         .into_iter()
         .chain(std::iter::once(RolloutItem::EventMsg(rollback_msg.clone())))
         .collect::<Vec<_>>();
@@ -840,7 +981,7 @@ pub async fn shutdown(sess: &Arc<Session>, sub_id: String) -> bool {
         .unified_exec_manager
         .terminate_all_processes()
         .await;
-    sess.guardian_review_session.shutdown().await;
+    sess.auto_review_session.shutdown().await;
     info!("Shutting down Lyra instance");
     let history = sess.clone_history().await;
     let turn_count = history
@@ -892,8 +1033,6 @@ pub async fn review(
     review_request: ReviewRequest,
 ) {
     let turn_context = sess.new_default_turn_with_sub_id(sub_id.clone()).await;
-    sess.maybe_emit_unknown_model_warning_for_turn(turn_context.as_ref())
-        .await;
     sess.refresh_mcp_servers_if_requested(&turn_context).await;
     match resolve_review_request(review_request, &turn_context.cwd) {
         Ok(resolved) => {
@@ -980,7 +1119,6 @@ pub(super) async fn submission_loop(
                     summary,
                     service_tier,
                     collaboration_mode,
-                    personality,
                 } => {
                     let collaboration_mode = if let Some(collab_mode) = collaboration_mode {
                         collab_mode
@@ -1004,7 +1142,6 @@ pub(super) async fn submission_loop(
                             collaboration_mode: Some(collaboration_mode),
                             reasoning_summary: summary,
                             service_tier,
-                            personality,
                             ..Default::default()
                         },
                     )
@@ -1071,8 +1208,12 @@ pub(super) async fn submission_loop(
                     undo(&sess, sub.id.clone()).await;
                     false
                 }
-                Op::ThreadRollback { num_turns } => {
-                    thread_rollback(&sess, sub.id.clone(), num_turns).await;
+                Op::ThreadRollback {
+                    turn_id,
+                    num_turns,
+                    restore_files,
+                } => {
+                    thread_rollback(&sess, sub.id.clone(), turn_id, num_turns, restore_files).await;
                     false
                 }
                 Op::SetThreadName { name } => {
@@ -1112,9 +1253,9 @@ pub(super) async fn submission_loop(
             break;
         }
     }
-    // Also drain cached guardian state if the submission loop exits because
+    // Also drain cached auto_review state if the submission loop exits because
     // the channel closed without receiving an explicit shutdown op.
-    sess.guardian_review_session.shutdown().await;
+    sess.auto_review_session.shutdown().await;
     debug!("Agent loop exited");
 }
 

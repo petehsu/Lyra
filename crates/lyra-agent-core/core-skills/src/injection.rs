@@ -5,6 +5,10 @@ use std::sync::Arc;
 use crate::SkillLoadOutcome;
 use crate::SkillMetadata;
 use crate::build_skill_name_counts;
+use lyra_analytics::AnalyticsEventsClient;
+use lyra_analytics::InvocationType;
+use lyra_analytics::SkillInvocation;
+use lyra_analytics::TrackEventsContext;
 use lyra_exec_server::LOCAL_FS;
 use lyra_instructions::SkillInstructions;
 use lyra_otel::SessionTelemetry;
@@ -23,6 +27,8 @@ pub async fn build_skill_injections(
     mentioned_skills: &[SkillMetadata],
     loaded_skills: Option<&SkillLoadOutcome>,
     otel: Option<&SessionTelemetry>,
+    analytics_client: &AnalyticsEventsClient,
+    tracking: TrackEventsContext,
 ) -> SkillInjections {
     if mentioned_skills.is_empty() {
         return SkillInjections::default();
@@ -32,6 +38,7 @@ pub async fn build_skill_injections(
         items: Vec::with_capacity(mentioned_skills.len()),
         warnings: Vec::new(),
     };
+    let mut invocations = Vec::new();
     for skill in mentioned_skills {
         let fs = loaded_skills
             .and_then(|outcome| outcome.file_system_for_skill(skill))
@@ -42,6 +49,12 @@ pub async fn build_skill_injections(
         {
             Ok(contents) => {
                 emit_skill_injected_metric(otel, skill, "ok");
+                invocations.push(SkillInvocation {
+                    skill_name: skill.name.clone(),
+                    skill_scope: skill.scope,
+                    skill_path: skill.path_to_skills_md.to_path_buf(),
+                    invocation_type: InvocationType::Explicit,
+                });
                 result.items.push(ResponseItem::from(SkillInstructions {
                     name: skill.name.clone(),
                     path: skill.path_to_skills_md.to_string_lossy().into_owned(),
@@ -59,6 +72,8 @@ pub async fn build_skill_injections(
             }
         }
     }
+
+    analytics_client.track_skill_invocations(tracking, invocations);
 
     result
 }

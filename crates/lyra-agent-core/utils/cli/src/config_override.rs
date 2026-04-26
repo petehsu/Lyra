@@ -89,8 +89,8 @@ impl CliConfigOverrides {
 }
 
 fn canonicalize_override_key(key: &str) -> String {
-    if key == "use_legacy_landlock" {
-        "features.use_legacy_landlock".to_string()
+    if key == "use_classic_landlock" {
+        "features.use_classic_landlock".to_string()
     } else {
         key.to_string()
     }
@@ -181,12 +181,12 @@ mod tests {
     }
 
     #[test]
-    fn canonicalizes_use_legacy_landlock_alias() {
+    fn canonicalizes_use_classic_landlock_alias() {
         let overrides = CliConfigOverrides {
-            raw_overrides: vec!["use_legacy_landlock=true".to_string()],
+            raw_overrides: vec!["use_classic_landlock=true".to_string()],
         };
         let parsed = overrides.parse_overrides().expect("parse_overrides");
-        assert_eq!(parsed[0].0.as_str(), "features.use_legacy_landlock");
+        assert_eq!(parsed[0].0.as_str(), "features.use_classic_landlock");
         assert_eq!(parsed[0].1.as_bool(), Some(true));
     }
 

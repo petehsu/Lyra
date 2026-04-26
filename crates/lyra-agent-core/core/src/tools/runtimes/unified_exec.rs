@@ -4,11 +4,11 @@ Runtime: unified exec
 Handles approval + sandbox orchestration for unified exec requests, delegating to
 the process manager to spawn PTYs once an ExecRequest is prepared.
 */
+use crate::auto_review::AutoReviewApprovalRequest;
+use crate::auto_review::review_approval_request;
 use crate::command_canonicalization::canonicalize_command_for_approval;
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecExpiration;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::review_approval_request;
 use crate::sandboxing::ExecOptions;
 use crate::sandboxing::ExecServerEnvConfig;
 use crate::sandboxing::SandboxPermissions;
@@ -132,14 +132,14 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
         let cwd = req.cwd.clone();
         let retry_reason = ctx.retry_reason.clone();
         let reason = retry_reason.clone().or_else(|| req.justification.clone());
-        let guardian_review_id = ctx.guardian_review_id.clone();
+        let auto_review_id = ctx.auto_review_id.clone();
         Box::pin(async move {
-            if let Some(review_id) = guardian_review_id {
+            if let Some(review_id) = auto_review_id {
                 return review_approval_request(
                     session,
                     turn,
                     review_id,
-                    GuardianApprovalRequest::ExecCommand {
+                    AutoReviewApprovalRequest::ExecCommand {
                         id: call_id,
                         command,
                         cwd: cwd.clone(),

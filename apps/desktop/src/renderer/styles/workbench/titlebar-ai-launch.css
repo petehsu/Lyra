@@ -14,49 +14,14 @@
   font-family: var(--lyra-font-ui);
   cursor: pointer;
   isolation: isolate;
-  transition:
-    background-color var(--lyra-transition-fast),
-    color var(--lyra-transition-fast);
+  transition: color var(--lyra-transition-fast);
   -webkit-app-region: no-drag;
   app-region: no-drag;
   user-select: none;
 }
 
-.lyra-titlebar-ai-launch::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: var(--lyra-stroke-thin);
-  background: linear-gradient(
-    90deg,
-    var(--lyra-pill-rainbow-red, #eaa0b7) 0%,
-    var(--lyra-pill-rainbow-orange, #eab589) 14%,
-    var(--lyra-pill-rainbow-yellow, #e4cc82) 28%,
-    var(--lyra-pill-rainbow-green, #8ecea0) 42%,
-    var(--lyra-pill-rainbow-cyan, #8ebecf) 57%,
-    var(--lyra-pill-rainbow-blue, #929bdc) 71%,
-    var(--lyra-pill-rainbow-violet, #b193d4) 85%,
-    var(--lyra-pill-rainbow-red, #eaa0b7) 100%
-  );
-  background-size: 200% 100%;
-  background-repeat: repeat-x;
-  -webkit-mask:
-    linear-gradient(black, black) content-box,
-    linear-gradient(black, black);
-  mask:
-    linear-gradient(black, black) content-box,
-    linear-gradient(black, black);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: lyra-pill-border-run 4800ms linear infinite;
-  opacity: 0.82;
-  pointer-events: none;
-}
-
 .lyra-titlebar-ai-launch:hover {
   color: var(--lyra-text-primary);
-  background: color-mix(in srgb, var(--lyra-bg-hover) 22%, transparent);
 }
 
 .lyra-titlebar-ai-launch:focus-visible {
@@ -67,16 +32,11 @@
 
 .lyra-titlebar-ai-launch-open {
   color: var(--lyra-text-primary);
-  background: color-mix(in srgb, var(--lyra-text-accent) 10%, transparent);
-}
-
-.lyra-titlebar-ai-launch-open:hover {
-  background: color-mix(in srgb, var(--lyra-text-accent) 16%, transparent);
 }
 
 .lyra-titlebar-ai-launch-logo {
-  width: var(--lyra-unit-14);
-  height: var(--lyra-unit-14);
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
   flex-shrink: 0;
   color: inherit;
 }
@@ -241,6 +201,24 @@
   }
   to {
     background-position: 200% 50%;
+  }
+}
+
+@keyframes lyra-pill-sweep-spin-linear {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes lyra-pill-sweep-spin-eased {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
   }
 }
 

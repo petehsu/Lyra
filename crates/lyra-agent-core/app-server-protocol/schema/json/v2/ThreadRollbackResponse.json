@@ -529,7 +529,7 @@
       "type": "object"
     },
     "MessagePhase": {
-      "description": "Classifies an assistant message as interim commentary or final answer text.\n\nProviders do not emit this consistently, so callers must treat `None` as \"phase unknown\" and keep compatibility behavior for legacy models.",
+      "description": "Classifies an assistant message as interim commentary or final answer text.\n\nProviders do not emit this consistently, so callers must treat `None` as \"phase unknown\" and keep compatibility behavior for base models.",
       "oneOf": [
         {
           "description": "Mid-turn assistant text (for example preamble/progress narration).\n\nAdditional tool calls or assistant output may follow before turn completion.",
@@ -786,6 +786,17 @@
             "null"
           ]
         },
+        "boundProjectRoot": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Project root explicitly bound by the user, if any."
+        },
         "cliVersion": {
           "description": "Version of the CLI that created the thread.",
           "type": "string"
@@ -1007,7 +1018,7 @@
           "type": "object"
         },
         {
-          "description": "EXPERIMENTAL - proposed plan item content. The completed plan item is authoritative and may not match the concatenation of `PlanDelta` text.",
+          "description": "proposed plan item content. The completed plan item is authoritative and may not match the concatenation of `PlanDelta` text.",
           "properties": {
             "id": {
               "type": "string"
@@ -1931,16 +1942,31 @@
     }
   },
   "properties": {
+    "restoredInput": {
+      "description": "The user text from the rolled-back turn, when available.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "revertedFiles": {
+      "description": "Paths that were covered by the rollback file-restore operation.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "thread": {
       "allOf": [
         {
           "$ref": "#/definitions/Thread"
         }
       ],
-      "description": "The updated thread after applying the rollback, with `turns` populated.\n\nThe ThreadItems stored in each Turn are lossy since we explicitly do not persist all agent interactions, such as command executions. This is the same behavior as `thread/resume`."
+      "description": "The updated thread after applying the rollback, with `turns` populated."
     }
   },
   "required": [
+    "revertedFiles",
     "thread"
   ],
   "title": "ThreadRollbackResponse",

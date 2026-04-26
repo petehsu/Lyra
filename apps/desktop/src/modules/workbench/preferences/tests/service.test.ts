@@ -17,6 +17,9 @@ const defaults: WorkbenchPreferences = {
   splitThreePaneLayout: "adaptive",
   splitOverflowPolicy: "block_with_notice",
   aiRichRenderingEnabled: true,
+  aiStopBehavior: "turn_only",
+  preventSleepEnabled: true,
+  forceWebPageThemingEnabled: true,
   searchScopePreset: "home",
   searchCustomRoots: [],
   searchEnableFuzzy: true,
@@ -54,7 +57,8 @@ describe("workbench preferences", () => {
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
-      aiRichRenderingEnabled: false
+      aiRichRenderingEnabled: false,
+      preventSleepEnabled: false
     });
 
     expect(readWorkbenchPreferences(defaults)).toEqual({
@@ -65,7 +69,8 @@ describe("workbench preferences", () => {
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
-      aiRichRenderingEnabled: false
+      aiRichRenderingEnabled: false,
+      preventSleepEnabled: false
     });
   });
 
@@ -113,6 +118,8 @@ describe("workbench preferences", () => {
       result.current.setSplitThreePaneLayout("left_two_right_one");
       result.current.setSplitOverflowPolicy("replace_target");
       result.current.setAiRichRenderingEnabled(false);
+      result.current.setAiStopBehavior("turn_and_background");
+      result.current.setPreventSleepEnabled(false);
     });
 
     expect(result.current.preferences).toEqual({
@@ -123,7 +130,9 @@ describe("workbench preferences", () => {
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
-      aiRichRenderingEnabled: false
+      aiRichRenderingEnabled: false,
+      aiStopBehavior: "turn_and_background",
+      preventSleepEnabled: false
     });
 
     expect(readWorkbenchPreferences(defaults)).toEqual({
@@ -134,7 +143,9 @@ describe("workbench preferences", () => {
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
-      aiRichRenderingEnabled: false
+      aiRichRenderingEnabled: false,
+      aiStopBehavior: "turn_and_background",
+      preventSleepEnabled: false
     });
   });
 

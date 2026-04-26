@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "xterm";
 
+import {
+  ModernCaretOverlay,
+  measureElementCaretRect,
+  useCaretMotionState,
+  useCaretPressState
+} from "../caret/modern-caret";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { TerminalDockLabels, TerminalDockPane } from "./types";
 import { resolveTerminalTheme } from "./theme";
@@ -34,7 +40,9 @@ export const TerminalPaneSurface = ({
   uiThemeId,
   onFocus
 }: TerminalPaneSurfaceProps) => {
+  const paneBodyRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const helperTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const sessionReadyRef = useRef(false);
   const sessionDisposedRef = useRef(false);
@@ -44,6 +52,30 @@ export const TerminalPaneSurface = ({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [readyToPaint, setReadyToPaint] = useState(false);
   const [promptSessionReady, setPromptSessionReady] = useState(false);
+  const [caretRect, setCaretRect] = useState<ReturnType<typeof measureElementCaretRect>>(null);
+  const [caretFocused, setCaretFocused] = useState(false);
+  const [caretActivityVersion, setCaretActivityVersion] = useState(0);
+  const markCaretActivity = useCallback((): void => {
+    setCaretActivityVersion((current) => current + 1);
+  }, []);
+  const {
+    pressed: isCaretPressed,
+    pressKey: pressCaretKey,
+    releaseKey: releaseCaretKey,
+    resetPressed: resetCaretPressed
+  } = useCaretPressState({
+    enabled: caretFocused,
+    onActivity: markCaretActivity
+  });
+  const {
+    motionToken: caretMotionToken,
+    isIdle: isCaretIdle,
+    motionTrail: caretMotionTrail
+  } = useCaretMotionState(caretRect, {
+    enabled: caretFocused,
+    activityKey: caretActivityVersion,
+    suppressMotion: isCaretPressed
+  });
 
   const applyTheme = useCallback((): void => {
     if (sessionDisposedRef.current) {
@@ -69,10 +101,15 @@ export const TerminalPaneSurface = ({
   useEffect(() => {
     sessionReadyRef.current = false;
     sessionDisposedRef.current = false;
+    helperTextareaRef.current = null;
     setReadyToPaint(false);
     setPromptSessionReady(false);
+    setCaretRect(null);
+    setCaretFocused(false);
+    setCaretActivityVersion(0);
     let frameId: number | null = null;
     let resizeFrameId: number | null = null;
+    let caretFrameId: number | null = null;
     let lastSyncedCols = -1;
     let lastSyncedRows = -1;
 
@@ -93,6 +130,9 @@ export const TerminalPaneSurface = ({
     const terminal = new Terminal({
       allowTransparency: false,
       cursorBlink: true,
+      cursorInactiveStyle: "bar",
+      cursorStyle: "bar",
+      cursorWidth: 1,
       convertEol: true,
       fontFamily: "var(--lyra-font-mono)",
       fontSize: terminalFontSize,
@@ -106,6 +146,85 @@ export const TerminalPaneSurface = ({
     terminal.loadAddon(fitAddon);
     terminal.open(host);
     const terminalWithElement = terminal as Terminal & { element?: HTMLElement };
+    const syncCaret = (): void => {
+      if (sessionDisposedRef.current) {
+        return;
+      }
+      const paneBody = paneBodyRef.current;
+      const helperTextarea = helperTextareaRef.current;
+      if (paneBody === null || helperTextarea === null) {
+        setCaretRect(null);
+        setCaretFocused(false);
+        return;
+      }
+      setCaretRect(measureElementCaretRect(helperTextarea, paneBody));
+      setCaretFocused(paneBody.ownerDocument.activeElement === helperTextarea);
+    };
+    const scheduleCaretSync = (): void => {
+      if (sessionDisposedRef.current) {
+        return;
+      }
+      if (caretFrameId !== null) {
+        return;
+      }
+      caretFrameId = requestAnimationFrame(() => {
+        caretFrameId = null;
+        syncCaret();
+      });
+    };
+    let detachCaretSource = (): void => {
+      helperTextareaRef.current = null;
+    };
+    const attachCaretSource = (): void => {
+      const helperTextarea = terminalWithElement.element?.querySelector("textarea.xterm-helper-textarea");
+      if (!(helperTextarea instanceof HTMLTextAreaElement)) {
+        helperTextareaRef.current = null;
+        scheduleCaretSync();
+        return;
+      }
+      helperTextareaRef.current = helperTextarea;
+      const handleFocus = (): void => {
+        setCaretFocused(true);
+        scheduleCaretSync();
+      };
+      const handleBlur = (): void => {
+        resetCaretPressed();
+        setCaretFocused(false);
+        scheduleCaretSync();
+      };
+      const handleKeyDown = (event: KeyboardEvent): void => {
+        pressCaretKey(event.key, event.repeat);
+        scheduleCaretSync();
+      };
+      const handleKeyUp = (event: KeyboardEvent): void => {
+        releaseCaretKey(event.key);
+        scheduleCaretSync();
+      };
+      helperTextarea.addEventListener("focus", handleFocus);
+      helperTextarea.addEventListener("blur", handleBlur);
+      helperTextarea.addEventListener("keydown", handleKeyDown);
+      helperTextarea.addEventListener("keyup", handleKeyUp);
+      const observer =
+        typeof MutationObserver === "function"
+          ? new MutationObserver(() => {
+              scheduleCaretSync();
+            })
+          : null;
+      observer?.observe(helperTextarea, {
+        attributes: true,
+        attributeFilter: ["style", "class"]
+      });
+      detachCaretSource = () => {
+        helperTextarea.removeEventListener("focus", handleFocus);
+        helperTextarea.removeEventListener("blur", handleBlur);
+        helperTextarea.removeEventListener("keydown", handleKeyDown);
+        helperTextarea.removeEventListener("keyup", handleKeyUp);
+        observer?.disconnect();
+        helperTextareaRef.current = null;
+      };
+      scheduleCaretSync();
+    };
+    attachCaretSource();
 
     const fitToContainer = (): void => {
       if (sessionDisposedRef.current) {
@@ -165,6 +284,7 @@ export const TerminalPaneSurface = ({
         return;
       }
       resizeAndSync();
+      scheduleCaretSync();
       setReadyToPaint(true);
     });
 
@@ -173,6 +293,7 @@ export const TerminalPaneSurface = ({
         return;
       }
       scheduleResizeAndSync();
+      scheduleCaretSync();
     });
     resizeObserver.observe(host);
 
@@ -256,6 +377,7 @@ export const TerminalPaneSurface = ({
         lastSyncedCols = -1;
         lastSyncedRows = -1;
         scheduleResizeAndSync();
+        scheduleCaretSync();
       })
       .catch((error: unknown) => {
         sessionReadyRef.current = false;
@@ -272,6 +394,10 @@ export const TerminalPaneSurface = ({
       if (resizeFrameId !== null) {
         cancelAnimationFrame(resizeFrameId);
       }
+      if (caretFrameId !== null) {
+        cancelAnimationFrame(caretFrameId);
+      }
+      detachCaretSource();
       disposeData.dispose();
       unlistenData();
       unlistenExit();
@@ -281,7 +407,14 @@ export const TerminalPaneSurface = ({
       terminal.dispose();
       setReadyToPaint(false);
     };
-  }, [applyTheme, desktopApi, pane.sessionId]);
+  }, [
+    applyTheme,
+    desktopApi,
+    pane.sessionId,
+    pressCaretKey,
+    releaseCaretKey,
+    resetCaretPressed
+  ]);
 
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
@@ -321,8 +454,19 @@ export const TerminalPaneSurface = ({
       className={active ? "lyra-terminal-pane lyra-terminal-pane-active" : "lyra-terminal-pane"}
       onMouseDown={onFocus}
     >
-      <div className="lyra-terminal-pane-body">
+      <div className="lyra-terminal-pane-body" ref={paneBodyRef}>
         <div className={readyToPaint ? "lyra-terminal-host lyra-terminal-host-ready" : "lyra-terminal-host"} ref={hostRef} />
+        <div className="lyra-modern-caret-layer lyra-terminal-caret-layer">
+          <ModernCaretOverlay
+            rect={caretRect}
+            focused={caretFocused}
+            blinking={isCaretIdle && !isCaretPressed}
+            pressed={isCaretPressed}
+            motionToken={caretMotionToken}
+            motionTrail={caretMotionTrail}
+            className="lyra-modern-caret-terminal"
+          />
+        </div>
         {statusMessage === null ? null : <div className="lyra-terminal-status">{statusMessage}</div>}
       </div>
     </section>

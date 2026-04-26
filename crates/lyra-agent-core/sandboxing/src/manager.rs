@@ -101,7 +101,7 @@ pub struct SandboxTransformRequest<'a> {
     pub network: Option<&'a NetworkProxy>,
     pub sandbox_policy_cwd: &'a Path,
     pub lyra_linux_sandbox_exe: Option<&'a Path>,
-    pub use_legacy_landlock: bool,
+    pub use_classic_landlock: bool,
     pub windows_sandbox_level: WindowsSandboxLevel,
     pub windows_sandbox_private_desktop: bool,
 }
@@ -182,7 +182,7 @@ impl SandboxManager {
             network,
             sandbox_policy_cwd,
             lyra_linux_sandbox_exe,
-            use_legacy_landlock,
+            use_classic_landlock,
             windows_sandbox_level,
             windows_sandbox_private_desktop,
         } = request;
@@ -231,7 +231,7 @@ impl SandboxManager {
                 #[cfg(target_os = "linux")]
                 ensure_linux_bubblewrap_is_supported(
                     &effective_file_system_policy,
-                    use_legacy_landlock,
+                    use_classic_landlock,
                     allow_proxy_network,
                     is_wsl1(),
                 )?;
@@ -242,7 +242,7 @@ impl SandboxManager {
                     &effective_file_system_policy,
                     effective_network_policy,
                     sandbox_policy_cwd,
-                    use_legacy_landlock,
+                    use_classic_landlock,
                     allow_proxy_network,
                 );
                 let mut full_command = Vec::with_capacity(1 + args.len());
@@ -275,11 +275,11 @@ impl SandboxManager {
 #[cfg(target_os = "linux")]
 fn ensure_linux_bubblewrap_is_supported(
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    use_legacy_landlock: bool,
+    use_classic_landlock: bool,
     allow_network_for_proxy: bool,
     is_wsl1: bool,
 ) -> Result<(), SandboxTransformError> {
-    let requires_bubblewrap = !use_legacy_landlock
+    let requires_bubblewrap = !use_classic_landlock
         && (!file_system_sandbox_policy.has_full_disk_write_access() || allow_network_for_proxy);
     if is_wsl1 && requires_bubblewrap {
         return Err(SandboxTransformError::Wsl1UnsupportedForBubblewrap);

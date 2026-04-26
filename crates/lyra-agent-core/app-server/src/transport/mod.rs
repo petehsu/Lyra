@@ -9,7 +9,6 @@ use crate::outgoing_message::OutgoingMessage;
 use crate::outgoing_message::QueuedOutgoingMessage;
 use lyra_app_server_protocol::JSONRPCErrorError;
 use lyra_app_server_protocol::JSONRPCMessage;
-use lyra_app_server_protocol::ServerRequest;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -116,7 +115,6 @@ pub(crate) enum TransportEvent {
 
 pub(crate) struct ConnectionState {
     pub(crate) outbound_initialized: Arc<AtomicBool>,
-    pub(crate) outbound_experimental_api_enabled: Arc<AtomicBool>,
     pub(crate) outbound_opted_out_notification_methods: Arc<RwLock<HashSet<String>>>,
     pub(crate) session: Arc<ConnectionSessionState>,
 }
@@ -124,12 +122,10 @@ pub(crate) struct ConnectionState {
 impl ConnectionState {
     pub(crate) fn new(
         outbound_initialized: Arc<AtomicBool>,
-        outbound_experimental_api_enabled: Arc<AtomicBool>,
         outbound_opted_out_notification_methods: Arc<RwLock<HashSet<String>>>,
     ) -> Self {
         Self {
             outbound_initialized,
-            outbound_experimental_api_enabled,
             outbound_opted_out_notification_methods,
             session: Arc::new(ConnectionSessionState::default()),
         }
@@ -138,7 +134,6 @@ impl ConnectionState {
 
 pub(crate) struct OutboundConnectionState {
     pub(crate) initialized: Arc<AtomicBool>,
-    pub(crate) experimental_api_enabled: Arc<AtomicBool>,
     pub(crate) opted_out_notification_methods: Arc<RwLock<HashSet<String>>>,
     pub(crate) writer: mpsc::Sender<QueuedOutgoingMessage>,
     disconnect_sender: Option<CancellationToken>,
@@ -148,13 +143,11 @@ impl OutboundConnectionState {
     pub(crate) fn new(
         writer: mpsc::Sender<QueuedOutgoingMessage>,
         initialized: Arc<AtomicBool>,
-        experimental_api_enabled: Arc<AtomicBool>,
         opted_out_notification_methods: Arc<RwLock<HashSet<String>>>,
         disconnect_sender: Option<CancellationToken>,
     ) -> Self {
         Self {
             initialized,
-            experimental_api_enabled,
             opted_out_notification_methods,
             writer,
             disconnect_sender,
@@ -292,7 +285,6 @@ async fn send_message_to_connection(
         warn!("dropping message for disconnected connection: {connection_id:?}");
         return false;
     };
-    let message = filter_outgoing_message_for_connection(connection_state, message);
     if should_skip_notification_for_connection(connection_state, &message) {
         return false;
     }
@@ -319,30 +311,6 @@ async fn send_message_to_connection(
         disconnect_connection(connections, connection_id)
     } else {
         false
-    }
-}
-
-fn filter_outgoing_message_for_connection(
-    connection_state: &OutboundConnectionState,
-    message: OutgoingMessage,
-) -> OutgoingMessage {
-    let experimental_api_enabled = connection_state
-        .experimental_api_enabled
-        .load(Ordering::Acquire);
-    match message {
-        OutgoingMessage::Request(ServerRequest::CommandExecutionRequestApproval {
-            request_id,
-            mut params,
-        }) => {
-            if !experimental_api_enabled {
-                params.strip_experimental_fields();
-            }
-            OutgoingMessage::Request(ServerRequest::CommandExecutionRequestApproval {
-                request_id,
-                params,
-            })
-        }
-        _ => message,
     }
 }
 
@@ -396,6 +364,7 @@ mod tests {
     use lyra_app_server_protocol::JSONRPCResponse;
     use lyra_app_server_protocol::RequestId;
     use lyra_app_server_protocol::ServerNotification;
+    use lyra_app_server_protocol::ServerRequest;
     use lyra_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     use serde_json::json;
@@ -622,7 +591,6 @@ mod tests {
             OutboundConnectionState::new(
                 writer_tx,
                 initialized,
-                Arc::new(AtomicBool::new(true)),
                 opted_out_notification_methods,
                 /*disconnect_sender*/ None,
             ),
@@ -661,7 +629,6 @@ mod tests {
             connection_id,
             OutboundConnectionState::new(
                 writer_tx,
-                Arc::new(AtomicBool::new(true)),
                 Arc::new(AtomicBool::new(true)),
                 Arc::new(RwLock::new(HashSet::from(["configWarning".to_string()]))),
                 /*disconnect_sender*/ None,
@@ -702,7 +669,6 @@ mod tests {
             OutboundConnectionState::new(
                 writer_tx,
                 Arc::new(AtomicBool::new(true)),
-                Arc::new(AtomicBool::new(true)),
                 Arc::new(RwLock::new(HashSet::new())),
                 /*disconnect_sender*/ None,
             ),
@@ -738,69 +704,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn command_execution_request_approval_strips_additional_permissions_without_capability() {
-        let connection_id = ConnectionId(8);
-        let (writer_tx, mut writer_rx) = mpsc::channel(1);
-
-        let mut connections = HashMap::new();
-        connections.insert(
-            connection_id,
-            OutboundConnectionState::new(
-                writer_tx,
-                Arc::new(AtomicBool::new(true)),
-                Arc::new(AtomicBool::new(false)),
-                Arc::new(RwLock::new(HashSet::new())),
-                /*disconnect_sender*/ None,
-            ),
-        );
-
-        route_outgoing_envelope(
-            &mut connections,
-            OutgoingEnvelope::ToConnection {
-                connection_id,
-                message: OutgoingMessage::Request(ServerRequest::CommandExecutionRequestApproval {
-                    request_id: RequestId::Integer(1),
-                    params: lyra_app_server_protocol::CommandExecutionRequestApprovalParams {
-                        thread_id: "thr_123".to_string(),
-                        turn_id: "turn_123".to_string(),
-                        item_id: "call_123".to_string(),
-                        approval_id: None,
-                        reason: Some("Need extra read access".to_string()),
-                        network_approval_context: None,
-                        command: Some("cat file".to_string()),
-                        cwd: Some(absolute_path("/tmp")),
-                        command_actions: None,
-                        additional_permissions: Some(
-                            lyra_app_server_protocol::AdditionalPermissionProfile {
-                                network: None,
-                                file_system: Some(
-                                    lyra_app_server_protocol::AdditionalFileSystemPermissions {
-                                        read: Some(vec![absolute_path("/tmp/allowed")]),
-                                        write: None,
-                                    },
-                                ),
-                            },
-                        ),
-                        proposed_execpolicy_amendment: None,
-                        proposed_network_policy_amendments: None,
-                        available_decisions: None,
-                    },
-                }),
-                write_complete_tx: None,
-            },
-        )
-        .await;
-
-        let message = writer_rx
-            .recv()
-            .await
-            .expect("request should be delivered to the connection");
-        let json = serde_json::to_value(message.message).expect("request should serialize");
-        assert_eq!(json["params"].get("additionalPermissions"), None);
-    }
-
-    #[tokio::test]
-    async fn command_execution_request_approval_keeps_additional_permissions_with_capability() {
+    async fn command_execution_request_approval_keeps_additional_permissions() {
         let connection_id = ConnectionId(9);
         let (writer_tx, mut writer_rx) = mpsc::channel(1);
 
@@ -809,7 +713,6 @@ mod tests {
             connection_id,
             OutboundConnectionState::new(
                 writer_tx,
-                Arc::new(AtomicBool::new(true)),
                 Arc::new(AtomicBool::new(true)),
                 Arc::new(RwLock::new(HashSet::new())),
                 /*disconnect_sender*/ None,
@@ -887,7 +790,6 @@ mod tests {
             OutboundConnectionState::new(
                 fast_writer_tx,
                 Arc::new(AtomicBool::new(true)),
-                Arc::new(AtomicBool::new(true)),
                 Arc::new(RwLock::new(HashSet::new())),
                 Some(fast_disconnect_token.clone()),
             ),
@@ -896,7 +798,6 @@ mod tests {
             slow_connection_id,
             OutboundConnectionState::new(
                 slow_writer_tx.clone(),
-                Arc::new(AtomicBool::new(true)),
                 Arc::new(AtomicBool::new(true)),
                 Arc::new(RwLock::new(HashSet::new())),
                 Some(slow_disconnect_token.clone()),
@@ -981,7 +882,6 @@ mod tests {
             connection_id,
             OutboundConnectionState::new(
                 writer_tx,
-                Arc::new(AtomicBool::new(true)),
                 Arc::new(AtomicBool::new(true)),
                 Arc::new(RwLock::new(HashSet::new())),
                 /*disconnect_sender*/ None,

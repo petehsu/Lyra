@@ -1,6 +1,9 @@
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { AiProviderProfile } from "../../../shared/ai";
 import type { FileEditorRevealLocation } from "../file-editor";
+import type { GlobalDialogOpenRequest } from "../global-dialog";
 import type { WorkbenchLocale } from "../i18n";
+import type { WorkbenchAiStopBehavior } from "../preferences";
 
 export type AiPanelAppId = "ai-mcp" | "ai-skills" | "ai-history";
 
@@ -18,6 +21,8 @@ export type AiPanelAppOpenRequest = {
 };
 
 export type AiPanelSurfaceVariant = "sidebar" | "workspace" | "detached";
+
+export type AiPanelSide = "left" | "right";
 
 export type AiPanelWriteStreamEvent =
   | {
@@ -71,11 +76,13 @@ export type AiPanelSurfaceProps = {
   readonly description: string;
   readonly themeSignature?: string;
   readonly richRenderingEnabled?: boolean;
+  readonly stopBehavior?: WorkbenchAiStopBehavior;
   readonly newSessionTitle: string;
   readonly defaultProfileId?: string | null;
   readonly defaultProviderId?: string | null;
   readonly defaultProfileName: string | null;
   readonly defaultModelNames: readonly string[];
+  readonly configuredProfiles?: readonly AiProviderProfile[];
   readonly profileLabel: string;
   readonly modelLabel: string;
   readonly modelsLabel: string;
@@ -140,5 +147,10 @@ export type AiPanelSurfaceProps = {
   readonly onOpenHistory?: () => void;
   readonly onOpenMcp?: () => void;
   readonly onOpenSkills?: () => void;
+  readonly aiPanelSide?: AiPanelSide;
+  readonly onToggleAiPanelSide?: () => void;
+  readonly movePanelToLeftLabel?: string;
+  readonly movePanelToRightLabel?: string;
   readonly onRequestProjectBind?: (currentPath?: string) => Promise<string | null>;
+  readonly openDialog?: (request: GlobalDialogOpenRequest) => void;
 };

@@ -1,15 +1,15 @@
 use lyra_mcp::ToolInfo;
 use lyra_protocol::dynamic_tools::DynamicToolSpec;
-use lyra_tools::ToolSearchOutputTool;
+use lyra_tools::LoadableToolSpec;
 use lyra_tools::ToolSearchResultSource;
-use lyra_tools::dynamic_tool_to_responses_api_tool;
-use lyra_tools::tool_search_result_source_to_output_tool;
+use lyra_tools::dynamic_tool_to_loadable_tool_spec;
+use lyra_tools::tool_search_result_source_to_loadable_tool_spec;
 use std::collections::HashMap;
 
 #[derive(Clone)]
 pub(crate) struct ToolSearchEntry {
     pub(crate) search_text: String,
-    pub(crate) output: ToolSearchOutputTool,
+    pub(crate) output: LoadableToolSpec,
     pub(crate) limit_bucket: Option<String>,
 }
 
@@ -55,7 +55,7 @@ pub(crate) fn build_tool_search_entries(
 fn mcp_tool_search_entry(info: &ToolInfo) -> Result<ToolSearchEntry, serde_json::Error> {
     Ok(ToolSearchEntry {
         search_text: build_mcp_search_text(info),
-        output: tool_search_result_source_to_output_tool(ToolSearchResultSource {
+        output: tool_search_result_source_to_loadable_tool_spec(ToolSearchResultSource {
             server_name: info.server_name.as_str(),
             tool_namespace: info.callable_namespace.as_str(),
             tool_name: info.callable_name.as_str(),
@@ -70,7 +70,7 @@ fn mcp_tool_search_entry(info: &ToolInfo) -> Result<ToolSearchEntry, serde_json:
 fn dynamic_tool_search_entry(tool: &DynamicToolSpec) -> Result<ToolSearchEntry, serde_json::Error> {
     Ok(ToolSearchEntry {
         search_text: build_dynamic_search_text(tool),
-        output: ToolSearchOutputTool::Function(dynamic_tool_to_responses_api_tool(tool)?),
+        output: dynamic_tool_to_loadable_tool_spec(tool)?,
         limit_bucket: None,
     })
 }

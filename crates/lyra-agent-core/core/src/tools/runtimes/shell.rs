@@ -8,10 +8,10 @@ builds sandbox transform inputs, and runs them under the current SandboxAttempt.
 pub(crate) mod unix_escalation;
 pub(crate) mod zsh_fork_backend;
 
+use crate::auto_review::AutoReviewApprovalRequest;
+use crate::auto_review::review_approval_request;
 use crate::command_canonicalization::canonicalize_command_for_approval;
 use crate::exec::ExecCapturePolicy;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::review_approval_request;
 use crate::sandboxing::ExecOptions;
 use crate::sandboxing::SandboxPermissions;
 use crate::sandboxing::execute_env;
@@ -154,14 +154,14 @@ impl Approvable<ShellRequest> for ShellRuntime {
         let session = ctx.session;
         let turn = ctx.turn;
         let call_id = ctx.call_id.to_string();
-        let guardian_review_id = ctx.guardian_review_id.clone();
+        let auto_review_id = ctx.auto_review_id.clone();
         Box::pin(async move {
-            if let Some(review_id) = guardian_review_id {
+            if let Some(review_id) = auto_review_id {
                 return review_approval_request(
                     session,
                     turn,
                     review_id,
-                    GuardianApprovalRequest::Shell {
+                    AutoReviewApprovalRequest::Shell {
                         id: call_id,
                         command,
                         cwd: cwd.clone(),

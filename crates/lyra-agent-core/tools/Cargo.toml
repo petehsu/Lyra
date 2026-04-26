@@ -11,6 +11,7 @@ workspace = true
 lyra-app-server-protocol = { workspace = true }
 lyra-code-mode = { workspace = true }
 lyra-features = { workspace = true }
+lyra-model-provider-info = { workspace = true }
 lyra-protocol = { workspace = true }
 lyra-utils-absolute-path = { workspace = true }
 lyra-utils-pty = { workspace = true }

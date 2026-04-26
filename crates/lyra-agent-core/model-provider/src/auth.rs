@@ -30,7 +30,7 @@ fn bearer_auth_provider_from_auth(
         });
     }
 
-    if let Some(token) = provider.experimental_bearer_token.clone() {
+    if let Some(token) = provider.bearer_token.clone() {
         return Ok(BearerAuthProvider { token: Some(token) });
     }
 

@@ -16,7 +16,11 @@ pub(super) async fn spawn_review_thread(
     let review_model_info = sess
         .services
         .models_manager
-        .get_model_info(&model, &config.to_models_manager_config())
+        .get_model_info_for_provider(
+            &model,
+            Some(config.model_provider_id.as_str()),
+            &config.to_models_manager_config(),
+        )
         .await;
     // For reviews, disable web_search and view_image regardless of global settings.
     let mut review_features = sess.features.clone();
@@ -34,6 +38,7 @@ pub(super) async fn spawn_review_thread(
         image_generation_tool_auth_allowed: image_generation_tool_auth_allowed(Some(
             sess.services.auth_manager.as_ref(),
         )),
+        wire_api: parent_turn_context.provider.info().wire_api,
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
         sandbox_policy: parent_turn_context.sandbox_policy.get(),
@@ -119,7 +124,6 @@ pub(super) async fn spawn_review_thread(
         developer_instructions: None,
         user_instructions: None,
         collaboration_mode: parent_turn_context.collaboration_mode.clone(),
-        personality: parent_turn_context.personality,
         approval_policy: parent_turn_context.approval_policy.clone(),
         sandbox_policy: parent_turn_context.sandbox_policy.clone(),
         file_system_sandbox_policy: parent_turn_context.file_system_sandbox_policy.clone(),

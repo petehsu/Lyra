@@ -13,9 +13,16 @@ use lyra_model_provider_info::WireApi;
 use lyra_model_provider_info::create_oss_provider_with_base_url;
 use lyra_otel::SessionTelemetry;
 use lyra_protocol::ThreadId;
+use lyra_protocol::models::ContentItem;
+use lyra_protocol::models::FunctionCallOutputPayload;
+use lyra_protocol::models::ReasoningItemContent;
+use lyra_protocol::models::ResponseItem;
 use lyra_protocol::openai_models::ModelInfo;
 use lyra_protocol::protocol::SessionSource;
 use lyra_protocol::protocol::SubAgentSource;
+use lyra_tools::FreeformTool;
+use lyra_tools::FreeformToolFormat;
+use lyra_tools::ToolSpec;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
@@ -30,7 +37,6 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         /*model_verbosity*/ None,
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
-        /*beta_features_header*/ None,
     )
 }
 
@@ -49,7 +55,6 @@ fn test_model_info() -> ModelInfo {
         "priority": 1,
         "upgrade": null,
         "base_instructions": "base instructions",
-        "model_messages": null,
         "supports_reasoning_summaries": false,
         "support_verbosity": false,
         "default_verbosity": null,
@@ -58,7 +63,7 @@ fn test_model_info() -> ModelInfo {
         "supports_parallel_tool_calls": false,
         "supports_image_detail_original": false,
         "context_window": 272000,
-        "experimental_supported_tools": []
+        "supported_tools": []
     }))
     .expect("deserialize test model info")
 }
@@ -76,6 +81,172 @@ fn test_session_telemetry() -> SessionTelemetry {
         "test-terminal".to_string(),
         SessionSource::Cli,
     )
+}
+
+#[test]
+fn parse_chat_completions_payload_preserves_reasoning_content() {
+    let payload = json!({
+        "id": "chatcmpl-test",
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "content": "I will inspect that.",
+                "reasoning_content": "Need inspect before answering.",
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "exec_command",
+                        "arguments": "{\"cmd\":\"ls\"}"
+                    }
+                }]
+            }
+        }]
+    });
+
+    let mapped = super::parse_chat_completions_payload(&payload, &super::ToolMappings::default());
+
+    assert_eq!(mapped.assistant_text, "I will inspect that.");
+    assert_eq!(
+        mapped.reasoning_content.as_deref(),
+        Some("Need inspect before answering.")
+    );
+    assert_eq!(mapped.function_calls.len(), 1);
+}
+
+#[test]
+fn build_chat_messages_replays_reasoning_content_with_tool_call() {
+    let messages = super::build_chat_messages(&[
+        ResponseItem::Reasoning {
+            id: "reasoning-1".to_string(),
+            summary: Vec::new(),
+            content: Some(vec![ReasoningItemContent::ReasoningText {
+                text: "Need inspect before answering.".to_string(),
+            }]),
+            encrypted_content: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "I will inspect that.".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        },
+        ResponseItem::FunctionCall {
+            id: None,
+            name: "exec_command".to_string(),
+            namespace: None,
+            arguments: "{\"cmd\":\"ls\"}".to_string(),
+            call_id: "call_1".to_string(),
+        },
+        ResponseItem::FunctionCallOutput {
+            call_id: "call_1".to_string(),
+            output: FunctionCallOutputPayload::from_text("ok".to_string()),
+        },
+    ]);
+
+    assert_eq!(
+        messages,
+        vec![
+            json!({
+                "role": "assistant",
+                "content": "I will inspect that.",
+                "reasoning_content": "Need inspect before answering.",
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "exec_command",
+                        "arguments": "{\"cmd\":\"ls\"}",
+                    },
+                }],
+            }),
+            json!({
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": "ok",
+            }),
+        ]
+    );
+}
+
+#[test]
+fn build_chat_messages_accumulates_contiguous_reasoning_content() {
+    let messages = super::build_chat_messages(&[
+        ResponseItem::Reasoning {
+            id: "reasoning-1".to_string(),
+            summary: Vec::new(),
+            content: Some(vec![ReasoningItemContent::ReasoningText {
+                text: "First thought.".to_string(),
+            }]),
+            encrypted_content: None,
+        },
+        ResponseItem::Reasoning {
+            id: "reasoning-2".to_string(),
+            summary: Vec::new(),
+            content: Some(vec![ReasoningItemContent::ReasoningText {
+                text: "Second thought.".to_string(),
+            }]),
+            encrypted_content: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "Done.".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        },
+    ]);
+
+    assert_eq!(
+        messages,
+        vec![json!({
+            "role": "assistant",
+            "content": "Done.",
+            "reasoning_content": "First thought.\nSecond thought.",
+        })]
+    );
+}
+
+#[test]
+fn build_tool_mappings_wraps_freeform_tools_for_chat_completions() {
+    let mappings = super::build_tool_mappings(&[ToolSpec::Freeform(FreeformTool {
+        name: "apply_patch".to_string(),
+        description: "Use raw patch text.".to_string(),
+        format: FreeformToolFormat {
+            r#type: "grammar".to_string(),
+            syntax: "lark".to_string(),
+            definition: "start: /.+/".to_string(),
+        },
+    })]);
+
+    let tools = super::build_chat_tools(&mappings);
+
+    assert_eq!(
+        tools,
+        vec![json!({
+            "type": "function",
+            "function": {
+                "name": "apply_patch",
+                "description": "Use raw patch text. For this Chat Completions provider, call it as a JSON function with exactly one string field: input.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "input": {
+                            "type": "string",
+                            "description": "Raw freeform tool input. For apply_patch this must be the complete patch text, starting with *** Begin Patch and ending with *** End Patch."
+                        }
+                    },
+                    "required": ["input"],
+                    "additionalProperties": false
+                }
+            }
+        })]
+    );
 }
 
 #[test]

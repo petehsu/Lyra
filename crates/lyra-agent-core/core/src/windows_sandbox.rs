@@ -3,14 +3,11 @@ use crate::config::edit::ConfigEditsBuilder;
 use lyra_config::config_toml::ConfigToml;
 use lyra_config::profile_toml::ConfigProfile;
 use lyra_config::types::WindowsSandboxModeToml;
-use lyra_features::Feature;
 use lyra_features::Features;
-use lyra_features::FeaturesToml;
 use lyra_login::default_client::client_identity;
 use lyra_otel::sanitize_metric_tag_value;
 use lyra_protocol::config_types::WindowsSandboxLevel;
 use lyra_protocol::protocol::SandboxPolicy;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
@@ -36,15 +33,8 @@ impl WindowsSandboxLevelExt for WindowsSandboxLevel {
         }
     }
 
-    fn from_features(features: &Features) -> WindowsSandboxLevel {
-        if features.enabled(Feature::WindowsSandboxElevated) {
-            return WindowsSandboxLevel::Elevated;
-        }
-        if features.enabled(Feature::WindowsSandbox) {
-            WindowsSandboxLevel::RestrictedToken
-        } else {
-            WindowsSandboxLevel::Disabled
-        }
+    fn from_features(_features: &Features) -> WindowsSandboxLevel {
+        WindowsSandboxLevel::Disabled
     }
 }
 
@@ -60,19 +50,11 @@ pub fn resolve_windows_sandbox_mode(
     cfg: &ConfigToml,
     profile: &ConfigProfile,
 ) -> Option<WindowsSandboxModeToml> {
-    if let Some(mode) = legacy_windows_sandbox_mode(profile.features.as_ref()) {
-        return Some(mode);
-    }
-    if legacy_windows_sandbox_keys_present(profile.features.as_ref()) {
-        return None;
-    }
-
     profile
         .windows
         .as_ref()
         .and_then(|windows| windows.sandbox)
         .or_else(|| cfg.windows.as_ref().and_then(|windows| windows.sandbox))
-        .or_else(|| legacy_windows_sandbox_mode(cfg.features.as_ref()))
 }
 
 pub fn resolve_windows_sandbox_private_desktop(cfg: &ConfigToml, profile: &ConfigProfile) -> bool {
@@ -86,47 +68,6 @@ pub fn resolve_windows_sandbox_private_desktop(cfg: &ConfigToml, profile: &Confi
                 .and_then(|windows| windows.sandbox_private_desktop)
         })
         .unwrap_or(true)
-}
-
-fn legacy_windows_sandbox_keys_present(features: Option<&FeaturesToml>) -> bool {
-    let Some(entries) = features.map(FeaturesToml::entries) else {
-        return false;
-    };
-    entries.contains_key(Feature::WindowsSandboxElevated.key())
-        || entries.contains_key(Feature::WindowsSandbox.key())
-        || entries.contains_key("enable_experimental_windows_sandbox")
-}
-
-pub fn legacy_windows_sandbox_mode(
-    features: Option<&FeaturesToml>,
-) -> Option<WindowsSandboxModeToml> {
-    let entries = features.map(FeaturesToml::entries)?;
-    legacy_windows_sandbox_mode_from_entries(&entries)
-}
-
-pub fn legacy_windows_sandbox_mode_from_entries(
-    entries: &BTreeMap<String, bool>,
-) -> Option<WindowsSandboxModeToml> {
-    if entries
-        .get(Feature::WindowsSandboxElevated.key())
-        .copied()
-        .unwrap_or(false)
-    {
-        return Some(WindowsSandboxModeToml::Elevated);
-    }
-    if entries
-        .get(Feature::WindowsSandbox.key())
-        .copied()
-        .unwrap_or(false)
-        || entries
-            .get("enable_experimental_windows_sandbox")
-            .copied()
-            .unwrap_or(false)
-    {
-        Some(WindowsSandboxModeToml::Unelevated)
-    } else {
-        None
-    }
 }
 
 #[cfg(target_os = "windows")]
@@ -353,7 +294,6 @@ async fn run_windows_sandbox_setup_and_persist(
     ConfigEditsBuilder::new(lyra_home.as_path())
         .with_profile(active_profile.as_deref())
         .set_windows_sandbox_mode(windows_sandbox_setup_mode_tag(mode))
-        .clear_legacy_windows_sandbox_keys()
         .apply()
         .await
         .map_err(|err| anyhow::anyhow!("failed to persist windows sandbox mode: {err}"))

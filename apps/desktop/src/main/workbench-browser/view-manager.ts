@@ -18,7 +18,8 @@ import type {
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserPageSpec,
   WorkbenchBrowserReadPageStateRequest,
-  WorkbenchBrowserTopologySnapshot
+  WorkbenchBrowserTopologySnapshot,
+  WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/desktop-bridge";
 import type {
   WorkbenchTabExtractTextResult,
@@ -36,6 +37,7 @@ import {
 import { createWorkbenchBrowserSharedDebuggerSession } from "./debugger";
 import { createWorkbenchBrowserElementPickerController } from "./element-picker/controller";
 import { extractTextFromPage } from "./page-text-extractor";
+import { createWebThemeInjector } from "./web-theme";
 import type {
   WorkbenchBrowserDebuggerSession,
   WorkbenchBrowserElementPickerController,
@@ -298,6 +300,14 @@ export const createWorkbenchBrowserViewManager = ({
     string,
     ReturnType<typeof createWorkbenchBrowserSharedDebuggerSession>
   >();
+  const webThemeInjector = createWebThemeInjector({
+    onStageFallback: ({ tabId, stage, cause }) => {
+      console.warn(
+        `[lyra-browser] web-theme stage=${stage} tab=${tabId} fallback engaged:`,
+        cause
+      );
+    }
+  });
   const overlayView = new View();
   let overlayAttached = false;
   let topology: WorkbenchBrowserTopologySnapshot = {
@@ -477,6 +487,7 @@ export const createWorkbenchBrowserViewManager = ({
     entry.isDestroyed = true;
     void debuggerSessions.get(entry.tabId)?.dispose().catch(() => undefined);
     debuggerSessions.delete(entry.tabId);
+    webThemeInjector.detach(entry.tabId);
     elementPickerController.handlePageClosed(entry.tabId);
     const window = getWindow();
     if (window !== null && window.isDestroyed() === false && entry.attached) {
@@ -641,6 +652,7 @@ export const createWorkbenchBrowserViewManager = ({
       entries.delete(entry.tabId);
     });
 
+    webThemeInjector.attach(entry.tabId, webContents);
     loadRequestedAddress(entry);
     publishEvent({
       kind: "page-runtime-state",
@@ -962,6 +974,7 @@ export const createWorkbenchBrowserViewManager = ({
         void session.dispose().catch(() => undefined);
       }
       debuggerSessions.clear();
+      webThemeInjector.dispose();
       for (const entry of entries.values()) {
         destroyEntry(entry, false);
       }
@@ -971,6 +984,9 @@ export const createWorkbenchBrowserViewManager = ({
         window.contentView.removeChildView(overlayView);
         overlayAttached = false;
       }
+    },
+    applyWebTheme: async (snapshot: WorkbenchBrowserWebThemeSnapshot) => {
+      await webThemeInjector.updateSnapshot(snapshot);
     },
     syncTopology,
     syncLayout,

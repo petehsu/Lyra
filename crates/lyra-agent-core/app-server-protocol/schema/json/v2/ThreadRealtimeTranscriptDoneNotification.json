@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "description": "EXPERIMENTAL - final transcript text emitted when realtime completes a transcript part.",
+  "description": "final transcript text emitted when realtime completes a transcript part.",
   "properties": {
     "role": {
       "type": "string"

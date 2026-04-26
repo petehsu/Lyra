@@ -292,35 +292,6 @@ mod tests {
     }
 
     #[test]
-    fn deprecated_block_decision_blocks_processing() {
-        let parsed = parse_completed(
-            &handler(),
-            run_result(
-                Some(0),
-                r#"{"decision":"block","reason":"do not run that"}"#,
-                "",
-            ),
-            Some("turn-1".to_string()),
-        );
-
-        assert_eq!(
-            parsed.data,
-            PreToolUseHandlerData {
-                should_block: true,
-                block_reason: Some("do not run that".to_string()),
-            }
-        );
-        assert_eq!(parsed.completed.run.status, HookRunStatus::Blocked);
-        assert_eq!(
-            parsed.completed.run.entries,
-            vec![HookOutputEntry {
-                kind: HookOutputEntryKind::Feedback,
-                text: "do not run that".to_string(),
-            }]
-        );
-    }
-
-    #[test]
     fn unsupported_permission_decision_fails_open() {
         let parsed = parse_completed(
             &handler(),
@@ -345,31 +316,6 @@ mod tests {
             vec![HookOutputEntry {
                 kind: HookOutputEntryKind::Error,
                 text: "PreToolUse hook returned unsupported permissionDecision:ask".to_string(),
-            }]
-        );
-    }
-
-    #[test]
-    fn deprecated_approve_decision_fails_open() {
-        let parsed = parse_completed(
-            &handler(),
-            run_result(Some(0), r#"{"decision":"approve"}"#, ""),
-            Some("turn-1".to_string()),
-        );
-
-        assert_eq!(
-            parsed.data,
-            PreToolUseHandlerData {
-                should_block: false,
-                block_reason: None,
-            }
-        );
-        assert_eq!(parsed.completed.run.status, HookRunStatus::Failed);
-        assert_eq!(
-            parsed.completed.run.entries,
-            vec![HookOutputEntry {
-                kind: HookOutputEntryKind::Error,
-                text: "PreToolUse hook returned unsupported decision:approve".to_string(),
             }]
         );
     }

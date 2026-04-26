@@ -169,10 +169,10 @@
       "type": "object"
     },
     "ApprovalsReviewer": {
-      "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, MCP approval prompts, and ARC escalations. Defaults to `user`. `guardian_subagent` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request.",
+      "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, MCP approval prompts, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request.",
       "enum": [
         "user",
-        "guardian_subagent"
+        "auto_review"
       ],
       "type": "string"
     },
@@ -315,12 +315,6 @@
         "approvals_reviewer": {
           "$ref": "#/definitions/ApprovalsReviewer"
         },
-        "experimental_use_freeform_apply_patch": {
-          "type": "boolean"
-        },
-        "experimental_use_unified_exec_tool": {
-          "type": "boolean"
-        },
         "features": {
           "additionalProperties": false,
           "default": null,
@@ -335,6 +329,9 @@
             "apps": {
               "type": "boolean"
             },
+            "auto_review_approval": {
+              "type": "boolean"
+            },
             "child_agents_md": {
               "type": "boolean"
             },
@@ -344,22 +341,10 @@
             "code_mode_only": {
               "type": "boolean"
             },
-            "collab": {
-              "type": "boolean"
-            },
             "collaboration_modes": {
               "type": "boolean"
             },
-            "connectors": {
-              "type": "boolean"
-            },
             "default_mode_request_user_input": {
-              "type": "boolean"
-            },
-            "elevated_windows_sandbox": {
-              "type": "boolean"
-            },
-            "enable_experimental_windows_sandbox": {
               "type": "boolean"
             },
             "enable_fanout": {
@@ -371,34 +356,13 @@
             "exec_permission_approvals": {
               "type": "boolean"
             },
-            "experimental_use_freeform_apply_patch": {
-              "type": "boolean"
-            },
-            "experimental_use_unified_exec_tool": {
-              "type": "boolean"
-            },
-            "experimental_windows_sandbox": {
-              "type": "boolean"
-            },
-            "external_migration": {
-              "type": "boolean"
-            },
-            "fast_mode": {
-              "type": "boolean"
-            },
             "general_analytics": {
-              "type": "boolean"
-            },
-            "guardian_approval": {
               "type": "boolean"
             },
             "image_detail_original": {
               "type": "boolean"
             },
             "image_generation": {
-              "type": "boolean"
-            },
-            "include_apply_patch_tool": {
               "type": "boolean"
             },
             "js_repl": {
@@ -413,34 +377,19 @@
             "lyra_hooks": {
               "type": "boolean"
             },
-            "memories": {
-              "type": "boolean"
-            },
-            "memory_tool": {
-              "type": "boolean"
-            },
             "multi_agent": {
               "type": "boolean"
             },
             "multi_agent_v2": {
               "$ref": "#/definitions/FeatureToml_for_MultiAgentV2ConfigToml"
             },
-            "personality": {
-              "type": "boolean"
-            },
             "plugins": {
-              "type": "boolean"
-            },
-            "prevent_idle_sleep": {
               "type": "boolean"
             },
             "realtime_conversation": {
               "type": "boolean"
             },
             "remote_models": {
-              "type": "boolean"
-            },
-            "request_permissions": {
               "type": "boolean"
             },
             "request_permissions_tool": {
@@ -509,13 +458,10 @@
             "unified_exec": {
               "type": "boolean"
             },
-            "use_legacy_landlock": {
+            "use_classic_landlock": {
               "type": "boolean"
             },
             "use_linux_sandbox_bwrap": {
-              "type": "boolean"
-            },
-            "web_search": {
               "type": "boolean"
             },
             "web_search_cached": {
@@ -529,9 +475,6 @@
             }
           },
           "type": "object"
-        },
-        "include_apply_patch_tool": {
-          "type": "boolean"
         },
         "include_apps_instructions": {
           "type": "boolean"
@@ -587,9 +530,6 @@
         "oss_provider": {
           "type": "string"
         },
-        "personality": {
-          "$ref": "#/definitions/Personality"
-        },
         "plan_mode_reasoning_effort": {
           "$ref": "#/definitions/ReasoningEffort"
         },
@@ -623,39 +563,6 @@
             }
           ],
           "description": "Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution."
-        }
-      },
-      "type": "object"
-    },
-    "ExternalConfigMigrationPrompts": {
-      "additionalProperties": false,
-      "description": "Settings for notices we display to users via the tui and app-server clients (primarily the Lyra desktop extension). NOTE: these are different from notifications - notices are warnings, NUX screens, acknowledgements, etc.",
-      "properties": {
-        "home": {
-          "description": "Tracks whether home-level external config migration prompts are hidden.",
-          "type": "boolean"
-        },
-        "home_last_prompted_at": {
-          "description": "Tracks the last time the home-level external config migration prompt was shown.",
-          "format": "int64",
-          "type": "integer"
-        },
-        "project_last_prompted_at": {
-          "additionalProperties": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "default": {},
-          "description": "Tracks the last time a project-level external config migration prompt was shown.",
-          "type": "object"
-        },
-        "projects": {
-          "additionalProperties": {
-            "type": "boolean"
-          },
-          "default": {},
-          "description": "Tracks which project paths have opted out of external config migration prompts.",
-          "type": "object"
         }
       },
       "type": "object"
@@ -1285,6 +1192,10 @@
           "description": "Base URL for the provider's Responses-compatible API.",
           "type": "string"
         },
+        "bearer_token": {
+          "description": "Value to use with `Authorization: Bearer <token>` header. Use of this config is discouraged in favor of `env_key` for security reasons, but this may be necessary when using this programmatically.",
+          "type": "string"
+        },
         "env_http_headers": {
           "additionalProperties": {
             "type": "string"
@@ -1298,10 +1209,6 @@
         },
         "env_key_instructions": {
           "description": "Optional instructions to help the user get a valid value for the variable and set it.",
-          "type": "string"
-        },
-        "experimental_bearer_token": {
-          "description": "Value to use with `Authorization: Bearer <token>` header. Use of this config is discouraged in favor of `env_key` for security reasons, but this may be necessary when using this programmatically.",
           "type": "string"
         },
         "http_headers": {
@@ -1461,20 +1368,6 @@
     "Notice": {
       "additionalProperties": false,
       "properties": {
-        "external_config_migration_prompts": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ExternalConfigMigrationPrompts"
-            }
-          ],
-          "default": {
-            "home": null,
-            "home_last_prompted_at": null,
-            "project_last_prompted_at": {},
-            "projects": {}
-          },
-          "description": "Tracks scopes where external config migration prompts should be suppressed."
-        },
         "hide_full_access_warning": {
           "description": "Tracks whether the user has acknowledged the full access warning prompt.",
           "type": "boolean"
@@ -1746,14 +1639,6 @@
     "PermissionsToml": {
       "type": "object"
     },
-    "Personality": {
-      "enum": [
-        "none",
-        "friendly",
-        "pragmatic"
-      ],
-      "type": "string"
-    },
     "PluginConfig": {
       "additionalProperties": false,
       "properties": {
@@ -1844,7 +1729,7 @@
           },
           "type": "array"
         },
-        "experimental_environment": {
+        "environment": {
           "default": null,
           "type": "string"
         },
@@ -2049,7 +1934,6 @@
     },
     "ServiceTier": {
       "enum": [
-        "fast",
         "flex"
       ],
       "type": "string"
@@ -2090,9 +1974,6 @@
           },
           "type": "array"
         },
-        "experimental_use_profile": {
-          "type": "boolean"
-        },
         "ignore_default_excludes": {
           "type": "boolean"
         },
@@ -2111,6 +1992,9 @@
             "type": "string"
           },
           "type": "object"
+        },
+        "use_profile": {
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -2515,7 +2399,7 @@
       "description": "Preferred backend for storing CLI auth credentials. file (default): Use a file in the active Lyra runtime home directory. keyring: Use an OS-specific keyring service. auto: Use the keyring if available, otherwise use a file."
     },
     "commit_attribution": {
-      "description": "Compact prompt used for history compaction. Optional commit attribution text for commit message co-author trailers.\n\nSet to an empty string to disable automatic commit attribution.",
+      "description": "Optional commit attribution text for commit message co-author trailers.\n\nSet to an empty string to disable automatic commit attribution.",
       "type": "string"
     },
     "default_permissions": {
@@ -2529,32 +2413,6 @@
     },
     "disable_paste_burst": {
       "description": "When true, disables burst-paste detection for typed input entirely. All characters are inserted as they are received, and no buffering or placeholder replacement will occur for fast keypress bursts.",
-      "type": "boolean"
-    },
-    "experimental_realtime_start_instructions": {
-      "description": "Experimental / do not use. Replaces the built-in realtime start instructions inserted into developer messages when realtime becomes active.",
-      "type": "string"
-    },
-    "experimental_realtime_ws_backend_prompt": {
-      "description": "Experimental / do not use. Overrides only the realtime conversation websocket transport instructions (the `Op::RealtimeConversation` `/ws` session.update instructions) without changing normal prompts.",
-      "type": "string"
-    },
-    "experimental_realtime_ws_base_url": {
-      "description": "Experimental / do not use. Overrides only the realtime conversation websocket transport base URL (the `Op::RealtimeConversation` `/v1/realtime` connection) without changing normal provider HTTP requests.",
-      "type": "string"
-    },
-    "experimental_realtime_ws_model": {
-      "description": "Experimental / do not use. Selects the realtime websocket model/snapshot used for the `Op::RealtimeConversation` connection.",
-      "type": "string"
-    },
-    "experimental_realtime_ws_startup_context": {
-      "description": "Experimental / do not use. Replaces the synthesized realtime startup context appended to websocket session instructions. An empty string disables startup context injection entirely.",
-      "type": "string"
-    },
-    "experimental_use_freeform_apply_patch": {
-      "type": "boolean"
-    },
-    "experimental_use_unified_exec_tool": {
       "type": "boolean"
     },
     "features": {
@@ -2571,6 +2429,9 @@
         "apps": {
           "type": "boolean"
         },
+        "auto_review_approval": {
+          "type": "boolean"
+        },
         "child_agents_md": {
           "type": "boolean"
         },
@@ -2580,22 +2441,10 @@
         "code_mode_only": {
           "type": "boolean"
         },
-        "collab": {
-          "type": "boolean"
-        },
         "collaboration_modes": {
           "type": "boolean"
         },
-        "connectors": {
-          "type": "boolean"
-        },
         "default_mode_request_user_input": {
-          "type": "boolean"
-        },
-        "elevated_windows_sandbox": {
-          "type": "boolean"
-        },
-        "enable_experimental_windows_sandbox": {
           "type": "boolean"
         },
         "enable_fanout": {
@@ -2607,34 +2456,13 @@
         "exec_permission_approvals": {
           "type": "boolean"
         },
-        "experimental_use_freeform_apply_patch": {
-          "type": "boolean"
-        },
-        "experimental_use_unified_exec_tool": {
-          "type": "boolean"
-        },
-        "experimental_windows_sandbox": {
-          "type": "boolean"
-        },
-        "external_migration": {
-          "type": "boolean"
-        },
-        "fast_mode": {
-          "type": "boolean"
-        },
         "general_analytics": {
-          "type": "boolean"
-        },
-        "guardian_approval": {
           "type": "boolean"
         },
         "image_detail_original": {
           "type": "boolean"
         },
         "image_generation": {
-          "type": "boolean"
-        },
-        "include_apply_patch_tool": {
           "type": "boolean"
         },
         "js_repl": {
@@ -2649,34 +2477,19 @@
         "lyra_hooks": {
           "type": "boolean"
         },
-        "memories": {
-          "type": "boolean"
-        },
-        "memory_tool": {
-          "type": "boolean"
-        },
         "multi_agent": {
           "type": "boolean"
         },
         "multi_agent_v2": {
           "$ref": "#/definitions/FeatureToml_for_MultiAgentV2ConfigToml"
         },
-        "personality": {
-          "type": "boolean"
-        },
         "plugins": {
-          "type": "boolean"
-        },
-        "prevent_idle_sleep": {
           "type": "boolean"
         },
         "realtime_conversation": {
           "type": "boolean"
         },
         "remote_models": {
-          "type": "boolean"
-        },
-        "request_permissions": {
           "type": "boolean"
         },
         "request_permissions_tool": {
@@ -2745,13 +2558,10 @@
         "unified_exec": {
           "type": "boolean"
         },
-        "use_legacy_landlock": {
+        "use_classic_landlock": {
           "type": "boolean"
         },
         "use_linux_sandbox_bwrap": {
-          "type": "boolean"
-        },
-        "web_search": {
           "type": "boolean"
         },
         "web_search_cached": {
@@ -2958,14 +2768,6 @@
       ],
       "description": "Collection of in-product notices (different from notifications) See [`crate::types::Notice`] for more details"
     },
-    "notify": {
-      "default": null,
-      "description": "Optional external command to spawn for end-user notifications.",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
     "openai_base_url": {
       "description": "Base URL override for the built-in `openai` model provider.",
       "type": "string"
@@ -2990,14 +2792,6 @@
       ],
       "default": null,
       "description": "Named permissions profiles."
-    },
-    "personality": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/Personality"
-        }
-      ],
-      "description": "Optionally specify a personality for the model"
     },
     "plan_mode_reasoning_effort": {
       "$ref": "#/definitions/ReasoningEffort"
@@ -3056,7 +2850,27 @@
         }
       ],
       "default": null,
-      "description": "Experimental / do not use. Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
+      "description": "Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
+    },
+    "realtime_start_instructions": {
+      "description": "Replaces the built-in realtime start instructions inserted into developer messages when realtime becomes active.",
+      "type": "string"
+    },
+    "realtime_ws_backend_prompt": {
+      "description": "Overrides only the realtime conversation websocket transport instructions (the `Op::RealtimeConversation` `/ws` session.update instructions) without changing normal prompts.",
+      "type": "string"
+    },
+    "realtime_ws_base_url": {
+      "description": "Overrides only the realtime conversation websocket transport base URL (the `Op::RealtimeConversation` `/v1/realtime` connection) without changing normal provider HTTP requests.",
+      "type": "string"
+    },
+    "realtime_ws_model": {
+      "description": "Selects the realtime websocket model/snapshot used for the `Op::RealtimeConversation` connection.",
+      "type": "string"
+    },
+    "realtime_ws_startup_context": {
+      "description": "Replaces the synthesized realtime startup context appended to websocket session instructions. An empty string disables startup context injection entirely.",
+      "type": "string"
     },
     "review_model": {
       "description": "Review model override used by the `/review` feature.",
@@ -3094,11 +2908,11 @@
       ],
       "default": {
         "exclude": null,
-        "experimental_use_profile": null,
         "ignore_default_excludes": null,
         "include_only": null,
         "inherit": null,
-        "set": null
+        "set": null,
+        "use_profile": null
       }
     },
     "show_raw_agent_reasoning": {
@@ -3120,10 +2934,6 @@
         }
       ],
       "description": "Directory where Lyra stores the SQLite state DB. Defaults to `$LYRA_SQLITE_HOME` when set. Otherwise uses the active Lyra runtime home."
-    },
-    "suppress_unstable_features_warning": {
-      "description": "Suppress warnings about unstable (under development) features.",
-      "type": "boolean"
     },
     "tool_output_token_limit": {
       "description": "Token budget applied when storing tool/function outputs in the context manager.",

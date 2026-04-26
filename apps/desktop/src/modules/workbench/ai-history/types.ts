@@ -8,6 +8,7 @@ export type AiHistorySurfaceProps = {
   readonly newSessionTitle: string;
   readonly newConversationLabel: string;
   readonly openConversationLabel: string;
+  readonly renameConversationLabel?: string;
   readonly deleteConversationLabel: string;
   readonly archiveConversationLabel: string;
   readonly archivedConversationLabel: string;
@@ -32,6 +33,8 @@ export type AiHistorySurfaceProps = {
   readonly previewEmptyTitle: string;
   readonly previewEmptyDescription: string;
   readonly previewLoadingLabel: string;
+  readonly richRenderingEnabled?: boolean;
+  readonly themeSignature?: string;
   readonly defaultProfileId?: string | null;
   readonly defaultProviderId?: string | null;
   readonly openDialog?: (request: GlobalDialogOpenRequest) => void;

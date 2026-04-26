@@ -29,7 +29,7 @@ pub fn create_linux_sandbox_command_args_for_policies(
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_policy_cwd: &Path,
-    use_legacy_landlock: bool,
+    use_classic_landlock: bool,
     allow_network_for_proxy: bool,
 ) -> Vec<String> {
     let sandbox_policy_json = serde_json::to_string(sandbox_policy)
@@ -59,8 +59,8 @@ pub fn create_linux_sandbox_command_args_for_policies(
         "--network-sandbox-policy".to_string(),
         network_policy_json,
     ];
-    if use_legacy_landlock {
-        linux_cmd.push("--use-legacy-landlock".to_string());
+    if use_classic_landlock {
+        linux_cmd.push("--use-classic-landlock".to_string());
     }
     if allow_network_for_proxy {
         linux_cmd.push("--allow-network-for-proxy".to_string());
@@ -77,7 +77,7 @@ fn create_linux_sandbox_command_args(
     command: Vec<String>,
     command_cwd: &Path,
     sandbox_policy_cwd: &Path,
-    use_legacy_landlock: bool,
+    use_classic_landlock: bool,
     allow_network_for_proxy: bool,
 ) -> Vec<String> {
     let command_cwd = command_cwd
@@ -95,8 +95,8 @@ fn create_linux_sandbox_command_args(
         "--command-cwd".to_string(),
         command_cwd,
     ];
-    if use_legacy_landlock {
-        linux_cmd.push("--use-legacy-landlock".to_string());
+    if use_classic_landlock {
+        linux_cmd.push("--use-classic-landlock".to_string());
     }
     if allow_network_for_proxy {
         linux_cmd.push("--allow-network-for-proxy".to_string());

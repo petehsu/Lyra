@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import { memo, type RefObject } from "react";
 
 import {
   CommandApprovalBar,
@@ -37,7 +37,7 @@ type AiPanelInteractionShellProps = {
   readonly onPlanApprovalDecision: (response: PlanInteractionResponse) => Promise<void>;
 };
 
-export const AiPanelInteractionShell = ({
+export const AiPanelInteractionShell = memo(({
   locale,
   panelRef,
   activeInteractionPanel,
@@ -134,4 +134,6 @@ export const AiPanelInteractionShell = ({
       ) : null}
     </div>
   );
-};
+});
+
+AiPanelInteractionShell.displayName = "AiPanelInteractionShell";

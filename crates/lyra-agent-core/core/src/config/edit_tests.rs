@@ -553,130 +553,6 @@ gpt-5 = "gpt-5.1"
 }
 
 #[test]
-fn blocking_set_hide_external_config_migration_prompt_home_preserves_table() {
-    let tmp = tempdir().expect("tmpdir");
-    let lyra_home = tmp.path();
-    std::fs::write(
-        lyra_home.join(CONFIG_TOML_FILE),
-        r#"[notice]
-existing = "value"
-"#,
-    )
-    .expect("seed");
-    apply_blocking(
-        lyra_home,
-        /*profile*/ None,
-        &[ConfigEdit::SetNoticeHideExternalConfigMigrationPromptHome(
-            true,
-        )],
-    )
-    .expect("persist");
-
-    let contents = std::fs::read_to_string(lyra_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[notice]
-existing = "value"
-
-[notice.external_config_migration_prompts]
-home = true
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
-fn blocking_set_hide_external_config_migration_prompt_project_preserves_table() {
-    let tmp = tempdir().expect("tmpdir");
-    let lyra_home = tmp.path();
-    std::fs::write(
-        lyra_home.join(CONFIG_TOML_FILE),
-        r#"[notice]
-existing = "value"
-"#,
-    )
-    .expect("seed");
-    apply_blocking(
-        lyra_home,
-        /*profile*/ None,
-        &[
-            ConfigEdit::SetNoticeHideExternalConfigMigrationPromptProject(
-                "/Users/alexsong/code/skills".to_string(),
-                true,
-            ),
-        ],
-    )
-    .expect("persist");
-
-    let contents = std::fs::read_to_string(lyra_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[notice]
-existing = "value"
-
-[notice.external_config_migration_prompts.projects]
-"/Users/alexsong/code/skills" = true
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
-fn blocking_set_external_config_migration_prompt_home_last_prompted_at_preserves_table() {
-    let tmp = tempdir().expect("tmpdir");
-    let lyra_home = tmp.path();
-    std::fs::write(
-        lyra_home.join(CONFIG_TOML_FILE),
-        r#"[notice]
-existing = "value"
-"#,
-    )
-    .expect("seed");
-    apply_blocking(
-        lyra_home,
-        /*profile*/ None,
-        &[ConfigEdit::SetNoticeExternalConfigMigrationPromptHomeLastPromptedAt(1_760_000_000)],
-    )
-    .expect("persist");
-
-    let contents = std::fs::read_to_string(lyra_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[notice]
-existing = "value"
-
-[notice.external_config_migration_prompts]
-home_last_prompted_at = 1760000000
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
-fn blocking_set_external_config_migration_prompt_project_last_prompted_at_preserves_table() {
-    let tmp = tempdir().expect("tmpdir");
-    let lyra_home = tmp.path();
-    std::fs::write(
-        lyra_home.join(CONFIG_TOML_FILE),
-        r#"[notice]
-existing = "value"
-"#,
-    )
-    .expect("seed");
-    apply_blocking(
-        lyra_home,
-        /*profile*/ None,
-        &[
-            ConfigEdit::SetNoticeExternalConfigMigrationPromptProjectLastPromptedAt(
-                "/Users/alexsong/code/skills".to_string(),
-                1_760_000_000,
-            ),
-        ],
-    )
-    .expect("persist");
-
-    let contents = std::fs::read_to_string(lyra_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[notice]
-existing = "value"
-
-[notice.external_config_migration_prompts.project_last_prompted_at]
-"/Users/alexsong/code/skills" = 1760000000
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
 fn blocking_replace_mcp_servers_round_trips() {
     let tmp = tempdir().expect("tmpdir");
     let lyra_home = tmp.path();
@@ -699,7 +575,7 @@ fn blocking_replace_mcp_servers_round_trips() {
                 env_vars: vec!["FOO".into()],
                 cwd: None,
             },
-            experimental_environment: None,
+            environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: true,
@@ -728,7 +604,7 @@ fn blocking_replace_mcp_servers_round_trips() {
                 ),
                 env_http_headers: None,
             },
-            experimental_environment: None,
+            environment: None,
             enabled: false,
             required: false,
             supports_parallel_tool_calls: false,
@@ -794,7 +670,7 @@ fn blocking_replace_mcp_servers_serializes_tool_approval_overrides() {
                 env_vars: Vec::new(),
                 cwd: None,
             },
-            experimental_environment: None,
+            environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
@@ -858,7 +734,7 @@ foo = { command = "cmd" }
                 env_vars: Vec::new(),
                 cwd: None,
             },
-            experimental_environment: None,
+            environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
@@ -912,7 +788,7 @@ foo = { command = "cmd" } # keep me
                 env_vars: Vec::new(),
                 cwd: None,
             },
-            experimental_environment: None,
+            environment: None,
             enabled: false,
             required: false,
             supports_parallel_tool_calls: false,
@@ -965,7 +841,7 @@ foo = { command = "cmd", args = ["--flag"] } # keep me
                 env_vars: Vec::new(),
                 cwd: None,
             },
-            experimental_environment: None,
+            environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
@@ -1019,7 +895,7 @@ foo = { command = "cmd" }
                 env_vars: Vec::new(),
                 cwd: None,
             },
-            experimental_environment: None,
+            environment: None,
             enabled: false,
             required: false,
             supports_parallel_tool_calls: false,

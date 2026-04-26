@@ -1,31 +1,7 @@
 use super::*;
 use lyra_config::types::WindowsToml;
 use lyra_features::Features;
-use lyra_features::FeaturesToml;
 use pretty_assertions::assert_eq;
-use std::collections::BTreeMap;
-
-#[test]
-fn elevated_flag_works_by_itself() {
-    let mut features = Features::with_defaults();
-    features.enable(Feature::WindowsSandboxElevated);
-
-    assert_eq!(
-        WindowsSandboxLevel::from_features(&features),
-        WindowsSandboxLevel::Elevated
-    );
-}
-
-#[test]
-fn restricted_token_flag_works_by_itself() {
-    let mut features = Features::with_defaults();
-    features.enable(Feature::WindowsSandbox);
-
-    assert_eq!(
-        WindowsSandboxLevel::from_features(&features),
-        WindowsSandboxLevel::RestrictedToken
-    );
-}
 
 #[test]
 fn no_flags_means_no_sandbox() {
@@ -34,47 +10,6 @@ fn no_flags_means_no_sandbox() {
     assert_eq!(
         WindowsSandboxLevel::from_features(&features),
         WindowsSandboxLevel::Disabled
-    );
-}
-
-#[test]
-fn elevated_wins_when_both_flags_are_enabled() {
-    let mut features = Features::with_defaults();
-    features.enable(Feature::WindowsSandbox);
-    features.enable(Feature::WindowsSandboxElevated);
-
-    assert_eq!(
-        WindowsSandboxLevel::from_features(&features),
-        WindowsSandboxLevel::Elevated
-    );
-}
-
-#[test]
-fn legacy_mode_prefers_elevated() {
-    let mut entries = BTreeMap::new();
-    entries.insert(
-        "experimental_windows_sandbox".to_string(),
-        /*value*/ true,
-    );
-    entries.insert("elevated_windows_sandbox".to_string(), /*value*/ true);
-
-    assert_eq!(
-        legacy_windows_sandbox_mode_from_entries(&entries),
-        Some(WindowsSandboxModeToml::Elevated)
-    );
-}
-
-#[test]
-fn legacy_mode_supports_alias_key() {
-    let mut entries = BTreeMap::new();
-    entries.insert(
-        "enable_experimental_windows_sandbox".to_string(),
-        /*value*/ true,
-    );
-
-    assert_eq!(
-        legacy_windows_sandbox_mode_from_entries(&entries),
-        Some(WindowsSandboxModeToml::Unelevated)
     );
 }
 
@@ -99,49 +34,6 @@ fn resolve_windows_sandbox_mode_prefers_profile_windows() {
         resolve_windows_sandbox_mode(&cfg, &profile),
         Some(WindowsSandboxModeToml::Elevated)
     );
-}
-
-#[test]
-fn resolve_windows_sandbox_mode_falls_back_to_legacy_keys() {
-    let mut entries = BTreeMap::new();
-    entries.insert(
-        "experimental_windows_sandbox".to_string(),
-        /*value*/ true,
-    );
-    let cfg = ConfigToml {
-        features: Some(FeaturesToml::from(entries)),
-        ..Default::default()
-    };
-
-    assert_eq!(
-        resolve_windows_sandbox_mode(&cfg, &ConfigProfile::default()),
-        Some(WindowsSandboxModeToml::Unelevated)
-    );
-}
-
-#[test]
-fn resolve_windows_sandbox_mode_profile_legacy_false_blocks_top_level_legacy_true() {
-    let mut profile_entries = BTreeMap::new();
-    profile_entries.insert(
-        "experimental_windows_sandbox".to_string(),
-        /*value*/ false,
-    );
-    let profile = ConfigProfile {
-        features: Some(FeaturesToml::from(profile_entries)),
-        ..Default::default()
-    };
-
-    let mut cfg_entries = BTreeMap::new();
-    cfg_entries.insert(
-        "experimental_windows_sandbox".to_string(),
-        /*value*/ true,
-    );
-    let cfg = ConfigToml {
-        features: Some(FeaturesToml::from(cfg_entries)),
-        ..Default::default()
-    };
-
-    assert_eq!(resolve_windows_sandbox_mode(&cfg, &profile), None);
 }
 
 #[test]

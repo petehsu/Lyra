@@ -6,7 +6,6 @@ use crate::session::SteerInputError;
 use crate::session::session::SessionSettingsUpdate;
 use lyra_features::Feature;
 use lyra_protocol::config_types::ApprovalsReviewer;
-use lyra_protocol::config_types::Personality;
 use lyra_protocol::config_types::ServiceTier;
 use lyra_protocol::dynamic_tools::DynamicToolSpec;
 use lyra_protocol::error::LyraErr;
@@ -47,7 +46,6 @@ pub struct ThreadConfigSnapshot {
     pub cwd: AbsolutePathBuf,
     pub ephemeral: bool,
     pub reasoning_effort: Option<ReasoningEffort>,
-    pub personality: Option<Personality>,
     pub session_source: SessionSource,
 }
 

@@ -1,16 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import type { PlanInteractionResponse } from "../../../shared/agent";
+import type { LyraClientRequestPayload } from "../../../shared/desktop-bridge";
 import { createTranslator } from "../i18n";
 import { subscribeThreadSelected } from "../thread-selection-events";
-import { AgentComposer } from "./agent-composer";
+import {
+  AgentComposer,
+  type AgentComposerModelOption,
+  type AgentPermissionMode,
+} from "./agent-composer";
 import { AiPanelInteractionShell } from "./interaction-shell";
-import { buildThreadTitle } from "./lyra-thread-adapter";
+import { AiPermissionsPanel } from "./permissions-panel";
 import {
   toPersistedRuntimeFeedItem,
   type ToolNameLabelMap,
 } from "./runtime/feed-utils";
 import { AiPanelSurfaceFrame } from "./surface-frame";
+import { AiPanelThreadTabs } from "./thread-tabs";
 import { AiPanelThreadView } from "./thread-view";
 import { AiPanelTopbarActions } from "./topbar-actions";
 import type { AiPanelSurfaceProps } from "./types";
@@ -20,6 +26,48 @@ import { useTypewriter } from "./use-typewriter";
 
 const LOGO_URL = new URL("../../../renderer/assets/logo.svg", import.meta.url).toString();
 
+type RuntimeModelOption = AgentComposerModelOption & {
+  readonly model: string;
+  readonly modelProvider: string | null;
+};
+
+const permissionRuntimeOptions = (mode: AgentPermissionMode) => {
+  if (mode === "auto_review") {
+    return {
+      approvalPolicy: "on-request" as const,
+      approvalsReviewer: "auto_review" as const,
+      sandboxMode: "workspace-write" as const,
+    };
+  }
+  if (mode === "full_access") {
+    return {
+      approvalPolicy: "never" as const,
+      approvalsReviewer: "user" as const,
+      sandboxMode: "danger-full-access" as const,
+    };
+  }
+  return {
+    approvalPolicy: "on-request" as const,
+    approvalsReviewer: "user" as const,
+    sandboxMode: "workspace-write" as const,
+  };
+};
+
+const MODEL_OPTION_DELIMITER = "\u001F";
+const EMPTY_THREAD_STYLE = {};
+
+type JsonRecord = Record<string, unknown>;
+
+const createRequestPayload = (
+  method: string,
+  params: JsonRecord = {}
+): LyraClientRequestPayload => ({ method, params });
+
+const uniqueModelIds = (entries: readonly string[]): readonly string[] =>
+  entries
+    .map((entry) => entry.trim())
+    .filter((entry, index, values) => entry.length > 0 && values.indexOf(entry) === index);
+
 export const AiPanelSurface = ({
   variant,
   desktopApi,
@@ -27,10 +75,16 @@ export const AiPanelSurface = ({
   title,
   themeSignature,
   richRenderingEnabled = true,
+  stopBehavior = "turn_only",
   newSessionTitle,
+  defaultProfileId,
   defaultProviderId,
-  defaultProfileName,
   defaultModelNames,
+  configuredProfiles = [],
+  aiPanelSide = "left",
+  onToggleAiPanelSide,
+  movePanelToLeftLabel,
+  movePanelToRightLabel,
   openHistoryLabel,
   openMcpLabel,
   openSkillsLabel,
@@ -71,14 +125,21 @@ export const AiPanelSurface = ({
   onRequestProjectBind,
 }: AiPanelSurfaceProps) => {
   const t = useMemo(() => createTranslator(locale), [locale]);
-  const [draftInput, setDraftInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState(defaultModelNames[0] ?? "");
-  const [availableModels, setAvailableModels] = useState<readonly string[]>(defaultModelNames);
-  const [cwdOverrideByThread, setCwdOverrideByThread] = useState<
+  const lyraApi = desktopApi?.lyra;
+  const [selectedModelOptionValue, setSelectedModelOptionValue] = useState("");
+  const [permissionMode, setPermissionMode] = useState<AgentPermissionMode>("default");
+  const [composerHeight, setComposerHeight] = useState(96);
+  const [composerAppendRequest, setComposerAppendRequest] = useState<{
+    readonly id: number;
+    readonly text: string;
+  } | null>(null);
+  const [boundProjectRootByThread, setBoundProjectRootByThread] = useState<
     ReadonlyMap<string, string>
   >(() => new Map());
-  const [pendingCwdOverride, setPendingCwdOverride] = useState<string | null>(null);
+  const [pendingBoundProjectRoot, setPendingBoundProjectRoot] = useState<string | null>(null);
   const [isBindingProject, setIsBindingProject] = useState(false);
+  const [isPermissionsPanelOpen, setIsPermissionsPanelOpen] = useState(false);
+  const composerAppendRequestIdRef = useRef(0);
   const threadViewportRef = useRef<HTMLDivElement>(null);
   const interactionPanelRef = useRef<HTMLDivElement>(null);
 
@@ -98,27 +159,41 @@ export const AiPanelSurface = ({
     interactionTextLabels,
   });
   const {
+    forkThreadFromTurn,
     interruptTurn,
+    cleanBackgroundTerminals,
+    loadThread,
+    rollbackThread,
     respondToCommandApproval,
     respondToPlanQuestion,
     selectThread,
+    activateThreadTab,
+    closeThreadTab,
     sendTurn: sendRuntimeTurn,
     setActiveInteractionId,
+    setPlanModeEnabled,
+    startReview,
+    steerTurn,
   } = actions;
   const activeThreadId = state.activeThreadId;
-  const activeThreadCwd = state.activeThread?.cwd ?? null;
-  const boundCwdForActiveThread = useMemo(() => {
+  const boundProjectRootForActiveThread = useMemo(() => {
     if (activeThreadId !== null) {
-      const mapped = cwdOverrideByThread.get(activeThreadId);
+      const mapped = boundProjectRootByThread.get(activeThreadId);
       if (mapped !== undefined && mapped.length > 0) {
         return mapped;
       }
+      const persisted = state.activeThread?.id === activeThreadId
+        ? state.activeThread.boundProjectRoot
+        : null;
+      if (persisted !== null && persisted !== undefined && persisted.length > 0) {
+        return persisted;
+      }
     }
-    if (pendingCwdOverride !== null && pendingCwdOverride.length > 0) {
-      return pendingCwdOverride;
+    if (pendingBoundProjectRoot !== null && pendingBoundProjectRoot.length > 0) {
+      return pendingBoundProjectRoot;
     }
-    return activeThreadCwd;
-  }, [activeThreadCwd, activeThreadId, cwdOverrideByThread, pendingCwdOverride]);
+    return null;
+  }, [activeThreadId, boundProjectRootByThread, pendingBoundProjectRoot, state.activeThread]);
 
   const toolNameLabels = useMemo<ToolNameLabelMap>(
     () => ({
@@ -145,6 +220,59 @@ export const AiPanelSurface = ({
       toolNameSearchLabel,
       toolNameWriteLabel,
     ]
+  );
+
+  const modelOptions = useMemo<readonly RuntimeModelOption[]>(() => {
+    const nextOptions: RuntimeModelOption[] = [];
+    const multipleProfiles = configuredProfiles.filter((profile) => profile.runtimeSupported).length > 1;
+    const orderedProfiles = [...configuredProfiles].sort((left, right) => {
+      if (left.id === defaultProfileId) {
+        return -1;
+      }
+      if (right.id === defaultProfileId) {
+        return 1;
+      }
+      return 0;
+    });
+    for (const profile of orderedProfiles) {
+      if (!profile.runtimeSupported) {
+        continue;
+      }
+      const models = uniqueModelIds([
+        profile.model,
+        ...profile.customModels.map((entry) => entry.id),
+        ...profile.discoveryState.models.map((entry) => entry.id),
+      ]);
+      const providerId = profile.runtimeProviderId.trim();
+      if (providerId.length === 0) {
+        continue;
+      }
+      for (const model of models) {
+        nextOptions.push({
+          value: `${profile.id}${MODEL_OPTION_DELIMITER}${model}`,
+          label: multipleProfiles ? `${model} · ${profile.name}` : model,
+          model,
+          modelProvider: providerId,
+        });
+      }
+    }
+    if (nextOptions.length > 0) {
+      return nextOptions;
+    }
+    return uniqueModelIds(defaultModelNames).map((model) => ({
+      value: model,
+      label: model,
+      model,
+      modelProvider: defaultProviderId ?? null,
+    }));
+  }, [configuredProfiles, defaultModelNames, defaultProfileId, defaultProviderId]);
+
+  const selectedModelOption = useMemo(
+    () =>
+      modelOptions.find((option) => option.value === selectedModelOptionValue)
+      ?? modelOptions[0]
+      ?? null,
+    [modelOptions, selectedModelOptionValue]
   );
 
   const liveRuntimeFeed = useMemo(
@@ -192,9 +320,12 @@ export const AiPanelSurface = ({
   });
 
   useEffect(() => {
-    setAvailableModels(defaultModelNames);
-    setSelectedModel((current) => current.trim().length > 0 ? current : (defaultModelNames[0] ?? ""));
-  }, [defaultModelNames]);
+    setSelectedModelOptionValue((current) =>
+      modelOptions.some((option) => option.value === current)
+        ? current
+        : (modelOptions[0]?.value ?? "")
+    );
+  }, [modelOptions]);
 
   useEffect(() => {
     return subscribeThreadSelected((threadId) => {
@@ -202,16 +333,33 @@ export const AiPanelSurface = ({
     });
   }, [selectThread]);
 
+  const persistBoundProjectRoot = useCallback(
+    async (threadId: string, projectRoot: string): Promise<void> => {
+      const trimmed = projectRoot.trim();
+      if (lyraApi === undefined || trimmed.length === 0) {
+        return;
+      }
+      await lyraApi.request(
+        createRequestPayload("thread/metadata/update", {
+          threadId,
+          boundProjectRoot: trimmed,
+        })
+      );
+      await loadThread(threadId);
+    },
+    [loadThread, lyraApi]
+  );
+
   useEffect(() => {
-    if (activeThreadId === null || pendingCwdOverride === null) {
+    if (activeThreadId === null || pendingBoundProjectRoot === null) {
       return;
     }
-    const trimmed = pendingCwdOverride.trim();
+    const trimmed = pendingBoundProjectRoot.trim();
     if (trimmed.length === 0) {
-      setPendingCwdOverride(null);
+      setPendingBoundProjectRoot(null);
       return;
     }
-    setCwdOverrideByThread((current) => {
+    setBoundProjectRootByThread((current) => {
       if (current.get(activeThreadId) === trimmed) {
         return current;
       }
@@ -219,8 +367,11 @@ export const AiPanelSurface = ({
       next.set(activeThreadId, trimmed);
       return next;
     });
-    setPendingCwdOverride(null);
-  }, [activeThreadId, pendingCwdOverride]);
+    setPendingBoundProjectRoot(null);
+    void persistBoundProjectRoot(activeThreadId, trimmed).catch((error: unknown) => {
+      console.error("Failed to persist bound project root", error);
+    });
+  }, [activeThreadId, pendingBoundProjectRoot, persistBoundProjectRoot]);
 
   useEffect(() => {
     const viewport = threadViewportRef.current;
@@ -256,7 +407,7 @@ export const AiPanelSurface = ({
     }
     setIsBindingProject(true);
     try {
-      const nextPath = await onRequestProjectBind(boundCwdForActiveThread ?? undefined);
+      const nextPath = await onRequestProjectBind(boundProjectRootForActiveThread ?? undefined);
       if (typeof nextPath !== "string") {
         return;
       }
@@ -265,92 +416,268 @@ export const AiPanelSurface = ({
         return;
       }
       if (activeThreadId === null) {
-        setPendingCwdOverride(trimmed);
+        setPendingBoundProjectRoot(trimmed);
         return;
       }
-      setCwdOverrideByThread((current) => {
+      setBoundProjectRootByThread((current) => {
         const next = new Map(current);
         next.set(activeThreadId, trimmed);
         return next;
       });
+      await persistBoundProjectRoot(activeThreadId, trimmed);
     } finally {
       setIsBindingProject(false);
     }
-  }, [activeThreadId, boundCwdForActiveThread, isBindingProject, onRequestProjectBind]);
+  }, [
+    activeThreadId,
+    boundProjectRootForActiveThread,
+    isBindingProject,
+    onRequestProjectBind,
+    persistBoundProjectRoot,
+  ]);
 
-  const sendTurn = useCallback(async (): Promise<void> => {
-    const text = draftInput.trim();
+  const runtimeTurnOptions = useCallback((collaborationMode?: "default" | "plan") => ({
+    model: selectedModelOption?.model,
+    modelProvider: selectedModelOption?.modelProvider ?? defaultProviderId,
+    cwd: boundProjectRootForActiveThread,
+    ...permissionRuntimeOptions(permissionMode),
+    ...(collaborationMode === undefined || selectedModelOption?.model === undefined
+      ? {}
+      : { collaborationMode }),
+  }), [boundProjectRootForActiveThread, defaultProviderId, permissionMode, selectedModelOption]);
+
+  const sendTurn = useCallback(async (inputText: string): Promise<void> => {
+    const text = inputText.trim();
     if (text.length === 0) {
       return;
     }
-    setDraftInput("");
-    try {
-      await sendRuntimeTurn(text, {
-        model: selectedModel,
-        modelProvider: defaultProviderId,
-        cwd: boundCwdForActiveThread,
-      });
-    } catch {
-      setDraftInput(text);
+    const slashCommand = text.toLowerCase();
+    if (slashCommand === "/approvals" || slashCommand === "/permissions") {
+      setIsPermissionsPanelOpen(true);
+      return;
     }
-  }, [boundCwdForActiveThread, defaultProviderId, draftInput, selectedModel, sendRuntimeTurn]);
+    await sendRuntimeTurn(
+      text,
+      runtimeTurnOptions(state.planModeEnabled ? "plan" : "default")
+    );
+  }, [
+    runtimeTurnOptions,
+    sendRuntimeTurn,
+    state.planModeEnabled,
+  ]);
+
+  const steerActiveTurn = useCallback(async (inputText: string): Promise<void> => {
+    const text = inputText.trim();
+    if (text.length === 0) {
+      return;
+    }
+    await steerTurn(text);
+  }, [steerTurn]);
+
+  const handlePlanModeToggle = useCallback((): void => {
+    setPlanModeEnabled(!state.planModeEnabled);
+  }, [setPlanModeEnabled, state.planModeEnabled]);
+
+  const handleInterruptTurn = useCallback((): void => {
+    void (async () => {
+      await interruptTurn();
+      if (stopBehavior === "turn_and_background") {
+        await cleanBackgroundTerminals();
+      }
+    })();
+  }, [cleanBackgroundTerminals, interruptTurn, stopBehavior]);
 
   const createThread = useCallback((): void => {
-    const requestedCwd = boundCwdForActiveThread;
-    if (requestedCwd !== null && requestedCwd.length > 0) {
-      setPendingCwdOverride(requestedCwd);
-    }
+    setPendingBoundProjectRoot(null);
     selectThread(null);
-  }, [boundCwdForActiveThread, selectThread]);
+  }, [selectThread]);
+
+  const appendToComposer = useCallback((text: string): void => {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    composerAppendRequestIdRef.current += 1;
+    setComposerAppendRequest({
+      id: composerAppendRequestIdRef.current,
+      text: trimmed,
+    });
+  }, []);
 
   const handlePlanApprovalDecision = useCallback(async (
-    _response: PlanInteractionResponse
+    response: PlanInteractionResponse
   ): Promise<void> => {
-    return;
-  }, []);
+    const feedback = response.feedback?.trim() ?? "";
+    if (response.decision === "approve_and_implement") {
+      setPlanModeEnabled(false);
+      await sendRuntimeTurn(
+        feedback.length === 0
+          ? t("ai.planExecutePrompt")
+          : `${t("ai.planExecutePrompt")}\n\n${feedback}`,
+        runtimeTurnOptions("default")
+      );
+      return;
+    }
+    if (response.decision === "keep_planning") {
+      setPlanModeEnabled(true);
+      await sendRuntimeTurn(
+        feedback.length === 0
+          ? t("ai.planKeepPlanningPrompt")
+          : `${t("ai.planKeepPlanningPrompt")}\n\n${feedback}`,
+        runtimeTurnOptions("plan")
+      );
+      return;
+    }
+    if (feedback.length > 0) {
+      setPlanModeEnabled(true);
+      await sendRuntimeTurn(
+        `${t("ai.planRejectPrompt")}\n\n${feedback}`,
+        runtimeTurnOptions("plan")
+      );
+      return;
+    }
+    setPlanModeEnabled(false);
+  }, [runtimeTurnOptions, sendRuntimeTurn, setPlanModeEnabled, t]);
+
+  const handleForkTurn = useCallback(async (turnId: string): Promise<void> => {
+    const activeThread = state.activeThread;
+    if (activeThread === null) {
+      return;
+    }
+    const turnIndex = activeThread.turns.findIndex((turn) => turn.id === turnId);
+    if (turnIndex < 0) {
+      return;
+    }
+    try {
+      const forkedThreadId = await forkThreadFromTurn(
+        turnId,
+        activeThread.turns.length - turnIndex - 1,
+        runtimeTurnOptions()
+      );
+      if (boundProjectRootForActiveThread !== null) {
+        setBoundProjectRootByThread((current) => {
+          const next = new Map(current);
+          next.set(forkedThreadId, boundProjectRootForActiveThread);
+          return next;
+        });
+        await persistBoundProjectRoot(forkedThreadId, boundProjectRootForActiveThread);
+      }
+    } catch {
+      // Runtime hook owns the visible error state.
+    }
+  }, [
+    boundProjectRootForActiveThread,
+    forkThreadFromTurn,
+    persistBoundProjectRoot,
+    runtimeTurnOptions,
+    state.activeThread,
+  ]);
+
+  const handleStartReview = useCallback(async (): Promise<void> => {
+    try {
+      await startReview();
+    } catch {
+      // Runtime hook owns the visible error state.
+    }
+  }, [startReview]);
+
+  const handleEditMessageTurn = useCallback((turnId: string, content: string): void => {
+    void (async () => {
+      try {
+        const restoredInput = await rollbackThread(turnId);
+        appendToComposer(restoredInput ?? content);
+      } catch {
+        // Runtime hook owns the visible error state.
+      }
+    })();
+  }, [appendToComposer, rollbackThread]);
+
+  const handleRegenerateTurn = useCallback((turnId: string): void => {
+    const sourceUserMessage = viewModel.sortedMessages.find(
+      (message) => message.role === "user"
+        && "turnId" in message
+        && message.turnId === turnId
+    );
+    const fallbackInput = sourceUserMessage?.content ?? "";
+    void (async () => {
+      try {
+        const restoredInput = await rollbackThread(turnId);
+        await sendTurn(restoredInput ?? fallbackInput);
+      } catch {
+        // Runtime hook owns the visible error state.
+      }
+    })();
+  }, [rollbackThread, sendTurn, viewModel.sortedMessages]);
+
+  const topbarStart = (
+    <AiPanelThreadTabs
+      tabs={state.threadTabs}
+      activeTabId={state.activeTabId}
+      newThreadLabel={newSessionTitle}
+      closeThreadLabel={t("menu.close")}
+      draftTitle={newSessionTitle}
+      onActivateTab={activateThreadTab}
+      onCloseTab={closeThreadTab}
+      onCreateTab={() => {
+        void createThread();
+      }}
+    />
+  );
 
   const topbarActions = (
     <AiPanelTopbarActions
-      onCreateThread={() => {
-        void createThread();
-      }}
-      createThreadLabel={newSessionTitle}
       onRequestProjectBind={onRequestProjectBind === undefined || bindProjectLabel === undefined
         ? undefined
         : () => {
             void handleBindProject();
           }}
-      activeBoundProjectName={boundCwdForActiveThread}
+      activeBoundProjectName={boundProjectRootForActiveThread}
       isBindingProject={isBindingProject}
       bindProjectLabel={bindProjectLabel ?? ""}
       isAgentAvailable={desktopApi?.lyra !== null && desktopApi?.lyra !== undefined}
       onOpenHistory={onOpenHistory}
       onOpenMcp={onOpenMcp}
       onOpenSkills={onOpenSkills}
+      onOpenPermissions={() => {
+        setIsPermissionsPanelOpen(true);
+      }}
       openHistoryLabel={openHistoryLabel}
       openMcpLabel={openMcpLabel}
       openSkillsLabel={openSkillsLabel}
+      openPermissionsLabel={t("ai.permissionsLabel")}
+      onStartReview={state.activeThreadId === null ? undefined : () => {
+        void handleStartReview();
+      }}
+      reviewChangesLabel={t("ai.reviewChanges")}
+      aiPanelSide={aiPanelSide}
+      onToggleAiPanelSide={onToggleAiPanelSide}
+      movePanelToLeftLabel={movePanelToLeftLabel}
+      movePanelToRightLabel={movePanelToRightLabel}
+      moreActionsLabel={t("ai.moreActions")}
     />
   );
 
-  const topbarTitle = state.activeThread === null
-    ? defaultProfileName ?? null
-    : buildThreadTitle(state.activeThread, defaultProfileName ?? title);
   const showEmptySessionScene =
     (state.activeDetail?.messages.length ?? 0) === 0
     && state.optimisticUserMessages.length === 0
     && state.streamingAssistantText.length === 0
     && !state.isStreamActive;
   const isBusy = state.isSending || state.isStreamActive;
+  const shellStyle = useMemo(
+    () => ({
+      "--lyra-ai-composer-reserve": `${String(Math.max(96, Math.ceil(composerHeight)))}px`,
+    }) as CSSProperties,
+    [composerHeight]
+  );
 
   return (
     <AiPanelSurfaceFrame
       variant={variant}
       ariaLabel={title}
-      topbarTitle={topbarTitle}
+      topbarStart={topbarStart}
       topbarActions={topbarActions}
     >
-      <div className="lyra-ai-agent-shell">
+      <div className="lyra-ai-agent-shell" style={shellStyle}>
         <div className="lyra-ai-agent-thread-shell">
           <AiPanelThreadView
             logoUrl={LOGO_URL}
@@ -364,7 +691,7 @@ export const AiPanelSurface = ({
             loadingSessionLabel={loadingSessionLabel}
             emptyThreadLabel={emptyThreadLabel}
             threadRef={threadViewportRef}
-            threadStyle={{}}
+            threadStyle={EMPTY_THREAD_STYLE}
             sortedMessages={viewModel.sortedMessages}
             turnsById={viewModel.turnsById}
             toolCallsByTurn={viewModel.toolCallsByTurn}
@@ -387,6 +714,19 @@ export const AiPanelSurface = ({
             streamingStatus={viewModel.streamingStatus}
             orphanRuntimeFeed={viewModel.orphanRuntimeFeed}
             runtimeError={state.runtimeError}
+            planByTurn={state.planByTurn}
+            latestPlanTurnId={state.latestPlanTurnId}
+            planActionsEnabled={!state.isSending && !state.isStreamActive}
+            copyMessageLabel={t("ai.actionCopy")}
+            copiedMessageLabel={t("dialog.copiedAction")}
+            forkResponseLabel={t("ai.forkFromResponse")}
+            regenerateResponseLabel={t("ai.regenerateResponse")}
+            editMessageLabel={t("ai.editMessage")}
+            onForkTurn={(turnId) => {
+              void handleForkTurn(turnId);
+            }}
+            onRegenerateTurn={handleRegenerateTurn}
+            onEditMessageTurn={handleEditMessageTurn}
             onPlanApprovalDecision={handlePlanApprovalDecision}
             onOpenPlanApprovalInPanel={setActiveInteractionId}
           />
@@ -408,37 +748,55 @@ export const AiPanelSurface = ({
           onPlanApprovalDecision={handlePlanApprovalDecision}
         />
 
+        {isPermissionsPanelOpen ? (
+          <AiPermissionsPanel
+            desktopApi={desktopApi}
+            locale={locale}
+            onClose={() => {
+              setIsPermissionsPanelOpen(false);
+            }}
+          />
+        ) : null}
+
         <AgentComposer
           locale={locale}
-          modelNames={availableModels}
-          selectedModelName={selectedModel}
+          currentThreadId={activeThreadId}
+          appendRequest={composerAppendRequest}
+          modelOptions={modelOptions}
+          selectedModelName={selectedModelOption?.value ?? null}
           modelAriaLabel={t("ai.modelLabel")}
-          onModelSelect={setSelectedModel}
-          value={draftInput}
+          onModelSelect={setSelectedModelOptionValue}
+          modelSwitchDisabled={isBusy}
+          permissionMode={permissionMode}
+          permissionModeDisabled={isBusy}
+          onPermissionModeSelect={setPermissionMode}
           ariaLabel={composeAriaLabel ?? title}
           placeholder={composePlaceholder ?? ""}
           sendLabel={composeSendLabel ?? "Send"}
           inputDisabled={desktopApi?.lyra === null || desktopApi?.lyra === undefined}
-          sendDisabled={
-            draftInput.trim().length === 0
-            || desktopApi?.lyra === null
-            || desktopApi?.lyra === undefined
-          }
+          sendDisabled={desktopApi?.lyra === null || desktopApi?.lyra === undefined}
           sending={isBusy}
           stopDisabled={
             state.streamingTurnId === null
             || desktopApi?.lyra === null
             || desktopApi?.lyra === undefined
           }
-          planModeEnabled={false}
-          planModeLocked
-          onValueChange={setDraftInput}
-          onSend={() => {
-            void sendTurn();
+          planModeEnabled={state.planModeEnabled}
+          planModeLocked={selectedModelOption === null || isBusy}
+          planModeLabel={state.planModeEnabled ? t("ai.planModeArmed") : t("ai.planMode")}
+          onPlanModeToggle={handlePlanModeToggle}
+          onSend={sendTurn}
+          onSteer={steerActiveTurn}
+          steerLabel={t("ai.steerTurn")}
+          steerDisabled={
+            state.streamingTurnId === null
+            || desktopApi?.lyra === null
+            || desktopApi?.lyra === undefined
+          }
+          onHeightChange={(height) => {
+            setComposerHeight(height);
           }}
-          onStop={() => {
-            void interruptTurn();
-          }}
+          onStop={handleInterruptTurn}
         />
       </div>
     </AiPanelSurfaceFrame>

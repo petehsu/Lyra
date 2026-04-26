@@ -94,7 +94,8 @@ import type {
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserReadPageStateRequest,
   WorkbenchBrowserSetElementPickerModeRequest,
-  WorkbenchBrowserTopologySnapshot
+  WorkbenchBrowserTopologySnapshot,
+  WorkbenchBrowserWebThemeSnapshot
 } from "./workbench-browser";
 import type {
   WorkbenchObservationQueryRequest,
@@ -276,7 +277,9 @@ export type {
   WorkbenchBrowserPageSpec,
   WorkbenchBrowserReadPageStateRequest,
   WorkbenchBrowserSetElementPickerModeRequest,
-  WorkbenchBrowserTopologySnapshot
+  WorkbenchBrowserTopologySnapshot,
+  WorkbenchBrowserWebThemePalette,
+  WorkbenchBrowserWebThemeSnapshot
 } from "./workbench-browser";
 export type {
   BrowserTabObservation,
@@ -358,6 +361,7 @@ export const LYRA_CHANNELS = {
   workbenchBrowserStop: "lyra:workbench-browser/stop",
   workbenchBrowserReadPageState: "lyra:workbench-browser/read-page-state",
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
+  workbenchBrowserApplyWebTheme: "lyra:workbench-browser/apply-web-theme",
   workbenchBrowserEvent: "lyra:workbench-browser/event",
   browserUseReadRuntimeStatus: "lyra:browser-use/read-runtime-status",
   browserUseRuntimeStatusEvent: "lyra:browser-use/runtime-status",
@@ -1187,6 +1191,9 @@ export type WorkbenchBrowserApi = {
   readonly setElementPickerMode: (
     request: WorkbenchBrowserSetElementPickerModeRequest
   ) => Promise<void>;
+  readonly applyWebTheme: (
+    snapshot: WorkbenchBrowserWebThemeSnapshot
+  ) => Promise<void>;
   readonly onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => () => void;
 };
 
@@ -1229,6 +1236,7 @@ export type LspApi = {
 export type WorkbenchStateKey =
   | "preferences"
   | "workspace-tabs"
+  | "ai-panel-tabs"
   | "terminal-dock"
   | "notifications"
   | "layout";

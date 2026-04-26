@@ -3,9 +3,9 @@
 //! Assumes `apply_patch` verification/approval happened upstream. Reuses the
 //! selected turn environment filesystem for both local and remote turns, with
 //! sandboxing enforced by the explicit filesystem sandbox context.
+use crate::auto_review::AutoReviewApprovalRequest;
+use crate::auto_review::review_approval_request;
 use crate::exec::is_likely_sandbox_denied;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::review_approval_request;
 use crate::tools::sandboxing::Approvable;
 use crate::tools::sandboxing::ApprovalCtx;
 use crate::tools::sandboxing::ExecApprovalRequirement;
@@ -55,11 +55,11 @@ impl ApplyPatchRuntime {
         Self
     }
 
-    fn build_guardian_review_request(
+    fn build_auto_review_request(
         req: &ApplyPatchRequest,
         call_id: &str,
-    ) -> GuardianApprovalRequest {
-        GuardianApprovalRequest::ApplyPatch {
+    ) -> AutoReviewApprovalRequest {
+        AutoReviewApprovalRequest::ApplyPatch {
             id: call_id.to_string(),
             cwd: req.action.cwd.clone(),
             files: req.file_paths.clone(),
@@ -75,10 +75,8 @@ impl ApplyPatchRuntime {
             return None;
         }
 
-        let legacy_file_system_sandbox_policy = FileSystemSandboxPolicy::from_legacy_sandbox_policy(
-            attempt.policy,
-            attempt.sandbox_cwd,
-        );
+        let legacy_file_system_sandbox_policy =
+            FileSystemSandboxPolicy::from_sandbox_policy(attempt.policy, attempt.sandbox_cwd);
         let file_system_sandbox_policy = (attempt.file_system_policy
             != &legacy_file_system_sandbox_policy)
             .then(|| attempt.file_system_policy.clone());
@@ -89,7 +87,7 @@ impl ApplyPatchRuntime {
             file_system_sandbox_policy,
             windows_sandbox_level: attempt.windows_sandbox_level,
             windows_sandbox_private_desktop: attempt.windows_sandbox_private_desktop,
-            use_legacy_landlock: attempt.use_legacy_landlock,
+            use_classic_landlock: attempt.use_classic_landlock,
             additional_permissions: req.additional_permissions.clone(),
         })
     }
@@ -138,13 +136,13 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
         let retry_reason = ctx.retry_reason.clone();
         let approval_keys = self.approval_keys(req);
         let changes = req.changes.clone();
-        let guardian_review_id = ctx.guardian_review_id.clone();
+        let auto_review_id = ctx.auto_review_id.clone();
         Box::pin(async move {
             if req.permissions_preapproved && retry_reason.is_none() {
                 return ReviewDecision::Approved;
             }
-            if let Some(review_id) = guardian_review_id {
-                let action = ApplyPatchRuntime::build_guardian_review_request(req, ctx.call_id);
+            if let Some(review_id) = auto_review_id {
+                let action = ApplyPatchRuntime::build_auto_review_request(req, ctx.call_id);
                 return review_approval_request(session, turn, review_id, action, retry_reason)
                     .await;
             }

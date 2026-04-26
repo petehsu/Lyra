@@ -38,10 +38,6 @@ use lyra_app_server_protocol::CommandExecWriteParams;
 use lyra_app_server_protocol::ConversationGitInfo;
 use lyra_app_server_protocol::ConversationSummary;
 use lyra_app_server_protocol::DynamicToolSpec as ApiDynamicToolSpec;
-use lyra_app_server_protocol::ExperimentalFeature as ApiExperimentalFeature;
-use lyra_app_server_protocol::ExperimentalFeatureListParams;
-use lyra_app_server_protocol::ExperimentalFeatureListResponse;
-use lyra_app_server_protocol::ExperimentalFeatureStage as ApiExperimentalFeatureStage;
 use lyra_app_server_protocol::FuzzyFileSearchParams;
 use lyra_app_server_protocol::FuzzyFileSearchResponse;
 use lyra_app_server_protocol::FuzzyFileSearchSessionStartParams;
@@ -68,8 +64,6 @@ use lyra_app_server_protocol::McpServerStatus;
 use lyra_app_server_protocol::McpServerStatusDetail;
 use lyra_app_server_protocol::McpServerToolCallParams;
 use lyra_app_server_protocol::McpServerToolCallResponse;
-use lyra_app_server_protocol::MockExperimentalMethodParams;
-use lyra_app_server_protocol::MockExperimentalMethodResponse;
 use lyra_app_server_protocol::ModelListParams;
 use lyra_app_server_protocol::ModelListResponse;
 use lyra_app_server_protocol::PluginDetail;
@@ -225,9 +219,7 @@ use lyra_core_plugins::manifest::PluginManifestInterface;
 use lyra_core_plugins::marketplace::MarketplaceError;
 use lyra_core_plugins::marketplace::MarketplacePluginSource;
 use lyra_exec_server::LOCAL_FS;
-use lyra_features::FEATURES;
 use lyra_features::Feature;
-use lyra_features::Stage;
 use lyra_git_utils::resolve_root_git_project_for_trust;
 use lyra_login::AuthManager;
 use lyra_login::LyraAuth;
@@ -241,7 +233,6 @@ use lyra_mcp::resolve_oauth_scopes;
 use lyra_models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use lyra_protocol::ThreadId;
 use lyra_protocol::config_types::CollaborationMode;
-use lyra_protocol::config_types::Personality;
 use lyra_protocol::config_types::TrustLevel;
 use lyra_protocol::config_types::WindowsSandboxLevel;
 use lyra_protocol::dynamic_tools::DynamicToolSpec as CoreDynamicToolSpec;
@@ -935,10 +926,6 @@ impl LyraMessageProcessor {
                     Self::list_models(outgoing, thread_manager, request_id, params).await;
                 });
             }
-            ClientRequest::ExperimentalFeatureList { request_id, params } => {
-                self.experimental_feature_list(to_connection_request_id(request_id), params)
-                    .await;
-            }
             ClientRequest::CollaborationModeList { request_id, params } => {
                 let outgoing = self.outgoing.clone();
                 let thread_manager = self.thread_manager.clone();
@@ -948,10 +935,6 @@ impl LyraMessageProcessor {
                     Self::list_collaboration_modes(outgoing, thread_manager, request_id, params)
                         .await;
                 });
-            }
-            ClientRequest::MockExperimentalMethod { request_id, params } => {
-                self.mock_experimental_method(to_connection_request_id(request_id), params)
-                    .await;
             }
             ClientRequest::McpServerOauthLogin { request_id, params } => {
                 self.mcp_server_oauth_login(to_connection_request_id(request_id), params)
@@ -1019,8 +1002,7 @@ impl LyraMessageProcessor {
             | ClientRequest::LyraConfigProvidersCatalogRead { .. }
             | ClientRequest::LyraHostToolsSync { .. }
             | ClientRequest::LyraHostToolsRemove { .. }
-            | ClientRequest::LyraPersonaContextSet { .. }
-            | ClientRequest::ExperimentalFeatureEnablementSet { .. } => {
+            | ClientRequest::LyraPersonaContextSet { .. } => {
                 warn!("Config request reached LyraMessageProcessor unexpectedly");
             }
             ClientRequest::FsReadFile { .. }
@@ -1211,24 +1193,26 @@ impl LyraMessageProcessor {
             effective_file_system_sandbox_policy,
             effective_network_sandbox_policy,
         ) = match requested_policy {
-            Some(policy) => match self.config.permissions.sandbox_policy.can_set(&policy) {
-                Ok(()) => {
-                    let file_system_sandbox_policy =
-                        lyra_protocol::permissions::FileSystemSandboxPolicy::from_legacy_sandbox_policy(&policy, &sandbox_cwd);
-                    let network_sandbox_policy =
-                        lyra_protocol::permissions::NetworkSandboxPolicy::from(&policy);
-                    (policy, file_system_sandbox_policy, network_sandbox_policy)
+            Some(policy) => {
+                match self.config.permissions.sandbox_policy.can_set(&policy) {
+                    Ok(()) => {
+                        let file_system_sandbox_policy =
+                        lyra_protocol::permissions::FileSystemSandboxPolicy::from_sandbox_policy(&policy, &sandbox_cwd);
+                        let network_sandbox_policy =
+                            lyra_protocol::permissions::NetworkSandboxPolicy::from(&policy);
+                        (policy, file_system_sandbox_policy, network_sandbox_policy)
+                    }
+                    Err(err) => {
+                        let error = JSONRPCErrorError {
+                            code: INVALID_REQUEST_ERROR_CODE,
+                            message: format!("invalid sandbox policy: {err}"),
+                            data: None,
+                        };
+                        self.outgoing.send_error(request, error).await;
+                        return;
+                    }
                 }
-                Err(err) => {
-                    let error = JSONRPCErrorError {
-                        code: INVALID_REQUEST_ERROR_CODE,
-                        message: format!("invalid sandbox policy: {err}"),
-                        data: None,
-                    };
-                    self.outgoing.send_error(request, error).await;
-                    return;
-                }
-            },
+            }
             None => (
                 self.config.permissions.sandbox_policy.get().clone(),
                 self.config.permissions.file_system_sandbox_policy.clone(),
@@ -1240,7 +1224,7 @@ impl LyraMessageProcessor {
         let outgoing = self.outgoing.clone();
         let request_for_task = request.clone();
         let started_network_proxy_for_task = started_network_proxy;
-        let use_legacy_landlock = self.config.features.use_legacy_landlock();
+        let use_classic_landlock = self.config.features.use_classic_landlock();
         let size = match size.map(crate::command_exec::terminal_size_from_protocol) {
             Some(Ok(size)) => Some(size),
             Some(Err(error)) => {
@@ -1257,7 +1241,7 @@ impl LyraMessageProcessor {
             effective_network_sandbox_policy,
             &sandbox_cwd,
             &lyra_linux_sandbox_exe,
-            use_legacy_landlock,
+            use_classic_landlock,
         ) {
             Ok(exec_request) => {
                 if let Err(error) = self
@@ -1356,9 +1340,7 @@ impl LyraMessageProcessor {
             base_instructions,
             developer_instructions,
             dynamic_tools,
-            mock_experimental_field: _mock_experimental_field,
-            experimental_raw_events,
-            personality,
+            raw_events,
             ephemeral,
             session_start_source,
             persist_extended_history,
@@ -1377,7 +1359,6 @@ impl LyraMessageProcessor {
             sandbox,
             base_instructions,
             developer_instructions,
-            personality,
         );
         typesafe_overrides.ephemeral = ephemeral;
         let cloud_requirements = self.current_cloud_requirements();
@@ -1410,7 +1391,7 @@ impl LyraMessageProcessor {
                 session_start_source,
                 persist_extended_history,
                 service_name,
-                experimental_raw_events,
+                raw_events,
                 request_trace,
             )
             .await;
@@ -1479,7 +1460,7 @@ impl LyraMessageProcessor {
         session_start_source: Option<lyra_app_server_protocol::ThreadStartSource>,
         persist_extended_history: bool,
         service_name: Option<String>,
-        experimental_raw_events: bool,
+        raw_events: bool,
         request_trace: Option<W3cTraceContext>,
     ) {
         let requested_cwd = typesafe_overrides.cwd.clone();
@@ -1606,6 +1587,7 @@ impl LyraMessageProcessor {
             dynamic_tools
                 .into_iter()
                 .map(|tool| CoreDynamicToolSpec {
+                    namespace: tool.namespace,
                     name: tool.name,
                     description: tool.description,
                     input_schema: tool.input_schema,
@@ -1677,13 +1659,13 @@ impl LyraMessageProcessor {
                         listener_task_context.clone(),
                         thread_id,
                         request_id.connection_id,
-                        experimental_raw_events,
+                        raw_events,
                         ApiVersion::V2,
                     )
                     .instrument(tracing::info_span!(
                         "app_server.thread_start.attach_listener",
                         otel.name = "app_server.thread_start.attach_listener",
-                        thread_start.experimental_raw_events = experimental_raw_events,
+                        thread_start.raw_events = raw_events,
                     ))
                     .await,
                     thread_id,
@@ -1781,7 +1763,6 @@ impl LyraMessageProcessor {
         sandbox: Option<SandboxMode>,
         base_instructions: Option<String>,
         developer_instructions: Option<String>,
-        personality: Option<Personality>,
     ) -> ConfigOverrides {
         ConfigOverrides {
             model,
@@ -1796,7 +1777,6 @@ impl LyraMessageProcessor {
             main_execve_wrapper_exe: self.arg0_paths.main_execve_wrapper_exe.clone(),
             base_instructions,
             developer_instructions,
-            personality,
             ..Default::default()
         }
     }
@@ -2191,6 +2171,7 @@ impl LyraMessageProcessor {
     ) {
         let ThreadMetadataUpdateParams {
             thread_id,
+            bound_project_root,
             git_info,
         } = params;
 
@@ -2203,24 +2184,70 @@ impl LyraMessageProcessor {
             }
         };
 
-        let Some(ThreadMetadataGitInfoUpdateParams {
-            sha,
-            branch,
-            origin_url,
-        }) = git_info
-        else {
+        let git_patch_present = git_info.is_some();
+        let bound_project_root_patch_present = bound_project_root.is_some();
+        if !git_patch_present && !bound_project_root_patch_present {
             self.send_invalid_request_error(
                 request_id,
-                "gitInfo must include at least one field".to_string(),
+                "metadata update must include at least one field".to_string(),
             )
             .await;
             return;
         };
 
-        if sha.is_none() && branch.is_none() && origin_url.is_none() {
+        let (sha, branch, origin_url) = match git_info {
+            Some(ThreadMetadataGitInfoUpdateParams {
+                sha,
+                branch,
+                origin_url,
+            }) => {
+                if sha.is_none() && branch.is_none() && origin_url.is_none() {
+                    self.send_invalid_request_error(
+                        request_id,
+                        "gitInfo must include at least one field".to_string(),
+                    )
+                    .await;
+                    return;
+                }
+                (sha, branch, origin_url)
+            }
+            None => (None, None, None),
+        };
+
+        let normalized_bound_project_root = match bound_project_root {
+            Some(Some(path)) => {
+                let path = path.trim();
+                if path.is_empty() {
+                    self.send_invalid_request_error(
+                        request_id,
+                        "boundProjectRoot must not be empty".to_string(),
+                    )
+                    .await;
+                    return;
+                }
+                let path = match AbsolutePathBuf::relative_to_current_dir(
+                    path_utils::normalize_for_native_workdir(PathBuf::from(path)),
+                ) {
+                    Ok(path) => path.into_path_buf(),
+                    Err(err) => {
+                        self.send_invalid_request_error(
+                            request_id,
+                            format!("invalid boundProjectRoot: {err}"),
+                        )
+                        .await;
+                        return;
+                    }
+                };
+                Some(Some(path))
+            }
+            Some(None) => Some(None),
+            None => None,
+        };
+
+        if !git_patch_present && normalized_bound_project_root.is_none() {
             self.send_invalid_request_error(
                 request_id,
-                "gitInfo must include at least one field".to_string(),
+                "metadata update must include at least one field".to_string(),
             )
             .await;
             return;
@@ -2297,26 +2324,53 @@ impl LyraMessageProcessor {
             None => None,
         };
 
-        let updated = match state_db_ctx
-            .update_thread_git_info(
-                thread_uuid,
-                git_sha.as_ref().map(|value| value.as_deref()),
-                git_branch.as_ref().map(|value| value.as_deref()),
-                git_origin_url.as_ref().map(|value| value.as_deref()),
-            )
-            .await
-        {
-            Ok(updated) => updated,
-            Err(err) => {
-                self.send_internal_error(
-                    request_id,
-                    format!("failed to update thread metadata for {thread_uuid}: {err}"),
+        let git_updated = if git_patch_present {
+            match state_db_ctx
+                .update_thread_git_info(
+                    thread_uuid,
+                    git_sha.as_ref().map(|value| value.as_deref()),
+                    git_branch.as_ref().map(|value| value.as_deref()),
+                    git_origin_url.as_ref().map(|value| value.as_deref()),
                 )
-                .await;
-                return;
+                .await
+            {
+                Ok(updated) => updated,
+                Err(err) => {
+                    self.send_internal_error(
+                        request_id,
+                        format!("failed to update thread metadata for {thread_uuid}: {err}"),
+                    )
+                    .await;
+                    return;
+                }
             }
+        } else {
+            true
         };
-        if !updated {
+        let bound_project_root_updated = if normalized_bound_project_root.is_some() {
+            match state_db_ctx
+                .update_thread_bound_project_root(
+                    thread_uuid,
+                    normalized_bound_project_root
+                        .as_ref()
+                        .map(|value| value.as_deref()),
+                )
+                .await
+            {
+                Ok(updated) => updated,
+                Err(err) => {
+                    self.send_internal_error(
+                        request_id,
+                        format!("failed to update thread metadata for {thread_uuid}: {err}"),
+                    )
+                    .await;
+                    return;
+                }
+            }
+        } else {
+            true
+        };
+        if !git_updated || !bound_project_root_updated {
             self.send_internal_error(
                 request_id,
                 format!("thread metadata disappeared before update completed: {thread_uuid}"),
@@ -2544,14 +2598,9 @@ impl LyraMessageProcessor {
     async fn thread_rollback(&self, request_id: ConnectionRequestId, params: ThreadRollbackParams) {
         let ThreadRollbackParams {
             thread_id,
-            num_turns,
+            turn_id,
+            restore_files,
         } = params;
-
-        if num_turns == 0 {
-            self.send_invalid_request_error(request_id, "numTurns must be >= 1".to_string())
-                .await;
-            return;
-        }
 
         let (thread_id, thread) = match self.load_thread(&thread_id).await {
             Ok(v) => v,
@@ -2561,6 +2610,55 @@ impl LyraMessageProcessor {
             }
         };
 
+        let rollout_path = match thread.rollout_path() {
+            Some(path) => path.to_path_buf(),
+            None => {
+                self.send_invalid_request_error(
+                    request_id,
+                    "thread rollback requires a persisted rollout".to_string(),
+                )
+                .await;
+                return;
+            }
+        };
+        let rollout_items = match read_rollout_items_from_rollout(rollout_path.as_path()).await {
+            Ok(items) => items,
+            Err(err) => {
+                self.send_internal_error(
+                    request_id,
+                    format!("failed to load rollout `{}`: {err}", rollout_path.display()),
+                )
+                .await;
+                return;
+            }
+        };
+        let turns = build_turns_from_rollout_items(&rollout_items);
+        let Some((turn_index, target_turn)) = turns
+            .iter()
+            .enumerate()
+            .find(|(_, turn)| turn.id == turn_id)
+        else {
+            self.send_invalid_request_error(
+                request_id,
+                format!("turn not found for rollback: {turn_id}"),
+            )
+            .await;
+            return;
+        };
+        let num_turns = match u32::try_from(turns.len().saturating_sub(turn_index)) {
+            Ok(value) if value > 0 => value,
+            _ => {
+                self.send_invalid_request_error(
+                    request_id,
+                    format!("turn not found for rollback: {turn_id}"),
+                )
+                .await;
+                return;
+            }
+        };
+        let restored_input = user_text_from_turn(target_turn);
+        let reverted_files = collect_reverted_files_from_turns(&turns[turn_index..]);
+
         let request = request_id.clone();
 
         let rollback_already_in_progress = {
@@ -2569,7 +2667,12 @@ impl LyraMessageProcessor {
             if thread_state.pending_rollbacks.is_some() {
                 true
             } else {
-                thread_state.pending_rollbacks = Some(request.clone());
+                thread_state.pending_rollbacks =
+                    Some(crate::thread_state::PendingRollbackRequest {
+                        request_id: request.clone(),
+                        restored_input,
+                        reverted_files,
+                    });
                 false
             }
         };
@@ -2586,7 +2689,11 @@ impl LyraMessageProcessor {
             .submit_core_op(
                 &request_id,
                 thread.as_ref(),
-                Op::ThreadRollback { num_turns },
+                Op::ThreadRollback {
+                    turn_id,
+                    num_turns,
+                    restore_files,
+                },
             )
             .await
         {
@@ -3271,7 +3378,6 @@ impl LyraMessageProcessor {
             config: mut request_overrides,
             base_instructions,
             developer_instructions,
-            personality,
             persist_extended_history,
         } = params;
         let developer_instructions = self
@@ -3296,7 +3402,6 @@ impl LyraMessageProcessor {
             sandbox,
             base_instructions,
             developer_instructions,
-            personality,
         );
         let persisted_resume_metadata = self
             .load_and_apply_persisted_resume_metadata(
@@ -3876,7 +3981,6 @@ impl LyraMessageProcessor {
             sandbox,
             base_instructions,
             developer_instructions,
-            /*personality*/ None,
         );
         typesafe_overrides.ephemeral = ephemeral.then_some(true);
         // Derive a Config using the same logic as new conversation, honoring overrides if provided.
@@ -4293,126 +4397,6 @@ impl LyraMessageProcessor {
             .collect();
         let response = CollaborationModeListResponse { data: items };
         outgoing.send_response(request_id, response).await;
-    }
-
-    async fn experimental_feature_list(
-        &self,
-        request_id: ConnectionRequestId,
-        params: ExperimentalFeatureListParams,
-    ) {
-        let ExperimentalFeatureListParams { cursor, limit } = params;
-        let config = match self.load_latest_config(/*fallback_cwd*/ None).await {
-            Ok(config) => config,
-            Err(error) => {
-                self.outgoing.send_error(request_id, error).await;
-                return;
-            }
-        };
-
-        let data = FEATURES
-            .iter()
-            .map(|spec| {
-                let (stage, display_name, description, announcement) = match spec.stage {
-                    Stage::Experimental {
-                        name,
-                        menu_description,
-                        announcement,
-                    } => (
-                        ApiExperimentalFeatureStage::Beta,
-                        Some(name.to_string()),
-                        Some(menu_description.to_string()),
-                        Some(announcement.to_string()),
-                    ),
-                    Stage::UnderDevelopment => (
-                        ApiExperimentalFeatureStage::UnderDevelopment,
-                        None,
-                        None,
-                        None,
-                    ),
-                    Stage::Stable => (ApiExperimentalFeatureStage::Stable, None, None, None),
-                    Stage::Deprecated => {
-                        (ApiExperimentalFeatureStage::Deprecated, None, None, None)
-                    }
-                    Stage::Removed => (ApiExperimentalFeatureStage::Removed, None, None, None),
-                };
-
-                ApiExperimentalFeature {
-                    name: spec.key.to_string(),
-                    stage,
-                    display_name,
-                    description,
-                    announcement,
-                    enabled: config.features.enabled(spec.id),
-                    default_enabled: spec.default_enabled,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let total = data.len();
-        if total == 0 {
-            self.outgoing
-                .send_response(
-                    request_id,
-                    ExperimentalFeatureListResponse {
-                        data: Vec::new(),
-                        next_cursor: None,
-                    },
-                )
-                .await;
-            return;
-        }
-
-        // Clamp to 1 so limit=0 cannot return a non-advancing page.
-        let effective_limit = limit.unwrap_or(total as u32).max(1) as usize;
-        let effective_limit = effective_limit.min(total);
-        let start = match cursor {
-            Some(cursor) => match cursor.parse::<usize>() {
-                Ok(idx) => idx,
-                Err(_) => {
-                    self.send_invalid_request_error(
-                        request_id,
-                        format!("invalid cursor: {cursor}"),
-                    )
-                    .await;
-                    return;
-                }
-            },
-            None => 0,
-        };
-
-        if start > total {
-            self.send_invalid_request_error(
-                request_id,
-                format!("cursor {start} exceeds total feature flags {total}"),
-            )
-            .await;
-            return;
-        }
-
-        let end = start.saturating_add(effective_limit).min(total);
-        let data = data[start..end].to_vec();
-        let next_cursor = if end < total {
-            Some(end.to_string())
-        } else {
-            None
-        };
-
-        self.outgoing
-            .send_response(
-                request_id,
-                ExperimentalFeatureListResponse { data, next_cursor },
-            )
-            .await;
-    }
-
-    async fn mock_experimental_method(
-        &self,
-        request_id: ConnectionRequestId,
-        params: MockExperimentalMethodParams,
-    ) {
-        let MockExperimentalMethodParams { value } = params;
-        let response = MockExperimentalMethodResponse { echoed: value };
-        self.outgoing.send_response(request_id, response).await;
     }
 
     async fn mcp_server_refresh(&self, request_id: ConnectionRequestId, _params: Option<()>) {
@@ -5711,8 +5695,7 @@ impl LyraMessageProcessor {
             || params.service_tier.is_some()
             || params.effort.is_some()
             || params.summary.is_some()
-            || collaboration_mode.is_some()
-            || params.personality.is_some();
+            || collaboration_mode.is_some();
 
         // If any overrides are provided, update the session turn context first.
         if has_any_overrides {
@@ -5733,7 +5716,6 @@ impl LyraMessageProcessor {
                         summary: params.summary,
                         service_tier: params.service_tier,
                         collaboration_mode,
-                        personality: params.personality,
                     },
                 )
                 .await;
@@ -6723,7 +6705,7 @@ impl LyraMessageProcessor {
                         let raw_events_enabled = {
                             let mut thread_state = thread_state.lock().await;
                             thread_state.track_current_turn_event(&event.msg);
-                            thread_state.experimental_raw_events
+                            thread_state.raw_events
                         };
                         let subscribed_connection_ids = thread_state_manager
                             .subscribed_connection_ids(conversation_id)
@@ -7426,15 +7408,6 @@ fn collect_resume_override_mismatches(
             ));
         }
     }
-    if let Some(requested_personality) = request.personality.as_ref()
-        && config_snapshot.personality.as_ref() != Some(requested_personality)
-    {
-        mismatch_details.push(format!(
-            "personality requested={requested_personality:?} active={:?}",
-            config_snapshot.personality
-        ));
-    }
-
     if request.config.is_some() {
         mismatch_details
             .push("config overrides were provided and ignored while running".to_string());
@@ -7648,6 +7621,7 @@ fn config_load_error(err: &std::io::Error) -> JSONRPCErrorError {
 
 fn api_dynamic_tool_to_core(tool: ApiDynamicToolSpec) -> CoreDynamicToolSpec {
     CoreDynamicToolSpec {
+        namespace: tool.namespace,
         name: tool.name,
         description: tool.description,
         input_schema: tool.input_schema,
@@ -7902,6 +7876,10 @@ fn thread_from_stored_thread(
         thread.agent_nickname.clone(),
         thread.agent_role.clone(),
     );
+    let bound_project_root = thread.bound_project_root.and_then(|path| {
+        AbsolutePathBuf::relative_to_current_dir(path_utils::normalize_for_native_workdir(path))
+            .ok()
+    });
     let history = thread.history;
     let thread = Thread {
         id: thread.thread_id.to_string(),
@@ -7918,6 +7896,7 @@ fn thread_from_stored_thread(
         status: ThreadStatus::NotLoaded,
         path,
         cwd,
+        bound_project_root,
         cli_version: thread.cli_version,
         agent_nickname: source.get_nickname(),
         agent_role: source.get_agent_role(),
@@ -7981,6 +7960,7 @@ fn summary_from_stored_thread(
             thread.model_provider
         },
         cwd: thread.cwd,
+        bound_project_root: thread.bound_project_root,
         cli_version: thread.cli_version,
         source,
         git_info,
@@ -7996,6 +7976,7 @@ fn summary_from_state_db_metadata(
     updated_at: String,
     model_provider: String,
     cwd: PathBuf,
+    bound_project_root: Option<PathBuf>,
     cli_version: String,
     source: String,
     agent_nickname: Option<String>,
@@ -8026,6 +8007,7 @@ fn summary_from_state_db_metadata(
         updated_at: Some(updated_at),
         model_provider,
         cwd,
+        bound_project_root,
         cli_version,
         source,
         git_info,
@@ -8045,6 +8027,7 @@ fn summary_from_thread_metadata(metadata: &ThreadMetadata) -> ConversationSummar
             .to_rfc3339_opts(SecondsFormat::Secs, true),
         metadata.model_provider.clone(),
         metadata.cwd.clone(),
+        metadata.bound_project_root.clone(),
         metadata.cli_version.clone(),
         metadata.source.clone(),
         metadata.agent_nickname.clone(),
@@ -8123,6 +8106,7 @@ pub(crate) async fn read_summary_from_rollout(
         preview: String::new(),
         model_provider,
         cwd: session_meta.cwd,
+        bound_project_root: None,
         cli_version: session_meta.cli_version,
         source: session_meta.source,
         git_info,
@@ -8190,6 +8174,7 @@ fn extract_conversation_summary(
         preview: preview.to_string(),
         model_provider,
         cwd: session_meta.cwd.clone(),
+        bound_project_root: None,
         cli_version: session_meta.cli_version.clone(),
         source: session_meta.source.clone(),
         git_info,
@@ -8253,6 +8238,7 @@ async fn forked_from_id_from_rollout(path: &Path) -> Option<String> {
 
 fn merge_mutable_thread_metadata(thread: &mut Thread, persisted_thread: Thread) {
     thread.git_info = persisted_thread.git_info;
+    thread.bound_project_root = persisted_thread.bound_project_root;
 }
 
 fn preview_from_rollout_items(items: &[RolloutItem]) -> String {
@@ -8340,6 +8326,7 @@ fn build_thread_from_snapshot(
         status: ThreadStatus::NotLoaded,
         path,
         cwd: config_snapshot.cwd.clone(),
+        bound_project_root: None,
         cli_version: env!("CARGO_PKG_VERSION").to_string(),
         agent_nickname: config_snapshot.session_source.get_nickname(),
         agent_role: config_snapshot.session_source.get_agent_role(),
@@ -8362,6 +8349,7 @@ pub(crate) fn summary_to_thread(
         updated_at,
         model_provider,
         cwd,
+        bound_project_root,
         cli_version,
         source,
         git_info,
@@ -8395,6 +8383,10 @@ pub(crate) fn summary_to_thread(
         status: ThreadStatus::NotLoaded,
         path: Some(path),
         cwd,
+        bound_project_root: bound_project_root.and_then(|path| {
+            AbsolutePathBuf::relative_to_current_dir(path_utils::normalize_for_native_workdir(path))
+                .ok()
+        }),
         cli_version,
         agent_nickname: source.get_nickname(),
         agent_role: source.get_agent_role(),
@@ -8554,6 +8546,43 @@ fn reconstruct_thread_turns_from_rollout_items(
     turns
 }
 
+fn user_text_from_turn(turn: &Turn) -> Option<String> {
+    turn.items.iter().find_map(|item| match item {
+        ThreadItem::UserMessage { content, .. } => {
+            let text = content
+                .iter()
+                .filter_map(|input| match input {
+                    V2UserInput::Text { text, .. } => Some(text.as_str()),
+                    V2UserInput::Image { .. }
+                    | V2UserInput::LocalImage { .. }
+                    | V2UserInput::Skill { .. }
+                    | V2UserInput::Mention { .. } => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_string();
+            if text.is_empty() { None } else { Some(text) }
+        }
+        _ => None,
+    })
+}
+
+fn collect_reverted_files_from_turns(turns: &[Turn]) -> Vec<String> {
+    let mut paths = turns
+        .iter()
+        .flat_map(|turn| turn.items.iter())
+        .filter_map(|item| match item {
+            ThreadItem::FileChange { changes, .. } => Some(changes),
+            _ => None,
+        })
+        .flat_map(|changes| changes.iter().map(|change| change.path.clone()))
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 fn normalize_thread_turns_status(
     turns: &mut [Turn],
     loaded_status: ThreadStatus,
@@ -8597,6 +8626,7 @@ mod tests {
     #[test]
     fn validate_dynamic_tools_rejects_unsupported_input_schema() {
         let tools = vec![ApiDynamicToolSpec {
+            namespace: None,
             name: "my_tool".to_string(),
             description: "test".to_string(),
             input_schema: json!({"type": "null"}),
@@ -8609,6 +8639,7 @@ mod tests {
     #[test]
     fn validate_dynamic_tools_accepts_sanitizable_input_schema() {
         let tools = vec![ApiDynamicToolSpec {
+            namespace: None,
             name: "my_tool".to_string(),
             description: "test".to_string(),
             // Missing `type` is common; core sanitizes these to a supported schema.
@@ -8621,6 +8652,7 @@ mod tests {
     #[test]
     fn validate_dynamic_tools_accepts_nullable_field_schema() {
         let tools = vec![ApiDynamicToolSpec {
+            namespace: None,
             name: "my_tool".to_string(),
             description: "test".to_string(),
             input_schema: json!({
@@ -8672,6 +8704,7 @@ mod tests {
             updated_at: updated_at.with_timezone(&Utc),
             archived_at: None,
             cwd: PathBuf::from("/tmp"),
+            bound_project_root: Some(PathBuf::from("/tmp/project")),
             cli_version: "0.0.0".to_string(),
             source: SessionSource::Cli,
             agent_nickname: None,
@@ -8766,7 +8799,7 @@ mod tests {
             path: None,
             model: None,
             model_provider: None,
-            service_tier: Some(Some(lyra_protocol::config_types::ServiceTier::Fast)),
+            service_tier: Some(None),
             cwd: None,
             approval_policy: None,
             approvals_reviewer: None,
@@ -8774,7 +8807,6 @@ mod tests {
             config: None,
             base_instructions: None,
             developer_instructions: None,
-            personality: None,
             persist_extended_history: false,
         };
         let config_snapshot = ThreadConfigSnapshot {
@@ -8787,13 +8819,12 @@ mod tests {
             cwd: test_path_buf("/tmp").abs(),
             ephemeral: false,
             reasoning_effort: None,
-            personality: None,
             session_source: SessionSource::Cli,
         };
 
         assert_eq!(
             collect_resume_override_mismatches(&request, &config_snapshot),
-            vec!["service_tier requested=Some(Fast) active=Some(Flex)".to_string()]
+            vec!["service_tier requested=None active=Some(Flex)".to_string()]
         );
     }
 
@@ -9039,6 +9070,7 @@ mod tests {
             preview: "Count to 5".to_string(),
             model_provider: "test-provider".to_string(),
             cwd: PathBuf::from("/"),
+            bound_project_root: None,
             cli_version: "0.0.0".to_string(),
             source: SessionSource::VSCode,
             git_info: None,
@@ -9095,6 +9127,7 @@ mod tests {
             preview: String::new(),
             model_provider: "fallback".to_string(),
             cwd: PathBuf::new(),
+            bound_project_root: None,
             cli_version: String::new(),
             source: SessionSource::VSCode,
             git_info: None,
@@ -9270,6 +9303,7 @@ mod tests {
             "2025-09-05T16:53:12Z".to_string(),
             "test-provider".to_string(),
             PathBuf::from("/"),
+            None,
             "0.0.0".to_string(),
             source,
             Some("worker".to_string()),
@@ -9296,9 +9330,7 @@ mod tests {
 
         manager.connection_initialized(connection).await;
         manager
-            .try_ensure_connection_subscribed(
-                thread_id, connection, /*experimental_raw_events*/ false,
-            )
+            .try_ensure_connection_subscribed(thread_id, connection, /*raw_events*/ false)
             .await
             .expect("connection should be live");
         {
@@ -9339,19 +9371,11 @@ mod tests {
         manager.connection_initialized(connection_a).await;
         manager.connection_initialized(connection_b).await;
         manager
-            .try_ensure_connection_subscribed(
-                thread_id,
-                connection_a,
-                /*experimental_raw_events*/ false,
-            )
+            .try_ensure_connection_subscribed(thread_id, connection_a, /*raw_events*/ false)
             .await
             .expect("connection_a should be live");
         manager
-            .try_ensure_connection_subscribed(
-                thread_id,
-                connection_b,
-                /*experimental_raw_events*/ false,
-            )
+            .try_ensure_connection_subscribed(thread_id, connection_b, /*raw_events*/ false)
             .await
             .expect("connection_b should be live");
         {
@@ -9384,11 +9408,7 @@ mod tests {
         manager.connection_initialized(connection_a).await;
         manager.connection_initialized(connection_b).await;
         manager
-            .try_ensure_connection_subscribed(
-                thread_id,
-                connection_a,
-                /*experimental_raw_events*/ false,
-            )
+            .try_ensure_connection_subscribed(thread_id, connection_a, /*raw_events*/ false)
             .await
             .expect("connection_a should be live");
         let mut has_connections = manager
@@ -9433,9 +9453,7 @@ mod tests {
 
         assert!(
             manager
-                .try_ensure_connection_subscribed(
-                    thread_id, connection, /*experimental_raw_events*/ false
-                )
+                .try_ensure_connection_subscribed(thread_id, connection, /*raw_events*/ false)
                 .await
                 .is_none()
         );

@@ -484,17 +484,17 @@ fn resolve_sandbox_policies_accepts_semantically_equivalent_workspace_write_inpu
 }
 
 #[test]
-fn apply_seccomp_then_exec_with_legacy_landlock_panics() {
+fn apply_seccomp_then_exec_with_classic_landlock_panics() {
     let result = std::panic::catch_unwind(|| {
         ensure_inner_stage_mode_is_valid(
-            /*apply_seccomp_then_exec*/ true, /*use_legacy_landlock*/ true,
+            /*apply_seccomp_then_exec*/ true, /*use_classic_landlock*/ true,
         )
     });
     assert!(result.is_err());
 }
 
 #[test]
-fn legacy_landlock_rejects_split_only_filesystem_policies() {
+fn classic_landlock_rejects_split_only_filesystem_policies() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let docs = temp_dir.path().join("docs");
     std::fs::create_dir_all(&docs).expect("create docs");
@@ -513,8 +513,8 @@ fn legacy_landlock_rejects_split_only_filesystem_policies() {
     ]);
 
     let result = std::panic::catch_unwind(|| {
-        ensure_legacy_landlock_mode_supports_policy(
-            /*use_legacy_landlock*/ true,
+        ensure_classic_landlock_mode_supports_policy(
+            /*use_classic_landlock*/ true,
             &policy,
             NetworkSandboxPolicy::Restricted,
             temp_dir.path(),
@@ -527,12 +527,12 @@ fn legacy_landlock_rejects_split_only_filesystem_policies() {
 #[test]
 fn valid_inner_stage_modes_do_not_panic() {
     ensure_inner_stage_mode_is_valid(
-        /*apply_seccomp_then_exec*/ false, /*use_legacy_landlock*/ false,
+        /*apply_seccomp_then_exec*/ false, /*use_classic_landlock*/ false,
     );
     ensure_inner_stage_mode_is_valid(
-        /*apply_seccomp_then_exec*/ false, /*use_legacy_landlock*/ true,
+        /*apply_seccomp_then_exec*/ false, /*use_classic_landlock*/ true,
     );
     ensure_inner_stage_mode_is_valid(
-        /*apply_seccomp_then_exec*/ true, /*use_legacy_landlock*/ false,
+        /*apply_seccomp_then_exec*/ true, /*use_classic_landlock*/ false,
     );
 }

@@ -235,6 +235,13 @@
   gap: var(--lyra-unit-2);
 }
 
+.lyra-settings-description {
+  margin: var(--lyra-unit-8) 0 0;
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+  line-height: 1.5;
+}
+
 .lyra-settings-choice-main-rich {
   grid-template-columns: var(--lyra-unit-18) minmax(0, 1fr);
   gap: var(--lyra-unit-10);

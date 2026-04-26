@@ -13,7 +13,6 @@ pub use crate::mcp_types::RawMcpServerConfig;
 pub use lyra_protocol::config_types::AltScreenMode;
 pub use lyra_protocol::config_types::ApprovalsReviewer;
 pub use lyra_protocol::config_types::ModeKind;
-pub use lyra_protocol::config_types::Personality;
 pub use lyra_protocol::config_types::ServiceTier;
 pub use lyra_protocol::config_types::WebSearchMode;
 use lyra_utils_absolute_path::AbsolutePathBuf;
@@ -722,24 +721,6 @@ const fn default_true() -> bool {
     true
 }
 
-/// Settings for notices we display to users via the tui and app-server clients
-/// (primarily the Lyra desktop extension). NOTE: these are different from
-/// notifications - notices are warnings, NUX screens, acknowledgements, etc.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct ExternalConfigMigrationPrompts {
-    /// Tracks whether home-level external config migration prompts are hidden.
-    pub home: Option<bool>,
-    /// Tracks the last time the home-level external config migration prompt was shown.
-    pub home_last_prompted_at: Option<i64>,
-    /// Tracks which project paths have opted out of external config migration prompts.
-    #[serde(default)]
-    pub projects: BTreeMap<String, bool>,
-    /// Tracks the last time a project-level external config migration prompt was shown.
-    #[serde(default)]
-    pub project_last_prompted_at: BTreeMap<String, i64>,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct Notice {
@@ -757,9 +738,6 @@ pub struct Notice {
     /// Tracks acknowledged model migrations as old->new model slug mappings.
     #[serde(default)]
     pub model_migrations: BTreeMap<String, String>,
-    /// Tracks scopes where external config migration prompts should be suppressed.
-    #[serde(default)]
-    pub external_config_migration_prompts: ExternalConfigMigrationPrompts,
 }
 
 pub use crate::skills_config::BundledSkillsConfig;
@@ -859,7 +837,7 @@ pub struct ShellEnvironmentPolicyToml {
     /// List of regular expressions.
     pub include_only: Option<Vec<String>>,
 
-    pub experimental_use_profile: Option<bool>,
+    pub use_profile: Option<bool>,
 }
 
 pub type EnvironmentVariablePattern = WildMatchPattern<'*', '?'>;
@@ -911,7 +889,7 @@ impl From<ShellEnvironmentPolicyToml> for ShellEnvironmentPolicy {
             .into_iter()
             .map(|s| EnvironmentVariablePattern::new_case_insensitive(&s))
             .collect();
-        let use_profile = toml.experimental_use_profile.unwrap_or(false);
+        let use_profile = toml.use_profile.unwrap_or(false);
 
         Self {
             inherit,

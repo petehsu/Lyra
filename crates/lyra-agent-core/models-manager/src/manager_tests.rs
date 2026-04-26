@@ -2,7 +2,6 @@ use super::*;
 use crate::ModelsManagerConfig;
 use base64::Engine as _;
 use chrono::Utc;
-use core_test_support::responses::mount_models_once;
 use http::HeaderMap;
 use http::StatusCode;
 use lyra_api::TransportError;
@@ -30,6 +29,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use wiremock::Mock;
+use wiremock::MockGuard;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
 use wiremock::matchers::header_regex;
@@ -71,7 +71,7 @@ fn remote_model_with_visibility(
             "supports_image_detail_original": false,
             "context_window": 272_000,
             "max_context_window": 272_000,
-            "experimental_supported_tools": [],
+            "supported_tools": [],
         }))
         .expect("valid model")
 }
@@ -92,7 +92,7 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
         base_url: Some(base_url),
         env_key: None,
         env_key_instructions: None,
-        experimental_bearer_token: None,
+        bearer_token: None,
         auth: None,
         wire_api: WireApi::Responses,
         query_params: None,
@@ -105,6 +105,14 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
         requires_managed_auth: false,
         supports_websockets: false,
     }
+}
+
+async fn mount_models_once(server: &MockServer, response: ModelsResponse) -> MockGuard {
+    Mock::given(method("GET"))
+        .and(path(MODELS_ENDPOINT))
+        .respond_with(ResponseTemplate::new(200).set_body_json(response))
+        .mount_as_scoped(server)
+        .await
 }
 
 struct ProviderAuthScript {
@@ -234,7 +242,7 @@ where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
-        if event.metadata().target() != "feedback_tags" {
+        if event.metadata().target() != "lyra_otel.log_only" {
             return;
         }
         let mut visitor = TagCollectorVisitor::default();
@@ -244,7 +252,8 @@ where
 }
 
 #[tokio::test]
-async fn get_model_info_tracks_fallback_usage() {
+#[should_panic(expected = "Model metadata not resolved")]
+async fn get_model_info_rejects_unresolved_model_without_provider_context() {
     let lyra_home = tempdir().expect("temp dir");
     let config = ModelsManagerConfig::default();
     let auth_manager = AuthManager::from_auth_for_testing(LyraAuth::from_api_key("Test API Key"));
@@ -263,14 +272,11 @@ async fn get_model_info_tracks_fallback_usage() {
         .clone();
 
     let known = manager.get_model_info(known_slug.as_str(), &config).await;
-    assert!(!known.used_fallback_model_metadata);
     assert_eq!(known.slug, known_slug);
 
-    let unknown = manager
+    let _unknown = manager
         .get_model_info("model-that-does-not-exist", &config)
         .await;
-    assert!(unknown.used_fallback_model_metadata);
-    assert_eq!(unknown.slug, "model-that-does-not-exist");
 }
 
 #[tokio::test]
@@ -299,7 +305,6 @@ async fn get_model_info_uses_custom_catalog() {
     assert_eq!(model_info.context_window, Some(272_000));
     assert!(model_info.supports_image_detail_original);
     assert!(!model_info.supports_parallel_tool_calls);
-    assert!(!model_info.used_fallback_model_metadata);
 }
 
 #[tokio::test]
@@ -323,10 +328,10 @@ async fn get_model_info_matches_namespaced_suffix() {
 
     assert_eq!(model_info.slug, namespaced_model);
     assert!(model_info.supports_image_detail_original);
-    assert!(!model_info.used_fallback_model_metadata);
 }
 
 #[tokio::test]
+#[should_panic(expected = "Model metadata not resolved")]
 async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
     let lyra_home = tempdir().expect("temp dir");
     let config = ModelsManagerConfig::default();
@@ -346,10 +351,7 @@ async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
         .clone();
     let namespaced_model = format!("ns1/ns2/{known_slug}");
 
-    let model_info = manager.get_model_info(&namespaced_model, &config).await;
-
-    assert_eq!(model_info.slug, namespaced_model);
-    assert!(model_info.used_fallback_model_metadata);
+    let _model_info = manager.get_model_info(&namespaced_model, &config).await;
 }
 
 #[tokio::test]
@@ -368,8 +370,7 @@ async fn refresh_available_models_sorts_by_priority() {
     .await;
 
     let lyra_home = tempdir().expect("temp dir");
-    let auth_manager =
-        AuthManager::from_auth_for_testing(LyraAuth::create_dummy_api_key_auth_for_testing());
+    let auth_manager = AuthManager::from_auth_for_testing(LyraAuth::from_api_key("test-api-key"));
     let provider = provider_for(server.uri());
     let manager = ModelsManager::with_provider_for_tests(
         lyra_home.path().to_path_buf(),
@@ -398,7 +399,7 @@ async fn refresh_available_models_sorts_by_priority() {
         "higher priority should be listed before lower priority"
     );
     assert_eq!(
-        models_mock.requests().len(),
+        models_mock.received_requests().await.len(),
         1,
         "expected a single /models request"
     );
@@ -461,8 +462,7 @@ async fn refresh_available_models_uses_cache_when_fresh() {
     .await;
 
     let lyra_home = tempdir().expect("temp dir");
-    let auth_manager =
-        AuthManager::from_auth_for_testing(LyraAuth::create_dummy_api_key_auth_for_testing());
+    let auth_manager = AuthManager::from_auth_for_testing(LyraAuth::from_api_key("test-api-key"));
     let provider = provider_for(server.uri());
     let manager = ModelsManager::with_provider_for_tests(
         lyra_home.path().to_path_buf(),
@@ -483,7 +483,7 @@ async fn refresh_available_models_uses_cache_when_fresh() {
         .expect("cached refresh succeeds");
     assert_models_contain(&manager.get_remote_models().await, &remote_models);
     assert_eq!(
-        models_mock.requests().len(),
+        models_mock.received_requests().await.len(),
         1,
         "cache hit should avoid a second /models request"
     );
@@ -502,8 +502,7 @@ async fn refresh_available_models_refetches_when_cache_stale() {
     .await;
 
     let lyra_home = tempdir().expect("temp dir");
-    let auth_manager =
-        AuthManager::from_auth_for_testing(LyraAuth::create_dummy_api_key_auth_for_testing());
+    let auth_manager = AuthManager::from_auth_for_testing(LyraAuth::from_api_key("test-api-key"));
     let provider = provider_for(server.uri());
     let manager = ModelsManager::with_provider_for_tests(
         lyra_home.path().to_path_buf(),
@@ -524,6 +523,12 @@ async fn refresh_available_models_refetches_when_cache_stale() {
         })
         .await
         .expect("cache manipulation succeeds");
+    assert_eq!(
+        initial_mock.received_requests().await.len(),
+        1,
+        "initial refresh should only hit /models once"
+    );
+    drop(initial_mock);
 
     let updated_models = vec![remote_model("fresh", "Fresh", /*priority*/ 9)];
     server.reset().await;
@@ -541,12 +546,7 @@ async fn refresh_available_models_refetches_when_cache_stale() {
         .expect("second refresh succeeds");
     assert_models_contain(&manager.get_remote_models().await, &updated_models);
     assert_eq!(
-        initial_mock.requests().len(),
-        1,
-        "initial refresh should only hit /models once"
-    );
-    assert_eq!(
-        refreshed_mock.requests().len(),
+        refreshed_mock.received_requests().await.len(),
         1,
         "stale cache refresh should fetch /models once"
     );
@@ -565,8 +565,7 @@ async fn refresh_available_models_refetches_when_version_mismatch() {
     .await;
 
     let lyra_home = tempdir().expect("temp dir");
-    let auth_manager =
-        AuthManager::from_auth_for_testing(LyraAuth::create_dummy_api_key_auth_for_testing());
+    let auth_manager = AuthManager::from_auth_for_testing(LyraAuth::from_api_key("test-api-key"));
     let provider = provider_for(server.uri());
     let manager = ModelsManager::with_provider_for_tests(
         lyra_home.path().to_path_buf(),
@@ -587,6 +586,12 @@ async fn refresh_available_models_refetches_when_version_mismatch() {
         })
         .await
         .expect("cache mutation succeeds");
+    assert_eq!(
+        initial_mock.received_requests().await.len(),
+        1,
+        "initial refresh should only hit /models once"
+    );
+    drop(initial_mock);
 
     let updated_models = vec![remote_model("new", "New", /*priority*/ 2)];
     server.reset().await;
@@ -604,12 +609,7 @@ async fn refresh_available_models_refetches_when_version_mismatch() {
         .expect("second refresh succeeds");
     assert_models_contain(&manager.get_remote_models().await, &updated_models);
     assert_eq!(
-        initial_mock.requests().len(),
-        1,
-        "initial refresh should only hit /models once"
-    );
-    assert_eq!(
-        refreshed_mock.requests().len(),
+        refreshed_mock.received_requests().await.len(),
         1,
         "version mismatch should fetch /models once"
     );
@@ -632,8 +632,7 @@ async fn refresh_available_models_drops_removed_remote_models() {
     .await;
 
     let lyra_home = tempdir().expect("temp dir");
-    let auth_manager =
-        AuthManager::from_auth_for_testing(LyraAuth::create_dummy_api_key_auth_for_testing());
+    let auth_manager = AuthManager::from_auth_for_testing(LyraAuth::from_api_key("test-api-key"));
     let provider = provider_for(server.uri());
     let mut manager = ModelsManager::with_provider_for_tests(
         lyra_home.path().to_path_buf(),
@@ -646,6 +645,12 @@ async fn refresh_available_models_drops_removed_remote_models() {
         .refresh_available_models(RefreshStrategy::OnlineIfUncached)
         .await
         .expect("initial refresh succeeds");
+    assert_eq!(
+        initial_mock.received_requests().await.len(),
+        1,
+        "initial refresh should only hit /models once"
+    );
+    drop(initial_mock);
 
     server.reset().await;
     let refreshed_models = vec![remote_model(
@@ -678,12 +683,7 @@ async fn refresh_available_models_drops_removed_remote_models() {
         "removed remote model should not be listed"
     );
     assert_eq!(
-        initial_mock.requests().len(),
-        1,
-        "initial refresh should only hit /models once"
-    );
-    assert_eq!(
-        refreshed_mock.requests().len(),
+        refreshed_mock.received_requests().await.len(),
         1,
         "second refresh should only hit /models once"
     );
@@ -726,7 +726,7 @@ async fn refresh_available_models_skips_network_without_cached_credentials() {
         "remote refresh should be skipped without provider auth"
     );
     assert_eq!(
-        models_mock.requests().len(),
+        models_mock.received_requests().await.len(),
         0,
         "no auth should avoid /models requests"
     );
@@ -740,7 +740,7 @@ fn models_request_telemetry_emits_auth_env_feedback_tags_on_failure() {
         .set_default();
 
     let telemetry = ModelsRequestTelemetry {
-        auth_mode: Some(TelemetryAuthMode::Chatgpt.to_string()),
+        auth_mode: Some(TelemetryAuthMode::ApiKey.to_string()),
         auth_header_attached: true,
         auth_header_name: Some("authorization"),
         auth_env: lyra_login::AuthEnvTelemetry {
@@ -749,7 +749,6 @@ fn models_request_telemetry_emits_auth_env_feedback_tags_on_failure() {
             lyra_api_key_env_enabled: false,
             provider_env_key_name: Some("configured".to_string()),
             provider_env_key_present: Some(false),
-            refresh_token_url_override_present: false,
         },
     };
     let mut headers = HeaderMap::new();
@@ -779,52 +778,41 @@ fn models_request_telemetry_emits_auth_env_feedback_tags_on_failure() {
     );
 
     let tags = tags.lock().unwrap().clone();
+    assert_eq!(tags.get("endpoint").map(String::as_str), Some("/models"));
+    assert_eq!(tags.get("auth.mode").map(String::as_str), Some("ApiKey"));
     assert_eq!(
-        tags.get("endpoint").map(String::as_str),
-        Some("\"/models\"")
+        tags.get("auth.request_id").map(String::as_str),
+        Some("req-models-401")
     );
     assert_eq!(
-        tags.get("auth_mode").map(String::as_str),
-        Some("\"Chatgpt\"")
+        tags.get("auth.error").map(String::as_str),
+        Some("missing_authorization_header")
     );
     assert_eq!(
-        tags.get("auth_request_id").map(String::as_str),
-        Some("\"req-models-401\"")
+        tags.get("auth.error_code").map(String::as_str),
+        Some("token_expired")
     );
     assert_eq!(
-        tags.get("auth_error").map(String::as_str),
-        Some("\"missing_authorization_header\"")
-    );
-    assert_eq!(
-        tags.get("auth_error_code").map(String::as_str),
-        Some("\"token_expired\"")
-    );
-    assert_eq!(
-        tags.get("auth_env_openai_api_key_present")
+        tags.get("auth.env_openai_api_key_present")
             .map(String::as_str),
         Some("false")
     );
     assert_eq!(
-        tags.get("auth_env_lyra_api_key_present")
+        tags.get("auth.env_lyra_api_key_present")
             .map(String::as_str),
         Some("false")
     );
     assert_eq!(
-        tags.get("auth_env_lyra_api_key_enabled")
+        tags.get("auth.env_lyra_api_key_enabled")
             .map(String::as_str),
         Some("false")
     );
     assert_eq!(
-        tags.get("auth_env_provider_key_name").map(String::as_str),
-        Some("\"configured\"")
+        tags.get("auth.env_provider_key_name").map(String::as_str),
+        Some("configured")
     );
     assert_eq!(
-        tags.get("auth_env_provider_key_present")
-            .map(String::as_str),
-        Some("\"false\"")
-    );
-    assert_eq!(
-        tags.get("auth_env_refresh_token_url_override_present")
+        tags.get("auth.env_provider_key_present")
             .map(String::as_str),
         Some("false")
     );

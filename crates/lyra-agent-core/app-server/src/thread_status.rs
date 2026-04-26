@@ -896,6 +896,7 @@ mod tests {
             status: ThreadStatus::NotLoaded,
             path: None,
             cwd: test_path_buf("/tmp").abs(),
+            bound_project_root: None,
             cli_version: "test".to_string(),
             agent_nickname: None,
             agent_role: None,

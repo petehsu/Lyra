@@ -13,13 +13,6 @@
       ],
       "type": "string"
     },
-    "PreToolUseDecisionWire": {
-      "enum": [
-        "approve",
-        "block"
-      ],
-      "type": "string"
-    },
     "PreToolUseHookSpecificOutputWire": {
       "additionalProperties": false,
       "properties": {
@@ -65,14 +58,6 @@
       "default": true,
       "type": "boolean"
     },
-    "decision": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/PreToolUseDecisionWire"
-        }
-      ],
-      "default": null
-    },
     "hookSpecificOutput": {
       "allOf": [
         {
@@ -80,10 +65,6 @@
         }
       ],
       "default": null
-    },
-    "reason": {
-      "default": null,
-      "type": "string"
     },
     "stopReason": {
       "default": null,

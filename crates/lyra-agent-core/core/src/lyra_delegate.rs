@@ -30,15 +30,15 @@ use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
+use crate::auto_review::AutoReviewApprovalRequest;
+use crate::auto_review::new_auto_review_id;
+use crate::auto_review::review_approval_request_with_cancel;
+use crate::auto_review::routes_approval_to_auto_review;
 use crate::config::Config;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::new_guardian_review_id;
-use crate::guardian::review_approval_request_with_cancel;
-use crate::guardian::routes_approval_to_guardian;
 use crate::mcp_tool_call::MCP_TOOL_APPROVAL_ACCEPT;
 use crate::mcp_tool_call::MCP_TOOL_APPROVAL_ACCEPT_FOR_SESSION;
 use crate::mcp_tool_call::MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC;
-use crate::mcp_tool_call::build_guardian_mcp_tool_review_request;
+use crate::mcp_tool_call::build_auto_review_mcp_tool_review_request;
 use crate::mcp_tool_call::is_mcp_tool_approval_question_id;
 use crate::mcp_tool_call::lookup_mcp_tool_metadata;
 use crate::session::LyraSessionHandle;
@@ -121,7 +121,7 @@ pub(crate) async fn run_lyra_thread_interactive(
     let parent_session_clone = Arc::clone(&parent_session);
     let parent_ctx_clone = Arc::clone(&parent_ctx);
     let lyra_for_events = Arc::clone(&session_handle);
-    // Cache delegated MCP invocations so guardian can recover the full tool call
+    // Cache delegated MCP invocations so auto_review can recover the full tool call
     // context when the later legacy RequestUserInput approval event only carries
     // a call_id plus approval question metadata.
     let pending_mcp_invocations = Arc::new(Mutex::new(HashMap::<String, McpInvocation>::new()));
@@ -454,13 +454,13 @@ async fn handle_exec_approval(
         available_decisions,
         ..
     } = event;
-    let decision = if routes_approval_to_guardian(parent_ctx) {
+    let decision = if routes_approval_to_auto_review(parent_ctx) {
         let review_cancel = cancel_token.child_token();
-        let review_rx = spawn_guardian_review(
+        let review_rx = spawn_auto_review(
             Arc::clone(parent_session),
             Arc::clone(parent_ctx),
-            new_guardian_review_id(),
-            GuardianApprovalRequest::Shell {
+            new_auto_review_id(),
+            AutoReviewApprovalRequest::Shell {
                 id: call_id.clone(),
                 command,
                 cwd,
@@ -531,7 +531,7 @@ async fn handle_patch_approval(
         ..
     } = event;
     let approval_id = call_id.clone();
-    let guardian_decision = if routes_approval_to_guardian(parent_ctx) {
+    let auto_review_decision = if routes_approval_to_auto_review(parent_ctx) {
         let files = changes
             .keys()
             .map(|path| parent_ctx.cwd.join(path))
@@ -564,11 +564,11 @@ async fn handle_patch_approval(
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let review_rx = spawn_guardian_review(
+        let review_rx = spawn_auto_review(
             Arc::clone(parent_session),
             Arc::clone(parent_ctx),
-            new_guardian_review_id(),
-            GuardianApprovalRequest::ApplyPatch {
+            new_auto_review_id(),
+            AutoReviewApprovalRequest::ApplyPatch {
                 id: approval_id.clone(),
                 cwd: parent_ctx.cwd.clone(),
                 files,
@@ -590,7 +590,7 @@ async fn handle_patch_approval(
     } else {
         None
     };
-    let decision = if let Some(decision) = guardian_decision {
+    let decision = if let Some(decision) = auto_review_decision {
         decision
     } else {
         let decision_rx = parent_session
@@ -622,7 +622,7 @@ async fn handle_request_user_input(
     event: RequestUserInputEvent,
     cancel_token: &CancellationToken,
 ) {
-    if routes_approval_to_guardian(parent_ctx)
+    if routes_approval_to_auto_review(parent_ctx)
         && let Some(response) = maybe_auto_review_mcp_request_user_input(
             parent_session,
             parent_ctx,
@@ -656,12 +656,12 @@ async fn handle_request_user_input(
 }
 
 /// Intercepts delegated legacy MCP approval prompts on the RequestUserInput
-/// compatibility path and, when guardian is active, answers them
-/// programmatically after running the guardian review.
+/// compatibility path and, when auto_review is active, answers them
+/// programmatically after running the auto_review review.
 ///
 /// The RequestUserInput event only carries `call_id` plus approval question
 /// metadata, so this helper joins it back to the cached `McpToolCallBegin`
-/// invocation in order to rebuild the full guardian review request.
+/// invocation in order to rebuild the full auto_review review request.
 async fn maybe_auto_review_mcp_request_user_input(
     parent_session: &Arc<Session>,
     parent_ctx: &Arc<TurnContext>,
@@ -670,7 +670,7 @@ async fn maybe_auto_review_mcp_request_user_input(
     cancel_token: &CancellationToken,
 ) -> Option<RequestUserInputResponse> {
     // TODO(ccunningham): Support delegated MCP approval elicitations here too after
-    // coordinating with @fouad. Today guardian only auto-reviews the RequestUserInput
+    // coordinating with @fouad. Today auto_review only auto-reviews the RequestUserInput
     // compatibility path for delegated MCP approvals.
     let question = event
         .questions
@@ -689,11 +689,11 @@ async fn maybe_auto_review_mcp_request_user_input(
     )
     .await;
     let review_cancel = cancel_token.child_token();
-    let review_rx = spawn_guardian_review(
+    let review_rx = spawn_auto_review(
         Arc::clone(parent_session),
         Arc::clone(parent_ctx),
-        new_guardian_review_id(),
-        build_guardian_mcp_tool_review_request(&event.call_id, &invocation, metadata.as_ref()),
+        new_auto_review_id(),
+        build_auto_review_mcp_tool_review_request(&event.call_id, &invocation, metadata.as_ref()),
         /*retry_reason*/ None,
         review_cancel.clone(),
     );
@@ -733,11 +733,11 @@ async fn maybe_auto_review_mcp_request_user_input(
     })
 }
 
-fn spawn_guardian_review(
+fn spawn_auto_review(
     session: Arc<Session>,
     turn: Arc<TurnContext>,
     review_id: String,
-    request: GuardianApprovalRequest,
+    request: AutoReviewApprovalRequest,
     retry_reason: Option<String>,
     cancel_token: CancellationToken,
 ) -> oneshot::Receiver<ReviewDecision> {
@@ -775,7 +775,14 @@ async fn handle_request_permissions(
         reason: event.reason,
         permissions: event.permissions,
     };
-    let response_fut = parent_session.request_permissions(parent_ctx, call_id.clone(), args);
+    let cwd = event.cwd.unwrap_or_else(|| parent_ctx.cwd.clone());
+    let response_fut = parent_session.request_permissions_for_cwd(
+        parent_ctx,
+        call_id.clone(),
+        args,
+        cwd,
+        cancel_token.clone(),
+    );
     let response =
         await_request_permissions_with_cancel(response_fut, parent_session, &call_id, cancel_token)
             .await;
@@ -828,6 +835,7 @@ where
             let empty = RequestPermissionsResponse {
                 permissions: Default::default(),
                 scope: PermissionGrantScope::Turn,
+                strict_auto_review: false,
             };
             parent_session
                 .notify_request_permissions_response(call_id, empty.clone())
@@ -837,6 +845,7 @@ where
         response = fut => response.unwrap_or_else(|| RequestPermissionsResponse {
             permissions: Default::default(),
             scope: PermissionGrantScope::Turn,
+            strict_auto_review: false,
         }),
     }
 }

@@ -292,13 +292,13 @@ impl<'de> Deserialize<'de> for NetworkRequirementsToml {
 
         if domains.is_some() && (allowed_domains.is_some() || denied_domains.is_some()) {
             return Err(D::Error::custom(
-                "`experimental_network.domains` cannot be combined with legacy `allowed_domains` or `denied_domains`",
+                "`network.domains` cannot be combined with legacy `allowed_domains` or `denied_domains`",
             ));
         }
 
         if unix_sockets.is_some() && allow_unix_sockets.is_some() {
             return Err(D::Error::custom(
-                "`experimental_network.unix_sockets` cannot be combined with legacy `allow_unix_sockets`",
+                "`network.unix_sockets` cannot be combined with legacy `allow_unix_sockets`",
             ));
         }
 
@@ -627,10 +627,10 @@ pub struct ConfigRequirementsToml {
     pub apps: Option<AppsRequirementsToml>,
     pub rules: Option<RequirementsExecPolicyToml>,
     pub enforce_residency: Option<ResidencyRequirement>,
-    #[serde(rename = "experimental_network")]
+    #[serde(rename = "network")]
     pub network: Option<NetworkRequirementsToml>,
     pub permissions: Option<PermissionsRequirementsToml>,
-    pub guardian_policy_config: Option<String>,
+    pub auto_review_policy_config: Option<String>,
 }
 
 /// Value paired with the requirement source it came from, for better error
@@ -668,7 +668,7 @@ pub struct ConfigRequirementsWithSources {
     pub enforce_residency: Option<Sourced<ResidencyRequirement>>,
     pub network: Option<Sourced<NetworkRequirementsToml>>,
     pub permissions: Option<Sourced<PermissionsRequirementsToml>>,
-    pub guardian_policy_config: Option<Sourced<String>>,
+    pub auto_review_policy_config: Option<Sourced<String>>,
 }
 
 impl ConfigRequirementsWithSources {
@@ -701,16 +701,16 @@ impl ConfigRequirementsWithSources {
             enforce_residency: _,
             network: _,
             permissions: _,
-            guardian_policy_config: _,
+            auto_review_policy_config: _,
         } = &other;
 
         let mut other = other;
         if other
-            .guardian_policy_config
+            .auto_review_policy_config
             .as_deref()
             .is_some_and(|value| value.trim().is_empty())
         {
-            other.guardian_policy_config = None;
+            other.auto_review_policy_config = None;
         }
         fill_missing_take!(
             self,
@@ -727,7 +727,7 @@ impl ConfigRequirementsWithSources {
                 enforce_residency,
                 network,
                 permissions,
-                guardian_policy_config,
+                auto_review_policy_config,
             }
         );
 
@@ -753,7 +753,7 @@ impl ConfigRequirementsWithSources {
             enforce_residency,
             network,
             permissions,
-            guardian_policy_config,
+            auto_review_policy_config,
         } = self;
         ConfigRequirementsToml {
             allowed_approval_policies: allowed_approval_policies.map(|sourced| sourced.value),
@@ -767,7 +767,7 @@ impl ConfigRequirementsWithSources {
             enforce_residency: enforce_residency.map(|sourced| sourced.value),
             network: network.map(|sourced| sourced.value),
             permissions: permissions.map(|sourced| sourced.value),
-            guardian_policy_config: guardian_policy_config.map(|sourced| sourced.value),
+            auto_review_policy_config: auto_review_policy_config.map(|sourced| sourced.value),
         }
     }
 }
@@ -825,7 +825,7 @@ impl ConfigRequirementsToml {
             && self.network.is_none()
             && self.permissions.is_none()
             && self
-                .guardian_policy_config
+                .auto_review_policy_config
                 .as_deref()
                 .is_none_or(|value| value.trim().is_empty())
     }
@@ -847,7 +847,7 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             enforce_residency,
             network,
             permissions,
-            guardian_policy_config: _guardian_policy_config,
+            auto_review_policy_config: _auto_review_policy_config,
         } = toml;
 
         let approval_policy = match allowed_approval_policies {
@@ -1107,7 +1107,7 @@ mod tests {
             enforce_residency,
             network,
             permissions,
-            guardian_policy_config,
+            auto_review_policy_config,
         } = toml;
         ConfigRequirementsWithSources {
             allowed_approval_policies: allowed_approval_policies
@@ -1127,7 +1127,7 @@ mod tests {
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             network: network.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             permissions: permissions.map(|value| Sourced::new(value, RequirementSource::Unknown)),
-            guardian_policy_config: guardian_policy_config
+            auto_review_policy_config: auto_review_policy_config
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
         }
     }
@@ -1139,7 +1139,7 @@ mod tests {
 
         let allowed_approval_policies = vec![AskForApproval::UnlessTrusted, AskForApproval::Never];
         let allowed_approvals_reviewers =
-            vec![ApprovalsReviewer::GuardianSubagent, ApprovalsReviewer::User];
+            vec![ApprovalsReviewer::AutoReview, ApprovalsReviewer::User];
         let allowed_sandbox_modes = vec![
             SandboxModeRequirement::WorkspaceWrite,
             SandboxModeRequirement::DangerFullAccess,
@@ -1149,11 +1149,11 @@ mod tests {
             WebSearchModeRequirement::Live,
         ];
         let feature_requirements = FeatureRequirementsToml {
-            entries: BTreeMap::from([("personality".to_string(), true)]),
+            entries: BTreeMap::from([("apps".to_string(), true)]),
         };
         let enforce_residency = ResidencyRequirement::Us;
         let enforce_source = source.clone();
-        let guardian_policy_config = "Use the company-managed guardian policy.".to_string();
+        let auto_review_policy_config = "Use the company-managed auto_review policy.".to_string();
 
         // Intentionally constructed without `..Default::default()` so adding a new field to
         // `ConfigRequirementsToml` forces this test to be updated.
@@ -1169,7 +1169,7 @@ mod tests {
             enforce_residency: Some(enforce_residency),
             network: None,
             permissions: None,
-            guardian_policy_config: Some(guardian_policy_config.clone()),
+            auto_review_policy_config: Some(auto_review_policy_config.clone()),
         };
 
         target.merge_unset_fields(source.clone(), other);
@@ -1200,7 +1200,7 @@ mod tests {
                 enforce_residency: Some(Sourced::new(enforce_residency, enforce_source)),
                 network: None,
                 permissions: None,
-                guardian_policy_config: Some(Sourced::new(guardian_policy_config, source)),
+                auto_review_policy_config: Some(Sourced::new(auto_review_policy_config, source)),
             }
         );
     }
@@ -1237,7 +1237,7 @@ mod tests {
                 enforce_residency: None,
                 network: None,
                 permissions: None,
-                guardian_policy_config: None,
+                auto_review_policy_config: None,
             }
         );
         Ok(())
@@ -1282,19 +1282,19 @@ mod tests {
                 enforce_residency: None,
                 network: None,
                 permissions: None,
-                guardian_policy_config: None,
+                auto_review_policy_config: None,
             }
         );
         Ok(())
     }
 
     #[test]
-    fn merge_unset_fields_ignores_blank_guardian_override() {
+    fn merge_unset_fields_ignores_blank_auto_review_override() {
         let mut target = ConfigRequirementsWithSources::default();
         target.merge_unset_fields(
             RequirementSource::CloudRequirements,
             ConfigRequirementsToml {
-                guardian_policy_config: Some("   \n\t".to_string()),
+                auto_review_policy_config: Some("   \n\t".to_string()),
                 ..Default::default()
             },
         );
@@ -1304,15 +1304,15 @@ mod tests {
                     .expect("system requirements.toml path"),
             },
             ConfigRequirementsToml {
-                guardian_policy_config: Some("Use the system guardian policy.".to_string()),
+                auto_review_policy_config: Some("Use the system auto_review policy.".to_string()),
                 ..Default::default()
             },
         );
 
         assert_eq!(
-            target.guardian_policy_config,
+            target.auto_review_policy_config,
             Some(Sourced::new(
-                "Use the system guardian policy.".to_string(),
+                "Use the system auto_review policy.".to_string(),
                 RequirementSource::SystemRequirementsToml {
                     file: system_requirements_toml_file_for_test()
                         .expect("system requirements.toml path"),
@@ -1322,27 +1322,27 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_guardian_policy_config() -> Result<()> {
+    fn deserialize_auto_review_policy_config() -> Result<()> {
         let requirements: ConfigRequirementsToml = from_str(
             r#"
-guardian_policy_config = """
-Use the cloud-managed guardian policy.
+auto_review_policy_config = """
+Use the cloud-managed auto_review policy.
 """
 "#,
         )?;
 
         assert_eq!(
-            requirements.guardian_policy_config.as_deref(),
-            Some("Use the cloud-managed guardian policy.\n")
+            requirements.auto_review_policy_config.as_deref(),
+            Some("Use the cloud-managed auto_review policy.\n")
         );
         Ok(())
     }
 
     #[test]
-    fn blank_guardian_policy_config_is_empty() -> Result<()> {
+    fn blank_auto_review_policy_config_is_empty() -> Result<()> {
         let requirements: ConfigRequirementsToml = from_str(
             r#"
-guardian_policy_config = """
+auto_review_policy_config = """
 
 """
 "#,
@@ -1602,7 +1602,7 @@ allowed_approvals_reviewers = ["user"]
         let source: ConfigRequirementsToml = from_str(
             r#"
                 allowed_approval_policies = ["on-request"]
-                allowed_approvals_reviewers = ["guardian_subagent"]
+                allowed_approvals_reviewers = ["auto_review"]
                 allowed_sandbox_modes = ["read-only"]
             "#,
         )?;
@@ -1643,7 +1643,7 @@ allowed_approvals_reviewers = ["user"]
             Err(ConstraintError::InvalidValue {
                 field_name: "approvals_reviewer",
                 candidate: "User".into(),
-                allowed: "[GuardianSubagent]".into(),
+                allowed: "[AutoReview]".into(),
                 requirement_source: source_location,
             })
         );
@@ -1683,12 +1683,12 @@ allowed_approvals_reviewers = ["user"]
         let source: ConfigRequirementsToml = from_str(
             r#"
                 allowed_approval_policies = ["on-request"]
-                allowed_approvals_reviewers = ["guardian_subagent"]
+                allowed_approvals_reviewers = ["auto_review"]
                 allowed_sandbox_modes = ["read-only"]
                 allowed_web_search_modes = ["cached"]
                 enforce_residency = "us"
                 [features]
-                personality = true
+                apps = true
             "#,
         )?;
 
@@ -1783,20 +1783,20 @@ allowed_approvals_reviewers = ["user"]
     #[test]
     fn deserialize_allowed_approvals_reviewers() -> Result<()> {
         let toml_str = r#"
-            allowed_approvals_reviewers = ["guardian_subagent", "user"]
+            allowed_approvals_reviewers = ["auto_review", "user"]
         "#;
         let config: ConfigRequirementsToml = from_str(toml_str)?;
         let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
 
         assert_eq!(
             requirements.approvals_reviewer.value(),
-            ApprovalsReviewer::GuardianSubagent,
+            ApprovalsReviewer::AutoReview,
             "currently, there is no way to specify the default value for approvals reviewer in the toml, so it picks the first allowed value"
         );
         assert!(
             requirements
                 .approvals_reviewer
-                .can_set(&ApprovalsReviewer::GuardianSubagent)
+                .can_set(&ApprovalsReviewer::AutoReview)
                 .is_ok()
         );
         assert!(
@@ -1982,7 +1982,6 @@ allowed_approvals_reviewers = ["user"]
         let toml_str = r#"
             [features]
             apps = false
-            personality = true
         "#;
         let config: ConfigRequirementsToml = from_str(toml_str)?;
         let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
@@ -1991,10 +1990,7 @@ allowed_approvals_reviewers = ["user"]
             requirements.feature_requirements,
             Some(Sourced::new(
                 FeatureRequirementsToml {
-                    entries: BTreeMap::from([
-                        ("apps".to_string(), false),
-                        ("personality".to_string(), true),
-                    ]),
+                    entries: BTreeMap::from([("apps".to_string(), false)]),
                 },
                 RequirementSource::Unknown,
             ))
@@ -2006,19 +2002,19 @@ allowed_approvals_reviewers = ["user"]
     #[test]
     fn network_requirements_are_preserved_as_constraints_with_source() -> Result<()> {
         let toml_str = r#"
-            [experimental_network]
+            [network]
             enabled = true
             allow_upstream_proxy = false
             dangerously_allow_all_unix_sockets = true
             managed_allowed_domains_only = true
             allow_local_binding = false
 
-            [experimental_network.domains]
+            [network.domains]
             "api.example.com" = "allow"
             "*.openai.com" = "allow"
             "blocked.example.com" = "deny"
 
-            [experimental_network.unix_sockets]
+            [network.unix_sockets]
             "/tmp/example.sock" = "allow"
         "#;
 
@@ -2078,7 +2074,7 @@ allowed_approvals_reviewers = ["user"]
     #[test]
     fn legacy_network_requirements_are_preserved_as_constraints_with_source() -> Result<()> {
         let toml_str = r#"
-            [experimental_network]
+            [network]
             enabled = true
             allow_upstream_proxy = false
             dangerously_allow_all_unix_sockets = true
@@ -2146,10 +2142,10 @@ allowed_approvals_reviewers = ["user"]
     fn mixed_legacy_and_canonical_network_requirements_are_rejected() {
         let err = from_str::<ConfigRequirementsToml>(
             r#"
-                [experimental_network]
+                [network]
                 allowed_domains = ["api.example.com"]
 
-                [experimental_network.domains]
+                [network.domains]
                 "*.openai.com" = "allow"
             "#,
         )
@@ -2157,16 +2153,16 @@ allowed_approvals_reviewers = ["user"]
 
         assert!(
             err.to_string()
-                .contains("`experimental_network.domains` cannot be combined"),
+                .contains("`network.domains` cannot be combined"),
             "unexpected error: {err:#}"
         );
 
         let err = from_str::<ConfigRequirementsToml>(
             r#"
-                [experimental_network]
+                [network]
                 allow_unix_sockets = ["/tmp/example.sock"]
 
-                [experimental_network.unix_sockets]
+                [network.unix_sockets]
                 "/tmp/another.sock" = "allow"
             "#,
         )
@@ -2174,7 +2170,7 @@ allowed_approvals_reviewers = ["user"]
 
         assert!(
             err.to_string()
-                .contains("`experimental_network.unix_sockets` cannot be combined"),
+                .contains("`network.unix_sockets` cannot be combined"),
             "unexpected error: {err:#}"
         );
     }

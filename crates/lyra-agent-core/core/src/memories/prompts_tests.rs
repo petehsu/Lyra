@@ -19,18 +19,6 @@ async fn build_memory_tool_developer_instructions_renders_embedded_template() {
 
     let shared_dir = truth_root.join("shared");
     tokio_fs::write(
-        shared_dir.join("shared_memory.md"),
-        "Shared project convention for tests.",
-    )
-    .await
-    .unwrap();
-    tokio_fs::write(
-        shared_dir.join("frozen_memory.md"),
-        "Stable user preference for tests.",
-    )
-    .await
-    .unwrap();
-    tokio_fs::write(
         shared_dir.join("dynamic_prompt_cache.md"),
         "Derived snapshot for tests.",
     )
@@ -92,6 +80,84 @@ insert into session_dialog (
                 1_i64,
                 r#"{"item_type":"userMessage"}"#,
                 "stream-1",
+            ],
+        )
+        .unwrap();
+
+    let shared_truth = Connection::open(shared_dir.join("shared_truth.sqlite")).unwrap();
+    shared_truth
+        .execute(
+            r#"
+insert into memory_entries (
+    memory_id,
+    namespace,
+    kind,
+    value,
+    evidence_refs,
+    confidence,
+    stability,
+    status,
+    revision,
+    supersedes,
+    created_at_ms,
+    created_at_iso,
+    updated_at_ms,
+    updated_at_iso
+) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, null, ?10, ?11, ?12, ?13)
+            "#,
+            params![
+                "shared-1",
+                "project",
+                "convention",
+                "Shared project convention for tests.",
+                "[]",
+                0.9_f64,
+                0.8_f64,
+                "active",
+                1_i64,
+                1_i64,
+                "2026-04-21T00:00:00+00:00",
+                1_i64,
+                "2026-04-21T00:00:00+00:00",
+            ],
+        )
+        .unwrap();
+
+    let frozen_truth = Connection::open(shared_dir.join("frozen_truth.sqlite")).unwrap();
+    frozen_truth
+        .execute(
+            r#"
+insert into memory_entries (
+    memory_id,
+    namespace,
+    kind,
+    value,
+    evidence_refs,
+    confidence,
+    stability,
+    status,
+    revision,
+    supersedes,
+    created_at_ms,
+    created_at_iso,
+    updated_at_ms,
+    updated_at_iso
+) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, null, ?10, ?11, ?12, ?13)
+            "#,
+            params![
+                "frozen-1",
+                "user",
+                "preference",
+                "Stable user preference for tests.",
+                "[]",
+                0.95_f64,
+                0.9_f64,
+                "active",
+                1_i64,
+                1_i64,
+                "2026-04-21T00:00:00+00:00",
+                1_i64,
+                "2026-04-21T00:00:00+00:00",
             ],
         )
         .unwrap();

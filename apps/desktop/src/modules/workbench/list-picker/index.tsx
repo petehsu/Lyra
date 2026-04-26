@@ -12,6 +12,7 @@ type LyraListPickerProps<T extends string> = {
   readonly value: T;
   readonly options: readonly LyraListPickerOption<T>[];
   readonly className?: string;
+  readonly style?: CSSProperties;
   readonly variant?: "default" | "compact";
   readonly shape?: "pill" | "rounded";
   readonly disabled?: boolean;
@@ -28,6 +29,7 @@ export const LyraListPicker = <T extends string>({
   value,
   options,
   className,
+  style,
   variant = "default",
   shape = "pill",
   disabled = false,
@@ -38,6 +40,7 @@ export const LyraListPicker = <T extends string>({
 
   const activeOption = options.find((option) => option.value === value) ?? options[0];
   const pickerStyle = {
+    ...style,
     "--lyra-list-picker-option-count": String(Math.max(1, options.length))
   } as CSSProperties;
 

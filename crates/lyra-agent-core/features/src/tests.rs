@@ -6,21 +6,16 @@ use crate::Features;
 use crate::FeaturesToml;
 use crate::Stage;
 use crate::feature_for_key;
-use crate::unstable_features_warning_event;
-use lyra_protocol::protocol::EventMsg;
-use lyra_protocol::protocol::WarningEvent;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
-use toml::Table;
-use toml::Value as TomlValue;
 
 #[test]
-fn under_development_features_are_disabled_by_default() {
+fn internal_features_are_disabled_by_default() {
     for spec in crate::FEATURES {
-        if matches!(spec.stage, Stage::UnderDevelopment) {
+        if matches!(spec.stage, Stage::Internal) {
             assert_eq!(
                 spec.default_enabled, false,
-                "feature `{}` is under development and must be disabled by default",
+                "feature `{}` is internal and must be disabled by default",
                 spec.key
             );
         }
@@ -42,9 +37,9 @@ fn default_enabled_features_are_stable() {
 }
 
 #[test]
-fn use_legacy_landlock_is_deprecated_and_disabled_by_default() {
-    assert_eq!(Feature::UseLegacyLandlock.stage(), Stage::Deprecated);
-    assert_eq!(Feature::UseLegacyLandlock.default_enabled(), false);
+fn use_classic_landlock_is_deprecated_and_disabled_by_default() {
+    assert_eq!(Feature::UseClassicLandlock.stage(), Stage::Deprecated);
+    assert_eq!(Feature::UseClassicLandlock.default_enabled(), false);
 }
 
 #[test]
@@ -60,20 +55,9 @@ fn image_detail_original_is_removed_and_disabled_by_default() {
 }
 
 #[test]
-fn js_repl_is_experimental_and_user_toggleable() {
-    let spec = Feature::JsRepl.info();
-    let stage = spec.stage;
-    let expected_node_version = include_str!("../../node-version.txt").trim_end();
-
-    assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("JavaScript REPL"));
-    assert_eq!(
-        stage.experimental_menu_description().map(str::to_owned),
-        Some(format!(
-            "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities. Requires Node >= v{expected_node_version} installed."
-        ))
-    );
-    assert_eq!(Feature::JsRepl.default_enabled(), false);
+fn js_repl_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::JsRepl.stage(), Stage::Stable);
+    assert_eq!(Feature::JsRepl.default_enabled(), true);
 }
 
 #[test]
@@ -87,54 +71,20 @@ fn code_mode_only_requires_code_mode() {
 }
 
 #[test]
-fn guardian_approval_is_experimental_and_user_toggleable() {
-    let spec = Feature::GuardianApproval.info();
-    let stage = spec.stage;
-
-    assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("Auto-review"));
-    assert_eq!(
-        stage.experimental_menu_description().map(str::to_owned),
-        Some(
-            "When Lyra needs approval for higher-risk actions (e.g. sandbox escapes or blocked network access), route eligible approval requests to a carefully-prompted security reviewer subagent rather than blocking the agent on your input. This can consume significantly more tokens because it runs a subagent on every approval request.".to_string()
-        )
-    );
-    assert_eq!(stage.experimental_announcement(), None);
-    assert_eq!(Feature::GuardianApproval.default_enabled(), false);
+fn auto_review_approval_is_stable_and_mode_controlled() {
+    assert_eq!(Feature::AutoReviewApproval.stage(), Stage::Stable);
+    assert_eq!(Feature::AutoReviewApproval.default_enabled(), false);
 }
 
 #[test]
-fn external_migration_is_experimental_and_disabled_by_default() {
-    let spec = Feature::ExternalMigration.info();
-    let stage = spec.stage;
-
-    assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("External migration"));
-    assert_eq!(
-        stage.experimental_menu_description(),
-        Some(
-            "Show a startup prompt when Lyra detects migratable external agent config for this machine or project."
-        )
-    );
-    assert_eq!(stage.experimental_announcement(), None);
-    assert_eq!(Feature::ExternalMigration.default_enabled(), false);
-}
-
-#[test]
-fn request_permissions_is_under_development() {
-    assert_eq!(
-        Feature::ExecPermissionApprovals.stage(),
-        Stage::UnderDevelopment
-    );
+fn request_permissions_is_internal() {
+    assert_eq!(Feature::ExecPermissionApprovals.stage(), Stage::Internal);
     assert_eq!(Feature::ExecPermissionApprovals.default_enabled(), false);
 }
 
 #[test]
-fn request_permissions_tool_is_under_development() {
-    assert_eq!(
-        Feature::RequestPermissionsTool.stage(),
-        Stage::UnderDevelopment
-    );
+fn request_permissions_tool_is_internal() {
+    assert_eq!(Feature::RequestPermissionsTool.stage(), Stage::Internal);
     assert_eq!(Feature::RequestPermissionsTool.default_enabled(), false);
 }
 
@@ -151,11 +101,8 @@ fn tool_search_is_stable_and_enabled_by_default() {
 }
 
 #[test]
-fn unavailable_dummy_tools_is_under_development_and_disabled_by_default() {
-    assert_eq!(
-        Feature::UnavailableDummyTools.stage(),
-        Stage::UnderDevelopment
-    );
+fn unavailable_dummy_tools_is_internal_and_disabled_by_default() {
+    assert_eq!(Feature::UnavailableDummyTools.stage(), Stage::Internal);
     assert_eq!(Feature::UnavailableDummyTools.default_enabled(), false);
 }
 
@@ -168,8 +115,8 @@ fn general_analytics_is_stable_and_enabled_by_default() {
 #[test]
 fn use_linux_sandbox_bwrap_is_a_removed_feature_key() {
     assert_eq!(
-        feature_for_key("use_legacy_landlock"),
-        Some(Feature::UseLegacyLandlock)
+        feature_for_key("use_classic_landlock"),
+        Some(Feature::UseClassicLandlock)
     );
     assert_eq!(
         feature_for_key("use_linux_sandbox_bwrap"),
@@ -181,28 +128,6 @@ fn use_linux_sandbox_bwrap_is_a_removed_feature_key() {
 fn image_generation_is_stable_and_enabled_by_default() {
     assert_eq!(Feature::ImageGeneration.stage(), Stage::Stable);
     assert_eq!(Feature::ImageGeneration.default_enabled(), true);
-}
-
-#[test]
-fn use_legacy_landlock_config_records_deprecation_notice() {
-    let mut entries = BTreeMap::new();
-    entries.insert("use_legacy_landlock".to_string(), true);
-
-    let mut features = Features::with_defaults();
-    features.apply_map(&entries);
-
-    let usages = features.legacy_feature_usages().collect::<Vec<_>>();
-    assert_eq!(usages.len(), 1);
-    assert_eq!(usages[0].alias, "features.use_legacy_landlock");
-    assert_eq!(usages[0].feature, Feature::UseLegacyLandlock);
-    assert_eq!(
-        usages[0].summary,
-        "`[features].use_legacy_landlock` is deprecated and will be removed soon."
-    );
-    assert_eq!(
-        usages[0].details.as_deref(),
-        Some("Remove this setting to stop opting into the legacy Linux sandbox behavior.")
-    );
 }
 
 #[test]
@@ -230,9 +155,9 @@ fn workspace_dependencies_is_stable_and_enabled_by_default() {
 }
 
 #[test]
-fn collab_is_legacy_alias_for_multi_agent() {
+fn multi_agent_is_the_only_collab_feature_key() {
     assert_eq!(feature_for_key("multi_agent"), Some(Feature::Collab));
-    assert_eq!(feature_for_key("collab"), Some(Feature::Collab));
+    assert_eq!(feature_for_key("collab"), None);
 }
 
 #[test]
@@ -242,8 +167,8 @@ fn multi_agent_is_stable_and_enabled_by_default() {
 }
 
 #[test]
-fn enable_fanout_is_under_development() {
-    assert_eq!(Feature::SpawnCsv.stage(), Stage::UnderDevelopment);
+fn enable_fanout_is_internal() {
+    assert_eq!(Feature::SpawnCsv.stage(), Stage::Internal);
     assert_eq!(Feature::SpawnCsv.default_enabled(), false);
 }
 
@@ -263,13 +188,14 @@ fn enable_fanout_normalization_enables_multi_agent_one_way() {
 }
 
 #[test]
-fn apps_remain_disabled_even_with_feature_flag() {
+fn apps_require_feature_flag() {
     let mut features = Features::with_defaults();
+    features.disable(Feature::Apps);
     assert!(!features.apps_enabled_for_auth(/*has_managed_auth*/ false));
 
     features.enable(Feature::Apps);
-    assert!(!features.apps_enabled_for_auth(/*has_managed_auth*/ false));
-    assert!(!features.apps_enabled_for_auth(/*has_managed_auth*/ true));
+    assert!(features.apps_enabled_for_auth(/*has_managed_auth*/ false));
+    assert!(features.apps_enabled_for_auth(/*has_managed_auth*/ true));
 }
 
 #[test]
@@ -283,6 +209,7 @@ fn from_sources_applies_base_profile_and_overrides() {
 
     let mut profile_entries = BTreeMap::new();
     profile_entries.insert("code_mode_only".to_string(), true);
+    profile_entries.insert("apply_patch_freeform".to_string(), true);
     let profile_features = FeaturesToml {
         entries: profile_entries,
         ..Default::default()
@@ -295,8 +222,6 @@ fn from_sources_applies_base_profile_and_overrides() {
         },
         FeatureConfigSource {
             features: Some(&profile_features),
-            include_apply_patch_tool: Some(true),
-            ..Default::default()
         },
         FeatureOverrides {
             web_search_request: Some(false),
@@ -403,30 +328,4 @@ usage_hint_enabled = false
             hide_spawn_agent_metadata: None,
         }))
     );
-}
-
-#[test]
-fn unstable_warning_event_only_mentions_enabled_under_development_features() {
-    let mut configured_features = Table::new();
-    configured_features.insert("child_agents_md".to_string(), TomlValue::Boolean(true));
-    configured_features.insert("personality".to_string(), TomlValue::Boolean(true));
-    configured_features.insert("unknown".to_string(), TomlValue::Boolean(true));
-
-    let mut features = Features::with_defaults();
-    features.enable(Feature::ChildAgentsMd);
-
-    let warning = unstable_features_warning_event(
-        Some(&configured_features),
-        /*suppress_unstable_features_warning*/ false,
-        &features,
-        "/tmp/config.toml",
-    )
-    .expect("warning event");
-
-    let EventMsg::Warning(WarningEvent { message }) = warning.msg else {
-        panic!("expected warning event");
-    };
-    assert!(message.contains("child_agents_md"));
-    assert!(!message.contains("personality"));
-    assert!(message.contains("/tmp/config.toml"));
 }

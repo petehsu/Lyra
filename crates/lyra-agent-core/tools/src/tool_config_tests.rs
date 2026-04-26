@@ -1,6 +1,7 @@
 use super::*;
 use lyra_features::Feature;
 use lyra_features::Features;
+use lyra_model_provider_info::WireApi;
 use lyra_protocol::config_types::WebSearchMode;
 use lyra_protocol::config_types::WindowsSandboxLevel;
 use lyra_protocol::openai_models::ConfigShellToolType;
@@ -27,7 +28,6 @@ fn model_info() -> ModelInfo {
         "availability_nux": null,
         "upgrade": null,
         "base_instructions": "base",
-        "model_messages": null,
         "supports_reasoning_summaries": false,
         "default_reasoning_summary": "auto",
         "support_verbosity": false,
@@ -41,7 +41,7 @@ fn model_info() -> ModelInfo {
         "supports_image_detail_original": false,
         "context_window": null,
         "effective_context_window_percent": 95,
-        "experimental_supported_tools": [],
+        "supported_tools": [],
         "input_modalities": ["text", "image"],
         "supports_search_tool": false
     }))
@@ -85,6 +85,7 @@ fn shell_zsh_fork_prefers_shell_command_over_unified_exec() {
         available_models: &available_models,
         features: &features,
         image_generation_tool_auth_allowed: true,
+        wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
@@ -143,6 +144,7 @@ fn subagents_keep_request_user_input_mode_config_and_agent_jobs_workers_opt_in_b
         available_models: &available_models,
         features: &features,
         image_generation_tool_auth_allowed: true,
+        wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::SubAgent(SubAgentSource::Other(
             "agent_job:test".to_string(),
@@ -173,6 +175,7 @@ fn image_generation_requires_feature_and_supported_model() {
         available_models: &available_models,
         features: &image_generation_disabled_features,
         image_generation_tool_auth_allowed: true,
+        wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
@@ -183,6 +186,7 @@ fn image_generation_requires_feature_and_supported_model() {
         available_models: &available_models,
         features: &image_generation_features,
         image_generation_tool_auth_allowed: true,
+        wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
@@ -193,6 +197,7 @@ fn image_generation_requires_feature_and_supported_model() {
         available_models: &available_models,
         features: &image_generation_features,
         image_generation_tool_auth_allowed: false,
+        wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
@@ -203,6 +208,7 @@ fn image_generation_requires_feature_and_supported_model() {
         available_models: &available_models,
         features: &image_generation_features,
         image_generation_tool_auth_allowed: true,
+        wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
@@ -212,4 +218,42 @@ fn image_generation_requires_feature_and_supported_model() {
     assert!(supported_tools_config.image_gen_tool);
     assert!(!auth_disallowed_tools_config.image_gen_tool);
     assert!(!unsupported_tools_config.image_gen_tool);
+}
+
+#[test]
+fn provider_builtin_tools_require_responses_wire_api() {
+    let mut model_info = model_info();
+    model_info.supports_search_tool = true;
+
+    let mut features = Features::with_defaults();
+    features.enable(Feature::ImageGeneration);
+
+    let available_models = Vec::new();
+    let responses_tools = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        wire_api: WireApi::Responses,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let chat_completion_tools = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        wire_api: WireApi::ChatCompletions,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    assert!(responses_tools.search_tool);
+    assert!(responses_tools.image_gen_tool);
+    assert!(!chat_completion_tools.search_tool);
+    assert!(!chat_completion_tools.image_gen_tool);
 }

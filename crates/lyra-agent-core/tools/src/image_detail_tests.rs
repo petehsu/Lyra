@@ -19,7 +19,6 @@ fn model_info() -> ModelInfo {
         "availability_nux": null,
         "upgrade": null,
         "base_instructions": "base",
-        "model_messages": null,
         "supports_reasoning_summaries": false,
         "default_reasoning_summary": "auto",
         "support_verbosity": false,
@@ -33,7 +32,7 @@ fn model_info() -> ModelInfo {
         "supports_image_detail_original": true,
         "context_window": null,
         "effective_context_window_percent": 95,
-        "experimental_supported_tools": [],
+        "supported_tools": [],
         "input_modalities": ["text", "image"],
         "supports_search_tool": false
     }))

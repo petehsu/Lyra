@@ -4,67 +4,26 @@
 //! effective feature set from config-like inputs.
 
 use lyra_otel::SessionTelemetry;
-use lyra_protocol::protocol::Event;
-use lyra_protocol::protocol::EventMsg;
-use lyra_protocol::protocol::WarningEvent;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use toml::Table;
 
 mod feature_configs;
-mod legacy;
 pub use feature_configs::MultiAgentV2ConfigToml;
-use legacy::LegacyFeatureToggles;
-pub use legacy::legacy_feature_keys;
 
 /// High-level lifecycle stage for a feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
-    /// Features that are still under development, not ready for external use
-    UnderDevelopment,
-    /// Experimental features made available to users through the `/experimental` menu
-    Experimental {
-        name: &'static str,
-        menu_description: &'static str,
-        announcement: &'static str,
-    },
     /// Stable features. The feature flag is kept for ad-hoc enabling/disabling
     Stable,
+    /// Internal features that may be toggled by first-party config only.
+    Internal,
     /// Deprecated feature that should not be used anymore.
     Deprecated,
-    /// The feature flag is useless but kept for backward compatibility reason.
+    /// The feature flag is a no-op and should not be used.
     Removed,
-}
-
-impl Stage {
-    pub fn experimental_menu_name(self) -> Option<&'static str> {
-        match self {
-            Stage::Experimental { name, .. } => Some(name),
-            Stage::UnderDevelopment | Stage::Stable | Stage::Deprecated | Stage::Removed => None,
-        }
-    }
-
-    pub fn experimental_menu_description(self) -> Option<&'static str> {
-        match self {
-            Stage::Experimental {
-                menu_description, ..
-            } => Some(menu_description),
-            Stage::UnderDevelopment | Stage::Stable | Stage::Deprecated | Stage::Removed => None,
-        }
-    }
-
-    pub fn experimental_announcement(self) -> Option<&'static str> {
-        match self {
-            Stage::Experimental {
-                announcement: "", ..
-            } => None,
-            Stage::Experimental { announcement, .. } => Some(announcement),
-            Stage::UnderDevelopment | Stage::Stable | Stage::Deprecated | Stage::Removed => None,
-        }
-    }
 }
 
 /// Unique features toggled via configuration.
@@ -76,7 +35,6 @@ pub enum Feature {
     /// Enable the default shell tool.
     ShellTool,
 
-    // Experimental
     /// Enable JavaScript REPL tools backed by a persistent Node kernel.
     JsRepl,
     /// Enable a minimal JavaScript mode backed by Node's built-in vm runtime.
@@ -104,23 +62,18 @@ pub enum Feature {
     /// Allow the model to request web searches that fetch cached content.
     /// Takes precedence over `WebSearchRequest`.
     WebSearchCached,
-    /// Legacy search-tool feature flag kept for backward compatibility.
+    /// Removed search-tool feature flag.
     SearchTool,
-    /// Removed legacy Linux bubblewrap opt-in flag retained as a no-op so old
-    /// wrappers and config can still parse it.
+    /// Removed Linux bubblewrap opt-in flag.
     UseLinuxSandboxBwrap,
-    /// Use the legacy Landlock Linux sandbox fallback instead of the default
+    /// Use the classic Landlock Linux sandbox fallback instead of the default
     /// bubblewrap pipeline.
-    UseLegacyLandlock,
+    UseClassicLandlock,
     /// Allow the model to request approval and propose exec rules.
     RequestRule,
-    /// Enable Windows sandbox (restricted token) on Windows.
-    WindowsSandbox,
-    /// Use the elevated Windows sandbox pipeline (setup + runner).
-    WindowsSandboxElevated,
-    /// Legacy remote models flag kept for backward compatibility.
+    /// Removed remote models flag.
     RemoteModels,
-    /// Experimental shell snapshotting.
+    /// Enable shell snapshotting.
     ShellSnapshot,
     /// Enable git commit attribution guidance via model instructions.
     LyraGitCommit,
@@ -130,8 +83,6 @@ pub enum Feature {
     GeneralAnalytics,
     /// Persist rollout metadata to a local SQLite database.
     Sqlite,
-    /// Enable startup memory extraction and file-backed memory consolidation.
-    MemoryTool,
     /// Enable the Telepathy sidecar for passive screen-context memories.
     Telepathy,
     /// Append additional AGENTS.md guidance to user instructions.
@@ -156,44 +107,33 @@ pub enum Feature {
     ToolSuggest,
     /// Enable plugins.
     Plugins,
-    /// Show the startup prompt for migrating external agent config into Lyra.
-    ExternalMigration,
     /// Allow the model to invoke the built-in image generation tool.
     ImageGeneration,
     /// Allow prompting and installing missing MCP dependencies.
     SkillMcpDependencyInstall,
     /// Prompt for missing skill env var dependencies.
     SkillEnvVarDependencyPrompt,
-    /// Steer feature flag - when enabled, Enter submits immediately instead of queuing.
-    /// Kept for config backward compatibility; behavior is always steer-enabled.
+    /// Steer feature flag. Behavior is always steer-enabled.
     Steer,
     /// Allow request_user_input in Default collaboration mode.
     DefaultModeRequestUserInput,
     /// Enable automatic review for approval prompts.
-    GuardianApproval,
-    /// Enable collaboration modes (Plan, Default).
-    /// Kept for config backward compatibility; behavior is always collaboration-modes-enabled.
+    AutoReviewApproval,
+    /// Enable collaboration modes (Plan, Default). Behavior is always enabled.
     CollaborationModes,
     /// Route MCP tool approval prompts through the MCP elicitation request path.
     ToolCallMcpElicitation,
-    /// Enable personality selection in the TUI.
-    Personality,
     /// Enable native artifact tools.
     Artifact,
-    /// Enable Fast mode selection in the TUI and request layer.
-    FastMode,
-    /// Enable experimental realtime voice conversation mode in the TUI.
+    /// Enable realtime voice conversation mode in the TUI.
     RealtimeConversation,
-    /// Removed compatibility flag retained as a no-op so old wrappers can
-    /// still pass `--enable image_detail_original`.
+    /// Removed image detail feature flag.
     ImageDetailOriginal,
-    /// Removed compatibility flag. The TUI now always uses the app-server implementation.
+    /// Removed TUI app-server flag. The TUI always uses the app-server implementation.
     TuiAppServer,
-    /// Prevent idle system sleep while a turn is actively running.
-    PreventIdleSleep,
-    /// Legacy rollout flag for Responses API WebSocket transport experiments.
+    /// Legacy rollout flag for Responses API WebSocket transport.
     ResponsesWebsockets,
-    /// Legacy rollout flag for Responses API WebSocket transport v2 experiments.
+    /// Legacy rollout flag for Responses API WebSocket transport v2.
     ResponsesWebsocketsV2,
     /// Enable workspace dependency support.
     WorkspaceDependencies,
@@ -220,19 +160,10 @@ impl Feature {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LegacyFeatureUsage {
-    pub alias: String,
-    pub feature: Feature,
-    pub summary: String,
-    pub details: Option<String>,
-}
-
 /// Holds the effective set of enabled features.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Features {
     enabled: BTreeSet<Feature>,
-    legacy_usages: BTreeSet<LegacyFeatureUsage>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -244,25 +175,15 @@ pub struct FeatureOverrides {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FeatureConfigSource<'a> {
     pub features: Option<&'a FeaturesToml>,
-    pub include_apply_patch_tool: Option<bool>,
-    pub experimental_use_freeform_apply_patch: Option<bool>,
-    pub experimental_use_unified_exec_tool: Option<bool>,
 }
 
 impl FeatureOverrides {
     fn apply(self, features: &mut Features) {
-        LegacyFeatureToggles {
-            include_apply_patch_tool: self.include_apply_patch_tool,
-            ..Default::default()
+        if let Some(enabled) = self.include_apply_patch_tool {
+            features.set_enabled(Feature::ApplyPatchFreeform, enabled);
         }
-        .apply(features);
         if let Some(enabled) = self.web_search_request {
-            if enabled {
-                features.enable(Feature::WebSearchRequest);
-            } else {
-                features.disable(Feature::WebSearchRequest);
-            }
-            features.record_legacy_usage("web_search_request", Feature::WebSearchRequest);
+            features.set_enabled(Feature::WebSearchRequest, enabled);
         }
     }
 }
@@ -276,10 +197,7 @@ impl Features {
                 set.insert(spec.id);
             }
         }
-        Self {
-            enabled: set,
-            legacy_usages: BTreeSet::new(),
-        }
+        Self { enabled: set }
     }
 
     pub fn enabled(&self, f: Feature) -> bool {
@@ -287,11 +205,11 @@ impl Features {
     }
 
     pub fn apps_enabled_for_auth(&self, _has_managed_auth: bool) -> bool {
-        false
+        self.enabled(Feature::Apps)
     }
 
-    pub fn use_legacy_landlock(&self) -> bool {
-        self.enabled(Feature::UseLegacyLandlock)
+    pub fn use_classic_landlock(&self) -> bool {
+        self.enabled(Feature::UseClassicLandlock)
     }
 
     pub fn enable(&mut self, f: Feature) -> &mut Self {
@@ -310,27 +228,6 @@ impl Features {
         } else {
             self.disable(f)
         }
-    }
-
-    pub fn record_legacy_usage_force(&mut self, alias: &str, feature: Feature) {
-        let (summary, details) = legacy_usage_notice(alias, feature);
-        self.legacy_usages.insert(LegacyFeatureUsage {
-            alias: alias.to_string(),
-            feature,
-            summary,
-            details,
-        });
-    }
-
-    pub fn record_legacy_usage(&mut self, alias: &str, feature: Feature) {
-        if alias == feature.key() {
-            return;
-        }
-        self.record_legacy_usage_force(alias, feature);
-    }
-
-    pub fn legacy_feature_usages(&self) -> impl Iterator<Item = &LegacyFeatureUsage> + '_ {
-        self.legacy_usages.iter()
     }
 
     pub fn emit_metrics(&self, otel: &SessionTelemetry) {
@@ -354,40 +251,10 @@ impl Features {
     /// Apply a table of key -> bool toggles (e.g. from TOML).
     pub fn apply_map(&mut self, m: &BTreeMap<String, bool>) {
         for (k, v) in m {
-            match k.as_str() {
-                "web_search_request" => {
-                    self.record_legacy_usage_force(
-                        "features.web_search_request",
-                        Feature::WebSearchRequest,
-                    );
-                }
-                "web_search_cached" => {
-                    self.record_legacy_usage_force(
-                        "features.web_search_cached",
-                        Feature::WebSearchCached,
-                    );
-                }
-                "tui_app_server" => {
-                    continue;
-                }
-                "image_detail_original" => {
-                    continue;
-                }
-                "use_legacy_landlock" => {
-                    self.record_legacy_usage_force(
-                        "features.use_legacy_landlock",
-                        Feature::UseLegacyLandlock,
-                    );
-                }
-                _ => {}
-            }
             match feature_for_key(k) {
                 Some(feat) => {
-                    if matches!(feat, Feature::TuiAppServer) {
+                    if matches!(feat.stage(), Stage::Removed) {
                         continue;
-                    }
-                    if k != feat.key() {
-                        self.record_legacy_usage(k.as_str(), feat);
                     }
                     if *v {
                         self.enable(feat);
@@ -410,13 +277,6 @@ impl Features {
         let mut features = Features::with_defaults();
 
         for source in [base, profile] {
-            LegacyFeatureToggles {
-                include_apply_patch_tool: source.include_apply_patch_tool,
-                experimental_use_freeform_apply_patch: source.experimental_use_freeform_apply_patch,
-                experimental_use_unified_exec_tool: source.experimental_use_unified_exec_tool,
-            }
-            .apply(&mut features);
-
             if let Some(feature_entries) = source.features {
                 features.apply_toml(feature_entries);
             }
@@ -446,68 +306,12 @@ impl Features {
     }
 }
 
-fn legacy_usage_notice(alias: &str, feature: Feature) -> (String, Option<String>) {
-    let canonical = feature.key();
-    match feature {
-        Feature::WebSearchRequest | Feature::WebSearchCached => {
-            let label = match alias {
-                "web_search" => "[features].web_search",
-                "features.web_search_request" | "web_search_request" => {
-                    "[features].web_search_request"
-                }
-                "features.web_search_cached" | "web_search_cached" => {
-                    "[features].web_search_cached"
-                }
-                _ => alias,
-            };
-            let summary =
-                format!("`{label}` is deprecated because web search is enabled by default.");
-            (summary, Some(web_search_details().to_string()))
-        }
-        Feature::UseLegacyLandlock => {
-            let label = match alias {
-                "features.use_legacy_landlock" | "use_legacy_landlock" => {
-                    "[features].use_legacy_landlock"
-                }
-                _ => alias,
-            };
-            let summary = format!("`{label}` is deprecated and will be removed soon.");
-            let details =
-                "Remove this setting to stop opting into the legacy Linux sandbox behavior."
-                    .to_string();
-            (summary, Some(details))
-        }
-        _ => {
-            let label = if alias.contains('.') || alias.starts_with('[') {
-                alias.to_string()
-            } else {
-                format!("[features].{alias}")
-            };
-            let summary = format!("`{label}` is deprecated. Use `[features].{canonical}` instead.");
-            let details = if alias == canonical {
-                None
-            } else {
-                Some(format!(
-                    "Enable it with `--enable {canonical}` or `[features].{canonical}` in config.toml."
-                ))
-            };
-            (summary, details)
-        }
-    }
-}
-
-fn web_search_details() -> &'static str {
-    "Set `web_search` to `\"live\"`, `\"cached\"`, or `\"disabled\"` at the top level (or under a profile) in config.toml if you want to override it."
-}
-
 /// Keys accepted in `[features]` tables.
 pub fn feature_for_key(key: &str) -> Option<Feature> {
-    for spec in FEATURES {
-        if spec.key == key {
-            return Some(spec.id);
-        }
-    }
-    legacy::feature_for_key(key)
+    FEATURES
+        .iter()
+        .find(|spec| spec.key == key)
+        .map(|spec| spec.id)
 }
 
 pub fn canonical_feature_for_key(key: &str) -> Option<Feature> {
@@ -527,7 +331,7 @@ pub fn is_known_feature_key(key: &str) -> bool {
 pub struct FeaturesToml {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_agent_v2: Option<FeatureToml<MultiAgentV2ConfigToml>>,
-    /// Boolean feature toggles keyed by canonical or legacy feature name.
+    /// Boolean feature toggles keyed by canonical feature name.
     #[serde(flatten)]
     entries: BTreeMap<String, bool>,
 }
@@ -597,7 +401,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::GhostCommit,
         key: "undo",
         stage: Stage::Stable,
-        default_enabled: false,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::ShellTool,
@@ -614,7 +418,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::ShellZshFork,
         key: "shell_zsh_fork",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
@@ -626,29 +430,25 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::JsRepl,
         key: "js_repl",
-        stage: Stage::Experimental {
-            name: "JavaScript REPL",
-            menu_description: "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities. Requires Node >= v22.22.0 installed.",
-            announcement: "NEW: JavaScript REPL is now available in /experimental. Enable it, then start a new chat or restart Lyra to use it.",
-        },
-        default_enabled: false,
+        stage: Stage::Stable,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::CodeMode,
         key: "code_mode",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::CodeModeOnly,
         key: "code_mode_only",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::JsReplToolsOnly,
         key: "js_repl_tools_only",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
@@ -669,17 +469,16 @@ pub const FEATURES: &[FeatureSpec] = &[
         stage: Stage::Removed,
         default_enabled: false,
     },
-    // Experimental program. Rendered in the `/experimental` menu for users.
     FeatureSpec {
         id: Feature::LyraGitCommit,
         key: "lyra_git_commit",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::RuntimeMetrics,
         key: "runtime_metrics",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
@@ -695,55 +494,45 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
-        id: Feature::MemoryTool,
-        key: "memories",
-        stage: Stage::Experimental {
-            name: "Memories",
-            menu_description: "Allow Lyra to create new memories from conversations and bring relevant memories into new conversations.",
-            announcement: "NEW: Lyra can now generate and uses memories. Try is now with `/memories`",
-        },
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::Telepathy,
         key: "telepathy",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ChildAgentsMd,
         key: "child_agents_md",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ApplyPatchFreeform,
         key: "apply_patch_freeform",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ApplyPatchStreamingEvents,
         key: "apply_patch_streaming_events",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ExecPermissionApprovals,
         key: "exec_permission_approvals",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::LyraHooks,
         key: "lyra_hooks",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::RequestPermissionsTool,
         key: "request_permissions_tool",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
@@ -753,26 +542,14 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::UseLegacyLandlock,
-        key: "use_legacy_landlock",
+        id: Feature::UseClassicLandlock,
+        key: "use_classic_landlock",
         stage: Stage::Deprecated,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::RequestRule,
         key: "request_rule",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WindowsSandbox,
-        key: "experimental_windows_sandbox",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WindowsSandboxElevated,
-        key: "elevated_windows_sandbox",
         stage: Stage::Removed,
         default_enabled: false,
     },
@@ -797,13 +574,13 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::MultiAgentV2,
         key: "multi_agent_v2",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::SpawnCsv,
         key: "enable_fanout",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
@@ -821,13 +598,13 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::ToolSearchAlwaysDeferMcpTools,
         key: "tool_search_always_defer_mcp_tools",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
         id: Feature::UnavailableDummyTools,
         key: "unavailable_dummy_tools",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
@@ -841,16 +618,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "plugins",
         stage: Stage::Stable,
         default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::ExternalMigration,
-        key: "external_migration",
-        stage: Stage::Experimental {
-            name: "External migration",
-            menu_description: "Show a startup prompt when Lyra detects migratable external agent config for this machine or project.",
-            announcement: "",
-        },
-        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ImageGeneration,
@@ -867,7 +634,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::SkillEnvVarDependencyPrompt,
         key: "skill_env_var_dependency_prompt",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
@@ -879,17 +646,13 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::DefaultModeRequestUserInput,
         key: "default_mode_request_user_input",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::GuardianApproval,
-        key: "guardian_approval",
-        stage: Stage::Experimental {
-            name: "Auto-review",
-            menu_description: "When Lyra needs approval for higher-risk actions (e.g. sandbox escapes or blocked network access), route eligible approval requests to a carefully-prompted security reviewer subagent rather than blocking the agent on your input. This can consume significantly more tokens because it runs a subagent on every approval request.",
-            announcement: "",
-        },
+        id: Feature::AutoReviewApproval,
+        key: "auto_review_approval",
+        stage: Stage::Stable,
         default_enabled: false,
     },
     FeatureSpec {
@@ -905,27 +668,15 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
-        id: Feature::Personality,
-        key: "personality",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
         id: Feature::Artifact,
         key: "artifact",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::FastMode,
-        key: "fast_mode",
-        stage: Stage::Stable,
-        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::RealtimeConversation,
         key: "realtime_conversation",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Internal,
         default_enabled: false,
     },
     FeatureSpec {
@@ -939,24 +690,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "tui_app_server",
         stage: Stage::Removed,
         default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::PreventIdleSleep,
-        key: "prevent_idle_sleep",
-        stage: if cfg!(any(
-            target_os = "macos",
-            target_os = "linux",
-            target_os = "windows"
-        )) {
-            Stage::Experimental {
-                name: "Prevent sleep while running",
-                menu_description: "Keep your computer awake while Lyra is running a thread.",
-                announcement: "NEW: Prevent sleep while running is now available in /experimental.",
-            }
-        } else {
-            Stage::UnderDevelopment
-        },
-        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ResponsesWebsockets,
@@ -977,48 +710,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
 ];
-
-pub fn unstable_features_warning_event(
-    effective_features: Option<&Table>,
-    suppress_unstable_features_warning: bool,
-    features: &Features,
-    config_path: &str,
-) -> Option<Event> {
-    if suppress_unstable_features_warning {
-        return None;
-    }
-
-    let mut under_development_feature_keys = Vec::new();
-    if let Some(table) = effective_features {
-        for (key, value) in table {
-            if value.as_bool() != Some(true) {
-                continue;
-            }
-            let Some(spec) = FEATURES.iter().find(|spec| spec.key == key.as_str()) else {
-                continue;
-            };
-            if !features.enabled(spec.id) {
-                continue;
-            }
-            if matches!(spec.stage, Stage::UnderDevelopment) {
-                under_development_feature_keys.push(spec.key.to_string());
-            }
-        }
-    }
-
-    if under_development_feature_keys.is_empty() {
-        return None;
-    }
-
-    let under_development_feature_keys = under_development_feature_keys.join(", ");
-    let message = format!(
-        "Under-development features enabled: {under_development_feature_keys}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {config_path}."
-    );
-    Some(Event {
-        id: String::new(),
-        msg: EventMsg::Warning(WarningEvent { message }),
-    })
-}
 
 #[cfg(test)]
 mod tests;

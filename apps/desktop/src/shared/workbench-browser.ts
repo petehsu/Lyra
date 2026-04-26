@@ -28,6 +28,32 @@ export type WorkbenchBrowserPageSpec = {
   readonly isActive: boolean;
 };
 
+export type WorkbenchBrowserWebThemePalette = {
+  readonly bgApp: string;
+  readonly bgSurface: string;
+  readonly bgEditor: string;
+  readonly textPrimary: string;
+  readonly textSecondary: string;
+  readonly textMuted: string;
+  readonly textAccent: string;
+  readonly lineDefault: string;
+  readonly lineFocused: string;
+  readonly statusSuccess: string;
+  readonly statusWarning: string;
+  readonly statusError: string;
+};
+
+export type WorkbenchBrowserWebThemeSnapshot = {
+  /** Master toggle. When false, injector should disable all stages and let pages render natively. */
+  readonly enabled: boolean;
+  /** Whether resolved Lyra theme is on the dark side of the spectrum. */
+  readonly isDark: boolean;
+  /** Subset of Lyra theme vars relevant to web page theming. */
+  readonly palette: WorkbenchBrowserWebThemePalette;
+  /** Monotonic tick that bumps on every snapshot update so downstream can react. */
+  readonly revision: number;
+};
+
 export type WorkbenchBrowserTopologySnapshot = {
   readonly activeTabId: string | null;
   readonly pages: readonly WorkbenchBrowserPageSpec[];

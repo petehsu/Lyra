@@ -5,7 +5,7 @@ use super::ProxyPolicyInputs;
 use super::UnixDomainSocketPolicy;
 use super::build_seatbelt_unreadable_glob_policy;
 use super::create_seatbelt_command_args;
-use super::create_seatbelt_command_args_for_legacy_policy;
+use super::create_seatbelt_command_args_for_sandbox_policy;
 use super::dynamic_network_policy;
 use super::macos_dir_params;
 use super::normalize_path_for_sandbox;
@@ -341,9 +341,9 @@ fn unreadable_glob_policy_includes_canonicalized_static_prefix() {
 }
 
 #[test]
-fn seatbelt_args_without_extension_profile_keep_legacy_preferences_read_access() {
+fn seatbelt_args_without_extension_profile_keep_preferences_read_access() {
     let cwd = std::env::temp_dir();
-    let args = create_seatbelt_command_args_for_legacy_policy(
+    let args = create_seatbelt_command_args_for_sandbox_policy(
         vec!["echo".to_string(), "ok".to_string()],
         &SandboxPolicy::new_read_only_policy(),
         cwd.as_path(),
@@ -356,12 +356,12 @@ fn seatbelt_args_without_extension_profile_keep_legacy_preferences_read_access()
 }
 
 #[test]
-fn seatbelt_legacy_workspace_write_nested_readable_root_stays_writable() {
+fn seatbelt_projected_workspace_write_nested_readable_root_stays_writable() {
     let tmp = TempDir::new().expect("tempdir");
     let cwd = tmp.path().join("workspace");
     fs::create_dir_all(cwd.join("docs")).expect("create docs");
     let docs = AbsolutePathBuf::from_absolute_path(cwd.join("docs")).expect("absolute docs");
-    let args = create_seatbelt_command_args_for_legacy_policy(
+    let args = create_seatbelt_command_args_for_sandbox_policy(
         vec!["/bin/true".to_string()],
         &SandboxPolicy::WorkspaceWrite {
             writable_roots: vec![],
@@ -382,7 +382,7 @@ fn seatbelt_legacy_workspace_write_nested_readable_root_stays_writable() {
         !args
             .iter()
             .any(|arg| arg.ends_with(&format!("={}", docs.as_path().display()))),
-        "legacy workspace-write readable roots under cwd should not become seatbelt carveouts:\n{args:#?}",
+        "projected workspace-write readable roots under cwd should not become seatbelt carveouts:\n{args:#?}",
     );
     assert!(
         args.iter()
@@ -566,7 +566,7 @@ fn create_seatbelt_args_allowlists_unix_socket_paths() {
 #[test]
 fn create_seatbelt_args_allowlists_explicit_unix_socket_paths_without_proxy() {
     let cwd = TempDir::new().expect("temp cwd");
-    let file_system_policy = FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+    let file_system_policy = FileSystemSandboxPolicy::from_sandbox_policy(
         &SandboxPolicy::new_read_only_policy(),
         cwd.path(),
     );
@@ -606,7 +606,7 @@ fn create_seatbelt_args_allowlists_explicit_unix_socket_paths_without_proxy() {
 #[tokio::test]
 async fn create_seatbelt_args_merges_proxy_and_explicit_unix_socket_paths() -> anyhow::Result<()> {
     let cwd = TempDir::new().expect("temp cwd");
-    let file_system_policy = FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+    let file_system_policy = FileSystemSandboxPolicy::from_sandbox_policy(
         &SandboxPolicy::new_read_only_policy(),
         cwd.path(),
     );
@@ -665,7 +665,7 @@ async fn create_seatbelt_args_merges_proxy_and_explicit_unix_socket_paths() -> a
 #[test]
 fn create_seatbelt_args_preserves_full_network_with_explicit_unix_socket_paths() {
     let cwd = TempDir::new().expect("temp cwd");
-    let file_system_policy = FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+    let file_system_policy = FileSystemSandboxPolicy::from_sandbox_policy(
         &SandboxPolicy::new_read_only_policy(),
         cwd.path(),
     );
@@ -861,7 +861,7 @@ fn create_seatbelt_args_with_read_only_git_and_lyra_subpaths() {
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-    let args = create_seatbelt_command_args_for_legacy_policy(
+    let args = create_seatbelt_command_args_for_sandbox_policy(
         shell_command.clone(),
         &policy,
         &cwd,
@@ -975,7 +975,7 @@ fn create_seatbelt_args_with_read_only_git_and_lyra_subpaths() {
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-    let write_hooks_file_args = create_seatbelt_command_args_for_legacy_policy(
+    let write_hooks_file_args = create_seatbelt_command_args_for_sandbox_policy(
         shell_command_git,
         &policy,
         &cwd,
@@ -1011,7 +1011,7 @@ fn create_seatbelt_args_with_read_only_git_and_lyra_subpaths() {
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-    let write_allowed_file_args = create_seatbelt_command_args_for_legacy_policy(
+    let write_allowed_file_args = create_seatbelt_command_args_for_sandbox_policy(
         shell_command_allowed,
         &policy,
         &cwd,
@@ -1076,7 +1076,7 @@ fn create_seatbelt_args_block_first_time_dot_lyra_creation_with_exact_and_descen
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-    let args = create_seatbelt_command_args_for_legacy_policy(
+    let args = create_seatbelt_command_args_for_sandbox_policy(
         shell_command,
         &policy,
         repo_root.as_path(),
@@ -1131,7 +1131,7 @@ fn create_seatbelt_args_with_read_only_git_pointer_file() {
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-    let args = create_seatbelt_command_args_for_legacy_policy(
+    let args = create_seatbelt_command_args_for_sandbox_policy(
         shell_command,
         &policy,
         &cwd,
@@ -1167,7 +1167,7 @@ fn create_seatbelt_args_with_read_only_git_pointer_file() {
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-    let gitdir_args = create_seatbelt_command_args_for_legacy_policy(
+    let gitdir_args = create_seatbelt_command_args_for_sandbox_policy(
         shell_command_gitdir,
         &policy,
         &cwd,
@@ -1230,7 +1230,7 @@ fn create_seatbelt_args_for_cwd_as_git_repo() {
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-    let args = create_seatbelt_command_args_for_legacy_policy(
+    let args = create_seatbelt_command_args_for_sandbox_policy(
         shell_command.clone(),
         &policy,
         vulnerable_root.as_path(),

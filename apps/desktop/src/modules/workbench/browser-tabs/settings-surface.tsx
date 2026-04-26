@@ -7,6 +7,7 @@ import type {
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
 import type {
+  WorkbenchAiStopBehavior,
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchSplitOverflowPolicy,
   WorkbenchSplitThreePaneLayout,
@@ -35,6 +36,24 @@ export type BrowserSettingsSurfaceProps = {
   readonly aiRichRenderDescription: string;
   readonly aiRichRenderEnabledLabel: string;
   readonly aiRichRenderDisabledLabel: string;
+  readonly aiStopBehaviorLabel: string;
+  readonly aiStopBehaviorDescription: string;
+  readonly aiStopBehaviorTurnOnlyLabel: string;
+  readonly aiStopBehaviorTurnOnlyDescription: string;
+  readonly aiStopBehaviorTurnAndBackgroundLabel: string;
+  readonly aiStopBehaviorTurnAndBackgroundDescription: string;
+  readonly preventSleepLabel: string;
+  readonly preventSleepDescription: string;
+  readonly preventSleepEnabledLabel: string;
+  readonly preventSleepDisabledLabel: string;
+  readonly jsReplLabel: string;
+  readonly jsReplDescription: string;
+  readonly jsReplEnabledLabel: string;
+  readonly jsReplDisabledLabel: string;
+  readonly forceWebPageThemingLabel: string;
+  readonly forceWebPageThemingDescription: string;
+  readonly forceWebPageThemingEnabledLabel: string;
+  readonly forceWebPageThemingDisabledLabel: string;
   readonly searchCategoryLabel: string;
   readonly searchScopeLabel: string;
   readonly searchCustomRootsLabel: string;
@@ -61,6 +80,10 @@ export type BrowserSettingsSurfaceProps = {
   readonly splitThreePaneLayoutValue: WorkbenchSplitThreePaneLayout;
   readonly splitOverflowPolicyValue: WorkbenchSplitOverflowPolicy;
   readonly aiRichRenderValue: boolean;
+  readonly aiStopBehaviorValue: WorkbenchAiStopBehavior;
+  readonly preventSleepValue: boolean;
+  readonly jsReplValue: boolean;
+  readonly forceWebPageThemingValue: boolean;
   readonly searchScopeValue: SearchLocalScopePreset;
   readonly searchCustomRootsValue: string;
   readonly searchWebEngineIds: readonly string[];
@@ -101,6 +124,10 @@ export type BrowserSettingsSurfaceProps = {
   ) => void;
   readonly onSplitOverflowPolicyChange: (value: WorkbenchSplitOverflowPolicy) => void;
   readonly onAiRichRenderChange: (value: boolean) => void;
+  readonly onAiStopBehaviorChange: (value: WorkbenchAiStopBehavior) => void;
+  readonly onPreventSleepChange: (value: boolean) => void;
+  readonly onJsReplChange: (value: boolean) => void;
+  readonly onForceWebPageThemingChange: (value: boolean) => void;
   readonly onSearchScopeChange: (value: SearchLocalScopePreset) => void;
   readonly onSearchCustomRootsChange: (value: string) => void;
   readonly onSearchWebEnginesChange: (value: readonly string[]) => void;
@@ -150,6 +177,24 @@ export const BrowserSettingsSurface = ({
   aiRichRenderDescription,
   aiRichRenderEnabledLabel,
   aiRichRenderDisabledLabel,
+  aiStopBehaviorLabel,
+  aiStopBehaviorDescription,
+  aiStopBehaviorTurnOnlyLabel,
+  aiStopBehaviorTurnOnlyDescription,
+  aiStopBehaviorTurnAndBackgroundLabel,
+  aiStopBehaviorTurnAndBackgroundDescription,
+  preventSleepLabel,
+  preventSleepDescription,
+  preventSleepEnabledLabel,
+  preventSleepDisabledLabel,
+  jsReplLabel,
+  jsReplDescription,
+  jsReplEnabledLabel,
+  jsReplDisabledLabel,
+  forceWebPageThemingLabel,
+  forceWebPageThemingDescription,
+  forceWebPageThemingEnabledLabel,
+  forceWebPageThemingDisabledLabel,
   searchCategoryLabel,
   searchScopeLabel,
   searchCustomRootsLabel,
@@ -176,6 +221,10 @@ export const BrowserSettingsSurface = ({
   splitThreePaneLayoutValue,
   splitOverflowPolicyValue,
   aiRichRenderValue,
+  aiStopBehaviorValue,
+  preventSleepValue,
+  jsReplValue,
+  forceWebPageThemingValue,
   searchScopeValue,
   searchCustomRootsValue,
   searchWebEngineIds,
@@ -214,6 +263,10 @@ export const BrowserSettingsSurface = ({
   onSplitThreePaneLayoutChange,
   onSplitOverflowPolicyChange,
   onAiRichRenderChange,
+  onAiStopBehaviorChange,
+  onPreventSleepChange,
+  onJsReplChange,
+  onForceWebPageThemingChange,
   onSearchScopeChange,
   onSearchCustomRootsChange,
   onSearchWebEnginesChange,
@@ -311,6 +364,49 @@ export const BrowserSettingsSurface = ({
                     </span>
                   </button>
                 ))}
+              </div>
+            </section>
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{preventSleepLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={preventSleepLabel}>
+                <button
+                  type="button"
+                  className={
+                    preventSleepValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  role="radio"
+                  aria-checked={preventSleepValue}
+                  onClick={() => {
+                    onPreventSleepChange(true);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{preventSleepEnabledLabel}</strong>
+                    <small>{preventSleepDescription}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={
+                    preventSleepValue
+                      ? "lyra-settings-choice"
+                      : "lyra-settings-choice lyra-settings-choice-active"
+                  }
+                  role="radio"
+                  aria-checked={preventSleepValue === false}
+                  onClick={() => {
+                    onPreventSleepChange(false);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{preventSleepDisabledLabel}</strong>
+                    <small>{preventSleepDescription}</small>
+                  </span>
+                </button>
               </div>
             </section>
           </section>
@@ -458,6 +554,53 @@ export const BrowserSettingsSurface = ({
                     </span>
                   </button>
                 ))}
+              </div>
+            </section>
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{forceWebPageThemingLabel}</h3>
+              </header>
+              <div
+                className="lyra-settings-choice-grid"
+                role="radiogroup"
+                aria-label={forceWebPageThemingLabel}
+              >
+                <button
+                  type="button"
+                  className={
+                    forceWebPageThemingValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  role="radio"
+                  aria-checked={forceWebPageThemingValue}
+                  onClick={() => {
+                    onForceWebPageThemingChange(true);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{forceWebPageThemingEnabledLabel}</strong>
+                    <small>{forceWebPageThemingDescription}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={
+                    forceWebPageThemingValue
+                      ? "lyra-settings-choice"
+                      : "lyra-settings-choice lyra-settings-choice-active"
+                  }
+                  role="radio"
+                  aria-checked={forceWebPageThemingValue === false}
+                  onClick={() => {
+                    onForceWebPageThemingChange(false);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{forceWebPageThemingDisabledLabel}</strong>
+                    <small>{forceWebPageThemingDescription}</small>
+                  </span>
+                </button>
               </div>
             </section>
           </section>
@@ -950,6 +1093,49 @@ export const BrowserSettingsSurface = ({
             </header>
             <section className="lyra-settings-group">
               <header className="lyra-settings-group-header">
+                <h3>{jsReplLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={jsReplLabel}>
+                <button
+                  type="button"
+                  className={
+                    jsReplValue
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  role="radio"
+                  aria-checked={jsReplValue}
+                  onClick={() => {
+                    onJsReplChange(true);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{jsReplEnabledLabel}</strong>
+                    <small>{jsReplDescription}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={
+                    jsReplValue
+                      ? "lyra-settings-choice"
+                      : "lyra-settings-choice lyra-settings-choice-active"
+                  }
+                  role="radio"
+                  aria-checked={jsReplValue === false}
+                  onClick={() => {
+                    onJsReplChange(false);
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{jsReplDisabledLabel}</strong>
+                    <small>{jsReplDescription}</small>
+                  </span>
+                </button>
+              </div>
+            </section>
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
                 <h3>{aiRichRenderLabel}</h3>
               </header>
               <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={aiRichRenderLabel}>
@@ -990,6 +1176,50 @@ export const BrowserSettingsSurface = ({
                   </span>
                 </button>
               </div>
+            </section>
+            <section className="lyra-settings-group">
+              <header className="lyra-settings-group-header">
+                <h3>{aiStopBehaviorLabel}</h3>
+              </header>
+              <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={aiStopBehaviorLabel}>
+                <button
+                  type="button"
+                  className={
+                    aiStopBehaviorValue === "turn_only"
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  role="radio"
+                  aria-checked={aiStopBehaviorValue === "turn_only"}
+                  onClick={() => {
+                    onAiStopBehaviorChange("turn_only");
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{aiStopBehaviorTurnOnlyLabel}</strong>
+                    <small>{aiStopBehaviorTurnOnlyDescription}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={
+                    aiStopBehaviorValue === "turn_and_background"
+                      ? "lyra-settings-choice lyra-settings-choice-active"
+                      : "lyra-settings-choice"
+                  }
+                  role="radio"
+                  aria-checked={aiStopBehaviorValue === "turn_and_background"}
+                  onClick={() => {
+                    onAiStopBehaviorChange("turn_and_background");
+                  }}
+                >
+                  <span className="lyra-settings-choice-main">
+                    <strong>{aiStopBehaviorTurnAndBackgroundLabel}</strong>
+                    <small>{aiStopBehaviorTurnAndBackgroundDescription}</small>
+                  </span>
+                </button>
+              </div>
+              <p className="lyra-settings-description">{aiStopBehaviorDescription}</p>
             </section>
             <SettingsAiView labels={aiLabels} model={aiModel} />
           </section>

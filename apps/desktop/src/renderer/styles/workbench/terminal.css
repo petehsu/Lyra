@@ -6,6 +6,9 @@
 
 .lyra-terminal-dock {
   --lyra-terminal-stage-bg: color-mix(in srgb, var(--lyra-bg-editor) 74%, var(--lyra-terminal-bg) 26%);
+  --lyra-terminal-tabstrip-bg: color-mix(in srgb, var(--lyra-bg-surface) 82%, var(--lyra-terminal-bg) 18%);
+  --lyra-terminal-tabstrip-line: color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  --lyra-terminal-tabstrip-hover-bg: color-mix(in srgb, var(--lyra-bg-surface) 70%, var(--lyra-terminal-bg) 30%);
   min-height: 0;
   height: 100%;
   display: grid;
@@ -27,9 +30,22 @@
 .lyra-terminal-side {
   min-height: 0;
   min-width: 0;
+  position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  background: var(--lyra-terminal-stage-bg);
+  background: var(--lyra-terminal-tabstrip-bg);
+}
+
+.lyra-terminal-side::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--lyra-unit-0-5);
+  background: var(--lyra-terminal-tabstrip-line);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .lyra-terminal-tabs {
@@ -39,7 +55,7 @@
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
-  background: var(--lyra-terminal-stage-bg);
+  background: transparent;
   position: relative;
 }
 
@@ -60,10 +76,15 @@
   min-height: var(--lyra-size-terminal-tab-h);
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--lyra-unit-24);
-  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-variant) 76%, transparent);
-  background: color-mix(in srgb, var(--lyra-bg-surface) 92%, var(--lyra-terminal-bg) 8%);
+  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-terminal-tabstrip-line) 72%, transparent);
+  background: transparent;
   color: var(--lyra-text-secondary);
   position: relative;
+  z-index: 2;
+}
+
+.lyra-terminal-tab:hover {
+  background: var(--lyra-terminal-tabstrip-hover-bg);
 }
 
 .lyra-terminal-tab-drop-target-before::before {
@@ -127,9 +148,23 @@
 }
 
 .lyra-terminal-tab-active {
-  background: color-mix(in srgb, var(--lyra-bg-editor) 76%, var(--lyra-terminal-bg) 24%);
+  background: var(--lyra-terminal-stage-bg);
   color: var(--lyra-text-primary);
+  box-shadow:
+    inset var(--lyra-unit-1) 0 0 color-mix(in srgb, var(--lyra-bg-surface) 36%, transparent),
+    0 calc(var(--lyra-unit-0-5) * -1) 0 color-mix(in srgb, var(--lyra-terminal-tabstrip-line) 58%, transparent);
   z-index: 2;
+}
+
+.lyra-terminal-tab-active::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--lyra-unit-1);
+  background: var(--lyra-terminal-stage-bg);
+  pointer-events: none;
 }
 
 .lyra-terminal-tab-active .lyra-terminal-tab-icon {
@@ -138,10 +173,11 @@
 
 .lyra-terminal-toolbar-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;
   gap: var(--lyra-unit-4);
   padding: var(--lyra-unit-6);
+  border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-terminal-tabstrip-line) 76%, transparent);
   background: transparent;
 }
 
@@ -242,6 +278,7 @@
   width: 100%;
   height: 100%;
   padding: var(--lyra-unit-6) var(--lyra-unit-6) var(--lyra-unit-6);
+  position: relative;
   opacity: 0;
   transition: opacity 100ms ease;
 }
@@ -259,6 +296,25 @@
 .lyra-terminal-host .xterm,
 .lyra-terminal-host .xterm-viewport {
   background-color: var(--lyra-terminal-bg) !important;
+}
+
+.lyra-terminal-caret-layer {
+  z-index: 2;
+}
+
+.lyra-modern-caret-terminal {
+  --lyra-modern-caret-width: var(--lyra-stroke-thin);
+  --lyra-modern-caret-length: var(--lyra-space-18);
+  --lyra-modern-caret-color: color-mix(in srgb, var(--lyra-terminal-cursor) 88%, var(--lyra-terminal-fg) 12%);
+  opacity: 0.94;
+}
+
+.lyra-modern-caret-terminal.lyra-modern-caret-focused {
+  opacity: 1;
+}
+
+.lyra-terminal-host .xterm-helper-textarea {
+  caret-color: transparent;
 }
 
 .lyra-terminal-status {

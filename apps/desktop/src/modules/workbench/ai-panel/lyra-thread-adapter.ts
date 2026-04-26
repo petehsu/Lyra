@@ -29,6 +29,7 @@ export type LyraThread = {
   readonly preview: string;
   readonly name?: string | null;
   readonly cwd?: string | null;
+  readonly boundProjectRoot?: string | null;
   readonly modelProvider: string;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -160,6 +161,7 @@ export const readLyraThread = (value: unknown): LyraThread | null => {
     preview: readString(value.preview) ?? "",
     name: readString(value.name),
     cwd: readPath(value.cwd),
+    boundProjectRoot: readPath(value.boundProjectRoot),
     modelProvider: readString(value.modelProvider) ?? "lyra",
     createdAt,
     updatedAt: toMs(readNumber(value.updatedAt), createdAt),
@@ -353,7 +355,7 @@ const messageFromItem = (
           createdAt,
         };
   }
-  if (item.type === "agentMessage" || item.type === "plan") {
+  if (item.type === "agentMessage") {
     const content = readString(item.text) ?? "";
     return content.length === 0
       ? null
@@ -364,7 +366,7 @@ const messageFromItem = (
           role: "assistant",
           content,
           displayContent: content,
-          createdAt: toMs(turn.completedAt ?? null, createdAt) + index,
+          createdAt,
         };
   }
   if (item.type === "reasoning") {
@@ -391,6 +393,7 @@ const threadTitle = (thread: LyraThread): string =>
   thread.name?.trim() || thread.preview.trim() || "New thread";
 
 export const lyraThreadToAgentDetail = (thread: LyraThread): AgentSessionDetail => {
+  const projectRoot = thread.boundProjectRoot ?? null;
   const session: AgentSession = {
     id: thread.id,
     title: threadTitle(thread),
@@ -398,8 +401,8 @@ export const lyraThreadToAgentDetail = (thread: LyraThread): AgentSessionDetail 
     collaborationMode: "default",
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
-    ...(thread.cwd === null || thread.cwd === undefined ? {} : { projectRoot: thread.cwd }),
-    ...(basename(thread.cwd) === undefined ? {} : { projectName: basename(thread.cwd)! }),
+    ...(projectRoot === null || projectRoot === undefined ? {} : { projectRoot }),
+    ...(basename(projectRoot) === undefined ? {} : { projectName: basename(projectRoot)! }),
   };
   const turns: AgentTurn[] = [];
   const messages: AgentMessage[] = [];

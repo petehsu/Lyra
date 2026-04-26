@@ -88,6 +88,7 @@ import {
   type WorkbenchBrowserSetElementPickerModeRequest,
   type WorkbenchBrowserLayoutSnapshot,
   type WorkbenchBrowserNavigateRequest,
+  type WorkbenchBrowserWebThemeSnapshot,
   type WorkbenchBrowserNavigateResult,
   type WorkbenchObservationQueryRequest,
   type WorkbenchObservationQueryResult,
@@ -553,6 +554,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(
         LYRA_CHANNELS.workbenchBrowserSetElementPickerMode,
         request
+      ) as Promise<void>,
+    applyWebTheme: (snapshot: WorkbenchBrowserWebThemeSnapshot) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserApplyWebTheme,
+        snapshot
       ) as Promise<void>,
     onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => {
       ensureWorkbenchBrowserEventBridge();

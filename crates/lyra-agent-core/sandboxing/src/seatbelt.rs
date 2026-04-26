@@ -525,7 +525,7 @@ fn seatbelt_regex_for_unreadable_glob(pattern: &str) -> Option<String> {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-fn create_seatbelt_command_args_for_legacy_policy(
+fn create_seatbelt_command_args_for_sandbox_policy(
     command: Vec<String>,
     sandbox_policy: &SandboxPolicy,
     sandbox_policy_cwd: &Path,
@@ -533,7 +533,7 @@ fn create_seatbelt_command_args_for_legacy_policy(
     network: Option<&NetworkProxy>,
 ) -> Vec<String> {
     let file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
+        FileSystemSandboxPolicy::from_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
     create_seatbelt_command_args(CreateSeatbeltCommandArgsParams {
         command,
         file_system_sandbox_policy: &file_system_sandbox_policy,

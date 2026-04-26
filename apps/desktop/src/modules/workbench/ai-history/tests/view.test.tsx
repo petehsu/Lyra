@@ -13,6 +13,7 @@ type ThreadFixture = {
   readonly preview: string;
   readonly modelProvider: string;
   readonly cwd?: string | null;
+  readonly boundProjectRoot?: string | null;
   readonly updatedAt: number;
 };
 
@@ -23,6 +24,7 @@ const fixtureThreads: readonly ThreadFixture[] = [
     preview: "Start refactor agent runtime",
     modelProvider: "lp-openai",
     cwd: "/Users/dev/project-a",
+    boundProjectRoot: "/Users/dev/project-a",
     updatedAt: 1_700_000_300
   },
   {
@@ -30,7 +32,8 @@ const fixtureThreads: readonly ThreadFixture[] = [
     name: null,
     preview: "Brainstorm ideas",
     modelProvider: "lp-openai",
-    cwd: null,
+    cwd: "/Users/dev",
+    boundProjectRoot: null,
     updatedAt: 1_700_000_200
   },
   {
@@ -39,6 +42,7 @@ const fixtureThreads: readonly ThreadFixture[] = [
     preview: "Review PR for project a",
     modelProvider: "lp-openai",
     cwd: "/Users/dev/project-a",
+    boundProjectRoot: "/Users/dev/project-a",
     updatedAt: 1_700_000_100
   },
   {
@@ -47,6 +51,7 @@ const fixtureThreads: readonly ThreadFixture[] = [
     preview: "Look at new dataset",
     modelProvider: "lp-openai",
     cwd: "/Users/dev/project-b",
+    boundProjectRoot: "/Users/dev/project-b",
     updatedAt: 1_700_000_050
   }
 ];
@@ -268,6 +273,7 @@ describe("AiHistorySurface", () => {
               preview: "",
               modelProvider: "lp-openai",
               cwd: "/Users/dev/project-a",
+              boundProjectRoot: "/Users/dev/project-a",
               updatedAt: 1_700_000_500
             }
           ]
@@ -306,6 +312,7 @@ describe("AiHistorySurface", () => {
       preview: "Archived preview",
       modelProvider: "lp-openai",
       cwd: "/Users/dev/project-a",
+      boundProjectRoot: "/Users/dev/project-a",
       updatedAt: 1_700_000_600
     };
     const request = vi.fn(async (payload: LyraRequest) => {

@@ -393,7 +393,7 @@ fn sandbox_policy_with_additional_permissions(
             } else {
                 // todo(dylan) - for now, this grants more access than the request. We should restrict this,
                 // but we should add a new SandboxPolicy variant to handle this. While the feature is still
-                // UnderDevelopment, it's a useful approximation of the desired behavior.
+                // Internal, it's a useful approximation of the desired behavior.
                 SandboxPolicy::WorkspaceWrite {
                     writable_roots: dedup_absolute_paths(extra_writes),
                     read_only_access: merge_read_only_access_with_additional_reads(

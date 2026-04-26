@@ -542,10 +542,28 @@
 
 .lyra-panel-left {
   grid-column: 1;
+  grid-row: 1;
+}
+
+.lyra-main-ai-panel-right {
+  grid-template-columns: minmax(0, 1fr) 0 var(--left-width, var(--lyra-unit-260));
+}
+
+.lyra-main-ai-panel-right .lyra-panel-left {
+  grid-column: 3;
+}
+
+.lyra-main-ai-panel-right > .lyra-resizer-vertical {
+  grid-column: 2;
+}
+
+.lyra-main-ai-panel-right .lyra-center-stack {
+  grid-column: 1;
 }
 
 .lyra-main > .lyra-resizer-vertical {
   grid-column: 2;
+  grid-row: 1;
 }
 
 .lyra-center-stack {
@@ -554,9 +572,38 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 0 var(--bottom-height, var(--lyra-unit-180));
   grid-column: 3;
+  grid-row: 1;
   overflow: hidden;
+}
+
+.lyra-center-stack-terminal-top {
+  grid-template-rows: var(--bottom-height, var(--lyra-unit-180)) 0 minmax(0, 1fr);
+}
+
+.lyra-center-stack-terminal-bottom {
+  grid-template-rows: minmax(0, 1fr) 0 var(--bottom-height, var(--lyra-unit-180));
+}
+
+.lyra-center-stack-terminal-top > .lyra-panel-bottom {
+  grid-row: 1;
+}
+
+.lyra-center-stack-terminal-top > .lyra-resizer-horizontal,
+.lyra-center-stack-terminal-bottom > .lyra-resizer-horizontal {
+  grid-row: 2;
+}
+
+.lyra-center-stack-terminal-top > .lyra-workspace {
+  grid-row: 3;
+}
+
+.lyra-center-stack-terminal-bottom > .lyra-workspace {
+  grid-row: 1;
+}
+
+.lyra-center-stack-terminal-bottom > .lyra-panel-bottom {
+  grid-row: 3;
 }
 
 .lyra-panel,
@@ -570,13 +617,18 @@
   height: 100%;
   background: var(--lyra-bg-editor);
   display: grid;
-  grid-template-rows: minmax(0, 1fr) var(--lyra-size-browser-tab-h);
+  grid-template-rows: var(--lyra-size-browser-tab-h) minmax(0, 1fr);
   overflow: hidden;
   position: relative;
 }
 
+.lyra-workspace > .lyra-browser-tabs {
+  grid-row: 1;
+}
+
 .lyra-workspace-surface-single,
 .lyra-workspace-surface-split {
+  grid-row: 2;
   position: relative;
   width: 100%;
   height: 100%;
@@ -722,6 +774,11 @@
   padding: 0;
 }
 
+.lyra-panel-left-hidden {
+  pointer-events: none;
+  visibility: hidden;
+}
+
 
 .lyra-resizer {
   --lyra-resizer-line: var(--lyra-line-default);
@@ -765,20 +822,47 @@
     );
 }
 
-.lyra-resizer-horizontal::after {
+.lyra-main-ai-panel-right .lyra-resizer-vertical::after {
+  left: 0;
+  background:
+    linear-gradient(
+      90deg,
+      var(--lyra-resizer-line) 0,
+      var(--lyra-resizer-line) var(--lyra-unit-1),
+      transparent var(--lyra-unit-1),
+      transparent 100%
+    );
+}
+
+.lyra-center-stack-terminal-top > .lyra-resizer-horizontal::after {
   left: 0;
   right: 0;
-  top: calc(var(--lyra-unit-3) * -1);
+  top: calc(var(--lyra-unit-6) * -1);
   height: var(--lyra-unit-6);
   cursor: row-resize;
   background:
     linear-gradient(
       180deg,
       transparent 0,
-      transparent var(--lyra-unit-2-5),
-      var(--lyra-resizer-line) var(--lyra-unit-2-5),
-      var(--lyra-resizer-line) var(--lyra-unit-3-5),
-      transparent var(--lyra-unit-3-5),
+      transparent var(--lyra-unit-5),
+      var(--lyra-resizer-line) var(--lyra-unit-5),
+      var(--lyra-resizer-line) 100%,
+      transparent 100%
+    );
+}
+
+.lyra-center-stack-terminal-bottom > .lyra-resizer-horizontal::after {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--lyra-unit-6);
+  cursor: row-resize;
+  background:
+    linear-gradient(
+      180deg,
+      var(--lyra-resizer-line) 0,
+      var(--lyra-resizer-line) var(--lyra-unit-1),
+      transparent var(--lyra-unit-1),
       transparent 100%
     );
 }
@@ -799,7 +883,7 @@
 
   .lyra-main {
     grid-template-columns: 1fr;
-    grid-template-rows: var(--lyra-unit-180) 0 minmax(0, 1fr);
+    grid-template-rows: var(--left-panel-mobile-height, var(--lyra-unit-180)) 0 minmax(0, 1fr);
   }
 
   .lyra-panel-left,
@@ -808,8 +892,18 @@
     grid-column: auto;
   }
 
-  .lyra-center-stack {
-    grid-template-rows: minmax(0, 1fr) 0 var(--lyra-unit-160);
+  .lyra-main-ai-panel-right .lyra-panel-left,
+  .lyra-main-ai-panel-right .lyra-center-stack,
+  .lyra-main-ai-panel-right > .lyra-resizer-vertical {
+    grid-column: auto;
+  }
+
+  .lyra-center-stack-terminal-top {
+    grid-template-rows: var(--bottom-height, var(--lyra-unit-160)) 0 minmax(0, 1fr);
+  }
+
+  .lyra-center-stack-terminal-bottom {
+    grid-template-rows: minmax(0, 1fr) 0 var(--bottom-height, var(--lyra-unit-160));
   }
 
   .lyra-panel-left {

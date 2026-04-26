@@ -2,6 +2,7 @@ use crate::error_code::INTERNAL_ERROR_CODE;
 use chrono::Utc;
 use lyra_app_server_protocol::JSONRPCErrorError;
 use lyra_app_server_protocol::LyraAiModelDiscoveryState;
+use lyra_app_server_protocol::LyraAiModelRuntimeMetadata;
 use lyra_app_server_protocol::LyraAiProviderCatalogItem;
 use lyra_app_server_protocol::LyraAiProviderFieldOption;
 use lyra_app_server_protocol::LyraAiProviderFieldSchema;
@@ -16,6 +17,7 @@ use lyra_app_server_protocol::LyraConfigProfileUpsertParams;
 use lyra_app_server_protocol::LyraConfigProfileUpsertResponse;
 use lyra_app_server_protocol::LyraConfigProfilesListResponse;
 use lyra_app_server_protocol::LyraConfigProvidersCatalogReadResponse;
+use lyra_models_manager::provider_model_entry_from_id;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -152,9 +154,14 @@ impl LyraAiConfigApi {
             headers: normalize_string_map(params.headers),
             model: trim_string(&params.model),
             custom_models: normalize_custom_models(params.custom_models),
-            discovery_state: previous
-                .as_ref()
-                .map(|profile| profile.discovery_state.clone())
+            discovery_state: params
+                .discovery_state
+                .map(normalize_discovery_state)
+                .or_else(|| {
+                    previous
+                        .as_ref()
+                        .map(|profile| profile.discovery_state.clone())
+                })
                 .unwrap_or_else(empty_discovery_state),
             created_at: previous
                 .as_ref()
@@ -320,7 +327,16 @@ fn provider_preset_from_spec(spec: &ProviderPresetSpec) -> LyraAiProviderPreset 
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
-        recommended_models: Vec::new(),
+        recommended_models: if spec.default_model.trim().is_empty() {
+            Vec::new()
+        } else {
+            vec![provider_model_entry_from_id(
+                spec.provider_id.as_str(),
+                spec.protocol_id.as_str(),
+                spec.default_model.as_str(),
+                "preset",
+            )]
+        },
     }
 }
 
@@ -779,11 +795,53 @@ fn normalize_custom_models(models: Vec<LyraAiProviderModelEntry>) -> Vec<LyraAiP
                 context_window: entry.context_window,
                 supports_images: entry.supports_images,
                 supports_tools: entry.supports_tools,
+                runtime_metadata: entry.runtime_metadata.map(normalize_runtime_metadata),
                 source: trim_to_option(Some(entry.source.as_str()))
                     .unwrap_or_else(|| "custom".to_string()),
             })
         })
         .collect()
+}
+
+fn normalize_discovery_state(state: LyraAiModelDiscoveryState) -> LyraAiModelDiscoveryState {
+    LyraAiModelDiscoveryState {
+        status: trim_string(&state.status),
+        last_checked_at: state.last_checked_at,
+        error_message: state.error_message.map(|value| trim_string(&value)),
+        models: normalize_custom_models(state.models),
+    }
+}
+
+fn normalize_runtime_metadata(metadata: LyraAiModelRuntimeMetadata) -> LyraAiModelRuntimeMetadata {
+    LyraAiModelRuntimeMetadata {
+        shell_type: metadata.shell_type.map(|value| trim_string(&value)),
+        apply_patch_tool_type: metadata
+            .apply_patch_tool_type
+            .map(|value| trim_string(&value)),
+        supports_search_tool: metadata.supports_search_tool,
+        supports_parallel_tool_calls: metadata.supports_parallel_tool_calls,
+        supports_reasoning_summaries: metadata.supports_reasoning_summaries,
+        support_verbosity: metadata.support_verbosity,
+        web_search_tool_type: metadata
+            .web_search_tool_type
+            .map(|value| trim_string(&value)),
+        supports_image_detail_original: metadata.supports_image_detail_original,
+        input_modalities: metadata
+            .input_modalities
+            .into_iter()
+            .map(|value| trim_string(&value))
+            .filter(|value| !value.is_empty())
+            .collect(),
+        supported_tools: metadata
+            .supported_tools
+            .into_iter()
+            .map(|value| trim_string(&value))
+            .filter(|value| !value.is_empty())
+            .collect(),
+        context_window: metadata.context_window,
+        max_context_window: metadata.max_context_window,
+        effective_context_window_percent: metadata.effective_context_window_percent,
+    }
 }
 
 fn merge_configured_secret_fields(
@@ -887,6 +945,7 @@ mod tests {
                 headers: BTreeMap::new(),
                 model: "gpt-5".to_string(),
                 custom_models: Vec::new(),
+                discovery_state: None,
             })
             .await
             .expect("save profile");

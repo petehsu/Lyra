@@ -1,4 +1,4 @@
-import type { CSSProperties, RefObject } from "react";
+import { Fragment, memo, type CSSProperties, type RefObject } from "react";
 
 import type {
   AgentToolCall,
@@ -13,6 +13,7 @@ import type {
 } from "./interaction/pending-interaction-mappers";
 import { AiPanelRichContent } from "./rich-content";
 import { MessageActions } from "./message-actions";
+import { PlanCard } from "./plan-card";
 import {
   type AgentRuntimeFeedItem,
   type AgentTurnTimelineItem,
@@ -33,6 +34,21 @@ import {
   AiPanelStreamStatusBlock,
 } from "./runtime-feed-block";
 import { StatusEmptyState } from "./status-primitives";
+import type { LyraTurnPlanState } from "./use-lyra-thread-runtime";
+
+const formatMessageTime = (timestamp: number, locale: WorkbenchLocale): string => {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "";
+  }
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(timestamp));
+  } catch {
+    return "";
+  }
+};
 
 type AiPanelThreadViewProps = {
   readonly logoUrl: string;
@@ -76,6 +92,17 @@ type AiPanelThreadViewProps = {
   readonly streamingStatus: StreamStatusItem | null;
   readonly orphanRuntimeFeed: readonly AgentRuntimeFeedItem[];
   readonly runtimeError: string | null;
+  readonly planByTurn: Readonly<Record<string, LyraTurnPlanState>>;
+  readonly latestPlanTurnId: string | null;
+  readonly planActionsEnabled: boolean;
+  readonly copyMessageLabel: string;
+  readonly copiedMessageLabel: string;
+  readonly forkResponseLabel: string;
+  readonly regenerateResponseLabel: string;
+  readonly editMessageLabel: string;
+  readonly onForkTurn: (turnId: string) => void;
+  readonly onRegenerateTurn: (turnId: string) => void;
+  readonly onEditMessageTurn: (turnId: string, content: string) => void;
   readonly onPlanApprovalDecision: (
     response: PlanInteractionResponse,
     requestOverride?: PlanApprovalRequest
@@ -83,7 +110,7 @@ type AiPanelThreadViewProps = {
   readonly onOpenPlanApprovalInPanel: (requestId: string) => void;
 };
 
-export const AiPanelThreadView = ({
+export const AiPanelThreadView = memo(({
   logoUrl,
   locale,
   isZhLocale,
@@ -118,6 +145,17 @@ export const AiPanelThreadView = ({
   streamingStatus,
   orphanRuntimeFeed,
   runtimeError,
+  planByTurn,
+  latestPlanTurnId,
+  planActionsEnabled,
+  copyMessageLabel,
+  copiedMessageLabel,
+  forkResponseLabel,
+  regenerateResponseLabel,
+  editMessageLabel,
+  onForkTurn,
+  onRegenerateTurn,
+  onEditMessageTurn,
   onPlanApprovalDecision,
   onOpenPlanApprovalInPanel,
 }: AiPanelThreadViewProps) => (
@@ -147,17 +185,20 @@ export const AiPanelThreadView = ({
     >
       {sortedMessages.length === 0
         ? null
-        : sortedMessages.map((message) => {
+        : sortedMessages.map((message, messageIndex) => {
           const isUserMessage = message.role === "user";
           const isOptimistic = isOptimisticUserMessage(message);
           const turnId = "turnId" in message && typeof message.turnId === "string"
             ? message.turnId
             : null;
           const turn = turnId === null ? null : (turnsById.get(turnId) ?? null);
+          const canRewriteTurn = turn !== null && turn.status !== "running";
           const turnToolCalls = turnId === null ? [] : (toolCallsByTurn.get(turnId) ?? []);
           const assistantOrder = assistantMessageOrderById.get(message.id) ?? null;
           const turnDurationLabel =
-            turn === null ? null : resolveTurnDurationLabel(turn, turnWorkingLabel, turnWorkedForPrefix);
+            turn === null || turn.status === "running"
+              ? null
+              : resolveTurnDurationLabel(turn, turnWorkingLabel, turnWorkedForPrefix);
           const turnToolSummaryLabel =
             turn === null
               ? null
@@ -177,6 +218,14 @@ export const AiPanelThreadView = ({
             turnId !== null && message.role === "assistant"
               ? (turnTimelineByTurn.get(turnId) ?? [])
               : [];
+          const isFirstAssistantMessageForTurn =
+            !isUserMessage
+            && turnId !== null
+            && sortedMessages.findIndex((candidate) =>
+              candidate.role === "assistant"
+              && "turnId" in candidate
+              && candidate.turnId === turnId
+            ) === messageIndex;
           const fallbackTimeline =
             turnTimeline.length === 0
               ? [
@@ -216,6 +265,17 @@ export const AiPanelThreadView = ({
           const displayMessageContent = isUserMessage
             ? message.content
             : resolveAssistantDisplayContent(message);
+          const messageTimeLabel = formatMessageTime(message.createdAt, locale);
+          const planForTurn = turnId === null ? undefined : planByTurn[turnId];
+          const shouldRenderPlanAfterMessage =
+            turnId !== null
+            && planForTurn !== undefined
+            && message.role === "assistant"
+            && sortedMessages.findIndex((candidate) =>
+              candidate.role === "assistant"
+              && "turnId" in candidate
+              && candidate.turnId === turnId
+            ) === messageIndex;
           const messagePlanApprovalRequest =
             turnId === null
               ? null
@@ -228,28 +288,37 @@ export const AiPanelThreadView = ({
             message.role === "assistant"
             && proposedPlanPattern.test(message.content)
             && messagePlanApprovalRequest !== null;
+          const isLastAssistantMessageForTurn =
+            !isUserMessage
+            && turnId !== null
+            && sortedMessages.findIndex((candidate, candidateIndex) =>
+              candidateIndex > messageIndex
+              && candidate.role === "assistant"
+              && "turnId" in candidate
+              && candidate.turnId === turnId
+            ) === -1;
+
+          if (!isUserMessage && turnId !== null && !isFirstAssistantMessageForTurn) {
+            return null;
+          }
 
           return (
-            <div
-              key={message.id}
-              className={
-                isUserMessage
-                  ? (
-                      isOptimistic
-                        ? "lyra-ai-agent-message lyra-ai-agent-message-user lyra-ai-agent-message-pending"
-                        : "lyra-ai-agent-message lyra-ai-agent-message-user"
-                    )
-                  : "lyra-ai-agent-message lyra-ai-agent-message-assistant"
-              }
-            >
-              <MessageActions
-                content={displayMessageContent}
-                messageType={isUserMessage ? "user" : "assistant"}
-              />
-              {isUserMessage || !richRenderingEnabled ? (
-                <div className="lyra-ai-agent-message-content">{displayMessageContent}</div>
-              ) : (
-                <>
+            <Fragment key={message.id}>
+              <div
+                className={
+                  isUserMessage
+                    ? (
+                        isOptimistic
+                          ? "lyra-ai-agent-message lyra-ai-agent-message-user lyra-ai-agent-message-pending"
+                          : "lyra-ai-agent-message lyra-ai-agent-message-user"
+                      )
+                    : "lyra-ai-agent-message lyra-ai-agent-message-assistant"
+                }
+              >
+                {isUserMessage || !richRenderingEnabled ? (
+                  <div className="lyra-ai-agent-message-content">{displayMessageContent}</div>
+                ) : (
+                  <>
                   <div className="lyra-ai-agent-turn-timeline">
                     {(() => {
                       const nodes: JSX.Element[] = [];
@@ -341,18 +410,6 @@ export const AiPanelThreadView = ({
                       return nodes;
                     })()}
                   </div>
-                  {assistantOrder === null || turnDurationLabel === null ? null : (
-                    <div className="lyra-ai-agent-turn-footer">
-                      <span className="lyra-ai-agent-turn-footer-index">
-                        {(isZhLocale ? "消息" : "Message")}
-                        ·
-                        {String(assistantOrder)}
-                      </span>
-                      <span className="lyra-ai-agent-turn-footer-duration">
-                        {turnDurationLabel}
-                      </span>
-                    </div>
-                  )}
                   {!showToolSummary ? null : (
                     <details className="lyra-ai-agent-turn-tools-details">
                       <summary className="lyra-ai-agent-turn-tools-summary">
@@ -365,7 +422,92 @@ export const AiPanelThreadView = ({
                   )}
                 </>
               )}
-            </div>
+                <div className="lyra-ai-agent-message-footer">
+                  <div
+                    className={
+                      isUserMessage
+                        ? "lyra-ai-agent-message-footer-meta lyra-ai-agent-message-footer-meta-user"
+                        : "lyra-ai-agent-message-footer-meta lyra-ai-agent-message-footer-meta-assistant"
+                    }
+                  >
+                    {isUserMessage ? (
+                      <span className="lyra-ai-agent-message-footer-time">{messageTimeLabel}</span>
+                    ) : (
+                      <>
+                        {assistantOrder === null ? null : (
+                          <span className="lyra-ai-agent-turn-footer-index">
+                            {(isZhLocale ? "消息" : "Message")}
+                            ·
+                            {String(assistantOrder)}
+                          </span>
+                        )}
+                        {turnDurationLabel === null ? null : (
+                          <span className="lyra-ai-agent-turn-footer-duration">
+                            {turnDurationLabel}
+                          </span>
+                        )}
+                        <span className="lyra-ai-agent-message-footer-time">{messageTimeLabel}</span>
+                      </>
+                    )}
+                  </div>
+                <MessageActions
+                  content={displayMessageContent}
+                  messageType={isUserMessage ? "user" : "assistant"}
+                  copyLabel={copyMessageLabel}
+                  copiedLabel={copiedMessageLabel}
+                  {...(isLastAssistantMessageForTurn && turnId !== null && canRewriteTurn
+                    ? {
+                        forkLabel: forkResponseLabel,
+                        onFork: () => {
+                          onForkTurn(turnId);
+                        },
+                        regenerateLabel: regenerateResponseLabel,
+                        onRegenerate: () => {
+                          onRegenerateTurn(turnId);
+                        }
+                      }
+                    : {})}
+                  {...(isUserMessage && turnId !== null && canRewriteTurn && !isOptimistic
+                    ? {
+                        editLabel: editMessageLabel,
+                        onEdit: () => {
+                          onEditMessageTurn(turnId, displayMessageContent);
+                        }
+                      }
+                    : {})}
+                />
+                </div>
+              </div>
+              {shouldRenderPlanAfterMessage ? (
+                <div className="lyra-ai-agent-message lyra-ai-agent-message-assistant lyra-ai-agent-message-plan">
+                  <PlanCard
+                    locale={locale}
+                    plan={planForTurn}
+                    richRenderingEnabled={richRenderingEnabled}
+                    {...(themeSignature === undefined ? {} : { themeSignature })}
+                    showActions={planActionsEnabled && turnId === latestPlanTurnId}
+                    onApprove={() => {
+                      void onPlanApprovalDecision({
+                        requestId: `plan:${turnId}`,
+                        decision: "approve_and_implement",
+                      });
+                    }}
+                    onKeepPlanning={() => {
+                      void onPlanApprovalDecision({
+                        requestId: `plan:${turnId}`,
+                        decision: "keep_planning",
+                      });
+                    }}
+                    onReject={() => {
+                      void onPlanApprovalDecision({
+                        requestId: `plan:${turnId}`,
+                        decision: "reject",
+                      });
+                    }}
+                  />
+                </div>
+              ) : null}
+            </Fragment>
           );
         })}
       {typewriterText.length === 0 && streamingTurnRuntimeFeed.length === 0 && streamingStatus === null ? null : (
@@ -383,6 +525,9 @@ export const AiPanelThreadView = ({
             ) : (
               <div className="lyra-ai-agent-message-content">{typewriterText}</div>
             )
+          )}
+          {typewriterText.length === 0 || streamingStatus === null ? null : (
+            <AiPanelStreamStatusBlock status={streamingStatus} />
           )}
           {streamingTurnRuntimeFeed.length === 0 ? null : (
             <AiPanelRuntimeFeedBlock
@@ -417,4 +562,6 @@ export const AiPanelThreadView = ({
       )}
     </div>
   </>
-);
+));
+
+AiPanelThreadView.displayName = "AiPanelThreadView";

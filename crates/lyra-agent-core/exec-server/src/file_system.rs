@@ -50,7 +50,7 @@ pub struct FileSystemSandboxContext {
     #[serde(default)]
     pub windows_sandbox_private_desktop: bool,
     #[serde(default)]
-    pub use_legacy_landlock: bool,
+    pub use_classic_landlock: bool,
     pub additional_permissions: Option<PermissionProfile>,
 }
 
@@ -62,7 +62,7 @@ impl FileSystemSandboxContext {
             file_system_sandbox_policy: None,
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             windows_sandbox_private_desktop: false,
-            use_legacy_landlock: false,
+            use_classic_landlock: false,
             additional_permissions: None,
         }
     }

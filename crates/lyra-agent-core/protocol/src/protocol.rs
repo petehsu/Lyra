@@ -19,7 +19,6 @@ use crate::approvals::ElicitationRequestEvent;
 use crate::config_types::ApprovalsReviewer;
 use crate::config_types::CollaborationMode;
 use crate::config_types::ModeKind;
-use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::config_types::ServiceTier;
 use crate::config_types::WindowsSandboxLevel;
@@ -60,16 +59,16 @@ use tracing::error;
 use ts_rs::TS;
 
 pub use crate::approvals::ApplyPatchApprovalRequestEvent;
+pub use crate::approvals::AutoReviewAssessmentAction;
+pub use crate::approvals::AutoReviewAssessmentDecisionSource;
+pub use crate::approvals::AutoReviewAssessmentEvent;
+pub use crate::approvals::AutoReviewAssessmentStatus;
+pub use crate::approvals::AutoReviewCommandSource;
+pub use crate::approvals::AutoReviewRiskLevel;
+pub use crate::approvals::AutoReviewUserAuthorization;
 pub use crate::approvals::ElicitationAction;
 pub use crate::approvals::ExecApprovalRequestEvent;
 pub use crate::approvals::ExecPolicyAmendment;
-pub use crate::approvals::GuardianAssessmentAction;
-pub use crate::approvals::GuardianAssessmentDecisionSource;
-pub use crate::approvals::GuardianAssessmentEvent;
-pub use crate::approvals::GuardianAssessmentStatus;
-pub use crate::approvals::GuardianCommandSource;
-pub use crate::approvals::GuardianRiskLevel;
-pub use crate::approvals::GuardianUserAuthorization;
 pub use crate::approvals::NetworkApprovalContext;
 pub use crate::approvals::NetworkApprovalProtocol;
 pub use crate::approvals::NetworkPolicyAmendment;
@@ -476,10 +475,6 @@ pub enum Op {
         /// Takes precedence over model, effort, and developer instructions if set.
         #[serde(skip_serializing_if = "Option::is_none")]
         collaboration_mode: Option<CollaborationMode>,
-
-        /// Optional personality override for this turn.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        personality: Option<Personality>,
     },
 
     /// Inter-agent communication that should be recorded as assistant history
@@ -542,10 +537,6 @@ pub enum Op {
         /// Takes precedence over model, effort, and developer instructions if set.
         #[serde(skip_serializing_if = "Option::is_none")]
         collaboration_mode: Option<CollaborationMode>,
-
-        /// Updated personality preference.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        personality: Option<Personality>,
     },
 
     /// Approve a command execution
@@ -660,11 +651,16 @@ pub enum Op {
     /// Request Lyra to undo a turn (turns are stacked so it is the same effect as CMD + Z).
     Undo,
 
-    /// Request Lyra to drop the last N user turns from in-memory context.
+    /// Request Lyra to drop a user turn and all newer user turns from context.
     ///
-    /// This does not attempt to revert local filesystem changes. Clients are
-    /// responsible for undoing any edits on disk.
-    ThreadRollback { num_turns: u32 },
+    /// When `restore_files` is true, Lyra restores the filesystem checkpoint for
+    /// `turn_id` before writing the rollback marker. If restoration cannot be
+    /// proven safe, rollback fails without changing conversation history.
+    ThreadRollback {
+        turn_id: String,
+        num_turns: u32,
+        restore_files: bool,
+    },
 
     /// Request a code review from the agent.
     Review { review_request: ReviewRequest },
@@ -1508,8 +1504,8 @@ pub enum EventMsg {
 
     ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent),
 
-    /// Structured lifecycle event for a guardian-reviewed approval request.
-    GuardianAssessment(GuardianAssessmentEvent),
+    /// Structured lifecycle event for a auto_review-reviewed approval request.
+    AutoReviewAssessment(AutoReviewAssessmentEvent),
 
     /// Notification advising the user that something they are using has been
     /// deprecated and should be phased out.
@@ -1899,8 +1895,8 @@ pub struct ItemStartedEvent {
     pub item: TurnItem,
 }
 
-impl HasLegacyEvent for ItemStartedEvent {
-    fn as_legacy_events(&self, _: bool) -> Vec<EventMsg> {
+impl HasRuntimeEvent for ItemStartedEvent {
+    fn as_runtime_events(&self, _: bool) -> Vec<EventMsg> {
         match &self.item {
             TurnItem::WebSearch(item) => vec![EventMsg::WebSearchBegin(WebSearchBeginEvent {
                 call_id: item.id.clone(),
@@ -1922,13 +1918,13 @@ pub struct ItemCompletedEvent {
     pub item: TurnItem,
 }
 
-pub trait HasLegacyEvent {
-    fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg>;
+pub trait HasRuntimeEvent {
+    fn as_runtime_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg>;
 }
 
-impl HasLegacyEvent for ItemCompletedEvent {
-    fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
-        self.item.as_legacy_events(show_raw_agent_reasoning)
+impl HasRuntimeEvent for ItemCompletedEvent {
+    fn as_runtime_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
+        self.item.as_runtime_events(show_raw_agent_reasoning)
     }
 }
 
@@ -1940,8 +1936,8 @@ pub struct AgentMessageContentDeltaEvent {
     pub delta: String,
 }
 
-impl HasLegacyEvent for AgentMessageContentDeltaEvent {
-    fn as_legacy_events(&self, _: bool) -> Vec<EventMsg> {
+impl HasRuntimeEvent for AgentMessageContentDeltaEvent {
+    fn as_runtime_events(&self, _: bool) -> Vec<EventMsg> {
         vec![EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
             delta: self.delta.clone(),
         })]
@@ -1967,8 +1963,8 @@ pub struct ReasoningContentDeltaEvent {
     pub summary_index: i64,
 }
 
-impl HasLegacyEvent for ReasoningContentDeltaEvent {
-    fn as_legacy_events(&self, _: bool) -> Vec<EventMsg> {
+impl HasRuntimeEvent for ReasoningContentDeltaEvent {
+    fn as_runtime_events(&self, _: bool) -> Vec<EventMsg> {
         vec![EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent {
             delta: self.delta.clone(),
         })]
@@ -1986,8 +1982,8 @@ pub struct ReasoningRawContentDeltaEvent {
     pub content_index: i64,
 }
 
-impl HasLegacyEvent for ReasoningRawContentDeltaEvent {
-    fn as_legacy_events(&self, _: bool) -> Vec<EventMsg> {
+impl HasRuntimeEvent for ReasoningRawContentDeltaEvent {
+    fn as_runtime_events(&self, _: bool) -> Vec<EventMsg> {
         vec![EventMsg::AgentReasoningRawContentDelta(
             AgentReasoningRawContentDeltaEvent {
                 delta: self.delta.clone(),
@@ -1996,19 +1992,19 @@ impl HasLegacyEvent for ReasoningRawContentDeltaEvent {
     }
 }
 
-impl HasLegacyEvent for EventMsg {
-    fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
+impl HasRuntimeEvent for EventMsg {
+    fn as_runtime_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
         match self {
-            EventMsg::ItemStarted(event) => event.as_legacy_events(show_raw_agent_reasoning),
-            EventMsg::ItemCompleted(event) => event.as_legacy_events(show_raw_agent_reasoning),
+            EventMsg::ItemStarted(event) => event.as_runtime_events(show_raw_agent_reasoning),
+            EventMsg::ItemCompleted(event) => event.as_runtime_events(show_raw_agent_reasoning),
             EventMsg::AgentMessageContentDelta(event) => {
-                event.as_legacy_events(show_raw_agent_reasoning)
+                event.as_runtime_events(show_raw_agent_reasoning)
             }
             EventMsg::ReasoningContentDelta(event) => {
-                event.as_legacy_events(show_raw_agent_reasoning)
+                event.as_runtime_events(show_raw_agent_reasoning)
             }
             EventMsg::ReasoningRawContentDelta(event) => {
-                event.as_legacy_events(show_raw_agent_reasoning)
+                event.as_runtime_events(show_raw_agent_reasoning)
             }
             _ => Vec::new(),
         }
@@ -2323,7 +2319,7 @@ pub struct AgentMessageEvent {
 pub struct UserMessageEvent {
     pub message: String,
     /// Image URLs sourced from `UserInput::Image`. These are safe
-    /// to replay in legacy UI history events and correspond to images sent to
+    /// to replay in runtime history events and correspond to images sent to
     /// the model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<String>>,
@@ -2864,8 +2860,6 @@ pub struct TurnContextItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_system_sandbox_policy: Option<FileSystemSandboxPolicy>,
     pub model: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub personality: Option<Personality>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collaboration_mode: Option<CollaborationMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4393,7 +4387,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_workspace_write_nested_readable_root_stays_writable() {
+    fn projected_workspace_write_nested_readable_root_stays_writable() {
         let cwd = TempDir::new().expect("tempdir");
         let docs = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path());
         let canonical_cwd = lyra_utils_absolute_path::canonicalize_preserving_symlinks(cwd.path())
@@ -4413,7 +4407,7 @@ mod tests {
 
         assert_eq!(
             sorted_writable_roots(
-                FileSystemSandboxPolicy::from_legacy_sandbox_policy(&policy, cwd.path())
+                FileSystemSandboxPolicy::from_sandbox_policy(&policy, cwd.path())
                     .get_writable_roots_with_cwd(cwd.path())
             ),
             vec![(canonical_cwd, vec![expected_dot_lyra.to_path_buf()])]
@@ -4421,7 +4415,7 @@ mod tests {
     }
 
     #[test]
-    fn file_system_policy_rejects_legacy_bridge_for_non_workspace_writes() {
+    fn file_system_policy_rejects_projection_for_non_workspace_writes() {
         let cwd = if cfg!(windows) {
             Path::new(r"C:\workspace")
         } else {
@@ -4440,7 +4434,7 @@ mod tests {
         }]);
 
         let err = policy
-            .to_legacy_sandbox_policy(NetworkSandboxPolicy::Restricted, cwd)
+            .to_sandbox_policy(NetworkSandboxPolicy::Restricted, cwd)
             .expect_err("non-workspace writes should be rejected");
 
         assert!(
@@ -4451,7 +4445,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_sandbox_policy_semantics_survive_split_bridge() {
+    fn sandbox_policy_projection_semantics_survive_split_bridge() {
         let cwd = TempDir::new().expect("tempdir");
         let readable_root = AbsolutePathBuf::resolve_path_against_base("readable", cwd.path());
         let writable_root = AbsolutePathBuf::resolve_path_against_base("writable", cwd.path());
@@ -4505,9 +4499,9 @@ mod tests {
         ];
 
         for expected in policies {
-            let actual = FileSystemSandboxPolicy::from_legacy_sandbox_policy(&expected, cwd.path())
-                .to_legacy_sandbox_policy(NetworkSandboxPolicy::from(&expected), cwd.path())
-                .expect("legacy bridge should preserve legacy policy semantics");
+            let actual = FileSystemSandboxPolicy::from_sandbox_policy(&expected, cwd.path())
+                .to_sandbox_policy(NetworkSandboxPolicy::from(&expected), cwd.path())
+                .expect("sandbox projection should preserve base policy semantics");
 
             assert_same_sandbox_policy_semantics(&expected, &actual, cwd.path());
         }
@@ -4528,16 +4522,16 @@ mod tests {
             }),
         };
 
-        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
-        assert_eq!(legacy_events.len(), 1);
-        match &legacy_events[0] {
+        let runtime_events = event.as_runtime_events(/*show_raw_agent_reasoning*/ false);
+        assert_eq!(runtime_events.len(), 1);
+        match &runtime_events[0] {
             EventMsg::WebSearchBegin(event) => assert_eq!(event.call_id, "search-1"),
             _ => panic!("expected WebSearchBegin event"),
         }
     }
 
     #[test]
-    fn item_started_event_from_non_web_search_emits_no_legacy_events() {
+    fn item_started_event_from_non_web_search_emits_no_runtime_events() {
         let event = ItemStartedEvent {
             thread_id: ThreadId::new(),
             turn_id: "turn-1".into(),
@@ -4546,7 +4540,7 @@ mod tests {
 
         assert!(
             event
-                .as_legacy_events(/*show_raw_agent_reasoning*/ false)
+                .as_runtime_events(/*show_raw_agent_reasoning*/ false)
                 .is_empty()
         );
     }
@@ -4565,9 +4559,9 @@ mod tests {
             }),
         };
 
-        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
-        assert_eq!(legacy_events.len(), 1);
-        match &legacy_events[0] {
+        let runtime_events = event.as_runtime_events(/*show_raw_agent_reasoning*/ false);
+        assert_eq!(runtime_events.len(), 1);
+        match &runtime_events[0] {
             EventMsg::ImageGenerationBegin(event) => assert_eq!(event.call_id, "ig-1"),
             _ => panic!("expected ImageGenerationBegin event"),
         }
@@ -4587,9 +4581,9 @@ mod tests {
             }),
         };
 
-        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
-        assert_eq!(legacy_events.len(), 1);
-        match &legacy_events[0] {
+        let runtime_events = event.as_runtime_events(/*show_raw_agent_reasoning*/ false);
+        assert_eq!(runtime_events.len(), 1);
+        match &runtime_events[0] {
             EventMsg::ImageGenerationEnd(event) => {
                 assert_eq!(event.call_id, "ig-1");
                 assert_eq!(event.status, "completed");
@@ -4994,7 +4988,6 @@ mod tests {
                 },
             ])),
             model: "gpt-5".to_string(),
-            personality: None,
             collaboration_mode: None,
             realtime_active: None,
             effort: None,

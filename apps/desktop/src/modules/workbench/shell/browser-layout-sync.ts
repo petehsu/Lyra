@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { LyraDesktopApi, WorkbenchBrowserLayoutSnapshot } from "../../../shared/desktop-bridge";
 
+export type BrowserLayoutSyncOptions = {
+  readonly force?: boolean;
+  readonly followUpFrames?: number;
+};
+
 type BrowserPageHostDescriptor = {
   readonly tabId: string;
   readonly zIndex: number;
@@ -55,23 +60,43 @@ export const useWorkbenchBrowserLayoutSync = ({
   const frameRef = useRef<number | null>(null);
   const lastSnapshotKeyRef = useRef<string | null>(null);
 
-  const scheduleSync = useCallback(() => {
+  const scheduleSync = useCallback((options?: BrowserLayoutSyncOptions) => {
+    const followUpFrames = Math.max(0, Math.round(options?.followUpFrames ?? 0));
+    const force = options?.force === true;
+
+    const scheduleFrame = (forceFrame: boolean, remainingFollowUps: number): void => {
+      if (desktopApi === null) {
+        return;
+      }
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = null;
+        if (desktopApi === null) {
+          return;
+        }
+        const snapshot = toSnapshot(descriptorsRef.current, hostByTabIdRef.current);
+        const snapshotKey = JSON.stringify(snapshot);
+        if (forceFrame === false && lastSnapshotKeyRef.current === snapshotKey) {
+          if (remainingFollowUps > 0) {
+            scheduleFrame(false, remainingFollowUps - 1);
+          }
+          return;
+        }
+        lastSnapshotKeyRef.current = snapshotKey;
+        void desktopApi.workbenchBrowser.syncLayout(snapshot);
+        if (remainingFollowUps > 0) {
+          scheduleFrame(false, remainingFollowUps - 1);
+        }
+      });
+    };
+
     if (desktopApi === null) {
       return;
     }
     if (frameRef.current !== null) {
       window.cancelAnimationFrame(frameRef.current);
-    }
-    frameRef.current = window.requestAnimationFrame(() => {
       frameRef.current = null;
-      const snapshot = toSnapshot(descriptorsRef.current, hostByTabIdRef.current);
-      const snapshotKey = JSON.stringify(snapshot);
-      if (lastSnapshotKeyRef.current === snapshotKey) {
-        return;
-      }
-      lastSnapshotKeyRef.current = snapshotKey;
-      void desktopApi.workbenchBrowser.syncLayout(snapshot);
-    });
+    }
+    scheduleFrame(force, followUpFrames);
   }, [desktopApi]);
 
   useEffect(() => {

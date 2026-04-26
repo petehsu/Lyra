@@ -3,7 +3,6 @@ use crate::ClientRequest;
 use crate::ServerNotification;
 use crate::ServerRequest;
 use crate::export::GENERATED_TS_HEADER;
-use crate::export::filter_experimental_ts_tree;
 use crate::export::generate_index_ts_tree;
 use crate::export::trim_trailing_line_whitespace;
 use crate::protocol::common::visit_client_response_types;
@@ -20,11 +19,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use ts_rs::TS;
 use ts_rs::TypeVisitor;
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SchemaFixtureOptions {
-    pub experimental_api: bool,
-}
 
 pub fn read_schema_fixture_tree(schema_root: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>> {
     let typescript_root = schema_root.join("typescript");
@@ -67,7 +61,6 @@ pub fn generate_typescript_schema_fixture_subtree_for_tests() -> Result<BTreeMap
     })?;
     collect_typescript_fixture_file::<ServerNotification>(&mut files, &mut seen)?;
 
-    filter_experimental_ts_tree(&mut files)?;
     generate_index_ts_tree(&mut files);
     for content in files.values_mut() {
         *content = trim_trailing_line_whitespace(content);
@@ -84,30 +77,14 @@ pub fn generate_typescript_schema_fixture_subtree_for_tests() -> Result<BTreeMap
 /// This is intended to be used by tooling (e.g., `just write-app-server-schema`).
 /// It deletes any previously generated files so stale artifacts are removed.
 pub fn write_schema_fixtures(schema_root: &Path, prettier: Option<&Path>) -> Result<()> {
-    write_schema_fixtures_with_options(schema_root, prettier, SchemaFixtureOptions::default())
-}
-
-/// Regenerates schema fixtures with configurable options.
-pub fn write_schema_fixtures_with_options(
-    schema_root: &Path,
-    prettier: Option<&Path>,
-    options: SchemaFixtureOptions,
-) -> Result<()> {
     let typescript_out_dir = schema_root.join("typescript");
     let json_out_dir = schema_root.join("json");
 
     ensure_empty_dir(&typescript_out_dir)?;
     ensure_empty_dir(&json_out_dir)?;
 
-    crate::generate_ts_with_options(
-        &typescript_out_dir,
-        prettier,
-        crate::GenerateTsOptions {
-            experimental_api: options.experimental_api,
-            ..crate::GenerateTsOptions::default()
-        },
-    )?;
-    crate::generate_json_with_experimental(&json_out_dir, options.experimental_api)?;
+    crate::generate_ts(&typescript_out_dir, prettier)?;
+    crate::generate_json(&json_out_dir)?;
 
     Ok(())
 }

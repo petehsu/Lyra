@@ -39,9 +39,6 @@ pub struct ClientInfo {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeCapabilities {
-    /// Opt into receiving experimental API methods and fields.
-    #[serde(default)]
-    pub experimental_api: bool,
     /// Exact notification method names that should be suppressed for this
     /// connection (for example `thread/started`).
     #[ts(optional = nullable)]
@@ -72,6 +69,8 @@ pub struct ConversationSummary {
     pub updated_at: Option<String>,
     pub model_provider: String,
     pub cwd: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bound_project_root: Option<PathBuf>,
     pub cli_version: String,
     pub source: SessionSource,
     pub git_info: Option<ConversationGitInfo>,

@@ -57,8 +57,8 @@ pub struct LandlockCommand {
     /// Opt-in: use the legacy Landlock Linux sandbox fallback.
     ///
     /// When not set, the helper uses the default bubblewrap pipeline.
-    #[arg(long = "use-legacy-landlock", hide = true, default_value_t = false)]
-    pub use_legacy_landlock: bool,
+    #[arg(long = "use-classic-landlock", hide = true, default_value_t = false)]
+    pub use_classic_landlock: bool,
 
     /// Internal: apply seccomp and `no_new_privs` in the already-sandboxed
     /// process, then exec the user command.
@@ -105,7 +105,7 @@ pub fn run_main() -> ! {
         sandbox_policy,
         file_system_sandbox_policy,
         network_sandbox_policy,
-        use_legacy_landlock,
+        use_classic_landlock,
         apply_seccomp_then_exec,
         allow_network_for_proxy,
         proxy_route_spec,
@@ -116,7 +116,7 @@ pub fn run_main() -> ! {
     if command.is_empty() {
         panic!("No command specified to execute.");
     }
-    ensure_inner_stage_mode_is_valid(apply_seccomp_then_exec, use_legacy_landlock);
+    ensure_inner_stage_mode_is_valid(apply_seccomp_then_exec, use_classic_landlock);
     let EffectiveSandboxPolicies {
         sandbox_policy,
         file_system_sandbox_policy,
@@ -128,8 +128,8 @@ pub fn run_main() -> ! {
         network_sandbox_policy,
     )
     .unwrap_or_else(|err| panic!("{err}"));
-    ensure_legacy_landlock_mode_supports_policy(
-        use_legacy_landlock,
+    ensure_classic_landlock_mode_supports_policy(
+        use_classic_landlock,
         &file_system_sandbox_policy,
         network_sandbox_policy,
         &sandbox_policy_cwd,
@@ -174,7 +174,7 @@ pub fn run_main() -> ! {
         exec_or_panic(command);
     }
 
-    if !use_legacy_landlock {
+    if !use_classic_landlock {
         // Outer stage: bubblewrap first, then re-enter this binary in the
         // sandboxed environment to apply seccomp. This path never falls back
         // to legacy Landlock on failure.
@@ -301,7 +301,7 @@ fn resolve_sandbox_policies(
                 });
             }
             let derived_legacy_policy = file_system_sandbox_policy
-                .to_legacy_sandbox_policy(network_sandbox_policy, sandbox_policy_cwd)
+                .to_sandbox_policy(network_sandbox_policy, sandbox_policy_cwd)
                 .map_err(|err| {
                     ResolveSandboxPoliciesError::SplitPoliciesRequireDirectRuntimeEnforcement(
                         err.to_string(),
@@ -324,7 +324,7 @@ fn resolve_sandbox_policies(
             })
         }
         (Some(sandbox_policy), None) => Ok(EffectiveSandboxPolicies {
-            file_system_sandbox_policy: FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+            file_system_sandbox_policy: FileSystemSandboxPolicy::from_sandbox_policy(
                 &sandbox_policy,
                 sandbox_policy_cwd,
             ),
@@ -333,7 +333,7 @@ fn resolve_sandbox_policies(
         }),
         (None, Some((file_system_sandbox_policy, network_sandbox_policy))) => {
             let sandbox_policy = file_system_sandbox_policy
-                .to_legacy_sandbox_policy(network_sandbox_policy, sandbox_policy_cwd)
+                .to_sandbox_policy(network_sandbox_policy, sandbox_policy_cwd)
                 .map_err(|err| {
                     ResolveSandboxPoliciesError::FailedToDeriveLegacyPolicy(err.to_string())
                 })?;
@@ -354,8 +354,8 @@ fn legacy_sandbox_policies_match_semantics(
 ) -> bool {
     NetworkSandboxPolicy::from(provided) == NetworkSandboxPolicy::from(derived)
         && file_system_sandbox_policies_match_semantics(
-            &FileSystemSandboxPolicy::from_legacy_sandbox_policy(provided, sandbox_policy_cwd),
-            &FileSystemSandboxPolicy::from_legacy_sandbox_policy(derived, sandbox_policy_cwd),
+            &FileSystemSandboxPolicy::from_sandbox_policy(provided, sandbox_policy_cwd),
+            &FileSystemSandboxPolicy::from_sandbox_policy(derived, sandbox_policy_cwd),
             sandbox_policy_cwd,
         )
 }
@@ -376,24 +376,24 @@ fn file_system_sandbox_policies_match_semantics(
             == derived.get_unreadable_roots_with_cwd(sandbox_policy_cwd)
 }
 
-fn ensure_inner_stage_mode_is_valid(apply_seccomp_then_exec: bool, use_legacy_landlock: bool) {
-    if apply_seccomp_then_exec && use_legacy_landlock {
-        panic!("--apply-seccomp-then-exec is incompatible with --use-legacy-landlock");
+fn ensure_inner_stage_mode_is_valid(apply_seccomp_then_exec: bool, use_classic_landlock: bool) {
+    if apply_seccomp_then_exec && use_classic_landlock {
+        panic!("--apply-seccomp-then-exec is incompatible with --use-classic-landlock");
     }
 }
 
-fn ensure_legacy_landlock_mode_supports_policy(
-    use_legacy_landlock: bool,
+fn ensure_classic_landlock_mode_supports_policy(
+    use_classic_landlock: bool,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_policy_cwd: &Path,
 ) {
-    if use_legacy_landlock
+    if use_classic_landlock
         && file_system_sandbox_policy
             .needs_direct_runtime_enforcement(network_sandbox_policy, sandbox_policy_cwd)
     {
         panic!(
-            "split sandbox policies requiring direct runtime enforcement are incompatible with --use-legacy-landlock"
+            "split sandbox policies requiring direct runtime enforcement are incompatible with --use-classic-landlock"
         );
     }
 }

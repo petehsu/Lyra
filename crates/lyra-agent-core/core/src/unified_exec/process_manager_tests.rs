@@ -17,6 +17,16 @@ fn unified_exec_env_injects_defaults() {
         ("GIT_PAGER".to_string(), "cat".to_string()),
         ("GH_PAGER".to_string(), "cat".to_string()),
         ("LYRA_CI".to_string(), "1".to_string()),
+        ("npm_config_fetch_retries".to_string(), "0".to_string()),
+        (
+            "npm_config_fetch_retry_maxtimeout".to_string(),
+            "10000".to_string(),
+        ),
+        (
+            "npm_config_fetch_retry_mintimeout".to_string(),
+            "1000".to_string(),
+        ),
+        ("npm_config_fetch_timeout".to_string(), "15000".to_string()),
     ]);
 
     assert_eq!(env, expected);

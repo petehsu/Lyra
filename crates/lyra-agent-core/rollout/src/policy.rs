@@ -91,7 +91,6 @@ fn should_persist_event_msg_extended(ev: &EventMsg) -> bool {
 fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
     match ev {
         EventMsg::UserMessage(_)
-        | EventMsg::AgentMessage(_)
         | EventMsg::AgentReasoning(_)
         | EventMsg::AgentReasoningRawContent(_)
         | EventMsg::TokenCount(_)
@@ -105,17 +104,21 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::TurnComplete(_)
         | EventMsg::ImageGenerationEnd(_) => Some(EventPersistenceMode::Limited),
         EventMsg::ItemCompleted(event) => {
-            // Plan items are derived from streaming tags and are not part of the
-            // raw ResponseItem history, so we persist their completion to replay
-            // them on resume without bloating rollouts with every item lifecycle.
-            if matches!(event.item, lyra_protocol::items::TurnItem::Plan(_)) {
+            // Persist first-class assistant/plan completions as the history
+            // truth. Legacy AgentMessage events are runtime-only and must not
+            // be replayed as separate assistant messages.
+            if matches!(
+                event.item,
+                lyra_protocol::items::TurnItem::AgentMessage(_)
+                    | lyra_protocol::items::TurnItem::Plan(_)
+            ) {
                 Some(EventPersistenceMode::Limited)
             } else {
                 None
             }
         }
         EventMsg::Error(_)
-        | EventMsg::GuardianAssessment(_)
+        | EventMsg::AutoReviewAssessment(_)
         | EventMsg::WebSearchEnd(_)
         | EventMsg::ExecCommandEnd(_)
         | EventMsg::PatchApplyEnd(_)
@@ -129,6 +132,7 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::DynamicToolCallRequest(_)
         | EventMsg::DynamicToolCallResponse(_) => Some(EventPersistenceMode::Extended),
         EventMsg::Warning(_)
+        | EventMsg::AgentMessage(_)
         | EventMsg::RealtimeConversationStarted(_)
         | EventMsg::RealtimeConversationSdp(_)
         | EventMsg::RealtimeConversationRealtime(_)
@@ -187,8 +191,12 @@ mod tests {
     use super::EventPersistenceMode;
     use super::should_persist_event_msg;
     use lyra_protocol::ThreadId;
+    use lyra_protocol::items::AgentMessageContent;
+    use lyra_protocol::items::AgentMessageItem;
+    use lyra_protocol::items::TurnItem;
     use lyra_protocol::protocol::EventMsg;
     use lyra_protocol::protocol::ImageGenerationEndEvent;
+    use lyra_protocol::protocol::ItemCompletedEvent;
     use lyra_protocol::protocol::ThreadNameUpdatedEvent;
 
     #[test]
@@ -215,6 +223,41 @@ mod tests {
         });
 
         assert!(should_persist_event_msg(
+            &event,
+            EventPersistenceMode::Limited
+        ));
+    }
+
+    #[test]
+    fn persists_completed_agent_messages_in_limited_mode() {
+        let event = EventMsg::ItemCompleted(ItemCompletedEvent {
+            thread_id: ThreadId::new(),
+            turn_id: "turn-1".into(),
+            item: TurnItem::AgentMessage(AgentMessageItem {
+                id: "agent-1".into(),
+                content: vec![AgentMessageContent::Text {
+                    text: "done".into(),
+                }],
+                phase: None,
+                memory_citation: None,
+            }),
+        });
+
+        assert!(should_persist_event_msg(
+            &event,
+            EventPersistenceMode::Limited
+        ));
+    }
+
+    #[test]
+    fn does_not_persist_legacy_agent_message_events() {
+        let event = EventMsg::AgentMessage(lyra_protocol::protocol::AgentMessageEvent {
+            message: "done".into(),
+            phase: None,
+            memory_citation: None,
+        });
+
+        assert!(!should_persist_event_msg(
             &event,
             EventPersistenceMode::Limited
         ));

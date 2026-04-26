@@ -315,12 +315,12 @@ impl FileSystemSandboxPolicy {
                 .any(|entry| entry.access == FileSystemAccessMode::None)
     }
 
-    pub fn from_legacy_sandbox_policy_preserving_deny_entries(
+    pub fn from_sandbox_policy_preserving_deny_entries(
         sandbox_policy: &SandboxPolicy,
         cwd: &Path,
         existing: &Self,
     ) -> Self {
-        let mut rebuilt = Self::from_legacy_sandbox_policy(sandbox_policy, cwd);
+        let mut rebuilt = Self::from_sandbox_policy(sandbox_policy, cwd);
         if !matches!(rebuilt.kind, FileSystemSandboxKind::Restricted) {
             return rebuilt;
         }
@@ -377,24 +377,24 @@ impl FileSystemSandboxPolicy {
         })
     }
 
-    /// Converts a legacy sandbox policy into an equivalent filesystem policy
+    /// Converts a base sandbox policy into an equivalent filesystem policy
     /// for the provided cwd.
     ///
-    /// Legacy `WorkspaceWrite` policies may list readable roots that live
+    /// `WorkspaceWrite` policies may list readable roots that live
     /// under an already-writable root. Those paths were redundant in the
-    /// legacy model and should not become read-only carveouts when projected
+    /// base model and should not become read-only carveouts when projected
     /// into split filesystem policy.
-    pub fn from_legacy_sandbox_policy(sandbox_policy: &SandboxPolicy, cwd: &Path) -> Self {
+    pub fn from_sandbox_policy(sandbox_policy: &SandboxPolicy, cwd: &Path) -> Self {
         let mut file_system_policy = Self::from(sandbox_policy);
         if let SandboxPolicy::WorkspaceWrite { writable_roots, .. } = sandbox_policy {
-            let legacy_writable_roots = sandbox_policy.get_writable_roots_with_cwd(cwd);
+            let writable_roots_for_policy = sandbox_policy.get_writable_roots_with_cwd(cwd);
             file_system_policy.entries.retain(|entry| {
                 if entry.access != FileSystemAccessMode::Read {
                     return true;
                 }
 
                 match &entry.path {
-                    FileSystemPath::Path { path } => !legacy_writable_roots
+                    FileSystemPath::Path { path } => !writable_roots_for_policy
                         .iter()
                         .any(|root| root.is_path_writable(path.as_path())),
                     FileSystemPath::GlobPattern { .. } => true,
@@ -543,12 +543,12 @@ impl FileSystemSandboxPolicy {
             return false;
         }
 
-        let Ok(legacy_policy) = self.to_legacy_sandbox_policy(network_policy, cwd) else {
+        let Ok(projected_policy) = self.to_sandbox_policy(network_policy, cwd) else {
             return true;
         };
 
         self.semantic_signature(cwd)
-            != FileSystemSandboxPolicy::from_legacy_sandbox_policy(&legacy_policy, cwd)
+            != FileSystemSandboxPolicy::from_sandbox_policy(&projected_policy, cwd)
                 .semantic_signature(cwd)
     }
 
@@ -730,7 +730,7 @@ impl FileSystemSandboxPolicy {
         patterns
     }
 
-    pub fn to_legacy_sandbox_policy(
+    pub fn to_sandbox_policy(
         &self,
         network_policy: NetworkSandboxPolicy,
         cwd: &Path,
@@ -1450,7 +1450,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_special_paths_are_ignored_by_legacy_bridge() -> std::io::Result<()> {
+    fn unknown_special_paths_are_ignored_by_projection() -> std::io::Result<()> {
         let policy = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
             path: FileSystemPath::Special {
                 value: FileSystemSpecialPath::unknown(
@@ -1461,7 +1461,7 @@ mod tests {
             access: FileSystemAccessMode::Write,
         }]);
 
-        let sandbox_policy = policy.to_legacy_sandbox_policy(
+        let sandbox_policy = policy.to_sandbox_policy(
             NetworkSandboxPolicy::Restricted,
             Path::new("/tmp/workspace"),
         )?;
@@ -1551,7 +1551,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_workspace_write_projection_blocks_missing_dot_lyra_writes() {
+    fn projected_workspace_write_projection_blocks_missing_dot_lyra_writes() {
         let cwd = TempDir::new().expect("tempdir");
         let dot_lyra_config = cwd.path().join(".lyra").join("config.toml");
         let policy = SandboxPolicy::WorkspaceWrite {
@@ -1565,14 +1565,13 @@ mod tests {
             exclude_slash_tmp: true,
         };
 
-        let file_system_policy =
-            FileSystemSandboxPolicy::from_legacy_sandbox_policy(&policy, cwd.path());
+        let file_system_policy = FileSystemSandboxPolicy::from_sandbox_policy(&policy, cwd.path());
 
         assert!(!file_system_policy.can_write_path_with_cwd(&dot_lyra_config, cwd.path()));
     }
 
     #[test]
-    fn legacy_workspace_write_projection_accepts_relative_cwd() {
+    fn projected_workspace_write_projection_accepts_relative_cwd() {
         let relative_cwd = Path::new("workspace");
         let expected_dot_lyra = AbsolutePathBuf::from_absolute_path(
             std::env::current_dir()
@@ -1593,7 +1592,7 @@ mod tests {
         };
 
         let file_system_policy =
-            FileSystemSandboxPolicy::from_legacy_sandbox_policy(&policy, relative_cwd);
+            FileSystemSandboxPolicy::from_sandbox_policy(&policy, relative_cwd);
 
         assert_eq!(
             file_system_policy,
@@ -2052,12 +2051,12 @@ mod tests {
             policy.needs_direct_runtime_enforcement(NetworkSandboxPolicy::Restricted, cwd.path(),)
         );
 
-        let legacy_workspace_write = FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+        let projected_workspace_write = FileSystemSandboxPolicy::from_sandbox_policy(
             &SandboxPolicy::new_workspace_write_policy(),
             cwd.path(),
         );
         assert!(
-            !legacy_workspace_write
+            !projected_workspace_write
                 .needs_direct_runtime_enforcement(NetworkSandboxPolicy::Restricted, cwd.path(),)
         );
     }
@@ -2254,7 +2253,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_bridge_preserves_explicit_deny_entries() {
+    fn projection_preserves_explicit_deny_entries() {
         let denied = AbsolutePathBuf::try_from("/tmp/private").expect("absolute path");
         let existing = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
             path: FileSystemPath::Path {
@@ -2263,7 +2262,7 @@ mod tests {
             access: FileSystemAccessMode::None,
         }]);
 
-        let rebuilt = FileSystemSandboxPolicy::from_legacy_sandbox_policy_preserving_deny_entries(
+        let rebuilt = FileSystemSandboxPolicy::from_sandbox_policy_preserving_deny_entries(
             &SandboxPolicy::new_workspace_write_policy(),
             Path::new("/tmp/workspace"),
             &existing,

@@ -50,14 +50,20 @@ impl ToolHandler for DynamicToolHandler {
         };
 
         let args: Value = parse_arguments(&arguments)?;
-        let response =
-            request_dynamic_tool(&session, turn.as_ref(), call_id, tool_name.display(), args)
-                .await
-                .ok_or_else(|| {
-                    FunctionCallError::RespondToModel(
-                        "dynamic tool call was cancelled before receiving a response".to_string(),
-                    )
-                })?;
+        let response = request_dynamic_tool(
+            &session,
+            turn.as_ref(),
+            call_id,
+            tool_name.namespace.clone(),
+            tool_name.name.clone(),
+            args,
+        )
+        .await
+        .ok_or_else(|| {
+            FunctionCallError::RespondToModel(
+                "dynamic tool call was cancelled before receiving a response".to_string(),
+            )
+        })?;
 
         let DynamicToolResponse {
             content_items,
@@ -75,6 +81,7 @@ async fn request_dynamic_tool(
     session: &Session,
     turn_context: &TurnContext,
     call_id: String,
+    namespace: Option<String>,
     tool: String,
     arguments: Value,
 ) -> Option<DynamicToolResponse> {
@@ -99,6 +106,7 @@ async fn request_dynamic_tool(
     let event = EventMsg::DynamicToolCallRequest(DynamicToolCallRequest {
         call_id: call_id.clone(),
         turn_id: turn_id.clone(),
+        namespace,
         tool: tool.clone(),
         arguments: arguments.clone(),
     });

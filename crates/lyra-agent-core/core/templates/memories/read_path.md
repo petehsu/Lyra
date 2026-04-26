@@ -10,6 +10,8 @@ Decision boundary:
 
 - Skip memory only when the request is clearly self-contained and does not need
   repo history, prior turns, stored preferences, or repeated workflow context.
+- Hard skip examples: current time/date, simple translation, one-line shell
+  command, trivial formatting, or other obviously self-contained requests.
 - Use memory by default when the task is non-trivial, ambiguous, ongoing, or
   likely to depend on previous work in this workspace.
 - If unsure, do a lightweight memory pass.
@@ -45,6 +47,13 @@ Quick memory pass:
 4. Only inspect cut shards when live session history is insufficient.
 5. Use `dynamic_prompt_cache.md` only as a quick derived snapshot, not as final truth.
 
+Quick-pass budget:
+
+- Keep memory lookup lightweight: ideally no more than 4-6 narrow reads before
+  starting main work.
+- Avoid broad scans of cut packs or full sqlite dumps unless the task clearly
+  needs exact older evidence.
+
 Query guidance:
 
 - Prefer narrow reads over broad scans.
@@ -52,6 +61,16 @@ Query guidance:
 - Treat `session.sqlite`, cut packs, `shared_truth.sqlite`, `frozen_truth.sqlite`,
   and `conflict_sets.sqlite` as the actual truth layers.
 - Treat `shared_memory.md` and `frozen_memory.md` as projections generated from truth DBs.
+
+Verification guidance:
+
+- If a memory-derived fact is likely to drift and is cheap to verify from truth,
+  verify it before answering.
+- If a memory-derived fact may be stale but verification is expensive or
+  disruptive, it is acceptable to answer from memory in an interactive turn, but
+  say briefly that it is memory-derived and may be outdated.
+- Prefer a short refresh/verification offer over silently doing expensive memory
+  re-scans that the user did not ask for.
 
 Citation requirements:
 
@@ -66,6 +85,9 @@ Citation requirements:
   - `sessions/{{ current_session_id }}/session.sqlite:session_dialog|note=[recent turn context]`
   - `sessions/{{ current_session_id }}/cuts/cut_pack_0001.sqlite:cut_payload|note=[trimmed history lookup]`
 - `rollout_ids` may remain empty if Lyra truth sources do not provide rollout ids.
+- Do not cite workspace files as memory citations. Only cite files or truth
+  stores that live under `{{ lyra_truth_root }}`.
+- Keep notes short, single-line, and specific about how memory influenced the answer.
 
 ========= CURRENT SESSION EXCERPT BEGINS =========
 {{ current_session_excerpt }}

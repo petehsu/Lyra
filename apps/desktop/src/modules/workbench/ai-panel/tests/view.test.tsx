@@ -69,10 +69,9 @@ describe("ai panel surface topbar", () => {
     );
 
     expect(screen.queryByText("AI 面板")).toBeNull();
-    expect(screen.getByRole("button", { name: "新会话" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "新会话" })).toBeDefined();
     expect(screen.getByRole("button", { name: "历史记录" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "MCP" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "技能" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "更多操作" })).toBeDefined();
     expect(screen.getByRole("button", { name: "绑定项目" })).toBeDisabled();
   });
 });

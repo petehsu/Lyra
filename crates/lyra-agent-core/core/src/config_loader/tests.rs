@@ -533,7 +533,7 @@ allowed_web_search_modes = ["cached"]
 enforce_residency = "us"
 
 [features]
-personality = true
+apps = true
 "#,
     )
     .await?;
@@ -567,7 +567,7 @@ personality = true
             .as_ref()
             .map(|requirements| requirements.value.clone()),
         Some(crate::config_loader::FeatureRequirementsToml {
-            entries: BTreeMap::from([("personality".to_string(), true)]),
+            entries: BTreeMap::from([("apps".to_string(), true)]),
         })
     );
     let config_requirements: ConfigRequirements = config_requirements_toml.try_into()?;
@@ -613,7 +613,7 @@ personality = true
             .as_ref()
             .map(|requirements| requirements.value.clone()),
         Some(crate::config_loader::FeatureRequirementsToml {
-            entries: BTreeMap::from([("personality".to_string(), true)]),
+            entries: BTreeMap::from([("apps".to_string(), true)]),
         })
     );
     Ok(())
@@ -653,7 +653,7 @@ allowed_approval_policies = ["on-request"]
                 enforce_residency: None,
                 network: None,
                 permissions: None,
-                guardian_policy_config: None,
+                auto_review_policy_config: None,
             }))
         }),
     )
@@ -706,7 +706,7 @@ allowed_approval_policies = ["on-request"]
             enforce_residency: None,
             network: None,
             permissions: None,
-            guardian_policy_config: None,
+            auto_review_policy_config: None,
         },
     );
     load_requirements_toml(
@@ -862,7 +862,7 @@ async fn load_config_layers_includes_cloud_requirements() -> anyhow::Result<()> 
         enforce_residency: None,
         network: None,
         permissions: None,
-        guardian_policy_config: None,
+        auto_review_policy_config: None,
     };
     let expected = requirements.clone();
     let cloud_requirements = CloudRequirementsLoader::new(async move { Ok(Some(requirements)) });

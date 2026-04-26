@@ -6,7 +6,6 @@ use serde::Serialize;
 use crate::config_toml::ToolsToml;
 use crate::types::AnalyticsConfigToml;
 use crate::types::ApprovalsReviewer;
-use crate::types::Personality;
 use crate::types::WindowsToml;
 use lyra_features::FeaturesToml;
 use lyra_protocol::config_types::ReasoningSummary;
@@ -36,7 +35,6 @@ pub struct ConfigProfile {
     pub model_verbosity: Option<Verbosity>,
     /// Optional path to a JSON model catalog (applied on startup only).
     pub model_catalog_json: Option<AbsolutePathBuf>,
-    pub personality: Option<Personality>,
     /// Optional path to a file containing model instructions.
     pub model_instructions_file: Option<AbsolutePathBuf>,
     pub js_repl_node_path: Option<AbsolutePathBuf>,
@@ -44,15 +42,9 @@ pub struct ConfigProfile {
     pub js_repl_node_module_dirs: Option<Vec<AbsolutePathBuf>>,
     /// Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution.
     pub zsh_path: Option<AbsolutePathBuf>,
-    /// Deprecated: ignored. Use `model_instructions_file`.
-    #[schemars(skip)]
-    pub experimental_instructions_file: Option<AbsolutePathBuf>,
-    pub include_apply_patch_tool: Option<bool>,
     pub include_permissions_instructions: Option<bool>,
     pub include_apps_instructions: Option<bool>,
     pub include_environment_context: Option<bool>,
-    pub experimental_use_unified_exec_tool: Option<bool>,
-    pub experimental_use_freeform_apply_patch: Option<bool>,
     pub tools_view_image: Option<bool>,
     pub tools: Option<ToolsToml>,
     pub web_search: Option<WebSearchMode>,

@@ -10,8 +10,6 @@ use lyra_app_server_protocol::ConfigRequirementsReadResponse;
 use lyra_app_server_protocol::ConfigValueWriteParams;
 use lyra_app_server_protocol::ConfigWriteErrorCode;
 use lyra_app_server_protocol::ConfigWriteResponse;
-use lyra_app_server_protocol::ExperimentalFeatureEnablementSetParams;
-use lyra_app_server_protocol::ExperimentalFeatureEnablementSetResponse;
 use lyra_app_server_protocol::JSONRPCErrorError;
 use lyra_app_server_protocol::NetworkDomainPermission;
 use lyra_app_server_protocol::NetworkRequirements;
@@ -29,7 +27,6 @@ use lyra_core::config_loader::SandboxModeRequirement as CoreSandboxModeRequireme
 use lyra_core::plugins::PluginId;
 use lyra_core_plugins::loader::installed_plugin_telemetry_metadata;
 use lyra_core_plugins::toggles::collect_plugin_enabled_candidates;
-use lyra_features::canonical_feature_for_key;
 use lyra_features::feature_for_key;
 use lyra_protocol::config_types::WebSearchMode;
 use lyra_protocol::protocol::Op;
@@ -42,12 +39,13 @@ use std::sync::RwLock;
 use toml::Value as TomlValue;
 use tracing::warn;
 
-const SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT: &[&str] = &[
+const RUNTIME_EXPOSED_FEATURE_KEYS: &[&str] = &[
     "apps",
     "plugins",
     "tool_search",
     "tool_suggest",
     "tool_call_mcp_elicitation",
+    "js_repl",
 ];
 
 #[async_trait]
@@ -164,7 +162,7 @@ impl ConfigApi {
             .await
             .map_err(map_error)?;
         let config = self.load_latest_config(fallback_cwd).await?;
-        for feature_key in SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT {
+        for feature_key in RUNTIME_EXPOSED_FEATURE_KEYS {
             let Some(feature) = feature_for_key(feature_key) else {
                 continue;
             };
@@ -237,68 +235,6 @@ impl ConfigApi {
         Ok(response)
     }
 
-    pub(crate) async fn set_experimental_feature_enablement(
-        &self,
-        params: ExperimentalFeatureEnablementSetParams,
-    ) -> Result<ExperimentalFeatureEnablementSetResponse, JSONRPCErrorError> {
-        let ExperimentalFeatureEnablementSetParams { enablement } = params;
-        for key in enablement.keys() {
-            if canonical_feature_for_key(key).is_some() {
-                if SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT.contains(&key.as_str()) {
-                    continue;
-                }
-
-                return Err(JSONRPCErrorError {
-                    code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!(
-                        "unsupported feature enablement `{key}`: currently supported features are {}",
-                        SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT.join(", ")
-                    ),
-                    data: None,
-                });
-            }
-
-            let message = if let Some(feature) = feature_for_key(key) {
-                format!(
-                    "invalid feature enablement `{key}`: use canonical feature key `{}`",
-                    feature.key()
-                )
-            } else {
-                format!("invalid feature enablement `{key}`")
-            };
-            return Err(JSONRPCErrorError {
-                code: INVALID_REQUEST_ERROR_CODE,
-                message,
-                data: None,
-            });
-        }
-
-        if enablement.is_empty() {
-            return Ok(ExperimentalFeatureEnablementSetResponse { enablement });
-        }
-
-        {
-            let mut runtime_feature_enablement =
-                self.runtime_feature_enablement
-                    .write()
-                    .map_err(|_| JSONRPCErrorError {
-                        code: INTERNAL_ERROR_CODE,
-                        message: "failed to update feature enablement".to_string(),
-                        data: None,
-                    })?;
-            runtime_feature_enablement.extend(
-                enablement
-                    .iter()
-                    .map(|(name, enabled)| (name.clone(), *enabled)),
-            );
-        }
-
-        self.load_latest_config(/*fallback_cwd*/ None).await?;
-        self.user_config_reloader.reload_user_config().await;
-
-        Ok(ExperimentalFeatureEnablementSetResponse { enablement })
-    }
-
     async fn emit_plugin_toggle_events(
         &self,
         pending_changes: std::collections::BTreeMap<String, bool>,
@@ -351,13 +287,7 @@ pub(crate) fn apply_runtime_feature_enablement(
         let Some(feature) = feature_for_key(name) else {
             continue;
         };
-        if let Err(err) = config.features.set_enabled(feature, *enabled) {
-            warn!(
-                feature = name,
-                error = %err,
-                "failed to apply runtime feature enablement"
-            );
-        }
+        let _ = config.features.set_enabled(feature, *enabled);
     }
 }
 
@@ -557,7 +487,7 @@ mod tests {
             ]),
             allowed_approvals_reviewers: Some(vec![
                 CoreApprovalsReviewer::User,
-                CoreApprovalsReviewer::GuardianSubagent,
+                CoreApprovalsReviewer::AutoReview,
             ]),
             allowed_sandbox_modes: Some(vec![
                 CoreSandboxModeRequirement::ReadOnly,
@@ -566,12 +496,9 @@ mod tests {
             allowed_web_search_modes: Some(vec![
                 lyra_core::config_loader::WebSearchModeRequirement::Cached,
             ]),
-            guardian_policy_config: None,
+            auto_review_policy_config: None,
             feature_requirements: Some(lyra_core::config_loader::FeatureRequirementsToml {
-                entries: std::collections::BTreeMap::from([
-                    ("apps".to_string(), false),
-                    ("personality".to_string(), true),
-                ]),
+                entries: std::collections::BTreeMap::from([("apps".to_string(), false)]),
             }),
             mcp_servers: None,
             apps: None,
@@ -621,7 +548,7 @@ mod tests {
             mapped.allowed_approvals_reviewers,
             Some(vec![
                 lyra_app_server_protocol::ApprovalsReviewer::User,
-                lyra_app_server_protocol::ApprovalsReviewer::GuardianSubagent,
+                lyra_app_server_protocol::ApprovalsReviewer::AutoReview,
             ])
         );
         assert_eq!(
@@ -634,10 +561,10 @@ mod tests {
         );
         assert_eq!(
             mapped.feature_requirements,
-            Some(std::collections::BTreeMap::from([
-                ("apps".to_string(), false),
-                ("personality".to_string(), true),
-            ])),
+            Some(std::collections::BTreeMap::from([(
+                "apps".to_string(),
+                false
+            )])),
         );
         assert_eq!(
             mapped.enforce_residency,
@@ -679,7 +606,7 @@ mod tests {
             allowed_approvals_reviewers: None,
             allowed_sandbox_modes: None,
             allowed_web_search_modes: None,
-            guardian_policy_config: None,
+            auto_review_policy_config: None,
             feature_requirements: None,
             mcp_servers: None,
             apps: None,
@@ -737,7 +664,7 @@ mod tests {
             allowed_approvals_reviewers: None,
             allowed_sandbox_modes: None,
             allowed_web_search_modes: Some(Vec::new()),
-            guardian_policy_config: None,
+            auto_review_policy_config: None,
             feature_requirements: None,
             mcp_servers: None,
             apps: None,

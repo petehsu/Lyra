@@ -9,9 +9,9 @@ use bm25::Document;
 use bm25::Language;
 use bm25::SearchEngine;
 use bm25::SearchEngineBuilder;
+use lyra_tools::LoadableToolSpec;
 use lyra_tools::TOOL_SEARCH_DEFAULT_LIMIT;
 use lyra_tools::TOOL_SEARCH_TOOL_NAME;
-use lyra_tools::ToolSearchOutputTool;
 use std::collections::HashMap;
 
 const COMPUTER_USE_MCP_SERVER_NAME: &str = "computer-use";
@@ -93,7 +93,7 @@ impl ToolSearchHandler {
         query: &str,
         limit: usize,
         use_default_limit: bool,
-    ) -> Result<Vec<ToolSearchOutputTool>, FunctionCallError> {
+    ) -> Result<Vec<LoadableToolSpec>, FunctionCallError> {
         let results = self.search_result_entries(query, limit, use_default_limit);
         self.search_output_tools(results)
     }
@@ -135,28 +135,24 @@ impl ToolSearchHandler {
     fn search_output_tools<'a>(
         &self,
         results: impl IntoIterator<Item = &'a ToolSearchEntry>,
-    ) -> Result<Vec<ToolSearchOutputTool>, FunctionCallError> {
+    ) -> Result<Vec<LoadableToolSpec>, FunctionCallError> {
         let mut tools = Vec::new();
         // Preserve search order: group namespace children, emit standalone tools directly.
         for entry in results {
             match &entry.output {
-                ToolSearchOutputTool::Function(tool) => {
-                    tools.push(ToolSearchOutputTool::Function(tool.clone()));
+                LoadableToolSpec::Function(tool) => {
+                    tools.push(LoadableToolSpec::Function(tool.clone()));
                 }
-                ToolSearchOutputTool::Namespace(namespace) => {
+                LoadableToolSpec::Namespace(namespace) => {
                     if let Some(output) = tools.iter_mut().find_map(|tool| match tool {
-                        ToolSearchOutputTool::Namespace(output)
-                            if output.name == namespace.name =>
-                        {
+                        LoadableToolSpec::Namespace(output) if output.name == namespace.name => {
                             Some(output)
                         }
-                        ToolSearchOutputTool::Namespace(_) | ToolSearchOutputTool::Function(_) => {
-                            None
-                        }
+                        LoadableToolSpec::Namespace(_) | LoadableToolSpec::Function(_) => None,
                     }) {
                         output.tools.extend(namespace.tools.clone());
                     } else {
-                        tools.push(ToolSearchOutputTool::Namespace(namespace.clone()));
+                        tools.push(LoadableToolSpec::Namespace(namespace.clone()));
                     }
                 }
             }
@@ -199,6 +195,7 @@ mod tests {
     use crate::tools::tool_search_entry::build_tool_search_entries;
     use lyra_mcp::ToolInfo;
     use lyra_protocol::dynamic_tools::DynamicToolSpec;
+    use lyra_tools::LoadableToolSpec;
     use lyra_tools::ResponsesApiNamespace;
     use lyra_tools::ResponsesApiNamespaceTool;
     use lyra_tools::ResponsesApiTool;
@@ -209,6 +206,7 @@ mod tests {
     #[test]
     fn mixed_search_results_coalesce_mcp_namespaces() {
         let dynamic_tools = vec![DynamicToolSpec {
+            namespace: None,
             name: "automation_update".to_string(),
             description: "Create, update, view, or delete recurring automations.".to_string(),
             input_schema: serde_json::json!({
@@ -247,7 +245,7 @@ mod tests {
         assert_eq!(
             tools,
             vec![
-                ToolSearchOutputTool::Namespace(ResponsesApiNamespace {
+                LoadableToolSpec::Namespace(ResponsesApiNamespace {
                     name: "mcp__calendar__".to_string(),
                     description: "Tools in the mcp__calendar__ namespace.".to_string(),
                     tools: vec![
@@ -277,7 +275,7 @@ mod tests {
                         }),
                     ],
                 }),
-                ToolSearchOutputTool::Function(ResponsesApiTool {
+                LoadableToolSpec::Function(ResponsesApiTool {
                     name: "automation_update".to_string(),
                     description: "Create, update, view, or delete recurring automations."
                         .to_string(),

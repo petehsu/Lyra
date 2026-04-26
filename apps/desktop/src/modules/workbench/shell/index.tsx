@@ -1,4 +1,4 @@
-import { BookText, Folder, Minus, PanelBottom, Settings2, Square, X } from "lucide-react";
+import { BookText, Folder, Minus, PanelBottom, PanelTop, Settings2, Square, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -83,6 +83,11 @@ import type {
   BrowserUseRuntimeStatus,
   WorkbenchBrowserPageRuntimeState
 } from "../../../shared/desktop-bridge";
+import {
+  areWebThemeSnapshotsEquivalent,
+  buildWebThemeSnapshot,
+  DEFAULT_WEB_THEME_SNAPSHOT
+} from "../../../shared/web-theme";
 
 type PageNavigationState = {
   readonly canGoBack: boolean;
@@ -92,6 +97,27 @@ type PageNavigationState = {
 const DEFAULT_PAGE_NAVIGATION_STATE: PageNavigationState = {
   canGoBack: false,
   canGoForward: false
+};
+
+type LyraConfigReadResponse = {
+  readonly config?: Record<string, unknown>;
+};
+
+const createLyraRequestPayload = (
+  method: string,
+  params: Record<string, unknown> = {}
+): Record<string, unknown> => ({
+  method,
+  params
+});
+
+const readJsReplEnabledFromConfig = (config: Record<string, unknown> | undefined): boolean => {
+  const features = config?.features;
+  if (features !== null && typeof features === "object" && !Array.isArray(features)) {
+    const value = (features as Record<string, unknown>).js_repl;
+    return typeof value === "boolean" ? value : true;
+  }
+  return true;
 };
 
 export const WorkbenchShell = () => {
@@ -104,6 +130,9 @@ export const WorkbenchShell = () => {
     splitThreePaneLayout: "adaptive",
     splitOverflowPolicy: "block_with_notice",
     aiRichRenderingEnabled: true,
+    aiStopBehavior: "turn_only",
+    preventSleepEnabled: true,
+    forceWebPageThemingEnabled: true,
     searchScopePreset: "home",
     searchCustomRoots: [],
     searchEnableFuzzy: true,
@@ -122,6 +151,48 @@ export const WorkbenchShell = () => {
     browserAutomationEngine: "lyra_direct",
     lyraDirectMicroExecutorBudget: "3-5"
   });
+  const [jsReplEnabled, setJsReplEnabled] = useState(true);
+
+  const syncJsReplSetting = useCallback(async () => {
+    const lyraApi = desktopApi?.lyra ?? null;
+    if (lyraApi === null) {
+      setJsReplEnabled(true);
+      return;
+    }
+    try {
+      const response = await lyraApi.request<LyraConfigReadResponse>(
+        createLyraRequestPayload("config/read")
+      );
+      setJsReplEnabled(readJsReplEnabledFromConfig(response.config));
+    } catch (error) {
+      console.warn(`[lyra-settings] failed to read js_repl setting ${String(error)}`);
+    }
+  }, [desktopApi]);
+
+  const updateJsReplSetting = useCallback((enabled: boolean): void => {
+    setJsReplEnabled(enabled);
+    const lyraApi = desktopApi?.lyra ?? null;
+    if (lyraApi === null) {
+      return;
+    }
+    void lyraApi.request(createLyraRequestPayload("config/batchWrite", {
+      edits: [
+        {
+          keyPath: "features.js_repl",
+          value: enabled,
+          mergeStrategy: "replace"
+        }
+      ],
+      reloadUserConfig: true
+    })).catch((error: unknown) => {
+      console.warn(`[lyra-settings] failed to write js_repl setting ${String(error)}`);
+      void syncJsReplSetting();
+    });
+  }, [desktopApi, syncJsReplSetting]);
+
+  useEffect(() => {
+    void syncJsReplSetting();
+  }, [syncJsReplSetting]);
 
   const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() =>
     readSystemPrefersDark()
@@ -258,6 +329,8 @@ export const WorkbenchShell = () => {
       newTab: t("terminal.newTab"),
       splitHorizontal: t("terminal.splitHorizontal"),
       splitVertical: t("terminal.splitVertical"),
+      moveTerminalToTop: t("panel.moveTerminalToTop"),
+      moveTerminalToBottom: t("panel.moveTerminalToBottom"),
       closeTab: t("terminal.closeTab"),
       emptyDock: t("terminal.emptyDock"),
       unavailable: t("terminal.unavailable")
@@ -427,6 +500,23 @@ export const WorkbenchShell = () => {
       pages
     });
   }, [activeBrowserTabId, desktopApi, tabsModel.tabs]);
+
+  const webThemeSnapshotRef = useRef(DEFAULT_WEB_THEME_SNAPSHOT);
+  useEffect(() => {
+    if (desktopApi === null) {
+      return;
+    }
+    const nextSnapshot = buildWebThemeSnapshot({
+      vars: themeVars,
+      enabled: preferencesModel.preferences.forceWebPageThemingEnabled,
+      previousRevision: webThemeSnapshotRef.current.revision
+    });
+    if (areWebThemeSnapshotsEquivalent(webThemeSnapshotRef.current, nextSnapshot)) {
+      return;
+    }
+    webThemeSnapshotRef.current = nextSnapshot;
+    void desktopApi.workbenchBrowser.applyWebTheme(nextSnapshot);
+  }, [desktopApi, preferencesModel.preferences.forceWebPageThemingEnabled, themeVars]);
 
   useEffect(() => {
     if (desktopApi === null) {
@@ -1015,17 +1105,23 @@ export const WorkbenchShell = () => {
       description: t("settings.aiCategoryLabel"),
       themeSignature: resolvedThemeId,
       richRenderingEnabled: preferencesModel.preferences.aiRichRenderingEnabled,
+      stopBehavior: preferencesModel.preferences.aiStopBehavior,
       newSessionTitle: t("ai.sessionDefaultTitle"),
       defaultProfileId: settingsAiModel.defaultProfileId,
       defaultProviderId: settingsAiModel.defaultProviderId,
       defaultProfileName: settingsAiModel.defaultProfileLabel,
       defaultModelNames: settingsAiModel.defaultModelNames,
+      configuredProfiles: settingsAiModel.profiles,
       profileLabel: t("ai.profileLabel"),
       modelLabel: t("ai.modelLabel"),
       modelsLabel: t("ai.modelsLabel"),
       openHistoryLabel: t("ai.openHistory"),
       openMcpLabel: t("ai.openMcp"),
       openSkillsLabel: t("ai.openSkills"),
+      aiPanelSide: panelLayoutModel.aiPanelSide,
+      onToggleAiPanelSide: panelLayoutModel.toggleAiPanelSide,
+      movePanelToLeftLabel: t("ai.movePanelToLeft"),
+      movePanelToRightLabel: t("ai.movePanelToRight"),
       bindProjectLabel: t("ai.bindProjectLabel"),
       composeAriaLabel: t("sidebar.composeAriaLabel"),
       composePlaceholder: t("sidebar.composePlaceholder"),
@@ -1074,13 +1170,18 @@ export const WorkbenchShell = () => {
       onOpenSkills: () => {
         tabsModel.openAppTab(createAiSkillsAppRequest(t("ai.skillsTabTitle")));
       },
-      onRequestProjectBind: requestProjectBind
+      onRequestProjectBind: requestProjectBind,
+      openDialog: globalDialogModel.openDialog
     };
   }, [
     desktopApi,
+    globalDialogModel.openDialog,
     requestProjectBind,
     resolvedThemeId,
+    panelLayoutModel.aiPanelSide,
+    panelLayoutModel.toggleAiPanelSide,
     preferencesModel.preferences.aiRichRenderingEnabled,
+    preferencesModel.preferences.aiStopBehavior,
     preferencesModel.preferences.locale,
     settingsAiModel.defaultModelNames,
     settingsAiModel.defaultProfileId,
@@ -1311,8 +1412,18 @@ export const WorkbenchShell = () => {
   );
 
   useEffect(() => {
-    scheduleBrowserLayoutSync();
-  }, [panelLayoutModel.cssVars, scheduleBrowserLayoutSync, stackedBrowserTabs, tabsModel.activeTabId]);
+    scheduleBrowserLayoutSync({
+      force: true,
+      followUpFrames: 4
+    });
+  }, [
+    panelLayoutModel.aiPanelSide,
+    panelLayoutModel.terminalPanelSide,
+    panelLayoutModel.cssVars,
+    scheduleBrowserLayoutSync,
+    stackedBrowserTabs,
+    tabsModel.activeTabId
+  ]);
 
   useEffect(() => {
     syncCssVarsToDocumentRoot({
@@ -2203,7 +2314,11 @@ export const WorkbenchShell = () => {
             aria-label={t("panel.toggleBottom")}
             onClick={panelLayoutModel.toggleBottomPanel}
           >
-            <PanelBottom size={14} />
+            {panelLayoutModel.terminalPanelSide === "top" ? (
+              <PanelTop size={14} />
+            ) : (
+              <PanelBottom size={14} />
+            )}
           </button>
           <button
             className="lyra-window-button"
@@ -2286,17 +2401,29 @@ export const WorkbenchShell = () => {
         </div>
       </header>
 
-      <section className="lyra-main">
-        {panelLayoutModel.isLeftPanelVisible ? (
-          <aside className="lyra-panel lyra-panel-left" aria-label="left-panel">
-            {sidebarAiSurfacePropsWithFileOpen === null ? null : (
-              <AiPanelSurface
-                variant="sidebar"
-                {...sidebarAiSurfacePropsWithFileOpen}
-              />
-            )}
-          </aside>
-        ) : null}
+      <section
+        className={
+          panelLayoutModel.aiPanelSide === "right"
+            ? "lyra-main lyra-main-ai-panel-right"
+            : "lyra-main lyra-main-ai-panel-left"
+        }
+      >
+        <aside
+          className={
+            panelLayoutModel.isLeftPanelVisible
+              ? "lyra-panel lyra-panel-left"
+              : "lyra-panel lyra-panel-left lyra-panel-left-hidden"
+          }
+          aria-label="left-panel"
+          aria-hidden={panelLayoutModel.isLeftPanelVisible ? undefined : true}
+        >
+          {sidebarAiSurfacePropsWithFileOpen === null ? null : (
+            <AiPanelSurface
+              variant="sidebar"
+              {...sidebarAiSurfacePropsWithFileOpen}
+            />
+          )}
+        </aside>
         {panelLayoutModel.isLeftPanelVisible ? (
           <div
             className="lyra-resizer lyra-resizer-vertical"
@@ -2307,7 +2434,13 @@ export const WorkbenchShell = () => {
           />
         ) : null}
 
-        <section className="lyra-center-stack">
+        <section
+          className={
+            panelLayoutModel.terminalPanelSide === "top"
+              ? "lyra-center-stack lyra-center-stack-terminal-top"
+              : "lyra-center-stack lyra-center-stack-terminal-bottom"
+          }
+        >
           <section className="lyra-workspace" aria-label="workspace">
             <WorkspaceSurfaceRouter
               activeTab={activeTab}
@@ -2366,6 +2499,30 @@ export const WorkbenchShell = () => {
                 aiRichRenderDescription: t("settings.aiRichRenderDescription"),
                 aiRichRenderEnabledLabel: t("settings.aiRichRenderEnabled"),
                 aiRichRenderDisabledLabel: t("settings.aiRichRenderDisabled"),
+                aiStopBehaviorLabel: t("settings.aiStopBehaviorLabel"),
+                aiStopBehaviorDescription: t("settings.aiStopBehaviorDescription"),
+                aiStopBehaviorTurnOnlyLabel: t("settings.aiStopBehaviorTurnOnlyLabel"),
+                aiStopBehaviorTurnOnlyDescription: t("settings.aiStopBehaviorTurnOnlyDescription"),
+                aiStopBehaviorTurnAndBackgroundLabel: t("settings.aiStopBehaviorTurnAndBackgroundLabel"),
+                aiStopBehaviorTurnAndBackgroundDescription: t("settings.aiStopBehaviorTurnAndBackgroundDescription"),
+                preventSleepLabel: t("settings.preventSleepLabel"),
+                preventSleepDescription: t("settings.preventSleepDescription"),
+                preventSleepEnabledLabel: t("settings.preventSleepEnabled"),
+                preventSleepDisabledLabel: t("settings.preventSleepDisabled"),
+                jsReplLabel: t("settings.jsReplLabel"),
+                jsReplDescription: t("settings.jsReplDescription"),
+                jsReplEnabledLabel: t("settings.jsReplEnabled"),
+                jsReplDisabledLabel: t("settings.jsReplDisabled"),
+                forceWebPageThemingLabel: t("settings.forceWebPageThemingLabel"),
+                forceWebPageThemingDescription: t(
+                  "settings.forceWebPageThemingDescription"
+                ),
+                forceWebPageThemingEnabledLabel: t(
+                  "settings.forceWebPageThemingEnabled"
+                ),
+                forceWebPageThemingDisabledLabel: t(
+                  "settings.forceWebPageThemingDisabled"
+                ),
                 searchCategoryLabel: t("settings.searchCategoryLabel"),
                 searchScopeLabel: t("settings.searchScopeLabel"),
                 searchCustomRootsLabel: t("settings.searchCustomRootsLabel"),
@@ -2396,6 +2553,14 @@ export const WorkbenchShell = () => {
                   preferencesModel.preferences.splitOverflowPolicy,
                 aiRichRenderValue:
                   preferencesModel.preferences.aiRichRenderingEnabled,
+                aiStopBehaviorValue:
+                  preferencesModel.preferences.aiStopBehavior,
+                preventSleepValue:
+                  preferencesModel.preferences.preventSleepEnabled,
+                jsReplValue:
+                  jsReplEnabled,
+                forceWebPageThemingValue:
+                  preferencesModel.preferences.forceWebPageThemingEnabled,
                 searchScopeValue: preferencesModel.preferences.searchScopePreset,
                 searchCustomRootsValue: preferencesModel.preferences.searchCustomRoots.join("\n"),
                 searchWebEngineIds: preferencesModel.preferences.searchWebEngineIds,
@@ -2454,6 +2619,14 @@ export const WorkbenchShell = () => {
                   preferencesModel.setSplitOverflowPolicy,
                 onAiRichRenderChange:
                   preferencesModel.setAiRichRenderingEnabled,
+                onAiStopBehaviorChange:
+                  preferencesModel.setAiStopBehavior,
+                onPreventSleepChange:
+                  preferencesModel.setPreventSleepEnabled,
+                onJsReplChange:
+                  updateJsReplSetting,
+                onForceWebPageThemingChange:
+                  preferencesModel.setForceWebPageThemingEnabled,
                 onSearchScopeChange: preferencesModel.setSearchScopePreset,
                 onSearchCustomRootsChange: (value: string) => {
                   preferencesModel.setSearchCustomRoots(
@@ -2590,6 +2763,7 @@ export const WorkbenchShell = () => {
                 newSessionTitle: t("ai.sessionDefaultTitle"),
                 newConversationLabel: t("ai.newConversation"),
                 openConversationLabel: t("ai.openConversation"),
+                renameConversationLabel: t("ai.renameConversation"),
                 deleteConversationLabel: t("ai.deleteConversation"),
                 archiveConversationLabel: t("ai.archiveConversation"),
                 archivedConversationLabel: t("ai.historyArchivedConversations"),
@@ -2614,6 +2788,8 @@ export const WorkbenchShell = () => {
                 previewEmptyTitle: t("ai.historyPreviewEmptyTitle"),
                 previewEmptyDescription: t("ai.historyPreviewEmptyDescription"),
                 previewLoadingLabel: t("ai.historyPreviewLoading"),
+                richRenderingEnabled: preferencesModel.preferences.aiRichRenderingEnabled,
+                themeSignature: resolvedThemeId,
                 defaultProfileId: settingsAiModel.defaultProfileId,
                 defaultProviderId: settingsAiModel.defaultProviderId,
                 openDialog: globalDialogModel.openDialog
@@ -2692,6 +2868,7 @@ export const WorkbenchShell = () => {
                 themePresetId={preferencesModel.preferences.terminalThemePreset}
                 uiThemeId={resolvedThemeId}
                 model={terminalModel}
+                terminalPanelSide={panelLayoutModel.terminalPanelSide}
                 onRequestCloseTab={terminalWorkspaceActions.closeTerminalTabEverywhere}
                 onRequestTabContextMenu={(request) => {
                   terminalWorkspaceActions.openDockTabContextMenu(
@@ -2700,6 +2877,7 @@ export const WorkbenchShell = () => {
                     request.anchorY
                   );
                 }}
+                onToggleTerminalPanelSide={panelLayoutModel.toggleTerminalPanelSide}
                 onDropWorkspaceTerminalTab={terminalWorkspaceActions.openTerminalTabInDock}
               />
             </footer>

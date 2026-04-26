@@ -33,8 +33,6 @@ use lyra_app_server_protocol::ConfigBatchWriteParams;
 use lyra_app_server_protocol::ConfigReadParams;
 use lyra_app_server_protocol::ConfigValueWriteParams;
 use lyra_app_server_protocol::ConfigWarningNotification;
-use lyra_app_server_protocol::ExperimentalApi;
-use lyra_app_server_protocol::ExperimentalFeatureEnablementSetParams;
 use lyra_app_server_protocol::FsCopyParams;
 use lyra_app_server_protocol::FsCreateDirectoryParams;
 use lyra_app_server_protocol::FsGetMetadataParams;
@@ -57,7 +55,6 @@ use lyra_app_server_protocol::LyraHostToolsRemoveParams;
 use lyra_app_server_protocol::LyraHostToolsSyncParams;
 use lyra_app_server_protocol::LyraPersonaContextParams;
 use lyra_app_server_protocol::ServerNotification;
-use lyra_app_server_protocol::experimental_required_message;
 use lyra_arg0::Arg0DispatchPaths;
 use lyra_core::ThreadManager;
 use lyra_core::config::Config;
@@ -102,7 +99,6 @@ pub(crate) struct ConnectionSessionState {
 
 #[derive(Debug)]
 struct InitializedConnectionSessionState {
-    experimental_api_enabled: bool,
     opted_out_notification_methods: HashSet<String>,
     app_server_client_name: String,
     client_version: String,
@@ -111,12 +107,6 @@ struct InitializedConnectionSessionState {
 impl ConnectionSessionState {
     pub(crate) fn initialized(&self) -> bool {
         self.initialized.get().is_some()
-    }
-
-    pub(crate) fn experimental_api_enabled(&self) -> bool {
-        self.initialized
-            .get()
-            .is_some_and(|session| session.experimental_api_enabled)
     }
 
     pub(crate) fn opted_out_notification_methods(&self) -> HashSet<String> {
@@ -501,22 +491,12 @@ impl MessageProcessor {
                 return;
             }
 
-            // TODO(maxj): Revisit capability scoping for `experimental_api_enabled`.
-            // Current behavior is per-connection. Reviewer feedback notes this can
-            // create odd cross-client behavior (for example dynamic tool calls on a
-            // shared thread when another connected client did not opt into
-            // experimental API). Proposed direction is instance-global first-write-wins
-            // with initialize-time mismatch rejection.
             let analytics_initialize_params = params.clone();
-            let (experimental_api_enabled, opt_out_notification_methods) = match params.capabilities
-            {
-                Some(capabilities) => (
-                    capabilities.experimental_api,
-                    capabilities
-                        .opt_out_notification_methods
-                        .unwrap_or_default(),
-                ),
-                None => (false, Vec::new()),
+            let opt_out_notification_methods = match params.capabilities {
+                Some(capabilities) => capabilities
+                    .opt_out_notification_methods
+                    .unwrap_or_default(),
+                None => Vec::new(),
             };
             let ClientInfo {
                 name,
@@ -542,7 +522,6 @@ impl MessageProcessor {
             let lyra_home = self.config.lyra_home.clone();
             if session
                 .initialize(InitializedConnectionSessionState {
-                    experimental_api_enabled,
                     opted_out_notification_methods: opt_out_notification_methods
                         .into_iter()
                         .collect(),
@@ -622,17 +601,6 @@ impl MessageProcessor {
             return;
         }
 
-        if let Some(reason) = lyra_request.experimental_reason()
-            && !session.experimental_api_enabled()
-        {
-            let error = JSONRPCErrorError {
-                code: INVALID_REQUEST_ERROR_CODE,
-                message: experimental_required_message(reason),
-                data: None,
-            };
-            self.outgoing.send_error(connection_request_id, error).await;
-            return;
-        }
         let connection_id = connection_request_id.connection_id;
         if self.config.features.enabled(Feature::GeneralAnalytics)
             && let ClientRequest::TurnStart { request_id, .. }
@@ -771,16 +739,6 @@ impl MessageProcessor {
             }
             ClientRequest::LyraPersonaContextSet { request_id, params } => {
                 self.handle_lyra_persona_context_set(
-                    ConnectionRequestId {
-                        connection_id,
-                        request_id,
-                    },
-                    params,
-                )
-                .await;
-            }
-            ClientRequest::ExperimentalFeatureEnablementSet { request_id, params } => {
-                self.handle_experimental_feature_enablement_set(
                     ConnectionRequestId {
                         connection_id,
                         request_id,
@@ -1020,18 +978,6 @@ impl MessageProcessor {
             .await;
     }
 
-    async fn handle_experimental_feature_enablement_set(
-        &self,
-        request_id: ConnectionRequestId,
-        params: ExperimentalFeatureEnablementSetParams,
-    ) {
-        let result = self
-            .config_api
-            .set_experimental_feature_enablement(params)
-            .await;
-        self.handle_config_mutation_result(request_id, result).await;
-    }
-
     async fn handle_config_mutation_result<T: serde::Serialize>(
         &self,
         request_id: ConnectionRequestId,
@@ -1197,6 +1143,7 @@ fn api_dynamic_tool_to_core(
     tool: lyra_app_server_protocol::DynamicToolSpec,
 ) -> CoreDynamicToolSpec {
     CoreDynamicToolSpec {
+        namespace: tool.namespace,
         name: tool.name,
         description: tool.description,
         input_schema: tool.input_schema,

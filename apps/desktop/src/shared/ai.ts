@@ -77,7 +77,24 @@ export type AiProviderModelEntry = {
   readonly contextWindow?: number;
   readonly supportsImages?: boolean;
   readonly supportsTools?: boolean;
+  readonly runtimeMetadata?: AiModelRuntimeMetadata;
   readonly source: "preset" | "dynamic" | "custom";
+};
+
+export type AiModelRuntimeMetadata = {
+  readonly shellType?: string;
+  readonly applyPatchToolType?: string;
+  readonly supportsSearchTool?: boolean;
+  readonly supportsParallelToolCalls?: boolean;
+  readonly supportsReasoningSummaries?: boolean;
+  readonly supportVerbosity?: boolean;
+  readonly webSearchToolType?: string;
+  readonly supportsImageDetailOriginal?: boolean;
+  readonly inputModalities?: readonly string[];
+  readonly supportedTools?: readonly string[];
+  readonly contextWindow?: number;
+  readonly maxContextWindow?: number;
+  readonly effectiveContextWindowPercent?: number;
 };
 
 export type AiProviderCatalogItem = {
@@ -153,6 +170,7 @@ export type AiUpsertProfileRequest = {
   readonly headers?: Record<string, string>;
   readonly model: string;
   readonly customModels?: readonly AiProviderModelEntry[];
+  readonly discoveryState?: AiModelDiscoveryState;
 };
 
 export type AiDeleteProfileRequest = {

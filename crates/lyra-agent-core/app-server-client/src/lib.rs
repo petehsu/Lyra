@@ -105,10 +105,6 @@ pub mod legacy_core {
         pub use lyra_core::otel_init::*;
     }
 
-    pub mod personality_migration {
-        pub use lyra_core::personality_migration::*;
-    }
-
     pub mod plugins {
         pub use lyra_core::plugins::*;
     }
@@ -363,8 +359,6 @@ pub struct InProcessClientStartArgs {
     pub client_name: String,
     /// Client version reported during initialize.
     pub client_version: String,
-    /// Whether experimental APIs are requested at initialize time.
-    pub experimental_api: bool,
     /// Notification methods this client opts out of receiving.
     pub opt_out_notification_methods: Vec<String>,
     /// Queue capacity for command/event channels (clamped to at least 1).
@@ -375,7 +369,6 @@ impl InProcessClientStartArgs {
     /// Builds initialize params from caller-provided metadata.
     pub fn initialize_params(&self) -> InitializeParams {
         let capabilities = InitializeCapabilities {
-            experimental_api: self.experimental_api,
             opt_out_notification_methods: if self.opt_out_notification_methods.is_empty() {
                 None
             } else {
@@ -417,7 +410,6 @@ pub struct EmbeddedClientDefaults {
     pub session_source: SessionSource,
     pub client_name: String,
     pub client_version: String,
-    pub experimental_api: bool,
     pub opt_out_notification_methods: Vec<String>,
     pub channel_capacity: usize,
     pub enable_lyra_api_key_env: bool,
@@ -431,7 +423,6 @@ impl EmbeddedClientDefaults {
             ),
             client_name: "lyra-agent-core".to_string(),
             client_version: client_version.into(),
-            experimental_api: true,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
             enable_lyra_api_key_env: false,
@@ -527,7 +518,6 @@ impl InProcessAppServerClient {
             enable_lyra_api_key_env: defaults.enable_lyra_api_key_env,
             client_name: defaults.client_name,
             client_version: defaults.client_version,
-            experimental_api: defaults.experimental_api,
             opt_out_notification_methods: defaults.opt_out_notification_methods,
             channel_capacity: defaults.channel_capacity,
         })
@@ -1004,7 +994,6 @@ mod tests {
         let defaults = EmbeddedClientDefaults::lyra("1.2.3");
         assert_eq!(defaults.client_name, "lyra-agent-core");
         assert_eq!(defaults.client_version, "1.2.3");
-        assert!(defaults.experimental_api);
         assert!(!defaults.enable_lyra_api_key_env);
         assert!(matches!(
             defaults.session_source,
@@ -1038,7 +1027,6 @@ mod tests {
             enable_lyra_api_key_env: false,
             client_name: "lyra-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
-            experimental_api: true,
             opt_out_notification_methods: Vec::new(),
             channel_capacity,
         })
@@ -1213,7 +1201,6 @@ mod tests {
             auth_token: None,
             client_name: "lyra-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
-            experimental_api: true,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 8,
         }
@@ -1641,7 +1628,6 @@ mod tests {
             auth_token: None,
             client_name: "lyra-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
-            experimental_api: true,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 1,
         })
@@ -2034,7 +2020,6 @@ mod tests {
             enable_lyra_api_key_env: false,
             client_name: "lyra-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
-            experimental_api: true,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
         }
