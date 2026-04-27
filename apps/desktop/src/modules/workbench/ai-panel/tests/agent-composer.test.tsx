@@ -286,4 +286,132 @@ describe("agent composer", () => {
     expect(onPermissionModeSelect).toHaveBeenCalledWith("auto_review");
     expect(screen.getByRole("button", { name: "Default" })).toHaveClass("lyra-ai-agent-permission-mode-active");
   });
+
+  test("applies append requests once and appends later requests with spacing", () => {
+    const props = createProps({
+      initialValue: "",
+      appendRequest: {
+        id: 1,
+        text: " first note "
+      }
+    });
+    const { rerender } = render(<AgentComposer {...props} />);
+
+    expect(screen.getByLabelText("Ask Lyra")).toHaveValue("first note");
+
+    rerender(
+      <AgentComposer
+        {...props}
+        appendRequest={{
+          id: 1,
+          text: "ignored"
+        }}
+      />
+    );
+    expect(screen.getByLabelText("Ask Lyra")).toHaveValue("first note");
+
+    rerender(
+      <AgentComposer
+        {...props}
+        appendRequest={{
+          id: 2,
+          text: "second note"
+        }}
+      />
+    );
+    expect(screen.getByLabelText("Ask Lyra")).toHaveValue("first note\n\nsecond note");
+  });
+
+  test("submits on Enter but preserves Shift+Enter", async () => {
+    const onSend = vi.fn(async () => undefined);
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          onSend
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+
+    await act(async () => {
+      fireEvent.change(input, {
+        target: { value: "send this" }
+      });
+      fireEvent.keyDown(input, {
+        key: "Enter",
+        code: "Enter",
+        shiftKey: true
+      });
+    });
+    expect(onSend).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, {
+        key: "Enter",
+        code: "Enter"
+      });
+    });
+
+    expect(onSend).toHaveBeenCalledWith("send this");
+  });
+
+  test("routes steer and stop actions while sending", async () => {
+    const onSteer = vi.fn(async () => undefined);
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "focus on tests",
+          sending: true,
+          onSteer,
+          steerLabel: "Steer"
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Steer" }));
+
+    await waitFor(() => {
+      expect(onSteer).toHaveBeenCalledWith("focus on tests");
+      expect(screen.getByLabelText("Ask Lyra")).toHaveValue("");
+    });
+
+    const onStop = vi.fn();
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "stop this",
+          sending: true,
+          onStop,
+          stopDisabled: false
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getAllByLabelText("Send")[1]!);
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  test("closes the plus menu from outside click and Escape", () => {
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          onPlanModeToggle: vi.fn()
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText("Composer menu"));
+    expect(screen.getByRole("menuitemcheckbox", { name: /Plan mode/i })).toBeDefined();
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menuitemcheckbox", { name: /Plan mode/i })).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Composer menu"));
+    expect(screen.getByRole("menuitemcheckbox", { name: /Plan mode/i })).toBeDefined();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menuitemcheckbox", { name: /Plan mode/i })).toBeNull();
+  });
 });

@@ -14,7 +14,7 @@ import {
   renderTypeLabel
 } from "./view-panels";
 
-type SkillsCenterSurfaceProps = {
+export type SkillsCenterSurfaceProps = {
   readonly model: SkillsCenterModel;
   readonly labels: SkillsCenterLabels;
 };

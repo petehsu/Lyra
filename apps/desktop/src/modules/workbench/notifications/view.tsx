@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { renderNotificationSourceIcon } from "./icon-registry";
 import type { NotificationCenterLabels, WorkbenchNotificationItem } from "./types";
 
-type NotificationCenterSurfaceProps = {
+export type NotificationCenterSurfaceProps = {
   readonly labels: NotificationCenterLabels;
   readonly notifications: readonly WorkbenchNotificationItem[];
   readonly selectedNotificationId: string | null;

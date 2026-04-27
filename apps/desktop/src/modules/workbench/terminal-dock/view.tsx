@@ -22,6 +22,13 @@ import {
 } from "./drag-transfer";
 import { TerminalPaneSurface } from "./pane-surface";
 import type { TerminalDockProps } from "./types";
+import {
+  ChromeIconButton,
+  ChromeTabButton,
+  ChromeTabFrame,
+  ChromeToolbar,
+  cx
+} from "../ui-primitives";
 
 export const TerminalDock = ({
   desktopApi,
@@ -182,11 +189,10 @@ export const TerminalDock = ({
 
   return (
     <section
-      className={
-        isWorkspaceDropActive
-          ? "lyra-terminal-dock lyra-terminal-dock-workspace-drop-target"
-          : "lyra-terminal-dock"
-      }
+      className={cx(
+        "lyra-terminal-dock",
+        isWorkspaceDropActive && "lyra-terminal-dock-workspace-drop-target"
+      )}
       aria-label="terminal-dock"
       onDragOverCapture={onWorkspaceDragOver}
       onDragEnterCapture={onWorkspaceDragOver}
@@ -195,30 +201,25 @@ export const TerminalDock = ({
     >
       <aside className="lyra-terminal-side" aria-label="terminal-tabs-side">
         <nav
-          className={
+          className={cx(
+            "lyra-terminal-tabs",
             dockDropIndex !== null && dockDropIndex >= model.dockTabs.length
-              ? "lyra-terminal-tabs lyra-terminal-tabs-drop-end"
-              : "lyra-terminal-tabs"
-          }
+              && "lyra-terminal-tabs-drop-end"
+          )}
           aria-label="terminal-tabs"
         >
           {model.dockTabs.map((tab, index) => (
-            <div
+            <ChromeTabFrame
               key={tab.id}
-              className={
-                [
-                  "lyra-terminal-tab",
-                  "lyra-allow-web-drag",
-                  tab.id === activeDockTab?.id ? "lyra-terminal-tab-active" : "",
-                  dockDropIndex !== null && dockDropIndex === index
-                    ? "lyra-terminal-tab-drop-target-before"
-                    : ""
-                ]
-                  .filter((value) => value.length > 0)
-                  .join(" ")
-              }
+              className={cx(
+                "lyra-terminal-tab",
+                "lyra-allow-web-drag",
+                tab.id === activeDockTab?.id && "lyra-terminal-tab-active",
+                dockDropIndex !== null && dockDropIndex === index
+                  && "lyra-terminal-tab-drop-target-before"
+              )}
               data-lyra-terminal-tab-id={tab.id}
-              data-lyra-allow-web-drag="true"
+              allowWebDrag
               draggable
               onDragStart={(event: ReactDragEvent<HTMLDivElement>) => {
                 onDockTabDragStart(event, tab.id);
@@ -236,9 +237,9 @@ export const TerminalDock = ({
                 });
               }}
             >
-              <button
+              <ChromeTabButton
                 className="lyra-terminal-tab-main"
-                data-lyra-allow-web-drag="true"
+                allowWebDrag
                 draggable
                 onDragStart={(event: ReactDragEvent<HTMLButtonElement>) => {
                   onDockTabDragStart(event, tab.id);
@@ -255,8 +256,8 @@ export const TerminalDock = ({
                   <SquareTerminal size={13} />
                 </span>
                 <span className="lyra-terminal-tab-title">{tab.title}</span>
-              </button>
-              <button
+              </ChromeTabButton>
+              <ChromeIconButton
                 className="lyra-terminal-tab-close"
                 aria-label={labels.closeTab}
                 onClick={() => {
@@ -264,15 +265,15 @@ export const TerminalDock = ({
                 }}
               >
                 <X size={11} />
-              </button>
-            </div>
+              </ChromeIconButton>
+            </ChromeTabFrame>
           ))}
         </nav>
-        <div className="lyra-terminal-toolbar-actions">
-          <button aria-label={labels.newTab} onClick={model.openTab}>
+        <ChromeToolbar className="lyra-terminal-toolbar-actions">
+          <ChromeIconButton aria-label={labels.newTab} onClick={model.openTab}>
             <Plus size={14} />
-          </button>
-          <button
+          </ChromeIconButton>
+          <ChromeIconButton
             aria-label={labels.splitHorizontal}
             disabled={activeDockTab === null}
             onClick={() => {
@@ -280,8 +281,8 @@ export const TerminalDock = ({
             }}
           >
             <SplitSquareHorizontal size={14} />
-          </button>
-          <button
+          </ChromeIconButton>
+          <ChromeIconButton
             aria-label={labels.splitVertical}
             disabled={activeDockTab === null}
             onClick={() => {
@@ -289,8 +290,8 @@ export const TerminalDock = ({
             }}
           >
             <SplitSquareVertical size={14} />
-          </button>
-          <button
+          </ChromeIconButton>
+          <ChromeIconButton
             aria-label={
               terminalPanelSide === "top"
                 ? labels.moveTerminalToBottom
@@ -303,8 +304,8 @@ export const TerminalDock = ({
             ) : (
               <PanelTop size={14} />
             )}
-          </button>
-        </div>
+          </ChromeIconButton>
+        </ChromeToolbar>
       </aside>
 
       <section className="lyra-terminal-stage">

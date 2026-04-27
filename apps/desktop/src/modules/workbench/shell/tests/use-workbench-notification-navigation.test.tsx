@@ -1,0 +1,117 @@
+import { renderHook } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
+
+import type { FileEditorModel } from "../../file-editor";
+import type { FileManagerModel } from "../../file-manager";
+import type {
+  WorkbenchNotificationItem,
+  WorkbenchNotificationModel
+} from "../../notifications";
+import type { WorkspaceTabsModel } from "../../workspace-tabs";
+import { useWorkbenchNotificationNavigation } from "../use-workbench-notification-navigation";
+
+const t = (key: string): string => key;
+
+const createNotification = (
+  overrides: Partial<WorkbenchNotificationItem>
+): WorkbenchNotificationItem => ({
+  id: "notification-1",
+  title: "Notice",
+  preview: "Preview",
+  level: "info",
+  source: {
+    id: "source-1",
+    title: "Source",
+    iconKey: "system"
+  },
+  target: {
+    kind: "none"
+  },
+  createdAt: 1000,
+  ...overrides
+});
+
+const createNotificationModel = (
+  notification: WorkbenchNotificationItem | null
+): WorkbenchNotificationModel => ({
+  notifications: notification === null ? [] : [notification],
+  unreadCount: notification === null ? 0 : 1,
+  selectedNotificationId: null,
+  selectedNotification: null,
+  topbarPreviewNotificationId: notification?.id ?? null,
+  topbarPreview: notification,
+  publishNotification: vi.fn() as never,
+  markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
+  clearNotifications: vi.fn(),
+  selectNotification: vi.fn(),
+  acknowledgeTopbarPreview: vi.fn(),
+  getNotification: vi.fn((notificationId: string) =>
+    notification?.id === notificationId ? notification : null
+  )
+});
+
+describe("useWorkbenchNotificationNavigation", () => {
+  test("opens page-tab notification previews and marks them read", () => {
+    const notification = createNotification({
+      target: {
+        kind: "page-tab",
+        address: "https://example.com",
+        title: "Example"
+      }
+    });
+    const notificationModel = createNotificationModel(notification);
+    const tabsModel = {
+      tabs: [],
+      openPageInNewTab: vi.fn(),
+      openAppTab: vi.fn(),
+      setActiveTab: vi.fn()
+    } as unknown as WorkspaceTabsModel;
+    const { result } = renderHook(() =>
+      useWorkbenchNotificationNavigation({
+        tabsModel,
+        fileManagerModel: {} as FileManagerModel,
+        fileEditorModel: {} as FileEditorModel,
+        notificationModel,
+        openDialog: vi.fn(),
+        t: t as never
+      })
+    );
+
+    result.current.onOpenNotificationPreview();
+
+    expect(notificationModel.markNotificationRead).toHaveBeenCalledWith("notification-1");
+    expect(notificationModel.acknowledgeTopbarPreview).toHaveBeenCalled();
+    expect(tabsModel.openPageInNewTab).toHaveBeenCalledWith("https://example.com", "Example");
+  });
+
+  test("shows a clear-all confirmation dialog", () => {
+    const notificationModel = createNotificationModel(null);
+    const openDialog = vi.fn();
+    const { result } = renderHook(() =>
+      useWorkbenchNotificationNavigation({
+        tabsModel: { tabs: [] } as unknown as WorkspaceTabsModel,
+        fileManagerModel: {} as FileManagerModel,
+        fileEditorModel: {} as FileEditorModel,
+        notificationModel,
+        openDialog,
+        t: t as never
+      })
+    );
+
+    result.current.onRequestClearNotifications();
+
+    expect(openDialog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "notification.centerClearConfirmTitle",
+        actions: expect.arrayContaining([
+          expect.objectContaining({
+            id: "notification-clear-confirm",
+            tone: "danger",
+            onSelect: notificationModel.clearNotifications
+          })
+        ])
+      })
+    );
+  });
+});

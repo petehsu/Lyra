@@ -10,7 +10,7 @@ import {
   renderRuntimeLabel
 } from "./view-panels";
 
-type McpCenterSurfaceProps = {
+export type McpCenterSurfaceProps = {
   readonly model: McpCenterModel;
   readonly labels: McpCenterLabels;
 };

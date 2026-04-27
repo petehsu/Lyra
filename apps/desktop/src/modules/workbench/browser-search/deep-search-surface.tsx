@@ -1,24 +1,19 @@
 import "@xyflow/react/dist/style.css";
 
-import type { Viewport } from "@xyflow/react";
 import { Search } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import type { SearchDeepNode, SearchDeepSnapshot } from "../../../shared/desktop-bridge";
+import type { SearchDeepSnapshot } from "../../../shared/desktop-bridge";
 import { LyraBrandLogo } from "../brand";
 import { DeepSearchCanvas } from "./deep-search-canvas";
-import { buildDeepSearchLineage, getDeepSearchConnectedEdges } from "./deep-search-lineage";
 import {
   DeepSearchOverview,
-  formatDeepSearchEdgeReason,
   type DeepSearchOverviewLabels
 } from "./deep-search-overview";
 import type {
-  DeepSearchEdgeDirectionFilter,
-  DeepSearchEdgeKindFilter
-} from "./types";
-
-const DEEP_SEARCH_VIEWPORT_MEMORY = new Map<string, Viewport>();
+  DeepSearchLocalOpenBehavior,
+  DeepSearchSourceFilter
+} from "./deep-search-surface-model";
+import { useDeepSearchSurfaceRuntime } from "./use-deep-search-surface-runtime";
 
 export type DeepSearchResultSurfaceLabels = DeepSearchOverviewLabels & {
   readonly headingLabel: string;
@@ -50,42 +45,19 @@ export type DeepSearchResultSurfaceProps = {
   readonly searching: boolean;
   readonly viewportMemoryKey: string;
   readonly restoreViewportEnabled: boolean;
-  readonly localOpenBehavior: "open_file" | "reveal_in_manager";
-  readonly sourceFilter: "all" | "web" | "local";
+  readonly localOpenBehavior: DeepSearchLocalOpenBehavior;
+  readonly sourceFilter: DeepSearchSourceFilter;
   readonly sharedStartRect?: DOMRect | null;
   readonly onInputChange: (value: string) => void;
   readonly onSubmit: () => void;
   readonly onToggleDeepSearch: () => void;
   readonly onCancel: () => void;
   readonly onExpandNode: (nodeId: string) => void;
-  readonly onSourceFilterChange: (value: "all" | "web" | "local") => void;
+  readonly onSourceFilterChange: (value: DeepSearchSourceFilter) => void;
   readonly onOpenUrl?: (url: string, title: string) => void;
   readonly onOpenLocalPath?: (path: string) => void;
   readonly onRevealLocalPath?: (path: string) => void;
   readonly onSharedAnimationDone?: () => void;
-};
-
-const filterDeepSearchSnapshotBySource = (
-  snapshot: SearchDeepSnapshot,
-  sourceFilter: "all" | "web" | "local"
-): SearchDeepSnapshot => {
-  if (sourceFilter === "all") {
-    return snapshot;
-  }
-  const allowedKinds = new Set<SearchDeepNode["kind"]>(
-    sourceFilter === "web"
-      ? ["root_query", "derived_query", "site_domain", "site_subdomain", "web_page"]
-      : ["root_query", "derived_query", "local_result"]
-  );
-  const nodes = snapshot.nodes.filter((node) => allowedKinds.has(node.kind));
-  const allowedIds = new Set(nodes.map((node) => node.id));
-  return {
-    ...snapshot,
-    nodes,
-    edges: snapshot.edges.filter(
-      (edge) => allowedIds.has(edge.sourceId) && allowedIds.has(edge.targetId)
-    )
-  };
 };
 
 export const DeepSearchResultSurface = ({
@@ -113,158 +85,25 @@ export const DeepSearchResultSurface = ({
   onRevealLocalPath,
   onSharedAnimationDone
 }: DeepSearchResultSurfaceProps) => {
-  const pillRef = useRef<HTMLDivElement | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [highlightedEdgeId, setHighlightedEdgeId] = useState<string | null>(null);
-  const [fitViewNonce, setFitViewNonce] = useState(0);
-  const [focusSelectionNonce, setFocusSelectionNonce] = useState(0);
-  const [resetLayoutNonce, setResetLayoutNonce] = useState(0);
-  const [edgeKindFilter, setEdgeKindFilter] = useState<DeepSearchEdgeKindFilter>("all");
-  const [edgeDirectionFilter, setEdgeDirectionFilter] = useState<DeepSearchEdgeDirectionFilter>("both");
-  const filteredSnapshot = useMemo(
-    () => filterDeepSearchSnapshotBySource(snapshot, sourceFilter),
-    [snapshot, sourceFilter]
-  );
-
-  const selectedNode = useMemo<SearchDeepNode | null>(
-    () => filteredSnapshot.nodes.find((node) => node.id === selectedNodeId) ?? null,
-    [filteredSnapshot.nodes, selectedNodeId]
-  );
-  const lineage = useMemo(
-    () => buildDeepSearchLineage(filteredSnapshot, selectedNodeId),
-    [filteredSnapshot, selectedNodeId]
-  );
-  const connectedEdges = useMemo(
-    () => getDeepSearchConnectedEdges(filteredSnapshot, selectedNodeId, edgeKindFilter, edgeDirectionFilter),
-    [edgeDirectionFilter, edgeKindFilter, filteredSnapshot, selectedNodeId]
-  );
-  const edgeReasonLabels = useMemo(
-    () => Object.fromEntries(filteredSnapshot.edges.map((edge) => [edge.id, formatDeepSearchEdgeReason(edge, labels)])),
-    [filteredSnapshot.edges, labels]
-  );
-  const savedViewport = restoreViewportEnabled
-    ? (DEEP_SEARCH_VIEWPORT_MEMORY.get(viewportMemoryKey) ?? null)
-    : null;
-
-  useEffect(() => {
-    if (selectedNodeId === null) {
-      return;
-    }
-    if (filteredSnapshot.nodes.some((node) => node.id === selectedNodeId)) {
-      return;
-    }
-    setSelectedNodeId(null);
-  }, [filteredSnapshot.nodes, selectedNodeId]);
-
-  useEffect(() => {
-    setHighlightedEdgeId(null);
-  }, [selectedNodeId]);
-
-  useLayoutEffect(() => {
-    if (sharedStartRect === null || sharedStartRect === undefined) {
-      return;
-    }
-
-    const pill = pillRef.current;
-    if (pill === null) {
-      return;
-    }
-
-    const targetRect = pill.getBoundingClientRect();
-    const deltaX = sharedStartRect.left - targetRect.left;
-    const deltaY = sharedStartRect.top - targetRect.top;
-    const scaleX = sharedStartRect.width / targetRect.width;
-    const scaleY = sharedStartRect.height / targetRect.height;
-
-    const animation = pill.animate(
-      [
-        {
-          transformOrigin: "left top",
-          transform: `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`
-        },
-        {
-          transformOrigin: "left top",
-          transform: "translate(0, 0) scale(1, 1)"
-        }
-      ],
-      {
-        duration: 320,
-        easing: "cubic-bezier(0.2, 0.78, 0.08, 0.98)",
-        fill: "both"
-      }
-    );
-
-    animation.onfinish = () => {
-      pill.style.transform = "none";
-      pill.style.transformOrigin = "";
-      onSharedAnimationDone?.();
-    };
-
-    return () => {
-      animation.cancel();
-      pill.style.transform = "";
-      pill.style.transformOrigin = "";
-    };
-  }, [onSharedAnimationDone, sharedStartRect]);
-
-  const openLocalPrimary = (path: string): void => {
-    if (localOpenBehavior === "reveal_in_manager") {
-      if (onRevealLocalPath !== undefined) {
-        onRevealLocalPath(path);
-        return;
-      }
-    }
-    onOpenLocalPath?.(path);
-  };
-
-  const openLocalSecondary = (path: string): void => {
-    if (localOpenBehavior === "reveal_in_manager") {
-      onOpenLocalPath?.(path);
-      return;
-    }
-    onRevealLocalPath?.(path);
-  };
-
-  const onOpenSelected = (): void => {
-    if (selectedNode === null) {
-      return;
-    }
-    if (
-      (selectedNode.kind === "site_domain" || selectedNode.kind === "site_subdomain")
-      && typeof selectedNode.metadata?.finalUrl === "string"
-    ) {
-      onOpenUrl?.(selectedNode.metadata.finalUrl, selectedNode.title);
-      return;
-    }
-    if (selectedNode.kind === "web_page" && typeof selectedNode.metadata?.url === "string") {
-      onOpenUrl?.(selectedNode.metadata.url, selectedNode.title);
-      return;
-    }
-    if (selectedNode.kind === "local_result" && typeof selectedNode.metadata?.path === "string") {
-      openLocalPrimary(selectedNode.metadata.path);
-    }
-  };
-
-  const onRevealSelected = (): void => {
-    if (selectedNode?.kind !== "local_result" || typeof selectedNode.metadata?.path !== "string") {
-      return;
-    }
-    openLocalSecondary(selectedNode.metadata.path);
-  };
-
-  const onExpandSelected = (): void => {
-    if (selectedNode === null) {
-      return;
-    }
-    if (selectedNode.kind === "root_query" || selectedNode.kind === "derived_query") {
-      onExpandNode(selectedNode.id);
-    }
-  };
+  const runtime = useDeepSearchSurfaceRuntime({
+    labels,
+    snapshot,
+    viewportMemoryKey,
+    restoreViewportEnabled,
+    localOpenBehavior,
+    sourceFilter,
+    sharedStartRect,
+    onExpandNode,
+    onOpenUrl,
+    onOpenLocalPath,
+    onRevealLocalPath,
+    onSharedAnimationDone
+  });
 
   return (
     <section className="lyra-results-shell lyra-deep-search-shell" aria-label="deep-search-results-surface">
       <header className="lyra-results-topbar lyra-deep-search-topbar">
-        <div className="lyra-browser-pill lyra-browser-pill-compact" ref={pillRef}>
+        <div className="lyra-browser-pill lyra-browser-pill-compact" ref={runtime.pillRef}>
           <button
             type="button"
             role="switch"
@@ -311,17 +150,13 @@ export const DeepSearchResultSurface = ({
           <button type="button" onClick={onCancel} disabled={!searching}>{labels.stopLabel}</button>
           <button
             type="button"
-            onClick={() => {
-              setFitViewNonce((current) => current + 1);
-            }}
+            onClick={runtime.onFitView}
           >
             {labels.fitViewLabel}
           </button>
           <button
             type="button"
-            onClick={() => {
-              setResetLayoutNonce((current) => current + 1);
-            }}
+            onClick={runtime.onResetLayout}
           >
             {labels.resetLayoutLabel}
           </button>
@@ -330,8 +165,8 @@ export const DeepSearchResultSurface = ({
 
       <div className="lyra-deep-search-grid">
         <DeepSearchCanvas
-          snapshot={filteredSnapshot}
-          selectedNodeId={selectedNodeId}
+          snapshot={runtime.filteredSnapshot}
+          selectedNodeId={runtime.selectedNodeId}
           loadingLabel={labels.loadingLabel}
           emptyLabel={labels.emptyLabel}
           officialResultLabel={labels.officialResultLabel}
@@ -343,46 +178,40 @@ export const DeepSearchResultSurface = ({
             official_download: labels.officialDownloadLabel,
             official_support: labels.officialSupportLabel
           }}
-          fitViewNonce={fitViewNonce}
-          focusSelectionNonce={focusSelectionNonce}
-          resetLayoutNonce={resetLayoutNonce}
-          connectedEdgeIds={connectedEdges.map((entry) => entry.edge.id)}
-          highlightedEdgeId={highlightedEdgeId}
-          edgeReasonLabels={edgeReasonLabels}
-          savedViewport={savedViewport}
+          fitViewNonce={runtime.fitViewNonce}
+          focusSelectionNonce={runtime.focusSelectionNonce}
+          resetLayoutNonce={runtime.resetLayoutNonce}
+          connectedEdgeIds={runtime.connectedEdgeIds}
+          highlightedEdgeId={runtime.highlightedEdgeId}
+          edgeReasonLabels={runtime.edgeReasonLabels}
+          savedViewport={runtime.savedViewport}
           restoreViewportEnabled={restoreViewportEnabled}
-          onSelectNode={setSelectedNodeId}
-          onHighlightEdge={setHighlightedEdgeId}
-          onViewportChange={(viewport) => {
-            if (restoreViewportEnabled) {
-              DEEP_SEARCH_VIEWPORT_MEMORY.set(viewportMemoryKey, viewport);
-            }
-          }}
+          onSelectNode={runtime.setSelectedNodeId}
+          onHighlightEdge={runtime.setHighlightedEdgeId}
+          onViewportChange={runtime.onViewportChange}
           onOpenWebResult={onOpenUrl}
-          onOpenLocalResult={openLocalPrimary}
+          onOpenLocalResult={runtime.onOpenLocalPrimary}
           onExpandNode={onExpandNode}
         />
 
         <DeepSearchOverview
           labels={labels}
           snapshot={snapshot}
-          selectedNode={selectedNode}
-          connectedEdges={connectedEdges}
-          lineage={lineage}
+          selectedNode={runtime.selectedNode}
+          connectedEdges={runtime.connectedEdges}
+          lineage={runtime.lineage}
           sourceFilter={sourceFilter}
-          edgeKindFilter={edgeKindFilter}
-          edgeDirectionFilter={edgeDirectionFilter}
+          edgeKindFilter={runtime.edgeKindFilter}
+          edgeDirectionFilter={runtime.edgeDirectionFilter}
           localPrimaryAction={localOpenBehavior}
-          onOpenSelected={onOpenSelected}
-          onRevealSelected={onRevealSelected}
-          onExpandSelected={onExpandSelected}
-          onCenterSelected={() => {
-            setFocusSelectionNonce((current) => current + 1);
-          }}
+          onOpenSelected={runtime.onOpenSelected}
+          onRevealSelected={runtime.onRevealSelected}
+          onExpandSelected={runtime.onExpandSelected}
+          onCenterSelected={runtime.onCenterSelected}
           onSourceFilterChange={onSourceFilterChange}
-          onEdgeKindFilterChange={setEdgeKindFilter}
-          onEdgeDirectionFilterChange={setEdgeDirectionFilter}
-          onHighlightEdge={setHighlightedEdgeId}
+          onEdgeKindFilterChange={runtime.setEdgeKindFilter}
+          onEdgeDirectionFilterChange={runtime.setEdgeDirectionFilter}
+          onHighlightEdge={runtime.setHighlightedEdgeId}
         />
       </div>
     </section>

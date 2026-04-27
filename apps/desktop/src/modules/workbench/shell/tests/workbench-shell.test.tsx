@@ -2,7 +2,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("../../browser-tabs", () => ({
-  BrowserTabStrip: () => <nav aria-label="browser-tabs" />
+  BrowserPageSurface: () => <div aria-label="browser-page-surface" />,
+  BrowserSearchSurface: () => <div aria-label="browser-search-surface" />,
+  BrowserSettingsSurface: () => <div aria-label="settings-surface" />,
+  BrowserTabStrip: () => <nav aria-label="browser-tabs" />,
+  ClassicWorkspaceTabsAdapter: () => <nav aria-label="browser-tabs" />
 }));
 
 vi.mock("../../terminal-dock", () => ({
@@ -55,8 +59,13 @@ vi.mock("../use-terminal-workspace-actions", () => ({
   })
 }));
 
-vi.mock("../use-browser-search-model", () => ({
-  useBrowserSearchModel: () => ({
+vi.mock("../../browser-search", async () => {
+  const actual = await vi.importActual<typeof import("../../browser-search")>(
+    "../../browser-search"
+  );
+  return {
+    ...actual,
+    useBrowserSearchModel: () => ({
     isSearching: false,
     searchError: null,
     activeSearchMode: "standard",
@@ -142,11 +151,13 @@ vi.mock("../use-browser-search-model", () => ({
     onToggleDeepSearch: vi.fn(),
     onCancelDeepSearch: vi.fn(),
     onExpandDeepNode: vi.fn(),
-    searchPillRef: { current: null }
-  })
-}));
+      searchPillRef: { current: null }
+    })
+  };
+});
 
 vi.mock("../../file-manager", () => ({
+  FileManagerSurface: () => <div aria-label="file-manager-surface" />,
   useFileManagerModel: () => ({
     createInstance: () => ({
       appId: "file-manager" as const,
@@ -610,6 +621,9 @@ describe("workbench shell", () => {
   test("renders empty frame regions", () => {
     render(<WorkbenchShell />);
 
+    expect(screen.getByRole("main")).toHaveAttribute("data-lyra-ui-style", "classic");
+    expect(screen.getByRole("main")).toHaveClass("lyra-style-classic");
+    expect(document.documentElement.dataset.lyraUiStyle).toBe("classic");
     expect(screen.getByLabelText("left-panel")).toBeInTheDocument();
     expect(screen.getByLabelText("左侧输入框")).toBeInTheDocument();
     expect(screen.getByLabelText("workspace")).toBeInTheDocument();

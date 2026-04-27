@@ -1,4 +1,5 @@
 export { FileManagerSurface } from "./view";
+export type { FileManagerSurfaceProps } from "./view";
 export { useFileManagerModel } from "./service";
 export {
   renderFileManagerAppIcon,

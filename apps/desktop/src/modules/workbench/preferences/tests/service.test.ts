@@ -6,12 +6,16 @@ import {
   useWorkbenchPreferencesModel,
   writeWorkbenchPreferences
 } from "../service";
-import { resetWorkbenchStateStorageForTests } from "../../state-storage";
+import {
+  resetWorkbenchStateStorageForTests,
+  writeWorkbenchStateSync
+} from "../../state-storage";
 import type { WorkbenchPreferences } from "../types";
 
 const defaults: WorkbenchPreferences = {
   locale: "zh-CN",
   theme: "lyra-light",
+  uiPackId: "classic",
   terminalThemePreset: "follow-app",
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",
@@ -53,6 +57,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "en-US",
       theme: "lyra-dark",
+      uiPackId: "classic",
       terminalThemePreset: "lyra-rich",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
@@ -65,6 +70,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "en-US",
       theme: "lyra-dark",
+      uiPackId: "classic",
       terminalThemePreset: "lyra-rich",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
@@ -79,6 +85,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "zh-CN",
       theme: "terra-system",
+      uiPackId: "classic",
       terminalThemePreset: "lyra-standard",
       splitTriggerMode: "ctrl_left_drag",
       splitThreePaneLayout: "top_two_bottom_one",
@@ -90,6 +97,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "zh-CN",
       theme: "terra-system",
+      uiPackId: "classic",
       terminalThemePreset: "lyra-standard",
       splitTriggerMode: "ctrl_left_drag",
       splitThreePaneLayout: "top_two_bottom_one",
@@ -107,12 +115,32 @@ describe("workbench preferences", () => {
     expect(readWorkbenchPreferences(defaults).terminalThemePreset).toBe("lyra-rich");
   });
 
+  test("falls back to classic when stored UI pack is unknown", () => {
+    writeWorkbenchPreferences({
+      ...defaults,
+      uiPackId: "unknown-style" as unknown as WorkbenchPreferences["uiPackId"]
+    });
+
+    expect(readWorkbenchPreferences(defaults).uiPackId).toBe("classic");
+  });
+
+  test("migrates legacy UI style id to UI pack id", () => {
+    writeWorkbenchStateSync("preferences", JSON.stringify({
+      ...defaults,
+      uiPackId: undefined,
+      uiStyleId: "classic"
+    }));
+
+    expect(readWorkbenchPreferences(defaults).uiPackId).toBe("classic");
+  });
+
   test("updates via model and writes to storage", () => {
     const { result } = renderHook(() => useWorkbenchPreferencesModel(defaults));
 
     act(() => {
       result.current.setLocale("en-US");
       result.current.setTheme("lyra-dark");
+      result.current.setUiPackId("classic");
       result.current.setTerminalThemePreset("lyra-developer");
       result.current.setSplitTriggerMode("right_drag");
       result.current.setSplitThreePaneLayout("left_two_right_one");
@@ -126,6 +154,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "en-US",
       theme: "lyra-dark",
+      uiPackId: "classic",
       terminalThemePreset: "lyra-developer",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
@@ -139,6 +168,7 @@ describe("workbench preferences", () => {
       ...defaults,
       locale: "en-US",
       theme: "lyra-dark",
+      uiPackId: "classic",
       terminalThemePreset: "lyra-developer",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",

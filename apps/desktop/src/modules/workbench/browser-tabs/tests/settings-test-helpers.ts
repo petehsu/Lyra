@@ -1,0 +1,166 @@
+import type { BrowserSettingsSurfaceProps } from "../settings-surface";
+
+const noop = (): void => undefined;
+
+export const createBrowserSettingsSurfaceProps = (
+  overrides: Partial<BrowserSettingsSurfaceProps> = {}
+): BrowserSettingsSurfaceProps => ({
+  title: "Settings",
+  aiCategoryLabel: "AI",
+  languageLabel: "Language",
+  themeLabel: "Theme",
+  uiStyleLabel: "UI style",
+  terminalThemeLabel: "Terminal theme",
+  splitTriggerModeLabel: "Split trigger",
+  splitThreePaneLayoutLabel: "Split layout",
+  splitOverflowPolicyLabel: "Split overflow",
+  aiRichRenderLabel: "Rich rendering",
+  aiRichRenderDescription: "Render rich AI content.",
+  aiRichRenderEnabledLabel: "Enabled",
+  aiRichRenderDisabledLabel: "Disabled",
+  aiStopBehaviorLabel: "Stop behavior",
+  aiStopBehaviorDescription: "Choose how stop behaves.",
+  aiStopBehaviorTurnOnlyLabel: "Turn only",
+  aiStopBehaviorTurnOnlyDescription: "Stop the current turn.",
+  aiStopBehaviorTurnAndBackgroundLabel: "Turn and background",
+  aiStopBehaviorTurnAndBackgroundDescription: "Stop all background work.",
+  preventSleepLabel: "Prevent sleep",
+  preventSleepDescription: "Keep the machine awake.",
+  preventSleepEnabledLabel: "Enabled",
+  preventSleepDisabledLabel: "Disabled",
+  jsReplLabel: "JS REPL",
+  jsReplDescription: "Enable JavaScript REPL.",
+  jsReplEnabledLabel: "Enabled",
+  jsReplDisabledLabel: "Disabled",
+  forceWebPageThemingLabel: "Web page theming",
+  forceWebPageThemingDescription: "Apply Lyra theming to web pages.",
+  forceWebPageThemingEnabledLabel: "Enabled",
+  forceWebPageThemingDisabledLabel: "Disabled",
+  searchCategoryLabel: "Search",
+  searchScopeLabel: "Search scope",
+  searchCustomRootsLabel: "Custom roots",
+  searchCustomRootsPlaceholder: "/workspace",
+  searchWebEnginesLabel: "Web engines",
+  searchSearxngEndpointLabel: "SearXNG endpoint",
+  searchDeepBudgetLabel: "Deep search budget",
+  deepSearchRestoreViewportLabel: "Restore viewport",
+  deepSearchLocalOpenBehaviorLabel: "Local open behavior",
+  deepSearchSiteExpansionLabel: "Site expansion",
+  deepSearchProactiveGuessLabel: "Proactive guessing",
+  deepSearchCrawlPolicyLabel: "Crawl policy",
+  searchEnableFuzzyLabel: "Fuzzy",
+  searchEnableContentLabel: "Index content",
+  searchIncludeHiddenLabel: "Hidden files",
+  searchAutoIndexLabel: "Auto index",
+  searchIndexStatusLabel: "Index status",
+  searchRebuildIndexLabel: "Rebuild",
+  omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
+  localeValue: "en-US",
+  themeValue: "lyra-light",
+  uiStyleValue: "classic",
+  terminalThemeValue: "follow-app",
+  splitTriggerModeValue: "ctrl_left_drag",
+  splitThreePaneLayoutValue: "adaptive",
+  splitOverflowPolicyValue: "block_with_notice",
+  aiRichRenderValue: true,
+  aiStopBehaviorValue: "turn_only",
+  preventSleepValue: true,
+  jsReplValue: false,
+  forceWebPageThemingValue: false,
+  searchScopeValue: "workspace",
+  searchCustomRootsValue: "/workspace",
+  searchWebEngineIds: ["google"],
+  searchSearxngEndpointValue: "",
+  searchDeepBudgetValue: "medium",
+  deepSearchRestoreViewportValue: true,
+  deepSearchLocalOpenBehaviorValue: "open_file",
+  deepSearchSiteExpansionValue: true,
+  deepSearchProactiveGuessValue: false,
+  deepSearchCrawlPolicyValue: "accessibility_only",
+  searchEnableFuzzyValue: true,
+  searchEnableContentValue: true,
+  searchIncludeHiddenValue: false,
+  searchAutoIndexValue: true,
+  searchIndexStatusValue: "idle",
+  searchRebuildIndexPending: false,
+  omniboxNonBrowserSubmitTargetValue: "new_tab",
+  localeOptions: [
+    { value: "en-US", label: "English" },
+    { value: "zh-CN", label: "Chinese" }
+  ],
+  themeOptions: [
+    { value: "lyra-light", label: "Light" },
+    { value: "lyra-dark", label: "Dark" }
+  ],
+  uiStyleOptions: [{ value: "classic", label: "Classic" }],
+  terminalThemeOptions: [
+    { value: "follow-app", label: "Follow app" },
+    { value: "lyra-standard", label: "Standard" }
+  ],
+  splitTriggerModeOptions: [
+    { value: "ctrl_left_drag", label: "Ctrl left drag" },
+    { value: "right_drag", label: "Right drag" }
+  ],
+  splitThreePaneLayoutOptions: [
+    { value: "adaptive", label: "Adaptive" },
+    { value: "left_two_right_one", label: "Left split" }
+  ],
+  splitOverflowPolicyOptions: [
+    { value: "block_with_notice", label: "Block" },
+    { value: "replace_oldest", label: "Replace oldest" }
+  ],
+  searchScopeOptions: [
+    { value: "workspace", label: "Workspace" },
+    { value: "custom", label: "Custom" }
+  ],
+  searchDeepBudgetOptions: [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" }
+  ],
+  deepSearchLocalOpenBehaviorOptions: [
+    { value: "open_file", label: "Open file" },
+    { value: "reveal_in_manager", label: "Reveal" }
+  ],
+  deepSearchCrawlPolicyOptions: [
+    { value: "accessibility_only", label: "Accessibility only" }
+  ],
+  searchWebEngineOptions: [
+    { value: "google", label: "Google" },
+    { value: "bing", label: "Bing" }
+  ],
+  omniboxNonBrowserSubmitTargetOptions: [
+    { value: "new_tab", label: "New tab" },
+    { value: "replace_active_tab", label: "Replace active tab" }
+  ],
+  aiLabels: { categoryLabel: "AI" } as BrowserSettingsSurfaceProps["aiLabels"],
+  aiModel: {} as BrowserSettingsSurfaceProps["aiModel"],
+  onLocaleChange: noop,
+  onThemeChange: noop,
+  onUiStyleChange: noop,
+  onTerminalThemeChange: noop,
+  onSplitTriggerModeChange: noop,
+  onSplitThreePaneLayoutChange: noop,
+  onSplitOverflowPolicyChange: noop,
+  onAiRichRenderChange: noop,
+  onAiStopBehaviorChange: noop,
+  onPreventSleepChange: noop,
+  onJsReplChange: noop,
+  onForceWebPageThemingChange: noop,
+  onSearchScopeChange: noop,
+  onSearchCustomRootsChange: noop,
+  onSearchWebEnginesChange: noop,
+  onSearchSearxngEndpointChange: noop,
+  onSearchDeepBudgetChange: noop,
+  onDeepSearchRestoreViewportChange: noop,
+  onDeepSearchLocalOpenBehaviorChange: noop,
+  onDeepSearchSiteExpansionChange: noop,
+  onDeepSearchProactiveGuessChange: noop,
+  onDeepSearchCrawlPolicyChange: noop,
+  onSearchEnableFuzzyChange: noop,
+  onSearchEnableContentChange: noop,
+  onSearchIncludeHiddenChange: noop,
+  onSearchAutoIndexChange: noop,
+  onSearchRebuildIndex: noop,
+  onOmniboxNonBrowserSubmitTargetChange: noop,
+  ...overrides
+});

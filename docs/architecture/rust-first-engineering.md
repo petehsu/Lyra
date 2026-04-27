@@ -29,7 +29,8 @@ Requirements:
 1. Rust crate or vendored native workspace must exist.
 2. Main process wiring must call the module bridge factory in `apps/desktop/src/main/index.ts`.
 3. `apps/desktop/package.json` `scripts.native:build` must include `-p <crate>`.
-4. TypeScript services must not keep fallback implementations for native-owned behavior.
+4. `lyrad` must build in its own `cargo build` invocation. Do not combine it with Node-API/native addon packages in the same Cargo command, because Cargo feature unification can enable `node-api` on crates linked into the daemon and produce unresolved `_napi_*` symbols.
+5. TypeScript services must not keep fallback implementations for native-owned behavior.
 
 ## TypeScript-Owned Main Modules
 These modules are shell-level logic and may stay TypeScript-owned:

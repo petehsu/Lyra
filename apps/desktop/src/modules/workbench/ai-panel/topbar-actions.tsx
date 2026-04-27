@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { renderAiPanelTopbarIcon } from "./icon-registry";
 import type { AiPanelSide } from "./types";
+import { ChromeIconButton, cx } from "../ui-primitives";
 
 type AiPanelTopbarActionsProps = {
   readonly onRequestProjectBind?: (() => void) | undefined;
@@ -87,21 +88,12 @@ export const AiPanelTopbarActions = ({
   return (
     <div className="lyra-ai-panel-topbar-actions">
       {onRequestProjectBind === undefined ? null : (
-        <button
-          type="button"
-          className={
-            activeBoundProjectName === null
-              ? (
-                  isBindingProject
-                    ? "lyra-ai-panel-topbar-action lyra-ai-panel-topbar-action-pending"
-                    : "lyra-ai-panel-topbar-action"
-                )
-              : (
-                  isBindingProject
-                    ? "lyra-ai-panel-topbar-action lyra-ai-panel-topbar-action-active lyra-ai-panel-topbar-action-pending"
-                    : "lyra-ai-panel-topbar-action lyra-ai-panel-topbar-action-active"
-                )
-          }
+        <ChromeIconButton
+          className={cx(
+            "lyra-ai-panel-topbar-action",
+            activeBoundProjectName !== null && "lyra-ai-panel-topbar-action-active",
+            isBindingProject && "lyra-ai-panel-topbar-action-pending"
+          )}
           disabled={isBindingProject || !isAgentAvailable}
           aria-label={bindProjectLabel}
           title={activeBoundProjectName === null
@@ -110,23 +102,21 @@ export const AiPanelTopbarActions = ({
           onClick={onRequestProjectBind}
         >
           <FolderOpen size={14} aria-hidden="true" />
-        </button>
+        </ChromeIconButton>
       )}
       {onOpenHistory === undefined || openHistoryLabel === undefined ? null : (
-        <button
-          type="button"
+        <ChromeIconButton
           className="lyra-ai-panel-topbar-action"
           onClick={onOpenHistory}
           aria-label={openHistoryLabel}
           title={openHistoryLabel}
         >
           {renderAiPanelTopbarIcon("history")}
-        </button>
+        </ChromeIconButton>
       )}
       {hasMoreActions ? (
         <div className="lyra-ai-panel-topbar-more" ref={moreMenuRef}>
-          <button
-            type="button"
+          <ChromeIconButton
             className="lyra-ai-panel-topbar-action"
             onClick={() => {
               setIsMoreOpen((current) => !current);
@@ -137,7 +127,7 @@ export const AiPanelTopbarActions = ({
             title={moreActionsLabel}
           >
             <MoreHorizontal size={15} aria-hidden="true" />
-          </button>
+          </ChromeIconButton>
           {isMoreOpen ? (
             <div className="lyra-ai-panel-topbar-more-menu" role="menu">
               {onOpenMcp === undefined || openMcpLabel === undefined ? null : (

@@ -5,6 +5,7 @@ export {
 export { mapFeedbackEventToNotification } from "./feedback-adapter";
 export { WorkbenchNotificationTopbar } from "./topbar";
 export { NotificationCenterSurface } from "./view";
+export type { NotificationCenterSurfaceProps } from "./view";
 export {
   renderNotificationCenterAppIcon,
   renderNotificationSourceIcon

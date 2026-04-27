@@ -23,10 +23,20 @@ const createMonacoTestMock = (): typeof Monaco => {
     let value = initialValue;
     let languageId = initialLanguageId;
     const listeners = new Set<() => void>();
+    const readLines = () => value.split("\n");
 
     const model = {
       getValue: () => value,
       getLanguageId: () => languageId,
+      setValue: (nextValue: string) => {
+        value = nextValue;
+        listeners.forEach((listener) => listener());
+      },
+      getLineCount: () => readLines().length,
+      getLineMaxColumn: (lineNumber: number) => {
+        const line = readLines()[Math.max(0, lineNumber - 1)] ?? "";
+        return line.length + 1;
+      },
       getWordUntilPosition: (_position: {
         lineNumber: number;
         column: number;
@@ -43,9 +53,30 @@ const createMonacoTestMock = (): typeof Monaco => {
       }),
       pushEditOperations: (
         _beforeCursorState: unknown,
-        operations: readonly { text: string }[]
+        operations: readonly {
+          readonly range?: {
+            readonly startLineNumber: number;
+            readonly startColumn: number;
+            readonly endLineNumber: number;
+            readonly endColumn: number;
+          };
+          readonly text: string;
+        }[]
       ) => {
-        value = operations[0]?.text ?? "";
+        const operation = operations[0];
+        if (operation === undefined) {
+          return null;
+        }
+        const fullRange = model.getFullModelRange();
+        const isFullReplacement =
+          operation.range === undefined ||
+          (
+            operation.range.startLineNumber === fullRange.startLineNumber &&
+            operation.range.startColumn === fullRange.startColumn &&
+            operation.range.endLineNumber === fullRange.endLineNumber &&
+            operation.range.endColumn === fullRange.endColumn
+          );
+        value = isFullReplacement ? operation.text : `${value}${operation.text}`;
         listeners.forEach((listener) => listener());
         return null;
       },
@@ -66,6 +97,34 @@ const createMonacoTestMock = (): typeof Monaco => {
     return model;
   };
 
+  const createEditor = (initialModel: Monaco.editor.ITextModel | null) => {
+    let currentModel = initialModel;
+    const blurListeners = new Set<() => void>();
+    const editor = {
+      getSelection: () => null,
+      setSelection: () => undefined,
+      updateOptions: () => undefined,
+      addCommand: () => undefined,
+      revealLine: () => undefined,
+      revealLineInCenter: () => undefined,
+      focus: () => undefined,
+      onDidBlurEditorWidget: (listener: () => void) => {
+        blurListeners.add(listener);
+        return createDisposable(() => {
+          blurListeners.delete(listener);
+        });
+      },
+      dispose: () => {
+        blurListeners.clear();
+      },
+      getModel: () => currentModel,
+      __setModel: (nextModel: Monaco.editor.ITextModel | null) => {
+        currentModel = nextModel;
+      }
+    };
+    return editor;
+  };
+
   const mock = {
     editor: {
       defineTheme: () => undefined,
@@ -80,28 +139,54 @@ const createMonacoTestMock = (): typeof Monaco => {
       createModel: (value: string, languageId: string) =>
         createModel(value, languageId) as unknown as Monaco.editor.ITextModel,
       create: (_host: HTMLElement, options: { model: Monaco.editor.ITextModel }) => {
-        const blurListeners = new Set<() => void>();
-        const editor = {
-          getSelection: () => null,
-          setSelection: () => undefined,
-          updateOptions: () => undefined,
-          addCommand: () => undefined,
-          onDidBlurEditorWidget: (listener: () => void) => {
-            blurListeners.add(listener);
-            return createDisposable(() => {
-              blurListeners.delete(listener);
-            });
+        return createEditor(options.model) as unknown as Monaco.editor.IStandaloneCodeEditor;
+      },
+      createDiffEditor: () => {
+        const modifiedEditor = createEditor(null);
+        return {
+          setModel: (models: {
+            readonly original: Monaco.editor.ITextModel;
+            readonly modified: Monaco.editor.ITextModel;
+          }) => {
+            modifiedEditor.__setModel(models.modified);
           },
+          getModifiedEditor: () =>
+            modifiedEditor as unknown as Monaco.editor.IStandaloneCodeEditor,
           dispose: () => {
-            blurListeners.clear();
-          },
-          getModel: () => options.model
-        };
-        return editor as unknown as Monaco.editor.IStandaloneCodeEditor;
+            modifiedEditor.dispose();
+          }
+        } as unknown as Monaco.editor.IStandaloneDiffEditor;
       }
     },
     languages: {
-      registerCompletionItemProvider: () => createDisposable()
+      registerCompletionItemProvider: () => createDisposable(),
+      CompletionItemKind: {
+        Method: 0,
+        Function: 1,
+        Constructor: 2,
+        Field: 3,
+        Variable: 4,
+        Class: 5,
+        Interface: 6,
+        Module: 7,
+        Property: 8,
+        Unit: 9,
+        Value: 10,
+        Enum: 11,
+        Keyword: 12,
+        Snippet: 13,
+        Color: 14,
+        File: 15,
+        Reference: 16,
+        Folder: 17,
+        EnumMember: 18,
+        Constant: 19,
+        Struct: 20,
+        Event: 21,
+        Operator: 22,
+        TypeParameter: 23,
+        Text: 24
+      }
     },
     Range: MockRange,
     MarkerSeverity: {

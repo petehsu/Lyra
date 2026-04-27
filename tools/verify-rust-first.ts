@@ -233,6 +233,10 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
 
 const tsOwnedMainModules = new Map<string, string>([
   [
+    "agent-core",
+    "TypeScript-owned shell module: Agent Core IPC bridge and host persona context enrichment above the Rust runtime."
+  ],
+  [
     "browser-use",
     "TypeScript-owned shell module: browser-use runtime coordination, bundle lifecycle, and host-tool bridging."
   ],
@@ -410,6 +414,25 @@ const checkDesktopNativeBuildScript = (): void => {
     }
     violations.push(
       `${DESKTOP_PACKAGE_JSON} scripts.native:build must include '${requiredFlag}' for native-owned module '${module.name}'.`
+    );
+  }
+
+  const cargoBuildSegments = nativeBuildScript
+    .split(/\s*(?:&&|\|\||;)\s*/)
+    .filter((segment) => /\bcargo\s+build\b/.test(segment));
+  for (const segment of cargoBuildSegments) {
+    const packageNames = [...segment.matchAll(/(?:^|\s)-p\s+([^\s&;|]+)/g)]
+      .map((match) => match[1])
+      .filter((packageName): packageName is string => packageName !== undefined);
+    if (packageNames.includes("lyrad") === false) {
+      continue;
+    }
+    const mixedPackages = packageNames.filter((packageName) => packageName !== "lyrad");
+    if (mixedPackages.length === 0) {
+      continue;
+    }
+    violations.push(
+      `${DESKTOP_PACKAGE_JSON} scripts.native:build must build 'lyrad' in its own cargo build invocation; mixed packages ${mixedPackages.map((packageName) => `'${packageName}'`).join(", ")} can enable Node-API features and break daemon linking.`
     );
   }
 };

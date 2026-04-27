@@ -10,6 +10,8 @@ import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storag
 import { isWorkbenchThemeId } from "../theme";
 import type { WorkbenchThemeId } from "../theme";
 import { resolveTerminalThemePresetId } from "../terminal-theme";
+import { resolveWorkbenchUiPackId } from "../ui-platform";
+import type { WorkbenchUiPackId } from "../ui-platform";
 import type {
   WorkbenchAiStopBehavior,
   WorkbenchBrowserAutomationEngine,
@@ -30,6 +32,8 @@ const isLocale = (value: unknown): value is WorkbenchLocale =>
   typeof value === "string" && WORKBENCH_LOCALES.includes(value as WorkbenchLocale);
 
 const isTheme = (value: unknown): value is WorkbenchThemeId => isWorkbenchThemeId(value);
+const isUiPackId = (value: unknown): value is WorkbenchUiPackId =>
+  resolveWorkbenchUiPackId(value) === value;
 const isSplitTriggerMode = (value: unknown): value is WorkbenchSplitTriggerMode =>
   value === "ctrl_left_drag" || value === "right_drag";
 const isSplitThreePaneLayout = (value: unknown): value is WorkbenchSplitThreePaneLayout =>
@@ -90,6 +94,8 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
     const parsed = JSON.parse(raw) as {
       readonly locale?: unknown;
       readonly theme?: unknown;
+      readonly uiPackId?: unknown;
+      readonly uiStyleId?: unknown;
       readonly terminalThemePreset?: unknown;
       readonly splitTriggerMode?: unknown;
       readonly splitThreePaneLayout?: unknown;
@@ -126,6 +132,11 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
     return {
       locale: isLocale(parsed.locale) ? parsed.locale : defaults.locale,
       theme: isTheme(parsed.theme) ? parsed.theme : defaults.theme,
+      uiPackId: isUiPackId(parsed.uiPackId)
+        ? parsed.uiPackId
+        : isUiPackId(parsed.uiStyleId)
+          ? parsed.uiStyleId
+          : defaults.uiPackId,
       terminalThemePreset:
         parsed.terminalThemePreset === undefined
           ? defaults.terminalThemePreset
@@ -243,6 +254,12 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         theme
+      }));
+    },
+    setUiPackId: (uiPackId) => {
+      commit((current) => ({
+        ...current,
+        uiPackId
       }));
     },
     setTerminalThemePreset: (terminalThemePreset) => {

@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SearchDeepSnapshot } from "../../../shared/desktop-bridge";
+import { buildDeepSearchCanvasEdges } from "./deep-search-canvas-model";
 import { deepSearchEdgeTypes, type DeepSearchCanvasEdge } from "./deep-search-edge-renderers";
 import {
   buildDeepSearchCanvasNodes,
@@ -52,13 +53,6 @@ type DeepSearchCanvasProps = {
   readonly onExpandNode: (nodeId: string) => void;
 };
 
-const resolveEdgeSide = (dx: number, dy: number): "north" | "south" | "east" | "west" => {
-  if (Math.abs(dx) > Math.abs(dy)) {
-    return dx >= 0 ? "east" : "west";
-  }
-  return dy >= 0 ? "south" : "north";
-};
-
 export const DeepSearchCanvas = ({
   snapshot,
   selectedNodeId,
@@ -91,7 +85,6 @@ export const DeepSearchCanvas = ({
   );
   const [nodes, setNodes] = useState<readonly DeepSearchCanvasNode[]>([]);
   const [edges, setEdges] = useState<readonly DeepSearchCanvasEdge[]>([]);
-  const connectedEdgeSet = useMemo(() => new Set(connectedEdgeIds), [connectedEdgeIds]);
 
   useEffect(() => {
     if (initialViewportKeyRef.current !== snapshot.query) {
@@ -124,54 +117,15 @@ export const DeepSearchCanvas = ({
   }, [officialCategoryLabels, officialResultLabel, snapshot]);
 
   useEffect(() => {
-    const nodeById = new Map(nodes.map((node) => [node.id, node]));
-    const nextEdges: DeepSearchCanvasEdge[] = snapshot.edges.flatMap((edge) => {
-      const sourceNode = nodeById.get(edge.sourceId);
-      const targetNode = nodeById.get(edge.targetId);
-      if (sourceNode === undefined || targetNode === undefined) {
-        return [];
-      }
-      const sourceWidth = sourceNode.width ?? 0;
-      const sourceHeight = sourceNode.height ?? 0;
-      const targetWidth = targetNode.width ?? 0;
-      const targetHeight = targetNode.height ?? 0;
-      const sourceCenterX = sourceNode.position.x + sourceWidth / 2;
-      const sourceCenterY = sourceNode.position.y + sourceHeight / 2;
-      const targetCenterX = targetNode.position.x + targetWidth / 2;
-      const targetCenterY = targetNode.position.y + targetHeight / 2;
-      const direction = resolveEdgeSide(targetCenterX - sourceCenterX, targetCenterY - sourceCenterY);
-      const opposite = direction === "east"
-        ? "west"
-        : direction === "west"
-          ? "east"
-          : direction === "north"
-            ? "south"
-            : "north";
-      const adjacentToSelection = selectedNodeId !== null && connectedEdgeSet.has(edge.id);
-      if (edge.kind === "related_to" && adjacentToSelection === false) {
-        return [];
-      }
-      return [{
-        id: edge.id,
-        type: "deepSearchEdge",
-        source: edge.sourceId,
-        target: edge.targetId,
-        sourceHandle: `source-${direction}`,
-        targetHandle: `target-${opposite}`,
-        animated: edge.kind === "expanded_to",
-        data: {
-          kind: edge.kind,
-          highlighted: highlightedEdgeId === edge.id || adjacentToSelection,
-          muted: selectedNodeId !== null && adjacentToSelection === false,
-          showReasonBadge: adjacentToSelection,
-          ...(edgeReasonLabels[edge.id] === undefined
-            ? {}
-            : { reasonLabel: edgeReasonLabels[edge.id] })
-        }
-      } satisfies DeepSearchCanvasEdge];
-    });
-    setEdges(nextEdges);
-  }, [connectedEdgeSet, edgeReasonLabels, highlightedEdgeId, nodes, selectedNodeId, snapshot.edges]);
+    setEdges(buildDeepSearchCanvasEdges({
+      snapshot,
+      nodes,
+      selectedNodeId,
+      connectedEdgeIds,
+      highlightedEdgeId,
+      edgeReasonLabels
+    }));
+  }, [connectedEdgeIds, edgeReasonLabels, highlightedEdgeId, nodes, selectedNodeId, snapshot]);
 
   useEffect(() => {
     if (resetLayoutNonce === 0) {
