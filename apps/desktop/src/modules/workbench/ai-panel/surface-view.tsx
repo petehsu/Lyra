@@ -1,6 +1,8 @@
 import { AgentComposer } from "./agent-composer";
+import type { AgentComposerFileAttachment } from "./agent-composer";
 import { AiPanelInteractionShell } from "./interaction-shell";
 import { AiPermissionsPanel } from "./permissions-panel";
+import { ReviewStartPanel } from "./review-start-panel";
 import { EMPTY_THREAD_STYLE, type AiPanelSurfaceTextLabels } from "./surface-model";
 import { AiPanelSurfaceFrame } from "./surface-frame";
 import { AiPanelThreadTabs } from "./thread-tabs";
@@ -9,6 +11,7 @@ import { AiPanelTopbarActions } from "./topbar-actions";
 import type { AiPanelSide, AiPanelSurfaceProps } from "./types";
 import type { AiPanelSurfaceRuntime } from "./use-ai-panel-surface-runtime";
 import type { WorkbenchLocale } from "../i18n";
+import { useState } from "react";
 
 const LOGO_URL = new URL("../../../renderer/assets/logo.svg", import.meta.url).toString();
 
@@ -57,9 +60,12 @@ export const AiPanelSurfaceView = ({
     onOpenHistory,
     onOpenMcp,
     onOpenSkills,
+    onOpenPlugins,
     onRequestProjectBind
   } = surfaceProps;
   const { state, viewModel, actions } = runtime;
+  const [isReviewPanelOpen, setIsReviewPanelOpen] = useState(false);
+  const [isReviewStarting, setIsReviewStarting] = useState(false);
 
   const topbarStart = (
     <AiPanelThreadTabs
@@ -90,15 +96,17 @@ export const AiPanelSurfaceView = ({
       onOpenHistory={onOpenHistory}
       onOpenMcp={onOpenMcp}
       onOpenSkills={onOpenSkills}
+      onOpenPlugins={onOpenPlugins}
       onOpenPermissions={() => {
         actions.setIsPermissionsPanelOpen(true);
       }}
       openHistoryLabel={openHistoryLabel}
       openMcpLabel={openMcpLabel}
       openSkillsLabel={openSkillsLabel}
+      openPluginsLabel={surfaceProps.openPluginsLabel}
       openPermissionsLabel={textLabels.permissions}
       onStartReview={state.activeThreadId === null ? undefined : () => {
-        void actions.startReview();
+        setIsReviewPanelOpen(true);
       }}
       reviewChangesLabel={textLabels.reviewChanges}
       aiPanelSide={aiPanelSide}
@@ -168,6 +176,7 @@ export const AiPanelSurfaceView = ({
             onEditMessageTurn={actions.editMessageTurn}
             onPlanApprovalDecision={actions.planApprovalDecision}
             onOpenPlanApprovalInPanel={actions.setActiveInteractionId}
+            onOpenThread={actions.openThreadTab}
           />
         </div>
 
@@ -197,6 +206,25 @@ export const AiPanelSurfaceView = ({
           />
         ) : null}
 
+        {isReviewPanelOpen ? (
+          <ReviewStartPanel
+            locale={locale}
+            isStarting={isReviewStarting}
+            onClose={() => {
+              setIsReviewPanelOpen(false);
+            }}
+            onStart={async (target) => {
+              setIsReviewStarting(true);
+              try {
+                await actions.startReview(target);
+                setIsReviewPanelOpen(false);
+              } finally {
+                setIsReviewStarting(false);
+              }
+            }}
+          />
+        ) : null}
+
         <AgentComposer
           locale={locale}
           currentThreadId={state.activeThreadId}
@@ -206,12 +234,22 @@ export const AiPanelSurfaceView = ({
           modelAriaLabel={textLabels.model}
           onModelSelect={actions.setSelectedModelOptionValue}
           modelSwitchDisabled={runtime.isBusy}
+          reasoningEffortOptions={runtime.reasoningEffortOptions}
+          selectedReasoningEffort={runtime.selectedReasoningEffort ?? null}
+          onReasoningEffortSelect={actions.setSelectedReasoningEffort}
+          verbosityOptions={runtime.verbosityOptions}
+          selectedVerbosity={runtime.selectedVerbosity ?? null}
+          onVerbositySelect={actions.setSelectedVerbosity}
           permissionMode={runtime.permissionMode}
           permissionModeDisabled={runtime.isBusy}
           onPermissionModeSelect={actions.setPermissionMode}
           ariaLabel={composeAriaLabel ?? title}
           placeholder={composePlaceholder ?? ""}
           sendLabel={composeSendLabel ?? "Send"}
+          followEnabled={state.followEnabled}
+          followLabel={textLabels.followMode}
+          onFollowToggle={actions.toggleFollow}
+          onSendWithFollow={actions.enableFollow}
           inputDisabled={!runtime.isAgentAvailable}
           sendDisabled={!runtime.isAgentAvailable}
           sending={runtime.isBusy}
@@ -223,6 +261,21 @@ export const AiPanelSurfaceView = ({
           planModeLocked={runtime.selectedModelOption === null || runtime.isBusy}
           planModeLabel={state.planModeEnabled ? textLabels.planModeArmed : textLabels.planMode}
           onPlanModeToggle={actions.togglePlanMode}
+          onRequestFileAttachments={
+            desktopApi?.files === undefined
+              ? undefined
+              : async (): Promise<readonly AgentComposerFileAttachment[]> =>
+                (await desktopApi.files.selectAttachments()).map((attachment) => ({
+                  ...attachment,
+                  id: `system-picker:${attachment.kind}:${attachment.path}`,
+                  source: "system-picker" as const,
+                }))
+          }
+          fileMentionSearchRoots={runtime.fileMentionSearchRoots}
+          fileMentionSearchResults={runtime.fileMentionSearchResults}
+          onFileMentionSearchStart={actions.startFileMentionSearch}
+          onFileMentionSearchUpdate={actions.updateFileMentionSearch}
+          onFileMentionSearchStop={actions.stopFileMentionSearch}
           onSend={actions.sendTurn}
           onSteer={actions.steerActiveTurn}
           steerLabel={textLabels.steerTurn}

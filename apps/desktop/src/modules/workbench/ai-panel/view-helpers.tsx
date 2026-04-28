@@ -1,6 +1,7 @@
 import {
   Asterisk,
   BookText,
+  Bot,
   FileCode,
   Files,
   FolderTree,
@@ -28,6 +29,7 @@ export type OptimisticUserMessage = {
   readonly turnId?: string;
   readonly role: "user";
   readonly content: string;
+  readonly contentParts?: AgentSessionDetail["messages"][number]["contentParts"];
   readonly createdAt: number;
   readonly optimistic: true;
 };
@@ -278,6 +280,9 @@ export const renderRuntimeFeedIcon = (kind: AgentRuntimeFeedIconKind) => {
   }
   if (kind === "multiEdit") {
     return <Files size={11} />;
+  }
+  if (kind === "agent") {
+    return <Bot size={11} />;
   }
   if (kind === "tool") {
     return <Wrench size={11} />;

@@ -252,34 +252,6 @@ pub struct ConfigToml {
     /// Base URL override for the built-in `openai` model provider.
     pub openai_base_url: Option<String>,
 
-    /// Machine-local realtime audio device preferences used by realtime voice.
-    #[serde(default)]
-    pub audio: Option<RealtimeAudioToml>,
-
-    /// Overrides only the realtime conversation
-    /// websocket transport base URL (the `Op::RealtimeConversation`
-    /// `/v1/realtime`
-    /// connection) without changing normal provider HTTP requests.
-    pub realtime_ws_base_url: Option<String>,
-    /// Selects the realtime websocket model/snapshot
-    /// used for the `Op::RealtimeConversation` connection.
-    pub realtime_ws_model: Option<String>,
-    /// Realtime websocket session selection.
-    /// `version` controls v1/v2 and `type` controls conversational/transcription.
-    #[serde(default)]
-    pub realtime: Option<RealtimeToml>,
-    /// Overrides only the realtime conversation
-    /// websocket transport instructions (the `Op::RealtimeConversation`
-    /// `/ws` session.update instructions) without changing normal prompts.
-    pub realtime_ws_backend_prompt: Option<String>,
-    /// Replaces the synthesized realtime startup
-    /// context appended to websocket session instructions. An empty string
-    /// disables startup context injection entirely.
-    pub realtime_ws_startup_context: Option<String>,
-    /// Replaces the built-in realtime start
-    /// instructions inserted into developer messages when realtime becomes
-    /// active.
-    pub realtime_start_instructions: Option<String>,
     pub projects: Option<HashMap<String, ProjectConfig>>,
 
     /// Controls the web search tool mode: disabled, cached, or live.
@@ -400,59 +372,6 @@ impl ProjectConfig {
     pub fn is_untrusted(&self) -> bool {
         matches!(self.trust_level, Some(TrustLevel::Untrusted))
     }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RealtimeAudioConfig {
-    pub microphone: Option<String>,
-    pub speaker: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RealtimeWsMode {
-    #[default]
-    Conversational,
-    Transcription,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RealtimeTransport {
-    #[default]
-    #[serde(rename = "webrtc")]
-    WebRtc,
-    Websocket,
-}
-
-pub use lyra_protocol::protocol::RealtimeConversationVersion as RealtimeWsVersion;
-pub use lyra_protocol::protocol::RealtimeVoice;
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct RealtimeConfig {
-    pub version: RealtimeWsVersion,
-    #[serde(rename = "type")]
-    pub session_type: RealtimeWsMode,
-    pub transport: RealtimeTransport,
-    pub voice: Option<RealtimeVoice>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct RealtimeToml {
-    pub version: Option<RealtimeWsVersion>,
-    #[serde(rename = "type")]
-    pub session_type: Option<RealtimeWsMode>,
-    pub transport: Option<RealtimeTransport>,
-    pub voice: Option<RealtimeVoice>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct RealtimeAudioToml {
-    pub microphone: Option<String>,
-    pub speaker: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]

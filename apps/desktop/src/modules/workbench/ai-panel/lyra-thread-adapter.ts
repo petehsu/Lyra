@@ -1,4 +1,5 @@
 import type {
+  AgentMessageContentPart,
   AgentMessage,
   AgentSession,
   AgentSessionDetail,
@@ -42,8 +43,16 @@ const isRecord = (value: unknown): value is JsonRecord =>
 const readString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 
+const readRawString = (value: unknown): string | null =>
+  typeof value === "string" ? value : null;
+
 const readNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const readStringArray = (value: unknown): readonly string[] =>
+  Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
 
 const toMs = (value: number | null | undefined, fallback: number): number => {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -104,6 +113,9 @@ const readPath = (value: unknown): string | null => {
 const basename = (path: string | null | undefined): string | undefined => {
   if (path === null || path === undefined) {
     return undefined;
+  }
+  if (/^data:image\//iu.test(path)) {
+    return "image";
   }
   const normalized = path.trim().replace(/\\/g, "/");
   if (normalized.length === 0) {
@@ -192,6 +204,62 @@ const renderUserInput = (input: unknown): string => {
     return `[mention] ${readString(input.name) ?? readString(input.path) ?? ""}`.trim();
   }
   return "";
+};
+
+const userInputContentPart = (input: unknown): AgentMessageContentPart | null => {
+  if (!isRecord(input)) {
+    return null;
+  }
+  const type = readString(input.type);
+  if (type === "text") {
+    const text = readRawString(input.text);
+    return text === null || text.length === 0 ? null : { type: "text", text };
+  }
+  if (type === "mention") {
+    const path = readString(input.path);
+    const name = readString(input.name) ?? path;
+    if (path === null || name === null) {
+      return null;
+    }
+    return {
+      type: "attachment",
+      name,
+      path,
+      kind: path.endsWith("/") ? "directory" : "file",
+    };
+  }
+  if (type === "localImage") {
+    const path = readPath(input.path);
+    if (path === null) {
+      return null;
+    }
+    return {
+      type: "attachment",
+      name: basename(path) ?? path,
+      path,
+      kind: "local_image",
+    };
+  }
+  if (type === "image") {
+    const url = readString(input.url);
+    if (url === null) {
+      return null;
+    }
+    return {
+      type: "attachment",
+      name: basename(url) ?? url,
+      path: url,
+      kind: "image",
+    };
+  }
+  return null;
+};
+
+const userInputContentParts = (content: readonly unknown[]): readonly AgentMessageContentPart[] => {
+  const parts = content
+    .map(userInputContentPart)
+    .filter((part): part is AgentMessageContentPart => part !== null);
+  return parts.length === 0 ? [] : parts;
 };
 
 const firstChangePath = (item: LyraThreadItem): string | null => {
@@ -306,6 +374,27 @@ export const threadItemToToolCall = (
     };
   }
 
+  if (item.type === "collabAgentToolCall") {
+    const tool = readString(item.tool) ?? "agent";
+    const receiverThreadIds = readStringArray(item.receiverThreadIds);
+    return {
+      ...base,
+      toolName: `collab.${tool}`,
+      input: {
+        senderThreadId: readString(item.senderThreadId) ?? thread.id,
+        receiverThreadIds,
+        prompt: readString(item.prompt),
+        model: readString(item.model),
+        reasoningEffort: readString(item.reasoningEffort),
+      },
+      output: {
+        receiverThreadIds,
+        agentsStates: item.agentsStates ?? {},
+      },
+      status: toolStatusToAgent(item.status, fallbackStatus),
+    };
+  }
+
   if (item.type === "webSearch") {
     return {
       ...base,
@@ -341,8 +430,11 @@ const messageFromItem = (
   const id = item.id ?? `${turn.id}:${item.type}:${String(index)}`;
   const createdAt = toMs(turn.startedAt ?? null, thread.createdAt) + index;
   if (item.type === "userMessage") {
+    const contentParts = Array.isArray(item.content)
+      ? userInputContentParts(item.content)
+      : [];
     const content = Array.isArray(item.content)
-      ? item.content.map(renderUserInput).filter(Boolean).join("\n").trim()
+      ? item.content.map(renderUserInput).filter(Boolean).join("").trim()
       : "";
     return content.length === 0
       ? null
@@ -352,6 +444,7 @@ const messageFromItem = (
           turnId: turn.id,
           role: "user",
           content,
+          ...(contentParts.length === 0 ? {} : { contentParts }),
           createdAt,
         };
   }

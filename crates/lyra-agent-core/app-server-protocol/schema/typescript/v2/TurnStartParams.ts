@@ -5,6 +5,7 @@ import type { CollaborationMode } from "../CollaborationMode";
 import type { ReasoningEffort } from "../ReasoningEffort";
 import type { ReasoningSummary } from "../ReasoningSummary";
 import type { ServiceTier } from "../ServiceTier";
+import type { Verbosity } from "../Verbosity";
 import type { JsonValue } from "../serde_json/JsonValue";
 import type { ApprovalsReviewer } from "./ApprovalsReviewer";
 import type { AskForApproval } from "./AskForApproval";
@@ -45,6 +46,10 @@ serviceTier?: ServiceTier | null | null,
  * Override the reasoning effort for this turn and subsequent turns.
  */
 effort?: ReasoningEffort | null,
+/**
+ * Override the model verbosity for this turn and subsequent turns.
+ */
+verbosity?: Verbosity | null,
 /**
  * Override the reasoning summary for this turn and subsequent turns.
  */

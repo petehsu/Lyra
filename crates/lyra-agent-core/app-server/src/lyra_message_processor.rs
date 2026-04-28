@@ -124,17 +124,6 @@ use lyra_app_server_protocol::ThreadMetadataUpdateResponse;
 use lyra_app_server_protocol::ThreadNameUpdatedNotification;
 use lyra_app_server_protocol::ThreadReadParams;
 use lyra_app_server_protocol::ThreadReadResponse;
-use lyra_app_server_protocol::ThreadRealtimeAppendAudioParams;
-use lyra_app_server_protocol::ThreadRealtimeAppendAudioResponse;
-use lyra_app_server_protocol::ThreadRealtimeAppendTextParams;
-use lyra_app_server_protocol::ThreadRealtimeAppendTextResponse;
-use lyra_app_server_protocol::ThreadRealtimeListVoicesParams;
-use lyra_app_server_protocol::ThreadRealtimeListVoicesResponse;
-use lyra_app_server_protocol::ThreadRealtimeStartParams;
-use lyra_app_server_protocol::ThreadRealtimeStartResponse;
-use lyra_app_server_protocol::ThreadRealtimeStartTransport;
-use lyra_app_server_protocol::ThreadRealtimeStopParams;
-use lyra_app_server_protocol::ThreadRealtimeStopResponse;
 use lyra_app_server_protocol::ThreadResumeParams;
 use lyra_app_server_protocol::ThreadResumeResponse;
 use lyra_app_server_protocol::ThreadRollbackParams;
@@ -241,17 +230,12 @@ use lyra_protocol::error::Result as LyraResult;
 use lyra_protocol::items::TurnItem;
 use lyra_protocol::models::ResponseItem;
 use lyra_protocol::protocol::AgentStatus;
-use lyra_protocol::protocol::ConversationAudioParams;
-use lyra_protocol::protocol::ConversationStartParams;
-use lyra_protocol::protocol::ConversationStartTransport;
-use lyra_protocol::protocol::ConversationTextParams;
 use lyra_protocol::protocol::EventMsg;
 use lyra_protocol::protocol::GitInfo as CoreGitInfo;
 use lyra_protocol::protocol::InitialHistory;
 use lyra_protocol::protocol::McpAuthStatus as CoreMcpAuthStatus;
 use lyra_protocol::protocol::McpServerRefreshConfig;
 use lyra_protocol::protocol::Op;
-use lyra_protocol::protocol::RealtimeVoicesList;
 use lyra_protocol::protocol::ReviewDelivery as CoreReviewDelivery;
 use lyra_protocol::protocol::ReviewRequest;
 use lyra_protocol::protocol::ReviewTarget as CoreReviewTarget;
@@ -891,26 +875,6 @@ impl LyraMessageProcessor {
             }
             ClientRequest::TurnInterrupt { request_id, params } => {
                 self.turn_interrupt(to_connection_request_id(request_id), params)
-                    .await;
-            }
-            ClientRequest::ThreadRealtimeStart { request_id, params } => {
-                self.thread_realtime_start(to_connection_request_id(request_id), params)
-                    .await;
-            }
-            ClientRequest::ThreadRealtimeAppendAudio { request_id, params } => {
-                self.thread_realtime_append_audio(to_connection_request_id(request_id), params)
-                    .await;
-            }
-            ClientRequest::ThreadRealtimeAppendText { request_id, params } => {
-                self.thread_realtime_append_text(to_connection_request_id(request_id), params)
-                    .await;
-            }
-            ClientRequest::ThreadRealtimeStop { request_id, params } => {
-                self.thread_realtime_stop(to_connection_request_id(request_id), params)
-                    .await;
-            }
-            ClientRequest::ThreadRealtimeListVoices { request_id, params } => {
-                self.thread_realtime_list_voices(to_connection_request_id(request_id), params)
                     .await;
             }
             ClientRequest::ReviewStart { request_id, params } => {
@@ -5694,6 +5658,7 @@ impl LyraMessageProcessor {
             || params.model.is_some()
             || params.service_tier.is_some()
             || params.effort.is_some()
+            || params.verbosity.is_some()
             || params.summary.is_some()
             || collaboration_mode.is_some();
 
@@ -5713,6 +5678,7 @@ impl LyraMessageProcessor {
                         windows_sandbox_level: None,
                         model: params.model,
                         effort: params.effort.map(Some),
+                        verbosity: params.verbosity,
                         summary: params.summary,
                         service_tier: params.service_tier,
                         collaboration_mode,
@@ -5960,220 +5926,6 @@ impl LyraMessageProcessor {
                 self.outgoing.send_error(request_id, error).await;
             }
         }
-    }
-
-    async fn prepare_realtime_conversation_thread(
-        &self,
-        request_id: ConnectionRequestId,
-        thread_id: &str,
-    ) -> Option<(ThreadId, Arc<LyraThread>)> {
-        let (thread_id, thread) = match self.load_thread(thread_id).await {
-            Ok(v) => v,
-            Err(error) => {
-                self.outgoing.send_error(request_id, error).await;
-                return None;
-            }
-        };
-
-        match self
-            .ensure_conversation_listener(
-                thread_id,
-                request_id.connection_id,
-                /*raw_events_enabled*/ false,
-                ApiVersion::V2,
-            )
-            .await
-        {
-            Ok(EnsureConversationListenerResult::Attached) => {}
-            Ok(EnsureConversationListenerResult::ConnectionClosed) => {
-                return None;
-            }
-            Err(error) => {
-                self.outgoing.send_error(request_id, error).await;
-                return None;
-            }
-        }
-
-        if !thread.enabled(Feature::RealtimeConversation) {
-            self.send_invalid_request_error(
-                request_id,
-                format!("thread {thread_id} does not support realtime conversation"),
-            )
-            .await;
-            return None;
-        }
-
-        Some((thread_id, thread))
-    }
-
-    async fn thread_realtime_start(
-        &self,
-        request_id: ConnectionRequestId,
-        params: ThreadRealtimeStartParams,
-    ) {
-        let Some((_, thread)) = self
-            .prepare_realtime_conversation_thread(request_id.clone(), &params.thread_id)
-            .await
-        else {
-            return;
-        };
-
-        let submit = self
-            .submit_core_op(
-                &request_id,
-                thread.as_ref(),
-                Op::RealtimeConversationStart(ConversationStartParams {
-                    output_modality: params.output_modality,
-                    prompt: params.prompt,
-                    session_id: params.session_id,
-                    transport: params.transport.map(|transport| match transport {
-                        ThreadRealtimeStartTransport::Websocket => {
-                            ConversationStartTransport::Websocket
-                        }
-                        ThreadRealtimeStartTransport::Webrtc { sdp } => {
-                            ConversationStartTransport::Webrtc { sdp }
-                        }
-                    }),
-                    voice: params.voice,
-                }),
-            )
-            .await;
-
-        match submit {
-            Ok(_) => {
-                self.outgoing
-                    .send_response(request_id, ThreadRealtimeStartResponse::default())
-                    .await;
-            }
-            Err(err) => {
-                self.send_internal_error(
-                    request_id,
-                    format!("failed to start realtime conversation: {err}"),
-                )
-                .await;
-            }
-        }
-    }
-
-    async fn thread_realtime_append_audio(
-        &self,
-        request_id: ConnectionRequestId,
-        params: ThreadRealtimeAppendAudioParams,
-    ) {
-        let Some((_, thread)) = self
-            .prepare_realtime_conversation_thread(request_id.clone(), &params.thread_id)
-            .await
-        else {
-            return;
-        };
-
-        let submit = self
-            .submit_core_op(
-                &request_id,
-                thread.as_ref(),
-                Op::RealtimeConversationAudio(ConversationAudioParams {
-                    frame: params.audio.into(),
-                }),
-            )
-            .await;
-
-        match submit {
-            Ok(_) => {
-                self.outgoing
-                    .send_response(request_id, ThreadRealtimeAppendAudioResponse::default())
-                    .await;
-            }
-            Err(err) => {
-                self.send_internal_error(
-                    request_id,
-                    format!("failed to append realtime conversation audio: {err}"),
-                )
-                .await;
-            }
-        }
-    }
-
-    async fn thread_realtime_append_text(
-        &self,
-        request_id: ConnectionRequestId,
-        params: ThreadRealtimeAppendTextParams,
-    ) {
-        let Some((_, thread)) = self
-            .prepare_realtime_conversation_thread(request_id.clone(), &params.thread_id)
-            .await
-        else {
-            return;
-        };
-
-        let submit = self
-            .submit_core_op(
-                &request_id,
-                thread.as_ref(),
-                Op::RealtimeConversationText(ConversationTextParams { text: params.text }),
-            )
-            .await;
-
-        match submit {
-            Ok(_) => {
-                self.outgoing
-                    .send_response(request_id, ThreadRealtimeAppendTextResponse::default())
-                    .await;
-            }
-            Err(err) => {
-                self.send_internal_error(
-                    request_id,
-                    format!("failed to append realtime conversation text: {err}"),
-                )
-                .await;
-            }
-        }
-    }
-
-    async fn thread_realtime_stop(
-        &self,
-        request_id: ConnectionRequestId,
-        params: ThreadRealtimeStopParams,
-    ) {
-        let Some((_, thread)) = self
-            .prepare_realtime_conversation_thread(request_id.clone(), &params.thread_id)
-            .await
-        else {
-            return;
-        };
-
-        let submit = self
-            .submit_core_op(&request_id, thread.as_ref(), Op::RealtimeConversationClose)
-            .await;
-
-        match submit {
-            Ok(_) => {
-                self.outgoing
-                    .send_response(request_id, ThreadRealtimeStopResponse::default())
-                    .await;
-            }
-            Err(err) => {
-                self.send_internal_error(
-                    request_id,
-                    format!("failed to stop realtime conversation: {err}"),
-                )
-                .await;
-            }
-        }
-    }
-
-    async fn thread_realtime_list_voices(
-        &self,
-        request_id: ConnectionRequestId,
-        _params: ThreadRealtimeListVoicesParams,
-    ) {
-        self.outgoing
-            .send_response(
-                request_id,
-                ThreadRealtimeListVoicesResponse {
-                    voices: RealtimeVoicesList::builtin(),
-                },
-            )
-            .await;
     }
 
     fn build_review_turn(turn_id: String, display_text: &str) -> Turn {

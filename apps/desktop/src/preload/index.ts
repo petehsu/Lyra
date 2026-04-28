@@ -84,6 +84,16 @@ import {
   type SearchLocalStreamStartResponse,
   type SearchRebuildIndexRequest,
   type SearchRebuildIndexResponse,
+  type UiuxInstallFromGitRequest,
+  type UiuxInstallFromLocalRequest,
+  type UiuxInstallFromNpmRequest,
+  type UiuxListPacksResponse,
+  type UiuxPackRuntime,
+  type UiuxRequestActivationRequest,
+  type UiuxRequestActivationResponse,
+  type UiuxResolveRuntimeRequest,
+  type UiuxSetTrustStateRequest,
+  type InstalledUiuxPack,
   type WorkbenchBrowserEvent,
   type WorkbenchBrowserSetElementPickerModeRequest,
   type WorkbenchBrowserLayoutSnapshot,
@@ -119,6 +129,7 @@ import type {
   FileManagerReadTrashResponse,
   FileManagerRecentLocationsPayload,
   FileManagerRestoreFromTrashRequest,
+  FileManagerSelectedAttachment,
   FileWriteResult,
   FileWriteTextRequest
 } from "../shared/file-manager";
@@ -528,7 +539,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     writeTextFile: (request: FileWriteTextRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.filesWriteTextFile, request) as Promise<FileWriteResult>,
     statFile: (request: FileStatRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.filesStatFile, request) as Promise<FileStatResult>
+      ipcRenderer.invoke(LYRA_CHANNELS.filesStatFile, request) as Promise<FileStatResult>,
+    selectAttachments: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.filesSelectAttachments) as Promise<readonly FileManagerSelectedAttachment[]>,
+    selectDirectories: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.filesSelectDirectories) as Promise<readonly FileManagerSelectedAttachment[]>
   },
   workbenchBrowser: {
     syncTopology: (snapshot: WorkbenchBrowserTopologySnapshot) =>
@@ -754,6 +769,25 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         }
       };
     }
+  },
+  uiux: {
+    listPacks: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.uiuxListPacks) as Promise<UiuxListPacksResponse>,
+    installFromLocal: (request: UiuxInstallFromLocalRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.uiuxInstallFromLocal, request) as Promise<InstalledUiuxPack>,
+    installFromGit: (request: UiuxInstallFromGitRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.uiuxInstallFromGit, request) as Promise<InstalledUiuxPack>,
+    installFromNpm: (request: UiuxInstallFromNpmRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.uiuxInstallFromNpm, request) as Promise<InstalledUiuxPack>,
+    setTrustState: (request: UiuxSetTrustStateRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.uiuxSetTrustState, request) as Promise<InstalledUiuxPack>,
+    requestActivation: (request: UiuxRequestActivationRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.uiuxRequestActivation,
+        request
+      ) as Promise<UiuxRequestActivationResponse>,
+    resolveRuntime: (request: UiuxResolveRuntimeRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.uiuxResolveRuntime, request) as Promise<UiuxPackRuntime | null>
   },
   workbenchState: {
     readSync: (key: WorkbenchStateKey) =>

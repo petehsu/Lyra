@@ -130,7 +130,8 @@ export const WorkbenchShell = () => {
   const contextMenuModel = useContextMenuModel();
   const panelLayoutModel = usePanelLayoutModel();
   const uiRuntime = useWorkbenchUiRuntime(
-    preferencesModel.preferences.uiPackId
+    preferencesModel.preferences.uiPackId,
+    desktopApi
   );
   const {
     themeVars,
@@ -227,6 +228,7 @@ export const WorkbenchShell = () => {
     activeFileEditorState,
     mcpCenterModel,
     skillsCenterModel,
+    pluginsCenterModel,
     settingsAiModel
   } = useWorkbenchActiveAppContext({
     activeTab,
@@ -237,6 +239,7 @@ export const WorkbenchShell = () => {
   });
   const settingsSurfaceProps = useWorkbenchSettingsSurfaceProps({
     labels,
+    desktopApi,
     preferencesModel,
     settingsAiModel,
     browserUseRuntimeStatus,
@@ -252,12 +255,20 @@ export const WorkbenchShell = () => {
       tabsModel,
       confirmLabel: t("ai.bindProjectConfirm")
     });
+  const aiFileMentionFallbackRoots = useMemo(
+    () => {
+      const currentPath = activeFileManagerState?.currentLocation?.path?.trim();
+      return currentPath === undefined || currentPath.length === 0 ? [] : [currentPath];
+    },
+    [activeFileManagerState?.currentLocation?.path]
+  );
   const sidebarAiSurfaceProps = useWorkbenchSidebarAiSurfaceProps({
     desktopApi,
     preferences: preferencesModel.preferences,
     settingsAiModel,
     resolvedThemeId,
     aiPanelSide: panelLayoutModel.aiPanelSide,
+    fileMentionFallbackRoots: aiFileMentionFallbackRoots,
     onToggleAiPanelSide: panelLayoutModel.toggleAiPanelSide,
     openAppTab: tabsModel.openAppTab,
     onRequestProjectBind: requestProjectBind,
@@ -449,6 +460,7 @@ export const WorkbenchShell = () => {
     settings: settingsSurfaceProps,
     mcpCenterModel,
     skillsCenterModel,
+    pluginsCenterModel,
     settingsAiModel,
     notificationModel,
     labels,

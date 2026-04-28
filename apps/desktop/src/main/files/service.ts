@@ -1,4 +1,6 @@
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import { basename } from "node:path";
+
+import { dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 
 import { LYRA_CHANNELS } from "../../shared/desktop-bridge";
 import type {
@@ -251,6 +253,38 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
       LYRA_CHANNELS.filesStatFile,
       (_event, payload) =>
         bindings.statFile(normalizeStatRequest(payload as FileStatRequest))
+    ],
+    [
+      LYRA_CHANNELS.filesSelectAttachments,
+      async () => {
+        const result = await dialog.showOpenDialog({
+          properties: ["openFile", "multiSelections"]
+        });
+        if (result.canceled) {
+          return [];
+        }
+        return result.filePaths.map((filePath) => ({
+          name: basename(filePath),
+          path: filePath,
+          kind: "file" as const
+        }));
+      }
+    ],
+    [
+      LYRA_CHANNELS.filesSelectDirectories,
+      async () => {
+        const result = await dialog.showOpenDialog({
+          properties: ["openDirectory", "multiSelections"]
+        });
+        if (result.canceled) {
+          return [];
+        }
+        return result.filePaths.map((filePath) => ({
+          name: basename(filePath),
+          path: filePath,
+          kind: "directory" as const
+        }));
+      }
     ]
   ];
 

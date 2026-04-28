@@ -541,6 +541,8 @@ const createDesktopApi = (): {
         readOnly: false,
         sizeBytes: 0
       }),
+      selectAttachments: async () => [],
+      selectDirectories: async () => [],
       createFile: async () => ({}),
       createFolder: async () => ({}),
       moveToTrash: async () => undefined,
@@ -619,6 +621,27 @@ const createDesktopApi = (): {
       readSync: () => null,
       writeSync: () => undefined,
       removeSync: () => undefined
+    },
+    uiux: {
+      listPacks: async () => ({ builtin: [], installed: [] }),
+      installFromLocal: async () => {
+        throw new Error("not implemented");
+      },
+      installFromGit: async () => {
+        throw new Error("not implemented");
+      },
+      installFromNpm: async () => {
+        throw new Error("not implemented");
+      },
+      setTrustState: async () => {
+        throw new Error("not implemented");
+      },
+      requestActivation: async (request) => ({
+        packId: request.packId,
+        reloadRequired: request.packId !== "classic",
+        activated: request.packId === "classic"
+      }),
+      resolveRuntime: async () => null
     },
     browserUse: {
       readRuntimeStatus: async () => ({

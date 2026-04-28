@@ -1,4 +1,4 @@
-import type { AiProviderProfile } from "../../../shared/ai";
+import type { AiModelRuntimeMetadata, AiProviderProfile } from "../../../shared/ai";
 import type { LyraClientRequestPayload } from "../../../shared/desktop-bridge";
 import type { createTranslator } from "../i18n";
 import type { AgentComposerModelOption, AgentPermissionMode } from "./agent-composer";
@@ -8,6 +8,7 @@ import type { RuntimeThreadOptions } from "./use-lyra-thread-runtime";
 export type RuntimeModelOption = AgentComposerModelOption & {
   readonly model: string;
   readonly modelProvider: string | null;
+  readonly runtimeMetadata?: AiModelRuntimeMetadata;
 };
 
 type Translator = ReturnType<typeof createTranslator>;
@@ -87,11 +88,15 @@ export const createRuntimeModelOptions = ({
       continue;
     }
     for (const model of models) {
+      const modelEntry =
+        profile.customModels.find((entry) => entry.id === model)
+        ?? profile.discoveryState.models.find((entry) => entry.id === model);
       nextOptions.push({
         value: `${profile.id}${MODEL_OPTION_DELIMITER}${model}`,
         label: multipleProfiles ? `${model} · ${profile.name}` : model,
         model,
-        modelProvider: providerId
+        modelProvider: providerId,
+        ...(modelEntry?.runtimeMetadata === undefined ? {} : { runtimeMetadata: modelEntry.runtimeMetadata })
       });
     }
   }
@@ -119,17 +124,23 @@ export const createRuntimeTurnOptions = ({
   defaultProviderId,
   boundProjectRoot,
   permissionMode,
-  collaborationMode
+  collaborationMode,
+  effort,
+  verbosity
 }: {
   readonly selectedModelOption: RuntimeModelOption | null;
   readonly defaultProviderId?: string | null | undefined;
   readonly boundProjectRoot: string | null;
   readonly permissionMode: AgentPermissionMode;
   readonly collaborationMode?: "default" | "plan" | undefined;
+  readonly effort?: RuntimeThreadOptions["effort"] | null | undefined;
+  readonly verbosity?: RuntimeThreadOptions["verbosity"] | null | undefined;
 }): RuntimeThreadOptions => ({
   model: selectedModelOption?.model,
   modelProvider: selectedModelOption?.modelProvider ?? defaultProviderId,
   cwd: boundProjectRoot,
+  ...(effort === null || effort === undefined ? {} : { effort }),
+  ...(verbosity === null || verbosity === undefined ? {} : { verbosity }),
   ...permissionRuntimeOptions(permissionMode),
   ...(collaborationMode === undefined || selectedModelOption?.model === undefined
     ? {}
@@ -173,6 +184,7 @@ export type AiPanelSurfaceTextLabels = {
   readonly model: string;
   readonly planMode: string;
   readonly planModeArmed: string;
+  readonly followMode: string;
   readonly steerTurn: string;
   readonly pendingInteractions: string;
   readonly navPrevious: string;
@@ -192,6 +204,7 @@ export const createSurfaceTextLabels = (t: Translator): AiPanelSurfaceTextLabels
   model: t("ai.modelLabel"),
   planMode: t("ai.planMode"),
   planModeArmed: t("ai.planModeArmed"),
+  followMode: t("ai.followMode"),
   steerTurn: t("ai.steerTurn"),
   pendingInteractions: t("ai.pendingInteractions"),
   navPrevious: t("ai.navPrevious"),
@@ -243,7 +256,13 @@ export const createToolNameLabels = ({
   terminalRead: t("ai.toolNameTerminalRead"),
   terminalInput: t("ai.toolNameTerminalInput"),
   terminalClose: t("ai.toolNameTerminalClose"),
-  terminalExec: t("ai.toolNameTerminalExec")
+  terminalExec: t("ai.toolNameTerminalExec"),
+  collabSpawnAgent: t("ai.toolNameCollabSpawnAgent"),
+  collabSendInput: t("ai.toolNameCollabSendInput"),
+  collabResumeAgent: t("ai.toolNameCollabResumeAgent"),
+  collabWait: t("ai.toolNameCollabWait"),
+  collabCloseAgent: t("ai.toolNameCollabCloseAgent"),
+  collabAgent: t("ai.toolNameCollabAgent")
 });
 
 export const shouldShowEmptySessionScene = ({

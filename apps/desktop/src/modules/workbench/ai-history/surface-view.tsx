@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { AiPanelRichContent } from "../ai-panel/rich-content";
+import { InlineMessageContent } from "../ai-panel/inline-message-content";
 import {
   StatusBadge,
   StatusEmptyState,
@@ -601,6 +602,11 @@ const AiHistoryPreviewPane = ({
                       content={displayContent}
                       locale={locale === "zh-CN" ? "zh-CN" : "en-US"}
                       {...(themeSignature === undefined ? {} : { themeSignature })}
+                    />
+                  ) : message.role === "user" ? (
+                    <InlineMessageContent
+                      content={displayContent}
+                      parts={message.contentParts}
                     />
                   ) : (
                     displayContent

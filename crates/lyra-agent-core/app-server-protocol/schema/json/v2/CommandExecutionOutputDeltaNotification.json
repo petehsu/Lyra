@@ -1,11 +1,35 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "CommandExecOutputStream": {
+      "description": "Stream label for `command/exec/outputDelta` notifications.",
+      "oneOf": [
+        {
+          "description": "stdout stream. PTY mode multiplexes terminal output here.",
+          "enum": [
+            "stdout"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "stderr stream.",
+          "enum": [
+            "stderr"
+          ],
+          "type": "string"
+        }
+      ]
+    }
+  },
   "properties": {
     "delta": {
       "type": "string"
     },
     "itemId": {
       "type": "string"
+    },
+    "stream": {
+      "$ref": "#/definitions/CommandExecOutputStream"
     },
     "threadId": {
       "type": "string"
@@ -17,6 +41,7 @@
   "required": [
     "delta",
     "itemId",
+    "stream",
     "threadId",
     "turnId"
   ],

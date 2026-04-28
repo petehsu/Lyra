@@ -2,9 +2,44 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ComponentProps } from "react";
 import { describe, expect, test, vi } from "vitest";
 
+import { writeFileManagerEntryDragPayload } from "../../file-manager/drag-transfer";
 import { AgentComposer } from "../agent-composer";
 
 type AgentComposerProps = ComponentProps<typeof AgentComposer>;
+type DataTransferLike = Pick<DataTransfer, "types" | "files" | "setData" | "getData" | "effectAllowed" | "dropEffect">;
+
+const createDataTransferMock = (
+  files: readonly File[] = []
+): DataTransferLike => {
+  const store = new Map<string, string>();
+  const dataTransfer: DataTransferLike = {
+    effectAllowed: "all",
+    dropEffect: "none",
+    files: files as unknown as FileList,
+    get types() {
+      return [
+        ...Array.from(store.keys()),
+        ...(files.length > 0 ? ["Files"] : []),
+      ];
+    },
+    setData(format, value) {
+      store.set(format, value);
+    },
+    getData(format) {
+      return store.get(format) ?? "";
+    },
+  };
+  return dataTransfer;
+};
+
+const createFileWithPath = (name: string, path: string): File => {
+  const file = new File([""], name);
+  Object.defineProperty(file, "path", {
+    configurable: true,
+    value: path,
+  });
+  return file;
+};
 
 const createProps = (overrides: Partial<AgentComposerProps> = {}): AgentComposerProps => ({
   locale: "en-US",
@@ -239,7 +274,11 @@ describe("agent composer", () => {
     });
 
     await waitFor(() => {
-      expect(onSend).toHaveBeenCalledWith("keep this draft");
+      expect(onSend).toHaveBeenCalledWith({
+        text: "keep this draft",
+        attachments: [],
+        parts: [{ type: "text", text: "keep this draft" }],
+      });
       expect(screen.getByLabelText("Ask Lyra")).toHaveValue("keep this draft");
     });
   });
@@ -353,7 +392,11 @@ describe("agent composer", () => {
       });
     });
 
-    expect(onSend).toHaveBeenCalledWith("send this");
+    expect(onSend).toHaveBeenCalledWith({
+      text: "send this",
+      attachments: [],
+      parts: [{ type: "text", text: "send this" }],
+    });
   });
 
   test("routes steer and stop actions while sending", async () => {
@@ -372,7 +415,11 @@ describe("agent composer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Steer" }));
 
     await waitFor(() => {
-      expect(onSteer).toHaveBeenCalledWith("focus on tests");
+      expect(onSteer).toHaveBeenCalledWith({
+        text: "focus on tests",
+        attachments: [],
+        parts: [{ type: "text", text: "focus on tests" }],
+      });
       expect(screen.getByLabelText("Ask Lyra")).toHaveValue("");
     });
 
@@ -390,6 +437,350 @@ describe("agent composer", () => {
 
     fireEvent.click(screen.getAllByLabelText("Send")[1]!);
     expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  test("adds selected files inline and sends mentions in text order", async () => {
+    const onSend = vi.fn(async () => undefined);
+    const onRequestFileAttachments = vi.fn(async () => [
+      {
+        id: "system-picker:file:/workspace/README.md",
+        name: "README.md",
+        path: "/workspace/README.md",
+        kind: "file" as const,
+        source: "system-picker" as const,
+      },
+    ]);
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          onSend,
+          onRequestFileAttachments,
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText("Composer menu"));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Add file" }));
+    });
+
+    expect(await screen.findByText("README.md")).toBeDefined();
+    expect(screen.getByLabelText("Ask Lyra")).toHaveValue("[[file:README.md]]");
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send"));
+    });
+
+    expect(onSend).toHaveBeenCalledWith({
+      text: "",
+      attachments: [
+        {
+          id: "system-picker:file:/workspace/README.md",
+          name: "README.md",
+          path: "/workspace/README.md",
+          kind: "file",
+          source: "system-picker",
+        },
+      ],
+      parts: [
+        {
+          type: "attachment",
+          attachment: {
+            id: "system-picker:file:/workspace/README.md",
+            name: "README.md",
+            path: "/workspace/README.md",
+            kind: "file",
+            source: "system-picker",
+          },
+        },
+      ],
+    });
+  });
+
+  test("inserts selected files at the textarea cursor", async () => {
+    const onSend = vi.fn(async () => undefined);
+    const onRequestFileAttachments = vi.fn(async () => [
+      {
+        id: "system-picker:file:/workspace/README.md",
+        name: "README.md",
+        path: "/workspace/README.md",
+        kind: "file" as const,
+        source: "system-picker" as const,
+      },
+    ]);
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "你看一下 是什么？",
+          onSend,
+          onRequestFileAttachments,
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+    await act(async () => {
+      input.focus();
+      input.setSelectionRange("你看一下 ".length, "你看一下 ".length);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    fireEvent.click(screen.getByLabelText("Composer menu"));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Add file" }));
+    });
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => {
+          resolve();
+        });
+      });
+    });
+
+    expect(input.value).toBe("你看一下 [[file:README.md]] 是什么？");
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send"));
+    });
+
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      parts: [
+        { type: "text", text: "你看一下 " },
+        {
+          type: "attachment",
+          attachment: {
+            id: "system-picker:file:/workspace/README.md",
+            name: "README.md",
+            path: "/workspace/README.md",
+            kind: "file",
+            source: "system-picker",
+          },
+        },
+        { type: "text", text: " 是什么？" },
+      ],
+    }));
+  });
+
+  test("starts fuzzy file mention search and inserts the selected result inline", async () => {
+    const onSend = vi.fn(async () => undefined);
+    const onFileMentionSearchStart = vi.fn();
+    const onFileMentionSearchUpdate = vi.fn();
+    const onFileMentionSearchStop = vi.fn();
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          onSend,
+          fileMentionSearchRoots: ["/workspace"],
+          fileMentionSearchResults: [
+            {
+              id: "readme",
+              name: "README.md",
+              path: "/workspace/README.md",
+              kind: "file",
+            },
+          ],
+          onFileMentionSearchStart,
+          onFileMentionSearchUpdate,
+          onFileMentionSearchStop,
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+
+    await act(async () => {
+      input.focus();
+      fireEvent.change(input, { target: { value: "open @read" } });
+      input.setSelectionRange("open @read".length, "open @read".length);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    await waitFor(() => {
+      expect(onFileMentionSearchStart).toHaveBeenCalledWith(expect.any(String), ["/workspace"]);
+      expect(onFileMentionSearchUpdate).toHaveBeenCalledWith(expect.any(String), "read");
+      expect(screen.getByRole("option", { name: /README\.md/i })).toBeDefined();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    });
+
+    expect(input.value).toBe("open [[file:README.md]]");
+    expect(onFileMentionSearchStop).toHaveBeenCalledWith(expect.any(String));
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send"));
+    });
+
+    expect(onSend).toHaveBeenCalledWith({
+      text: "open",
+      attachments: [
+        {
+          id: "fuzzy-mention:file:/workspace/README.md",
+          name: "README.md",
+          path: "/workspace/README.md",
+          kind: "file",
+          source: "fuzzy-mention",
+        },
+      ],
+      parts: [
+        { type: "text", text: "open " },
+        {
+          type: "attachment",
+          attachment: {
+            id: "fuzzy-mention:file:/workspace/README.md",
+            name: "README.md",
+            path: "/workspace/README.md",
+            kind: "file",
+            source: "fuzzy-mention",
+          },
+        },
+      ],
+    });
+  });
+
+  test("treats inline attachment chips as atomic keyboard tokens", async () => {
+    const onRequestFileAttachments = vi.fn(async () => [
+      {
+        id: "system-picker:file:/workspace/README.md",
+        name: "README.md",
+        path: "/workspace/README.md",
+        kind: "file" as const,
+        source: "system-picker" as const,
+      },
+    ]);
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "before after",
+          onRequestFileAttachments,
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+    const insertAt = "before ".length;
+    await act(async () => {
+      input.focus();
+      input.setSelectionRange(insertAt, insertAt);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    fireEvent.click(screen.getByLabelText("Composer menu"));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Add file" }));
+    });
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => {
+          resolve();
+        });
+      });
+    });
+
+    const placeholder = "[[file:README.md]]";
+    const placeholderStart = input.value.indexOf(placeholder);
+    const placeholderEnd = placeholderStart + placeholder.length;
+    input.setSelectionRange(placeholderStart, placeholderStart);
+    fireEvent.keyDown(input, { key: "ArrowRight", code: "ArrowRight" });
+    expect(input.selectionStart).toBe(placeholderEnd);
+
+    fireEvent.keyDown(input, { key: "ArrowLeft", code: "ArrowLeft" });
+    expect(input.selectionStart).toBe(placeholderStart);
+
+    input.setSelectionRange(placeholderEnd, placeholderEnd);
+    fireEvent.keyDown(input, { key: "Backspace", code: "Backspace" });
+    expect(input.value).not.toContain(placeholder);
+    expect(screen.queryByText("README.md")).toBeNull();
+  });
+
+  test("turns file manager drops into inline chips instead of raw path text", async () => {
+    const props = createProps({ initialValue: "" });
+    const { container } = render(<AgentComposer {...props} />);
+    const dataTransfer = createDataTransferMock();
+    writeFileManagerEntryDragPayload(dataTransfer as DataTransfer, {
+      name: "client.ts",
+      kind: "file",
+      source: "directory",
+      path: "/workspace/src/client.ts",
+    });
+
+    await act(async () => {
+      fireEvent.drop(
+        container.querySelector(".lyra-ai-agent-composer-input-shell")!,
+        { dataTransfer }
+      );
+    });
+
+    expect(screen.getByText("client.ts")).toBeDefined();
+    expect(screen.getByLabelText("Ask Lyra")).toHaveValue("[[file:client.ts]]");
+  });
+
+  test("turns pasted system files into inline attachment chips", async () => {
+    const props = createProps({ initialValue: "" });
+    render(<AgentComposer {...props} />);
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+    const file = createFileWithPath("notes.md", "/Users/petehsu/notes.md");
+
+    await act(async () => {
+      fireEvent.paste(input, {
+        clipboardData: createDataTransferMock([file]),
+      });
+    });
+
+    expect(screen.getByText("notes.md")).toBeDefined();
+    expect(input.value).toBe("[[file:notes.md]]");
+  });
+
+  test("turns pasted absolute file paths into inline attachment chips", async () => {
+    const props = createProps({ initialValue: "" });
+    render(<AgentComposer {...props} />);
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+    const clipboardData = createDataTransferMock();
+    clipboardData.setData("text/plain", "/Users/petehsu/Documents/Lyra/package.json");
+
+    await act(async () => {
+      fireEvent.paste(input, { clipboardData });
+    });
+
+    expect(screen.getByText("package.json")).toBeDefined();
+    expect(input.value).toBe("[[file:package.json]]");
+  });
+
+  test("turns pasted image references into image attachment chips", async () => {
+    const onSend = vi.fn(async () => undefined);
+    render(<AgentComposer {...createProps({ initialValue: "inspect ", onSend })} />);
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+    const clipboardData = createDataTransferMock();
+    clipboardData.setData("text/plain", "https://example.test/screenshot.png");
+
+    await act(async () => {
+      input.focus();
+      input.setSelectionRange("inspect ".length, "inspect ".length);
+      fireEvent.paste(input, { clipboardData });
+    });
+
+    expect(screen.getByText("screenshot.png")).toBeDefined();
+    expect(input.value).toBe("inspect [[image:screenshot.png]]");
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send"));
+    });
+
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      parts: [
+        { type: "text", text: "inspect " },
+        {
+          type: "attachment",
+          attachment: {
+            id: "clipboard:image:https://example.test/screenshot.png",
+            name: "screenshot.png",
+            path: "https://example.test/screenshot.png",
+            kind: "image",
+            source: "clipboard",
+          },
+        },
+      ],
+    }));
   });
 
   test("closes the plus menu from outside click and Escape", () => {
@@ -413,5 +804,42 @@ describe("agent composer", () => {
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menuitemcheckbox", { name: /Plan mode/i })).toBeNull();
+  });
+
+  test("toggles follow and enables it for command-enter send", async () => {
+    const onFollowToggle = vi.fn();
+    const onSendWithFollow = vi.fn();
+    const onSend = vi.fn(async () => undefined);
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "inspect file",
+          followLabel: "Follow Agent",
+          followEnabled: true,
+          onFollowToggle,
+          onSendWithFollow,
+          onSend,
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+    const followButton = screen.getByLabelText("Follow Agent");
+
+    expect(followButton).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(followButton);
+    expect(onFollowToggle).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      fireEvent.keyDown(input, {
+        key: "Enter",
+        code: "Enter",
+        metaKey: true,
+      });
+    });
+
+    expect(onSendWithFollow).toHaveBeenCalledTimes(1);
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      text: "inspect file",
+    }));
   });
 });

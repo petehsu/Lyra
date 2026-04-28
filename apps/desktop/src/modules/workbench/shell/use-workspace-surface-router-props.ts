@@ -7,6 +7,7 @@ import type {
 import type { FileManagerChooserMode, FileManagerModel } from "../file-manager";
 import type { McpCenterModel } from "../mcp-center";
 import type { WorkbenchNotificationModel } from "../notifications";
+import type { PluginsCenterModel } from "../plugins-center";
 import type { WorkbenchPreferencesModel } from "../preferences";
 import type { SettingsAiModel } from "../settings-ai";
 import type { SkillsCenterModel } from "../skills-center";
@@ -48,6 +49,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly settings: WorkspaceSurfaceRouterProps["settings"];
   readonly mcpCenterModel: McpCenterModel;
   readonly skillsCenterModel: SkillsCenterModel;
+  readonly pluginsCenterModel: PluginsCenterModel;
   readonly settingsAiModel: SettingsAiModel;
   readonly notificationModel: WorkbenchNotificationModel;
   readonly labels: WorkbenchLabels;
@@ -84,6 +86,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   settings,
   mcpCenterModel,
   skillsCenterModel,
+  pluginsCenterModel,
   settingsAiModel,
   notificationModel,
   labels,
@@ -150,6 +153,10 @@ export const useWorkspaceSurfaceRouterProps = ({
     skillsCenter: {
       model: skillsCenterModel,
       labels: labels.skillsCenter
+    },
+    pluginsCenter: {
+      model: pluginsCenterModel,
+      labels: labels.pluginsCenter
     },
     aiHistory: {
       locale: preferences.locale,

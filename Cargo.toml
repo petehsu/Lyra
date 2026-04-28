@@ -50,7 +50,6 @@ members = [
   "crates/lyra-agent-core/ollama",
   "crates/lyra-agent-core/process-hardening",
   "crates/lyra-agent-core/protocol",
-  "crates/lyra-agent-core/realtime-webrtc",
   "crates/lyra-agent-core/rollout",
   "crates/lyra-agent-core/rollout-trace",
   "crates/lyra-agent-core/rmcp-client",
@@ -146,7 +145,6 @@ lyra-plugin = { path = "crates/lyra-agent-core/plugin" }
 lyra-model-provider = { path = "crates/lyra-agent-core/model-provider" }
 lyra-process-hardening = { path = "crates/lyra-agent-core/process-hardening" }
 lyra-protocol = { path = "crates/lyra-agent-core/protocol" }
-lyra-realtime-webrtc = { path = "crates/lyra-agent-core/realtime-webrtc" }
 lyra-responses-api-proxy = { path = "crates/lyra-agent-core/responses-api-proxy" }
 lyra-response-debug-context = { path = "crates/lyra-agent-core/response-debug-context" }
 lyra-rmcp-client = { path = "crates/lyra-agent-core/rmcp-client" }

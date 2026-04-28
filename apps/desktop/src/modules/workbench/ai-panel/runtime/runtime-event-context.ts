@@ -52,6 +52,7 @@ export type HandleAiPanelRuntimeEventParams = {
   readonly setOptimisticUserMessages: Dispatch<SetStateAction<readonly OptimisticUserMessage[]>>;
   readonly onWriteStreamEvent?: AiPanelSurfaceProps["onWriteStreamEvent"];
   readonly onTerminalExecStarted?: AiPanelSurfaceProps["onTerminalExecStarted"];
+  readonly followEnabled?: boolean;
   readonly openRuntimeTargetPath: (
     path: string,
     options?: {

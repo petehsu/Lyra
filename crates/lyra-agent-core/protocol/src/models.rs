@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -21,10 +22,9 @@ use crate::protocol::COLLABORATION_MODE_CLOSE_TAG;
 use crate::protocol::COLLABORATION_MODE_OPEN_TAG;
 use crate::protocol::GranularApprovalConfig;
 use crate::protocol::NetworkAccess;
-use crate::protocol::REALTIME_CONVERSATION_CLOSE_TAG;
-use crate::protocol::REALTIME_CONVERSATION_OPEN_TAG;
 use crate::protocol::SandboxPolicy;
 use crate::protocol::WritableRoot;
+use crate::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use crate::user_input::UserInput;
 use lyra_execpolicy::Policy;
 use lyra_utils_absolute_path::AbsolutePathBuf;
@@ -444,9 +444,6 @@ const SANDBOX_MODE_WORKSPACE_WRITE: &str =
     include_str!("prompts/permissions/sandbox_mode/workspace_write.md");
 const SANDBOX_MODE_READ_ONLY: &str = include_str!("prompts/permissions/sandbox_mode/read_only.md");
 
-const REALTIME_START_INSTRUCTIONS: &str = include_str!("prompts/realtime/realtime_start.md");
-const REALTIME_END_INSTRUCTIONS: &str = include_str!("prompts/realtime/realtime_end.md");
-
 struct PermissionsPromptConfig<'a> {
     approval_policy: AskForApproval,
     approvals_reviewer: ApprovalsReviewer,
@@ -533,23 +530,6 @@ impl DeveloperInstructions {
     pub fn model_switch_message(model_instructions: String) -> Self {
         DeveloperInstructions::new(format!(
             "<model_switch>\nThe user was previously using a different model. Please continue the conversation according to the following instructions:\n\n{model_instructions}\n</model_switch>"
-        ))
-    }
-
-    pub fn realtime_start_message() -> Self {
-        Self::realtime_start_message_with_instructions(REALTIME_START_INSTRUCTIONS.trim())
-    }
-
-    pub fn realtime_start_message_with_instructions(instructions: &str) -> Self {
-        DeveloperInstructions::new(format!(
-            "{REALTIME_CONVERSATION_OPEN_TAG}\n{instructions}\n{REALTIME_CONVERSATION_CLOSE_TAG}"
-        ))
-    }
-
-    pub fn realtime_end_message(reason: &str) -> Self {
-        DeveloperInstructions::new(format!(
-            "{REALTIME_CONVERSATION_OPEN_TAG}\n{}\n\nReason: {reason}\n{REALTIME_CONVERSATION_CLOSE_TAG}",
-            REALTIME_END_INSTRUCTIONS.trim()
         ))
     }
 
@@ -753,6 +733,7 @@ fn granular_instructions(
 
 const MAX_RENDERED_PREFIXES: usize = 100;
 const MAX_ALLOW_PREFIX_TEXT_BYTES: usize = 5000;
+const MAX_LOCAL_FILE_MENTION_BYTES: u64 = MAX_USER_INPUT_TEXT_CHARS as u64;
 const TRUNCATED_MARKER: &str = "...\n[Some commands were truncated]";
 
 pub fn format_allow_prefixes(prefixes: Vec<Vec<String>>) -> Option<String> {
@@ -961,6 +942,110 @@ pub fn local_image_content_items_with_label_number(
     }
 }
 
+fn local_file_mention_path(path: &str) -> Option<PathBuf> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if matches!(
+        trimmed.split_once("://").map(|(scheme, _)| scheme),
+        Some("app" | "plugin" | "mcp" | "skill")
+    ) {
+        return None;
+    }
+    if trimmed.contains("://") {
+        return None;
+    }
+    Some(PathBuf::from(trimmed))
+}
+
+fn local_file_mention_placeholder(
+    name: &str,
+    path: &str,
+    detail: impl fmt::Display,
+) -> ContentItem {
+    ContentItem::InputText {
+        text: format!(
+            "The user attached local file `{name}` at `{path}`, but Lyra could not inline its contents: {detail}"
+        ),
+    }
+}
+
+fn local_file_mention_content_items(name: &str, path: &str) -> Vec<ContentItem> {
+    let Some(local_path) = local_file_mention_path(path) else {
+        return Vec::new();
+    };
+
+    let metadata = match std::fs::metadata(&local_path) {
+        Ok(metadata) => metadata,
+        Err(err) => return vec![local_file_mention_placeholder(name, path, err)],
+    };
+
+    if metadata.is_dir() {
+        return vec![ContentItem::InputText {
+            text: format!(
+                "The user attached local directory `{name}` at `{path}`. Use tools to inspect it if needed."
+            ),
+        }];
+    }
+    if !metadata.is_file() {
+        return vec![local_file_mention_placeholder(
+            name,
+            path,
+            "the path is not a regular file",
+        )];
+    }
+
+    let file = match std::fs::File::open(&local_path) {
+        Ok(file) => file,
+        Err(err) => return vec![local_file_mention_placeholder(name, path, err)],
+    };
+    let mut bytes = Vec::new();
+    let mut limited = file.take(MAX_LOCAL_FILE_MENTION_BYTES + 1);
+    if let Err(err) = limited.read_to_end(&mut bytes) {
+        return vec![local_file_mention_placeholder(name, path, err)];
+    }
+    let truncated = bytes.len() as u64 > MAX_LOCAL_FILE_MENTION_BYTES;
+    if truncated {
+        bytes.truncate(MAX_LOCAL_FILE_MENTION_BYTES as usize);
+    }
+    if bytes.contains(&0) {
+        return vec![local_file_mention_placeholder(
+            name,
+            path,
+            "the file appears to be binary",
+        )];
+    }
+
+    let content = match String::from_utf8(bytes) {
+        Ok(content) => content,
+        Err(err) => {
+            let utf8_error = err.utf8_error();
+            let valid_up_to = utf8_error.valid_up_to();
+            let mut bytes = err.into_bytes();
+            if truncated && valid_up_to > 0 && bytes.len().saturating_sub(valid_up_to) <= 4 {
+                bytes.truncate(valid_up_to);
+                String::from_utf8(bytes).unwrap_or_default()
+            } else {
+                return vec![local_file_mention_placeholder(
+                    name,
+                    path,
+                    "the file is not valid UTF-8 text",
+                )];
+            }
+        }
+    };
+
+    let truncation_note = if truncated {
+        format!("\n\n[File truncated after {MAX_LOCAL_FILE_MENTION_BYTES} bytes]")
+    } else {
+        String::new()
+    };
+    vec![ContentItem::InputText {
+        text: format!("Attached local file `{name}` at `{path}`:\n\n{content}{truncation_note}"),
+    }]
+}
+
 impl From<ResponseInputItem> for ResponseItem {
     fn from(item: ResponseInputItem) -> Self {
         match item {
@@ -1104,7 +1189,10 @@ impl From<Vec<UserInput>> for ResponseInputItem {
                             Err(err) => vec![local_image_error_placeholder(&path, err)],
                         }
                     }
-                    UserInput::Skill { .. } | UserInput::Mention { .. } => Vec::new(), // Tool bodies are injected later in core
+                    UserInput::Skill { .. } => Vec::new(),
+                    UserInput::Mention { name, path } => {
+                        local_file_mention_content_items(&name, &path)
+                    }
                 })
                 .collect::<Vec<ContentItem>>(),
         }
@@ -2742,6 +2830,76 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn local_file_mention_adds_model_visible_text() -> Result<()> {
+        let dir = tempdir()?;
+        let file_path = dir.path().join("Fast Prompt.txt");
+        std::fs::write(&file_path, "Explain this prompt")?;
+
+        let item = ResponseInputItem::from(vec![
+            UserInput::Text {
+                text: "这是什么".to_string(),
+                text_elements: Vec::new(),
+            },
+            UserInput::Mention {
+                name: "Fast Prompt.txt".to_string(),
+                path: file_path.display().to_string(),
+            },
+        ]);
+
+        match item {
+            ResponseInputItem::Message { content, .. } => {
+                assert_eq!(content.len(), 2);
+                match &content[1] {
+                    ContentItem::InputText { text } => {
+                        assert!(text.contains("Attached local file `Fast Prompt.txt`"));
+                        assert!(text.contains(&file_path.display().to_string()));
+                        assert!(text.contains("Explain this prompt"));
+                    }
+                    other => panic!("expected attached file text but found {other:?}"),
+                }
+            }
+            other => panic!("expected message response but got {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn tool_mention_still_drops_from_model_input() {
+        let item = ResponseInputItem::from(vec![UserInput::Mention {
+            name: "calendar".to_string(),
+            path: "app://calendar".to_string(),
+        }]);
+
+        match item {
+            ResponseInputItem::Message { content, .. } => assert!(content.is_empty()),
+            other => panic!("expected message response but got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_local_file_mention_adds_placeholder() {
+        let item = ResponseInputItem::from(vec![UserInput::Mention {
+            name: "missing.txt".to_string(),
+            path: "/tmp/lyra-missing-file-mention.txt".to_string(),
+        }]);
+
+        match item {
+            ResponseInputItem::Message { content, .. } => {
+                assert_eq!(content.len(), 1);
+                match &content[0] {
+                    ContentItem::InputText { text } => {
+                        assert!(text.contains("missing.txt"));
+                        assert!(text.contains("could not inline"));
+                    }
+                    other => panic!("expected missing file placeholder but found {other:?}"),
+                }
+            }
+            other => panic!("expected message response but got {other:?}"),
+        }
     }
 
     #[test]

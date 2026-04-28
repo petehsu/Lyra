@@ -43,6 +43,10 @@ import {
   type WorkbenchBrowserIpcBridge
 } from "./workbench-browser/service";
 import {
+  LYRA_UIUX_PACK_SCHEME,
+  createUiuxPacksIpcBridge
+} from "./uiux-packs";
+import {
   createWorkbenchWebAutomationHostToolsBridge,
   createWorkbenchWebAutomationService
 } from "./workbench-web-automation";
@@ -77,6 +81,16 @@ protocol.registerSchemesAsPrivileged([
       corsEnabled: true,
       stream: true
     }
+  },
+  {
+    scheme: LYRA_UIUX_PACK_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true
+    }
   }
 ]);
 
@@ -90,6 +104,7 @@ let disposeMcpBridge: (() => Promise<void>) | null = null;
 let disposeSkillsBridge: (() => Promise<void>) | null = null;
 let disposeWorkbenchBrowserBridge: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
+let disposeUiuxPacksBridge: (() => void) | null = null;
 let disposeRuntimeClient: (() => void) | null = null;
 let disposeRuntimeHostRpc: (() => void) | null = null;
 let disposeSearchBridge: (() => void) | null = null;
@@ -658,6 +673,11 @@ const registerIpcHandlers = (): void => {
     storageRoots.modules.workbenchState
   );
   disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
+  const uiuxPacksBridge = createUiuxPacksIpcBridge({
+    storageRoot: storageRoots.modules.uiuxPacks,
+    workbenchStateBridge
+  });
+  disposeUiuxPacksBridge = uiuxPacksBridge.dispose;
   const powerSaveBlockerController = createPowerSaveBlockerController();
   powerSaveBlockerController.setEnabled(
     readPreventSleepEnabledPreference(workbenchStateBridge.readState("preferences"))
@@ -986,6 +1006,10 @@ app.on("before-quit", () => {
     disposePowerSaveBlocker = null;
   }
   workbenchBrowserBridge = null;
+  if (disposeUiuxPacksBridge !== null) {
+    disposeUiuxPacksBridge();
+    disposeUiuxPacksBridge = null;
+  }
   if (disposeWorkbenchStateBridge !== null) {
     disposeWorkbenchStateBridge();
     disposeWorkbenchStateBridge = null;

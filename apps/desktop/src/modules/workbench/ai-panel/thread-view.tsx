@@ -12,6 +12,7 @@ import type {
   PendingInteractionPanel,
 } from "./interaction/pending-interaction-mappers";
 import { AiPanelRichContent } from "./rich-content";
+import { InlineMessageContent } from "./inline-message-content";
 import { MessageActions } from "./message-actions";
 import { PlanCard } from "./plan-card";
 import {
@@ -108,6 +109,7 @@ type AiPanelThreadViewProps = {
     requestOverride?: PlanApprovalRequest
   ) => Promise<void>;
   readonly onOpenPlanApprovalInPanel: (requestId: string) => void;
+  readonly onOpenThread?: (threadId: string) => void;
 };
 
 export const AiPanelThreadView = memo(({
@@ -158,6 +160,7 @@ export const AiPanelThreadView = memo(({
   onEditMessageTurn,
   onPlanApprovalDecision,
   onOpenPlanApprovalInPanel,
+  onOpenThread,
 }: AiPanelThreadViewProps) => (
   <>
     {showEmptySessionScene ? (
@@ -316,7 +319,16 @@ export const AiPanelThreadView = memo(({
                 }
               >
                 {isUserMessage || !richRenderingEnabled ? (
-                  <div className="lyra-ai-agent-message-content">{displayMessageContent}</div>
+                  <div className="lyra-ai-agent-message-content">
+                    {isUserMessage ? (
+                      <InlineMessageContent
+                        content={displayMessageContent}
+                        parts={message.contentParts}
+                      />
+                    ) : (
+                      displayMessageContent
+                    )}
+                  </div>
                 ) : (
                   <>
                   <div className="lyra-ai-agent-turn-timeline">
@@ -354,6 +366,7 @@ export const AiPanelThreadView = memo(({
                                   failed: toolStatusFailedLabel,
                                 }}
                                 openRuntimeTargetPath={openRuntimeTargetPath}
+                                {...(onOpenThread === undefined ? {} : { onOpenThread })}
                               />
                             </div>
                           );
@@ -539,6 +552,7 @@ export const AiPanelThreadView = memo(({
                 failed: toolStatusFailedLabel,
               }}
               openRuntimeTargetPath={openRuntimeTargetPath}
+              {...(onOpenThread === undefined ? {} : { onOpenThread })}
             />
           )}
         </div>
@@ -554,6 +568,7 @@ export const AiPanelThreadView = memo(({
               failed: toolStatusFailedLabel,
             }}
             openRuntimeTargetPath={openRuntimeTargetPath}
+            {...(onOpenThread === undefined ? {} : { onOpenThread })}
           />
         </div>
       )}

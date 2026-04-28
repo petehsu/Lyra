@@ -14,7 +14,7 @@ pub(crate) fn write_plugin_fixture(root: &Path, plugin_name: &str) {
         &format!(
             r#"{{
   "name": "{plugin_name}",
-  "description": "Plugin that includes skills, MCP servers, and app connectors"
+  "description": "Plugin that includes skills, MCP servers, and plugin connectors"
 }}"#
         ),
     );

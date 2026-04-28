@@ -5,11 +5,59 @@ export type AgentComposerModelOption = {
   readonly label: string;
 };
 
+export type AgentComposerReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type AgentComposerVerbosity = "low" | "medium" | "high";
+
+export type AgentComposerModelControlOption<Value extends string> = {
+  readonly value: Value;
+  readonly label: string;
+  readonly disabled?: boolean;
+  readonly disabledReason?: string;
+};
+
 export type AgentPermissionMode = "default" | "auto_review" | "full_access";
 
 export type AgentComposerAppendRequest = {
   readonly id: number;
   readonly text: string;
+};
+
+export type AgentComposerFileAttachment = {
+  readonly id: string;
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "file" | "directory" | "local_image" | "image";
+  readonly source: "lyra-file-manager" | "system-picker" | "system-drag" | "clipboard" | "fuzzy-mention";
+};
+
+export type AgentComposerInlineAttachment = AgentComposerFileAttachment & {
+  readonly placeholder: string;
+};
+
+export type AgentComposerContentPart =
+  | {
+    readonly type: "text";
+    readonly text: string;
+  }
+  | {
+    readonly type: "attachment";
+    readonly attachment: AgentComposerFileAttachment;
+  };
+
+export type AgentComposerSubmitPayload = {
+  readonly text: string;
+  readonly attachments: readonly AgentComposerFileAttachment[];
+  readonly parts: readonly AgentComposerContentPart[];
+};
+
+export type AgentComposerFileMentionSearchResult = {
+  readonly id: string;
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "file" | "directory";
+  readonly root?: string;
+  readonly score?: number;
+  readonly indices?: readonly number[] | null;
 };
 
 export type AgentComposerProps = {
@@ -21,11 +69,22 @@ export type AgentComposerProps = {
   readonly modelAriaLabel?: string;
   readonly modelSwitchDisabled?: boolean;
   readonly onModelSelect?: (modelName: string) => void;
+  readonly reasoningEffortOptions?: readonly AgentComposerModelControlOption<AgentComposerReasoningEffort>[];
+  readonly selectedReasoningEffort?: AgentComposerReasoningEffort | null;
+  readonly reasoningEffortLabel?: string;
+  readonly modelControlAutoLabel?: string;
+  readonly onReasoningEffortSelect?: (value: AgentComposerReasoningEffort | null) => void;
+  readonly verbosityOptions?: readonly AgentComposerModelControlOption<AgentComposerVerbosity>[];
+  readonly selectedVerbosity?: AgentComposerVerbosity | null;
+  readonly verbosityLabel?: string;
+  readonly onVerbositySelect?: (value: AgentComposerVerbosity | null) => void;
   readonly initialValue?: string;
   readonly appendRequest?: AgentComposerAppendRequest | null;
   readonly ariaLabel: string;
   readonly placeholder: string;
   readonly sendLabel: string;
+  readonly followLabel?: string;
+  readonly followEnabled?: boolean;
   readonly inputDisabled: boolean;
   readonly sendDisabled: boolean;
   readonly sending: boolean;
@@ -38,12 +97,28 @@ export type AgentComposerProps = {
   readonly permissionModeDisabled?: boolean;
   readonly onPermissionModeSelect?: (mode: AgentPermissionMode) => void;
   readonly onHeightChange?: (height: number) => void;
-  readonly onSend: (value: string) => void | Promise<void>;
-  readonly onSteer?: (value: string) => void | Promise<void>;
+  readonly onSend: (payload: AgentComposerSubmitPayload) => void | Promise<void>;
+  readonly onSendWithFollow?: (() => void) | undefined;
+  readonly onFollowToggle?: (() => void) | undefined;
+  readonly onSteer?: (payload: AgentComposerSubmitPayload) => void | Promise<void>;
   readonly steerLabel?: string;
   readonly steerDisabled?: boolean;
   readonly onStop?: () => void;
   readonly stopDisabled?: boolean;
+  readonly addFileLabel?: string;
+  readonly removeAttachmentLabel?: string;
+  readonly onRequestFileAttachments?: (() => Promise<readonly AgentComposerFileAttachment[]>) | undefined;
+  readonly fileMentionSearchRoots?: readonly string[] | undefined;
+  readonly fileMentionSearchResults?: readonly AgentComposerFileMentionSearchResult[] | undefined;
+  readonly onFileMentionSearchStart?: (
+    sessionId: string,
+    roots: readonly string[]
+  ) => void | Promise<void>;
+  readonly onFileMentionSearchUpdate?: (
+    sessionId: string,
+    query: string
+  ) => void | Promise<void>;
+  readonly onFileMentionSearchStop?: (sessionId: string) => void | Promise<void>;
 };
 
 export type ComposerTextEffect = {

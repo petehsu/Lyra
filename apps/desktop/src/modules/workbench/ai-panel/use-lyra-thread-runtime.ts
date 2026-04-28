@@ -34,6 +34,7 @@ import {
   readWorkbenchStateSync,
   writeWorkbenchStateSync,
 } from "../state-storage";
+import { isWriteToolName } from "./runtime/feed-utils";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -74,6 +75,7 @@ export type LyraThreadRuntimeState = {
   readonly activeThread: LyraThread | null;
   readonly activeDetail: AgentSessionDetail | null;
   readonly planModeEnabled: boolean;
+  readonly followEnabled: boolean;
   readonly planByTurn: Readonly<Record<string, LyraTurnPlanState>>;
   readonly latestPlanTurnId: string | null;
   readonly optimisticUserMessages: readonly OptimisticUserMessage[];
@@ -100,8 +102,8 @@ export type LyraThreadRuntimeActions = {
   readonly loadThreads: () => Promise<void>;
   readonly loadThread: (threadId: string) => Promise<void>;
   readonly createThread: (options?: RuntimeThreadOptions) => Promise<string>;
-  readonly sendTurn: (input: string, options?: RuntimeThreadOptions) => Promise<void>;
-  readonly steerTurn: (input: string) => Promise<void>;
+  readonly sendTurn: (input: RuntimeTurnInput, options?: RuntimeThreadOptions) => Promise<void>;
+  readonly steerTurn: (input: RuntimeTurnInput) => Promise<void>;
   readonly interruptTurn: () => Promise<void>;
   readonly cleanBackgroundTerminals: () => Promise<void>;
   readonly forkThread: (options?: RuntimeThreadOptions) => Promise<string>;
@@ -111,12 +113,13 @@ export type LyraThreadRuntimeActions = {
     options?: RuntimeThreadOptions
   ) => Promise<string>;
   readonly rollbackThread: (turnId: string) => Promise<string | null>;
-  readonly startReview: () => Promise<void>;
+  readonly startReview: (target: ReviewTarget) => Promise<void>;
   readonly selectThread: (threadId: string | null) => void;
   readonly activateThreadTab: (tabId: string) => void;
   readonly closeThreadTab: (tabId: string) => void;
   readonly openThreadTab: (threadId: string) => void;
   readonly setPlanModeEnabled: (enabled: boolean) => void;
+  readonly setFollowEnabled: (enabled: boolean) => void;
   readonly setActiveInteractionId: (interactionId: string | null) => void;
   readonly respondToCommandApproval: (response: CommandApprovalResponse) => Promise<void>;
   readonly respondToPlanQuestion: (
@@ -124,19 +127,54 @@ export type LyraThreadRuntimeActions = {
   ) => Promise<void>;
 };
 
+export type ReviewTarget =
+  | { readonly type: "uncommittedChanges" }
+  | { readonly type: "baseBranch"; readonly branch: string }
+  | { readonly type: "commit"; readonly sha: string; readonly title: string | null }
+  | { readonly type: "custom"; readonly instructions: string };
+
 export type RuntimeThreadOptions = {
   readonly model?: string | undefined;
   readonly modelProvider?: string | null | undefined;
   readonly cwd?: string | null | undefined;
   readonly collaborationMode?: LyraCollaborationMode | undefined;
+  readonly effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
+  readonly verbosity?: "low" | "medium" | "high" | undefined;
   readonly approvalPolicy?: "untrusted" | "on-failure" | "on-request" | "never" | undefined;
   readonly approvalsReviewer?: "user" | "auto_review" | undefined;
   readonly sandboxMode?: "read-only" | "workspace-write" | "danger-full-access" | undefined;
 };
 
+export type RuntimeTurnAttachment = {
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "file" | "directory" | "local_image" | "image";
+};
+
+export type RuntimeTurnInputPart =
+  | {
+    readonly type: "text";
+    readonly text: string;
+  }
+  | {
+    readonly type: "attachment";
+    readonly attachment: RuntimeTurnAttachment;
+  };
+
+export type RuntimeTurnInput = {
+  readonly text: string;
+  readonly attachments: readonly RuntimeTurnAttachment[];
+  readonly parts?: readonly RuntimeTurnInputPart[];
+};
+
 type UseLyraThreadRuntimeOptions = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly interactionTextLabels: InteractionTextBundle;
+  readonly onFollowOpenFilePath?: (filePath: string, options?: {
+    readonly forceReloadIfOpen?: boolean;
+    readonly allowMissing?: boolean;
+    readonly location?: { readonly line: number };
+  }) => void;
 };
 
 type LyraThreadTabState = {
@@ -168,6 +206,7 @@ type ThreadRuntimeBucket = {
   readonly finalizingTurnId: string | null;
   readonly isSending: boolean;
   readonly isStreamActive: boolean;
+  readonly followEnabled: boolean;
 };
 
 const AI_PANEL_TABS_STATE_KEY = "ai-panel-tabs" as const;
@@ -184,6 +223,7 @@ const createEmptyRuntimeBucket = (): ThreadRuntimeBucket => ({
   finalizingTurnId: null,
   isSending: false,
   isStreamActive: false,
+  followEnabled: false,
 });
 
 const EMPTY_RUNTIME_BUCKET = createEmptyRuntimeBucket();
@@ -196,6 +236,37 @@ const readString = (value: unknown): string | null =>
 
 const readNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const readPathLike = (value: unknown): string | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  return readString(value.path)
+    ?? readString(value.rootPath)
+    ?? readString(value.root)
+    ?? readString(value.relativePath);
+};
+
+const readFirstChangePath = (value: unknown): string | null => {
+  if (!isRecord(value) || !Array.isArray(value.changes)) {
+    return null;
+  }
+  for (const change of value.changes) {
+    const path = readPathLike(change);
+    if (path !== null) {
+      return path;
+    }
+  }
+  return null;
+};
+
+const readTerminalTranscriptChunks = (value: unknown): readonly JsonRecord[] =>
+  Array.isArray(value)
+    ? value.filter((entry): entry is JsonRecord => isRecord(entry))
+    : [];
+
+const normalizeTerminalOutputStream = (value: unknown): "stdout" | "stderr" =>
+  value === "stderr" ? "stderr" : "stdout";
 
 const createTabId = (): string =>
   `${DRAFT_TAB_PREFIX}${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
@@ -365,6 +436,7 @@ const mergeRuntimeBuckets = (
   finalizingTurnId: source.finalizingTurnId ?? target.finalizingTurnId,
   isSending: source.isSending || target.isSending,
   isStreamActive: source.isStreamActive || target.isStreamActive,
+  followEnabled: source.followEnabled || target.followEnabled,
 });
 
 const normalizeStatus = (value: unknown): string =>
@@ -421,6 +493,46 @@ const toRuntimeEvent = ({
   timestamp: Date.now(),
   toolOwner: "agent_core",
 });
+
+const toolCallFollowTarget = (
+  call: AgentToolCall
+): { readonly path: string; readonly line?: number } | null => {
+  const input = isRecord(call.input) ? call.input : {};
+  const output = isRecord(call.output) ? call.output : {};
+  if (call.toolName === "filesystem.read_range") {
+    const path = readPathLike(input) ?? readPathLike(output);
+    if (path === null) {
+      return null;
+    }
+    const startLine =
+      readNumber(input.startLine)
+      ?? readNumber(input.start_line)
+      ?? readNumber(output.startLine)
+      ?? readNumber(output.start_line);
+    return {
+      path,
+      ...(startLine === null ? {} : { line: Math.max(1, Math.round(startLine)) }),
+    };
+  }
+  if (!isWriteToolName(call.toolName)) {
+    return null;
+  }
+  const path = readFirstChangePath(output)
+    ?? readPathLike(output)
+    ?? readPathLike(input);
+  if (path === null) {
+    return null;
+  }
+  const firstChangedLine =
+    readNumber(output.firstChangedLine)
+    ?? readNumber(output.first_changed_line)
+    ?? readNumber(input.firstChangedLine)
+    ?? readNumber(input.first_changed_line);
+  return {
+    path,
+    ...(firstChangedLine === null ? {} : { line: Math.max(1, Math.round(firstChangedLine)) }),
+  };
+};
 
 const requestKindFromMethod = (method: string): AgentPendingInteraction["kind"] | null => {
   if (method === "item/commandExecution/requestApproval") {
@@ -650,14 +762,103 @@ const createTextInput = (text: string): JsonRecord => ({
   textElements: [],
 });
 
+const createMentionInput = (attachment: RuntimeTurnAttachment): JsonRecord => ({
+  type: "mention",
+  name: attachment.name,
+  path: attachment.path,
+});
+
+const createAttachmentInput = (attachment: RuntimeTurnAttachment): JsonRecord => {
+  if (attachment.kind === "local_image") {
+    return {
+      type: "localImage",
+      path: attachment.path,
+    };
+  }
+  if (attachment.kind === "image") {
+    return {
+      type: "image",
+      url: attachment.path,
+    };
+  }
+  return createMentionInput(attachment);
+};
+
+const normalizeRuntimeTurnParts = (input: RuntimeTurnInput): readonly RuntimeTurnInputPart[] => {
+  if (input.parts !== undefined) {
+    return input.parts
+      .map((part): RuntimeTurnInputPart | null => {
+        if (part.type === "text") {
+          return part.text.length === 0 ? null : { type: "text", text: part.text };
+        }
+        const attachment = {
+          name: part.attachment.name.trim(),
+          path: part.attachment.path.trim(),
+          kind: part.attachment.kind,
+        };
+        return attachment.name.length === 0 || attachment.path.length === 0
+          ? null
+          : { type: "attachment", attachment };
+      })
+      .filter((part): part is RuntimeTurnInputPart => part !== null);
+  }
+  const text = input.text.trim();
+  return [
+    ...(text.length === 0 ? [] : [{ type: "text" as const, text }]),
+    ...input.attachments.map((attachment) => ({
+      type: "attachment" as const,
+      attachment,
+    })),
+  ];
+};
+
+const createTurnInputParts = (input: RuntimeTurnInput): readonly JsonRecord[] => {
+  return normalizeRuntimeTurnParts(input).map((part) =>
+    part.type === "text"
+      ? createTextInput(part.text)
+      : createAttachmentInput(part.attachment)
+  );
+};
+
+const formatOptimisticUserContent = (input: RuntimeTurnInput): string => {
+  return normalizeRuntimeTurnParts(input)
+    .map((part) => {
+      if (part.type === "text") {
+        return part.text;
+      }
+      if (part.attachment.kind === "local_image") {
+        return `[local image] ${part.attachment.name}`;
+      }
+      if (part.attachment.kind === "image") {
+        return `[image] ${part.attachment.name}`;
+      }
+      return `[mention] ${part.attachment.name}`;
+    })
+    .join("")
+    .trim();
+};
+
+const optimisticContentPartsFromInput = (input: RuntimeTurnInput) =>
+  normalizeRuntimeTurnParts(input).map((part) =>
+    part.type === "text"
+      ? { type: "text" as const, text: part.text }
+      : {
+          type: "attachment" as const,
+          name: part.attachment.name,
+          path: part.attachment.path,
+          kind: part.attachment.kind,
+        }
+  );
+
 const createCollaborationModePayload = (
   mode: LyraCollaborationMode,
-  model: string
+  model: string,
+  effort?: RuntimeThreadOptions["effort"]
 ): JsonRecord => ({
   mode,
   settings: {
     model,
-    reasoning_effort: null,
+    reasoning_effort: effort ?? null,
     developer_instructions: null,
   },
 });
@@ -673,7 +874,7 @@ const collaborationModeRequestPart = (
     throw new Error("A selected model is required before changing Agent mode.");
   }
   return {
-    collaborationMode: createCollaborationModePayload(options.collaborationMode, model),
+    collaborationMode: createCollaborationModePayload(options.collaborationMode, model, options.effort),
   };
 };
 
@@ -717,6 +918,32 @@ const persistedUserTurnIds = (thread: LyraThread): ReadonlySet<string> => {
   return turnIds;
 };
 
+const persistedUserAttachmentTurnIds = (thread: LyraThread): ReadonlySet<string> => {
+  const turnIds = new Set<string>();
+  for (const turn of thread.turns) {
+    if (
+      turn.items.some((item) =>
+        item.type === "userMessage" &&
+        Array.isArray(item.content) &&
+        item.content.some((contentItem) =>
+          isRecord(contentItem) &&
+          (
+            readString(contentItem.type) === "mention" ||
+            readString(contentItem.type) === "localImage" ||
+            readString(contentItem.type) === "image"
+          )
+        )
+      )
+    ) {
+      turnIds.add(turn.id);
+    }
+  }
+  return turnIds;
+};
+
+const optimisticMessageHasAttachment = (message: OptimisticUserMessage): boolean =>
+  message.contentParts?.some((part) => part.type === "attachment") ?? false;
+
 const dropPersistedOptimisticMessages = (
   optimisticMessages: readonly OptimisticUserMessage[],
   thread: LyraThread
@@ -725,11 +952,15 @@ const dropPersistedOptimisticMessages = (
   if (userTurnIds.size === 0) {
     return optimisticMessages;
   }
+  const userAttachmentTurnIds = persistedUserAttachmentTurnIds(thread);
   return optimisticMessages.filter((message) => {
     if (message.sessionId !== undefined && message.sessionId !== thread.id) {
       return true;
     }
-    return message.turnId === undefined || !userTurnIds.has(message.turnId);
+    if (message.turnId === undefined || !userTurnIds.has(message.turnId)) {
+      return true;
+    }
+    return optimisticMessageHasAttachment(message) && !userAttachmentTurnIds.has(message.turnId);
   });
 };
 
@@ -773,6 +1004,7 @@ const commandDecisionToAgentCore = (decision: CommandApprovalResponse["decision"
 export const useLyraThreadRuntime = ({
   desktopApi,
   interactionTextLabels,
+  onFollowOpenFilePath,
 }: UseLyraThreadRuntimeOptions): {
   readonly state: LyraThreadRuntimeState;
   readonly actions: LyraThreadRuntimeActions;
@@ -794,6 +1026,7 @@ export const useLyraThreadRuntime = ({
   const activeRuntimeKeyRef = useRef<string | null>(null);
   const activeThreadRef = useRef<LyraThread | null>(null);
   const threadByIdRef = useRef<Readonly<Record<string, LyraThread>>>({});
+  const runtimeByKeyRef = useRef<Readonly<Record<string, ThreadRuntimeBucket>>>({});
   const streamingTurnIdRef = useRef<string | null>(null);
   const loadThreadRef = useRef<((threadId: string) => Promise<void>) | null>(null);
   const threadReadRequestedForIdRef = useRef<Set<string>>(new Set());
@@ -856,6 +1089,10 @@ export const useLyraThreadRuntime = ({
   }, [threadById]);
 
   useEffect(() => {
+    runtimeByKeyRef.current = runtimeByKey;
+  }, [runtimeByKey]);
+
+  useEffect(() => {
     streamingTurnIdRef.current = activeBucket.streamingTurnId;
   }, [activeBucket.streamingTurnId]);
 
@@ -877,6 +1114,95 @@ export const useLyraThreadRuntime = ({
   const resetRuntimeBucket = useCallback((key: string): void => {
     setRuntimeByKey((current) => ({ ...current, [key]: createEmptyRuntimeBucket() }));
   }, []);
+
+  const setFollowEnabled = useCallback((enabled: boolean): void => {
+    const key = activeRuntimeKeyRef.current;
+    if (key === null) {
+      return;
+    }
+    patchRuntimeBucket(key, (current) => ({
+      ...current,
+      followEnabled: enabled,
+    }));
+  }, [patchRuntimeBucket]);
+
+  const followToolCallInWorkspace = useCallback((
+    threadId: string,
+    call: AgentToolCall
+  ): void => {
+    if (
+      onFollowOpenFilePath === undefined
+      || runtimeByKeyRef.current[threadId]?.followEnabled !== true
+    ) {
+      return;
+    }
+    const target = toolCallFollowTarget(call);
+    if (target === null) {
+      return;
+    }
+    onFollowOpenFilePath(target.path, {
+      allowMissing: call.status === "running",
+      forceReloadIfOpen: call.status !== "running",
+      ...(target.line === undefined ? {} : { location: { line: target.line } }),
+    });
+  }, [onFollowOpenFilePath]);
+
+  const appendTerminalTranscriptChunk = useCallback((
+    threadId: string,
+    turnId: string,
+    itemId: string,
+    chunk: {
+      readonly stream: "stdin" | "stdout" | "stderr";
+      readonly text: string;
+      readonly timestamp: number;
+      readonly processId?: string;
+    }
+  ): void => {
+    if (chunk.text.length === 0) {
+      return;
+    }
+    patchRuntimeBucket(threadId, (current) => {
+      const existing = current.liveToolCalls.find((entry) => entry.id === itemId);
+      const baseCall: AgentToolCall = existing ?? {
+        id: itemId,
+        sessionId: threadId,
+        turnId,
+        toolName: "terminal.exec",
+        input: {},
+        status: "running",
+        startedAt: chunk.timestamp,
+      };
+      const output = isRecord(baseCall.output) ? baseCall.output : {};
+      const terminalChunks = [
+        ...readTerminalTranscriptChunks(output.terminalChunks),
+        {
+          stream: chunk.stream,
+          text: chunk.text,
+          timestamp: chunk.timestamp,
+        },
+      ];
+      const liveOutput = `${typeof output.liveOutput === "string" ? output.liveOutput : ""}${chunk.text}`;
+      const nextCall: AgentToolCall = {
+        ...baseCall,
+        status: baseCall.status === "completed" || baseCall.status === "failed"
+          ? baseCall.status
+          : "running",
+        output: {
+          ...output,
+          terminalChunks,
+          liveOutput,
+          ...(chunk.processId === undefined ? {} : { processId: chunk.processId }),
+        },
+      };
+      return {
+        ...current,
+        liveToolCalls: [
+          ...current.liveToolCalls.filter((entry) => entry.id !== itemId),
+          nextCall,
+        ].slice(-48),
+      };
+    });
+  }, [patchRuntimeBucket]);
 
   const upsertThread = useCallback((thread: LyraThread): void => {
     setThreadById((current) => ({ ...current, [thread.id]: thread }));
@@ -1100,16 +1426,29 @@ export const useLyraThreadRuntime = ({
   const createThread = useCallback(async (): Promise<string> => createDraftTab(), [createDraftTab]);
 
   const sendTurn = useCallback(async (
-    input: string,
+    input: RuntimeTurnInput,
     options: RuntimeThreadOptions = {}
   ): Promise<void> => {
     if (lyraApi === null) {
       return;
     }
-    const text = input.trim();
-    if (text.length === 0) {
+    const normalizedInput: RuntimeTurnInput = {
+      text: input.text.trim(),
+      attachments: input.attachments
+        .map((attachment) => ({
+          name: attachment.name.trim(),
+          path: attachment.path.trim(),
+          kind: attachment.kind,
+        }))
+        .filter((attachment) => attachment.name.length > 0 && attachment.path.length > 0),
+      ...(input.parts === undefined ? {} : { parts: input.parts }),
+    };
+    const inputParts = createTurnInputParts(normalizedInput);
+    if (inputParts.length === 0) {
       return;
     }
+    const optimisticContent = formatOptimisticUserContent(normalizedInput);
+    const optimisticContentParts = optimisticContentPartsFromInput(normalizedInput);
     const tabId = activeTabIdRef.current ?? createDraftTab();
     const initialThreadId = activeThreadIdRef.current;
     const initialRuntimeKey = initialThreadId ?? tabId;
@@ -1132,7 +1471,8 @@ export const useLyraThreadRuntime = ({
           {
             id: messageId,
             role: "user",
-            content: text,
+            content: optimisticContent,
+            contentParts: optimisticContentParts,
             createdAt: messageCreatedAt,
             optimistic: true,
             ...(sessionId === null ? {} : { sessionId }),
@@ -1161,11 +1501,13 @@ export const useLyraThreadRuntime = ({
     const submitTurn = async (threadId: string, messageId: string): Promise<void> => {
       const response = await lyraApi.request<{ turn?: unknown }>(createRequestPayload("turn/start", {
         threadId,
-        input: [createTextInput(text)],
+        input: inputParts,
         ...(options.model !== undefined && options.model.trim().length > 0 ? { model: options.model.trim() } : {}),
         ...(options.cwd === null || options.cwd === undefined || options.cwd.trim().length === 0
           ? {}
           : { cwd: options.cwd.trim() }),
+        ...(options.effort === undefined ? {} : { effort: options.effort }),
+        ...(options.verbosity === undefined ? {} : { verbosity: options.verbosity }),
         ...turnPermissionRequestPart(options),
         ...collaborationModeRequestPart(options),
       }));
@@ -1229,12 +1571,23 @@ export const useLyraThreadRuntime = ({
     }
   }, [createDraftTab, forgetThread, lyraApi, patchRuntimeBucket, startThread]);
 
-  const steerTurn = useCallback(async (input: string): Promise<void> => {
+  const steerTurn = useCallback(async (input: RuntimeTurnInput): Promise<void> => {
     if (lyraApi === null || activeThreadIdRef.current === null || streamingTurnIdRef.current === null) {
       return;
     }
-    const text = input.trim();
-    if (text.length === 0) {
+    const normalizedInput: RuntimeTurnInput = {
+      text: input.text.trim(),
+      attachments: input.attachments
+        .map((attachment) => ({
+          name: attachment.name.trim(),
+          path: attachment.path.trim(),
+          kind: attachment.kind,
+        }))
+        .filter((attachment) => attachment.name.length > 0 && attachment.path.length > 0),
+      ...(input.parts === undefined ? {} : { parts: input.parts }),
+    };
+    const inputParts = createTurnInputParts(normalizedInput);
+    if (inputParts.length === 0) {
       return;
     }
     const threadId = activeThreadIdRef.current;
@@ -1243,7 +1596,7 @@ export const useLyraThreadRuntime = ({
       await lyraApi.request(createRequestPayload("turn/steer", {
         threadId,
         expectedTurnId: turnId,
-        input: [createTextInput(text)],
+        input: inputParts,
       }));
       patchRuntimeBucket(threadId, (current) => ({
         ...current,
@@ -1253,7 +1606,7 @@ export const useLyraThreadRuntime = ({
             sessionId: threadId,
             turnId,
             phase: "steer_submitted",
-            payload: { text },
+            payload: { text: normalizedInput.text },
           }),
         },
       }));
@@ -1438,7 +1791,7 @@ export const useLyraThreadRuntime = ({
     }
   }, [loadThreads, lyraApi, patchRuntimeBucket, resetRuntimeBucket, upsertThread]);
 
-  const startReview = useCallback(async (): Promise<void> => {
+  const startReview = useCallback(async (target: ReviewTarget): Promise<void> => {
     if (lyraApi === null || activeThreadIdRef.current === null) {
       return;
     }
@@ -1446,7 +1799,7 @@ export const useLyraThreadRuntime = ({
     try {
       const response = await lyraApi.request<{ turn?: unknown; reviewThreadId?: unknown }>(createRequestPayload("review/start", {
         threadId,
-        target: { type: "uncommittedChanges" },
+        target,
         delivery: "inline",
       }));
       const turnId = isRecord(response.turn) ? readString(response.turn.id) : null;
@@ -1547,7 +1900,7 @@ export const useLyraThreadRuntime = ({
       }
       await resolveInteraction(interaction.id, {
         permissions: raw.permissions ?? {},
-        scope: "turn",
+        scope: response.decision === "allow_always" ? "session" : "turn",
       });
       return;
     }
@@ -1801,6 +2154,113 @@ export const useLyraThreadRuntime = ({
         }
         return;
       }
+      if (method === "item/commandExecution/outputDelta") {
+        const threadId = readString(params.threadId);
+        const turnId = readString(params.turnId);
+        const itemId = readString(params.itemId);
+        const delta = typeof params.delta === "string" ? params.delta : "";
+        if (threadId !== null && turnId !== null && itemId !== null) {
+          appendTerminalTranscriptChunk(threadId, turnId, itemId, {
+            stream: normalizeTerminalOutputStream(params.stream),
+            text: delta,
+            timestamp: Date.now(),
+          });
+          patchRuntimeBucket(threadId, (current) => ({
+            ...current,
+            streamingTurnId: turnId,
+            isStreamActive: true,
+            latestRuntimeEventByTurn: {
+              ...current.latestRuntimeEventByTurn,
+              [turnId]: toRuntimeEvent({
+                sessionId: threadId,
+                turnId,
+                phase: "tool_progress",
+                payload: {
+                  toolCallId: itemId,
+                  toolName: "terminal.exec",
+                  progress: {
+                    stream: normalizeTerminalOutputStream(params.stream),
+                    stdoutChunk: normalizeTerminalOutputStream(params.stream) === "stdout" ? delta : "",
+                    stderrChunk: normalizeTerminalOutputStream(params.stream) === "stderr" ? delta : "",
+                  },
+                },
+              }),
+            },
+          }));
+        }
+        return;
+      }
+      if (method === "item/commandExecution/terminalInteraction") {
+        const threadId = readString(params.threadId);
+        const turnId = readString(params.turnId);
+        const itemId = readString(params.itemId);
+        const stdin = typeof params.stdin === "string" ? params.stdin : "";
+        const processId = readString(params.processId) ?? undefined;
+        if (threadId !== null && turnId !== null && itemId !== null) {
+          appendTerminalTranscriptChunk(threadId, turnId, itemId, {
+            stream: "stdin",
+            text: stdin,
+            timestamp: Date.now(),
+            ...(processId === undefined ? {} : { processId }),
+          });
+        }
+        return;
+      }
+      if (method === "item/fileChange/outputDelta") {
+        const threadId = readString(params.threadId);
+        const turnId = readString(params.turnId);
+        const itemId = readString(params.itemId);
+        const delta = typeof params.delta === "string" ? params.delta : "";
+        if (threadId !== null && turnId !== null && itemId !== null) {
+          patchRuntimeBucket(threadId, (current) => ({
+            ...current,
+            streamingTurnId: turnId,
+            isStreamActive: true,
+            latestRuntimeEventByTurn: {
+              ...current.latestRuntimeEventByTurn,
+              [turnId]: toRuntimeEvent({
+                sessionId: threadId,
+                turnId,
+                phase: "tool_progress",
+                payload: {
+                  toolCallId: itemId,
+                  toolName: "filesystem.write",
+                  progress: {
+                    stage: "output",
+                    delta,
+                  },
+                },
+              }),
+            },
+          }));
+        }
+        return;
+      }
+      if (method === "turn/diff/updated") {
+        const threadId = readString(params.threadId);
+        const turnId = readString(params.turnId);
+        if (threadId !== null && turnId !== null) {
+          patchRuntimeBucket(threadId, (current) => ({
+            ...current,
+            latestRuntimeEventByTurn: {
+              ...current.latestRuntimeEventByTurn,
+              [turnId]: toRuntimeEvent({
+                sessionId: threadId,
+                turnId,
+                phase: "tool_progress",
+                payload: {
+                  toolName: "filesystem.write",
+                  progress: {
+                    stage: "diff_updated",
+                    diff: params,
+                  },
+                },
+              }),
+            },
+          }));
+        }
+        return;
+      }
       if (method === "item/started" || method === "item/completed") {
         const threadId = readString(params.threadId);
         const turnId = readString(params.turnId);
@@ -1843,6 +2303,7 @@ export const useLyraThreadRuntime = ({
               const nextCalls = current.liveToolCalls.filter((entry) => entry.id !== call.id);
               return { ...current, liveToolCalls: [...nextCalls, call].slice(-48) };
             });
+            followToolCallInWorkspace(threadId, call);
           }
         }
         return;
@@ -1902,7 +2363,7 @@ export const useLyraThreadRuntime = ({
         void loadThreads();
       }
     });
-  }, [forgetThread, loadThread, loadThreads, lyraApi, patchRuntimeBucket, upsertThread]);
+  }, [appendTerminalTranscriptChunk, followToolCallInWorkspace, forgetThread, loadThread, loadThreads, lyraApi, patchRuntimeBucket, upsertThread]);
 
   const pendingInteractionQueue = useMemo(
     () =>
@@ -1934,6 +2395,7 @@ export const useLyraThreadRuntime = ({
       optimisticUserMessages: activeBucket.optimisticUserMessages,
       liveToolCalls: activeBucket.liveToolCalls,
       latestRuntimeEventByTurn: activeBucket.latestRuntimeEventByTurn,
+      followEnabled: activeBucket.followEnabled,
       latestPlanTurnId,
       pendingInteractions,
       pendingInteractionQueue,
@@ -1970,6 +2432,7 @@ export const useLyraThreadRuntime = ({
       closeThreadTab,
       openThreadTab,
       setPlanModeEnabled,
+      setFollowEnabled,
       setActiveInteractionId,
       respondToCommandApproval,
       respondToPlanQuestion,

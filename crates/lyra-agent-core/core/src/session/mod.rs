@@ -24,7 +24,6 @@ use crate::exec_policy::ExecPolicyManager;
 use crate::installation_id::resolve_installation_id;
 use crate::parse_turn_item;
 use crate::path_utils::normalize_for_native_workdir;
-use crate::realtime_conversation::RealtimeConversationManager;
 use crate::rollout::find_thread_name_by_id;
 use crate::session_prefix::format_subagent_notification_message;
 use crate::skills::SkillRenderSideEffects;
@@ -72,6 +71,7 @@ use lyra_protocol::approvals::NetworkPolicyRuleAction;
 use lyra_protocol::config_types::ApprovalsReviewer;
 use lyra_protocol::config_types::ModeKind;
 use lyra_protocol::config_types::Settings;
+use lyra_protocol::config_types::Verbosity as VerbosityConfig;
 use lyra_protocol::config_types::WebSearchMode;
 use lyra_protocol::dynamic_tools::DynamicToolResponse;
 use lyra_protocol::dynamic_tools::DynamicToolSpec;
@@ -171,7 +171,6 @@ use self::session::AppServerClientMetadata;
 use self::session::Session;
 use self::session::SessionConfiguration;
 use self::session::SessionSettingsUpdate;
-use self::turn::realtime_text_for_event;
 use self::turn_context::TurnContext;
 use self::turn_context::TurnSkillsContext;
 
@@ -214,15 +213,9 @@ impl SteerInputError {
 }
 
 /// Notes from the previous real user turn.
-///
-/// Conceptually this is the same role that `previous_model` used to fill, but
-/// it can carry other prior-turn settings that matter when constructing
-/// sensible state-change diffs or full-context reinjection, such as model
-/// switches or detecting a prior `realtime_active -> false` transition.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PreviousTurnSettings {
     pub(crate) model: String,
-    pub(crate) realtime_active: Option<bool>,
 }
 
 use crate::SkillError;
@@ -575,6 +568,7 @@ impl LyraSessionHandle {
             provider: config.model_provider.clone(),
             collaboration_mode,
             model_reasoning_summary: config.model_reasoning_summary,
+            model_verbosity: config.model_verbosity,
             service_tier: config.service_tier,
             developer_instructions: config.developer_instructions.clone(),
             user_instructions,
@@ -969,23 +963,6 @@ impl Session {
         format!("internal-turn-{id}")
     }
 
-    pub(crate) async fn route_realtime_text_input(self: &Arc<Self>, text: String) {
-        handlers::user_input_or_turn_inner(
-            self,
-            self.next_internal_sub_id(),
-            Op::UserInput {
-                items: vec![UserInput::Text {
-                    text,
-                    text_elements: Vec::new(),
-                }],
-                final_output_json_schema: None,
-                responsesapi_client_metadata: None,
-            },
-            /*mirror_user_text_to_realtime*/ None,
-        )
-        .await;
-    }
-
     pub(crate) async fn get_total_token_usage(&self) -> i64 {
         let state = self.state.lock().await;
         state.get_total_token_usage(state.server_reasoning_included())
@@ -1342,11 +1319,6 @@ impl Session {
         self.send_event_raw(event).await;
         self.maybe_notify_parent_of_terminal_turn(turn_context, &runtime_source)
             .await;
-        self.maybe_mirror_event_text_to_realtime(&runtime_source)
-            .await;
-        self.maybe_clear_realtime_handoff_for_event(&runtime_source)
-            .await;
-
         let show_raw_agent_reasoning = self.show_raw_agent_reasoning();
         for legacy in runtime_source.as_runtime_events(show_raw_agent_reasoning) {
             let runtime_event = Event {
@@ -1447,30 +1419,6 @@ impl Session {
                     },
                 );
         }
-    }
-
-    async fn maybe_mirror_event_text_to_realtime(&self, msg: &EventMsg) {
-        let Some(text) = realtime_text_for_event(msg) else {
-            return;
-        };
-        if self.conversation.running_state().await.is_none()
-            || self.conversation.active_handoff_id().await.is_none()
-        {
-            return;
-        }
-        if let Err(err) = self.conversation.handoff_out(text).await {
-            debug!("failed to mirror event text to realtime conversation: {err}");
-        }
-    }
-
-    async fn maybe_clear_realtime_handoff_for_event(&self, msg: &EventMsg) {
-        if !matches!(msg, EventMsg::TurnComplete(_)) {
-            return;
-        }
-        if let Err(err) = self.conversation.handoff_complete().await {
-            debug!("failed to finalize realtime handoff output: {err}");
-        }
-        self.conversation.clear_active_handoff().await;
     }
 
     pub(crate) async fn send_event_raw(&self, event: Event) {
@@ -2241,10 +2189,9 @@ impl Session {
         let mut developer_sections = Vec::<String>::with_capacity(8);
         let mut contextual_user_sections = Vec::<String>::with_capacity(2);
         let shell = self.user_shell();
-        let (reference_context_item, previous_turn_settings, collaboration_mode, session_source) = {
+        let (previous_turn_settings, collaboration_mode, session_source) = {
             let state = self.state.lock().await;
             (
-                state.reference_context_item(),
                 state.previous_turn_settings(),
                 state.session_configuration.collaboration_mode.clone(),
                 state.session_configuration.session_source.clone(),
@@ -2303,13 +2250,6 @@ impl Session {
             DeveloperInstructions::from_collaboration_mode(&collaboration_mode)
         {
             developer_sections.push(collab_instructions.into_text());
-        }
-        if let Some(realtime_update) = crate::context_manager::updates::build_initial_realtime_item(
-            reference_context_item.as_ref(),
-            previous_turn_settings.as_ref(),
-            turn_context,
-        ) {
-            developer_sections.push(realtime_update.into_text());
         }
         if turn_context.config.include_apps_instructions && turn_context.apps_enabled() {
             let mcp_connection_manager = self.services.mcp_connection_manager.read().await;

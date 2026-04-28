@@ -5,12 +5,13 @@ import type { GlobalDialogOpenRequest } from "../global-dialog";
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchAiStopBehavior } from "../preferences";
 
-export type AiPanelAppId = "ai-mcp" | "ai-skills" | "ai-history";
+export type AiPanelAppId = "ai-mcp" | "ai-skills" | "ai-plugins" | "ai-history";
 
 export type AiPanelAppIconKey =
   | "ai-panel-default"
   | "ai-panel-mcp"
   | "ai-panel-skills"
+  | "ai-panel-plugins"
   | "ai-panel-history";
 
 export type AiPanelAppOpenRequest = {
@@ -83,12 +84,14 @@ export type AiPanelSurfaceProps = {
   readonly defaultProfileName: string | null;
   readonly defaultModelNames: readonly string[];
   readonly configuredProfiles?: readonly AiProviderProfile[];
+  readonly fileMentionFallbackRoots?: readonly string[];
   readonly profileLabel: string;
   readonly modelLabel: string;
   readonly modelsLabel: string;
   readonly openHistoryLabel?: string;
   readonly openMcpLabel?: string;
   readonly openSkillsLabel?: string;
+  readonly openPluginsLabel?: string;
   readonly bindProjectLabel?: string;
   readonly composeAriaLabel?: string;
   readonly composePlaceholder?: string;
@@ -147,6 +150,7 @@ export type AiPanelSurfaceProps = {
   readonly onOpenHistory?: () => void;
   readonly onOpenMcp?: () => void;
   readonly onOpenSkills?: () => void;
+  readonly onOpenPlugins?: () => void;
   readonly aiPanelSide?: AiPanelSide;
   readonly onToggleAiPanelSide?: () => void;
   readonly movePanelToLeftLabel?: string;

@@ -1,11 +1,17 @@
 export {
   DEFAULT_WORKBENCH_UI_PACK_ID,
+  EXTERNAL_WORKBENCH_UI_PACK_ID_PREFIX,
   WORKBENCH_CORE_ADAPTER_KEYS,
   WORKBENCH_UI_PACK_IDS,
+  createWorkbenchUiPackContext,
   createWorkbenchUiPackOptions,
+  isBuiltinWorkbenchUiPackId,
+  isExternalWorkbenchUiPackId,
   isWorkbenchUiPackId,
+  loadExternalWorkbenchUiPack,
   resolveWorkbenchUiPack,
   resolveWorkbenchUiPackId,
+  syncExternalWorkbenchUiPackCss,
   syncWorkbenchUiPackToDocument,
   validateWorkbenchUiPack
 } from "./service";
@@ -19,7 +25,9 @@ export type {
   WorkbenchUiPackAdapters,
   WorkbenchUiPackCapabilities,
   WorkbenchUiPackCompatibility,
+  WorkbenchUiPackContext,
   WorkbenchUiPackManifest,
+  WorkbenchUiPackModule,
   WorkbenchUiPackSource,
   WorkbenchUiRuntime
 } from "./types";

@@ -251,7 +251,9 @@ describe("aggregated search service", () => {
           writeRecentLocations: vi.fn(),
           readTextFile: vi.fn(),
           writeTextFile: vi.fn(),
-          statFile: vi.fn()
+          statFile: vi.fn(),
+          selectAttachments: vi.fn(async () => []),
+          selectDirectories: vi.fn(async () => [])
         },
         workbenchBrowser: {
           syncTopology: vi.fn(async () => undefined),
@@ -356,6 +358,19 @@ describe("aggregated search service", () => {
           readSync: vi.fn(() => null),
           writeSync: vi.fn(),
           removeSync: vi.fn()
+        },
+        uiux: {
+          listPacks: vi.fn(async () => ({ builtin: [], installed: [] })),
+          installFromLocal: vi.fn(),
+          installFromGit: vi.fn(),
+          installFromNpm: vi.fn(),
+          setTrustState: vi.fn(),
+          requestActivation: vi.fn(async (request) => ({
+            packId: request.packId,
+            reloadRequired: request.packId !== "classic",
+            activated: request.packId === "classic"
+          })),
+          resolveRuntime: vi.fn(async () => null)
         },
         browserUse: {
           readRuntimeStatus: vi.fn(async () => ({

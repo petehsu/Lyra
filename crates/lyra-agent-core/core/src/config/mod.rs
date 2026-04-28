@@ -23,8 +23,6 @@ use crate::windows_sandbox::resolve_windows_sandbox_mode;
 use crate::windows_sandbox::resolve_windows_sandbox_private_desktop;
 use lyra_config::config_toml::ConfigToml;
 use lyra_config::config_toml::ProjectConfig;
-use lyra_config::config_toml::RealtimeAudioConfig;
-use lyra_config::config_toml::RealtimeConfig;
 use lyra_config::config_toml::validate_model_providers;
 use lyra_config::profile_toml::ConfigProfile;
 use lyra_config::types::ApprovalsReviewer;
@@ -909,32 +907,6 @@ pub struct Config {
     /// Optional verbosity control for GPT-5 models (Responses API `text.verbosity`).
     pub model_verbosity: Option<Verbosity>,
 
-    /// Machine-local realtime audio device preferences used by realtime voice.
-    pub realtime_audio: RealtimeAudioConfig,
-
-    /// Overrides only the realtime conversation
-    /// websocket transport base URL (the `Op::RealtimeConversation`
-    /// `/v1/realtime`
-    /// connection) without changing normal provider HTTP requests.
-    pub realtime_ws_base_url: Option<String>,
-    /// Selects the realtime websocket model/snapshot
-    /// used for the `Op::RealtimeConversation` connection.
-    pub realtime_ws_model: Option<String>,
-    /// Realtime websocket session selection.
-    /// `version` controls v1/v2 and `type` controls conversational/transcription.
-    pub realtime: RealtimeConfig,
-    /// Overrides only the realtime conversation
-    /// websocket transport instructions (the `Op::RealtimeConversation`
-    /// `/ws` session.update instructions) without changing normal prompts.
-    pub realtime_ws_backend_prompt: Option<String>,
-    /// Replaces the synthesized realtime startup
-    /// context appended to websocket session instructions. An empty string
-    /// disables startup context injection entirely.
-    pub realtime_ws_startup_context: Option<String>,
-    /// Replaces the built-in realtime start
-    /// instructions inserted into developer messages when realtime becomes
-    /// active.
-    pub realtime_start_instructions: Option<String>,
     /// When set, restricts the login mechanism users may use.
     pub forced_login_method: Option<ForcedLoginMethod>,
 
@@ -2568,28 +2540,6 @@ impl Config {
             model_catalog,
             provider_model_catalogs,
             model_verbosity: config_profile.model_verbosity.or(cfg.model_verbosity),
-            realtime_audio: cfg
-                .audio
-                .map_or_else(RealtimeAudioConfig::default, |audio| RealtimeAudioConfig {
-                    microphone: audio.microphone,
-                    speaker: audio.speaker,
-                }),
-            realtime_ws_base_url: cfg.realtime_ws_base_url,
-            realtime_ws_model: cfg.realtime_ws_model,
-            realtime: cfg
-                .realtime
-                .map_or_else(RealtimeConfig::default, |realtime| {
-                    let defaults = RealtimeConfig::default();
-                    RealtimeConfig {
-                        version: realtime.version.unwrap_or(defaults.version),
-                        session_type: realtime.session_type.unwrap_or(defaults.session_type),
-                        transport: realtime.transport.unwrap_or(defaults.transport),
-                        voice: realtime.voice,
-                    }
-                }),
-            realtime_ws_backend_prompt: cfg.realtime_ws_backend_prompt,
-            realtime_ws_startup_context: cfg.realtime_ws_startup_context,
-            realtime_start_instructions: cfg.realtime_start_instructions,
             forced_login_method,
             include_apply_patch_tool: include_apply_patch_tool_flag,
             web_search_mode: constrained_web_search_mode.value,

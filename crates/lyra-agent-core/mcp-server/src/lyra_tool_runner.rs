@@ -339,7 +339,6 @@ async fn run_lyra_tool_session_inner(
                     | EventMsg::McpToolCallEnd(_)
                     | EventMsg::McpListToolsResponse(_)
                     | EventMsg::ListSkillsResponse(_)
-                    | EventMsg::RealtimeConversationListVoicesResponse(_)
                     | EventMsg::ExecCommandBegin(_)
                     | EventMsg::TerminalInteraction(_)
                     | EventMsg::ExecCommandOutputDelta(_)
@@ -389,10 +388,6 @@ async fn run_lyra_tool_session_inner(
                     | EventMsg::CollabCloseEnd(_)
                     | EventMsg::CollabResumeBegin(_)
                     | EventMsg::CollabResumeEnd(_)
-                    | EventMsg::RealtimeConversationStarted(_)
-                    | EventMsg::RealtimeConversationSdp(_)
-                    | EventMsg::RealtimeConversationRealtime(_)
-                    | EventMsg::RealtimeConversationClosed(_)
                     | EventMsg::DeprecationNotice(_) => {
                         // For now, we do not do anything extra for these
                         // events. Note that

@@ -133,12 +133,25 @@ export type AgentTurn = {
 
 export type AgentMessageRole = "user" | "assistant";
 
+export type AgentMessageContentPart =
+  | {
+    readonly type: "text";
+    readonly text: string;
+  }
+  | {
+    readonly type: "attachment";
+    readonly name: string;
+    readonly path: string;
+    readonly kind?: "file" | "directory" | "local_image" | "image";
+  };
+
 export type AgentMessage = {
   readonly id: AgentMessageId;
   readonly sessionId: AgentSessionId;
   readonly turnId?: AgentTurnId;
   readonly role: AgentMessageRole | string;
   readonly content: string;
+  readonly contentParts?: readonly AgentMessageContentPart[];
   readonly displayContent?: string;
   readonly createdAt: number;
 };
@@ -335,6 +348,7 @@ export type AgentRuntimePhase =
   | "started"
   | "assistant_delta"
   | "tool_started"
+  | "tool_progress"
   | "tool_finished"
   | "paused"
   | "completed"

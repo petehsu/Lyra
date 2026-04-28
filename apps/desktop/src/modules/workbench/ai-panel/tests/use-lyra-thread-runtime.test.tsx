@@ -13,6 +13,18 @@ const labels = {
   proposedPlanSummaryFallback: "Plan",
 };
 
+const turnInput = (
+  text: string,
+  attachments: readonly {
+    readonly name: string;
+    readonly path: string;
+    readonly kind: "file" | "directory" | "local_image" | "image";
+  }[] = []
+) => ({
+  text,
+  attachments,
+});
+
 const makeDesktopApi = () => {
   let listener: ((event: LyraRuntimeEvent) => void) | null = null;
   const request = vi.fn(async (payload: { method?: unknown; params?: Record<string, unknown> }) => {
@@ -202,7 +214,7 @@ describe("useLyraThreadRuntime", () => {
 
     let sendPromise: Promise<void> | null = null;
     act(() => {
-      sendPromise = result.current.actions.sendTurn("Hello", {
+      sendPromise = result.current.actions.sendTurn(turnInput("Hello"), {
         model: "gpt-test",
         modelProvider: "lp-openai",
         cwd: "/repo",
@@ -249,7 +261,7 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.actions.sendTurn("Hello", {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
         model: "gpt-test",
         modelProvider: "lp-openai",
         cwd: "/repo",
@@ -318,6 +330,153 @@ describe("useLyraThreadRuntime", () => {
       expect(result.current.state.activeDetail?.messages.at(-1)?.content).toBe("Hi there");
       expect(result.current.state.optimisticUserMessages).toHaveLength(0);
     });
+  });
+
+  test("sends file attachments as mention inputs", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn(
+        turnInput("Read this", [
+          {
+            name: "README.md",
+            path: "/repo/README.md",
+            kind: "file",
+          },
+        ]),
+        {
+          model: "gpt-test",
+          modelProvider: "lp-openai",
+          cwd: "/repo",
+        }
+      );
+    });
+
+    expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: "turn/start",
+      params: expect.objectContaining({
+        input: [
+          { type: "text", text: "Read this", textElements: [] },
+          { type: "mention", name: "README.md", path: "/repo/README.md" },
+        ],
+      }),
+    }));
+  });
+
+  test("sends inline file attachments in authored order", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn({
+        text: "你看一下 是什么？然后 有什么关系",
+        attachments: [
+          { name: "Fast Prompt.txt", path: "/repo/Fast Prompt.txt", kind: "file" },
+          { name: "README.md", path: "/repo/README.md", kind: "file" },
+        ],
+        parts: [
+          { type: "text", text: "你看一下 " },
+          {
+            type: "attachment",
+            attachment: { name: "Fast Prompt.txt", path: "/repo/Fast Prompt.txt", kind: "file" },
+          },
+          { type: "text", text: " 是什么？然后 " },
+          {
+            type: "attachment",
+            attachment: { name: "README.md", path: "/repo/README.md", kind: "file" },
+          },
+          { type: "text", text: " 有什么关系" },
+        ],
+      });
+    });
+
+    expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: "turn/start",
+      params: expect.objectContaining({
+        input: [
+          { type: "text", text: "你看一下 ", textElements: [] },
+          { type: "mention", name: "Fast Prompt.txt", path: "/repo/Fast Prompt.txt" },
+          { type: "text", text: " 是什么？然后 ", textElements: [] },
+          { type: "mention", name: "README.md", path: "/repo/README.md" },
+          { type: "text", text: " 有什么关系", textElements: [] },
+        ],
+      }),
+    }));
+  });
+
+  test("sends image inputs and turn-level model controls", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn({
+        text: "Compare with screenshot",
+        attachments: [
+          { name: "screen.png", path: "/repo/screen.png", kind: "local_image" },
+          { name: "remote.png", path: "https://example.test/remote.png", kind: "image" },
+        ],
+        parts: [
+          { type: "text", text: "Compare " },
+          {
+            type: "attachment",
+            attachment: { name: "screen.png", path: "/repo/screen.png", kind: "local_image" },
+          },
+          { type: "text", text: " with " },
+          {
+            type: "attachment",
+            attachment: { name: "remote.png", path: "https://example.test/remote.png", kind: "image" },
+          },
+        ],
+      }, {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+        effort: "high",
+        verbosity: "low",
+      });
+    });
+
+    expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: "turn/start",
+      params: expect.objectContaining({
+        effort: "high",
+        verbosity: "low",
+        input: [
+          { type: "text", text: "Compare ", textElements: [] },
+          { type: "localImage", path: "/repo/screen.png" },
+          { type: "text", text: " with ", textElements: [] },
+          { type: "image", url: "https://example.test/remote.png" },
+        ],
+      }),
+    }));
   });
 
   test("thread list summaries do not clear hydrated active thread turns", async () => {
@@ -538,7 +697,7 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.actions.sendTurn("Hello", {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
         model: "gpt-test",
         modelProvider: "lp-openai",
         cwd: "/repo",
@@ -573,7 +732,7 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.actions.sendTurn("Plan this", {
+      await result.current.actions.sendTurn(turnInput("Plan this"), {
         model: "gpt-test",
         modelProvider: "lp-openai",
         cwd: "/repo",
@@ -610,7 +769,7 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.actions.sendTurn("Use full access", {
+      await result.current.actions.sendTurn(turnInput("Use full access"), {
         model: "gpt-test",
         modelProvider: "lp-openai",
         cwd: "/repo",
@@ -652,7 +811,7 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.actions.sendTurn("Plan", {
+      await result.current.actions.sendTurn(turnInput("Plan"), {
         model: "gpt-test",
         modelProvider: "lp-openai",
         cwd: "/repo",
@@ -711,7 +870,7 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.actions.sendTurn("Hello", {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
         model: "gpt-test",
         modelProvider: "lp-openai",
         cwd: "/repo",
@@ -719,9 +878,9 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.actions.steerTurn("focus on tests");
+      await result.current.actions.steerTurn(turnInput("focus on tests"));
       await result.current.actions.cleanBackgroundTerminals();
-      await result.current.actions.startReview();
+      await result.current.actions.startReview({ type: "uncommittedChanges" });
     });
 
     expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
@@ -819,7 +978,7 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.actions.sendTurn("Hello", {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
         model: "gpt-test",
         modelProvider: "lp-openai",
         cwd: "/repo",
@@ -869,7 +1028,7 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.actions.sendTurn("Hello", {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
         model: "gpt-test",
         modelProvider: "lp-openai",
         cwd: "/repo",
@@ -919,7 +1078,7 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await act(async () => {
-      await result.current.actions.sendTurn("Hello", {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
         model: "gpt-test",
         modelProvider: "lp-openai",
         cwd: "/repo",
@@ -946,5 +1105,152 @@ describe("useLyraThreadRuntime", () => {
       expect(result.current.state.activeThread).toBeNull();
       expect(result.current.state.threads).toHaveLength(0);
     });
+  });
+
+  test("follows read_range items only after follow is enabled", async () => {
+    const desktop = makeDesktopApi();
+    const onFollowOpenFilePath = vi.fn();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onFollowOpenFilePath,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "thread/list" })
+      );
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    act(() => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/started",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item: {
+              type: "dynamicToolCall",
+              id: "read-1",
+              tool: "filesystem.read_range",
+              status: "inProgress",
+              arguments: {
+                path: "/repo/src/main.ts",
+                startLine: 12,
+              },
+            },
+          },
+        },
+      });
+    });
+    expect(onFollowOpenFilePath).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.actions.setFollowEnabled(true);
+    });
+    act(() => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/started",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item: {
+              type: "dynamicToolCall",
+              id: "read-2",
+              tool: "filesystem.read_range",
+              status: "inProgress",
+              arguments: {
+                path: "/repo/src/main.ts",
+                startLine: 12,
+              },
+            },
+          },
+        },
+      });
+    });
+
+    expect(onFollowOpenFilePath).toHaveBeenCalledWith("/repo/src/main.ts", {
+      allowMissing: true,
+      forceReloadIfOpen: false,
+      location: { line: 12 },
+    });
+  });
+
+  test("aggregates command output and terminal interaction notifications", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "thread/list" })
+      );
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    act(() => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/commandExecution/outputDelta",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            itemId: "cmd-1",
+            stream: "stdout",
+            delta: "ok\n",
+          },
+        },
+      });
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/commandExecution/terminalInteraction",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            itemId: "cmd-1",
+            processId: "proc-1",
+            stdin: "y\n",
+          },
+        },
+      });
+    });
+
+    const call = result.current.state.liveToolCalls.find((entry) => entry.id === "cmd-1");
+    expect(call).toMatchObject({
+      toolName: "terminal.exec",
+      status: "running",
+      output: {
+        liveOutput: "ok\ny\n",
+        processId: "proc-1",
+      },
+    });
+    expect((call?.output as any).terminalChunks).toEqual([
+      expect.objectContaining({ stream: "stdout", text: "ok\n" }),
+      expect.objectContaining({ stream: "stdin", text: "y\n" }),
+    ]);
   });
 });

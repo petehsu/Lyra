@@ -1,4 +1,4 @@
-import { Check, ShieldCheck, X } from "lucide-react";
+import { Check, FolderPlus, ShieldCheck, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { LyraClientRequestPayload, LyraDesktopApi } from "../../../shared/desktop-bridge";
@@ -8,6 +8,7 @@ type JsonRecord = Record<string, unknown>;
 
 type ApprovalPolicyPreset = "on-request" | "on-failure" | "never" | "granular";
 type ApprovalsReviewerValue = "user" | "auto_review";
+type SandboxModeValue = "read-only" | "workspace-write" | "danger-full-access";
 
 type GranularPolicyValue = {
   readonly sandbox_approval: boolean;
@@ -15,6 +16,13 @@ type GranularPolicyValue = {
   readonly skill_approval: boolean;
   readonly request_permissions: boolean;
   readonly mcp_elicitations: boolean;
+};
+
+type SandboxWorkspaceWriteValue = {
+  readonly writable_roots: readonly string[];
+  readonly network_access: boolean;
+  readonly exclude_tmpdir_env_var: boolean;
+  readonly exclude_slash_tmp: boolean;
 };
 
 type ApprovalPolicyValue =
@@ -28,8 +36,11 @@ type PermissionPanelState = {
   readonly policyPreset: ApprovalPolicyPreset;
   readonly granular: GranularPolicyValue;
   readonly reviewer: ApprovalsReviewerValue;
+  readonly sandboxMode: SandboxModeValue;
+  readonly sandboxWorkspaceWrite: SandboxWorkspaceWriteValue;
   readonly allowedPolicies: readonly ApprovalPolicyPreset[];
   readonly allowedReviewers: readonly ApprovalsReviewerValue[];
+  readonly allowedSandboxModes: readonly SandboxModeValue[];
 };
 
 type AiPermissionsPanelProps = {
@@ -50,8 +61,16 @@ const DEFAULT_STATE: PermissionPanelState = {
   policyPreset: "on-request",
   granular: DEFAULT_GRANULAR,
   reviewer: "user",
+  sandboxMode: "workspace-write",
+  sandboxWorkspaceWrite: {
+    writable_roots: [],
+    network_access: false,
+    exclude_tmpdir_env_var: false,
+    exclude_slash_tmp: false,
+  },
   allowedPolicies: ["on-request", "on-failure", "never", "granular"],
   allowedReviewers: ["user", "auto_review"],
+  allowedSandboxModes: ["read-only", "workspace-write", "danger-full-access"],
 };
 
 const createRequestPayload = (
@@ -101,6 +120,40 @@ const readGranularPolicy = (value: unknown): GranularPolicyValue => {
 const readReviewer = (value: unknown): ApprovalsReviewerValue =>
   value === "auto_review" ? "auto_review" : "user";
 
+const readSandboxMode = (value: unknown): SandboxModeValue =>
+  value === "read-only" || value === "danger-full-access" || value === "workspace-write"
+    ? value
+    : "workspace-write";
+
+const readStringArray = (value: unknown): readonly string[] =>
+  Array.isArray(value)
+    ? value
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter((entry, index, entries) => entry.length > 0 && entries.indexOf(entry) === index)
+    : [];
+
+const readSandboxWorkspaceWrite = (value: unknown): SandboxWorkspaceWriteValue => {
+  if (!isRecord(value)) {
+    return DEFAULT_STATE.sandboxWorkspaceWrite;
+  }
+  return {
+    writable_roots: readStringArray(value.writable_roots),
+    network_access:
+      typeof value.network_access === "boolean"
+        ? value.network_access
+        : DEFAULT_STATE.sandboxWorkspaceWrite.network_access,
+    exclude_tmpdir_env_var:
+      typeof value.exclude_tmpdir_env_var === "boolean"
+        ? value.exclude_tmpdir_env_var
+        : DEFAULT_STATE.sandboxWorkspaceWrite.exclude_tmpdir_env_var,
+    exclude_slash_tmp:
+      typeof value.exclude_slash_tmp === "boolean"
+        ? value.exclude_slash_tmp
+        : DEFAULT_STATE.sandboxWorkspaceWrite.exclude_slash_tmp,
+  };
+};
+
 const readAllowedPolicyPresets = (value: unknown): readonly ApprovalPolicyPreset[] => {
   if (!Array.isArray(value)) {
     return DEFAULT_STATE.allowedPolicies;
@@ -119,6 +172,16 @@ const readAllowedReviewers = (value: unknown): readonly ApprovalsReviewerValue[]
     .map(readReviewer)
     .filter((entry, index, entries) => entries.indexOf(entry) === index);
   return reviewers.length > 0 ? reviewers : DEFAULT_STATE.allowedReviewers;
+};
+
+const readAllowedSandboxModes = (value: unknown): readonly SandboxModeValue[] => {
+  if (!Array.isArray(value)) {
+    return DEFAULT_STATE.allowedSandboxModes;
+  }
+  const modes = value
+    .map(readSandboxMode)
+    .filter((entry, index, entries) => entries.indexOf(entry) === index);
+  return modes.length > 0 ? modes : DEFAULT_STATE.allowedSandboxModes;
 };
 
 const policyValueOf = (
@@ -141,6 +204,7 @@ export const AiPermissionsPanel = ({
   const [state, setState] = useState<PermissionPanelState>(DEFAULT_STATE);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [manualRootPath, setManualRootPath] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
@@ -166,8 +230,11 @@ export const AiPermissionsPanel = ({
         policyPreset: readPolicyPreset(approvalPolicy),
         granular: readGranularPolicy(approvalPolicy),
         reviewer: readReviewer(config.approvals_reviewer),
+        sandboxMode: readSandboxMode(config.sandbox_mode),
+        sandboxWorkspaceWrite: readSandboxWorkspaceWrite(config.sandbox_workspace_write),
         allowedPolicies: readAllowedPolicyPresets(requirements.allowed_approval_policies),
         allowedReviewers: readAllowedReviewers(requirements.allowed_approvals_reviewers),
+        allowedSandboxModes: readAllowedSandboxModes(requirements.allowed_sandbox_modes),
       });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
@@ -199,6 +266,16 @@ export const AiPermissionsPanel = ({
             value: state.reviewer,
             mergeStrategy: "replace",
           },
+          {
+            keyPath: "sandbox_mode",
+            value: state.sandboxMode,
+            mergeStrategy: "replace",
+          },
+          {
+            keyPath: "sandbox_workspace_write",
+            value: state.sandboxWorkspaceWrite,
+            mergeStrategy: "replace",
+          },
         ],
         reloadUserConfig: true,
       }));
@@ -208,7 +285,15 @@ export const AiPermissionsPanel = ({
     } finally {
       setIsSaving(false);
     }
-  }, [lyraApi, onClose, state.granular, state.policyPreset, state.reviewer]);
+  }, [
+    lyraApi,
+    onClose,
+    state.granular,
+    state.policyPreset,
+    state.reviewer,
+    state.sandboxMode,
+    state.sandboxWorkspaceWrite
+  ]);
 
   const policyOptions = useMemo(
     () => [
@@ -236,6 +321,27 @@ export const AiPermissionsPanel = ({
     [state.allowedPolicies, t]
   );
 
+  const sandboxOptions = useMemo(
+    () => [
+      {
+        value: "read-only" as const,
+        label: t("ai.permissionsSandboxReadOnly"),
+        description: t("ai.permissionsSandboxReadOnlyDescription"),
+      },
+      {
+        value: "workspace-write" as const,
+        label: t("ai.permissionsSandboxWorkspace"),
+        description: t("ai.permissionsSandboxWorkspaceDescription"),
+      },
+      {
+        value: "danger-full-access" as const,
+        label: t("ai.permissionsSandboxFullAccess"),
+        description: t("ai.permissionsSandboxFullAccessDescription"),
+      },
+    ].filter((option) => state.allowedSandboxModes.includes(option.value)),
+    [state.allowedSandboxModes, t]
+  );
+
   const setGranularFlag = (key: keyof GranularPolicyValue, value: boolean): void => {
     setState((current) => ({
       ...current,
@@ -244,6 +350,69 @@ export const AiPermissionsPanel = ({
         [key]: value,
       },
     }));
+  };
+
+  const setWorkspaceWriteFlag = (
+    key: Exclude<keyof SandboxWorkspaceWriteValue, "writable_roots">,
+    value: boolean
+  ): void => {
+    setState((current) => ({
+      ...current,
+      sandboxWorkspaceWrite: {
+        ...current.sandboxWorkspaceWrite,
+        [key]: value,
+      },
+    }));
+  };
+
+  const addWritableRoots = (roots: readonly string[]): void => {
+    const normalizedRoots = roots
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (normalizedRoots.length === 0) {
+      return;
+    }
+    setState((current) => ({
+      ...current,
+      sandboxWorkspaceWrite: {
+        ...current.sandboxWorkspaceWrite,
+        writable_roots: [
+          ...current.sandboxWorkspaceWrite.writable_roots,
+          ...normalizedRoots,
+        ].filter((entry, index, entries) => entries.indexOf(entry) === index),
+      },
+    }));
+  };
+
+  const removeWritableRoot = (root: string): void => {
+    setState((current) => ({
+      ...current,
+      sandboxWorkspaceWrite: {
+        ...current.sandboxWorkspaceWrite,
+        writable_roots: current.sandboxWorkspaceWrite.writable_roots.filter((entry) => entry !== root),
+      },
+    }));
+  };
+
+  const addManualRoot = (): void => {
+    const root = manualRootPath.trim();
+    if (root.length === 0) {
+      return;
+    }
+    addWritableRoots([root]);
+    setManualRootPath("");
+  };
+
+  const selectWritableDirectories = async (): Promise<void> => {
+    if (desktopApi?.files?.selectDirectories === undefined) {
+      return;
+    }
+    try {
+      const directories = await desktopApi.files.selectDirectories();
+      addWritableRoots(directories.map((entry) => entry.path));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
   };
 
   return (
@@ -293,6 +462,128 @@ export const AiPermissionsPanel = ({
                 <small>{option.description}</small>
               </button>
             ))}
+          </div>
+
+          <div className="lyra-ai-permissions-panel__section">
+            <span>{t("ai.permissionsSandboxLabel")}</span>
+            <div className="lyra-ai-permissions-panel__grid" role="radiogroup" aria-label={t("ai.permissionsSandboxLabel")}>
+              {sandboxOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={state.sandboxMode === option.value}
+                  className={
+                    state.sandboxMode === option.value
+                      ? "lyra-ai-permissions-panel__choice lyra-ai-permissions-panel__choice-active"
+                      : "lyra-ai-permissions-panel__choice"
+                  }
+                  onClick={() => {
+                    setState((current) => ({
+                      ...current,
+                      sandboxMode: option.value,
+                    }));
+                  }}
+                >
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </button>
+              ))}
+            </div>
+            {state.sandboxMode === "read-only" ? (
+              <p className="lyra-ai-permissions-panel__note">
+                {t("ai.permissionsSandboxReadOnlyNote")}
+              </p>
+            ) : null}
+            {state.sandboxMode === "workspace-write" ? (
+              <div className="lyra-ai-permissions-panel__advanced">
+                <div className="lyra-ai-permissions-panel__advanced-header">
+                  <strong>{t("ai.permissionsSandboxWorkspaceAdvanced")}</strong>
+                  <button
+                    type="button"
+                    className="lyra-ai-permissions-panel__button lyra-ai-permissions-panel__button-compact"
+                    disabled={desktopApi?.files?.selectDirectories === undefined}
+                    onClick={() => {
+                      void selectWritableDirectories();
+                    }}
+                  >
+                    <FolderPlus size={13} aria-hidden="true" />
+                    <span>{t("ai.permissionsSandboxAddDirectory")}</span>
+                  </button>
+                </div>
+                <label className="lyra-ai-permissions-panel__input-row">
+                  <span>{t("ai.permissionsSandboxManualPath")}</span>
+                  <input
+                    type="text"
+                    value={manualRootPath}
+                    placeholder={t("ai.permissionsSandboxManualPathPlaceholder")}
+                    onChange={(event) => {
+                      setManualRootPath(event.target.value);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        addManualRoot();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="lyra-ai-permissions-panel__button lyra-ai-permissions-panel__button-compact"
+                    onClick={addManualRoot}
+                  >
+                    {t("ai.permissionsSandboxAddManual")}
+                  </button>
+                </label>
+                <div className="lyra-ai-permissions-panel__roots" aria-label={t("ai.permissionsSandboxWritableRoots")}>
+                  {state.sandboxWorkspaceWrite.writable_roots.length === 0 ? (
+                    <span className="lyra-ai-permissions-panel__empty">
+                      {t("ai.permissionsSandboxNoWritableRoots")}
+                    </span>
+                  ) : (
+                    state.sandboxWorkspaceWrite.writable_roots.map((root) => (
+                      <span key={root} className="lyra-ai-permissions-panel__root">
+                        <code>{root}</code>
+                        <button
+                          type="button"
+                          className="lyra-ai-permissions-panel__icon"
+                          onClick={() => {
+                            removeWritableRoot(root);
+                          }}
+                          aria-label={t("ai.permissionsSandboxRemoveRoot")}
+                          title={t("ai.permissionsSandboxRemoveRoot")}
+                        >
+                          <Trash2 size={12} aria-hidden="true" />
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+                <div className="lyra-ai-permissions-panel__granular">
+                  {([
+                    ["network_access", t("ai.permissionsSandboxNetworkAccess")],
+                    ["exclude_tmpdir_env_var", t("ai.permissionsSandboxExcludeTmpdirEnv")],
+                    ["exclude_slash_tmp", t("ai.permissionsSandboxExcludeSlashTmp")],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={
+                        state.sandboxWorkspaceWrite[key]
+                          ? "lyra-ai-permissions-panel__toggle lyra-ai-permissions-panel__toggle-active"
+                          : "lyra-ai-permissions-panel__toggle"
+                      }
+                      onClick={() => {
+                        setWorkspaceWriteFlag(key, !state.sandboxWorkspaceWrite[key]);
+                      }}
+                    >
+                      <span>{label}</span>
+                      {state.sandboxWorkspaceWrite[key] ? <Check size={13} /> : null}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {state.policyPreset === "granular" ? (

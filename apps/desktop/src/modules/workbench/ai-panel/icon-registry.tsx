@@ -1,4 +1,4 @@
-import { Bot, History } from "lucide-react";
+import { Bot, Boxes, History } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import type { AiPanelAppIconKey } from "./types";
@@ -29,7 +29,7 @@ const renderSvgMaskIcon = (iconUrl: string, className?: string) => (
   />
 );
 
-export const renderAiPanelTopbarIcon = (kind: "history" | "mcp" | "skills") => {
+export const renderAiPanelTopbarIcon = (kind: "history" | "mcp" | "skills" | "plugins") => {
   if (kind === "history") {
     return <History size={13} aria-hidden="true" />;
   }
@@ -38,6 +38,9 @@ export const renderAiPanelTopbarIcon = (kind: "history" | "mcp" | "skills") => {
       MCP_ICON_URL,
       "lyra-ai-panel-svg-icon-topbar lyra-ai-panel-svg-icon-topbar-mcp"
     );
+  }
+  if (kind === "plugins") {
+    return <Boxes size={13} aria-hidden="true" />;
   }
   return renderSvgMaskIcon(
     SKILLS_ICON_URL,
@@ -61,6 +64,9 @@ export const renderAiPanelAppIcon = (iconKey: AiPanelAppIconKey) => {
         "lyra-ai-panel-svg-icon-app lyra-ai-panel-svg-icon-app-skills"
       )
     );
+  }
+  if (iconKey === "ai-panel-plugins") {
+    return renderShell(<Boxes size={SIZE} />);
   }
   return renderShell(<Bot size={SIZE} />);
 };

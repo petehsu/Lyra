@@ -21,6 +21,7 @@ use crate::config_types::CollaborationMode;
 use crate::config_types::ModeKind;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::config_types::ServiceTier;
+use crate::config_types::Verbosity as VerbosityConfig;
 use crate::config_types::WindowsSandboxLevel;
 use crate::dynamic_tools::DynamicToolCallOutputContentItem;
 use crate::dynamic_tools::DynamicToolCallRequest;
@@ -97,8 +98,6 @@ pub const PLUGINS_INSTRUCTIONS_OPEN_TAG: &str = "<plugins_instructions>";
 pub const PLUGINS_INSTRUCTIONS_CLOSE_TAG: &str = "</plugins_instructions>";
 pub const COLLABORATION_MODE_OPEN_TAG: &str = "<collaboration_mode>";
 pub const COLLABORATION_MODE_CLOSE_TAG: &str = "</collaboration_mode>";
-pub const REALTIME_CONVERSATION_OPEN_TAG: &str = "<realtime_conversation>";
-pub const REALTIME_CONVERSATION_CLOSE_TAG: &str = "</realtime_conversation>";
 pub const USER_MESSAGE_BEGIN: &str = "## My request for Lyra:";
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, TS)]
@@ -141,245 +140,6 @@ pub struct McpServerRefreshConfig {
     pub mcp_oauth_credentials_store_mode: Value,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ConversationStartParams {
-    /// Selects whether the realtime session should produce text or audio output.
-    pub output_modality: RealtimeOutputModality,
-    #[serde(
-        default,
-        deserialize_with = "conversation_start_prompt_serde::deserialize",
-        serialize_with = "conversation_start_prompt_serde::serialize",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub prompt: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transport: Option<ConversationStartTransport>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub voice: Option<RealtimeVoice>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
-#[ts(tag = "type")]
-pub enum ConversationStartTransport {
-    Websocket,
-    Webrtc { sdp: String },
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum RealtimeOutputModality {
-    Text,
-    Audio,
-}
-
-mod conversation_start_prompt_serde {
-    use serde::Deserializer;
-    use serde::Serializer;
-
-    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        serde_with::rust::double_option::deserialize(deserializer)
-    }
-
-    pub(crate) fn serialize<S>(
-        value: &Option<Option<String>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serde_with::rust::double_option::serialize(value, serializer)
-    }
-}
-
-#[derive(
-    Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash, JsonSchema, TS, Ord, PartialOrd,
-)]
-#[serde(rename_all = "snake_case")]
-#[ts(rename_all = "snake_case")]
-pub enum RealtimeVoice {
-    Alloy,
-    Arbor,
-    Ash,
-    Ballad,
-    Breeze,
-    Cedar,
-    Coral,
-    Cove,
-    Echo,
-    Ember,
-    Juniper,
-    Maple,
-    Marin,
-    Sage,
-    Shimmer,
-    Sol,
-    Spruce,
-    Vale,
-    Verse,
-}
-
-impl RealtimeVoice {
-    pub fn wire_name(self) -> &'static str {
-        match self {
-            Self::Alloy => "alloy",
-            Self::Arbor => "arbor",
-            Self::Ash => "ash",
-            Self::Ballad => "ballad",
-            Self::Breeze => "breeze",
-            Self::Cedar => "cedar",
-            Self::Coral => "coral",
-            Self::Cove => "cove",
-            Self::Echo => "echo",
-            Self::Ember => "ember",
-            Self::Juniper => "juniper",
-            Self::Maple => "maple",
-            Self::Marin => "marin",
-            Self::Sage => "sage",
-            Self::Shimmer => "shimmer",
-            Self::Sol => "sol",
-            Self::Spruce => "spruce",
-            Self::Vale => "vale",
-            Self::Verse => "verse",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename_all = "camelCase")]
-pub struct RealtimeVoicesList {
-    pub v1: Vec<RealtimeVoice>,
-    pub v2: Vec<RealtimeVoice>,
-    pub default_v1: RealtimeVoice,
-    pub default_v2: RealtimeVoice,
-}
-
-impl RealtimeVoicesList {
-    pub fn builtin() -> Self {
-        Self {
-            v1: vec![
-                RealtimeVoice::Juniper,
-                RealtimeVoice::Maple,
-                RealtimeVoice::Spruce,
-                RealtimeVoice::Ember,
-                RealtimeVoice::Vale,
-                RealtimeVoice::Breeze,
-                RealtimeVoice::Arbor,
-                RealtimeVoice::Sol,
-                RealtimeVoice::Cove,
-            ],
-            v2: vec![
-                RealtimeVoice::Alloy,
-                RealtimeVoice::Ash,
-                RealtimeVoice::Ballad,
-                RealtimeVoice::Coral,
-                RealtimeVoice::Echo,
-                RealtimeVoice::Sage,
-                RealtimeVoice::Shimmer,
-                RealtimeVoice::Verse,
-                RealtimeVoice::Marin,
-                RealtimeVoice::Cedar,
-            ],
-            default_v1: RealtimeVoice::Cove,
-            default_v2: RealtimeVoice::Marin,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeAudioFrame {
-    pub data: String,
-    pub sample_rate: u32,
-    pub num_channels: u16,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub samples_per_channel: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub item_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeTranscriptDelta {
-    pub delta: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeTranscriptDone {
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeTranscriptEntry {
-    pub role: String,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeHandoffRequested {
-    pub handoff_id: String,
-    pub item_id: String,
-    pub input_transcript: String,
-    pub active_transcript: Vec<RealtimeTranscriptEntry>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeInputAudioSpeechStarted {
-    pub item_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeResponseCancelled {
-    pub response_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeResponseCreated {
-    pub response_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeResponseDone {
-    pub response_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub enum RealtimeEvent {
-    SessionUpdated {
-        session_id: String,
-        instructions: Option<String>,
-    },
-    InputAudioSpeechStarted(RealtimeInputAudioSpeechStarted),
-    InputTranscriptDelta(RealtimeTranscriptDelta),
-    InputTranscriptDone(RealtimeTranscriptDone),
-    OutputTranscriptDelta(RealtimeTranscriptDelta),
-    OutputTranscriptDone(RealtimeTranscriptDone),
-    AudioOut(RealtimeAudioFrame),
-    ResponseCreated(RealtimeResponseCreated),
-    ResponseCancelled(RealtimeResponseCancelled),
-    ResponseDone(RealtimeResponseDone),
-    ConversationItemAdded(Value),
-    ConversationItemDone {
-        item_id: String,
-    },
-    HandoffRequested(RealtimeHandoffRequested),
-    Error(String),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ConversationAudioParams {
-    pub frame: RealtimeAudioFrame,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ConversationTextParams {
-    pub text: String,
-}
-
 /// Submission operation
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -393,21 +153,6 @@ pub enum Op {
     /// Terminate all running background terminal processes for this thread.
     /// Use this when callers intentionally want to stop long-lived background shells.
     CleanBackgroundTerminals,
-
-    /// Start a realtime conversation stream.
-    RealtimeConversationStart(ConversationStartParams),
-
-    /// Send audio input to the running realtime conversation stream.
-    RealtimeConversationAudio(ConversationAudioParams),
-
-    /// Send text input to the running realtime conversation stream.
-    RealtimeConversationText(ConversationTextParams),
-
-    /// Close the running realtime conversation stream.
-    RealtimeConversationClose,
-
-    /// Request the list of voices supported by realtime conversation streams.
-    RealtimeConversationListVoices,
 
     /// Legacy user input.
     ///
@@ -521,6 +266,10 @@ pub enum Op {
         /// the effort, or `None` to leave the existing value unchanged.
         #[serde(skip_serializing_if = "Option::is_none")]
         effort: Option<Option<ReasoningEffortConfig>>,
+
+        /// Updated model verbosity (honored only for verbosity-capable models).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        verbosity: Option<VerbosityConfig>,
 
         /// Updated reasoning summary preference (honored only for reasoning-capable models).
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -754,11 +503,6 @@ impl Op {
         match self {
             Self::Interrupt => "interrupt",
             Self::CleanBackgroundTerminals => "clean_background_terminals",
-            Self::RealtimeConversationStart(_) => "realtime_conversation_start",
-            Self::RealtimeConversationAudio(_) => "realtime_conversation_audio",
-            Self::RealtimeConversationText(_) => "realtime_conversation_text",
-            Self::RealtimeConversationClose => "realtime_conversation_close",
-            Self::RealtimeConversationListVoices => "realtime_conversation_list_voices",
             Self::UserInput { .. } => "user_input",
             Self::UserTurn { .. } => "user_turn",
             Self::InterAgentCommunication { .. } => "inter_agent_communication",
@@ -1397,18 +1141,6 @@ pub enum EventMsg {
     /// indicates the turn continued but the user should still be notified.
     Warning(WarningEvent),
 
-    /// Realtime conversation lifecycle start event.
-    RealtimeConversationStarted(RealtimeConversationStartedEvent),
-
-    /// Realtime conversation streaming payload event.
-    RealtimeConversationRealtime(RealtimeConversationRealtimeEvent),
-
-    /// Realtime conversation lifecycle close event.
-    RealtimeConversationClosed(RealtimeConversationClosedEvent),
-
-    /// Realtime session description protocol payload.
-    RealtimeConversationSdp(RealtimeConversationSdpEvent),
-
     /// Model routing changed from the requested model to a different model.
     ModelReroute(ModelRerouteEvent),
 
@@ -1541,9 +1273,6 @@ pub enum EventMsg {
 
     /// List of skills available to the agent.
     ListSkillsResponse(ListSkillsResponseEvent),
-
-    /// List of voices supported by realtime conversation streams.
-    RealtimeConversationListVoicesResponse(RealtimeConversationListVoicesResponseEvent),
 
     /// Notification that skill data may have been updated and clients may want to reload.
     SkillsUpdateAvailable,
@@ -1704,36 +1433,6 @@ pub struct HookStartedEvent {
 pub struct HookCompletedEvent {
     pub turn_id: Option<String>,
     pub run: HookRunSummary,
-}
-
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum RealtimeConversationVersion {
-    V1,
-    #[default]
-    V2,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct RealtimeConversationStartedEvent {
-    pub session_id: Option<String>,
-    pub version: RealtimeConversationVersion,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct RealtimeConversationRealtimeEvent {
-    pub payload: RealtimeEvent,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct RealtimeConversationClosedEvent {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct RealtimeConversationSdpEvent {
-    pub sdp: String,
 }
 
 impl From<CollabAgentSpawnBeginEvent> for EventMsg {
@@ -2862,8 +2561,6 @@ pub struct TurnContextItem {
     pub model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collaboration_mode: Option<CollaborationMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub realtime_active: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<ReasoningEffortConfig>,
     pub summary: ReasoningSummaryConfig,
@@ -3343,11 +3040,6 @@ impl fmt::Display for McpAuthStatus {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ListSkillsResponseEvent {
     pub skills: Vec<SkillsListEntry>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeConversationListVoicesResponseEvent {
-    pub voices: RealtimeVoicesList,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, TS)]
@@ -4628,180 +4320,6 @@ mod tests {
     }
 
     #[test]
-    fn conversation_op_serializes_as_unnested_variants() {
-        let audio = Op::RealtimeConversationAudio(ConversationAudioParams {
-            frame: RealtimeAudioFrame {
-                data: "AQID".to_string(),
-                sample_rate: 24_000,
-                num_channels: 1,
-                samples_per_channel: Some(480),
-                item_id: None,
-            },
-        });
-        let start = Op::RealtimeConversationStart(ConversationStartParams {
-            output_modality: RealtimeOutputModality::Audio,
-            prompt: Some(Some("be helpful".to_string())),
-            session_id: Some("conv_1".to_string()),
-            transport: None,
-            voice: None,
-        });
-        let webrtc_start = Op::RealtimeConversationStart(ConversationStartParams {
-            output_modality: RealtimeOutputModality::Audio,
-            prompt: Some(Some("be helpful".to_string())),
-            session_id: Some("conv_1".to_string()),
-            transport: Some(ConversationStartTransport::Webrtc {
-                sdp: "v=offer\r\n".to_string(),
-            }),
-            voice: Some(RealtimeVoice::Cove),
-        });
-        let text = Op::RealtimeConversationText(ConversationTextParams {
-            text: "hello".to_string(),
-        });
-        let close = Op::RealtimeConversationClose;
-        let default_prompt_start = Op::RealtimeConversationStart(ConversationStartParams {
-            output_modality: RealtimeOutputModality::Audio,
-            prompt: None,
-            session_id: None,
-            transport: None,
-            voice: None,
-        });
-        let null_prompt_start = Op::RealtimeConversationStart(ConversationStartParams {
-            output_modality: RealtimeOutputModality::Audio,
-            prompt: Some(None),
-            session_id: None,
-            transport: None,
-            voice: None,
-        });
-        let list_voices = Op::RealtimeConversationListVoices;
-
-        assert_eq!(
-            serde_json::to_value(&start).unwrap(),
-            json!({
-                "type": "realtime_conversation_start",
-                "output_modality": "audio",
-                "prompt": "be helpful",
-                "session_id": "conv_1"
-            })
-        );
-        assert_eq!(
-            serde_json::to_value(&default_prompt_start).unwrap(),
-            json!({
-                "type": "realtime_conversation_start",
-                "output_modality": "audio"
-            })
-        );
-        assert_eq!(
-            serde_json::to_value(&null_prompt_start).unwrap(),
-            json!({
-                "type": "realtime_conversation_start",
-                "output_modality": "audio",
-                "prompt": null
-            })
-        );
-        assert_eq!(
-            serde_json::from_value::<Op>(json!({
-                "type": "realtime_conversation_start",
-                "output_modality": "audio"
-            }))
-            .unwrap(),
-            default_prompt_start
-        );
-        assert_eq!(
-            serde_json::from_value::<Op>(json!({
-                "type": "realtime_conversation_start",
-                "output_modality": "audio",
-                "prompt": null
-            }))
-            .unwrap(),
-            null_prompt_start
-        );
-        assert_eq!(
-            serde_json::to_value(&audio).unwrap(),
-            json!({
-                "type": "realtime_conversation_audio",
-                "frame": {
-                    "data": "AQID",
-                    "sample_rate": 24000,
-                    "num_channels": 1,
-                    "samples_per_channel": 480
-                }
-            })
-        );
-        assert_eq!(
-            serde_json::from_value::<Op>(serde_json::to_value(&text).unwrap()).unwrap(),
-            text
-        );
-        assert_eq!(
-            serde_json::to_value(&close).unwrap(),
-            json!({
-                "type": "realtime_conversation_close"
-            })
-        );
-        assert_eq!(
-            serde_json::from_value::<Op>(serde_json::to_value(&close).unwrap()).unwrap(),
-            close
-        );
-        assert_eq!(
-            serde_json::to_value(&list_voices).unwrap(),
-            json!({
-                "type": "realtime_conversation_list_voices"
-            })
-        );
-        assert_eq!(
-            serde_json::from_value::<Op>(serde_json::to_value(&list_voices).unwrap()).unwrap(),
-            list_voices
-        );
-        assert_eq!(
-            serde_json::to_value(&webrtc_start).unwrap(),
-            json!({
-                "type": "realtime_conversation_start",
-                "output_modality": "audio",
-                "prompt": "be helpful",
-                "session_id": "conv_1",
-                "transport": {
-                    "type": "webrtc",
-                    "sdp": "v=offer\r\n"
-                },
-                "voice": "cove"
-            })
-        );
-    }
-
-    #[test]
-    fn realtime_voice_list_is_stable() {
-        assert_eq!(
-            RealtimeVoicesList::builtin(),
-            RealtimeVoicesList {
-                v1: vec![
-                    RealtimeVoice::Juniper,
-                    RealtimeVoice::Maple,
-                    RealtimeVoice::Spruce,
-                    RealtimeVoice::Ember,
-                    RealtimeVoice::Vale,
-                    RealtimeVoice::Breeze,
-                    RealtimeVoice::Arbor,
-                    RealtimeVoice::Sol,
-                    RealtimeVoice::Cove,
-                ],
-                v2: vec![
-                    RealtimeVoice::Alloy,
-                    RealtimeVoice::Ash,
-                    RealtimeVoice::Ballad,
-                    RealtimeVoice::Coral,
-                    RealtimeVoice::Echo,
-                    RealtimeVoice::Sage,
-                    RealtimeVoice::Shimmer,
-                    RealtimeVoice::Verse,
-                    RealtimeVoice::Marin,
-                    RealtimeVoice::Cedar,
-                ],
-                default_v1: RealtimeVoice::Cove,
-                default_v2: RealtimeVoice::Marin,
-            }
-        );
-    }
-
-    #[test]
     fn user_input_serialization_omits_final_output_json_schema_when_none() -> Result<()> {
         let op = Op::UserInput {
             items: Vec::new(),
@@ -4989,7 +4507,6 @@ mod tests {
             ])),
             model: "gpt-5".to_string(),
             collaboration_mode: None,
-            realtime_active: None,
             effort: None,
             summary: ReasoningSummaryConfig::Auto,
             user_instructions: None,

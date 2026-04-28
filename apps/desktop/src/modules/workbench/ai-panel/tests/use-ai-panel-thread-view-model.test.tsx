@@ -27,6 +27,12 @@ const toolNameLabels = {
   terminalInput: "Terminal Input",
   terminalClose: "Terminal Close",
   terminalExec: "Terminal Exec",
+  collabSpawnAgent: "Spawn Agent",
+  collabSendInput: "Send Input",
+  collabResumeAgent: "Resume Agent",
+  collabWait: "Wait",
+  collabCloseAgent: "Close Agent",
+  collabAgent: "Agent",
 } as const;
 
 describe("useAiPanelThreadViewModel", () => {
@@ -144,6 +150,61 @@ describe("useAiPanelThreadViewModel", () => {
     );
 
     expect(result.current.sortedMessages.map((message) => message.id)).toEqual(["persisted-user"]);
+  });
+
+  test("keeps optimistic attachment parts on persisted user messages", () => {
+    const { result } = renderHook(() =>
+      useAiPanelThreadViewModel({
+        activeDetail: {
+          messages: [
+            {
+              id: "persisted-user",
+              role: "user",
+              content: "What is this?",
+              turnId: "turn-1",
+              createdAt: 1,
+            },
+          ],
+          turns: [],
+          toolCalls: [],
+          runtimeEvents: [],
+        } as any,
+        optimisticUserMessages: [
+          {
+            id: "optimistic-user",
+            sessionId: "thread-1",
+            turnId: "turn-1",
+            role: "user",
+            content: "What is this?[mention] README.md",
+            contentParts: [
+              { type: "text", text: "What is this? " },
+              { type: "attachment", name: "README.md", path: "/repo/README.md", kind: "file" },
+            ],
+            createdAt: 2,
+            optimistic: true,
+          },
+        ],
+        runtimeFeed: [],
+        streamingTurnId: null,
+        latestRuntimeEventByTurn: {},
+        activeInteractionPanel: null,
+        isInteractionSubmitting: false,
+        isSending: false,
+        isStreamActive: false,
+        streamingAssistantText: "",
+        finalizingTurnId: null,
+        toolNameLabels,
+        runtimeToolFallbackLabel: "Tool",
+        labels,
+      })
+    );
+
+    expect(result.current.sortedMessages).toHaveLength(1);
+    expect(result.current.sortedMessages[0]?.id).toBe("persisted-user");
+    expect(result.current.sortedMessages[0]?.contentParts).toEqual([
+      { type: "text", text: "What is this? " },
+      { type: "attachment", name: "README.md", path: "/repo/README.md", kind: "file" },
+    ]);
   });
 
   test("keeps only non-assistant-turn entries in orphan runtime feed", () => {

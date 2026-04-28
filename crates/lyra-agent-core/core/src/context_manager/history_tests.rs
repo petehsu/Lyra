@@ -137,7 +137,6 @@ fn reference_context_item() -> TurnContextItem {
         file_system_sandbox_policy: None,
         model: "gpt-test".to_string(),
         collaboration_mode: None,
-        realtime_active: Some(false),
         effort: None,
         summary: ReasoningSummary::Auto,
         user_instructions: None,

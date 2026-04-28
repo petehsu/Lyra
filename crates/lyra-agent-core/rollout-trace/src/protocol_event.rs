@@ -217,10 +217,6 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
         }),
         EventMsg::Error(_)
         | EventMsg::Warning(_)
-        | EventMsg::RealtimeConversationStarted(_)
-        | EventMsg::RealtimeConversationRealtime(_)
-        | EventMsg::RealtimeConversationClosed(_)
-        | EventMsg::RealtimeConversationSdp(_)
         | EventMsg::ModelReroute(_)
         | EventMsg::ThreadRolledBack(_)
         | EventMsg::TurnStarted(_)
@@ -265,7 +261,6 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
         | EventMsg::GetHistoryEntryResponse(_)
         | EventMsg::McpListToolsResponse(_)
         | EventMsg::ListSkillsResponse(_)
-        | EventMsg::RealtimeConversationListVoicesResponse(_)
         | EventMsg::SkillsUpdateAvailable
         | EventMsg::PlanUpdate(_)
         | EventMsg::TurnAborted(_)
@@ -297,11 +292,7 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
         EventMsg::Error(_) => Some("error"),
         EventMsg::Warning(_) => Some("warning"),
         EventMsg::ShutdownComplete => Some("shutdown_complete"),
-        EventMsg::RealtimeConversationStarted(_)
-        | EventMsg::RealtimeConversationRealtime(_)
-        | EventMsg::RealtimeConversationClosed(_)
-        | EventMsg::RealtimeConversationSdp(_)
-        | EventMsg::ModelReroute(_)
+        EventMsg::ModelReroute(_)
         | EventMsg::TokenCount(_)
         | EventMsg::AgentMessage(_)
         | EventMsg::UserMessage(_)
@@ -344,7 +335,6 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
         | EventMsg::GetHistoryEntryResponse(_)
         | EventMsg::McpListToolsResponse(_)
         | EventMsg::ListSkillsResponse(_)
-        | EventMsg::RealtimeConversationListVoicesResponse(_)
         | EventMsg::SkillsUpdateAvailable
         | EventMsg::PlanUpdate(_)
         | EventMsg::EnteredReviewMode(_)

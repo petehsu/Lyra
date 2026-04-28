@@ -21,10 +21,12 @@ type AiPanelTopbarActionsProps = {
   readonly onOpenHistory?: (() => void) | undefined;
   readonly onOpenMcp?: (() => void) | undefined;
   readonly onOpenSkills?: (() => void) | undefined;
+  readonly onOpenPlugins?: (() => void) | undefined;
   readonly onOpenPermissions?: (() => void) | undefined;
   readonly openHistoryLabel?: string | undefined;
   readonly openMcpLabel?: string | undefined;
   readonly openSkillsLabel?: string | undefined;
+  readonly openPluginsLabel?: string | undefined;
   readonly openPermissionsLabel?: string | undefined;
   readonly onStartReview?: (() => void) | undefined;
   readonly reviewChangesLabel?: string | undefined;
@@ -44,10 +46,12 @@ export const AiPanelTopbarActions = ({
   onOpenHistory,
   onOpenMcp,
   onOpenSkills,
+  onOpenPlugins,
   onOpenPermissions,
   openHistoryLabel,
   openMcpLabel,
   openSkillsLabel,
+  openPluginsLabel,
   openPermissionsLabel,
   onStartReview,
   reviewChangesLabel,
@@ -62,6 +66,7 @@ export const AiPanelTopbarActions = ({
   const hasMoreActions =
     (onOpenMcp !== undefined && openMcpLabel !== undefined)
     || (onOpenSkills !== undefined && openSkillsLabel !== undefined)
+    || (onOpenPlugins !== undefined && openPluginsLabel !== undefined)
     || (onOpenPermissions !== undefined && openPermissionsLabel !== undefined)
     || onToggleAiPanelSide !== undefined
     || onStartReview !== undefined;
@@ -156,6 +161,20 @@ export const AiPanelTopbarActions = ({
                 >
                   {renderAiPanelTopbarIcon("skills")}
                   <span>{openSkillsLabel}</span>
+                </button>
+              )}
+              {onOpenPlugins === undefined || openPluginsLabel === undefined ? null : (
+                <button
+                  type="button"
+                  className="lyra-ai-panel-topbar-more-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setIsMoreOpen(false);
+                    onOpenPlugins();
+                  }}
+                >
+                  {renderAiPanelTopbarIcon("plugins")}
+                  <span>{openPluginsLabel}</span>
                 </button>
               )}
               {onOpenPermissions === undefined || openPermissionsLabel === undefined ? null : (

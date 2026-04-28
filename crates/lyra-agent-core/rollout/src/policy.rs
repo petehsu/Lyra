@@ -133,10 +133,6 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::DynamicToolCallResponse(_) => Some(EventPersistenceMode::Extended),
         EventMsg::Warning(_)
         | EventMsg::AgentMessage(_)
-        | EventMsg::RealtimeConversationStarted(_)
-        | EventMsg::RealtimeConversationSdp(_)
-        | EventMsg::RealtimeConversationRealtime(_)
-        | EventMsg::RealtimeConversationClosed(_)
         | EventMsg::ModelReroute(_)
         | EventMsg::AgentMessageDelta(_)
         | EventMsg::AgentReasoningDelta(_)
@@ -162,7 +158,6 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::GetHistoryEntryResponse(_)
         | EventMsg::UndoStarted(_)
         | EventMsg::McpListToolsResponse(_)
-        | EventMsg::RealtimeConversationListVoicesResponse(_)
         | EventMsg::McpStartupUpdate(_)
         | EventMsg::McpStartupComplete(_)
         | EventMsg::ListSkillsResponse(_)

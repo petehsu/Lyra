@@ -386,9 +386,6 @@
             "plugins": {
               "type": "boolean"
             },
-            "realtime_conversation": {
-              "type": "boolean"
-            },
             "remote_models": {
               "type": "boolean"
             },
@@ -1792,81 +1789,6 @@
       },
       "type": "object"
     },
-    "RealtimeAudioToml": {
-      "additionalProperties": false,
-      "properties": {
-        "microphone": {
-          "type": "string"
-        },
-        "speaker": {
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "RealtimeConversationVersion": {
-      "enum": [
-        "v1",
-        "v2"
-      ],
-      "type": "string"
-    },
-    "RealtimeToml": {
-      "additionalProperties": false,
-      "properties": {
-        "transport": {
-          "$ref": "#/definitions/RealtimeTransport"
-        },
-        "type": {
-          "$ref": "#/definitions/RealtimeWsMode"
-        },
-        "version": {
-          "$ref": "#/definitions/RealtimeConversationVersion"
-        },
-        "voice": {
-          "$ref": "#/definitions/RealtimeVoice"
-        }
-      },
-      "type": "object"
-    },
-    "RealtimeTransport": {
-      "enum": [
-        "webrtc",
-        "websocket"
-      ],
-      "type": "string"
-    },
-    "RealtimeVoice": {
-      "enum": [
-        "alloy",
-        "arbor",
-        "ash",
-        "ballad",
-        "breeze",
-        "cedar",
-        "coral",
-        "cove",
-        "echo",
-        "ember",
-        "juniper",
-        "maple",
-        "marin",
-        "sage",
-        "shimmer",
-        "sol",
-        "spruce",
-        "vale",
-        "verse"
-      ],
-      "type": "string"
-    },
-    "RealtimeWsMode": {
-      "enum": [
-        "conversational",
-        "transcription"
-      ],
-      "type": "string"
-    },
     "ReasoningEffort": {
       "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
       "enum": [
@@ -2370,15 +2292,6 @@
       "default": null,
       "description": "Settings for app-specific controls."
     },
-    "audio": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/RealtimeAudioToml"
-        }
-      ],
-      "default": null,
-      "description": "Machine-local realtime audio device preferences used by realtime voice."
-    },
     "background_terminal_max_timeout": {
       "description": "Maximum poll window for background terminal output (`write_stdin`), in milliseconds. Default: `300000` (5 minutes).",
       "format": "uint64",
@@ -2484,9 +2397,6 @@
           "$ref": "#/definitions/FeatureToml_for_MultiAgentV2ConfigToml"
         },
         "plugins": {
-          "type": "boolean"
-        },
-        "realtime_conversation": {
           "type": "boolean"
         },
         "remote_models": {
@@ -2842,35 +2752,6 @@
         "$ref": "#/definitions/ProjectConfig"
       },
       "type": "object"
-    },
-    "realtime": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/RealtimeToml"
-        }
-      ],
-      "default": null,
-      "description": "Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
-    },
-    "realtime_start_instructions": {
-      "description": "Replaces the built-in realtime start instructions inserted into developer messages when realtime becomes active.",
-      "type": "string"
-    },
-    "realtime_ws_backend_prompt": {
-      "description": "Overrides only the realtime conversation websocket transport instructions (the `Op::RealtimeConversation` `/ws` session.update instructions) without changing normal prompts.",
-      "type": "string"
-    },
-    "realtime_ws_base_url": {
-      "description": "Overrides only the realtime conversation websocket transport base URL (the `Op::RealtimeConversation` `/v1/realtime` connection) without changing normal provider HTTP requests.",
-      "type": "string"
-    },
-    "realtime_ws_model": {
-      "description": "Selects the realtime websocket model/snapshot used for the `Op::RealtimeConversation` connection.",
-      "type": "string"
-    },
-    "realtime_ws_startup_context": {
-      "description": "Replaces the synthesized realtime startup context appended to websocket session instructions. An empty string disables startup context injection entirely.",
-      "type": "string"
     },
     "review_model": {
       "description": "Review model override used by the `/review` feature.",

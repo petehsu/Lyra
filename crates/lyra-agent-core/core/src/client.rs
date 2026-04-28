@@ -39,8 +39,6 @@ use lyra_api::MemorySummarizeInput as ApiMemorySummarizeInput;
 use lyra_api::MemorySummarizeOutput as ApiMemorySummarizeOutput;
 use lyra_api::Provider as ApiProvider;
 use lyra_api::RawMemory as ApiRawMemory;
-use lyra_api::RealtimeCallClient as ApiRealtimeCallClient;
-use lyra_api::RealtimeSessionConfig as ApiRealtimeSessionConfig;
 use lyra_api::Reasoning;
 use lyra_api::RequestTelemetry;
 use lyra_api::ReqwestTransport;
@@ -1310,26 +1308,6 @@ fn parse_gemini_response_payload(
     }
 }
 
-/// Result of opening a WebRTC Realtime call.
-///
-/// The SDP answer goes back to the client. The call id and auth headers stay on the server so the
-/// ordinary Realtime WebSocket machinery can join the same in-progress call as a sideband
-/// controller.
-pub(crate) struct RealtimeWebrtcCallStart {
-    pub(crate) sdp: String,
-    pub(crate) call_id: String,
-    pub(crate) sideband_headers: ApiHeaderMap,
-}
-
-/// Reuses the API-auth material that created the WebRTC call for the sideband WebSocket join.
-///
-/// The sideband connection reuses the same bearer material as the initial call creation.
-fn sideband_websocket_auth_headers(api_auth: &dyn AuthProvider) -> ApiHeaderMap {
-    let mut headers = ApiHeaderMap::new();
-    api_auth.add_auth_headers(&mut headers);
-    headers
-}
-
 impl ModelClient {
     #[allow(clippy::too_many_arguments)]
     /// Creates a new session-scoped `ModelClient`.
@@ -1440,32 +1418,6 @@ impl ModelClient {
 
         self.store_cached_websocket_session(WebsocketSession::default());
         activated
-    }
-
-    pub(crate) async fn create_realtime_call_with_headers(
-        &self,
-        sdp: String,
-        session_config: ApiRealtimeSessionConfig,
-        extra_headers: ApiHeaderMap,
-    ) -> Result<RealtimeWebrtcCallStart> {
-        // Create the media call over HTTP first, then retain matching auth so realtime can attach
-        // the server-side control WebSocket to the call id from that HTTP response.
-        let client_setup = self.current_client_setup().await?;
-        let mut sideband_headers = extra_headers.clone();
-        sideband_headers.extend(sideband_websocket_auth_headers(
-            client_setup.api_auth.as_ref(),
-        ));
-        let transport = ReqwestTransport::new(build_reqwest_client());
-        let response =
-            ApiRealtimeCallClient::new(transport, client_setup.api_provider, client_setup.api_auth)
-                .create_with_session_and_headers(sdp, session_config, extra_headers)
-                .await
-                .map_err(map_api_error)?;
-        Ok(RealtimeWebrtcCallStart {
-            sdp: response.sdp,
-            call_id: response.call_id,
-            sideband_headers,
-        })
     }
 
     /// Builds memory summaries for each provided normalized raw memory.
@@ -1753,6 +1705,7 @@ impl ModelClientSession {
         model_info: &ModelInfo,
         effort: Option<ReasoningEffortConfig>,
         summary: ReasoningSummaryConfig,
+        model_verbosity: Option<VerbosityConfig>,
         service_tier: Option<ServiceTier>,
     ) -> Result<ResponsesApiRequest> {
         let instructions = &prompt.base_instructions.text;
@@ -1777,12 +1730,14 @@ impl ModelClientSession {
             Vec::new()
         };
         let verbosity = if model_info.support_verbosity {
-            self.client
-                .state
-                .model_verbosity
+            model_verbosity
+                .or(self.client.state.model_verbosity)
                 .or(model_info.default_verbosity)
         } else {
-            if self.client.state.model_verbosity.is_some() {
+            if model_verbosity
+                .or(self.client.state.model_verbosity)
+                .is_some()
+            {
                 warn!(
                     "model_verbosity is set but ignored as the model does not support verbosity: {}",
                     model_info.slug
@@ -2064,6 +2019,7 @@ impl ModelClientSession {
         session_telemetry: &SessionTelemetry,
         effort: Option<ReasoningEffortConfig>,
         summary: ReasoningSummaryConfig,
+        model_verbosity: Option<VerbosityConfig>,
         service_tier: Option<ServiceTier>,
         turn_metadata_header: Option<&str>,
         inference_trace: &InferenceTraceContext,
@@ -2111,6 +2067,7 @@ impl ModelClientSession {
                 model_info,
                 effort,
                 summary,
+                model_verbosity,
                 service_tier,
             )?;
             let inference_trace_attempt = inference_trace.start_attempt();
@@ -2177,6 +2134,7 @@ impl ModelClientSession {
         session_telemetry: &SessionTelemetry,
         effort: Option<ReasoningEffortConfig>,
         summary: ReasoningSummaryConfig,
+        model_verbosity: Option<VerbosityConfig>,
         service_tier: Option<ServiceTier>,
         turn_metadata_header: Option<&str>,
         warmup: bool,
@@ -2205,6 +2163,7 @@ impl ModelClientSession {
                 model_info,
                 effort,
                 summary,
+                model_verbosity,
                 service_tier,
             )?;
             let mut ws_payload = ResponseCreateWsRequest {
@@ -2328,6 +2287,7 @@ impl ModelClientSession {
         session_telemetry: &SessionTelemetry,
         effort: Option<ReasoningEffortConfig>,
         summary: ReasoningSummaryConfig,
+        model_verbosity: Option<VerbosityConfig>,
         service_tier: Option<ServiceTier>,
         turn_metadata_header: Option<&str>,
     ) -> Result<()> {
@@ -2345,6 +2305,7 @@ impl ModelClientSession {
                 session_telemetry,
                 effort,
                 summary,
+                model_verbosity,
                 service_tier,
                 turn_metadata_header,
                 /*warmup*/ true,
@@ -2386,6 +2347,7 @@ impl ModelClientSession {
         session_telemetry: &SessionTelemetry,
         effort: Option<ReasoningEffortConfig>,
         summary: ReasoningSummaryConfig,
+        model_verbosity: Option<VerbosityConfig>,
         service_tier: Option<ServiceTier>,
         turn_metadata_header: Option<&str>,
         inference_trace: &InferenceTraceContext,
@@ -2402,6 +2364,7 @@ impl ModelClientSession {
                             session_telemetry,
                             effort,
                             summary,
+                            model_verbosity,
                             service_tier,
                             turn_metadata_header,
                             /*warmup*/ false,
@@ -2423,6 +2386,7 @@ impl ModelClientSession {
                     session_telemetry,
                     effort,
                     summary,
+                    model_verbosity,
                     service_tier,
                     turn_metadata_header,
                     inference_trace,

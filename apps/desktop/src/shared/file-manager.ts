@@ -270,3 +270,9 @@ export type FileStatResult = {
   readonly modifiedAt?: string;
   readonly revision?: string;
 };
+
+export type FileManagerSelectedAttachment = {
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "file" | "directory";
+};

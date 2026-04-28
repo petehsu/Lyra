@@ -39,6 +39,7 @@ export type WorkbenchNotificationTarget =
         | "ai-history"
         | "ai-mcp"
         | "ai-skills"
+        | "ai-plugins"
         | NotificationCenterAppId;
       readonly appInstanceId: string;
       readonly title?: string;

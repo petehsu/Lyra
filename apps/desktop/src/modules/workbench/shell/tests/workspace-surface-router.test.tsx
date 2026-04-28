@@ -33,6 +33,7 @@ const createSurfaceAdapters = (): WorkbenchSurfaceAdapters => ({
   notificationCenter: () => <div aria-label="fake-notification-center" />,
   mcpCenter: () => <div aria-label="fake-mcp-center" />,
   skillsCenter: () => <div aria-label="fake-skills-center" />,
+  pluginsCenter: () => <div aria-label="fake-plugins-center" />,
   aiHistory: () => <div aria-label="fake-ai-history" />
 });
 

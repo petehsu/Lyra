@@ -263,6 +263,7 @@ const tsOwnedMainModules = new Map<string, string>([
   ["search", "TypeScript-owned shell module: provider composition and lightweight search routing."],
   ["linux-compat", "TypeScript-owned shell module: Electron/Linux startup environment integration."],
   ["storage", "TypeScript-owned shell module: unified storage root resolution and Electron path wiring."],
+  ["uiux-packs", "TypeScript-owned shell module: trusted UIUX pack registry and renderer asset protocol."],
   ["workbench-state", "TypeScript-owned shell module: sync IPC bridge for renderer workbench state files."]
 ]);
 

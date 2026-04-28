@@ -15,6 +15,7 @@ import type { FileEditorSurfaceProps } from "../file-editor";
 import type { FileManagerSurfaceProps } from "../file-manager";
 import type { McpCenterSurfaceProps } from "../mcp-center";
 import type { NotificationCenterSurfaceProps } from "../notifications";
+import type { PluginsCenterSurfaceProps } from "../plugins-center";
 import type { SkillsCenterSurfaceProps } from "../skills-center";
 import type {
   TerminalDockProps,
@@ -33,6 +34,7 @@ export type WorkbenchSurfaceAdapters = {
   readonly notificationCenter: ComponentType<NotificationCenterSurfaceProps>;
   readonly mcpCenter: ComponentType<McpCenterSurfaceProps>;
   readonly skillsCenter: ComponentType<SkillsCenterSurfaceProps>;
+  readonly pluginsCenter: ComponentType<PluginsCenterSurfaceProps>;
   readonly aiHistory: ComponentType<AiHistorySurfaceProps>;
 };
 
@@ -48,6 +50,7 @@ export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
   "notificationCenter",
   "mcpCenter",
   "skillsCenter",
+  "pluginsCenter",
   "aiHistory"
 ] as const satisfies readonly (keyof WorkbenchSurfaceAdapters)[];
 

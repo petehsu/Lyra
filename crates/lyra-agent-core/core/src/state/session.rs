@@ -24,9 +24,8 @@ pub(crate) struct SessionState {
     pub(crate) server_reasoning_included: bool,
     pub(crate) dependency_env: HashMap<String, String>,
     pub(crate) mcp_dependency_prompted: HashSet<String>,
-    /// Settings used by the latest regular user turn, used for turn-to-turn
-    /// model/realtime handling on subsequent regular turns, including full-context
-    /// reinjection after resume.
+    /// Settings used by the latest regular user turn for turn-to-turn model handling,
+    /// including full-context reinjection after resume.
     previous_turn_settings: Option<PreviousTurnSettings>,
     /// Startup prewarmed session prepared during session initialization.
     pub(crate) startup_prewarm: Option<SessionStartupPrewarmHandle>,

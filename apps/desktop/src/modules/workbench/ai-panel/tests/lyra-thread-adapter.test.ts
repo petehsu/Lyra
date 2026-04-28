@@ -115,4 +115,114 @@ describe("lyra thread adapter", () => {
     expect(detail.session.projectRoot).toBeUndefined();
     expect(detail.session.projectName).toBeUndefined();
   });
+
+  test("preserves inline user attachment order", () => {
+    const thread = readLyraThread({
+      id: "thread-attachments",
+      preview: "Read files",
+      modelProvider: "lp-openai",
+      createdAt: 100,
+      updatedAt: 120,
+      turns: [
+        {
+          id: "turn-1",
+          status: "completed",
+          startedAt: 101,
+          completedAt: 119,
+          items: [
+            {
+              type: "userMessage",
+              id: "user-1",
+              content: [
+                { type: "text", text: "你看一下 " },
+                { type: "mention", name: "Fast Prompt.txt", path: "/tmp/Fast Prompt.txt" },
+                { type: "text", text: " 是什么？然后 " },
+                { type: "mention", name: "README.md", path: "/tmp/README.md" },
+                { type: "text", text: " 有什么关系" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(thread).not.toBeNull();
+    const detail = lyraThreadToAgentDetail(thread!);
+
+    expect(detail.messages[0]?.contentParts).toEqual([
+      { type: "text", text: "你看一下 " },
+      { type: "attachment", name: "Fast Prompt.txt", path: "/tmp/Fast Prompt.txt", kind: "file" },
+      { type: "text", text: " 是什么？然后 " },
+      { type: "attachment", name: "README.md", path: "/tmp/README.md", kind: "file" },
+      { type: "text", text: " 有什么关系" },
+    ]);
+  });
+
+  test("preserves image inputs and collab agent calls", () => {
+    const thread = readLyraThread({
+      id: "thread-images",
+      preview: "Inspect image",
+      modelProvider: "lp-openai",
+      createdAt: 100,
+      updatedAt: 140,
+      turns: [
+        {
+          id: "turn-1",
+          status: "completed",
+          startedAt: 101,
+          completedAt: 139,
+          items: [
+            {
+              type: "userMessage",
+              id: "user-1",
+              content: [
+                { type: "text", text: "Compare " },
+                { type: "localImage", path: "/tmp/screen.png" },
+                { type: "text", text: " with " },
+                { type: "image", url: "data:image/png;base64,abc" },
+              ],
+            },
+            {
+              type: "collabAgentToolCall",
+              id: "collab-1",
+              tool: "spawnAgent",
+              status: "completed",
+              senderThreadId: "thread-images",
+              receiverThreadIds: ["thread-child"],
+              prompt: "Inspect image details",
+              model: "gpt-5.4",
+              reasoningEffort: "medium",
+              agentsStates: {
+                "thread-child": "completed",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(thread).not.toBeNull();
+    const detail = lyraThreadToAgentDetail(thread!);
+
+    expect(detail.messages[0]?.contentParts).toEqual([
+      { type: "text", text: "Compare " },
+      { type: "attachment", name: "screen.png", path: "/tmp/screen.png", kind: "local_image" },
+      { type: "text", text: " with " },
+      { type: "attachment", name: "image", path: "data:image/png;base64,abc", kind: "image" },
+    ]);
+    expect(detail.toolCalls[0]).toMatchObject({
+      toolName: "collab.spawnAgent",
+      status: "completed",
+      input: {
+        senderThreadId: "thread-images",
+        receiverThreadIds: ["thread-child"],
+        prompt: "Inspect image details",
+        model: "gpt-5.4",
+        reasoningEffort: "medium",
+      },
+      output: {
+        receiverThreadIds: ["thread-child"],
+      },
+    });
+  });
 });

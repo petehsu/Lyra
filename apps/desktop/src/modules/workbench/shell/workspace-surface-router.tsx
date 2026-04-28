@@ -18,6 +18,7 @@ import {
   type NotificationCenterLabels,
   type WorkbenchNotificationModel
 } from "../notifications";
+import type { PluginsCenterLabels, PluginsCenterModel } from "../plugins-center";
 import type { WorkbenchSplitThreePaneLayout } from "../preferences";
 import type { SkillsCenterLabels, SkillsCenterModel } from "../skills-center";
 import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/types";
@@ -178,6 +179,10 @@ export type WorkspaceSurfaceRouterProps = {
     readonly model: SkillsCenterModel;
     readonly labels: SkillsCenterLabels;
   };
+  readonly pluginsCenter: {
+    readonly model: PluginsCenterModel;
+    readonly labels: PluginsCenterLabels;
+  };
   readonly aiHistory: {
     readonly locale: string;
     readonly title: string;
@@ -270,6 +275,10 @@ const renderSurfaceModel = (
     }
     case "skillsCenter": {
       const Adapter = surfaceAdapters.skillsCenter;
+      return <Adapter {...model.props} />;
+    }
+    case "pluginsCenter": {
+      const Adapter = surfaceAdapters.pluginsCenter;
       return <Adapter {...model.props} />;
     }
     case "aiHistory": {

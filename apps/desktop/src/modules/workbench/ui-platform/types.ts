@@ -1,11 +1,14 @@
 import type { ComponentType } from "react";
+import type * as ReactRuntime from "react";
 
 import type { BrowserTabStripProps } from "../browser-tabs/tab-strip";
 import type { I18nKey } from "../i18n";
 import type { WorkbenchInteractionPolicies } from "../interaction-policy";
 import type { WorkbenchShellAdapterProps } from "../shell/workbench-chrome";
 import type { WorkspaceSurfaceRouterProps } from "../shell/workspace-surface-router";
+import type * as WorkbenchUiPrimitives from "../ui-primitives";
 import type { WorkbenchUiStylePack } from "../ui-style";
+import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { WorkbenchUiPackId } from "./ids";
 import type { WorkbenchPanelAdapters, WorkbenchSurfaceAdapters } from "./surface-types";
 
@@ -37,8 +40,10 @@ export type WorkbenchUiPackCapabilities = {
 
 export type WorkbenchUiPackManifest = {
   readonly id: WorkbenchUiPackId;
-  readonly labelKey: I18nKey;
-  readonly descriptionKey: I18nKey;
+  readonly labelKey?: I18nKey;
+  readonly descriptionKey?: I18nKey;
+  readonly label?: string;
+  readonly description?: string;
   readonly version: string;
   readonly compatibility: WorkbenchUiPackCompatibility;
   readonly source: WorkbenchUiPackSource;
@@ -57,6 +62,21 @@ export type WorkbenchUiPack = {
   readonly style: WorkbenchUiStylePack;
   readonly adapters: WorkbenchUiPackAdapters;
   readonly interactions: WorkbenchInteractionPolicies;
+};
+
+export type WorkbenchUiPackContext = {
+  readonly apiVersion: WorkbenchUiPackCompatibility["workbenchUiApi"];
+  readonly React: typeof ReactRuntime;
+  readonly desktopApi: LyraDesktopApi | null;
+  readonly adapters: WorkbenchUiPackAdapters;
+  readonly style: WorkbenchUiStylePack;
+  readonly interactions: WorkbenchInteractionPolicies;
+  readonly primitives: typeof WorkbenchUiPrimitives;
+};
+
+export type WorkbenchUiPackModule = {
+  readonly manifest: WorkbenchUiPackManifest;
+  readonly createPack: (context: WorkbenchUiPackContext) => WorkbenchUiPack | Promise<WorkbenchUiPack>;
 };
 
 export type WorkbenchUiRuntime = {

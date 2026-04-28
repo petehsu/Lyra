@@ -20,8 +20,9 @@ export const handleWriteStreamEvent = ({
   payload,
   progress,
   onWriteStreamEvent,
+  followEnabled = false,
 }: RuntimeEventProcessingContext): void => {
-  if (onWriteStreamEvent === undefined) {
+  if (onWriteStreamEvent === undefined || !followEnabled) {
     return;
   }
   const toolName = pickString(payload, "toolName");
@@ -157,6 +158,7 @@ export const handleRuntimeFeed = ({
   runtimeToolFallbackLabel,
   setRuntimeFeed,
   openRuntimeTargetPath,
+  followEnabled = false,
 }: RuntimeEventProcessingContext): void => {
   const feedItem = toRuntimeFeedItem(event, toolNameLabels, runtimeToolFallbackLabel);
   if (feedItem === null) {
@@ -201,6 +203,7 @@ export const handleRuntimeFeed = ({
     return next;
   });
   if (
+    followEnabled &&
     feedItem.autoOpen === true &&
     typeof feedItem.openPath === "string" &&
     feedItem.openPath.trim().length > 0

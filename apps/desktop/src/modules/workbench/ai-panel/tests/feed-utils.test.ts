@@ -21,7 +21,13 @@ const LABELS: ToolNameLabelMap = {
   terminalRead: "Terminal Read",
   terminalInput: "Terminal Input",
   terminalClose: "Terminal Close",
-  terminalExec: "Terminal"
+  terminalExec: "Terminal",
+  collabSpawnAgent: "Spawn Agent",
+  collabSendInput: "Send Input",
+  collabResumeAgent: "Resume Agent",
+  collabWait: "Wait",
+  collabCloseAgent: "Close Agent",
+  collabAgent: "Agent",
 };
 
 describe("ai panel runtime feed utils", () => {
@@ -62,6 +68,114 @@ describe("ai panel runtime feed utils", () => {
       firstChangedLine: 12,
       status: "running"
     });
+  });
+
+  test("builds collab agent feed item with thread navigation target", () => {
+    const feed = toRuntimeFeedItem({
+      sessionId: "s1",
+      turnId: "t1",
+      phase: "tool_finished",
+      timestamp: 100,
+      payload: {
+        toolName: "collab.spawnAgent",
+        toolCallId: "agent-call-1",
+        input: {
+          receiverThreadIds: ["child-thread-1"],
+          model: "gpt-5.4",
+          prompt: "Inspect the failing test",
+        },
+        output: {
+          receiverThreadIds: ["child-thread-1"],
+        },
+        status: "completed",
+      },
+    } as any, LABELS, "Tool");
+
+    expect(feed).toMatchObject({
+      id: "agent-call-1",
+      toolName: "collab.spawnAgent",
+      toolLabel: "Spawn Agent",
+      target: "child-thread-1 · gpt-5.4 · Inspect the failing test",
+      openThreadId: "child-thread-1",
+      icon: "agent",
+      status: "completed",
+    });
+  });
+
+  test("marks read_range as follow-openable without opening search tools automatically", () => {
+    const readFeed = toRuntimeFeedItem({
+      sessionId: "s1",
+      turnId: "t1",
+      phase: "tool_started",
+      timestamp: 100,
+      payload: {
+        toolName: "filesystem.read_range",
+        toolCallId: "read-1",
+        input: {
+          path: "src/main.ts",
+          startLine: 9,
+          endLine: 12,
+        },
+      },
+    } as any, LABELS, "Tool");
+    const searchFeed = toRuntimeFeedItem({
+      sessionId: "s1",
+      turnId: "t1",
+      phase: "tool_started",
+      timestamp: 100,
+      payload: {
+        toolName: "filesystem.search",
+        toolCallId: "search-1",
+        input: {
+          path: "src",
+          query: "Follow",
+        },
+      },
+    } as any, LABELS, "Tool");
+
+    expect(readFeed).toMatchObject({
+      openPath: "src/main.ts",
+      autoOpen: true,
+    });
+    expect(searchFeed).toMatchObject({
+      openPath: "src",
+    });
+    expect(searchFeed?.autoOpen).toBeUndefined();
+  });
+
+  test("builds terminal transcript feed item from streamed chunks", () => {
+    const feed = toRuntimeFeedItem({
+      sessionId: "s1",
+      turnId: "t1",
+      phase: "tool_progress",
+      timestamp: 100,
+      payload: {
+        toolName: "terminal.exec",
+        toolCallId: "cmd-1",
+        input: {
+          command: "pnpm test",
+          cwd: "/repo",
+        },
+        output: {
+          terminalChunks: [
+            { stream: "stdout", text: "ok\n", timestamp: 101 },
+            { stream: "stderr", text: "warn\n", timestamp: 102 },
+          ],
+        },
+      },
+    } as any, LABELS, "Tool");
+
+    expect(feed).toMatchObject({
+      id: "cmd-1",
+      toolName: "terminal.exec",
+      liveOutput: "ok\nwarn\n",
+      terminalTranscript: {
+        command: "pnpm test",
+        cwd: "/repo",
+        outputLength: 8,
+      },
+    });
+    expect(feed?.terminalTranscript?.chunks).toHaveLength(2);
   });
 
   test("merges runtime feed status with stronger precedence", () => {

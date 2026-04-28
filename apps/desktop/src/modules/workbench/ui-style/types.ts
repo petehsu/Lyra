@@ -1,7 +1,7 @@
 import type { WorkbenchThemeVars } from "../theme";
 import type { I18nKey } from "../i18n";
 
-export type WorkbenchUiStyleId = "classic";
+export type WorkbenchUiStyleId = string;
 
 export type WorkbenchUiStyleVars = Partial<WorkbenchThemeVars>;
 
@@ -10,7 +10,7 @@ export type WorkbenchUiStyleRootAttributes = {
 };
 
 export type WorkbenchUiStyleCapabilities = {
-  readonly source: "builtin";
+  readonly source: "builtin" | "external";
   readonly supportsCustomCss: boolean;
   readonly supportsSurfaceAdapters: boolean;
   readonly supportsCommunityDistribution: boolean;

@@ -86,10 +86,36 @@ export const useAiPanelThreadViewModel = ({
   runtimeToolFallbackLabel,
   labels,
 }: UseAiPanelThreadViewModelParams): UseAiPanelThreadViewModelResult => {
-  const persistedMessages = useMemo(
-    () => sortByTime(activeDetail?.messages ?? []),
-    [activeDetail?.messages]
-  );
+  const persistedMessages = useMemo(() => {
+    const optimisticByTurn = new Map<string, OptimisticUserMessage>();
+    for (const message of optimisticUserMessages) {
+      if (
+        typeof message.turnId === "string" &&
+        message.contentParts !== undefined &&
+        message.contentParts.some((part) => part.type === "attachment")
+      ) {
+        optimisticByTurn.set(message.turnId, message);
+      }
+    }
+    return sortByTime((activeDetail?.messages ?? []).map((message) => {
+      if (
+        message.role !== "user" ||
+        typeof message.turnId !== "string" ||
+        (message.contentParts !== undefined && message.contentParts.length > 0)
+      ) {
+        return message;
+      }
+      const optimistic = optimisticByTurn.get(message.turnId);
+      if (optimistic === undefined || optimistic.contentParts === undefined) {
+        return message;
+      }
+      return {
+        ...message,
+        content: optimistic.content,
+        contentParts: optimistic.contentParts,
+      };
+    }));
+  }, [activeDetail?.messages, optimisticUserMessages]);
 
   const persistedAssistantDisplayByTurn = useMemo(() => {
     const visible = new Set<string>();

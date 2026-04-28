@@ -1,6 +1,7 @@
 import {
   isAiHistoryAppId,
   isAiMcpAppId,
+  isAiPluginsAppId,
   isAiSkillsAppId,
   isFileEditorAppId,
   isFileManagerAppId,
@@ -196,6 +197,16 @@ export const createAppSurfaceRenderModel = (
       props: {
         model: context.skillsCenter.model,
         labels: context.skillsCenter.labels
+      }
+    };
+  }
+
+  if (isAiPluginsAppId(tab.appId)) {
+    return {
+      kind: "pluginsCenter",
+      props: {
+        model: context.pluginsCenter.model,
+        labels: context.pluginsCenter.labels
       }
     };
   }

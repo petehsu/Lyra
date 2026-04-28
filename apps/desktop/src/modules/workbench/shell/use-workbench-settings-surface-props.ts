@@ -1,12 +1,23 @@
+import { useEffect, useMemo, useState } from "react";
+
 import type { BrowserUseRuntimeStatus } from "../../../shared/browser-use";
-import type { SearchIndexStatusResponse } from "../../../shared/desktop-bridge";
+import type {
+  LyraDesktopApi,
+  SearchIndexStatusResponse,
+  UiuxListPacksResponse
+} from "../../../shared/desktop-bridge";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
 import type { WorkbenchPreferencesModel } from "../preferences";
 import type { SettingsAiModel } from "../settings-ai";
+import {
+  isBuiltinWorkbenchUiPackId,
+  type WorkbenchUiPackId
+} from "../ui-platform";
 import type { WorkbenchLabels } from "./use-workbench-labels";
 
 type UseWorkbenchSettingsSurfacePropsParams = {
   readonly labels: WorkbenchLabels;
+  readonly desktopApi: LyraDesktopApi | null;
   readonly preferencesModel: WorkbenchPreferencesModel;
   readonly settingsAiModel: SettingsAiModel;
   readonly browserUseRuntimeStatus: BrowserUseRuntimeStatus;
@@ -27,6 +38,7 @@ const formatSearchIndexStatus = (status: SearchIndexStatusResponse | null): stri
 
 export const useWorkbenchSettingsSurfaceProps = ({
   labels,
+  desktopApi,
   preferencesModel,
   settingsAiModel,
   browserUseRuntimeStatus,
@@ -37,12 +49,82 @@ export const useWorkbenchSettingsSurfaceProps = ({
   onSearchRebuildIndex
 }: UseWorkbenchSettingsSurfacePropsParams): BrowserSettingsSurfaceProps => {
   const preferences = preferencesModel.preferences;
+  const [uiuxPacks, setUiuxPacks] = useState<UiuxListPacksResponse | null>(null);
+  const [pendingUiPackId, setPendingUiPackId] = useState<WorkbenchUiPackId | null>(null);
+
+  useEffect(() => {
+    if (desktopApi?.uiux === undefined) {
+      setUiuxPacks(null);
+      return;
+    }
+    let cancelled = false;
+    void desktopApi.uiux.listPacks()
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setUiuxPacks(response);
+        setPendingUiPackId(response.pendingExternalPackId ?? null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        console.warn("[lyra-uiux] failed to list installed UIUX packs", error);
+        setUiuxPacks(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [desktopApi]);
+
+  const uiStyleOptions = useMemo(
+    () => [
+      ...labels.settingsOptions.uiStyle,
+      ...(uiuxPacks?.installed
+        .filter((pack) => pack.trustState === "trusted")
+        .map((pack) => ({
+          value: pack.id,
+          label: pack.manifest.name,
+          description: labels.settingsSurface.uiStyleExternalReloadRequired
+        })) ?? [])
+    ],
+    [
+      labels.settingsOptions.uiStyle,
+      labels.settingsSurface.uiStyleExternalReloadRequired,
+      uiuxPacks?.installed
+    ]
+  );
+
+  const handleUiStyleChange = (value: WorkbenchUiPackId): void => {
+    if (isBuiltinWorkbenchUiPackId(value)) {
+      setPendingUiPackId(null);
+      preferencesModel.setUiPackId(value);
+      void desktopApi?.uiux.requestActivation({ packId: value }).catch((error: unknown) => {
+        console.warn("[lyra-uiux] failed to clear external UIUX activation", error);
+      });
+      return;
+    }
+
+    if (desktopApi?.uiux === undefined) {
+      return;
+    }
+    setPendingUiPackId(value);
+    void desktopApi.uiux.requestActivation({ packId: value })
+      .then((response) => {
+        setPendingUiPackId(response.packId);
+      })
+      .catch((error: unknown) => {
+        console.warn(`[lyra-uiux] failed to request UIUX pack activation: ${value}`, error);
+        setPendingUiPackId(null);
+      });
+  };
 
   return {
     ...labels.settingsSurface,
     localeValue: preferences.locale,
     themeValue: preferences.theme,
-    uiStyleValue: preferences.uiPackId,
+    uiStyleValue: pendingUiPackId ?? preferences.uiPackId,
     terminalThemeValue: preferences.terminalThemePreset,
     splitTriggerModeValue: preferences.splitTriggerMode,
     splitThreePaneLayoutValue: preferences.splitThreePaneLayout,
@@ -71,7 +153,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     omniboxNonBrowserSubmitTargetValue: preferences.omniboxNonBrowserSubmitTarget,
     localeOptions: labels.settingsOptions.locale,
     themeOptions: labels.settingsOptions.theme,
-    uiStyleOptions: labels.settingsOptions.uiStyle,
+    uiStyleOptions,
     terminalThemeOptions: labels.settingsOptions.terminalTheme,
     splitTriggerModeOptions: labels.settingsOptions.splitTriggerMode,
     splitThreePaneLayoutOptions: labels.settingsOptions.splitThreePaneLayout,
@@ -93,7 +175,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     },
     onLocaleChange: preferencesModel.setLocale,
     onThemeChange: preferencesModel.setTheme,
-    onUiStyleChange: preferencesModel.setUiPackId,
+    onUiStyleChange: handleUiStyleChange,
     onTerminalThemeChange: preferencesModel.setTerminalThemePreset,
     onSplitTriggerModeChange: preferencesModel.setSplitTriggerMode,
     onSplitThreePaneLayoutChange: preferencesModel.setSplitThreePaneLayout,

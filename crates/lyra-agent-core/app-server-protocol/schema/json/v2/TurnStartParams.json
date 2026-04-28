@@ -487,6 +487,15 @@
           "type": "object"
         }
       ]
+    },
+    "Verbosity": {
+      "description": "Controls output length/detail on GPT-5 models via the Responses API. Serialized with lowercase values to match the Responses API wire format.",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "type": "string"
     }
   },
   "properties": {
@@ -609,6 +618,17 @@
     },
     "threadId": {
       "type": "string"
+    },
+    "verbosity": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Verbosity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Override the model verbosity for this turn and subsequent turns."
     }
   },
   "required": [

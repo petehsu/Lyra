@@ -72,6 +72,7 @@ const withSyncReply = <T>(run: () => T): SyncReply<T> => {
 export type WorkbenchStateIpcBridge = {
   readonly dispose: () => void;
   readonly readState: (key: WorkbenchStateKey) => string | null;
+  readonly writeState: (key: WorkbenchStateKey, json: string) => void;
   readonly subscribe: (
     listener: (event: {
       readonly key: WorkbenchStateKey;
@@ -107,6 +108,13 @@ export const createWorkbenchStateIpcBridge = (
     }
   };
 
+  const writeState = (key: WorkbenchStateKey, json: string): void => {
+    const normalizedJson = normalizeJson(json);
+    const filePath = resolveStateFilePath(storageRoot, key);
+    writeFileSync(filePath, normalizedJson, "utf8");
+    publish(key, normalizedJson);
+  };
+
   const listeners: Array<readonly [string, Parameters<typeof ipcMain.on>[1]]> = [
     [
       LYRA_CHANNELS.workbenchStateReadSync,
@@ -122,10 +130,7 @@ export const createWorkbenchStateIpcBridge = (
       (event, payload: unknown) => {
         event.returnValue = withSyncReply(() => {
           const key = normalizeKey((payload as { readonly key?: unknown })?.key);
-          const json = normalizeJson((payload as { readonly json?: unknown })?.json);
-          const filePath = resolveStateFilePath(storageRoot, key);
-          writeFileSync(filePath, json, "utf8");
-          publish(key, json);
+          writeState(key, (payload as { readonly json?: unknown })?.json as string);
           return null;
         }) satisfies SyncReply<null>;
       }
@@ -150,6 +155,7 @@ export const createWorkbenchStateIpcBridge = (
 
   return {
     readState,
+    writeState,
     subscribe: (listener) => {
       stateListeners.add(listener);
       return () => {

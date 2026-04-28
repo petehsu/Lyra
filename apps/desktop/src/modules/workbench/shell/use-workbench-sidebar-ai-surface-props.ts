@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import {
   createAiHistoryAppRequest,
   createAiMcpAppRequest,
+  createAiPluginsAppRequest,
   createAiSkillsAppRequest
 } from "../ai-panel";
 import type { GlobalDialogModel } from "../global-dialog";
@@ -25,6 +26,7 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   readonly settingsAiModel: SettingsAiModel;
   readonly resolvedThemeId: string;
   readonly aiPanelSide: AiPanelSide;
+  readonly fileMentionFallbackRoots: readonly string[];
   readonly onToggleAiPanelSide: () => void;
   readonly openAppTab: WorkspaceTabsModel["openAppTab"];
   readonly onRequestProjectBind: (
@@ -40,6 +42,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   settingsAiModel,
   resolvedThemeId,
   aiPanelSide,
+  fileMentionFallbackRoots,
   onToggleAiPanelSide,
   openAppTab,
   onRequestProjectBind,
@@ -61,12 +64,14 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       defaultProfileName: settingsAiModel.defaultProfileLabel,
       defaultModelNames: settingsAiModel.defaultModelNames,
       configuredProfiles: settingsAiModel.profiles,
+      fileMentionFallbackRoots,
       profileLabel: t("ai.profileLabel"),
       modelLabel: t("ai.modelLabel"),
       modelsLabel: t("ai.modelsLabel"),
       openHistoryLabel: t("ai.openHistory"),
       openMcpLabel: t("ai.openMcp"),
       openSkillsLabel: t("ai.openSkills"),
+      openPluginsLabel: t("ai.openPlugins"),
       aiPanelSide,
       onToggleAiPanelSide,
       movePanelToLeftLabel: t("ai.movePanelToLeft"),
@@ -119,12 +124,16 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenSkills: () => {
         openAppTab(createAiSkillsAppRequest(t("ai.skillsTabTitle")));
       },
+      onOpenPlugins: () => {
+        openAppTab(createAiPluginsAppRequest(t("ai.pluginsTabTitle")));
+      },
       onRequestProjectBind,
       openDialog
     }),
     [
       aiPanelSide,
       desktopApi,
+      fileMentionFallbackRoots,
       onRequestProjectBind,
       onToggleAiPanelSide,
       openAppTab,

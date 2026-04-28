@@ -3,6 +3,8 @@ import { describe, expect, test } from "vitest";
 import {
   DEFAULT_WORKBENCH_UI_PACK_ID,
   createWorkbenchUiPackOptions,
+  isBuiltinWorkbenchUiPackId,
+  isExternalWorkbenchUiPackId,
   isWorkbenchUiPackId,
   resolveWorkbenchUiPack,
   resolveWorkbenchUiPackId,
@@ -45,9 +47,14 @@ describe("workbench ui platform service", () => {
 
   test("validates and falls back UI pack ids", () => {
     expect(isWorkbenchUiPackId("classic")).toBe(true);
+    expect(isBuiltinWorkbenchUiPackId("classic")).toBe(true);
+    expect(isExternalWorkbenchUiPackId("external:acme.theme")).toBe(true);
+    expect(isWorkbenchUiPackId("external:acme.theme")).toBe(true);
     expect(isWorkbenchUiPackId("unknown")).toBe(false);
     expect(resolveWorkbenchUiPackId("unknown")).toBe("classic");
+    expect(resolveWorkbenchUiPackId("external:acme.theme")).toBe("external:acme.theme");
     expect(resolveWorkbenchUiPack("unknown").manifest.id).toBe("classic");
+    expect(resolveWorkbenchUiPack("external:missing").manifest.id).toBe("classic");
   });
 
   test("builds localized UI pack options", () => {

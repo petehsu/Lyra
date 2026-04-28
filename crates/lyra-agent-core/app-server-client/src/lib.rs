@@ -1151,6 +1151,7 @@ mod tests {
                 thread_id: "thread".to_string(),
                 turn_id: "turn".to_string(),
                 item_id: "item".to_string(),
+                stream: lyra_app_server_protocol::CommandExecOutputStream::Stdout,
                 delta: delta.to_string(),
             },
         )
@@ -1993,6 +1994,7 @@ mod tests {
                         thread_id: "thread".to_string(),
                         turn_id: "turn".to_string(),
                         item_id: "item".to_string(),
+                        stream: lyra_app_server_protocol::CommandExecOutputStream::Stdout,
                         delta: "stdout".to_string(),
                     }
                 )

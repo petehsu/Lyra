@@ -28,6 +28,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly languageLabel: string;
   readonly themeLabel: string;
   readonly uiStyleLabel: string;
+  readonly uiStyleExternalReloadRequired: string;
+  readonly uiStyleExternalUntrusted: string;
   readonly terminalThemeLabel: string;
   readonly splitTriggerModeLabel: string;
   readonly splitThreePaneLayoutLabel: string;

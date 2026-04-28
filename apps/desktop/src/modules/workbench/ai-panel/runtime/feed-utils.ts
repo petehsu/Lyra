@@ -13,7 +13,26 @@ export type AgentRuntimeFeedIconKind =
   | "write"
   | "edit"
   | "multiEdit"
+  | "agent"
   | "tool";
+
+export type AgentTerminalTranscriptStream = "stdin" | "stdout" | "stderr";
+
+export type AgentTerminalTranscriptChunk = {
+  readonly stream: AgentTerminalTranscriptStream;
+  readonly text: string;
+  readonly timestamp: number;
+};
+
+export type AgentTerminalTranscript = {
+  readonly command?: string;
+  readonly cwd?: string;
+  readonly processId?: string;
+  readonly chunks: readonly AgentTerminalTranscriptChunk[];
+  readonly outputLength: number;
+  readonly exitCode?: number | null;
+  readonly durationMs?: number | null;
+};
 
 export type AgentRuntimeFeedItem = {
   readonly id: string;
@@ -24,11 +43,13 @@ export type AgentRuntimeFeedItem = {
   readonly icon: AgentRuntimeFeedIconKind;
   readonly sessionId?: string;
   readonly openPath?: string;
+  readonly openThreadId?: string;
   readonly autoOpen?: boolean;
   readonly firstChangedLine?: number;
   readonly status: AgentRuntimeFeedStatus;
   readonly timestamp: number;
   readonly liveOutput?: string;
+  readonly terminalTranscript?: AgentTerminalTranscript;
 };
 
 export type AgentTurnTimelineItem =
@@ -48,6 +69,7 @@ export type AgentTurnTimelineItem =
 type RuntimeToolTarget = {
   readonly target: string;
   readonly openPath?: string;
+  readonly openThreadId?: string;
 };
 
 export type ToolNameLabelMap = {
@@ -63,6 +85,12 @@ export type ToolNameLabelMap = {
   readonly terminalInput: string;
   readonly terminalClose: string;
   readonly terminalExec: string;
+  readonly collabSpawnAgent: string;
+  readonly collabSendInput: string;
+  readonly collabResumeAgent: string;
+  readonly collabWait: string;
+  readonly collabCloseAgent: string;
+  readonly collabAgent: string;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -81,6 +109,84 @@ const pickNumber = (value: Record<string, unknown>, key: string): number | null 
 const pickRawString = (value: Record<string, unknown>, key: string): string | null => {
   const next = value[key];
   return typeof next === "string" ? next : null;
+};
+
+const pickTerminalStream = (value: unknown): AgentTerminalTranscriptStream | null =>
+  value === "stdin" || value === "stdout" || value === "stderr" ? value : null;
+
+const readTerminalChunks = (
+  value: unknown,
+  fallbackTimestamp: number
+): readonly AgentTerminalTranscriptChunk[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => {
+      if (!isRecord(entry)) {
+        return null;
+      }
+      const stream = pickTerminalStream(entry.stream);
+      const text = pickRawString(entry, "text");
+      if (stream === null || text === null || text.length === 0) {
+        return null;
+      }
+      return {
+        stream,
+        text,
+        timestamp: pickNumber(entry, "timestamp") ?? fallbackTimestamp,
+      };
+    })
+    .filter((entry): entry is AgentTerminalTranscriptChunk => entry !== null);
+};
+
+const terminalOutputFromChunks = (
+  chunks: readonly AgentTerminalTranscriptChunk[]
+): string => chunks.map((chunk) => chunk.text).join("");
+
+const createTerminalTranscript = (
+  toolName: string,
+  inputPayload: Record<string, unknown> | null,
+  outputPayload: Record<string, unknown> | null,
+  timestamp: number
+): AgentTerminalTranscript | undefined => {
+  if (!isTerminalToolName(toolName)) {
+    return undefined;
+  }
+  const chunks = readTerminalChunks(outputPayload?.terminalChunks, timestamp);
+  const aggregatedOutput =
+    outputPayload === null
+      ? null
+      : pickRawString(outputPayload, "aggregatedOutput")
+        ?? pickRawString(outputPayload, "liveOutput")
+        ?? pickRawString(outputPayload, "output");
+  const transcriptChunks = chunks.length > 0
+    ? chunks
+    : aggregatedOutput === null || aggregatedOutput.length === 0
+      ? []
+      : [{ stream: "stdout" as const, text: aggregatedOutput, timestamp }];
+  const command = inputPayload === null ? null : pickRawString(inputPayload, "command");
+  const cwd = inputPayload === null ? null : pickRawString(inputPayload, "cwd");
+  const processId = outputPayload === null ? null : pickRawString(outputPayload, "processId");
+  if (
+    transcriptChunks.length === 0
+    && command === null
+    && cwd === null
+    && processId === null
+  ) {
+    return undefined;
+  }
+  const exitCode = outputPayload === null ? null : pickNumber(outputPayload, "exitCode");
+  const durationMs = outputPayload === null ? null : pickNumber(outputPayload, "durationMs");
+  return {
+    ...(command === null ? {} : { command }),
+    ...(cwd === null ? {} : { cwd }),
+    ...(processId === null ? {} : { processId }),
+    chunks: transcriptChunks,
+    outputLength: transcriptChunks.reduce((total, chunk) => total + chunk.text.length, 0),
+    ...(exitCode === null ? {} : { exitCode }),
+    ...(durationMs === null ? {} : { durationMs }),
+  };
 };
 
 export const normalizeToolName = (toolName: string, labels: ToolNameLabelMap): string => {
@@ -109,6 +215,16 @@ export const normalizeToolName = (toolName: string, labels: ToolNameLabelMap): s
       return labels.terminalClose;
     case "terminal.exec":
       return labels.terminalExec;
+    case "collab.spawnAgent":
+      return labels.collabSpawnAgent;
+    case "collab.sendInput":
+      return labels.collabSendInput;
+    case "collab.resumeAgent":
+      return labels.collabResumeAgent;
+    case "collab.wait":
+      return labels.collabWait;
+    case "collab.closeAgent":
+      return labels.collabCloseAgent;
     default:
       return toolName;
   }
@@ -132,6 +248,12 @@ const resolveRuntimeToolIconKind = (toolName: string): AgentRuntimeFeedIconKind 
       return "multiEdit";
     case "terminal.exec":
       return "tool";
+    case "collab.spawnAgent":
+    case "collab.sendInput":
+    case "collab.resumeAgent":
+    case "collab.wait":
+    case "collab.closeAgent":
+      return "agent";
     default:
       return "tool";
   }
@@ -155,6 +277,13 @@ const pickPathField = (value: Record<string, unknown>): string | null =>
   ?? pickString(value, "root")
   ?? pickString(value, "relativePath");
 
+const pickStringArray = (value: Record<string, unknown>, key: string): readonly string[] => {
+  const next = value[key];
+  return Array.isArray(next)
+    ? next.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
+};
+
 const resolveRuntimeToolTarget = (
   toolName: string,
   payload: Record<string, unknown>,
@@ -167,6 +296,26 @@ const resolveRuntimeToolTarget = (
   const fallbackTarget = normalizeToolName(toolName, labels);
   const path = pickPathField(source) ?? (output === null ? null : pickPathField(output));
   const query = pickString(source, "query") ?? pickString(source, "pattern");
+
+  if (toolName.startsWith("collab.")) {
+    const receiverThreadIds = [
+      ...pickStringArray(source, "receiverThreadIds"),
+      ...(output === null ? [] : pickStringArray(output, "receiverThreadIds")),
+    ].filter((value, index, values) => values.indexOf(value) === index);
+    const prompt = pickString(source, "prompt") ?? (output === null ? null : pickString(output, "prompt"));
+    const model = pickString(source, "model") ?? (output === null ? null : pickString(output, "model"));
+    const targetParts = [
+      receiverThreadIds[0],
+      model,
+      prompt,
+    ].filter((value): value is string => value !== undefined && value !== null && value.length > 0);
+    return {
+      target: targetParts.length > 0
+        ? targetParts.join(" · ")
+        : normalizeToolName(toolName, labels) || labels.collabAgent,
+      ...(receiverThreadIds[0] === undefined ? {} : { openThreadId: receiverThreadIds[0] }),
+    };
+  }
 
   if (toolName === "filesystem.read_range") {
     if (path !== null) {
@@ -324,6 +473,12 @@ export const toRuntimeFeedItem = (
   const target = resolveRuntimeToolTarget(toolName, payload, toolNameLabels, toolFallbackLabel);
   const outputPayload = isRecord(payload.output) ? payload.output : null;
   const inputPayload = isRecord(payload.input) ? payload.input : null;
+  const terminalTranscript = createTerminalTranscript(
+    toolName,
+    inputPayload,
+    outputPayload,
+    event.timestamp
+  );
   const sessionId =
     (outputPayload === null ? null : pickString(outputPayload, "sessionId"))
     ?? (inputPayload === null ? null : pickString(inputPayload, "sessionId"));
@@ -351,13 +506,20 @@ export const toRuntimeFeedItem = (
     target: target.target,
     ...(sessionId === null ? {} : { sessionId }),
     ...(target.openPath === undefined ? {} : { openPath: target.openPath }),
-    ...(isWriteToolName(toolName)
+    ...(target.openThreadId === undefined ? {} : { openThreadId: target.openThreadId }),
+    ...(isWriteToolName(toolName) || toolName === "filesystem.read_range"
       ? { autoOpen: true }
       : {}),
     ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
     icon: resolveRuntimeToolIconKind(toolName),
     status,
-    timestamp: event.timestamp
+    timestamp: event.timestamp,
+    ...(terminalTranscript === undefined
+      ? {}
+      : {
+          terminalTranscript,
+          liveOutput: terminalOutputFromChunks(terminalTranscript.chunks),
+        }),
   };
 };
 
@@ -373,6 +535,12 @@ export const toPersistedRuntimeFeedItem = (
   };
   const inputPayload = isRecord(call.input) ? call.input : null;
   const outputPayload = isRecord(call.output) ? call.output : null;
+  const terminalTranscript = createTerminalTranscript(
+    call.toolName,
+    inputPayload,
+    outputPayload,
+    call.finishedAt ?? call.startedAt
+  );
   const sessionId =
     (outputPayload === null ? null : pickString(outputPayload, "sessionId"))
     ?? (inputPayload === null ? null : pickString(inputPayload, "sessionId"));
@@ -386,10 +554,17 @@ export const toPersistedRuntimeFeedItem = (
     target: target.target,
     ...(sessionId === null ? {} : { sessionId }),
     ...(target.openPath === undefined ? {} : { openPath: target.openPath }),
+    ...(target.openThreadId === undefined ? {} : { openThreadId: target.openThreadId }),
     ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
     icon: resolveRuntimeToolIconKind(call.toolName),
     status: call.status,
-    timestamp: call.startedAt
+    timestamp: call.startedAt,
+    ...(terminalTranscript === undefined
+      ? {}
+      : {
+          terminalTranscript,
+          liveOutput: terminalOutputFromChunks(terminalTranscript.chunks),
+        }),
   };
 };
 
@@ -401,6 +576,27 @@ const runtimeStatusRank = (status: AgentRuntimeFeedStatus): number => {
     return 1;
   }
   return 2;
+};
+
+const mergeTerminalTranscript = (
+  current: AgentTerminalTranscript | undefined,
+  next: AgentTerminalTranscript | undefined
+): AgentTerminalTranscript | undefined => {
+  if (current === undefined) {
+    return next;
+  }
+  if (next === undefined) {
+    return current;
+  }
+  const chunks = next.chunks.length >= current.chunks.length
+    ? next.chunks
+    : current.chunks;
+  return {
+    ...current,
+    ...next,
+    chunks,
+    outputLength: chunks.reduce((total, chunk) => total + chunk.text.length, 0),
+  };
 };
 
 export const mergeRuntimeFeedItem = (
@@ -416,6 +612,10 @@ export const mergeRuntimeFeedItem = (
     && current.sessionId === next.sessionId
   ) {
     const liveOutput = next.liveOutput ?? current.liveOutput;
+    const terminalTranscript = mergeTerminalTranscript(
+      current.terminalTranscript,
+      next.terminalTranscript
+    );
     return {
       ...current,
       ...next,
@@ -424,7 +624,8 @@ export const mergeRuntimeFeedItem = (
         runtimeStatusRank(next.status) >= runtimeStatusRank(current.status)
           ? next.status
           : current.status,
-      ...(liveOutput === undefined ? {} : { liveOutput })
+      ...(liveOutput === undefined ? {} : { liveOutput }),
+      ...(terminalTranscript === undefined ? {} : { terminalTranscript }),
     };
   }
   if (next.timestamp > current.timestamp) {

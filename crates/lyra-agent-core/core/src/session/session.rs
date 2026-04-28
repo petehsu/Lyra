@@ -16,7 +16,6 @@ pub(crate) struct Session {
     /// session.
     pub(super) features: ManagedFeatures,
     pub(super) pending_mcp_server_refresh_config: Mutex<Option<McpServerRefreshConfig>>,
-    pub(crate) conversation: Arc<RealtimeConversationManager>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
     pub(super) mailbox: Mailbox,
     pub(super) mailbox_rx: Mutex<MailboxReceiver>,
@@ -34,6 +33,7 @@ pub(crate) struct SessionConfiguration {
 
     pub(super) collaboration_mode: CollaborationMode,
     pub(super) model_reasoning_summary: Option<ReasoningSummaryConfig>,
+    pub(super) model_verbosity: Option<VerbosityConfig>,
     pub(super) service_tier: Option<ServiceTier>,
 
     /// Developer instructions that supplement the base instructions.
@@ -107,6 +107,9 @@ impl SessionConfiguration {
         }
         if let Some(summary) = updates.reasoning_summary {
             next_configuration.model_reasoning_summary = Some(summary);
+        }
+        if let Some(verbosity) = updates.model_verbosity {
+            next_configuration.model_verbosity = Some(verbosity);
         }
         if let Some(service_tier) = updates.service_tier {
             next_configuration.service_tier = service_tier;
@@ -185,6 +188,7 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) windows_sandbox_level: Option<WindowsSandboxLevel>,
     pub(crate) collaboration_mode: Option<CollaborationMode>,
     pub(crate) reasoning_summary: Option<ReasoningSummaryConfig>,
+    pub(crate) model_verbosity: Option<VerbosityConfig>,
     pub(crate) service_tier: Option<Option<ServiceTier>>,
     pub(crate) developer_instructions: Option<String>,
     pub(crate) dynamic_tools: Option<Vec<DynamicToolSpec>>,
@@ -670,7 +674,6 @@ impl Session {
             managed_network_proxy_refresh_lock: Mutex::new(()),
             features: config.features.clone(),
             pending_mcp_server_refresh_config: Mutex::new(None),
-            conversation: Arc::new(RealtimeConversationManager::new()),
             active_turn: Mutex::new(None),
             mailbox,
             mailbox_rx: Mutex::new(mailbox_rx),

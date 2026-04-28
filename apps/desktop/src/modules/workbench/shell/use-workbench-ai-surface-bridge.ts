@@ -45,10 +45,8 @@ type UseWorkbenchAiSurfaceBridgeParams = {
 };
 
 export const useWorkbenchAiSurfaceBridge = ({
-  desktopApi,
   sidebarAiSurfaceProps,
   fileEditorModel,
-  terminalModel,
   onOpenFileFromManager,
   recordCompletedEditorWorkItem
 }: UseWorkbenchAiSurfaceBridgeParams): WorkbenchSidebarAiSurfaceProps | null => {
@@ -203,40 +201,8 @@ export const useWorkbenchAiSurfaceBridge = ({
             onWriteStreamEvent: onAiWriteStreamEvent,
             onOpenFilePath: (filePath, options) => {
               onOpenFileFromManager(filePath, options?.location, options);
-            },
-            onTerminalExecStarted: (command) => {
-              if (desktopApi === null) {
-                return;
-              }
-              const prevActiveTab = terminalModel.activeDockTab;
-              terminalModel.openTab();
-
-              const newTab = terminalModel.activeDockTab;
-              if (newTab === null || newTab === prevActiveTab) {
-                return;
-              }
-
-              const paneId = newTab.activePaneId ?? newTab.paneIds[0];
-              if (paneId === undefined) {
-                return;
-              }
-
-              const terminalSessionId = `session-${paneId}`;
-              const commandToSend = `${command}\n`;
-
-              setTimeout(() => {
-                void desktopApi.terminal
-                  .write({
-                    sessionId: terminalSessionId,
-                    data: commandToSend,
-                    source: "user"
-                  })
-                  .catch((_error) => {
-                    // session may not be ready yet; best-effort delivery
-                  });
-              }, 300);
             }
           },
-    [desktopApi, onAiWriteStreamEvent, onOpenFileFromManager, sidebarAiSurfaceProps, terminalModel]
+    [onAiWriteStreamEvent, onOpenFileFromManager, sidebarAiSurfaceProps]
   );
 };

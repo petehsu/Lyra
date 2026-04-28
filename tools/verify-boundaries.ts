@@ -234,6 +234,14 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
   {
     scopePrefix: "crates/lyra-agent-core/",
     pattern: new RegExp([
+      "thread\\/realtime",
+      "\\bRealtimeConversation\\b",
+      "\\bRealtimeVoice\\b",
+      "\\bRealtimeOutputModality\\b",
+      "\\bRealtimeVoicesList\\b",
+      "\\bRealtimeAudioFrame\\b",
+      "lyra-realtime-webrtc",
+      "\\brealtime_conversation\\b",
       "\\bCo" + "dexHttpClient\\b",
       "\\bCo" + "dexRequestBuilder\\b",
       "\\bCo" + "dexAuth\\b",
@@ -287,6 +295,12 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     excludePathPattern: /\/(schema\/json|schema\/typescript|models\.json|Cargo\.lock|deny\.toml)\b/,
     message:
       "Agent Core internals must use Lyra-owned names, not legacy compatibility symbols."
+  },
+  {
+    scopePrefix: "apps/desktop/src/",
+    pattern: /\bApp Connectors\b/,
+    message:
+      "Desktop must not expose App Connectors as an independent product surface; use Plugins, MCP, or Skills UI."
   },
   {
     scopePrefix: "crates/lyra-agent-core/",
@@ -393,6 +407,8 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
       "[\"'`]\\/fast\\b",
       "[\"'`]\\/experimental\\b",
       "[\"'`]\\/memories\\b",
+      "[\"'`]\\/approvals\\b",
+      "[\"'`]\\/permissions\\b",
       "[\"'`]\\/personality\\b",
       "[\"'`]\\/compact\\b",
       "[\"'`]\\/debug-m-",
@@ -418,7 +434,7 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     ].join("|")),
     excludePathPattern: /\/tests\//,
     message:
-      "AI panel must not expose unsupported Codex-style slash commands. Keep only explicit Lyra UI actions and the approved permissions aliases."
+      "AI panel must not expose unsupported Codex-style slash commands. Use explicit Lyra UI actions instead."
   }
 ];
 
@@ -518,6 +534,10 @@ if (fs.existsSync(path.join(ROOT, "agent-core", "rust"))) {
 
 if (fs.existsSync(path.join(ROOT, "agent-core", "rust", "vendor", "bubblewrap"))) {
   violations.push("Bubblewrap source must live under third-party/native/bubblewrap, not inside Agent Core vendor paths.");
+}
+
+if (fs.existsSync(path.join(ROOT, "crates", "lyra-agent-core", "realtime-webrtc"))) {
+  violations.push("Realtime/voice runtime crate is removed; do not reintroduce crates/lyra-agent-core/realtime-webrtc.");
 }
 
 for (const file of files) {

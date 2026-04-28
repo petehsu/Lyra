@@ -12,6 +12,7 @@ import { FileManagerSurface } from "../file-manager";
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
 import { McpCenterSurface } from "../mcp-center";
 import { NotificationCenterSurface } from "../notifications";
+import { PluginsCenterSurface } from "../plugins-center";
 import { SkillsCenterSurface } from "../skills-center";
 import { WorkbenchChrome } from "../shell/workbench-chrome";
 import { WorkspaceSurfaceRouter } from "../shell/workspace-surface-router";
@@ -62,6 +63,7 @@ export const CLASSIC_WORKBENCH_UI_PACK = {
       notificationCenter: NotificationCenterSurface,
       mcpCenter: McpCenterSurface,
       skillsCenter: SkillsCenterSurface,
+      pluginsCenter: PluginsCenterSurface,
       aiHistory: AiHistorySurface
     }
   },

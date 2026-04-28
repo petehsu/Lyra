@@ -39,6 +39,7 @@ export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
     toolNameWriteLabel: surfaceProps.toolNameWriteLabel,
     toolNameEditLabel: surfaceProps.toolNameEditLabel,
     toolNameMultiEditLabel: surfaceProps.toolNameMultiEditLabel,
+    fileMentionFallbackRoots: surfaceProps.fileMentionFallbackRoots,
     onOpenFilePath: surfaceProps.onOpenFilePath,
     onRequestProjectBind: surfaceProps.onRequestProjectBind
   });

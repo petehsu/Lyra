@@ -12,8 +12,14 @@ import { useAgentComposerRuntime } from "./use-agent-composer-runtime";
 
 export type {
   AgentComposerAppendRequest,
+  AgentComposerFileAttachment,
+  AgentComposerFileMentionSearchResult,
+  AgentComposerModelControlOption,
   AgentComposerModelOption,
+  AgentComposerReasoningEffort,
+  AgentComposerVerbosity,
   AgentComposerProps,
+  AgentComposerSubmitPayload,
   AgentPermissionMode
 } from "./agent-composer-types";
 
@@ -26,11 +32,22 @@ export const AgentComposer = memo(({
   modelAriaLabel,
   modelSwitchDisabled = false,
   onModelSelect,
+  reasoningEffortOptions = [],
+  selectedReasoningEffort = null,
+  reasoningEffortLabel,
+  modelControlAutoLabel,
+  onReasoningEffortSelect,
+  verbosityOptions = [],
+  selectedVerbosity = null,
+  verbosityLabel,
+  onVerbositySelect,
   initialValue = "",
   appendRequest = null,
   ariaLabel,
   placeholder,
   sendLabel,
+  followLabel,
+  followEnabled = false,
   inputDisabled,
   sendDisabled,
   sending,
@@ -44,11 +61,21 @@ export const AgentComposer = memo(({
   onPermissionModeSelect,
   onHeightChange,
   onSend,
+  onSendWithFollow,
+  onFollowToggle,
   onSteer,
   steerLabel,
   steerDisabled = false,
   onStop,
-  stopDisabled = false
+  stopDisabled = false,
+  addFileLabel,
+  removeAttachmentLabel,
+  onRequestFileAttachments,
+  fileMentionSearchRoots,
+  fileMentionSearchResults,
+  onFileMentionSearchStart,
+  onFileMentionSearchUpdate,
+  onFileMentionSearchStop
 }: AgentComposerProps) => {
   const t = useMemo(() => createTranslator(locale), [locale]);
   const runtime = useAgentComposerRuntime({
@@ -60,7 +87,13 @@ export const AgentComposer = memo(({
     sending,
     onHeightChange,
     onSend,
-    onSteer
+    onSendWithFollow,
+    onSteer,
+    fileMentionSearchRoots,
+    fileMentionSearchResults,
+    onFileMentionSearchStart,
+    onFileMentionSearchUpdate,
+    onFileMentionSearchStop
   });
   const modelState = useMemo(
     () => createAgentComposerModelState({
@@ -107,9 +140,15 @@ export const AgentComposer = memo(({
       ariaLabel={ariaLabel}
       placeholder={placeholder}
       sendLabel={sendLabel}
+      followLabel={followLabel ?? t("ai.followMode")}
+      followEnabled={followEnabled}
+      addFileLabel={addFileLabel ?? t("ai.addFileAttachment")}
+      removeAttachmentLabel={removeAttachmentLabel ?? t("ai.removeFileAttachment")}
+      fileMentionNoMatchesLabel={t("ai.fileMentionNoMatches")}
       inputDisabled={inputDisabled}
       sendDisabled={sendDisabled}
       sending={sending}
+      modelSwitchDisabled={modelSwitchDisabled}
       planModeEnabled={planModeEnabled}
       planModeLocked={planModeLocked}
       onPlanModeToggle={onPlanModeToggle}
@@ -117,6 +156,17 @@ export const AgentComposer = memo(({
       permissionModeDisabled={permissionModeDisabled}
       onPermissionModeSelect={onPermissionModeSelect}
       onModelSelect={onModelSelect}
+      reasoningEffortOptions={reasoningEffortOptions}
+      selectedReasoningEffort={selectedReasoningEffort}
+      reasoningEffortLabel={reasoningEffortLabel ?? t("ai.reasoningEffortLabel")}
+      modelControlAutoLabel={modelControlAutoLabel ?? t("ai.modelControlAuto")}
+      onReasoningEffortSelect={onReasoningEffortSelect}
+      verbosityOptions={verbosityOptions}
+      selectedVerbosity={selectedVerbosity}
+      verbosityLabel={verbosityLabel ?? t("ai.verbosityLabel")}
+      onVerbositySelect={onVerbositySelect}
+      onFollowToggle={onFollowToggle}
+      onRequestFileAttachments={onRequestFileAttachments}
       onSteer={onSteer}
       steerDisabled={steerDisabled}
       onStop={onStop}

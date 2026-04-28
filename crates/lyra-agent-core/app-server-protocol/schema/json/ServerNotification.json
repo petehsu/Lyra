@@ -519,6 +519,9 @@
         "itemId": {
           "type": "string"
         },
+        "stream": {
+          "$ref": "#/definitions/CommandExecOutputStream"
+        },
         "threadId": {
           "type": "string"
         },
@@ -529,6 +532,7 @@
       "required": [
         "delta",
         "itemId",
+        "stream",
         "threadId",
         "turnId"
       ],
@@ -1691,13 +1695,6 @@
       ],
       "type": "object"
     },
-    "RealtimeConversationVersion": {
-      "enum": [
-        "v1",
-        "v2"
-      ],
-      "type": "string"
-    },
     "ReasoningEffort": {
       "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
       "enum": [
@@ -2846,188 +2843,6 @@
         }
       },
       "required": [
-        "threadId"
-      ],
-      "type": "object"
-    },
-    "ThreadRealtimeAudioChunk": {
-      "description": "thread realtime audio chunk.",
-      "properties": {
-        "data": {
-          "type": "string"
-        },
-        "itemId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "numChannels": {
-          "format": "uint16",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "sampleRate": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "samplesPerChannel": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "data",
-        "numChannels",
-        "sampleRate"
-      ],
-      "type": "object"
-    },
-    "ThreadRealtimeClosedNotification": {
-      "description": "emitted when thread realtime transport closes.",
-      "properties": {
-        "reason": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "threadId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "threadId"
-      ],
-      "type": "object"
-    },
-    "ThreadRealtimeErrorNotification": {
-      "description": "emitted when thread realtime encounters an error.",
-      "properties": {
-        "message": {
-          "type": "string"
-        },
-        "threadId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "message",
-        "threadId"
-      ],
-      "type": "object"
-    },
-    "ThreadRealtimeItemAddedNotification": {
-      "description": "raw non-audio thread realtime item emitted by the backend.",
-      "properties": {
-        "item": true,
-        "threadId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "item",
-        "threadId"
-      ],
-      "type": "object"
-    },
-    "ThreadRealtimeOutputAudioDeltaNotification": {
-      "description": "streamed output audio emitted by thread realtime.",
-      "properties": {
-        "audio": {
-          "$ref": "#/definitions/ThreadRealtimeAudioChunk"
-        },
-        "threadId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "audio",
-        "threadId"
-      ],
-      "type": "object"
-    },
-    "ThreadRealtimeSdpNotification": {
-      "description": "emitted with the remote SDP for a WebRTC realtime session.",
-      "properties": {
-        "sdp": {
-          "type": "string"
-        },
-        "threadId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "sdp",
-        "threadId"
-      ],
-      "type": "object"
-    },
-    "ThreadRealtimeStartedNotification": {
-      "description": "emitted when thread realtime startup is accepted.",
-      "properties": {
-        "sessionId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "threadId": {
-          "type": "string"
-        },
-        "version": {
-          "$ref": "#/definitions/RealtimeConversationVersion"
-        }
-      },
-      "required": [
-        "threadId",
-        "version"
-      ],
-      "type": "object"
-    },
-    "ThreadRealtimeTranscriptDeltaNotification": {
-      "description": "flat transcript delta emitted whenever realtime transcript text changes.",
-      "properties": {
-        "delta": {
-          "description": "Live transcript delta from the realtime event.",
-          "type": "string"
-        },
-        "role": {
-          "type": "string"
-        },
-        "threadId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "delta",
-        "role",
-        "threadId"
-      ],
-      "type": "object"
-    },
-    "ThreadRealtimeTranscriptDoneNotification": {
-      "description": "final transcript text emitted when realtime completes a transcript part.",
-      "properties": {
-        "role": {
-          "type": "string"
-        },
-        "text": {
-          "description": "Final complete text for the transcript part.",
-          "type": "string"
-        },
-        "threadId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "role",
-        "text",
         "threadId"
       ],
       "type": "object"
@@ -4589,166 +4404,6 @@
         "params"
       ],
       "title": "FuzzyFileSearch/sessionCompletedNotification",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "method": {
-          "enum": [
-            "thread/realtime/started"
-          ],
-          "title": "Thread/realtime/startedNotificationMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/ThreadRealtimeStartedNotification"
-        }
-      },
-      "required": [
-        "method",
-        "params"
-      ],
-      "title": "Thread/realtime/startedNotification",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "method": {
-          "enum": [
-            "thread/realtime/itemAdded"
-          ],
-          "title": "Thread/realtime/itemAddedNotificationMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/ThreadRealtimeItemAddedNotification"
-        }
-      },
-      "required": [
-        "method",
-        "params"
-      ],
-      "title": "Thread/realtime/itemAddedNotification",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "method": {
-          "enum": [
-            "thread/realtime/transcript/delta"
-          ],
-          "title": "Thread/realtime/transcript/deltaNotificationMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/ThreadRealtimeTranscriptDeltaNotification"
-        }
-      },
-      "required": [
-        "method",
-        "params"
-      ],
-      "title": "Thread/realtime/transcript/deltaNotification",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "method": {
-          "enum": [
-            "thread/realtime/transcript/done"
-          ],
-          "title": "Thread/realtime/transcript/doneNotificationMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/ThreadRealtimeTranscriptDoneNotification"
-        }
-      },
-      "required": [
-        "method",
-        "params"
-      ],
-      "title": "Thread/realtime/transcript/doneNotification",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "method": {
-          "enum": [
-            "thread/realtime/outputAudio/delta"
-          ],
-          "title": "Thread/realtime/outputAudio/deltaNotificationMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/ThreadRealtimeOutputAudioDeltaNotification"
-        }
-      },
-      "required": [
-        "method",
-        "params"
-      ],
-      "title": "Thread/realtime/outputAudio/deltaNotification",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "method": {
-          "enum": [
-            "thread/realtime/sdp"
-          ],
-          "title": "Thread/realtime/sdpNotificationMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/ThreadRealtimeSdpNotification"
-        }
-      },
-      "required": [
-        "method",
-        "params"
-      ],
-      "title": "Thread/realtime/sdpNotification",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "method": {
-          "enum": [
-            "thread/realtime/error"
-          ],
-          "title": "Thread/realtime/errorNotificationMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/ThreadRealtimeErrorNotification"
-        }
-      },
-      "required": [
-        "method",
-        "params"
-      ],
-      "title": "Thread/realtime/errorNotification",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "method": {
-          "enum": [
-            "thread/realtime/closed"
-          ],
-          "title": "Thread/realtime/closedNotificationMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/ThreadRealtimeClosedNotification"
-        }
-      },
-      "required": [
-        "method",
-        "params"
-      ],
-      "title": "Thread/realtime/closedNotification",
       "type": "object"
     },
     {

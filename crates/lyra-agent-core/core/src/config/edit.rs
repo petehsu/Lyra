@@ -1014,42 +1014,6 @@ impl ConfigEditsBuilder {
         self
     }
 
-    pub fn set_realtime_microphone(mut self, microphone: Option<&str>) -> Self {
-        let segments = vec!["audio".to_string(), "microphone".to_string()];
-        match microphone {
-            Some(microphone) => self.edits.push(ConfigEdit::SetPath {
-                segments,
-                value: value(microphone),
-            }),
-            None => self.edits.push(ConfigEdit::ClearPath { segments }),
-        }
-        self
-    }
-
-    pub fn set_realtime_speaker(mut self, speaker: Option<&str>) -> Self {
-        let segments = vec!["audio".to_string(), "speaker".to_string()];
-        match speaker {
-            Some(speaker) => self.edits.push(ConfigEdit::SetPath {
-                segments,
-                value: value(speaker),
-            }),
-            None => self.edits.push(ConfigEdit::ClearPath { segments }),
-        }
-        self
-    }
-
-    pub fn set_realtime_voice(mut self, voice: Option<&str>) -> Self {
-        let segments = vec!["realtime".to_string(), "voice".to_string()];
-        match voice {
-            Some(voice) => self.edits.push(ConfigEdit::SetPath {
-                segments,
-                value: value(voice),
-            }),
-            None => self.edits.push(ConfigEdit::ClearPath { segments }),
-        }
-        self
-    }
-
     pub fn with_edits<I>(mut self, edits: I) -> Self
     where
         I: IntoIterator<Item = ConfigEdit>,

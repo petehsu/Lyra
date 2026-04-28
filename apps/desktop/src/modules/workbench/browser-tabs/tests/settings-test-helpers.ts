@@ -10,6 +10,8 @@ export const createBrowserSettingsSurfaceProps = (
   languageLabel: "Language",
   themeLabel: "Theme",
   uiStyleLabel: "UI style",
+  uiStyleExternalReloadRequired: "Reload required",
+  uiStyleExternalUntrusted: "Untrusted",
   terminalThemeLabel: "Terminal theme",
   splitTriggerModeLabel: "Split trigger",
   splitThreePaneLayoutLabel: "Split layout",

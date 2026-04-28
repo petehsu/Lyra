@@ -125,8 +125,6 @@ pub enum Feature {
     ToolCallMcpElicitation,
     /// Enable native artifact tools.
     Artifact,
-    /// Enable realtime voice conversation mode in the TUI.
-    RealtimeConversation,
     /// Removed image detail feature flag.
     ImageDetailOriginal,
     /// Removed TUI app-server flag. The TUI always uses the app-server implementation.
@@ -670,12 +668,6 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::Artifact,
         key: "artifact",
-        stage: Stage::Internal,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::RealtimeConversation,
-        key: "realtime_conversation",
         stage: Stage::Internal,
         default_enabled: false,
     },

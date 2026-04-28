@@ -1,6 +1,7 @@
 export {
   createAiHistoryAppRequest,
   createAiMcpAppRequest,
+  createAiPluginsAppRequest,
   createAiSkillsAppRequest
 } from "./service";
 export { renderAiPanelAppIcon, renderAiPanelTopbarIcon } from "./icon-registry";

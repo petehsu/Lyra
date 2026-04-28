@@ -29,6 +29,7 @@ import type {
   FileManagerReadTrashResponse,
   FileManagerRecentLocationsPayload,
   FileManagerRestoreFromTrashRequest,
+  FileManagerSelectedAttachment,
   FileWriteResult,
   FileWriteTextRequest
 } from "./file-manager";
@@ -101,6 +102,18 @@ import type {
   WorkbenchObservationQueryRequest,
   WorkbenchObservationQueryResult
 } from "./workbench-observation";
+import type {
+  InstalledUiuxPack,
+  UiuxInstallFromGitRequest,
+  UiuxInstallFromLocalRequest,
+  UiuxInstallFromNpmRequest,
+  UiuxListPacksResponse,
+  UiuxPackRuntime,
+  UiuxRequestActivationRequest,
+  UiuxRequestActivationResponse,
+  UiuxResolveRuntimeRequest,
+  UiuxSetTrustStateRequest
+} from "./uiux-packs";
 
 export type {
   AiDiscoverModelsRequest,
@@ -166,6 +179,7 @@ export type {
   AgentResumeExecutionRequest,
   AgentResolvePlanApprovalRequest,
   AgentMessage,
+  AgentMessageContentPart,
   AgentRuntimeEvent,
   AgentRuntimePhase,
   AgentSendTurnRequest,
@@ -307,6 +321,22 @@ export type {
   WorkbenchWorkspaceReadRequest,
   WorkbenchWorkspaceSnapshot
 } from "./workbench-observation";
+export type {
+  BuiltinUiuxPackSummary,
+  InstalledUiuxPack,
+  UiuxInstallFromGitRequest,
+  UiuxInstallFromLocalRequest,
+  UiuxInstallFromNpmRequest,
+  UiuxListPacksResponse,
+  UiuxPackManifest,
+  UiuxPackRuntime,
+  UiuxPackSource,
+  UiuxPackTrustState,
+  UiuxRequestActivationRequest,
+  UiuxRequestActivationResponse,
+  UiuxResolveRuntimeRequest,
+  UiuxSetTrustStateRequest
+} from "./uiux-packs";
 
 export const LYRA_CHANNELS = {
   minimizeWindow: "lyra:shell/window/minimize",
@@ -346,6 +376,8 @@ export const LYRA_CHANNELS = {
   filesReadTextFile: "lyra:files/read-text-file",
   filesWriteTextFile: "lyra:files/write-text-file",
   filesStatFile: "lyra:files/stat-file",
+  filesSelectAttachments: "lyra:files/select-attachments",
+  filesSelectDirectories: "lyra:files/select-directories",
   lyraRuntimeHealth: "lyra:lyra/runtime/health",
   lyraRuntimeRequest: "lyra:lyra/runtime/request",
   lyraRuntimeNotify: "lyra:lyra/runtime/notify",
@@ -409,6 +441,13 @@ export const LYRA_CHANNELS = {
   capabilityEvent: "lyra:capabilities/event",
   workbenchObservationQuery: "lyra:workbench-observation/query",
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
+  uiuxListPacks: "lyra:uiux/list-packs",
+  uiuxInstallFromLocal: "lyra:uiux/install-from-local",
+  uiuxInstallFromGit: "lyra:uiux/install-from-git",
+  uiuxInstallFromNpm: "lyra:uiux/install-from-npm",
+  uiuxSetTrustState: "lyra:uiux/set-trust-state",
+  uiuxRequestActivation: "lyra:uiux/request-activation",
+  uiuxResolveRuntime: "lyra:uiux/resolve-runtime",
   workbenchStateReadSync: "lyra:workbench-state/read-sync",
   workbenchStateWriteSync: "lyra:workbench-state/write-sync",
   workbenchStateRemoveSync: "lyra:workbench-state/remove-sync"
@@ -1167,6 +1206,8 @@ export type FilesApi = {
   readonly readTextFile: (request: FileReadTextRequest) => Promise<FileReadResult>;
   readonly writeTextFile: (request: FileWriteTextRequest) => Promise<FileWriteResult>;
   readonly statFile: (request: FileStatRequest) => Promise<FileStatResult>;
+  readonly selectAttachments: () => Promise<readonly FileManagerSelectedAttachment[]>;
+  readonly selectDirectories: () => Promise<readonly FileManagerSelectedAttachment[]>;
 };
 
 export type WorkbenchBrowserApi = {
@@ -1260,6 +1301,18 @@ export type BrowserUseApi = {
   readonly onRuntimeStatus: (listener: (status: BrowserUseRuntimeStatus) => void) => () => void;
 };
 
+export type UiuxPacksApi = {
+  readonly listPacks: () => Promise<UiuxListPacksResponse>;
+  readonly installFromLocal: (request: UiuxInstallFromLocalRequest) => Promise<InstalledUiuxPack>;
+  readonly installFromGit: (request: UiuxInstallFromGitRequest) => Promise<InstalledUiuxPack>;
+  readonly installFromNpm: (request: UiuxInstallFromNpmRequest) => Promise<InstalledUiuxPack>;
+  readonly setTrustState: (request: UiuxSetTrustStateRequest) => Promise<InstalledUiuxPack>;
+  readonly requestActivation: (
+    request: UiuxRequestActivationRequest
+  ) => Promise<UiuxRequestActivationResponse>;
+  readonly resolveRuntime: (request: UiuxResolveRuntimeRequest) => Promise<UiuxPackRuntime | null>;
+};
+
 export type LyraDesktopApi = {
   readonly windowControls: WindowControlsApi;
   readonly appMeta: AppMetaPayload;
@@ -1277,5 +1330,6 @@ export type LyraDesktopApi = {
   readonly terminal: TerminalApi;
   readonly capabilities: CapabilitiesApi;
   readonly workbenchObservation: WorkbenchObservationBridgeApi;
+  readonly uiux: UiuxPacksApi;
   readonly workbenchState: WorkbenchStateApi;
 };

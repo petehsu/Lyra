@@ -134,6 +134,15 @@ describe("workbench preferences", () => {
     expect(readWorkbenchPreferences(defaults).uiPackId).toBe("classic");
   });
 
+  test("preserves external UIUX pack ids after activation", () => {
+    writeWorkbenchPreferences({
+      ...defaults,
+      uiPackId: "external:acme.theme"
+    });
+
+    expect(readWorkbenchPreferences(defaults).uiPackId).toBe("external:acme.theme");
+  });
+
   test("updates via model and writes to storage", () => {
     const { result } = renderHook(() => useWorkbenchPreferencesModel(defaults));
 

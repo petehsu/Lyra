@@ -21,6 +21,7 @@ use lyra_app_server_protocol::CollabAgentState as V2CollabAgentStatus;
 use lyra_app_server_protocol::CollabAgentTool;
 use lyra_app_server_protocol::CollabAgentToolCallStatus as V2CollabToolCallStatus;
 use lyra_app_server_protocol::CommandAction as V2ParsedCommand;
+use lyra_app_server_protocol::CommandExecOutputStream;
 use lyra_app_server_protocol::CommandExecutionApprovalDecision;
 use lyra_app_server_protocol::CommandExecutionOutputDeltaNotification;
 use lyra_app_server_protocol::CommandExecutionRequestApprovalParams;
@@ -78,14 +79,6 @@ use lyra_app_server_protocol::SkillsChangedNotification;
 use lyra_app_server_protocol::TerminalInteractionNotification;
 use lyra_app_server_protocol::ThreadItem;
 use lyra_app_server_protocol::ThreadNameUpdatedNotification;
-use lyra_app_server_protocol::ThreadRealtimeClosedNotification;
-use lyra_app_server_protocol::ThreadRealtimeErrorNotification;
-use lyra_app_server_protocol::ThreadRealtimeItemAddedNotification;
-use lyra_app_server_protocol::ThreadRealtimeOutputAudioDeltaNotification;
-use lyra_app_server_protocol::ThreadRealtimeSdpNotification;
-use lyra_app_server_protocol::ThreadRealtimeStartedNotification;
-use lyra_app_server_protocol::ThreadRealtimeTranscriptDeltaNotification;
-use lyra_app_server_protocol::ThreadRealtimeTranscriptDoneNotification;
 use lyra_app_server_protocol::ThreadRollbackResponse;
 use lyra_app_server_protocol::ThreadTokenUsage;
 use lyra_app_server_protocol::ThreadTokenUsageUpdatedNotification;
@@ -125,11 +118,11 @@ use lyra_protocol::plan_tool::UpdatePlanArgs;
 use lyra_protocol::protocol::Event;
 use lyra_protocol::protocol::EventMsg;
 use lyra_protocol::protocol::ExecApprovalRequestEvent;
+use lyra_protocol::protocol::ExecOutputStream as CoreExecOutputStream;
 use lyra_protocol::protocol::LyraErrorInfo as CoreLyraErrorInfo;
 use lyra_protocol::protocol::McpToolCallBeginEvent;
 use lyra_protocol::protocol::McpToolCallEndEvent;
 use lyra_protocol::protocol::Op;
-use lyra_protocol::protocol::RealtimeEvent;
 use lyra_protocol::protocol::ReviewDecision;
 use lyra_protocol::protocol::ReviewOutputEvent;
 use lyra_protocol::protocol::TokenCountEvent;
@@ -153,6 +146,13 @@ use tracing::error;
 use tracing::warn;
 
 type JsonValue = serde_json::Value;
+
+fn command_output_stream_to_v2(stream: &CoreExecOutputStream) -> CommandExecOutputStream {
+    match stream {
+        CoreExecOutputStream::Stdout => CommandExecOutputStream::Stdout,
+        CoreExecOutputStream::Stderr => CommandExecOutputStream::Stderr,
+    }
+}
 
 enum CommandExecutionApprovalPresentation {
     Network(V2NetworkApprovalContext),
@@ -379,180 +379,6 @@ pub(crate) async fn apply_bespoke_event_handling(
                 };
                 outgoing
                     .send_server_notification(ServerNotification::ModelRerouted(notification))
-                    .await;
-            }
-        }
-        EventMsg::RealtimeConversationStarted(event) => {
-            if let ApiVersion::V2 = api_version {
-                let notification = ThreadRealtimeStartedNotification {
-                    thread_id: conversation_id.to_string(),
-                    session_id: event.session_id,
-                    version: event.version,
-                };
-                outgoing
-                    .send_server_notification(ServerNotification::ThreadRealtimeStarted(
-                        notification,
-                    ))
-                    .await;
-            }
-        }
-        EventMsg::RealtimeConversationSdp(event) => {
-            if let ApiVersion::V2 = api_version {
-                let notification = ThreadRealtimeSdpNotification {
-                    thread_id: conversation_id.to_string(),
-                    sdp: event.sdp,
-                };
-                outgoing
-                    .send_server_notification(ServerNotification::ThreadRealtimeSdp(notification))
-                    .await;
-            }
-        }
-        EventMsg::RealtimeConversationRealtime(event) => {
-            if let ApiVersion::V2 = api_version {
-                match event.payload {
-                    RealtimeEvent::SessionUpdated { .. } => {}
-                    RealtimeEvent::InputAudioSpeechStarted(event) => {
-                        let notification = ThreadRealtimeItemAddedNotification {
-                            thread_id: conversation_id.to_string(),
-                            item: serde_json::json!({
-                                "type": "input_audio_buffer.speech_started",
-                                "item_id": event.item_id,
-                            }),
-                        };
-                        outgoing
-                            .send_server_notification(ServerNotification::ThreadRealtimeItemAdded(
-                                notification,
-                            ))
-                            .await;
-                    }
-                    RealtimeEvent::InputTranscriptDelta(event) => {
-                        let notification = ThreadRealtimeTranscriptDeltaNotification {
-                            thread_id: conversation_id.to_string(),
-                            role: "user".to_string(),
-                            delta: event.delta,
-                        };
-                        outgoing
-                            .send_server_notification(
-                                ServerNotification::ThreadRealtimeTranscriptDelta(notification),
-                            )
-                            .await;
-                    }
-                    RealtimeEvent::InputTranscriptDone(event) => {
-                        let notification = ThreadRealtimeTranscriptDoneNotification {
-                            thread_id: conversation_id.to_string(),
-                            role: "user".to_string(),
-                            text: event.text,
-                        };
-                        outgoing
-                            .send_server_notification(
-                                ServerNotification::ThreadRealtimeTranscriptDone(notification),
-                            )
-                            .await;
-                    }
-                    RealtimeEvent::OutputTranscriptDelta(event) => {
-                        let notification = ThreadRealtimeTranscriptDeltaNotification {
-                            thread_id: conversation_id.to_string(),
-                            role: "assistant".to_string(),
-                            delta: event.delta,
-                        };
-                        outgoing
-                            .send_server_notification(
-                                ServerNotification::ThreadRealtimeTranscriptDelta(notification),
-                            )
-                            .await;
-                    }
-                    RealtimeEvent::OutputTranscriptDone(event) => {
-                        let notification = ThreadRealtimeTranscriptDoneNotification {
-                            thread_id: conversation_id.to_string(),
-                            role: "assistant".to_string(),
-                            text: event.text,
-                        };
-                        outgoing
-                            .send_server_notification(
-                                ServerNotification::ThreadRealtimeTranscriptDone(notification),
-                            )
-                            .await;
-                    }
-                    RealtimeEvent::AudioOut(audio) => {
-                        let notification = ThreadRealtimeOutputAudioDeltaNotification {
-                            thread_id: conversation_id.to_string(),
-                            audio: audio.into(),
-                        };
-                        outgoing
-                            .send_server_notification(
-                                ServerNotification::ThreadRealtimeOutputAudioDelta(notification),
-                            )
-                            .await;
-                    }
-                    RealtimeEvent::ResponseCreated(_) => {}
-                    RealtimeEvent::ResponseCancelled(event) => {
-                        let notification = ThreadRealtimeItemAddedNotification {
-                            thread_id: conversation_id.to_string(),
-                            item: serde_json::json!({
-                                "type": "response.cancelled",
-                                "response_id": event.response_id,
-                            }),
-                        };
-                        outgoing
-                            .send_server_notification(ServerNotification::ThreadRealtimeItemAdded(
-                                notification,
-                            ))
-                            .await;
-                    }
-                    RealtimeEvent::ResponseDone(_) => {}
-                    RealtimeEvent::ConversationItemAdded(item) => {
-                        let notification = ThreadRealtimeItemAddedNotification {
-                            thread_id: conversation_id.to_string(),
-                            item,
-                        };
-                        outgoing
-                            .send_server_notification(ServerNotification::ThreadRealtimeItemAdded(
-                                notification,
-                            ))
-                            .await;
-                    }
-                    RealtimeEvent::ConversationItemDone { .. } => {}
-                    RealtimeEvent::HandoffRequested(handoff) => {
-                        let notification = ThreadRealtimeItemAddedNotification {
-                            thread_id: conversation_id.to_string(),
-                            item: serde_json::json!({
-                                "type": "handoff_request",
-                                "handoff_id": handoff.handoff_id,
-                                "item_id": handoff.item_id,
-                                "input_transcript": handoff.input_transcript,
-                                "active_transcript": handoff.active_transcript,
-                            }),
-                        };
-                        outgoing
-                            .send_server_notification(ServerNotification::ThreadRealtimeItemAdded(
-                                notification,
-                            ))
-                            .await;
-                    }
-                    RealtimeEvent::Error(message) => {
-                        let notification = ThreadRealtimeErrorNotification {
-                            thread_id: conversation_id.to_string(),
-                            message,
-                        };
-                        outgoing
-                            .send_server_notification(ServerNotification::ThreadRealtimeError(
-                                notification,
-                            ))
-                            .await;
-                    }
-                }
-            }
-        }
-        EventMsg::RealtimeConversationClosed(event) => {
-            if let ApiVersion::V2 = api_version {
-                let notification = ThreadRealtimeClosedNotification {
-                    thread_id: conversation_id.to_string(),
-                    reason: event.reason,
-                };
-                outgoing
-                    .send_server_notification(ServerNotification::ThreadRealtimeClosed(
-                        notification,
-                    ))
                     .await;
             }
         }
@@ -1781,6 +1607,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                     thread_id: conversation_id.to_string(),
                     turn_id: event_turn_id.clone(),
                     item_id,
+                    stream: command_output_stream_to_v2(&exec_command_output_delta_event.stream),
                     delta: String::from_utf8_lossy(&exec_command_output_delta_event.chunk)
                         .to_string(),
                 };

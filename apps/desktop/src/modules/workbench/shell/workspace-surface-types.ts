@@ -20,6 +20,7 @@ export type SurfacePropsByKind = {
   readonly notificationCenter: ComponentProps<WorkbenchSurfaceAdapters["notificationCenter"]>;
   readonly mcpCenter: ComponentProps<WorkbenchSurfaceAdapters["mcpCenter"]>;
   readonly skillsCenter: ComponentProps<WorkbenchSurfaceAdapters["skillsCenter"]>;
+  readonly pluginsCenter: ComponentProps<WorkbenchSurfaceAdapters["pluginsCenter"]>;
   readonly aiHistory: ComponentProps<WorkbenchSurfaceAdapters["aiHistory"]>;
 };
 

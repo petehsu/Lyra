@@ -87,7 +87,7 @@ describe("useWorkbenchAiSurfaceBridge", () => {
     );
   });
 
-  test("opens a terminal tab and writes commands after the startup delay", () => {
+  test("does not auto-open the terminal dock for agent commands", () => {
     vi.useFakeTimers();
     const write = vi.fn().mockResolvedValue(undefined);
     const terminalTab = {
@@ -125,11 +125,7 @@ describe("useWorkbenchAiSurfaceBridge", () => {
       vi.advanceTimersByTime(300);
     });
 
-    expect(terminalModel.openTab).toHaveBeenCalled();
-    expect(write).toHaveBeenCalledWith({
-      sessionId: "session-pane-1",
-      data: "pnpm test\n",
-      source: "user"
-    });
+    expect(terminalModel.openTab).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
   });
 });

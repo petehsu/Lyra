@@ -4,6 +4,7 @@ import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { FileEditorModel } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
 import { useMcpCenterModel } from "../mcp-center";
+import { usePluginsCenterModel } from "../plugins-center";
 import { useSettingsAiModel } from "../settings-ai";
 import { useSkillsCenterModel } from "../skills-center";
 import type { WorkspaceTab } from "../workspace-tabs/types";
@@ -54,6 +55,10 @@ export const useWorkbenchActiveAppContext = ({
     ...(mcpProjectHintPath === undefined ? {} : { projectHintPath: mcpProjectHintPath }),
     labels: labels.skillsCenter
   });
+  const pluginsCenterModel = usePluginsCenterModel({
+    desktopApi,
+    ...(mcpProjectHintPath === undefined ? {} : { projectHintPath: mcpProjectHintPath })
+  });
   const settingsAiModel = useSettingsAiModel({
     desktopApi,
     labels: labels.settingsAi
@@ -64,6 +69,7 @@ export const useWorkbenchActiveAppContext = ({
     activeFileEditorState,
     mcpCenterModel,
     skillsCenterModel,
+    pluginsCenterModel,
     settingsAiModel
   };
 };

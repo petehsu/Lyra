@@ -27,7 +27,6 @@ impl TurnSkillsContext {
 pub(crate) struct TurnContext {
     pub(crate) sub_id: String,
     pub(crate) trace_id: Option<String>,
-    pub(crate) realtime_active: bool,
     pub(crate) config: Arc<Config>,
     pub(crate) auth_manager: Option<Arc<AuthManager>>,
     pub(crate) model_info: ModelInfo,
@@ -150,7 +149,6 @@ impl TurnContext {
         Self {
             sub_id: self.sub_id.clone(),
             trace_id: self.trace_id.clone(),
-            realtime_active: self.realtime_active,
             config: Arc::new(config),
             auth_manager: self.auth_manager.clone(),
             model_info: model_info.clone(),
@@ -240,7 +238,6 @@ impl TurnContext {
             file_system_sandbox_policy: self.explicit_file_system_sandbox_policy(),
             model: self.model_info.slug.clone(),
             collaboration_mode: Some(self.collaboration_mode.clone()),
-            realtime_active: Some(self.realtime_active),
             effort: self.reasoning_effort,
             summary: self.reasoning_summary,
             user_instructions: self.user_instructions.clone(),
@@ -292,6 +289,7 @@ impl Session {
         per_turn_config.model_reasoning_effort =
             session_configuration.collaboration_mode.reasoning_effort();
         per_turn_config.model_reasoning_summary = session_configuration.model_reasoning_summary;
+        per_turn_config.model_verbosity = session_configuration.model_verbosity;
         per_turn_config.service_tier = session_configuration.service_tier;
         per_turn_config.approvals_reviewer = session_configuration.approvals_reviewer;
         let resolved_web_search_mode = resolve_web_search_mode_for_turn(
@@ -389,7 +387,6 @@ impl Session {
         TurnContext {
             sub_id,
             trace_id: current_span_trace_id(),
-            realtime_active: false,
             config: per_turn_config.clone(),
             auth_manager: auth_manager_for_context,
             model_info: model_info.clone(),
@@ -565,8 +562,6 @@ impl Session {
             Arc::clone(&self.js_repl),
             skills_outcome,
         );
-        turn_context.realtime_active = self.conversation.running_state().await.is_some();
-
         if let Some(final_schema) = final_output_json_schema {
             turn_context.final_output_json_schema = final_schema;
         }

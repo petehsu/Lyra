@@ -11,6 +11,7 @@ export type LyraModuleStorageRoots = {
   readonly linuxCompat: string;
   readonly terminal: string;
   readonly workbenchState: string;
+  readonly uiuxPacks: string;
   readonly search: string;
   readonly webAutomation: string;
   readonly browserUse: string;
@@ -43,6 +44,7 @@ export const resolveLyraStorageRoots = (): LyraStorageRoots => {
       linuxCompat: path.join(modulesRoot, "linux-compat"),
       terminal: path.join(modulesRoot, "terminal"),
       workbenchState: path.join(modulesRoot, "workbench-state"),
+      uiuxPacks: path.join(modulesRoot, "uiux-packs"),
       search: path.join(modulesRoot, "search"),
       webAutomation: path.join(modulesRoot, "web-automation"),
       browserUse: path.join(modulesRoot, "browser-use")
