@@ -50,6 +50,11 @@ use lyra_app_server_protocol::GitInfo as ApiGitInfo;
 use lyra_app_server_protocol::JSONRPCErrorError;
 use lyra_app_server_protocol::ListMcpServerStatusParams;
 use lyra_app_server_protocol::ListMcpServerStatusResponse;
+use lyra_app_server_protocol::LocalSearchExtractTextParams;
+use lyra_app_server_protocol::LocalSearchIndexRootParams;
+use lyra_app_server_protocol::LocalSearchReadResultParams;
+use lyra_app_server_protocol::LocalSearchSearchParams;
+use lyra_app_server_protocol::LocalSearchStatusParams;
 use lyra_app_server_protocol::LyraErrorInfo;
 use lyra_app_server_protocol::MarketplaceAddParams;
 use lyra_app_server_protocol::MarketplaceAddResponse;
@@ -309,6 +314,7 @@ mod token_usage_replay;
 
 use crate::filters::compute_source_filters;
 use crate::filters::source_kind_matches;
+use crate::local_search::LocalSearchService;
 use crate::lyra_runtime_api::LyraRuntimeApi;
 use crate::lyra_runtime_api::strip_persona_context_block;
 use crate::thread_state::ThreadListenerCommand;
@@ -403,6 +409,7 @@ pub(crate) struct LyraMessageProcessor {
     thread_state_manager: ThreadStateManager,
     thread_watch_manager: ThreadWatchManager,
     command_exec_manager: CommandExecManager,
+    local_search_service: LocalSearchService,
     pending_fuzzy_searches: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     fuzzy_search_sessions: Arc<Mutex<HashMap<String, FuzzyFileSearchSession>>>,
     background_tasks: TaskTracker,
@@ -640,6 +647,7 @@ impl LyraMessageProcessor {
             thread_state_manager: ThreadStateManager::new(),
             thread_watch_manager: ThreadWatchManager::new_with_outgoing(outgoing),
             command_exec_manager: CommandExecManager::default(),
+            local_search_service: LocalSearchService::new(),
             pending_fuzzy_searches: Arc::new(Mutex::new(HashMap::new())),
             fuzzy_search_sessions: Arc::new(Mutex::new(HashMap::new())),
             background_tasks: TaskTracker::new(),
@@ -974,6 +982,26 @@ impl LyraMessageProcessor {
             }
             ClientRequest::WindowsSandboxSetupStart { request_id, params } => {
                 self.windows_sandbox_setup_start(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::LocalSearchStatus { request_id, params } => {
+                self.local_search_status(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::LocalSearchIndexRoot { request_id, params } => {
+                self.local_search_index_root(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::LocalSearchSearch { request_id, params } => {
+                self.local_search_search(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::LocalSearchReadResult { request_id, params } => {
+                self.local_search_read_result(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::LocalSearchExtractText { request_id, params } => {
+                self.local_search_extract_text(to_connection_request_id(request_id), params)
                     .await;
             }
             ClientRequest::FuzzyFileSearch { request_id, params } => {
@@ -6768,6 +6796,62 @@ impl LyraMessageProcessor {
         });
         Ok(())
     }
+
+    async fn local_search_status(
+        &self,
+        request_id: ConnectionRequestId,
+        params: LocalSearchStatusParams,
+    ) {
+        match self.local_search_service.status(params).await {
+            Ok(response) => self.outgoing.send_response(request_id, response).await,
+            Err(error) => self.outgoing.send_error(request_id, error).await,
+        }
+    }
+
+    async fn local_search_index_root(
+        &self,
+        request_id: ConnectionRequestId,
+        params: LocalSearchIndexRootParams,
+    ) {
+        match self.local_search_service.index_root(params).await {
+            Ok(response) => self.outgoing.send_response(request_id, response).await,
+            Err(error) => self.outgoing.send_error(request_id, error).await,
+        }
+    }
+
+    async fn local_search_search(
+        &self,
+        request_id: ConnectionRequestId,
+        params: LocalSearchSearchParams,
+    ) {
+        match self.local_search_service.search(params).await {
+            Ok(response) => self.outgoing.send_response(request_id, response).await,
+            Err(error) => self.outgoing.send_error(request_id, error).await,
+        }
+    }
+
+    async fn local_search_read_result(
+        &self,
+        request_id: ConnectionRequestId,
+        params: LocalSearchReadResultParams,
+    ) {
+        match self.local_search_service.read_result(params).await {
+            Ok(response) => self.outgoing.send_response(request_id, response).await,
+            Err(error) => self.outgoing.send_error(request_id, error).await,
+        }
+    }
+
+    async fn local_search_extract_text(
+        &self,
+        request_id: ConnectionRequestId,
+        params: LocalSearchExtractTextParams,
+    ) {
+        match self.local_search_service.extract_text(params).await {
+            Ok(response) => self.outgoing.send_response(request_id, response).await,
+            Err(error) => self.outgoing.send_error(request_id, error).await,
+        }
+    }
+
     async fn fuzzy_file_search(
         &self,
         request_id: ConnectionRequestId,
@@ -6794,10 +6878,13 @@ impl LyraMessageProcessor {
             None => Arc::new(AtomicBool::new(false)),
         };
 
-        let results = match query.as_str() {
-            "" => vec![],
-            _ => run_fuzzy_file_search(query, roots, cancel_flag.clone()).await,
-        };
+        let results = run_fuzzy_file_search(
+            query,
+            roots,
+            self.local_search_service.engine(),
+            cancel_flag.clone(),
+        )
+        .await;
 
         if let Some(token) = cancellation_token {
             let mut pending_fuzzy_searches = self.pending_fuzzy_searches.lock().await;
@@ -6828,8 +6915,12 @@ impl LyraMessageProcessor {
             return;
         }
 
-        let session =
-            start_fuzzy_file_search_session(session_id.clone(), roots, self.outgoing.clone());
+        let session = start_fuzzy_file_search_session(
+            session_id.clone(),
+            roots,
+            self.outgoing.clone(),
+            self.local_search_service.engine(),
+        );
         match session {
             Ok(session) => {
                 self.fuzzy_search_sessions

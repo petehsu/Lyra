@@ -35,8 +35,11 @@ use nucleo::pattern::AtomKind;
 use nucleo::pattern::Pattern;
 
 mod cli;
+mod local;
+mod native;
 
 pub use cli::Cli;
+pub use local::*;
 
 /// A single match result returned from the search.
 ///
@@ -111,6 +114,44 @@ pub struct FileSearchOptions {
     /// parent-directory ignore scanning.
     pub respect_gitignore: bool,
 }
+
+const INITIAL_CANDIDATE_SCORE_BASE: u32 = 1_000_000;
+const INITIAL_CANDIDATE_RANK_STEP: u32 = 100_000;
+const INITIAL_CANDIDATE_DEPTH_STEP: u32 = 1_000;
+const FILENAME_EXACT_MATCH_BONUS: u32 = 300_000;
+const FILENAME_PREFIX_MATCH_BONUS: u32 = 240_000;
+const FILENAME_SUBSTRING_MATCH_BONUS: u32 = 180_000;
+const FILENAME_TOKEN_MATCH_BONUS: u32 = 130_000;
+const FILENAME_FUZZY_MATCH_BONUS: u32 = 70_000;
+const FUZZY_CANDIDATE_RERANK_MULTIPLIER: usize = 4;
+
+const COMMON_PROJECT_ENTRY_NAMES: &[&str] = &[
+    ".env",
+    ".env.example",
+    ".gitignore",
+    "BUILD.bazel",
+    "Cargo.toml",
+    "Gemfile",
+    "go.mod",
+    "Makefile",
+    "package.json",
+    "pnpm-workspace.yaml",
+    "pom.xml",
+    "pyproject.toml",
+    "README",
+    "README.md",
+    "requirements.txt",
+    "settings.gradle",
+    "tsconfig.json",
+    "vite.config.js",
+    "vite.config.mjs",
+    "vite.config.ts",
+];
+
+const SHALLOW_RECOMMENDED_EXTENSIONS: &[&str] = &[
+    "c", "cc", "cpp", "cs", "css", "go", "h", "hpp", "html", "java", "js", "jsx", "json", "kt",
+    "md", "mjs", "py", "rs", "swift", "toml", "ts", "tsx", "xml", "yaml", "yml",
+];
 
 impl Default for FileSearchOptions {
     fn default() -> Self {
@@ -396,6 +437,278 @@ fn get_file_path<'a>(path: &'a Path, search_directories: &[PathBuf]) -> Option<(
     rel_path.to_str().map(|p| (root_idx, p))
 }
 
+fn path_component_count(path: &Path) -> usize {
+    path.components().count()
+}
+
+fn file_name_eq_ignore_ascii_case(path: &Path, candidates: &[&str]) -> bool {
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    candidates
+        .iter()
+        .any(|candidate| file_name.eq_ignore_ascii_case(candidate))
+}
+
+fn extension_is_shallow_recommended(path: &Path) -> bool {
+    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
+        return false;
+    };
+    SHALLOW_RECOMMENDED_EXTENSIONS
+        .iter()
+        .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+}
+
+fn is_common_project_entry(path: &Path) -> bool {
+    file_name_eq_ignore_ascii_case(path, COMMON_PROJECT_ENTRY_NAMES)
+        || path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.to_ascii_lowercase().starts_with("readme."))
+}
+
+fn initial_candidate_rank(path: &Path, match_type: MatchType) -> Option<(u8, usize)> {
+    let depth = path_component_count(path);
+    if depth == 0 {
+        return None;
+    }
+    let is_project_entry = is_common_project_entry(path);
+    if is_project_entry {
+        return Some((if depth == 1 { 0 } else { 2 }, depth));
+    }
+    if depth == 1 {
+        return Some((1, depth));
+    }
+    if match_type == MatchType::File && depth <= 3 && extension_is_shallow_recommended(path) {
+        return Some((3, depth));
+    }
+    None
+}
+
+fn initial_candidate_score(rank: u8, depth: usize) -> u32 {
+    INITIAL_CANDIDATE_SCORE_BASE
+        .saturating_sub(u32::from(rank) * INITIAL_CANDIDATE_RANK_STEP)
+        .saturating_sub((depth as u32) * INITIAL_CANDIDATE_DEPTH_STEP)
+}
+
+fn collect_initial_candidates(
+    snapshot: &nucleo::Snapshot<Arc<str>>,
+    search_directories: &[PathBuf],
+    limit: usize,
+    compute_indices: bool,
+) -> Vec<FileMatch> {
+    let mut matches = snapshot
+        .matches()
+        .iter()
+        .filter_map(|match_| {
+            let item = snapshot.get_item(match_.idx)?;
+            let full_path = item.data.as_ref();
+            let (root_idx, relative_path) =
+                get_file_path(Path::new(full_path), search_directories)?;
+            if relative_path.is_empty() {
+                return None;
+            }
+            let path = PathBuf::from(relative_path);
+            let match_type = if Path::new(full_path).is_dir() {
+                MatchType::Directory
+            } else {
+                MatchType::File
+            };
+            let (rank, depth) = initial_candidate_rank(&path, match_type)?;
+            Some((
+                rank,
+                depth,
+                match_type,
+                FileMatch {
+                    score: initial_candidate_score(rank, depth),
+                    path,
+                    match_type,
+                    root: search_directories[root_idx].clone(),
+                    indices: compute_indices.then(Vec::new),
+                },
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    matches.sort_by(
+        |(left_rank, left_depth, left_type, left), (right_rank, right_depth, right_type, right)| {
+            left_rank
+                .cmp(right_rank)
+                .then_with(|| left_depth.cmp(right_depth))
+                .then_with(|| match (left_type, right_type) {
+                    (MatchType::Directory, MatchType::File) => std::cmp::Ordering::Less,
+                    (MatchType::File, MatchType::Directory) => std::cmp::Ordering::Greater,
+                    _ => std::cmp::Ordering::Equal,
+                })
+                .then_with(|| left.path.cmp(&right.path))
+        },
+    );
+
+    matches
+        .into_iter()
+        .map(|(_, _, _, file_match)| file_match)
+        .take(limit)
+        .collect()
+}
+
+fn normalized_file_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_lowercase()
+}
+
+fn normalized_file_stem(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_lowercase()
+}
+
+fn query_tokens(query: &str) -> Vec<String> {
+    query
+        .split(|ch: char| ch.is_whitespace() || matches!(ch, '/' | '\\' | '-' | '_' | '.'))
+        .map(str::trim)
+        .filter(|token| token.len() > 1)
+        .map(str::to_lowercase)
+        .collect()
+}
+
+fn fuzzy_subsequence_gap_count(needle: &str, haystack: &str) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+
+    let mut gaps = 0usize;
+    let mut previous_match: Option<usize> = None;
+    let mut haystack_chars = haystack.chars().enumerate();
+    for needle_char in needle.chars() {
+        let (index, _) = haystack_chars.find(|(_, haystack_char)| {
+            *haystack_char == needle_char
+        })?;
+        if let Some(previous_index) = previous_match
+            && index > previous_index + 1
+        {
+            gaps += 1;
+        }
+        previous_match = Some(index);
+    }
+    Some(gaps)
+}
+
+fn filename_match_bonus(path: &Path, query: &str, match_type: MatchType) -> u32 {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return 0;
+    }
+
+    let file_name = normalized_file_name(path);
+    if file_name.is_empty() {
+        return 0;
+    }
+    let file_stem = normalized_file_stem(path);
+    let targets = [file_name.as_str(), file_stem.as_str()];
+
+    let bonus = if targets.iter().any(|target| *target == query) {
+        FILENAME_EXACT_MATCH_BONUS
+    } else if targets.iter().any(|target| target.starts_with(&query)) {
+        FILENAME_PREFIX_MATCH_BONUS
+    } else if targets.iter().any(|target| target.contains(&query)) {
+        FILENAME_SUBSTRING_MATCH_BONUS
+    } else {
+        let tokens = query_tokens(&query);
+        if !tokens.is_empty()
+            && targets
+                .iter()
+                .any(|target| tokens.iter().all(|token| target.contains(token)))
+        {
+            FILENAME_TOKEN_MATCH_BONUS
+        } else {
+            targets
+                .iter()
+                .filter_map(|target| fuzzy_subsequence_gap_count(&query, target))
+                .min()
+                .map(|gaps| {
+                    FILENAME_FUZZY_MATCH_BONUS
+                        .saturating_sub((gaps as u32).saturating_mul(1_000))
+                })
+                .unwrap_or(0)
+        }
+    };
+
+    if match_type == MatchType::Directory {
+        return bonus / 2;
+    }
+    bonus
+}
+
+fn collect_fuzzy_matches(
+    snapshot: &nucleo::Snapshot<Arc<str>>,
+    search_directories: &[PathBuf],
+    limit: usize,
+    query: &str,
+    compute_indices: bool,
+    indices_matcher: &mut Option<Matcher>,
+) -> Vec<FileMatch> {
+    let pattern = snapshot.pattern().column_pattern(0);
+    let candidate_limit = limit
+        .saturating_mul(FUZZY_CANDIDATE_RERANK_MULTIPLIER)
+        .max(limit);
+    let mut matches = snapshot
+        .matches()
+        .iter()
+        .take(candidate_limit)
+        .filter_map(|match_| {
+            let item = snapshot.get_item(match_.idx)?;
+            let full_path = item.data.as_ref();
+            let (root_idx, relative_path) =
+                get_file_path(Path::new(full_path), search_directories)?;
+            if relative_path.is_empty() {
+                return None;
+            }
+            let indices = if compute_indices {
+                indices_matcher.as_mut().map(|indices_matcher| {
+                    let mut idx_vec = Vec::<u32>::new();
+                    let haystack = item.matcher_columns[0].slice(..);
+                    let _ = pattern.indices(haystack, indices_matcher, &mut idx_vec);
+                    idx_vec.sort_unstable();
+                    idx_vec.dedup();
+                    idx_vec
+                })
+            } else {
+                None
+            };
+            let match_type = if Path::new(full_path).is_dir() {
+                MatchType::Directory
+            } else {
+                MatchType::File
+            };
+            Some(FileMatch {
+                score: match_
+                    .score
+                    .saturating_add(filename_match_bonus(
+                        Path::new(relative_path),
+                        query,
+                        match_type,
+                    )),
+                path: PathBuf::from(relative_path),
+                match_type,
+                root: search_directories[root_idx].clone(),
+                indices,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    matches.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    matches.truncate(limit);
+    matches
+}
+
 /// Walks the search directories and feeds discovered paths into `nucleo`
 /// via the injector.
 ///
@@ -462,7 +775,9 @@ fn walker_worker(
             let Some(full_path) = path.to_str() else {
                 return ignore::WalkState::Continue;
             };
-            if let Some((_, relative_path)) = get_file_path(path, &search_directories) {
+            if let Some((_, relative_path)) = get_file_path(path, &search_directories)
+                && !relative_path.is_empty()
+            {
                 injector.push(Arc::from(full_path), |_, cols| {
                     cols[0] = Utf32String::from(relative_path);
                 });
@@ -494,6 +809,7 @@ fn matcher_worker(
     let mut last_query = String::new();
     let mut next_notify = never();
     let mut will_notify = false;
+    let mut force_report_without_change = false;
     let mut walk_complete = false;
 
     loop {
@@ -504,6 +820,7 @@ fn matcher_worker(
                 };
                 match signal {
                     WorkSignal::QueryUpdated(query) => {
+                        let query_changed = query != last_query;
                         let append = query.starts_with(&last_query);
                         nucleo.pattern.reparse(
                             0,
@@ -513,6 +830,7 @@ fn matcher_worker(
                             append,
                         );
                         last_query = query;
+                        force_report_without_change = !query_changed;
                         will_notify = true;
                         next_notify = after(Duration::from_millis(0));
                     }
@@ -537,42 +855,27 @@ fn matcher_worker(
             recv(next_notify) -> _ => {
                 will_notify = false;
                 let status = nucleo.tick(TICK_TIMEOUT_MS);
-                if status.changed {
+                if status.changed || force_report_without_change {
+                    force_report_without_change = false;
                     let snapshot = nucleo.snapshot();
                     let limit = inner.limit.min(snapshot.matched_item_count() as usize);
-                    let pattern = snapshot.pattern().column_pattern(0);
-                    let matches: Vec<_> = snapshot
-                        .matches()
-                        .iter()
-                        .take(limit)
-                        .filter_map(|match_| {
-                            let item = snapshot.get_item(match_.idx)?;
-                            let full_path = item.data.as_ref();
-                            let (root_idx, relative_path) = get_file_path(Path::new(full_path), &inner.search_directories)?;
-                            let indices = if let Some(indices_matcher) = indices_matcher.as_mut() {
-                                let mut idx_vec = Vec::<u32>::new();
-                                let haystack = item.matcher_columns[0].slice(..);
-                                let _ = pattern.indices(haystack, indices_matcher, &mut idx_vec);
-                                idx_vec.sort_unstable();
-                                idx_vec.dedup();
-                                Some(idx_vec)
-                            } else {
-                                None
-                            };
-                            let match_type = if Path::new(full_path).is_dir() {
-                                MatchType::Directory
-                            } else {
-                                MatchType::File
-                            };
-                            Some(FileMatch {
-                                score: match_.score,
-                                path: PathBuf::from(relative_path),
-                                match_type,
-                                root: inner.search_directories[root_idx].clone(),
-                                indices,
-                            })
-                        })
-                        .collect();
+                    let matches = if last_query.is_empty() {
+                        collect_initial_candidates(
+                            snapshot,
+                            &inner.search_directories,
+                            limit,
+                            inner.compute_indices,
+                        )
+                    } else {
+                        collect_fuzzy_matches(
+                            snapshot,
+                            &inner.search_directories,
+                            limit,
+                            &last_query,
+                            inner.compute_indices,
+                            &mut indices_matcher,
+                        )
+                    };
 
                     let snapshot = FileSearchSnapshot {
                         query: last_query.clone(),
@@ -982,6 +1285,136 @@ mod tests {
                 .matches
                 .iter()
                 .any(|m| m.path.to_string_lossy().contains("file-0000.txt"))
+        );
+    }
+
+    #[test]
+    fn run_prioritizes_basename_matches_over_parent_directory_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("context/deeply/nested")).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(
+            dir.path().join("context/deeply/nested/index.ts"),
+            "export const nested = true;",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("src/context.ts"),
+            "export const direct = true;",
+        )
+        .unwrap();
+
+        let results = run(
+            "context",
+            vec![dir.path().to_path_buf()],
+            FileSearchOptions {
+                limit: NonZero::new(20).unwrap(),
+                exclude: Vec::new(),
+                threads: NonZero::new(2).unwrap(),
+                compute_indices: false,
+                respect_gitignore: true,
+            },
+            /*cancel_flag*/ None,
+        )
+        .expect("run ok");
+
+        assert_eq!(
+            results.matches.first().map(|m| m.path.as_path()),
+            Some(Path::new("src/context.ts"))
+        );
+    }
+
+    #[test]
+    fn run_empty_query_returns_initial_candidates_without_root() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::create_dir_all(dir.path().join("docs/guides")).unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"demo\"").unwrap();
+        fs::write(dir.path().join("README.md"), "readme").unwrap();
+        fs::write(dir.path().join("src/lib.rs"), "pub fn demo() {}").unwrap();
+        fs::write(dir.path().join("docs/guides/intro.md"), "intro").unwrap();
+
+        let results = run(
+            "",
+            vec![dir.path().to_path_buf()],
+            FileSearchOptions {
+                limit: NonZero::new(20).unwrap(),
+                exclude: Vec::new(),
+                threads: NonZero::new(2).unwrap(),
+                compute_indices: true,
+                respect_gitignore: true,
+            },
+            /*cancel_flag*/ None,
+        )
+        .expect("run ok");
+
+        assert!(
+            results
+                .matches
+                .iter()
+                .all(|m| !m.path.as_os_str().is_empty())
+        );
+        assert!(
+            results
+                .matches
+                .iter()
+                .any(|m| m.path == Path::new("Cargo.toml"))
+        );
+        assert!(
+            results
+                .matches
+                .iter()
+                .any(|m| m.path == Path::new("src") && m.match_type == MatchType::Directory)
+        );
+        assert!(
+            results
+                .matches
+                .iter()
+                .all(|m| m.indices.as_deref() == Some(&[]))
+        );
+    }
+
+    #[test]
+    fn session_empty_query_streams_initial_candidates() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
+        fs::write(dir.path().join("src/main.ts"), "export {}").unwrap();
+        let reporter = Arc::new(RecordingReporter::default());
+        let session = create_session(
+            vec![dir.path().to_path_buf()],
+            FileSearchOptions {
+                limit: NonZero::new(20).unwrap(),
+                compute_indices: true,
+                ..Default::default()
+            },
+            reporter.clone(),
+            /*cancel_flag*/ None,
+        )
+        .expect("session");
+
+        session.update_query("");
+        assert!(reporter.wait_for_complete(Duration::from_secs(5)));
+
+        let snapshot = reporter.snapshot();
+        assert_eq!(snapshot.query, "");
+        assert!(
+            snapshot
+                .matches
+                .iter()
+                .all(|m| !m.path.as_os_str().is_empty())
+        );
+        assert!(
+            snapshot
+                .matches
+                .iter()
+                .any(|m| m.path == Path::new("package.json"))
+        );
+        assert!(
+            snapshot
+                .matches
+                .iter()
+                .any(|m| m.path == Path::new("src") && m.match_type == MatchType::Directory)
         );
     }
 

@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "extractionMethod": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "extractionMethod",
+    "path",
+    "text",
+    "truncated"
+  ],
+  "title": "LocalSearchExtractTextResponse",
+  "type": "object"
+}

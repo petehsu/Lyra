@@ -72,6 +72,7 @@ mod fs_api;
 mod fs_watch;
 mod fuzzy_file_search;
 pub mod in_process;
+mod local_search;
 mod lyra_ai_config_api;
 mod lyra_message_processor;
 mod lyra_runtime_api;

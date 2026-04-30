@@ -824,6 +824,214 @@
       },
       "type": "object"
     },
+    "LocalSearchContentMode": {
+      "enum": [
+        "disabled",
+        "auto",
+        "required"
+      ],
+      "type": "string"
+    },
+    "LocalSearchExtractTextParams": {
+      "properties": {
+        "maxBytes": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "LocalSearchIndexRootParams": {
+      "properties": {
+        "contentMode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LocalSearchContentMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "includeHidden": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "includeVendor": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "maxFileSizeBytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "respectGitignore": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "root"
+      ],
+      "type": "object"
+    },
+    "LocalSearchKind": {
+      "enum": [
+        "file",
+        "directory"
+      ],
+      "type": "string"
+    },
+    "LocalSearchReadResultParams": {
+      "properties": {
+        "maxBytes": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offset": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "LocalSearchSearchParams": {
+      "properties": {
+        "cancellationToken": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contentMode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LocalSearchContentMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extensions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "includeHidden": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "includeVendor": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kinds": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/LocalSearchKind"
+          },
+          "type": "array"
+        },
+        "limit": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxFileSizeBytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "query": {
+          "type": "string"
+        },
+        "respectGitignore": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "roots": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "LocalSearchStatusParams": {
+      "properties": {
+        "roots": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "LyraAiModelDiscoveryState": {
       "properties": {
         "errorMessage": {
@@ -4798,6 +5006,132 @@
         "method"
       ],
       "title": "ConfigRequirements/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "localSearch/status"
+          ],
+          "title": "LocalSearch/statusRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/LocalSearchStatusParams"
+            }
+          ],
+          "default": {
+            "roots": []
+          }
+        }
+      },
+      "required": [
+        "id",
+        "method"
+      ],
+      "title": "LocalSearch/statusRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "localSearch/indexRoot"
+          ],
+          "title": "LocalSearch/indexRootRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/LocalSearchIndexRootParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "LocalSearch/indexRootRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "localSearch/search"
+          ],
+          "title": "LocalSearch/searchRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/LocalSearchSearchParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "LocalSearch/searchRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "localSearch/readResult"
+          ],
+          "title": "LocalSearch/readResultRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/LocalSearchReadResultParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "LocalSearch/readResultRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "localSearch/extractText"
+          ],
+          "title": "LocalSearch/extractTextRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/LocalSearchExtractTextParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "LocalSearch/extractTextRequest",
       "type": "object"
     },
     {

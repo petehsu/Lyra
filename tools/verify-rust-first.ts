@@ -276,6 +276,10 @@ const bridgeOnlyMainModules = new Map<string, string>([
     "runtime-host-rpc",
     "Bridge-only module: registers host RPC handlers onto the shared runtime client."
   ],
+  [
+    "local-search",
+    "Bridge-only module: registers local search host tools backed by Rust app-server RPC."
+  ],
   ["runtime", "Bridge-only utilities. Runtime ports must stay thin and native-backed where declared."]
 ]);
 

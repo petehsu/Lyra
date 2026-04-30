@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "LocalSearchContentMode": {
+      "enum": [
+        "disabled",
+        "auto",
+        "required"
+      ],
+      "type": "string"
+    },
+    "LocalSearchKind": {
+      "enum": [
+        "file",
+        "directory"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "cancellationToken": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contentMode": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/LocalSearchContentMode"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "extensions": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "includeHidden": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "includeVendor": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "kinds": {
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/LocalSearchKind"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "format": "uint",
+      "minimum": 0.0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "maxFileSizeBytes": {
+      "format": "uint64",
+      "minimum": 0.0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "query": {
+      "type": "string"
+    },
+    "respectGitignore": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "roots": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "title": "LocalSearchSearchParams",
+  "type": "object"
+}

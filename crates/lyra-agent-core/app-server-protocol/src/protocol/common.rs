@@ -438,6 +438,26 @@ client_request_definitions! {
         params: #[ts(type = "undefined")] #[serde(skip_serializing_if = "Option::is_none")] Option<()>,
         response: v2::ConfigRequirementsReadResponse,
     },
+    LocalSearchStatus => "localSearch/status" {
+        params: #[serde(default)] LocalSearchStatusParams,
+        response: LocalSearchStatusResponse,
+    },
+    LocalSearchIndexRoot => "localSearch/indexRoot" {
+        params: LocalSearchIndexRootParams,
+        response: LocalSearchIndexRootResponse,
+    },
+    LocalSearchSearch => "localSearch/search" {
+        params: LocalSearchSearchParams,
+        response: LocalSearchSearchResponse,
+    },
+    LocalSearchReadResult => "localSearch/readResult" {
+        params: LocalSearchReadResultParams,
+        response: LocalSearchReadResultResponse,
+    },
+    LocalSearchExtractText => "localSearch/extractText" {
+        params: LocalSearchExtractTextParams,
+        response: LocalSearchExtractTextResponse,
+    },
     FuzzyFileSearch {
         params: FuzzyFileSearchParams,
         response: FuzzyFileSearchResponse,
@@ -733,6 +753,261 @@ server_request_definitions! {
         params: v1::ExecCommandApprovalParams,
         response: v1::ExecCommandApprovalResponse,
     },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(rename_all = "lowercase")]
+pub enum LocalSearchKind {
+    File,
+    Directory,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(rename_all = "lowercase")]
+pub enum LocalSearchSource {
+    Index,
+    Walker,
+    Content,
+    Symbol,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum LocalSearchMatchKind {
+    Initial,
+    FileName,
+    Path,
+    Extension,
+    Content,
+    Metadata,
+    Fuzzy,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(rename_all = "lowercase")]
+pub enum LocalSearchIndexState {
+    Empty,
+    Indexing,
+    Ready,
+    Partial,
+    Failed,
+    Walker,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(rename_all = "lowercase")]
+pub enum LocalSearchContentMode {
+    Disabled,
+    Auto,
+    Required,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, Default)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchStatusParams {
+    #[serde(default)]
+    pub roots: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchIndexRootParams {
+    pub root: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub include_hidden: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub include_vendor: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub respect_gitignore: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub content_mode: Option<LocalSearchContentMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub max_file_size_bytes: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchSearchParams {
+    pub query: String,
+    #[serde(default)]
+    pub roots: Vec<String>,
+    #[serde(default)]
+    pub kinds: Vec<LocalSearchKind>,
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub include_hidden: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub include_vendor: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub respect_gitignore: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub content_mode: Option<LocalSearchContentMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub max_file_size_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cancellation_token: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchReadResultParams {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub root: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub max_bytes: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchExtractTextParams {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub max_bytes: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub extension: Option<String>,
+    pub size_bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub modified_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub created_at: Option<u64>,
+    pub hidden: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchResult {
+    pub path: String,
+    pub display_path: String,
+    pub root: String,
+    pub kind: LocalSearchKind,
+    pub score: u32,
+    pub source: LocalSearchSource,
+    pub match_kind: LocalSearchMatchKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub snippet: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub metadata: Option<LocalSearchMetadata>,
+    pub index_state: LocalSearchIndexState,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchRootStatus {
+    pub root: String,
+    pub state: LocalSearchIndexState,
+    pub indexed_file_count: u64,
+    pub indexed_dir_count: u64,
+    pub indexed_content_file_count: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub last_indexed_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchStatus {
+    pub state: LocalSearchIndexState,
+    pub roots: Vec<LocalSearchRootStatus>,
+    pub indexed_file_count: u64,
+    pub indexed_dir_count: u64,
+    pub indexed_content_file_count: u64,
+    pub sqlite_fts_available: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchStatusResponse {
+    pub status: LocalSearchStatus,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchIndexRootResponse {
+    pub status: LocalSearchStatus,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchSearchResponse {
+    pub query: String,
+    pub roots: Vec<String>,
+    pub results: Vec<LocalSearchResult>,
+    pub total_match_count: usize,
+    pub truncated: bool,
+    pub index_state: LocalSearchIndexState,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchReadResultResponse {
+    pub path: String,
+    pub offset: u64,
+    pub bytes_read: usize,
+    pub contents: String,
+    pub truncated: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct LocalSearchExtractTextResponse {
+    pub path: String,
+    pub text: String,
+    pub truncated: bool,
+    pub extraction_method: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

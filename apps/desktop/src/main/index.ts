@@ -26,6 +26,7 @@ import {
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createFilesIpcBridge } from "./files";
 import { createLspIpcBridge } from "./lsp";
+import { createLocalSearchHostToolsBridge } from "./local-search";
 import { createLinuxCompatBridge } from "./linux-compat";
 import { createMcpIpcBridge } from "./mcp";
 import { createLyraRuntimeClient } from "./runtime-client";
@@ -109,6 +110,7 @@ let disposeWorkbenchObservationService: (() => void) | null = null;
 let disposeWorkbenchDocumentsService: (() => void) | null = null;
 let disposeWorkbenchObservationHostTools: (() => void) | null = null;
 let disposeCodeIntelHostTools: (() => void) | null = null;
+let disposeLocalSearchHostTools: (() => void) | null = null;
 let disposeBrowserUseService: (() => void) | null = null;
 let disposeBrowserUseHostTools: (() => void) | null = null;
 let disposeBrowserUseRuntimeCoordinator: (() => void) | null = null;
@@ -703,6 +705,14 @@ const registerIpcHandlers = (): void => {
   void workbenchObservationHostTools.sync().catch((error: unknown) => {
     console.warn(`[lyra-workbench-observation] host tool sync failed ${String(error)}`);
   });
+  const localSearchHostTools = createLocalSearchHostToolsBridge({
+    runtimeClient,
+    runtimeHostRpc
+  });
+  disposeLocalSearchHostTools = localSearchHostTools.dispose;
+  void localSearchHostTools.sync().catch((error: unknown) => {
+    console.warn(`[lyra-local-search] host tool sync failed ${String(error)}`);
+  });
   const browserUseHostTools = createBrowserUseHostToolsBridge({
     capabilitiesBridge,
     runtimeClient,
@@ -901,6 +911,10 @@ app.on("before-quit", () => {
   if (disposeCodeIntelHostTools !== null) {
     disposeCodeIntelHostTools();
     disposeCodeIntelHostTools = null;
+  }
+  if (disposeLocalSearchHostTools !== null) {
+    disposeLocalSearchHostTools();
+    disposeLocalSearchHostTools = null;
   }
   if (disposeBrowserUseRuntimeCoordinator !== null) {
     disposeBrowserUseRuntimeCoordinator();

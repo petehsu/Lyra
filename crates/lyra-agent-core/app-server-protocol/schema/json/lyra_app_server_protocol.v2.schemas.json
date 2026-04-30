@@ -2140,6 +2140,132 @@
             },
             "method": {
               "enum": [
+                "localSearch/status"
+              ],
+              "title": "LocalSearch/statusRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/LocalSearchStatusParams"
+                }
+              ],
+              "default": {
+                "roots": []
+              }
+            }
+          },
+          "required": [
+            "id",
+            "method"
+          ],
+          "title": "LocalSearch/statusRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "localSearch/indexRoot"
+              ],
+              "title": "LocalSearch/indexRootRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/LocalSearchIndexRootParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "LocalSearch/indexRootRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "localSearch/search"
+              ],
+              "title": "LocalSearch/searchRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/LocalSearchSearchParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "LocalSearch/searchRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "localSearch/readResult"
+              ],
+              "title": "LocalSearch/readResultRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/LocalSearchReadResultParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "LocalSearch/readResultRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "localSearch/extractText"
+              ],
+              "title": "LocalSearch/extractTextRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/LocalSearchExtractTextParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "LocalSearch/extractTextRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "fuzzyFileSearch"
               ],
               "title": "FuzzyFileSearchRequestMethod",
@@ -4725,6 +4851,224 @@
         "data"
       ],
       "title": "ListMcpServerStatusResponse",
+      "type": "object"
+    },
+    "LocalSearchContentMode": {
+      "enum": [
+        "disabled",
+        "auto",
+        "required"
+      ],
+      "type": "string"
+    },
+    "LocalSearchExtractTextParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "maxBytes": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "LocalSearchExtractTextParams",
+      "type": "object"
+    },
+    "LocalSearchIndexRootParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "contentMode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LocalSearchContentMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "includeHidden": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "includeVendor": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "maxFileSizeBytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "respectGitignore": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "root": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "root"
+      ],
+      "title": "LocalSearchIndexRootParams",
+      "type": "object"
+    },
+    "LocalSearchKind": {
+      "enum": [
+        "file",
+        "directory"
+      ],
+      "type": "string"
+    },
+    "LocalSearchReadResultParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "maxBytes": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offset": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "LocalSearchReadResultParams",
+      "type": "object"
+    },
+    "LocalSearchSearchParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cancellationToken": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contentMode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LocalSearchContentMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extensions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "includeHidden": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "includeVendor": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kinds": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/LocalSearchKind"
+          },
+          "type": "array"
+        },
+        "limit": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxFileSizeBytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "query": {
+          "type": "string"
+        },
+        "respectGitignore": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "roots": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "LocalSearchSearchParams",
+      "type": "object"
+    },
+    "LocalSearchStatusParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "roots": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "title": "LocalSearchStatusParams",
       "type": "object"
     },
     "LyraAiModelDiscoveryState": {

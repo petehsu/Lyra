@@ -1,0 +1,178 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "LocalSearchIndexState": {
+      "enum": [
+        "empty",
+        "indexing",
+        "ready",
+        "partial",
+        "failed",
+        "walker"
+      ],
+      "type": "string"
+    },
+    "LocalSearchKind": {
+      "enum": [
+        "file",
+        "directory"
+      ],
+      "type": "string"
+    },
+    "LocalSearchMatchKind": {
+      "enum": [
+        "initial",
+        "fileName",
+        "path",
+        "extension",
+        "content",
+        "metadata",
+        "fuzzy"
+      ],
+      "type": "string"
+    },
+    "LocalSearchMetadata": {
+      "properties": {
+        "createdAt": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "extension": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "modifiedAt": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sizeBytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "hidden",
+        "sizeBytes"
+      ],
+      "type": "object"
+    },
+    "LocalSearchResult": {
+      "properties": {
+        "displayPath": {
+          "type": "string"
+        },
+        "indexState": {
+          "$ref": "#/definitions/LocalSearchIndexState"
+        },
+        "kind": {
+          "$ref": "#/definitions/LocalSearchKind"
+        },
+        "matchKind": {
+          "$ref": "#/definitions/LocalSearchMatchKind"
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LocalSearchMetadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        },
+        "score": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "snippet": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/definitions/LocalSearchSource"
+        }
+      },
+      "required": [
+        "displayPath",
+        "indexState",
+        "kind",
+        "matchKind",
+        "path",
+        "root",
+        "score",
+        "source"
+      ],
+      "type": "object"
+    },
+    "LocalSearchSource": {
+      "enum": [
+        "index",
+        "walker",
+        "content",
+        "symbol"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "indexState": {
+      "$ref": "#/definitions/LocalSearchIndexState"
+    },
+    "query": {
+      "type": "string"
+    },
+    "results": {
+      "items": {
+        "$ref": "#/definitions/LocalSearchResult"
+      },
+      "type": "array"
+    },
+    "roots": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "totalMatchCount": {
+      "format": "uint",
+      "minimum": 0.0,
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "indexState",
+    "query",
+    "results",
+    "roots",
+    "totalMatchCount",
+    "truncated"
+  ],
+  "title": "LocalSearchSearchResponse",
+  "type": "object"
+}

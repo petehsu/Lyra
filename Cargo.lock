@@ -5218,11 +5218,13 @@ name = "lyra-file-search"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "cc",
  "clap",
  "crossbeam-channel",
  "ignore",
  "nucleo",
  "pretty_assertions",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
