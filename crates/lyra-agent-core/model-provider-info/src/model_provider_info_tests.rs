@@ -28,6 +28,7 @@ base_url = "http://localhost:11434/v1"
         websocket_connect_timeout_ms: None,
         requires_managed_auth: false,
         supports_websockets: false,
+        protocol_behavior: None,
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
@@ -61,6 +62,7 @@ query_params = { api-version = "2025-04-01-preview" }
         websocket_connect_timeout_ms: None,
         requires_managed_auth: false,
         supports_websockets: false,
+        protocol_behavior: None,
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
@@ -97,10 +99,48 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
         websocket_connect_timeout_ms: None,
         requires_managed_auth: false,
         supports_websockets: false,
+        protocol_behavior: None,
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
     assert_eq!(expected_provider, provider);
+}
+
+#[test]
+fn test_deserialize_protocol_behavior_override() {
+    let provider_toml = r#"
+name = "Custom reasoning provider"
+base_url = "https://example.com/v1"
+wire_api = "chat_completions"
+
+[protocol_behavior]
+reasoning_replay_field = "reasoning_content"
+preserve_empty_reasoning = true
+require_assistant_reasoning = true
+tool_loop_supported = false
+prompt_cache_key = false
+unsupported_params = ["temperature"]
+request_params = { enable_thinking = true }
+        "#;
+
+    let provider: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
+    let behavior = provider
+        .protocol_behavior
+        .expect("protocol behavior override should parse");
+
+    assert_eq!(
+        behavior.reasoning_replay_field.as_deref(),
+        Some("reasoning_content")
+    );
+    assert_eq!(behavior.preserve_empty_reasoning, Some(true));
+    assert_eq!(behavior.require_assistant_reasoning, Some(true));
+    assert_eq!(behavior.tool_loop_supported, Some(false));
+    assert_eq!(behavior.prompt_cache_key, Some(false));
+    assert_eq!(behavior.unsupported_params, vec!["temperature".to_string()]);
+    assert_eq!(
+        behavior.request_params["enable_thinking"],
+        serde_json::json!(true)
+    );
 }
 
 #[test]
@@ -155,6 +195,7 @@ fn test_supports_remote_compaction_for_azure_name() {
         websocket_connect_timeout_ms: None,
         requires_managed_auth: false,
         supports_websockets: false,
+        protocol_behavior: None,
     };
 
     assert!(provider.supports_remote_compaction());
@@ -179,6 +220,7 @@ fn test_supports_remote_compaction_for_non_openai_non_azure_provider() {
         websocket_connect_timeout_ms: None,
         requires_managed_auth: false,
         supports_websockets: false,
+        protocol_behavior: None,
     };
 
     assert!(!provider.supports_remote_compaction());

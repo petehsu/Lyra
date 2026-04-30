@@ -640,7 +640,13 @@ export const useFileEditorModel = ({
 
   const hydrateIfNeeded = useCallback(async (instanceId: string) => {
     const current = statesRef.current[instanceId];
-    if (current === undefined || current.isHydrated || current.status === "loading") {
+    if (
+      current === undefined ||
+      current.isHydrated ||
+      current.status === "loading" ||
+      current.status === "unsupported" ||
+      current.status === "error"
+    ) {
       return;
     }
     await readFile(instanceId, current.filePath);

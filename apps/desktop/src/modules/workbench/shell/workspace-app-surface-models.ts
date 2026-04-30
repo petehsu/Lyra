@@ -1,6 +1,7 @@
 import {
   isAiHistoryAppId,
   isAiMcpAppId,
+  isAiPlanReviewAppId,
   isAiPluginsAppId,
   isAiSkillsAppId,
   isFileEditorAppId,
@@ -215,6 +216,16 @@ export const createAppSurfaceRenderModel = (
     return {
       kind: "aiHistory",
       props: createAiHistoryProps(context)
+    };
+  }
+
+  if (isAiPlanReviewAppId(tab.appId) && tab.appInstanceId !== undefined) {
+    return {
+      kind: "planReview",
+      props: {
+        instanceId: tab.appInstanceId,
+        model: context.planReview.model,
+      },
     };
   }
 

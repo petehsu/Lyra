@@ -187,7 +187,13 @@ export const handleInteractionPanels = (context: RuntimeEventProcessingContext):
     }
   }
 
-  if (event.phase === "plan_question_answered" || event.phase === "plan_approved" || event.phase === "plan_rejected") {
-    setActiveInteractionId((current) => (current !== null ? current : null));
+  if (
+    event.phase === "plan_question_answered"
+    || event.phase === "plan_approved"
+    || event.phase === "plan_revision_requested"
+    || event.phase === "plan_rejected"
+  ) {
+    setActiveInteractionId(null);
+    setTransientInteractionPanel(null);
   }
 };

@@ -20,9 +20,8 @@ export const handleWriteStreamEvent = ({
   payload,
   progress,
   onWriteStreamEvent,
-  followEnabled = false,
 }: RuntimeEventProcessingContext): void => {
-  if (onWriteStreamEvent === undefined || !followEnabled) {
+  if (onWriteStreamEvent === undefined) {
     return;
   }
   const toolName = pickString(payload, "toolName");

@@ -1,9 +1,9 @@
-import { CheckCircle2, Circle, Loader2 } from "lucide-react";
+import { Check, CheckCircle2, Circle, ExternalLink, Loader2, RotateCcw, X } from "lucide-react";
 import { useMemo } from "react";
 
 import { createTranslator, type WorkbenchLocale } from "../i18n";
 import { AiPanelRichContent } from "./rich-content";
-import { StatusBadge, StatusIndicator } from "./status-primitives";
+import { StatusIndicator } from "./status-primitives";
 import type { LyraPlanStepStatus, LyraTurnPlanState } from "./use-lyra-thread-runtime";
 
 type PlanCardProps = {
@@ -12,9 +12,10 @@ type PlanCardProps = {
   readonly richRenderingEnabled: boolean;
   readonly themeSignature?: string;
   readonly showActions: boolean;
-  readonly onApprove: () => void;
-  readonly onKeepPlanning: () => void;
+  readonly onApprove?: () => void;
+  readonly onKeepPlanning?: () => void;
   readonly onReject: () => void;
+  readonly onOpenInWorkspace?: () => void;
 };
 
 const statusIcon = (status: LyraPlanStepStatus) => {
@@ -46,29 +47,40 @@ export const PlanCard = ({
   onApprove,
   onKeepPlanning,
   onReject,
+  onOpenInWorkspace,
 }: PlanCardProps) => {
   const t = useMemo(() => createTranslator(locale), [locale]);
   const bodyText = (plan.finalText ?? plan.draftText).trim();
   const hasChecklist = plan.steps.length > 0;
+  const title = plan.finalText === null ? t("ai.planDraftTitle") : t("ai.planSubmittedTitle");
 
   if (bodyText.length === 0 && !hasChecklist && plan.explanation === null) {
     return null;
   }
 
   return (
-    <section className="lyra-ai-plan-card" aria-label={t("ai.planDraftTitle")}>
+    <section className="lyra-ai-plan-card" aria-label={title}>
       <div className="lyra-ai-plan-card__header">
         <div className="lyra-ai-plan-card__title">
-          <StatusIndicator tone="info" variant="bar" ariaLabel={t("ai.planDraftTitle")} />
-          <span>{t("ai.planDraftTitle")}</span>
+          <StatusIndicator tone="info" variant="dot" ariaLabel={title} />
+          <span>{title}</span>
         </div>
-        <StatusBadge
-          tone={plan.finalText === null ? "info" : "success"}
-          label={plan.finalText === null ? t("ai.planStatusDraft") : t("ai.planStatusSubmitted")}
-        />
       </div>
       {plan.explanation === null ? null : (
         <p className="lyra-ai-plan-card__explanation">{plan.explanation}</p>
+      )}
+      {bodyText.length === 0 ? null : (
+        <div className="lyra-ai-plan-card__body">
+          {richRenderingEnabled ? (
+            <AiPanelRichContent
+              content={bodyText}
+              locale={locale}
+              {...(themeSignature === undefined ? {} : { themeSignature })}
+            />
+          ) : (
+            <pre>{bodyText}</pre>
+          )}
+        </div>
       )}
       {!hasChecklist ? null : (
         <ol className="lyra-ai-plan-card__steps">
@@ -88,41 +100,49 @@ export const PlanCard = ({
           ))}
         </ol>
       )}
-      {bodyText.length === 0 || hasChecklist ? null : (
-        <div className="lyra-ai-plan-card__body">
-          {richRenderingEnabled ? (
-            <AiPanelRichContent
-              content={bodyText}
-              locale={locale}
-              {...(themeSignature === undefined ? {} : { themeSignature })}
-            />
-          ) : (
-            <pre>{bodyText}</pre>
-          )}
-        </div>
-      )}
       {!showActions ? null : (
         <div className="lyra-ai-plan-card__actions">
-          <button
-            type="button"
-            className="lyra-ai-plan-card__action lyra-ai-plan-card__action-primary"
-            onClick={onApprove}
-          >
-            {t("ai.proposedPlanApprove")}
-          </button>
-          <button
-            type="button"
-            className="lyra-ai-plan-card__action"
-            onClick={onKeepPlanning}
-          >
-            {t("ai.proposedPlanKeepPlanning")}
-          </button>
+          {onApprove === undefined ? null : (
+            <button
+              type="button"
+              className="lyra-ai-plan-card__action lyra-ai-plan-card__action-primary"
+              aria-label={t("ai.planApprovalApproveAndImplement")}
+              title={t("ai.planApprovalApproveAndImplement")}
+              onClick={onApprove}
+            >
+              <Check size={14} aria-hidden="true" />
+            </button>
+          )}
+          {onKeepPlanning === undefined ? null : (
+            <button
+              type="button"
+              className="lyra-ai-plan-card__action lyra-ai-plan-card__action-secondary"
+              aria-label={t("ai.planApprovalKeepPlanning")}
+              title={t("ai.planApprovalKeepPlanning")}
+              onClick={onKeepPlanning}
+            >
+              <RotateCcw size={14} aria-hidden="true" />
+            </button>
+          )}
+          {onOpenInWorkspace === undefined ? null : (
+            <button
+              type="button"
+              className="lyra-ai-plan-card__action lyra-ai-plan-card__action-primary"
+              aria-label={t("ai.proposedPlanOpenInPanel")}
+              title={t("ai.proposedPlanOpenInPanel")}
+              onClick={onOpenInWorkspace}
+            >
+              <ExternalLink size={14} aria-hidden="true" />
+            </button>
+          )}
           <button
             type="button"
             className="lyra-ai-plan-card__action lyra-ai-plan-card__action-danger"
+            aria-label={t("ai.proposedPlanReject")}
+            title={t("ai.proposedPlanReject")}
             onClick={onReject}
           >
-            {t("ai.proposedPlanReject")}
+            <X size={14} aria-hidden="true" />
           </button>
         </div>
       )}

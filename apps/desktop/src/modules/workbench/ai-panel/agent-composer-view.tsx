@@ -1,7 +1,9 @@
 import {
   ArrowRight,
+  Bot,
   Check,
   ChevronRight,
+  ClipboardList,
   Crosshair,
   FilePlus2,
   FileText,
@@ -9,9 +11,11 @@ import {
   Image as ImageIcon,
   Paperclip,
   Plus,
+  ShieldCheck,
   Square,
   X
 } from "lucide-react";
+import { createPortal } from "react-dom";
 
 import { ModernCaretOverlay } from "../caret/modern-caret";
 import type {
@@ -67,7 +71,6 @@ type AgentComposerViewProps = {
   readonly reasoningEffortOptions: readonly AgentComposerModelControlOption<AgentComposerReasoningEffort>[];
   readonly selectedReasoningEffort: AgentComposerReasoningEffort | null;
   readonly reasoningEffortLabel: string;
-  readonly modelControlAutoLabel: string;
   readonly onReasoningEffortSelect?: ((value: AgentComposerReasoningEffort | null) => void) | undefined;
   readonly verbosityOptions: readonly AgentComposerModelControlOption<AgentComposerVerbosity>[];
   readonly selectedVerbosity: AgentComposerVerbosity | null;
@@ -110,7 +113,6 @@ export const AgentComposerView = ({
   reasoningEffortOptions,
   selectedReasoningEffort,
   reasoningEffortLabel,
-  modelControlAutoLabel,
   onReasoningEffortSelect,
   verbosityOptions,
   selectedVerbosity,
@@ -122,7 +124,202 @@ export const AgentComposerView = ({
   steerDisabled = false,
   onStop,
   stopDisabled = false
-}: AgentComposerViewProps) => (
+}: AgentComposerViewProps) => {
+  const selectedPermissionOption =
+    modelState.permissionModeOptions.find((option) => option.value === permissionMode)
+    ?? modelState.permissionModeOptions[0]
+    ?? null;
+  const menuLayer = runtime.toolsMenuOpen
+    ? createPortal(
+        <div
+          ref={runtime.toolsMenuPortalRef}
+          className="lyra-ai-agent-composer-menu-layer"
+        >
+          <div
+            className="lyra-ai-agent-composer-menu"
+            role="menu"
+            style={runtime.toolsMenuStyle}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="lyra-ai-agent-composer-menu-item"
+              disabled={inputDisabled || onRequestFileAttachments === undefined}
+              onClick={() => {
+                void runtime.requestFileAttachments(onRequestFileAttachments);
+              }}
+            >
+              <FilePlus2 size={13} aria-hidden="true" />
+              <span>{addFileLabel}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={planModeEnabled}
+              className={
+                planModeEnabled
+                  ? "lyra-ai-agent-composer-menu-item lyra-ai-agent-composer-menu-item-active"
+                  : "lyra-ai-agent-composer-menu-item"
+              }
+              disabled={onPlanModeToggle === undefined || planModeLocked}
+              onClick={() => {
+                onPlanModeToggle?.();
+              }}
+            >
+              <ClipboardList size={13} aria-hidden="true" />
+              <span>{modelState.resolvedPlanModeLabel}</span>
+              {planModeEnabled ? <Check size={13} aria-hidden="true" /> : null}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={runtime.modelSubmenuOpen}
+              className="lyra-ai-agent-composer-menu-item lyra-ai-agent-composer-menu-item-nested"
+              disabled={!modelState.canOpenModelMenu}
+              onClick={runtime.toggleModelSubmenu}
+            >
+              <Bot size={13} aria-hidden="true" />
+              <span>{modelState.resolvedModelAriaLabel}</span>
+              <small>{modelState.selectedModelLabel}</small>
+              <ChevronRight size={13} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              aria-haspopup="menu"
+              aria-expanded={runtime.permissionSubmenuOpen}
+              className="lyra-ai-agent-composer-menu-item lyra-ai-agent-composer-menu-item-nested"
+              disabled={permissionModeDisabled || onPermissionModeSelect === undefined}
+              onClick={runtime.togglePermissionSubmenu}
+            >
+              <ShieldCheck size={13} aria-hidden="true" />
+              <span>{permissionModeLabel}</span>
+              {selectedPermissionOption === null ? null : <small>{selectedPermissionOption.label}</small>}
+              <ChevronRight size={13} aria-hidden="true" />
+            </button>
+          </div>
+          {runtime.modelSubmenuOpen && modelState.canOpenModelMenu ? (
+            <div
+              className="lyra-ai-agent-composer-submenu"
+              role="menu"
+              style={{
+                ...modelState.modelMenuStyle,
+                ...runtime.submenuStyle,
+              }}
+            >
+              {modelState.resolvedModelOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={option.value === modelState.resolvedSelectedModelName}
+                  className={
+                    option.value === modelState.resolvedSelectedModelName
+                      ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
+                      : "lyra-ai-agent-composer-submenu-item"
+                  }
+                  onClick={() => {
+                    runtime.selectModel(option.value, onModelSelect);
+                  }}
+                >
+                  <span>{option.label}</span>
+                  {option.value === modelState.resolvedSelectedModelName ? <Check size={13} aria-hidden="true" /> : null}
+                </button>
+              ))}
+              {reasoningEffortOptions.length > 0 ? (
+                <>
+                  <div className="lyra-ai-agent-composer-submenu-section" aria-hidden="true">
+                    {reasoningEffortLabel}
+                  </div>
+                  {reasoningEffortOptions.map((option) => (
+                    <button
+                      key={`reasoning-${option.value}`}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selectedReasoningEffort === option.value}
+                      className={
+                        selectedReasoningEffort === option.value
+                          ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
+                          : "lyra-ai-agent-composer-submenu-item"
+                      }
+                      disabled={option.disabled === true || onReasoningEffortSelect === undefined || modelSwitchDisabled}
+                      title={option.disabledReason}
+                      onClick={() => {
+                        onReasoningEffortSelect?.(option.value);
+                      }}
+                    >
+                      <span>{option.label}</span>
+                      {selectedReasoningEffort === option.value ? <Check size={13} aria-hidden="true" /> : null}
+                    </button>
+                  ))}
+                </>
+              ) : null}
+              {verbosityOptions.length > 0 ? (
+                <>
+                  <div className="lyra-ai-agent-composer-submenu-section" aria-hidden="true">
+                    {verbosityLabel}
+                  </div>
+                  {verbosityOptions.map((option) => (
+                    <button
+                      key={`verbosity-${option.value}`}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selectedVerbosity === option.value}
+                      className={
+                        selectedVerbosity === option.value
+                          ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
+                          : "lyra-ai-agent-composer-submenu-item"
+                      }
+                      disabled={option.disabled === true || onVerbositySelect === undefined || modelSwitchDisabled}
+                      title={option.disabledReason}
+                      onClick={() => {
+                        onVerbositySelect?.(option.value);
+                      }}
+                    >
+                      <span>{option.label}</span>
+                      {selectedVerbosity === option.value ? <Check size={13} aria-hidden="true" /> : null}
+                    </button>
+                  ))}
+                </>
+              ) : null}
+            </div>
+          ) : null}
+          {runtime.permissionSubmenuOpen ? (
+            <div
+              className="lyra-ai-agent-composer-submenu lyra-ai-agent-composer-permission-submenu"
+              role="menu"
+              style={runtime.submenuStyle}
+            >
+              {modelState.permissionModeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={permissionMode === option.value}
+                  className={
+                    permissionMode === option.value
+                      ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
+                      : "lyra-ai-agent-composer-submenu-item"
+                  }
+                  disabled={permissionModeDisabled || onPermissionModeSelect === undefined}
+                  onClick={() => {
+                    onPermissionModeSelect?.(option.value as AgentPermissionMode);
+                    runtime.closeMenus();
+                  }}
+                >
+                  <span>{option.label}</span>
+                  {permissionMode === option.value ? <Check size={13} aria-hidden="true" /> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
   <div
     ref={runtime.containerRef}
     className={composerClassName}
@@ -276,181 +473,8 @@ export const AgentComposerView = ({
           >
             <Plus size={15} aria-hidden="true" />
           </button>
-          {runtime.toolsMenuOpen ? (
-            <div className="lyra-ai-agent-composer-menu" role="menu">
-              <button
-                type="button"
-                role="menuitem"
-                className="lyra-ai-agent-composer-menu-item"
-                disabled={inputDisabled || onRequestFileAttachments === undefined}
-                onClick={() => {
-                  void runtime.requestFileAttachments(onRequestFileAttachments);
-                }}
-              >
-                <FilePlus2 size={13} aria-hidden="true" />
-                <span>{addFileLabel}</span>
-              </button>
-              <button
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={planModeEnabled}
-                className={
-                  planModeEnabled
-                    ? "lyra-ai-agent-composer-menu-item lyra-ai-agent-composer-menu-item-active"
-                    : "lyra-ai-agent-composer-menu-item"
-                }
-                disabled={onPlanModeToggle === undefined || planModeLocked}
-                onClick={() => {
-                  onPlanModeToggle?.();
-                }}
-              >
-                <span>{modelState.resolvedPlanModeLabel}</span>
-                {planModeEnabled ? <Check size={13} aria-hidden="true" /> : null}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                aria-haspopup="menu"
-                aria-expanded={runtime.modelSubmenuOpen}
-                className="lyra-ai-agent-composer-menu-item lyra-ai-agent-composer-menu-item-nested"
-                disabled={!modelState.canOpenModelMenu}
-                onClick={runtime.toggleModelSubmenu}
-              >
-                <span>{modelState.resolvedModelAriaLabel}</span>
-                <small>{modelState.selectedModelLabel}</small>
-                <ChevronRight size={13} aria-hidden="true" />
-              </button>
-              {runtime.modelSubmenuOpen && modelState.canOpenModelMenu ? (
-                <div
-                  className="lyra-ai-agent-composer-submenu"
-                  role="menu"
-                  style={modelState.modelMenuStyle}
-                >
-                  {modelState.resolvedModelOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={option.value === modelState.resolvedSelectedModelName}
-                      className={
-                        option.value === modelState.resolvedSelectedModelName
-                          ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
-                          : "lyra-ai-agent-composer-submenu-item"
-                      }
-                      onClick={() => {
-                        runtime.selectModel(option.value, onModelSelect);
-                      }}
-                    >
-                      <span>{option.label}</span>
-                      {option.value === modelState.resolvedSelectedModelName ? <Check size={13} aria-hidden="true" /> : null}
-                    </button>
-                  ))}
-                  <div className="lyra-ai-agent-composer-submenu-section" aria-hidden="true">
-                    {reasoningEffortLabel}
-                  </div>
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selectedReasoningEffort === null}
-                    className={
-                      selectedReasoningEffort === null
-                        ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
-                        : "lyra-ai-agent-composer-submenu-item"
-                    }
-                    disabled={onReasoningEffortSelect === undefined || modelSwitchDisabled}
-                    onClick={() => {
-                      onReasoningEffortSelect?.(null);
-                    }}
-                  >
-                    <span>{modelControlAutoLabel}</span>
-                    {selectedReasoningEffort === null ? <Check size={13} aria-hidden="true" /> : null}
-                  </button>
-                  {reasoningEffortOptions.map((option) => (
-                    <button
-                      key={`reasoning-${option.value}`}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={selectedReasoningEffort === option.value}
-                      className={
-                        selectedReasoningEffort === option.value
-                          ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
-                          : "lyra-ai-agent-composer-submenu-item"
-                      }
-                      disabled={option.disabled === true || onReasoningEffortSelect === undefined || modelSwitchDisabled}
-                      title={option.disabledReason}
-                      onClick={() => {
-                        onReasoningEffortSelect?.(option.value);
-                      }}
-                    >
-                      <span>{option.label}</span>
-                      {selectedReasoningEffort === option.value ? <Check size={13} aria-hidden="true" /> : null}
-                    </button>
-                  ))}
-                  <div className="lyra-ai-agent-composer-submenu-section" aria-hidden="true">
-                    {verbosityLabel}
-                  </div>
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selectedVerbosity === null}
-                    className={
-                      selectedVerbosity === null
-                        ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
-                        : "lyra-ai-agent-composer-submenu-item"
-                    }
-                    disabled={onVerbositySelect === undefined || modelSwitchDisabled}
-                    onClick={() => {
-                      onVerbositySelect?.(null);
-                    }}
-                  >
-                    <span>{modelControlAutoLabel}</span>
-                    {selectedVerbosity === null ? <Check size={13} aria-hidden="true" /> : null}
-                  </button>
-                  {verbosityOptions.map((option) => (
-                    <button
-                      key={`verbosity-${option.value}`}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={selectedVerbosity === option.value}
-                      className={
-                        selectedVerbosity === option.value
-                          ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
-                          : "lyra-ai-agent-composer-submenu-item"
-                      }
-                      disabled={option.disabled === true || onVerbositySelect === undefined || modelSwitchDisabled}
-                      title={option.disabledReason}
-                      onClick={() => {
-                        onVerbositySelect?.(option.value);
-                      }}
-                    >
-                      <span>{option.label}</span>
-                      {selectedVerbosity === option.value ? <Check size={13} aria-hidden="true" /> : null}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
         </div>
-        <div className="lyra-ai-agent-permission-modes" aria-label={permissionModeLabel}>
-          {modelState.permissionModeOptions.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={
-                permissionMode === option.value
-                  ? "lyra-ai-agent-permission-mode lyra-ai-agent-permission-mode-active"
-                  : "lyra-ai-agent-permission-mode"
-              }
-              disabled={permissionModeDisabled || onPermissionModeSelect === undefined}
-              onClick={() => {
-                onPermissionModeSelect?.(option.value as AgentPermissionMode);
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+        {menuLayer}
       </div>
       <div className="lyra-ai-agent-composer-toolbar-trailing">
         {sending && runtime.hasContent && onSteer !== undefined ? (
@@ -512,4 +536,5 @@ export const AgentComposerView = ({
       </div>
     </div>
   </div>
-);
+  );
+};

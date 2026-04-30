@@ -445,6 +445,19 @@ pub(crate) async fn run_turn(
                 );
 
                 if !needs_follow_up {
+                    if turn_context.collaboration_mode.mode == ModeKind::Plan
+                        && !sess.plan_submitted(&turn_context.sub_id).await
+                    {
+                        let violations = sess
+                            .record_plan_plain_message_violation(&turn_context.sub_id)
+                            .await;
+                        warn!(
+                            turn_id = %turn_context.sub_id,
+                            violations,
+                            "Plan Mode ended with a plain assistant message; accepting it as a user-facing follow-up"
+                        );
+                    }
+
                     last_agent_message = sampling_request_last_agent_message;
                     let stop_hook_permission_mode = match turn_context.approval_policy.value() {
                         AskForApproval::Never => "bypassPermissions",
@@ -1422,6 +1435,7 @@ async fn maybe_complete_plan_item_from_message(
                 .plan_item_state
                 .complete_with_text(sess, turn_context, plan_text)
                 .await;
+            sess.mark_plan_submitted(&turn_context.sub_id).await;
         }
     }
 }

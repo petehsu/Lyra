@@ -66,6 +66,7 @@ use lyra_app_server_protocol::McpServerToolCallParams;
 use lyra_app_server_protocol::McpServerToolCallResponse;
 use lyra_app_server_protocol::ModelListParams;
 use lyra_app_server_protocol::ModelListResponse;
+use lyra_app_server_protocol::PlanApprovalDecision;
 use lyra_app_server_protocol::PluginDetail;
 use lyra_app_server_protocol::PluginInstallParams;
 use lyra_app_server_protocol::PluginInstallResponse;
@@ -149,6 +150,8 @@ use lyra_app_server_protocol::Turn;
 use lyra_app_server_protocol::TurnError;
 use lyra_app_server_protocol::TurnInterruptParams;
 use lyra_app_server_protocol::TurnInterruptResponse;
+use lyra_app_server_protocol::TurnPlanApprovalResolveParams;
+use lyra_app_server_protocol::TurnPlanApprovalResolveResponse;
 use lyra_app_server_protocol::TurnStartParams;
 use lyra_app_server_protocol::TurnStartResponse;
 use lyra_app_server_protocol::TurnStatus;
@@ -159,6 +162,7 @@ use lyra_app_server_protocol::WindowsSandboxSetupCompletedNotification;
 use lyra_app_server_protocol::WindowsSandboxSetupMode;
 use lyra_app_server_protocol::WindowsSandboxSetupStartParams;
 use lyra_app_server_protocol::WindowsSandboxSetupStartResponse;
+use lyra_app_server_protocol::build_thread_ai_panel_view_model;
 use lyra_app_server_protocol::build_turns_from_rollout_items;
 use lyra_arg0::Arg0DispatchPaths;
 use lyra_config::types::McpServerTransportConfig;
@@ -222,6 +226,8 @@ use lyra_mcp::resolve_oauth_scopes;
 use lyra_models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use lyra_protocol::ThreadId;
 use lyra_protocol::config_types::CollaborationMode;
+use lyra_protocol::config_types::ModeKind;
+use lyra_protocol::config_types::Settings;
 use lyra_protocol::config_types::TrustLevel;
 use lyra_protocol::config_types::WindowsSandboxLevel;
 use lyra_protocol::dynamic_tools::DynamicToolSpec as CoreDynamicToolSpec;
@@ -236,6 +242,7 @@ use lyra_protocol::protocol::InitialHistory;
 use lyra_protocol::protocol::McpAuthStatus as CoreMcpAuthStatus;
 use lyra_protocol::protocol::McpServerRefreshConfig;
 use lyra_protocol::protocol::Op;
+use lyra_protocol::protocol::PlanApprovalResolutionDecision;
 use lyra_protocol::protocol::ReviewDelivery as CoreReviewDelivery;
 use lyra_protocol::protocol::ReviewRequest;
 use lyra_protocol::protocol::ReviewTarget as CoreReviewTarget;
@@ -336,6 +343,47 @@ enum ThreadShutdownResult {
 enum ThreadReadViewError {
     InvalidRequest(String),
     Internal(String),
+}
+
+fn format_plan_approval_instruction(
+    decision: PlanApprovalDecision,
+    feedback: Option<&str>,
+    proposed_markdown: Option<&str>,
+) -> String {
+    let trimmed_feedback = feedback.unwrap_or("").trim();
+    let trimmed_plan = proposed_markdown.unwrap_or("").trim();
+    let feedback_section = if trimmed_feedback.is_empty() {
+        String::new()
+    } else {
+        format!("\n\nUser feedback:\n\n{trimmed_feedback}")
+    };
+    let plan_section = if trimmed_plan.is_empty() {
+        String::new()
+    } else {
+        format!("\n\nProposed plan:\n\n{trimmed_plan}")
+    };
+
+    match decision {
+        PlanApprovalDecision::ApproveAndImplement => format!(
+            "The user approved the proposed plan. Continue in default mode and implement it without asking for another approval.{feedback_section}{plan_section}"
+        ),
+        PlanApprovalDecision::KeepPlanning => format!(
+            "The user wants to continue planning. Revise the plan in plan mode and submit an updated proposal.{feedback_section}{plan_section}"
+        ),
+        PlanApprovalDecision::Reject => format!(
+            "The user rejected the proposed plan. Do not implement it.{feedback_section}{plan_section}"
+        ),
+    }
+}
+
+fn core_plan_approval_decision(decision: PlanApprovalDecision) -> PlanApprovalResolutionDecision {
+    match decision {
+        PlanApprovalDecision::ApproveAndImplement => {
+            PlanApprovalResolutionDecision::ApproveAndImplement
+        }
+        PlanApprovalDecision::KeepPlanning => PlanApprovalResolutionDecision::KeepPlanning,
+        PlanApprovalDecision::Reject => PlanApprovalResolutionDecision::Reject,
+    }
 }
 
 /// Handles JSON-RPC messages for Lyra threads (and legacy conversation APIs).
@@ -864,6 +912,10 @@ impl LyraMessageProcessor {
                     app_server_client_version.clone(),
                 )
                 .await;
+            }
+            ClientRequest::TurnPlanApprovalResolve { request_id, params } => {
+                self.turn_plan_approval_resolve(to_connection_request_id(request_id), params)
+                    .await;
             }
             ClientRequest::ThreadInjectItems { request_id, params } => {
                 self.thread_inject_items(to_connection_request_id(request_id), params)
@@ -1553,9 +1605,24 @@ impl LyraMessageProcessor {
                 .map(|tool| CoreDynamicToolSpec {
                     namespace: tool.namespace,
                     name: tool.name,
+                    host_method: tool.host_method,
                     description: tool.description,
                     input_schema: tool.input_schema,
                     defer_loading: tool.defer_loading,
+                    side_effects: tool.side_effects.map(|effects| {
+                        lyra_protocol::dynamic_tools::DynamicToolSideEffects {
+                            level: effects.level,
+                            mutates_workspace: effects.mutates_workspace,
+                            mutates_memory: effects.mutates_memory,
+                            mutates_external_systems: effects.mutates_external_systems,
+                            mutates_session_state: effects.mutates_session_state,
+                            opens_interactive_session: effects.opens_interactive_session,
+                            reads_network: effects.reads_network,
+                        }
+                    }),
+                    approval_mode: tool.approval_mode,
+                    risk: tool.risk,
+                    model_input_capabilities: tool.model_input_capabilities,
                 })
                 .collect()
         };
@@ -2914,7 +2981,10 @@ impl LyraMessageProcessor {
         let ThreadReadParams {
             thread_id,
             include_turns,
+            view_model,
         } = params;
+        let view_model_params = view_model.as_ref();
+        let hydrate_turns_for_view_model = view_model_params.is_some();
 
         let thread_uuid = match ThreadId::from_string(&thread_id) {
             Ok(id) => id,
@@ -2925,7 +2995,10 @@ impl LyraMessageProcessor {
             }
         };
 
-        let thread = match self.read_thread_view(thread_uuid, include_turns).await {
+        let mut thread = match self
+            .read_thread_view(thread_uuid, include_turns || hydrate_turns_for_view_model)
+            .await
+        {
             Ok(thread) => thread,
             Err(ThreadReadViewError::InvalidRequest(message)) => {
                 self.send_invalid_request_error(request_id, message).await;
@@ -2936,7 +3009,12 @@ impl LyraMessageProcessor {
                 return;
             }
         };
-        let response = ThreadReadResponse { thread };
+        let view_model = view_model_params
+            .map(|params| build_thread_ai_panel_view_model(&thread, params.runtime_feed_limit()));
+        if !include_turns {
+            thread.turns.clear();
+        }
+        let response = ThreadReadResponse { thread, view_model };
         self.outgoing.send_response(request_id, response).await;
     }
 
@@ -5739,6 +5817,123 @@ impl LyraMessageProcessor {
         }
     }
 
+    async fn turn_plan_approval_resolve(
+        &self,
+        request_id: ConnectionRequestId,
+        params: TurnPlanApprovalResolveParams,
+    ) {
+        let thread_id = params.thread_id.trim().to_string();
+        let plan_turn_id = params.plan_turn_id.trim().to_string();
+        let approval_request_id = params.request_id.trim().to_string();
+        if thread_id.is_empty() || plan_turn_id.is_empty() || approval_request_id.is_empty() {
+            self.send_invalid_request_error(
+                request_id,
+                "threadId, planTurnId, and requestId must not be empty".to_string(),
+            )
+            .await;
+            return;
+        }
+
+        let (_, thread) = match self.load_thread(&thread_id).await {
+            Ok(v) => v,
+            Err(error) => {
+                self.track_error_response(&request_id, &error, /*error_type*/ None);
+                self.outgoing.send_error(request_id, error).await;
+                return;
+            }
+        };
+
+        let should_start_turn = matches!(
+            params.decision,
+            PlanApprovalDecision::ApproveAndImplement | PlanApprovalDecision::KeepPlanning
+        );
+        let mut response_turn = None;
+        if should_start_turn {
+            let config_snapshot = thread.config_snapshot().await;
+            let mode = match params.decision {
+                PlanApprovalDecision::KeepPlanning => ModeKind::Plan,
+                PlanApprovalDecision::ApproveAndImplement | PlanApprovalDecision::Reject => {
+                    ModeKind::Default
+                }
+            };
+            let collaboration_modes_config = CollaborationModesConfig {
+                default_mode_request_user_input: thread
+                    .enabled(Feature::DefaultModeRequestUserInput),
+            };
+            let collaboration_mode = self.normalize_turn_start_collaboration_mode(
+                CollaborationMode {
+                    mode,
+                    settings: Settings {
+                        model: config_snapshot.model,
+                        reasoning_effort: config_snapshot.reasoning_effort,
+                        developer_instructions: None,
+                    },
+                },
+                collaboration_modes_config,
+            );
+
+            match thread
+                .resolve_plan_approval_and_start_internal_developer_turn(
+                    plan_turn_id.clone(),
+                    approval_request_id.clone(),
+                    core_plan_approval_decision(params.decision),
+                    collaboration_mode,
+                    format_plan_approval_instruction(
+                        params.decision,
+                        params.feedback.as_deref(),
+                        params.proposed_markdown.as_deref(),
+                    ),
+                )
+                .await
+            {
+                Ok(turn_id) => {
+                    self.outgoing
+                        .record_request_turn_id(&request_id, &turn_id)
+                        .await;
+                    response_turn = Some(Turn {
+                        id: turn_id,
+                        items: vec![],
+                        error: None,
+                        status: TurnStatus::InProgress,
+                        started_at: None,
+                        completed_at: None,
+                        duration_ms: None,
+                    });
+                }
+                Err(err) => {
+                    self.send_internal_error(
+                        request_id,
+                        format!("failed to resolve plan approval and start follow-up turn: {err}"),
+                    )
+                    .await;
+                    return;
+                }
+            }
+        } else {
+            thread
+                .resolve_plan_approval(
+                    plan_turn_id,
+                    approval_request_id,
+                    core_plan_approval_decision(params.decision),
+                )
+                .await;
+        }
+
+        let response = TurnPlanApprovalResolveResponse {
+            turn: response_turn,
+        };
+        if self.config.features.enabled(Feature::GeneralAnalytics) {
+            self.analytics_events_client.track_response(
+                request_id.connection_id.0,
+                ClientResponse::TurnPlanApprovalResolve {
+                    request_id: request_id.request_id.clone(),
+                    response: response.clone(),
+                },
+            );
+        }
+        self.outgoing.send_response(request_id, response).await;
+    }
+
     async fn thread_inject_items(
         &self,
         request_id: ConnectionRequestId,
@@ -6122,6 +6317,7 @@ impl LyraMessageProcessor {
         let ReviewStartParams {
             thread_id,
             target,
+            cwd,
             delivery,
         } = params;
         let (parent_thread_id, parent_thread) = match self.load_thread(&thread_id).await {
@@ -6139,6 +6335,36 @@ impl LyraMessageProcessor {
                 return;
             }
         };
+
+        if cwd.is_some() {
+            if let Err(err) = self
+                .submit_core_op(
+                    &request_id,
+                    parent_thread.as_ref(),
+                    Op::OverrideTurnContext {
+                        cwd,
+                        approval_policy: None,
+                        approvals_reviewer: None,
+                        sandbox_policy: None,
+                        windows_sandbox_level: None,
+                        model: None,
+                        effort: None,
+                        verbosity: None,
+                        summary: None,
+                        service_tier: None,
+                        collaboration_mode: None,
+                    },
+                )
+                .await
+            {
+                self.send_internal_error(
+                    request_id,
+                    format!("failed to configure review working directory: {err}"),
+                )
+                .await;
+                return;
+            }
+        }
 
         let delivery = delivery.unwrap_or(ApiReviewDelivery::Inline).to_core();
         match delivery {
@@ -7375,9 +7601,24 @@ fn api_dynamic_tool_to_core(tool: ApiDynamicToolSpec) -> CoreDynamicToolSpec {
     CoreDynamicToolSpec {
         namespace: tool.namespace,
         name: tool.name,
+        host_method: tool.host_method,
         description: tool.description,
         input_schema: tool.input_schema,
         defer_loading: tool.defer_loading,
+        side_effects: tool.side_effects.map(|effects| {
+            lyra_protocol::dynamic_tools::DynamicToolSideEffects {
+                level: effects.level,
+                mutates_workspace: effects.mutates_workspace,
+                mutates_memory: effects.mutates_memory,
+                mutates_external_systems: effects.mutates_external_systems,
+                mutates_session_state: effects.mutates_session_state,
+                opens_interactive_session: effects.opens_interactive_session,
+                reads_network: effects.reads_network,
+            }
+        }),
+        approval_mode: tool.approval_mode,
+        risk: tool.risk,
+        model_input_capabilities: tool.model_input_capabilities,
     }
 }
 
@@ -8380,9 +8621,14 @@ mod tests {
         let tools = vec![ApiDynamicToolSpec {
             namespace: None,
             name: "my_tool".to_string(),
+            host_method: None,
             description: "test".to_string(),
             input_schema: json!({"type": "null"}),
             defer_loading: false,
+            side_effects: None,
+            approval_mode: None,
+            risk: None,
+            model_input_capabilities: None,
         }];
         let err = validate_dynamic_tools(&tools).expect_err("invalid schema");
         assert!(err.contains("my_tool"), "unexpected error: {err}");
@@ -8393,10 +8639,15 @@ mod tests {
         let tools = vec![ApiDynamicToolSpec {
             namespace: None,
             name: "my_tool".to_string(),
+            host_method: None,
             description: "test".to_string(),
             // Missing `type` is common; core sanitizes these to a supported schema.
             input_schema: json!({"properties": {}}),
             defer_loading: false,
+            side_effects: None,
+            approval_mode: None,
+            risk: None,
+            model_input_capabilities: None,
         }];
         validate_dynamic_tools(&tools).expect("valid schema");
     }
@@ -8406,6 +8657,7 @@ mod tests {
         let tools = vec![ApiDynamicToolSpec {
             namespace: None,
             name: "my_tool".to_string(),
+            host_method: None,
             description: "test".to_string(),
             input_schema: json!({
                 "type": "object",
@@ -8416,6 +8668,10 @@ mod tests {
                 "additionalProperties": false
             }),
             defer_loading: false,
+            side_effects: None,
+            approval_mode: None,
+            risk: None,
+            model_input_capabilities: None,
         }];
         validate_dynamic_tools(&tools).expect("valid schema");
     }

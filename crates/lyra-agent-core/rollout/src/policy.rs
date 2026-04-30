@@ -100,6 +100,7 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::ThreadRolledBack(_)
         | EventMsg::UndoCompleted(_)
         | EventMsg::TurnAborted(_)
+        | EventMsg::PlanApprovalResolved(_)
         | EventMsg::TurnStarted(_)
         | EventMsg::TurnComplete(_)
         | EventMsg::ImageGenerationEnd(_) => Some(EventPersistenceMode::Limited),

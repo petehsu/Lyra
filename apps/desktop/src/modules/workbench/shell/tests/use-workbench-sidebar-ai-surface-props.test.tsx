@@ -26,6 +26,7 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
   test("builds AI sidebar props and delegates app launch actions", () => {
     const openAppTab = vi.fn();
     const onRequestProjectBind = vi.fn().mockResolvedValue("/workspace");
+    const onOpenPlanApprovalWorkspace = vi.fn();
     const openDialog = vi.fn();
     const { result } = renderHook(() =>
       useWorkbenchSidebarAiSurfaceProps({
@@ -38,6 +39,7 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
         onToggleAiPanelSide: vi.fn(),
         openAppTab,
         onRequestProjectBind,
+        onOpenPlanApprovalWorkspace,
         openDialog,
         t
       })
@@ -70,6 +72,7 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
       title: "ai.skillsTabTitle"
     }));
     expect(result.current.onRequestProjectBind).toBe(onRequestProjectBind);
+    expect(result.current.onOpenPlanApprovalWorkspace).toBe(onOpenPlanApprovalWorkspace);
     expect(result.current.openDialog).toBe(openDialog);
   });
 });

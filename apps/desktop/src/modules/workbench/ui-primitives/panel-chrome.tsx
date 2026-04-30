@@ -25,14 +25,25 @@ export const PanelHost = ({
         aria-label={ariaLabel}
         aria-hidden={visible ? undefined : true}
       >
-        {children}
+        <div className="lyra-panel-content lyra-panel-left-content">
+          {children}
+        </div>
       </aside>
     );
   }
 
   return (
-    <footer className="lyra-panel lyra-panel-bottom" aria-label={ariaLabel}>
-      {children}
+    <footer
+      className={cx(
+        "lyra-panel lyra-panel-bottom",
+        visible === false && "lyra-panel-bottom-hidden"
+      )}
+      aria-label={ariaLabel}
+      aria-hidden={visible ? undefined : true}
+    >
+      <div className="lyra-panel-content lyra-panel-bottom-content">
+        {children}
+      </div>
     </footer>
   );
 };
@@ -40,12 +51,14 @@ export const PanelHost = ({
 type PanelResizerProps = {
   readonly orientation: "vertical" | "horizontal";
   readonly ariaLabel: string;
+  readonly visible?: boolean;
   readonly onMouseDown: MouseEventHandler<HTMLDivElement>;
 };
 
 export const PanelResizer = ({
   orientation,
   ariaLabel,
+  visible = true,
   onMouseDown
 }: PanelResizerProps) => (
   <div
@@ -53,10 +66,12 @@ export const PanelResizer = ({
       "lyra-resizer",
       orientation === "vertical"
         ? "lyra-resizer-vertical"
-        : "lyra-resizer-horizontal"
+        : "lyra-resizer-horizontal",
+      visible === false && "lyra-resizer-hidden"
     )}
     role="separator"
     aria-label={ariaLabel}
+    aria-hidden={visible ? undefined : true}
     aria-orientation={orientation}
     onMouseDown={onMouseDown}
   />

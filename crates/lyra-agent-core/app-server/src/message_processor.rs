@@ -1145,8 +1145,23 @@ fn api_dynamic_tool_to_core(
     CoreDynamicToolSpec {
         namespace: tool.namespace,
         name: tool.name,
+        host_method: tool.host_method,
         description: tool.description,
         input_schema: tool.input_schema,
         defer_loading: tool.defer_loading,
+        side_effects: tool.side_effects.map(|effects| {
+            lyra_protocol::dynamic_tools::DynamicToolSideEffects {
+                level: effects.level,
+                mutates_workspace: effects.mutates_workspace,
+                mutates_memory: effects.mutates_memory,
+                mutates_external_systems: effects.mutates_external_systems,
+                mutates_session_state: effects.mutates_session_state,
+                opens_interactive_session: effects.opens_interactive_session,
+                reads_network: effects.reads_network,
+            }
+        }),
+        approval_mode: tool.approval_mode,
+        risk: tool.risk,
+        model_input_capabilities: tool.model_input_capabilities,
     }
 }

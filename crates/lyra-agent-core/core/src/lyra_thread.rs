@@ -6,6 +6,7 @@ use crate::session::SteerInputError;
 use crate::session::session::SessionSettingsUpdate;
 use lyra_features::Feature;
 use lyra_protocol::config_types::ApprovalsReviewer;
+use lyra_protocol::config_types::CollaborationMode;
 use lyra_protocol::config_types::ServiceTier;
 use lyra_protocol::dynamic_tools::DynamicToolSpec;
 use lyra_protocol::error::LyraErr;
@@ -17,7 +18,10 @@ use lyra_protocol::models::ResponseItem;
 use lyra_protocol::openai_models::ReasoningEffort;
 use lyra_protocol::protocol::AskForApproval;
 use lyra_protocol::protocol::Event;
+use lyra_protocol::protocol::EventMsg;
 use lyra_protocol::protocol::Op;
+use lyra_protocol::protocol::PlanApprovalResolutionDecision;
+use lyra_protocol::protocol::PlanApprovalResolvedEvent;
 use lyra_protocol::protocol::SandboxPolicy;
 use lyra_protocol::protocol::SessionSource;
 use lyra_protocol::protocol::Submission;
@@ -251,6 +255,92 @@ impl LyraThread {
                 .await;
         }
 
+        Ok(submission_id)
+    }
+
+    /// Start a regular turn from an internal developer message without creating a user message.
+    pub async fn start_internal_developer_turn(&self, message: String) -> LyraResult<String> {
+        let trimmed = message.trim().to_string();
+        if trimmed.is_empty() {
+            return Err(LyraErr::InvalidRequest(
+                "internal developer message must not be empty".to_string(),
+            ));
+        }
+        self.start_internal_developer_turn_from_trimmed(trimmed)
+            .await
+    }
+
+    /// Resolve a submitted plan and start the follow-up turn after applying its mode.
+    ///
+    /// This path intentionally avoids queuing `OverrideTurnContext` before starting the internal
+    /// developer turn. The queued override can race with direct turn startup and leave the
+    /// follow-up running under the previous collaboration mode.
+    pub async fn resolve_plan_approval_and_start_internal_developer_turn(
+        &self,
+        plan_turn_id: String,
+        request_id: String,
+        decision: PlanApprovalResolutionDecision,
+        collaboration_mode: CollaborationMode,
+        message: String,
+    ) -> LyraResult<String> {
+        let trimmed = message.trim().to_string();
+        if trimmed.is_empty() {
+            return Err(LyraErr::InvalidRequest(
+                "internal developer message must not be empty".to_string(),
+            ));
+        }
+
+        self.session_handle
+            .session
+            .update_settings(SessionSettingsUpdate {
+                collaboration_mode: Some(collaboration_mode),
+                ..Default::default()
+            })
+            .await
+            .map_err(|err| LyraErr::InvalidRequest(err.to_string()))?;
+
+        self.resolve_plan_approval(plan_turn_id, request_id, decision)
+            .await;
+        self.start_internal_developer_turn_from_trimmed(trimmed)
+            .await
+    }
+
+    pub async fn resolve_plan_approval(
+        &self,
+        plan_turn_id: String,
+        request_id: String,
+        decision: PlanApprovalResolutionDecision,
+    ) {
+        self.session_handle
+            .session
+            .send_event_raw(Event {
+                id: uuid::Uuid::now_v7().to_string(),
+                msg: EventMsg::PlanApprovalResolved(PlanApprovalResolvedEvent {
+                    thread_id: self.session_handle.session.conversation_id.to_string(),
+                    plan_turn_id,
+                    request_id,
+                    decision,
+                }),
+            })
+            .await;
+    }
+
+    async fn start_internal_developer_turn_from_trimmed(
+        &self,
+        trimmed: String,
+    ) -> LyraResult<String> {
+        let submission_id = uuid::Uuid::new_v4().to_string();
+        self.session_handle
+            .session
+            .queue_response_items_for_next_turn(vec![ResponseInputItem::Message {
+                role: "developer".to_string(),
+                content: vec![ContentItem::InputText { text: trimmed }],
+            }])
+            .await;
+        self.session_handle
+            .session
+            .maybe_start_turn_for_pending_work_with_sub_id(submission_id.clone())
+            .await;
         Ok(submission_id)
     }
 

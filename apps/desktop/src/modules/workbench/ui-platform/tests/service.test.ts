@@ -34,6 +34,8 @@ describe("workbench ui platform service", () => {
       "fileManager",
       "mcpCenter",
       "notificationCenter",
+      "planReview",
+      "pluginsCenter",
       "searchHome",
       "searchResults",
       "settings",

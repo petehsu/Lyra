@@ -49,6 +49,21 @@ const pickString = (value: Record<string, unknown>, key: string): string | null 
   return typeof next === "string" && next.trim().length > 0 ? next : null;
 };
 
+const pickRawString = (value: Record<string, unknown>, key: string): string | null => {
+  const next = value[key];
+  return typeof next === "string" ? next : null;
+};
+
+const pickNumber = (value: Record<string, unknown>, key: string): number | null => {
+  const next = value[key];
+  return typeof next === "number" && Number.isFinite(next) ? next : null;
+};
+
+const planStatusFromValue = (value: string | null): PlanApprovalRequest["status"] =>
+  value === "draft" || value === "approved" || value === "rejected"
+    ? value
+    : "submitted";
+
 const toCommandApprovalRequest = (
   interaction: AgentPendingInteraction,
   labels: InteractionTextBundle
@@ -176,6 +191,43 @@ const toPlanQuestionRequest = (
   return null;
 };
 
+const toPlanApprovalRequest = (
+  interaction: AgentPendingInteraction,
+  labels: InteractionTextBundle
+): InteractionPlanApprovalRequest | null => {
+  if (!isRecord(interaction.payload)) {
+    return null;
+  }
+  const payload = interaction.payload;
+  const rawPayload = isRecord(payload.raw) ? payload.raw : payload;
+  const proposedMarkdown = pickRawString(rawPayload, "proposedMarkdown");
+  if (proposedMarkdown === null || proposedMarkdown.trim().length === 0) {
+    return null;
+  }
+  const requestId =
+    pickString(rawPayload, "requestId")
+    ?? pickString(payload, "requestId")
+    ?? interaction.id;
+
+  return {
+    id: requestId,
+    interactionId: interaction.id,
+    interactionKind: interaction.kind,
+    sessionId: interaction.sessionId,
+    turnId: interaction.turnId,
+    version: pickNumber(rawPayload, "version") ?? 0,
+    status: planStatusFromValue(pickString(rawPayload, "status")),
+    summary:
+      pickString(rawPayload, "summary")
+      ?? proposedMarkdown.split(/\r?\n/u).find((line) => line.trim().length > 0)
+      ?? labels.proposedPlanSummaryFallback,
+    proposedMarkdown,
+    ...(pickRawString(rawPayload, "draftMarkdown") === null
+      ? {}
+      : { draftMarkdown: pickRawString(rawPayload, "draftMarkdown")! }),
+  };
+};
+
 export const toPendingInteractionPanel = (
   interaction: AgentPendingInteraction,
   labels: InteractionTextBundle
@@ -191,6 +243,10 @@ export const toPendingInteractionPanel = (
   if (interaction.kind === "tool_user_input" || interaction.kind === "mcp_elicitation") {
     const request = toPlanQuestionRequest(interaction);
     return request === null ? null : { kind: "planQuestion", request };
+  }
+  if (interaction.kind === "plan_approval") {
+    const request = toPlanApprovalRequest(interaction, labels);
+    return request === null ? null : { kind: "planApproval", request };
   }
   return null;
 };

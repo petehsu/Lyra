@@ -91,12 +91,15 @@ export const createRuntimeModelOptions = ({
       const modelEntry =
         profile.customModels.find((entry) => entry.id === model)
         ?? profile.discoveryState.models.find((entry) => entry.id === model);
+      const runtimeMetadata =
+        modelEntry?.runtimeMetadata
+        ?? (model === profile.model ? profile.modelRuntimeMetadata ?? undefined : undefined);
       nextOptions.push({
         value: `${profile.id}${MODEL_OPTION_DELIMITER}${model}`,
         label: multipleProfiles ? `${model} · ${profile.name}` : model,
         model,
         modelProvider: providerId,
-        ...(modelEntry?.runtimeMetadata === undefined ? {} : { runtimeMetadata: modelEntry.runtimeMetadata })
+        ...(runtimeMetadata === undefined || runtimeMetadata === null ? {} : { runtimeMetadata })
       });
     }
   }
@@ -175,6 +178,62 @@ export const resolveBoundProjectRoot = ({
   }
   return null;
 };
+
+const withoutTrailingSeparators = (value: string): string =>
+  value.replace(/[\\/]+$/u, "");
+
+const parentPathOf = (value: string): string | null => {
+  const trimmed = withoutTrailingSeparators(value.trim());
+  if (trimmed.length === 0 || trimmed === "/" || /^[A-Za-z]:$/u.test(trimmed)) {
+    return null;
+  }
+  const match = /[\\/][^\\/]*$/u.exec(trimmed);
+  if (match === null || match.index === 0) {
+    return trimmed.startsWith("/") ? "/" : null;
+  }
+  const parent = trimmed.slice(0, match.index);
+  return /^[A-Za-z]:$/u.test(parent) ? `${parent}\\` : parent;
+};
+
+export const gitMetadataProbePaths = (projectRoot: string): readonly string[] => {
+  const trimmed = withoutTrailingSeparators(projectRoot.trim());
+  if (trimmed.length === 0) {
+    return [];
+  }
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  let current: string | null = trimmed;
+  while (current !== null && !seen.has(current)) {
+    seen.add(current);
+    const separator = current.endsWith("/") || current.endsWith("\\") ? "" : "/";
+    paths.push(`${current}${separator}.git`);
+    current = parentPathOf(current);
+  }
+  return paths;
+};
+
+export const canOpenReviewChanges = ({
+  activeThreadId,
+  boundProjectRoot,
+  gitMetadataAvailable,
+  isAgentAvailable,
+  isBusy,
+  isReviewStarting
+}: {
+  readonly activeThreadId: string | null;
+  readonly boundProjectRoot: string | null;
+  readonly gitMetadataAvailable: boolean;
+  readonly isAgentAvailable: boolean;
+  readonly isBusy: boolean;
+  readonly isReviewStarting: boolean;
+}): boolean =>
+  activeThreadId !== null
+  && boundProjectRoot !== null
+  && boundProjectRoot.trim().length > 0
+  && gitMetadataAvailable
+  && isAgentAvailable
+  && !isBusy
+  && !isReviewStarting;
 
 export type AiPanelSurfaceTextLabels = {
   readonly closeThread: string;

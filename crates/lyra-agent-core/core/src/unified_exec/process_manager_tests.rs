@@ -130,6 +130,47 @@ fn exec_server_process_id_matches_unified_exec_process_id() {
 }
 
 #[test]
+fn sandbox_retry_approval_policy_matches_prompt_capability() {
+    assert!(!sandbox_retry_approval_allowed(AskForApproval::Never));
+    assert!(sandbox_retry_approval_allowed(AskForApproval::OnFailure));
+    assert!(sandbox_retry_approval_allowed(AskForApproval::OnRequest));
+    assert!(sandbox_retry_approval_allowed(
+        AskForApproval::UnlessTrusted
+    ));
+    assert!(sandbox_retry_approval_allowed(AskForApproval::Granular(
+        lyra_protocol::protocol::GranularApprovalConfig {
+            sandbox_approval: true,
+            rules: true,
+            skill_approval: true,
+            request_permissions: true,
+            mcp_elicitations: true,
+        },
+    )));
+    assert!(!sandbox_retry_approval_allowed(AskForApproval::Granular(
+        lyra_protocol::protocol::GranularApprovalConfig {
+            sandbox_approval: false,
+            rules: true,
+            skill_approval: true,
+            request_permissions: true,
+            mcp_elicitations: true,
+        },
+    )));
+}
+
+#[test]
+fn sandbox_retry_reason_identifies_network_blockers() {
+    let output = ExecToolCallOutput {
+        exit_code: 1,
+        aggregated_output: lyra_protocol::exec_output::StreamOutput::new(
+            "npm ERR! code ENOTFOUND".to_string(),
+        ),
+        ..Default::default()
+    };
+
+    assert!(sandbox_retry_approval_reason(&output).contains("Network access"));
+}
+
+#[test]
 fn pruning_prefers_exited_processes_outside_recently_used() {
     let now = Instant::now();
     let meta = vec![

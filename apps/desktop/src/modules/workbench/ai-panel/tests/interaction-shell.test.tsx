@@ -21,6 +21,41 @@ const commandRequest = (id: string, turnId: string) => ({
 });
 
 describe("ai panel interaction shell", () => {
+  test("does not duplicate plan approval content above the composer", () => {
+    const request = {
+      id: "plan:turn-1",
+      sessionId: "thread-1",
+      turnId: "turn-1",
+      version: 0,
+      status: "submitted" as const,
+      summary: "Website plan",
+      proposedMarkdown: "# Website plan",
+    };
+    const interaction = {
+      kind: "planApproval" as const,
+      request,
+    } satisfies PendingInteractionPanel;
+
+    const { container } = render(
+      <AiPanelInteractionShell
+        locale="en-US"
+        panelRef={createRef<HTMLDivElement>()}
+        activeInteractionPanel={interaction}
+        activePendingInteraction={interaction}
+        pendingInteractionQueue={[interaction]}
+        activeInteractionPosition={1}
+        navPreviousLabel="Previous"
+        navNextLabel="Next"
+        onSelectInteractionId={vi.fn()}
+        onCommandApprovalDecision={async () => {}}
+        onPlanQuestionSubmit={async () => {}}
+      />
+    );
+
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByText("Website plan")).toBeNull();
+  });
+
   test("navigates pending interactions", () => {
     const first = {
       kind: "commandApproval" as const,
@@ -41,18 +76,16 @@ describe("ai panel interaction shell", () => {
         activePendingInteraction={second}
         pendingInteractionQueue={[first, second]}
         activeInteractionPosition={2}
-        pendingInteractionsLabel="Pending"
         navPreviousLabel="Previous"
         navNextLabel="Next"
         onSelectInteractionId={onSelectInteractionId}
         onCommandApprovalDecision={async () => {}}
         onPlanQuestionSubmit={async () => {}}
-        onPlanApprovalDecision={async () => {}}
       />
     );
 
-    expect(screen.getByText("Pending")).toBeDefined();
-    expect(screen.getByText("2/2")).toBeDefined();
+    expect(screen.queryByText("Pending")).toBeNull();
+    expect(screen.queryByText("2/2")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
 

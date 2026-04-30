@@ -38,6 +38,7 @@ export type WorkbenchNotificationTarget =
         | "file-editor"
         | "ai-history"
         | "ai-mcp"
+        | "ai-plan-review"
         | "ai-skills"
         | "ai-plugins"
         | NotificationCenterAppId;

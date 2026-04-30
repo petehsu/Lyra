@@ -5,6 +5,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use lyra_protocol::config_types::ModeKind;
 use lyra_protocol::items::TurnItem;
+use lyra_tools::PLAN_SUBMIT_TOOL_NAME;
 use lyra_utils_stream_parser::strip_citations;
 use tokio_util::sync::CancellationToken;
 
@@ -233,6 +234,7 @@ pub(crate) async fn handle_output_item_done(
             record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
 
+            let needs_follow_up = call.tool_name.name.as_str() != PLAN_SUBMIT_TOOL_NAME;
             let cancellation_token = ctx.cancellation_token.child_token();
             let tool_future: InFlightFuture<'static> = Box::pin(
                 ctx.tool_runtime
@@ -240,7 +242,7 @@ pub(crate) async fn handle_output_item_done(
                     .handle_tool_call(call, cancellation_token),
             );
 
-            output.needs_follow_up = true;
+            output.needs_follow_up = needs_follow_up;
             output.tool_future = Some(tool_future);
         }
         // No tool call: convert messages/reasoning into turn items and mark them as complete.

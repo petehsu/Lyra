@@ -400,15 +400,72 @@
       ],
       "type": "object"
     },
+    "DynamicToolSideEffects": {
+      "properties": {
+        "level": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mutatesExternalSystems": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mutatesMemory": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mutatesSessionState": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mutatesWorkspace": {
+          "default": false,
+          "type": "boolean"
+        },
+        "opensInteractiveSession": {
+          "default": false,
+          "type": "boolean"
+        },
+        "readsNetwork": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "DynamicToolSpec": {
       "properties": {
+        "approvalMode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "deferLoading": {
           "type": "boolean"
         },
         "description": {
           "type": "string"
         },
+        "hostMethod": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "inputSchema": true,
+        "modelInputCapabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "name": {
           "type": "string"
         },
@@ -416,6 +473,17 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "risk": true,
+        "sideEffects": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DynamicToolSideEffects"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -803,6 +871,26 @@
             "null"
           ]
         },
+        "defaultReasoningLevel": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "defaultVerbosity": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Verbosity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "effectiveContextWindowPercent": {
           "format": "uint64",
           "minimum": 0.0,
@@ -825,6 +913,16 @@
             "null"
           ]
         },
+        "protocolBehavior": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LyraAiProtocolBehaviorSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "shellType": {
           "type": [
             "string",
@@ -836,6 +934,12 @@
             "boolean",
             "null"
           ]
+        },
+        "supportedReasoningLevels": {
+          "items": {
+            "$ref": "#/definitions/ReasoningEffort"
+          },
+          "type": "array"
         },
         "supportedTools": {
           "items": {
@@ -870,6 +974,35 @@
         "webSearchToolType": {
           "type": [
             "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "LyraAiProtocolBehaviorSummary": {
+      "properties": {
+        "preserveEmptyReasoning": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reasoningReplayField": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requireAssistantReasoning": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "toolLoopSupported": {
+          "type": [
+            "boolean",
             "null"
           ]
         }
@@ -1314,6 +1447,14 @@
       ],
       "type": "string"
     },
+    "PlanApprovalDecision": {
+      "enum": [
+        "approve_and_implement",
+        "keep_planning",
+        "reject"
+      ],
+      "type": "string"
+    },
     "PluginInstallParams": {
       "properties": {
         "marketplacePath": {
@@ -1493,6 +1634,13 @@
     },
     "ReviewStartParams": {
       "properties": {
+        "cwd": {
+          "description": "Override the working directory before starting the review. This keeps review targets aligned with the project currently bound in the UI.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "delivery": {
           "anyOf": [
             {
@@ -2253,12 +2401,50 @@
         },
         "threadId": {
           "type": "string"
+        },
+        "viewModel": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadReadViewModelParams"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional view model projection to build alongside the thread metadata."
         }
       },
       "required": [
         "threadId"
       ],
       "type": "object"
+    },
+    "ThreadReadViewModelParams": {
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "aiPanel"
+              ],
+              "type": "string"
+            },
+            "runtimeFeedLimit": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "title": "KindThreadReadViewModelParams",
+          "type": "object"
+        }
+      ]
     },
     "ThreadResumeParams": {
       "description": "There are three ways to resume a thread: 1. By thread_id: load the thread from disk by thread_id and resume it. 2. By path: load the thread from disk by path and resume it.\n\nThe precedence is: path > thread_id. If using path, the thread_id param will be ignored.\n\nPrefer using thread_id whenever possible.",
@@ -2654,6 +2840,41 @@
       "required": [
         "threadId",
         "turnId"
+      ],
+      "type": "object"
+    },
+    "TurnPlanApprovalResolveParams": {
+      "properties": {
+        "decision": {
+          "$ref": "#/definitions/PlanApprovalDecision"
+        },
+        "feedback": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "planTurnId": {
+          "type": "string"
+        },
+        "proposedMarkdown": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "planTurnId",
+        "requestId",
+        "threadId"
       ],
       "type": "object"
     },
@@ -3904,6 +4125,30 @@
         "params"
       ],
       "title": "Turn/startRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "turn/planApproval/resolve"
+          ],
+          "title": "Turn/planApproval/resolveRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/TurnPlanApprovalResolveParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Turn/planApproval/resolveRequest",
       "type": "object"
     },
     {

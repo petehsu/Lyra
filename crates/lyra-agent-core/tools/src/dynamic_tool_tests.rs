@@ -10,6 +10,7 @@ fn parse_dynamic_tool_sanitizes_input_schema() {
     let tool = DynamicToolSpec {
         namespace: None,
         name: "lookup_ticket".to_string(),
+        host_method: None,
         description: "Fetch a ticket".to_string(),
         input_schema: serde_json::json!({
             "properties": {
@@ -19,6 +20,10 @@ fn parse_dynamic_tool_sanitizes_input_schema() {
             }
         }),
         defer_loading: false,
+        side_effects: None,
+        approval_mode: None,
+        risk: None,
+        model_input_capabilities: None,
     };
 
     assert_eq!(
@@ -45,12 +50,17 @@ fn parse_dynamic_tool_preserves_defer_loading() {
     let tool = DynamicToolSpec {
         namespace: None,
         name: "lookup_ticket".to_string(),
+        host_method: None,
         description: "Fetch a ticket".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {}
         }),
         defer_loading: true,
+        side_effects: None,
+        approval_mode: None,
+        risk: None,
+        model_input_capabilities: None,
     };
 
     assert_eq!(

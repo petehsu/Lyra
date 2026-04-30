@@ -13,7 +13,7 @@ describe("ai panel topbar actions", () => {
     render(
       <AiPanelTopbarActions
         onRequestProjectBind={onBind}
-        activeBoundProjectName="lyra"
+        activeBoundProjectName="/Users/dev/lyra"
         isBindingProject={false}
         bindProjectLabel="Bind Project"
         isAgentAvailable
@@ -27,6 +27,7 @@ describe("ai panel topbar actions", () => {
       />
     );
 
+    expect(screen.getByText("lyra")).toBeDefined();
     fireEvent.click(screen.getByLabelText("Bind Project"));
     fireEvent.click(screen.getByLabelText("History"));
     fireEvent.click(screen.getByLabelText("More"));
@@ -59,6 +60,25 @@ describe("ai panel topbar actions", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Review changes" }));
 
     expect(onReview).toHaveBeenCalledTimes(1);
+  });
+
+  test("omits review when no usable review action is provided", () => {
+    render(
+      <AiPanelTopbarActions
+        activeBoundProjectName={null}
+        isBindingProject={false}
+        bindProjectLabel="Bind Project"
+        isAgentAvailable
+        onOpenMcp={() => undefined}
+        openMcpLabel="MCP"
+        reviewChangesLabel="Review changes"
+        moreActionsLabel="More"
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText("More"));
+
+    expect(screen.queryByRole("menuitem", { name: "Review changes" })).toBeNull();
   });
 
   test("toggles sidebar placement from the more menu", () => {

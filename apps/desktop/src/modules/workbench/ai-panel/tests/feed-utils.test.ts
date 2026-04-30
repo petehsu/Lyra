@@ -35,6 +35,7 @@ describe("ai panel runtime feed utils", () => {
     expect(normalizeToolName("filesystem.search", LABELS)).toBe("Search");
     expect(normalizeToolName("unknown.tool", LABELS)).toBe("unknown.tool");
     expect(isWriteToolName("filesystem.edit")).toBe(true);
+    expect(isWriteToolName("filesystem.apply_patch")).toBe(true);
     expect(isWriteToolName("filesystem.search")).toBe(false);
     expect(isTerminalToolName("terminal.exec")).toBe(true);
     expect(isTerminalToolName("filesystem.edit")).toBe(false);
@@ -141,6 +142,30 @@ describe("ai panel runtime feed utils", () => {
       openPath: "src",
     });
     expect(searchFeed?.autoOpen).toBeUndefined();
+  });
+
+  test("does not expose dev null shell redirects as file targets", () => {
+    const feed = toRuntimeFeedItem({
+      sessionId: "s1",
+      turnId: "t1",
+      phase: "tool_finished",
+      timestamp: 100,
+      payload: {
+        toolName: "filesystem.write",
+        toolCallId: "write-1",
+        output: {
+          path: "/dev/null;",
+          status: "completed",
+        },
+      },
+    } as any, LABELS, "Tool");
+
+    expect(feed).toMatchObject({
+      id: "write-1",
+      target: "Write",
+      status: "completed",
+    });
+    expect(feed?.openPath).toBeUndefined();
   });
 
   test("builds terminal transcript feed item from streamed chunks", () => {

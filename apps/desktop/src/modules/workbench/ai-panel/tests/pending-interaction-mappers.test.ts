@@ -100,6 +100,38 @@ describe("pending interaction mappers", () => {
     expect(mcpPanel.request.questions[0]?.header).toBe("Filesystem MCP");
   });
 
+  test("maps plan approval interactions", () => {
+    const panel = toPendingInteractionPanel({
+      id: "plan:turn-plan",
+      sessionId: "thread-1",
+      turnId: "turn-plan",
+      kind: "plan_approval",
+      status: "pending",
+      payload: {
+        requestId: "plan:turn-plan",
+        raw: {
+          requestId: "plan:turn-plan",
+          version: 0,
+          status: "submitted",
+          summary: "Website plan",
+          proposedMarkdown: "# Website plan\n\n- Build the page",
+          draftMarkdown: "- draft"
+        }
+      },
+      createdAt: now + 3,
+      updatedAt: now + 3
+    } as any, LABELS);
+
+    expect(panel?.kind).toBe("planApproval");
+    if (panel?.kind !== "planApproval") {
+      throw new Error("expected planApproval panel");
+    }
+    expect(panel.request.id).toBe("plan:turn-plan");
+    expect(panel.request.turnId).toBe("turn-plan");
+    expect(panel.request.proposedMarkdown).toContain("Website plan");
+    expect(panel.request.draftMarkdown).toBe("- draft");
+  });
+
   test("sorts and merges pending interactions by timestamp and update version", () => {
     const current = [
       {

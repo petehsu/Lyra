@@ -590,10 +590,37 @@ pub struct ToolsV2 {
 pub struct DynamicToolSpec {
     pub namespace: Option<String>,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub host_method: Option<String>,
     pub description: String,
     pub input_schema: JsonValue,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub defer_loading: bool,
+    pub side_effects: Option<DynamicToolSideEffects>,
+    pub approval_mode: Option<String>,
+    pub risk: Option<JsonValue>,
+    pub model_input_capabilities: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct DynamicToolSideEffects {
+    #[serde(default)]
+    pub level: Option<String>,
+    #[serde(default)]
+    pub mutates_workspace: bool,
+    #[serde(default)]
+    pub mutates_memory: bool,
+    #[serde(default)]
+    pub mutates_external_systems: bool,
+    #[serde(default)]
+    pub mutates_session_state: bool,
+    #[serde(default)]
+    pub opens_interactive_session: bool,
+    #[serde(default)]
+    pub reads_network: bool,
 }
 
 #[derive(Deserialize)]
@@ -601,10 +628,15 @@ pub struct DynamicToolSpec {
 struct DynamicToolSpecDe {
     namespace: Option<String>,
     name: String,
+    host_method: Option<String>,
     description: String,
     input_schema: JsonValue,
     defer_loading: Option<bool>,
     expose_to_context: Option<bool>,
+    side_effects: Option<DynamicToolSideEffects>,
+    approval_mode: Option<String>,
+    risk: Option<JsonValue>,
+    model_input_capabilities: Option<Vec<String>>,
 }
 
 impl<'de> Deserialize<'de> for DynamicToolSpec {
@@ -615,19 +647,29 @@ impl<'de> Deserialize<'de> for DynamicToolSpec {
         let DynamicToolSpecDe {
             namespace,
             name,
+            host_method,
             description,
             input_schema,
             defer_loading,
             expose_to_context,
+            side_effects,
+            approval_mode,
+            risk,
+            model_input_capabilities,
         } = DynamicToolSpecDe::deserialize(deserializer)?;
 
         Ok(Self {
             namespace,
             name,
+            host_method,
             description,
             input_schema,
             defer_loading: defer_loading
                 .unwrap_or_else(|| expose_to_context.map(|visible| !visible).unwrap_or(false)),
+            side_effects,
+            approval_mode,
+            risk,
+            model_input_capabilities,
         })
     }
 }
@@ -978,13 +1020,27 @@ pub struct LyraAiProviderFieldSchema {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+pub struct LyraAiProtocolBehaviorSummary {
+    pub reasoning_replay_field: Option<String>,
+    pub preserve_empty_reasoning: Option<bool>,
+    pub require_assistant_reasoning: Option<bool>,
+    pub tool_loop_supported: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
 pub struct LyraAiModelRuntimeMetadata {
     pub shell_type: Option<String>,
     pub apply_patch_tool_type: Option<String>,
     pub supports_search_tool: Option<bool>,
     pub supports_parallel_tool_calls: Option<bool>,
     pub supports_reasoning_summaries: Option<bool>,
+    pub default_reasoning_level: Option<ReasoningEffort>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supported_reasoning_levels: Vec<ReasoningEffort>,
     pub support_verbosity: Option<bool>,
+    pub default_verbosity: Option<Verbosity>,
     pub web_search_tool_type: Option<String>,
     pub supports_image_detail_original: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -994,6 +1050,7 @@ pub struct LyraAiModelRuntimeMetadata {
     pub context_window: Option<u64>,
     pub max_context_window: Option<u64>,
     pub effective_context_window_percent: Option<u64>,
+    pub protocol_behavior: Option<LyraAiProtocolBehaviorSummary>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1042,6 +1099,7 @@ pub struct LyraAiProviderProfile {
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
     pub model: String,
+    pub model_runtime_metadata: Option<LyraAiModelRuntimeMetadata>,
     #[serde(default)]
     pub custom_models: Vec<LyraAiProviderModelEntry>,
     pub discovery_state: LyraAiModelDiscoveryState,
@@ -3158,6 +3216,10 @@ pub struct ThreadReadParams {
     /// When true, include turns and their items from rollout history.
     #[serde(default)]
     pub include_turns: bool,
+    /// Optional view model projection to build alongside the thread metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub view_model: Option<ThreadReadViewModelParams>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -3165,6 +3227,256 @@ pub struct ThreadReadParams {
 #[ts(export_to = "v2/")]
 pub struct ThreadReadResponse {
     pub thread: Thread,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub view_model: Option<ThreadAiPanelViewModel>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(tag = "kind")]
+#[ts(export_to = "v2/")]
+pub enum ThreadReadViewModelParams {
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    AiPanel {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        runtime_feed_limit: Option<u32>,
+    },
+}
+
+impl ThreadReadViewModelParams {
+    pub fn runtime_feed_limit(&self) -> Option<u32> {
+        match self {
+            Self::AiPanel { runtime_feed_limit } => *runtime_feed_limit,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadAiPanelViewModel {
+    pub messages: Vec<ThreadAiPanelMessage>,
+    pub turns: Vec<ThreadAiPanelTurn>,
+    pub tool_calls: Vec<ThreadAiPanelToolCall>,
+    pub plans: Vec<ThreadAiPanelPlan>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_interactions: Vec<ThreadAiPanelPendingInteraction>,
+    pub turn_meta: Vec<ThreadAiPanelTurnMeta>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadAiPanelMessage {
+    pub id: String,
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_id: Option<String>,
+    pub role: ThreadAiPanelMessageRole,
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub display_content: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub content_parts: Vec<ThreadAiPanelMessageContentPart>,
+    #[ts(type = "number")]
+    pub created_at_ms: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum ThreadAiPanelMessageRole {
+    User,
+    Assistant,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(tag = "type")]
+#[ts(export_to = "v2/")]
+pub enum ThreadAiPanelMessageContentPart {
+    Text {
+        text: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    Attachment {
+        name: String,
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        kind: Option<ThreadAiPanelAttachmentKind>,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "v2/")]
+pub enum ThreadAiPanelAttachmentKind {
+    File,
+    Directory,
+    LocalImage,
+    Image,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadAiPanelTurn {
+    pub id: String,
+    pub session_id: String,
+    pub status: ThreadAiPanelTurnStatus,
+    #[ts(type = "number")]
+    pub created_at_ms: i64,
+    #[ts(type = "number")]
+    pub updated_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub duration_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub error_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub error_message: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum ThreadAiPanelTurnStatus {
+    Running,
+    Completed,
+    Failed,
+    Paused,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadAiPanelToolCall {
+    pub id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub tool_name: String,
+    pub input: JsonValue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub output: Option<JsonValue>,
+    pub status: ThreadAiPanelToolCallStatus,
+    #[ts(type = "number")]
+    pub started_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[ts(type = "number")]
+    pub finished_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub error_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub error_message: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum ThreadAiPanelToolCallStatus {
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadAiPanelPlan {
+    pub turn_id: String,
+    pub draft_text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub final_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub explanation: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<ThreadAiPanelPlanStep>,
+    #[ts(type = "number")]
+    pub updated_at_ms: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadAiPanelPlanStep {
+    pub step: String,
+    pub status: ThreadAiPanelPlanStepStatus,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum ThreadAiPanelPlanStepStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadAiPanelPendingInteraction {
+    pub id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub kind: ThreadAiPanelPendingInteractionKind,
+    pub status: ThreadAiPanelPendingInteractionStatus,
+    pub payload: JsonValue,
+    #[ts(type = "number")]
+    pub created_at_ms: i64,
+    #[ts(type = "number")]
+    pub updated_at_ms: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum ThreadAiPanelPendingInteractionKind {
+    PlanApproval,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum ThreadAiPanelPendingInteractionStatus {
+    Pending,
+    Resolved,
+    Cancelled,
+    Expired,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadAiPanelTurnMeta {
+    pub turn_id: String,
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub first_assistant_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub last_assistant_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub assistant_order: Option<u32>,
+    pub has_assistant_display: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -3840,6 +4152,7 @@ pub enum TurnStatus {
     Interrupted,
     Failed,
     InProgress,
+    Waiting,
 }
 
 // Turn APIs
@@ -3906,6 +4219,10 @@ pub struct TurnStartParams {
 pub struct ReviewStartParams {
     pub thread_id: String,
     pub target: ReviewTarget,
+    /// Override the working directory before starting the review. This keeps
+    /// review targets aligned with the project currently bound in the UI.
+    #[ts(optional = nullable)]
+    pub cwd: Option<PathBuf>,
 
     /// Where to run the review: inline (default) on the current thread or
     /// detached on a new thread (returned in `reviewThreadId`).
@@ -3958,6 +4275,36 @@ pub enum ReviewTarget {
 #[ts(export_to = "v2/")]
 pub struct TurnStartResponse {
     pub turn: Turn,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case", export_to = "v2/")]
+pub enum PlanApprovalDecision {
+    ApproveAndImplement,
+    KeepPlanning,
+    Reject,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnPlanApprovalResolveParams {
+    pub thread_id: String,
+    pub plan_turn_id: String,
+    pub request_id: String,
+    pub decision: PlanApprovalDecision,
+    #[ts(optional = nullable)]
+    pub feedback: Option<String>,
+    #[ts(optional = nullable)]
+    pub proposed_markdown: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnPlanApprovalResolveResponse {
+    pub turn: Option<Turn>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -5972,6 +6319,9 @@ pub struct DynamicToolCallParams {
     pub turn_id: String,
     pub call_id: String,
     pub tool: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub host_method: Option<String>,
     pub arguments: JsonValue,
 }
 
@@ -8035,6 +8385,7 @@ mod tests {
             DynamicToolSpec {
                 namespace: None,
                 name: "lookup_ticket".to_string(),
+                host_method: None,
                 description: "Fetch a ticket".to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -8043,6 +8394,10 @@ mod tests {
                     }
                 }),
                 defer_loading: true,
+                side_effects: None,
+                approval_mode: None,
+                risk: None,
+                model_input_capabilities: None,
             }
         );
     }
@@ -8062,6 +8417,48 @@ mod tests {
         let actual: DynamicToolSpec = serde_json::from_value(value).expect("deserialize");
 
         assert!(actual.defer_loading);
+    }
+
+    #[test]
+    fn dynamic_tool_spec_preserves_permission_metadata() {
+        let value = json!({
+            "name": "workbench.workspace.read",
+            "hostMethod": "workbench.document.read",
+            "description": "Read workspace state",
+            "inputSchema": { "type": "object", "properties": {} },
+            "approvalMode": "auto",
+            "sideEffects": {
+                "level": "read_only",
+                "mutatesWorkspace": false,
+                "mutatesMemory": false,
+                "mutatesExternalSystems": false,
+                "mutatesSessionState": false,
+                "opensInteractiveSession": false,
+                "readsNetwork": false
+            },
+            "risk": { "level": "low" },
+            "modelInputCapabilities": ["text"]
+        });
+
+        let actual: DynamicToolSpec = serde_json::from_value(value).expect("deserialize");
+
+        assert_eq!(actual.approval_mode.as_deref(), Some("auto"));
+        assert_eq!(
+            actual.host_method.as_deref(),
+            Some("workbench.document.read")
+        );
+        assert_eq!(
+            actual
+                .side_effects
+                .as_ref()
+                .and_then(|effects| effects.level.as_deref()),
+            Some("read_only")
+        );
+        assert_eq!(
+            actual.model_input_capabilities,
+            Some(vec!["text".to_string()])
+        );
+        assert_eq!(actual.risk, Some(json!({ "level": "low" })));
     }
 
     #[test]

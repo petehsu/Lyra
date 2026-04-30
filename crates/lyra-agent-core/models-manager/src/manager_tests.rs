@@ -104,6 +104,7 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
         websocket_connect_timeout_ms: None,
         requires_managed_auth: false,
         supports_websockets: false,
+        protocol_behavior: None,
     }
 }
 

@@ -87,6 +87,68 @@ describe("useWorkbenchAiSurfaceBridge", () => {
     );
   });
 
+  test("reloads and records review items for final-only write events", () => {
+    vi.useFakeTimers();
+    const fileEditorModel = {
+      applyExternalContent: vi.fn(),
+      revealLocation: vi.fn()
+    } as unknown as FileEditorModel;
+    const terminalModel = {} as unknown as TerminalDockModel;
+    const onOpenFileFromManager = vi.fn(() => "editor-1");
+    const recordCompletedEditorWorkItem = vi.fn();
+    const sidebarAiSurfaceProps = {
+      desktopApi: null,
+      title: "AI"
+    } as WorkbenchSidebarAiSurfaceProps;
+    const { result } = renderHook(() =>
+      useWorkbenchAiSurfaceBridge({
+        desktopApi: null,
+        sidebarAiSurfaceProps,
+        fileEditorModel,
+        terminalModel,
+        onOpenFileFromManager,
+        recordCompletedEditorWorkItem
+      })
+    );
+
+    act(() => {
+      result.current?.onWriteStreamEvent?.(createWriteEvent({
+        kind: "finished",
+        status: "completed",
+        baselineContent: "before\n",
+        firstChangedLine: 4,
+        addedLines: 2,
+        removedLines: 1,
+        timestamp: 1030
+      }));
+    });
+
+    expect(onOpenFileFromManager).toHaveBeenNthCalledWith(
+      1,
+      "/tmp/app.ts",
+      undefined,
+      { allowMissing: true }
+    );
+    expect(onOpenFileFromManager).toHaveBeenNthCalledWith(
+      2,
+      "/tmp/app.ts",
+      { line: 4 },
+      { forceReloadIfOpen: true }
+    );
+    expect(recordCompletedEditorWorkItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "editor-work-tool-1",
+        status: "completed",
+        filePath: "/tmp/app.ts",
+        firstChangedLine: 4,
+        addedLines: 2,
+        removedLines: 1,
+        baselineContent: "before\n"
+      })
+    );
+    expect(fileEditorModel.applyExternalContent).not.toHaveBeenCalled();
+  });
+
   test("does not auto-open the terminal dock for agent commands", () => {
     vi.useFakeTimers();
     const write = vi.fn().mockResolvedValue(undefined);

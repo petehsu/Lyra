@@ -10,8 +10,15 @@ import {
   type SetStateAction
 } from "react";
 
-import type { PlanInteractionResponse } from "../../../shared/desktop-bridge";
+import type {
+  PlanApprovalRequest,
+  PlanInteractionResponse,
+} from "../../../shared/desktop-bridge";
 import type { createTranslator, I18nKey, WorkbenchLocale } from "../i18n";
+import {
+  normalizeProjectRoot,
+  useProjectLogoMap
+} from "../project-identity";
 import { subscribeThreadSelected } from "../thread-selection-events";
 import type {
   AgentComposerModelControlOption,
@@ -25,20 +32,30 @@ import {
   type ToolNameLabelMap
 } from "./runtime/feed-utils";
 import {
+  canOpenReviewChanges,
   createComposerReserveStyle,
   createInteractionTextLabels,
   createRequestPayload,
   createRuntimeModelOptions,
   createRuntimeTurnOptions,
   createToolNameLabels,
+  gitMetadataProbePaths,
   isAiRuntimeBusy,
   resolveBoundProjectRoot,
   resolveSelectedRuntimeModelOption,
   shouldShowEmptySessionScene,
   type RuntimeModelOption
 } from "./surface-model";
+import type {
+  AiPanelThreadMessageMetadata,
+  AiPanelThreadRenderRow
+} from "./thread-render-model";
+import {
+  useAiPanelThreadRendering,
+} from "./use-ai-panel-thread-rendering";
 import type { AiPanelSurfaceProps } from "./types";
 import { useAiPanelThreadViewModel } from "./use-ai-panel-thread-view-model";
+import type { AiPanelThreadVirtualRow } from "./use-ai-panel-thread-virtual-rows-model";
 import {
   useLyraThreadRuntime,
   type LyraThreadRuntimeActions,
@@ -142,6 +159,33 @@ const VERBOSITY_VALUES = [
   "high"
 ] as const satisfies readonly AgentComposerVerbosity[];
 
+const REASONING_EFFORT_RANK: Record<AgentComposerReasoningEffort, number> = {
+  none: 0,
+  minimal: 1,
+  low: 2,
+  medium: 3,
+  high: 4,
+  xhigh: 5
+};
+
+const isReasoningEffortValue = (value: unknown): value is AgentComposerReasoningEffort =>
+  typeof value === "string" && (REASONING_EFFORT_VALUES as readonly string[]).includes(value);
+
+const isVerbosityValue = (value: unknown): value is AgentComposerVerbosity =>
+  typeof value === "string" && (VERBOSITY_VALUES as readonly string[]).includes(value);
+
+const strongestReasoningEffort = (
+  values: readonly AgentComposerReasoningEffort[]
+): AgentComposerReasoningEffort | null =>
+  values.reduce<AgentComposerReasoningEffort | null>((strongest, value) => {
+    if (strongest === null) {
+      return value;
+    }
+    return REASONING_EFFORT_RANK[value] > REASONING_EFFORT_RANK[strongest]
+      ? value
+      : strongest;
+  }, null);
+
 const reasoningEffortLabelKey = (
   value: AgentComposerReasoningEffort
 ): I18nKey => {
@@ -197,12 +241,15 @@ type UseAiPanelSurfaceRuntimeInput = {
   readonly toolNameMultiEditLabel: string;
   readonly fileMentionFallbackRoots?: readonly string[] | undefined;
   readonly onOpenFilePath?: AiPanelSurfaceProps["onOpenFilePath"] | undefined;
+  readonly onWriteStreamEvent?: AiPanelSurfaceProps["onWriteStreamEvent"] | undefined;
   readonly onRequestProjectBind?: AiPanelSurfaceProps["onRequestProjectBind"] | undefined;
+  readonly onOpenPlanApprovalWorkspace?: AiPanelSurfaceProps["onOpenPlanApprovalWorkspace"] | undefined;
 };
 
 export type AiPanelSurfaceRuntimeActions = {
   readonly activateThreadTab: LyraThreadRuntimeActions["activateThreadTab"];
   readonly closeThreadTab: LyraThreadRuntimeActions["closeThreadTab"];
+  readonly reorderThreadTab: LyraThreadRuntimeActions["reorderThreadTab"];
   readonly openThreadTab: LyraThreadRuntimeActions["openThreadTab"];
   readonly setActiveInteractionId: LyraThreadRuntimeActions["setActiveInteractionId"];
   readonly respondToCommandApproval: LyraThreadRuntimeActions["respondToCommandApproval"];
@@ -215,6 +262,8 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly setIsPermissionsPanelOpen: Dispatch<SetStateAction<boolean>>;
   readonly createThread: () => void;
   readonly bindProject: () => Promise<void>;
+  readonly openReviewPanel: () => void;
+  readonly closeReviewPanel: () => void;
   readonly startReview: (target: ReviewTarget) => Promise<void>;
   readonly togglePlanMode: () => void;
   readonly toggleFollow: () => void;
@@ -228,7 +277,10 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly forkTurn: (turnId: string) => Promise<void>;
   readonly regenerateTurn: (turnId: string) => void;
   readonly editMessageTurn: (turnId: string, content: string) => void;
-  readonly planApprovalDecision: (response: PlanInteractionResponse) => Promise<void>;
+  readonly planApprovalDecision: (
+    response: PlanInteractionResponse,
+    requestOverride?: PlanApprovalRequest
+  ) => Promise<void>;
 };
 
 export type AiPanelSurfaceRuntime = {
@@ -250,19 +302,32 @@ export type AiPanelSurfaceRuntime = {
   readonly permissionMode: AgentPermissionMode;
   readonly toolNameLabels: ToolNameLabelMap;
   readonly typewriterText: string;
+  readonly messageMetadata: AiPanelThreadMessageMetadata;
+  readonly renderRows: readonly AiPanelThreadRenderRow[];
+  readonly virtualRows: readonly AiPanelThreadVirtualRow[];
+  readonly topSpacerHeight: number;
+  readonly bottomSpacerHeight: number;
+  readonly measureThreadRow: (rowKey: string, node: HTMLDivElement | null) => void;
   readonly boundProjectRootForActiveThread: string | null;
+  readonly boundProjectRootByThreadId: ReadonlyMap<string, string>;
+  readonly tabProjectRootById: ReadonlyMap<string, string | null>;
+  readonly projectLogoByRoot: ReadonlyMap<string, string | null>;
   readonly isBindingProject: boolean;
   readonly isPermissionsPanelOpen: boolean;
+  readonly isReviewPanelOpen: boolean;
+  readonly isReviewStarting: boolean;
+  readonly canOpenReviewChanges: boolean;
   readonly showEmptySessionScene: boolean;
   readonly isBusy: boolean;
   readonly isAgentAvailable: boolean;
   readonly canOpenFilePath: boolean;
   readonly openRuntimeTargetPath: OpenRuntimeTargetPath;
+  readonly openPlanApprovalInWorkspace?: (request: PlanApprovalRequest) => void;
 };
 
 export const useAiPanelSurfaceRuntime = ({
   desktopApi,
-  locale: _locale,
+  locale,
   t,
   stopBehavior,
   defaultProfileId,
@@ -285,7 +350,9 @@ export const useAiPanelSurfaceRuntime = ({
   toolNameMultiEditLabel,
   fileMentionFallbackRoots,
   onOpenFilePath,
-  onRequestProjectBind
+  onWriteStreamEvent,
+  onRequestProjectBind,
+  onOpenPlanApprovalWorkspace
 }: UseAiPanelSurfaceRuntimeInput): AiPanelSurfaceRuntime => {
   const lyraApi = desktopApi?.lyra;
   const [selectedModelOptionValue, setSelectedModelOptionValue] = useState("");
@@ -305,15 +372,19 @@ export const useAiPanelSurfaceRuntime = ({
   const [isPermissionsPanelOpen, setIsPermissionsPanelOpen] = useState(false);
   const [fileMentionSearchResults, setFileMentionSearchResults] =
     useState<readonly FuzzyFileSearchResult[]>([]);
+  const [isReviewPanelOpen, setIsReviewPanelOpen] = useState(false);
+  const [isReviewStarting, setIsReviewStarting] = useState(false);
+  const [gitMetadataAvailableForReview, setGitMetadataAvailableForReview] = useState(false);
   const composerAppendRequestIdRef = useRef(0);
-  const threadViewportRef = useRef<HTMLDivElement>(null);
   const interactionPanelRef = useRef<HTMLDivElement>(null);
+  const lastAutoOpenedPlanReviewIdRef = useRef<string | null>(null);
 
   const interactionTextLabels = useMemo(() => createInteractionTextLabels(t), [t]);
 
   const { state, actions } = useLyraThreadRuntime({
     desktopApi,
     interactionTextLabels,
+    ...(onWriteStreamEvent === undefined ? {} : { onWriteStreamEvent }),
     ...(onOpenFilePath === undefined ? {} : { onFollowOpenFilePath: onOpenFilePath })
   });
   const {
@@ -327,12 +398,14 @@ export const useAiPanelSurfaceRuntime = ({
     selectThread,
     activateThreadTab,
     closeThreadTab,
+    reorderThreadTab,
     openThreadTab,
+    resolvePlanApproval,
     sendTurn: sendRuntimeTurn,
     setActiveInteractionId,
     setFollowEnabled,
     setPlanModeEnabled,
-    startReview,
+    startReview: startRuntimeReview,
     steerTurn
   } = actions;
 
@@ -357,6 +430,84 @@ export const useAiPanelSurfaceRuntime = ({
     },
     [boundProjectRootForActiveThread, fileMentionFallbackRoots]
   );
+  const threadProjectRootById = useMemo(() => {
+    const next = new Map<string, string>();
+    for (const thread of state.threads) {
+      const root = normalizeProjectRoot(thread.boundProjectRoot);
+      if (root !== null) {
+        next.set(thread.id, root);
+      }
+    }
+    return next;
+  }, [state.threads]);
+  const tabProjectRootById = useMemo(() => {
+    const next = new Map<string, string | null>();
+    for (const tab of state.threadTabs) {
+      const activeRoot =
+        tab.tabId === state.activeTabId
+          ? normalizeProjectRoot(boundProjectRootForActiveThread)
+          : null;
+      const threadRoot =
+        tab.threadId === null
+          ? null
+          : (
+              normalizeProjectRoot(boundProjectRootByThread.get(tab.threadId))
+              ?? threadProjectRootById.get(tab.threadId)
+              ?? null
+            );
+      next.set(tab.tabId, activeRoot ?? threadRoot);
+    }
+    return next;
+  }, [
+    boundProjectRootByThread,
+    boundProjectRootForActiveThread,
+    state.activeTabId,
+    state.threadTabs,
+    threadProjectRootById
+  ]);
+  const tabProjectRoots = useMemo(
+    () => [...tabProjectRootById.values()].filter((root): root is string => root !== null),
+    [tabProjectRootById]
+  );
+  const projectLogoByRoot = useProjectLogoMap(desktopApi?.files, tabProjectRoots);
+
+  useEffect(() => {
+    const filesApi = desktopApi?.files;
+    const probePaths =
+      boundProjectRootForActiveThread === null
+        ? []
+        : gitMetadataProbePaths(boundProjectRootForActiveThread);
+    if (filesApi === undefined || probePaths.length === 0) {
+      setGitMetadataAvailableForReview(false);
+      return;
+    }
+    let cancelled = false;
+    setGitMetadataAvailableForReview(false);
+    void (async () => {
+      for (const path of probePaths) {
+        try {
+          const stat = await filesApi.statFile({ path });
+          if (cancelled) {
+            return;
+          }
+          if (stat.exists) {
+            setGitMetadataAvailableForReview(true);
+            return;
+          }
+        } catch {
+          if (cancelled) {
+            return;
+          }
+        }
+      }
+      if (!cancelled) {
+        setGitMetadataAvailableForReview(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [boundProjectRootForActiveThread, desktopApi?.files]);
 
   const toolNameLabels = useMemo<ToolNameLabelMap>(
     () => createToolNameLabels({
@@ -397,65 +548,102 @@ export const useAiPanelSurfaceRuntime = ({
   );
 
   const modelMetadata = selectedModelOption?.runtimeMetadata;
-  const reasoningControlDisabledReason =
-    selectedModelOption === null
-      ? t("ai.modelControlNoMetadata")
-      : modelMetadata === undefined
-        ? t("ai.modelControlNoMetadata")
-        : modelMetadata.supportsReasoningSummaries === true
-          ? null
-          : t("ai.modelControlUnsupported");
-  const verbosityControlDisabledReason =
-    selectedModelOption === null
-      ? t("ai.modelControlNoMetadata")
-      : modelMetadata === undefined
-        ? t("ai.modelControlNoMetadata")
-        : modelMetadata.supportVerbosity === true
-          ? null
-          : t("ai.modelControlUnsupported");
+  const supportedReasoningLevels = useMemo<readonly AgentComposerReasoningEffort[]>(
+    () => {
+      const values = modelMetadata?.supportedReasoningLevels ?? [];
+      const seen = new Set<AgentComposerReasoningEffort>();
+      const supported: AgentComposerReasoningEffort[] = [];
+      for (const value of values) {
+        if (isReasoningEffortValue(value) && !seen.has(value)) {
+          seen.add(value);
+          supported.push(value);
+        }
+      }
+      return supported;
+    },
+    [modelMetadata]
+  );
+  const strongestSupportedReasoningEffort = useMemo(
+    () => strongestReasoningEffort(supportedReasoningLevels),
+    [supportedReasoningLevels]
+  );
+  const supportedVerbosityLevels = useMemo<readonly AgentComposerVerbosity[]>(
+    () => modelMetadata?.supportVerbosity === true ? VERBOSITY_VALUES : [],
+    [modelMetadata?.supportVerbosity]
+  );
+  const defaultSupportedVerbosity = useMemo<AgentComposerVerbosity | null>(
+    () => {
+      if (supportedVerbosityLevels.length === 0) {
+        return null;
+      }
+      const defaultVerbosity = modelMetadata?.defaultVerbosity;
+      if (defaultVerbosity !== undefined && isVerbosityValue(defaultVerbosity)) {
+        return defaultVerbosity;
+      }
+      return supportedVerbosityLevels.includes("medium")
+        ? "medium"
+        : supportedVerbosityLevels[0] ?? null;
+    },
+    [modelMetadata?.defaultVerbosity, supportedVerbosityLevels]
+  );
   const reasoningEffortOptions = useMemo<
     readonly AgentComposerModelControlOption<AgentComposerReasoningEffort>[]
   >(
-    () => REASONING_EFFORT_VALUES.map((value) => ({
+    () => supportedReasoningLevels.map((value) => ({
       value,
       label: t(reasoningEffortLabelKey(value)),
-      ...(reasoningControlDisabledReason === null
-        ? {}
-        : {
-            disabled: true,
-            disabledReason: reasoningControlDisabledReason,
-          }),
     })),
-    [reasoningControlDisabledReason, t]
+    [supportedReasoningLevels, t]
   );
   const verbosityOptions = useMemo<
     readonly AgentComposerModelControlOption<AgentComposerVerbosity>[]
   >(
-    () => VERBOSITY_VALUES.map((value) => ({
+    () => supportedVerbosityLevels.map((value) => ({
       value,
       label: t(verbosityLabelKey(value)),
-      ...(verbosityControlDisabledReason === null
-        ? {}
-        : {
-            disabled: true,
-            disabledReason: verbosityControlDisabledReason,
-          }),
     })),
-    [t, verbosityControlDisabledReason]
+    [supportedVerbosityLevels, t]
   );
 
+  const selectedModelValueRef = useRef<string | null>(null);
   useEffect(() => {
-    if (reasoningControlDisabledReason !== null && selectedReasoningEffort !== null) {
-      setSelectedReasoningEffort(null);
+    const selectedModelValue = selectedModelOption?.value ?? null;
+    const modelChanged = selectedModelValueRef.current !== selectedModelValue;
+    selectedModelValueRef.current = selectedModelValue;
+
+    if (strongestSupportedReasoningEffort === null) {
+      if (selectedReasoningEffort !== null) {
+        setSelectedReasoningEffort(null);
+      }
+    } else if (
+      modelChanged
+      || selectedReasoningEffort === null
+      || !isReasoningEffortValue(selectedReasoningEffort)
+      || !supportedReasoningLevels.includes(selectedReasoningEffort)
+    ) {
+      setSelectedReasoningEffort(strongestSupportedReasoningEffort);
     }
-    if (verbosityControlDisabledReason !== null && selectedVerbosity !== null) {
-      setSelectedVerbosity(null);
+
+    if (defaultSupportedVerbosity === null) {
+      if (selectedVerbosity !== null) {
+        setSelectedVerbosity(null);
+      }
+    } else if (
+      modelChanged
+      || selectedVerbosity === null
+      || !isVerbosityValue(selectedVerbosity)
+      || !supportedVerbosityLevels.includes(selectedVerbosity)
+    ) {
+      setSelectedVerbosity(defaultSupportedVerbosity);
     }
   }, [
-    reasoningControlDisabledReason,
+    defaultSupportedVerbosity,
+    selectedModelOption?.value,
     selectedReasoningEffort,
     selectedVerbosity,
-    verbosityControlDisabledReason
+    strongestSupportedReasoningEffort,
+    supportedReasoningLevels,
+    supportedVerbosityLevels
   ]);
 
   const liveRuntimeFeed = useMemo(
@@ -500,6 +688,28 @@ export const useAiPanelSurfaceRuntime = ({
       generatingReply: t("ai.generatingReply"),
       pendingInteractions: t("ai.pendingInteractions")
     }
+  });
+
+  const {
+    threadViewportRef,
+    messageMetadata,
+    renderRows,
+    virtualRows,
+    topSpacerHeight,
+    bottomSpacerHeight,
+    measureThreadRow,
+  } = useAiPanelThreadRendering({
+    sortedMessages: viewModel.sortedMessages,
+    planByTurn: state.planByTurn,
+    typewriterText,
+    streamingTurnRuntimeFeed: viewModel.streamingTurnRuntimeFeed,
+    streamingStatus: viewModel.streamingStatus,
+    orphanRuntimeFeed: viewModel.orphanRuntimeFeed,
+    runtimeError: state.runtimeError,
+    activeThreadId: state.activeThreadId,
+    optimisticUserMessages: state.optimisticUserMessages,
+    pendingInteractions: state.pendingInteractions,
+    streamingAssistantText: state.streamingAssistantText,
   });
 
   useEffect(() => {
@@ -578,20 +788,6 @@ export const useAiPanelSurfaceRuntime = ({
       console.error("Failed to persist bound project root", error);
     });
   }, [activeThreadId, pendingBoundProjectRoot, persistBoundProjectRoot]);
-
-  useEffect(() => {
-    const viewport = threadViewportRef.current;
-    if (viewport === null) {
-      return;
-    }
-    viewport.scrollTop = viewport.scrollHeight;
-  }, [
-    state.activeDetail,
-    state.optimisticUserMessages,
-    state.pendingInteractions,
-    state.streamingAssistantText,
-    viewModel.sortedMessages
-  ]);
 
   const openRuntimeTargetPath = useCallback<OpenRuntimeTargetPath>(
     async (path, options): Promise<void> => {
@@ -752,48 +948,87 @@ export const useAiPanelSurfaceRuntime = ({
   }, []);
 
   const handlePlanApprovalDecision = useCallback(async (
-    response: PlanInteractionResponse
+    response: PlanInteractionResponse,
+    requestOverride?: PlanApprovalRequest
   ): Promise<void> => {
     const feedback = response.feedback?.trim() ?? "";
+    const activeThreadId = state.activeThreadId;
+    const planTurnId = requestOverride?.turnId
+      ?? response.requestId.replace(/^plan:/u, "").trim();
+    const threadId = requestOverride?.sessionId ?? activeThreadId;
+    if (threadId === null || threadId.trim().length === 0 || planTurnId.length === 0) {
+      return;
+    }
     if (response.decision === "approve_and_implement") {
       setPlanModeEnabled(false);
-      await sendRuntimeTurn(
-        {
-          text: feedback.length === 0
-            ? t("ai.planExecutePrompt")
-            : `${t("ai.planExecutePrompt")}\n\n${feedback}`,
-          attachments: [],
-        },
-        runtimeTurnOptions("default")
-      );
+      await resolvePlanApproval({
+        threadId,
+        planTurnId,
+        requestId: response.requestId,
+        decision: response.decision,
+        ...(feedback.length === 0 ? {} : { feedback }),
+        ...(requestOverride?.proposedMarkdown === undefined
+          ? {}
+          : { proposedMarkdown: requestOverride.proposedMarkdown }),
+      });
       return;
     }
     if (response.decision === "keep_planning") {
       setPlanModeEnabled(true);
-      await sendRuntimeTurn(
-        {
-          text: feedback.length === 0
-            ? t("ai.planKeepPlanningPrompt")
-            : `${t("ai.planKeepPlanningPrompt")}\n\n${feedback}`,
-          attachments: [],
-        },
-        runtimeTurnOptions("plan")
-      );
-      return;
-    }
-    if (feedback.length > 0) {
-      setPlanModeEnabled(true);
-      await sendRuntimeTurn(
-        {
-          text: `${t("ai.planRejectPrompt")}\n\n${feedback}`,
-          attachments: [],
-        },
-        runtimeTurnOptions("plan")
-      );
+      await resolvePlanApproval({
+        threadId,
+        planTurnId,
+        requestId: response.requestId,
+        decision: response.decision,
+        ...(feedback.length === 0 ? {} : { feedback }),
+        ...(requestOverride?.proposedMarkdown === undefined
+          ? {}
+          : { proposedMarkdown: requestOverride.proposedMarkdown }),
+      });
       return;
     }
     setPlanModeEnabled(false);
-  }, [runtimeTurnOptions, sendRuntimeTurn, setPlanModeEnabled, t]);
+    await resolvePlanApproval({
+      threadId,
+      planTurnId,
+      requestId: response.requestId,
+      decision: response.decision,
+      ...(feedback.length === 0 ? {} : { feedback }),
+      ...(requestOverride?.proposedMarkdown === undefined
+        ? {}
+        : { proposedMarkdown: requestOverride.proposedMarkdown }),
+    });
+  }, [resolvePlanApproval, setPlanModeEnabled, state.activeThreadId]);
+
+  const openPlanApprovalInWorkspace = useMemo(
+    () =>
+      onOpenPlanApprovalWorkspace === undefined
+        ? undefined
+        : (request: PlanApprovalRequest): void => {
+            onOpenPlanApprovalWorkspace({
+              locale,
+              request,
+              onDecision: handlePlanApprovalDecision,
+            });
+          },
+    [handlePlanApprovalDecision, locale, onOpenPlanApprovalWorkspace]
+  );
+
+  useEffect(() => {
+    if (
+      state.followEnabled !== true
+      || openPlanApprovalInWorkspace === undefined
+      || state.activeInteractionPanel?.kind !== "planApproval"
+    ) {
+      return;
+    }
+    const request = state.activeInteractionPanel.request;
+    if (lastAutoOpenedPlanReviewIdRef.current === request.id) {
+      return;
+    }
+    lastAutoOpenedPlanReviewIdRef.current = request.id;
+    openPlanApprovalInWorkspace(request);
+  }, [openPlanApprovalInWorkspace, state.activeInteractionPanel, state.followEnabled]);
 
   const handleForkTurn = useCallback(async (turnId: string): Promise<void> => {
     const activeThread = state.activeThread;
@@ -830,12 +1065,16 @@ export const useAiPanelSurfaceRuntime = ({
   ]);
 
   const handleStartReview = useCallback(async (target: ReviewTarget): Promise<void> => {
+    setIsReviewStarting(true);
     try {
-      await startReview(target);
+      await startRuntimeReview(target, { cwd: boundProjectRootForActiveThread });
+      setIsReviewPanelOpen(false);
     } catch {
       // Runtime hook owns the visible error state.
+    } finally {
+      setIsReviewStarting(false);
     }
-  }, [startReview]);
+  }, [boundProjectRootForActiveThread, startRuntimeReview]);
 
   const handleEditMessageTurn = useCallback((turnId: string, content: string): void => {
     void (async () => {
@@ -885,6 +1124,34 @@ export const useAiPanelSurfaceRuntime = ({
     [composerHeight]
   );
   const isAgentAvailable = desktopApi?.lyra !== null && desktopApi?.lyra !== undefined;
+  const canOpenReviewPanel = canOpenReviewChanges({
+    activeThreadId: state.activeThreadId,
+    boundProjectRoot: boundProjectRootForActiveThread,
+    gitMetadataAvailable: gitMetadataAvailableForReview,
+    isAgentAvailable,
+    isBusy,
+    isReviewStarting
+  });
+
+  useEffect(() => {
+    if (!isReviewPanelOpen) {
+      return;
+    }
+    if (
+      state.activeThreadId === null
+      || !isAgentAvailable
+      || boundProjectRootForActiveThread === null
+      || !gitMetadataAvailableForReview
+    ) {
+      setIsReviewPanelOpen(false);
+    }
+  }, [
+    boundProjectRootForActiveThread,
+    gitMetadataAvailableForReview,
+    isAgentAvailable,
+    isReviewPanelOpen,
+    state.activeThreadId
+  ]);
 
   return {
     state,
@@ -892,6 +1159,7 @@ export const useAiPanelSurfaceRuntime = ({
     actions: {
       activateThreadTab,
       closeThreadTab,
+      reorderThreadTab,
       openThreadTab,
       setActiveInteractionId,
       respondToCommandApproval,
@@ -904,6 +1172,14 @@ export const useAiPanelSurfaceRuntime = ({
       setIsPermissionsPanelOpen,
       createThread,
       bindProject: handleBindProject,
+      openReviewPanel: () => {
+        if (canOpenReviewPanel) {
+          setIsReviewPanelOpen(true);
+        }
+      },
+      closeReviewPanel: () => {
+        setIsReviewPanelOpen(false);
+      },
       startReview: handleStartReview,
       togglePlanMode: handlePlanModeToggle,
       toggleFollow: handleFollowToggle,
@@ -934,13 +1210,26 @@ export const useAiPanelSurfaceRuntime = ({
     permissionMode,
     toolNameLabels,
     typewriterText,
+    messageMetadata,
+    renderRows,
+    virtualRows,
+    topSpacerHeight,
+    bottomSpacerHeight,
+    measureThreadRow,
     boundProjectRootForActiveThread,
+    boundProjectRootByThreadId: boundProjectRootByThread,
+    tabProjectRootById,
+    projectLogoByRoot,
     isBindingProject,
     isPermissionsPanelOpen,
+    isReviewPanelOpen,
+    isReviewStarting,
+    canOpenReviewChanges: canOpenReviewPanel,
     showEmptySessionScene,
     isBusy,
     isAgentAvailable,
     canOpenFilePath: onOpenFilePath !== undefined,
-    openRuntimeTargetPath
+    openRuntimeTargetPath,
+    ...(openPlanApprovalInWorkspace === undefined ? {} : { openPlanApprovalInWorkspace })
   };
 };

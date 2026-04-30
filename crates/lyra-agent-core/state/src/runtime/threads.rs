@@ -1,5 +1,6 @@
 use super::*;
 use crate::SortDirection;
+use lyra_protocol::dynamic_tools::DynamicToolSideEffects;
 use lyra_protocol::protocol::SessionSource;
 use std::sync::atomic::Ordering;
 
@@ -57,7 +58,17 @@ WHERE threads.id = ?
     ) -> anyhow::Result<Option<Vec<DynamicToolSpec>>> {
         let rows = sqlx::query(
             r#"
-SELECT name, description, input_schema, defer_loading
+SELECT
+    namespace,
+    name,
+    host_method,
+    description,
+    input_schema,
+    defer_loading,
+    side_effects,
+    approval_mode,
+    risk,
+    model_input_capabilities
 FROM thread_dynamic_tools
 WHERE thread_id = ?
 ORDER BY position ASC
@@ -73,12 +84,33 @@ ORDER BY position ASC
         for row in rows {
             let input_schema: String = row.try_get("input_schema")?;
             let input_schema = serde_json::from_str::<Value>(input_schema.as_str())?;
+            let side_effects: Option<String> = row.try_get("side_effects")?;
+            let side_effects = side_effects
+                .as_deref()
+                .map(serde_json::from_str::<DynamicToolSideEffects>)
+                .transpose()?;
+            let risk: Option<String> = row.try_get("risk")?;
+            let risk = risk
+                .as_deref()
+                .map(serde_json::from_str::<Value>)
+                .transpose()?;
+            let model_input_capabilities: Option<String> =
+                row.try_get("model_input_capabilities")?;
+            let model_input_capabilities = model_input_capabilities
+                .as_deref()
+                .map(serde_json::from_str::<Vec<String>>)
+                .transpose()?;
             tools.push(DynamicToolSpec {
-                namespace: None,
+                namespace: row.try_get("namespace")?,
                 name: row.try_get("name")?,
+                host_method: row.try_get("host_method")?,
                 description: row.try_get("description")?,
                 input_schema,
                 defer_loading: row.try_get("defer_loading")?,
+                side_effects,
+                approval_mode: row.try_get("approval_mode")?,
+                risk,
+                model_input_capabilities,
             });
         }
         Ok(Some(tools))
@@ -807,25 +839,48 @@ ON CONFLICT(id) DO UPDATE SET
         for (idx, tool) in tools.iter().enumerate() {
             let position = i64::try_from(idx).unwrap_or(i64::MAX);
             let input_schema = serde_json::to_string(&tool.input_schema)?;
+            let side_effects = tool
+                .side_effects
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?;
+            let risk = tool.risk.as_ref().map(serde_json::to_string).transpose()?;
+            let model_input_capabilities = tool
+                .model_input_capabilities
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?;
             sqlx::query(
                 r#"
 INSERT INTO thread_dynamic_tools (
     thread_id,
     position,
+    namespace,
     name,
+    host_method,
     description,
     input_schema,
-    defer_loading
-) VALUES (?, ?, ?, ?, ?, ?)
+    defer_loading,
+    side_effects,
+    approval_mode,
+    risk,
+    model_input_capabilities
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(thread_id, position) DO NOTHING
                 "#,
             )
             .bind(thread_id.as_str())
             .bind(position)
+            .bind(tool.namespace.as_deref())
             .bind(tool.name.as_str())
+            .bind(tool.host_method.as_deref())
             .bind(tool.description.as_str())
             .bind(input_schema)
             .bind(tool.defer_loading)
+            .bind(side_effects.as_deref())
+            .bind(tool.approval_mode.as_deref())
+            .bind(risk.as_deref())
+            .bind(model_input_capabilities.as_deref())
             .execute(&mut *tx)
             .await?;
         }

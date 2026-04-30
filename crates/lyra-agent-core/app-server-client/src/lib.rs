@@ -1229,6 +1229,7 @@ mod tests {
                 params: lyra_app_server_protocol::ThreadReadParams {
                     thread_id: "missing-thread".to_string(),
                     include_turns: false,
+                    view_model: None,
                 },
             })
             .await
@@ -1283,6 +1284,7 @@ mod tests {
                     params: lyra_app_server_protocol::ThreadReadParams {
                         thread_id: response.thread.id.clone(),
                         include_turns: false,
+                        view_model: None,
                     },
                 },
             )

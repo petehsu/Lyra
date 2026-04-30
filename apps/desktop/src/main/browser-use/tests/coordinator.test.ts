@@ -32,7 +32,7 @@ const createRuntime = (
 });
 
 describe("browser-use runtime coordinator", () => {
-  test("syncs browser_use tools when preflight is healthy and engine allows exposure", async () => {
+  test("syncs browser_use tools when preflight is healthy", async () => {
     const hostTools = {
       sync: vi.fn(async () => undefined),
       remove: vi.fn(async () => undefined),
@@ -50,7 +50,6 @@ describe("browser-use runtime coordinator", () => {
         },
       })),
       hostTools,
-      readPreferredEngine: () => "smart",
       bridgeSmoke: async () => undefined,
     });
 
@@ -62,7 +61,7 @@ describe("browser-use runtime coordinator", () => {
     expect(hostTools.remove).not.toHaveBeenCalled();
   });
 
-  test("removes browser_use tools when preflight is unavailable or engine is lyra_direct", async () => {
+  test("removes browser_use tools when preflight is unavailable", async () => {
     const hostTools = {
       sync: vi.fn(async () => undefined),
       remove: vi.fn(async () => undefined),
@@ -74,7 +73,6 @@ describe("browser-use runtime coordinator", () => {
         detail: "missing bundle",
       })),
       hostTools,
-      readPreferredEngine: () => "browser_use",
       bridgeSmoke: async () => undefined,
     });
 
@@ -82,13 +80,6 @@ describe("browser-use runtime coordinator", () => {
     await flushAsync();
 
     expect(coordinator.readStatus().state).toBe("unavailable");
-    expect(hostTools.remove).toHaveBeenCalledTimes(1);
-
-    hostTools.sync.mockClear();
-    hostTools.remove.mockClear();
-
-    await coordinator.applyEnginePreference("lyra_direct");
-
     expect(hostTools.sync).not.toHaveBeenCalled();
     expect(hostTools.remove).toHaveBeenCalledTimes(1);
   });

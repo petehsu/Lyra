@@ -5,6 +5,12 @@
     "callId": {
       "type": "string"
     },
+    "hostMethod": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "threadId": {
       "type": "string"
     },

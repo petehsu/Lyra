@@ -639,7 +639,8 @@ describe("workbench shell", () => {
     expect(screen.getByLabelText("left-panel")).toHaveClass("lyra-panel-left-hidden");
     expect(screen.getByLabelText("left-panel")).toHaveAttribute("aria-hidden", "true");
     expect(screen.getByLabelText("左侧输入框")).toBeInTheDocument();
-    expect(screen.queryByLabelText("bottom-panel")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("bottom-panel")).toHaveClass("lyra-panel-bottom-hidden");
+    expect(screen.getByLabelText("bottom-panel")).toHaveAttribute("aria-hidden", "true");
   });
 
   test("moves the terminal panel between top and bottom from the titlebar button", () => {

@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   Check,
   ExternalLink,
-  FolderOpen,
   Pencil,
   Plus,
   Trash2,
@@ -12,18 +11,17 @@ import {
 
 import { AiPanelRichContent } from "../ai-panel/rich-content";
 import { InlineMessageContent } from "../ai-panel/inline-message-content";
-import {
-  StatusBadge,
-  StatusEmptyState,
-  StatusIndicator
-} from "../ai-panel/status-primitives";
+import { StatusEmptyState } from "../ai-panel/status-primitives";
 import { resolveAssistantDisplayContent } from "../ai-panel/view-helpers";
 import {
+  ProjectIdentityIcon,
+  normalizeProjectRoot,
+  projectLogoUrlForRoot
+} from "../project-identity";
+import {
   buildPreviewDisplayMessages,
-  createPreviewThreadSummary,
   formatSessionTime,
   resolveThreadPreviewText,
-  resolveThreadRowTone,
   type HistoryScope,
   type LyraThreadSummary
 } from "./model";
@@ -191,20 +189,19 @@ const AiHistoryThreadRow = ({
   thread,
   labels,
   runtime,
-  locale
+  locale,
+  projectLogoByRoot
 }: {
   readonly thread: LyraThreadSummary;
   readonly labels: AiHistoryLabels;
   readonly runtime: AiHistoryRuntime;
   readonly locale: string;
+  readonly projectLogoByRoot: ReadonlyMap<string, string | null>;
 }) => {
   const previewText = resolveThreadPreviewText(thread, labels.threadPreviewEmptyLabel);
   const updatedAtMs = thread.updatedAt ?? Date.now();
-  const tone = resolveThreadRowTone({
-    activeThreadId: runtime.activeThreadId,
-    firstThreadId: runtime.threads[0]?.id ?? null,
-    threadId: thread.id
-  });
+  const projectRoot = normalizeProjectRoot(thread.boundProjectRoot);
+  const projectLogoUrl = projectLogoUrlForRoot(projectLogoByRoot, projectRoot);
   const rowClassName =
     runtime.activeThreadId === thread.id
       ? "lyra-ai-history-row lyra-ai-history-row-active"
@@ -272,10 +269,11 @@ const AiHistoryThreadRow = ({
         }}
       >
         <span className="lyra-ai-history-row-heading">
-          <StatusIndicator
-            tone={tone}
-            variant="dot"
-            ariaLabel={previewText}
+          <ProjectIdentityIcon
+            className="lyra-ai-history-row-project-icon"
+            projectRoot={projectRoot}
+            projectLogoUrl={projectLogoUrl}
+            title={projectRoot ?? previewText}
           />
           <strong>{previewText}</strong>
         </span>
@@ -328,12 +326,14 @@ const AiHistoryThreadRows = ({
   labels,
   runtime,
   locale,
-  threads
+  threads,
+  projectLogoByRoot
 }: {
   readonly labels: AiHistoryLabels;
   readonly runtime: AiHistoryRuntime;
   readonly locale: string;
   readonly threads: readonly LyraThreadSummary[];
+  readonly projectLogoByRoot: ReadonlyMap<string, string | null>;
 }) => (
   <div className="lyra-ai-history-rows">
     {threads.map((thread) => (
@@ -343,6 +343,7 @@ const AiHistoryThreadRows = ({
         labels={labels}
         runtime={runtime}
         locale={locale}
+        projectLogoByRoot={projectLogoByRoot}
       />
     ))}
   </div>
@@ -351,11 +352,13 @@ const AiHistoryThreadRows = ({
 const AiHistoryScopeBody = ({
   labels,
   runtime,
-  locale
+  locale,
+  projectLogoByRoot
 }: {
   readonly labels: AiHistoryLabels;
   readonly runtime: AiHistoryRuntime;
   readonly locale: string;
+  readonly projectLogoByRoot: ReadonlyMap<string, string | null>;
 }) => {
   if (!runtime.isProjectScope) {
     if (runtime.isLoading && runtime.threads.length === 0) {
@@ -384,6 +387,7 @@ const AiHistoryScopeBody = ({
         runtime={runtime}
         locale={locale}
         threads={runtime.threads}
+        projectLogoByRoot={projectLogoByRoot}
       />
     );
   }
@@ -414,6 +418,7 @@ const AiHistoryScopeBody = ({
           runtime={runtime}
           locale={locale}
           threads={runtime.selectedProject.threads}
+          projectLogoByRoot={projectLogoByRoot}
         />
       </div>
     );
@@ -455,25 +460,21 @@ const AiHistoryScopeBody = ({
             runtime.actions.selectProject(group.projectRoot);
           }}
         >
-          <span className="lyra-ai-history-project-card-head">
-            <StatusIndicator
-              tone={runtime.selectedProjectRoot === group.projectRoot ? "success" : "info"}
-              variant="bar"
-              ariaLabel={group.displayName}
-            />
-          </span>
-          <span className="lyra-ai-history-project-card-icon">
-            <FolderOpen size={16} />
-          </span>
+          <ProjectIdentityIcon
+            className="lyra-ai-history-project-card-icon"
+            projectRoot={group.projectRoot}
+            projectLogoUrl={projectLogoUrlForRoot(projectLogoByRoot, group.projectRoot)}
+            title={group.displayName}
+          />
           <span className="lyra-ai-history-project-card-main">
             <strong>{group.displayName}</strong>
             <small title={group.projectRoot}>{group.projectRoot}</small>
           </span>
-          <StatusBadge
-            tone={runtime.selectedProjectRoot === group.projectRoot ? "info" : "muted"}
-            label={`${String(group.threads.length)} ${labels.projectSessionCountLabel}`}
-            className="lyra-ai-history-project-card-count"
-          />
+          <small className="lyra-ai-history-project-card-count">
+            {String(group.threads.length)}
+            {" "}
+            {labels.projectSessionCountLabel}
+          </small>
         </button>
       ))}
     </div>
@@ -527,55 +528,9 @@ const AiHistoryPreviewPane = ({
     ? null
     : (runtime.livePreviewByThread.get(runtime.activeThreadId) ?? null);
   const displayMessages = buildPreviewDisplayMessages(runtime.previewDetail, livePreview);
-  const updatedAtMs = runtime.previewDetail.session.updatedAt;
 
   return (
     <article className="lyra-ai-history-preview-card">
-      <header className="lyra-ai-history-preview-head">
-        <div className="lyra-ai-history-preview-title">
-          <strong>{runtime.previewDetail.session.title || labels.threadPreviewEmptyLabel}</strong>
-          <small>{formatSessionTime(updatedAtMs, locale)}</small>
-        </div>
-        <div className="lyra-ai-history-preview-actions">
-          <button
-            type="button"
-            className="lyra-ai-history-preview-open"
-            onClick={() => {
-              const sourceThread =
-                runtime.getThreadSummaryById(runtime.previewDetail!.session.id)
-                ?? createPreviewThreadSummary(runtime.previewDetail!);
-              runtime.actions.beginRenameThread(sourceThread);
-            }}
-            aria-label={labels.renameConversationLabel}
-            title={labels.renameConversationLabel}
-          >
-            <Pencil size={14} />
-            <span>{labels.renameConversationLabel}</span>
-          </button>
-          <button
-            type="button"
-            className="lyra-ai-history-preview-open"
-            onClick={() => {
-              runtime.actions.openThread(runtime.previewDetail!.session.id);
-            }}
-            aria-label={labels.openConversationLabel}
-            title={labels.openConversationLabel}
-          >
-            <ExternalLink size={14} />
-            <span>{labels.openConversationLabel}</span>
-          </button>
-        </div>
-      </header>
-      {runtime.previewDetail.session.projectRoot === undefined ? null : (
-        <div
-          className="lyra-ai-history-preview-meta"
-          title={runtime.previewDetail.session.projectRoot}
-        >
-          {labels.projectPathLabel}
-          {"\uff1a"}
-          {runtime.previewDetail.session.projectRoot}
-        </div>
-      )}
       {displayMessages.length === 0 ? (
         <StatusEmptyState
           title={labels.threadPreviewEmptyLabel}
@@ -626,6 +581,7 @@ export const AiHistorySurfaceView = ({
   runtime
 }: AiHistorySurfaceViewProps) => {
   const labels = toAiHistoryLabels(surfaceProps);
+
   if (!runtime.lyraAvailable) {
     return <AiHistoryUnavailableSurface labels={labels} />;
   }
@@ -641,6 +597,7 @@ export const AiHistorySurfaceView = ({
             labels={labels}
             runtime={runtime}
             locale={surfaceProps.locale}
+            projectLogoByRoot={runtime.projectLogoByRoot}
           />
           {runtime.errorMessage === null ? null : (
             <div className="lyra-ai-history-error">{runtime.errorMessage}</div>

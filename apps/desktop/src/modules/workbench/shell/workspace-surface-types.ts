@@ -22,6 +22,7 @@ export type SurfacePropsByKind = {
   readonly skillsCenter: ComponentProps<WorkbenchSurfaceAdapters["skillsCenter"]>;
   readonly pluginsCenter: ComponentProps<WorkbenchSurfaceAdapters["pluginsCenter"]>;
   readonly aiHistory: ComponentProps<WorkbenchSurfaceAdapters["aiHistory"]>;
+  readonly planReview: ComponentProps<WorkbenchSurfaceAdapters["planReview"]>;
 };
 
 export type WorkspaceSurfaceRenderModel =

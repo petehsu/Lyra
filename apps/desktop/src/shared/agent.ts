@@ -36,6 +36,7 @@ export type AgentPendingInteractionKind =
   | "command_execution_approval"
   | "file_change_approval"
   | "permissions_approval"
+  | "plan_approval"
   | "tool_user_input"
   | "mcp_elicitation";
 export type AgentPendingInteractionStatus = "pending" | "resolved" | "cancelled" | "expired";
@@ -297,6 +298,7 @@ export type AgentResolvePlanApprovalRequest = {
   readonly requestId: string;
   readonly decision: PlanApprovalDecision;
   readonly feedback?: string;
+  readonly proposedMarkdown?: string;
 };
 
 export type AgentResumeExecutionRequest = {
@@ -365,6 +367,7 @@ export type AgentRuntimePhase =
   | "plan_question_answered"
   | "plan_approval_requested"
   | "plan_approved"
+  | "plan_revision_requested"
   | "plan_rejected"
   | "plan_mode_exited"
   | "interaction_pending"

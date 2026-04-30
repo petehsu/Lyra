@@ -63,6 +63,12 @@ describe("BrowserTabStrip", () => {
     );
 
     const nav = screen.getByLabelText("browser-tabs");
+    const tabShapes = nav.querySelectorAll(".lyra-chrome-tab-shape");
+    expect(tabShapes).toHaveLength(2);
+    expect(nav.querySelector(".lyra-chrome-tab-dividers")).not.toBeNull();
+    expect(nav.querySelector(".lyra-chrome-tab-background-svg")).not.toBeNull();
+    expect(nav.querySelector(".lyra-browser-tab-item-active .lyra-chrome-tab-shape")).not.toBeNull();
+
     fireEvent.click(within(nav).getByRole("button", { name: "Back" }));
     fireEvent.click(within(nav).getByRole("button", { name: "Stack tabs" }));
     fireEvent.click(within(nav).getByRole("button", { name: "Docs" }));

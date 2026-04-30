@@ -72,7 +72,6 @@ export type AgentComposerProps = {
   readonly reasoningEffortOptions?: readonly AgentComposerModelControlOption<AgentComposerReasoningEffort>[];
   readonly selectedReasoningEffort?: AgentComposerReasoningEffort | null;
   readonly reasoningEffortLabel?: string;
-  readonly modelControlAutoLabel?: string;
   readonly onReasoningEffortSelect?: (value: AgentComposerReasoningEffort | null) => void;
   readonly verbosityOptions?: readonly AgentComposerModelControlOption<AgentComposerVerbosity>[];
   readonly selectedVerbosity?: AgentComposerVerbosity | null;

@@ -169,6 +169,12 @@ describe("AiHistorySurface", () => {
 
     expect(screen.getByText("Brainstorm ideas")).toBeDefined();
     expect(screen.getByText("Refactor agent runtime")).toBeDefined();
+
+    const unboundRow = screen.getByText("Brainstorm ideas").closest(".lyra-ai-history-row");
+    const lyraIcon = unboundRow?.querySelector("[data-project-icon-kind='lyra']");
+    expect(lyraIcon).not.toBeNull();
+    expect(lyraIcon?.querySelector(".lyra-project-identity-lyra-logo")).not.toBeNull();
+    expect(lyraIcon?.querySelector("img")).toBeNull();
   });
 
   test("clicking a thread previews it and the open icon emits threadSelected", async () => {

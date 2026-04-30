@@ -340,6 +340,16 @@ pub enum Op {
         response: RequestPermissionsResponse,
     },
 
+    /// Record that a submitted Plan Mode approval request was resolved by the user.
+    ResolvePlanApproval {
+        /// Turn id that produced the submitted plan.
+        plan_turn_id: String,
+        /// Client-visible approval request id.
+        request_id: String,
+        /// User decision for the submitted plan.
+        decision: PlanApprovalResolutionDecision,
+    },
+
     /// Resolve a dynamic tool call request.
     DynamicToolResponse {
         /// Call id for the in-flight request.
@@ -512,6 +522,7 @@ impl Op {
             Self::ResolveElicitation { .. } => "resolve_elicitation",
             Self::UserInputAnswer { .. } => "user_input_answer",
             Self::RequestPermissionsResponse { .. } => "request_permissions_response",
+            Self::ResolvePlanApproval { .. } => "resolve_plan_approval",
             Self::DynamicToolResponse { .. } => "dynamic_tool_response",
             Self::AddToHistory { .. } => "add_to_history",
             Self::GetHistoryEntryRequest { .. } => "get_history_entry_request",
@@ -1279,6 +1290,9 @@ pub enum EventMsg {
 
     PlanUpdate(UpdatePlanArgs),
 
+    /// A Plan Mode approval request was resolved by the user.
+    PlanApprovalResolved(PlanApprovalResolvedEvent),
+
     TurnAborted(TurnAbortedEvent),
 
     /// Notification that the agent is shutting down.
@@ -1649,6 +1663,25 @@ pub struct PlanDeltaEvent {
     pub turn_id: String,
     pub item_id: String,
     pub delta: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, TS, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum PlanApprovalResolutionDecision {
+    ApproveAndImplement,
+    KeepPlanning,
+    Reject,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PlanApprovalResolvedEvent {
+    pub thread_id: String,
+    pub plan_turn_id: String,
+    pub request_id: String,
+    pub decision: PlanApprovalResolutionDecision,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]

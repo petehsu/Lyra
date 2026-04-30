@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
 import type { AiHistorySurfaceProps } from "../ai-history";
+import type { AiPlanReviewModel } from "../ai-panel";
 import {
   type FileManagerChooserMode,
   type FileManagerModel,
@@ -220,6 +221,9 @@ export type WorkspaceSurfaceRouterProps = {
     readonly defaultProviderId?: string | null;
     readonly openDialog?: AiHistorySurfaceProps["openDialog"];
   };
+  readonly planReview: {
+    readonly model: AiPlanReviewModel;
+  };
   readonly notifications: {
     readonly model: WorkbenchNotificationModel;
     readonly labels: NotificationCenterLabels;
@@ -283,6 +287,10 @@ const renderSurfaceModel = (
     }
     case "aiHistory": {
       const Adapter = surfaceAdapters.aiHistory;
+      return <Adapter {...model.props} />;
+    }
+    case "planReview": {
+      const Adapter = surfaceAdapters.planReview;
       return <Adapter {...model.props} />;
     }
     case "empty":

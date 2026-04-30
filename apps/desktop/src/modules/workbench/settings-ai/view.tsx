@@ -32,11 +32,6 @@ const capabilityLabel = (
 };
 
 export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
-  const browserUseStatusLabel = model.browserUseRuntimeStatus.state === "healthy"
-    ? labels.browserAutomationStatusHealthy
-    : model.browserUseRuntimeStatus.state === "checking"
-      ? labels.browserAutomationStatusChecking
-      : labels.browserAutomationStatusUnavailable;
   const selectedPreset = model.selectedPreset;
   const helpText = model.availableModels.length > 0
     ? labels.modelsHelp
@@ -67,122 +62,6 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
 
   return (
     <>
-      <section className="lyra-settings-group">
-        <header className="lyra-settings-group-header">
-          <h3>{labels.browserAutomationTitle}</h3>
-        </header>
-        <div className="lyra-settings-ai-status-row-copy">
-          <span>{labels.browserAutomationDescription}</span>
-        </div>
-        <ul
-          className="lyra-settings-ai-selection-list lyra-settings-ai-selection-list-grid"
-          role="radiogroup"
-          aria-label={labels.browserAutomationTitle}
-        >
-          {[
-            {
-              value: "lyra_direct" as const,
-              label: labels.browserAutomationOptionLyraDirect,
-              description: labels.browserAutomationOptionLyraDirectDescription,
-              badge: null,
-            },
-            {
-              value: "browser_use" as const,
-              label: labels.browserAutomationOptionBrowserUse,
-              description: labels.browserAutomationOptionBrowserUseDescription,
-              badge: browserUseStatusLabel,
-            },
-            {
-              value: "smart" as const,
-              label: labels.browserAutomationOptionSmart,
-              description: labels.browserAutomationOptionSmartDescription,
-              badge: browserUseStatusLabel,
-            },
-          ].map((option) => (
-            <li key={option.value} className="lyra-settings-ai-selection-item-slot">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={model.browserAutomationEngine === option.value}
-                className={model.browserAutomationEngine === option.value
-                  ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
-                  : "lyra-settings-ai-selection-item"}
-                onClick={() => {
-                  model.setBrowserAutomationEngine(option.value);
-                }}
-              >
-                <span className="lyra-settings-ai-selection-copy">
-                  <span className="lyra-settings-ai-selection-heading">
-                    <strong>{option.label}</strong>
-                  </span>
-                  <small>{option.description}</small>
-                </span>
-                {option.badge === null ? null : (
-                  <span className="lyra-settings-ai-selection-meta">
-                    <span className="lyra-settings-ai-badge">{option.badge}</span>
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="lyra-settings-group">
-        <header className="lyra-settings-group-header">
-          <h3>{labels.lyraDirectAdvancedTitle}</h3>
-        </header>
-        <div className="lyra-settings-ai-selection-stack" role="group" aria-label={labels.lyraDirectMicroExecutorBudgetLabel}>
-          <span className="lyra-settings-ai-selection-caption">
-            {labels.lyraDirectMicroExecutorBudgetLabel}
-          </span>
-          <ul
-            className="lyra-settings-ai-selection-list lyra-settings-ai-selection-list-grid"
-            role="radiogroup"
-            aria-label={labels.lyraDirectMicroExecutorBudgetLabel}
-          >
-            {[
-              {
-                value: "1-2" as const,
-                label: labels.lyraDirectMicroExecutorBudgetConservative,
-                description: labels.lyraDirectMicroExecutorBudgetConservativeDescription,
-              },
-              {
-                value: "3-5" as const,
-                label: labels.lyraDirectMicroExecutorBudgetBalanced,
-                description: labels.lyraDirectMicroExecutorBudgetBalancedDescription,
-              },
-              {
-                value: "6-8" as const,
-                label: labels.lyraDirectMicroExecutorBudgetAggressive,
-                description: labels.lyraDirectMicroExecutorBudgetAggressiveDescription,
-              },
-            ].map((option) => (
-              <li key={option.value} className="lyra-settings-ai-selection-item-slot">
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={model.lyraDirectMicroExecutorBudget === option.value}
-                  className={model.lyraDirectMicroExecutorBudget === option.value
-                    ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
-                    : "lyra-settings-ai-selection-item"}
-                  onClick={() => {
-                    model.setLyraDirectMicroExecutorBudget(option.value);
-                  }}
-                >
-                  <span className="lyra-settings-ai-selection-copy">
-                    <span className="lyra-settings-ai-selection-heading">
-                      <strong>{option.label}</strong>
-                    </span>
-                    <small>{option.description}</small>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
       <section className="lyra-settings-group">
         <header className="lyra-settings-group-header">
           <h3>{labels.profilesTitle}</h3>

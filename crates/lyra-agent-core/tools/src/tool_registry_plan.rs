@@ -1,4 +1,5 @@
 use crate::CommandToolOptions;
+use crate::PLAN_SUBMIT_TOOL_NAME;
 use crate::REQUEST_USER_INPUT_TOOL_NAME;
 use crate::ResponsesApiNamespace;
 use crate::ResponsesApiNamespaceTool;
@@ -36,6 +37,7 @@ use crate::create_list_dir_tool;
 use crate::create_list_mcp_resource_templates_tool;
 use crate::create_list_mcp_resources_tool;
 use crate::create_local_shell_tool;
+use crate::create_plan_submit_tool;
 use crate::create_read_mcp_resource_tool;
 use crate::create_report_agent_job_result_tool;
 use crate::create_request_permissions_tool;
@@ -218,6 +220,13 @@ pub fn build_tool_registry_plan(
     );
     plan.register_handler("update_plan", ToolHandlerKind::Plan);
 
+    plan.push_spec(
+        create_plan_submit_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    plan.register_handler(PLAN_SUBMIT_TOOL_NAME, ToolHandlerKind::PlanSubmit);
+
     if config.has_environment && config.js_repl_enabled {
         plan.push_spec(
             create_js_repl_tool(),
@@ -373,7 +382,7 @@ pub fn build_tool_registry_plan(
         );
     }
 
-    if config.has_environment {
+    if config.has_environment && config.supports_image_input {
         plan.push_spec(
             create_view_image_tool(ViewImageToolOptions {
                 can_request_original_image_detail: config.can_request_original_image_detail,
@@ -602,4 +611,109 @@ fn code_mode_namespace_name<'a>(
         .as_ref()
         .and_then(|namespace| namespace_descriptions.get(namespace))
         .map(|namespace_description| namespace_description.name.as_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ToolsConfigParams;
+    use crate::WaitAgentTimeoutOptions;
+    use lyra_features::Features;
+    use lyra_model_provider_info::WireApi;
+    use lyra_protocol::config_types::WindowsSandboxLevel;
+    use lyra_protocol::openai_models::InputModality;
+    use lyra_protocol::openai_models::ModelInfo;
+    use lyra_protocol::protocol::SandboxPolicy;
+    use lyra_protocol::protocol::SessionSource;
+    use serde_json::json;
+
+    fn model_info(input_modalities: Vec<InputModality>) -> ModelInfo {
+        let mut model: ModelInfo = serde_json::from_value(json!({
+            "slug": "test-model",
+            "display_name": "Test Model",
+            "description": null,
+            "supported_reasoning_levels": [],
+            "shell_type": "unified_exec",
+            "visibility": "list",
+            "supported_in_api": true,
+            "priority": 1,
+            "availability_nux": null,
+            "upgrade": null,
+            "base_instructions": "base",
+            "supports_reasoning_summaries": false,
+            "default_reasoning_summary": "auto",
+            "support_verbosity": false,
+            "default_verbosity": null,
+            "apply_patch_tool_type": null,
+            "truncation_policy": {
+                "mode": "bytes",
+                "limit": 10000
+            },
+            "supports_parallel_tool_calls": false,
+            "supports_image_detail_original": false,
+            "context_window": null,
+            "effective_context_window_percent": 95,
+            "supported_tools": [],
+            "input_modalities": ["text"],
+            "supports_search_tool": false
+        }))
+        .expect("deserialize test model");
+        model.input_modalities = input_modalities;
+        model
+    }
+
+    fn tools_config(model_info: &ModelInfo) -> ToolsConfig {
+        let features = Features::with_defaults();
+        let available_models = Vec::new();
+        ToolsConfig::new(&ToolsConfigParams {
+            model_info,
+            available_models: &available_models,
+            features: &features,
+            image_generation_tool_auth_allowed: true,
+            wire_api: WireApi::Responses,
+            web_search_mode: None,
+            session_source: SessionSource::Cli,
+            sandbox_policy: &SandboxPolicy::DangerFullAccess,
+            windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        })
+    }
+
+    fn empty_params<'a>() -> ToolRegistryPlanParams<'a> {
+        ToolRegistryPlanParams {
+            mcp_tools: None,
+            deferred_mcp_tools: None,
+            tool_namespaces: None,
+            discoverable_tools: None,
+            dynamic_tools: &[],
+            default_agent_type_description: "",
+            wait_agent_timeouts: WaitAgentTimeoutOptions {
+                default_timeout_ms: 30_000,
+                min_timeout_ms: 10_000,
+                max_timeout_ms: 3_600_000,
+            },
+        }
+    }
+
+    #[test]
+    fn view_image_requires_model_image_input() {
+        let text_only = model_info(vec![InputModality::Text]);
+        let image_capable = model_info(vec![InputModality::Text, InputModality::Image]);
+
+        let text_only_plan = build_tool_registry_plan(&tools_config(&text_only), empty_params());
+        let image_capable_plan =
+            build_tool_registry_plan(&tools_config(&image_capable), empty_params());
+
+        assert!(
+            !text_only_plan
+                .specs
+                .iter()
+                .any(|spec| spec.name() == "view_image")
+        );
+        assert!(
+            image_capable_plan
+                .specs
+                .iter()
+                .any(|spec| spec.name() == "view_image")
+        );
+    }
 }

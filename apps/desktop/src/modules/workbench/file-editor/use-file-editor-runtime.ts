@@ -141,7 +141,11 @@ export const useFileEditorRuntime = ({
     if (state.isHydrated) {
       return;
     }
-    if (state.status === "loading" || state.status === "unsupported") {
+    if (
+      state.status === "loading" ||
+      state.status === "unsupported" ||
+      state.status === "error"
+    ) {
       return;
     }
     void hydrateIfNeeded(state.instanceId);

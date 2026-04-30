@@ -5,8 +5,10 @@ import type {
   AgentRuntimeEvent,
   AgentSessionDetail,
   AgentToolCall,
+  CapabilityRuntimeEvent,
   LyraClientRequestPayload,
   LyraDesktopApi,
+  PlanInteractionResponse,
 } from "../../../shared/desktop-bridge";
 import type {
   CommandApprovalResponse,
@@ -20,13 +22,22 @@ import {
   type PendingInteractionPanel,
 } from "./interaction/pending-interaction-mappers";
 import {
+  attachThreadAiPanelViewModel,
   lyraThreadToAgentDetail,
+  readThreadAiPanelViewModel,
   readLyraThread,
   threadItemToToolCall,
   type LyraThread,
   type LyraThreadItem,
   type LyraTurn,
 } from "./lyra-thread-adapter";
+import {
+  EMPTY_RUNTIME_BUCKET,
+  useLyraThreadRuntimeBuckets,
+  type LyraPlanStep,
+  type LyraPlanStepStatus,
+  type LyraTurnPlanState,
+} from "./use-lyra-thread-runtime-buckets";
 import type {
   OptimisticUserMessage,
 } from "./view-helpers";
@@ -35,26 +46,17 @@ import {
   writeWorkbenchStateSync,
 } from "../state-storage";
 import { isWriteToolName } from "./runtime/feed-utils";
+import type { AiPanelWriteStreamEvent } from "./types";
 
 type JsonRecord = Record<string, unknown>;
 
 export type LyraCollaborationMode = "default" | "plan";
 
-export type LyraPlanStepStatus = "pending" | "inProgress" | "completed";
-
-export type LyraPlanStep = {
-  readonly step: string;
-  readonly status: LyraPlanStepStatus;
-};
-
-export type LyraTurnPlanState = {
-  readonly turnId: string;
-  readonly draftText: string;
-  readonly finalText: string | null;
-  readonly explanation: string | null;
-  readonly steps: readonly LyraPlanStep[];
-  readonly updatedAt: number;
-};
+export type {
+  LyraPlanStep,
+  LyraPlanStepStatus,
+  LyraTurnPlanState,
+} from "./use-lyra-thread-runtime-buckets";
 
 export type LyraThreadTabStatus = "draft" | "idle" | "running" | "error";
 
@@ -113,10 +115,11 @@ export type LyraThreadRuntimeActions = {
     options?: RuntimeThreadOptions
   ) => Promise<string>;
   readonly rollbackThread: (turnId: string) => Promise<string | null>;
-  readonly startReview: (target: ReviewTarget) => Promise<void>;
+  readonly startReview: (target: ReviewTarget, options?: RuntimeReviewOptions) => Promise<void>;
   readonly selectThread: (threadId: string | null) => void;
   readonly activateThreadTab: (tabId: string) => void;
   readonly closeThreadTab: (tabId: string) => void;
+  readonly reorderThreadTab: (tabId: string, targetIndex: number) => void;
   readonly openThreadTab: (threadId: string) => void;
   readonly setPlanModeEnabled: (enabled: boolean) => void;
   readonly setFollowEnabled: (enabled: boolean) => void;
@@ -125,6 +128,7 @@ export type LyraThreadRuntimeActions = {
   readonly respondToPlanQuestion: (
     payload: { readonly answers: Record<string, unknown>; readonly note?: string }
   ) => Promise<void>;
+  readonly resolvePlanApproval: (input: ResolvePlanApprovalInput) => Promise<void>;
 };
 
 export type ReviewTarget =
@@ -143,6 +147,10 @@ export type RuntimeThreadOptions = {
   readonly approvalPolicy?: "untrusted" | "on-failure" | "on-request" | "never" | undefined;
   readonly approvalsReviewer?: "user" | "auto_review" | undefined;
   readonly sandboxMode?: "read-only" | "workspace-write" | "danger-full-access" | undefined;
+};
+
+export type RuntimeReviewOptions = {
+  readonly cwd?: string | null | undefined;
 };
 
 export type RuntimeTurnAttachment = {
@@ -167,6 +175,15 @@ export type RuntimeTurnInput = {
   readonly parts?: readonly RuntimeTurnInputPart[];
 };
 
+export type ResolvePlanApprovalInput = {
+  readonly threadId: string;
+  readonly planTurnId: string;
+  readonly requestId: string;
+  readonly decision: PlanInteractionResponse["decision"];
+  readonly feedback?: string | undefined;
+  readonly proposedMarkdown?: string | undefined;
+};
+
 type UseLyraThreadRuntimeOptions = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly interactionTextLabels: InteractionTextBundle;
@@ -175,6 +192,7 @@ type UseLyraThreadRuntimeOptions = {
     readonly allowMissing?: boolean;
     readonly location?: { readonly line: number };
   }) => void;
+  readonly onWriteStreamEvent?: (event: AiPanelWriteStreamEvent) => void;
 };
 
 type LyraThreadTabState = {
@@ -196,37 +214,9 @@ type PersistedThreadTabState = {
   readonly tabs?: unknown;
 };
 
-type ThreadRuntimeBucket = {
-  readonly optimisticUserMessages: readonly OptimisticUserMessage[];
-  readonly liveToolCalls: readonly AgentToolCall[];
-  readonly latestRuntimeEventByTurn: Readonly<Record<string, AgentRuntimeEvent>>;
-  readonly planByTurn: Readonly<Record<string, LyraTurnPlanState>>;
-  readonly streamingTurnId: string | null;
-  readonly streamingAssistantText: string;
-  readonly finalizingTurnId: string | null;
-  readonly isSending: boolean;
-  readonly isStreamActive: boolean;
-  readonly followEnabled: boolean;
-};
-
 const AI_PANEL_TABS_STATE_KEY = "ai-panel-tabs" as const;
 const DRAFT_TAB_PREFIX = "draft:";
 const DEFAULT_DRAFT_TITLE = "New thread";
-
-const createEmptyRuntimeBucket = (): ThreadRuntimeBucket => ({
-  optimisticUserMessages: [],
-  liveToolCalls: [],
-  latestRuntimeEventByTurn: {},
-  planByTurn: {},
-  streamingTurnId: null,
-  streamingAssistantText: "",
-  finalizingTurnId: null,
-  isSending: false,
-  isStreamActive: false,
-  followEnabled: false,
-});
-
-const EMPTY_RUNTIME_BUCKET = createEmptyRuntimeBucket();
 
 const isRecord = (value: unknown): value is JsonRecord =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -234,17 +224,51 @@ const isRecord = (value: unknown): value is JsonRecord =>
 const readString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 
+const normalizeRuntimePath = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const shellTerminated = trimmed.replace(/;+$/u, "");
+  if (shellTerminated === "/dev/null" || shellTerminated === "dev/null") {
+    return null;
+  }
+  return trimmed;
+};
+
+const readPathString = (value: unknown): string | null =>
+  typeof value === "string" ? normalizeRuntimePath(value) : null;
+
 const readNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const readRawString = (value: unknown): string | null =>
+  typeof value === "string" ? value : null;
+
+const readBoolean = (value: unknown): boolean | null =>
+  typeof value === "boolean" ? value : null;
+
+const readTimestamp = (value: unknown): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return Date.now();
+};
 
 const readPathLike = (value: unknown): string | null => {
   if (!isRecord(value)) {
     return null;
   }
-  return readString(value.path)
-    ?? readString(value.rootPath)
-    ?? readString(value.root)
-    ?? readString(value.relativePath);
+  return readPathString(value.path)
+    ?? readPathString(value.rootPath)
+    ?? readPathString(value.root)
+    ?? readPathString(value.relativePath);
 };
 
 const readFirstChangePath = (value: unknown): string | null => {
@@ -258,6 +282,210 @@ const readFirstChangePath = (value: unknown): string | null => {
     }
   }
   return null;
+};
+
+const readFirstChangeLineFromDiff = (diff: unknown): number | null => {
+  const text = readRawString(diff);
+  if (text === null) {
+    return null;
+  }
+  const match = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/m.exec(text);
+  if (match === null) {
+    return null;
+  }
+  const line = Number.parseInt(match[1]!, 10);
+  return Number.isFinite(line) ? Math.max(1, line) : null;
+};
+
+const unquoteDiffPath = (value: string): string => {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+    return trimmed.slice(1, -1).replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
+  }
+  return trimmed;
+};
+
+const stripDiffPathPrefix = (value: string): string | null => {
+  const path = normalizeRuntimePath(unquoteDiffPath(value));
+  if (path === null) {
+    return null;
+  }
+  if (path.startsWith("a/") || path.startsWith("b/")) {
+    return normalizeRuntimePath(path.slice(2));
+  }
+  return path;
+};
+
+const isAbsolutePathLike = (value: string): boolean =>
+  value.startsWith("/") || value.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(value);
+
+const resolveDiffPath = (filePath: string, cwd?: string | null): string => {
+  if (isAbsolutePathLike(filePath) || cwd === undefined || cwd === null || cwd.trim().length === 0) {
+    return filePath;
+  }
+  const trimmedCwd = cwd.trim();
+  const separator = trimmedCwd.includes("\\") && !trimmedCwd.includes("/") ? "\\" : "/";
+  return `${trimmedCwd.replace(/[\\/]+$/, "")}${separator}${filePath}`;
+};
+
+const readFirstPathFromUnifiedDiff = (
+  diff: unknown,
+  cwd?: string | null
+): string | null => {
+  const text = readRawString(diff);
+  if (text === null) {
+    return null;
+  }
+  const lines = text.split(/\r?\n/);
+  const fallback = lines
+    .filter((line) => line.startsWith("--- "))
+    .map((line) => stripDiffPathPrefix(line.slice(4)))
+    .find((path): path is string => path !== null) ?? null;
+  const preferred = lines
+    .filter((line) => line.startsWith("+++ "))
+    .map((line) => stripDiffPathPrefix(line.slice(4)))
+    .find((path): path is string => path !== null) ?? null;
+  const filePath = preferred ?? fallback;
+  return filePath === null ? null : resolveDiffPath(filePath, cwd);
+};
+
+const readFirstChangeLineFromChanges = (value: unknown): number | null => {
+  if (!isRecord(value) || !Array.isArray(value.changes)) {
+    return null;
+  }
+  for (const change of value.changes) {
+    if (!isRecord(change)) {
+      continue;
+    }
+    const line = readFirstChangeLineFromDiff(change.diff);
+    if (line !== null) {
+      return line;
+    }
+  }
+  return null;
+};
+
+const readFirstApplyPatchApprovalTarget = (
+  params: JsonRecord,
+  cwd?: string | null
+): { readonly path: string; readonly line?: number } | null => {
+  const fileChanges = isRecord(params.fileChanges) ? params.fileChanges : null;
+  if (fileChanges === null) {
+    return null;
+  }
+  for (const [filePath, change] of Object.entries(fileChanges)) {
+    const normalizedPath = normalizeRuntimePath(filePath);
+    if (normalizedPath === null || !isRecord(change)) {
+      continue;
+    }
+    return {
+      path: resolveDiffPath(normalizedPath, cwd),
+      ...(readFirstChangeLineFromDiff(change.unified_diff) === null
+        ? {}
+        : { line: readFirstChangeLineFromDiff(change.unified_diff)! }),
+    };
+  }
+  return null;
+};
+
+const readCreatedFromChanges = (value: unknown): boolean | undefined => {
+  if (!isRecord(value) || !Array.isArray(value.changes)) {
+    return undefined;
+  }
+  const firstChange = value.changes.find(isRecord);
+  const kind = isRecord(firstChange?.kind) ? readString(firstChange.kind.type) : null;
+  return kind === null ? undefined : kind === "add";
+};
+
+const readOptionalLine = (...values: readonly unknown[]): number | undefined => {
+  for (const value of values) {
+    const line = readNumber(value);
+    if (line !== null) {
+      return Math.max(1, Math.round(line));
+    }
+  }
+  return undefined;
+};
+
+const readOptionalCount = (...values: readonly unknown[]): number | undefined => {
+  for (const value of values) {
+    const count = readNumber(value);
+    if (count !== null) {
+      return Math.max(0, Math.round(count));
+    }
+  }
+  return undefined;
+};
+
+const readOptionalBoolean = (...values: readonly unknown[]): boolean | undefined => {
+  for (const value of values) {
+    const next = readBoolean(value);
+    if (next !== null) {
+      return next;
+    }
+  }
+  return undefined;
+};
+
+const readOptionalRawString = (...values: readonly unknown[]): string | undefined => {
+  for (const value of values) {
+    const next = readRawString(value);
+    if (next !== null) {
+      return next;
+    }
+  }
+  return undefined;
+};
+
+type WriteStreamCallMetadata = {
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly filePath: string;
+  readonly timestamp: number;
+  readonly created?: boolean;
+  readonly baselineContent?: string;
+  readonly firstChangedLine?: number;
+  readonly addedLines?: number;
+  readonly removedLines?: number;
+};
+
+const readFileCapabilityPreview = (payload: unknown): {
+  readonly filePath: string;
+  readonly created?: boolean;
+  readonly baselineContent?: string;
+  readonly firstChangedLine?: number;
+  readonly addedLines?: number;
+  readonly removedLines?: number;
+} | null => {
+  if (!isRecord(payload) || !isRecord(payload.preview)) {
+    return null;
+  }
+  const kind = readString(payload.preview.kind);
+  if (kind !== "file-edit" && kind !== "file-create") {
+    return null;
+  }
+  const filePath = readPathString(payload.preview.filePath);
+  if (filePath === null) {
+    return null;
+  }
+  return {
+    filePath,
+    ...(kind === "file-create" ? { created: true } : {}),
+    ...(readRawString(payload.preview.baselineContent) === null
+      ? kind === "file-create" ? { baselineContent: "" } : {}
+      : { baselineContent: readRawString(payload.preview.baselineContent)! }),
+    ...(readOptionalLine(payload.preview.firstChangedLine) === undefined
+      ? {}
+      : { firstChangedLine: readOptionalLine(payload.preview.firstChangedLine)! }),
+    ...(readOptionalCount(payload.preview.addedLines) === undefined
+      ? {}
+      : { addedLines: readOptionalCount(payload.preview.addedLines)! }),
+    ...(readOptionalCount(payload.preview.removedLines) === undefined
+      ? {}
+      : { removedLines: readOptionalCount(payload.preview.removedLines)! }),
+  };
 };
 
 const readTerminalTranscriptChunks = (value: unknown): readonly JsonRecord[] =>
@@ -348,6 +576,37 @@ const closeTabState = (state: LyraThreadTabState, tabId: string): LyraThreadTabS
   });
 };
 
+const reorderTabState = (
+  state: LyraThreadTabState,
+  tabId: string,
+  targetIndex: number
+): LyraThreadTabState => {
+  if (!Number.isFinite(targetIndex)) {
+    return normalizeTabState(state);
+  }
+  const fromIndex = state.tabs.findIndex((tab) => tab.tabId === tabId);
+  if (fromIndex < 0) {
+    return normalizeTabState(state);
+  }
+  const movingTab = state.tabs[fromIndex];
+  if (movingTab === undefined) {
+    return normalizeTabState(state);
+  }
+  const clampedTargetIndex = Math.max(0, Math.min(state.tabs.length, Math.round(targetIndex)));
+  const tabsWithoutMovingTab = state.tabs.filter((tab) => tab.tabId !== tabId);
+  const adjustedTargetIndex = fromIndex < clampedTargetIndex
+    ? clampedTargetIndex - 1
+    : clampedTargetIndex;
+  return normalizeTabState({
+    ...state,
+    tabs: [
+      ...tabsWithoutMovingTab.slice(0, adjustedTargetIndex),
+      movingTab,
+      ...tabsWithoutMovingTab.slice(adjustedTargetIndex),
+    ],
+  });
+};
+
 const readPersistedTab = (value: unknown): LyraThreadTab | null => {
   if (!isRecord(value)) {
     return null;
@@ -408,37 +667,6 @@ const writeTabSnapshot = (state: LyraThreadTabState): void => {
   );
 };
 
-const mergeRuntimeBuckets = (
-  target: ThreadRuntimeBucket,
-  source: ThreadRuntimeBucket
-): ThreadRuntimeBucket => ({
-  optimisticUserMessages:
-    source.optimisticUserMessages.length > 0
-      ? source.optimisticUserMessages
-      : target.optimisticUserMessages,
-  liveToolCalls:
-    source.liveToolCalls.length > 0
-      ? source.liveToolCalls
-      : target.liveToolCalls,
-  latestRuntimeEventByTurn: {
-    ...target.latestRuntimeEventByTurn,
-    ...source.latestRuntimeEventByTurn,
-  },
-  planByTurn: {
-    ...target.planByTurn,
-    ...source.planByTurn,
-  },
-  streamingTurnId: source.streamingTurnId ?? target.streamingTurnId,
-  streamingAssistantText:
-    source.streamingAssistantText.length > 0
-      ? source.streamingAssistantText
-      : target.streamingAssistantText,
-  finalizingTurnId: source.finalizingTurnId ?? target.finalizingTurnId,
-  isSending: source.isSending || target.isSending,
-  isStreamActive: source.isStreamActive || target.isStreamActive,
-  followEnabled: source.followEnabled || target.followEnabled,
-});
-
 const normalizeStatus = (value: unknown): string =>
   readString(value)?.replace(/[_\s-]+/g, "").toLowerCase() ?? "";
 
@@ -493,6 +721,46 @@ const toRuntimeEvent = ({
   timestamp: Date.now(),
   toolOwner: "agent_core",
 });
+
+const firstNonEmptyLine = (text: string): string | null =>
+  text.split(/\r?\n/u).map((line) => line.trim()).find((line) => line.length > 0) ?? null;
+
+const planApprovalPayload = (
+  turnId: string,
+  planText: string,
+  draftText: string
+): JsonRecord => ({
+  requestId: `plan:${turnId}`,
+  version: 0,
+  status: "submitted",
+  summary: firstNonEmptyLine(planText) ?? "Proposed plan",
+  proposedMarkdown: planText,
+  ...(draftText.length === 0 ? {} : { draftMarkdown: draftText }),
+});
+
+const planApprovalInteraction = (
+  threadId: string,
+  turnId: string,
+  planText: string,
+  draftText: string,
+  timestamp: number
+): AgentPendingInteraction => {
+  const requestId = `plan:${turnId}`;
+  return {
+    id: requestId,
+    sessionId: threadId,
+    turnId,
+    kind: "plan_approval",
+    status: "pending",
+    payload: {
+      requestId,
+      agentCoreMethod: "turn/planApproval/resolve",
+      raw: planApprovalPayload(turnId, planText, draftText),
+    },
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+};
 
 const toolCallFollowTarget = (
   call: AgentToolCall
@@ -701,6 +969,21 @@ const extractPlanStatesFromThread = (
   thread: LyraThread,
 ): Readonly<Record<string, LyraTurnPlanState>> => {
   const next: Record<string, LyraTurnPlanState> = {};
+  for (const plan of thread.aiPanelViewModel?.plans ?? []) {
+    const finalText = plan.finalText?.trim() ?? "";
+    const draftText = plan.draftText.trim();
+    if (finalText.length === 0 && draftText.length === 0) {
+      continue;
+    }
+    next[plan.turnId] = {
+      turnId: plan.turnId,
+      draftText,
+      finalText: finalText.length === 0 ? null : finalText,
+      explanation: plan.explanation ?? null,
+      steps: plan.steps,
+      updatedAt: plan.updatedAtMs,
+    };
+  }
   for (const turn of thread.turns) {
     for (const item of turn.items) {
       if (item.type !== "plan") {
@@ -749,7 +1032,10 @@ const latestPlanTurnIdOf = (
 ): string | null => {
   let latest: LyraTurnPlanState | null = null;
   for (const state of Object.values(planByTurn)) {
-    if (latest === null || state.updatedAt > latest.updatedAt) {
+    if ((state.finalText ?? state.draftText).trim().length === 0) {
+      continue;
+    }
+    if (latest === null || state.updatedAt >= latest.updatedAt) {
       latest = state;
     }
   }
@@ -910,6 +1196,11 @@ const turnPermissionRequestPart = (options: RuntimeThreadOptions): JsonRecord =>
 
 const persistedUserTurnIds = (thread: LyraThread): ReadonlySet<string> => {
   const turnIds = new Set<string>();
+  for (const message of thread.aiPanelViewModel?.messages ?? []) {
+    if (message.role === "user" && typeof message.turnId === "string") {
+      turnIds.add(message.turnId);
+    }
+  }
   for (const turn of thread.turns) {
     if (turn.items.some((item) => item.type === "userMessage")) {
       turnIds.add(turn.id);
@@ -920,6 +1211,15 @@ const persistedUserTurnIds = (thread: LyraThread): ReadonlySet<string> => {
 
 const persistedUserAttachmentTurnIds = (thread: LyraThread): ReadonlySet<string> => {
   const turnIds = new Set<string>();
+  for (const message of thread.aiPanelViewModel?.messages ?? []) {
+    if (
+      message.role === "user" &&
+      typeof message.turnId === "string" &&
+      message.contentParts?.some((part) => part.type === "attachment") === true
+    ) {
+      turnIds.add(message.turnId);
+    }
+  }
   for (const turn of thread.turns) {
     if (
       turn.items.some((item) =>
@@ -974,6 +1274,7 @@ const mergeThreadListSummary = (
   return {
     ...existing,
     ...summary,
+    aiPanelViewModel: summary.aiPanelViewModel ?? existing.aiPanelViewModel ?? null,
     turns:
       summary.turns.length === 0 && existing.turns.length > 0
         ? existing.turns
@@ -1005,6 +1306,7 @@ export const useLyraThreadRuntime = ({
   desktopApi,
   interactionTextLabels,
   onFollowOpenFilePath,
+  onWriteStreamEvent,
 }: UseLyraThreadRuntimeOptions): {
   readonly state: LyraThreadRuntimeState;
   readonly actions: LyraThreadRuntimeActions;
@@ -1013,7 +1315,17 @@ export const useLyraThreadRuntime = ({
   const [threadById, setThreadById] = useState<Readonly<Record<string, LyraThread>>>({});
   const [tabState, setTabState] = useState<LyraThreadTabState>(readInitialTabState);
   const [planModeEnabled, setPlanModeEnabled] = useState(false);
-  const [runtimeByKey, setRuntimeByKey] = useState<Readonly<Record<string, ThreadRuntimeBucket>>>({});
+  const {
+    runtimeByKey,
+    runtimeByKeyRef,
+    patchRuntimeBucket,
+    queueRuntimeBucketPatch,
+    flushQueuedRuntimeBucketPatches,
+    resetRuntimeBucket,
+    forgetRuntimeBucket,
+    bindRuntimeBucketToThread,
+    stopAllRuntimeBuckets,
+  } = useLyraThreadRuntimeBuckets();
   const [pendingInteractions, setPendingInteractions] = useState<readonly AgentPendingInteraction[]>([]);
   const [serverRequestIds, setServerRequestIds] = useState<Readonly<Record<string, string | number>>>({});
   const [activeInteractionId, setActiveInteractionId] = useState<string | null>(null);
@@ -1026,10 +1338,11 @@ export const useLyraThreadRuntime = ({
   const activeRuntimeKeyRef = useRef<string | null>(null);
   const activeThreadRef = useRef<LyraThread | null>(null);
   const threadByIdRef = useRef<Readonly<Record<string, LyraThread>>>({});
-  const runtimeByKeyRef = useRef<Readonly<Record<string, ThreadRuntimeBucket>>>({});
   const streamingTurnIdRef = useRef<string | null>(null);
   const loadThreadRef = useRef<((threadId: string) => Promise<void>) | null>(null);
   const threadReadRequestedForIdRef = useRef<Set<string>>(new Set());
+  const capabilityWriteMetadataByCallRef = useRef<Record<string, WriteStreamCallMetadata>>({});
+  const openedDiffTargetsRef = useRef<Set<string>>(new Set());
 
   const rawThreadTabs = tabState.tabs;
   const activeTab = rawThreadTabs.find((tab) => tab.tabId === tabState.activeTabId) ?? rawThreadTabs[0] ?? null;
@@ -1089,10 +1402,6 @@ export const useLyraThreadRuntime = ({
   }, [threadById]);
 
   useEffect(() => {
-    runtimeByKeyRef.current = runtimeByKey;
-  }, [runtimeByKey]);
-
-  useEffect(() => {
     streamingTurnIdRef.current = activeBucket.streamingTurnId;
   }, [activeBucket.streamingTurnId]);
 
@@ -1104,16 +1413,9 @@ export const useLyraThreadRuntime = ({
     setTabState((current) => normalizeTabState(updater(current)));
   }, []);
 
-  const patchRuntimeBucket = useCallback((key: string, updater: (current: ThreadRuntimeBucket) => ThreadRuntimeBucket): void => {
-    setRuntimeByKey((current) => ({
-      ...current,
-      [key]: updater(current[key] ?? EMPTY_RUNTIME_BUCKET),
-    }));
-  }, []);
-
-  const resetRuntimeBucket = useCallback((key: string): void => {
-    setRuntimeByKey((current) => ({ ...current, [key]: createEmptyRuntimeBucket() }));
-  }, []);
+  useEffect(() => {
+    flushQueuedRuntimeBucketPatches();
+  }, [activeThreadId, flushQueuedRuntimeBucketPatches]);
 
   const setFollowEnabled = useCallback((enabled: boolean): void => {
     const key = activeRuntimeKeyRef.current;
@@ -1125,6 +1427,187 @@ export const useLyraThreadRuntime = ({
       followEnabled: enabled,
     }));
   }, [patchRuntimeBucket]);
+
+  const emitWriteToolCallInWorkspace = useCallback((call: AgentToolCall): void => {
+    if (onWriteStreamEvent === undefined || !isWriteToolName(call.toolName)) {
+      return;
+    }
+    const target = toolCallFollowTarget(call);
+    if (target === null) {
+      return;
+    }
+    const input = isRecord(call.input) ? call.input : {};
+    const output = isRecord(call.output) ? call.output : {};
+    const baselineContent = readOptionalRawString(output.baselineContent, input.baselineContent);
+    const created = readOptionalBoolean(
+      output.created,
+      input.created,
+      readCreatedFromChanges(output),
+      readCreatedFromChanges(input)
+    );
+    const firstChangedLine = readOptionalLine(
+      output.firstChangedLine,
+      output.first_changed_line,
+      input.firstChangedLine,
+      input.first_changed_line,
+      readFirstChangeLineFromChanges(output),
+      readFirstChangeLineFromChanges(input),
+      target.line
+    );
+    const addedLines = readOptionalCount(output.addedLines, output.added_lines, input.addedLines, input.added_lines);
+    const removedLines = readOptionalCount(
+      output.removedLines,
+      output.removed_lines,
+      input.removedLines,
+      input.removed_lines
+    );
+
+    if (call.status === "running") {
+      onWriteStreamEvent({
+        kind: "started",
+        sessionId: call.sessionId,
+        turnId: call.turnId,
+        toolCallId: call.id,
+        toolName: call.toolName,
+        filePath: target.path,
+        timestamp: call.startedAt,
+        ...(created === undefined ? {} : { created }),
+        ...(baselineContent === undefined ? {} : { baselineContent }),
+      });
+      return;
+    }
+
+    onWriteStreamEvent({
+      kind: "finished",
+      sessionId: call.sessionId,
+      turnId: call.turnId,
+      toolCallId: call.id,
+      toolName: call.toolName,
+      filePath: target.path,
+      timestamp: call.finishedAt ?? Date.now(),
+      status: call.status === "failed" ? "failed" : "completed",
+      ...(created === undefined ? {} : { created }),
+      ...(baselineContent === undefined ? {} : { baselineContent }),
+      ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
+      ...(addedLines === undefined ? {} : { addedLines }),
+      ...(removedLines === undefined ? {} : { removedLines }),
+      ...(call.errorCode === undefined ? {} : { errorCode: call.errorCode }),
+      ...(call.errorMessage === undefined ? {} : { errorMessage: call.errorMessage }),
+    });
+  }, [onWriteStreamEvent]);
+
+  const emitCapabilityWriteEvent = useCallback((event: CapabilityRuntimeEvent): void => {
+    if (onWriteStreamEvent === undefined || !isWriteToolName(event.capabilityId)) {
+      return;
+    }
+    const payload = isRecord(event.payload) ? event.payload : {};
+    const preview = readFileCapabilityPreview(payload);
+    const previous = capabilityWriteMetadataByCallRef.current[event.callId];
+    const context = isRecord(payload.context) ? payload.context : {};
+    const sessionId =
+      readString(context.aiSessionId)
+      ?? previous?.sessionId
+      ?? activeThreadIdRef.current
+      ?? "capability";
+    const turnId =
+      readString(context.aiTurnId)
+      ?? previous?.turnId
+      ?? streamingTurnIdRef.current
+      ?? `${event.callId}:turn`;
+    const filePath =
+      preview?.filePath
+      ?? readPathLike(payload)
+      ?? previous?.filePath
+      ?? null;
+    if (filePath === null) {
+      return;
+    }
+
+    const timestamp = readTimestamp(event.timestamp);
+    const baselineContent = readOptionalRawString(payload.baselineContent, preview?.baselineContent, previous?.baselineContent);
+    const created = readOptionalBoolean(payload.created, preview?.created, previous?.created);
+    const firstChangedLine = readOptionalLine(payload.firstChangedLine, preview?.firstChangedLine, previous?.firstChangedLine);
+    const addedLines = readOptionalCount(payload.addedLines, preview?.addedLines, previous?.addedLines);
+    const removedLines = readOptionalCount(payload.removedLines, preview?.removedLines, previous?.removedLines);
+    const metadata: WriteStreamCallMetadata = {
+      sessionId,
+      turnId,
+      toolCallId: event.callId,
+      toolName: event.capabilityId,
+      filePath,
+      timestamp,
+      ...(created === undefined ? {} : { created }),
+      ...(baselineContent === undefined ? {} : { baselineContent }),
+      ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
+      ...(addedLines === undefined ? {} : { addedLines }),
+      ...(removedLines === undefined ? {} : { removedLines }),
+    };
+
+    if (event.phase === "approval_requested") {
+      capabilityWriteMetadataByCallRef.current[event.callId] = metadata;
+      onWriteStreamEvent({
+        kind: "started",
+        sessionId,
+        turnId,
+        toolCallId: event.callId,
+        toolName: event.capabilityId,
+        filePath,
+        timestamp,
+        ...(created === undefined ? {} : { created }),
+        ...(baselineContent === undefined ? {} : { baselineContent }),
+      });
+      return;
+    }
+
+    if (event.phase !== "completed" && event.phase !== "failed") {
+      return;
+    }
+
+    onWriteStreamEvent({
+      kind: "finished",
+      sessionId,
+      turnId,
+      toolCallId: event.callId,
+      toolName: event.capabilityId,
+      filePath,
+      timestamp,
+      status: event.phase === "failed" ? "failed" : "completed",
+      ...(created === undefined ? {} : { created }),
+      ...(baselineContent === undefined ? {} : { baselineContent }),
+      ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
+      ...(addedLines === undefined ? {} : { addedLines }),
+      ...(removedLines === undefined ? {} : { removedLines }),
+      ...(event.error?.code === undefined ? {} : { errorCode: event.error.code }),
+      ...(event.error?.message === undefined ? {} : { errorMessage: event.error.message }),
+    });
+    delete capabilityWriteMetadataByCallRef.current[event.callId];
+  }, [onWriteStreamEvent]);
+
+  const openDiffTargetInWorkspace = useCallback((
+    threadId: string,
+    turnId: string,
+    diff: unknown
+  ): void => {
+    if (onFollowOpenFilePath === undefined) {
+      return;
+    }
+    const cwd = threadByIdRef.current[threadId]?.cwd ?? activeThreadRef.current?.cwd ?? null;
+    const path = readFirstPathFromUnifiedDiff(diff, cwd);
+    if (path === null) {
+      return;
+    }
+    const key = `${threadId}:${turnId}:${path}`;
+    if (openedDiffTargetsRef.current.has(key)) {
+      return;
+    }
+    openedDiffTargetsRef.current.add(key);
+    const firstChangedLine = readFirstChangeLineFromDiff(diff);
+    onFollowOpenFilePath(path, {
+      allowMissing: true,
+      forceReloadIfOpen: false,
+      ...(firstChangedLine === null ? {} : { location: { line: firstChangedLine } }),
+    });
+  }, [onFollowOpenFilePath]);
 
   const followToolCallInWorkspace = useCallback((
     threadId: string,
@@ -1161,7 +1644,7 @@ export const useLyraThreadRuntime = ({
     if (chunk.text.length === 0) {
       return;
     }
-    patchRuntimeBucket(threadId, (current) => {
+    queueRuntimeBucketPatch(threadId, (current) => {
       const existing = current.liveToolCalls.find((entry) => entry.id === itemId);
       const baseCall: AgentToolCall = existing ?? {
         id: itemId,
@@ -1202,7 +1685,7 @@ export const useLyraThreadRuntime = ({
         ].slice(-48),
       };
     });
-  }, [patchRuntimeBucket]);
+  }, [queueRuntimeBucketPatch]);
 
   const upsertThread = useCallback((thread: LyraThread): void => {
     setThreadById((current) => ({ ...current, [thread.id]: thread }));
@@ -1246,21 +1729,8 @@ export const useLyraThreadRuntime = ({
           : tab
       ),
     }));
-    setRuntimeByKey((current) => {
-      if (tabId === thread.id) {
-        return current;
-      }
-      const draftBucket = current[tabId];
-      if (draftBucket === undefined) {
-        return current;
-      }
-      const existingBucket = current[thread.id] ?? EMPTY_RUNTIME_BUCKET;
-      const next = { ...current };
-      delete next[tabId];
-      next[thread.id] = mergeRuntimeBuckets(existingBucket, draftBucket);
-      return next;
-    });
-  }, [patchTabState]);
+    bindRuntimeBucketToThread(tabId, thread.id);
+  }, [bindRuntimeBucketToThread, patchTabState]);
 
   const openThreadTab = useCallback((threadId: string): void => {
     const normalized = threadId.trim();
@@ -1293,6 +1763,10 @@ export const useLyraThreadRuntime = ({
     setTabState((current) => closeTabState(current, tabId));
   }, []);
 
+  const reorderThreadTab = useCallback((tabId: string, targetIndex: number): void => {
+    patchTabState((current) => reorderTabState(current, tabId, targetIndex));
+  }, [patchTabState]);
+
   const forgetThread = useCallback((threadId: string): void => {
     threadReadRequestedForIdRef.current.delete(threadId);
     setThreadById((current) => {
@@ -1300,17 +1774,13 @@ export const useLyraThreadRuntime = ({
       delete next[threadId];
       return next;
     });
-    setRuntimeByKey((current) => {
-      const next = { ...current };
-      delete next[threadId];
-      return next;
-    });
+    forgetRuntimeBucket(threadId);
     patchTabState((current) => ({
       ...current,
       tabs: current.tabs.filter((tab) => tab.threadId !== threadId),
     }));
     setRuntimeError(null);
-  }, [patchTabState]);
+  }, [forgetRuntimeBucket, patchTabState]);
 
   const loadThreads = useCallback(async (): Promise<void> => {
     if (lyraApi === null) {
@@ -1350,14 +1820,37 @@ export const useLyraThreadRuntime = ({
     }
     setIsLoadingThread(true);
     try {
-      const response = await lyraApi.request<{ thread?: unknown }>(createRequestPayload("thread/read", {
+      const response = await lyraApi.request<{ thread?: unknown; viewModel?: unknown }>(createRequestPayload("thread/read", {
         threadId,
-        includeTurns: true,
+        includeTurns: false,
+        viewModel: {
+          kind: "aiPanel",
+          runtimeFeedLimit: 48,
+        },
       }));
-      const nextThread = readLyraThread(response.thread);
+      const rawThread = readLyraThread(response.thread);
+      const viewModel = readThreadAiPanelViewModel(response.viewModel);
+      const nextThread = rawThread === null ? null : attachThreadAiPanelViewModel(rawThread, viewModel);
       if (nextThread !== null) {
         threadReadRequestedForIdRef.current.add(nextThread.id);
         upsertThread(nextThread);
+        const hydratedDetail = lyraThreadToAgentDetail(nextThread);
+        const hydratedPlanInteractions = hydratedDetail.pendingInteractions.filter(
+          (interaction) => interaction.kind === "plan_approval"
+        );
+        setPendingInteractions((current) => {
+          const withoutHydratedPlanApprovals = current.filter(
+            (interaction) =>
+              interaction.sessionId !== nextThread.id || interaction.kind !== "plan_approval"
+          );
+          return mergePendingInteractionLists(
+            withoutHydratedPlanApprovals,
+            hydratedPlanInteractions
+          );
+        });
+        if (hydratedPlanInteractions.length > 0) {
+          setActiveInteractionId((current) => current ?? hydratedPlanInteractions[0]!.id);
+        }
         patchRuntimeBucket(nextThread.id, (current) => ({
           ...current,
           optimisticUserMessages: dropPersistedOptimisticMessages(current.optimisticUserMessages, nextThread),
@@ -1791,7 +2284,10 @@ export const useLyraThreadRuntime = ({
     }
   }, [loadThreads, lyraApi, patchRuntimeBucket, resetRuntimeBucket, upsertThread]);
 
-  const startReview = useCallback(async (target: ReviewTarget): Promise<void> => {
+  const startReview = useCallback(async (
+    target: ReviewTarget,
+    options: RuntimeReviewOptions = {}
+  ): Promise<void> => {
     if (lyraApi === null || activeThreadIdRef.current === null) {
       return;
     }
@@ -1800,6 +2296,9 @@ export const useLyraThreadRuntime = ({
       const response = await lyraApi.request<{ turn?: unknown; reviewThreadId?: unknown }>(createRequestPayload("review/start", {
         threadId,
         target,
+        ...(options.cwd === null || options.cwd === undefined || options.cwd.trim().length === 0
+          ? {}
+          : { cwd: options.cwd.trim() }),
         delivery: "inline",
       }));
       const turnId = isRecord(response.turn) ? readString(response.turn.id) : null;
@@ -1934,6 +2433,116 @@ export const useLyraThreadRuntime = ({
     await resolveInteraction(interaction.id, { answers });
   }, [activeInteractionId, pendingInteractions, resolveInteraction]);
 
+  const resolvePlanApproval = useCallback(async ({
+    threadId,
+    planTurnId,
+    requestId,
+    decision,
+    feedback,
+    proposedMarkdown,
+  }: ResolvePlanApprovalInput): Promise<void> => {
+    if (lyraApi === null) {
+      return;
+    }
+    const normalizedThreadId = threadId.trim();
+    const normalizedPlanTurnId = planTurnId.trim();
+    const normalizedRequestId = requestId.trim();
+    if (
+      normalizedThreadId.length === 0
+      || normalizedPlanTurnId.length === 0
+      || normalizedRequestId.length === 0
+    ) {
+      return;
+    }
+    const trimmedFeedback = feedback?.trim() ?? "";
+    setIsInteractionSubmitting(true);
+    try {
+      const response = await lyraApi.request<{ turn?: unknown }>(
+        createRequestPayload("turn/planApproval/resolve", {
+          threadId: normalizedThreadId,
+          planTurnId: normalizedPlanTurnId,
+          requestId: normalizedRequestId,
+          decision,
+          ...(trimmedFeedback.length === 0 ? {} : { feedback: trimmedFeedback }),
+          ...(proposedMarkdown === undefined ? {} : { proposedMarkdown }),
+        })
+      );
+      const nextTurnId = isRecord(response.turn) ? readString(response.turn.id) : null;
+      const planPhase =
+        decision === "approve_and_implement"
+          ? "plan_approved"
+          : decision === "keep_planning"
+            ? "plan_revision_requested"
+            : "plan_rejected";
+      setPendingInteractions((current) => current.filter((interaction) => interaction.id !== normalizedRequestId));
+      setServerRequestIds((current) => {
+        const next = { ...current };
+        delete next[normalizedRequestId];
+        return next;
+      });
+      setActiveInteractionId((current) => current === normalizedRequestId ? null : current);
+      patchRuntimeBucket(normalizedThreadId, (current) => {
+        const existingPlan = current.planByTurn[normalizedPlanTurnId];
+        const nextPlanByTurn = existingPlan === undefined
+          ? current.planByTurn
+          : {
+              ...current.planByTurn,
+              [normalizedPlanTurnId]: {
+                ...existingPlan,
+                ...(proposedMarkdown === undefined || proposedMarkdown.trim().length === 0
+                  ? {}
+                  : { finalText: proposedMarkdown.trim() }),
+                updatedAt: Date.now(),
+              },
+            };
+        return {
+          ...current,
+          isSending: false,
+          isStreamActive: nextTurnId !== null,
+          streamingAssistantText: "",
+          streamingTurnId: nextTurnId,
+          finalizingTurnId: null,
+          planByTurn: nextPlanByTurn,
+          latestRuntimeEventByTurn: {
+            ...current.latestRuntimeEventByTurn,
+            [normalizedPlanTurnId]: toRuntimeEvent({
+              sessionId: normalizedThreadId,
+              turnId: normalizedPlanTurnId,
+              phase: planPhase,
+              payload: {
+                requestId: normalizedRequestId,
+                decision,
+                ...(trimmedFeedback.length === 0 ? {} : { feedback: trimmedFeedback }),
+              },
+            }),
+            ...(nextTurnId === null
+              ? {}
+              : {
+                  [nextTurnId]: toRuntimeEvent({
+                    sessionId: normalizedThreadId,
+                    turnId: nextTurnId,
+                    phase: "accepted",
+                    payload: {
+                      threadId: normalizedThreadId,
+                      turnId: nextTurnId,
+                      planTurnId: normalizedPlanTurnId,
+                      requestId: normalizedRequestId,
+                      decision,
+                    },
+                  }),
+                }),
+          },
+        };
+      });
+      setRuntimeError(null);
+    } catch (error) {
+      setRuntimeError(errorMessageOf(error));
+      throw error;
+    } finally {
+      setIsInteractionSubmitting(false);
+    }
+  }, [lyraApi, patchRuntimeBucket]);
+
   useEffect(() => {
     void loadThreads();
   }, [loadThreads]);
@@ -1955,6 +2564,49 @@ export const useLyraThreadRuntime = ({
   }, [activeThread, activeThreadId, loadThread]);
 
   useEffect(() => {
+    if (activeThreadId === null || latestPlanTurnId === null) {
+      return;
+    }
+    const requestId = `plan:${latestPlanTurnId}`;
+    if (pendingInteractions.some((interaction) => interaction.id === requestId)) {
+      return;
+    }
+    const latestPlan = activeBucket.planByTurn[latestPlanTurnId];
+    if (latestPlan === undefined) {
+      return;
+    }
+    const latestPlanText = latestPlan.finalText ?? latestPlan.draftText.trim();
+    if (latestPlanText.trim().length === 0) {
+      return;
+    }
+    const latestEvent = activeBucket.latestRuntimeEventByTurn[latestPlanTurnId] ?? null;
+    const planTurn = activeThread?.turns.find((turn) => turn.id === latestPlanTurnId) ?? null;
+    const shouldRestorePendingApproval =
+      latestEvent?.phase === "plan_approval_requested"
+      || (latestEvent === null && normalizeStatus(planTurn?.status) === "waiting");
+    if (!shouldRestorePendingApproval) {
+      return;
+    }
+    const interaction = planApprovalInteraction(
+      activeThreadId,
+      latestPlanTurnId,
+      latestPlanText,
+      latestPlan.draftText,
+      Date.now()
+    );
+    setPendingInteractions((current) => mergePendingInteractionLists(current, [interaction]));
+    setActiveInteractionId((current) => current ?? interaction.id);
+    setIsInteractionSubmitting(false);
+  }, [
+    activeBucket.latestRuntimeEventByTurn,
+    activeBucket.planByTurn,
+    activeThread,
+    activeThreadId,
+    latestPlanTurnId,
+    pendingInteractions,
+  ]);
+
+  useEffect(() => {
     if (lyraApi === null) {
       return;
     }
@@ -1965,13 +2617,7 @@ export const useLyraThreadRuntime = ({
       }
       if (event.kind === "disconnected") {
         setRuntimeError(event.message ?? event.error?.message ?? "Lyra runtime disconnected");
-        setRuntimeByKey((current) => {
-          const next: Record<string, ThreadRuntimeBucket> = {};
-          for (const [key, bucket] of Object.entries(current)) {
-            next[key] = { ...bucket, isStreamActive: false, isSending: false };
-          }
-          return next;
-        });
+        stopAllRuntimeBuckets();
         return;
       }
       if (event.kind === "ready") {
@@ -1979,12 +2625,29 @@ export const useLyraThreadRuntime = ({
         return;
       }
       if (event.kind === "request") {
+        flushQueuedRuntimeBucketPatches();
         const request = isRecord(event.request) ? event.request : null;
         const requestId = request?.id;
         const method = readString(request?.method);
         const params = isRecord(request?.params) ? request.params : {};
         if ((typeof requestId !== "string" && typeof requestId !== "number") || method === null) {
           return;
+        }
+        if (method === "applyPatchApproval") {
+          const threadId = readString(params.conversationId) ?? activeThreadIdRef.current;
+          const turnId = streamingTurnIdRef.current ?? `${String(requestId)}:turn`;
+          const target = readFirstApplyPatchApprovalTarget(
+            params,
+            threadId === null ? activeThreadRef.current?.cwd : threadByIdRef.current[threadId]?.cwd
+          );
+          if (threadId !== null && target !== null && onFollowOpenFilePath !== undefined) {
+            onFollowOpenFilePath(target.path, {
+              allowMissing: true,
+              forceReloadIfOpen: false,
+              ...(target.line === undefined ? {} : { location: { line: target.line } }),
+            });
+            openedDiffTargetsRef.current.add(`${threadId}:${turnId}:${target.path}`);
+          }
         }
         const interaction = interactionFromServerRequest(requestId, method, params);
         if (interaction === null) {
@@ -2055,7 +2718,7 @@ export const useLyraThreadRuntime = ({
         const turnId = readString(params.turnId);
         const delta = typeof params.delta === "string" ? params.delta : "";
         if (threadId !== null && turnId !== null) {
-          patchRuntimeBucket(threadId, (current) => ({
+          queueRuntimeBucketPatch(threadId, (current) => ({
             ...current,
             streamingTurnId: turnId,
             isStreamActive: true,
@@ -2079,7 +2742,7 @@ export const useLyraThreadRuntime = ({
         const delta = typeof params.delta === "string" ? params.delta : "";
         if (threadId !== null && turnId !== null) {
           const updatedAt = Date.now();
-          patchRuntimeBucket(threadId, (current) => {
+          queueRuntimeBucketPatch(threadId, (current) => {
             const existing = current.planByTurn[turnId];
             return {
               ...current,
@@ -2111,6 +2774,7 @@ export const useLyraThreadRuntime = ({
         return;
       }
       if (method === "turn/plan/updated") {
+        flushQueuedRuntimeBucketPatches();
         const threadId = readString(params.threadId);
         const turnId = readString(params.turnId);
         if (threadId !== null && turnId !== null) {
@@ -2165,7 +2829,7 @@ export const useLyraThreadRuntime = ({
             text: delta,
             timestamp: Date.now(),
           });
-          patchRuntimeBucket(threadId, (current) => ({
+          queueRuntimeBucketPatch(threadId, (current) => ({
             ...current,
             streamingTurnId: turnId,
             isStreamActive: true,
@@ -2212,7 +2876,7 @@ export const useLyraThreadRuntime = ({
         const itemId = readString(params.itemId);
         const delta = typeof params.delta === "string" ? params.delta : "";
         if (threadId !== null && turnId !== null && itemId !== null) {
-          patchRuntimeBucket(threadId, (current) => ({
+          queueRuntimeBucketPatch(threadId, (current) => ({
             ...current,
             streamingTurnId: turnId,
             isStreamActive: true,
@@ -2240,7 +2904,8 @@ export const useLyraThreadRuntime = ({
         const threadId = readString(params.threadId);
         const turnId = readString(params.turnId);
         if (threadId !== null && turnId !== null) {
-          patchRuntimeBucket(threadId, (current) => ({
+          openDiffTargetInWorkspace(threadId, turnId, params.diff);
+          queueRuntimeBucketPatch(threadId, (current) => ({
             ...current,
             latestRuntimeEventByTurn: {
               ...current.latestRuntimeEventByTurn,
@@ -2262,6 +2927,9 @@ export const useLyraThreadRuntime = ({
         return;
       }
       if (method === "item/started" || method === "item/completed") {
+        if (method === "item/completed") {
+          flushQueuedRuntimeBucketPatches();
+        }
         const threadId = readString(params.threadId);
         const turnId = readString(params.turnId);
         const item = isRecord(params.item) && readString(params.item.type) !== null
@@ -2284,6 +2952,48 @@ export const useLyraThreadRuntime = ({
               ),
             }));
           }
+          if (method === "item/completed" && item.type === "plan") {
+            const planText = readRawString(item.text) ?? "";
+            if (planText.trim().length > 0) {
+              const updatedAt = Date.now();
+              const draftText = runtimeByKeyRef.current[threadId]?.planByTurn[turnId]?.draftText ?? "";
+              const finalText = planText.trim();
+              patchRuntimeBucket(threadId, (current) => {
+                const existing = current.planByTurn[turnId];
+                return {
+                  ...current,
+                  streamingTurnId: turnId,
+                  isSending: false,
+                  isStreamActive: false,
+                  finalizingTurnId: null,
+                  planByTurn: {
+                    ...current.planByTurn,
+                    [turnId]: {
+                      turnId,
+                      draftText,
+                      finalText,
+                      explanation: existing?.explanation ?? null,
+                      steps: existing?.steps ?? [],
+                      updatedAt,
+                    },
+                  },
+                  latestRuntimeEventByTurn: {
+                    ...current.latestRuntimeEventByTurn,
+                    [turnId]: toRuntimeEvent({
+                      sessionId: threadId,
+                      turnId,
+                      phase: "plan_approval_requested",
+                      payload: planApprovalPayload(turnId, finalText, draftText),
+                    }),
+                  },
+                };
+              });
+              const interaction = planApprovalInteraction(threadId, turnId, finalText, draftText, updatedAt);
+              setPendingInteractions((current) => mergePendingInteractionLists(current, [interaction]));
+              setActiveInteractionId((current) => current ?? interaction.id);
+              setIsInteractionSubmitting(false);
+            }
+          }
           const thread = threadByIdRef.current[threadId] ?? {
             id: threadId,
             preview: "",
@@ -2303,38 +3013,136 @@ export const useLyraThreadRuntime = ({
               const nextCalls = current.liveToolCalls.filter((entry) => entry.id !== call.id);
               return { ...current, liveToolCalls: [...nextCalls, call].slice(-48) };
             });
+            if (item.type === "fileChange") {
+              emitWriteToolCallInWorkspace(call);
+            }
             followToolCallInWorkspace(threadId, call);
           }
         }
         return;
       }
       if (method === "turn/completed") {
+        flushQueuedRuntimeBucketPatches();
         const threadId = readString(params.threadId);
         const turn = isRecord(params.turn) ? params.turn : null;
         const turnId = turn === null ? null : readString(turn.id);
         if (threadId !== null) {
+          if (turnId !== null) {
+            for (const key of Array.from(openedDiffTargetsRef.current)) {
+              if (key.startsWith(`${threadId}:${turnId}:`)) {
+                openedDiffTargetsRef.current.delete(key);
+              }
+            }
+          }
+          const bucketBeforeCompletion = runtimeByKeyRef.current[threadId] ?? null;
+          const resolvedTurnIdForApproval = turnId ?? bucketBeforeCompletion?.streamingTurnId ?? null;
+          const turnStatusForApproval = normalizeStatus(turn?.status);
+          const existingPlanForApproval = resolvedTurnIdForApproval === null
+            ? undefined
+            : bucketBeforeCompletion?.planByTurn[resolvedTurnIdForApproval];
+          const currentLatestEventForApproval = resolvedTurnIdForApproval === null
+            ? null
+            : bucketBeforeCompletion?.latestRuntimeEventByTurn[resolvedTurnIdForApproval] ?? null;
+          const promotedPlanTextForApproval =
+            existingPlanForApproval?.finalText ?? existingPlanForApproval?.draftText.trim() ?? "";
+          const shouldEnqueuePlanApproval =
+            resolvedTurnIdForApproval !== null
+            && turnStatusForApproval !== "failed"
+            && existingPlanForApproval !== undefined
+            && promotedPlanTextForApproval.trim().length > 0
+            && (
+              currentLatestEventForApproval?.phase === "plan_approval_requested"
+              || (
+                turnStatusForApproval === "waiting"
+                && existingPlanForApproval.finalText === null
+                && existingPlanForApproval.draftText.trim().length > 0
+              )
+            );
+          const pendingPlanApprovalInteraction = shouldEnqueuePlanApproval && resolvedTurnIdForApproval !== null
+            ? planApprovalInteraction(
+                threadId,
+                resolvedTurnIdForApproval,
+                promotedPlanTextForApproval,
+                existingPlanForApproval?.draftText ?? "",
+                Date.now()
+              )
+            : null;
           patchRuntimeBucket(threadId, (current) => {
             const resolvedTurnId = turnId ?? current.streamingTurnId;
+            const currentLatestEvent = resolvedTurnId === null
+              ? null
+              : current.latestRuntimeEventByTurn[resolvedTurnId] ?? null;
+            const turnStatus = normalizeStatus(turn?.status);
+            const existingPlan = resolvedTurnId === null
+              ? undefined
+              : current.planByTurn[resolvedTurnId];
+            const promotedPlanText =
+              existingPlan?.finalText ?? existingPlan?.draftText.trim() ?? "";
+            const shouldPromotePlanDraft =
+              resolvedTurnId !== null
+              && turnStatus === "waiting"
+              && currentLatestEvent?.phase !== "plan_approval_requested"
+              && existingPlan !== undefined
+              && existingPlan.finalText === null
+              && existingPlan.draftText.trim().length > 0;
+            const planApprovalEvent = shouldPromotePlanDraft && resolvedTurnId !== null
+              ? toRuntimeEvent({
+                  sessionId: threadId,
+                  turnId: resolvedTurnId,
+                  phase: "plan_approval_requested",
+                  payload: planApprovalPayload(
+                    resolvedTurnId,
+                    promotedPlanText,
+                    existingPlan?.draftText ?? ""
+                  ),
+                })
+              : currentLatestEvent?.phase === "plan_approval_requested"
+                ? currentLatestEvent
+                : null;
+            const keepPlanApprovalWaiting = planApprovalEvent !== null && turnStatus !== "failed";
             return {
               ...current,
               isSending: false,
               isStreamActive: false,
               streamingAssistantText: "",
-              streamingTurnId: null,
-              finalizingTurnId: resolvedTurnId,
+              streamingTurnId: keepPlanApprovalWaiting ? resolvedTurnId : null,
+              finalizingTurnId: keepPlanApprovalWaiting ? null : resolvedTurnId,
+              planByTurn: shouldPromotePlanDraft && resolvedTurnId !== null && existingPlan !== undefined
+                ? {
+                    ...current.planByTurn,
+                    [resolvedTurnId]: {
+                      ...existingPlan,
+                      finalText: promotedPlanText,
+                      updatedAt: Date.now(),
+                    },
+                  }
+                : current.planByTurn,
               latestRuntimeEventByTurn: resolvedTurnId === null
                 ? current.latestRuntimeEventByTurn
                 : {
                     ...current.latestRuntimeEventByTurn,
-                    [resolvedTurnId]: toRuntimeEvent({
-                      sessionId: threadId,
-                      turnId: resolvedTurnId,
-                      phase: normalizeStatus(turn?.status) === "failed" ? "failed" : "completed",
-                      payload: params,
-                    }),
+                    [resolvedTurnId]: keepPlanApprovalWaiting
+                      ? planApprovalEvent
+                      : toRuntimeEvent({
+                          sessionId: threadId,
+                          turnId: resolvedTurnId,
+                          phase: turnStatus === "failed"
+                            ? "failed"
+                            : turnStatus === "waiting"
+                              ? "paused"
+                              : "completed",
+                          payload: params,
+                        }),
                   },
             };
           });
+          if (pendingPlanApprovalInteraction !== null) {
+            setPendingInteractions((current) =>
+              mergePendingInteractionLists(current, [pendingPlanApprovalInteraction])
+            );
+            setActiveInteractionId((current) => current ?? pendingPlanApprovalInteraction.id);
+            setIsInteractionSubmitting(false);
+          }
           void loadThread(threadId);
           void loadThreads();
         }
@@ -2363,7 +3171,33 @@ export const useLyraThreadRuntime = ({
         void loadThreads();
       }
     });
-  }, [appendTerminalTranscriptChunk, followToolCallInWorkspace, forgetThread, loadThread, loadThreads, lyraApi, patchRuntimeBucket, upsertThread]);
+  }, [
+    appendTerminalTranscriptChunk,
+    emitWriteToolCallInWorkspace,
+    flushQueuedRuntimeBucketPatches,
+    followToolCallInWorkspace,
+    forgetThread,
+    loadThread,
+    loadThreads,
+    lyraApi,
+    onFollowOpenFilePath,
+    openDiffTargetInWorkspace,
+    patchRuntimeBucket,
+    queueRuntimeBucketPatch,
+    runtimeByKeyRef,
+    stopAllRuntimeBuckets,
+    upsertThread,
+  ]);
+
+  useEffect(() => {
+    const capabilitiesApi = desktopApi?.capabilities;
+    if (capabilitiesApi === undefined) {
+      return;
+    }
+    return capabilitiesApi.onEvent((event) => {
+      emitCapabilityWriteEvent(event);
+    });
+  }, [desktopApi, emitCapabilityWriteEvent]);
 
   const pendingInteractionQueue = useMemo(
     () =>
@@ -2430,12 +3264,14 @@ export const useLyraThreadRuntime = ({
       selectThread,
       activateThreadTab,
       closeThreadTab,
+      reorderThreadTab,
       openThreadTab,
       setPlanModeEnabled,
       setFollowEnabled,
       setActiveInteractionId,
       respondToCommandApproval,
       respondToPlanQuestion,
+      resolvePlanApproval,
     },
   };
 };

@@ -941,6 +941,7 @@ mod tests {
                     turn_id: "turn-1".to_string(),
                     call_id: "call-0".to_string(),
                     tool: "tool".to_string(),
+                    host_method: None,
                     arguments: json!({}),
                 },
             ))
@@ -998,6 +999,7 @@ mod tests {
                     turn_id: "turn-1".to_string(),
                     call_id: "call-0".to_string(),
                     tool: "tool".to_string(),
+                    host_method: None,
                     arguments: json!({}),
                 },
             ))

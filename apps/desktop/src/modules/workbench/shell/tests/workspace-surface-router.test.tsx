@@ -34,7 +34,8 @@ const createSurfaceAdapters = (): WorkbenchSurfaceAdapters => ({
   mcpCenter: () => <div aria-label="fake-mcp-center" />,
   skillsCenter: () => <div aria-label="fake-skills-center" />,
   pluginsCenter: () => <div aria-label="fake-plugins-center" />,
-  aiHistory: () => <div aria-label="fake-ai-history" />
+  aiHistory: () => <div aria-label="fake-ai-history" />,
+  planReview: () => <div aria-label="fake-plan-review" />
 });
 
 const createProps = (
@@ -141,6 +142,14 @@ const createProps = (
     previewEmptyDescription: "Empty",
     previewLoadingLabel: "Loading"
   },
+  planReview: {
+    model: {
+      getState: vi.fn(() => null),
+      decide: vi.fn(),
+      addAnnotation: vi.fn(),
+      submitAnnotations: vi.fn()
+    }
+  },
   notifications: {
     model: {
       notifications: [],
@@ -184,5 +193,19 @@ describe("WorkspaceSurfaceRouter", () => {
     );
 
     expect(screen.getByLabelText("fake-file-manager")).toHaveTextContent("/tmp");
+  });
+
+  test("delegates plan review app tabs to the injected plan review adapter", () => {
+    render(
+      <WorkspaceSurfaceRouter
+        {...createProps(createTab({
+          pageKind: "app",
+          appId: "ai-plan-review",
+          appInstanceId: "plan-1"
+        }))}
+      />
+    );
+
+    expect(screen.getByLabelText("fake-plan-review")).toBeInTheDocument();
   });
 });

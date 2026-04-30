@@ -14,7 +14,8 @@ import {
 import {
   ChromeIconButton,
   ChromeTabButton,
-  ChromeTabFrame
+  ChromeTabFrame,
+  ChromeTabShape
 } from "../ui-primitives";
 import { renderWorkspaceAppIcon } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
@@ -157,6 +158,7 @@ export const BrowserTabStripView = ({
           onDragEnd={runtime.onTabDragEnd}
           onContextMenu={runtime.onTabItemContextMenu}
         >
+          <ChromeTabShape />
           <ChromeTabButton
             className={tabModel.tabMainClassName}
             aria-label={tabModel.tab.title}
@@ -213,6 +215,7 @@ export const BrowserTabStripView = ({
           className={renderModel.preview.tabClassName}
           style={renderModel.preview.tabStyle}
         >
+          <ChromeTabShape />
           <span className={renderModel.preview.mainClassName}>
             <span className="lyra-browser-tab-icon" aria-hidden="true">
               {renderTabIcon(renderModel.preview.tab)}

@@ -36,6 +36,15 @@ export const useWorkbenchFileActions = ({
 }: UseWorkbenchFileActionsParams): WorkbenchFileActions => {
   const onOpenFileFromManager = useCallback<WorkbenchOpenFileFromManager>(
     (filePath, location, options) => {
+      const ensureMissingPlaceholderHydrated = (instanceId: string): void => {
+        const state = fileEditorModel.getState(instanceId);
+        if (state === null || state.isHydrated) {
+          return;
+        }
+        fileEditorModel.applyExternalContent(instanceId, state.content, {
+          markHydrated: true
+        });
+      };
       const existingInstanceId = fileEditorModel.findInstanceByPath(filePath);
       const existingTab = tabsModel.tabs.find(
         (tab) =>
@@ -60,6 +69,7 @@ export const useWorkbenchFileActions = ({
             fileEditorModel.ensureInstance(existingTab.appInstanceId, {
               filePath
             });
+            ensureMissingPlaceholderHydrated(existingTab.appInstanceId);
           } else if (shouldReload) {
             void fileEditorModel.openFile(existingTab.appInstanceId, filePath);
           } else {
@@ -79,6 +89,7 @@ export const useWorkbenchFileActions = ({
         fileEditorModel.ensureInstance(nextEditor.appInstanceId, {
           filePath
         });
+        ensureMissingPlaceholderHydrated(nextEditor.appInstanceId);
       } else {
         void fileEditorModel.openFile(nextEditor.appInstanceId, filePath);
       }

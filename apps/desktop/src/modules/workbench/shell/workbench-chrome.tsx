@@ -210,13 +210,12 @@ export const WorkbenchChrome = ({
       >
         {slots.leftPanel}
       </PanelHost>
-      {layout.isLeftPanelVisible ? (
-        <PanelResizer
-          orientation="vertical"
-          ariaLabel="left-resizer"
-          onMouseDown={layoutActions.onLeftResizeMouseDown}
-        />
-      ) : null}
+      <PanelResizer
+        orientation="vertical"
+        visible={layout.isLeftPanelVisible}
+        ariaLabel="left-resizer"
+        onMouseDown={layoutActions.onLeftResizeMouseDown}
+      />
 
       <section
         className={cx(
@@ -231,18 +230,19 @@ export const WorkbenchChrome = ({
           {slots.browserTabs}
         </section>
 
-        {layout.isBottomPanelVisible ? (
-          <PanelResizer
-            orientation="horizontal"
-            ariaLabel="bottom-resizer"
-            onMouseDown={layoutActions.onBottomResizeMouseDown}
-          />
-        ) : null}
-        {layout.isBottomPanelVisible ? (
-          <PanelHost placement="bottom" ariaLabel="bottom-panel">
-            {slots.terminalPanel}
-          </PanelHost>
-        ) : null}
+        <PanelResizer
+          orientation="horizontal"
+          visible={layout.isBottomPanelVisible}
+          ariaLabel="bottom-resizer"
+          onMouseDown={layoutActions.onBottomResizeMouseDown}
+        />
+        <PanelHost
+          placement="bottom"
+          visible={layout.isBottomPanelVisible}
+          ariaLabel="bottom-panel"
+        >
+          {slots.terminalPanel}
+        </PanelHost>
       </section>
     </section>
 

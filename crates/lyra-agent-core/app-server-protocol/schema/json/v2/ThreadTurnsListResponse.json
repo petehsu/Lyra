@@ -1354,7 +1354,8 @@
         "completed",
         "interrupted",
         "failed",
-        "inProgress"
+        "inProgress",
+        "waiting"
       ],
       "type": "string"
     },

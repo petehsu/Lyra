@@ -6,6 +6,7 @@ import {
   createAiPluginsAppRequest,
   createAiSkillsAppRequest
 } from "../ai-panel";
+import type { AiPlanApprovalWorkspaceOpenRequest } from "../ai-panel";
 import type { GlobalDialogModel } from "../global-dialog";
 import type { I18nKey } from "../i18n";
 import type { WorkbenchPreferences } from "../preferences";
@@ -32,6 +33,7 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   readonly onRequestProjectBind: (
     currentPath?: string
   ) => Promise<string | null>;
+  readonly onOpenPlanApprovalWorkspace: (request: AiPlanApprovalWorkspaceOpenRequest) => void;
   readonly openDialog: GlobalDialogModel["openDialog"];
   readonly t: (key: I18nKey) => string;
 };
@@ -46,6 +48,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   onToggleAiPanelSide,
   openAppTab,
   onRequestProjectBind,
+  onOpenPlanApprovalWorkspace,
   openDialog,
   t
 }: UseWorkbenchSidebarAiSurfacePropsParams): WorkbenchSidebarAiSurfaceProps =>
@@ -127,6 +130,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenPlugins: () => {
         openAppTab(createAiPluginsAppRequest(t("ai.pluginsTabTitle")));
       },
+      onOpenPlanApprovalWorkspace,
       onRequestProjectBind,
       openDialog
     }),
@@ -135,6 +139,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       desktopApi,
       fileMentionFallbackRoots,
       onRequestProjectBind,
+      onOpenPlanApprovalWorkspace,
       onToggleAiPanelSide,
       openAppTab,
       openDialog,

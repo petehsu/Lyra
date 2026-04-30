@@ -132,7 +132,6 @@ export type BrowserUseRuntimeCoordinator = {
   readonly start: () => void;
   readonly readStatus: () => BrowserUseRuntimeStatus;
   readonly subscribe: (listener: BrowserUseRuntimeStatusListener) => () => void;
-  readonly applyEnginePreference: (engine: "lyra_direct" | "browser_use" | "smart") => Promise<void>;
 };
 
 export const createBrowserUseError = (

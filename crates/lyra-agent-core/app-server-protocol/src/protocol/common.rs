@@ -310,6 +310,10 @@ client_request_definitions! {
         params: v2::TurnStartParams,
         response: v2::TurnStartResponse,
     },
+    TurnPlanApprovalResolve => "turn/planApproval/resolve" {
+        params: v2::TurnPlanApprovalResolveParams,
+        response: v2::TurnPlanApprovalResolveResponse,
+    },
     TurnSteer => "turn/steer" {
         params: v2::TurnSteerParams,
         response: v2::TurnSteerResponse,

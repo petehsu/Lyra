@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, SendHorizontal } from "lucide-react";
 
 import type { PlanQuestionOption, PlanQuestionRequest } from "../../../shared/desktop-bridge";
 import { createTranslator, type WorkbenchLocale } from "../i18n";
@@ -64,6 +65,7 @@ export const PlanQuestionBar = ({
     activeSelection?.kind === "option" && typeof activeSelection.option.preview === "string"
       ? activeSelection.option.preview
       : null;
+  const showOptionalNote = request.allowNote && activeSelection?.kind !== "other";
 
   if (activeQuestion === undefined) {
     return null;
@@ -71,17 +73,8 @@ export const PlanQuestionBar = ({
 
   return (
     <div className="lyra-ai-plan-bar">
-      <div className="lyra-ai-plan-bar__header">
-        <span className="lyra-ai-plan-bar__eyebrow">{t("ai.planQuestionTitle")}</span>
-        <span className="lyra-ai-plan-bar__meta">
-          {activeIndex + 1}/{request.questions.length}{" "}
-          {request.questions.length > 1
-            ? t("ai.planQuestionPendingDecisions")
-            : t("ai.planQuestionPendingDecision")}
-        </span>
-      </div>
       {request.questions.length > 1 ? (
-        <div className="lyra-ai-plan-bar__tabs" role="tablist" aria-label={t("ai.planQuestionNavigation")}>
+        <div className="lyra-ai-plan-bar__progress" aria-label={t("ai.planQuestionNavigation")}>
           {request.questions.map((question, index) => {
             const answered = isSelectedAnswerReady(selected[question.id]);
             const active = index === activeIndex;
@@ -89,19 +82,16 @@ export const PlanQuestionBar = ({
               <button
                 key={question.id}
                 type="button"
-                className={
-                  active
-                    ? "lyra-ai-plan-bar__tab lyra-ai-plan-bar__tab-active"
-                    : answered
-                      ? "lyra-ai-plan-bar__tab lyra-ai-plan-bar__tab-answered"
-                      : "lyra-ai-plan-bar__tab"
-                }
+                className={[
+                  "lyra-ai-plan-bar__progress-dot",
+                  active ? "lyra-ai-plan-bar__progress-dot-active" : "",
+                  answered ? "lyra-ai-plan-bar__progress-dot-answered" : "",
+                ].filter(Boolean).join(" ")}
+                aria-label={question.header}
                 onClick={() => {
                   setActiveIndex(index);
                 }}
-              >
-                {question.header}
-              </button>
+              />
             );
           })}
         </div>
@@ -178,7 +168,7 @@ export const PlanQuestionBar = ({
             <pre className="lyra-ai-plan-bar__preview">{preview}</pre>
           )}
         </div>
-        {request.allowNote ? (
+        {showOptionalNote ? (
           <textarea
             className="lyra-ai-plan-bar__note"
             placeholder={t("ai.planQuestionOptionalNote")}
@@ -194,42 +184,46 @@ export const PlanQuestionBar = ({
           <>
             <button
               type="button"
-              className="lyra-ai-plan-bar__secondary"
+              className="lyra-ai-plan-bar__icon-action"
               disabled={activeIndex === 0}
+              aria-label={t("ai.navPrevious")}
+              title={t("ai.navPrevious")}
               onClick={() => {
                 setActiveIndex((current) => Math.max(0, current - 1));
               }}
             >
-              {t("ai.navPrevious")}
+              <ChevronLeft size={15} aria-hidden="true" />
             </button>
             <button
               type="button"
-              className="lyra-ai-plan-bar__secondary"
+              className="lyra-ai-plan-bar__icon-action"
               disabled={activeIndex >= request.questions.length - 1}
+              aria-label={t("ai.navNext")}
+              title={t("ai.navNext")}
               onClick={() => {
                 setActiveIndex((current) => Math.min(request.questions.length - 1, current + 1));
               }}
             >
-              {t("ai.navNext")}
+              <ChevronRight size={15} aria-hidden="true" />
             </button>
           </>
         ) : null}
-        <button
-          type="button"
-          className="lyra-ai-plan-bar__submit"
-          disabled={!isReady}
-          onClick={() => {
-            if (!isReady) {
-              return;
-            }
-            onSubmit({
-              answers,
-              ...(note.trim().length === 0 ? {} : { note: note.trim() }),
-            });
-          }}
-        >
-          {t("ai.planQuestionContinue")}
-        </button>
+        {isReady ? (
+          <button
+            type="button"
+            className="lyra-ai-plan-bar__submit lyra-ai-plan-bar__icon-action lyra-ai-plan-bar__icon-action-submit"
+            aria-label={t("ai.planQuestionContinue")}
+            title={t("ai.planQuestionContinue")}
+            onClick={() => {
+              onSubmit({
+                answers,
+                ...(note.trim().length === 0 ? {} : { note: note.trim() }),
+              });
+            }}
+          >
+            <SendHorizontal size={15} aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
     </div>
   );

@@ -14,8 +14,6 @@ import { resolveWorkbenchUiPackId } from "../ui-platform";
 import type { WorkbenchUiPackId } from "../ui-platform";
 import type {
   WorkbenchAiStopBehavior,
-  WorkbenchBrowserAutomationEngine,
-  WorkbenchLyraDirectMicroExecutorBudget,
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchPreferences,
   WorkbenchPreferencesModel,
@@ -65,14 +63,6 @@ const isWorkbenchOmniboxNonBrowserSubmitTarget = (
   value: unknown
 ): value is WorkbenchOmniboxNonBrowserSubmitTarget =>
   value === "new_tab" || value === "replace_active_tab";
-const isWorkbenchBrowserAutomationEngine = (
-  value: unknown
-): value is WorkbenchBrowserAutomationEngine =>
-  value === "lyra_direct" || value === "browser_use" || value === "smart";
-const isWorkbenchLyraDirectMicroExecutorBudget = (
-  value: unknown
-): value is WorkbenchLyraDirectMicroExecutorBudget =>
-  value === "1-2" || value === "3-5" || value === "6-8";
 const asStringArray = (value: unknown): readonly string[] =>
   Array.isArray(value)
     ? value
@@ -120,8 +110,6 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly deepSearchCrawlPolicy?: unknown;
       readonly searchResultsSourceFilter?: unknown;
       readonly omniboxNonBrowserSubmitTarget?: unknown;
-      readonly browserAutomationEngine?: unknown;
-      readonly lyraDirectMicroExecutorBudget?: unknown;
     };
 
     const normalizedSearxngEndpoint =
@@ -205,13 +193,7 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
         : defaults.searchResultsSourceFilter,
       omniboxNonBrowserSubmitTarget: isWorkbenchOmniboxNonBrowserSubmitTarget(parsed.omniboxNonBrowserSubmitTarget)
         ? parsed.omniboxNonBrowserSubmitTarget
-        : defaults.omniboxNonBrowserSubmitTarget,
-      browserAutomationEngine: isWorkbenchBrowserAutomationEngine(parsed.browserAutomationEngine)
-        ? parsed.browserAutomationEngine
-        : defaults.browserAutomationEngine,
-      lyraDirectMicroExecutorBudget: isWorkbenchLyraDirectMicroExecutorBudget(parsed.lyraDirectMicroExecutorBudget)
-        ? parsed.lyraDirectMicroExecutorBudget
-        : defaults.lyraDirectMicroExecutorBudget
+        : defaults.omniboxNonBrowserSubmitTarget
     };
   } catch (_error) {
     return defaults;
@@ -419,18 +401,6 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         omniboxNonBrowserSubmitTarget
-      }));
-    },
-    setBrowserAutomationEngine: (browserAutomationEngine) => {
-      commit((current) => ({
-        ...current,
-        browserAutomationEngine
-      }));
-    },
-    setLyraDirectMicroExecutorBudget: (lyraDirectMicroExecutorBudget) => {
-      commit((current) => ({
-        ...current,
-        lyraDirectMicroExecutorBudget
       }));
     },
     reset: () => {

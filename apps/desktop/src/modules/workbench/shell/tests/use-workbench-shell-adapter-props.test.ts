@@ -15,8 +15,11 @@ const createPanelLayoutModel = (): PanelLayoutModel => ({
   bottomHeight: 260,
   cssVars: {
     "--left-width": "320px",
+    "--left-panel-content-width": "320px",
     "--left-panel-mobile-height": "220px",
-    "--bottom-height": "260px"
+    "--left-panel-content-mobile-height": "220px",
+    "--bottom-height": "260px",
+    "--bottom-panel-content-height": "260px"
   },
   toggleLeftPanel: vi.fn(),
   toggleBottomPanel: vi.fn(),

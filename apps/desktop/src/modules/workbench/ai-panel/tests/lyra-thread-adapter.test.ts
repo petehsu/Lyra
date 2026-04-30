@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  attachThreadAiPanelViewModel,
   lyraThreadToAgentDetail,
+  readThreadAiPanelViewModel,
   readLyraThread,
 } from "../lyra-thread-adapter";
 
@@ -223,6 +225,129 @@ describe("lyra thread adapter", () => {
       output: {
         receiverThreadIds: ["thread-child"],
       },
+    });
+  });
+
+  test("maps rust ai panel view model directly into session detail", () => {
+    const thread = readLyraThread({
+      id: "thread-projected",
+      preview: "Projected",
+      modelProvider: "lp-openai",
+      cwd: "/repo",
+      createdAt: 100,
+      updatedAt: 120,
+      turns: [],
+    });
+    const viewModel = readThreadAiPanelViewModel({
+      messages: [
+        {
+          id: "user-1",
+          sessionId: "thread-projected",
+          turnId: "turn-1",
+          role: "user",
+          content: "Hello",
+          contentParts: [{ type: "text", text: "Hello" }],
+          createdAtMs: 101000,
+        },
+        {
+          id: "assistant-1",
+          sessionId: "thread-projected",
+          turnId: "turn-1",
+          role: "assistant",
+          content: "Hi",
+          displayContent: "Hi",
+          createdAtMs: 102000,
+        },
+      ],
+      turns: [
+        {
+          id: "turn-1",
+          sessionId: "thread-projected",
+          status: "completed",
+          createdAtMs: 101000,
+          updatedAtMs: 103000,
+          durationMs: 2000,
+        },
+      ],
+      toolCalls: [
+        {
+          id: "tool-1",
+          sessionId: "thread-projected",
+          turnId: "turn-1",
+          toolName: "terminal.exec",
+          input: { command: "echo hi" },
+          output: { aggregatedOutput: "hi\n" },
+          status: "completed",
+          startedAtMs: 101500,
+          finishedAtMs: 101512,
+        },
+      ],
+      plans: [
+        {
+          turnId: "turn-1",
+          draftText: "",
+          finalText: "1. Check",
+          explanation: null,
+          steps: [],
+          updatedAtMs: 102500,
+        },
+      ],
+      pendingInteractions: [
+        {
+          id: "plan:turn-1",
+          sessionId: "thread-projected",
+          turnId: "turn-1",
+          kind: "planApproval",
+          status: "pending",
+          payload: {
+            requestId: "plan:turn-1",
+            raw: {
+              proposedMarkdown: "1. Check",
+            },
+          },
+          createdAtMs: 102500,
+          updatedAtMs: 102500,
+        },
+      ],
+      turnMeta: [
+        {
+          turnId: "turn-1",
+          sessionId: "thread-projected",
+          firstAssistantMessageId: "assistant-1",
+          lastAssistantMessageId: "assistant-1",
+          assistantOrder: 1,
+          hasAssistantDisplay: true,
+        },
+      ],
+    });
+
+    expect(thread).not.toBeNull();
+    expect(viewModel).not.toBeNull();
+    const detail = lyraThreadToAgentDetail(attachThreadAiPanelViewModel(thread!, viewModel));
+
+    expect(detail.messages.map((message) => [message.id, message.content])).toEqual([
+      ["user-1", "Hello"],
+      ["assistant-1", "Hi"],
+    ]);
+    expect(detail.turns[0]).toMatchObject({
+      id: "turn-1",
+      status: "completed",
+      createdAt: 101000,
+      updatedAt: 103000,
+    });
+    expect(detail.toolCalls[0]).toMatchObject({
+      id: "tool-1",
+      toolName: "terminal.exec",
+      status: "completed",
+      startedAt: 101500,
+      finishedAt: 101512,
+    });
+    expect(detail.aiPanelTurnMeta?.[0]?.assistantOrder).toBe(1);
+    expect(detail.pendingInteractions[0]).toMatchObject({
+      id: "plan:turn-1",
+      kind: "plan_approval",
+      status: "pending",
+      turnId: "turn-1",
     });
   });
 });

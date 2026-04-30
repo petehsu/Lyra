@@ -101,6 +101,23 @@ const pickString = (value: Record<string, unknown>, key: string): string | null 
   return typeof next === "string" && next.trim().length > 0 ? next : null;
 };
 
+const normalizeRuntimePath = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const shellTerminated = trimmed.replace(/;+$/u, "");
+  if (shellTerminated === "/dev/null" || shellTerminated === "dev/null") {
+    return null;
+  }
+  return trimmed;
+};
+
+const pickPathString = (value: Record<string, unknown>, key: string): string | null => {
+  const next = value[key];
+  return typeof next === "string" ? normalizeRuntimePath(next) : null;
+};
+
 const pickNumber = (value: Record<string, unknown>, key: string): number | null => {
   const next = value[key];
   return typeof next === "number" ? next : null;
@@ -205,6 +222,8 @@ export const normalizeToolName = (toolName: string, labels: ToolNameLabelMap): s
       return labels.edit;
     case "filesystem.multi_edit":
       return labels.multiEdit;
+    case "filesystem.apply_patch":
+      return labels.edit;
     case "terminal.session.start":
       return labels.terminalSession;
     case "terminal.session.read":
@@ -246,6 +265,8 @@ const resolveRuntimeToolIconKind = (toolName: string): AgentRuntimeFeedIconKind 
       return "edit";
     case "filesystem.multi_edit":
       return "multiEdit";
+    case "filesystem.apply_patch":
+      return "edit";
     case "terminal.exec":
       return "tool";
     case "collab.spawnAgent":
@@ -262,7 +283,8 @@ const resolveRuntimeToolIconKind = (toolName: string): AgentRuntimeFeedIconKind 
 export const isWriteToolName = (toolName: string): boolean =>
   toolName === "filesystem.write" ||
   toolName === "filesystem.edit" ||
-  toolName === "filesystem.multi_edit";
+  toolName === "filesystem.multi_edit" ||
+  toolName === "filesystem.apply_patch";
 
 export const isTerminalToolName = (toolName: string): boolean =>
   toolName === "terminal.exec"
@@ -272,10 +294,10 @@ export const isTerminalToolName = (toolName: string): boolean =>
   || toolName === "terminal.session.close";
 
 const pickPathField = (value: Record<string, unknown>): string | null =>
-  pickString(value, "path")
-  ?? pickString(value, "rootPath")
-  ?? pickString(value, "root")
-  ?? pickString(value, "relativePath");
+  pickPathString(value, "path")
+  ?? pickPathString(value, "rootPath")
+  ?? pickPathString(value, "root")
+  ?? pickPathString(value, "relativePath");
 
 const pickStringArray = (value: Record<string, unknown>, key: string): readonly string[] => {
   const next = value[key];

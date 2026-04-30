@@ -6,6 +6,11 @@ import type { ReviewTarget } from "./ReviewTarget";
 
 export type ReviewStartParams = { threadId: string, target: ReviewTarget,
 /**
+ * Override the working directory before starting the review. This keeps
+ * review targets aligned with the project currently bound in the UI.
+ */
+cwd?: string | null,
+/**
  * Where to run the review: inline (default) on the current thread or
  * detached on a new thread (returned in `reviewThreadId`).
  */

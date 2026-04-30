@@ -23,7 +23,9 @@
 //! WebSocket prewarm is treated as the first websocket connection attempt for a turn. If it
 //! fails, normal stream retry/fallback logic handles recovery on the same turn.
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
@@ -68,6 +70,7 @@ use lyra_otel::current_span_w3c_trace_context;
 
 use eventsource_stream::Event;
 use eventsource_stream::EventStreamError;
+use eventsource_stream::Eventsource;
 use futures::StreamExt;
 use http::HeaderMap as ApiHeaderMap;
 use http::HeaderValue;
@@ -78,6 +81,7 @@ use lyra_protocol::config_types::ServiceTier;
 use lyra_protocol::config_types::Verbosity as VerbosityConfig;
 use lyra_protocol::models::ContentItem;
 use lyra_protocol::models::ReasoningItemContent;
+use lyra_protocol::models::ReasoningProviderReplay;
 use lyra_protocol::models::ResponseItem;
 use lyra_protocol::openai_models::ModelInfo;
 use lyra_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -115,6 +119,7 @@ use lyra_model_provider::create_model_provider;
 #[cfg(test)]
 use lyra_model_provider_info::DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS;
 use lyra_model_provider_info::ModelProviderInfo;
+use lyra_model_provider_info::ProviderProtocolBehaviorConfig;
 use lyra_model_provider_info::WireApi;
 use lyra_protocol::error::LyraErr;
 use lyra_protocol::error::Result;
@@ -158,6 +163,7 @@ struct ModelClientState {
     enable_request_compression: bool,
     include_timing_metrics: bool,
     disable_websockets: AtomicBool,
+    disable_chat_prompt_cache_key: AtomicBool,
     cached_websocket_session: StdMutex<WebsocketSession>,
 }
 
@@ -264,6 +270,7 @@ enum WebsocketStreamOutcome {
 
 const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
 const DEFAULT_ANTHROPIC_MAX_TOKENS: i64 = 4096;
+const ANTHROPIC_THINKING_OUTPUT_HEADROOM_TOKENS: i64 = 1024;
 
 #[derive(Debug, Clone)]
 struct ProviderFunctionCall {
@@ -276,10 +283,232 @@ struct ProviderFunctionCall {
 #[derive(Debug, Clone, Default)]
 struct ProviderResponsePayload {
     assistant_text: String,
-    reasoning_content: Option<String>,
+    reasoning: Option<ProviderReasoningPayload>,
     function_calls: Vec<ProviderFunctionCall>,
     token_usage: Option<TokenUsage>,
     response_id: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProviderReasoningPayload {
+    visible_text: Option<String>,
+    provider_replay: Option<ReasoningProviderReplay>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ProviderProtocolBehavior {
+    provider_id: String,
+    protocol_id: String,
+    chat_reasoning_replay_fields: Vec<String>,
+    preserve_empty_reasoning: bool,
+    require_assistant_reasoning: bool,
+    synthesize_visible_reasoning: bool,
+    tool_loop_supported: bool,
+    request_params: HashMap<String, JsonValue>,
+    unsupported_params: Vec<String>,
+    force_stream: Option<bool>,
+    prompt_cache_key: bool,
+    enable_deepseek_thinking: bool,
+    enable_gemini_thinking_config: bool,
+    preserve_anthropic_signed_thinking: bool,
+}
+
+impl ProviderProtocolBehavior {
+    fn for_provider(provider: &ModelProviderInfo, model: &ModelInfo) -> Self {
+        let base_url = provider.base_url.as_deref().unwrap_or_default();
+        let base_url_lower = base_url.to_ascii_lowercase();
+        let model_lower = model.slug.to_ascii_lowercase();
+        let provider_name_lower = provider.name.to_ascii_lowercase();
+        let mut behavior = match provider.wire_api {
+            WireApi::Responses => Self {
+                provider_id: if provider_name_lower.contains("azure") {
+                    "azure_openai".to_string()
+                } else {
+                    "openai".to_string()
+                },
+                protocol_id: "responses".to_string(),
+                chat_reasoning_replay_fields: Vec::new(),
+                preserve_empty_reasoning: false,
+                require_assistant_reasoning: false,
+                synthesize_visible_reasoning: false,
+                tool_loop_supported: true,
+                request_params: HashMap::new(),
+                unsupported_params: Vec::new(),
+                force_stream: None,
+                prompt_cache_key: false,
+                enable_deepseek_thinking: false,
+                enable_gemini_thinking_config: false,
+                preserve_anthropic_signed_thinking: false,
+            },
+            WireApi::AnthropicMessages => Self {
+                provider_id: "anthropic".to_string(),
+                protocol_id: "anthropic_messages".to_string(),
+                chat_reasoning_replay_fields: Vec::new(),
+                preserve_empty_reasoning: false,
+                require_assistant_reasoning: false,
+                synthesize_visible_reasoning: false,
+                tool_loop_supported: true,
+                request_params: HashMap::new(),
+                unsupported_params: Vec::new(),
+                force_stream: None,
+                prompt_cache_key: false,
+                enable_deepseek_thinking: false,
+                enable_gemini_thinking_config: false,
+                preserve_anthropic_signed_thinking: true,
+            },
+            WireApi::GeminiGenerateContent => Self {
+                provider_id: "google_ai".to_string(),
+                protocol_id: "gemini_generate_content".to_string(),
+                chat_reasoning_replay_fields: Vec::new(),
+                preserve_empty_reasoning: false,
+                require_assistant_reasoning: false,
+                synthesize_visible_reasoning: false,
+                tool_loop_supported: true,
+                request_params: HashMap::new(),
+                unsupported_params: Vec::new(),
+                force_stream: None,
+                prompt_cache_key: false,
+                enable_deepseek_thinking: false,
+                enable_gemini_thinking_config: true,
+                preserve_anthropic_signed_thinking: false,
+            },
+            WireApi::ChatCompletions => {
+                let is_deepseek = base_url_lower.contains("deepseek")
+                    || provider_name_lower.contains("deepseek")
+                    || model_lower.contains("deepseek");
+                let is_openrouter = base_url_lower.contains("openrouter")
+                    || provider_name_lower.contains("openrouter");
+                let is_xai = base_url_lower.contains("api.x.ai")
+                    || provider_name_lower.contains("xai")
+                    || model_lower.starts_with("grok-");
+                let provider_id = if is_deepseek {
+                    "deepseek"
+                } else if is_openrouter {
+                    "openrouter"
+                } else if is_xai {
+                    "xai"
+                } else if base_url_lower.contains("mistral") {
+                    "mistral"
+                } else if base_url_lower.contains("groq") {
+                    "groq"
+                } else if base_url_lower.contains("together") {
+                    "together"
+                } else if base_url_lower.contains("fireworks") {
+                    "fireworks"
+                } else if base_url_lower.contains("vercel") {
+                    "vercel_ai_gateway"
+                } else if base_url_lower.contains("11434") || provider_name_lower.contains("ollama")
+                {
+                    "ollama"
+                } else if base_url_lower.contains("1234")
+                    || provider_name_lower.contains("lmstudio")
+                {
+                    "lmstudio"
+                } else {
+                    "custom_openai_compatible"
+                };
+                let chat_reasoning_replay_fields = if is_openrouter {
+                    vec![
+                        "reasoning_details".to_string(),
+                        "reasoning".to_string(),
+                        "reasoning_content".to_string(),
+                    ]
+                } else if is_deepseek {
+                    vec!["reasoning_content".to_string()]
+                } else {
+                    vec![
+                        "reasoning_details".to_string(),
+                        "reasoning".to_string(),
+                        "reasoning_content".to_string(),
+                    ]
+                };
+                Self {
+                    provider_id: provider_id.to_string(),
+                    protocol_id: "chat_completions".to_string(),
+                    chat_reasoning_replay_fields,
+                    preserve_empty_reasoning: is_deepseek,
+                    require_assistant_reasoning: is_deepseek,
+                    synthesize_visible_reasoning: is_deepseek || is_openrouter,
+                    tool_loop_supported: !(is_deepseek
+                        && model_lower.contains("deepseek-reasoner")),
+                    request_params: HashMap::new(),
+                    unsupported_params: if is_deepseek {
+                        vec![
+                            "temperature".to_string(),
+                            "top_p".to_string(),
+                            "presence_penalty".to_string(),
+                            "frequency_penalty".to_string(),
+                        ]
+                    } else {
+                        Vec::new()
+                    },
+                    force_stream: None,
+                    prompt_cache_key: provider_id == "custom_openai_compatible",
+                    enable_deepseek_thinking: is_deepseek
+                        && (model_lower.contains("v4") || model_lower.contains("v-4")),
+                    enable_gemini_thinking_config: false,
+                    preserve_anthropic_signed_thinking: false,
+                }
+            }
+        };
+
+        if let Some(override_config) = provider.protocol_behavior.as_ref() {
+            behavior.apply_override(override_config);
+        }
+        behavior
+    }
+
+    fn apply_override(&mut self, override_config: &ProviderProtocolBehaviorConfig) {
+        if let Some(field) = override_config
+            .reasoning_replay_field
+            .as_deref()
+            .map(str::trim)
+            .filter(|field| !field.is_empty())
+        {
+            self.chat_reasoning_replay_fields = vec![field.to_string()];
+        }
+        if let Some(preserve_empty) = override_config.preserve_empty_reasoning {
+            self.preserve_empty_reasoning = preserve_empty;
+        }
+        if let Some(require_reasoning) = override_config.require_assistant_reasoning {
+            self.require_assistant_reasoning = require_reasoning;
+        }
+        if override_config.reasoning_replay_field.is_some() {
+            self.synthesize_visible_reasoning = true;
+        }
+        if let Some(tool_loop_supported) = override_config.tool_loop_supported {
+            self.tool_loop_supported = tool_loop_supported;
+        }
+        if let Some(stream) = override_config.stream {
+            self.force_stream = Some(stream);
+        }
+        if let Some(prompt_cache_key) = override_config.prompt_cache_key {
+            self.prompt_cache_key = prompt_cache_key;
+        }
+        for (key, value) in &override_config.request_params {
+            self.request_params.insert(key.clone(), value.clone());
+        }
+        for param in &override_config.unsupported_params {
+            if !self.unsupported_params.iter().any(|value| value == param) {
+                self.unsupported_params.push(param.clone());
+            }
+        }
+    }
+
+    fn replay_from_fields(
+        &self,
+        fields: HashMap<String, JsonValue>,
+    ) -> Option<ReasoningProviderReplay> {
+        if fields.is_empty() {
+            None
+        } else {
+            Some(ReasoningProviderReplay {
+                provider: self.provider_id.clone(),
+                protocol: self.protocol_id.clone(),
+                fields,
+            })
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -296,6 +525,32 @@ struct ToolMappings {
     descriptors: Vec<ToolDescriptor>,
     canonical_to_wire: HashMap<String, String>,
     wire_to_descriptor: HashMap<String, ToolDescriptor>,
+}
+
+#[derive(Debug, Default)]
+struct StreamingChatToolCall {
+    call_id: Option<String>,
+    name: String,
+    arguments: String,
+}
+
+#[derive(Debug, Default)]
+struct StreamingChatCompletionsState {
+    response_id: Option<String>,
+    assistant_text: String,
+    visible_reasoning: Option<String>,
+    replay_fields: HashMap<String, JsonValue>,
+    tool_calls: BTreeMap<usize, StreamingChatToolCall>,
+    token_usage: Option<TokenUsage>,
+    message_started: bool,
+    reasoning_started: bool,
+    saw_data: bool,
+}
+
+#[derive(Debug, Default, PartialEq)]
+struct StreamingChatCompletionsChunkUpdate {
+    text_delta: Option<String>,
+    reasoning_delta: Option<String>,
 }
 
 fn stream_error(message: impl Into<String>) -> LyraErr {
@@ -319,21 +574,25 @@ fn response_stream_from_provider_payload(payload: ProviderResponsePayload) -> Re
             return;
         }
 
-        if let Some(reasoning_content) = payload.reasoning_content
-            && !reasoning_content.trim().is_empty()
-            && tx
-                .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Reasoning {
-                    id: format!("{}-reasoning", payload.response_id),
-                    summary: Vec::new(),
-                    content: Some(vec![ReasoningItemContent::ReasoningText {
-                        text: reasoning_content,
-                    }]),
-                    encrypted_content: None,
-                })))
-                .await
-                .is_err()
-        {
-            return;
+        if let Some(reasoning) = payload.reasoning {
+            let content = reasoning
+                .visible_text
+                .filter(|text| !text.trim().is_empty())
+                .map(|text| vec![ReasoningItemContent::ReasoningText { text }]);
+            if (content.is_some() || reasoning.provider_replay.is_some())
+                && tx
+                    .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Reasoning {
+                        id: format!("{}-reasoning", payload.response_id),
+                        summary: Vec::new(),
+                        content,
+                        encrypted_content: None,
+                        provider_replay: reasoning.provider_replay,
+                    })))
+                    .await
+                    .is_err()
+            {
+                return;
+            }
         }
 
         if !payload.assistant_text.trim().is_empty() {
@@ -639,21 +898,33 @@ fn token_usage_from_provider_counts(
     input_tokens: Option<i64>,
     output_tokens: Option<i64>,
     total_tokens: Option<i64>,
+    cached_input_tokens: Option<i64>,
 ) -> Option<TokenUsage> {
-    if input_tokens.is_none() && output_tokens.is_none() && total_tokens.is_none() {
+    if input_tokens.is_none()
+        && output_tokens.is_none()
+        && total_tokens.is_none()
+        && cached_input_tokens.is_none()
+    {
         return None;
     }
 
     let input_tokens = input_tokens.unwrap_or(0).max(0);
+    let cached_input_tokens = cached_input_tokens.unwrap_or(0).max(0);
     let output_tokens = output_tokens.unwrap_or(0).max(0);
     let total_tokens = total_tokens.unwrap_or(input_tokens + output_tokens).max(0);
     Some(TokenUsage {
         input_tokens,
-        cached_input_tokens: 0,
+        cached_input_tokens,
         output_tokens,
         reasoning_output_tokens: 0,
         total_tokens,
     })
+}
+
+fn cached_input_tokens_from_provider_usage(payload: &JsonValue) -> Option<i64> {
+    as_i64(payload.pointer("/usage/prompt_tokens_details/cached_tokens"))
+        .or_else(|| as_i64(payload.pointer("/usage/input_tokens_details/cached_tokens")))
+        .or_else(|| as_i64(payload.pointer("/usage/cache_read_input_tokens")))
 }
 
 fn reqwest_headers_from_api_provider(provider: &ApiProvider) -> reqwest::header::HeaderMap {
@@ -662,6 +933,69 @@ fn reqwest_headers_from_api_provider(provider: &ApiProvider) -> reqwest::header:
         headers.insert(name, value.clone());
     }
     headers
+}
+
+fn deepseek_reasoning_effort(effort: Option<ReasoningEffortConfig>) -> &'static str {
+    match effort.unwrap_or(ReasoningEffortConfig::High) {
+        ReasoningEffortConfig::XHigh => "max",
+        ReasoningEffortConfig::None
+        | ReasoningEffortConfig::Minimal
+        | ReasoningEffortConfig::Low
+        | ReasoningEffortConfig::Medium
+        | ReasoningEffortConfig::High => "high",
+    }
+}
+
+fn gemini_thinking_budget(effort: Option<ReasoningEffortConfig>) -> Option<i64> {
+    match effort {
+        Some(ReasoningEffortConfig::None) => Some(0),
+        Some(ReasoningEffortConfig::Minimal) => Some(0),
+        Some(ReasoningEffortConfig::Low) => Some(1024),
+        Some(ReasoningEffortConfig::Medium) => Some(8192),
+        Some(ReasoningEffortConfig::High) => Some(16_000),
+        Some(ReasoningEffortConfig::XHigh) => Some(24_576),
+        None => None,
+    }
+}
+
+fn anthropic_thinking_budget(effort: Option<ReasoningEffortConfig>) -> Option<i64> {
+    match effort {
+        Some(ReasoningEffortConfig::None) => None,
+        Some(ReasoningEffortConfig::Minimal) => Some(1024),
+        Some(ReasoningEffortConfig::Low) => Some(4096),
+        Some(ReasoningEffortConfig::Medium) => Some(8192),
+        Some(ReasoningEffortConfig::High) => Some(16_000),
+        Some(ReasoningEffortConfig::XHigh) => Some(24_576),
+        None => None,
+    }
+}
+
+fn anthropic_max_tokens(thinking_budget: Option<i64>) -> i64 {
+    thinking_budget
+        .map(|budget| {
+            DEFAULT_ANTHROPIC_MAX_TOKENS
+                .max(budget.saturating_add(ANTHROPIC_THINKING_OUTPUT_HEADROOM_TOKENS))
+        })
+        .unwrap_or(DEFAULT_ANTHROPIC_MAX_TOKENS)
+}
+
+fn response_item_for_responses_api(item: &ResponseItem) -> ResponseItem {
+    match item {
+        ResponseItem::Reasoning {
+            id,
+            summary,
+            content,
+            encrypted_content,
+            ..
+        } => ResponseItem::Reasoning {
+            id: id.clone(),
+            summary: summary.clone(),
+            content: content.clone(),
+            encrypted_content: encrypted_content.clone(),
+            provider_replay: None,
+        },
+        other => other.clone(),
+    }
 }
 
 fn anthropic_messages_endpoint(base_url: &str) -> String {
@@ -706,20 +1040,107 @@ fn reasoning_content_text(content: &[ReasoningItemContent]) -> Option<String> {
     if text.is_empty() { None } else { Some(text) }
 }
 
-fn push_pending_reasoning_content(
-    pending_reasoning_content: &mut Option<String>,
-    content: &[ReasoningItemContent],
-) {
-    let Some(text) = reasoning_content_text(content) else {
+#[derive(Debug, Clone, Default)]
+struct PendingChatReasoning {
+    visible_text: Option<String>,
+    replay_field: Option<String>,
+    replay_value: Option<JsonValue>,
+}
+
+fn append_pending_visible_reasoning(pending: &mut PendingChatReasoning, text: String) {
+    if text.trim().is_empty() {
         return;
-    };
-    match pending_reasoning_content {
+    }
+    match pending.visible_text.as_mut() {
         Some(existing) if !existing.trim().is_empty() => {
             existing.push('\n');
             existing.push_str(&text);
         }
-        _ => *pending_reasoning_content = Some(text),
+        _ => pending.visible_text = Some(text),
     }
+}
+
+fn merge_chat_reasoning_values(existing: &mut JsonValue, next: JsonValue) {
+    match (existing, next) {
+        (JsonValue::String(existing), JsonValue::String(next)) => {
+            if existing.is_empty() {
+                *existing = next;
+            } else if !next.is_empty() {
+                existing.push('\n');
+                existing.push_str(&next);
+            }
+        }
+        (JsonValue::Array(existing), JsonValue::Array(mut next)) => existing.append(&mut next),
+        (existing, next) => *existing = next,
+    }
+}
+
+fn push_pending_chat_reasoning(
+    pending: &mut PendingChatReasoning,
+    item: &ResponseItem,
+    behavior: &ProviderProtocolBehavior,
+) {
+    let ResponseItem::Reasoning {
+        content,
+        provider_replay,
+        ..
+    } = item
+    else {
+        return;
+    };
+
+    if let Some(replay) = provider_replay {
+        for field in &behavior.chat_reasoning_replay_fields {
+            let Some(value) = replay.fields.get(field) else {
+                continue;
+            };
+            pending.replay_field = Some(field.clone());
+            match pending.replay_value.as_mut() {
+                Some(existing) => merge_chat_reasoning_values(existing, value.clone()),
+                None => pending.replay_value = Some(value.clone()),
+            }
+            break;
+        }
+    }
+
+    if let Some(content) = content
+        && let Some(text) = reasoning_content_text(content)
+    {
+        append_pending_visible_reasoning(pending, text);
+    }
+}
+
+fn take_chat_reasoning_field(
+    pending: &mut PendingChatReasoning,
+    behavior: &ProviderProtocolBehavior,
+    assistant_message_requires_reasoning: bool,
+) -> Option<(String, JsonValue)> {
+    if let Some(field) = pending.replay_field.take()
+        && let Some(value) = pending.replay_value.take()
+    {
+        return Some((field, value));
+    }
+
+    let fallback_field = behavior
+        .chat_reasoning_replay_fields
+        .iter()
+        .find(|field| field.as_str() != "reasoning_details")
+        .cloned();
+
+    if behavior.synthesize_visible_reasoning
+        && let Some(text) = pending.visible_text.take()
+        && !text.trim().is_empty()
+        && let Some(field) = fallback_field.clone()
+    {
+        return Some((field, JsonValue::String(text)));
+    }
+    pending.visible_text = None;
+
+    if assistant_message_requires_reasoning && let Some(field) = fallback_field {
+        return Some((field, JsonValue::String(String::new())));
+    }
+
+    None
 }
 
 fn chat_tool_call_item(item: &ResponseItem) -> Option<JsonValue> {
@@ -759,7 +1180,8 @@ fn push_chat_assistant_message(
     messages: &mut Vec<JsonValue>,
     content: Option<String>,
     tool_calls: Vec<JsonValue>,
-    pending_reasoning_content: &mut Option<String>,
+    pending_reasoning: &mut PendingChatReasoning,
+    behavior: &ProviderProtocolBehavior,
 ) {
     let content_value = content
         .filter(|content| !content.trim().is_empty())
@@ -773,31 +1195,29 @@ fn push_chat_assistant_message(
         if !tool_calls.is_empty() {
             object.insert("tool_calls".to_string(), JsonValue::Array(tool_calls));
         }
-        if let Some(reasoning_content) = pending_reasoning_content
-            .take()
-            .filter(|value| !value.trim().is_empty())
-        {
-            object.insert(
-                "reasoning_content".to_string(),
-                JsonValue::String(reasoning_content),
-            );
+        if let Some((field, value)) = take_chat_reasoning_field(
+            pending_reasoning,
+            behavior,
+            behavior.require_assistant_reasoning,
+        ) {
+            object.insert(field, value);
         }
     }
     messages.push(message);
 }
 
-fn build_chat_messages(input: &[ResponseItem]) -> Vec<JsonValue> {
+fn build_chat_messages(
+    input: &[ResponseItem],
+    behavior: &ProviderProtocolBehavior,
+) -> Vec<JsonValue> {
     let mut messages = Vec::new();
-    let mut pending_reasoning_content: Option<String> = None;
+    let mut pending_reasoning = PendingChatReasoning::default();
     let mut index = 0;
 
     while index < input.len() {
         match &input[index] {
-            ResponseItem::Reasoning {
-                content: Some(content),
-                ..
-            } => {
-                push_pending_reasoning_content(&mut pending_reasoning_content, content);
+            item @ ResponseItem::Reasoning { .. } => {
+                push_pending_chat_reasoning(&mut pending_reasoning, item, behavior);
                 index += 1;
             }
             ResponseItem::Message { role, .. } if role == "system" => {
@@ -827,7 +1247,8 @@ fn build_chat_messages(input: &[ResponseItem]) -> Vec<JsonValue> {
                     &mut messages,
                     Some(text),
                     tool_calls,
-                    &mut pending_reasoning_content,
+                    &mut pending_reasoning,
+                    behavior,
                 );
                 index = cursor;
             }
@@ -845,7 +1266,8 @@ fn build_chat_messages(input: &[ResponseItem]) -> Vec<JsonValue> {
                     &mut messages,
                     None,
                     tool_calls,
-                    &mut pending_reasoning_content,
+                    &mut pending_reasoning,
+                    behavior,
                 );
             }
             ResponseItem::FunctionCallOutput { call_id, output }
@@ -888,6 +1310,7 @@ fn build_chat_tools(mappings: &ToolMappings) -> Vec<JsonValue> {
 fn parse_chat_completions_payload(
     payload: &JsonValue,
     mappings: &ToolMappings,
+    behavior: &ProviderProtocolBehavior,
 ) -> ProviderResponsePayload {
     let message = payload.pointer("/choices/0/message");
     let assistant_text = message
@@ -895,11 +1318,31 @@ fn parse_chat_completions_payload(
         .and_then(JsonValue::as_str)
         .unwrap_or_default()
         .to_string();
-    let reasoning_content = message
-        .and_then(|message| message.get("reasoning_content"))
-        .and_then(JsonValue::as_str)
-        .map(ToOwned::to_owned)
-        .filter(|content| !content.trim().is_empty());
+    let mut replay_fields = HashMap::new();
+    let mut visible_reasoning = None;
+    if let Some(message) = message {
+        for field in &behavior.chat_reasoning_replay_fields {
+            let Some(value) = message.get(field) else {
+                continue;
+            };
+            if value.is_null() {
+                continue;
+            }
+            let should_preserve = match value.as_str() {
+                Some(text) => behavior.preserve_empty_reasoning || !text.trim().is_empty(),
+                None => true,
+            };
+            if should_preserve {
+                replay_fields.insert(field.clone(), value.clone());
+            }
+            if visible_reasoning.is_none()
+                && let Some(text) = value.as_str()
+                && !text.trim().is_empty()
+            {
+                visible_reasoning = Some(text.to_string());
+            }
+        }
+    }
     let mut function_calls = Vec::new();
 
     if let Some(tool_calls) = message
@@ -935,7 +1378,13 @@ fn parse_chat_completions_payload(
     let input_tokens = as_i64(payload.pointer("/usage/prompt_tokens"));
     let output_tokens = as_i64(payload.pointer("/usage/completion_tokens"));
     let total_tokens = as_i64(payload.pointer("/usage/total_tokens"));
-    let token_usage = token_usage_from_provider_counts(input_tokens, output_tokens, total_tokens);
+    let cached_input_tokens = cached_input_tokens_from_provider_usage(payload);
+    let token_usage = token_usage_from_provider_counts(
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        cached_input_tokens,
+    );
     let response_id = payload
         .get("id")
         .and_then(JsonValue::as_str)
@@ -944,18 +1393,570 @@ fn parse_chat_completions_payload(
 
     ProviderResponsePayload {
         assistant_text,
-        reasoning_content,
+        reasoning: (visible_reasoning.is_some() || !replay_fields.is_empty()).then(|| {
+            ProviderReasoningPayload {
+                visible_text: visible_reasoning,
+                provider_replay: behavior.replay_from_fields(replay_fields),
+            }
+        }),
         function_calls,
         token_usage,
         response_id,
     }
 }
 
+fn append_stream_text(target: &mut Option<String>, delta: &str) {
+    if delta.is_empty() {
+        return;
+    }
+    match target {
+        Some(existing) => existing.push_str(delta),
+        None => *target = Some(delta.to_string()),
+    }
+}
+
+fn visible_reasoning_text_from_value(value: &JsonValue) -> Option<String> {
+    match value {
+        JsonValue::String(text) if !text.trim().is_empty() => Some(text.clone()),
+        JsonValue::Array(items) => {
+            let text = items
+                .iter()
+                .filter_map(visible_reasoning_text_from_value)
+                .collect::<Vec<_>>()
+                .join("");
+            (!text.trim().is_empty()).then_some(text)
+        }
+        JsonValue::Object(object) => object
+            .get("text")
+            .or_else(|| object.get("reasoning"))
+            .or_else(|| object.get("reasoning_content"))
+            .and_then(visible_reasoning_text_from_value),
+        _ => None,
+    }
+}
+
+fn merge_streaming_replay_field(
+    replay_fields: &mut HashMap<String, JsonValue>,
+    field: &str,
+    value: JsonValue,
+) {
+    match replay_fields.entry(field.to_string()) {
+        std::collections::hash_map::Entry::Occupied(mut entry) => match (entry.get_mut(), value) {
+            (JsonValue::String(existing), JsonValue::String(next)) => existing.push_str(&next),
+            (JsonValue::Array(existing), JsonValue::Array(mut next)) => existing.append(&mut next),
+            (existing, next) => *existing = next,
+        },
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(value);
+        }
+    }
+}
+
+fn apply_streaming_chat_reasoning_delta(
+    state: &mut StreamingChatCompletionsState,
+    field: &str,
+    value: &JsonValue,
+    behavior: &ProviderProtocolBehavior,
+) -> Option<String> {
+    if value.is_null() {
+        return None;
+    }
+
+    let should_preserve = match value.as_str() {
+        Some(text) => behavior.preserve_empty_reasoning || !text.trim().is_empty(),
+        None => true,
+    };
+    if should_preserve {
+        merge_streaming_replay_field(&mut state.replay_fields, field, value.clone());
+    }
+
+    let visible_text = visible_reasoning_text_from_value(value)?;
+    append_stream_text(&mut state.visible_reasoning, &visible_text);
+    Some(visible_text)
+}
+
+fn apply_streaming_chat_tool_call_delta(
+    state: &mut StreamingChatCompletionsState,
+    tool_call: &JsonValue,
+    fallback_index: usize,
+) {
+    let index = tool_call
+        .get("index")
+        .and_then(JsonValue::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(fallback_index);
+    let entry = state.tool_calls.entry(index).or_default();
+    if let Some(call_id) = tool_call.get("id").and_then(JsonValue::as_str)
+        && !call_id.trim().is_empty()
+    {
+        entry.call_id = Some(call_id.to_string());
+    }
+    if let Some(function) = tool_call.get("function") {
+        if let Some(name) = function.get("name").and_then(JsonValue::as_str) {
+            entry.name.push_str(name);
+        }
+        if let Some(arguments) = function.get("arguments").and_then(JsonValue::as_str) {
+            entry.arguments.push_str(arguments);
+        }
+    }
+}
+
+fn apply_streaming_chat_completions_chunk(
+    state: &mut StreamingChatCompletionsState,
+    payload: &JsonValue,
+    behavior: &ProviderProtocolBehavior,
+) -> StreamingChatCompletionsChunkUpdate {
+    state.saw_data = true;
+    if let Some(id) = payload.get("id").and_then(JsonValue::as_str)
+        && !id.trim().is_empty()
+    {
+        state.response_id = Some(id.to_string());
+    }
+
+    let input_tokens = as_i64(payload.pointer("/usage/prompt_tokens"));
+    let output_tokens = as_i64(payload.pointer("/usage/completion_tokens"));
+    let total_tokens = as_i64(payload.pointer("/usage/total_tokens"));
+    let cached_input_tokens = cached_input_tokens_from_provider_usage(payload);
+    if input_tokens.is_some()
+        || output_tokens.is_some()
+        || total_tokens.is_some()
+        || cached_input_tokens.is_some()
+    {
+        state.token_usage = token_usage_from_provider_counts(
+            input_tokens,
+            output_tokens,
+            total_tokens,
+            cached_input_tokens,
+        );
+    }
+
+    let mut update = StreamingChatCompletionsChunkUpdate::default();
+    let Some(choices) = payload.get("choices").and_then(JsonValue::as_array) else {
+        return update;
+    };
+
+    for choice in choices {
+        let Some(delta) = choice.get("delta") else {
+            continue;
+        };
+
+        for field in &behavior.chat_reasoning_replay_fields {
+            let Some(value) = delta.get(field) else {
+                continue;
+            };
+            if let Some(reasoning_delta) =
+                apply_streaming_chat_reasoning_delta(state, field, value, behavior)
+            {
+                match update.reasoning_delta.as_mut() {
+                    Some(existing) => existing.push_str(&reasoning_delta),
+                    None => update.reasoning_delta = Some(reasoning_delta),
+                }
+            }
+        }
+
+        if let Some(content_delta) = delta.get("content").and_then(JsonValue::as_str)
+            && !content_delta.is_empty()
+        {
+            state.assistant_text.push_str(content_delta);
+            match update.text_delta.as_mut() {
+                Some(existing) => existing.push_str(content_delta),
+                None => update.text_delta = Some(content_delta.to_string()),
+            }
+        }
+
+        if let Some(tool_calls) = delta.get("tool_calls").and_then(JsonValue::as_array) {
+            for (index, tool_call) in tool_calls.iter().enumerate() {
+                apply_streaming_chat_tool_call_delta(state, tool_call, index);
+            }
+        }
+    }
+
+    update
+}
+
+fn provider_payload_from_streaming_chat_state(
+    state: StreamingChatCompletionsState,
+    mappings: &ToolMappings,
+    behavior: &ProviderProtocolBehavior,
+) -> ProviderResponsePayload {
+    let mut function_calls = Vec::new();
+    for (index, call) in state.tool_calls {
+        let wire_name = if call.name.trim().is_empty() {
+            "tool"
+        } else {
+            call.name.as_str()
+        };
+        let (namespace, name) = resolve_canonical_tool_name(mappings, wire_name);
+        function_calls.push(ProviderFunctionCall {
+            call_id: call
+                .call_id
+                .unwrap_or_else(|| format!("chat-tool-call-{}", index + 1)),
+            name,
+            namespace,
+            input: parse_tool_input(&call.arguments),
+        });
+    }
+
+    let mut replay_fields = state.replay_fields;
+    if replay_fields.is_empty()
+        && behavior.require_assistant_reasoning
+        && !function_calls.is_empty()
+        && let Some(field) = behavior
+            .chat_reasoning_replay_fields
+            .iter()
+            .find(|field| field.as_str() != "reasoning_details")
+    {
+        replay_fields.insert(field.clone(), JsonValue::String(String::new()));
+    }
+
+    ProviderResponsePayload {
+        assistant_text: state.assistant_text,
+        reasoning: (state.visible_reasoning.is_some() || !replay_fields.is_empty()).then(|| {
+            ProviderReasoningPayload {
+                visible_text: state.visible_reasoning,
+                provider_replay: behavior.replay_from_fields(replay_fields),
+            }
+        }),
+        function_calls,
+        token_usage: state.token_usage,
+        response_id: state
+            .response_id
+            .unwrap_or_else(|| "chat-completions-response".to_string()),
+    }
+}
+
+fn chat_completions_status_error(status: StatusCode, body: String) -> LyraErr {
+    if body.contains("reasoning_content") && body.contains("passed back") {
+        stream_error(format!(
+            "Provider protocol replay failed ({status}): Chat Completions reasoning_content was not accepted by the provider. {body}"
+        ))
+    } else {
+        stream_error(format!(
+            "Chat Completions request failed ({status}): {body}"
+        ))
+    }
+}
+
+fn should_fallback_chat_stream_to_non_stream(status: StatusCode, body: &str) -> bool {
+    status == StatusCode::BAD_REQUEST
+        && body.to_ascii_lowercase().contains("stream")
+        && !body.contains("reasoning_content")
+}
+
+fn apply_chat_prompt_cache_key(
+    payload: &mut JsonValue,
+    behavior: &ProviderProtocolBehavior,
+    cache_key: &str,
+) -> bool {
+    if !behavior.prompt_cache_key {
+        return false;
+    }
+    let Some(object) = payload.as_object_mut() else {
+        return false;
+    };
+    if object.contains_key("prompt_cache_key") {
+        return false;
+    }
+    object.insert(
+        "prompt_cache_key".to_string(),
+        JsonValue::String(cache_key.to_string()),
+    );
+    true
+}
+
+fn remove_chat_prompt_cache_key(payload: &mut JsonValue) -> bool {
+    let Some(object) = payload.as_object_mut() else {
+        return false;
+    };
+    let removed_key = object.remove("prompt_cache_key").is_some();
+    let removed_retention = object.remove("prompt_cache_retention").is_some();
+    removed_key || removed_retention
+}
+
+fn chat_prompt_cache_key_unsupported(status: StatusCode, body: &str) -> bool {
+    if status != StatusCode::BAD_REQUEST && status != StatusCode::UNPROCESSABLE_ENTITY {
+        return false;
+    }
+    let body = body.to_ascii_lowercase();
+    let mentions_prompt_cache =
+        body.contains("prompt_cache_key") || body.contains("prompt_cache_retention");
+    let unsupported_reason = body.contains("unsupported")
+        || body.contains("unknown")
+        || body.contains("unrecognized")
+        || body.contains("invalid")
+        || body.contains("extra")
+        || body.contains("unexpected")
+        || body.contains("not allowed");
+    mentions_prompt_cache && unsupported_reason
+}
+
+fn chat_stream_response_is_json(response: &reqwest::Response) -> bool {
+    response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("application/json"))
+}
+
+async fn send_chat_completions_payload<F, Fut>(
+    send_payload: &F,
+    payload: &JsonValue,
+) -> Result<std::result::Result<reqwest::Response, (StatusCode, String)>>
+where
+    F: Fn(JsonValue) -> Fut,
+    Fut: Future<Output = Result<reqwest::Response>>,
+{
+    let response = send_payload(payload.clone()).await?;
+    if response.status().is_success() {
+        Ok(Ok(response))
+    } else {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        Ok(Err((status, body)))
+    }
+}
+
+async fn send_chat_event(tx: &mpsc::Sender<Result<ResponseEvent>>, event: ResponseEvent) -> bool {
+    tx.send(Ok(event)).await.is_ok()
+}
+
+async fn finalize_chat_completions_stream(
+    tx: &mpsc::Sender<Result<ResponseEvent>>,
+    state: StreamingChatCompletionsState,
+    mappings: &ToolMappings,
+    behavior: &ProviderProtocolBehavior,
+) {
+    let message_started = state.message_started;
+    let reasoning_started = state.reasoning_started;
+    let payload = provider_payload_from_streaming_chat_state(state, mappings, behavior);
+    if let Some(reasoning) = payload.reasoning {
+        let content = reasoning
+            .visible_text
+            .filter(|text| !text.trim().is_empty())
+            .map(|text| vec![ReasoningItemContent::ReasoningText { text }]);
+        if (reasoning_started || content.is_some() || reasoning.provider_replay.is_some())
+            && !send_chat_event(
+                tx,
+                ResponseEvent::OutputItemDone(ResponseItem::Reasoning {
+                    id: format!("{}-reasoning", payload.response_id),
+                    summary: Vec::new(),
+                    content,
+                    encrypted_content: None,
+                    provider_replay: reasoning.provider_replay,
+                }),
+            )
+            .await
+        {
+            return;
+        }
+    }
+
+    if message_started || !payload.assistant_text.trim().is_empty() {
+        let _ = send_chat_event(
+            tx,
+            ResponseEvent::OutputItemDone(assistant_message_item(payload.assistant_text)),
+        )
+        .await;
+    }
+
+    for call in payload.function_calls {
+        let arguments = serde_json::to_string(&call.input).unwrap_or_else(|_| "{}".to_string());
+        let item = ResponseItem::FunctionCall {
+            id: None,
+            name: call.name,
+            namespace: call.namespace,
+            arguments,
+            call_id: call.call_id,
+        };
+        if !send_chat_event(tx, ResponseEvent::OutputItemDone(item)).await {
+            return;
+        }
+    }
+
+    let _ = send_chat_event(
+        tx,
+        ResponseEvent::Completed {
+            response_id: payload.response_id,
+            token_usage: payload.token_usage,
+        },
+    )
+    .await;
+}
+
+fn response_stream_from_chat_completions_sse(
+    response: reqwest::Response,
+    mappings: ToolMappings,
+    behavior: ProviderProtocolBehavior,
+    idle_timeout: Duration,
+) -> ResponseStream {
+    let (tx, rx_event) = mpsc::channel::<Result<ResponseEvent>>(1600);
+    tokio::spawn(async move {
+        if !send_chat_event(&tx, ResponseEvent::Created).await {
+            return;
+        }
+
+        let mut stream = response.bytes_stream().eventsource();
+        let mut state = StreamingChatCompletionsState::default();
+        loop {
+            let event = tokio::time::timeout(idle_timeout, stream.next()).await;
+            let sse = match event {
+                Ok(Some(Ok(sse))) => sse,
+                Ok(Some(Err(error))) => {
+                    let _ = tx
+                        .send(Err(stream_error(format!(
+                            "Chat Completions stream failed: {error}"
+                        ))))
+                        .await;
+                    return;
+                }
+                Ok(None) => {
+                    if state.saw_data {
+                        finalize_chat_completions_stream(&tx, state, &mappings, &behavior).await;
+                    } else {
+                        let _ = tx
+                            .send(Err(stream_error(
+                                "Chat Completions stream closed before any data",
+                            )))
+                            .await;
+                    }
+                    return;
+                }
+                Err(_) => {
+                    let _ = tx
+                        .send(Err(stream_error(
+                            "idle timeout waiting for Chat Completions stream",
+                        )))
+                        .await;
+                    return;
+                }
+            };
+
+            let data = sse.data.trim();
+            if data == "[DONE]" {
+                finalize_chat_completions_stream(&tx, state, &mappings, &behavior).await;
+                return;
+            }
+
+            let payload = match serde_json::from_str::<JsonValue>(data) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    let _ = tx
+                        .send(Err(stream_error(format!(
+                            "failed to parse Chat Completions stream event: {error}"
+                        ))))
+                        .await;
+                    return;
+                }
+            };
+
+            if let Some(error) = payload.get("error") {
+                let message = error
+                    .get("message")
+                    .and_then(JsonValue::as_str)
+                    .unwrap_or_else(|| data);
+                let _ = tx
+                    .send(Err(stream_error(format!(
+                        "Chat Completions stream failed: {message}"
+                    ))))
+                    .await;
+                return;
+            }
+
+            let update = apply_streaming_chat_completions_chunk(&mut state, &payload, &behavior);
+            if let Some(reasoning_delta) = update.reasoning_delta {
+                if !state.reasoning_started {
+                    state.reasoning_started = true;
+                    if !send_chat_event(
+                        &tx,
+                        ResponseEvent::OutputItemAdded(ResponseItem::Reasoning {
+                            id: format!(
+                                "{}-reasoning",
+                                state
+                                    .response_id
+                                    .as_deref()
+                                    .unwrap_or("chat-completions-response")
+                            ),
+                            summary: Vec::new(),
+                            content: None,
+                            encrypted_content: None,
+                            provider_replay: None,
+                        }),
+                    )
+                    .await
+                    {
+                        return;
+                    }
+                }
+                if !send_chat_event(
+                    &tx,
+                    ResponseEvent::ReasoningContentDelta {
+                        delta: reasoning_delta,
+                        content_index: 0,
+                    },
+                )
+                .await
+                {
+                    return;
+                }
+            }
+
+            if let Some(text_delta) = update.text_delta {
+                if !state.message_started {
+                    state.message_started = true;
+                    if !send_chat_event(
+                        &tx,
+                        ResponseEvent::OutputItemAdded(assistant_message_item(String::new())),
+                    )
+                    .await
+                    {
+                        return;
+                    }
+                }
+                if !send_chat_event(&tx, ResponseEvent::OutputTextDelta(text_delta)).await {
+                    return;
+                }
+            }
+        }
+    });
+
+    ResponseStream { rx_event }
+}
+
+fn anthropic_replay_blocks(item: &ResponseItem) -> Vec<JsonValue> {
+    let ResponseItem::Reasoning {
+        provider_replay: Some(replay),
+        ..
+    } = item
+    else {
+        return Vec::new();
+    };
+    replay
+        .fields
+        .get("content_blocks")
+        .and_then(JsonValue::as_array)
+        .map(|blocks| blocks.to_vec())
+        .unwrap_or_default()
+}
+
+fn push_anthropic_assistant_message(messages: &mut Vec<JsonValue>, content: Vec<JsonValue>) {
+    if content.is_empty() {
+        return;
+    }
+    messages.push(json!({
+        "role": "assistant",
+        "content": content,
+    }));
+}
+
 fn build_anthropic_messages(input: &[ResponseItem], mappings: &ToolMappings) -> Vec<JsonValue> {
     let mut messages = Vec::new();
+    let mut pending_assistant_replay_blocks = Vec::new();
 
     for item in input {
         match item {
+            reasoning @ ResponseItem::Reasoning { .. } => {
+                pending_assistant_replay_blocks.extend(anthropic_replay_blocks(reasoning));
+            }
             ResponseItem::Message { role, content, .. } if role == "system" => {}
             ResponseItem::Message { role, content, .. } if role == "user" => {
                 let text = crate::content_items::content_items_to_text(content).unwrap_or_default();
@@ -969,13 +1970,14 @@ fn build_anthropic_messages(input: &[ResponseItem], mappings: &ToolMappings) -> 
             }
             ResponseItem::Message { role, content, .. } if role == "assistant" => {
                 let text = crate::content_items::content_items_to_text(content).unwrap_or_default();
-                messages.push(json!({
-                    "role": "assistant",
-                    "content": [{
+                let mut content = std::mem::take(&mut pending_assistant_replay_blocks);
+                if !text.trim().is_empty() {
+                    content.push(json!({
                         "type": "text",
                         "text": text,
-                    }],
-                }));
+                    }));
+                }
+                push_anthropic_assistant_message(&mut messages, content);
             }
             ResponseItem::FunctionCall {
                 name,
@@ -985,15 +1987,14 @@ fn build_anthropic_messages(input: &[ResponseItem], mappings: &ToolMappings) -> 
                 ..
             } => {
                 let tool_name = resolve_wire_tool_name(mappings, name, namespace.as_deref());
-                messages.push(json!({
-                    "role": "assistant",
-                    "content": [{
+                let mut content = std::mem::take(&mut pending_assistant_replay_blocks);
+                content.push(json!({
                         "type": "tool_use",
                         "id": call_id,
                         "name": tool_name,
                         "input": parse_tool_input(arguments),
-                    }],
                 }));
+                push_anthropic_assistant_message(&mut messages, content);
             }
             ResponseItem::CustomToolCall {
                 call_id,
@@ -1002,15 +2003,14 @@ fn build_anthropic_messages(input: &[ResponseItem], mappings: &ToolMappings) -> 
                 ..
             } => {
                 let tool_name = resolve_wire_tool_name(mappings, name, None);
-                messages.push(json!({
-                    "role": "assistant",
-                    "content": [{
+                let mut content = std::mem::take(&mut pending_assistant_replay_blocks);
+                content.push(json!({
                         "type": "tool_use",
                         "id": call_id,
                         "name": tool_name,
                         "input": parse_tool_input(input),
-                    }],
                 }));
+                push_anthropic_assistant_message(&mut messages, content);
             }
             ResponseItem::FunctionCallOutput { call_id, output } => {
                 messages.push(json!({
@@ -1066,6 +2066,8 @@ fn parse_anthropic_response_payload(
     mappings: &ToolMappings,
 ) -> ProviderResponsePayload {
     let mut assistant_text = String::new();
+    let mut visible_reasoning_parts = Vec::new();
+    let mut replay_blocks = Vec::new();
     let mut function_calls = Vec::new();
 
     if let Some(content_items) = payload.get("content").and_then(JsonValue::as_array) {
@@ -1075,6 +2077,23 @@ fn parse_anthropic_response_payload(
                 .and_then(JsonValue::as_str)
                 .unwrap_or_default();
             match item_type {
+                "thinking" => {
+                    let thinking = item
+                        .get("thinking")
+                        .and_then(JsonValue::as_str)
+                        .unwrap_or_default();
+                    if !thinking.trim().is_empty() {
+                        visible_reasoning_parts.push(thinking.to_string());
+                    }
+                    if item.get("signature").and_then(JsonValue::as_str).is_some()
+                        && !thinking.trim().is_empty()
+                    {
+                        replay_blocks.push(item.clone());
+                    }
+                }
+                "redacted_thinking" => {
+                    replay_blocks.push(item.clone());
+                }
                 "text" => {
                     if let Some(text) = item.get("text").and_then(JsonValue::as_str) {
                         if !assistant_text.is_empty() && !text.trim().is_empty() {
@@ -1108,7 +2127,9 @@ fn parse_anthropic_response_payload(
 
     let input_tokens = as_i64(payload.pointer("/usage/input_tokens"));
     let output_tokens = as_i64(payload.pointer("/usage/output_tokens"));
-    let token_usage = token_usage_from_provider_counts(input_tokens, output_tokens, None);
+    let cached_input_tokens = cached_input_tokens_from_provider_usage(payload);
+    let token_usage =
+        token_usage_from_provider_counts(input_tokens, output_tokens, None, cached_input_tokens);
     let response_id = payload
         .get("id")
         .and_then(JsonValue::as_str)
@@ -1116,7 +2137,28 @@ fn parse_anthropic_response_payload(
         .unwrap_or_else(|| "anthropic-response".to_string());
     ProviderResponsePayload {
         assistant_text,
-        reasoning_content: None,
+        reasoning: (!visible_reasoning_parts.is_empty() || !replay_blocks.is_empty()).then(|| {
+            let mut fields = HashMap::new();
+            if !replay_blocks.is_empty() {
+                fields.insert(
+                    "content_blocks".to_string(),
+                    JsonValue::Array(replay_blocks),
+                );
+            }
+            ProviderReasoningPayload {
+                visible_text: (!visible_reasoning_parts.is_empty())
+                    .then(|| visible_reasoning_parts.join("\n")),
+                provider_replay: if fields.is_empty() {
+                    None
+                } else {
+                    Some(ReasoningProviderReplay {
+                        provider: "anthropic".to_string(),
+                        protocol: "anthropic_messages".to_string(),
+                        fields,
+                    })
+                },
+            }
+        }),
         function_calls,
         token_usage,
         response_id,
@@ -1251,6 +2293,7 @@ fn parse_gemini_response_payload(
     mappings: &ToolMappings,
 ) -> ProviderResponsePayload {
     let mut assistant_text = String::new();
+    let mut visible_reasoning_parts = Vec::new();
     let mut function_calls = Vec::new();
 
     if let Some(parts) = payload
@@ -1259,10 +2302,16 @@ fn parse_gemini_response_payload(
     {
         for (index, part) in parts.iter().enumerate() {
             if let Some(text) = part.get("text").and_then(JsonValue::as_str) {
-                if !assistant_text.is_empty() && !text.trim().is_empty() {
-                    assistant_text.push('\n');
+                if part.get("thought").and_then(JsonValue::as_bool) == Some(true) {
+                    if !text.trim().is_empty() {
+                        visible_reasoning_parts.push(text.to_string());
+                    }
+                } else {
+                    if !assistant_text.is_empty() && !text.trim().is_empty() {
+                        assistant_text.push('\n');
+                    }
+                    assistant_text.push_str(text);
                 }
-                assistant_text.push_str(text);
             }
 
             if let Some(function_call) = part.get("functionCall").and_then(JsonValue::as_object) {
@@ -1293,7 +2342,8 @@ fn parse_gemini_response_payload(
     let input_tokens = usage_metadata.and_then(|usage| as_i64(usage.get("promptTokenCount")));
     let output_tokens = usage_metadata.and_then(|usage| as_i64(usage.get("candidatesTokenCount")));
     let total_tokens = usage_metadata.and_then(|usage| as_i64(usage.get("totalTokenCount")));
-    let token_usage = token_usage_from_provider_counts(input_tokens, output_tokens, total_tokens);
+    let token_usage =
+        token_usage_from_provider_counts(input_tokens, output_tokens, total_tokens, None);
     let response_id = payload
         .pointer("/candidates/0/index")
         .and_then(JsonValue::as_i64)
@@ -1301,7 +2351,10 @@ fn parse_gemini_response_payload(
         .unwrap_or_else(|| "gemini-response".to_string());
     ProviderResponsePayload {
         assistant_text,
-        reasoning_content: None,
+        reasoning: (!visible_reasoning_parts.is_empty()).then(|| ProviderReasoningPayload {
+            visible_text: Some(visible_reasoning_parts.join("\n")),
+            provider_replay: None,
+        }),
         function_calls,
         token_usage,
         response_id,
@@ -1343,6 +2396,7 @@ impl ModelClient {
                 enable_request_compression,
                 include_timing_metrics,
                 disable_websockets: AtomicBool::new(false),
+                disable_chat_prompt_cache_key: AtomicBool::new(false),
                 cached_websocket_session: StdMutex::new(WebsocketSession::default()),
             }),
         }
@@ -1543,18 +2597,31 @@ impl ModelClient {
         effort: Option<ReasoningEffortConfig>,
         summary: ReasoningSummaryConfig,
     ) -> Option<Reasoning> {
-        if model_info.supports_reasoning_summaries {
-            Some(Reasoning {
-                effort: effort.or(model_info.default_reasoning_level),
-                summary: if summary == ReasoningSummaryConfig::None {
-                    None
-                } else {
-                    Some(summary)
-                },
-            })
+        let model_supports_reasoning_effort = model_info.default_reasoning_level.is_some()
+            || !model_info.supported_reasoning_levels.is_empty();
+        let effort = if model_supports_reasoning_effort {
+            effort.or(model_info.default_reasoning_level)
         } else {
+            if effort.is_some() {
+                warn!(
+                    "model_reasoning_effort is set but ignored as the model does not declare reasoning effort support: {}",
+                    model_info.slug
+                );
+            }
             None
+        };
+        let summary =
+            if model_info.supports_reasoning_summaries && summary != ReasoningSummaryConfig::None {
+                Some(summary)
+            } else {
+                None
+            };
+
+        if effort.is_none() && summary.is_none() {
+            return None;
         }
+
+        Some(Reasoning { effort, summary })
     }
 
     /// Returns whether the Responses-over-WebSocket transport is active for this session.
@@ -1709,21 +2776,13 @@ impl ModelClientSession {
         service_tier: Option<ServiceTier>,
     ) -> Result<ResponsesApiRequest> {
         let instructions = &prompt.base_instructions.text;
-        let input = prompt.get_formatted_input();
+        let input = prompt
+            .get_formatted_input()
+            .iter()
+            .map(response_item_for_responses_api)
+            .collect();
         let tools = create_tools_json_for_responses_api(&prompt.tools)?;
-        let default_reasoning_effort = model_info.default_reasoning_level;
-        let reasoning = if model_info.supports_reasoning_summaries {
-            Some(Reasoning {
-                effort: effort.or(default_reasoning_effort),
-                summary: if summary == ReasoningSummaryConfig::None {
-                    None
-                } else {
-                    Some(summary)
-                },
-            })
-        } else {
-            None
-        };
+        let reasoning = ModelClient::build_reasoning(model_info, effort, summary);
         let include = if reasoning.is_some() {
             vec!["reasoning.encrypted_content".to_string()]
         } else {
@@ -2438,13 +3497,15 @@ impl ModelClientSession {
         prompt: &Prompt,
         model_info: &ModelInfo,
         _session_telemetry: &SessionTelemetry,
-        _effort: Option<ReasoningEffortConfig>,
+        effort: Option<ReasoningEffortConfig>,
         _summary: ReasoningSummaryConfig,
         _service_tier: Option<ServiceTier>,
         _turn_metadata_header: Option<&str>,
     ) -> Result<ResponseStream> {
         let client_setup = self.client.current_client_setup().await?;
         let provider = client_setup.api_provider;
+        let behavior =
+            ProviderProtocolBehavior::for_provider(self.client.state.provider.info(), model_info);
         let base_url = provider.base_url.trim();
         if base_url.is_empty() {
             return Err(stream_error("Chat Completions base URL is not configured"));
@@ -2452,6 +3513,12 @@ impl ModelClientSession {
 
         let input = prompt.get_formatted_input();
         let tool_mappings = build_tool_mappings(&prompt.tools);
+        if !behavior.tool_loop_supported && !tool_mappings.descriptors.is_empty() {
+            return Err(stream_error(format!(
+                "{} does not support Lyra's Chat Completions tool loop; choose a tool-capable model for agent work",
+                model_info.slug
+            )));
+        }
         let mut messages = Vec::new();
         if let Some(system) = build_system_prompt(&prompt.base_instructions.text, &input) {
             messages.push(json!({
@@ -2459,14 +3526,19 @@ impl ModelClientSession {
                 "content": system,
             }));
         }
-        messages.extend(build_chat_messages(&input));
+        messages.extend(build_chat_messages(&input, &behavior));
 
+        let input_item_count = input.len();
+        let message_count = messages.len();
+        let base_instruction_bytes = prompt.base_instructions.text.len();
+        let should_stream = behavior.force_stream.unwrap_or(true);
         let mut payload = json!({
             "model": model_info.slug,
             "messages": messages,
-            "stream": false,
+            "stream": should_stream,
         });
         let tools = build_chat_tools(&tool_mappings);
+        let tool_count = tools.len();
         if !tools.is_empty()
             && let Some(object) = payload.as_object_mut()
         {
@@ -2476,6 +3548,46 @@ impl ModelClientSession {
                 JsonValue::String("auto".to_string()),
             );
         }
+        if behavior.enable_deepseek_thinking
+            && let Some(object) = payload.as_object_mut()
+        {
+            object.insert("thinking".to_string(), json!({ "type": "enabled" }));
+            object.insert(
+                "reasoning_effort".to_string(),
+                JsonValue::String(deepseek_reasoning_effort(effort).to_string()),
+            );
+        }
+        if let Some(object) = payload.as_object_mut() {
+            for (key, value) in &behavior.request_params {
+                object.insert(key.clone(), value.clone());
+            }
+            for key in &behavior.unsupported_params {
+                object.remove(key);
+            }
+        }
+        let chat_prompt_cache_enabled = !self
+            .client
+            .state
+            .disable_chat_prompt_cache_key
+            .load(Ordering::Relaxed);
+        let prompt_cache_key_added = chat_prompt_cache_enabled
+            && apply_chat_prompt_cache_key(
+                &mut payload,
+                &behavior,
+                &self.client.state.conversation_id.to_string(),
+            );
+        trace!(
+            provider = %behavior.provider_id,
+            protocol = %behavior.protocol_id,
+            model = %model_info.slug,
+            input_items = input_item_count,
+            messages = message_count,
+            tools = tool_count,
+            base_instruction_bytes,
+            payload_bytes = serde_json::to_vec(&payload).map(|bytes| bytes.len()).unwrap_or(0),
+            prompt_cache_key = prompt_cache_key_added,
+            "chat completions prompt budget"
+        );
 
         let mut headers = reqwest_headers_from_api_provider(&provider);
         client_setup.api_auth.add_auth_headers(&mut headers);
@@ -2493,24 +3605,90 @@ impl ModelClientSession {
                 ))
             })?;
 
-        let mut request = client
-            .post(chat_completions_endpoint(&provider.base_url))
-            .headers(headers)
-            .json(&payload);
-        if let Some(query_params) = provider.query_params.as_ref() {
-            request = request.query(query_params);
+        let endpoint = chat_completions_endpoint(&provider.base_url);
+        let query_params = provider.query_params.clone();
+        let send_payload = |payload: JsonValue| {
+            let client = client.clone();
+            let headers = headers.clone();
+            let endpoint = endpoint.clone();
+            let query_params = query_params.clone();
+            async move {
+                let mut request = client.post(endpoint).headers(headers).json(&payload);
+                if let Some(query_params) = query_params.as_ref() {
+                    request = request.query(query_params);
+                }
+                request.send().await.map_err(|error| {
+                    stream_error(format!("Chat Completions request failed: {error}"))
+                })
+            }
+        };
+
+        let mut outcome = send_chat_completions_payload(&send_payload, &payload).await?;
+        if let Err((status, body)) = &outcome
+            && chat_prompt_cache_key_unsupported(*status, body)
+            && remove_chat_prompt_cache_key(&mut payload)
+        {
+            self.client
+                .state
+                .disable_chat_prompt_cache_key
+                .store(true, Ordering::Relaxed);
+            trace!(
+                provider = %behavior.provider_id,
+                protocol = %behavior.protocol_id,
+                status = %status,
+                "chat completions provider rejected prompt cache key; retrying without it"
+            );
+            outcome = send_chat_completions_payload(&send_payload, &payload).await?;
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(|error| stream_error(format!("Chat Completions request failed: {error}")))?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(stream_error(format!(
-                "Chat Completions request failed ({status}): {body}"
-            )));
+        let response = match outcome {
+            Ok(response) => response,
+            Err((status, body)) => {
+                if should_stream
+                    && behavior.force_stream != Some(true)
+                    && should_fallback_chat_stream_to_non_stream(status, &body)
+                {
+                    if let Some(object) = payload.as_object_mut() {
+                        object.insert("stream".to_string(), JsonValue::Bool(false));
+                    }
+                    let mut fallback_outcome =
+                        send_chat_completions_payload(&send_payload, &payload).await?;
+                    if let Err((status, body)) = &fallback_outcome
+                        && chat_prompt_cache_key_unsupported(*status, body)
+                        && remove_chat_prompt_cache_key(&mut payload)
+                    {
+                        self.client
+                            .state
+                            .disable_chat_prompt_cache_key
+                            .store(true, Ordering::Relaxed);
+                        trace!(
+                            provider = %behavior.provider_id,
+                            protocol = %behavior.protocol_id,
+                            status = %status,
+                            "chat completions non-stream fallback rejected prompt cache key; retrying without it"
+                        );
+                        fallback_outcome =
+                            send_chat_completions_payload(&send_payload, &payload).await?;
+                    }
+                    match fallback_outcome {
+                        Ok(response) => response,
+                        Err((status, body)) => {
+                            return Err(chat_completions_status_error(status, body));
+                        }
+                    }
+                } else {
+                    return Err(chat_completions_status_error(status, body));
+                }
+            }
+        };
+
+        if should_stream && !chat_stream_response_is_json(&response) {
+            return Ok(response_stream_from_chat_completions_sse(
+                response,
+                tool_mappings,
+                behavior,
+                self.client.state.provider.info().stream_idle_timeout(),
+            ));
         }
 
         let payload = response.json::<JsonValue>().await.map_err(|error| {
@@ -2518,7 +3696,7 @@ impl ModelClientSession {
                 "failed to parse Chat Completions response: {error}"
             ))
         })?;
-        let mapped = parse_chat_completions_payload(&payload, &tool_mappings);
+        let mapped = parse_chat_completions_payload(&payload, &tool_mappings, &behavior);
         Ok(response_stream_from_provider_payload(mapped))
     }
 
@@ -2528,7 +3706,7 @@ impl ModelClientSession {
         prompt: &Prompt,
         model_info: &ModelInfo,
         _session_telemetry: &SessionTelemetry,
-        _effort: Option<ReasoningEffortConfig>,
+        effort: Option<ReasoningEffortConfig>,
         _summary: ReasoningSummaryConfig,
         _service_tier: Option<ServiceTier>,
         _turn_metadata_header: Option<&str>,
@@ -2549,9 +3727,10 @@ impl ModelClientSession {
 
         let input = prompt.get_formatted_input();
         let tool_mappings = build_tool_mappings(&prompt.tools);
+        let thinking_budget = anthropic_thinking_budget(effort);
         let mut payload = json!({
             "model": model_info.slug,
-            "max_tokens": DEFAULT_ANTHROPIC_MAX_TOKENS,
+            "max_tokens": anthropic_max_tokens(thinking_budget),
             "messages": build_anthropic_messages(&input, &tool_mappings),
             "stream": false,
             "tools": build_anthropic_tools(&tool_mappings),
@@ -2561,6 +3740,17 @@ impl ModelClientSession {
             && let Some(object) = payload.as_object_mut()
         {
             object.insert("system".to_string(), JsonValue::String(system));
+        }
+        if let Some(budget_tokens) = thinking_budget
+            && let Some(object) = payload.as_object_mut()
+        {
+            object.insert(
+                "thinking".to_string(),
+                json!({
+                    "type": "enabled",
+                    "budget_tokens": budget_tokens,
+                }),
+            );
         }
 
         let mut headers = reqwest_headers_from_api_provider(&provider);
@@ -2621,7 +3811,7 @@ impl ModelClientSession {
         prompt: &Prompt,
         model_info: &ModelInfo,
         _session_telemetry: &SessionTelemetry,
-        _effort: Option<ReasoningEffortConfig>,
+        effort: Option<ReasoningEffortConfig>,
         _summary: ReasoningSummaryConfig,
         _service_tier: Option<ServiceTier>,
         _turn_metadata_header: Option<&str>,
@@ -2642,10 +3832,26 @@ impl ModelClientSession {
 
         let input = prompt.get_formatted_input();
         let tool_mappings = build_tool_mappings(&prompt.tools);
+        let behavior =
+            ProviderProtocolBehavior::for_provider(self.client.state.provider.info(), model_info);
         let mut payload = json!({
             "contents": build_gemini_contents(&input, &tool_mappings),
             "tools": build_gemini_tools(&tool_mappings),
         });
+        if behavior.enable_gemini_thinking_config
+            && let Some(thinking_budget) = gemini_thinking_budget(effort)
+            && let Some(object) = payload.as_object_mut()
+        {
+            object.insert(
+                "generationConfig".to_string(),
+                json!({
+                    "thinkingConfig": {
+                        "includeThoughts": true,
+                        "thinkingBudget": thinking_budget,
+                    }
+                }),
+            );
+        }
         if let Some(system) = build_system_prompt(&prompt.base_instructions.text, &input)
             && let Some(object) = payload.as_object_mut()
         {

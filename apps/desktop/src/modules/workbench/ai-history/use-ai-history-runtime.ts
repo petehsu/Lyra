@@ -5,6 +5,10 @@ import {
   lyraThreadToAgentDetail,
   readLyraThread
 } from "../ai-panel/lyra-thread-adapter";
+import {
+  normalizeProjectRoot,
+  useProjectLogoMap
+} from "../project-identity";
 import { emitThreadSelected } from "../thread-selection-events";
 import {
   createAiHistoryRequestPayload,
@@ -74,6 +78,7 @@ export type AiHistoryRuntime = {
   readonly errorMessage: string | null;
   readonly isArchivedScope: boolean;
   readonly isProjectScope: boolean;
+  readonly projectLogoByRoot: ReadonlyMap<string, string | null>;
   readonly getThreadSummaryById: (threadId: string) => LyraThreadSummary | null;
   readonly actions: AiHistoryRuntimeActions;
 };
@@ -129,6 +134,16 @@ export const useAiHistoryRuntime = ({
     }
     return projectGroups.find((group) => group.projectRoot === selectedProjectRoot) ?? null;
   }, [projectGroups, selectedProjectRoot]);
+  const projectRoots = useMemo(
+    () => [
+      ...activeThreads,
+      ...archivedThreads
+    ]
+      .map((thread) => normalizeProjectRoot(thread.boundProjectRoot))
+      .filter((root): root is string => root !== null),
+    [activeThreads, archivedThreads]
+  );
+  const projectLogoByRoot = useProjectLogoMap(desktopApi?.files, projectRoots);
 
   const loadThreads = useCallback(async (): Promise<void> => {
     if (lyraApi === undefined) {
@@ -596,6 +611,7 @@ export const useAiHistoryRuntime = ({
     errorMessage,
     isArchivedScope,
     isProjectScope,
+    projectLogoByRoot,
     getThreadSummaryById,
     actions: {
       createThread,

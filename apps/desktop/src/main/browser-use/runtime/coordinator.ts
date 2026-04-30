@@ -7,8 +7,6 @@ import type {
 import { createWorkbenchBrowserSharedDebuggerSession } from "../../workbench-browser/debugger";
 import type { BrowserUseRuntimeCoordinator, BrowserUseRuntimeManager } from "../types";
 
-type BrowserAutomationEngine = "lyra_direct" | "browser_use" | "smart";
-
 type HostToolsBridge = {
   readonly sync: () => Promise<void>;
   readonly remove: () => Promise<void>;
@@ -24,17 +22,13 @@ const createStatus = (
 export const createBrowserUseRuntimeCoordinator = ({
   runtime,
   hostTools,
-  readPreferredEngine,
   bridgeSmoke,
 }: {
   readonly runtime: BrowserUseRuntimeManager;
   readonly hostTools: HostToolsBridge;
-  readonly readPreferredEngine: () => BrowserAutomationEngine;
   readonly bridgeSmoke?: () => Promise<void>;
 }): BrowserUseRuntimeCoordinator => {
   let status: BrowserUseRuntimeStatus = createStatus({ state: "checking" });
-  let currentEngine = readPreferredEngine();
-  let disposed = false;
   let startPromise: Promise<void> | null = null;
   const listeners = new Set<(status: BrowserUseRuntimeStatus) => void>();
 
@@ -46,7 +40,7 @@ export const createBrowserUseRuntimeCoordinator = ({
   };
 
   const applyExposure = async (): Promise<void> => {
-    if (status.state === "healthy" && currentEngine !== "lyra_direct") {
+    if (status.state === "healthy") {
       await hostTools.sync();
     } else {
       await hostTools.remove();
@@ -133,7 +127,6 @@ export const createBrowserUseRuntimeCoordinator = ({
 
   return {
     dispose: async () => {
-      disposed = true;
       listeners.clear();
       await hostTools.remove().catch(() => undefined);
     },
@@ -160,13 +153,6 @@ export const createBrowserUseRuntimeCoordinator = ({
       return () => {
         listeners.delete(listener);
       };
-    },
-    applyEnginePreference: async (engine) => {
-      currentEngine = engine;
-      if (disposed) {
-        return;
-      }
-      await applyExposure();
     },
   };
 };

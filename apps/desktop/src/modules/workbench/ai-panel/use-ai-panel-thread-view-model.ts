@@ -359,7 +359,12 @@ export const useAiPanelThreadViewModel = ({
       }
       return runtimeFeedByTurn.get(streamingTurnId) ?? [];
     },
-    [persistedAssistantDisplayByTurn, runtimeFeedByTurn, streamingAssistantText.length, streamingTurnId]
+    [
+      persistedAssistantDisplayByTurn,
+      runtimeFeedByTurn,
+      streamingAssistantText.length,
+      streamingTurnId,
+    ]
   );
 
   const streamingRuntimeEvent = useMemo<AgentRuntimeEvent | null>(
@@ -377,10 +382,16 @@ export const useAiPanelThreadViewModel = ({
 
   const streamingStatus = useMemo<StreamStatusItem | null>(
     () => {
+      const responseUnfinished =
+        isSending
+        || isStreamActive
+        || streamingTurnId !== null
+        || finalizingTurnId !== null;
       if (
         streamingTurnId !== null
         && streamingAssistantText.length === 0
         && persistedAssistantDisplayByTurn.has(streamingTurnId)
+        && !responseUnfinished
       ) {
         return null;
       }
@@ -394,7 +405,9 @@ export const useAiPanelThreadViewModel = ({
         };
       }
 
-      const hasWaitingInteraction = activeInteractionPanel !== null || isInteractionSubmitting;
+      const hasWaitingInteraction =
+        isInteractionSubmitting
+        || (activeInteractionPanel !== null && activeInteractionPanel.kind !== "planApproval");
       if (hasWaitingInteraction) {
         return {
           label: normalizeStreamingStatusLabel(labels.pendingInteractions),
@@ -425,13 +438,15 @@ export const useAiPanelThreadViewModel = ({
           tone: "completed",
         };
       }
+      if (phase === "plan_approval_requested") {
+        return null;
+      }
       if (
         phase === "paused"
         || phase === "interaction_pending"
         || phase === "interaction_submitted"
         || phase === "command_approval_request"
         || phase === "plan_question_requested"
-        || phase === "plan_approval_requested"
       ) {
         return {
           label: normalizeStreamingStatusLabel(labels.pendingInteractions),

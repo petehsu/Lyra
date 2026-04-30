@@ -112,11 +112,12 @@
   background: transparent;
   color: var(--lyra-text-muted);
   cursor: pointer;
-  transition: color var(--lyra-transition-fast), transform var(--lyra-transition-fast), opacity var(--lyra-transition-fast);
+  transition: color var(--lyra-transition-fast), opacity var(--lyra-transition-fast);
 }
 
 .lyra-command-approval-bar__icon-action:hover {
-  transform: translateY(calc(var(--lyra-unit-1) * -1));
+  background: transparent;
+  opacity: 1;
 }
 
 .lyra-command-approval-bar__icon-action--allow {

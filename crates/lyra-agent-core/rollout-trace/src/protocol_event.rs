@@ -263,6 +263,7 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
         | EventMsg::ListSkillsResponse(_)
         | EventMsg::SkillsUpdateAvailable
         | EventMsg::PlanUpdate(_)
+        | EventMsg::PlanApprovalResolved(_)
         | EventMsg::TurnAborted(_)
         | EventMsg::ShutdownComplete
         | EventMsg::EnteredReviewMode(_)
@@ -357,7 +358,8 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
         | EventMsg::CollabCloseBegin(_)
         | EventMsg::CollabCloseEnd(_)
         | EventMsg::CollabResumeBegin(_)
-        | EventMsg::CollabResumeEnd(_) => None,
+        | EventMsg::CollabResumeEnd(_)
+        | EventMsg::PlanApprovalResolved(_) => None,
     }
 }
 

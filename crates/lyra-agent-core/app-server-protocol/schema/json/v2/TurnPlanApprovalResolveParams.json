@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "PlanApprovalDecision": {
+      "enum": [
+        "approve_and_implement",
+        "keep_planning",
+        "reject"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "decision": {
+      "$ref": "#/definitions/PlanApprovalDecision"
+    },
+    "feedback": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "planTurnId": {
+      "type": "string"
+    },
+    "proposedMarkdown": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "threadId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "decision",
+    "planTurnId",
+    "requestId",
+    "threadId"
+  ],
+  "title": "TurnPlanApprovalResolveParams",
+  "type": "object"
+}

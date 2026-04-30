@@ -14,13 +14,10 @@ import type { AiProviderProfile } from "../../../shared/ai";
 import type {
   AgentRuntimeEvent,
   AgentSessionDetail,
-  AgentToolCall,
   AgentTurn,
 } from "../../../shared/desktop-bridge";
 import {
-  normalizeToolName,
   type AgentRuntimeFeedIconKind,
-  type ToolNameLabelMap,
 } from "./runtime/feed-utils";
 
 export type OptimisticUserMessage = {
@@ -150,6 +147,9 @@ export const runtimeEventPhasePriority = (phase: string): number => {
   if (phase === "failed") {
     return 8;
   }
+  if (phase === "plan_approval_requested" || phase === "plan_question_requested") {
+    return 8;
+  }
   if (phase === "completed") {
     return 7;
   }
@@ -207,27 +207,6 @@ export const extractFolderName = (pathText: string): string => {
   return segments[segments.length - 1] ?? normalized;
 };
 
-const summarizeTurnToolCalls = (
-  toolCalls: readonly AgentToolCall[],
-  labels: ToolNameLabelMap,
-  noToolCallsLabel: string
-): string => {
-  if (toolCalls.length === 0) {
-    return noToolCallsLabel;
-  }
-  const grouped = new Map<string, number>();
-  for (const call of toolCalls) {
-    grouped.set(call.toolName, (grouped.get(call.toolName) ?? 0) + 1);
-  }
-  return [...grouped.entries()]
-    .map(([toolName, count]) =>
-      count === 1
-        ? normalizeToolName(toolName, labels)
-        : `${normalizeToolName(toolName, labels)} x${String(count)}`
-    )
-    .join(" · ");
-};
-
 export const resolveTurnDurationLabel = (
   turn: AgentTurn,
   turnWorkingLabel: string,
@@ -241,22 +220,6 @@ export const resolveTurnDurationLabel = (
   }
   const durationMs = Math.max(0, turn.updatedAt - turn.createdAt);
   return `${turnWorkedForPrefix} ${formatDurationCompact(durationMs)}`;
-};
-
-export const resolveTurnSecondaryLabel = (
-  turn: AgentTurn,
-  toolCalls: readonly AgentToolCall[],
-  labels: ToolNameLabelMap,
-  turnNoToolCallsLabel: string,
-  turnFailedLabel: string
-): string => {
-  if (turn.status === "failed") {
-    return turn.errorMessage ?? turnFailedLabel;
-  }
-  if (turn.status === "paused") {
-    return turn.errorMessage ?? turnNoToolCallsLabel;
-  }
-  return summarizeTurnToolCalls(toolCalls, labels, turnNoToolCallsLabel);
 };
 
 export const isOptimisticUserMessage = (message: DisplayMessage): message is OptimisticUserMessage =>

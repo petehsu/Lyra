@@ -174,8 +174,16 @@
   --lyra-backdrop-blur-md: blur(14px) saturate(1.06);
   --lyra-backdrop-blur-lg: blur(22px) saturate(1.2) contrast(1.02);
 
-  --lyra-motion-fast: 120ms ease;
-  --lyra-motion-standard: 190ms cubic-bezier(0.22, 0.82, 0.24, 1);
+  --lyra-ease-fast: ease;
+  --lyra-ease-standard: cubic-bezier(0.22, 0.82, 0.24, 1);
+  --lyra-ease-panel: cubic-bezier(0.2, 0, 0, 1);
+  --lyra-motion-fast-duration: 120ms;
+  --lyra-motion-standard-duration: 190ms;
+  --lyra-motion-panel-layout-duration: 260ms;
+  --lyra-motion-panel-hidden-offset: var(--lyra-space-10);
+  --lyra-motion-fast: var(--lyra-motion-fast-duration) var(--lyra-ease-fast);
+  --lyra-motion-standard: var(--lyra-motion-standard-duration) var(--lyra-ease-standard);
+  --lyra-motion-panel-layout: var(--lyra-motion-panel-layout-duration) var(--lyra-ease-panel);
   --lyra-transition-fast: var(--lyra-motion-fast);
 
   --lyra-shell-titlebar-h: var(--lyra-control-h-34);

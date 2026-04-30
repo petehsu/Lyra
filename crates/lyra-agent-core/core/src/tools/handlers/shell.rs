@@ -1,7 +1,14 @@
 use lyra_protocol::ThreadId;
+use lyra_protocol::error::LyraErr;
+use lyra_protocol::error::SandboxErr;
+use lyra_protocol::exec_output::ExecToolCallOutput;
 use lyra_protocol::models::ShellCommandToolCallParams;
 use lyra_protocol::models::ShellToolCallParams;
+use lyra_protocol::protocol::FileChange;
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::exec::ExecCapturePolicy;
@@ -18,6 +25,8 @@ use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
+use crate::tools::events::ToolEventFailure;
+use crate::tools::events::ToolEventStage;
 use crate::tools::handlers::apply_granted_turn_permissions;
 use crate::tools::handlers::apply_patch::intercept_apply_patch;
 use crate::tools::handlers::implicit_granted_permissions;
@@ -35,11 +44,14 @@ use crate::tools::runtimes::shell::ShellRequest;
 use crate::tools::runtimes::shell::ShellRuntime;
 use crate::tools::runtimes::shell::ShellRuntimeBackend;
 use crate::tools::sandboxing::ToolCtx;
+use crate::tools::sandboxing::ToolError;
 use lyra_features::Feature;
 use lyra_protocol::models::PermissionProfile;
 use lyra_protocol::protocol::ExecCommandSource;
 use lyra_shell_command::is_safe_command::is_known_safe_command;
+use lyra_shell_command::parse_command::extract_shell_command;
 use lyra_tools::ShellCommandBackendConfig;
+use lyra_utils_absolute_path::AbsolutePathBuf;
 
 pub struct ShellHandler;
 
@@ -73,6 +85,236 @@ fn shell_command_payload_command(payload: &ToolPayload) -> Option<String> {
     parse_arguments::<ShellCommandToolCallParams>(arguments)
         .ok()
         .map(|params| params.command)
+}
+
+pub(crate) fn detect_shell_file_changes(
+    command: &[String],
+    cwd: &AbsolutePathBuf,
+) -> HashMap<PathBuf, FileChange> {
+    let mut paths = Vec::new();
+    if let Some((_, script)) = extract_shell_command(command) {
+        collect_write_paths_from_script(script, cwd, &mut paths);
+    } else {
+        collect_write_paths_from_tokens(command, cwd, &mut paths);
+    }
+
+    paths
+        .into_iter()
+        .map(|path| {
+            let change = if path.exists() {
+                FileChange::Update {
+                    unified_diff: String::new(),
+                    move_path: None,
+                }
+            } else {
+                FileChange::Add {
+                    content: String::new(),
+                }
+            };
+            (path, change)
+        })
+        .collect()
+}
+
+fn collect_write_paths_from_script(script: &str, cwd: &AbsolutePathBuf, paths: &mut Vec<PathBuf>) {
+    if let Some(tokens) = shlex::split(script) {
+        collect_write_paths_from_tokens(&tokens, cwd, paths);
+    }
+    collect_redirection_paths_from_script(script, cwd, paths);
+}
+
+fn collect_write_paths_from_tokens(
+    tokens: &[String],
+    cwd: &AbsolutePathBuf,
+    paths: &mut Vec<PathBuf>,
+) {
+    let mut idx = 0;
+    while idx < tokens.len() {
+        let token = tokens[idx].as_str();
+        if is_tee_command(token) {
+            idx = collect_tee_paths(tokens, idx + 1, cwd, paths);
+            continue;
+        }
+
+        match redirection_target(tokens, idx) {
+            RedirectionTarget::Inline(path) => {
+                push_static_shell_path(&path, cwd, paths);
+            }
+            RedirectionTarget::Next => {
+                if let Some(path) = tokens.get(idx + 1) {
+                    push_static_shell_path(path, cwd, paths);
+                    idx += 1;
+                }
+            }
+            RedirectionTarget::None => {}
+        }
+
+        idx += 1;
+    }
+}
+
+fn collect_tee_paths(
+    tokens: &[String],
+    mut idx: usize,
+    cwd: &AbsolutePathBuf,
+    paths: &mut Vec<PathBuf>,
+) -> usize {
+    let mut options_done = false;
+    while idx < tokens.len() {
+        let token = tokens[idx].as_str();
+        if is_shell_control_token(token) {
+            break;
+        }
+        if !matches!(redirection_target(tokens, idx), RedirectionTarget::None) {
+            break;
+        }
+        if !options_done && token == "--" {
+            options_done = true;
+            idx += 1;
+            continue;
+        }
+        if !options_done && token.starts_with('-') {
+            idx += 1;
+            continue;
+        }
+        push_static_shell_path(token, cwd, paths);
+        idx += 1;
+    }
+    idx
+}
+
+enum RedirectionTarget {
+    None,
+    Next,
+    Inline(String),
+}
+
+fn redirection_target(tokens: &[String], idx: usize) -> RedirectionTarget {
+    let token = tokens[idx].as_str();
+    if matches!(token, ">" | ">>" | ">|" | "&>" | "&>>") || is_fd_redirect_token(token) {
+        return RedirectionTarget::Next;
+    }
+
+    for marker in [">>|", ">>", ">|", ">"] {
+        if let Some((prefix, suffix)) = token.split_once(marker)
+            && (prefix.is_empty() || prefix.chars().all(|ch| ch.is_ascii_digit()) || prefix == "&")
+            && !suffix.is_empty()
+        {
+            return RedirectionTarget::Inline(suffix.to_string());
+        }
+    }
+
+    RedirectionTarget::None
+}
+
+fn is_fd_redirect_token(token: &str) -> bool {
+    let Some(prefix) = token.strip_suffix('>') else {
+        return false;
+    };
+    !prefix.is_empty() && prefix.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn collect_redirection_paths_from_script(
+    script: &str,
+    cwd: &AbsolutePathBuf,
+    paths: &mut Vec<PathBuf>,
+) {
+    let bytes = script.as_bytes();
+    let mut idx = 0;
+    while idx < bytes.len() {
+        if bytes[idx] != b'>' {
+            idx += 1;
+            continue;
+        }
+        let mut target_start = idx + 1;
+        if target_start < bytes.len() && bytes[target_start] == b'>' {
+            target_start += 1;
+        }
+        while target_start < bytes.len() && bytes[target_start].is_ascii_whitespace() {
+            target_start += 1;
+        }
+        if target_start >= bytes.len() || matches!(bytes[target_start], b'&' | b'|' | b'>') {
+            idx += 1;
+            continue;
+        }
+
+        let (target, next_idx) = read_shell_path_token(script, target_start);
+        if !target.is_empty() {
+            push_static_shell_path(target.as_str(), cwd, paths);
+        }
+        idx = next_idx.max(idx + 1);
+    }
+}
+
+fn read_shell_path_token(script: &str, start: usize) -> (String, usize) {
+    let bytes = script.as_bytes();
+    if matches!(bytes.get(start), Some(b'"' | b'\'')) {
+        let quote = bytes[start];
+        let mut end = start + 1;
+        while end < bytes.len() && bytes[end] != quote {
+            end += 1;
+        }
+        let token = script[start + 1..end].to_string();
+        return (token, end.saturating_add(1));
+    }
+
+    let mut end = start;
+    while end < bytes.len() && !bytes[end].is_ascii_whitespace() && !b";|&<>".contains(&bytes[end])
+    {
+        end += 1;
+    }
+    (script[start..end].to_string(), end)
+}
+
+fn is_tee_command(token: &str) -> bool {
+    Path::new(token)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "tee")
+}
+
+fn is_shell_control_token(token: &str) -> bool {
+    matches!(token, "|" | ";" | "&&" | "||")
+}
+
+fn push_static_shell_path(path: &str, cwd: &AbsolutePathBuf, paths: &mut Vec<PathBuf>) {
+    let path = path.trim().trim_end_matches(';');
+    if path.is_empty()
+        || path == "/dev/null"
+        || path == "dev/null"
+        || path.starts_with('&')
+        || path.contains(['$', '`', '*', '?', '[', ']', '{', '}'])
+    {
+        return;
+    }
+    let path = Path::new(path);
+    let path = if path.is_absolute() {
+        match AbsolutePathBuf::from_absolute_path(path) {
+            Ok(path) => path.to_path_buf(),
+            Err(_) => return,
+        }
+    } else {
+        cwd.join(path).to_path_buf()
+    };
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
+}
+
+fn shell_file_change_finish_stage(out: &Result<ExecToolCallOutput, ToolError>) -> ToolEventStage {
+    match out {
+        Ok(output) => ToolEventStage::Success(output.clone()),
+        Err(ToolError::Lyra(LyraErr::Sandbox(SandboxErr::Timeout { output })))
+        | Err(ToolError::Lyra(LyraErr::Sandbox(SandboxErr::Denied { output, .. }))) => {
+            ToolEventStage::Failure(ToolEventFailure::Output((**output).clone()))
+        }
+        Err(ToolError::Lyra(err)) => ToolEventStage::Failure(ToolEventFailure::Message(format!(
+            "execution error: {err:?}"
+        ))),
+        Err(ToolError::Rejected(message)) => {
+            ToolEventStage::Failure(ToolEventFailure::Rejected(message.clone()))
+        }
+    }
 }
 
 struct RunExecLikeArgs {
@@ -111,6 +353,79 @@ impl ShellHandler {
             justification: params.justification.clone(),
             arg0: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    fn cwd(dir: &Path) -> AbsolutePathBuf {
+        AbsolutePathBuf::from_absolute_path(dir).expect("absolute temp dir")
+    }
+
+    fn changed_paths(command: &[&str], cwd: &AbsolutePathBuf) -> Vec<PathBuf> {
+        let command = command
+            .iter()
+            .map(|part| part.to_string())
+            .collect::<Vec<_>>();
+        let mut paths = detect_shell_file_changes(&command, cwd)
+            .into_keys()
+            .collect::<Vec<_>>();
+        paths.sort();
+        paths
+    }
+
+    #[test]
+    fn detects_shell_redirect_and_heredoc_writes() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cwd = cwd(temp.path());
+
+        assert_eq!(
+            changed_paths(&["bash", "-lc", "cat > src/app.ts <<'EOF'\nhi\nEOF"], &cwd),
+            vec![temp.path().join("src/app.ts")]
+        );
+        assert_eq!(
+            changed_paths(&["bash", "-lc", "printf hi >> notes.txt"], &cwd),
+            vec![temp.path().join("notes.txt")]
+        );
+    }
+
+    #[test]
+    fn detects_tee_writes() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cwd = cwd(temp.path());
+
+        assert_eq!(
+            changed_paths(
+                &["bash", "-lc", "printf hi | tee -a out.txt >/dev/null"],
+                &cwd
+            ),
+            vec![temp.path().join("out.txt")]
+        );
+        assert_eq!(
+            changed_paths(&["tee", "one.txt", "two.txt"], &cwd),
+            vec![temp.path().join("one.txt"), temp.path().join("two.txt")]
+        );
+    }
+
+    #[test]
+    fn ignores_dev_null_redirections_with_shell_terminators() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cwd = cwd(temp.path());
+
+        assert_eq!(
+            changed_paths(
+                &[
+                    "zsh",
+                    "-lc",
+                    "system_profiler SPHardwareDataType 2>/dev/null; uptime",
+                ],
+                &cwd
+            ),
+            Vec::<PathBuf>::new()
+        );
     }
 }
 
@@ -504,6 +819,19 @@ impl ShellHandler {
             source,
             freeform,
         );
+        let shell_file_changes = detect_shell_file_changes(&exec_params.command, &exec_params.cwd);
+        let shell_file_change_call_id = format!("{call_id}:files");
+        let shell_file_change_emitter = (!shell_file_changes.is_empty())
+            .then(|| ToolEmitter::apply_patch(shell_file_changes, /*auto_approved*/ true));
+        if let Some(shell_file_change_emitter) = shell_file_change_emitter.as_ref() {
+            let event_ctx = ToolEventCtx::new(
+                session.as_ref(),
+                turn.as_ref(),
+                &shell_file_change_call_id,
+                Some(&tracker),
+            );
+            shell_file_change_emitter.begin(event_ctx).await;
+        }
         let event_ctx = ToolEventCtx::new(
             session.as_ref(),
             turn.as_ref(),
@@ -582,7 +910,23 @@ impl ShellHandler {
             .ok()
             .map(|output| crate::tools::format_exec_output_str(output, turn.truncation_policy))
             .map(JsonValue::String);
-        let content = emitter.finish(event_ctx, out).await?;
+        let shell_file_change_finish_stage = shell_file_change_emitter
+            .as_ref()
+            .map(|_| shell_file_change_finish_stage(&out));
+        let content_result = emitter.finish(event_ctx, out).await;
+        if let (Some(shell_file_change_emitter), Some(stage)) = (
+            shell_file_change_emitter.as_ref(),
+            shell_file_change_finish_stage,
+        ) {
+            let event_ctx = ToolEventCtx::new(
+                session.as_ref(),
+                turn.as_ref(),
+                &shell_file_change_call_id,
+                Some(&tracker),
+            );
+            shell_file_change_emitter.emit(event_ctx, stage).await;
+        }
+        let content = content_result?;
         Ok(FunctionToolOutput {
             body: vec![
                 lyra_protocol::models::FunctionCallOutputContentItem::InputText { text: content },

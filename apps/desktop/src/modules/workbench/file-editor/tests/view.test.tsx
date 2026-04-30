@@ -61,6 +61,28 @@ describe("FileEditorSurface", () => {
     expect(model.openFile).toHaveBeenCalledWith("editor-1", "/workspace/app.ts");
   });
 
+  test("does not auto-hydrate a failed missing-file state", async () => {
+    const model = createModel();
+    render(
+      <FileEditorSurface
+        state={createFileEditorState({
+          status: "error",
+          isHydrated: false,
+          message: "No such file or directory"
+        })}
+        labels={labels}
+        themeSignature="test-theme"
+        model={model}
+      />
+    );
+    await flushEditorRuntime();
+
+    expect(model.hydrateIfNeeded).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(model.openFile).toHaveBeenCalledWith("editor-1", "/workspace/app.ts");
+  });
+
   test("routes review actions through the supplied callbacks", async () => {
     const reviewItem = createReviewItem();
     const onPrevious = vi.fn();

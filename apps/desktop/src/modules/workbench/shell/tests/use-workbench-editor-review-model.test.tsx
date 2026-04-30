@@ -88,4 +88,37 @@ describe("useWorkbenchEditorReviewModel", () => {
       { forceReloadIfOpen: true }
     );
   });
+
+  test("does not overwrite existing files when rejecting without a baseline", async () => {
+    const onOpenFileFromManager = vi.fn(() => "editor-1");
+    const desktopApi = {
+      files: {
+        moveToTrash: vi.fn(),
+        writeTextFile: vi.fn().mockResolvedValue(undefined)
+      }
+    } as unknown as LyraDesktopApi;
+    const { result } = renderHook(() =>
+      useWorkbenchEditorReviewModel({
+        desktopApi,
+        onOpenFileFromManager
+      })
+    );
+    const item = createReviewItem({ firstChangedLine: 6 });
+
+    act(() => {
+      result.current.recordCompletedEditorWorkItem(item);
+      result.current.onRejectEditorWorkItem(item);
+    });
+
+    expect(result.current.editorReviewItems[0]?.decision).toBe("rejected");
+    await waitFor(() => {
+      expect(onOpenFileFromManager).toHaveBeenCalledWith(
+        item.filePath,
+        { line: 6 },
+        { forceReloadIfOpen: true }
+      );
+    });
+    expect(desktopApi.files.writeTextFile).not.toHaveBeenCalled();
+    expect(desktopApi.files.moveToTrash).not.toHaveBeenCalled();
+  });
 });

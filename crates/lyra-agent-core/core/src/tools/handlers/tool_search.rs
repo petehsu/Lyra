@@ -208,6 +208,7 @@ mod tests {
         let dynamic_tools = vec![DynamicToolSpec {
             namespace: None,
             name: "automation_update".to_string(),
+            host_method: None,
             description: "Create, update, view, or delete recurring automations.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -218,6 +219,10 @@ mod tests {
                 "additionalProperties": false,
             }),
             defer_loading: true,
+            side_effects: None,
+            approval_mode: None,
+            risk: None,
+            model_input_capabilities: None,
         }];
         let handler = handler_from_tools(
             Some(&std::collections::HashMap::from([

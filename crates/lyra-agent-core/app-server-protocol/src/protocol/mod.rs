@@ -5,6 +5,7 @@ pub mod common;
 pub mod item_builders;
 mod mappers;
 mod serde_helpers;
+mod thread_ai_panel_view_model;
 pub mod thread_history;
 pub mod v1;
 pub mod v2;

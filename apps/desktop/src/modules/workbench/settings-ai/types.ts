@@ -1,14 +1,9 @@
-import type { BrowserUseRuntimeStatus } from "../../../shared/browser-use";
 import type { LyraRuntimeHealth } from "../../../shared/lyra-runtime";
 import type {
   AiProviderModelEntry,
   AiProviderPreset,
   AiProviderProfile,
 } from "../../../shared/ai";
-import type {
-  WorkbenchBrowserAutomationEngine,
-  WorkbenchLyraDirectMicroExecutorBudget,
-} from "../preferences";
 
 export type SettingsAiLabels = {
   readonly categoryLabel: string;
@@ -70,31 +65,6 @@ export type SettingsAiLabels = {
   readonly memoryConfigStatusLoaded: string;
   readonly memoryConfigStatusSaved: string;
   readonly memoryConfigStatusInvalidJson: string;
-  readonly browserAutomationTitle: string;
-  readonly browserAutomationDescription: string;
-  readonly browserAutomationOptionLyraDirect: string;
-  readonly browserAutomationOptionLyraDirectDescription: string;
-  readonly browserAutomationOptionBrowserUse: string;
-  readonly browserAutomationOptionBrowserUseDescription: string;
-  readonly browserAutomationOptionSmart: string;
-  readonly browserAutomationOptionSmartDescription: string;
-  readonly browserAutomationStatusChecking: string;
-  readonly browserAutomationStatusHealthy: string;
-  readonly browserAutomationStatusUnavailable: string;
-  readonly browserAutomationStatusReasonMissingBundle: string;
-  readonly browserAutomationStatusReasonIntegrityFailed: string;
-  readonly browserAutomationStatusReasonDaemonLaunchFailed: string;
-  readonly browserAutomationStatusReasonBridgeUnavailable: string;
-  readonly browserAutomationStatusReasonUnsupportedPlatform: string;
-  readonly lyraDirectAdvancedTitle: string;
-  readonly lyraDirectAdvancedDescription: string;
-  readonly lyraDirectMicroExecutorBudgetLabel: string;
-  readonly lyraDirectMicroExecutorBudgetConservative: string;
-  readonly lyraDirectMicroExecutorBudgetConservativeDescription: string;
-  readonly lyraDirectMicroExecutorBudgetBalanced: string;
-  readonly lyraDirectMicroExecutorBudgetBalancedDescription: string;
-  readonly lyraDirectMicroExecutorBudgetAggressive: string;
-  readonly lyraDirectMicroExecutorBudgetAggressiveDescription: string;
 };
 
 export type SettingsAiDraft = {
@@ -138,9 +108,6 @@ export type SettingsAiModel = {
   readonly draft: SettingsAiDraft;
   readonly availableModels: readonly AiProviderModelEntry[];
   readonly selectedModelIds: readonly string[];
-  readonly browserAutomationEngine: WorkbenchBrowserAutomationEngine;
-  readonly lyraDirectMicroExecutorBudget: WorkbenchLyraDirectMicroExecutorBudget;
-  readonly browserUseRuntimeStatus: BrowserUseRuntimeStatus;
   readonly selectProfile: (profileId: string | null) => void;
   readonly applyPreset: (presetId: string) => void;
   readonly updateDraftName: (value: string) => void;
@@ -159,10 +126,4 @@ export type SettingsAiModel = {
   readonly saveProfile: () => Promise<void>;
   readonly deleteProfile: () => Promise<void>;
   readonly setDefaultProfile: () => Promise<void>;
-  readonly setBrowserAutomationEngine: (
-    value: WorkbenchBrowserAutomationEngine
-  ) => void;
-  readonly setLyraDirectMicroExecutorBudget: (
-    value: WorkbenchLyraDirectMicroExecutorBudget
-  ) => void;
 };

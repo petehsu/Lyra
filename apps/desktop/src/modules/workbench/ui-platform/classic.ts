@@ -1,5 +1,5 @@
 import { AiHistorySurface } from "../ai-history";
-import { AiPanelSurface } from "../ai-panel";
+import { AiPanelSurface, AiPlanReviewSurface } from "../ai-panel";
 import {
   BrowserPageSurface,
   BrowserSearchSurface,
@@ -64,7 +64,8 @@ export const CLASSIC_WORKBENCH_UI_PACK = {
       mcpCenter: McpCenterSurface,
       skillsCenter: SkillsCenterSurface,
       pluginsCenter: PluginsCenterSurface,
-      aiHistory: AiHistorySurface
+      aiHistory: AiHistorySurface,
+      planReview: AiPlanReviewSurface
     }
   },
   interactions: CLASSIC_WORKBENCH_INTERACTION_POLICIES

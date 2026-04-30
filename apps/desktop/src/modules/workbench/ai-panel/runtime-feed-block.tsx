@@ -8,7 +8,6 @@ import {
 } from "./runtime/feed-utils";
 import {
   SpinnerLabel,
-  StatusBadge,
   StatusIndicator,
   type StatusTone,
 } from "./status-primitives";
@@ -168,23 +167,16 @@ export const AiPanelRuntimeFeedBlock = ({
             }
           >
             <span className="lyra-ai-agent-runtime-feed-leading">
-              {isRunning ? (
-                <SpinnerLabel
-                  variant="dots"
-                  tone={statusTone}
-                  size="sm"
-                  ariaLabel={statusLabel}
-                  className="lyra-ai-agent-runtime-feed-spinner-label"
-                  glyphClassName="lyra-ai-agent-runtime-feed-spinner-glyph"
-                />
-              ) : (
-                <StatusIndicator
-                  tone={statusTone}
-                  variant="dot"
-                  ariaLabel={statusLabel}
-                  className="lyra-ai-agent-runtime-feed-indicator"
-                />
-              )}
+              <StatusIndicator
+                tone={statusTone}
+                variant="dot"
+                ariaLabel={statusLabel}
+                className={
+                  isRunning
+                    ? "lyra-ai-agent-runtime-feed-indicator lyra-ai-agent-runtime-feed-indicator-running"
+                    : "lyra-ai-agent-runtime-feed-indicator"
+                }
+              />
             </span>
             <span
               className="lyra-ai-agent-runtime-feed-icon"
@@ -196,7 +188,11 @@ export const AiPanelRuntimeFeedBlock = ({
             {isOpenable ? (
               <button
                 type="button"
-                className="lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link"
+                className={
+                  isRunning
+                    ? "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link lyra-ai-agent-runtime-feed-target-running"
+                    : "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link"
+                }
                 onClick={() => {
                   void openRuntimeTargetPath(openPath, {
                     ...(location === undefined ? {} : { location })
@@ -209,7 +205,11 @@ export const AiPanelRuntimeFeedBlock = ({
             ) : isThreadOpenable ? (
               <button
                 type="button"
-                className="lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link"
+                className={
+                  isRunning
+                    ? "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link lyra-ai-agent-runtime-feed-target-running"
+                    : "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link"
+                }
                 onClick={() => {
                   onOpenThread(openThreadId);
                 }}
@@ -218,13 +218,16 @@ export const AiPanelRuntimeFeedBlock = ({
                 {item.target}
               </button>
             ) : (
-              <span className="lyra-ai-agent-runtime-feed-target">{item.target}</span>
+              <span
+                className={
+                  isRunning
+                    ? "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-running"
+                    : "lyra-ai-agent-runtime-feed-target"
+                }
+              >
+                {item.target}
+              </span>
             )}
-            <StatusBadge
-              tone={statusTone}
-              label={statusLabel}
-              className="lyra-ai-agent-runtime-feed-item-status"
-            />
             {isTerminal && hasTerminalTranscript ? <TerminalTranscriptBlock item={item} /> : null}
           </div>
         );
@@ -264,18 +267,5 @@ export const AiPanelStreamStatusBlock = ({ status }: AiPanelStreamStatusBlockPro
     );
   }
 
-  return (
-    <div
-      className={
-        status.tone === "failed"
-          ? "lyra-ai-agent-message-content lyra-ai-stream-status lyra-ai-stream-status-failed"
-          : "lyra-ai-agent-message-content lyra-ai-stream-status lyra-ai-stream-status-completed"
-      }
-    >
-      <StatusBadge
-        tone={status.tone === "failed" ? "danger" : "success"}
-        label={status.label}
-      />
-    </div>
-  );
+  return null;
 };

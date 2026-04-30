@@ -231,8 +231,14 @@ pub(crate) async fn apply_bespoke_event_handling(
                 analytics_events_client.as_ref(),
                 &outgoing,
                 &thread_state,
+                &thread_watch_manager,
             )
             .await;
+        }
+        EventMsg::PlanApprovalResolved(_) => {
+            thread_watch_manager
+                .note_plan_approval_resolved(&conversation_id.to_string())
+                .await;
         }
         EventMsg::SkillsUpdateAvailable => {
             if let ApiVersion::V2 = api_version {
@@ -811,6 +817,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                     turn_id: turn_id.clone(),
                     call_id: call_id.clone(),
                     tool: tool.clone(),
+                    host_method: request.host_method.clone(),
                     arguments: arguments.clone(),
                 };
                 let (_pending_request_id, rx) = outgoing
@@ -1356,6 +1363,10 @@ pub(crate) async fn apply_bespoke_event_handling(
         }
         EventMsg::ItemCompleted(item_completed_event) => {
             let item: ThreadItem = item_completed_event.item.clone().into();
+            if matches!(item, ThreadItem::Plan { .. }) {
+                let mut state = thread_state.lock().await;
+                state.turn_summary.plan_submitted = true;
+            }
             let thread_id = conversation_id.to_string();
             let turn_id = event_turn_id.clone();
             let notification = ItemCompletedNotification {
@@ -2076,11 +2087,14 @@ async fn handle_turn_complete(
     analytics_events_client: Option<&AnalyticsEventsClient>,
     outgoing: &ThreadScopedOutgoingMessageSender,
     thread_state: &Arc<Mutex<ThreadState>>,
+    thread_watch_manager: &ThreadWatchManager,
 ) {
     let turn_summary = find_and_remove_turn_summary(conversation_id, thread_state).await;
+    let plan_approval_requested = turn_summary.last_error.is_none() && turn_summary.plan_submitted;
 
     let (status, error) = match turn_summary.last_error {
         Some(error) => (TurnStatus::Failed, Some(error)),
+        None if turn_summary.plan_submitted => (TurnStatus::Waiting, None),
         None => (TurnStatus::Completed, None),
     };
 
@@ -2098,6 +2112,12 @@ async fn handle_turn_complete(
         outgoing,
     )
     .await;
+
+    if plan_approval_requested {
+        thread_watch_manager
+            .note_plan_approval_requested(&conversation_id.to_string())
+            .await;
+    }
 }
 
 async fn handle_turn_interrupted(
@@ -3496,6 +3516,7 @@ mod tests {
             ThreadId::new(),
         );
         let thread_state = new_thread_state();
+        let thread_watch_manager = ThreadWatchManager::new();
         {
             let mut state = thread_state.lock().await;
             state.track_current_turn_event(&EventMsg::TurnStarted(
@@ -3518,6 +3539,7 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
+            &thread_watch_manager,
         )
         .await;
 
@@ -3530,6 +3552,50 @@ mod tests {
                 assert_eq!(n.turn.started_at, Some(42));
                 assert_eq!(n.turn.completed_at, Some(TEST_TURN_COMPLETED_AT));
                 assert_eq!(n.turn.duration_ms, Some(TEST_TURN_DURATION_MS));
+            }
+            other => bail!("unexpected message: {other:?}"),
+        }
+        assert!(rx.try_recv().is_err(), "no extra messages expected");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_handle_turn_complete_emits_waiting_for_submitted_plan() -> Result<()> {
+        let conversation_id = ThreadId::new();
+        let event_turn_id = "plan-waiting".to_string();
+        let (tx, mut rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let outgoing = Arc::new(OutgoingMessageSender::new(tx));
+        let outgoing = ThreadScopedOutgoingMessageSender::new(
+            outgoing,
+            vec![ConnectionId(1)],
+            ThreadId::new(),
+        );
+        let thread_state = new_thread_state();
+        let thread_watch_manager = ThreadWatchManager::new();
+        {
+            let mut state = thread_state.lock().await;
+            state.turn_summary.started_at = Some(42);
+            state.turn_summary.plan_submitted = true;
+        }
+
+        handle_turn_complete(
+            conversation_id,
+            event_turn_id.clone(),
+            turn_complete_event(&event_turn_id),
+            /*analytics_events_client*/ None,
+            &outgoing,
+            &thread_state,
+            &thread_watch_manager,
+        )
+        .await;
+
+        let msg = recv_broadcast_message(&mut rx).await?;
+        match msg {
+            OutgoingMessage::AppServerNotification(ServerNotification::TurnCompleted(n)) => {
+                assert_eq!(n.turn.id, event_turn_id);
+                assert_eq!(n.turn.status, TurnStatus::Waiting);
+                assert_eq!(n.turn.error, None);
+                assert_eq!(n.turn.started_at, Some(42));
             }
             other => bail!("unexpected message: {other:?}"),
         }
@@ -3607,6 +3673,7 @@ mod tests {
             vec![ConnectionId(1)],
             ThreadId::new(),
         );
+        let thread_watch_manager = ThreadWatchManager::new();
 
         handle_turn_complete(
             conversation_id,
@@ -3615,6 +3682,7 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
+            &thread_watch_manager,
         )
         .await;
 
@@ -3852,6 +3920,7 @@ mod tests {
             vec![ConnectionId(1)],
             ThreadId::new(),
         );
+        let thread_watch_manager = ThreadWatchManager::new();
 
         // Turn 1 on conversation A
         let a_turn1 = "a_turn1".to_string();
@@ -3872,6 +3941,7 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
+            &thread_watch_manager,
         )
         .await;
 
@@ -3894,6 +3964,7 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
+            &thread_watch_manager,
         )
         .await;
 
@@ -3906,6 +3977,7 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
+            &thread_watch_manager,
         )
         .await;
 

@@ -714,7 +714,7 @@ pub(crate) fn is_likely_sandbox_denied(
     // 2: misuse of shell builtins
     // 126: permission denied
     // 127: command not found
-    const SANDBOX_DENIED_KEYWORDS: [&str; 7] = [
+    const SANDBOX_DENIED_KEYWORDS: [&str; 23] = [
         "operation not permitted",
         "permission denied",
         "read-only file system",
@@ -722,6 +722,22 @@ pub(crate) fn is_likely_sandbox_denied(
         "sandbox",
         "landlock",
         "failed to write file",
+        "enotfound",
+        "eai_again",
+        "eai again",
+        "temporary failure in name resolution",
+        "name or service not known",
+        "could not resolve host",
+        "couldn't resolve host",
+        "getaddrinfo",
+        "network is unreachable",
+        "network access is disabled",
+        "network access disabled",
+        "network access denied",
+        "download failed",
+        "failed to download",
+        "failed to fetch",
+        "unable to access 'https://",
     ];
 
     let has_sandbox_keyword = [
@@ -1398,4 +1414,45 @@ fn synthetic_exit_status(code: i32) -> ExitStatus {
     // On Windows the raw status is a u32. Use a direct cast to avoid
     // panicking on negative i32 values produced by prior narrowing casts.
     std::process::ExitStatus::from_raw(code as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn output(exit_code: i32, stderr: &str) -> ExecToolCallOutput {
+        ExecToolCallOutput {
+            exit_code,
+            stderr: StreamOutput::new(stderr.to_string()),
+            aggregated_output: StreamOutput::new(stderr.to_string()),
+            ..ExecToolCallOutput::default()
+        }
+    }
+
+    #[test]
+    fn likely_sandbox_denied_detects_network_blockers() {
+        for message in [
+            "npm ERR! code ENOTFOUND\nrequest to https://registry.npmjs.org/vite failed",
+            "curl: (6) Could not resolve host: example.com",
+            "Temporary failure in name resolution",
+            "download failed: network is unreachable",
+        ] {
+            assert!(is_likely_sandbox_denied(
+                SandboxType::MacosSeatbelt,
+                &output(1, message),
+            ));
+        }
+    }
+
+    #[test]
+    fn likely_sandbox_denied_ignores_unsandboxed_and_successful_commands() {
+        assert!(!is_likely_sandbox_denied(
+            SandboxType::None,
+            &output(1, "operation not permitted"),
+        ));
+        assert!(!is_likely_sandbox_denied(
+            SandboxType::MacosSeatbelt,
+            &output(0, "ENOTFOUND"),
+        ));
+    }
 }

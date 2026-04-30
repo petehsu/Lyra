@@ -221,6 +221,41 @@ fn image_generation_requires_feature_and_supported_model() {
 }
 
 #[test]
+fn records_whether_model_supports_image_input() {
+    let supported_model_info = model_info();
+    let mut unsupported_model_info = supported_model_info.clone();
+    unsupported_model_info.input_modalities = vec![InputModality::Text];
+
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let supported_tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &supported_model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        wire_api: WireApi::Responses,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let unsupported_tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &unsupported_model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        wire_api: WireApi::Responses,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    assert!(supported_tools_config.supports_image_input);
+    assert!(!unsupported_tools_config.supports_image_input);
+}
+
+#[test]
 fn provider_builtin_tools_require_responses_wire_api() {
     let mut model_info = model_info();
     model_info.supports_search_tool = true;

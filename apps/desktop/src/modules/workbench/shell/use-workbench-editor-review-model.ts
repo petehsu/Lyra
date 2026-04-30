@@ -131,10 +131,14 @@ export const useWorkbenchEditorReviewModel = ({
       try {
         if (item.created) {
           await desktopApi.files.moveToTrash({ paths: [item.filePath] });
+        } else if (item.baselineContent === undefined) {
+          // Some agent-side file change notifications only provide final state.
+          // Without a baseline, rejecting must not overwrite the file with empty content.
+          return;
         } else {
           await desktopApi.files.writeTextFile({
             path: item.filePath,
-            content: item.baselineContent ?? "",
+            content: item.baselineContent,
             encoding: "utf8"
           });
         }

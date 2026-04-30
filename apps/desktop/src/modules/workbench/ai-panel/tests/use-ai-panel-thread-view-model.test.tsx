@@ -106,6 +106,55 @@ describe("useAiPanelThreadViewModel", () => {
     expect(result.current.streamingStatus).toBeNull();
   });
 
+  test("does not duplicate plan approval as a generic waiting status", () => {
+    const planApprovalPanel = {
+      kind: "planApproval" as const,
+      request: {
+        id: "plan:t-plan",
+        sessionId: "thread-1",
+        turnId: "t-plan",
+        version: 0,
+        status: "submitted" as const,
+        summary: "Website plan",
+        proposedMarkdown: "# Website plan",
+      },
+    };
+    const { result } = renderHook(() =>
+      useAiPanelThreadViewModel({
+        activeDetail: {
+          messages: [],
+          turns: [],
+          toolCalls: [],
+          runtimeEvents: [],
+        } as any,
+        optimisticUserMessages: [],
+        runtimeFeed: [],
+        streamingTurnId: "t-plan",
+        latestRuntimeEventByTurn: {
+          "t-plan": {
+            id: "event-1",
+            sessionId: "thread-1",
+            turnId: "t-plan",
+            phase: "plan_approval_requested",
+            timestamp: 1,
+            payload: {},
+          },
+        } as any,
+        activeInteractionPanel: planApprovalPanel,
+        isInteractionSubmitting: false,
+        isSending: false,
+        isStreamActive: false,
+        streamingAssistantText: "",
+        finalizingTurnId: null,
+        toolNameLabels,
+        runtimeToolFallbackLabel: "Tool",
+        labels,
+      })
+    );
+
+    expect(result.current.streamingStatus).toBeNull();
+  });
+
   test("hides optimistic user message after the same turn is persisted", () => {
     const { result } = renderHook(() =>
       useAiPanelThreadViewModel({
@@ -262,5 +311,53 @@ describe("useAiPanelThreadViewModel", () => {
     );
 
     expect(result.current.orphanRuntimeFeed.map((item) => item.id)).toEqual(["tool-b"]);
+  });
+
+  test("does not repeat streaming runtime feed after assistant content is persisted", () => {
+    const { result } = renderHook(() =>
+      useAiPanelThreadViewModel({
+        activeDetail: {
+          messages: [
+            {
+              id: "m-1",
+              role: "assistant",
+              content: "Done",
+              turnId: "t-1",
+              createdAt: 1,
+            },
+          ],
+          turns: [],
+          toolCalls: [],
+          runtimeEvents: [],
+        } as any,
+        optimisticUserMessages: [],
+        runtimeFeed: [
+          {
+            id: "tool-1",
+            turnId: "t-1",
+            toolName: "filesystem.write",
+            toolLabel: "Write",
+            target: "/tmp/app.ts",
+            icon: "write",
+            status: "completed",
+            timestamp: 2,
+          },
+        ] as any,
+        streamingTurnId: "t-1",
+        latestRuntimeEventByTurn: {},
+        activeInteractionPanel: null,
+        isInteractionSubmitting: false,
+        isSending: false,
+        isStreamActive: true,
+        streamingAssistantText: "",
+        finalizingTurnId: null,
+        toolNameLabels,
+        runtimeToolFallbackLabel: "Tool",
+        labels,
+      })
+    );
+
+    expect(result.current.streamingTurnRuntimeFeed).toEqual([]);
+    expect(result.current.runtimeFeedByTurn.get("t-1")).toHaveLength(1);
   });
 });

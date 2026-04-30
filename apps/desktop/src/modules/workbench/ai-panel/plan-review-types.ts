@@ -1,0 +1,40 @@
+import type {
+  PlanApprovalRequest,
+  PlanInteractionResponse,
+} from "../../../shared/desktop-bridge";
+import type { WorkbenchLocale } from "../i18n";
+
+export type AiPlanReviewAnnotationKind = "selection" | "line";
+
+export type AiPlanReviewAnnotation = {
+  readonly id: string;
+  readonly kind: AiPlanReviewAnnotationKind;
+  readonly note: string;
+  readonly createdAt: number;
+  readonly selectedText?: string;
+  readonly lineNumber?: number;
+  readonly lineText?: string;
+};
+
+export type AiPlanReviewState = {
+  readonly instanceId: string;
+  readonly locale: WorkbenchLocale;
+  readonly request: PlanApprovalRequest;
+  readonly annotations: readonly AiPlanReviewAnnotation[];
+  readonly isActionable: boolean;
+  readonly isSubmitting: boolean;
+  readonly lastSubmittedAt: number | null;
+};
+
+export type AiPlanReviewModel = {
+  readonly getState: (instanceId: string) => AiPlanReviewState | null;
+  readonly decide: (
+    instanceId: string,
+    response: PlanInteractionResponse
+  ) => Promise<void>;
+  readonly addAnnotation: (
+    instanceId: string,
+    annotation: Omit<AiPlanReviewAnnotation, "id" | "createdAt">
+  ) => Promise<void>;
+  readonly submitAnnotations: (instanceId: string) => Promise<void>;
+};

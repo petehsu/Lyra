@@ -6,8 +6,6 @@ export {
 } from "./service";
 export type {
   WorkbenchAiStopBehavior,
-  WorkbenchBrowserAutomationEngine,
-  WorkbenchLyraDirectMicroExecutorBudget,
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchPreferences,
   WorkbenchPreferencesModel,

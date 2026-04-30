@@ -7,7 +7,7 @@ use lyra_app_server_protocol::{
 };
 use lyra_runtime_protocol::{RuntimeEnvelope, RuntimeError};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -187,7 +187,10 @@ impl AgentActor {
                 "transport": "in_process",
                 "version": env!("CARGO_PKG_VERSION"),
             })),
-            "lyra.runtime.request" => self.handle_agent_core_runtime_request(client, payload).await,
+            "lyra.runtime.request" => {
+                self.handle_agent_core_runtime_request(client, payload)
+                    .await
+            }
             "lyra.runtime.notify" => {
                 let notification: ClientNotification = from_value(payload)?;
                 client
@@ -216,15 +219,12 @@ impl AgentActor {
                     })?;
                 Ok(Value::Null)
             }
-            retired if retired.starts_with("agent.") =>
-            {
-                Err(runtime_error(
-                    "METHOD_RETIRED",
-                    format!(
-                        "{retired} has been retired. Use lyra.runtime.* with native runtime payloads instead."
-                    ),
-                ))
-            }
+            retired if retired.starts_with("agent.") => Err(runtime_error(
+                "METHOD_RETIRED",
+                format!(
+                    "{retired} has been retired. Use lyra.runtime.* with native runtime payloads instead."
+                ),
+            )),
             _ => Err(runtime_error(
                 "METHOD_NOT_FOUND",
                 format!("unknown lyra runtime method: {method}"),
@@ -316,11 +316,14 @@ impl AgentActor {
             thread_id,
             turn_id,
             tool,
+            host_method,
             arguments,
             ..
         } = params;
+        let host_method = dynamic_tool_host_method(tool.as_str(), host_method.as_deref());
         let payload = json!({
             "toolName": tool,
+            "hostMethod": host_method.clone(),
             "arguments": arguments,
             "context": {
                 "agentSessionId": thread_id,
@@ -329,7 +332,7 @@ impl AgentActor {
         });
         let response = match self
             .host_rpc
-            .call_json(&tool, payload, HOST_RPC_REQUEST_TIMEOUT)
+            .call_json(&host_method, payload, HOST_RPC_REQUEST_TIMEOUT)
             .await
         {
             Ok(value) => normalize_dynamic_tool_call_response(value),
@@ -465,6 +468,14 @@ fn dynamic_tool_error_response(message: String) -> DynamicToolCallResponse {
     }
 }
 
+fn dynamic_tool_host_method(tool: &str, host_method: Option<&str>) -> String {
+    host_method
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(tool)
+        .to_string()
+}
+
 fn value_to_text(value: Value) -> String {
     match value {
         Value::String(text) => text,
@@ -503,6 +514,7 @@ fn _keep_protocol_types_linked(_notification: ServerNotification, _request: Serv
 
 #[cfg(test)]
 mod tests {
+    use super::dynamic_tool_host_method;
     use super::normalize_runtime_client_request_payload;
     use serde_json::json;
 
@@ -517,10 +529,12 @@ mod tests {
             normalized.get("method"),
             Some(&json!("lyra/config/providers/catalog/read"))
         );
-        assert!(normalized
-            .get("id")
-            .and_then(serde_json::Value::as_i64)
-            .is_some());
+        assert!(
+            normalized
+                .get("id")
+                .and_then(serde_json::Value::as_i64)
+                .is_some()
+        );
     }
 
     #[test]
@@ -532,5 +546,21 @@ mod tests {
         });
         let normalized = normalize_runtime_client_request_payload(payload);
         assert_eq!(normalized.get("id"), Some(&json!("settings-test-id")));
+    }
+
+    #[test]
+    fn dynamic_tool_host_method_overrides_model_tool_name() {
+        assert_eq!(
+            dynamic_tool_host_method("read_open_document", Some("workbench.document.read")),
+            "workbench.document.read"
+        );
+        assert_eq!(
+            dynamic_tool_host_method("read_open_document", Some("   ")),
+            "read_open_document"
+        );
+        assert_eq!(
+            dynamic_tool_host_method("read_open_document", None),
+            "read_open_document"
+        );
     }
 }

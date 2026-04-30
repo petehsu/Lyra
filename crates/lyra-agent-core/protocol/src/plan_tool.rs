@@ -27,3 +27,12 @@ pub struct UpdatePlanArgs {
     pub explanation: Option<String>,
     pub plan: Vec<PlanItemArg>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct PlanSubmitArgs {
+    /// Short human-readable summary of the proposed plan.
+    pub summary: String,
+    /// Full Markdown plan to show for user approval.
+    pub plan_markdown: String,
+}

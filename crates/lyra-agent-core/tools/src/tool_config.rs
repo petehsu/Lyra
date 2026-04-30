@@ -102,6 +102,7 @@ pub struct ToolsConfig {
     pub code_mode_only_enabled: bool,
     pub js_repl_enabled: bool,
     pub js_repl_tools_only: bool,
+    pub supports_image_input: bool,
     pub can_request_original_image_detail: bool,
     pub collab_tools: bool,
     pub multi_agent_v2: bool,
@@ -158,13 +159,14 @@ impl ToolsConfig {
         let include_tool_suggest = features.enabled(Feature::ToolSuggest)
             && features.enabled(Feature::Apps)
             && features.enabled(Feature::Plugins);
+        let supports_image_input = model_supports_image_input(model_info);
         let include_original_image_detail = can_request_original_image_detail(model_info);
         // API-key auth bypasses backend entitlement/tool normalization, so
         // callers must confirm host-side auth before exposing the built-in tool.
         let include_image_gen_tool = *image_generation_tool_auth_allowed
             && supports_provider_builtin_tools
             && features.enabled(Feature::ImageGeneration)
-            && supports_image_generation(model_info);
+            && supports_image_input;
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
         let shell_command_backend =
@@ -228,6 +230,7 @@ impl ToolsConfig {
             code_mode_only_enabled: include_code_mode_only,
             js_repl_enabled: include_js_repl,
             js_repl_tools_only: include_js_repl_tools_only,
+            supports_image_input,
             can_request_original_image_detail: include_original_image_detail,
             collab_tools: include_collab_tools,
             multi_agent_v2: include_multi_agent_v2,
@@ -311,7 +314,7 @@ impl ToolsConfig {
     }
 }
 
-fn supports_image_generation(model_info: &ModelInfo) -> bool {
+fn model_supports_image_input(model_info: &ModelInfo) -> bool {
     model_info.input_modalities.contains(&InputModality::Image)
 }
 

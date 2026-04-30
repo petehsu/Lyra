@@ -101,6 +101,13 @@
     }
   },
   "properties": {
+    "cwd": {
+      "description": "Override the working directory before starting the review. This keeps review targets aligned with the project currently bound in the UI.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "delivery": {
       "anyOf": [
         {

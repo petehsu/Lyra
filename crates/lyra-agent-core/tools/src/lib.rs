@@ -75,6 +75,8 @@ pub use mcp_resource_tool::create_list_mcp_resources_tool;
 pub use mcp_resource_tool::create_read_mcp_resource_tool;
 pub use mcp_tool::mcp_call_tool_result_output_schema;
 pub use mcp_tool::parse_mcp_tool;
+pub use plan_tool::PLAN_SUBMIT_TOOL_NAME;
+pub use plan_tool::create_plan_submit_tool;
 pub use plan_tool::create_update_plan_tool;
 pub use request_user_input_tool::REQUEST_USER_INPUT_TOOL_NAME;
 pub use request_user_input_tool::create_request_user_input_tool;

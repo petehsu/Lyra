@@ -1467,6 +1467,30 @@
             },
             "method": {
               "enum": [
+                "turn/planApproval/resolve"
+              ],
+              "title": "Turn/planApproval/resolveRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/TurnPlanApprovalResolveParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Turn/planApproval/resolveRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "turn/steer"
               ],
               "title": "Turn/steerRequestMethod",
@@ -3521,15 +3545,72 @@
       ],
       "type": "string"
     },
+    "DynamicToolSideEffects": {
+      "properties": {
+        "level": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mutatesExternalSystems": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mutatesMemory": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mutatesSessionState": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mutatesWorkspace": {
+          "default": false,
+          "type": "boolean"
+        },
+        "opensInteractiveSession": {
+          "default": false,
+          "type": "boolean"
+        },
+        "readsNetwork": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "DynamicToolSpec": {
       "properties": {
+        "approvalMode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "deferLoading": {
           "type": "boolean"
         },
         "description": {
           "type": "string"
         },
+        "hostMethod": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "inputSchema": true,
+        "modelInputCapabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "name": {
           "type": "string"
         },
@@ -3537,6 +3618,17 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "risk": true,
+        "sideEffects": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DynamicToolSideEffects"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -4682,6 +4774,26 @@
             "null"
           ]
         },
+        "defaultReasoningLevel": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "defaultVerbosity": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Verbosity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "effectiveContextWindowPercent": {
           "format": "uint64",
           "minimum": 0.0,
@@ -4704,6 +4816,16 @@
             "null"
           ]
         },
+        "protocolBehavior": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LyraAiProtocolBehaviorSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "shellType": {
           "type": [
             "string",
@@ -4715,6 +4837,12 @@
             "boolean",
             "null"
           ]
+        },
+        "supportedReasoningLevels": {
+          "items": {
+            "$ref": "#/definitions/ReasoningEffort"
+          },
+          "type": "array"
         },
         "supportedTools": {
           "items": {
@@ -4749,6 +4877,35 @@
         "webSearchToolType": {
           "type": [
             "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "LyraAiProtocolBehaviorSummary": {
+      "properties": {
+        "preserveEmptyReasoning": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reasoningReplayField": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requireAssistantReasoning": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "toolLoopSupported": {
+          "type": [
+            "boolean",
             "null"
           ]
         }
@@ -5066,6 +5223,16 @@
         },
         "model": {
           "type": "string"
+        },
+        "modelRuntimeMetadata": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LyraAiModelRuntimeMetadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "name": {
           "type": "string"
@@ -6567,6 +6734,14 @@
         }
       ]
     },
+    "PlanApprovalDecision": {
+      "enum": [
+        "approve_and_implement",
+        "keep_planning",
+        "reject"
+      ],
+      "type": "string"
+    },
     "PlanDeltaNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "description": "proposed plan streaming deltas for plan items. Clients should not assume concatenated deltas match the completed plan item content.",
@@ -7545,6 +7720,13 @@
     "ReviewStartParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "cwd": {
+          "description": "Override the working directory before starting the review. This keeps review targets aligned with the project currently bound in the UI.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "delivery": {
           "anyOf": [
             {
@@ -9522,6 +9704,447 @@
       ],
       "type": "string"
     },
+    "ThreadAiPanelAttachmentKind": {
+      "enum": [
+        "file",
+        "directory",
+        "local_image",
+        "image"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelMessage": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "contentParts": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelMessageContentPart"
+          },
+          "type": "array"
+        },
+        "createdAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "displayContent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/ThreadAiPanelMessageRole"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "content",
+        "createdAtMs",
+        "id",
+        "role",
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelMessageContentPart": {
+      "oneOf": [
+        {
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "text"
+              ],
+              "title": "TextThreadAiPanelMessageContentPartType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "type"
+          ],
+          "title": "TextThreadAiPanelMessageContentPart",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ThreadAiPanelAttachmentKind"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "attachment"
+              ],
+              "title": "AttachmentThreadAiPanelMessageContentPartType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "path",
+            "type"
+          ],
+          "title": "AttachmentThreadAiPanelMessageContentPart",
+          "type": "object"
+        }
+      ]
+    },
+    "ThreadAiPanelMessageRole": {
+      "enum": [
+        "user",
+        "assistant"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelPendingInteraction": {
+      "properties": {
+        "createdAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/ThreadAiPanelPendingInteractionKind"
+        },
+        "payload": true,
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/ThreadAiPanelPendingInteractionStatus"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "updatedAtMs": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "createdAtMs",
+        "id",
+        "kind",
+        "payload",
+        "sessionId",
+        "status",
+        "turnId",
+        "updatedAtMs"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelPendingInteractionKind": {
+      "enum": [
+        "planApproval"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelPendingInteractionStatus": {
+      "enum": [
+        "pending",
+        "resolved",
+        "cancelled",
+        "expired"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelPlan": {
+      "properties": {
+        "draftText": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finalText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelPlanStep"
+          },
+          "type": "array"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "updatedAtMs": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "draftText",
+        "turnId",
+        "updatedAtMs"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelPlanStep": {
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/ThreadAiPanelPlanStepStatus"
+        },
+        "step": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "step"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelPlanStepStatus": {
+      "enum": [
+        "pending",
+        "inProgress",
+        "completed"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelToolCall": {
+      "properties": {
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errorMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finishedAtMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "input": true,
+        "output": true,
+        "sessionId": {
+          "type": "string"
+        },
+        "startedAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/definitions/ThreadAiPanelToolCallStatus"
+        },
+        "toolName": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "input",
+        "sessionId",
+        "startedAtMs",
+        "status",
+        "toolName",
+        "turnId"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelToolCallStatus": {
+      "enum": [
+        "running",
+        "completed",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelTurn": {
+      "properties": {
+        "createdAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "durationMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errorMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/ThreadAiPanelTurnStatus"
+        },
+        "updatedAtMs": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "createdAtMs",
+        "id",
+        "sessionId",
+        "status",
+        "updatedAtMs"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelTurnMeta": {
+      "properties": {
+        "assistantOrder": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "firstAssistantMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hasAssistantDisplay": {
+          "type": "boolean"
+        },
+        "lastAssistantMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hasAssistantDisplay",
+        "sessionId",
+        "turnId"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelTurnStatus": {
+      "enum": [
+        "running",
+        "completed",
+        "failed",
+        "paused"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelViewModel": {
+      "properties": {
+        "messages": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelMessage"
+          },
+          "type": "array"
+        },
+        "pendingInteractions": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelPendingInteraction"
+          },
+          "type": "array"
+        },
+        "plans": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelPlan"
+          },
+          "type": "array"
+        },
+        "toolCalls": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelToolCall"
+          },
+          "type": "array"
+        },
+        "turnMeta": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelTurnMeta"
+          },
+          "type": "array"
+        },
+        "turns": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelTurn"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "messages",
+        "plans",
+        "toolCalls",
+        "turnMeta",
+        "turns"
+      ],
+      "type": "object"
+    },
     "ThreadArchiveParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -10825,6 +11448,17 @@
         },
         "threadId": {
           "type": "string"
+        },
+        "viewModel": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadReadViewModelParams"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional view model projection to build alongside the thread metadata."
         }
       },
       "required": [
@@ -10838,6 +11472,16 @@
       "properties": {
         "thread": {
           "$ref": "#/definitions/Thread"
+        },
+        "viewModel": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadAiPanelViewModel"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -10845,6 +11489,33 @@
       ],
       "title": "ThreadReadResponse",
       "type": "object"
+    },
+    "ThreadReadViewModelParams": {
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "aiPanel"
+              ],
+              "type": "string"
+            },
+            "runtimeFeedLimit": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "title": "KindThreadReadViewModelParams",
+          "type": "object"
+        }
+      ]
     },
     "ThreadResumeParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -11888,6 +12559,60 @@
       "title": "TurnInterruptResponse",
       "type": "object"
     },
+    "TurnPlanApprovalResolveParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "decision": {
+          "$ref": "#/definitions/PlanApprovalDecision"
+        },
+        "feedback": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "planTurnId": {
+          "type": "string"
+        },
+        "proposedMarkdown": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "planTurnId",
+        "requestId",
+        "threadId"
+      ],
+      "title": "TurnPlanApprovalResolveParams",
+      "type": "object"
+    },
+    "TurnPlanApprovalResolveResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "turn": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Turn"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "title": "TurnPlanApprovalResolveResponse",
+      "type": "object"
+    },
     "TurnPlanStep": {
       "properties": {
         "status": {
@@ -12118,7 +12843,8 @@
         "completed",
         "interrupted",
         "failed",
-        "inProgress"
+        "inProgress",
+        "waiting"
       ],
       "type": "string"
     },

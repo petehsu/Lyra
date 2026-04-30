@@ -32,4 +32,5 @@ If core shell logic stays coupled in one file, every UI change will risk breakin
 5. `browser-tabs` is UI-only; tab lifecycle state/actions are only allowed in `workspace-tabs`.
 6. Presentational surface views must receive data/actions through props. They must not own React state/effect hooks or call runtime hooks/services directly.
 7. Model, render-model, task, and runtime hook modules must not import view components by value; view dependencies stay one-way.
-8. `pnpm lint:ui-style` enforces these UI composition rules plus the shell entrypoint size budget.
+8. High-volume surfaces must follow `docs/architecture/performance-engineering.md`: no unbounded render lists, no per-event full-tree updates, and no heavy parsing in render paths.
+9. `pnpm lint:ui-style` enforces these UI composition rules plus the shell entrypoint size budget.

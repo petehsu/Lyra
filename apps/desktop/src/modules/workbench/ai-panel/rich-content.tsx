@@ -1,4 +1,5 @@
 import DOMPurify from "dompurify";
+import { Check, ExternalLink, RotateCcw, X } from "lucide-react";
 import { marked } from "marked";
 import { memo, useEffect, useMemo, useRef } from "react";
 import { createTranslator, type WorkbenchLocale } from "../i18n";
@@ -299,36 +300,44 @@ export const AiPanelRichContent = memo(({
             <button
               type="button"
               className="lyra-ai-proposed-plan__action lyra-ai-proposed-plan__action-primary"
+              aria-label={t("ai.planApprovalApproveAndImplement")}
+              title={t("ai.planApprovalApproveAndImplement")}
               onClick={planActions.onApprove}
             >
-              {t("ai.proposedPlanApprove")}
+              <Check size={14} aria-hidden="true" />
             </button>
           )}
           {planActions.onKeepPlanning === undefined ? null : (
             <button
               type="button"
-              className="lyra-ai-proposed-plan__action"
+              className="lyra-ai-proposed-plan__action lyra-ai-proposed-plan__action-secondary"
+              aria-label={t("ai.planApprovalKeepPlanning")}
+              title={t("ai.planApprovalKeepPlanning")}
               onClick={planActions.onKeepPlanning}
             >
-              {t("ai.proposedPlanKeepPlanning")}
+              <RotateCcw size={14} aria-hidden="true" />
+            </button>
+          )}
+          {planActions.onOpenInPanel === undefined ? null : (
+            <button
+              type="button"
+              className="lyra-ai-proposed-plan__action lyra-ai-proposed-plan__action-primary"
+              aria-label={t("ai.proposedPlanOpenInPanel")}
+              title={t("ai.proposedPlanOpenInPanel")}
+              onClick={planActions.onOpenInPanel}
+            >
+              <ExternalLink size={14} aria-hidden="true" />
             </button>
           )}
           {planActions.onReject === undefined ? null : (
             <button
               type="button"
               className="lyra-ai-proposed-plan__action lyra-ai-proposed-plan__action-danger"
+              aria-label={t("ai.proposedPlanReject")}
+              title={t("ai.proposedPlanReject")}
               onClick={planActions.onReject}
             >
-              {t("ai.proposedPlanReject")}
-            </button>
-          )}
-          {planActions.onOpenInPanel === undefined ? null : (
-            <button
-              type="button"
-              className="lyra-ai-proposed-plan__action"
-              onClick={planActions.onOpenInPanel}
-            >
-              {t("ai.proposedPlanOpenInPanel")}
+              <X size={14} aria-hidden="true" />
             </button>
           )}
         </div>

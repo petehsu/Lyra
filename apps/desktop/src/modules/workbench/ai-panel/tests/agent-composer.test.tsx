@@ -310,7 +310,7 @@ describe("agent composer", () => {
     expect(onModelSelect).toHaveBeenCalledWith("gpt-b");
   });
 
-  test("renders permission modes outside the plus menu", () => {
+  test("renders permission modes inside the portal plus menu", () => {
     const onPermissionModeSelect = vi.fn();
     render(
       <AgentComposer
@@ -321,9 +321,27 @@ describe("agent composer", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Auto review" }));
+    expect(screen.queryByRole("button", { name: "Auto review" })).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Composer menu"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Permission mode/i }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Auto review" }));
     expect(onPermissionModeSelect).toHaveBeenCalledWith("auto_review");
-    expect(screen.getByRole("button", { name: "Default" })).toHaveClass("lyra-ai-agent-permission-mode-active");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  test("closes the portal plus menu on outside click and Escape", () => {
+    render(<AgentComposer {...createProps({ initialValue: "" })} />);
+
+    fireEvent.click(screen.getByLabelText("Composer menu"));
+    expect(screen.getByRole("menu")).toBeDefined();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Composer menu"));
+    expect(screen.getByRole("menu")).toBeDefined();
+    fireEvent.keyDown(document, { key: "Escape", code: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   test("applies append requests once and appends later requests with spacing", () => {

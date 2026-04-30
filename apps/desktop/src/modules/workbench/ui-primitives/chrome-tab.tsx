@@ -48,3 +48,31 @@ export const ChromeTabButton = ({
     {children}
   </button>
 );
+
+export type ChromeTabShapeProps = HTMLAttributes<HTMLDivElement>;
+
+export const ChromeTabShape = ({
+  className,
+  ...shapeProps
+}: ChromeTabShapeProps) => (
+  <div
+    {...shapeProps}
+    className={cx("lyra-chrome-tab-shape", className)}
+    aria-hidden="true"
+  >
+    <div className="lyra-chrome-tab-dividers" />
+    <div className="lyra-chrome-tab-background">
+      <svg
+        className="lyra-chrome-tab-background-svg"
+        viewBox="0 0 428 36"
+        preserveAspectRatio="none"
+        focusable="false"
+      >
+        <path
+          className="lyra-chrome-tab-geometry"
+          d="M17 0h394c4.5 0 8 3.5 8 8v18c0 4.5 4.5 8 9 8v2H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z"
+        />
+      </svg>
+    </div>
+  </div>
+);

@@ -32,3 +32,13 @@ export const createAiHistoryAppRequest = (title: string): AiPanelAppOpenRequest 
   title,
   iconKey: "ai-panel-history"
 });
+
+export const createAiPlanReviewAppRequest = (
+  title: string,
+  instanceId: string
+): AiPanelAppOpenRequest => ({
+  appId: "ai-plan-review",
+  appInstanceId: instanceId,
+  title,
+  iconKey: "ai-panel-plan"
+});

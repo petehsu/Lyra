@@ -230,15 +230,22 @@ export const createSkillsIpcBridge = ({
     scope: SkillScope,
     projectRootHint?: string
   ): Promise<readonly InstalledSkillConfig[]> => {
-    const resolvedScope = withResolvedScope(workbenchFsPort, scope, projectRootHint);
+    const resolvedScope =
+      scope === GLOBAL_SCOPE
+        ? { scope }
+        : (() => {
+            const projectRoot = resolveProjectRoot(workbenchFsPort, projectRootHint);
+            return projectRoot === undefined ? null : { scope, projectRoot };
+          })();
+    if (resolvedScope === null) {
+      return [];
+    }
     const document = JSON.parse(
       nativeBindings.readSkillsScopeDocumentJson(
         JSON.stringify({
           storageRoot,
           scope: resolvedScope.scope,
-          ...(resolvedScope.projectRoot === undefined
-            ? {}
-            : { projectRoot: resolvedScope.projectRoot })
+          ...("projectRoot" in resolvedScope ? { projectRoot: resolvedScope.projectRoot } : {})
         })
       )
     ) as PersistedSkillsDocument;

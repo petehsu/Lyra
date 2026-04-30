@@ -1,4 +1,4 @@
-import { Bot, Boxes, History } from "lucide-react";
+import { Bot, Boxes, ClipboardList, History } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import type { AiPanelAppIconKey } from "./types";
@@ -67,6 +67,9 @@ export const renderAiPanelAppIcon = (iconKey: AiPanelAppIconKey) => {
   }
   if (iconKey === "ai-panel-plugins") {
     return renderShell(<Boxes size={SIZE} />);
+  }
+  if (iconKey === "ai-panel-plan") {
+    return renderShell(<ClipboardList size={SIZE} />);
   }
   return renderShell(<Bot size={SIZE} />);
 };

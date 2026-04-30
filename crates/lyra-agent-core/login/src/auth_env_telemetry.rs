@@ -71,6 +71,7 @@ mod tests {
             websocket_connect_timeout_ms: None,
             requires_managed_auth: false,
             supports_websockets: false,
+            protocol_behavior: None,
         };
 
         let telemetry =

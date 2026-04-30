@@ -51,6 +51,7 @@ pub(crate) struct TurnSummary {
     pub(crate) started_at: Option<i64>,
     pub(crate) file_change_started: HashSet<String>,
     pub(crate) command_execution_started: HashSet<String>,
+    pub(crate) plan_submitted: bool,
     pub(crate) last_error: Option<TurnError>,
 }
 

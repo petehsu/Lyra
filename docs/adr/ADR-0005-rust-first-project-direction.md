@@ -43,22 +43,27 @@ Earlier iterations allowed some native capabilities to coexist with TypeScript f
 7. `search` and `linux-compat` are currently TypeScript-owned shell concerns, but must move downward if they become heavier, stateful, or system-facing.
 8. New core product behavior that is stateful, OS-facing, security-sensitive, or performance-sensitive should default to Rust.
 9. During development, Lyra prefers clean replacement over compatibility debt. We do not keep TypeScript fallback paths alive for already-native-owned behavior.
+10. Lyra optimizes for measured performance before lower-level rewrites. TypeScript remains the default UI layer, while Rust is the default destination for heavy state, event normalization, protocol behavior, indexing, and compute-heavy view-model preparation.
+11. C/C++ may be introduced only as a narrow acceleration or platform-integration layer when a mature library, platform SDK, or measured hot path justifies it. Hand-written assembly is exceptional and must be isolated, benchmarked, tested, and backed by a portable fallback.
 
 ## Consequences
 ### Positive
 - Core behavior now has a single source of truth.
 - Main-process services stay thinner and easier to reason about.
 - Performance-sensitive and security-sensitive paths live closer to the system boundary.
+- UI performance work has a clear escalation path: optimize React/event/state flow first, move heavy work to Rust second, and use C/C++ or assembly-level techniques only with evidence.
 - Future agent, sandbox, filesystem, and runtime features can build on stable native foundations.
 
 ### Tradeoffs
 - Native build health becomes part of daily development, not an optional path.
 - Some changes will require Rust work even when a TypeScript-only shortcut would be faster in the moment.
 - Startup should fail loudly if required native capabilities are unavailable.
+- Native acceleration must justify its complexity with measurements, tests, and a narrow boundary.
 
 ## Enforcement
 This ADR is enforced by:
 - `docs/architecture/rust-first-engineering.md`
+- `docs/architecture/performance-engineering.md`
 - `pnpm lint:structure`
 - `pnpm lint:rust-first`
 

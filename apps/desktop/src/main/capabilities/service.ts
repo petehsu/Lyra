@@ -19,7 +19,6 @@ import type { McpIpcBridge } from "../mcp/types";
 import type { TerminalIpcBridge } from "../terminal/types";
 import type { WorkbenchObservationService } from "../workbench-observation/types";
 import type { WorkbenchDocumentsService } from "../workbench-documents/types";
-import type { WorkbenchWebAutomationService } from "../workbench-web-automation/types";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import type { BrowserUseService } from "../browser-use/types";
 import type { LyraRuntimeClient } from "../runtime-client";
@@ -55,7 +54,6 @@ export const createCapabilitiesIpcBridge = ({
   workbenchBrowserBridge,
   workbenchObservationService,
   workbenchDocumentsService,
-  workbenchWebAutomationService,
   browserUseService,
   getWindow
 }: {
@@ -68,7 +66,6 @@ export const createCapabilitiesIpcBridge = ({
   readonly workbenchBrowserBridge: WorkbenchBrowserIpcBridge;
   readonly workbenchObservationService: WorkbenchObservationService;
   readonly workbenchDocumentsService: WorkbenchDocumentsService;
-  readonly workbenchWebAutomationService: WorkbenchWebAutomationService;
   readonly browserUseService: BrowserUseService;
   readonly getWindow: () => BrowserWindow | null;
 }): CapabilitiesIpcBridge => {
@@ -100,8 +97,7 @@ export const createCapabilitiesIpcBridge = ({
   appRegistry.register(
     registerWorkbenchCapabilities(
       capabilityRegistry,
-      workbenchObservationService,
-      workbenchWebAutomationService
+      workbenchObservationService
     )
   );
   appRegistry.register(registerDocumentCapabilities(capabilityRegistry, workbenchDocumentsService));

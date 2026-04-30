@@ -24,8 +24,6 @@ export type WorkbenchSplitOverflowPolicy =
 
 export type WorkbenchSearchResultsSourceFilter = "all" | "web" | "local";
 export type WorkbenchOmniboxNonBrowserSubmitTarget = "new_tab" | "replace_active_tab";
-export type WorkbenchBrowserAutomationEngine = "lyra_direct" | "browser_use" | "smart";
-export type WorkbenchLyraDirectMicroExecutorBudget = "1-2" | "3-5" | "6-8";
 export type WorkbenchAiStopBehavior = "turn_only" | "turn_and_background";
 
 export type WorkbenchPreferences = {
@@ -56,8 +54,6 @@ export type WorkbenchPreferences = {
   readonly deepSearchCrawlPolicy: SearchDeepCrawlPolicy;
   readonly searchResultsSourceFilter: WorkbenchSearchResultsSourceFilter;
   readonly omniboxNonBrowserSubmitTarget: WorkbenchOmniboxNonBrowserSubmitTarget;
-  readonly browserAutomationEngine: WorkbenchBrowserAutomationEngine;
-  readonly lyraDirectMicroExecutorBudget: WorkbenchLyraDirectMicroExecutorBudget;
 };
 
 export type WorkbenchPreferencesModel = {
@@ -90,12 +86,6 @@ export type WorkbenchPreferencesModel = {
   readonly setSearchResultsSourceFilter: (value: WorkbenchSearchResultsSourceFilter) => void;
   readonly setOmniboxNonBrowserSubmitTarget: (
     value: WorkbenchOmniboxNonBrowserSubmitTarget
-  ) => void;
-  readonly setBrowserAutomationEngine: (
-    value: WorkbenchBrowserAutomationEngine
-  ) => void;
-  readonly setLyraDirectMicroExecutorBudget: (
-    value: WorkbenchLyraDirectMicroExecutorBudget
   ) => void;
   readonly reset: () => void;
 };

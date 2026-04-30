@@ -9,6 +9,16 @@ type SelectorRule = {
   readonly forbidden?: readonly RegExp[];
 };
 
+type IconOnlyHoverRule = {
+  readonly selector: string;
+  readonly requireTransparentBackground?: boolean;
+};
+
+type CssSelectorBlock = {
+  readonly selectors: readonly string[];
+  readonly body: string;
+};
+
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
 const RENDERER_WORKBENCH_STYLES_DIR = path.join(ROOT, "apps/desktop/src/renderer/styles/workbench");
@@ -117,6 +127,49 @@ const selectorRules: readonly SelectorRule[] = [
   }
 ];
 
+const iconOnlyHoverRules: readonly IconOnlyHoverRule[] = [
+  { selector: ".lyra-titlebar-navigation-action:hover" },
+  { selector: ".lyra-window-button:hover" },
+  { selector: ".lyra-window-button-close:hover" },
+  { selector: ".lyra-browser-nav-button:hover" },
+  { selector: ".lyra-browser-tab-close:hover" },
+  { selector: ".lyra-browser-tab-add:hover" },
+  { selector: ".lyra-ai-panel-topbar-nav:hover" },
+  { selector: ".lyra-ai-thread-tab-new:hover" },
+  { selector: ".lyra-ai-panel-topbar-action:hover" },
+  { selector: ".lyra-ai-panel-topbar-more-item:hover:enabled" },
+  { selector: ".lyra-ai-permissions-panel__icon:hover" },
+  { selector: ".lyra-ai-review-panel__icon:hover" },
+  { selector: ".lyra-ai-proposed-plan__action:hover" },
+  { selector: ".lyra-ai-message-action:hover" },
+  { selector: ".lyra-ai-message-copy-button:hover" },
+  { selector: ".lyra-ai-panel-history-item-delete:hover:enabled" },
+  { selector: ".lyra-ai-plan-card__action:hover" },
+  { selector: ".lyra-ai-agent-composer-attachment-remove:hover" },
+  { selector: ".lyra-ai-agent-composer-menu-item:hover:enabled" },
+  { selector: ".lyra-ai-agent-composer-submenu-item:hover" },
+  { selector: ".lyra-ai-plan-bar__icon-action:hover:enabled" },
+  { selector: ".lyra-ai-interaction-shell__button:hover:enabled" },
+  { selector: ".lyra-ai-plan-review__action:hover:enabled" },
+  { selector: ".lyra-ai-plan-review__comment-submit:hover:enabled" },
+  { selector: ".lyra-ai-plan-review__comment-cancel:hover:enabled" },
+  { selector: ".lyra-ai-plan-review__line-comment:hover" },
+  { selector: ".lyra-ai-agent-composer-tools-trigger:hover:enabled" },
+  { selector: ".lyra-ai-agent-follow-toggle:hover:enabled" },
+  { selector: ".lyra-ai-agent-send-idle:hover:enabled" },
+  { selector: ".lyra-ai-agent-send-ready:hover:enabled", requireTransparentBackground: false },
+  { selector: ".lyra-ai-agent-send-sending:hover:enabled", requireTransparentBackground: false },
+  { selector: ".lyra-ai-history-topbar-action:hover:enabled" },
+  { selector: ".lyra-ai-history-row-action:hover" },
+  { selector: ".lyra-ai-history-row-action-open:hover" },
+  { selector: ".lyra-command-approval-bar__icon-action:hover" }
+];
+
+const transparentMenuSelectionSelectors = [
+  ".lyra-ai-agent-composer-menu-item-active",
+  ".lyra-ai-agent-composer-submenu-item-active"
+];
+
 const globalForbiddenPatterns: readonly { readonly pattern: RegExp; readonly message: string }[] = [
   {
     pattern: /\.lyra-settings-choice\s*\{[^}]*border:\s*var\(--lyra-(?:unit-0-5|stroke-hairline)\)/gs,
@@ -135,12 +188,27 @@ const globalForbiddenPatterns: readonly { readonly pattern: RegExp; readonly mes
 export const escapeRegex = (input: string): string =>
   input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const splitSelectorList = (selectorText: string): string[] =>
+  selectorText
+    .split(",")
+    .map((selector) => selector.trim())
+    .filter((selector) => selector.length > 0 && !selector.startsWith("@"));
+
+const collectSelectorBlocks = (css: string): CssSelectorBlock[] =>
+  [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map((match) => ({
+      selectors: splitSelectorList(match[1] ?? ""),
+      body: match[2] ?? ""
+    }))
+    .filter((block) => block.selectors.length > 0);
+
 const findSelectorBlock = (css: string, selector: string): string | null => {
-  const escaped = escapeRegex(selector);
-  const blockRegex = new RegExp(`${escaped}\\s*\\{([\\s\\S]*?)\\}`, "m");
-  const match = css.match(blockRegex);
-  return match?.[1] ?? null;
+  const matchingBlock = collectSelectorBlocks(css).find((block) => block.selectors.includes(selector));
+  return matchingBlock?.body ?? null;
 };
+
+const findSelectorBlocks = (css: string, selector: string): CssSelectorBlock[] =>
+  collectSelectorBlocks(css).filter((block) => block.selectors.includes(selector));
 
 const isColorExemptFile = (filePath: string): boolean =>
   COLOR_EXEMPT_FILES.some((pattern) => pattern.test(filePath));
@@ -302,6 +370,72 @@ export const validateGlobalPatterns = (css: string): string[] => {
   for (const rule of globalForbiddenPatterns) {
     if (rule.pattern.test(css)) {
       violations.push(rule.message);
+    }
+  }
+  return violations;
+};
+
+const hasDeclaration = (body: string, property: string): boolean =>
+  new RegExp(`(?:^|;)\\s*${escapeRegex(property)}\\s*:`, "m").test(body);
+
+const declarationValues = (body: string, propertyPattern: string): string[] =>
+  [...body.matchAll(new RegExp(`(?:^|;)\\s*${propertyPattern}\\s*:\\s*([^;]+)\\s*;`, "gm"))]
+    .map((match) => match[1]?.trim() ?? "");
+
+const hasTransparentBackgroundDeclaration = (body: string): boolean =>
+  declarationValues(body, "background(?:-color)?").some((value) => value === "transparent");
+
+const hasNonTransparentBackgroundDeclaration = (body: string): boolean =>
+  declarationValues(body, "background(?:-color)?").some((value) => value !== "transparent");
+
+const hasNonNoneBoxShadowDeclaration = (body: string): boolean =>
+  declarationValues(body, "box-shadow").some((value) => value !== "none");
+
+export const validateIconOnlyHoverRules = (css: string): string[] => {
+  const violations: string[] = [];
+  for (const rule of iconOnlyHoverRules) {
+    const blocks = findSelectorBlocks(css, rule.selector);
+    if (blocks.length === 0) {
+      violations.push(`Missing icon-only hover selector block: ${rule.selector}`);
+      continue;
+    }
+
+    const requireTransparentBackground = rule.requireTransparentBackground ?? true;
+    for (const block of blocks) {
+      if (requireTransparentBackground && !hasTransparentBackgroundDeclaration(block.body)) {
+        violations.push(`${rule.selector} hover must declare background: transparent.`);
+      }
+      if (hasNonTransparentBackgroundDeclaration(block.body)) {
+        violations.push(`${rule.selector} hover must not add a container background.`);
+      }
+      for (const property of ["border-color", "box-shadow", "transform"]) {
+        if (hasDeclaration(block.body, property)) {
+          violations.push(`${rule.selector} hover must not change ${property}.`);
+        }
+      }
+    }
+  }
+  return violations;
+};
+
+export const validateTransparentMenuSelections = (css: string): string[] => {
+  const violations: string[] = [];
+  for (const selector of transparentMenuSelectionSelectors) {
+    const blocks = findSelectorBlocks(css, selector);
+    if (blocks.length === 0) {
+      violations.push(`Missing transparent menu selection selector block: ${selector}`);
+      continue;
+    }
+    for (const block of blocks) {
+      if (hasNonTransparentBackgroundDeclaration(block.body)) {
+        violations.push(`${selector} selected state must not use a row background.`);
+      }
+      if (hasNonNoneBoxShadowDeclaration(block.body)) {
+        violations.push(`${selector} selected state must not use a row shadow.`);
+      }
+      if (hasDeclaration(block.body, "border-color")) {
+        violations.push(`${selector} selected state must not use a row border.`);
+      }
     }
   }
   return violations;
@@ -587,6 +721,8 @@ export const runUiStyleGuard = (): string[] => {
   const combinedCss = [...cssByPath.values()].join("\n\n");
   violations.push(...validateSelectorRules(combinedCss));
   violations.push(...validateGlobalPatterns(combinedCss));
+  violations.push(...validateIconOnlyHoverRules(combinedCss));
+  violations.push(...validateTransparentMenuSelections(combinedCss));
 
   for (const [cssPath, cssText] of cssByPath) {
     violations.push(...scanCssText(cssPath, cssText));

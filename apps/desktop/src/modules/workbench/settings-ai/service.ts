@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { BrowserUseRuntimeStatus } from "../../../shared/browser-use";
 import type { LyraRuntimeHealth } from "../../../shared/lyra-runtime";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type {
@@ -14,11 +13,6 @@ import type {
   AiUpsertProfileRequest,
   AiValidateProfileRequest,
 } from "../../../shared/ai";
-import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
-import type {
-  WorkbenchBrowserAutomationEngine,
-  WorkbenchLyraDirectMicroExecutorBudget,
-} from "../preferences";
 import {
   findSelectedProfile,
   parseMap,
@@ -55,10 +49,6 @@ type ProfileUpsertResponse = {
   readonly profile: AiProviderProfile;
 };
 
-type PreferencesRecord = Record<string, unknown>;
-
-const DEFAULT_BROWSER_AUTOMATION_ENGINE: WorkbenchBrowserAutomationEngine = "lyra_direct";
-const DEFAULT_LYRA_DIRECT_BUDGET: WorkbenchLyraDirectMicroExecutorBudget = "3-5";
 const DEFAULT_PROVIDER_ID = "lmstudio";
 const DEFAULT_PROTOCOL_ID = "lmstudio_chat_completions";
 
@@ -69,50 +59,6 @@ const createRequestPayload = (
   method,
   params,
 });
-
-const createUnavailableBrowserUseStatus = (detail: string): BrowserUseRuntimeStatus => ({
-  state: "unavailable",
-  checkedAt: Date.now(),
-  reason: "unsupported_platform",
-  detail,
-});
-
-const readPreferencesRecord = (): PreferencesRecord => {
-  const raw = readWorkbenchStateSync("preferences");
-  if (raw === null) {
-    return {};
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as PreferencesRecord
-      : {};
-  } catch {
-    return {};
-  }
-};
-
-const writePreferencesField = (field: string, value: string): void => {
-  const next = {
-    ...readPreferencesRecord(),
-    [field]: value,
-  };
-  writeWorkbenchStateSync("preferences", JSON.stringify(next));
-};
-
-const readBrowserAutomationEnginePreference = (): WorkbenchBrowserAutomationEngine => {
-  const value = readPreferencesRecord().browserAutomationEngine;
-  return value === "browser_use" || value === "smart" || value === "lyra_direct"
-    ? value
-    : DEFAULT_BROWSER_AUTOMATION_ENGINE;
-};
-
-const readLyraDirectBudgetPreference = (): WorkbenchLyraDirectMicroExecutorBudget => {
-  const value = readPreferencesRecord().lyraDirectMicroExecutorBudget;
-  return value === "1-2" || value === "3-5" || value === "6-8"
-    ? value
-    : DEFAULT_LYRA_DIRECT_BUDGET;
-};
 
 const createDraftFromPreset = (
   preset: AiProviderPreset | null,
@@ -229,16 +175,6 @@ export const useSettingsAiModel = ({
   const selectedProfileIdRef = useRef<string | null>(null);
   const [draft, setDraft] = useState<SettingsAiDraft>(createDefaultDraft([]));
   const [draftDiscoveryResult, setDraftDiscoveryResult] = useState<AiModelDiscoveryResult | null>(null);
-  const [browserAutomationEngine, setBrowserAutomationEngineState] = useState<WorkbenchBrowserAutomationEngine>(() =>
-    readBrowserAutomationEnginePreference()
-  );
-  const [lyraDirectMicroExecutorBudget, setLyraDirectMicroExecutorBudgetState] = useState<WorkbenchLyraDirectMicroExecutorBudget>(() =>
-    readLyraDirectBudgetPreference()
-  );
-  const [browserUseRuntimeStatus, setBrowserUseRuntimeStatus] = useState<BrowserUseRuntimeStatus>({
-    state: "checking",
-    checkedAt: Date.now(),
-  });
 
   const resetDraftForSelection = useCallback((
     nextProfiles: readonly AiProviderProfile[],
@@ -320,33 +256,6 @@ export const useSettingsAiModel = ({
   useEffect(() => {
     void syncConfig();
   }, [syncConfig]);
-
-  useEffect(() => {
-    if (desktopApi?.browserUse === undefined) {
-      setBrowserUseRuntimeStatus(createUnavailableBrowserUseStatus("browser-use runtime status unavailable"));
-      return;
-    }
-
-    let cancelled = false;
-    void desktopApi.browserUse.readRuntimeStatus().then((status) => {
-      if (!cancelled) {
-        setBrowserUseRuntimeStatus(status);
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setBrowserUseRuntimeStatus(createUnavailableBrowserUseStatus("browser-use runtime status unavailable"));
-      }
-    });
-
-    const unsubscribe = desktopApi.browserUse.onRuntimeStatus((status) => {
-      setBrowserUseRuntimeStatus(status);
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [desktopApi]);
 
   const selectedProfile = useMemo(
     () => findSelectedProfile(profiles, selectedProfileId),
@@ -742,16 +651,6 @@ export const useSettingsAiModel = ({
     updateDraftModelsText(nextIds.join("\n"));
   }, [selectedModelIds, updateDraftModelsText]);
 
-  const updateBrowserAutomationEngine = useCallback((value: WorkbenchBrowserAutomationEngine): void => {
-    writePreferencesField("browserAutomationEngine", value);
-    setBrowserAutomationEngineState(value);
-  }, []);
-
-  const updateLyraDirectMicroExecutorBudget = useCallback((value: WorkbenchLyraDirectMicroExecutorBudget): void => {
-    writePreferencesField("lyraDirectMicroExecutorBudget", value);
-    setLyraDirectMicroExecutorBudgetState(value);
-  }, []);
-
   return {
     isLoading,
     isSaving,
@@ -771,9 +670,6 @@ export const useSettingsAiModel = ({
     draft,
     availableModels,
     selectedModelIds,
-    browserAutomationEngine,
-    lyraDirectMicroExecutorBudget,
-    browserUseRuntimeStatus,
     selectProfile,
     applyPreset,
     updateDraftName,
@@ -788,7 +684,5 @@ export const useSettingsAiModel = ({
     saveProfile,
     deleteProfile,
     setDefaultProfile,
-    setBrowserAutomationEngine: updateBrowserAutomationEngine,
-    setLyraDirectMicroExecutorBudget: updateLyraDirectMicroExecutorBudget,
   };
 };

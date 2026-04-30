@@ -209,7 +209,13 @@ struct LyraStoredModelRuntimeMetadata {
     #[serde(default)]
     supports_reasoning_summaries: Option<bool>,
     #[serde(default)]
+    default_reasoning_level: Option<ReasoningEffort>,
+    #[serde(default)]
+    supported_reasoning_levels: Vec<ReasoningEffort>,
+    #[serde(default)]
     support_verbosity: Option<bool>,
+    #[serde(default)]
+    default_verbosity: Option<Verbosity>,
     #[serde(default)]
     web_search_tool_type: Option<String>,
     #[serde(default)]
@@ -224,6 +230,8 @@ struct LyraStoredModelRuntimeMetadata {
     max_context_window: Option<u64>,
     #[serde(default)]
     effective_context_window_percent: Option<u64>,
+    #[serde(default)]
+    protocol_behavior: Option<lyra_app_server_protocol::LyraAiProtocolBehaviorSummary>,
 }
 
 #[derive(Debug, Default)]
@@ -399,6 +407,7 @@ fn model_provider_info_from_lyra_profile(
             websocket_connect_timeout_ms: None,
             requires_managed_auth: false,
             supports_websockets: matches!(protocol_id, "openai_chat_completions"),
+            protocol_behavior: None,
         },
         model_catalog,
     ))
@@ -474,7 +483,10 @@ fn lyra_provider_model_entry_from_stored(
                 supports_search_tool: metadata.supports_search_tool,
                 supports_parallel_tool_calls: metadata.supports_parallel_tool_calls,
                 supports_reasoning_summaries: metadata.supports_reasoning_summaries,
+                default_reasoning_level: metadata.default_reasoning_level,
+                supported_reasoning_levels: metadata.supported_reasoning_levels,
                 support_verbosity: metadata.support_verbosity,
+                default_verbosity: metadata.default_verbosity,
                 web_search_tool_type: metadata.web_search_tool_type,
                 supports_image_detail_original: metadata.supports_image_detail_original,
                 input_modalities: metadata.input_modalities,
@@ -482,6 +494,7 @@ fn lyra_provider_model_entry_from_stored(
                 context_window: metadata.context_window,
                 max_context_window: metadata.max_context_window,
                 effective_context_window_percent: metadata.effective_context_window_percent,
+                protocol_behavior: metadata.protocol_behavior,
             }
         }),
         source: if entry.source.trim().is_empty() {

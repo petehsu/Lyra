@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type { BrowserUseRuntimeStatus } from "../../../shared/browser-use";
 import type {
   LyraDesktopApi,
   SearchIndexStatusResponse,
@@ -20,7 +19,6 @@ type UseWorkbenchSettingsSurfacePropsParams = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly preferencesModel: WorkbenchPreferencesModel;
   readonly settingsAiModel: SettingsAiModel;
-  readonly browserUseRuntimeStatus: BrowserUseRuntimeStatus;
   readonly jsReplEnabled: boolean;
   readonly searchIndexStatus: SearchIndexStatusResponse | null;
   readonly searchRebuildIndexPending: boolean;
@@ -41,7 +39,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
   desktopApi,
   preferencesModel,
   settingsAiModel,
-  browserUseRuntimeStatus,
   jsReplEnabled,
   searchIndexStatus,
   searchRebuildIndexPending,
@@ -165,14 +162,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     searchWebEngineOptions: labels.settingsOptions.searchWebEngine,
     omniboxNonBrowserSubmitTargetOptions: labels.settingsOptions.omniboxNonBrowserSubmitTarget,
     aiLabels: labels.settingsAi,
-    aiModel: {
-      ...settingsAiModel,
-      browserAutomationEngine: preferences.browserAutomationEngine,
-      lyraDirectMicroExecutorBudget: preferences.lyraDirectMicroExecutorBudget,
-      browserUseRuntimeStatus,
-      setBrowserAutomationEngine: preferencesModel.setBrowserAutomationEngine,
-      setLyraDirectMicroExecutorBudget: preferencesModel.setLyraDirectMicroExecutorBudget
-    },
+    aiModel: settingsAiModel,
     onLocaleChange: preferencesModel.setLocale,
     onThemeChange: preferencesModel.setTheme,
     onUiStyleChange: handleUiStyleChange,

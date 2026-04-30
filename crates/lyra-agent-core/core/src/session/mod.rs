@@ -1856,6 +1856,8 @@ impl Session {
         call_id: String,
         args: RequestUserInputArgs,
     ) -> Option<RequestUserInputResponse> {
+        self.mark_request_user_input_called(&turn_context.sub_id)
+            .await;
         let sub_id = turn_context.sub_id.clone();
         let (tx_response, rx_response) = oneshot::channel();
         let event_id = sub_id.clone();
@@ -2706,6 +2708,37 @@ impl Session {
             .set_mailbox_delivery_phase(MailboxDeliveryPhase::CurrentTurn);
     }
 
+    pub(crate) async fn mark_plan_submitted(&self, sub_id: &str) {
+        let Some(turn_state) = self.turn_state_for_sub_id(sub_id).await else {
+            return;
+        };
+        turn_state.lock().await.mark_plan_submitted();
+    }
+
+    pub(crate) async fn plan_submitted(&self, sub_id: &str) -> bool {
+        let Some(turn_state) = self.turn_state_for_sub_id(sub_id).await else {
+            return false;
+        };
+        turn_state.lock().await.plan_submitted()
+    }
+
+    pub(crate) async fn mark_request_user_input_called(&self, sub_id: &str) {
+        let Some(turn_state) = self.turn_state_for_sub_id(sub_id).await else {
+            return;
+        };
+        turn_state.lock().await.mark_request_user_input_called();
+    }
+
+    pub(crate) async fn record_plan_plain_message_violation(&self, sub_id: &str) -> u8 {
+        let Some(turn_state) = self.turn_state_for_sub_id(sub_id).await else {
+            return 0;
+        };
+        turn_state
+            .lock()
+            .await
+            .record_plan_plain_message_violation()
+    }
+
     async fn turn_state_for_sub_id(
         &self,
         sub_id: &str,
@@ -2780,7 +2813,6 @@ impl Session {
     }
 
     /// Queue response items to be injected into the next active turn created for this session.
-    #[cfg(test)]
     pub(crate) async fn queue_response_items_for_next_turn(&self, items: Vec<ResponseInputItem>) {
         if items.is_empty() {
             return;

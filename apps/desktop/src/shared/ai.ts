@@ -87,7 +87,10 @@ export type AiModelRuntimeMetadata = {
   readonly supportsSearchTool?: boolean;
   readonly supportsParallelToolCalls?: boolean;
   readonly supportsReasoningSummaries?: boolean;
+  readonly defaultReasoningLevel?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  readonly supportedReasoningLevels?: readonly ("none" | "minimal" | "low" | "medium" | "high" | "xhigh")[];
   readonly supportVerbosity?: boolean;
+  readonly defaultVerbosity?: "low" | "medium" | "high";
   readonly webSearchToolType?: string;
   readonly supportsImageDetailOriginal?: boolean;
   readonly inputModalities?: readonly string[];
@@ -95,6 +98,14 @@ export type AiModelRuntimeMetadata = {
   readonly contextWindow?: number;
   readonly maxContextWindow?: number;
   readonly effectiveContextWindowPercent?: number;
+  readonly protocolBehavior?: AiProtocolBehaviorSummary;
+};
+
+export type AiProtocolBehaviorSummary = {
+  readonly reasoningReplayField?: string;
+  readonly preserveEmptyReasoning?: boolean;
+  readonly requireAssistantReasoning?: boolean;
+  readonly toolLoopSupported?: boolean;
 };
 
 export type AiProviderCatalogItem = {
@@ -150,6 +161,7 @@ export type AiProviderProfile = {
   readonly configuredSecretFields: readonly string[];
   readonly headers: AiProviderHeaders;
   readonly model: string;
+  readonly modelRuntimeMetadata?: AiModelRuntimeMetadata | null;
   readonly customModels: readonly AiProviderModelEntry[];
   readonly discoveryState: AiModelDiscoveryState;
   readonly isDefault: boolean;

@@ -6,9 +6,14 @@ pub fn parse_dynamic_tool(tool: &DynamicToolSpec) -> Result<ToolDefinition, serd
     let DynamicToolSpec {
         namespace: _,
         name,
+        host_method: _,
         description,
         input_schema,
         defer_loading,
+        side_effects: _,
+        approval_mode: _,
+        risk: _,
+        model_input_capabilities: _,
     } = tool;
     Ok(ToolDefinition {
         name: name.clone(),

@@ -1,5 +1,34 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ThreadReadViewModelParams": {
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "aiPanel"
+              ],
+              "type": "string"
+            },
+            "runtimeFeedLimit": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "title": "KindThreadReadViewModelParams",
+          "type": "object"
+        }
+      ]
+    }
+  },
   "properties": {
     "includeTurns": {
       "default": false,
@@ -8,6 +37,17 @@
     },
     "threadId": {
       "type": "string"
+    },
+    "viewModel": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ThreadReadViewModelParams"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional view model projection to build alongside the thread metadata."
     }
   },
   "required": [

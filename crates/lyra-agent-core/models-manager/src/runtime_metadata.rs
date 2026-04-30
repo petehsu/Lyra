@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
 
 use lyra_app_server_protocol::LyraAiModelRuntimeMetadata;
+use lyra_app_server_protocol::LyraAiProtocolBehaviorSummary;
 use lyra_app_server_protocol::LyraAiProviderModelEntry;
 use lyra_protocol::config_types::ReasoningSummary;
 use lyra_protocol::openai_models::ApplyPatchToolType;
@@ -8,6 +9,7 @@ use lyra_protocol::openai_models::ConfigShellToolType;
 use lyra_protocol::openai_models::InputModality;
 use lyra_protocol::openai_models::ModelInfo;
 use lyra_protocol::openai_models::ModelVisibility;
+use lyra_protocol::openai_models::ReasoningEffortPreset;
 use lyra_protocol::openai_models::TruncationPolicyConfig;
 use lyra_protocol::openai_models::WebSearchToolType;
 use lyra_protocol::openai_models::default_input_modalities;
@@ -106,7 +108,14 @@ pub fn runtime_metadata_from_model_info(model: &ModelInfo) -> LyraAiModelRuntime
         supports_search_tool: Some(model.supports_search_tool),
         supports_parallel_tool_calls: Some(model.supports_parallel_tool_calls),
         supports_reasoning_summaries: Some(model.supports_reasoning_summaries),
+        default_reasoning_level: model.default_reasoning_level,
+        supported_reasoning_levels: model
+            .supported_reasoning_levels
+            .iter()
+            .map(|preset| preset.effort)
+            .collect(),
         support_verbosity: Some(model.support_verbosity),
+        default_verbosity: model.default_verbosity,
         web_search_tool_type: Some(web_search_tool_type_to_wire(model.web_search_tool_type)),
         supports_image_detail_original: Some(model.supports_image_detail_original),
         input_modalities: model
@@ -123,6 +132,7 @@ pub fn runtime_metadata_from_model_info(model: &ModelInfo) -> LyraAiModelRuntime
             .and_then(|value| u64::try_from(value).ok()),
         effective_context_window_percent: u64::try_from(model.effective_context_window_percent)
             .ok(),
+        protocol_behavior: None,
     }
 }
 
@@ -151,15 +161,55 @@ fn normalized_runtime_metadata(
     existing: Option<&LyraAiModelRuntimeMetadata>,
 ) -> LyraAiModelRuntimeMetadata {
     if let Some(exact) = exact_model_info_for_provider_protocol(provider_id, protocol_id, model) {
-        return runtime_metadata_from_model_info(&exact);
+        let mut metadata = runtime_metadata_from_model_info(&exact);
+        metadata.protocol_behavior = protocol_behavior_summary(provider_id, protocol_id, model);
+        return metadata;
     }
 
-    let baseline = baseline_model_info_for_provider_protocol(provider_id, protocol_id, model)
+    let mut baseline = baseline_model_info_for_provider_protocol(provider_id, protocol_id, model)
         .map(|model| runtime_metadata_from_model_info(&model))
         .unwrap_or_else(default_runtime_metadata);
+    baseline.protocol_behavior = protocol_behavior_summary(provider_id, protocol_id, model);
     match existing {
         Some(existing) => merge_runtime_metadata(existing, &baseline),
         None => baseline,
+    }
+}
+
+fn protocol_behavior_summary(
+    provider_id: &str,
+    protocol_id: &str,
+    model: &str,
+) -> Option<LyraAiProtocolBehaviorSummary> {
+    let provider_id = provider_id.trim();
+    let protocol_id = protocol_id.trim();
+    let model = model.trim().to_ascii_lowercase();
+    match (provider_id, protocol_id) {
+        ("deepseek", "deepseek_chat_completions") => Some(LyraAiProtocolBehaviorSummary {
+            reasoning_replay_field: Some("reasoning_content".to_string()),
+            preserve_empty_reasoning: Some(true),
+            require_assistant_reasoning: Some(true),
+            tool_loop_supported: Some(model != "deepseek-reasoner"),
+        }),
+        ("openrouter", "openrouter_chat_completions") => Some(LyraAiProtocolBehaviorSummary {
+            reasoning_replay_field: Some("reasoning_details".to_string()),
+            preserve_empty_reasoning: Some(false),
+            require_assistant_reasoning: Some(false),
+            tool_loop_supported: Some(true),
+        }),
+        ("anthropic", "anthropic_messages") => Some(LyraAiProtocolBehaviorSummary {
+            reasoning_replay_field: Some("signed_thinking_blocks".to_string()),
+            preserve_empty_reasoning: Some(false),
+            require_assistant_reasoning: Some(false),
+            tool_loop_supported: Some(true),
+        }),
+        ("google_ai", "gemini_generate_content") => Some(LyraAiProtocolBehaviorSummary {
+            reasoning_replay_field: None,
+            preserve_empty_reasoning: Some(false),
+            require_assistant_reasoning: Some(false),
+            tool_loop_supported: Some(true),
+        }),
+        _ => None,
     }
 }
 
@@ -185,7 +235,16 @@ fn merge_runtime_metadata(
         supports_reasoning_summaries: existing
             .supports_reasoning_summaries
             .or(baseline.supports_reasoning_summaries),
+        default_reasoning_level: existing
+            .default_reasoning_level
+            .or(baseline.default_reasoning_level),
+        supported_reasoning_levels: if existing.supported_reasoning_levels.is_empty() {
+            baseline.supported_reasoning_levels.clone()
+        } else {
+            existing.supported_reasoning_levels.clone()
+        },
         support_verbosity: existing.support_verbosity.or(baseline.support_verbosity),
+        default_verbosity: existing.default_verbosity.or(baseline.default_verbosity),
         web_search_tool_type: existing
             .web_search_tool_type
             .clone()
@@ -208,6 +267,10 @@ fn merge_runtime_metadata(
         effective_context_window_percent: existing
             .effective_context_window_percent
             .or(baseline.effective_context_window_percent),
+        protocol_behavior: existing
+            .protocol_behavior
+            .clone()
+            .or_else(|| baseline.protocol_behavior.clone()),
     }
 }
 
@@ -325,7 +388,10 @@ fn exact_template_model(
         supports_search_tool: Some(false),
         supports_parallel_tool_calls: Some(true),
         supports_reasoning_summaries: Some(false),
+        default_reasoning_level: None,
+        supported_reasoning_levels: Vec::new(),
         support_verbosity: Some(false),
+        default_verbosity: None,
         web_search_tool_type: Some(web_search_tool_type_to_wire(WebSearchToolType::Text)),
         supports_image_detail_original: Some(false),
         input_modalities: if supports_images {
@@ -340,6 +406,7 @@ fn exact_template_model(
         context_window: u64::try_from(context_window).ok(),
         max_context_window: u64::try_from(context_window).ok(),
         effective_context_window_percent: Some(95),
+        protocol_behavior: None,
     };
     model_info_from_runtime_metadata(slug, display_name, None, &metadata)
 }
@@ -420,7 +487,10 @@ fn responses_provider_baseline(
         supports_search_tool: Some(supports_search_tool),
         supports_parallel_tool_calls: Some(true),
         supports_reasoning_summaries: Some(false),
+        default_reasoning_level: None,
+        supported_reasoning_levels: Vec::new(),
         support_verbosity: Some(false),
+        default_verbosity: None,
         web_search_tool_type: Some(web_search_tool_type_to_wire(WebSearchToolType::Text)),
         supports_image_detail_original: Some(false),
         input_modalities: if supports_images {
@@ -435,6 +505,7 @@ fn responses_provider_baseline(
         context_window: Some(context_window),
         max_context_window: Some(context_window),
         effective_context_window_percent: Some(95),
+        protocol_behavior: None,
     }
 }
 
@@ -450,7 +521,10 @@ fn chat_completions_baseline(
         supports_search_tool: Some(supports_search_tool),
         supports_parallel_tool_calls: Some(supports_parallel_tool_calls),
         supports_reasoning_summaries: Some(false),
+        default_reasoning_level: None,
+        supported_reasoning_levels: Vec::new(),
         support_verbosity: Some(false),
+        default_verbosity: None,
         web_search_tool_type: Some(web_search_tool_type_to_wire(WebSearchToolType::Text)),
         supports_image_detail_original: Some(false),
         input_modalities: if supports_images {
@@ -465,6 +539,7 @@ fn chat_completions_baseline(
         context_window: Some(context_window),
         max_context_window: Some(context_window),
         effective_context_window_percent: Some(95),
+        protocol_behavior: None,
     }
 }
 
@@ -475,7 +550,10 @@ fn anthropic_baseline(context_window: u64) -> LyraAiModelRuntimeMetadata {
         supports_search_tool: Some(false),
         supports_parallel_tool_calls: Some(false),
         supports_reasoning_summaries: Some(false),
+        default_reasoning_level: None,
+        supported_reasoning_levels: Vec::new(),
         support_verbosity: Some(false),
+        default_verbosity: None,
         web_search_tool_type: Some(web_search_tool_type_to_wire(WebSearchToolType::Text)),
         supports_image_detail_original: Some(false),
         input_modalities: default_input_modalities()
@@ -486,6 +564,7 @@ fn anthropic_baseline(context_window: u64) -> LyraAiModelRuntimeMetadata {
         context_window: Some(context_window),
         max_context_window: Some(context_window),
         effective_context_window_percent: Some(95),
+        protocol_behavior: None,
     }
 }
 
@@ -496,7 +575,10 @@ fn gemini_baseline(context_window: u64) -> LyraAiModelRuntimeMetadata {
         supports_search_tool: Some(false),
         supports_parallel_tool_calls: Some(false),
         supports_reasoning_summaries: Some(false),
+        default_reasoning_level: None,
+        supported_reasoning_levels: Vec::new(),
         support_verbosity: Some(false),
+        default_verbosity: None,
         web_search_tool_type: Some(web_search_tool_type_to_wire(WebSearchToolType::Text)),
         supports_image_detail_original: Some(false),
         input_modalities: default_input_modalities()
@@ -507,6 +589,7 @@ fn gemini_baseline(context_window: u64) -> LyraAiModelRuntimeMetadata {
         context_window: Some(context_window),
         max_context_window: Some(context_window),
         effective_context_window_percent: Some(95),
+        protocol_behavior: None,
     }
 }
 
@@ -517,7 +600,10 @@ fn default_runtime_metadata() -> LyraAiModelRuntimeMetadata {
         supports_search_tool: Some(false),
         supports_parallel_tool_calls: Some(false),
         supports_reasoning_summaries: Some(false),
+        default_reasoning_level: None,
+        supported_reasoning_levels: Vec::new(),
         support_verbosity: Some(false),
+        default_verbosity: None,
         web_search_tool_type: Some(web_search_tool_type_to_wire(WebSearchToolType::Text)),
         supports_image_detail_original: Some(false),
         input_modalities: vec![input_modality_to_wire(&InputModality::Text)],
@@ -525,6 +611,7 @@ fn default_runtime_metadata() -> LyraAiModelRuntimeMetadata {
         context_window: None,
         max_context_window: None,
         effective_context_window_percent: Some(95),
+        protocol_behavior: None,
     }
 }
 
@@ -582,8 +669,15 @@ fn model_info_from_runtime_metadata(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string),
-        default_reasoning_level: None,
-        supported_reasoning_levels: Vec::new(),
+        default_reasoning_level: metadata.default_reasoning_level,
+        supported_reasoning_levels: metadata
+            .supported_reasoning_levels
+            .iter()
+            .map(|effort| ReasoningEffortPreset {
+                effort: *effort,
+                description: effort.to_string(),
+            })
+            .collect(),
         shell_type,
         visibility: ModelVisibility::List,
         supported_in_api: true,
@@ -595,7 +689,7 @@ fn model_info_from_runtime_metadata(
         supports_reasoning_summaries: metadata.supports_reasoning_summaries.unwrap_or(false),
         default_reasoning_summary: ReasoningSummary::Auto,
         support_verbosity: metadata.support_verbosity.unwrap_or(false),
-        default_verbosity: None,
+        default_verbosity: metadata.default_verbosity,
         apply_patch_tool_type,
         web_search_tool_type,
         truncation_policy: TruncationPolicyConfig::bytes(10_000),

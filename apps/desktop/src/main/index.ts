@@ -46,10 +46,6 @@ import {
   LYRA_UIUX_PACK_SCHEME,
   createUiuxPacksIpcBridge
 } from "./uiux-packs";
-import {
-  createWorkbenchWebAutomationHostToolsBridge,
-  createWorkbenchWebAutomationService
-} from "./workbench-web-automation";
 import { createWorkbenchObservationRendererClient } from "./workbench-observation/local-tabs";
 import { createWorkbenchObservationHostToolsBridge } from "./workbench-observation/host-tools";
 import { createWorkbenchObservationService } from "./workbench-observation/service";
@@ -112,8 +108,6 @@ let disposeWorkbenchObservationRendererClient: (() => void) | null = null;
 let disposeWorkbenchObservationService: (() => void) | null = null;
 let disposeWorkbenchDocumentsService: (() => void) | null = null;
 let disposeWorkbenchObservationHostTools: (() => void) | null = null;
-let disposeWorkbenchWebAutomationService: (() => void) | null = null;
-let disposeWorkbenchWebAutomationHostTools: (() => void) | null = null;
 let disposeCodeIntelHostTools: (() => void) | null = null;
 let disposeBrowserUseService: (() => void) | null = null;
 let disposeBrowserUseHostTools: (() => void) | null = null;
@@ -478,43 +472,6 @@ const attachDevelopmentDiagnostics = (window: BrowserWindow): void => {
   });
 };
 
-type BrowserAutomationEngine = "lyra_direct" | "browser_use" | "smart";
-type LyraDirectMicroExecutorBudget = "1-2" | "3-5" | "6-8";
-
-const normalizeBrowserAutomationEngine = (value: unknown): BrowserAutomationEngine =>
-  value === "browser_use" || value === "smart" ? value : "lyra_direct";
-
-const readBrowserAutomationEnginePreference = (
-  rawPreferencesJson: string | null,
-): BrowserAutomationEngine => {
-  if (typeof rawPreferencesJson !== "string" || rawPreferencesJson.trim().length === 0) {
-    return "lyra_direct";
-  }
-  try {
-    const parsed = JSON.parse(rawPreferencesJson) as { readonly browserAutomationEngine?: unknown };
-    return normalizeBrowserAutomationEngine(parsed.browserAutomationEngine);
-  } catch {
-    return "lyra_direct";
-  }
-};
-
-const normalizeLyraDirectMicroExecutorBudget = (value: unknown): LyraDirectMicroExecutorBudget =>
-  value === "1-2" || value === "6-8" ? value : "3-5";
-
-const readLyraDirectMicroExecutorBudgetPreference = (
-  rawPreferencesJson: string | null,
-): LyraDirectMicroExecutorBudget => {
-  if (typeof rawPreferencesJson !== "string" || rawPreferencesJson.trim().length === 0) {
-    return "3-5";
-  }
-  try {
-    const parsed = JSON.parse(rawPreferencesJson) as { readonly lyraDirectMicroExecutorBudget?: unknown };
-    return normalizeLyraDirectMicroExecutorBudget(parsed.lyraDirectMicroExecutorBudget);
-  } catch {
-    return "3-5";
-  }
-};
-
 const readPreventSleepEnabledPreference = (
   rawPreferencesJson: string | null,
 ): boolean => {
@@ -683,15 +640,6 @@ const registerIpcHandlers = (): void => {
     readPreventSleepEnabledPreference(workbenchStateBridge.readState("preferences"))
   );
   disposePowerSaveBlocker = powerSaveBlockerController.dispose;
-  const workbenchWebAutomationService = createWorkbenchWebAutomationService({
-    browserBridge: workbenchBrowserBridge,
-    storageRoot: storageRoots.modules.webAutomation,
-    readLyraDirectMicroExecutorBudget: () =>
-      readLyraDirectMicroExecutorBudgetPreference(
-        workbenchStateBridge.readState("preferences")
-      )
-  });
-  disposeWorkbenchWebAutomationService = workbenchWebAutomationService.dispose;
   const browserUseService = createBrowserUseService({
     browserBridge: workbenchBrowserBridge,
     storageRoot: storageRoots.modules.browserUse
@@ -733,7 +681,6 @@ const registerIpcHandlers = (): void => {
     workbenchBrowserBridge,
     workbenchObservationService,
     workbenchDocumentsService,
-    workbenchWebAutomationService,
     browserUseService,
     getWindow: () => mainWindow
   });
@@ -756,15 +703,6 @@ const registerIpcHandlers = (): void => {
   void workbenchObservationHostTools.sync().catch((error: unknown) => {
     console.warn(`[lyra-workbench-observation] host tool sync failed ${String(error)}`);
   });
-  const workbenchWebAutomationHostTools = createWorkbenchWebAutomationHostToolsBridge({
-    capabilitiesBridge,
-    runtimeClient,
-    runtimeHostRpc
-  });
-  disposeWorkbenchWebAutomationHostTools = workbenchWebAutomationHostTools.dispose;
-  void workbenchWebAutomationHostTools.sync().catch((error: unknown) => {
-    console.warn(`[lyra-workbench-automation] host tool sync failed ${String(error)}`);
-  });
   const browserUseHostTools = createBrowserUseHostToolsBridge({
     capabilitiesBridge,
     runtimeClient,
@@ -778,15 +716,8 @@ const registerIpcHandlers = (): void => {
   };
   const browserUseRuntimeCoordinator = createBrowserUseRuntimeCoordinator({
     runtime: browserUseService.runtime,
-    hostTools: browserUseHostTools,
-    readPreferredEngine: () =>
-      readBrowserAutomationEnginePreference(
-        workbenchStateBridge.readState("preferences")
-      )
+    hostTools: browserUseHostTools
   });
-  disposeBrowserUseRuntimeCoordinator = () => {
-    void browserUseRuntimeCoordinator.dispose();
-  };
   const publishBrowserUseRuntimeStatus = (status: BrowserUseRuntimeStatus): void => {
     browserUseRuntimeStatus = status;
     if (mainWindow === null || mainWindow.isDestroyed()) {
@@ -802,22 +733,12 @@ const registerIpcHandlers = (): void => {
       return;
     }
     powerSaveBlockerController.setEnabled(readPreventSleepEnabledPreference(event.json));
-    void browserUseRuntimeCoordinator.applyEnginePreference(
-      readBrowserAutomationEnginePreference(event.json)
-    ).catch((error: unknown) => {
-      console.warn(`[lyra-browser-use] failed to apply browser engine preference ${String(error)}`);
-    });
   });
   disposeBrowserUseRuntimeCoordinator = () => {
     unsubscribeBrowserUseRuntimeStatus();
     unsubscribeWorkbenchPreferenceState();
     void browserUseRuntimeCoordinator.dispose();
   };
-  void browserUseRuntimeCoordinator.applyEnginePreference(
-    readBrowserAutomationEnginePreference(workbenchStateBridge.readState("preferences"))
-  ).catch((error: unknown) => {
-    console.warn(`[lyra-browser-use] initial engine preference apply failed ${String(error)}`);
-  });
   browserUseRuntimeCoordinator.start();
 
   const agentCoreBridge = createAgentCoreIpcBridge(runtimeClient);
@@ -977,17 +898,9 @@ app.on("before-quit", () => {
     disposeWorkbenchObservationHostTools();
     disposeWorkbenchObservationHostTools = null;
   }
-  if (disposeWorkbenchWebAutomationHostTools !== null) {
-    disposeWorkbenchWebAutomationHostTools();
-    disposeWorkbenchWebAutomationHostTools = null;
-  }
   if (disposeCodeIntelHostTools !== null) {
     disposeCodeIntelHostTools();
     disposeCodeIntelHostTools = null;
-  }
-  if (disposeWorkbenchWebAutomationService !== null) {
-    disposeWorkbenchWebAutomationService();
-    disposeWorkbenchWebAutomationService = null;
   }
   if (disposeBrowserUseRuntimeCoordinator !== null) {
     disposeBrowserUseRuntimeCoordinator();

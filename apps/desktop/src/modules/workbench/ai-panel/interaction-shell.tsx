@@ -1,19 +1,14 @@
 import { memo, type RefObject } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import {
   CommandApprovalBar,
   type CommandApprovalRequest,
   type CommandApprovalResponse,
 } from "../command-approval-bar";
-import type {
-  PlanApprovalRequest,
-  PlanInteractionResponse,
-  PlanQuestionRequest
-} from "../../../shared/desktop-bridge";
-import { PlanApprovalBar } from "./plan-approval-bar";
+import type { PlanQuestionRequest } from "../../../shared/desktop-bridge";
 import { PlanQuestionBar } from "./plan-question-bar";
 import type { WorkbenchLocale } from "../i18n";
-import { SpinnerLabel, StatusBadge } from "./status-primitives";
 import type {
   ActiveInteractionPanel,
   PendingInteractionPanel,
@@ -26,7 +21,6 @@ type AiPanelInteractionShellProps = {
   readonly activePendingInteraction: PendingInteractionPanel | null;
   readonly pendingInteractionQueue: readonly PendingInteractionPanel[];
   readonly activeInteractionPosition: number;
-  readonly pendingInteractionsLabel: string;
   readonly navPreviousLabel: string;
   readonly navNextLabel: string;
   readonly onSelectInteractionId: (interactionId: string | null) => void;
@@ -34,7 +28,6 @@ type AiPanelInteractionShellProps = {
   readonly onPlanQuestionSubmit: (
     payload: { readonly answers: Record<string, unknown>; readonly note?: string }
   ) => Promise<void>;
-  readonly onPlanApprovalDecision: (response: PlanInteractionResponse) => Promise<void>;
 };
 
 export const AiPanelInteractionShell = memo(({
@@ -44,67 +37,51 @@ export const AiPanelInteractionShell = memo(({
   activePendingInteraction,
   pendingInteractionQueue,
   activeInteractionPosition,
-  pendingInteractionsLabel,
   navPreviousLabel,
   navNextLabel,
   onSelectInteractionId,
   onCommandApprovalDecision,
   onPlanQuestionSubmit,
-  onPlanApprovalDecision,
 }: AiPanelInteractionShellProps) => {
-  if (activeInteractionPanel === null) {
+  if (activeInteractionPanel === null || activeInteractionPanel.kind === "planApproval") {
     return null;
   }
 
   const queueSize = activePendingInteraction === null ? 1 : pendingInteractionQueue.length;
+  const showNavigation = activePendingInteraction !== null && queueSize > 1;
 
   return (
     <div ref={panelRef} className="lyra-ai-interaction-shell">
-      <div className="lyra-ai-interaction-shell__header">
-        <div className="lyra-ai-interaction-shell__status">
-          <SpinnerLabel
-            variant="sand"
-            tone="warning"
-            size="sm"
-            ariaLabel={pendingInteractionsLabel}
-            className="lyra-ai-interaction-shell__spinner"
-          />
-          <span className="lyra-ai-interaction-shell__label">{pendingInteractionsLabel}</span>
-          <StatusBadge
-            tone="warning"
-            label={`${String(activeInteractionPosition)}/${String(queueSize)}`}
-            className="lyra-ai-interaction-shell__badge"
-          />
-        </div>
+      {showNavigation ? (
         <div className="lyra-ai-interaction-shell__actions">
-          {activePendingInteraction !== null && queueSize > 1 ? (
-            <>
-              <button
-                type="button"
-                className="lyra-ai-interaction-shell__button"
-                disabled={activeInteractionPosition <= 1}
-                onClick={() => {
-                  const previous = pendingInteractionQueue[activeInteractionPosition - 2];
-                  onSelectInteractionId(previous?.request.id ?? null);
-                }}
-              >
-                {navPreviousLabel}
-              </button>
-              <button
-                type="button"
-                className="lyra-ai-interaction-shell__button"
-                disabled={activeInteractionPosition >= queueSize}
-                onClick={() => {
-                  const next = pendingInteractionQueue[activeInteractionPosition];
-                  onSelectInteractionId(next?.request.id ?? null);
-                }}
-              >
-                {navNextLabel}
-              </button>
-            </>
-          ) : null}
+          <button
+            type="button"
+            className="lyra-ai-interaction-shell__button"
+            disabled={activeInteractionPosition <= 1}
+            aria-label={navPreviousLabel}
+            title={navPreviousLabel}
+            onClick={() => {
+              const previous = pendingInteractionQueue[activeInteractionPosition - 2];
+              onSelectInteractionId(previous?.request.id ?? null);
+            }}
+          >
+            <ChevronLeft size={14} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="lyra-ai-interaction-shell__button"
+            disabled={activeInteractionPosition >= queueSize}
+            aria-label={navNextLabel}
+            title={navNextLabel}
+            onClick={() => {
+              const next = pendingInteractionQueue[activeInteractionPosition];
+              onSelectInteractionId(next?.request.id ?? null);
+            }}
+          >
+            <ChevronRight size={14} aria-hidden="true" />
+          </button>
         </div>
-      </div>
+      ) : null}
       {activeInteractionPanel.kind === "commandApproval" ? (
         <CommandApprovalBar
           locale={locale}
@@ -120,15 +97,6 @@ export const AiPanelInteractionShell = memo(({
           request={activeInteractionPanel.request as PlanQuestionRequest}
           onSubmit={(payload) => {
             void onPlanQuestionSubmit(payload);
-          }}
-        />
-      ) : null}
-      {activeInteractionPanel.kind === "planApproval" ? (
-        <PlanApprovalBar
-          locale={locale}
-          request={activeInteractionPanel.request as PlanApprovalRequest}
-          onDecision={(response) => {
-            void onPlanApprovalDecision(response);
           }}
         />
       ) : null}

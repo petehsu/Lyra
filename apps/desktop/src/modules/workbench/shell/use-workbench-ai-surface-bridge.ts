@@ -178,6 +178,21 @@ export const useWorkbenchAiSurfaceBridge = ({
 
     entry.finished = true;
     entry.completedAt = event.timestamp;
+    if (event.baselineContent !== undefined) {
+      entry.baselineContent = event.baselineContent;
+    }
+    if (typeof event.created === "boolean") {
+      entry.created = event.created;
+    }
+    if (typeof event.firstChangedLine === "number") {
+      entry.firstChangedLine = event.firstChangedLine;
+    }
+    if (typeof event.addedLines === "number") {
+      entry.addedLines = event.addedLines;
+    }
+    if (typeof event.removedLines === "number") {
+      entry.removedLines = event.removedLines;
+    }
 
     if (event.status === "failed") {
       if (entry.paceTimerId !== null) {
@@ -189,6 +204,11 @@ export const useWorkbenchAiSurfaceBridge = ({
       }
       applyContent(entry);
       delete writeStreamByToolCallRef.current[event.toolCallId];
+      return;
+    }
+
+    if (entry.paceTimerId === null && entry.chunkQueue.length === 0) {
+      runPostCompletion(entry);
     }
   }, [fileEditorModel, onOpenFileFromManager, recordCompletedEditorWorkItem]);
 

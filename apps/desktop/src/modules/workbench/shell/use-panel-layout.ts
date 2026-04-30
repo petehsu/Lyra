@@ -32,8 +32,11 @@ export type PanelLayoutModel = PanelLayoutState &
   PanelLayoutActions & {
     readonly cssVars: {
       readonly "--left-width": string;
+      readonly "--left-panel-content-width": string;
       readonly "--left-panel-mobile-height": string;
+      readonly "--left-panel-content-mobile-height": string;
       readonly "--bottom-height": string;
+      readonly "--bottom-panel-content-height": string;
     };
   };
 
@@ -104,6 +107,7 @@ export const usePanelLayoutModel = (): PanelLayoutModel => {
     const previousUserSelect = document.body.style.userSelect;
     document.body.style.cursor = cursor;
     document.body.style.userSelect = "none";
+    document.body.classList.add("lyra-layout-resizing");
 
     const handleMouseMove = (event: MouseEvent): void => {
       onMove(event);
@@ -114,6 +118,7 @@ export const usePanelLayoutModel = (): PanelLayoutModel => {
       window.removeEventListener("mouseup", handleMouseUp);
       document.body.style.cursor = previousCursor;
       document.body.style.userSelect = previousUserSelect;
+      document.body.classList.remove("lyra-layout-resizing");
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -198,8 +203,11 @@ export const usePanelLayoutModel = (): PanelLayoutModel => {
   const cssVars = useMemo(
     () => ({
       "--left-width": isLeftPanelVisible ? `${leftWidth}px` : "0px",
+      "--left-panel-content-width": `${leftWidth}px`,
       "--left-panel-mobile-height": isLeftPanelVisible ? "var(--lyra-unit-180)" : "0px",
-      "--bottom-height": isBottomPanelVisible ? `${bottomHeight}px` : "0px"
+      "--left-panel-content-mobile-height": "var(--lyra-unit-180)",
+      "--bottom-height": isBottomPanelVisible ? `${bottomHeight}px` : "0px",
+      "--bottom-panel-content-height": `${bottomHeight}px`
     }),
     [bottomHeight, isBottomPanelVisible, isLeftPanelVisible, leftWidth]
   );

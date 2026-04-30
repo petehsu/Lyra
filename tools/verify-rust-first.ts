@@ -256,10 +256,6 @@ const tsOwnedMainModules = new Map<string, string>([
     "workbench-observation",
     "TypeScript-owned shell module: renderer/browser observation aggregation and cache."
   ],
-  [
-    "workbench-web-automation",
-    "TypeScript-owned shell module: deterministic web action planning, execution, and verification."
-  ],
   ["search", "TypeScript-owned shell module: provider composition and lightweight search routing."],
   ["linux-compat", "TypeScript-owned shell module: Electron/Linux startup environment integration."],
   ["storage", "TypeScript-owned shell module: unified storage root resolution and Electron path wiring."],

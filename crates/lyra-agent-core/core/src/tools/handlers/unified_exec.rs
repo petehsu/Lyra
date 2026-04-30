@@ -7,6 +7,10 @@ use crate::tools::context::ExecCommandToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
+use crate::tools::events::ToolEmitter;
+use crate::tools::events::ToolEventCtx;
+use crate::tools::events::ToolEventFailure;
+use crate::tools::events::ToolEventStage;
 use crate::tools::handlers::apply_granted_turn_permissions;
 use crate::tools::handlers::apply_patch::intercept_apply_patch;
 use crate::tools::handlers::implicit_granted_permissions;
@@ -14,6 +18,7 @@ use crate::tools::handlers::normalize_and_validate_additional_permissions;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::handlers::parse_arguments_with_base_path;
 use crate::tools::handlers::resolve_workdir_base_path;
+use crate::tools::handlers::shell::detect_shell_file_changes;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
@@ -24,16 +29,16 @@ use crate::unified_exec::UnifiedExecContext;
 use crate::unified_exec::UnifiedExecError;
 use crate::unified_exec::UnifiedExecProcessManager;
 use crate::unified_exec::WriteStdinRequest;
-use crate::unified_exec::generate_chunk_id;
 use lyra_features::Feature;
 use lyra_otel::SessionTelemetry;
 use lyra_otel::TOOL_CALL_UNIFIED_EXEC_METRIC;
+use lyra_protocol::exec_output::ExecToolCallOutput;
+use lyra_protocol::exec_output::StreamOutput;
 use lyra_protocol::models::PermissionProfile;
 use lyra_protocol::protocol::EventMsg;
 use lyra_protocol::protocol::TerminalInteractionEvent;
 use lyra_shell_command::is_safe_command::is_known_safe_command;
 use lyra_tools::UnifiedExecShellMode;
-use lyra_utils_output_truncation::approx_token_count;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -87,6 +92,32 @@ fn default_write_stdin_yield_time_ms() -> u64 {
 
 fn default_tty() -> bool {
     false
+}
+
+fn exec_output_from_unified_exec(output: &ExecCommandToolOutput) -> ExecToolCallOutput {
+    let text = String::from_utf8_lossy(&output.raw_output).to_string();
+    ExecToolCallOutput {
+        exit_code: output.exit_code.unwrap_or(0),
+        stdout: StreamOutput::new(text.clone()),
+        stderr: StreamOutput::new(String::new()),
+        aggregated_output: StreamOutput::new(text),
+        duration: output.wall_time,
+        timed_out: false,
+    }
+}
+
+fn unified_exec_file_change_finish_stage(
+    result: &Result<ExecCommandToolOutput, UnifiedExecError>,
+) -> ToolEventStage {
+    match result {
+        Ok(output) => ToolEventStage::Success(exec_output_from_unified_exec(output)),
+        Err(UnifiedExecError::SandboxDenied { output, .. }) => {
+            ToolEventStage::Failure(ToolEventFailure::Output(output.clone()))
+        }
+        Err(error) => ToolEventStage::Failure(ToolEventFailure::Message(format!(
+            "exec_command failed: {error}"
+        ))),
+    }
 }
 
 impl ToolHandler for UnifiedExecHandler {
@@ -324,7 +355,21 @@ impl ToolHandler for UnifiedExecHandler {
 
                 emit_unified_exec_tty_metric(&turn.session_telemetry, tty);
                 let hook_command = args.cmd;
-                match manager
+                let shell_file_changes = detect_shell_file_changes(&command, &cwd);
+                let shell_file_change_call_id = format!("{}:files", context.call_id);
+                let shell_file_change_emitter = (!shell_file_changes.is_empty()).then(|| {
+                    ToolEmitter::apply_patch(shell_file_changes, /*auto_approved*/ true)
+                });
+                if let Some(shell_file_change_emitter) = shell_file_change_emitter.as_ref() {
+                    let event_ctx = ToolEventCtx::new(
+                        context.session.as_ref(),
+                        context.turn.as_ref(),
+                        &shell_file_change_call_id,
+                        Some(&tracker),
+                    );
+                    shell_file_change_emitter.begin(event_ctx).await;
+                }
+                let exec_result = manager
                     .exec_command(
                         ExecCommandRequest {
                             command,
@@ -342,28 +387,38 @@ impl ToolHandler for UnifiedExecHandler {
                                 .permissions_preapproved,
                             justification,
                             prefix_rule,
+                            sandbox_retry_attempt: false,
+                            exec_approval_requirement_override: None,
                         },
                         &context,
                     )
-                    .await
-                {
+                    .await;
+                if let Some(shell_file_change_emitter) = shell_file_change_emitter.as_ref() {
+                    let event_ctx = ToolEventCtx::new(
+                        context.session.as_ref(),
+                        context.turn.as_ref(),
+                        &shell_file_change_call_id,
+                        Some(&tracker),
+                    );
+                    shell_file_change_emitter
+                        .emit(
+                            event_ctx,
+                            unified_exec_file_change_finish_stage(&exec_result),
+                        )
+                        .await;
+                }
+                match exec_result {
                     Ok(response) => response,
                     Err(UnifiedExecError::SandboxDenied { output, .. }) => {
-                        let output_text = output.aggregated_output.text;
-                        let original_token_count = approx_token_count(&output_text);
-                        ExecCommandToolOutput {
-                            event_call_id: context.call_id.clone(),
-                            chunk_id: generate_chunk_id(),
-                            wall_time: output.duration,
-                            raw_output: output_text.into_bytes(),
-                            max_output_tokens,
-                            // Sandbox denial is terminal, so there is no live
-                            // process for write_stdin to resume.
-                            process_id: None,
-                            exit_code: Some(output.exit_code),
-                            original_token_count: Some(original_token_count),
-                            hook_command: Some(hook_command),
-                        }
+                        let output_text = output.aggregated_output.text.trim().to_string();
+                        let detail = if output_text.is_empty() {
+                            format!("process exited with code {}", output.exit_code)
+                        } else {
+                            output_text
+                        };
+                        return Err(FunctionCallError::RespondToModel(format!(
+                            "exec_command was blocked by sandbox or network policy: {detail}"
+                        )));
                     }
                     Err(err) => {
                         return Err(FunctionCallError::RespondToModel(format!(

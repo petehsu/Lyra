@@ -11,7 +11,6 @@ import { AiPanelTopbarActions } from "./topbar-actions";
 import type { AiPanelSide, AiPanelSurfaceProps } from "./types";
 import type { AiPanelSurfaceRuntime } from "./use-ai-panel-surface-runtime";
 import type { WorkbenchLocale } from "../i18n";
-import { useState } from "react";
 
 const LOGO_URL = new URL("../../../renderer/assets/logo.svg", import.meta.url).toString();
 
@@ -50,9 +49,7 @@ export const AiPanelSurfaceView = ({
     composeSendLabel,
     emptyThreadLabel,
     loadingSessionLabel,
-    turnNoToolCallsLabel,
     turnWorkingLabel,
-    turnFailedLabel,
     turnWorkedForPrefix,
     toolStatusRunningLabel,
     toolStatusCompletedLabel,
@@ -64,8 +61,6 @@ export const AiPanelSurfaceView = ({
     onRequestProjectBind
   } = surfaceProps;
   const { state, viewModel, actions } = runtime;
-  const [isReviewPanelOpen, setIsReviewPanelOpen] = useState(false);
-  const [isReviewStarting, setIsReviewStarting] = useState(false);
 
   const topbarStart = (
     <AiPanelThreadTabs
@@ -74,11 +69,14 @@ export const AiPanelSurfaceView = ({
       newThreadLabel={newSessionTitle}
       closeThreadLabel={textLabels.closeThread}
       draftTitle={newSessionTitle}
+      tabProjectRootById={runtime.tabProjectRootById}
+      projectLogoByRoot={runtime.projectLogoByRoot}
       onActivateTab={actions.activateThreadTab}
       onCloseTab={actions.closeThreadTab}
       onCreateTab={() => {
         actions.createThread();
       }}
+      onReorderTab={actions.reorderThreadTab}
     />
   );
 
@@ -105,9 +103,7 @@ export const AiPanelSurfaceView = ({
       openSkillsLabel={openSkillsLabel}
       openPluginsLabel={surfaceProps.openPluginsLabel}
       openPermissionsLabel={textLabels.permissions}
-      onStartReview={state.activeThreadId === null ? undefined : () => {
-        setIsReviewPanelOpen(true);
-      }}
+      onStartReview={runtime.canOpenReviewChanges ? actions.openReviewPanel : undefined}
       reviewChangesLabel={textLabels.reviewChanges}
       aiPanelSide={aiPanelSide}
       onToggleAiPanelSide={onToggleAiPanelSide}
@@ -139,17 +135,17 @@ export const AiPanelSurfaceView = ({
             emptyThreadLabel={emptyThreadLabel}
             threadRef={runtime.threadViewportRef}
             threadStyle={EMPTY_THREAD_STYLE}
-            sortedMessages={viewModel.sortedMessages}
+            messageMetadata={runtime.messageMetadata}
+            virtualRows={runtime.virtualRows}
+            topSpacerHeight={runtime.topSpacerHeight}
+            bottomSpacerHeight={runtime.bottomSpacerHeight}
+            measureRow={runtime.measureThreadRow}
             turnsById={viewModel.turnsById}
-            toolCallsByTurn={viewModel.toolCallsByTurn}
             runtimeFeedByTurn={viewModel.runtimeFeedByTurn}
             turnTimelineByTurn={viewModel.turnTimelineByTurn}
             assistantMessageOrderById={viewModel.assistantMessageOrderById}
             turnWorkingLabel={turnWorkingLabel}
             turnWorkedForPrefix={turnWorkedForPrefix}
-            turnNoToolCallsLabel={turnNoToolCallsLabel}
-            turnFailedLabel={turnFailedLabel}
-            toolNameLabels={runtime.toolNameLabels}
             toolStatusRunningLabel={toolStatusRunningLabel}
             toolStatusCompletedLabel={toolStatusCompletedLabel}
             toolStatusFailedLabel={toolStatusFailedLabel}
@@ -160,8 +156,6 @@ export const AiPanelSurfaceView = ({
             streamingTurnRuntimeFeed={viewModel.streamingTurnRuntimeFeed}
             streamingStatus={viewModel.streamingStatus}
             orphanRuntimeFeed={viewModel.orphanRuntimeFeed}
-            runtimeError={state.runtimeError}
-            planByTurn={state.planByTurn}
             latestPlanTurnId={state.latestPlanTurnId}
             planActionsEnabled={!state.isSending && !state.isStreamActive}
             copyMessageLabel={textLabels.copyMessage}
@@ -176,6 +170,9 @@ export const AiPanelSurfaceView = ({
             onEditMessageTurn={actions.editMessageTurn}
             onPlanApprovalDecision={actions.planApprovalDecision}
             onOpenPlanApprovalInPanel={actions.setActiveInteractionId}
+            {...(runtime.openPlanApprovalInWorkspace === undefined
+              ? {}
+              : { onOpenPlanApprovalInWorkspace: runtime.openPlanApprovalInWorkspace })}
             onOpenThread={actions.openThreadTab}
           />
         </div>
@@ -187,13 +184,11 @@ export const AiPanelSurfaceView = ({
           activePendingInteraction={state.activePendingInteraction}
           pendingInteractionQueue={state.pendingInteractionQueue}
           activeInteractionPosition={state.activeInteractionPosition}
-          pendingInteractionsLabel={textLabels.pendingInteractions}
           navPreviousLabel={textLabels.navPrevious}
           navNextLabel={textLabels.navNext}
           onSelectInteractionId={actions.setActiveInteractionId}
           onCommandApprovalDecision={actions.respondToCommandApproval}
           onPlanQuestionSubmit={actions.respondToPlanQuestion}
-          onPlanApprovalDecision={actions.planApprovalDecision}
         />
 
         {runtime.isPermissionsPanelOpen ? (
@@ -206,22 +201,12 @@ export const AiPanelSurfaceView = ({
           />
         ) : null}
 
-        {isReviewPanelOpen ? (
+        {runtime.isReviewPanelOpen ? (
           <ReviewStartPanel
             locale={locale}
-            isStarting={isReviewStarting}
-            onClose={() => {
-              setIsReviewPanelOpen(false);
-            }}
-            onStart={async (target) => {
-              setIsReviewStarting(true);
-              try {
-                await actions.startReview(target);
-                setIsReviewPanelOpen(false);
-              } finally {
-                setIsReviewStarting(false);
-              }
-            }}
+            isStarting={runtime.isReviewStarting}
+            onClose={actions.closeReviewPanel}
+            onStart={actions.startReview}
           />
         ) : null}
 

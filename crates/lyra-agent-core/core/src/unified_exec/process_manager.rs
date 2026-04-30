@@ -25,6 +25,7 @@ use crate::tools::network_approval::finish_deferred_network_approval;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::runtimes::unified_exec::UnifiedExecRequest as UnifiedExecToolRequest;
 use crate::tools::runtimes::unified_exec::UnifiedExecRuntime;
+use crate::tools::sandboxing::ExecApprovalRequirement;
 use crate::tools::sandboxing::ToolCtx;
 use crate::tools::sandboxing::ToolError;
 use crate::unified_exec::ExecCommandRequest;
@@ -53,7 +54,12 @@ use crate::unified_exec::process::UnifiedExecProcess;
 use lyra_config::types::ShellEnvironmentPolicy;
 use lyra_protocol::error::LyraErr;
 use lyra_protocol::error::SandboxErr;
+use lyra_protocol::exec_output::ExecToolCallOutput;
+use lyra_protocol::models::SandboxPermissions;
+use lyra_protocol::protocol::AskForApproval;
 use lyra_protocol::protocol::ExecCommandSource;
+use lyra_protocol::protocol::NetworkPolicyRuleAction;
+use lyra_protocol::protocol::ReviewDecision;
 use lyra_utils_absolute_path::AbsolutePathBuf;
 use lyra_utils_output_truncation::approx_token_count;
 
@@ -164,6 +170,53 @@ fn exec_server_params_for_request(
     }
 }
 
+fn sandbox_retry_approval_allowed(policy: AskForApproval) -> bool {
+    match policy {
+        AskForApproval::Never => false,
+        AskForApproval::OnFailure | AskForApproval::OnRequest | AskForApproval::UnlessTrusted => {
+            true
+        }
+        AskForApproval::Granular(config) => config.allows_sandbox_approval(),
+    }
+}
+
+fn sandbox_retry_decision_approved(decision: &ReviewDecision) -> bool {
+    match decision {
+        ReviewDecision::Approved
+        | ReviewDecision::ApprovedExecpolicyAmendment { .. }
+        | ReviewDecision::ApprovedForSession => true,
+        ReviewDecision::NetworkPolicyAmendment {
+            network_policy_amendment,
+        } => matches!(
+            network_policy_amendment.action,
+            NetworkPolicyRuleAction::Allow
+        ),
+        ReviewDecision::Denied | ReviewDecision::TimedOut | ReviewDecision::Abort => false,
+    }
+}
+
+fn sandbox_retry_denial_message(output: &ExecToolCallOutput) -> String {
+    if output.aggregated_output.text.is_empty() {
+        let exit_code = output.exit_code;
+        format!("Process exited with code {exit_code}")
+    } else {
+        output.aggregated_output.text.clone()
+    }
+}
+
+fn sandbox_retry_approval_reason(output: &ExecToolCallOutput) -> String {
+    let text = output.aggregated_output.text.to_lowercase();
+    if text.contains("enotfound")
+        || text.contains("getaddrinfo")
+        || text.contains("could not resolve host")
+        || text.contains("couldn't resolve host")
+        || text.contains("network")
+    {
+        return "Network access appears blocked by the sandbox; retry without sandbox?".to_string();
+    }
+    "Command failed because sandbox policy blocked it; retry without sandbox?".to_string()
+}
+
 /// Borrowed process state prepared for a `write_stdin` or poll operation.
 struct PreparedProcessHandles {
     process: Arc<UnifiedExecProcess>,
@@ -230,6 +283,66 @@ impl UnifiedExecProcessManager {
                 .unregister_call(network_approval_id)
                 .await;
         }
+    }
+
+    async fn prepare_retry_without_sandbox_after_denial(
+        &self,
+        request: &ExecCommandRequest,
+        context: &UnifiedExecContext,
+        cwd: AbsolutePathBuf,
+        output: ExecToolCallOutput,
+    ) -> Result<ExecCommandRequest, UnifiedExecError> {
+        if request.sandbox_retry_attempt
+            || !sandbox_retry_approval_allowed(context.turn.approval_policy.value())
+        {
+            let message = sandbox_retry_denial_message(&output);
+            return Err(UnifiedExecError::sandbox_denied(message, output));
+        }
+
+        let decision = context
+            .session
+            .request_command_approval(
+                context.turn.as_ref(),
+                format!("{}:retry", context.call_id),
+                /*approval_id*/ None,
+                request.command.clone(),
+                cwd.clone(),
+                Some(sandbox_retry_approval_reason(&output)),
+                /*network_approval_context*/ None,
+                /*proposed_execpolicy_amendment*/ None,
+                /*additional_permissions*/ None,
+                /*available_decisions*/ None,
+            )
+            .await;
+
+        if !sandbox_retry_decision_approved(&decision) {
+            return Err(UnifiedExecError::create_process(
+                "sandbox retry rejected by user".to_string(),
+            ));
+        }
+
+        Ok(ExecCommandRequest {
+            command: request.command.clone(),
+            hook_command: request.hook_command.clone(),
+            process_id: self.allocate_process_id().await,
+            yield_time_ms: request.yield_time_ms,
+            max_output_tokens: request.max_output_tokens,
+            workdir: Some(cwd),
+            network: request.network.clone(),
+            tty: request.tty,
+            sandbox_permissions: SandboxPermissions::RequireEscalated,
+            additional_permissions: None,
+            additional_permissions_preapproved: false,
+            justification: Some(
+                "Retrying without sandbox after sandbox or network policy denial.".to_string(),
+            ),
+            prefix_rule: request.prefix_rule.clone(),
+            sandbox_retry_attempt: true,
+            exec_approval_requirement_override: Some(ExecApprovalRequirement::Skip {
+                bypass_sandbox: true,
+                proposed_execpolicy_amendment: None,
+            }),
+        })
     }
 
     pub(crate) async fn exec_command(
@@ -356,7 +469,26 @@ impl UnifiedExecProcessManager {
                     ..
                 } => (Some(process_id), exit_code),
                 ProcessStatus::Exited { exit_code, .. } => {
-                    process.check_for_sandbox_denial_with_text(&text).await?;
+                    match process.check_for_sandbox_denial_with_text(&text).await {
+                        Ok(()) => {}
+                        Err(UnifiedExecError::SandboxDenied { output, .. }) => {
+                            finish_deferred_network_approval(
+                                context.session.as_ref(),
+                                deferred_network_approval.take(),
+                            )
+                            .await;
+                            let retry_request = self
+                                .prepare_retry_without_sandbox_after_denial(
+                                    &request,
+                                    context,
+                                    cwd.clone(),
+                                    output,
+                                )
+                                .await?;
+                            return Box::pin(self.exec_command(retry_request, context)).await;
+                        }
+                        Err(err) => return Err(err),
+                    }
                     (None, exit_code)
                 }
                 ProcessStatus::Unknown => {
@@ -389,7 +521,21 @@ impl UnifiedExecProcessManager {
                 deferred_network_approval.take(),
             )
             .await;
-            process.check_for_sandbox_denial_with_text(&text).await?;
+            match process.check_for_sandbox_denial_with_text(&text).await {
+                Ok(()) => {}
+                Err(UnifiedExecError::SandboxDenied { output, .. }) => {
+                    let retry_request = self
+                        .prepare_retry_without_sandbox_after_denial(
+                            &request,
+                            context,
+                            cwd.clone(),
+                            output,
+                        )
+                        .await?;
+                    return Box::pin(self.exec_command(retry_request, context)).await;
+                }
+                Err(err) => return Err(err),
+            }
             (None, exit_code)
         };
 
@@ -738,23 +884,28 @@ impl UnifiedExecProcessManager {
             self,
             context.turn.tools_config.unified_exec_shell_mode.clone(),
         );
-        let exec_approval_requirement = context
-            .session
-            .services
-            .exec_policy
-            .create_exec_approval_requirement_for_command(ExecApprovalRequest {
-                command: &request.command,
-                approval_policy: context.turn.approval_policy.value(),
-                sandbox_policy: context.turn.sandbox_policy.get(),
-                file_system_sandbox_policy: &context.turn.file_system_sandbox_policy,
-                sandbox_permissions: if request.additional_permissions_preapproved {
-                    crate::sandboxing::SandboxPermissions::UseDefault
-                } else {
-                    request.sandbox_permissions
-                },
-                prefix_rule: request.prefix_rule.clone(),
-            })
-            .await;
+        let exec_approval_requirement =
+            if let Some(requirement) = request.exec_approval_requirement_override.clone() {
+                requirement
+            } else {
+                context
+                    .session
+                    .services
+                    .exec_policy
+                    .create_exec_approval_requirement_for_command(ExecApprovalRequest {
+                        command: &request.command,
+                        approval_policy: context.turn.approval_policy.value(),
+                        sandbox_policy: context.turn.sandbox_policy.get(),
+                        file_system_sandbox_policy: &context.turn.file_system_sandbox_policy,
+                        sandbox_permissions: if request.additional_permissions_preapproved {
+                            crate::sandboxing::SandboxPermissions::UseDefault
+                        } else {
+                            request.sandbox_permissions
+                        },
+                        prefix_rule: request.prefix_rule.clone(),
+                    })
+                    .await
+            };
         let req = UnifiedExecToolRequest {
             command: request.command.clone(),
             hook_command: request.hook_command.clone(),

@@ -37,6 +37,16 @@ type AiPanelTopbarActionsProps = {
   readonly moreActionsLabel?: string | undefined;
 };
 
+const projectNameFromPath = (value: string | null): string | null => {
+  const trimmed = value?.trim() ?? "";
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const withoutTrailingSeparator = trimmed.replace(/[\\/]+$/u, "");
+  const parts = withoutTrailingSeparator.split(/[\\/]/u).filter((part) => part.length > 0);
+  return parts.at(-1) ?? withoutTrailingSeparator;
+};
+
 export const AiPanelTopbarActions = ({
   onRequestProjectBind,
   activeBoundProjectName,
@@ -73,6 +83,7 @@ export const AiPanelTopbarActions = ({
   const movePanelLabel =
     aiPanelSide === "left" ? movePanelToRightLabel : movePanelToLeftLabel;
   const MovePanelIcon = aiPanelSide === "left" ? PanelRightOpen : PanelLeftOpen;
+  const activeProjectName = projectNameFromPath(activeBoundProjectName);
 
   useEffect(() => {
     if (!isMoreOpen) {
@@ -93,21 +104,34 @@ export const AiPanelTopbarActions = ({
   return (
     <div className="lyra-ai-panel-topbar-actions">
       {onRequestProjectBind === undefined ? null : (
-        <ChromeIconButton
-          className={cx(
-            "lyra-ai-panel-topbar-action",
-            activeBoundProjectName !== null && "lyra-ai-panel-topbar-action-active",
-            isBindingProject && "lyra-ai-panel-topbar-action-pending"
-          )}
-          disabled={isBindingProject || !isAgentAvailable}
-          aria-label={bindProjectLabel}
-          title={activeBoundProjectName === null
-            ? bindProjectLabel
-            : `${bindProjectLabel}: ${activeBoundProjectName}`}
-          onClick={onRequestProjectBind}
-        >
-          <FolderOpen size={14} aria-hidden="true" />
-        </ChromeIconButton>
+        activeProjectName === null ? (
+          <ChromeIconButton
+            className={cx(
+              "lyra-ai-panel-topbar-action",
+              isBindingProject && "lyra-ai-panel-topbar-action-pending"
+            )}
+            disabled={isBindingProject || !isAgentAvailable}
+            aria-label={bindProjectLabel}
+            title={bindProjectLabel}
+            onClick={onRequestProjectBind}
+          >
+            <FolderOpen size={14} aria-hidden="true" />
+          </ChromeIconButton>
+        ) : (
+          <ChromeIconButton
+            className={cx(
+              "lyra-ai-panel-project-bind lyra-ai-panel-project-bind-active",
+              isBindingProject && "lyra-ai-panel-project-bind-pending"
+            )}
+            disabled={isBindingProject || !isAgentAvailable}
+            aria-label={bindProjectLabel}
+            title={`${bindProjectLabel}: ${activeBoundProjectName ?? activeProjectName}`}
+            onClick={onRequestProjectBind}
+          >
+            <FolderOpen size={13} aria-hidden="true" />
+            <span>{activeProjectName}</span>
+          </ChromeIconButton>
+        )
       )}
       {onOpenHistory === undefined || openHistoryLabel === undefined ? null : (
         <ChromeIconButton

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import type { LyraRuntimeEvent } from "../../../../shared/desktop-bridge";
+import type { CapabilityRuntimeEvent, LyraRuntimeEvent } from "../../../../shared/desktop-bridge";
 import { resetWorkbenchStateStorageForTests } from "../../state-storage";
 import { useLyraThreadRuntime } from "../use-lyra-thread-runtime";
 
@@ -27,6 +27,7 @@ const turnInput = (
 
 const makeDesktopApi = () => {
   let listener: ((event: LyraRuntimeEvent) => void) | null = null;
+  let capabilityListener: ((event: CapabilityRuntimeEvent) => void) | null = null;
   const request = vi.fn(async (payload: { method?: unknown; params?: Record<string, unknown> }) => {
     if (payload.method === "thread/list") {
       return { data: [] };
@@ -56,6 +57,19 @@ const makeDesktopApi = () => {
     }
     if (payload.method === "turn/steer") {
       return { turnId: "turn-1" };
+    }
+    if (payload.method === "turn/planApproval/resolve") {
+      if (payload.params?.decision === "reject") {
+        return { turn: null };
+      }
+      return {
+        turn: {
+          id: payload.params?.decision === "keep_planning" ? "turn-replan" : "turn-implement",
+          status: "inProgress",
+          items: [],
+          startedAt: 131,
+        },
+      };
     }
     if (payload.method === "thread/fork") {
       return {
@@ -149,9 +163,20 @@ const makeDesktopApi = () => {
           };
         },
       },
+      capabilities: {
+        onEvent: (nextListener: (event: CapabilityRuntimeEvent) => void) => {
+          capabilityListener = nextListener;
+          return () => {
+            capabilityListener = null;
+          };
+        },
+      },
     },
     emit: (event: LyraRuntimeEvent) => {
       listener?.(event);
+    },
+    emitCapability: (event: CapabilityRuntimeEvent) => {
+      capabilityListener?.(event);
     },
     request,
   };
@@ -272,7 +297,7 @@ describe("useLyraThreadRuntime", () => {
     expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "turn/start" }));
     expect(result.current.state.streamingTurnId).toBe("turn-1");
 
-    act(() => {
+    await act(async () => {
       desktop.emit({
         kind: "notification",
         notification: {
@@ -285,11 +310,14 @@ describe("useLyraThreadRuntime", () => {
           },
         },
       });
+      await Promise.resolve();
     });
 
-    expect(result.current.state.streamingAssistantText).toBe("Hi");
+    await waitFor(() => {
+      expect(result.current.state.streamingAssistantText).toBe("Hi");
+    });
 
-    act(() => {
+    await act(async () => {
       desktop.emit({
         kind: "notification",
         notification: {
@@ -305,6 +333,7 @@ describe("useLyraThreadRuntime", () => {
           },
         },
       });
+      await Promise.resolve();
     });
 
     await waitFor(() => {
@@ -312,7 +341,7 @@ describe("useLyraThreadRuntime", () => {
       expect(result.current.state.activeDetail?.messages.at(-1)?.content).toBe("Hi");
     });
 
-    act(() => {
+    await act(async () => {
       desktop.emit({
         kind: "notification",
         notification: {
@@ -323,6 +352,7 @@ describe("useLyraThreadRuntime", () => {
           },
         },
       });
+      await Promise.resolve();
     });
 
     await waitFor(() => {
@@ -818,7 +848,7 @@ describe("useLyraThreadRuntime", () => {
       });
     });
 
-    act(() => {
+    await act(async () => {
       desktop.emit({
         kind: "notification",
         notification: {
@@ -846,6 +876,7 @@ describe("useLyraThreadRuntime", () => {
           },
         },
       });
+      await Promise.resolve();
     });
 
     expect(result.current.state.planByTurn["turn-plan"]?.draftText).toBe("- inspect\n");
@@ -854,6 +885,379 @@ describe("useLyraThreadRuntime", () => {
       "inProgress",
     ]);
     expect(result.current.state.latestPlanTurnId).toBe("turn-plan");
+  });
+
+  test("promotes a waiting plan draft to a submitted plan when completion arrives first", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Plan"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    await act(async () => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/plan/delta",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-plan",
+            itemId: "plan-1",
+            delta: "# Website plan\n\n- Inspect the app",
+          },
+        },
+      });
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "turn/completed",
+          params: {
+            threadId: "thread-1",
+            turn: {
+              id: "turn-plan",
+              status: "waiting",
+            },
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.planByTurn["turn-plan"]?.finalText).toBe("# Website plan\n\n- Inspect the app");
+    expect(result.current.state.latestRuntimeEventByTurn["turn-plan"]?.phase).toBe("plan_approval_requested");
+    expect(result.current.state.streamingTurnId).toBe("turn-plan");
+  });
+
+  test("does not treat checklist-only update_plan state as latest Plan Mode proposal", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Track"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    await act(async () => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "turn/plan/updated",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-checklist",
+            explanation: "tracking",
+            plan: [{ step: "inspect", status: "completed" }],
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.planByTurn["turn-checklist"]?.steps.map((step) => step.step)).toEqual([
+      "inspect",
+    ]);
+    expect(result.current.state.latestPlanTurnId).toBeNull();
+  });
+
+  test("keeps completed plan turns waiting for approval instead of completed", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Plan"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    await act(async () => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/completed",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-plan",
+            item: {
+              type: "plan",
+              id: "plan-1",
+              text: "# Website plan\n\n- Inspect the app\n- Implement the page",
+            },
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.planByTurn["turn-plan"]?.finalText).toContain("Website plan");
+    expect(result.current.state.latestRuntimeEventByTurn["turn-plan"]?.phase).toBe("plan_approval_requested");
+    expect(result.current.state.streamingTurnId).toBe("turn-plan");
+    expect(result.current.state.isStreamActive).toBe(false);
+    expect(result.current.state.pendingInteractionQueue[0]?.kind).toBe("planApproval");
+    expect(result.current.state.activeInteractionPanel?.kind).toBe("planApproval");
+
+    await act(async () => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "turn/completed",
+          params: {
+            threadId: "thread-1",
+            turn: {
+              id: "turn-plan",
+              status: "completed",
+            },
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.latestRuntimeEventByTurn["turn-plan"]?.phase).toBe("plan_approval_requested");
+    expect(result.current.state.streamingTurnId).toBe("turn-plan");
+  });
+
+  test("resolves plan approval through the internal request without an optimistic user message", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Plan"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    await act(async () => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/completed",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-plan",
+            item: {
+              type: "plan",
+              id: "plan-1",
+              text: "# Website plan\n\n- Inspect the app",
+            },
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    const turnStartCountBeforeApproval = desktop.request.mock.calls
+      .filter(([payload]) => payload.method === "turn/start")
+      .length;
+
+    await act(async () => {
+      await result.current.actions.resolvePlanApproval({
+        threadId: "thread-1",
+        planTurnId: "turn-plan",
+        requestId: "plan:turn-plan",
+        decision: "approve_and_implement",
+        proposedMarkdown: "# Website plan\n\n- Inspect the app",
+      });
+    });
+
+    expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: "turn/planApproval/resolve",
+      params: {
+        threadId: "thread-1",
+        planTurnId: "turn-plan",
+        requestId: "plan:turn-plan",
+        decision: "approve_and_implement",
+        proposedMarkdown: "# Website plan\n\n- Inspect the app",
+      },
+    }));
+    expect(desktop.request.mock.calls.filter(([payload]) => payload.method === "turn/start")).toHaveLength(
+      turnStartCountBeforeApproval
+    );
+    expect(
+      result.current.state.optimisticUserMessages.some((message) => message.content.includes("Website plan"))
+    ).toBe(false);
+    expect(result.current.state.latestRuntimeEventByTurn["turn-plan"]?.phase).toBe("plan_approved");
+    expect(result.current.state.streamingTurnId).toBe("turn-implement");
+  });
+
+  test("keep planning and reject clear plan approval waiting through internal state", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Plan"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    await act(async () => {
+      await result.current.actions.resolvePlanApproval({
+        threadId: "thread-1",
+        planTurnId: "turn-plan",
+        requestId: "plan:turn-plan",
+        decision: "keep_planning",
+        feedback: "add tests",
+        proposedMarkdown: "# Plan",
+      });
+    });
+
+    expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: "turn/planApproval/resolve",
+      params: expect.objectContaining({
+        decision: "keep_planning",
+        feedback: "add tests",
+      }),
+    }));
+    expect(result.current.state.latestRuntimeEventByTurn["turn-plan"]?.phase).toBe("plan_revision_requested");
+    expect(result.current.state.streamingTurnId).toBe("turn-replan");
+
+    await act(async () => {
+      await result.current.actions.resolvePlanApproval({
+        threadId: "thread-1",
+        planTurnId: "turn-plan",
+        requestId: "plan:turn-plan",
+        decision: "reject",
+      });
+    });
+
+    expect(result.current.state.latestRuntimeEventByTurn["turn-plan"]?.phase).toBe("plan_rejected");
+    expect(result.current.state.streamingTurnId).toBeNull();
+    expect(result.current.state.isStreamActive).toBe(false);
+  });
+
+  test("accepts a revised plan for approval after keep-planning feedback", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Plan"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    await act(async () => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/completed",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-plan",
+            item: {
+              type: "plan",
+              id: "plan-1",
+              text: "# Website plan\n\n- Inspect the app",
+            },
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.actions.resolvePlanApproval({
+        threadId: "thread-1",
+        planTurnId: "turn-plan",
+        requestId: "plan:turn-plan",
+        decision: "keep_planning",
+        feedback: "add a CSS step",
+        proposedMarkdown: "# Website plan\n\n- Inspect the app",
+      });
+    });
+
+    expect(result.current.state.pendingInteractionQueue).toHaveLength(0);
+
+    await act(async () => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/completed",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-replan",
+            item: {
+              type: "plan",
+              id: "plan-2",
+              text: "# Revised website plan\n\n- Inspect\n- Add CSS",
+            },
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.latestPlanTurnId).toBe("turn-replan");
+    expect(result.current.state.pendingInteractionQueue[0]?.kind).toBe("planApproval");
+    expect(result.current.state.pendingInteractionQueue[0]?.request.id).toBe("plan:turn-replan");
   });
 
   test("exposes steer, fork, rollback, and review runtime actions", async () => {
@@ -880,7 +1284,7 @@ describe("useLyraThreadRuntime", () => {
     await act(async () => {
       await result.current.actions.steerTurn(turnInput("focus on tests"));
       await result.current.actions.cleanBackgroundTerminals();
-      await result.current.actions.startReview({ type: "uncommittedChanges" });
+      await result.current.actions.startReview({ type: "uncommittedChanges" }, { cwd: "/repo" });
     });
 
     expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
@@ -901,6 +1305,7 @@ describe("useLyraThreadRuntime", () => {
       params: expect.objectContaining({
         threadId: "thread-1",
         target: { type: "uncommittedChanges" },
+        cwd: "/repo",
         delivery: "inline",
       }),
     }));
@@ -1188,6 +1593,486 @@ describe("useLyraThreadRuntime", () => {
     });
   });
 
+  test("applies follow state synchronously when a tool event arrives in the same tick", async () => {
+    const desktop = makeDesktopApi();
+    const onFollowOpenFilePath = vi.fn();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onFollowOpenFilePath,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "thread/list" })
+      );
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    act(() => {
+      result.current.actions.setFollowEnabled(true);
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/started",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item: {
+              type: "dynamicToolCall",
+              id: "read-1",
+              tool: "filesystem.read_range",
+              status: "inProgress",
+              arguments: {
+                path: "/repo/src/main.ts",
+                startLine: 12,
+              },
+            },
+          },
+        },
+      });
+    });
+
+    expect(onFollowOpenFilePath).toHaveBeenCalledWith("/repo/src/main.ts", {
+      allowMissing: true,
+      forceReloadIfOpen: false,
+      location: { line: 12 },
+    });
+  });
+
+  test("emits write stream events for file changes without follow and ignores reads", async () => {
+    const desktop = makeDesktopApi();
+    const onFollowOpenFilePath = vi.fn();
+    const onWriteStreamEvent = vi.fn();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onFollowOpenFilePath,
+        onWriteStreamEvent,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "thread/list" })
+      );
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    act(() => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/started",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item: {
+              type: "fileChange",
+              id: "patch-1",
+              status: "inProgress",
+              changes: [{
+                path: "/repo/src/main.ts",
+                kind: { type: "update", move_path: null },
+                diff: "@@ -2,1 +3,2 @@\n-old\n+new\n+line\n",
+              }],
+            },
+          },
+        },
+      });
+    });
+
+    expect(onWriteStreamEvent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "started",
+      sessionId: "thread-1",
+      turnId: "turn-1",
+      toolCallId: "patch-1",
+      toolName: "filesystem.write",
+      filePath: "/repo/src/main.ts",
+      created: false,
+    }));
+    expect(onFollowOpenFilePath).not.toHaveBeenCalled();
+
+    act(() => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/completed",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item: {
+              type: "fileChange",
+              id: "patch-1",
+              status: "completed",
+              changes: [{
+                path: "/repo/src/main.ts",
+                kind: { type: "update", move_path: null },
+                diff: "@@ -2,1 +3,2 @@\n-old\n+new\n+line\n",
+              }],
+            },
+          },
+        },
+      });
+    });
+
+    expect(onWriteStreamEvent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "finished",
+      toolCallId: "patch-1",
+      status: "completed",
+      filePath: "/repo/src/main.ts",
+      firstChangedLine: 3,
+      created: false,
+    }));
+
+    const writeEventCount = onWriteStreamEvent.mock.calls.length;
+    act(() => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/started",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item: {
+              type: "dynamicToolCall",
+              id: "read-1",
+              tool: "filesystem.read_range",
+              status: "inProgress",
+              arguments: {
+                path: "/repo/src/main.ts",
+                startLine: 12,
+              },
+            },
+          },
+        },
+      });
+    });
+    expect(onWriteStreamEvent).toHaveBeenCalledTimes(writeEventCount);
+  });
+
+  test("opens files from turn diff updates before file change completion", async () => {
+    const desktop = makeDesktopApi();
+    const onFollowOpenFilePath = vi.fn();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onFollowOpenFilePath,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "thread/list" })
+      );
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    const diff = [
+      "diff --git a/src/main.ts b/src/main.ts",
+      "--- a/src/main.ts",
+      "+++ b/src/main.ts",
+      "@@ -4,1 +5,2 @@",
+      "-old",
+      "+new",
+      "+line",
+      "",
+    ].join("\n");
+
+    act(() => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "turn/diff/updated",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            diff,
+          },
+        },
+      });
+    });
+
+    expect(onFollowOpenFilePath).toHaveBeenCalledWith("/repo/src/main.ts", {
+      allowMissing: true,
+      forceReloadIfOpen: false,
+      location: { line: 5 },
+    });
+
+    act(() => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "turn/diff/updated",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            diff,
+          },
+        },
+      });
+    });
+    expect(onFollowOpenFilePath).toHaveBeenCalledTimes(1);
+  });
+
+  test("opens files from legacy apply patch approval requests", async () => {
+    const desktop = makeDesktopApi();
+    const onFollowOpenFilePath = vi.fn();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onFollowOpenFilePath,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "thread/list" })
+      );
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    act(() => {
+      desktop.emit({
+        kind: "request",
+        request: {
+          id: "approval-1",
+          method: "applyPatchApproval",
+          params: {
+            conversationId: "thread-1",
+            callId: "patch-legacy-1",
+            reason: null,
+            grantRoot: null,
+            fileChanges: {
+              "src/legacy.ts": {
+                type: "update",
+                unified_diff: "@@ -1,1 +2,1 @@\n-old\n+new\n",
+                move_path: null,
+              },
+            },
+          },
+        },
+      });
+    });
+
+    expect(onFollowOpenFilePath).toHaveBeenCalledWith("/repo/src/legacy.ts", {
+      allowMissing: true,
+      forceReloadIfOpen: false,
+      location: { line: 2 },
+    });
+  });
+
+  test("ignores dev null targets from legacy apply patch approval requests", async () => {
+    const desktop = makeDesktopApi();
+    const onFollowOpenFilePath = vi.fn();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onFollowOpenFilePath,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "thread/list" })
+      );
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    act(() => {
+      desktop.emit({
+        kind: "request",
+        request: {
+          id: "approval-1",
+          method: "applyPatchApproval",
+          params: {
+            conversationId: "thread-1",
+            fileChanges: {
+              "/dev/null;": {
+                type: "add",
+                unified_diff: "",
+              },
+            },
+          },
+        },
+      });
+    });
+
+    expect(onFollowOpenFilePath).not.toHaveBeenCalled();
+  });
+
+  test("emits write stream events for filesystem capability approvals and completions", async () => {
+    const desktop = makeDesktopApi();
+    const onWriteStreamEvent = vi.fn();
+    renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onWriteStreamEvent,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "thread/list" })
+      );
+    });
+
+    act(() => {
+      desktop.emitCapability({
+        eventId: "event-1",
+        callId: "cap-1",
+        capabilityId: "filesystem.apply_patch",
+        phase: "approval_requested",
+        timestamp: "2026-04-28T00:00:01.000Z",
+        payload: {
+          approvalId: "approval-1",
+          callId: "cap-1",
+          capabilityId: "filesystem.apply_patch",
+          title: "Apply Patch",
+          description: "Preview patch",
+          risk: "write",
+          requestedAt: "2026-04-28T00:00:01.000Z",
+          preview: {
+            kind: "file-edit",
+            filePath: "/repo/src/main.ts",
+            baselineContent: "before\n",
+            firstChangedLine: 7,
+            addedLines: 2,
+            removedLines: 1,
+          },
+          context: {
+            aiSessionId: "thread-1",
+            aiTurnId: "turn-1",
+          },
+        },
+      });
+    });
+
+    expect(onWriteStreamEvent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "started",
+      sessionId: "thread-1",
+      turnId: "turn-1",
+      toolCallId: "cap-1",
+      toolName: "filesystem.apply_patch",
+      filePath: "/repo/src/main.ts",
+      baselineContent: "before\n",
+    }));
+
+    act(() => {
+      desktop.emitCapability({
+        eventId: "event-2",
+        callId: "cap-1",
+        capabilityId: "filesystem.apply_patch",
+        phase: "completed",
+        timestamp: "2026-04-28T00:00:02.000Z",
+        payload: {
+          ok: true,
+          path: "/repo/src/main.ts",
+          firstChangedLine: 8,
+          addedLines: 3,
+          removedLines: 1,
+        },
+      });
+    });
+
+    expect(onWriteStreamEvent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "finished",
+      sessionId: "thread-1",
+      turnId: "turn-1",
+      toolCallId: "cap-1",
+      status: "completed",
+      filePath: "/repo/src/main.ts",
+      baselineContent: "before\n",
+      firstChangedLine: 8,
+      addedLines: 3,
+      removedLines: 1,
+    }));
+
+    const writeEventCount = onWriteStreamEvent.mock.calls.length;
+    act(() => {
+      desktop.emitCapability({
+        eventId: "event-3",
+        callId: "cap-2",
+        capabilityId: "filesystem.search",
+        phase: "completed",
+        timestamp: "2026-04-28T00:00:03.000Z",
+        payload: { ok: true },
+      });
+    });
+    expect(onWriteStreamEvent).toHaveBeenCalledTimes(writeEventCount);
+  });
+
+  test("ignores dev null targets from filesystem capability events", async () => {
+    const desktop = makeDesktopApi();
+    const onWriteStreamEvent = vi.fn();
+    renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onWriteStreamEvent,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "thread/list" })
+      );
+    });
+
+    act(() => {
+      desktop.emitCapability({
+        eventId: "event-dev-null",
+        callId: "cap-dev-null",
+        capabilityId: "filesystem.apply_patch",
+        phase: "completed",
+        timestamp: "2026-04-28T00:00:02.000Z",
+        payload: {
+          ok: true,
+          path: "/dev/null;",
+        },
+      });
+    });
+
+    expect(onWriteStreamEvent).not.toHaveBeenCalled();
+  });
+
   test("aggregates command output and terminal interaction notifications", async () => {
     const desktop = makeDesktopApi();
     const { result } = renderHook(() =>
@@ -1239,18 +2124,20 @@ describe("useLyraThreadRuntime", () => {
       });
     });
 
-    const call = result.current.state.liveToolCalls.find((entry) => entry.id === "cmd-1");
-    expect(call).toMatchObject({
-      toolName: "terminal.exec",
-      status: "running",
-      output: {
-        liveOutput: "ok\ny\n",
-        processId: "proc-1",
-      },
+    await waitFor(() => {
+      const call = result.current.state.liveToolCalls.find((entry) => entry.id === "cmd-1");
+      expect(call).toMatchObject({
+        toolName: "terminal.exec",
+        status: "running",
+        output: {
+          liveOutput: "ok\ny\n",
+          processId: "proc-1",
+        },
+      });
+      expect((call?.output as any).terminalChunks).toEqual([
+        expect.objectContaining({ stream: "stdout", text: "ok\n" }),
+        expect.objectContaining({ stream: "stdin", text: "y\n" }),
+      ]);
     });
-    expect((call?.output as any).terminalChunks).toEqual([
-      expect.objectContaining({ stream: "stdout", text: "ok\n" }),
-      expect.objectContaining({ stream: "stdin", text: "y\n" }),
-    ]);
   });
 });

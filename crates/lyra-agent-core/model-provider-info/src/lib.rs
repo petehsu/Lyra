@@ -20,6 +20,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json;
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::env;
 use std::fmt;
@@ -142,6 +143,48 @@ pub struct ModelProviderInfo {
     /// Whether this provider supports the Responses API WebSocket transport.
     #[serde(default)]
     pub supports_websockets: bool,
+    /// Optional provider protocol behavior overrides for OpenAI-compatible or
+    /// native provider adapters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_behavior: Option<ProviderProtocolBehaviorConfig>,
+}
+
+/// User-configurable protocol behavior override for custom providers.
+///
+/// Built-in Lyra profile providers use compiled provider baselines and only
+/// need this for custom OpenAI-compatible endpoints that expose non-standard
+/// reasoning replay fields or request parameters.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ProviderProtocolBehaviorConfig {
+    /// Provider-specific reasoning field to replay on assistant messages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_replay_field: Option<String>,
+    /// Preserve and replay empty reasoning strings. Required by DeepSeek
+    /// thinking/tool loops.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserve_empty_reasoning: Option<bool>,
+    /// Insert an empty reasoning field on assistant messages when no replay
+    /// artifact is available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub require_assistant_reasoning: Option<bool>,
+    /// Extra request parameters to merge into the provider payload.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub request_params: HashMap<String, JsonValue>,
+    /// Request parameters that must not be sent to this provider.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unsupported_params: Vec<String>,
+    /// Force streaming on or off for adapters that support both paths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream: Option<bool>,
+    /// Send a stable prompt cache key when the provider supports OpenAI-compatible
+    /// prompt caching.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_key: Option<bool>,
+    /// Set to false for models/providers where Lyra's tool loop is known to be
+    /// incompatible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_loop_supported: Option<bool>,
 }
 
 fn canonical_base_url_account(base_url: &str) -> Option<String> {
@@ -374,6 +417,7 @@ impl ModelProviderInfo {
             websocket_connect_timeout_ms: None,
             requires_managed_auth: false,
             supports_websockets: true,
+            protocol_behavior: None,
         }
     }
 
@@ -458,6 +502,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         websocket_connect_timeout_ms: None,
         requires_managed_auth: false,
         supports_websockets: false,
+        protocol_behavior: None,
     }
 }
 

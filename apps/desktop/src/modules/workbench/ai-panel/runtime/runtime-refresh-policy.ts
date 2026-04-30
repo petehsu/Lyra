@@ -13,6 +13,7 @@ const shouldRefreshSessionDetail = (phase: string): boolean =>
   || phase === "plan_draft_updated"
   || phase === "plan_question_answered"
   || phase === "plan_approved"
+  || phase === "plan_revision_requested"
   || phase === "plan_rejected"
   || phase === "plan_mode_exited"
   || phase === "memory_trimmed"

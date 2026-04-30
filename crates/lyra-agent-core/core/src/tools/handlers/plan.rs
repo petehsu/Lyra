@@ -6,12 +6,8 @@ use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
-use lyra_protocol::config_types::ModeKind;
-use lyra_protocol::items::PlanItem;
-use lyra_protocol::items::TurnItem;
 use lyra_protocol::models::FunctionCallOutputPayload;
 use lyra_protocol::models::ResponseInputItem;
-use lyra_protocol::plan_tool::StepStatus;
 use lyra_protocol::plan_tool::UpdatePlanArgs;
 use lyra_protocol::protocol::EventMsg;
 use serde_json::Value as JsonValue;
@@ -87,9 +83,6 @@ pub(crate) async fn handle_update_plan(
     _call_id: String,
 ) -> Result<String, FunctionCallError> {
     let args = parse_update_plan_arguments(&arguments)?;
-    if turn_context.collaboration_mode.mode == ModeKind::Plan {
-        emit_plan_mode_plan_item(session, turn_context, &args).await;
-    }
     session
         .send_event(turn_context, EventMsg::PlanUpdate(args))
         .await;
@@ -100,81 +93,4 @@ fn parse_update_plan_arguments(arguments: &str) -> Result<UpdatePlanArgs, Functi
     serde_json::from_str::<UpdatePlanArgs>(arguments).map_err(|e| {
         FunctionCallError::RespondToModel(format!("failed to parse function arguments: {e}"))
     })
-}
-
-async fn emit_plan_mode_plan_item(
-    session: &Session,
-    turn_context: &TurnContext,
-    args: &UpdatePlanArgs,
-) {
-    let text = render_plan_markdown(args);
-    if text.trim().is_empty() {
-        return;
-    }
-    let item = TurnItem::Plan(PlanItem {
-        id: format!("{}-update-plan", turn_context.sub_id),
-        text,
-    });
-    session.emit_turn_item_started(turn_context, &item).await;
-    session.emit_turn_item_completed(turn_context, item).await;
-}
-
-fn render_plan_markdown(args: &UpdatePlanArgs) -> String {
-    let mut lines = Vec::new();
-    if let Some(explanation) = args
-        .explanation
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        lines.push(explanation.to_string());
-        if !args.plan.is_empty() {
-            lines.push(String::new());
-        }
-    }
-    for item in &args.plan {
-        let step = item.step.trim();
-        if step.is_empty() {
-            continue;
-        }
-        let marker = match item.status {
-            StepStatus::Completed => "x",
-            StepStatus::InProgress => "~",
-            StepStatus::Pending => " ",
-        };
-        lines.push(format!("- [{marker}] {step}"));
-    }
-    lines.join("\n")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use lyra_protocol::plan_tool::PlanItemArg;
-
-    #[test]
-    fn render_plan_markdown_preserves_explanation_and_statuses() {
-        let args = UpdatePlanArgs {
-            explanation: Some("Build a focused landing page.".to_string()),
-            plan: vec![
-                PlanItemArg {
-                    step: "Inspect workspace".to_string(),
-                    status: StepStatus::Completed,
-                },
-                PlanItemArg {
-                    step: "Create React structure".to_string(),
-                    status: StepStatus::InProgress,
-                },
-                PlanItemArg {
-                    step: "Polish responsive styling".to_string(),
-                    status: StepStatus::Pending,
-                },
-            ],
-        };
-
-        assert_eq!(
-            render_plan_markdown(&args),
-            "Build a focused landing page.\n\n- [x] Inspect workspace\n- [~] Create React structure\n- [ ] Polish responsive styling"
-        );
-    }
 }

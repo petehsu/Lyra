@@ -9,8 +9,10 @@ Lyra desktop keeps a single source of truth for system-facing capabilities:
 - Native-owned capabilities live in Rust crates.
 - Desktop main TypeScript code stays as shell glue, IPC wiring, and orchestration.
 - Bridge-only modules remain thin and do not re-implement native logic.
+- Performance-sensitive state, event normalization, indexing, protocol behavior, and compute-heavy view-model preparation move downward instead of growing in UI code.
 
 This document is the enforcement reference for `pnpm lint:rust-first`.
+The performance escalation policy is defined in `docs/architecture/performance-engineering.md`.
 
 ## Native-Owned Modules
 These modules must route core behavior to the matching Rust crate:
@@ -44,9 +46,10 @@ These modules are shell-level logic and may stay TypeScript-owned:
 - `workbench-documents`
 - `workbench-observation`
 - `workbench-state`
-- `workbench-web-automation`
 
 If a TypeScript-owned module becomes stateful + OS-facing + security-sensitive, it should move to native ownership.
+
+If a TypeScript-owned module becomes a repeated performance bottleneck, first measure and reduce UI/event work. If the bottleneck is heavy state, parsing, scanning, indexing, protocol behavior, or long-lived runtime coordination, move that responsibility to Rust.
 
 ## Bridge-Only Main Modules
 These modules must stay thin adapters:
@@ -61,6 +64,13 @@ Bridge-only rule:
 1. No business-domain state machine growth.
 2. No native capability re-implementation in TypeScript.
 3. Prefer type-shaping + transport adaptation only.
+
+## Native Acceleration Policy
+Rust is Lyra's default native implementation language. C/C++ may be used only for narrow platform or library integrations, or for a measured hot path where an existing C/C++ engine is the right dependency.
+
+Hand-written assembly is not part of normal product development. Assembly-level optimization must be isolated behind a safe Rust or C++ API, benchmarked, tested, and paired with a portable fallback.
+
+Do not rewrite ordinary UI surfaces in C/C++ or assembly. Optimize React rendering, event batching, virtualization, and Rust-backed view models first. Specialized native or canvas rendering is reserved for dense high-frequency surfaces with measured pressure.
 
 ## Required Checks
 Run before merge:

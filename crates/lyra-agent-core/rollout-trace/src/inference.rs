@@ -350,6 +350,7 @@ mod tests {
                 text: "raw reasoning".to_string(),
             }]),
             encrypted_content: Some("encoded".to_string()),
+            provider_replay: None,
         };
 
         let normal = serde_json::to_value(&item).expect("response item serializes");

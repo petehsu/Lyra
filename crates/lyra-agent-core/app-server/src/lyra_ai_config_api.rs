@@ -655,6 +655,13 @@ fn to_public_profile(
         &profile.protocol_id,
         &profile.configured_secret_fields,
     );
+    let model_runtime_metadata = provider_model_entry_from_id(
+        &profile.provider_id,
+        &profile.protocol_id,
+        &profile.model,
+        "preset",
+    )
+    .runtime_metadata;
     LyraAiProviderProfile {
         id: profile.id,
         name: profile.name,
@@ -669,6 +676,7 @@ fn to_public_profile(
         configured_secret_fields: profile.configured_secret_fields,
         headers: profile.headers,
         model: profile.model,
+        model_runtime_metadata,
         custom_models: profile.custom_models,
         discovery_state: profile.discovery_state,
         is_default,
@@ -821,7 +829,10 @@ fn normalize_runtime_metadata(metadata: LyraAiModelRuntimeMetadata) -> LyraAiMod
         supports_search_tool: metadata.supports_search_tool,
         supports_parallel_tool_calls: metadata.supports_parallel_tool_calls,
         supports_reasoning_summaries: metadata.supports_reasoning_summaries,
+        default_reasoning_level: metadata.default_reasoning_level,
+        supported_reasoning_levels: metadata.supported_reasoning_levels,
         support_verbosity: metadata.support_verbosity,
+        default_verbosity: metadata.default_verbosity,
         web_search_tool_type: metadata
             .web_search_tool_type
             .map(|value| trim_string(&value)),
@@ -841,6 +852,7 @@ fn normalize_runtime_metadata(metadata: LyraAiModelRuntimeMetadata) -> LyraAiMod
         context_window: metadata.context_window,
         max_context_window: metadata.max_context_window,
         effective_context_window_percent: metadata.effective_context_window_percent,
+        protocol_behavior: metadata.protocol_behavior,
     }
 }
 

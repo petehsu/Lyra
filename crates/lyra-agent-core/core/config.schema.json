@@ -1219,6 +1219,14 @@
           "description": "Friendly display name.",
           "type": "string"
         },
+        "protocol_behavior": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ProviderProtocolBehaviorConfig"
+            }
+          ],
+          "description": "Optional provider protocol behavior overrides for OpenAI-compatible or native provider adapters."
+        },
         "query_params": {
           "additionalProperties": {
             "type": "string"
@@ -1651,6 +1659,49 @@
       "properties": {
         "trust_level": {
           "$ref": "#/definitions/TrustLevel"
+        }
+      },
+      "type": "object"
+    },
+    "ProviderProtocolBehaviorConfig": {
+      "additionalProperties": false,
+      "description": "User-configurable protocol behavior override for custom providers.\n\nBuilt-in Lyra profile providers use compiled provider baselines and only need this for custom OpenAI-compatible endpoints that expose non-standard reasoning replay fields or request parameters.",
+      "properties": {
+        "preserve_empty_reasoning": {
+          "description": "Preserve and replay empty reasoning strings. Required by DeepSeek thinking/tool loops.",
+          "type": "boolean"
+        },
+        "reasoning_replay_field": {
+          "description": "Provider-specific reasoning field to replay on assistant messages.",
+          "type": "string"
+        },
+        "request_params": {
+          "additionalProperties": true,
+          "description": "Extra request parameters to merge into the provider payload.",
+          "type": "object"
+        },
+        "require_assistant_reasoning": {
+          "description": "Insert an empty reasoning field on assistant messages when no replay artifact is available.",
+          "type": "boolean"
+        },
+        "prompt_cache_key": {
+          "description": "Send a stable prompt cache key when the provider supports OpenAI-compatible prompt caching.",
+          "type": "boolean"
+        },
+        "stream": {
+          "description": "Force streaming on or off for adapters that support both paths.",
+          "type": "boolean"
+        },
+        "tool_loop_supported": {
+          "description": "Set to false for models/providers where Lyra's tool loop is known to be incompatible.",
+          "type": "boolean"
+        },
+        "unsupported_params": {
+          "description": "Request parameters that must not be sent to this provider.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"

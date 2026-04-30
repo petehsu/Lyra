@@ -912,6 +912,447 @@
       ],
       "type": "string"
     },
+    "ThreadAiPanelAttachmentKind": {
+      "enum": [
+        "file",
+        "directory",
+        "local_image",
+        "image"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelMessage": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "contentParts": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelMessageContentPart"
+          },
+          "type": "array"
+        },
+        "createdAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "displayContent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/ThreadAiPanelMessageRole"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "content",
+        "createdAtMs",
+        "id",
+        "role",
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelMessageContentPart": {
+      "oneOf": [
+        {
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "text"
+              ],
+              "title": "TextThreadAiPanelMessageContentPartType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "type"
+          ],
+          "title": "TextThreadAiPanelMessageContentPart",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ThreadAiPanelAttachmentKind"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "attachment"
+              ],
+              "title": "AttachmentThreadAiPanelMessageContentPartType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "path",
+            "type"
+          ],
+          "title": "AttachmentThreadAiPanelMessageContentPart",
+          "type": "object"
+        }
+      ]
+    },
+    "ThreadAiPanelMessageRole": {
+      "enum": [
+        "user",
+        "assistant"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelPendingInteraction": {
+      "properties": {
+        "createdAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/ThreadAiPanelPendingInteractionKind"
+        },
+        "payload": true,
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/ThreadAiPanelPendingInteractionStatus"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "updatedAtMs": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "createdAtMs",
+        "id",
+        "kind",
+        "payload",
+        "sessionId",
+        "status",
+        "turnId",
+        "updatedAtMs"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelPendingInteractionKind": {
+      "enum": [
+        "planApproval"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelPendingInteractionStatus": {
+      "enum": [
+        "pending",
+        "resolved",
+        "cancelled",
+        "expired"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelPlan": {
+      "properties": {
+        "draftText": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finalText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelPlanStep"
+          },
+          "type": "array"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "updatedAtMs": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "draftText",
+        "turnId",
+        "updatedAtMs"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelPlanStep": {
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/ThreadAiPanelPlanStepStatus"
+        },
+        "step": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "step"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelPlanStepStatus": {
+      "enum": [
+        "pending",
+        "inProgress",
+        "completed"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelToolCall": {
+      "properties": {
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errorMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finishedAtMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "input": true,
+        "output": true,
+        "sessionId": {
+          "type": "string"
+        },
+        "startedAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/definitions/ThreadAiPanelToolCallStatus"
+        },
+        "toolName": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "input",
+        "sessionId",
+        "startedAtMs",
+        "status",
+        "toolName",
+        "turnId"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelToolCallStatus": {
+      "enum": [
+        "running",
+        "completed",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelTurn": {
+      "properties": {
+        "createdAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "durationMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errorMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/ThreadAiPanelTurnStatus"
+        },
+        "updatedAtMs": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "createdAtMs",
+        "id",
+        "sessionId",
+        "status",
+        "updatedAtMs"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelTurnMeta": {
+      "properties": {
+        "assistantOrder": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "firstAssistantMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hasAssistantDisplay": {
+          "type": "boolean"
+        },
+        "lastAssistantMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hasAssistantDisplay",
+        "sessionId",
+        "turnId"
+      ],
+      "type": "object"
+    },
+    "ThreadAiPanelTurnStatus": {
+      "enum": [
+        "running",
+        "completed",
+        "failed",
+        "paused"
+      ],
+      "type": "string"
+    },
+    "ThreadAiPanelViewModel": {
+      "properties": {
+        "messages": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelMessage"
+          },
+          "type": "array"
+        },
+        "pendingInteractions": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelPendingInteraction"
+          },
+          "type": "array"
+        },
+        "plans": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelPlan"
+          },
+          "type": "array"
+        },
+        "toolCalls": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelToolCall"
+          },
+          "type": "array"
+        },
+        "turnMeta": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelTurnMeta"
+          },
+          "type": "array"
+        },
+        "turns": {
+          "items": {
+            "$ref": "#/definitions/ThreadAiPanelTurn"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "messages",
+        "plans",
+        "toolCalls",
+        "turnMeta",
+        "turns"
+      ],
+      "type": "object"
+    },
     "ThreadId": {
       "type": "string"
     },
@@ -1715,7 +2156,8 @@
         "completed",
         "interrupted",
         "failed",
-        "inProgress"
+        "inProgress",
+        "waiting"
       ],
       "type": "string"
     },
@@ -1944,6 +2386,16 @@
   "properties": {
     "thread": {
       "$ref": "#/definitions/Thread"
+    },
+    "viewModel": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ThreadAiPanelViewModel"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [

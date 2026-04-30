@@ -23,6 +23,7 @@ const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactN
   "file-manager": (iconKey) => renderFileManagerAppIcon(iconKey as FileManagerAppIconKey),
   "file-editor": (iconKey) => renderFileEditorAppIcon(iconKey as FileEditorAppIconKey),
   "ai-history": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
+  "ai-plan-review": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
   "ai-mcp": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
   "ai-skills": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
   "ai-plugins": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
@@ -50,6 +51,9 @@ export const isFileEditorAppId = (value: WorkbenchAppId): value is FileEditorApp
 
 export const isAiHistoryAppId = (value: WorkbenchAppId): value is "ai-history" =>
   value === "ai-history";
+
+export const isAiPlanReviewAppId = (value: WorkbenchAppId): value is "ai-plan-review" =>
+  value === "ai-plan-review";
 
 export const isAiMcpAppId = (value: WorkbenchAppId): value is "ai-mcp" =>
   value === "ai-mcp";

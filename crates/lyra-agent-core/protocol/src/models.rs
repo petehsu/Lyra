@@ -12,6 +12,7 @@ use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde::ser::Serializer;
+use serde_json::Value as JsonValue;
 use ts_rs::TS;
 
 use crate::config_types::ApprovalsReviewer;
@@ -279,6 +280,11 @@ pub enum ResponseItem {
         #[ts(optional)]
         content: Option<Vec<ReasoningItemContent>>,
         encrypted_content: Option<String>,
+        /// Provider-specific protocol artifacts that must be replayed on later
+        /// turns but are not necessarily visible reasoning text.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        provider_replay: Option<ReasoningProviderReplay>,
     },
     LocalShellCall {
         /// Legacy id field retained for compatibility with older payloads.
@@ -1151,6 +1157,16 @@ pub enum ReasoningItemReasoningSummary {
 pub enum ReasoningItemContent {
     ReasoningText { text: String },
     Text { text: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ReasoningProviderReplay {
+    pub provider: String,
+    pub protocol: String,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    #[ts(type = "{ [key in string]?: unknown }")]
+    pub fields: HashMap<String, JsonValue>,
 }
 
 impl From<Vec<UserInput>> for ResponseInputItem {

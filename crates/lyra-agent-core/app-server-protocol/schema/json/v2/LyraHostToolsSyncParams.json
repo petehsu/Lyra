@@ -1,15 +1,72 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "DynamicToolSideEffects": {
+      "properties": {
+        "level": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mutatesExternalSystems": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mutatesMemory": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mutatesSessionState": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mutatesWorkspace": {
+          "default": false,
+          "type": "boolean"
+        },
+        "opensInteractiveSession": {
+          "default": false,
+          "type": "boolean"
+        },
+        "readsNetwork": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "DynamicToolSpec": {
       "properties": {
+        "approvalMode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "deferLoading": {
           "type": "boolean"
         },
         "description": {
           "type": "string"
         },
+        "hostMethod": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "inputSchema": true,
+        "modelInputCapabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "name": {
           "type": "string"
         },
@@ -17,6 +74,17 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "risk": true,
+        "sideEffects": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DynamicToolSideEffects"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },

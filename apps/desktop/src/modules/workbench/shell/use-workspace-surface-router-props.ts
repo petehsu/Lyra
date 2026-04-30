@@ -1,4 +1,5 @@
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { AiPlanReviewModel } from "../ai-panel";
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type {
   FileEditorChangeReviewItem,
@@ -54,6 +55,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly notificationModel: WorkbenchNotificationModel;
   readonly labels: WorkbenchLabels;
   readonly openDialog: NonNullable<WorkspaceSurfaceRouterProps["aiHistory"]["openDialog"]>;
+  readonly planReviewModel: AiPlanReviewModel;
   readonly onOpenFileFromManager: (filePath: string) => void;
   readonly onRevealPathInFileManager: (filePath: string) => void;
   readonly onOpenNotificationSource: (notificationId: string) => void;
@@ -91,6 +93,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   notificationModel,
   labels,
   openDialog,
+  planReviewModel,
   onOpenFileFromManager,
   onRevealPathInFileManager,
   onOpenNotificationSource,
@@ -166,6 +169,9 @@ export const useWorkspaceSurfaceRouterProps = ({
       defaultProfileId: settingsAiModel.defaultProfileId,
       defaultProviderId: settingsAiModel.defaultProviderId,
       openDialog
+    },
+    planReview: {
+      model: planReviewModel
     },
     notifications: {
       model: notificationModel,

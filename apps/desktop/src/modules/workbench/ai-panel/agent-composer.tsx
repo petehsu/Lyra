@@ -35,7 +35,6 @@ export const AgentComposer = memo(({
   reasoningEffortOptions = [],
   selectedReasoningEffort = null,
   reasoningEffortLabel,
-  modelControlAutoLabel,
   onReasoningEffortSelect,
   verbosityOptions = [],
   selectedVerbosity = null,
@@ -159,7 +158,6 @@ export const AgentComposer = memo(({
       reasoningEffortOptions={reasoningEffortOptions}
       selectedReasoningEffort={selectedReasoningEffort}
       reasoningEffortLabel={reasoningEffortLabel ?? t("ai.reasoningEffortLabel")}
-      modelControlAutoLabel={modelControlAutoLabel ?? t("ai.modelControlAuto")}
       onReasoningEffortSelect={onReasoningEffortSelect}
       verbosityOptions={verbosityOptions}
       selectedVerbosity={selectedVerbosity}

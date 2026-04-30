@@ -1,18 +1,28 @@
-import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type {
+  LyraDesktopApi,
+  PlanApprovalRequest,
+  PlanInteractionResponse
+} from "../../../shared/desktop-bridge";
 import type { AiProviderProfile } from "../../../shared/ai";
 import type { FileEditorRevealLocation } from "../file-editor";
 import type { GlobalDialogOpenRequest } from "../global-dialog";
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchAiStopBehavior } from "../preferences";
 
-export type AiPanelAppId = "ai-mcp" | "ai-skills" | "ai-plugins" | "ai-history";
+export type AiPanelAppId =
+  | "ai-mcp"
+  | "ai-skills"
+  | "ai-plugins"
+  | "ai-history"
+  | "ai-plan-review";
 
 export type AiPanelAppIconKey =
   | "ai-panel-default"
   | "ai-panel-mcp"
   | "ai-panel-skills"
   | "ai-panel-plugins"
-  | "ai-panel-history";
+  | "ai-panel-history"
+  | "ai-panel-plan";
 
 export type AiPanelAppOpenRequest = {
   readonly appId: AiPanelAppId;
@@ -24,6 +34,15 @@ export type AiPanelAppOpenRequest = {
 export type AiPanelSurfaceVariant = "sidebar" | "workspace" | "detached";
 
 export type AiPanelSide = "left" | "right";
+
+export type AiPlanApprovalWorkspaceOpenRequest = {
+  readonly locale: WorkbenchLocale;
+  readonly request: PlanApprovalRequest;
+  readonly onDecision: (
+    response: PlanInteractionResponse,
+    requestOverride?: PlanApprovalRequest
+  ) => Promise<void>;
+};
 
 export type AiPanelWriteStreamEvent =
   | {
@@ -151,6 +170,7 @@ export type AiPanelSurfaceProps = {
   readonly onOpenMcp?: () => void;
   readonly onOpenSkills?: () => void;
   readonly onOpenPlugins?: () => void;
+  readonly onOpenPlanApprovalWorkspace?: (request: AiPlanApprovalWorkspaceOpenRequest) => void;
   readonly aiPanelSide?: AiPanelSide;
   readonly onToggleAiPanelSide?: () => void;
   readonly movePanelToLeftLabel?: string;

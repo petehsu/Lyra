@@ -3,9 +3,11 @@ import { describe, expect, test } from "vitest";
 import type { AiProviderProfile, AiProviderModelEntry } from "../../../../shared/ai";
 import {
   MODEL_OPTION_DELIMITER,
+  canOpenReviewChanges,
   createComposerReserveStyle,
   createRuntimeModelOptions,
   createRuntimeTurnOptions,
+  gitMetadataProbePaths,
   isAiRuntimeBusy,
   permissionRuntimeOptions,
   resolveBoundProjectRoot,
@@ -124,6 +126,32 @@ describe("ai panel surface model", () => {
     ]);
   });
 
+  test("uses primary profile model runtime metadata", () => {
+    const options = createRuntimeModelOptions({
+      configuredProfiles: [
+        createProfile({
+          model: "gpt-5.4",
+          modelRuntimeMetadata: {
+            supportedReasoningLevels: ["low", "medium", "high", "xhigh"],
+            defaultReasoningLevel: "medium",
+            supportVerbosity: true,
+            defaultVerbosity: "low"
+          }
+        })
+      ],
+      defaultProfileId: "profile-openai",
+      defaultProviderId: "lp-default",
+      defaultModelNames: ["fallback-model"]
+    });
+
+    expect(options[0]?.runtimeMetadata).toEqual({
+      supportedReasoningLevels: ["low", "medium", "high", "xhigh"],
+      defaultReasoningLevel: "medium",
+      supportVerbosity: true,
+      defaultVerbosity: "low"
+    });
+  });
+
   test("falls back to default model names when profiles cannot run in the runtime", () => {
     const options = createRuntimeModelOptions({
       configuredProfiles: [
@@ -231,6 +259,61 @@ describe("ai panel surface model", () => {
       pendingRoot: "/pending",
       activeThread: null
     })).toBe("/pending");
+  });
+
+  test("builds git metadata probe paths from nested project roots", () => {
+    expect(gitMetadataProbePaths("/Users/dev/project/src/")).toEqual([
+      "/Users/dev/project/src/.git",
+      "/Users/dev/project/.git",
+      "/Users/dev/.git",
+      "/Users/.git",
+      "/.git"
+    ]);
+    expect(gitMetadataProbePaths("")).toEqual([]);
+  });
+
+  test("only opens review changes when the active thread has a usable git project", () => {
+    expect(canOpenReviewChanges({
+      activeThreadId: "thread-1",
+      boundProjectRoot: "/repo",
+      gitMetadataAvailable: true,
+      isAgentAvailable: true,
+      isBusy: false,
+      isReviewStarting: false
+    })).toBe(true);
+
+    expect(canOpenReviewChanges({
+      activeThreadId: null,
+      boundProjectRoot: "/repo",
+      gitMetadataAvailable: true,
+      isAgentAvailable: true,
+      isBusy: false,
+      isReviewStarting: false
+    })).toBe(false);
+    expect(canOpenReviewChanges({
+      activeThreadId: "thread-1",
+      boundProjectRoot: null,
+      gitMetadataAvailable: true,
+      isAgentAvailable: true,
+      isBusy: false,
+      isReviewStarting: false
+    })).toBe(false);
+    expect(canOpenReviewChanges({
+      activeThreadId: "thread-1",
+      boundProjectRoot: "/repo",
+      gitMetadataAvailable: false,
+      isAgentAvailable: true,
+      isBusy: false,
+      isReviewStarting: false
+    })).toBe(false);
+    expect(canOpenReviewChanges({
+      activeThreadId: "thread-1",
+      boundProjectRoot: "/repo",
+      gitMetadataAvailable: true,
+      isAgentAvailable: true,
+      isBusy: true,
+      isReviewStarting: false
+    })).toBe(false);
   });
 
   test("computes stable surface booleans and composer reserve style", () => {

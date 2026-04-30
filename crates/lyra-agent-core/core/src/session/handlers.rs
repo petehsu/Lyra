@@ -38,6 +38,8 @@ use lyra_protocol::protocol::ListSkillsResponseEvent;
 use lyra_protocol::protocol::LyraErrorInfo;
 use lyra_protocol::protocol::McpServerRefreshConfig;
 use lyra_protocol::protocol::Op;
+use lyra_protocol::protocol::PlanApprovalResolutionDecision;
+use lyra_protocol::protocol::PlanApprovalResolvedEvent;
 use lyra_protocol::protocol::ReviewDecision;
 use lyra_protocol::protocol::ReviewRequest;
 use lyra_protocol::protocol::RolloutItem;
@@ -343,6 +345,25 @@ pub async fn request_permissions_response(
 ) {
     sess.notify_request_permissions_response(&id, response)
         .await;
+}
+
+async fn resolve_plan_approval(
+    sess: &Arc<Session>,
+    sub_id: String,
+    plan_turn_id: String,
+    request_id: String,
+    decision: PlanApprovalResolutionDecision,
+) {
+    sess.send_event_raw(Event {
+        id: sub_id,
+        msg: EventMsg::PlanApprovalResolved(PlanApprovalResolvedEvent {
+            thread_id: sess.conversation_id.to_string(),
+            plan_turn_id,
+            request_id,
+            decision,
+        }),
+    })
+    .await;
 }
 
 pub async fn dynamic_tool_response(sess: &Arc<Session>, id: String, response: DynamicToolResponse) {
@@ -1080,6 +1101,21 @@ pub(super) async fn submission_loop(
                 }
                 Op::RequestPermissionsResponse { id, response } => {
                     request_permissions_response(&sess, id, response).await;
+                    false
+                }
+                Op::ResolvePlanApproval {
+                    plan_turn_id,
+                    request_id,
+                    decision,
+                } => {
+                    resolve_plan_approval(
+                        &sess,
+                        sub.id.clone(),
+                        plan_turn_id,
+                        request_id,
+                        decision,
+                    )
+                    .await;
                     false
                 }
                 Op::DynamicToolResponse { id, response } => {

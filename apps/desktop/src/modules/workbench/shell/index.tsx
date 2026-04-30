@@ -39,7 +39,6 @@ import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context
 import { useWorkbenchAiSurfaceBridge } from "./use-workbench-ai-surface-bridge";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
 import { useWorkbenchBrowserRuntime } from "./use-workbench-browser-runtime";
-import { useWorkbenchBrowserUseRuntimeStatus } from "./use-workbench-browser-use-runtime-status";
 import {
   createWorkbenchChromeLabels,
   useWorkbenchActionApi
@@ -53,6 +52,7 @@ import { useWorkbenchJsReplSetting } from "./use-workbench-js-repl-setting";
 import { useWorkbenchLabels } from "./use-workbench-labels";
 import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
+import { useWorkbenchPlanReviewModel } from "./use-workbench-plan-review-model";
 import { useWorkbenchSearchIndexStatus } from "./use-workbench-search-index-status";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
 import { useWorkbenchShellAdapterProps } from "./use-workbench-shell-adapter-props";
@@ -94,9 +94,7 @@ export const WorkbenchShell = () => {
     deepSearchProactiveDomainGuessingEnabled: true,
     deepSearchCrawlPolicy: "accessibility_only",
     searchResultsSourceFilter: "all",
-    omniboxNonBrowserSubmitTarget: "new_tab",
-    browserAutomationEngine: "lyra_direct",
-    lyraDirectMicroExecutorBudget: "3-5"
+    omniboxNonBrowserSubmitTarget: "new_tab"
   });
   const { jsReplEnabled, updateJsReplSetting } = useWorkbenchJsReplSetting(desktopApi);
 
@@ -163,8 +161,6 @@ export const WorkbenchShell = () => {
     forceWebPageThemingEnabled:
       preferencesModel.preferences.forceWebPageThemingEnabled
   });
-  const browserUseRuntimeStatus =
-    useWorkbenchBrowserUseRuntimeStatus(desktopApi);
 
   const searchSettingsFacade = useWorkbenchSearchSettings(preferencesModel.preferences);
   const {
@@ -242,7 +238,6 @@ export const WorkbenchShell = () => {
     desktopApi,
     preferencesModel,
     settingsAiModel,
-    browserUseRuntimeStatus,
     jsReplEnabled,
     searchIndexStatus,
     searchRebuildIndexPending,
@@ -262,6 +257,10 @@ export const WorkbenchShell = () => {
     },
     [activeFileManagerState?.currentLocation?.path]
   );
+  const planReview = useWorkbenchPlanReviewModel({
+    openAppTab: tabsModel.openAppTab,
+    title: t("ai.planReviewTitle")
+  });
   const sidebarAiSurfaceProps = useWorkbenchSidebarAiSurfaceProps({
     desktopApi,
     preferences: preferencesModel.preferences,
@@ -272,6 +271,7 @@ export const WorkbenchShell = () => {
     onToggleAiPanelSide: panelLayoutModel.toggleAiPanelSide,
     openAppTab: tabsModel.openAppTab,
     onRequestProjectBind: requestProjectBind,
+    onOpenPlanApprovalWorkspace: planReview.openPlanReview,
     openDialog: globalDialogModel.openDialog,
     t
   });
@@ -462,6 +462,7 @@ export const WorkbenchShell = () => {
     skillsCenterModel,
     pluginsCenterModel,
     settingsAiModel,
+    planReviewModel: planReview.model,
     notificationModel,
     labels,
     openDialog: globalDialogModel.openDialog,

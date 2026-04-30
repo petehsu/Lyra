@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ClipboardEvent as ReactClipboardEvent,
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -70,12 +71,16 @@ type UseAgentComposerRuntimeInput = {
 export type AgentComposerRuntime = {
   readonly containerRef: RefObject<HTMLDivElement>;
   readonly toolsMenuRef: RefObject<HTMLDivElement>;
+  readonly toolsMenuPortalRef: RefObject<HTMLDivElement>;
+  readonly toolsMenuStyle: CSSProperties;
+  readonly submenuStyle: CSSProperties;
   readonly inputRef: RefObject<HTMLTextAreaElement>;
   readonly draftValue: string;
   readonly hasContent: boolean;
   readonly inputFocused: boolean;
   readonly toolsMenuOpen: boolean;
   readonly modelSubmenuOpen: boolean;
+  readonly permissionSubmenuOpen: boolean;
   readonly caretRect: ModernCaretRect | null;
   readonly isCaretIdle: boolean;
   readonly isCaretPressed: boolean;
@@ -98,6 +103,7 @@ export type AgentComposerRuntime = {
   readonly submit: (action: AgentComposerSubmitAction) => Promise<void>;
   readonly toggleToolsMenu: () => void;
   readonly toggleModelSubmenu: () => void;
+  readonly togglePermissionSubmenu: () => void;
   readonly closeMenus: () => void;
   readonly selectModel: (
     value: string,
@@ -598,6 +604,77 @@ const attachmentsFromPaste = async (
   return attachmentsFromPlainPathText(plainText, "clipboard");
 };
 
+const MENU_VIEWPORT_MARGIN = 8;
+const MENU_GAP = 8;
+const DEFAULT_MENU_WIDTH = 224;
+const DEFAULT_MENU_HEIGHT = 148;
+const DEFAULT_SUBMENU_WIDTH = 268;
+const DEFAULT_SUBMENU_HEIGHT = 320;
+
+type MenuPlacement = {
+  readonly menuLeft: number;
+  readonly menuTop: number;
+  readonly submenuLeft: number;
+  readonly submenuTop: number;
+};
+
+const clampNumber = (value: number, min: number, max: number): number =>
+  Math.max(min, Math.min(value, max));
+
+const measureElementSize = (
+  element: HTMLElement | null,
+  fallbackWidth: number,
+  fallbackHeight: number
+): { readonly width: number; readonly height: number } => ({
+  width: element?.offsetWidth && element.offsetWidth > 0 ? element.offsetWidth : fallbackWidth,
+  height: element?.offsetHeight && element.offsetHeight > 0 ? element.offsetHeight : fallbackHeight,
+});
+
+const createMenuPlacement = (
+  anchor: HTMLElement,
+  portal: HTMLElement | null
+): MenuPlacement => {
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const anchorRect = anchor.getBoundingClientRect();
+  const menuElement = portal?.querySelector<HTMLElement>(".lyra-ai-agent-composer-menu") ?? null;
+  const submenuElement = portal?.querySelector<HTMLElement>(".lyra-ai-agent-composer-submenu") ?? null;
+  const menuSize = measureElementSize(menuElement, DEFAULT_MENU_WIDTH, DEFAULT_MENU_HEIGHT);
+  const submenuSize = measureElementSize(submenuElement, DEFAULT_SUBMENU_WIDTH, DEFAULT_SUBMENU_HEIGHT);
+  const menuLeft = clampNumber(
+    anchorRect.left,
+    MENU_VIEWPORT_MARGIN,
+    Math.max(MENU_VIEWPORT_MARGIN, viewportWidth - menuSize.width - MENU_VIEWPORT_MARGIN)
+  );
+  const menuTop = clampNumber(
+    anchorRect.top - menuSize.height - MENU_GAP >= MENU_VIEWPORT_MARGIN
+      ? anchorRect.top - menuSize.height - MENU_GAP
+      : anchorRect.bottom + MENU_GAP,
+    MENU_VIEWPORT_MARGIN,
+    Math.max(MENU_VIEWPORT_MARGIN, viewportHeight - menuSize.height - MENU_VIEWPORT_MARGIN)
+  );
+  const opensRight = menuLeft + menuSize.width + MENU_GAP + submenuSize.width <= viewportWidth - MENU_VIEWPORT_MARGIN;
+  const submenuLeft = opensRight
+    ? menuLeft + menuSize.width + MENU_GAP
+    : clampNumber(
+        menuLeft - submenuSize.width - MENU_GAP,
+        MENU_VIEWPORT_MARGIN,
+        Math.max(MENU_VIEWPORT_MARGIN, viewportWidth - submenuSize.width - MENU_VIEWPORT_MARGIN)
+      );
+  const submenuTop = clampNumber(
+    menuTop,
+    MENU_VIEWPORT_MARGIN,
+    Math.max(MENU_VIEWPORT_MARGIN, viewportHeight - submenuSize.height - MENU_VIEWPORT_MARGIN)
+  );
+
+  return {
+    menuLeft,
+    menuTop,
+    submenuLeft,
+    submenuTop,
+  };
+};
+
 export const useAgentComposerRuntime = ({
   currentThreadId,
   initialValue,
@@ -617,6 +694,7 @@ export const useAgentComposerRuntime = ({
 }: UseAgentComposerRuntimeInput): AgentComposerRuntime => {
   const containerRef = useRef<HTMLDivElement>(null);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
+  const toolsMenuPortalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const previousValueRef = useRef(initialValue);
   const previousExternalDraftRef = useRef({
@@ -636,6 +714,13 @@ export const useAgentComposerRuntime = ({
   const [inputFocused, setInputFocused] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [modelSubmenuOpen, setModelSubmenuOpen] = useState(false);
+  const [permissionSubmenuOpen, setPermissionSubmenuOpen] = useState(false);
+  const [menuPlacement, setMenuPlacement] = useState<MenuPlacement>({
+    menuLeft: MENU_VIEWPORT_MARGIN,
+    menuTop: MENU_VIEWPORT_MARGIN,
+    submenuLeft: MENU_VIEWPORT_MARGIN + DEFAULT_MENU_WIDTH + MENU_GAP,
+    submenuTop: MENU_VIEWPORT_MARGIN,
+  });
   const [fileMentionMenuOpen, setFileMentionMenuOpen] = useState(false);
   const [fileMentionSelectedIndex, setFileMentionSelectedIndex] = useState(0);
   const [caretRect, setCaretRect] = useState<ModernCaretRect | null>(null);
@@ -1120,6 +1205,7 @@ export const useAgentComposerRuntime = ({
   const closeMenus = useCallback((): void => {
     setToolsMenuOpen(false);
     setModelSubmenuOpen(false);
+    setPermissionSubmenuOpen(false);
   }, []);
 
   useEffect(() => {
@@ -1130,6 +1216,9 @@ export const useAgentComposerRuntime = ({
     const handlePointerDown = (event: PointerEvent): void => {
       const target = event.target;
       if (target instanceof Node && toolsMenuRef.current?.contains(target)) {
+        return;
+      }
+      if (target instanceof Node && toolsMenuPortalRef.current?.contains(target)) {
         return;
       }
       closeMenus();
@@ -1147,6 +1236,32 @@ export const useAgentComposerRuntime = ({
     };
   }, [closeMenus, toolsMenuOpen]);
 
+  const updateMenuPlacement = useCallback((): void => {
+    const anchor = toolsMenuRef.current;
+    if (anchor === null) {
+      return;
+    }
+    setMenuPlacement(createMenuPlacement(anchor, toolsMenuPortalRef.current));
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!toolsMenuOpen) {
+      return;
+    }
+    updateMenuPlacement();
+    const animationFrame = window.requestAnimationFrame(updateMenuPlacement);
+    const handleViewportChange = (): void => {
+      updateMenuPlacement();
+    };
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [modelSubmenuOpen, permissionSubmenuOpen, toolsMenuOpen, updateMenuPlacement]);
+
   useEffect(() => {
     return () => {
       const session = fileMentionSessionRef.current;
@@ -1163,10 +1278,27 @@ export const useAgentComposerRuntime = ({
   const toggleToolsMenu = useCallback((): void => {
     setToolsMenuOpen((current) => !current);
     setModelSubmenuOpen(false);
+    setPermissionSubmenuOpen(false);
   }, []);
 
   const toggleModelSubmenu = useCallback((): void => {
-    setModelSubmenuOpen((current) => !current);
+    setModelSubmenuOpen((current) => {
+      const next = !current;
+      if (next) {
+        setPermissionSubmenuOpen(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const togglePermissionSubmenu = useCallback((): void => {
+    setPermissionSubmenuOpen((current) => {
+      const next = !current;
+      if (next) {
+        setModelSubmenuOpen(false);
+      }
+      return next;
+    });
   }, []);
 
   const selectModel = useCallback((
@@ -1417,12 +1549,22 @@ export const useAgentComposerRuntime = ({
   return {
     containerRef,
     toolsMenuRef,
+    toolsMenuPortalRef,
+    toolsMenuStyle: {
+      left: menuPlacement.menuLeft,
+      top: menuPlacement.menuTop,
+    },
+    submenuStyle: {
+      left: menuPlacement.submenuLeft,
+      top: menuPlacement.submenuTop,
+    },
     inputRef,
     draftValue,
     hasContent,
     inputFocused,
     toolsMenuOpen,
     modelSubmenuOpen,
+    permissionSubmenuOpen,
     caretRect,
     isCaretIdle,
     isCaretPressed,
@@ -1443,6 +1585,7 @@ export const useAgentComposerRuntime = ({
     submit,
     toggleToolsMenu,
     toggleModelSubmenu,
+    togglePermissionSubmenu,
     closeMenus,
     selectModel,
     onTextareaCompositionStart,
