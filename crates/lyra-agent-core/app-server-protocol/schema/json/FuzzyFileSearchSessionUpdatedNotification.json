@@ -9,7 +9,7 @@
       "type": "string"
     },
     "FuzzyFileSearchResult": {
-      "description": "Superset of [`lyra_file_search::FileMatch`]",
+      "description": "Superset of [`lyra_local_search::FileMatch`]",
       "properties": {
         "file_name": {
           "type": "string"

@@ -2,10 +2,10 @@ use std::io::IsTerminal;
 use std::path::Path;
 
 use clap::Parser;
-use lyra_file_search::Cli;
-use lyra_file_search::FileMatch;
-use lyra_file_search::Reporter;
-use lyra_file_search::run_main;
+use lyra_local_search::Cli;
+use lyra_local_search::FileMatch;
+use lyra_local_search::Reporter;
+use lyra_local_search::run_main;
 use serde_json::json;
 
 #[tokio::main]

@@ -38,7 +38,7 @@ members = [
   "crates/lyra-agent-core/execpolicy",
   "crates/lyra-agent-core/execpolicy-legacy",
   "crates/lyra-agent-core/keyring-store",
-  "crates/lyra-agent-core/file-search",
+  "crates/lyra-local-search",
   "crates/lyra-agent-core/linux-sandbox",
   "crates/lyra-agent-core/lmstudio",
   "crates/lyra-agent-core/login",
@@ -126,7 +126,7 @@ lyra-exec-server = { path = "crates/lyra-agent-core/exec-server" }
 lyra-execpolicy = { path = "crates/lyra-agent-core/execpolicy" }
 lyra-features = { path = "crates/lyra-agent-core/features" }
 lyra-install-context = { path = "crates/lyra-agent-core/install-context" }
-lyra-file-search = { path = "crates/lyra-agent-core/file-search" }
+lyra-local-search = { path = "crates/lyra-local-search" }
 lyra-git-utils = { path = "crates/lyra-agent-core/git-utils" }
 lyra-hooks = { path = "crates/lyra-agent-core/hooks" }
 lyra-instructions = { path = "crates/lyra-agent-core/instructions" }

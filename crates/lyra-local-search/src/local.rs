@@ -224,6 +224,8 @@ pub struct LocalSearchOptions {
     pub respect_gitignore: bool,
     pub content_mode: LocalSearchContentMode,
     pub max_file_size_bytes: u64,
+    pub enable_fuzzy: bool,
+    pub enable_extension_match: bool,
 }
 
 impl Default for LocalSearchOptions {
@@ -239,6 +241,8 @@ impl Default for LocalSearchOptions {
             respect_gitignore: true,
             content_mode: LocalSearchContentMode::Auto,
             max_file_size_bytes: DEFAULT_TEXT_LIMIT_BYTES,
+            enable_fuzzy: true,
+            enable_extension_match: true,
         }
     }
 }
@@ -276,9 +280,27 @@ pub struct LocalSearchExtractTextResponse {
     pub extraction_method: String,
 }
 
-#[derive(Default)]
 pub struct LocalSearchEngine {
     state: Mutex<LocalSearchState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalSearchEngineConfig {
+    pub storage_mode: LocalSearchStorageMode,
+}
+
+impl Default for LocalSearchEngineConfig {
+    fn default() -> Self {
+        Self {
+            storage_mode: LocalSearchStorageMode::Memory,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LocalSearchStorageMode {
+    Memory,
+    Persistent { storage_root: PathBuf },
 }
 
 struct LocalSearchState {
@@ -288,20 +310,16 @@ struct LocalSearchState {
     state: LocalSearchIndexState,
 }
 
-impl Default for LocalSearchState {
+impl Default for LocalSearchEngine {
     fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-            roots: BTreeMap::new(),
-            sqlite: open_sqlite_index(),
-            state: LocalSearchIndexState::Empty,
-        }
+        Self::with_config(LocalSearchEngineConfig::default())
     }
 }
 
 struct SqliteIndex {
     conn: Connection,
     fts_available: bool,
+    persistent: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -340,6 +358,12 @@ struct Candidate {
 impl LocalSearchEngine {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_config(config: LocalSearchEngineConfig) -> Self {
+        Self {
+            state: Mutex::new(LocalSearchState::from_config(config)),
+        }
     }
 
     pub fn status(&self) -> LocalSearchStatus {
@@ -385,8 +409,6 @@ impl LocalSearchEngine {
             .map_err(|_| anyhow::anyhow!("local search state lock poisoned"))?;
         state.entries.retain(|entry| entry.root != collected.root);
         state.entries.extend(collected.entries.clone());
-        let entries = state.entries.clone();
-        rebuild_sqlite(&mut state, &entries);
         let root_state = if collected.truncated {
             LocalSearchIndexState::Partial
         } else {
@@ -405,6 +427,8 @@ impl LocalSearchEngine {
             },
         );
         state.state = aggregate_root_state(state.roots.values());
+        let entries = state.entries.clone();
+        rebuild_sqlite(&mut state, &entries);
         Ok(status_from_state(&state))
     }
 
@@ -560,46 +584,250 @@ impl LocalSearchEngine {
     }
 }
 
-fn open_sqlite_index() -> Option<SqliteIndex> {
-    let conn = Connection::open_in_memory().ok()?;
-    if conn
-        .execute_batch(
-            "CREATE TABLE files (
-                full_path TEXT PRIMARY KEY,
-                root TEXT NOT NULL,
-                relative_path TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                extension TEXT,
-                size_bytes INTEGER NOT NULL,
-                modified_at INTEGER,
-                created_at INTEGER,
-                hidden INTEGER NOT NULL
-            );",
-        )
-        .is_err()
-    {
-        return None;
+impl LocalSearchState {
+    fn from_config(config: LocalSearchEngineConfig) -> Self {
+        let sqlite = match open_sqlite_index(&config.storage_mode) {
+            Ok(sqlite) => sqlite,
+            Err(error) => {
+                let message = format!("local search sqlite open failed: {error}");
+                return Self {
+                    entries: Vec::new(),
+                    roots: BTreeMap::new(),
+                    sqlite: None,
+                    state: LocalSearchIndexState::Failed,
+                }
+                .with_error(message);
+            }
+        };
+        let mut state = Self {
+            entries: Vec::new(),
+            roots: BTreeMap::new(),
+            sqlite,
+            state: LocalSearchIndexState::Empty,
+        };
+        load_sqlite_state(&mut state);
+        state
     }
+
+    fn with_error(mut self, message: String) -> Self {
+        self.roots.insert(
+            PathBuf::new(),
+            LocalSearchRootStatus {
+                root: PathBuf::new(),
+                state: LocalSearchIndexState::Failed,
+                indexed_file_count: 0,
+                indexed_dir_count: 0,
+                indexed_content_file_count: 0,
+                last_indexed_at: None,
+                error: Some(message),
+            },
+        );
+        self
+    }
+}
+
+fn open_sqlite_index(storage_mode: &LocalSearchStorageMode) -> anyhow::Result<Option<SqliteIndex>> {
+    let (conn, persistent) = match storage_mode {
+        LocalSearchStorageMode::Memory => (Connection::open_in_memory()?, false),
+        LocalSearchStorageMode::Persistent { storage_root } => {
+            let index_dir = storage_root.join("local-search");
+            fs::create_dir_all(&index_dir)?;
+            (Connection::open(index_dir.join("index.v1.sqlite"))?, true)
+        }
+    };
+    if persistent {
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
+             PRAGMA temp_store=MEMORY;",
+        )?;
+    } else {
+        conn.execute_batch("PRAGMA temp_store=MEMORY;")?;
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS roots (
+            root TEXT PRIMARY KEY,
+            state TEXT NOT NULL,
+            indexed_file_count INTEGER NOT NULL,
+            indexed_dir_count INTEGER NOT NULL,
+            indexed_content_file_count INTEGER NOT NULL,
+            last_indexed_at INTEGER,
+            error TEXT
+        );
+        CREATE TABLE IF NOT EXISTS files (
+            full_path TEXT PRIMARY KEY,
+            root TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            extension TEXT,
+            size_bytes INTEGER NOT NULL,
+            modified_at INTEGER,
+            created_at INTEGER,
+            hidden INTEGER NOT NULL,
+            vendor INTEGER NOT NULL DEFAULT 0,
+            content_indexed INTEGER NOT NULL DEFAULT 0
+        );",
+    )?;
+    let _ = conn.execute_batch("ALTER TABLE files ADD COLUMN vendor INTEGER NOT NULL DEFAULT 0;");
+    let _ = conn
+        .execute_batch("ALTER TABLE files ADD COLUMN content_indexed INTEGER NOT NULL DEFAULT 0;");
     let fts_available = conn
-        .execute_batch("CREATE VIRTUAL TABLE content_fts USING fts5(full_path UNINDEXED, body);")
+        .execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(full_path UNINDEXED, body);",
+        )
         .is_ok();
-    Some(SqliteIndex {
+    Ok(Some(SqliteIndex {
         conn,
         fts_available,
-    })
+        persistent,
+    }))
+}
+
+fn load_sqlite_state(state: &mut LocalSearchState) {
+    let Some(sqlite) = state.sqlite.as_ref() else {
+        return;
+    };
+    if !sqlite.persistent {
+        return;
+    }
+
+    if let Ok(mut stmt) = sqlite.conn.prepare(
+        "SELECT root, relative_path, full_path, kind, extension, size_bytes, modified_at,
+                created_at, hidden, vendor, content_indexed
+         FROM files",
+    ) && let Ok(rows) = stmt.query_map([], |row| {
+        let root = PathBuf::from(row.get::<_, String>(0)?);
+        let relative_path = PathBuf::from(row.get::<_, String>(1)?);
+        let full_path = PathBuf::from(row.get::<_, String>(2)?);
+        let kind_value = row.get::<_, String>(3)?;
+        let kind = if kind_value == "directory" {
+            LocalSearchKind::Directory
+        } else {
+            LocalSearchKind::File
+        };
+        let extension = row.get::<_, Option<String>>(4)?;
+        let size_bytes = i64_to_u64(row.get::<_, i64>(5)?);
+        let modified_at = row.get::<_, Option<i64>>(6)?.map(i64_to_u64);
+        let created_at = row.get::<_, Option<i64>>(7)?.map(i64_to_u64);
+        let hidden = row.get::<_, i64>(8)? != 0;
+        let vendor = row.get::<_, i64>(9)? != 0;
+        let content_indexed = row.get::<_, i64>(10)? != 0;
+        let display_path = normalize_path_for_display(&relative_path);
+        Ok(IndexedEntry {
+            root,
+            relative_path,
+            full_path,
+            display_path: display_path.clone(),
+            kind,
+            extension,
+            lower_file_name: display_path
+                .rsplit('/')
+                .next()
+                .unwrap_or(display_path.as_str())
+                .to_lowercase(),
+            lower_path: display_path.to_lowercase(),
+            size_bytes,
+            modified_at,
+            created_at,
+            hidden,
+            vendor,
+            content_indexed,
+        })
+    }) {
+        state.entries = rows.flatten().collect();
+    }
+
+    if let Ok(mut stmt) = sqlite.conn.prepare(
+        "SELECT root, state, indexed_file_count, indexed_dir_count,
+                indexed_content_file_count, last_indexed_at, error
+         FROM roots",
+    ) && let Ok(rows) = stmt.query_map([], |row| {
+        let root = PathBuf::from(row.get::<_, String>(0)?);
+        let state_value = row.get::<_, String>(1)?;
+        Ok(LocalSearchRootStatus {
+            root,
+            state: index_state_from_storage(&state_value),
+            indexed_file_count: i64_to_u64(row.get::<_, i64>(2)?),
+            indexed_dir_count: i64_to_u64(row.get::<_, i64>(3)?),
+            indexed_content_file_count: i64_to_u64(row.get::<_, i64>(4)?),
+            last_indexed_at: row.get::<_, Option<i64>>(5)?.map(i64_to_u64),
+            error: row.get::<_, Option<String>>(6)?,
+        })
+    }) {
+        state.roots = rows
+            .flatten()
+            .map(|status| (status.root.clone(), status))
+            .collect();
+    }
+
+    if state.roots.is_empty() && !state.entries.is_empty() {
+        rebuild_root_statuses_from_entries(state);
+    }
+    state.state = aggregate_root_state(state.roots.values());
+}
+
+fn rebuild_root_statuses_from_entries(state: &mut LocalSearchState) {
+    let mut counts = BTreeMap::<PathBuf, (u64, u64, u64)>::new();
+    for entry in &state.entries {
+        let root_counts = counts.entry(entry.root.clone()).or_default();
+        match entry.kind {
+            LocalSearchKind::File => root_counts.0 += 1,
+            LocalSearchKind::Directory => root_counts.1 += 1,
+        }
+        if entry.content_indexed {
+            root_counts.2 += 1;
+        }
+    }
+    state.roots = counts
+        .into_iter()
+        .map(
+            |(root, (indexed_file_count, indexed_dir_count, indexed_content_file_count))| {
+                (
+                    root.clone(),
+                    LocalSearchRootStatus {
+                        root,
+                        state: LocalSearchIndexState::Ready,
+                        indexed_file_count,
+                        indexed_dir_count,
+                        indexed_content_file_count,
+                        last_indexed_at: None,
+                        error: None,
+                    },
+                )
+            },
+        )
+        .collect();
 }
 
 fn rebuild_sqlite(state: &mut LocalSearchState, entries: &[IndexedEntry]) {
+    let root_statuses = state.roots.values().cloned().collect::<Vec<_>>();
     let Some(sqlite) = state.sqlite.as_mut() else {
         return;
     };
-    let _ = sqlite.conn.execute_batch("DELETE FROM files;");
-    if sqlite.fts_available {
-        let _ = sqlite.conn.execute_batch("DELETE FROM content_fts;");
-    }
     let Ok(tx) = sqlite.conn.transaction() else {
         return;
     };
+    let _ = tx.execute_batch("DELETE FROM files; DELETE FROM roots;");
+    if sqlite.fts_available {
+        let _ = tx.execute_batch("DELETE FROM content_fts;");
+    }
+    for root in root_statuses {
+        let _ = tx.execute(
+            "INSERT OR REPLACE INTO roots
+             (root, state, indexed_file_count, indexed_dir_count, indexed_content_file_count,
+              last_indexed_at, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                root.root.to_string_lossy(),
+                index_state_to_storage(root.state),
+                u64_to_i64_saturating(root.indexed_file_count),
+                u64_to_i64_saturating(root.indexed_dir_count),
+                u64_to_i64_saturating(root.indexed_content_file_count),
+                root.last_indexed_at.and_then(u64_to_i64),
+                root.error,
+            ],
+        );
+    }
     for entry in entries {
         let kind = match entry.kind {
             LocalSearchKind::File => "file",
@@ -607,21 +835,23 @@ fn rebuild_sqlite(state: &mut LocalSearchState, entries: &[IndexedEntry]) {
         };
         let modified_at = entry.modified_at.and_then(u64_to_i64);
         let created_at = entry.created_at.and_then(u64_to_i64);
-        let size_bytes = i64::try_from(entry.size_bytes).unwrap_or(i64::MAX);
         let _ = tx.execute(
             "INSERT OR REPLACE INTO files
-             (full_path, root, relative_path, kind, extension, size_bytes, modified_at, created_at, hidden)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             (full_path, root, relative_path, kind, extension, size_bytes, modified_at,
+              created_at, hidden, vendor, content_indexed)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 entry.full_path.to_string_lossy(),
                 entry.root.to_string_lossy(),
                 entry.relative_path.to_string_lossy(),
                 kind,
                 entry.extension,
-                size_bytes,
+                u64_to_i64_saturating(entry.size_bytes),
                 modified_at,
                 created_at,
                 if entry.hidden { 1_i64 } else { 0_i64 },
+                if entry.vendor { 1_i64 } else { 0_i64 },
+                if entry.content_indexed { 1_i64 } else { 0_i64 },
             ],
         );
         if sqlite.fts_available
@@ -663,12 +893,10 @@ fn query_fts(state: &LocalSearchState, query: &str) -> anyhow::Result<Vec<PathBu
 }
 
 fn build_fts_query(query: &str) -> Option<String> {
-    let tokens = query
-        .split(|ch: char| !ch.is_alphanumeric() && ch != '_')
-        .map(str::trim)
+    let tokens = native::query_token_spans(query, 8)
+        .into_iter()
         .filter(|token| !token.is_empty())
-        .take(8)
-        .map(|token| format!("{token}*"))
+        .map(|token| format!("{}*", token.to_lowercase()))
         .collect::<Vec<_>>();
     if tokens.is_empty() {
         None
@@ -871,7 +1099,8 @@ fn score_indexed_entry(
             snippet_for_file(&entry.full_path, &query, options.max_file_size_bytes),
         ));
     }
-    if let Some(extension_query) = extension_query(&query, &options.extensions)
+    if options.enable_extension_match
+        && let Some(extension_query) = extension_query(&query, &options.extensions)
         && entry
             .extension
             .as_deref()
@@ -917,16 +1146,18 @@ fn score_indexed_entry(
             None,
         ));
     }
-    let basename_fuzzy = native::subsequence_score(&entry.lower_file_name, &query);
-    let path_fuzzy = native::subsequence_score(&entry.lower_path, &query);
-    let fuzzy = basename_fuzzy.max(path_fuzzy / 2);
-    if fuzzy > 900 {
-        return Some((
-            apply_entry_penalties(FUZZY_SCORE_BASE.saturating_add(fuzzy), entry),
-            LocalSearchMatchKind::Fuzzy,
-            LocalSearchSource::Index,
-            None,
-        ));
+    if options.enable_fuzzy {
+        let basename_fuzzy = native::subsequence_score(&entry.lower_file_name, &query);
+        let path_fuzzy = native::subsequence_score(&entry.lower_path, &query);
+        let fuzzy = basename_fuzzy.max(path_fuzzy / 2);
+        if fuzzy > 900 {
+            return Some((
+                apply_entry_penalties(FUZZY_SCORE_BASE.saturating_add(fuzzy), entry),
+                LocalSearchMatchKind::Fuzzy,
+                LocalSearchSource::Index,
+                None,
+            ));
+        }
     }
     None
 }
@@ -1045,6 +1276,35 @@ fn fallback_search(
                     LocalSearchSource::Walker,
                     LocalSearchMatchKind::Path,
                     None,
+                    LocalSearchIndexState::Walker,
+                );
+            }
+        }
+    }
+
+    if options.enable_extension_match
+        && extension_query(&options.query.trim().to_lowercase(), &options.extensions).is_some()
+    {
+        let extension_entries =
+            collect_fallback_content_entries(&search_roots, &options, cancel_flag.as_ref())?;
+        let empty_content_hits = HashSet::new();
+        for entry in &extension_entries {
+            if cancel_flag.load(Ordering::Relaxed) {
+                break;
+            }
+            if !entry_allowed(entry, &options) {
+                continue;
+            }
+            if let Some((score, match_kind, source, snippet)) =
+                score_indexed_entry(entry, &options, &empty_content_hits, false)
+            {
+                merge_candidate(
+                    &mut candidates,
+                    entry,
+                    score,
+                    source,
+                    match_kind,
+                    snippet,
                     LocalSearchIndexState::Walker,
                 );
             }
@@ -1430,6 +1690,36 @@ fn u64_to_i64(value: u64) -> Option<i64> {
     i64::try_from(value).ok()
 }
 
+fn u64_to_i64_saturating(value: u64) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
+}
+
+fn i64_to_u64(value: i64) -> u64 {
+    u64::try_from(value).unwrap_or(0)
+}
+
+fn index_state_to_storage(state: LocalSearchIndexState) -> &'static str {
+    match state {
+        LocalSearchIndexState::Empty => "empty",
+        LocalSearchIndexState::Indexing => "indexing",
+        LocalSearchIndexState::Ready => "ready",
+        LocalSearchIndexState::Partial => "partial",
+        LocalSearchIndexState::Failed => "failed",
+        LocalSearchIndexState::Walker => "walker",
+    }
+}
+
+fn index_state_from_storage(value: &str) -> LocalSearchIndexState {
+    match value {
+        "indexing" => LocalSearchIndexState::Indexing,
+        "ready" => LocalSearchIndexState::Ready,
+        "partial" => LocalSearchIndexState::Partial,
+        "failed" => LocalSearchIndexState::Failed,
+        "walker" => LocalSearchIndexState::Walker,
+        _ => LocalSearchIndexState::Empty,
+    }
+}
+
 fn aggregate_root_state<'a>(
     roots: impl Iterator<Item = &'a LocalSearchRootStatus>,
 ) -> LocalSearchIndexState {
@@ -1610,6 +1900,32 @@ mod tests {
     }
 
     #[test]
+    fn local_search_fallback_matches_extension_query_without_index() {
+        let dir = tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("src")).expect("src");
+        fs::write(dir.path().join("src/app.ts"), "export {};").expect("app");
+
+        let engine = LocalSearchEngine::new();
+        let results = engine
+            .search(
+                LocalSearchOptions {
+                    query: "ext:ts".to_string(),
+                    roots: vec![dir.path().to_path_buf()],
+                    content_mode: LocalSearchContentMode::Disabled,
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("search");
+
+        assert_eq!(results.index_state, LocalSearchIndexState::Walker);
+        assert!(results.results.iter().any(|result| {
+            result.display_path == "src/app.ts"
+                && result.match_kind == LocalSearchMatchKind::Extension
+        }));
+    }
+
+    #[test]
     fn read_result_rejects_path_outside_root() {
         let dir = tempdir().expect("tempdir");
         let outside = tempdir().expect("outside");
@@ -1644,5 +1960,55 @@ mod tests {
         assert_eq!(result.contents, "234");
         assert_eq!(result.bytes_read, 3);
         assert!(result.truncated);
+    }
+
+    #[test]
+    fn persistent_storage_reuses_index_across_engine_instances() {
+        let dir = tempdir().expect("tempdir");
+        let storage = tempdir().expect("storage");
+        fs::write(dir.path().join("persisted.txt"), "needle contents").expect("sample");
+
+        let config = LocalSearchEngineConfig {
+            storage_mode: LocalSearchStorageMode::Persistent {
+                storage_root: storage.path().to_path_buf(),
+            },
+        };
+        let first_engine = LocalSearchEngine::with_config(config.clone());
+        first_engine
+            .index_root(
+                LocalSearchIndexRootOptions {
+                    root: dir.path().to_path_buf(),
+                    include_hidden: true,
+                    include_vendor: true,
+                    content_mode: LocalSearchContentMode::Auto,
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("index");
+
+        let second_engine = LocalSearchEngine::with_config(config);
+        let status = second_engine.status();
+        assert_eq!(status.state, LocalSearchIndexState::Ready);
+        assert!(storage.path().join("local-search/index.v1.sqlite").exists());
+
+        let results = second_engine
+            .search(
+                LocalSearchOptions {
+                    query: "persisted".to_string(),
+                    roots: vec![dir.path().to_path_buf()],
+                    content_mode: LocalSearchContentMode::Disabled,
+                    ..Default::default()
+                },
+                None,
+            )
+            .expect("search");
+        assert_eq!(results.index_state, LocalSearchIndexState::Ready);
+        assert!(
+            results
+                .results
+                .iter()
+                .any(|result| result.display_path == "persisted.txt")
+        );
     }
 }

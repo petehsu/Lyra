@@ -1,16 +1,20 @@
 [package]
-name = "lyra-file-search"
+name = "lyra-local-search"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "lyra-file-search"
+name = "lyra-local-search"
 path = "src/main.rs"
 
 [lib]
-name = "lyra_file_search"
+name = "lyra_local_search"
 path = "src/lib.rs"
+
+[features]
+default = []
+asm-kernels = []
 
 [lints]
 workspace = true

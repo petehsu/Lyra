@@ -9,7 +9,7 @@ use lyra_app_server_protocol::FuzzyFileSearchResult;
 use lyra_app_server_protocol::FuzzyFileSearchSessionCompletedNotification;
 use lyra_app_server_protocol::FuzzyFileSearchSessionUpdatedNotification;
 use lyra_app_server_protocol::ServerNotification;
-use lyra_file_search as file_search;
+use lyra_local_search as file_search;
 use tracing::warn;
 
 use crate::outgoing_message::OutgoingMessageSender;

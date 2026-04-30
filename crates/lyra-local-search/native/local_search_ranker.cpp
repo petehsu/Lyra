@@ -1,5 +1,4 @@
-#include <stdint.h>
-#include <stddef.h>
+#include "local_search_native.h"
 
 static unsigned char lower_ascii(unsigned char value) {
     if (value >= 'A' && value <= 'Z') {
@@ -8,13 +7,13 @@ static unsigned char lower_ascii(unsigned char value) {
     return value;
 }
 
-uint32_t lyra_local_search_subsequence_score(
+extern "C" uint32_t lyra_local_search_subsequence_score(
     const uint8_t *haystack,
     size_t haystack_len,
     const uint8_t *needle,
     size_t needle_len
 ) {
-    if (haystack == NULL || needle == NULL || haystack_len == 0 || needle_len == 0) {
+    if (haystack == 0 || needle == 0 || haystack_len == 0 || needle_len == 0) {
         return 0;
     }
 
@@ -64,4 +63,13 @@ uint32_t lyra_local_search_subsequence_score(
         return 1;
     }
     return score - penalty;
+}
+
+extern "C" uint32_t lyra_local_search_asm_subsequence_score(
+    const uint8_t *haystack,
+    size_t haystack_len,
+    const uint8_t *needle,
+    size_t needle_len
+) {
+    return lyra_local_search_subsequence_score(haystack, haystack_len, needle, needle_len);
 }

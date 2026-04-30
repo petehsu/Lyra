@@ -583,9 +583,7 @@ fn fuzzy_subsequence_gap_count(needle: &str, haystack: &str) -> Option<usize> {
     let mut previous_match: Option<usize> = None;
     let mut haystack_chars = haystack.chars().enumerate();
     for needle_char in needle.chars() {
-        let (index, _) = haystack_chars.find(|(_, haystack_char)| {
-            *haystack_char == needle_char
-        })?;
+        let (index, _) = haystack_chars.find(|(_, haystack_char)| *haystack_char == needle_char)?;
         if let Some(previous_index) = previous_match
             && index > previous_index + 1
         {
@@ -629,8 +627,7 @@ fn filename_match_bonus(path: &Path, query: &str, match_type: MatchType) -> u32 
                 .filter_map(|target| fuzzy_subsequence_gap_count(&query, target))
                 .min()
                 .map(|gaps| {
-                    FILENAME_FUZZY_MATCH_BONUS
-                        .saturating_sub((gaps as u32).saturating_mul(1_000))
+                    FILENAME_FUZZY_MATCH_BONUS.saturating_sub((gaps as u32).saturating_mul(1_000))
                 })
                 .unwrap_or(0)
         }
@@ -684,13 +681,11 @@ fn collect_fuzzy_matches(
                 MatchType::File
             };
             Some(FileMatch {
-                score: match_
-                    .score
-                    .saturating_add(filename_match_bonus(
-                        Path::new(relative_path),
-                        query,
-                        match_type,
-                    )),
+                score: match_.score.saturating_add(filename_match_bonus(
+                    Path::new(relative_path),
+                    query,
+                    match_type,
+                )),
                 path: PathBuf::from(relative_path),
                 match_type,
                 root: search_directories[root_idx].clone(),

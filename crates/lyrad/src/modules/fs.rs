@@ -1,14 +1,13 @@
-use rayon::prelude::*;
+use lyra_local_search as core_search;
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 use uuid::Uuid;
 
 const DEFAULT_RESULT_LIMIT: usize = 48;
@@ -16,23 +15,9 @@ const MAX_RESULT_LIMIT: usize = 300;
 const DEFAULT_CONTENT_SCAN_ENABLED: bool = true;
 const DEFAULT_FUZZY_ENABLED: bool = true;
 const DEFAULT_EXTENSION_MATCH_ENABLED: bool = true;
-const MAX_TEXT_SCAN_BYTES: u64 = 1_000_000;
-const MAX_CONTENT_SCAN_FILES: usize = 4_000;
-const INDEX_MAX_FILES: usize = 250_000;
+const DEFAULT_TEXT_SCAN_BYTES: u64 = 1_000_000;
 const STREAM_RESULT_LIMIT_DEFAULT: usize = 120;
-const STREAM_EMIT_BATCH_SIZE: usize = 160;
 const STREAM_MAX_ACTIVE: usize = 64;
-const STREAM_CONTENT_SCAN_TARGET_MULTIPLIER: u64 = 4;
-const SKIP_DIRECTORY_NAMES: [&str; 8] = [
-    ".git",
-    "node_modules",
-    "dist",
-    "build",
-    "target",
-    ".cache",
-    "coverage",
-    ".turbo",
-];
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -77,6 +62,8 @@ pub struct SearchLocalRequest {
     pub enable_content: Option<bool>,
     #[serde(default)]
     pub enable_extension_match: Option<bool>,
+    #[serde(default)]
+    pub storage_root: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,6 +79,15 @@ pub struct SearchRebuildIndexRequest {
     pub include_hidden: Option<bool>,
     #[serde(default)]
     pub force: Option<bool>,
+    #[serde(default)]
+    pub storage_root: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchIndexStatusRequest {
+    #[serde(default)]
+    storage_root: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -195,107 +191,19 @@ pub struct SearchRebuildIndexResponse {
     pub roots: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-struct SearchMetadataEntry {
-    path: String,
-    file_name: String,
-    extension: Option<String>,
-    lower_path: String,
-    lower_file_name: String,
-    lower_extension: Option<String>,
-    modified_at: Option<u64>,
-    size_bytes: u64,
-}
-
-#[derive(Debug, Clone)]
-struct MetadataCollectionResult {
-    entries: Vec<SearchMetadataEntry>,
-    scanned_files: u64,
-    scanned_dirs: u64,
-    skipped_unreadable: u64,
-    truncated: bool,
-}
-
-#[derive(Debug, Clone)]
-struct SearchIndexStore {
-    status: SearchIndexStatusResponse,
-    scope_preset: SearchLocalScopePreset,
-    include_hidden: bool,
-    roots: Vec<String>,
-    entries: Vec<SearchMetadataEntry>,
-}
-
-impl Default for SearchIndexStore {
-    fn default() -> Self {
-        Self {
-            status: SearchIndexStatusResponse {
-                state: SearchIndexState::Idle,
-                indexed_files: 0,
-                indexed_dirs: 0,
-                last_built_at: None,
-                progress: None,
-                error: None,
-            },
-            scope_preset: SearchLocalScopePreset::Home,
-            include_hidden: false,
-            roots: Vec::new(),
-            entries: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct SearchStreamState {
     snapshot: SearchLocalStreamReadResponse,
+    cancel_flag: Arc<AtomicBool>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MatchKind {
-    Content,
-    FileName,
-    Extension,
-    Path,
-    Fuzzy,
-}
-
-impl MatchKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Content => "content",
-            Self::FileName => "file_name",
-            Self::Extension => "extension",
-            Self::Path => "path",
-            Self::Fuzzy => "fuzzy",
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct CandidateMatch {
-    path: String,
-    file_name: String,
-    extension: Option<String>,
-    modified_at: Option<u64>,
-    match_kind: MatchKind,
-    score: f64,
-    snippet: Option<String>,
-    line: Option<u64>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ContentScanOutcome {
-    Hit,
-    Miss,
-    Unreadable,
-    BinaryOrTooLarge,
-}
-
-static SEARCH_INDEX: OnceLock<RwLock<SearchIndexStore>> = OnceLock::new();
+static SEARCH_ENGINES: OnceLock<RwLock<HashMap<String, Arc<core_search::LocalSearchEngine>>>> =
+    OnceLock::new();
 static SEARCH_STREAMS: OnceLock<RwLock<HashMap<String, Arc<RwLock<SearchStreamState>>>>> =
     OnceLock::new();
 
-fn search_index_store() -> &'static RwLock<SearchIndexStore> {
-    SEARCH_INDEX.get_or_init(|| RwLock::new(SearchIndexStore::default()))
+fn search_engine_store() -> &'static RwLock<HashMap<String, Arc<core_search::LocalSearchEngine>>> {
+    SEARCH_ENGINES.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
 fn search_stream_store() -> &'static RwLock<HashMap<String, Arc<RwLock<SearchStreamState>>>> {
@@ -322,13 +230,6 @@ fn normalize_path_key(path: &Path) -> String {
     {
         normalize_path_string(path)
     }
-}
-
-fn unix_seconds_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
 }
 
 fn home_directory() -> Option<PathBuf> {
@@ -403,6 +304,20 @@ fn normalize_root_path(raw: &str) -> Option<PathBuf> {
     }
 }
 
+fn normalize_storage_root(raw: Option<&str>) -> Option<PathBuf> {
+    let raw = raw?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let path = expand_tilde_prefix(raw);
+    let resolved = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir().ok()?.join(path)
+    };
+    Some(resolved.canonicalize().unwrap_or(resolved))
+}
+
 fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut seen = std::collections::HashSet::new();
     let mut deduped = Vec::new();
@@ -449,176 +364,54 @@ fn resolve_scope_roots(
     dedupe_paths(roots)
 }
 
-fn should_skip_directory(name: &str, include_hidden: bool) -> bool {
-    if name.is_empty() {
-        return true;
-    }
-    if include_hidden == false && name.starts_with('.') {
-        return true;
-    }
-    SKIP_DIRECTORY_NAMES.contains(&name)
-}
-
-fn should_skip_file(name: &str, include_hidden: bool) -> bool {
-    if name.is_empty() {
-        return true;
-    }
-    if include_hidden == false && name.starts_with('.') {
-        return true;
-    }
-    false
-}
-
-fn to_metadata_entry(path: &Path) -> Option<SearchMetadataEntry> {
-    let metadata = fs::metadata(path).ok()?;
-    if metadata.is_file() == false {
+fn should_use_persistent_storage(
+    scope_preset: SearchLocalScopePreset,
+    storage_root: Option<&str>,
+) -> Option<PathBuf> {
+    if scope_preset != SearchLocalScopePreset::Workspace {
         return None;
     }
-    let path_string = normalize_path_string(path);
-    let file_name = path
-        .file_name()
-        .map(|value| value.to_string_lossy().to_string())
-        .unwrap_or_else(|| path_string.clone());
-    let extension = path
-        .extension()
-        .map(|value| value.to_string_lossy().to_string())
-        .filter(|value| value.is_empty() == false);
-    let modified_at = metadata
-        .modified()
-        .ok()
-        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-        .map(|value| value.as_secs());
-
-    Some(SearchMetadataEntry {
-        path: path_string.clone(),
-        file_name: file_name.clone(),
-        extension: extension.clone(),
-        lower_path: path_string.to_lowercase(),
-        lower_file_name: file_name.to_lowercase(),
-        lower_extension: extension.as_ref().map(|value| value.to_lowercase()),
-        modified_at,
-        size_bytes: metadata.len(),
-    })
+    normalize_storage_root(storage_root)
 }
 
-fn collect_metadata_entries(
-    roots: &[PathBuf],
-    include_hidden: bool,
-    max_files: usize,
-) -> MetadataCollectionResult {
-    let mut entries = Vec::new();
-    let mut stack = Vec::new();
-    let mut scanned_files = 0_u64;
-    let mut scanned_dirs = 0_u64;
-    let mut skipped_unreadable = 0_u64;
-    let mut truncated = false;
-
-    for root in roots {
-        let metadata = match fs::symlink_metadata(root) {
-            Ok(metadata) => metadata,
-            Err(_) => {
-                skipped_unreadable += 1;
-                continue;
-            }
-        };
-        if metadata.is_file() {
-            scanned_files += 1;
-            if let Some(entry) = to_metadata_entry(root) {
-                entries.push(entry);
-            }
-            if entries.len() >= max_files {
-                truncated = true;
-                break;
-            }
-            continue;
-        }
-        if metadata.is_dir() {
-            stack.push(root.clone());
+fn engine_for_storage(
+    storage_root: Option<PathBuf>,
+) -> Result<Arc<core_search::LocalSearchEngine>, String> {
+    let key = storage_root
+        .as_ref()
+        .map(|root| format!("persistent:{}", normalize_path_string(root)))
+        .unwrap_or_else(|| "memory".to_string());
+    if let Ok(guard) = search_engine_store().read() {
+        if let Some(engine) = guard.get(&key) {
+            return Ok(engine.clone());
         }
     }
 
-    while let Some(directory_path) = stack.pop() {
-        scanned_dirs += 1;
-        let directory = match fs::read_dir(&directory_path) {
-            Ok(directory) => directory,
-            Err(_) => {
-                skipped_unreadable += 1;
-                continue;
-            }
-        };
-
-        for entry_result in directory {
-            let entry = match entry_result {
-                Ok(entry) => entry,
-                Err(_) => {
-                    skipped_unreadable += 1;
-                    continue;
-                }
-            };
-            let entry_path = entry.path();
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            let file_type = match entry.file_type() {
-                Ok(file_type) => file_type,
-                Err(_) => {
-                    skipped_unreadable += 1;
-                    continue;
-                }
-            };
-            if file_type.is_symlink() {
-                continue;
-            }
-            if file_type.is_dir() {
-                if should_skip_directory(&file_name, include_hidden) {
-                    continue;
-                }
-                stack.push(entry_path);
-                continue;
-            }
-            if file_type.is_file() {
-                if should_skip_file(&file_name, include_hidden) {
-                    continue;
-                }
-                scanned_files += 1;
-                if let Some(metadata_entry) = to_metadata_entry(&entry_path) {
-                    entries.push(metadata_entry);
-                }
-                if entries.len() >= max_files {
-                    truncated = true;
-                    break;
-                }
-            }
+    let engine = Arc::new(match storage_root {
+        Some(storage_root) => {
+            core_search::LocalSearchEngine::with_config(core_search::LocalSearchEngineConfig {
+                storage_mode: core_search::LocalSearchStorageMode::Persistent { storage_root },
+            })
         }
-
-        if truncated {
-            break;
-        }
-    }
-
-    MetadataCollectionResult {
-        entries,
-        scanned_files,
-        scanned_dirs,
-        skipped_unreadable,
-        truncated,
-    }
+        None => core_search::LocalSearchEngine::new(),
+    });
+    let mut guard = search_engine_store()
+        .write()
+        .map_err(|_| "search engine state lock poisoned".to_string())?;
+    Ok(guard.entry(key).or_insert_with(|| engine).clone())
 }
 
-fn parse_extension_query(query_lower: &str) -> Option<String> {
-    if let Some(value) = query_lower.strip_prefix("ext:") {
-        let normalized = value.trim().trim_start_matches('.');
-        if normalized.is_empty() {
-            return None;
-        }
-        return Some(normalized.to_string());
-    }
-    if query_lower.starts_with('.') && query_lower.contains(char::is_whitespace) == false {
-        let normalized = query_lower.trim_start_matches('.');
-        if normalized.is_empty() {
-            return None;
-        }
-        return Some(normalized.to_string());
-    }
-    None
+fn engine_for_request(
+    scope_preset: SearchLocalScopePreset,
+    storage_root: Option<&str>,
+) -> Result<Arc<core_search::LocalSearchEngine>, String> {
+    engine_for_storage(should_use_persistent_storage(scope_preset, storage_root))
+}
+
+fn engine_for_status(
+    storage_root: Option<&str>,
+) -> Result<Arc<core_search::LocalSearchEngine>, String> {
+    engine_for_storage(normalize_storage_root(storage_root))
 }
 
 fn stable_local_result_id(path: &str) -> String {
@@ -627,572 +420,246 @@ fn stable_local_result_id(path: &str) -> String {
     format!("local-{:x}", hasher.finish())
 }
 
-fn subsequence_fuzzy_score(haystack: &str, needle: &str) -> Option<f64> {
-    if haystack.is_empty() || needle.is_empty() {
+fn file_name_from_path(path: &Path) -> String {
+    path.file_name()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| normalize_path_string(path))
+}
+
+fn extension_from_result(result: &core_search::LocalSearchResult) -> Option<String> {
+    result
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.extension.clone())
+        .or_else(|| {
+            result
+                .path
+                .extension()
+                .and_then(|value| value.to_str())
+                .map(str::to_string)
+        })
+}
+
+fn match_kind_to_legacy(kind: core_search::LocalSearchMatchKind) -> &'static str {
+    match kind {
+        core_search::LocalSearchMatchKind::Content => "content",
+        core_search::LocalSearchMatchKind::FileName => "file_name",
+        core_search::LocalSearchMatchKind::Extension => "extension",
+        core_search::LocalSearchMatchKind::Fuzzy => "fuzzy",
+        core_search::LocalSearchMatchKind::Initial
+        | core_search::LocalSearchMatchKind::Metadata
+        | core_search::LocalSearchMatchKind::Path => "path",
+    }
+}
+
+fn line_for_query(path: &Path, query: &str) -> Option<u64> {
+    if query.trim().is_empty() {
         return None;
     }
-    let mut score = 0.0;
-    let mut cursor = 0_usize;
-    let haystack_chars = haystack.chars().collect::<Vec<_>>();
-    let needle_chars = needle.chars().collect::<Vec<_>>();
-    for needle_char in needle_chars.iter() {
-        let mut matched = false;
-        for index in cursor..haystack_chars.len() {
-            if &haystack_chars[index] == needle_char {
-                let gap = index.saturating_sub(cursor);
-                score += if gap == 0 {
-                    1.8
-                } else {
-                    1.0 / (gap as f64 + 1.0)
-                };
-                cursor = index + 1;
-                matched = true;
-                break;
-            }
-        }
-        if matched == false {
-            return None;
-        }
+    let metadata = fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > DEFAULT_TEXT_SCAN_BYTES {
+        return None;
     }
-    Some(score / needle_chars.len() as f64)
+    let bytes = fs::read(path).ok()?;
+    if bytes.contains(&0) {
+        return None;
+    }
+    let text = String::from_utf8(bytes).ok()?;
+    let query = query.to_lowercase();
+    text.lines()
+        .position(|line| line.to_lowercase().contains(&query))
+        .map(|index| (index + 1) as u64)
 }
 
-fn update_candidate(
-    map: &mut HashMap<String, CandidateMatch>,
-    entry: &SearchMetadataEntry,
-    match_kind: MatchKind,
-    score: f64,
-    snippet: Option<String>,
-    line: Option<u64>,
-) {
-    let next = CandidateMatch {
-        path: entry.path.clone(),
-        file_name: entry.file_name.clone(),
-        extension: entry.extension.clone(),
-        modified_at: entry.modified_at,
-        match_kind,
-        score,
-        snippet,
-        line,
-    };
-
-    let key = entry.path.clone();
-    if let Some(current) = map.get_mut(&key) {
-        if score > current.score {
-            *current = next;
-            return;
-        }
-        if current.snippet.is_none() && next.snippet.is_some() {
-            current.snippet = next.snippet;
-            current.line = next.line;
-            if match_kind == MatchKind::Content {
-                current.match_kind = MatchKind::Content;
-            }
-        }
-        return;
-    }
-    map.insert(key, next);
-}
-
-fn merge_candidate(map: &mut HashMap<String, CandidateMatch>, next: CandidateMatch) {
-    let key = next.path.clone();
-    if let Some(current) = map.get_mut(&key) {
-        if next.score > current.score {
-            *current = next;
-            return;
-        }
-        if current.snippet.is_none() && next.snippet.is_some() {
-            current.snippet = next.snippet;
-            current.line = next.line;
-            if next.match_kind == MatchKind::Content {
-                current.match_kind = MatchKind::Content;
-            }
-        }
-        return;
-    }
-    map.insert(key, next);
-}
-
-fn consider_best_candidate(best: &mut Option<CandidateMatch>, next: CandidateMatch) {
-    if let Some(current) = best {
-        if next.score > current.score {
-            *current = next;
-            return;
-        }
-        if current.snippet.is_none() && next.snippet.is_some() {
-            current.snippet = next.snippet;
-            current.line = next.line;
-            if next.match_kind == MatchKind::Content {
-                current.match_kind = MatchKind::Content;
-            }
-        }
-        return;
-    }
-    *best = Some(next);
-}
-
-fn candidate_rank_order(left: &CandidateMatch, right: &CandidateMatch) -> Ordering {
-    let score_order = right
-        .score
-        .partial_cmp(&left.score)
-        .unwrap_or(Ordering::Equal);
-    if score_order != Ordering::Equal {
-        return score_order;
-    }
-    let name_order = left
-        .file_name
-        .to_lowercase()
-        .cmp(&right.file_name.to_lowercase());
-    if name_order != Ordering::Equal {
-        return name_order;
-    }
-    left.path.to_lowercase().cmp(&right.path.to_lowercase())
-}
-
-fn clip_snippet(line: &str, max_chars: usize) -> String {
-    let trimmed = line.trim();
-    if trimmed.chars().count() <= max_chars {
-        return trimmed.to_string();
-    }
-    trimmed.chars().take(max_chars).collect::<String>() + "..."
-}
-
-fn scan_content_for_query(
-    file_path: &str,
-    query_lower: &str,
-) -> (ContentScanOutcome, Option<String>, Option<u64>) {
-    let metadata = match fs::metadata(file_path) {
-        Ok(metadata) => metadata,
-        Err(_) => return (ContentScanOutcome::Unreadable, None, None),
-    };
-    if metadata.is_file() == false || metadata.len() > MAX_TEXT_SCAN_BYTES {
-        return (ContentScanOutcome::BinaryOrTooLarge, None, None);
-    }
-    let bytes = match fs::read(file_path) {
-        Ok(bytes) => bytes,
-        Err(_) => return (ContentScanOutcome::Unreadable, None, None),
-    };
-    if bytes.iter().any(|byte| *byte == 0) {
-        return (ContentScanOutcome::BinaryOrTooLarge, None, None);
-    }
-    let text = match String::from_utf8(bytes) {
-        Ok(text) => text,
-        Err(_) => return (ContentScanOutcome::BinaryOrTooLarge, None, None),
-    };
-    for (index, line) in text.lines().enumerate() {
-        if line.to_lowercase().contains(query_lower) {
-            return (
-                ContentScanOutcome::Hit,
-                Some(clip_snippet(line, 220)),
-                Some((index + 1) as u64),
-            );
-        }
-    }
-    (ContentScanOutcome::Miss, None, None)
-}
-
-fn apply_metadata_matching(
-    candidates: &mut HashMap<String, CandidateMatch>,
-    entries: &[SearchMetadataEntry],
-    query_lower: &str,
-    extension_query: Option<&str>,
-    enable_fuzzy: bool,
-    enable_extension_match: bool,
-) {
-    for entry in entries {
-        if entry.lower_file_name.contains(query_lower) {
-            let score = 120.0
-                + (query_lower.len().min(entry.lower_file_name.len()) as f64
-                    / entry.lower_file_name.len().max(1) as f64);
-            update_candidate(candidates, entry, MatchKind::FileName, score, None, None);
-        }
-        if entry.lower_path.contains(query_lower) {
-            let score = 85.0
-                + (query_lower.len().min(entry.lower_path.len()) as f64
-                    / entry.lower_path.len().max(1) as f64);
-            update_candidate(candidates, entry, MatchKind::Path, score, None, None);
-        }
-        if enable_extension_match {
-            if let Some(extension_query) = extension_query {
-                if entry
-                    .lower_extension
-                    .as_ref()
-                    .map(|value| value == extension_query)
-                    .unwrap_or(false)
-                {
-                    update_candidate(candidates, entry, MatchKind::Extension, 102.0, None, None);
-                }
-            }
-        }
-        if enable_fuzzy {
-            if let Some(score) = subsequence_fuzzy_score(&entry.lower_file_name, query_lower) {
-                if score > 0.35 {
-                    update_candidate(
-                        candidates,
-                        entry,
-                        MatchKind::Fuzzy,
-                        60.0 + score * 40.0,
-                        None,
-                        None,
-                    );
-                    continue;
-                }
-            }
-            if let Some(score) = subsequence_fuzzy_score(&entry.lower_path, query_lower) {
-                if score > 0.30 {
-                    update_candidate(
-                        candidates,
-                        entry,
-                        MatchKind::Fuzzy,
-                        52.0 + score * 34.0,
-                        None,
-                        None,
-                    );
-                }
-            }
-        }
-    }
-}
-
-fn apply_content_matching(
-    candidates: &mut HashMap<String, CandidateMatch>,
-    entries: &[SearchMetadataEntry],
-    query_lower: &str,
-    stats: &mut SearchLocalStats,
-) {
-    let mut scanned = 0_usize;
-    for entry in entries {
-        if scanned >= MAX_CONTENT_SCAN_FILES {
-            break;
-        }
-        scanned += 1;
-        if entry.size_bytes > MAX_TEXT_SCAN_BYTES {
-            stats.skipped_binary_or_too_large += 1;
-            continue;
-        }
-        stats.content_scanned_files += 1;
-        let (outcome, snippet, line) = scan_content_for_query(&entry.path, query_lower);
-        match outcome {
-            ContentScanOutcome::Hit => {
-                let bonus = if let Some(existing) = candidates.get(&entry.path) {
-                    existing.score.max(130.0) + 25.0
-                } else {
-                    130.0
-                };
-                update_candidate(candidates, entry, MatchKind::Content, bonus, snippet, line);
-            }
-            ContentScanOutcome::Unreadable => {
-                stats.skipped_unreadable += 1;
-            }
-            ContentScanOutcome::BinaryOrTooLarge => {
-                stats.skipped_binary_or_too_large += 1;
-            }
-            ContentScanOutcome::Miss => {}
-        }
-    }
-}
-
-fn find_matches(
-    entries: &[SearchMetadataEntry],
+fn to_search_result_item(
+    result: core_search::LocalSearchResult,
     query: &str,
-    enable_fuzzy: bool,
-    enable_content: bool,
-    enable_extension_match: bool,
-    stats: &mut SearchLocalStats,
-) -> Vec<CandidateMatch> {
-    let query_lower = query.to_lowercase();
-    let extension_query = parse_extension_query(&query_lower);
-    let mut candidates = HashMap::<String, CandidateMatch>::new();
-
-    apply_metadata_matching(
-        &mut candidates,
-        entries,
-        &query_lower,
-        extension_query.as_deref(),
-        enable_fuzzy,
-        enable_extension_match,
-    );
-
-    if enable_content {
-        apply_content_matching(&mut candidates, entries, &query_lower, stats);
+) -> SearchLocalResultItem {
+    let path = normalize_path_string(&result.path);
+    let file_name = file_name_from_path(&result.path);
+    let line = if result.match_kind == core_search::LocalSearchMatchKind::Content {
+        line_for_query(&result.path, query)
+    } else {
+        None
+    };
+    SearchLocalResultItem {
+        id: stable_local_result_id(&path),
+        path: path.clone(),
+        display_path: path,
+        file_name,
+        extension: extension_from_result(&result),
+        match_kind: match_kind_to_legacy(result.match_kind).to_string(),
+        score: f64::from(result.score) / 10_000.0,
+        snippet: result.snippet,
+        line,
+        modified_at: result.metadata.and_then(|metadata| metadata.modified_at),
     }
-
-    let mut values = candidates.into_values().collect::<Vec<_>>();
-    values.sort_by(candidate_rank_order);
-    values
 }
 
-fn to_search_results(
-    matches: Vec<CandidateMatch>,
+fn core_content_mode(enabled: bool) -> core_search::LocalSearchContentMode {
+    if enabled {
+        core_search::LocalSearchContentMode::Auto
+    } else {
+        core_search::LocalSearchContentMode::Disabled
+    }
+}
+
+fn to_core_search_options(
+    request: &SearchLocalRequest,
+    roots: Vec<PathBuf>,
     limit: usize,
-) -> (Vec<SearchLocalResultItem>, bool) {
-    let truncated = matches.len() > limit;
-    let results = matches
-        .into_iter()
-        .take(limit)
-        .map(|item| SearchLocalResultItem {
-            id: stable_local_result_id(&item.path),
-            path: item.path.clone(),
-            display_path: item.path,
-            file_name: item.file_name,
-            extension: item.extension,
-            match_kind: item.match_kind.as_str().to_string(),
-            score: (item.score * 100.0).round() / 100.0,
-            snippet: item.snippet,
-            line: item.line,
-            modified_at: item.modified_at,
-        })
-        .collect::<Vec<_>>();
-    (results, truncated)
-}
-
-#[derive(Debug, Clone)]
-struct ProcessedEntryResult {
-    candidate: Option<CandidateMatch>,
-    content_scanned_files: u64,
-    skipped_unreadable: u64,
-    skipped_binary_or_too_large: u64,
-}
-
-fn try_consume_content_budget(budget: &AtomicUsize) -> bool {
-    let mut current = budget.load(AtomicOrdering::Relaxed);
-    loop {
-        if current == 0 {
-            return false;
-        }
-        match budget.compare_exchange_weak(
-            current,
-            current - 1,
-            AtomicOrdering::SeqCst,
-            AtomicOrdering::Relaxed,
-        ) {
-            Ok(_) => return true,
-            Err(next) => current = next,
-        }
+) -> core_search::LocalSearchOptions {
+    core_search::LocalSearchOptions {
+        query: request.query.trim().to_string(),
+        roots,
+        kinds: vec![core_search::LocalSearchKind::File],
+        extensions: Vec::new(),
+        limit,
+        include_hidden: request.include_hidden.unwrap_or(false),
+        include_vendor: false,
+        respect_gitignore: true,
+        content_mode: core_content_mode(
+            request
+                .enable_content
+                .unwrap_or(DEFAULT_CONTENT_SCAN_ENABLED),
+        ),
+        max_file_size_bytes: DEFAULT_TEXT_SCAN_BYTES,
+        enable_fuzzy: request.enable_fuzzy.unwrap_or(DEFAULT_FUZZY_ENABLED),
+        enable_extension_match: request
+            .enable_extension_match
+            .unwrap_or(DEFAULT_EXTENSION_MATCH_ENABLED),
     }
 }
 
-fn evaluate_entry_for_query(
-    entry: &SearchMetadataEntry,
-    query_lower: &str,
-    extension_query: Option<&str>,
-    enable_fuzzy: bool,
-    enable_content: bool,
-    enable_extension_match: bool,
-    content_budget: &AtomicUsize,
-) -> ProcessedEntryResult {
-    let mut best: Option<CandidateMatch> = None;
-
-    if entry.lower_file_name.contains(query_lower) {
-        let score = 120.0
-            + (query_lower.len().min(entry.lower_file_name.len()) as f64
-                / entry.lower_file_name.len().max(1) as f64);
-        consider_best_candidate(
-            &mut best,
-            CandidateMatch {
-                path: entry.path.clone(),
-                file_name: entry.file_name.clone(),
-                extension: entry.extension.clone(),
-                modified_at: entry.modified_at,
-                match_kind: MatchKind::FileName,
-                score,
-                snippet: None,
-                line: None,
-            },
-        );
-    }
-    if entry.lower_path.contains(query_lower) {
-        let score = 85.0
-            + (query_lower.len().min(entry.lower_path.len()) as f64
-                / entry.lower_path.len().max(1) as f64);
-        consider_best_candidate(
-            &mut best,
-            CandidateMatch {
-                path: entry.path.clone(),
-                file_name: entry.file_name.clone(),
-                extension: entry.extension.clone(),
-                modified_at: entry.modified_at,
-                match_kind: MatchKind::Path,
-                score,
-                snippet: None,
-                line: None,
-            },
-        );
-    }
-    if enable_extension_match {
-        if let Some(extension_query) = extension_query {
-            if entry
-                .lower_extension
-                .as_ref()
-                .map(|value| value == extension_query)
-                .unwrap_or(false)
-            {
-                consider_best_candidate(
-                    &mut best,
-                    CandidateMatch {
-                        path: entry.path.clone(),
-                        file_name: entry.file_name.clone(),
-                        extension: entry.extension.clone(),
-                        modified_at: entry.modified_at,
-                        match_kind: MatchKind::Extension,
-                        score: 102.0,
-                        snippet: None,
-                        line: None,
-                    },
-                );
-            }
-        }
-    }
-    if enable_fuzzy {
-        if let Some(score) = subsequence_fuzzy_score(&entry.lower_file_name, query_lower) {
-            if score > 0.35 {
-                consider_best_candidate(
-                    &mut best,
-                    CandidateMatch {
-                        path: entry.path.clone(),
-                        file_name: entry.file_name.clone(),
-                        extension: entry.extension.clone(),
-                        modified_at: entry.modified_at,
-                        match_kind: MatchKind::Fuzzy,
-                        score: 60.0 + score * 40.0,
-                        snippet: None,
-                        line: None,
-                    },
-                );
-            }
-        }
-        if let Some(score) = subsequence_fuzzy_score(&entry.lower_path, query_lower) {
-            if score > 0.30 {
-                consider_best_candidate(
-                    &mut best,
-                    CandidateMatch {
-                        path: entry.path.clone(),
-                        file_name: entry.file_name.clone(),
-                        extension: entry.extension.clone(),
-                        modified_at: entry.modified_at,
-                        match_kind: MatchKind::Fuzzy,
-                        score: 52.0 + score * 34.0,
-                        snippet: None,
-                        line: None,
-                    },
-                );
-            }
-        }
-    }
-
-    let mut content_scanned_files = 0_u64;
-    let mut skipped_unreadable = 0_u64;
-    let mut skipped_binary_or_too_large = 0_u64;
-    if enable_content {
-        if entry.size_bytes > MAX_TEXT_SCAN_BYTES {
-            skipped_binary_or_too_large += 1;
-        } else if try_consume_content_budget(content_budget) {
-            content_scanned_files += 1;
-            let (outcome, snippet, line) = scan_content_for_query(&entry.path, query_lower);
-            match outcome {
-                ContentScanOutcome::Hit => {
-                    let boosted = if let Some(existing) = &best {
-                        existing.score.max(130.0) + 25.0
-                    } else {
-                        130.0
-                    };
-                    consider_best_candidate(
-                        &mut best,
-                        CandidateMatch {
-                            path: entry.path.clone(),
-                            file_name: entry.file_name.clone(),
-                            extension: entry.extension.clone(),
-                            modified_at: entry.modified_at,
-                            match_kind: MatchKind::Content,
-                            score: boosted,
-                            snippet,
-                            line,
-                        },
-                    );
-                }
-                ContentScanOutcome::Unreadable => {
-                    skipped_unreadable += 1;
-                }
-                ContentScanOutcome::BinaryOrTooLarge => {
-                    skipped_binary_or_too_large += 1;
-                }
-                ContentScanOutcome::Miss => {}
-            }
-        }
-    }
-
-    ProcessedEntryResult {
-        candidate: best,
-        content_scanned_files,
-        skipped_unreadable,
-        skipped_binary_or_too_large,
-    }
-}
-
-fn process_entry_batch_parallel(
-    entries: &[SearchMetadataEntry],
-    query_lower: &str,
-    extension_query: Option<&str>,
-    enable_fuzzy: bool,
-    enable_content: bool,
-    enable_extension_match: bool,
-    content_budget: &AtomicUsize,
-) -> Vec<ProcessedEntryResult> {
-    entries
-        .par_iter()
-        .map(|entry| {
-            evaluate_entry_for_query(
-                entry,
-                query_lower,
-                extension_query,
-                enable_fuzzy,
-                enable_content,
-                enable_extension_match,
-                content_budget,
-            )
-        })
-        .collect::<Vec<_>>()
-}
-
-fn top_candidates(
-    candidates: &HashMap<String, CandidateMatch>,
-    limit: usize,
-) -> (Vec<CandidateMatch>, bool, u64) {
-    let mut values = candidates.values().cloned().collect::<Vec<_>>();
-    let matched_files = values.len() as u64;
-    if values.len() <= limit {
-        values.sort_by(candidate_rank_order);
-        return (values, false, matched_files);
-    }
-    values.select_nth_unstable_by(limit, candidate_rank_order);
-    let mut top = values.into_iter().take(limit).collect::<Vec<_>>();
-    top.sort_by(candidate_rank_order);
-    (top, true, matched_files)
-}
-
-fn to_stream_snapshot_results(
-    candidates: &HashMap<String, CandidateMatch>,
-    limit: usize,
-) -> (Vec<SearchLocalResultItem>, bool, u64) {
-    let (top, truncated, matched_files) = top_candidates(candidates, limit);
-    let (results, _ignored_truncated) = to_search_results(top, limit);
-    (results, truncated, matched_files)
-}
-
-fn read_cached_entries(
-    scope_preset: SearchLocalScopePreset,
-    include_hidden: bool,
+fn indexed_root_statuses_for_response(
+    status: core_search::LocalSearchStatus,
     roots: &[String],
-) -> Option<(Vec<SearchMetadataEntry>, SearchIndexStatusResponse)> {
-    let guard = search_index_store().read().ok()?;
-    if guard.status.state == SearchIndexState::Ready
-        && guard.scope_preset == scope_preset
-        && guard.include_hidden == include_hidden
-        && guard.roots == roots
-    {
-        return Some((guard.entries.clone(), guard.status.clone()));
+) -> Vec<core_search::LocalSearchRootStatus> {
+    let requested = roots
+        .iter()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    let matching = status
+        .roots
+        .iter()
+        .filter(|root| requested.contains(&normalize_path_string(&root.root)))
+        .cloned()
+        .collect::<Vec<_>>();
+    if matching.is_empty() {
+        status.roots
+    } else {
+        matching
     }
-    None
+}
+
+fn stats_from_core(
+    engine: &core_search::LocalSearchEngine,
+    response: &core_search::LocalSearchResponse,
+    roots: &[String],
+) -> SearchLocalStats {
+    let status_roots = indexed_root_statuses_for_response(engine.status(), roots);
+    let used_index = !matches!(
+        response.index_state,
+        core_search::LocalSearchIndexState::Empty | core_search::LocalSearchIndexState::Walker
+    );
+    SearchLocalStats {
+        scanned_files: status_roots
+            .iter()
+            .map(|root| root.indexed_file_count)
+            .sum::<u64>(),
+        scanned_dirs: status_roots
+            .iter()
+            .map(|root| root.indexed_dir_count)
+            .sum::<u64>(),
+        content_scanned_files: status_roots
+            .iter()
+            .map(|root| root.indexed_content_file_count)
+            .sum::<u64>(),
+        matched_files: response.total_match_count as u64,
+        skipped_unreadable: 0,
+        skipped_binary_or_too_large: 0,
+        used_index,
+    }
+}
+
+fn to_search_local_response(
+    request: &SearchLocalRequest,
+    engine: &core_search::LocalSearchEngine,
+    response: core_search::LocalSearchResponse,
+    elapsed_ms: u64,
+) -> SearchLocalResponse {
+    let roots = response
+        .roots
+        .iter()
+        .map(|root| normalize_path_string(root))
+        .collect::<Vec<_>>();
+    let stats = stats_from_core(engine, &response, &roots);
+    SearchLocalResponse {
+        query: response.query.clone(),
+        scope_preset: request.scope_preset,
+        roots,
+        results: response
+            .results
+            .into_iter()
+            .map(|result| to_search_result_item(result, &request.query))
+            .collect(),
+        truncated: response.truncated,
+        elapsed_ms,
+        stats,
+    }
+}
+
+fn index_state_to_legacy(state: core_search::LocalSearchIndexState) -> SearchIndexState {
+    match state {
+        core_search::LocalSearchIndexState::Empty | core_search::LocalSearchIndexState::Walker => {
+            SearchIndexState::Idle
+        }
+        core_search::LocalSearchIndexState::Indexing => SearchIndexState::Building,
+        core_search::LocalSearchIndexState::Ready | core_search::LocalSearchIndexState::Partial => {
+            SearchIndexState::Ready
+        }
+        core_search::LocalSearchIndexState::Failed => SearchIndexState::Failed,
+    }
+}
+
+fn to_index_status(status: core_search::LocalSearchStatus) -> SearchIndexStatusResponse {
+    let last_built_at = status
+        .roots
+        .iter()
+        .filter_map(|root| root.last_indexed_at)
+        .max()
+        .map(|value| value.to_string());
+    let error = status.roots.iter().find_map(|root| root.error.clone());
+    let state = index_state_to_legacy(status.state);
+    let progress = match state {
+        SearchIndexState::Building => Some(0.0),
+        SearchIndexState::Ready => Some(1.0),
+        SearchIndexState::Idle | SearchIndexState::Failed => None,
+    };
+    SearchIndexStatusResponse {
+        state,
+        indexed_files: status.indexed_file_count,
+        indexed_dirs: status.indexed_dir_count,
+        last_built_at,
+        progress,
+        error,
+    }
+}
+
+fn roots_ready(status: &core_search::LocalSearchStatus, roots: &[String]) -> bool {
+    if roots.is_empty() {
+        return false;
+    }
+    let ready_roots = status
+        .roots
+        .iter()
+        .filter(|root| {
+            root.state == core_search::LocalSearchIndexState::Ready
+                || root.state == core_search::LocalSearchIndexState::Partial
+        })
+        .map(|root| normalize_path_string(&root.root))
+        .collect::<std::collections::HashSet<_>>();
+    roots.iter().all(|root| ready_roots.contains(root))
 }
 
 fn prune_stream_store(streams: &mut HashMap<String, Arc<RwLock<SearchStreamState>>>) {
@@ -1219,45 +686,6 @@ fn prune_stream_store(streams: &mut HashMap<String, Arc<RwLock<SearchStreamState
     }
 }
 
-fn apply_processed_entry_results(
-    processed_entries: Vec<ProcessedEntryResult>,
-    candidates: &mut HashMap<String, CandidateMatch>,
-    stats: &mut SearchLocalStats,
-) {
-    for processed in processed_entries {
-        stats.content_scanned_files += processed.content_scanned_files;
-        stats.skipped_unreadable += processed.skipped_unreadable;
-        stats.skipped_binary_or_too_large += processed.skipped_binary_or_too_large;
-        if let Some(candidate) = processed.candidate {
-            merge_candidate(candidates, candidate);
-        }
-    }
-    stats.matched_files = candidates.len() as u64;
-}
-
-fn publish_stream_snapshot(
-    stream_state: &Arc<RwLock<SearchStreamState>>,
-    candidates: &HashMap<String, CandidateMatch>,
-    stats: &SearchLocalStats,
-    limit: usize,
-    done: bool,
-    error: Option<String>,
-    elapsed_ms: u64,
-) {
-    let (results, truncated, matched_files) = to_stream_snapshot_results(candidates, limit);
-    if let Ok(mut guard) = stream_state.write() {
-        guard.snapshot.results = results;
-        guard.snapshot.truncated = truncated;
-        guard.snapshot.stats = SearchLocalStats {
-            matched_files,
-            ..stats.clone()
-        };
-        guard.snapshot.elapsed_ms = elapsed_ms;
-        guard.snapshot.done = done;
-        guard.snapshot.error = error;
-    }
-}
-
 fn stream_is_active(stream_id: &str) -> bool {
     search_stream_store()
         .read()
@@ -1265,157 +693,32 @@ fn stream_is_active(stream_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn process_stream_batch(
-    batch: &mut Vec<SearchMetadataEntry>,
-    query_lower: &str,
-    extension_query: Option<&str>,
-    enable_fuzzy: bool,
-    enable_content: bool,
-    enable_extension_match: bool,
-    content_budget: &AtomicUsize,
-    candidates: &mut HashMap<String, CandidateMatch>,
-    stats: &mut SearchLocalStats,
-    stream_state: &Arc<RwLock<SearchStreamState>>,
-    limit: usize,
-    started_at: &Instant,
-    force_emit: bool,
-) {
-    if batch.is_empty() {
-        return;
-    }
-    let snapshot = std::mem::take(batch);
-    let content_scan_target = (limit as u64)
-        .saturating_mul(STREAM_CONTENT_SCAN_TARGET_MULTIPLIER)
-        .max(STREAM_EMIT_BATCH_SIZE as u64);
-    let enable_content_for_batch = enable_content && stats.matched_files < content_scan_target;
-    let processed = process_entry_batch_parallel(
-        &snapshot,
-        query_lower,
-        extension_query,
-        enable_fuzzy,
-        enable_content_for_batch,
-        enable_extension_match,
-        content_budget,
-    );
-    apply_processed_entry_results(processed, candidates, stats);
-    if force_emit || stats.scanned_files % STREAM_EMIT_BATCH_SIZE as u64 == 0 {
-        publish_stream_snapshot(
-            stream_state,
-            candidates,
-            stats,
-            limit,
-            false,
-            None,
-            started_at.elapsed().as_millis() as u64,
-        );
-    }
-}
-
 pub fn search_local_json(request_json: String) -> Result<String, String> {
     let started_at = Instant::now();
     let request: SearchLocalRequest =
         serde_json::from_str(&request_json).map_err(|error| format!("invalid request: {error}"))?;
-    let query = request.query.trim().to_string();
-    if query.is_empty() {
+    if request.query.trim().is_empty() {
         return Err("query is required".to_string());
     }
-
-    let limit = clamp_limit(request.limit);
-    let include_hidden = request.include_hidden.unwrap_or(false);
-    let enable_fuzzy = request.enable_fuzzy.unwrap_or(DEFAULT_FUZZY_ENABLED);
-    let enable_content = request
-        .enable_content
-        .unwrap_or(DEFAULT_CONTENT_SCAN_ENABLED);
-    let enable_extension_match = request
-        .enable_extension_match
-        .unwrap_or(DEFAULT_EXTENSION_MATCH_ENABLED);
     let roots = resolve_scope_roots(
         request.scope_preset,
         &request.custom_roots,
         request.project_root.as_deref(),
     );
-    let root_paths = roots
-        .iter()
-        .map(|value| normalize_path_string(value))
-        .collect::<Vec<_>>();
-    if root_paths.is_empty() {
+    if roots.is_empty() {
         return Err("resolved search roots are empty".to_string());
     }
-
-    let mut stats = SearchLocalStats {
-        scanned_files: 0,
-        scanned_dirs: 0,
-        content_scanned_files: 0,
-        matched_files: 0,
-        skipped_unreadable: 0,
-        skipped_binary_or_too_large: 0,
-        used_index: false,
-    };
-
-    let mut entries = Vec::<SearchMetadataEntry>::new();
-    let mut collected_for_cache = false;
-    {
-        let guard = search_index_store()
-            .read()
-            .map_err(|_| "search index state lock poisoned".to_string())?;
-        if guard.status.state == SearchIndexState::Ready
-            && guard.scope_preset == request.scope_preset
-            && guard.include_hidden == include_hidden
-            && guard.roots == root_paths
-        {
-            entries = guard.entries.clone();
-            stats.scanned_files = guard.status.indexed_files;
-            stats.scanned_dirs = guard.status.indexed_dirs;
-            stats.used_index = true;
-        }
-    }
-
-    if entries.is_empty() {
-        let collection = collect_metadata_entries(&roots, include_hidden, INDEX_MAX_FILES);
-        stats.scanned_files = collection.scanned_files;
-        stats.scanned_dirs = collection.scanned_dirs;
-        stats.skipped_unreadable += collection.skipped_unreadable;
-        entries = collection.entries;
-        collected_for_cache = true;
-    }
-
-    if collected_for_cache {
-        let status = SearchIndexStatusResponse {
-            state: SearchIndexState::Ready,
-            indexed_files: stats.scanned_files,
-            indexed_dirs: stats.scanned_dirs,
-            last_built_at: Some(unix_seconds_now().to_string()),
-            progress: Some(1.0),
-            error: None,
-        };
-        if let Ok(mut guard) = search_index_store().write() {
-            guard.status = status;
-            guard.scope_preset = request.scope_preset;
-            guard.include_hidden = include_hidden;
-            guard.roots = root_paths.clone();
-            guard.entries = entries.clone();
-        }
-    }
-
-    let matches = find_matches(
-        &entries,
-        &query,
-        enable_fuzzy,
-        enable_content,
-        enable_extension_match,
-        &mut stats,
+    let engine = engine_for_request(request.scope_preset, request.storage_root.as_deref())?;
+    let options = to_core_search_options(&request, roots, clamp_limit(request.limit));
+    let response = engine
+        .search(options, None)
+        .map_err(|error| format!("local search failed: {error}"))?;
+    let response = to_search_local_response(
+        &request,
+        &engine,
+        response,
+        started_at.elapsed().as_millis() as u64,
     );
-    stats.matched_files = matches.len() as u64;
-    let (results, truncated) = to_search_results(matches, limit);
-    let response = SearchLocalResponse {
-        query,
-        scope_preset: request.scope_preset,
-        roots: root_paths,
-        results,
-        truncated,
-        elapsed_ms: started_at.elapsed().as_millis() as u64,
-        stats,
-    };
     serde_json::to_string(&response).map_err(|error| format!("serialize response failed: {error}"))
 }
 
@@ -1424,258 +727,67 @@ fn run_search_local_stream_worker(
     stream_state: Arc<RwLock<SearchStreamState>>,
     request: SearchLocalRequest,
     roots: Vec<PathBuf>,
-    root_paths: Vec<String>,
     limit: usize,
+    engine: Arc<core_search::LocalSearchEngine>,
+    cancel_flag: Arc<AtomicBool>,
 ) {
     let started_at = Instant::now();
-    let include_hidden = request.include_hidden.unwrap_or(false);
-    let enable_fuzzy = request.enable_fuzzy.unwrap_or(DEFAULT_FUZZY_ENABLED);
-    let enable_content = request
-        .enable_content
-        .unwrap_or(DEFAULT_CONTENT_SCAN_ENABLED);
-    let enable_extension_match = request
-        .enable_extension_match
-        .unwrap_or(DEFAULT_EXTENSION_MATCH_ENABLED);
-    let query = request.query.trim().to_string();
-    let query_lower = query.to_lowercase();
-    let extension_query = parse_extension_query(&query_lower);
-    let content_budget = Arc::new(AtomicUsize::new(MAX_CONTENT_SCAN_FILES));
-
-    let mut stats = SearchLocalStats {
-        scanned_files: 0,
-        scanned_dirs: 0,
-        content_scanned_files: 0,
-        matched_files: 0,
-        skipped_unreadable: 0,
-        skipped_binary_or_too_large: 0,
-        used_index: false,
-    };
-    let mut candidates = HashMap::<String, CandidateMatch>::new();
-
-    if let Some((entries, status)) =
-        read_cached_entries(request.scope_preset, include_hidden, &root_paths)
-    {
-        stats.used_index = true;
-        stats.scanned_files = status.indexed_files;
-        stats.scanned_dirs = status.indexed_dirs;
-
-        for chunk in entries.chunks(STREAM_EMIT_BATCH_SIZE) {
-            if stream_is_active(&stream_id) == false {
-                return;
-            }
-            let processed = process_entry_batch_parallel(
-                chunk,
-                &query_lower,
-                extension_query.as_deref(),
-                enable_fuzzy,
-                enable_content,
-                enable_extension_match,
-                content_budget.as_ref(),
-            );
-            apply_processed_entry_results(processed, &mut candidates, &mut stats);
-            publish_stream_snapshot(
-                &stream_state,
-                &candidates,
-                &stats,
-                limit,
-                false,
-                None,
-                started_at.elapsed().as_millis() as u64,
-            );
-        }
-
-        publish_stream_snapshot(
-            &stream_state,
-            &candidates,
-            &stats,
-            limit,
-            true,
-            None,
-            started_at.elapsed().as_millis() as u64,
-        );
+    let options = to_core_search_options(&request, roots, limit);
+    let result = engine.search(options, Some(cancel_flag.clone()));
+    if cancel_flag.load(Ordering::Relaxed) || !stream_is_active(&stream_id) {
         return;
     }
 
-    let mut all_entries = Vec::<SearchMetadataEntry>::new();
-    let mut batch = Vec::<SearchMetadataEntry>::new();
-    let mut stack = Vec::<PathBuf>::new();
-    let mut index_truncated = false;
-
-    for root in roots {
-        if stream_is_active(&stream_id) == false {
-            return;
+    let (payload, error) = match result {
+        Ok(response) => (
+            to_search_local_response(
+                &request,
+                &engine,
+                response,
+                started_at.elapsed().as_millis() as u64,
+            ),
+            None,
+        ),
+        Err(error) => {
+            let roots = resolve_scope_roots(
+                request.scope_preset,
+                &request.custom_roots,
+                request.project_root.as_deref(),
+            )
+            .iter()
+            .map(|root| normalize_path_string(root))
+            .collect::<Vec<_>>();
+            (
+                SearchLocalResponse {
+                    query: request.query.clone(),
+                    scope_preset: request.scope_preset,
+                    roots,
+                    results: Vec::new(),
+                    truncated: false,
+                    elapsed_ms: started_at.elapsed().as_millis() as u64,
+                    stats: SearchLocalStats {
+                        scanned_files: 0,
+                        scanned_dirs: 0,
+                        content_scanned_files: 0,
+                        matched_files: 0,
+                        skipped_unreadable: 0,
+                        skipped_binary_or_too_large: 0,
+                        used_index: false,
+                    },
+                },
+                Some(error.to_string()),
+            )
         }
-        let metadata = match fs::symlink_metadata(&root) {
-            Ok(metadata) => metadata,
-            Err(_) => {
-                stats.skipped_unreadable += 1;
-                continue;
-            }
-        };
-        if metadata.is_file() {
-            stats.scanned_files += 1;
-            if let Some(entry) = to_metadata_entry(&root) {
-                all_entries.push(entry.clone());
-                batch.push(entry);
-                if all_entries.len() >= INDEX_MAX_FILES {
-                    index_truncated = true;
-                    break;
-                }
-                if batch.len() >= STREAM_EMIT_BATCH_SIZE {
-                    process_stream_batch(
-                        &mut batch,
-                        &query_lower,
-                        extension_query.as_deref(),
-                        enable_fuzzy,
-                        enable_content,
-                        enable_extension_match,
-                        content_budget.as_ref(),
-                        &mut candidates,
-                        &mut stats,
-                        &stream_state,
-                        limit,
-                        &started_at,
-                        true,
-                    );
-                }
-            }
-            continue;
-        }
-        if metadata.is_dir() {
-            stack.push(root);
-        }
-    }
-
-    while let Some(directory_path) = stack.pop() {
-        if stream_is_active(&stream_id) == false {
-            return;
-        }
-        stats.scanned_dirs += 1;
-        let directory = match fs::read_dir(&directory_path) {
-            Ok(directory) => directory,
-            Err(_) => {
-                stats.skipped_unreadable += 1;
-                continue;
-            }
-        };
-
-        for entry_result in directory {
-            if stream_is_active(&stream_id) == false {
-                return;
-            }
-            let entry = match entry_result {
-                Ok(entry) => entry,
-                Err(_) => {
-                    stats.skipped_unreadable += 1;
-                    continue;
-                }
-            };
-            let entry_path = entry.path();
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            let file_type = match entry.file_type() {
-                Ok(file_type) => file_type,
-                Err(_) => {
-                    stats.skipped_unreadable += 1;
-                    continue;
-                }
-            };
-            if file_type.is_symlink() {
-                continue;
-            }
-            if file_type.is_dir() {
-                if should_skip_directory(&file_name, include_hidden) {
-                    continue;
-                }
-                stack.push(entry_path);
-                continue;
-            }
-            if file_type.is_file() {
-                if should_skip_file(&file_name, include_hidden) {
-                    continue;
-                }
-                stats.scanned_files += 1;
-                if let Some(metadata_entry) = to_metadata_entry(&entry_path) {
-                    all_entries.push(metadata_entry.clone());
-                    batch.push(metadata_entry);
-                    if all_entries.len() >= INDEX_MAX_FILES {
-                        index_truncated = true;
-                        break;
-                    }
-                    if batch.len() >= STREAM_EMIT_BATCH_SIZE {
-                        process_stream_batch(
-                            &mut batch,
-                            &query_lower,
-                            extension_query.as_deref(),
-                            enable_fuzzy,
-                            enable_content,
-                            enable_extension_match,
-                            content_budget.as_ref(),
-                            &mut candidates,
-                            &mut stats,
-                            &stream_state,
-                            limit,
-                            &started_at,
-                            true,
-                        );
-                    }
-                }
-            }
-        }
-
-        if index_truncated {
-            break;
-        }
-    }
-
-    process_stream_batch(
-        &mut batch,
-        &query_lower,
-        extension_query.as_deref(),
-        enable_fuzzy,
-        enable_content,
-        enable_extension_match,
-        content_budget.as_ref(),
-        &mut candidates,
-        &mut stats,
-        &stream_state,
-        limit,
-        &started_at,
-        true,
-    );
-
-    let index_status = SearchIndexStatusResponse {
-        state: SearchIndexState::Ready,
-        indexed_files: stats.scanned_files,
-        indexed_dirs: stats.scanned_dirs,
-        last_built_at: Some(unix_seconds_now().to_string()),
-        progress: Some(1.0),
-        error: if index_truncated {
-            Some("index truncated at file cap".to_string())
-        } else {
-            None
-        },
     };
-    if let Ok(mut guard) = search_index_store().write() {
-        guard.status = index_status;
-        guard.scope_preset = request.scope_preset;
-        guard.include_hidden = include_hidden;
-        guard.roots = root_paths;
-        guard.entries = all_entries;
-    }
 
-    publish_stream_snapshot(
-        &stream_state,
-        &candidates,
-        &stats,
-        limit,
-        true,
-        if index_truncated {
-            Some("stream completed with truncated index scope".to_string())
-        } else {
-            None
-        },
-        started_at.elapsed().as_millis() as u64,
-    );
+    if let Ok(mut guard) = stream_state.write() {
+        guard.snapshot.results = payload.results;
+        guard.snapshot.truncated = payload.truncated;
+        guard.snapshot.elapsed_ms = payload.elapsed_ms;
+        guard.snapshot.stats = payload.stats;
+        guard.snapshot.done = true;
+        guard.snapshot.error = error;
+    }
 }
 
 pub fn search_local_stream_start_json(request_json: String) -> Result<String, String> {
@@ -1702,8 +814,9 @@ pub fn search_local_stream_start_json(request_json: String) -> Result<String, St
     if root_paths.is_empty() {
         return Err("resolved search roots are empty".to_string());
     }
-
+    let engine = engine_for_request(request.scope_preset, request.storage_root.as_deref())?;
     let stream_id = format!("search-stream-{}", Uuid::new_v4());
+    let cancel_flag = Arc::new(AtomicBool::new(false));
     let stream_state = Arc::new(RwLock::new(SearchStreamState {
         snapshot: SearchLocalStreamReadResponse {
             stream_id: stream_id.clone(),
@@ -1725,6 +838,7 @@ pub fn search_local_stream_start_json(request_json: String) -> Result<String, St
             done: false,
             error: None,
         },
+        cancel_flag: cancel_flag.clone(),
     }));
     {
         let mut streams = search_stream_store()
@@ -1734,24 +848,24 @@ pub fn search_local_stream_start_json(request_json: String) -> Result<String, St
         streams.insert(stream_id.clone(), stream_state.clone());
     }
 
-    let worker_request = request.clone();
     let worker_stream_id = stream_id.clone();
-    let worker_root_paths = root_paths.clone();
+    let scope_preset = request.scope_preset;
     std::thread::spawn(move || {
         run_search_local_stream_worker(
             worker_stream_id,
             stream_state,
-            worker_request,
+            request,
             roots,
-            worker_root_paths,
             limit,
+            engine,
+            cancel_flag,
         );
     });
 
     let response = SearchLocalStreamStartResponse {
         stream_id,
         query,
-        scope_preset: request.scope_preset,
+        scope_preset,
         roots: root_paths,
     };
     serde_json::to_string(&response).map_err(|error| format!("serialize response failed: {error}"))
@@ -1800,9 +914,15 @@ pub fn search_local_stream_cancel_json(request_json: String) -> Result<String, S
     let removed = search_stream_store()
         .write()
         .map_err(|_| "search stream state lock poisoned".to_string())?
-        .remove(request.stream_id.as_str())
-        .is_some();
-    let response = SearchLocalStreamCancelResponse { removed };
+        .remove(request.stream_id.as_str());
+    if let Some(stream_state) = &removed {
+        if let Ok(guard) = stream_state.read() {
+            guard.cancel_flag.store(true, Ordering::Relaxed);
+        }
+    }
+    let response = SearchLocalStreamCancelResponse {
+        removed: removed.is_some(),
+    };
     serde_json::to_string(&response).map_err(|error| format!("serialize response failed: {error}"))
 }
 
@@ -1823,72 +943,48 @@ pub fn rebuild_search_index_json(request_json: String) -> Result<String, String>
     if root_paths.is_empty() {
         return Err("resolved index roots are empty".to_string());
     }
-
-    if force_rebuild == false {
-        if let Ok(guard) = search_index_store().read() {
-            if guard.status.state == SearchIndexState::Ready
-                && guard.scope_preset == request.scope_preset
-                && guard.include_hidden == include_hidden
-                && guard.roots == root_paths
-            {
-                let response = SearchRebuildIndexResponse {
-                    status: guard.status.clone(),
-                    scope_preset: request.scope_preset,
-                    roots: root_paths,
-                };
-                return serde_json::to_string(&response)
-                    .map_err(|error| format!("serialize response failed: {error}"));
-            }
+    let engine = engine_for_request(request.scope_preset, request.storage_root.as_deref())?;
+    if !force_rebuild {
+        let status = engine.status();
+        if roots_ready(&status, &root_paths) {
+            let response = SearchRebuildIndexResponse {
+                status: to_index_status(status),
+                scope_preset: request.scope_preset,
+                roots: root_paths,
+            };
+            return serde_json::to_string(&response)
+                .map_err(|error| format!("serialize response failed: {error}"));
         }
     }
 
-    {
-        let mut guard = search_index_store()
-            .write()
-            .map_err(|_| "search index state lock poisoned".to_string())?;
-        guard.status.state = SearchIndexState::Building;
-        guard.status.progress = Some(0.0);
-        guard.status.error = None;
+    for root in roots {
+        engine
+            .index_root(
+                core_search::LocalSearchIndexRootOptions {
+                    root,
+                    include_hidden,
+                    include_vendor: false,
+                    respect_gitignore: true,
+                    content_mode: core_search::LocalSearchContentMode::Auto,
+                    max_file_size_bytes: DEFAULT_TEXT_SCAN_BYTES,
+                },
+                None,
+            )
+            .map_err(|error| format!("search index rebuild failed: {error}"))?;
     }
-
-    let collection = collect_metadata_entries(&roots, include_hidden, INDEX_MAX_FILES);
-    let status = SearchIndexStatusResponse {
-        state: SearchIndexState::Ready,
-        indexed_files: collection.scanned_files,
-        indexed_dirs: collection.scanned_dirs,
-        last_built_at: Some(unix_seconds_now().to_string()),
-        progress: Some(1.0),
-        error: if collection.truncated {
-            Some("index truncated at file cap".to_string())
-        } else {
-            None
-        },
-    };
-
-    {
-        let mut guard = search_index_store()
-            .write()
-            .map_err(|_| "search index state lock poisoned".to_string())?;
-        guard.status = status.clone();
-        guard.scope_preset = request.scope_preset;
-        guard.include_hidden = include_hidden;
-        guard.roots = root_paths.clone();
-        guard.entries = collection.entries;
-    }
-
     let response = SearchRebuildIndexResponse {
-        status,
+        status: to_index_status(engine.status()),
         scope_preset: request.scope_preset,
         roots: root_paths,
     };
     serde_json::to_string(&response).map_err(|error| format!("serialize response failed: {error}"))
 }
 
-pub fn read_search_index_status_json(_request_json: String) -> Result<String, String> {
-    let guard = search_index_store()
-        .read()
-        .map_err(|_| "search index state lock poisoned".to_string())?;
-    serde_json::to_string(&guard.status)
+pub fn read_search_index_status_json(request_json: String) -> Result<String, String> {
+    let request: SearchIndexStatusRequest = serde_json::from_str(&request_json)
+        .unwrap_or(SearchIndexStatusRequest { storage_root: None });
+    let engine = engine_for_status(request.storage_root.as_deref())?;
+    serde_json::to_string(&to_index_status(engine.status()))
         .map_err(|error| format!("serialize response failed: {error}"))
 }
 
@@ -2051,6 +1147,43 @@ mod tests {
         );
 
         fs::remove_dir_all(root).expect("cleanup temp root");
+    }
+
+    #[test]
+    fn workspace_index_uses_persistent_storage_root() {
+        let root = create_temp_root();
+        let storage_root = create_temp_root();
+        write_text_file(&root.join("persisted.txt"), "index me");
+
+        let rebuild_request = serde_json::json!({
+            "scopePreset": "workspace",
+            "projectRoot": normalize_path_string(&root),
+            "storageRoot": normalize_path_string(&storage_root),
+            "force": true
+        });
+        rebuild_search_index_json(rebuild_request.to_string()).expect("rebuild index");
+
+        assert!(storage_root.join("local-search/index.v1.sqlite").exists());
+
+        let search_request = serde_json::json!({
+            "query": "persisted",
+            "limit": 10,
+            "scopePreset": "workspace",
+            "projectRoot": normalize_path_string(&root),
+            "storageRoot": normalize_path_string(&storage_root),
+            "enableContent": false
+        });
+        let search_response =
+            search_local_json(search_request.to_string()).expect("search persistent index");
+        let search_object = parse_json_object(&search_response);
+        let stats = search_object
+            .get("stats")
+            .and_then(Value::as_object)
+            .expect("stats object");
+        assert_eq!(stats.get("usedIndex").and_then(Value::as_bool), Some(true));
+
+        fs::remove_dir_all(root).expect("cleanup temp root");
+        fs::remove_dir_all(storage_root).expect("cleanup storage root");
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use crate::error_code::INTERNAL_ERROR_CODE;
 use crate::error_code::INVALID_REQUEST_ERROR_CODE;
 use lyra_app_server_protocol as api;
-use lyra_file_search as search;
+use lyra_local_search as search;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -99,6 +99,8 @@ impl LocalSearchService {
             max_file_size_bytes: params
                 .max_file_size_bytes
                 .unwrap_or(DEFAULT_TEXT_LIMIT_BYTES),
+            enable_fuzzy: true,
+            enable_extension_match: true,
         };
 
         let response = tokio::task::spawn_blocking({

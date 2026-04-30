@@ -4685,8 +4685,8 @@ dependencies = [
  "lyra-core-plugins",
  "lyra-exec-server",
  "lyra-features",
- "lyra-file-search",
  "lyra-git-utils",
+ "lyra-local-search",
  "lyra-login",
  "lyra-mcp",
  "lyra-models-manager",
@@ -5214,24 +5214,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lyra-file-search"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "cc",
- "clap",
- "crossbeam-channel",
- "ignore",
- "nucleo",
- "pretty_assertions",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "lyra-files-napi"
 version = "0.1.0"
 dependencies = [
@@ -5348,6 +5330,24 @@ dependencies = [
  "tracing",
  "which 8.0.2",
  "wiremock",
+]
+
+[[package]]
+name = "lyra-local-search"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "cc",
+ "clap",
+ "crossbeam-channel",
+ "ignore",
+ "nucleo",
+ "pretty_assertions",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -5748,8 +5748,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "lyra-file-search",
  "lyra-git-utils",
+ "lyra-local-search",
  "lyra-login",
  "lyra-otel",
  "lyra-protocol",
@@ -6282,6 +6282,7 @@ dependencies = [
  "lyra-code-intel-core",
  "lyra-core",
  "lyra-exec-server",
+ "lyra-local-search",
  "lyra-lsp-core",
  "lyra-mcp-core",
  "lyra-models-manager",

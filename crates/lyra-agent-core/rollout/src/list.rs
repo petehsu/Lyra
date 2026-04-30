@@ -19,7 +19,7 @@ use super::ARCHIVED_SESSIONS_SUBDIR;
 use super::SESSIONS_SUBDIR;
 use crate::protocol::EventMsg;
 use crate::state_db;
-use lyra_file_search as file_search;
+use lyra_local_search as file_search;
 use lyra_protocol::ThreadId;
 use lyra_protocol::protocol::RolloutItem;
 use lyra_protocol::protocol::RolloutLine;

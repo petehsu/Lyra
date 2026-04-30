@@ -16,7 +16,7 @@ workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
-lyra-file-search = { workspace = true }
+lyra-local-search = { workspace = true }
 lyra-git-utils = { workspace = true }
 lyra-login = { workspace = true }
 lyra-otel = { workspace = true }

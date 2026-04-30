@@ -41,7 +41,7 @@ lyra-otel = { workspace = true }
 lyra-shell-command = { workspace = true }
 lyra-utils-cli = { workspace = true }
 lyra-utils-pty = { workspace = true }
-lyra-file-search = { workspace = true }
+lyra-local-search = { workspace = true }
 lyra-login = { workspace = true }
 lyra-mcp = { workspace = true }
 lyra-models-manager = { workspace = true }
