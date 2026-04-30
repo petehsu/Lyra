@@ -520,7 +520,7 @@ checkPurityScopes();
 checkRequiredDocs();
 
 if (violations.length > 0) {
-  console.error("\n[Lyra Rust-First Guard] Violations found:\n");
+  console.error("\n[Lyra Native-Core Guard] Violations found:\n");
   for (const violation of violations) {
     console.error(`- ${violation}`);
   }

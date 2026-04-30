@@ -67,7 +67,7 @@ Lyra Desktop renderer 样式采用“基础层 + 模块层”结构，避免回�
 ## 校验与回归
 
 - 结构校验：`npm run lint:structure`
-- Rust-first 约束：`npm run lint:rust-first`
+- Native-core 约束：`npm run lint:rust-first`（脚本名为历史兼容名）
 - UI 样式守卫：`npm run lint:ui-style`
 - Desktop 类型检查：`npm --prefix apps/desktop run typecheck`
 - Shell 核心测试：`npm --prefix apps/desktop run test -- src/modules/workbench/shell/tests/workbench-shell.test.tsx`

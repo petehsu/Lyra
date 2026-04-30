@@ -51,8 +51,10 @@ Desktop process rewires Electron paths to keep app state under Lyra root:
    - wiring where consumed in `apps/desktop/src/main/index.ts`
 
 ## Validation
-This layout is guardrailed by:
+This layout is guardrailed by the native-core architecture check:
 
 ```bash
 pnpm lint:rust-first
 ```
+
+`lint:rust-first` is a historical compatibility name for the native-core guard.

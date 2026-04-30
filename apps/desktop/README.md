@@ -21,10 +21,10 @@ Desktop shell module for Lyra.
 
 ## Performance Direction
 - TypeScript/React remains the default UI layer.
-- Rust owns heavy runtime state, provider protocol behavior, event normalization, indexing, parsing, and compute-heavy view-model preparation.
+- Native core code owns heavy runtime state, provider protocol behavior, event normalization, indexing, parsing, and compute-heavy view-model preparation.
+- Rust remains the default safety/orchestration boundary, while C and C++ are accepted core implementation languages for measured engines, platform SDKs, parsers, indexers, media/rendering subsystems, and hot kernels.
 - High-volume UI surfaces must use batching, selectors, virtualization, incremental rendering, and lazy rich rendering before introducing a new rendering stack.
-- C/C++ is allowed only for narrow native library or platform integrations, or measured hot paths with a clear boundary.
-- Hand-written assembly is exceptional, benchmark-driven, isolated, tested, and must have a portable fallback.
+- Hand-written assembly is exceptional, benchmark-driven, isolated behind a safe Rust/C/C++ boundary, tested, and must have a portable fallback.
 - See `../../docs/architecture/performance-engineering.md`.
 
 ## Commands
