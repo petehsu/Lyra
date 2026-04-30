@@ -3355,6 +3355,12 @@
         },
         {
           "properties": {
+            "contextText": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "name": {
               "type": "string"
             },

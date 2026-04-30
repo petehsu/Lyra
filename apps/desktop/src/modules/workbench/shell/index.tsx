@@ -32,6 +32,7 @@ import {
   getDesktopApi,
   syncCssVarsToDocumentRoot
 } from "./service";
+import type { AgentComposerWorkbenchTabMention } from "../ai-panel";
 import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "../browser-search";
@@ -253,14 +254,44 @@ export const WorkbenchShell = () => {
   const aiFileMentionFallbackRoots = useMemo(
     () => {
       const currentPath = activeFileManagerState?.currentLocation?.path?.trim();
-      return currentPath === undefined || currentPath.length === 0 ? [] : [currentPath];
+      const roots = [
+        currentPath === undefined || currentPath.length === 0 ? null : currentPath,
+        ...tabsModel.tabs.map((tab) => {
+          const filePath = tab.filePath?.trim();
+          if (filePath === undefined || filePath.length === 0) {
+            return null;
+          }
+          const normalized = filePath.replace(/\\/gu, "/");
+          const separatorIndex = normalized.lastIndexOf("/");
+          return separatorIndex <= 0 ? null : normalized.slice(0, separatorIndex);
+        }),
+      ].filter((root): root is string => root !== null);
+      return roots.filter((root, index, values) => values.indexOf(root) === index);
     },
-    [activeFileManagerState?.currentLocation?.path]
+    [activeFileManagerState?.currentLocation?.path, tabsModel.tabs]
   );
   const planReview = useWorkbenchPlanReviewModel({
     openAppTab: tabsModel.openAppTab,
     title: t("ai.planReviewTitle")
   });
+  const workbenchTabMentions = useMemo<readonly AgentComposerWorkbenchTabMention[]>(() => {
+    const visibleTabIds = new Set(visibleWorkspaceLayout.visibleTabIds);
+    return tabsModel.tabs.map((tab) => ({
+      tabId: tab.id,
+      title: tab.title,
+      kind: tab.pageKind,
+      active: tab.id === tabsModel.activeTabId,
+      visible: visibleTabIds.has(tab.id),
+      ...(tab.displayAddress.trim().length === 0 ? {} : { address: tab.displayAddress }),
+      ...(tab.inputValue.trim().length === 0 ? {} : { inputValue: tab.inputValue }),
+      ...(tab.query === undefined ? {} : { query: tab.query }),
+      ...(tab.filePath === undefined ? {} : { filePath: tab.filePath }),
+      ...(tab.appId === undefined ? {} : { appId: tab.appId }),
+      ...(tab.appIconKey === undefined ? {} : { appIconKey: tab.appIconKey }),
+      ...(tab.terminalTabId === undefined ? {} : { terminalTabId: tab.terminalTabId }),
+      ...(tab.faviconUrl === undefined ? {} : { faviconUrl: tab.faviconUrl }),
+    }));
+  }, [tabsModel.activeTabId, tabsModel.tabs, visibleWorkspaceLayout.visibleTabIds]);
   const sidebarAiSurfaceProps = useWorkbenchSidebarAiSurfaceProps({
     desktopApi,
     preferences: preferencesModel.preferences,
@@ -268,6 +299,7 @@ export const WorkbenchShell = () => {
     resolvedThemeId,
     aiPanelSide: panelLayoutModel.aiPanelSide,
     fileMentionFallbackRoots: aiFileMentionFallbackRoots,
+    workbenchTabMentions,
     onToggleAiPanelSide: panelLayoutModel.toggleAiPanelSide,
     openAppTab: tabsModel.openAppTab,
     onRequestProjectBind: requestProjectBind,

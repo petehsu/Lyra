@@ -36,7 +36,17 @@ pub enum UserInput {
     ///
     /// `path` identifies the exact mention target, for example
     /// `app://<connector-id>` or `plugin://<plugin-name>@<marketplace-name>`.
-    Mention { name: String, path: String },
+    Mention {
+        name: String,
+        path: String,
+        #[serde(
+            default,
+            rename = "contextText",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[ts(optional, rename = "contextText")]
+        context_text: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, TS, JsonSchema)]

@@ -4,7 +4,8 @@ import {
   createAiHistoryAppRequest,
   createAiMcpAppRequest,
   createAiPluginsAppRequest,
-  createAiSkillsAppRequest
+  createAiSkillsAppRequest,
+  type AgentComposerWorkbenchTabMention
 } from "../ai-panel";
 import type { AiPlanApprovalWorkspaceOpenRequest } from "../ai-panel";
 import type { GlobalDialogModel } from "../global-dialog";
@@ -28,6 +29,7 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   readonly resolvedThemeId: string;
   readonly aiPanelSide: AiPanelSide;
   readonly fileMentionFallbackRoots: readonly string[];
+  readonly workbenchTabMentions: readonly AgentComposerWorkbenchTabMention[];
   readonly onToggleAiPanelSide: () => void;
   readonly openAppTab: WorkspaceTabsModel["openAppTab"];
   readonly onRequestProjectBind: (
@@ -45,6 +47,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   resolvedThemeId,
   aiPanelSide,
   fileMentionFallbackRoots,
+  workbenchTabMentions,
   onToggleAiPanelSide,
   openAppTab,
   onRequestProjectBind,
@@ -68,6 +71,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       defaultModelNames: settingsAiModel.defaultModelNames,
       configuredProfiles: settingsAiModel.profiles,
       fileMentionFallbackRoots,
+      workbenchTabMentions,
       profileLabel: t("ai.profileLabel"),
       modelLabel: t("ai.modelLabel"),
       modelsLabel: t("ai.modelsLabel"),
@@ -138,6 +142,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       aiPanelSide,
       desktopApi,
       fileMentionFallbackRoots,
+      workbenchTabMentions,
       onRequestProjectBind,
       onOpenPlanApprovalWorkspace,
       onToggleAiPanelSide,

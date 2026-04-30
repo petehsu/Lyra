@@ -2033,6 +2033,7 @@ mod tests {
                             UserInput::Mention {
                                 name: "README.md".into(),
                                 path: "/repo/README.md".into(),
+                                context_text: None,
                             },
                             UserInput::LocalImage {
                                 path: PathBuf::from("/tmp/cat.png"),

@@ -2849,13 +2849,6 @@
     background-color var(--lyra-transition-fast);
 }
 
-.lyra-ai-agent-composer:focus-within {
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 78%, transparent);
-  box-shadow:
-    0 0 0 var(--lyra-unit-0-5) color-mix(in srgb, var(--lyra-line-focused) 52%, transparent),
-    0 calc(var(--lyra-unit-12) * -1) var(--lyra-unit-26) color-mix(in srgb, var(--lyra-bg-app) 22%, transparent);
-}
-
 .lyra-ai-agent-composer-disabled {
   opacity: 0.68;
 }
@@ -2926,7 +2919,7 @@
 .lyra-ai-agent-composer-input-stack {
   min-width: 0;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .lyra-ai-agent-composer-input-renderer {
@@ -2940,29 +2933,103 @@
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  overflow: hidden;
   pointer-events: none;
 }
 
 .lyra-ai-agent-composer-mention-popover {
-  position: absolute;
-  z-index: 9;
+  position: fixed;
+  z-index: 8990;
   left: var(--lyra-space-8);
   right: var(--lyra-space-8);
   bottom: calc(100% + var(--lyra-unit-8));
-  max-height: min(var(--lyra-unit-240), 40vh);
-  overflow: auto;
-  border-radius: var(--lyra-unit-14);
-  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--lyra-bg-surface) 78%, transparent), color-mix(in srgb, var(--lyra-bg-app) 66%, transparent));
-  box-shadow: 0 var(--lyra-unit-12) var(--lyra-unit-28) color-mix(in srgb, var(--lyra-bg-app) 24%, transparent);
-  backdrop-filter: blur(var(--lyra-unit-14)) saturate(1.08);
-  -webkit-backdrop-filter: blur(var(--lyra-unit-14)) saturate(1.08);
+  height: clamp(var(--lyra-unit-240), 38dvh, var(--lyra-unit-420));
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: var(--lyra-unit-8);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-panel) 88%, transparent);
+  -webkit-backdrop-filter: blur(var(--lyra-unit-22)) saturate(1.12);
+  backdrop-filter: blur(var(--lyra-unit-22)) saturate(1.12);
+  box-shadow:
+    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 40%, transparent),
+    0 var(--lyra-unit-18) var(--lyra-unit-46) color-mix(in srgb, var(--lyra-bg-app) 34%, transparent);
   padding: var(--lyra-unit-6);
+}
+
+.lyra-ai-agent-composer-mention-list {
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+  overflow: auto;
+  width: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--lyra-scrollbar-thumb-idle) transparent;
+}
+
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar {
+  width: var(--lyra-scrollbar-size);
+  height: var(--lyra-scrollbar-size);
+}
+
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar-track,
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar-track-piece,
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar-corner {
+  background: transparent;
+  border-radius: var(--lyra-scrollbar-radius);
+}
+
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar-track-piece:vertical {
+  margin-block: var(--lyra-unit-2);
+}
+
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar-track-piece:horizontal {
+  margin-inline: var(--lyra-unit-2);
+}
+
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar-thumb {
+  min-height: var(--lyra-unit-24);
+  min-width: var(--lyra-unit-24);
+  border: var(--lyra-unit-2) solid transparent;
+  border-radius: var(--lyra-scrollbar-radius);
+  background-color: var(--lyra-scrollbar-thumb-idle);
+  background-clip: padding-box;
+  -webkit-background-clip: padding-box;
+}
+
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--lyra-scrollbar-thumb-hover);
+}
+
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar-thumb:active {
+  background-color: var(--lyra-scrollbar-thumb-active);
+}
+
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar-button,
+.lyra-ai-agent-composer-mention-list::-webkit-scrollbar-button:single-button {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.lyra-ai-agent-composer-mention-row {
+  min-width: 0;
+}
+
+.lyra-ai-agent-composer-mention-section {
+  padding: var(--lyra-unit-8) var(--lyra-unit-8) var(--lyra-unit-4);
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-text-size-10);
+  font-weight: var(--lyra-font-weight-semibold);
+  text-transform: uppercase;
 }
 
 .lyra-ai-agent-composer-mention-item,
 .lyra-ai-agent-composer-mention-empty {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-width: 0;
   min-height: var(--lyra-unit-30);
@@ -2971,7 +3038,7 @@
   align-items: center;
   gap: var(--lyra-unit-8);
   border: 0;
-  border-radius: var(--lyra-unit-10);
+  border-radius: var(--lyra-unit-8);
   background: transparent;
   color: var(--lyra-text-secondary);
   padding: var(--lyra-unit-6) var(--lyra-unit-8);
@@ -2981,6 +3048,28 @@
 
 .lyra-ai-agent-composer-mention-item {
   cursor: pointer;
+}
+
+.lyra-ai-agent-composer-mention-file-icon,
+.lyra-ai-agent-composer-mention-item > .lyra-file-manager-icon-shell,
+.lyra-ai-agent-composer-mention-item > svg,
+.lyra-ai-agent-composer-mention-favicon {
+  width: var(--lyra-icon-size-16);
+  height: var(--lyra-icon-size-16);
+  min-width: var(--lyra-icon-size-16);
+  justify-self: center;
+}
+
+.lyra-ai-agent-composer-mention-file-icon svg,
+.lyra-ai-agent-composer-mention-item > .lyra-file-manager-icon-shell svg {
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+}
+
+.lyra-ai-agent-composer-mention-favicon {
+  display: block;
+  border-radius: var(--lyra-radius-4);
+  object-fit: contain;
 }
 
 .lyra-ai-agent-composer-mention-item:hover,

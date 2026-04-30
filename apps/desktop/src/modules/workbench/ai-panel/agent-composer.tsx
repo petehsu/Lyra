@@ -12,6 +12,8 @@ import { useAgentComposerRuntime } from "./use-agent-composer-runtime";
 
 export type {
   AgentComposerAppendRequest,
+  AgentComposerAiThreadMention,
+  AgentComposerAttachmentKind,
   AgentComposerFileAttachment,
   AgentComposerFileMentionSearchResult,
   AgentComposerModelControlOption,
@@ -20,6 +22,7 @@ export type {
   AgentComposerVerbosity,
   AgentComposerProps,
   AgentComposerSubmitPayload,
+  AgentComposerWorkbenchTabMention,
   AgentPermissionMode
 } from "./agent-composer-types";
 
@@ -72,6 +75,8 @@ export const AgentComposer = memo(({
   onRequestFileAttachments,
   fileMentionSearchRoots,
   fileMentionSearchResults,
+  workbenchTabMentions,
+  aiThreadMentions,
   onFileMentionSearchStart,
   onFileMentionSearchUpdate,
   onFileMentionSearchStop
@@ -90,6 +95,8 @@ export const AgentComposer = memo(({
     onSteer,
     fileMentionSearchRoots,
     fileMentionSearchResults,
+    workbenchTabMentions,
+    aiThreadMentions,
     onFileMentionSearchStart,
     onFileMentionSearchUpdate,
     onFileMentionSearchStop

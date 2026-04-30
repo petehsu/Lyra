@@ -35,11 +35,13 @@ import {
 import type {
   AgentComposerAppendRequest,
   AgentComposerContentPart,
+  AgentComposerAiThreadMention,
   AgentComposerFileAttachment,
   AgentComposerFileMentionSearchResult,
   AgentComposerInlineAttachment,
   AgentComposerSubmitAction,
   AgentComposerSubmitPayload,
+  AgentComposerWorkbenchTabMention,
   ComposerTextEffect,
   ComposerTextEffectDraft
 } from "./agent-composer-types";
@@ -57,6 +59,8 @@ type UseAgentComposerRuntimeInput = {
   readonly onSteer?: ((payload: AgentComposerSubmitPayload) => void | Promise<void>) | undefined;
   readonly fileMentionSearchRoots?: readonly string[] | undefined;
   readonly fileMentionSearchResults?: readonly AgentComposerFileMentionSearchResult[] | undefined;
+  readonly workbenchTabMentions?: readonly AgentComposerWorkbenchTabMention[] | undefined;
+  readonly aiThreadMentions?: readonly AgentComposerAiThreadMention[] | undefined;
   readonly onFileMentionSearchStart?: ((
     sessionId: string,
     roots: readonly string[]
@@ -91,12 +95,13 @@ export type AgentComposerRuntime = {
   readonly draftParts: readonly AgentComposerContentPart[];
   readonly inputScrollTop: number;
   readonly attachmentDragActive: boolean;
-  readonly fileMentionMenuOpen: boolean;
-  readonly fileMentionResults: readonly AgentComposerFileMentionSearchResult[];
-  readonly fileMentionSelectedIndex: number;
+  readonly mentionPanelOpen: boolean;
+  readonly mentionPanelStyle: CSSProperties;
+  readonly mentionPanelResults: readonly AgentComposerMentionPanelResult[];
+  readonly mentionPanelSelectedIndex: number;
   readonly setDraftValue: (value: string) => void;
   readonly removeAttachment: (id: string) => void;
-  readonly selectFileMentionResult: (result: AgentComposerFileMentionSearchResult) => void;
+  readonly selectMentionPanelResult: (result: AgentComposerMentionPanelResult) => void;
   readonly requestFileAttachments: (
     requestAttachments: (() => Promise<readonly AgentComposerFileAttachment[]>) | undefined
   ) => Promise<void>;
@@ -128,11 +133,35 @@ type FileWithPath = File & {
   readonly path?: unknown;
 };
 
-type FileMentionSessionState = {
-  readonly sessionId: string;
+type MentionPanelSessionState = {
+  readonly fileSearchSessionId: string | null;
   readonly triggerStart: number;
   readonly triggerEnd: number;
   readonly query: string;
+  readonly rootsKey: string;
+};
+
+type AgentComposerMentionPanelSection =
+  | "tabs"
+  | "recommended_files"
+  | "root"
+  | "search_results";
+
+export type AgentComposerMentionPanelResult = {
+  readonly id: string;
+  readonly name: string;
+  readonly path: string;
+  readonly kind: "file" | "directory" | "workbench_tab" | "ai_thread";
+  readonly section: AgentComposerMentionPanelSection;
+  readonly description?: string;
+  readonly root?: string;
+  readonly score?: number;
+  readonly indices?: readonly number[] | null;
+  readonly contextText?: string;
+  readonly tabKind?: string;
+  readonly appId?: string;
+  readonly appIconKey?: string;
+  readonly faviconUrl?: string;
 };
 
 const attachmentKey = (attachment: AgentComposerFileAttachment): string =>
@@ -146,6 +175,7 @@ const submitAttachment = (
   path: attachment.path,
   kind: attachment.kind,
   source: attachment.source,
+  ...(attachment.contextText === undefined ? {} : { contextText: attachment.contextText }),
 });
 
 const trimNonEmpty = (value: unknown): string | null => {
@@ -187,6 +217,9 @@ const attachmentKindForPath = (
   kind: AgentComposerFileAttachment["kind"]
 ): AgentComposerFileAttachment["kind"] => {
   if (kind === "directory" || kind === "image" || kind === "local_image") {
+    return kind;
+  }
+  if (kind === "workbench_tab" || kind === "ai_thread") {
     return kind;
   }
   if (isRemoteImageReference(path)) {
@@ -234,17 +267,22 @@ const createFileAttachment = ({
   name,
   path,
   kind,
-  source
+  source,
+  contextText
 }: Omit<AgentComposerFileAttachment, "id">): AgentComposerFileAttachment => {
   const normalizedPath = path.trim();
   const normalizedName = name.trim().length > 0 ? name.trim() : fileNameFromPath(normalizedPath);
   const normalizedKind = attachmentKindForPath(normalizedPath, kind);
+  const normalizedContextText = contextText?.trim();
   return {
     id: `${source}:${normalizedKind}:${normalizedPath}`,
     name: normalizedName,
     path: normalizedPath,
     kind: normalizedKind,
-    source
+    source,
+    ...(normalizedContextText === undefined || normalizedContextText.length === 0
+      ? {}
+      : { contextText: normalizedContextText })
   };
 };
 
@@ -259,7 +297,9 @@ const createAttachmentPlaceholder = (
   const placeholderKind = attachment.kind === "directory" ? "directory"
     : attachment.kind === "local_image" ? "local_image"
       : attachment.kind === "image" ? "image"
-        : "file";
+        : attachment.kind === "workbench_tab" ? "workbench_tab"
+          : attachment.kind === "ai_thread" ? "ai_thread"
+            : "file";
   let index = 1;
   let candidate = `[[${placeholderKind}:${base}]]`;
   while (usedPlaceholders.has(candidate)) {
@@ -417,7 +457,7 @@ const createFileMentionSessionId = (): string =>
 const resolveFileMentionTrigger = (
   value: string,
   caret: number
-): Omit<FileMentionSessionState, "sessionId"> | null => {
+): Pick<MentionPanelSessionState, "triggerStart" | "triggerEnd" | "query"> | null => {
   const prefix = value.slice(0, caret);
   const match = /(^|\s)@([^\s@]*)$/u.exec(prefix);
   if (match === null) {
@@ -431,14 +471,342 @@ const resolveFileMentionTrigger = (
   };
 };
 
+const encodeMentionPathSegment = (value: string): string =>
+  encodeURIComponent(value).replace(/%2F/giu, "%252F");
+
+const compactLines = (lines: readonly (string | null | undefined)[]): string =>
+  lines
+    .map((line) => line?.trim() ?? "")
+    .filter((line) => line.length > 0)
+    .join("\n");
+
+const searchableText = (values: readonly (string | undefined)[]): string =>
+  values
+    .map((value) => value?.toLowerCase() ?? "")
+    .filter((value) => value.length > 0)
+    .join("\n");
+
+const isFuzzySubsequence = (query: string, value: string): boolean => {
+  if (query.length <= 1) {
+    return value.includes(query);
+  }
+  let valueIndex = 0;
+  for (const queryChar of query) {
+    valueIndex = value.indexOf(queryChar, valueIndex);
+    if (valueIndex === -1) {
+      return false;
+    }
+    valueIndex += 1;
+  }
+  return true;
+};
+
+const matchesMentionQuery = (
+  query: string,
+  values: readonly (string | undefined)[]
+): boolean => {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery.length === 0) {
+    return true;
+  }
+  const haystack = searchableText(values);
+  return normalizedQuery
+    .split(/\s+/u)
+    .filter((token) => token.length > 0)
+    .every((token) =>
+      haystack.includes(token)
+      || values.some((value) => isFuzzySubsequence(token, value?.toLowerCase() ?? ""))
+    );
+};
+
+const normalizeMentionDisplayPath = (path: string): string =>
+  path.trim().replace(/\\/gu, "/");
+
+const stripRootFromPath = (
+  path: string,
+  roots: readonly string[]
+): string | null => {
+  const normalizedPath = normalizeMentionDisplayPath(path);
+  const matchingRoots = roots
+    .map(normalizeMentionDisplayPath)
+    .filter((root) => root.length > 0)
+    .sort((left, right) => right.length - left.length);
+  const normalizedPathLower = normalizedPath.toLowerCase();
+  for (const root of matchingRoots) {
+    const normalizedRoot = root.replace(/\/+$/u, "");
+    const normalizedRootLower = normalizedRoot.toLowerCase();
+    if (
+      normalizedPathLower === normalizedRootLower ||
+      normalizedPathLower.startsWith(`${normalizedRootLower}/`)
+    ) {
+      return normalizedPath.slice(normalizedRoot.length).replace(/^\/+/u, "") || fileNameFromPath(normalizedPath);
+    }
+  }
+  return null;
+};
+
+const compactAbsolutePathTail = (path: string, segmentCount = 4): string => {
+  const normalizedPath = normalizeMentionDisplayPath(path);
+  const segments = normalizedPath.split("/").filter((segment) => segment.length > 0);
+  if (segments.length <= segmentCount) {
+    return normalizedPath;
+  }
+  return `.../${segments.slice(-segmentCount).join("/")}`;
+};
+
+const queryMatchesHiddenPathPrefix = (
+  query: string,
+  fullPath: string,
+  visiblePath: string
+): boolean => {
+  const normalizedQueryTokens = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/u)
+    .filter((token) => token.length > 0);
+  if (normalizedQueryTokens.length === 0) {
+    return false;
+  }
+  const normalizedFullPath = normalizeMentionDisplayPath(fullPath).toLowerCase();
+  const normalizedVisiblePath = normalizeMentionDisplayPath(visiblePath)
+    .replace(/^\.\.\//u, "")
+    .toLowerCase();
+  const visibleStart = normalizedFullPath.lastIndexOf(normalizedVisiblePath);
+  const hiddenPrefix = visibleStart <= 0 ? "" : normalizedFullPath.slice(0, visibleStart);
+  return normalizedQueryTokens.some((token) =>
+    hiddenPrefix.includes(token) && !normalizedVisiblePath.includes(token)
+  );
+};
+
+const createFileMentionDisplayPath = (
+  path: string,
+  roots: readonly string[],
+  query: string
+): string => {
+  const relativePath = stripRootFromPath(path, roots);
+  const displayPath = relativePath ?? compactAbsolutePathTail(path);
+  return queryMatchesHiddenPathPrefix(query, path, displayPath)
+    ? normalizeMentionDisplayPath(path)
+    : displayPath;
+};
+
+const workspaceTabTypeLabel = (kind: string): string => {
+  if (kind === "page") {
+    return "Browser";
+  }
+  if (kind === "search" || kind === "results") {
+    return "Search";
+  }
+  if (kind === "terminal") {
+    return "Terminal";
+  }
+  if (kind === "settings") {
+    return "Settings";
+  }
+  return kind === "app" ? "Workspace app" : "Workspace";
+};
+
+const workbenchTabMentionToPanelResult = (
+  tab: AgentComposerWorkbenchTabMention,
+  query: string
+): AgentComposerMentionPanelResult | null => {
+  if (!matchesMentionQuery(query, [
+    tab.title,
+    tab.address,
+    tab.inputValue,
+    tab.query,
+    tab.filePath,
+    tab.appId,
+    tab.appIconKey,
+    tab.faviconUrl,
+    tab.preview,
+    tab.kind,
+  ])) {
+    return null;
+  }
+  const typeLabel = workspaceTabTypeLabel(tab.kind);
+  const statusLabel = `${tab.active ? "active" : "inactive"}, ${tab.visible ? "visible" : "hidden"}`;
+  const description = tab.address ?? tab.filePath ?? tab.query ?? tab.preview ?? typeLabel;
+  const contextText = compactLines([
+    `Title: ${tab.title}`,
+    `Type: ${typeLabel}`,
+    `State: ${statusLabel}`,
+    tab.address === undefined ? undefined : `Address: ${tab.address}`,
+    tab.inputValue === undefined ? undefined : `Input: ${tab.inputValue}`,
+    tab.query === undefined ? undefined : `Query: ${tab.query}`,
+    tab.filePath === undefined ? undefined : `File: ${tab.filePath}`,
+    tab.appId === undefined ? undefined : `Workspace app: ${tab.appId}`,
+    tab.terminalTabId === undefined ? undefined : `Terminal tab: ${tab.terminalTabId}`,
+    tab.preview === undefined ? undefined : `Preview: ${tab.preview}`,
+    "Reference: use workbench.tab.read or workbench.tab.extract_text with this tab id for more detail.",
+  ]);
+  return {
+    id: `workbench-tab:${tab.tabId}`,
+    name: tab.title,
+    path: `app://workbench/tab/${encodeMentionPathSegment(tab.tabId)}`,
+    kind: "workbench_tab",
+    section: "tabs",
+    description,
+    tabKind: tab.kind,
+    ...(tab.appId === undefined ? {} : { appId: tab.appId }),
+    ...(tab.appIconKey === undefined ? {} : { appIconKey: tab.appIconKey }),
+    ...(tab.faviconUrl === undefined ? {} : { faviconUrl: tab.faviconUrl }),
+    contextText,
+  };
+};
+
+const OPEN_FILE_MENTION_SCORE_BASE = 2_000_000;
+
+const workbenchTabMentionToOpenFilePanelResult = (
+  tab: AgentComposerWorkbenchTabMention,
+  query: string,
+  roots: readonly string[]
+): AgentComposerMentionPanelResult | null => {
+  const filePath = tab.filePath?.trim();
+  if (filePath === undefined || filePath.length === 0) {
+    return null;
+  }
+  const name = fileNameFromPath(filePath);
+  if (!matchesMentionQuery(query, [name, filePath, tab.title])) {
+    return null;
+  }
+  const hasQuery = query.trim().length > 0;
+  const stateBonus = tab.active ? 20_000 : tab.visible ? 10_000 : 0;
+  return {
+    id: `open-file:${tab.tabId}:${filePath}`,
+    name,
+    path: filePath,
+    kind: "file",
+    section: hasQuery ? "search_results" : "recommended_files",
+    description: createFileMentionDisplayPath(filePath, roots, query),
+    score: OPEN_FILE_MENTION_SCORE_BASE + stateBonus,
+  };
+};
+
+const aiThreadMentionToPanelResult = (
+  thread: AgentComposerAiThreadMention,
+  query: string
+): AgentComposerMentionPanelResult | null => {
+  if (!matchesMentionQuery(query, [
+    thread.title,
+    thread.threadId,
+    thread.status,
+    thread.preview,
+    thread.projectRoot,
+    ...(thread.recentMessages ?? []),
+  ])) {
+    return null;
+  }
+  const description = thread.preview ?? thread.projectRoot ?? thread.status;
+  const contextText = compactLines([
+    `Title: ${thread.title}`,
+    `Type: AI session`,
+    `Thread ID: ${thread.threadId}`,
+    `State: ${thread.status}${thread.active ? ", active" : ""}`,
+    thread.projectRoot === undefined ? undefined : `Project: ${thread.projectRoot}`,
+    thread.preview === undefined ? undefined : `Preview: ${thread.preview}`,
+    ...(thread.recentMessages ?? []).map((message, index) => `Recent ${String(index + 1)}: ${message}`),
+  ]);
+  return {
+    id: `ai-thread:${thread.threadId}`,
+    name: thread.title,
+    path: `app://lyra/thread/${encodeMentionPathSegment(thread.threadId)}`,
+    kind: "ai_thread",
+    section: "tabs",
+    description,
+    contextText,
+  };
+};
+
+const relativePathDepth = (path: string): number =>
+  path.replace(/\\/gu, "/").split("/").filter((part) => part.length > 0).length;
+
+const isCommonProjectEntry = (path: string): boolean => {
+  const fileName = fileNameFromPath(path).toLowerCase();
+  return [
+    ".env",
+    ".env.example",
+    ".gitignore",
+    "cargo.toml",
+    "go.mod",
+    "makefile",
+    "package.json",
+    "pnpm-workspace.yaml",
+    "pom.xml",
+    "pyproject.toml",
+    "readme",
+    "readme.md",
+    "requirements.txt",
+    "settings.gradle",
+    "tsconfig.json",
+  ].includes(fileName) || fileName.startsWith("readme.");
+};
+
+const fileMentionResultSection = (
+  result: AgentComposerFileMentionSearchResult,
+  query: string
+): AgentComposerMentionPanelSection => {
+  if (query.trim().length > 0) {
+    return "search_results";
+  }
+  const relativePath = result.root !== undefined && result.path.startsWith(result.root)
+    ? result.path.slice(result.root.length).replace(/^[\\/]+/u, "")
+    : result.path;
+  if (isCommonProjectEntry(relativePath)) {
+    return "recommended_files";
+  }
+  return relativePathDepth(relativePath) <= 1 ? "root" : "recommended_files";
+};
+
+const fileMentionResultToPanelResult = (
+  result: AgentComposerFileMentionSearchResult,
+  query: string,
+  roots: readonly string[]
+): AgentComposerMentionPanelResult => ({
+  id: `file:${result.id}`,
+  name: result.name,
+  path: result.path,
+  kind: result.kind,
+  section: fileMentionResultSection(result, query),
+  description: createFileMentionDisplayPath(
+    result.path,
+    result.root === undefined ? roots : [result.root, ...roots],
+    query
+  ),
+  ...(result.root === undefined ? {} : { root: result.root }),
+  ...(result.score === undefined ? {} : { score: result.score }),
+  ...(result.indices === undefined ? {} : { indices: result.indices }),
+});
+
+const compareMentionPanelResults = (
+  sectionRank: Record<AgentComposerMentionPanelSection, number>,
+  left: AgentComposerMentionPanelResult,
+  right: AgentComposerMentionPanelResult
+): number => {
+  const sectionDelta = sectionRank[left.section] - sectionRank[right.section];
+  if (sectionDelta !== 0) {
+    return sectionDelta;
+  }
+  if (left.score !== undefined || right.score !== undefined) {
+    return (right.score ?? 0) - (left.score ?? 0)
+      || left.name.localeCompare(right.name)
+      || left.path.localeCompare(right.path);
+  }
+  return left.name.localeCompare(right.name)
+    || left.path.localeCompare(right.path);
+};
+
 const mentionResultToAttachment = (
-  result: AgentComposerFileMentionSearchResult
+  result: AgentComposerMentionPanelResult
 ): AgentComposerFileAttachment =>
   createFileAttachment({
     name: result.name,
     path: result.path,
     kind: result.kind,
-    source: "fuzzy-mention",
+    source: result.kind === "file" || result.kind === "directory"
+      ? "fuzzy-mention"
+      : "mention-panel",
+    ...(result.contextText === undefined ? {} : { contextText: result.contextText }),
   });
 
 const attachmentsFromFiles = (
@@ -688,6 +1056,8 @@ export const useAgentComposerRuntime = ({
   onSteer,
   fileMentionSearchRoots,
   fileMentionSearchResults,
+  workbenchTabMentions,
+  aiThreadMentions,
   onFileMentionSearchStart,
   onFileMentionSearchUpdate,
   onFileMentionSearchStop
@@ -706,7 +1076,7 @@ export const useAgentComposerRuntime = ({
   const textEffectTimeoutsRef = useRef<number[]>([]);
   const composingRef = useRef(false);
   const attachmentDragDepthRef = useRef(0);
-  const fileMentionSessionRef = useRef<FileMentionSessionState | null>(null);
+  const mentionPanelSessionRef = useRef<MentionPanelSessionState | null>(null);
   const [draftValue, setDraftValue] = useState(initialValue);
   const [attachments, setAttachments] = useState<readonly AgentComposerInlineAttachment[]>([]);
   const [attachmentDragActive, setAttachmentDragActive] = useState(false);
@@ -721,8 +1091,10 @@ export const useAgentComposerRuntime = ({
     submenuLeft: MENU_VIEWPORT_MARGIN + DEFAULT_MENU_WIDTH + MENU_GAP,
     submenuTop: MENU_VIEWPORT_MARGIN,
   });
-  const [fileMentionMenuOpen, setFileMentionMenuOpen] = useState(false);
-  const [fileMentionSelectedIndex, setFileMentionSelectedIndex] = useState(0);
+  const [mentionPanelOpen, setMentionPanelOpen] = useState(false);
+  const [mentionPanelQuery, setMentionPanelQuery] = useState("");
+  const [mentionPanelSelectedIndex, setMentionPanelSelectedIndex] = useState(0);
+  const [mentionPanelStyle, setMentionPanelStyle] = useState<CSSProperties>({});
   const [caretRect, setCaretRect] = useState<ModernCaretRect | null>(null);
   const [caretActivityVersion, setCaretActivityVersion] = useState(0);
   const [textEffects, setTextEffects] = useState<readonly ComposerTextEffect[]>([]);
@@ -736,6 +1108,78 @@ export const useAgentComposerRuntime = ({
     [fileMentionSearchRoots]
   );
   const normalizedFileMentionResults = fileMentionSearchResults ?? [];
+  const normalizedWorkbenchTabMentions = workbenchTabMentions ?? [];
+  const normalizedAiThreadMentions = aiThreadMentions ?? [];
+  const normalizedMentionPanelResults = useMemo(() => {
+    const results: AgentComposerMentionPanelResult[] = [];
+    for (const tab of normalizedWorkbenchTabMentions) {
+      const result = workbenchTabMentionToPanelResult(tab, mentionPanelQuery);
+      if (result !== null) {
+        results.push(result);
+      }
+      const openFileResult = workbenchTabMentionToOpenFilePanelResult(
+        tab,
+        mentionPanelQuery,
+        normalizedFileMentionRoots
+      );
+      if (openFileResult !== null) {
+        results.push(openFileResult);
+      }
+    }
+    for (const thread of normalizedAiThreadMentions) {
+      const result = aiThreadMentionToPanelResult(thread, mentionPanelQuery);
+      if (result !== null) {
+        results.push(result);
+      }
+    }
+    for (const result of normalizedFileMentionResults) {
+      results.push(fileMentionResultToPanelResult(
+        result,
+        mentionPanelQuery,
+        normalizedFileMentionRoots
+      ));
+    }
+
+    const hasQuery = mentionPanelQuery.trim().length > 0;
+    const sectionRank: Record<AgentComposerMentionPanelSection, number> = hasQuery
+      ? {
+          search_results: 0,
+          tabs: 1,
+          recommended_files: 2,
+          root: 3,
+        }
+      : {
+          tabs: 0,
+          recommended_files: 1,
+          root: 2,
+          search_results: 3,
+        };
+    const seen = new Set<string>();
+    return results
+      .filter((result) => {
+        const key = `${result.kind}:${result.path}`;
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      .sort((left, right) => compareMentionPanelResults(sectionRank, left, right));
+  }, [
+    mentionPanelQuery,
+    normalizedAiThreadMentions,
+    normalizedFileMentionRoots,
+    normalizedFileMentionResults,
+    normalizedWorkbenchTabMentions
+  ]);
+
+  useEffect(() => {
+    setMentionPanelSelectedIndex((current) =>
+      normalizedMentionPanelResults.length === 0
+        ? 0
+        : Math.min(current, normalizedMentionPanelResults.length - 1)
+    );
+  }, [normalizedMentionPanelResults.length]);
 
   const markCaretActivity = useCallback((): void => {
     setCaretActivityVersion((current) => current + 1);
@@ -783,68 +1227,95 @@ export const useAgentComposerRuntime = ({
     setCaretRect(measureTextAreaCaretRect(input));
   }, [inputDisabled]);
 
-  const stopFileMentionSearch = useCallback((): void => {
-    const session = fileMentionSessionRef.current;
-    fileMentionSessionRef.current = null;
-    setFileMentionMenuOpen(false);
-    setFileMentionSelectedIndex(0);
-    if (session !== null) {
-      void onFileMentionSearchStop?.(session.sessionId);
+  const stopMentionPanel = useCallback((): void => {
+    const session = mentionPanelSessionRef.current;
+    mentionPanelSessionRef.current = null;
+    setMentionPanelOpen(false);
+    setMentionPanelSelectedIndex(0);
+    setMentionPanelQuery("");
+    if (session?.fileSearchSessionId !== null && session?.fileSearchSessionId !== undefined) {
+      void onFileMentionSearchStop?.(session.fileSearchSessionId);
     }
   }, [onFileMentionSearchStop]);
 
-  const syncFileMentionSearch = useCallback((): void => {
+  const syncMentionPanel = useCallback((): void => {
     const input = inputRef.current;
     if (
       input === null ||
       inputDisabled ||
       input.ownerDocument.activeElement !== input ||
-      input.selectionStart !== input.selectionEnd ||
-      normalizedFileMentionRoots.length === 0 ||
-      onFileMentionSearchStart === undefined ||
-      onFileMentionSearchUpdate === undefined
+      input.selectionStart !== input.selectionEnd
     ) {
-      stopFileMentionSearch();
+      stopMentionPanel();
       return;
     }
 
     const trigger = resolveFileMentionTrigger(draftValue, input.selectionStart);
     if (trigger === null) {
-      stopFileMentionSearch();
+      stopMentionPanel();
       return;
     }
 
-    const existing = fileMentionSessionRef.current;
+    const rootsKey = normalizedFileMentionRoots.join("\n");
+    const startFileSearch = onFileMentionSearchStart;
+    const updateFileSearch = onFileMentionSearchUpdate;
+    const canSearchFiles =
+      normalizedFileMentionRoots.length > 0 &&
+      startFileSearch !== undefined &&
+      updateFileSearch !== undefined;
+    const existing = mentionPanelSessionRef.current;
     if (existing === null) {
-      const nextSession: FileMentionSessionState = {
-        sessionId: createFileMentionSessionId(),
+      const fileSearchSessionId = canSearchFiles ? createFileMentionSessionId() : null;
+      const nextSession: MentionPanelSessionState = {
+        fileSearchSessionId,
+        rootsKey,
         ...trigger,
       };
-      fileMentionSessionRef.current = nextSession;
-      setFileMentionMenuOpen(true);
-      setFileMentionSelectedIndex(0);
-      void onFileMentionSearchStart(nextSession.sessionId, normalizedFileMentionRoots);
-      void onFileMentionSearchUpdate(nextSession.sessionId, trigger.query);
+      mentionPanelSessionRef.current = nextSession;
+      setMentionPanelOpen(true);
+      setMentionPanelQuery(trigger.query);
+      setMentionPanelSelectedIndex(0);
+      if (fileSearchSessionId !== null) {
+        void startFileSearch?.(fileSearchSessionId, normalizedFileMentionRoots);
+        void updateFileSearch?.(fileSearchSessionId, trigger.query);
+      }
       return;
     }
 
-    const nextSession: FileMentionSessionState = {
+    let fileSearchSessionId = existing.fileSearchSessionId;
+    if (fileSearchSessionId !== null && (!canSearchFiles || existing.rootsKey !== rootsKey)) {
+      void onFileMentionSearchStop?.(fileSearchSessionId);
+      fileSearchSessionId = null;
+    }
+    if (fileSearchSessionId === null && canSearchFiles) {
+      fileSearchSessionId = createFileMentionSessionId();
+      void startFileSearch?.(fileSearchSessionId, normalizedFileMentionRoots);
+      void updateFileSearch?.(fileSearchSessionId, trigger.query);
+    }
+
+    const nextSession: MentionPanelSessionState = {
       ...existing,
       ...trigger,
+      rootsKey,
+      fileSearchSessionId,
     };
-    fileMentionSessionRef.current = nextSession;
-    setFileMentionMenuOpen(true);
+    mentionPanelSessionRef.current = nextSession;
+    setMentionPanelOpen(true);
+    setMentionPanelQuery(trigger.query);
     if (existing.query !== trigger.query) {
-      setFileMentionSelectedIndex(0);
-      void onFileMentionSearchUpdate(existing.sessionId, trigger.query);
+      setMentionPanelSelectedIndex(0);
+      if (fileSearchSessionId !== null) {
+        void updateFileSearch?.(fileSearchSessionId, trigger.query);
+      }
     }
   }, [
     draftValue,
     inputDisabled,
     normalizedFileMentionRoots,
     onFileMentionSearchStart,
+    onFileMentionSearchStop,
     onFileMentionSearchUpdate,
-    stopFileMentionSearch
+    stopMentionPanel
   ]);
 
   const pushTextEffects = useCallback((nextEffects: readonly ComposerTextEffectDraft[]): void => {
@@ -928,7 +1399,7 @@ export const useAgentComposerRuntime = ({
     const seen = new Set(attachments.map(attachmentKey));
     const usedPlaceholders = new Set([
       ...attachments.map((attachment) => attachment.placeholder),
-      ...Array.from(draftValue.matchAll(/\[\[(?:file|directory|local_image|image):[^\]]+\]\]/gu), (match) => match[0] ?? ""),
+      ...Array.from(draftValue.matchAll(/\[\[(?:file|directory|local_image|image|workbench_tab|ai_thread):[^\]]+\]\]/gu), (match) => match[0] ?? ""),
     ]);
     const normalizedAttachments: AgentComposerInlineAttachment[] = [];
     for (const attachment of nextAttachments) {
@@ -941,7 +1412,8 @@ export const useAgentComposerRuntime = ({
         name,
         path,
         kind: attachment.kind,
-        source: attachment.source
+        source: attachment.source,
+        ...(attachment.contextText === undefined ? {} : { contextText: attachment.contextText })
       });
       const key = attachmentKey(normalized);
       if (seen.has(key)) {
@@ -993,10 +1465,10 @@ export const useAgentComposerRuntime = ({
     });
   }, []);
 
-  const selectFileMentionResult = useCallback((
-    result: AgentComposerFileMentionSearchResult
+  const selectMentionPanelResult = useCallback((
+    result: AgentComposerMentionPanelResult
   ): void => {
-    const session = fileMentionSessionRef.current;
+    const session = mentionPanelSessionRef.current;
     if (session === null) {
       return;
     }
@@ -1004,8 +1476,8 @@ export const useAgentComposerRuntime = ({
       [mentionResultToAttachment(result)],
       { start: session.triggerStart, end: session.triggerEnd }
     );
-    stopFileMentionSearch();
-  }, [insertAttachments, stopFileMentionSearch]);
+    stopMentionPanel();
+  }, [insertAttachments, stopMentionPanel]);
 
   useEffect(() => {
     smartResize();
@@ -1116,7 +1588,7 @@ export const useAgentComposerRuntime = ({
     const handleSelectionChange = (): void => {
       if (ownerDocument.activeElement === inputRef.current) {
         normalizeAttachmentSelection();
-        syncFileMentionSearch();
+        syncMentionPanel();
         markCaretActivity();
         syncCaret();
       }
@@ -1126,15 +1598,15 @@ export const useAgentComposerRuntime = ({
     return () => {
       ownerDocument.removeEventListener("selectionchange", handleSelectionChange);
     };
-  }, [inputFocused, markCaretActivity, normalizeAttachmentSelection, syncCaret, syncFileMentionSearch]);
+  }, [inputFocused, markCaretActivity, normalizeAttachmentSelection, syncCaret, syncMentionPanel]);
 
   useEffect(() => {
     if (inputFocused) {
-      syncFileMentionSearch();
+      syncMentionPanel();
     } else {
-      stopFileMentionSearch();
+      stopMentionPanel();
     }
-  }, [draftValue, inputFocused, stopFileMentionSearch, syncFileMentionSearch]);
+  }, [draftValue, inputFocused, stopMentionPanel, syncMentionPanel]);
 
   const submit = useCallback(async (
     action: AgentComposerSubmitAction
@@ -1157,7 +1629,7 @@ export const useAgentComposerRuntime = ({
     };
     setDraftValue("");
     setAttachments([]);
-    stopFileMentionSearch();
+    stopMentionPanel();
     previousValueRef.current = "";
     setInputScrollTop(0);
     markCaretActivity();
@@ -1173,7 +1645,7 @@ export const useAgentComposerRuntime = ({
       previousValueRef.current = draftValue;
       markCaretActivity();
     }
-  }, [attachments, draftValue, markCaretActivity, onSend, onSteer, stopFileMentionSearch]);
+  }, [attachments, draftValue, markCaretActivity, onSend, onSteer, stopMentionPanel]);
 
   useEffect(() => {
     if (onHeightChange === undefined) {
@@ -1244,6 +1716,21 @@ export const useAgentComposerRuntime = ({
     setMenuPlacement(createMenuPlacement(anchor, toolsMenuPortalRef.current));
   }, []);
 
+  const updateMentionPanelPlacement = useCallback((): void => {
+    const input = inputRef.current;
+    const viewport = input?.ownerDocument.defaultView;
+    if (input === null || viewport === undefined || viewport === null) {
+      return;
+    }
+    const rect = input.getBoundingClientRect();
+    const inset = 8;
+    setMentionPanelStyle({
+      left: Math.max(inset, rect.left + inset),
+      right: Math.max(inset, viewport.innerWidth - rect.right + inset),
+      bottom: Math.max(inset, viewport.innerHeight - rect.top + inset),
+    });
+  }, []);
+
   useLayoutEffect(() => {
     if (!toolsMenuOpen) {
       return;
@@ -1262,11 +1749,37 @@ export const useAgentComposerRuntime = ({
     };
   }, [modelSubmenuOpen, permissionSubmenuOpen, toolsMenuOpen, updateMenuPlacement]);
 
+  useLayoutEffect(() => {
+    if (!mentionPanelOpen) {
+      return;
+    }
+    const viewport = inputRef.current?.ownerDocument.defaultView;
+    if (viewport === undefined || viewport === null) {
+      return;
+    }
+    const handleViewportChange = (): void => {
+      updateMentionPanelPlacement();
+    };
+    updateMentionPanelPlacement();
+    const animationFrame = viewport.requestAnimationFrame(updateMentionPanelPlacement);
+    viewport.addEventListener("resize", handleViewportChange);
+    viewport.addEventListener("scroll", handleViewportChange, true);
+    viewport.visualViewport?.addEventListener("resize", handleViewportChange);
+    viewport.visualViewport?.addEventListener("scroll", handleViewportChange);
+    return () => {
+      viewport.cancelAnimationFrame(animationFrame);
+      viewport.removeEventListener("resize", handleViewportChange);
+      viewport.removeEventListener("scroll", handleViewportChange, true);
+      viewport.visualViewport?.removeEventListener("resize", handleViewportChange);
+      viewport.visualViewport?.removeEventListener("scroll", handleViewportChange);
+    };
+  }, [draftValue, inputScrollTop, mentionPanelOpen, updateMentionPanelPlacement]);
+
   useEffect(() => {
     return () => {
-      const session = fileMentionSessionRef.current;
-      if (session !== null) {
-        void onFileMentionSearchStop?.(session.sessionId);
+      const session = mentionPanelSessionRef.current;
+      if (session?.fileSearchSessionId !== null && session?.fileSearchSessionId !== undefined) {
+        void onFileMentionSearchStop?.(session.fileSearchSessionId);
       }
       for (const timeoutId of textEffectTimeoutsRef.current) {
         window.clearTimeout(timeoutId);
@@ -1354,45 +1867,46 @@ export const useAgentComposerRuntime = ({
     markCaretActivity();
     window.requestAnimationFrame(() => {
       normalizeAttachmentSelection();
-      syncFileMentionSearch();
+      syncMentionPanel();
       syncCaret();
     });
-  }, [markCaretActivity, normalizeAttachmentSelection, smartResize, syncCaret, syncFileMentionSearch]);
+  }, [markCaretActivity, normalizeAttachmentSelection, smartResize, syncCaret, syncMentionPanel]);
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
     pressCaretKey(event.key, event.repeat);
     const input = event.currentTarget;
-    if (fileMentionMenuOpen) {
+    if (mentionPanelOpen) {
       if (event.key === "Escape") {
         event.preventDefault();
-        stopFileMentionSearch();
+        stopMentionPanel();
         return;
       }
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setFileMentionSelectedIndex((current) =>
-          normalizedFileMentionResults.length === 0
+        setMentionPanelSelectedIndex((current) =>
+          normalizedMentionPanelResults.length === 0
             ? 0
-            : (current + 1) % normalizedFileMentionResults.length
+            : (current + 1) % normalizedMentionPanelResults.length
         );
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setFileMentionSelectedIndex((current) =>
-          normalizedFileMentionResults.length === 0
+        setMentionPanelSelectedIndex((current) =>
+          normalizedMentionPanelResults.length === 0
             ? 0
-            : (current + normalizedFileMentionResults.length - 1) % normalizedFileMentionResults.length
+            : (current + normalizedMentionPanelResults.length - 1) % normalizedMentionPanelResults.length
         );
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
-        const result = normalizedFileMentionResults[fileMentionSelectedIndex];
+        event.preventDefault();
+        const result = normalizedMentionPanelResults[mentionPanelSelectedIndex];
         if (result !== undefined) {
-          event.preventDefault();
-          selectFileMentionResult(result);
+          selectMentionPanelResult(result);
           return;
         }
+        return;
       }
     }
     const ranges = attachmentTextRanges(draftValue, attachments);
@@ -1466,26 +1980,26 @@ export const useAgentComposerRuntime = ({
   }, [
     attachments,
     draftValue,
-    fileMentionMenuOpen,
-    fileMentionSelectedIndex,
     hasContent,
     markCaretActivity,
-    normalizedFileMentionResults,
+    mentionPanelOpen,
+    mentionPanelSelectedIndex,
+    normalizedMentionPanelResults,
     onSendWithFollow,
     pressCaretKey,
     replaceDraftRange,
-    selectFileMentionResult,
+    selectMentionPanelResult,
     sendDisabled,
     sending,
-    stopFileMentionSearch,
+    stopMentionPanel,
     submit,
     syncCaret
   ]);
 
   const onTextareaKeyUp = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
     releaseCaretKey(event.key);
-    window.requestAnimationFrame(syncFileMentionSearch);
-  }, [releaseCaretKey, syncFileMentionSearch]);
+    window.requestAnimationFrame(syncMentionPanel);
+  }, [releaseCaretKey, syncMentionPanel]);
 
   const onTextareaPaste = useCallback((event: ReactClipboardEvent<HTMLTextAreaElement>): void => {
     const clipboardData = event.clipboardData;
@@ -1575,12 +2089,13 @@ export const useAgentComposerRuntime = ({
     draftParts,
     inputScrollTop,
     attachmentDragActive,
-    fileMentionMenuOpen,
-    fileMentionResults: normalizedFileMentionResults,
-    fileMentionSelectedIndex,
+    mentionPanelOpen,
+    mentionPanelStyle,
+    mentionPanelResults: normalizedMentionPanelResults,
+    mentionPanelSelectedIndex,
     setDraftValue: setDraftValueAndSyncAttachments,
     removeAttachment,
-    selectFileMentionResult,
+    selectMentionPanelResult,
     requestFileAttachments,
     submit,
     toggleToolsMenu,

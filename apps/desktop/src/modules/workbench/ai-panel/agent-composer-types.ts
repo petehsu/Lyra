@@ -22,12 +22,27 @@ export type AgentComposerAppendRequest = {
   readonly text: string;
 };
 
+export type AgentComposerAttachmentKind =
+  | "file"
+  | "directory"
+  | "local_image"
+  | "image"
+  | "workbench_tab"
+  | "ai_thread";
+
 export type AgentComposerFileAttachment = {
   readonly id: string;
   readonly name: string;
   readonly path: string;
-  readonly kind: "file" | "directory" | "local_image" | "image";
-  readonly source: "lyra-file-manager" | "system-picker" | "system-drag" | "clipboard" | "fuzzy-mention";
+  readonly kind: AgentComposerAttachmentKind;
+  readonly source:
+    | "lyra-file-manager"
+    | "system-picker"
+    | "system-drag"
+    | "clipboard"
+    | "fuzzy-mention"
+    | "mention-panel";
+  readonly contextText?: string;
 };
 
 export type AgentComposerInlineAttachment = AgentComposerFileAttachment & {
@@ -58,6 +73,34 @@ export type AgentComposerFileMentionSearchResult = {
   readonly root?: string;
   readonly score?: number;
   readonly indices?: readonly number[] | null;
+};
+
+export type AgentComposerWorkbenchTabMention = {
+  readonly tabId: string;
+  readonly title: string;
+  readonly kind: string;
+  readonly active: boolean;
+  readonly visible: boolean;
+  readonly address?: string | undefined;
+  readonly inputValue?: string | undefined;
+  readonly query?: string | undefined;
+  readonly filePath?: string | undefined;
+  readonly appId?: string | undefined;
+  readonly appIconKey?: string | undefined;
+  readonly terminalTabId?: string | undefined;
+  readonly faviconUrl?: string | undefined;
+  readonly preview?: string | undefined;
+};
+
+export type AgentComposerAiThreadMention = {
+  readonly tabId: string;
+  readonly threadId: string;
+  readonly title: string;
+  readonly status: string;
+  readonly active: boolean;
+  readonly preview?: string | undefined;
+  readonly projectRoot?: string | undefined;
+  readonly recentMessages?: readonly string[] | undefined;
 };
 
 export type AgentComposerProps = {
@@ -109,6 +152,8 @@ export type AgentComposerProps = {
   readonly onRequestFileAttachments?: (() => Promise<readonly AgentComposerFileAttachment[]>) | undefined;
   readonly fileMentionSearchRoots?: readonly string[] | undefined;
   readonly fileMentionSearchResults?: readonly AgentComposerFileMentionSearchResult[] | undefined;
+  readonly workbenchTabMentions?: readonly AgentComposerWorkbenchTabMention[] | undefined;
+  readonly aiThreadMentions?: readonly AgentComposerAiThreadMention[] | undefined;
   readonly onFileMentionSearchStart?: (
     sessionId: string,
     roots: readonly string[]

@@ -1052,6 +1052,19 @@ fn local_file_mention_content_items(name: &str, path: &str) -> Vec<ContentItem> 
     }]
 }
 
+fn mention_context_content_items(
+    name: &str,
+    path: &str,
+    context_text: Option<&str>,
+) -> Vec<ContentItem> {
+    let Some(context_text) = context_text.map(str::trim).filter(|text| !text.is_empty()) else {
+        return Vec::new();
+    };
+    vec![ContentItem::InputText {
+        text: format!("Mentioned context `{name}` at `{path}`:\n\n{context_text}"),
+    }]
+}
+
 impl From<ResponseInputItem> for ResponseItem {
     fn from(item: ResponseInputItem) -> Self {
         match item {
@@ -1206,8 +1219,17 @@ impl From<Vec<UserInput>> for ResponseInputItem {
                         }
                     }
                     UserInput::Skill { .. } => Vec::new(),
-                    UserInput::Mention { name, path } => {
-                        local_file_mention_content_items(&name, &path)
+                    UserInput::Mention {
+                        name,
+                        path,
+                        context_text,
+                    } => {
+                        let local_items = local_file_mention_content_items(&name, &path);
+                        if local_items.is_empty() {
+                            mention_context_content_items(&name, &path, context_text.as_deref())
+                        } else {
+                            local_items
+                        }
                     }
                 })
                 .collect::<Vec<ContentItem>>(),
@@ -2862,6 +2884,7 @@ mod tests {
             UserInput::Mention {
                 name: "Fast Prompt.txt".to_string(),
                 path: file_path.display().to_string(),
+                context_text: None,
             },
         ]);
 
@@ -2888,6 +2911,7 @@ mod tests {
         let item = ResponseInputItem::from(vec![UserInput::Mention {
             name: "calendar".to_string(),
             path: "app://calendar".to_string(),
+            context_text: None,
         }]);
 
         match item {
@@ -2897,10 +2921,35 @@ mod tests {
     }
 
     #[test]
+    fn non_local_mention_context_adds_model_visible_text() {
+        let item = ResponseInputItem::from(vec![UserInput::Mention {
+            name: "Browser tab".to_string(),
+            path: "app://workbench/tab/tab-1".to_string(),
+            context_text: Some("Title: Docs\nAddress: https://example.test".to_string()),
+        }]);
+
+        match item {
+            ResponseInputItem::Message { content, .. } => {
+                assert_eq!(content.len(), 1);
+                match &content[0] {
+                    ContentItem::InputText { text } => {
+                        assert!(text.contains("Mentioned context `Browser tab`"));
+                        assert!(text.contains("app://workbench/tab/tab-1"));
+                        assert!(text.contains("Title: Docs"));
+                    }
+                    other => panic!("expected mention context text but found {other:?}"),
+                }
+            }
+            other => panic!("expected message response but got {other:?}"),
+        }
+    }
+
+    #[test]
     fn missing_local_file_mention_adds_placeholder() {
         let item = ResponseInputItem::from(vec![UserInput::Mention {
             name: "missing.txt".to_string(),
             path: "/tmp/lyra-missing-file-mention.txt".to_string(),
+            context_text: None,
         }]);
 
         match item {

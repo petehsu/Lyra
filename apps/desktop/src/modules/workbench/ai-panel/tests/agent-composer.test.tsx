@@ -1,6 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+// @vitest-environment jsdom
+
+import "../../../../renderer/test/setup";
+
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { writeFileManagerEntryDragPayload } from "../../file-manager/drag-transfer";
 import { AgentComposer } from "../agent-composer";
@@ -53,6 +57,10 @@ const createProps = (overrides: Partial<AgentComposerProps> = {}): AgentComposer
   sending: false,
   onSend: vi.fn(async () => undefined),
   ...overrides
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe("agent composer", () => {
@@ -655,6 +663,380 @@ describe("agent composer", () => {
         },
       ],
     });
+  });
+
+  test("opens the mention panel for a bare at sign and keeps Enter from sending empty matches", async () => {
+    const onSend = vi.fn(async () => undefined);
+    const onFileMentionSearchStart = vi.fn();
+    const onFileMentionSearchUpdate = vi.fn();
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          onSend,
+          fileMentionSearchRoots: ["/workspace"],
+          fileMentionSearchResults: [],
+          onFileMentionSearchStart,
+          onFileMentionSearchUpdate,
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+
+    await act(async () => {
+      input.focus();
+      fireEvent.change(input, { target: { value: "@" } });
+      input.setSelectionRange(1, 1);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    await waitFor(() => {
+      expect(onFileMentionSearchStart).toHaveBeenCalledWith(expect.any(String), ["/workspace"]);
+      expect(onFileMentionSearchUpdate).toHaveBeenCalledWith(expect.any(String), "");
+      expect(screen.getByRole("listbox", { name: "Mentions" })).toBeDefined();
+      expect(screen.getByText("No matches")).toBeDefined();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    });
+
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  test("renders all mention results inside the scrollable panel", async () => {
+    const results = Array.from({ length: 12 }, (_, index) => ({
+      id: `file-${String(index)}`,
+      name: `file-${String(index)}.ts`,
+      path: `/workspace/file-${String(index)}.ts`,
+      kind: "file" as const,
+    }));
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          fileMentionSearchRoots: ["/workspace"],
+          fileMentionSearchResults: results,
+          onFileMentionSearchStart: vi.fn(),
+          onFileMentionSearchUpdate: vi.fn(),
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+
+    await act(async () => {
+      input.focus();
+      fireEvent.change(input, { target: { value: "@file" } });
+      input.setSelectionRange("@file".length, "@file".length);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /file-0\.ts/i })).toBeDefined();
+      expect(screen.getByRole("option", { name: /file-11\.ts/i })).toBeDefined();
+    });
+  });
+
+  test("selects workbench tab mentions without a file search root and sends context text", async () => {
+    const onSend = vi.fn(async () => undefined);
+    const onFileMentionSearchStart = vi.fn();
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          onSend,
+          fileMentionSearchRoots: [],
+          workbenchTabMentions: [
+            {
+              tabId: "tab-1",
+              title: "Docs",
+              kind: "page",
+              active: true,
+              visible: true,
+              address: "https://example.test/docs",
+            },
+          ],
+          onFileMentionSearchStart,
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+
+    await act(async () => {
+      input.focus();
+      fireEvent.change(input, { target: { value: "read @doc" } });
+      input.setSelectionRange("read @doc".length, "read @doc".length);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: /Docs/i })).toBeDefined();
+    });
+    expect(onFileMentionSearchStart).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    });
+
+    expect(input.value).toBe("read [[workbench_tab:Docs]]");
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send"));
+    });
+
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      attachments: [
+        expect.objectContaining({
+          name: "Docs",
+          path: "app://workbench/tab/tab-1",
+          kind: "workbench_tab",
+          source: "mention-panel",
+          contextText: expect.stringContaining("Address: https://example.test/docs"),
+        }),
+      ],
+      parts: [
+        { type: "text", text: "read " },
+        {
+          type: "attachment",
+          attachment: expect.objectContaining({
+            name: "Docs",
+            path: "app://workbench/tab/tab-1",
+            kind: "workbench_tab",
+            contextText: expect.stringContaining("workbench.tab.read"),
+          }),
+        },
+      ],
+    }));
+  });
+
+  test("prioritizes fuzzy file matches over tab mentions for filename queries", async () => {
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          fileMentionSearchRoots: ["/workspace"],
+          fileMentionSearchResults: [
+            {
+              id: "main-ts",
+              name: "main.ts",
+              path: "/workspace/src/main.ts",
+              kind: "file",
+              score: 950,
+            },
+          ],
+          workbenchTabMentions: [
+            {
+              tabId: "tab-1",
+              title: "Main docs",
+              kind: "page",
+              active: false,
+              visible: true,
+              address: "https://example.test/main",
+            },
+          ],
+          onFileMentionSearchStart: vi.fn(),
+          onFileMentionSearchUpdate: vi.fn(),
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+
+    await act(async () => {
+      input.focus();
+      fireEvent.change(input, { target: { value: "@main" } });
+      input.setSelectionRange("@main".length, "@main".length);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    await waitFor(() => {
+      const options = screen.getAllByRole("option");
+      expect(options[0]?.textContent).toContain("main.ts");
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    });
+
+    expect(input.value).toBe("[[file:main.ts]]");
+  });
+
+  test("shows file mention paths relative to the search root", async () => {
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          fileMentionSearchRoots: ["/Users/petehsu/Documents/Lyra"],
+          fileMentionSearchResults: [
+            {
+              id: "main-ts",
+              name: "main.ts",
+              path: "/Users/petehsu/Documents/Lyra/apps/desktop/src/main.ts",
+              root: "/Users/petehsu/Documents/Lyra",
+              kind: "file",
+            },
+          ],
+          onFileMentionSearchStart: vi.fn(),
+          onFileMentionSearchUpdate: vi.fn(),
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+
+    await act(async () => {
+      input.focus();
+      fireEvent.change(input, { target: { value: "@main" } });
+      input.setSelectionRange("@main".length, "@main".length);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    await waitFor(() => {
+      const option = screen.getByRole("option", { name: /main\.ts/i });
+      expect(option.textContent).toContain("apps/desktop/src/main.ts");
+      expect(option.textContent).not.toContain("/Users/petehsu/Documents/Lyra");
+    });
+  });
+
+  test("keeps the full file mention path when the query matches the hidden prefix", async () => {
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          fileMentionSearchRoots: ["/Users/petehsu/Documents/Lyra"],
+          fileMentionSearchResults: [
+            {
+              id: "main-ts",
+              name: "main.ts",
+              path: "/Users/petehsu/Documents/Lyra/apps/desktop/src/main.ts",
+              root: "/Users/petehsu/Documents/Lyra",
+              kind: "file",
+            },
+          ],
+          onFileMentionSearchStart: vi.fn(),
+          onFileMentionSearchUpdate: vi.fn(),
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+
+    await act(async () => {
+      input.focus();
+      fireEvent.change(input, { target: { value: "@petehsu" } });
+      input.setSelectionRange("@petehsu".length, "@petehsu".length);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    await waitFor(() => {
+      const option = screen.getByRole("option", { name: /main\.ts/i });
+      expect(option.textContent).toContain("/Users/petehsu/Documents/Lyra/apps/desktop/src/main.ts");
+    });
+  });
+
+  test("turns matching open file tabs into local file mention candidates", async () => {
+    const onSend = vi.fn(async () => undefined);
+    const onFileMentionSearchStart = vi.fn();
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          onSend,
+          fileMentionSearchRoots: [],
+          workbenchTabMentions: [
+            {
+              tabId: "tab-1",
+              title: "Composer View",
+              kind: "app",
+              active: true,
+              visible: true,
+              filePath: "/workspace/src/agent-composer-view.tsx",
+            },
+          ],
+          onFileMentionSearchStart,
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+
+    await act(async () => {
+      input.focus();
+      fireEvent.change(input, { target: { value: "read @acv" } });
+      input.setSelectionRange("read @acv".length, "read @acv".length);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    await waitFor(() => {
+      const options = screen.getAllByRole("option");
+      expect(options[0]?.textContent).toContain("agent-composer-view.tsx");
+    });
+    expect(onFileMentionSearchStart).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    });
+
+    expect(input.value).toBe("read [[file:agent-composer-view.tsx]]");
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Send"));
+    });
+
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      attachments: [
+        expect.objectContaining({
+          name: "agent-composer-view.tsx",
+          path: "/workspace/src/agent-composer-view.tsx",
+          kind: "file",
+          source: "fuzzy-mention",
+        }),
+      ],
+    }));
+  });
+
+  test("renders favicon and file type icons in mention results", async () => {
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          fileMentionSearchRoots: ["/workspace"],
+          fileMentionSearchResults: [
+            {
+              id: "package-json",
+              name: "package.json",
+              path: "/workspace/package.json",
+              kind: "file",
+            },
+          ],
+          workbenchTabMentions: [
+            {
+              tabId: "tab-1",
+              title: "Package docs",
+              kind: "page",
+              active: true,
+              visible: true,
+              address: "https://example.test/package",
+              faviconUrl: "https://example.test/favicon.ico",
+            },
+          ],
+          onFileMentionSearchStart: vi.fn(),
+          onFileMentionSearchUpdate: vi.fn(),
+        })}
+      />
+    );
+    const input = screen.getByLabelText("Ask Lyra") as HTMLTextAreaElement;
+
+    await act(async () => {
+      input.focus();
+      fireEvent.change(input, { target: { value: "@" } });
+      input.setSelectionRange(1, 1);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    await waitFor(() => {
+      expect(document.body.querySelector(".lyra-ai-agent-composer-mention-favicon")).not.toBeNull();
+      expect(document.body.querySelector(".lyra-ai-agent-composer-mention-file-icon")).not.toBeNull();
+    });
+    expect(
+      document.body.querySelector<HTMLImageElement>(".lyra-ai-agent-composer-mention-favicon")?.src
+    ).toBe("https://example.test/favicon.ico");
   });
 
   test("treats inline attachment chips as atomic keyboard tokens", async () => {

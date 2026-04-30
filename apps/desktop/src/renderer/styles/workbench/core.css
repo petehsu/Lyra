@@ -317,7 +317,7 @@
 .lyra-titlebar {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, var(--lyra-unit-560)) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, var(--lyra-unit-280)) minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--lyra-unit-10);
   padding: 0 var(--lyra-unit-10);
@@ -329,7 +329,7 @@
 }
 
 .lyra-titlebar-macos {
-  grid-template-columns: auto minmax(0, var(--lyra-unit-560)) minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, var(--lyra-unit-280)) minmax(0, 1fr) auto;
   padding-left: var(--lyra-unit-8);
 }
 
@@ -347,7 +347,7 @@
 .lyra-titlebar-navigation {
   width: 100%;
   min-width: 0;
-  max-width: var(--lyra-unit-560);
+  max-width: var(--lyra-unit-280);
   justify-self: start;
 }
 

@@ -8,16 +8,30 @@ import {
   FilePlus2,
   FileText,
   Folder,
+  Globe,
+  House,
   Image as ImageIcon,
+  MessagesSquare,
   Paperclip,
+  PanelTop,
   Plus,
+  Search,
+  Settings2,
   ShieldCheck,
   Square,
+  SquareTerminal,
   X
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
 import { ModernCaretOverlay } from "../caret/modern-caret";
+import { renderFileManagerEntryIconByKind } from "../file-manager/icon-registry";
+import { resolveFileManagerEntryIconKind } from "../file-manager/entry-icon-classifier";
+import {
+  renderWorkspaceAppIcon,
+  type WorkbenchAppId,
+  type WorkspaceAppIconKey
+} from "../workspace-apps";
 import type {
   AgentComposerModelState,
   AgentComposerSendVisualState
@@ -30,7 +44,10 @@ import type {
   AgentComposerVerbosity,
   AgentPermissionMode
 } from "./agent-composer-types";
-import type { AgentComposerRuntime } from "./use-agent-composer-runtime";
+import type {
+  AgentComposerMentionPanelResult,
+  AgentComposerRuntime
+} from "./use-agent-composer-runtime";
 
 const renderAttachmentIcon = (kind: AgentComposerFileAttachment["kind"]) => {
   if (kind === "directory") {
@@ -39,7 +56,105 @@ const renderAttachmentIcon = (kind: AgentComposerFileAttachment["kind"]) => {
   if (kind === "local_image" || kind === "image") {
     return <ImageIcon size={12} aria-hidden="true" />;
   }
+  if (kind === "workbench_tab") {
+    return <PanelTop size={12} aria-hidden="true" />;
+  }
+  if (kind === "ai_thread") {
+    return <MessagesSquare size={12} aria-hidden="true" />;
+  }
   return <Paperclip size={12} aria-hidden="true" />;
+};
+
+const mentionPanelSectionLabel = (section: string): string => {
+  if (section === "tabs") {
+    return "Tabs";
+  }
+  if (section === "recommended_files") {
+    return "Recommended files";
+  }
+  if (section === "root") {
+    return "Root";
+  }
+  return "Search results";
+};
+
+const extensionFromPath = (path: string): string | undefined => {
+  const fileName = path.replace(/\\/gu, "/").split("/").filter(Boolean).pop() ?? path;
+  const dotIndex = fileName.lastIndexOf(".");
+  return dotIndex <= 0 || dotIndex === fileName.length - 1
+    ? undefined
+    : fileName.slice(dotIndex + 1);
+};
+
+const renderFileMentionIcon = (result: AgentComposerMentionPanelResult) => {
+  const extension = extensionFromPath(result.path);
+  const iconKind = resolveFileManagerEntryIconKind(
+    result.kind === "directory"
+      ? {
+          id: result.id,
+          name: result.name,
+          path: result.path,
+          kind: "directory" as const,
+          isHidden: result.name.startsWith("."),
+          folderState: "unknown" as const,
+          ...(extension === undefined ? {} : { extension }),
+        }
+      : {
+          id: result.id,
+          name: result.name,
+          path: result.path,
+          kind: "file" as const,
+          isHidden: result.name.startsWith("."),
+          ...(extension === undefined ? {} : { extension }),
+        }
+  );
+  return renderFileManagerEntryIconByKind(iconKind, {
+    className: "lyra-ai-agent-composer-mention-file-icon",
+    size: 13,
+  });
+};
+
+const renderTabMentionIcon = (result: AgentComposerMentionPanelResult) => {
+  if (result.faviconUrl !== undefined && result.faviconUrl.length > 0) {
+    return (
+      <img
+        src={result.faviconUrl}
+        alt=""
+        className="lyra-ai-agent-composer-mention-favicon"
+        loading="eager"
+        decoding="async"
+      />
+    );
+  }
+  if (result.appId !== undefined && result.appIconKey !== undefined) {
+    return renderWorkspaceAppIcon(
+      result.appId as WorkbenchAppId,
+      result.appIconKey as WorkspaceAppIconKey
+    );
+  }
+  if (result.tabKind === "settings") {
+    return <Settings2 size={13} aria-hidden="true" />;
+  }
+  if (result.tabKind === "results") {
+    return <Search size={13} aria-hidden="true" />;
+  }
+  if (result.tabKind === "search") {
+    return <House size={13} aria-hidden="true" />;
+  }
+  if (result.tabKind === "terminal") {
+    return <SquareTerminal size={13} aria-hidden="true" />;
+  }
+  return <Globe size={13} aria-hidden="true" />;
+};
+
+const renderMentionIcon = (result: AgentComposerMentionPanelResult) => {
+  if (result.kind === "file" || result.kind === "directory") {
+    return renderFileMentionIcon(result);
+  }
+  if (result.kind === "workbench_tab") {
+    return renderTabMentionIcon(result);
+  }
+  return <MessagesSquare size={13} aria-hidden="true" />;
 };
 
 type AgentComposerViewProps = {
@@ -318,6 +433,62 @@ export const AgentComposerView = ({
         document.body
       )
     : null;
+  const mentionPanelHost = runtime.inputRef.current?.ownerDocument.body ?? null;
+  const mentionPanelLayer = runtime.mentionPanelOpen && mentionPanelHost !== null
+    ? createPortal(
+        <div
+          className="lyra-ai-agent-composer-mention-popover"
+          role="listbox"
+          aria-label="Mentions"
+          style={runtime.mentionPanelStyle}
+          onMouseDown={(event) => {
+            event.preventDefault();
+          }}
+        >
+          {runtime.mentionPanelResults.length === 0 ? (
+            <div className="lyra-ai-agent-composer-mention-empty">
+              <FileText size={12} aria-hidden="true" />
+              <span>{fileMentionNoMatchesLabel}</span>
+            </div>
+          ) : (
+            <div className="lyra-ai-agent-composer-mention-list">
+              {runtime.mentionPanelResults.map((result, index, results) => {
+                const previous = results[index - 1];
+                const showSection = previous === undefined || previous.section !== result.section;
+                return (
+                  <div key={result.id} className="lyra-ai-agent-composer-mention-row">
+                    {showSection ? (
+                      <div className="lyra-ai-agent-composer-mention-section" aria-hidden="true">
+                        {mentionPanelSectionLabel(result.section)}
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={index === runtime.mentionPanelSelectedIndex}
+                      className={
+                        index === runtime.mentionPanelSelectedIndex
+                          ? "lyra-ai-agent-composer-mention-item lyra-ai-agent-composer-mention-item-active"
+                          : "lyra-ai-agent-composer-mention-item"
+                      }
+                      title={result.path}
+                      onClick={() => {
+                        runtime.selectMentionPanelResult(result);
+                      }}
+                    >
+                      {renderMentionIcon(result)}
+                      <span>{result.name}</span>
+                      <small>{result.description ?? result.path}</small>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>,
+        mentionPanelHost
+      )
+    : null;
 
   return (
   <div
@@ -414,49 +585,6 @@ export const AgentComposerView = ({
             className="lyra-modern-caret-composer"
           />
         </div>
-        {runtime.fileMentionMenuOpen ? (
-          <div
-            className="lyra-ai-agent-composer-mention-popover"
-            role="listbox"
-            aria-label="File mentions"
-            onMouseDown={(event) => {
-              event.preventDefault();
-            }}
-          >
-            {runtime.fileMentionResults.length === 0 ? (
-              <div className="lyra-ai-agent-composer-mention-empty">
-                <FileText size={12} aria-hidden="true" />
-                <span>{fileMentionNoMatchesLabel}</span>
-              </div>
-            ) : (
-              runtime.fileMentionResults.slice(0, 8).map((result, index) => (
-                <button
-                  key={result.id}
-                  type="button"
-                  role="option"
-                  aria-selected={index === runtime.fileMentionSelectedIndex}
-                  className={
-                    index === runtime.fileMentionSelectedIndex
-                      ? "lyra-ai-agent-composer-mention-item lyra-ai-agent-composer-mention-item-active"
-                      : "lyra-ai-agent-composer-mention-item"
-                  }
-                  title={result.path}
-                  onClick={() => {
-                    runtime.selectFileMentionResult(result);
-                  }}
-                >
-                  {result.kind === "directory" ? (
-                    <Folder size={12} aria-hidden="true" />
-                  ) : (
-                    <FileText size={12} aria-hidden="true" />
-                  )}
-                  <span>{result.name}</span>
-                  <small>{result.path}</small>
-                </button>
-              ))
-            )}
-          </div>
-        ) : null}
       </div>
     </div>
     <div className="lyra-ai-agent-composer-toolbar">
@@ -535,6 +663,7 @@ export const AgentComposerView = ({
         </button>
       </div>
     </div>
+    {mentionPanelLayer}
   </div>
-  );
+);
 };

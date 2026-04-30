@@ -13,8 +13,11 @@ export type SettingsAiLabels = {
   readonly additionalFieldsTitle: string;
   readonly statusTitle: string;
   readonly addProfile: string;
+  readonly editProfile: string;
+  readonly addAllModels: string;
   readonly saveProfile: string;
   readonly deleteProfile: string;
+  readonly cancel: string;
   readonly setDefaultProfile: string;
   readonly clearApiKey: string;
   readonly testConnection: string;
@@ -29,6 +32,8 @@ export type SettingsAiLabels = {
   readonly keyLabel: string;
   readonly keyPlaceholder: string;
   readonly modelLabel: string;
+  readonly mainModelLabel: string;
+  readonly additionalModelsLabel: string;
   readonly modelPlaceholder: string;
   readonly modelsHelp: string;
   readonly headersLabel: string;
@@ -49,6 +54,13 @@ export type SettingsAiLabels = {
   readonly secretConfigured: string;
   readonly secretMissing: string;
   readonly noDiscoveredModels: string;
+  readonly advancedSettingsLabel: string;
+  readonly selectProviderLabel: string;
+  readonly connectionReady: string;
+  readonly connectionError: string;
+  readonly connectionUnchecked: string;
+  readonly deleteProfileConfirmTitle: string;
+  readonly deleteProfileConfirmDescription: string;
   readonly capabilityLabel: string;
   readonly capabilityFull: string;
   readonly capabilityStatic: string;
@@ -122,8 +134,8 @@ export type SettingsAiModel = {
   readonly toggleModelSelection: (modelId: string) => void;
   readonly refreshConfig: () => Promise<void>;
   readonly refreshModels: () => Promise<void>;
-  readonly validateProfile: () => Promise<void>;
+  readonly validateProfile: (profileId?: string) => Promise<void>;
   readonly saveProfile: () => Promise<void>;
-  readonly deleteProfile: () => Promise<void>;
-  readonly setDefaultProfile: () => Promise<void>;
+  readonly deleteProfile: (profileId?: string) => Promise<void>;
+  readonly setDefaultProfile: (profileId?: string) => Promise<void>;
 };

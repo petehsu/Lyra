@@ -20,11 +20,14 @@ import {
   useProjectLogoMap
 } from "../project-identity";
 import { subscribeThreadSelected } from "../thread-selection-events";
+import type { LyraThread } from "./lyra-thread-adapter";
 import type {
   AgentComposerModelControlOption,
   AgentComposerReasoningEffort,
   AgentComposerSubmitPayload,
   AgentComposerVerbosity,
+  AgentComposerAiThreadMention,
+  AgentComposerWorkbenchTabMention,
   AgentPermissionMode
 } from "./agent-composer";
 import {
@@ -85,6 +88,17 @@ const readString = (value: unknown): string | null =>
 const readNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
+const isAbsolutePath = (path: string): boolean =>
+  path.startsWith("/") || path.startsWith("\\\\") || /^[a-z]:[\\/]/iu.test(path);
+
+const joinRootPath = (root: string, path: string): string => {
+  if (isAbsolutePath(path)) {
+    return path;
+  }
+  const separator = root.includes("\\") && !root.includes("/") ? "\\" : "/";
+  return `${root.replace(/[\\/]+$/u, "")}${separator}${path.replace(/^[\\/]+/u, "")}`;
+};
+
 const readFuzzyFileSearchResult = (value: unknown): FuzzyFileSearchResult | null => {
   if (!isRecord(value)) {
     return null;
@@ -95,16 +109,18 @@ const readFuzzyFileSearchResult = (value: unknown): FuzzyFileSearchResult | null
   if (path === null || name === null) {
     return null;
   }
+  const root = readString(value.root);
+  const resolvedPath = root === null ? path : joinRootPath(root, path);
   const kind = matchType === "directory" ? "directory" : "file";
   const indices = Array.isArray(value.indices)
     ? value.indices.filter((entry): entry is number => typeof entry === "number")
     : null;
   return {
-    id: `${kind}:${path}`,
+    id: `${kind}:${resolvedPath}`,
     name,
-    path,
+    path: resolvedPath,
     kind,
-    ...(readString(value.root) === null ? {} : { root: readString(value.root)! }),
+    ...(root === null ? {} : { root }),
     ...(readNumber(value.score) === null ? {} : { score: readNumber(value.score)! }),
     indices,
   };
@@ -116,6 +132,7 @@ const runtimeAttachmentFromComposer = (
   name: attachment.name,
   path: attachment.path,
   kind: attachment.kind,
+  ...(attachment.contextText === undefined ? {} : { contextText: attachment.contextText }),
 });
 
 const runtimeInputFromComposerPayload = (payload: AgentComposerSubmitPayload) => ({
@@ -142,6 +159,26 @@ type FuzzyFileSearchResult = {
   readonly root?: string;
   readonly score?: number;
   readonly indices?: readonly number[] | null;
+};
+
+const readThreadRecentMessages = (thread: LyraThread): readonly string[] => {
+  const viewModelMessages = thread.aiPanelViewModel?.messages;
+  if (viewModelMessages !== undefined && viewModelMessages.length > 0) {
+    return viewModelMessages
+      .slice(-3)
+      .map((message) => `${message.role}: ${(message.displayContent ?? message.content).trim()}`)
+      .filter((message) => message.trim().length > 0);
+  }
+  return thread.turns
+    .slice(-2)
+    .flatMap((turn) => turn.items)
+    .map((item) => {
+      const type = readString(item.type) ?? "item";
+      const text = readString(item.text) ?? readString(item.content) ?? "";
+      return text.length === 0 ? type : `${type}: ${text}`;
+    })
+    .filter((message) => message.trim().length > 0)
+    .slice(-3);
 };
 
 const REASONING_EFFORT_VALUES = [
@@ -240,6 +277,7 @@ type UseAiPanelSurfaceRuntimeInput = {
   readonly toolNameEditLabel: string;
   readonly toolNameMultiEditLabel: string;
   readonly fileMentionFallbackRoots?: readonly string[] | undefined;
+  readonly workbenchTabMentions?: readonly AgentComposerWorkbenchTabMention[] | undefined;
   readonly onOpenFilePath?: AiPanelSurfaceProps["onOpenFilePath"] | undefined;
   readonly onWriteStreamEvent?: AiPanelSurfaceProps["onWriteStreamEvent"] | undefined;
   readonly onRequestProjectBind?: AiPanelSurfaceProps["onRequestProjectBind"] | undefined;
@@ -299,6 +337,8 @@ export type AiPanelSurfaceRuntime = {
   readonly selectedVerbosity: RuntimeThreadOptions["verbosity"] | null;
   readonly fileMentionSearchRoots: readonly string[];
   readonly fileMentionSearchResults: readonly FuzzyFileSearchResult[];
+  readonly workbenchTabMentions: readonly AgentComposerWorkbenchTabMention[];
+  readonly aiThreadMentions: readonly AgentComposerAiThreadMention[];
   readonly permissionMode: AgentPermissionMode;
   readonly toolNameLabels: ToolNameLabelMap;
   readonly typewriterText: string;
@@ -349,6 +389,7 @@ export const useAiPanelSurfaceRuntime = ({
   toolNameEditLabel,
   toolNameMultiEditLabel,
   fileMentionFallbackRoots,
+  workbenchTabMentions,
   onOpenFilePath,
   onWriteStreamEvent,
   onRequestProjectBind,
@@ -376,6 +417,7 @@ export const useAiPanelSurfaceRuntime = ({
   const [isReviewStarting, setIsReviewStarting] = useState(false);
   const [gitMetadataAvailableForReview, setGitMetadataAvailableForReview] = useState(false);
   const composerAppendRequestIdRef = useRef(0);
+  const activeFileMentionSearchSessionIdRef = useRef<string | null>(null);
   const interactionPanelRef = useRef<HTMLDivElement>(null);
   const lastAutoOpenedPlanReviewIdRef = useRef<string | null>(null);
 
@@ -422,13 +464,16 @@ export const useAiPanelSurfaceRuntime = ({
   const fileMentionSearchRoots = useMemo(
     () => {
       const roots = boundProjectRootForActiveThread === null
-        ? (fileMentionFallbackRoots ?? [])
+        ? [
+            state.activeThread?.cwd ?? null,
+            ...(fileMentionFallbackRoots ?? []),
+          ]
         : [boundProjectRootForActiveThread];
       return roots
-        .map((root) => root.trim())
+        .map((root) => root?.trim() ?? "")
         .filter((root, index, values) => root.length > 0 && values.indexOf(root) === index);
     },
-    [boundProjectRootForActiveThread, fileMentionFallbackRoots]
+    [boundProjectRootForActiveThread, fileMentionFallbackRoots, state.activeThread?.cwd]
   );
   const threadProjectRootById = useMemo(() => {
     const next = new Map<string, string>();
@@ -465,6 +510,28 @@ export const useAiPanelSurfaceRuntime = ({
     state.threadTabs,
     threadProjectRootById
   ]);
+  const aiThreadMentions = useMemo<readonly AgentComposerAiThreadMention[]>(() => {
+    const threadById = new Map(state.threads.map((thread) => [thread.id, thread]));
+    return state.threadTabs
+      .filter((tab) => tab.threadId !== null)
+      .map((tab) => {
+        const threadId = tab.threadId!;
+        const thread = threadById.get(threadId);
+        const projectRoot = tabProjectRootById.get(tab.tabId) ?? undefined;
+        return {
+          tabId: tab.tabId,
+          threadId,
+          title: tab.title,
+          status: tab.status,
+          active: tab.tabId === state.activeTabId,
+          ...(thread?.preview === undefined || thread.preview.trim().length === 0
+            ? {}
+            : { preview: thread.preview.trim() }),
+          ...(projectRoot === undefined || projectRoot === null ? {} : { projectRoot }),
+          ...(thread === undefined ? {} : { recentMessages: readThreadRecentMessages(thread) }),
+        };
+      });
+  }, [state.activeTabId, state.threadTabs, state.threads, tabProjectRootById]);
   const tabProjectRoots = useMemo(
     () => [...tabProjectRootById.values()].filter((root): root is string => root !== null),
     [tabProjectRootById]
@@ -737,6 +804,10 @@ export const useAiPanelSurfaceRuntime = ({
       const method = readString(event.notification.method);
       const params = isRecord(event.notification.params) ? event.notification.params : {};
       if (method === "fuzzyFileSearch/sessionUpdated") {
+        const sessionId = readString(params.sessionId);
+        if (sessionId !== null && sessionId !== activeFileMentionSearchSessionIdRef.current) {
+          return;
+        }
         const files = Array.isArray(params.files)
           ? params.files.map(readFuzzyFileSearchResult).filter((entry): entry is FuzzyFileSearchResult => entry !== null)
           : [];
@@ -744,7 +815,7 @@ export const useAiPanelSurfaceRuntime = ({
         return;
       }
       if (method === "fuzzyFileSearch/sessionCompleted") {
-        setFileMentionSearchResults([]);
+        return;
       }
     });
   }, [lyraApi]);
@@ -835,8 +906,9 @@ export const useAiPanelSurfaceRuntime = ({
     sessionId: string,
     roots: readonly string[]
   ): Promise<void> => {
+    activeFileMentionSearchSessionIdRef.current = sessionId;
+    setFileMentionSearchResults([]);
     if (lyraApi === undefined || roots.length === 0) {
-      setFileMentionSearchResults([]);
       return;
     }
     await lyraApi.request(createRequestPayload("fuzzyFileSearch/sessionStart", {
@@ -859,7 +931,10 @@ export const useAiPanelSurfaceRuntime = ({
   }, [lyraApi]);
 
   const stopFileMentionSearch = useCallback(async (sessionId: string): Promise<void> => {
-    setFileMentionSearchResults([]);
+    if (activeFileMentionSearchSessionIdRef.current === sessionId) {
+      activeFileMentionSearchSessionIdRef.current = null;
+      setFileMentionSearchResults([]);
+    }
     if (lyraApi === undefined) {
       return;
     }
@@ -1207,6 +1282,8 @@ export const useAiPanelSurfaceRuntime = ({
     selectedVerbosity,
     fileMentionSearchRoots,
     fileMentionSearchResults,
+    workbenchTabMentions: workbenchTabMentions ?? [],
+    aiThreadMentions,
     permissionMode,
     toolNameLabels,
     typewriterText,

@@ -35,11 +35,12 @@
     var(--lyra-pill-rainbow-red, #eaa0b7) 100%
   );
   pointer-events: none;
+  will-change: transform, mask-image;
 }
 
 .lyra-magic-border-sweep-closed-static {
-  -webkit-mask-image: conic-gradient(transparent 0deg, black 70deg, black 90deg, transparent 90deg);
-  mask-image: conic-gradient(transparent 0deg, black 70deg, black 90deg, transparent 90deg);
+  -webkit-mask-image: conic-gradient(transparent 0deg, black 72deg, black 96deg, transparent 96deg);
+  mask-image: conic-gradient(transparent 0deg, black 72deg, black 96deg, transparent 96deg);
 }
 
 .lyra-magic-border-sweep-open-static {

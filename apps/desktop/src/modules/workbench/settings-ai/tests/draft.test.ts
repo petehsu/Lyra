@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  appendAdditionalConfiguredModelLines,
   parseConfiguredModelEntries,
+  replacePrimaryConfiguredModelLine,
   resolveConfiguredModels
 } from "../draft";
 import type { AiProviderModelEntry } from "../../../../shared/ai";
@@ -56,5 +58,19 @@ describe("settings-ai draft model parsing", () => {
         source: "dynamic"
       }
     ]);
+  });
+
+  test("replaces only the primary model line", () => {
+    expect(replacePrimaryConfiguredModelLine(
+      "gpt-5.4\nmy-model | My Model | Internal alias\ngpt-5.4-mini",
+      "claude-sonnet-4-5"
+    )).toBe("claude-sonnet-4-5\nmy-model | My Model | Internal alias\ngpt-5.4-mini");
+  });
+
+  test("appends all additional model ids without duplicating primary or existing entries", () => {
+    expect(appendAdditionalConfiguredModelLines(
+      "gpt-5.4\nextra-one",
+      ["extra-one", "extra-two", "gpt-5.4", "extra-three"]
+    )).toBe("gpt-5.4\nextra-one\nextra-two\nextra-three");
   });
 });

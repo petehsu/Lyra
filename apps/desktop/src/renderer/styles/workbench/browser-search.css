@@ -12,13 +12,6 @@
   box-shadow: inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 80%, transparent);
 }
 
-.lyra-browser-pill:focus-within {
-  border-color: var(--lyra-line-focused);
-  box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 80%, transparent),
-    0 0 0 var(--lyra-unit-2) color-mix(in srgb, var(--lyra-line-focused) 35%, transparent);
-}
-
 .lyra-browser-pill:hover {
   border-color: color-mix(in srgb, var(--lyra-line-default) 60%, var(--lyra-text-secondary) 40%);
 }

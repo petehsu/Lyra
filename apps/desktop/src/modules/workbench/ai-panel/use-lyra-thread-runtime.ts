@@ -156,7 +156,8 @@ export type RuntimeReviewOptions = {
 export type RuntimeTurnAttachment = {
   readonly name: string;
   readonly path: string;
-  readonly kind: "file" | "directory" | "local_image" | "image";
+  readonly kind: "file" | "directory" | "local_image" | "image" | "workbench_tab" | "ai_thread";
+  readonly contextText?: string | undefined;
 };
 
 export type RuntimeTurnInputPart =
@@ -1052,6 +1053,7 @@ const createMentionInput = (attachment: RuntimeTurnAttachment): JsonRecord => ({
   type: "mention",
   name: attachment.name,
   path: attachment.path,
+  ...(attachment.contextText === undefined ? {} : { contextText: attachment.contextText }),
 });
 
 const createAttachmentInput = (attachment: RuntimeTurnAttachment): JsonRecord => {
@@ -1081,6 +1083,7 @@ const normalizeRuntimeTurnParts = (input: RuntimeTurnInput): readonly RuntimeTur
           name: part.attachment.name.trim(),
           path: part.attachment.path.trim(),
           kind: part.attachment.kind,
+          ...(part.attachment.contextText === undefined ? {} : { contextText: part.attachment.contextText }),
         };
         return attachment.name.length === 0 || attachment.path.length === 0
           ? null
@@ -1124,6 +1127,11 @@ const formatOptimisticUserContent = (input: RuntimeTurnInput): string => {
     .trim();
 };
 
+const optimisticAttachmentKind = (
+  kind: RuntimeTurnAttachment["kind"]
+): "file" | "directory" | "local_image" | "image" =>
+  kind === "workbench_tab" || kind === "ai_thread" ? "file" : kind;
+
 const optimisticContentPartsFromInput = (input: RuntimeTurnInput) =>
   normalizeRuntimeTurnParts(input).map((part) =>
     part.type === "text"
@@ -1132,7 +1140,7 @@ const optimisticContentPartsFromInput = (input: RuntimeTurnInput) =>
           type: "attachment" as const,
           name: part.attachment.name,
           path: part.attachment.path,
-          kind: part.attachment.kind,
+          kind: optimisticAttachmentKind(part.attachment.kind),
         }
   );
 
@@ -1932,6 +1940,7 @@ export const useLyraThreadRuntime = ({
           name: attachment.name.trim(),
           path: attachment.path.trim(),
           kind: attachment.kind,
+          ...(attachment.contextText === undefined ? {} : { contextText: attachment.contextText }),
         }))
         .filter((attachment) => attachment.name.length > 0 && attachment.path.length > 0),
       ...(input.parts === undefined ? {} : { parts: input.parts }),
@@ -2075,6 +2084,7 @@ export const useLyraThreadRuntime = ({
           name: attachment.name.trim(),
           path: attachment.path.trim(),
           kind: attachment.kind,
+          ...(attachment.contextText === undefined ? {} : { contextText: attachment.contextText }),
         }))
         .filter((attachment) => attachment.name.length > 0 && attachment.path.length > 0),
       ...(input.parts === undefined ? {} : { parts: input.parts }),

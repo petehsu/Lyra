@@ -30,6 +30,11 @@ const readCssNumber = (element: HTMLElement, name: `--${string}`, fallback: numb
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const TERMINAL_RESIZE_SETTLE_MS = 140;
+const TERMINAL_MIN_FIT_COLS = 10;
+const TERMINAL_MIN_FIT_ROWS = 3;
+type TerminalResizeMode = "immediate" | "settled";
+
 export const TerminalPaneSurface = ({
   pane,
   active,
@@ -109,6 +114,7 @@ export const TerminalPaneSurface = ({
     setCaretActivityVersion(0);
     let frameId: number | null = null;
     let resizeFrameId: number | null = null;
+    let resizeSettleTimerId: number | null = null;
     let caretFrameId: number | null = null;
     let lastSyncedCols = -1;
     let lastSyncedRows = -1;
@@ -226,28 +232,50 @@ export const TerminalPaneSurface = ({
     };
     attachCaretSource();
 
-    const fitToContainer = (): void => {
+    const fitToContainer = (): boolean => {
       if (sessionDisposedRef.current) {
-        return;
+        return false;
       }
       if (!host.isConnected) {
-        return;
+        return false;
       }
       if (host.clientWidth <= 0 || host.clientHeight <= 0) {
-        return;
+        return false;
       }
       if (terminalWithElement.element === undefined || !terminalWithElement.element.isConnected) {
-        return;
+        return false;
+      }
+      let dimensions: ReturnType<FitAddon["proposeDimensions"]>;
+      try {
+        dimensions = fitAddon.proposeDimensions();
+      } catch (_error) {
+        return false;
+      }
+      if (
+        dimensions === undefined ||
+        Number.isFinite(dimensions.cols) === false ||
+        Number.isFinite(dimensions.rows) === false ||
+        dimensions.cols < TERMINAL_MIN_FIT_COLS ||
+        dimensions.rows < TERMINAL_MIN_FIT_ROWS
+      ) {
+        return false;
+      }
+      if (terminal.cols === dimensions.cols && terminal.rows === dimensions.rows) {
+        return true;
       }
       try {
         fitAddon.fit();
+        return true;
       } catch (_error) {
         // xterm can throw during very early/late lifecycle ticks; safe to ignore.
+        return false;
       }
     };
 
     const resizeAndSync = (): void => {
-      fitToContainer();
+      if (fitToContainer() === false) {
+        return;
+      }
       if (sessionReadyRef.current === false) {
         return;
       }
@@ -265,7 +293,15 @@ export const TerminalPaneSurface = ({
       });
     };
 
-    const scheduleResizeAndSync = (): void => {
+    const cancelResizeSettleTimer = (): void => {
+      if (resizeSettleTimerId === null) {
+        return;
+      }
+      window.clearTimeout(resizeSettleTimerId);
+      resizeSettleTimerId = null;
+    };
+
+    const scheduleResizeFrame = (): void => {
       if (sessionDisposedRef.current) {
         return;
       }
@@ -276,6 +312,27 @@ export const TerminalPaneSurface = ({
         resizeFrameId = null;
         resizeAndSync();
       });
+    };
+
+    const scheduleResizeAndSync = (mode: TerminalResizeMode = "settled"): void => {
+      if (sessionDisposedRef.current) {
+        return;
+      }
+      // Panel animations produce transient terminal sizes; only user drag needs frame-level fitting.
+      if (
+        mode === "immediate" ||
+        host.ownerDocument.body.classList.contains("lyra-layout-resizing")
+      ) {
+        cancelResizeSettleTimer();
+        scheduleResizeFrame();
+        return;
+      }
+
+      cancelResizeSettleTimer();
+      resizeSettleTimerId = window.setTimeout(() => {
+        resizeSettleTimerId = null;
+        scheduleResizeFrame();
+      }, TERMINAL_RESIZE_SETTLE_MS);
     };
 
     applyTheme();
@@ -376,7 +433,7 @@ export const TerminalPaneSurface = ({
         appliedPromptSignatureRef.current = `${initialThemePresetRef.current}:${uiThemeId}`;
         lastSyncedCols = -1;
         lastSyncedRows = -1;
-        scheduleResizeAndSync();
+        scheduleResizeAndSync("immediate");
         scheduleCaretSync();
       })
       .catch((error: unknown) => {
@@ -394,6 +451,7 @@ export const TerminalPaneSurface = ({
       if (resizeFrameId !== null) {
         cancelAnimationFrame(resizeFrameId);
       }
+      cancelResizeSettleTimer();
       if (caretFrameId !== null) {
         cancelAnimationFrame(caretFrameId);
       }

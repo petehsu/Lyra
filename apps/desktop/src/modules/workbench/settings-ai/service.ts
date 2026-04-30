@@ -317,7 +317,24 @@ export const useSettingsAiModel = ({
     return fallbackModel.length > 0 ? [fallbackModel] : [];
   }, [defaultProfileId, profiles, selectedPreset]);
 
-  const buildValidateRequest = useCallback((): AiValidateProfileRequest => {
+  const buildValidateRequest = useCallback((
+    profile?: AiProviderProfile | null
+  ): AiValidateProfileRequest => {
+    if (profile !== undefined && profile !== null) {
+      return {
+        id: profile.id,
+        name: profile.name.trim(),
+        providerId: profile.providerId,
+        protocolId: profile.protocolId,
+        presetId: profile.presetId,
+        connectionConfig: { ...profile.connectionConfig },
+        authConfig: { ...profile.authConfig },
+        secretValues: {},
+        headers: { ...profile.headers },
+        model: profile.model,
+      };
+    }
+
     const { primaryModel } = resolveConfiguredModels(
       draft.modelsText,
       availableModels,
@@ -451,13 +468,22 @@ export const useSettingsAiModel = ({
     }
   }, [buildDiscoverRequest, lyraApi, draft, selectedPreset, syncConfig]);
 
-  const validateProfile = useCallback(async (): Promise<void> => {
+  const validateProfile = useCallback(async (profileId?: string): Promise<void> => {
     if (lyraApi === null) {
+      return;
+    }
+    const profile = profileId === undefined
+      ? null
+      : profiles.find((entry) => entry.id === profileId) ?? null;
+    if (profileId !== undefined && profile === null) {
       return;
     }
     try {
       const result = await lyraApi.request<AiProfileValidationResult>(
-        createRequestPayload("lyra/config/profiles/validate", buildValidateRequest() as Record<string, unknown>)
+        createRequestPayload(
+          "lyra/config/profiles/validate",
+          (profileId === undefined ? buildValidateRequest() : buildValidateRequest(profile)) as Record<string, unknown>
+        )
       );
       setStatusMessage(result.message);
       setStatusTone(validationTone(result));
@@ -465,7 +491,7 @@ export const useSettingsAiModel = ({
       setStatusMessage(error instanceof Error ? error.message : String(error));
       setStatusTone("error");
     }
-  }, [buildValidateRequest, lyraApi]);
+  }, [buildValidateRequest, lyraApi, profiles]);
 
   const saveProfile = useCallback(async (): Promise<void> => {
     if (lyraApi === null) {
@@ -494,20 +520,28 @@ export const useSettingsAiModel = ({
     }
   }, [buildUpsertRequest, lyraApi, labels.statusSaved, persistDraftSecrets, syncConfig]);
 
-  const deleteProfile = useCallback(async (): Promise<void> => {
-    if (lyraApi === null || draft.id === null) {
+  const deleteProfile = useCallback(async (profileId?: string): Promise<void> => {
+    const targetProfileId = profileId ?? draft.id;
+    if (lyraApi === null || targetProfileId === null) {
       return;
     }
+    const targetProfile = profiles.find((profile) => profile.id === targetProfileId) ?? null;
+    if (profileId !== undefined && targetProfile === null) {
+      return;
+    }
+    const targetPreset = targetProfile === null
+      ? selectedPreset
+      : resolvePreset(presets, targetProfile.presetId, targetProfile.providerId, targetProfile.protocolId);
 
     setIsSaving(true);
     let deleted = false;
     try {
       await lyraApi.request(
-        createRequestPayload("lyra/config/profiles/delete", { id: draft.id })
+        createRequestPayload("lyra/config/profiles/delete", { id: targetProfileId })
       );
       deleted = true;
-      const baseUrl = readPrimaryConnectionValue(selectedPreset, {
-        ...draft.connectionConfig,
+      const baseUrl = readPrimaryConnectionValue(targetPreset, {
+        ...(targetProfile?.connectionConfig ?? draft.connectionConfig),
       }).trim();
       if (baseUrl.length > 0) {
         await lyraApi.request(createRequestPayload("lyra/secrets.ai.delete", { baseUrl }));
@@ -524,21 +558,22 @@ export const useSettingsAiModel = ({
     } finally {
       setIsSaving(false);
     }
-  }, [lyraApi, draft.connectionConfig, draft.id, labels.statusDeleted, selectedPreset, syncConfig]);
+  }, [lyraApi, draft.connectionConfig, draft.id, labels.statusDeleted, presets, profiles, selectedPreset, syncConfig]);
 
-  const setDefaultProfile = useCallback(async (): Promise<void> => {
-    if (lyraApi === null || draft.id === null) {
+  const setDefaultProfile = useCallback(async (profileId?: string): Promise<void> => {
+    const targetProfileId = profileId ?? draft.id;
+    if (lyraApi === null || targetProfileId === null) {
       return;
     }
 
     setIsSaving(true);
     try {
       await lyraApi.request(
-        createRequestPayload("lyra/config/profiles/setDefault", { id: draft.id })
+        createRequestPayload("lyra/config/profiles/setDefault", { id: targetProfileId })
       );
       setStatusMessage(labels.statusDefaultUpdated);
       setStatusTone("success");
-      await syncConfig(draft.id);
+      await syncConfig(targetProfileId);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : String(error));
       setStatusTone("error");

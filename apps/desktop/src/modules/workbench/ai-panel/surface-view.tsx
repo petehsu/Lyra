@@ -258,6 +258,8 @@ export const AiPanelSurfaceView = ({
           }
           fileMentionSearchRoots={runtime.fileMentionSearchRoots}
           fileMentionSearchResults={runtime.fileMentionSearchResults}
+          workbenchTabMentions={runtime.workbenchTabMentions}
+          aiThreadMentions={runtime.aiThreadMentions}
           onFileMentionSearchStart={actions.startFileMentionSearch}
           onFileMentionSearchUpdate={actions.updateFileMentionSearch}
           onFileMentionSearchStop={actions.stopFileMentionSearch}

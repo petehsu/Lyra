@@ -8,6 +8,7 @@ export {
 export { renderAiPanelAppIcon, renderAiPanelTopbarIcon } from "./icon-registry";
 export { AiPanelSurface } from "./view";
 export { AiPlanReviewSurface } from "./plan-review-surface";
+export type { AgentComposerWorkbenchTabMention } from "./agent-composer";
 export type { AiPlanReviewSurfaceProps } from "./plan-review-surface";
 export type {
   AiPanelAppId,

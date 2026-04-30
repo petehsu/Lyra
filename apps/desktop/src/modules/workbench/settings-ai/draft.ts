@@ -42,6 +42,73 @@ export const serializeConfiguredModels = (
   .filter((entry, index, entries) => entry.length > 0 && entries.indexOf(entry) === index)
   .join("\n");
 
+const configuredModelLines = (value: string): readonly string[] =>
+  value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+export const readPrimaryConfiguredModelLine = (value: string): string =>
+  configuredModelLines(value)[0] ?? "";
+
+export const readAdditionalConfiguredModelLines = (value: string): string =>
+  configuredModelLines(value).slice(1).join("\n");
+
+export const replacePrimaryConfiguredModelLine = (
+  value: string,
+  primaryModel: string
+): string => [
+  primaryModel.trim(),
+  ...configuredModelLines(value).slice(1)
+]
+  .filter((line, index, lines) => line.length > 0 && lines.indexOf(line) === index)
+  .join("\n");
+
+export const replaceAdditionalConfiguredModelLines = (
+  value: string,
+  additionalModelsText: string
+): string => [
+  readPrimaryConfiguredModelLine(value),
+  ...configuredModelLines(additionalModelsText)
+]
+  .filter((line, index, lines) => line.length > 0 && lines.indexOf(line) === index)
+  .join("\n");
+
+export const toggleAdditionalConfiguredModelLine = (
+  value: string,
+  modelId: string
+): string => {
+  const primaryModel = readPrimaryConfiguredModelLine(value);
+  const normalizedModelId = modelId.trim();
+  if (normalizedModelId.length === 0 || normalizedModelId === primaryModel) {
+    return value;
+  }
+  const additionalLines = configuredModelLines(value).slice(1);
+  const nextAdditionalLines = additionalLines.includes(normalizedModelId)
+    ? additionalLines.filter((line) => line !== normalizedModelId)
+    : [...additionalLines, normalizedModelId];
+  return [primaryModel, ...nextAdditionalLines]
+    .filter((line, index, lines) => line.length > 0 && lines.indexOf(line) === index)
+    .join("\n");
+};
+
+export const appendAdditionalConfiguredModelLines = (
+  value: string,
+  modelIds: readonly string[]
+): string => {
+  const primaryModel = readPrimaryConfiguredModelLine(value);
+  return [
+    primaryModel,
+    ...configuredModelLines(value).slice(1),
+    ...modelIds.map((modelId) => modelId.trim())
+  ]
+    .filter((line, index, lines) =>
+      line.length > 0 && line !== primaryModel && lines.indexOf(line) === index
+    )
+    .reduce<string[]>((lines, line) => [...lines, line], primaryModel.length > 0 ? [primaryModel] : [])
+    .join("\n");
+};
+
 type ParsedModelEntry = {
   readonly id: string;
   readonly name: string;

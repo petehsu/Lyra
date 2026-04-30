@@ -40,6 +40,7 @@ export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
     toolNameEditLabel: surfaceProps.toolNameEditLabel,
     toolNameMultiEditLabel: surfaceProps.toolNameMultiEditLabel,
     fileMentionFallbackRoots: surfaceProps.fileMentionFallbackRoots,
+    workbenchTabMentions: surfaceProps.workbenchTabMentions,
     onOpenFilePath: surfaceProps.onOpenFilePath,
     onWriteStreamEvent: surfaceProps.onWriteStreamEvent,
     onRequestProjectBind: surfaceProps.onRequestProjectBind,

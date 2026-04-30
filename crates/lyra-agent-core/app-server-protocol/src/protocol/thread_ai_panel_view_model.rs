@@ -573,7 +573,7 @@ fn render_user_input(input: &UserInput) -> Option<String> {
             .trim()
             .to_string(),
         ),
-        UserInput::Mention { name, path } => Some(
+        UserInput::Mention { name, path, .. } => Some(
             format!(
                 "[mention] {}",
                 if name.is_empty() {
@@ -623,19 +623,21 @@ fn user_input_content_part(input: &UserInput) -> Option<ThreadAiPanelMessageCont
                 kind: Some(ThreadAiPanelAttachmentKind::File),
             })
         }
-        UserInput::Mention { name, path } => Some(ThreadAiPanelMessageContentPart::Attachment {
-            name: if name.is_empty() {
-                basename(path).unwrap_or_else(|| path.clone())
-            } else {
-                name.clone()
-            },
-            path: path.clone(),
-            kind: Some(if path.ends_with('/') {
-                ThreadAiPanelAttachmentKind::Directory
-            } else {
-                ThreadAiPanelAttachmentKind::File
-            }),
-        }),
+        UserInput::Mention { name, path, .. } => {
+            Some(ThreadAiPanelMessageContentPart::Attachment {
+                name: if name.is_empty() {
+                    basename(path).unwrap_or_else(|| path.clone())
+                } else {
+                    name.clone()
+                },
+                path: path.clone(),
+                kind: Some(if path.ends_with('/') {
+                    ThreadAiPanelAttachmentKind::Directory
+                } else {
+                    ThreadAiPanelAttachmentKind::File
+                }),
+            })
+        }
     }
 }
 

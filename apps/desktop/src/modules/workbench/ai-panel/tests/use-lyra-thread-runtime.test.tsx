@@ -403,6 +403,49 @@ describe("useLyraThreadRuntime", () => {
     }));
   });
 
+  test("sends non-local mention context text", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn({
+        text: "Read this tab",
+        attachments: [
+          {
+            name: "Docs",
+            path: "app://workbench/tab/tab-1",
+            kind: "workbench_tab",
+            contextText: "Title: Docs\nAddress: https://example.test/docs",
+          },
+        ],
+      });
+    });
+
+    expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: "turn/start",
+      params: expect.objectContaining({
+        input: [
+          { type: "text", text: "Read this tab", textElements: [] },
+          {
+            type: "mention",
+            name: "Docs",
+            path: "app://workbench/tab/tab-1",
+            contextText: "Title: Docs\nAddress: https://example.test/docs",
+          },
+        ],
+      }),
+    }));
+  });
+
   test("sends inline file attachments in authored order", async () => {
     const desktop = makeDesktopApi();
     const { result } = renderHook(() =>

@@ -3574,7 +3574,7 @@ fn render_user_input(input: &UserInput) -> String {
         UserInput::Image { url } => format!("[image] {url}"),
         UserInput::LocalImage { path } => format!("[local_image] {}", path.display()),
         UserInput::Skill { name, path } => format!("[skill] {name} ({})", path.display()),
-        UserInput::Mention { name, path } => format!("[mention] {name} ({path})"),
+        UserInput::Mention { name, path, .. } => format!("[mention] {name} ({path})"),
     }
 }
 

@@ -36,6 +36,7 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
         resolvedThemeId: "lyra-light",
         aiPanelSide: "right",
         fileMentionFallbackRoots: [],
+        workbenchTabMentions: [],
         onToggleAiPanelSide: vi.fn(),
         openAppTab,
         onRequestProjectBind,

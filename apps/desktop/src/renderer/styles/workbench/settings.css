@@ -708,6 +708,12 @@
   gap: var(--lyra-unit-8);
 }
 
+.lyra-settings-ai-header {
+  width: 100%;
+  justify-content: space-between;
+  gap: var(--lyra-unit-10);
+}
+
 .lyra-settings-ai-field {
   min-width: 0;
   display: grid;
@@ -994,6 +1000,7 @@
   font-size: var(--lyra-unit-12);
   transition:
     color var(--lyra-transition-fast),
+    background var(--lyra-transition-fast),
     border-color var(--lyra-transition-fast),
     opacity var(--lyra-transition-fast);
 }
@@ -1007,6 +1014,17 @@
 .lyra-settings-ai-action:hover {
   color: var(--lyra-text-primary);
   border-color: color-mix(in srgb, var(--lyra-line-focused) 42%, transparent);
+}
+
+.lyra-settings-ai-action-primary {
+  color: var(--lyra-text-primary);
+  border-color: color-mix(in srgb, var(--lyra-line-focused) 52%, transparent);
+  background: color-mix(in srgb, var(--lyra-line-focused) 12%, transparent);
+}
+
+.lyra-settings-ai-action-primary:hover {
+  border-color: color-mix(in srgb, var(--lyra-line-focused) 68%, transparent);
+  background: color-mix(in srgb, var(--lyra-line-focused) 18%, transparent);
 }
 
 .lyra-settings-ai-action:disabled {
@@ -1033,12 +1051,24 @@
 }
 
 .lyra-settings-ai-status-row {
+  min-width: 0;
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  border-radius: var(--lyra-unit-7);
+  padding: var(--lyra-unit-10);
   display: grid;
-  grid-template-columns: var(--lyra-unit-120) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--lyra-unit-10);
   align-items: center;
   font-size: var(--lyra-unit-12);
   color: var(--lyra-text-secondary);
+}
+
+.lyra-settings-ai-status-row-success {
+  border-color: color-mix(in srgb, var(--lyra-accent-positive) 38%, var(--lyra-line-default) 62%);
+}
+
+.lyra-settings-ai-status-row-error {
+  border-color: color-mix(in srgb, var(--lyra-accent-danger) 38%, var(--lyra-line-default) 62%);
 }
 
 .lyra-settings-ai-status-row strong {
@@ -1064,6 +1094,15 @@
   padding: var(--lyra-unit-2) var(--lyra-unit-2) var(--lyra-unit-4);
   color: var(--lyra-text-secondary);
   font-size: var(--lyra-unit-12);
+}
+
+.lyra-settings-ai-empty-panel {
+  min-height: var(--lyra-unit-108);
+  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  border-radius: var(--lyra-unit-7);
+  padding: var(--lyra-unit-16);
+  align-content: center;
+  justify-items: start;
 }
 
 .lyra-settings-ai-provider-group {
@@ -1115,6 +1154,206 @@
   line-height: 1.5;
 }
 
+.lyra-settings-ai-profile-grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--lyra-unit-320)), 1fr));
+  gap: var(--lyra-unit-8);
+}
+
+.lyra-settings-ai-profile-card-slot {
+  min-width: 0;
+  display: block;
+}
+
+.lyra-settings-ai-profile-card {
+  min-width: 0;
+  min-height: var(--lyra-unit-184);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  border-radius: var(--lyra-unit-7);
+  padding: var(--lyra-unit-12);
+  display: grid;
+  align-content: space-between;
+  gap: var(--lyra-unit-12);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 76%, var(--lyra-bg-editor) 24%);
+}
+
+.lyra-settings-ai-profile-card-header,
+.lyra-settings-ai-profile-card-footer {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--lyra-unit-10);
+}
+
+.lyra-settings-ai-profile-card-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-10);
+  color: var(--lyra-text-primary);
+}
+
+.lyra-settings-ai-profile-card-title > span {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-2);
+}
+
+.lyra-settings-ai-profile-card-title strong {
+  min-width: 0;
+  font-size: var(--lyra-unit-13);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-settings-ai-profile-card-title small {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+}
+
+.lyra-settings-ai-profile-card-meta {
+  margin: 0;
+  display: grid;
+  gap: var(--lyra-unit-8);
+}
+
+.lyra-settings-ai-profile-card-meta div {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-2);
+}
+
+.lyra-settings-ai-profile-card-meta dt {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+}
+
+.lyra-settings-ai-profile-card-meta dd {
+  margin: 0;
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-unit-12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-settings-ai-card-status {
+  min-height: var(--lyra-unit-22);
+  border-radius: var(--lyra-unit-999);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  padding: 0 var(--lyra-unit-8);
+  display: inline-flex;
+  align-items: center;
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+  white-space: nowrap;
+}
+
+.lyra-settings-ai-card-status-ready {
+  color: color-mix(in srgb, var(--lyra-accent-positive) 78%, var(--lyra-text-primary) 22%);
+  border-color: color-mix(in srgb, var(--lyra-accent-positive) 38%, var(--lyra-line-default) 62%);
+}
+
+.lyra-settings-ai-card-status-error {
+  color: color-mix(in srgb, var(--lyra-accent-danger) 78%, var(--lyra-text-primary) 22%);
+  border-color: color-mix(in srgb, var(--lyra-accent-danger) 38%, var(--lyra-line-default) 62%);
+}
+
+.lyra-settings-ai-profile-card-active {
+  position: relative;
+}
+
+.lyra-settings-ai-profile-card-active::before {
+  content: "";
+  position: absolute;
+  left: var(--lyra-unit-3);
+  top: var(--lyra-unit-10);
+  bottom: var(--lyra-unit-10);
+  width: var(--lyra-unit-2);
+  border-radius: var(--lyra-unit-999);
+  background: color-mix(in srgb, var(--lyra-line-focused) 82%, var(--lyra-text-primary) 18%);
+}
+
+.lyra-settings-ai-delete-confirm {
+  min-width: 0;
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-accent-danger) 34%, var(--lyra-line-default) 66%);
+  border-radius: var(--lyra-unit-7);
+  padding: var(--lyra-unit-10);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--lyra-unit-10);
+  align-items: center;
+}
+
+.lyra-settings-ai-delete-confirm-copy {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-3);
+}
+
+.lyra-settings-ai-delete-confirm-copy strong {
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-unit-12);
+}
+
+.lyra-settings-ai-delete-confirm-copy small {
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-unit-11);
+}
+
+.lyra-settings-ai-inline-editor {
+  min-width: 0;
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  border-radius: var(--lyra-unit-7);
+  padding: var(--lyra-unit-12);
+  display: grid;
+  gap: var(--lyra-unit-14);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 78%, var(--lyra-bg-editor) 22%);
+}
+
+.lyra-settings-ai-inline-editor-header,
+.lyra-settings-ai-inline-editor-footer {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lyra-unit-10);
+}
+
+.lyra-settings-ai-inline-editor-title-copy {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-3);
+}
+
+.lyra-settings-ai-inline-editor-title-copy h3 {
+  margin: 0;
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-unit-14);
+}
+
+.lyra-settings-ai-inline-editor-title-copy small {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+}
+
+.lyra-settings-ai-provider-picker {
+  display: grid;
+  gap: var(--lyra-unit-8);
+}
+
+.lyra-settings-ai-section-label {
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-unit-12);
+  font-weight: 600;
+}
+
 @media (min-width: var(--lyra-unit-1320)) {
   .lyra-settings-ai-status-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1142,6 +1381,24 @@
 
   .lyra-settings-ai-form {
     grid-template-columns: 1fr;
+  }
+
+  .lyra-settings-ai-status-row {
+    grid-template-columns: 1fr;
+  }
+
+  .lyra-settings-ai-profile-card-footer {
+    display: grid;
+  }
+
+  .lyra-settings-ai-delete-confirm {
+    grid-template-columns: 1fr;
+  }
+
+  .lyra-settings-ai-inline-editor-header,
+  .lyra-settings-ai-inline-editor-footer {
+    align-items: stretch;
+    display: grid;
   }
 
   .lyra-settings-ai-advanced-grid {

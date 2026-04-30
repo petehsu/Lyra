@@ -4448,6 +4448,13 @@ pub enum UserInput {
     Mention {
         name: String,
         path: String,
+        #[serde(
+            default,
+            rename = "contextText",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[ts(optional, rename = "contextText")]
+        context_text: Option<String>,
     },
 }
 
@@ -4464,7 +4471,15 @@ impl UserInput {
             UserInput::Image { url } => CoreUserInput::Image { image_url: url },
             UserInput::LocalImage { path } => CoreUserInput::LocalImage { path },
             UserInput::Skill { name, path } => CoreUserInput::Skill { name, path },
-            UserInput::Mention { name, path } => CoreUserInput::Mention { name, path },
+            UserInput::Mention {
+                name,
+                path,
+                context_text,
+            } => CoreUserInput::Mention {
+                name,
+                path,
+                context_text,
+            },
         }
     }
 }
@@ -4482,7 +4497,15 @@ impl From<CoreUserInput> for UserInput {
             CoreUserInput::Image { image_url } => UserInput::Image { url: image_url },
             CoreUserInput::LocalImage { path } => UserInput::LocalImage { path },
             CoreUserInput::Skill { name, path } => UserInput::Skill { name, path },
-            CoreUserInput::Mention { name, path } => UserInput::Mention { name, path },
+            CoreUserInput::Mention {
+                name,
+                path,
+                context_text,
+            } => UserInput::Mention {
+                name,
+                path,
+                context_text,
+            },
             _ => unreachable!("unsupported user input variant"),
         }
     }
@@ -7822,6 +7845,7 @@ mod tests {
                 CoreUserInput::Mention {
                     name: "Demo App".to_string(),
                     path: "app://demo-app".to_string(),
+                    context_text: Some("Demo app summary".to_string()),
                 },
             ],
         });
@@ -7848,6 +7872,7 @@ mod tests {
                     UserInput::Mention {
                         name: "Demo App".to_string(),
                         path: "app://demo-app".to_string(),
+                        context_text: Some("Demo app summary".to_string()),
                     },
                 ],
             }

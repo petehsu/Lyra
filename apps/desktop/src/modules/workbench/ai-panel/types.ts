@@ -8,6 +8,9 @@ import type { FileEditorRevealLocation } from "../file-editor";
 import type { GlobalDialogOpenRequest } from "../global-dialog";
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchAiStopBehavior } from "../preferences";
+import type {
+  AgentComposerWorkbenchTabMention,
+} from "./agent-composer";
 
 export type AiPanelAppId =
   | "ai-mcp"
@@ -104,6 +107,7 @@ export type AiPanelSurfaceProps = {
   readonly defaultModelNames: readonly string[];
   readonly configuredProfiles?: readonly AiProviderProfile[];
   readonly fileMentionFallbackRoots?: readonly string[];
+  readonly workbenchTabMentions?: readonly AgentComposerWorkbenchTabMention[];
   readonly profileLabel: string;
   readonly modelLabel: string;
   readonly modelsLabel: string;

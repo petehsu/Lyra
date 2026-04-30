@@ -41,6 +41,7 @@ fn collect_explicit_app_ids_dedupes_structured_and_linked_mentions() {
         UserInput::Mention {
             name: "calendar".to_string(),
             path: "app://calendar".to_string(),
+            context_text: None,
         },
     ];
 
@@ -58,14 +59,17 @@ fn collect_explicit_app_ids_ignores_non_app_paths() {
         UserInput::Mention {
             name: "docs".to_string(),
             path: "mcp://docs".to_string(),
+            context_text: None,
         },
         UserInput::Mention {
             name: "skill".to_string(),
             path: "skill://team/skill".to_string(),
+            context_text: None,
         },
         UserInput::Mention {
             name: "file".to_string(),
             path: "/tmp/file.txt".to_string(),
+            context_text: None,
         },
     ];
 
@@ -85,6 +89,7 @@ fn collect_explicit_plugin_mentions_from_structured_paths() {
         &[UserInput::Mention {
             name: "sample".to_string(),
             path: "plugin://sample@test".to_string(),
+            context_text: None,
         }],
         &plugins,
     );
@@ -120,6 +125,7 @@ fn collect_explicit_plugin_mentions_dedupes_structured_and_linked_mentions() {
             UserInput::Mention {
                 name: "sample".to_string(),
                 path: "plugin://sample@test".to_string(),
+                context_text: None,
             },
         ],
         &plugins,
