@@ -1,5 +1,7 @@
+import DOMPurify from "dompurify";
+import { marked } from "marked";
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { Check, MessageSquarePlus, SendHorizontal, X } from "lucide-react";
+import { Check, MessageSquarePlus, Pencil, SendHorizontal, Trash2, X } from "lucide-react";
 
 import { createTranslator } from "../i18n";
 import type {
@@ -21,6 +23,12 @@ type DraftComment = {
   readonly lineText?: string;
 };
 
+const sanitizeMarkdownLine = (html: string): string =>
+  DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    ADD_ATTR: ["target", "rel", "class"],
+  });
+
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
@@ -29,6 +37,26 @@ const isNodeInside = (root: HTMLElement, node: Node): boolean => {
     return root.contains(node);
   }
   return node.parentElement !== null && root.contains(node.parentElement);
+};
+
+const PlanReviewMarkdownLine = ({ line }: { readonly line: string }) => {
+  const html = useMemo(() => {
+    if (line.length === 0) {
+      return "&nbsp;";
+    }
+    const parsed = marked.parse(line, {
+      gfm: true,
+      breaks: true,
+    });
+    return sanitizeMarkdownLine(typeof parsed === "string" ? parsed : line);
+  }, [line]);
+
+  return (
+    <div
+      className="lyra-ai-plan-review__line-rendered lyra-ai-rich-content"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
 };
 
 export const AiPlanReviewSurface = ({
@@ -40,6 +68,8 @@ export const AiPlanReviewSurface = ({
   const planBodyRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<DraftComment | null>(null);
   const [draftText, setDraftText] = useState("");
+  const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
   const t = useMemo(
     () => createTranslator(state?.locale ?? "en-US"),
     [state?.locale]
@@ -122,6 +152,28 @@ export const AiPlanReviewSurface = ({
     setDraftText("");
   };
 
+  const startEditing = (annotation: AiPlanReviewAnnotation): void => {
+    setEditingAnnotationId(annotation.id);
+    setEditingText(annotation.note);
+  };
+
+  const cancelEditing = (): void => {
+    setEditingAnnotationId(null);
+    setEditingText("");
+  };
+
+  const saveEditing = async (): Promise<void> => {
+    if (editingAnnotationId === null) {
+      return;
+    }
+    const note = editingText.trim();
+    if (note.length === 0) {
+      return;
+    }
+    await model.updateAnnotation(instanceId, editingAnnotationId, note);
+    cancelEditing();
+  };
+
   const annotationsByLine = new Map<number, readonly AiPlanReviewAnnotation[]>();
   for (const annotation of state.annotations) {
     if (annotation.lineNumber === undefined) {
@@ -130,6 +182,105 @@ export const AiPlanReviewSurface = ({
     const current = annotationsByLine.get(annotation.lineNumber) ?? [];
     annotationsByLine.set(annotation.lineNumber, [...current, annotation]);
   }
+  const selectionAnnotations = state.annotations.filter(
+    (annotation) => annotation.lineNumber === undefined
+  );
+
+  const renderAnnotation = (annotation: AiPlanReviewAnnotation, index: number) => {
+    const isEditing = editingAnnotationId === annotation.id;
+    return (
+      <div key={annotation.id} className="lyra-ai-plan-review__annotation">
+        <span className="lyra-ai-plan-review__annotation-index">{String(index + 1)}</span>
+        <span className="lyra-ai-plan-review__annotation-body">
+          <span className="lyra-ai-plan-review__annotation-context">
+            {annotation.kind === "line"
+              ? `${t("ai.planReviewLineComment")} ${String(annotation.lineNumber ?? "")}`
+              : t("ai.planReviewSelectionComment")}
+          </span>
+          {isEditing ? (
+            <textarea
+              className="lyra-ai-plan-review__annotation-edit"
+              value={editingText}
+              autoFocus
+              onChange={(event) => {
+                setEditingText(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  void saveEditing();
+                }
+                if (event.key === "Escape") {
+                  cancelEditing();
+                }
+              }}
+            />
+          ) : (
+            <span className="lyra-ai-plan-review__annotation-note">{annotation.note}</span>
+          )}
+        </span>
+        {!state.isActionable ? null : (
+          <span className="lyra-ai-plan-review__annotation-actions">
+            {isEditing ? (
+              <>
+                <button
+                  type="button"
+                  className="lyra-ai-plan-review__annotation-action"
+                  aria-label={t("ai.planReviewSaveComment")}
+                  title={t("ai.planReviewSaveComment")}
+                  disabled={editingText.trim().length === 0 || state.isSubmitting}
+                  onClick={() => {
+                    void saveEditing();
+                  }}
+                >
+                  <Check size={13} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="lyra-ai-plan-review__annotation-action"
+                  aria-label={t("ai.planReviewCancelEdit")}
+                  title={t("ai.planReviewCancelEdit")}
+                  onClick={cancelEditing}
+                >
+                  <X size={13} aria-hidden="true" />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="lyra-ai-plan-review__annotation-action"
+                  aria-label={t("ai.planReviewEditComment")}
+                  title={t("ai.planReviewEditComment")}
+                  disabled={state.isSubmitting}
+                  onClick={() => {
+                    startEditing(annotation);
+                  }}
+                >
+                  <Pencil size={13} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="lyra-ai-plan-review__annotation-action lyra-ai-plan-review__annotation-action-danger"
+                  aria-label={t("ai.planReviewDeleteComment")}
+                  title={t("ai.planReviewDeleteComment")}
+                  disabled={state.isSubmitting}
+                  onClick={() => {
+                    void model.deleteAnnotation(instanceId, annotation.id);
+                    if (editingAnnotationId === annotation.id) {
+                      cancelEditing();
+                    }
+                  }}
+                >
+                  <Trash2 size={13} aria-hidden="true" />
+                </button>
+              </>
+            )}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div ref={surfaceRef} className="lyra-ai-plan-review">
@@ -190,6 +341,11 @@ export const AiPlanReviewSurface = ({
         className="lyra-ai-plan-review__body"
         onMouseUp={handleSelectionComment}
       >
+        {selectionAnnotations.length === 0 ? null : (
+          <div className="lyra-ai-plan-review__selection-comments">
+            {selectionAnnotations.map(renderAnnotation)}
+          </div>
+        )}
         {lines.map((line, index) => {
           const lineNumber = index + 1;
           const lineAnnotations = annotationsByLine.get(lineNumber) ?? [];
@@ -197,7 +353,7 @@ export const AiPlanReviewSurface = ({
             <div key={`${String(lineNumber)}-${line}`} className="lyra-ai-plan-review__line">
               <span className="lyra-ai-plan-review__line-number">{lineNumber}</span>
               <span className="lyra-ai-plan-review__line-content">
-                <span className="lyra-ai-plan-review__line-text">{line.length === 0 ? " " : line}</span>
+                <PlanReviewMarkdownLine line={line} />
                 {state.isActionable ? (
                   <button
                     type="button"
@@ -224,30 +380,13 @@ export const AiPlanReviewSurface = ({
               </span>
               {lineAnnotations.length === 0 ? null : (
                 <span className="lyra-ai-plan-review__line-comments">
-                  {String(lineAnnotations.length)}
+                  {lineAnnotations.map(renderAnnotation)}
                 </span>
               )}
             </div>
           );
         })}
       </div>
-      {state.annotations.length === 0 ? null : (
-        <div className="lyra-ai-plan-review__annotations">
-          {state.annotations.map((annotation, index) => (
-            <div key={annotation.id} className="lyra-ai-plan-review__annotation">
-              <span className="lyra-ai-plan-review__annotation-index">{String(index + 1)}</span>
-              <span className="lyra-ai-plan-review__annotation-body">
-                <span className="lyra-ai-plan-review__annotation-context">
-                  {annotation.kind === "line"
-                    ? `${t("ai.planReviewLineComment")} ${String(annotation.lineNumber ?? "")}`
-                    : t("ai.planReviewSelectionComment")}
-                </span>
-                <span className="lyra-ai-plan-review__annotation-note">{annotation.note}</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
       {draft === null ? null : (
         <div
           className="lyra-ai-plan-review__comment-popover"

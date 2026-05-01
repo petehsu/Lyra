@@ -29,6 +29,7 @@ import { createLspIpcBridge } from "./lsp";
 import { createLocalSearchHostToolsBridge } from "./local-search";
 import { createLinuxCompatBridge } from "./linux-compat";
 import { createMcpIpcBridge } from "./mcp";
+import { createResourceRuntimeService } from "./resources/service";
 import { createLyraRuntimeClient } from "./runtime-client";
 import { createRuntimeHostRpcService } from "./runtime-host-rpc/service";
 import { createSearchIpcBridge } from "./search";
@@ -100,6 +101,7 @@ let disposeLspBridge: (() => void) | null = null;
 let disposeMcpBridge: (() => Promise<void>) | null = null;
 let disposeSkillsBridge: (() => Promise<void>) | null = null;
 let disposeWorkbenchBrowserBridge: (() => void) | null = null;
+let disposeResourceRuntimeService: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
 let disposeUiuxPacksBridge: (() => void) | null = null;
 let disposeRuntimeClient: (() => void) | null = null;
@@ -583,6 +585,9 @@ const registerIpcHandlers = (): void => {
   const filesBridge = createFilesIpcBridge(storageRoots.modules.fileManager);
   console.info(`[lyra-files] native loaded: ${filesBridge.loadResult.loadedFrom}`);
   disposeFilesBridge = filesBridge.dispose;
+  const resourceRuntimeService = createResourceRuntimeService();
+  console.info(`[lyra-resources] native loaded: ${resourceRuntimeService.loadResult.loadedFrom}`);
+  disposeResourceRuntimeService = resourceRuntimeService.dispose;
 
   const runtimeClient = createLyraRuntimeClient({
     storageRoot: storageRoots.modules.ai
@@ -625,7 +630,8 @@ const registerIpcHandlers = (): void => {
   disposeSkillsBridge = skillsBridge.dispose;
 
   workbenchBrowserBridge = createWorkbenchBrowserIpcBridge({
-    getWindow: () => mainWindow
+    getWindow: () => mainWindow,
+    resourceRuntime: resourceRuntimeService
   });
   disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
   const workbenchStateBridge = createWorkbenchStateIpcBridge(
@@ -891,6 +897,10 @@ app.on("before-quit", () => {
   if (disposeWorkbenchBrowserBridge !== null) {
     disposeWorkbenchBrowserBridge();
     disposeWorkbenchBrowserBridge = null;
+  }
+  if (disposeResourceRuntimeService !== null) {
+    disposeResourceRuntimeService();
+    disposeResourceRuntimeService = null;
   }
   if (disposeWorkbenchObservationRendererClient !== null) {
     disposeWorkbenchObservationRendererClient();

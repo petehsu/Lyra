@@ -164,8 +164,10 @@ describe("AiHistorySurface", () => {
     const globalTab = screen.getByRole("tab", { name: /^全部会话/u });
     const projectTab = screen.getByRole("tab", { name: /^项目会话/u });
     expect(globalTab.getAttribute("aria-selected")).toBe("true");
-    expect(within(globalTab).getByText("4")).toBeDefined();
-    expect(within(projectTab).getByText("2")).toBeDefined();
+    await waitFor(() => {
+      expect(within(globalTab).getByText("4")).toBeDefined();
+      expect(within(projectTab).getByText("2")).toBeDefined();
+    });
 
     expect(screen.getByText("Brainstorm ideas")).toBeDefined();
     expect(screen.getByText("Refactor agent runtime")).toBeDefined();

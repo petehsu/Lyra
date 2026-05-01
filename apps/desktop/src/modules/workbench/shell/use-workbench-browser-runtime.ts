@@ -63,6 +63,11 @@ const arePageRuntimeStatesEquivalent = (
   first.address === second.address
   && first.title === second.title
   && first.faviconUrl === second.faviconUrl
+  && first.lifecycleState === second.lifecycleState
+  && first.coreKey === second.coreKey
+  && first.stateKey === second.stateKey
+  && first.isTombstoned === second.isTombstoned
+  && first.restoreReason === second.restoreReason
   && first.isActive === second.isActive
   && first.isVisible === second.isVisible
   && first.isLoading === second.isLoading

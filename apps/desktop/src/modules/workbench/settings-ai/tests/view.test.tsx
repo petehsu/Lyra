@@ -18,7 +18,6 @@ const labels: SettingsAiLabels = {
   saveProfile: "Save Profile",
   deleteProfile: "Delete Profile",
   cancel: "Cancel",
-  setDefaultProfile: "Set as Default",
   clearApiKey: "Clear API Key",
   testConnection: "Test Connection",
   discoverModels: "Discover Models",
@@ -38,8 +37,6 @@ const labels: SettingsAiLabels = {
   modelsHelp: "Support one or many model ids.",
   headersLabel: "Request Headers",
   headersPlaceholder: "X-Title: Lyra",
-  defaultBadge: "Default",
-  defaultProfileLabel: "Default Profile",
   statusIdle: "No connection check has run yet.",
   statusSaved: "Profile saved.",
   statusDeleted: "Profile deleted.",
@@ -249,6 +246,7 @@ describe("SettingsAiView", () => {
 
     expect(model.selectProfile).toHaveBeenCalledWith(null);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("Mainstream")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("option", { name: /OpenAI/ }));
 
     expect(model.applyPreset).toHaveBeenCalledWith("openai");
@@ -301,11 +299,10 @@ describe("SettingsAiView", () => {
 
     const card = findProfileCard("Production API");
     fireEvent.click(within(card).getByRole("button", { name: "Test Connection" }));
-    fireEvent.click(within(card).getByRole("button", { name: "Set as Default" }));
+    expect(within(card).queryByRole("button", { name: "Set as Default" })).not.toBeInTheDocument();
     fireEvent.click(within(card).getByRole("button", { name: "Delete Profile" }));
 
     expect(model.validateProfile).toHaveBeenCalledWith("profile-1");
-    expect(model.setDefaultProfile).toHaveBeenCalledWith("profile-1");
 
     const confirm = screen.getByLabelText("Delete Profile?");
     fireEvent.click(within(confirm).getByRole("button", { name: "Delete Profile" }));

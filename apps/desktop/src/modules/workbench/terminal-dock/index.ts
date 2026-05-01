@@ -5,6 +5,7 @@ export { useTerminalDockModel } from "./service";
 export type {
   TerminalDockProps,
   TerminalDockLabels,
+  TerminalDockModel,
   TerminalDockPane,
   TerminalDockState,
   TerminalDockTab,

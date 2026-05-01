@@ -1522,6 +1522,31 @@ pub(crate) async fn apply_bespoke_event_handling(
                     .await;
             }
         }
+        EventMsg::PatchApplyUpdated(patch_updated_event) => {
+            if matches!(api_version, ApiVersion::V2) {
+                let item_id = patch_updated_event.call_id.clone();
+                {
+                    let mut state = thread_state.lock().await;
+                    state
+                        .turn_summary
+                        .file_change_started
+                        .insert(item_id.clone());
+                }
+                let item = ThreadItem::FileChange {
+                    id: item_id,
+                    changes: convert_patch_changes(&patch_updated_event.changes),
+                    status: PatchApplyStatus::InProgress,
+                };
+                let notification = ItemStartedNotification {
+                    thread_id: conversation_id.to_string(),
+                    turn_id: event_turn_id.clone(),
+                    item,
+                };
+                outgoing
+                    .send_server_notification(ServerNotification::ItemStarted(notification))
+                    .await;
+            }
+        }
         EventMsg::PatchApplyEnd(patch_end_event) => {
             // Until we migrate the core to be aware of a first class FileChangeItem
             // and emit the corresponding EventMsg, we repurpose the call_id as the item_id.

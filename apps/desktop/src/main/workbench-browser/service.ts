@@ -21,6 +21,7 @@ import type {
   BrowserDomSummaryReadOptions,
   BrowserTextExtractOptions
 } from "../workbench-observation/browser/types";
+import type { ResourceRuntimeService } from "../resources/types";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import { createWorkbenchBrowserViewManager } from "./view-manager";
 import type {
@@ -115,13 +116,16 @@ export type WorkbenchBrowserIpcBridge = {
 };
 
 export const createWorkbenchBrowserIpcBridge = ({
-  getWindow
+  getWindow,
+  resourceRuntime
 }: {
   readonly getWindow: () => BrowserWindow | null;
+  readonly resourceRuntime?: ResourceRuntimeService;
 }): WorkbenchBrowserIpcBridge => {
   const manager: WorkbenchBrowserViewManager = createWorkbenchBrowserViewManager({
     getWindow,
-    publishEvent: (event) => publishEvent(getWindow, event)
+    publishEvent: (event) => publishEvent(getWindow, event),
+    ...(resourceRuntime === undefined ? {} : { resourceRuntime })
   });
 
   ipcMain.handle(LYRA_CHANNELS.workbenchBrowserSyncTopology, (_event, snapshot: unknown) => {

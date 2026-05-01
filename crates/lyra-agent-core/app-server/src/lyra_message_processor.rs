@@ -374,7 +374,7 @@ fn format_plan_approval_instruction(
             "The user approved the proposed plan. Continue in default mode and implement it without asking for another approval.{feedback_section}{plan_section}"
         ),
         PlanApprovalDecision::KeepPlanning => format!(
-            "The user wants to continue planning. Revise the plan in plan mode and submit an updated proposal.{feedback_section}{plan_section}"
+            "The user wants to continue planning. Read the user feedback, revise the plan in plan mode, and submit a complete updated proposal with plan_submit. Do not implement yet and do not ask the user to confirm in a plain assistant message.{feedback_section}{plan_section}"
         ),
         PlanApprovalDecision::Reject => format!(
             "The user rejected the proposed plan. Do not implement it.{feedback_section}{plan_section}"

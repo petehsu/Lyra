@@ -1,3 +1,4 @@
+import { Pencil, Plus, RefreshCw, Save, Trash2, Wifi, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { AiProviderPreset, AiProviderProfile } from "../../../shared/ai";
@@ -119,7 +120,6 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   const helpText = model.availableModels.length > 0
     ? labels.modelsHelp
     : `${labels.modelsHelp} ${labels.noDiscoveredModels}`;
-  const defaultModelName = model.defaultModelNames[0] ?? "-";
 
   const startCreate = (): void => {
     model.selectProfile(null);
@@ -147,52 +147,56 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
         <div className="lyra-settings-ai-actions">
           <button
             type="button"
-            className="lyra-settings-ai-action"
+            className="lyra-settings-ai-action lyra-settings-ai-action-icon"
+            aria-label={labels.refreshModels}
+            title={labels.refreshModels}
             disabled={model.isLoading}
             onClick={() => {
               void model.refreshConfig();
             }}
           >
-            {labels.refreshModels}
+            <RefreshCw size={14} aria-hidden="true" />
           </button>
           <button
             type="button"
-            className="lyra-settings-ai-action lyra-settings-ai-action-primary"
+            className="lyra-settings-ai-action lyra-settings-ai-action-primary lyra-settings-ai-action-icon"
+            aria-label={labels.addProfile}
+            title={labels.addProfile}
             onClick={startCreate}
           >
-            {labels.addProfile}
+            <Plus size={15} aria-hidden="true" />
           </button>
         </div>
       </header>
 
       <div className={STATUS_CLASSNAME[model.statusTone]}>
+        <span
+          className={`lyra-settings-ai-status-dot lyra-settings-ai-status-dot-${model.statusTone}`}
+          aria-hidden="true"
+        />
         <div className="lyra-settings-ai-status-row-copy">
-          <strong>{model.defaultProfileLabel ?? labels.emptyTitle}</strong>
-          <small>
-            {labels.defaultProfileLabel}: {model.defaultProfileLabel ?? "-"} · {labels.mainModelLabel}: {defaultModelName}
-          </small>
+          <strong>{labels.statusTitle}</strong>
+          <small>{model.statusMessage}</small>
           <small>
             {model.runtimeHealth === null
               ? "Lyra Agent runtime unavailable"
               : `${model.runtimeHealth.backend} · ${model.runtimeHealth.transport} · ${model.runtimeHealth.version}`}
           </small>
         </div>
-        <div className="lyra-settings-ai-status-row-copy">
-          <strong>{labels.statusTitle}</strong>
-          <small>{model.statusMessage}</small>
-        </div>
       </div>
 
       {model.profiles.length === 0 ? (
-        <div className="lyra-settings-ai-empty lyra-settings-ai-empty-panel">
+        activeEditorMode === "create" ? null : <div className="lyra-settings-ai-empty lyra-settings-ai-empty-panel">
           <strong>{labels.emptyTitle}</strong>
           <small>{labels.emptyDescription}</small>
           <button
             type="button"
-            className="lyra-settings-ai-action lyra-settings-ai-action-primary"
+            className="lyra-settings-ai-action lyra-settings-ai-action-primary lyra-settings-ai-action-icon"
+            aria-label={labels.addProfile}
+            title={labels.addProfile}
             onClick={startCreate}
           >
-            {labels.addProfile}
+            <Plus size={15} aria-hidden="true" />
           </button>
         </div>
       ) : (
@@ -216,9 +220,6 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                         <small>{providerLabel}</small>
                       </span>
                     </span>
-                    {profile.isDefault ? (
-                      <span className="lyra-settings-ai-badge">{labels.defaultBadge}</span>
-                    ) : null}
                   </header>
                   <dl className="lyra-settings-ai-profile-card-meta">
                     <div>
@@ -231,47 +232,45 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                     </div>
                   </dl>
                   <div className="lyra-settings-ai-profile-card-footer">
-                    <span className={profileStatusClassName(profile)}>
-                      {profileStatusLabel(labels, profile)}
-                    </span>
+                    <span
+                      className={profileStatusClassName(profile)}
+                      aria-label={profileStatusLabel(labels, profile)}
+                      title={profileStatusLabel(labels, profile)}
+                    />
                     <div className="lyra-settings-ai-actions">
                       <button
                         type="button"
-                        className="lyra-settings-ai-action"
+                        className="lyra-settings-ai-action lyra-settings-ai-action-icon"
+                        aria-label={labels.editProfile}
+                        title={labels.editProfile}
                         onClick={() => {
                           startEdit(profile.id);
                         }}
                       >
-                        {labels.editProfile}
+                        <Pencil size={14} aria-hidden="true" />
                       </button>
                       <button
                         type="button"
-                        className="lyra-settings-ai-action"
+                        className="lyra-settings-ai-action lyra-settings-ai-action-icon"
+                        aria-label={labels.testConnection}
+                        title={labels.testConnection}
                         onClick={() => {
                           void model.validateProfile(profile.id);
                         }}
                       >
-                        {labels.testConnection}
+                        <Wifi size={14} aria-hidden="true" />
                       </button>
                       <button
                         type="button"
-                        className="lyra-settings-ai-action"
-                        disabled={profile.isDefault || model.isSaving}
-                        onClick={() => {
-                          void model.setDefaultProfile(profile.id);
-                        }}
-                      >
-                        {labels.setDefaultProfile}
-                      </button>
-                      <button
-                        type="button"
-                        className="lyra-settings-ai-action lyra-settings-ai-action-danger"
+                        className="lyra-settings-ai-action lyra-settings-ai-action-danger lyra-settings-ai-action-icon"
+                        aria-label={labels.deleteProfile}
+                        title={labels.deleteProfile}
                         disabled={model.isSaving}
                         onClick={() => {
                           setDeleteTarget({ id: profile.id, name: profile.name });
                         }}
                       >
-                        {labels.deleteProfile}
+                        <Trash2 size={14} aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -291,16 +290,20 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
           <div className="lyra-settings-ai-actions">
             <button
               type="button"
-              className="lyra-settings-ai-action"
+              className="lyra-settings-ai-action lyra-settings-ai-action-icon"
+              aria-label={labels.cancel}
+              title={labels.cancel}
               onClick={() => {
                 setDeleteTarget(null);
               }}
             >
-              {labels.cancel}
+              <X size={14} aria-hidden="true" />
             </button>
             <button
               type="button"
-              className="lyra-settings-ai-action lyra-settings-ai-action-danger"
+              className="lyra-settings-ai-action lyra-settings-ai-action-danger lyra-settings-ai-action-icon"
+              aria-label={labels.deleteProfile}
+              title={labels.deleteProfile}
               disabled={model.isSaving}
               onClick={() => {
                 const targetId = deleteTarget.id;
@@ -312,7 +315,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                 });
               }}
             >
-              {labels.deleteProfile}
+              <Trash2 size={14} aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -331,55 +334,47 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             </div>
             <button
               type="button"
-              className="lyra-settings-ai-action"
+              className="lyra-settings-ai-action lyra-settings-ai-action-icon"
+              aria-label={labels.cancel}
+              title={labels.cancel}
               onClick={closeEditor}
             >
-              {labels.cancel}
+              <X size={14} aria-hidden="true" />
             </button>
           </header>
 
           {activeEditorMode === "create" ? (
             <div className="lyra-settings-ai-provider-picker">
               <span className="lyra-settings-ai-section-label">{labels.selectProviderLabel}</span>
-              {model.presetSections.map((section) => (
-                <div key={section.id} className="lyra-settings-ai-provider-group">
-                  <h4 className="lyra-settings-ai-provider-group-title">{section.label}</h4>
-                  <ul
-                    className="lyra-settings-ai-selection-list lyra-settings-ai-selection-list-grid"
-                    role="listbox"
-                    aria-label={section.label}
-                  >
-                    {section.presets.map((preset) => (
-                      <li key={preset.id} className="lyra-settings-ai-selection-item-slot">
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={model.selectedPresetId === preset.id}
-                          className={model.selectedPresetId === preset.id
-                            ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
-                            : "lyra-settings-ai-selection-item"}
-                          onClick={() => {
-                            model.applyPreset(preset.id);
-                          }}
-                        >
-                          <span className="lyra-settings-ai-selection-copy">
-                            <span className="lyra-settings-ai-selection-heading">
-                              <SettingsAiProviderIcon iconKey={preset.iconKey} title={preset.label} />
-                              <strong>{preset.label}</strong>
-                            </span>
-                            <small>{preset.protocolId}</small>
-                          </span>
-                          <span className="lyra-settings-ai-selection-meta">
-                            <span className="lyra-settings-ai-badge lyra-settings-ai-badge-subtle">
-                              {capabilityLabel(labels, preset.capability)}
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+              <ul
+                className="lyra-settings-ai-selection-list lyra-settings-ai-provider-list"
+                role="listbox"
+                aria-label={labels.selectProviderLabel}
+              >
+                {presets.map((preset) => (
+                  <li key={preset.id} className="lyra-settings-ai-selection-item-slot">
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={model.selectedPresetId === preset.id}
+                      className={model.selectedPresetId === preset.id
+                        ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
+                        : "lyra-settings-ai-selection-item"}
+                      onClick={() => {
+                        model.applyPreset(preset.id);
+                      }}
+                    >
+                      <span className="lyra-settings-ai-selection-copy">
+                        <span className="lyra-settings-ai-selection-heading">
+                          <SettingsAiProviderIcon iconKey={preset.iconKey} title={preset.label} />
+                          <strong>{preset.label}</strong>
+                        </span>
+                        <small>{preset.protocolId} · {capabilityLabel(labels, preset.capability)}</small>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
 
@@ -526,35 +521,43 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             {activeEditorMode === "edit" && model.draft.id !== null ? (
               <button
                 type="button"
-                className="lyra-settings-ai-action lyra-settings-ai-action-danger"
+                className="lyra-settings-ai-action lyra-settings-ai-action-danger lyra-settings-ai-action-icon"
+                aria-label={labels.deleteProfile}
+                title={labels.deleteProfile}
                 disabled={model.isSaving}
                 onClick={() => {
                   setDeleteTarget({ id: model.draft.id ?? "", name: model.draft.name });
                 }}
               >
-                {labels.deleteProfile}
+                <Trash2 size={14} aria-hidden="true" />
               </button>
             ) : <span />}
             <div className="lyra-settings-ai-actions">
               <button
                 type="button"
-                className="lyra-settings-ai-action"
+                className="lyra-settings-ai-action lyra-settings-ai-action-icon"
+                aria-label={labels.cancel}
+                title={labels.cancel}
                 onClick={closeEditor}
               >
-                {labels.cancel}
+                <X size={14} aria-hidden="true" />
               </button>
               <button
                 type="button"
-                className="lyra-settings-ai-action"
+                className="lyra-settings-ai-action lyra-settings-ai-action-icon"
+                aria-label={labels.testConnection}
+                title={labels.testConnection}
                 onClick={() => {
                   void model.validateProfile();
                 }}
               >
-                {labels.testConnection}
+                <Wifi size={14} aria-hidden="true" />
               </button>
               <button
                 type="button"
-                className="lyra-settings-ai-action lyra-settings-ai-action-primary"
+                className="lyra-settings-ai-action lyra-settings-ai-action-primary lyra-settings-ai-action-icon"
+                aria-label={labels.saveProfile}
+                title={labels.saveProfile}
                 disabled={model.isSaving}
                 onClick={() => {
                   void model.saveProfile().then(() => {
@@ -562,7 +565,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                   });
                 }}
               >
-                {labels.saveProfile}
+                <Save size={14} aria-hidden="true" />
               </button>
             </div>
           </footer>

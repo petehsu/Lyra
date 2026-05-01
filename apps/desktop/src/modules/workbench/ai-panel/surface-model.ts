@@ -8,6 +8,7 @@ import type { RuntimeThreadOptions } from "./use-lyra-thread-runtime";
 export type RuntimeModelOption = AgentComposerModelOption & {
   readonly model: string;
   readonly modelProvider: string | null;
+  readonly profileId?: string;
   readonly runtimeMetadata?: AiModelRuntimeMetadata;
 };
 
@@ -99,6 +100,7 @@ export const createRuntimeModelOptions = ({
         label: multipleProfiles ? `${model} · ${profile.name}` : model,
         model,
         modelProvider: providerId,
+        profileId: profile.id,
         ...(runtimeMetadata === undefined || runtimeMetadata === null ? {} : { runtimeMetadata })
       });
     }

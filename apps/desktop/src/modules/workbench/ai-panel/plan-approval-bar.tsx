@@ -6,6 +6,7 @@ import type {
   PlanInteractionResponse,
 } from "../../../shared/desktop-bridge";
 import { createTranslator, type WorkbenchLocale } from "../i18n";
+import { AiPanelRichContent } from "./rich-content";
 
 type PlanApprovalBarProps = {
   readonly locale?: WorkbenchLocale;
@@ -36,7 +37,9 @@ export const PlanApprovalBar = ({
       <div className="lyra-ai-plan-bar__body">
         <div className="lyra-ai-plan-bar__summary">{request.summary}</div>
         <div className="lyra-ai-plan-bar__diff">{diffLabel}</div>
-        <pre className="lyra-ai-plan-bar__markdown">{request.proposedMarkdown}</pre>
+        <div className="lyra-ai-plan-bar__markdown">
+          <AiPanelRichContent locale={locale} content={request.proposedMarkdown} />
+        </div>
         {onOpenInWorkspace === undefined ? (
           <textarea
             className="lyra-ai-plan-bar__note"

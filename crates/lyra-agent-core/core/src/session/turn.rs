@@ -120,6 +120,18 @@ use tracing::warn;
 /// - If the model sends only an assistant message, we record it in the
 ///   conversation history and consider the turn complete.
 ///
+fn build_plan_mode_submit_retry_message() -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "Plan Mode requires an approvable plan before this turn can finish. Read the user's feedback, revise the proposal, and call plan_submit with the complete updated Markdown plan. Do not ask for confirmation in a plain assistant message.".to_string(),
+        }],
+        end_turn: None,
+        phase: None,
+    }
+}
+
 pub(crate) async fn run_turn(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
@@ -454,8 +466,17 @@ pub(crate) async fn run_turn(
                         warn!(
                             turn_id = %turn_context.sub_id,
                             violations,
-                            "Plan Mode ended with a plain assistant message; accepting it as a user-facing follow-up"
+                            "Plan Mode ended with a plain assistant message before submitting a plan"
                         );
+                        if violations <= 1 {
+                            let retry_message = build_plan_mode_submit_retry_message();
+                            sess.record_conversation_items(
+                                &turn_context,
+                                std::slice::from_ref(&retry_message),
+                            )
+                            .await;
+                            continue;
+                        }
                     }
 
                     last_agent_message = sampling_request_last_agent_message;

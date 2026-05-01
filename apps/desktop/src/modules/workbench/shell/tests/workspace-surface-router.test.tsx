@@ -30,6 +30,7 @@ const createSurfaceAdapters = (): WorkbenchSurfaceAdapters => ({
     <div aria-label="fake-file-manager">{state?.currentLocation?.path ?? "missing"}</div>
   ),
   fileEditor: () => <div aria-label="fake-file-editor" />,
+  resourceMonitor: () => <div aria-label="fake-resource-monitor" />,
   notificationCenter: () => <div aria-label="fake-notification-center" />,
   mcpCenter: () => <div aria-label="fake-mcp-center" />,
   skillsCenter: () => <div aria-label="fake-skills-center" />,

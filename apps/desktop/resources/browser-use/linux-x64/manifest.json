@@ -57,7 +57,7 @@
     },
     {
       "path": "wheelhouse/browser_use-0.12.6-py3-none-any.whl",
-      "sha256": "f969aa1f895cbf44525e13b5743d78282bee589e68cc5d0ee238666b8b0d0b13"
+      "sha256": "1e15420d4e34cbfdaa57710e9cd05ce1fe09e3231f36267e61d5935f57860a88"
     },
     {
       "path": "wheelhouse/browser_use_sdk-2.0.15-py3-none-any.whl",
@@ -222,10 +222,6 @@
     {
       "path": "wheelhouse/portalocker-3.2.0-py3-none-any.whl",
       "sha256": "3cdc5f565312224bc570c49337bd21428bba0ef363bbcf58b9ef4a9f11779968"
-    },
-    {
-      "path": "wheelhouse/posthog-7.7.0-py3-none-any.whl",
-      "sha256": "955f42097bf147459653b9102e5f7f9a22e4b6fc9f15003447bd1137fafbc505"
     },
     {
       "path": "wheelhouse/prompt_toolkit-3.0.52-py3-none-any.whl",

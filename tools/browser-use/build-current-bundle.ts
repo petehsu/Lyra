@@ -21,10 +21,12 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(currentDir, "../..");
 const BUNDLES_ROOT = path.join(REPO_ROOT, "apps/desktop/resources/browser-use");
 const WHEELHOUSE_HELPER = path.join(currentDir, "download_wheelhouse.py");
+const SANITIZE_WHEEL_HELPER = path.join(currentDir, "sanitize_browser_use_wheel.py");
 const PYTHON_BUILD_STANDALONE_RELEASE = "20260408";
 const BROWSER_USE_PIN = "browser-use==0.12.6";
 const PYTHON_FULL_VERSION = "3.12.13";
 const DEFAULT_BUILD_PYTHON = process.env.BROWSER_USE_BUILD_PYTHON?.trim() || "python3.12";
+const BLOCKED_WHEEL_PATTERNS = [/^posthog-/i];
 
 const TARGETS: Record<string, TargetConfig> = {
   "darwin-x64": {
@@ -214,6 +216,18 @@ const collectFiles = async (root: string, relativeRoot = ""): Promise<readonly s
   return files.sort();
 };
 
+const isBlockedWheelFile = (fileName: string): boolean =>
+  BLOCKED_WHEEL_PATTERNS.some((pattern) => pattern.test(path.basename(fileName)));
+
+const removeBlockedWheelFiles = async (wheelhouseDir: string): Promise<void> => {
+  const wheelhouseFiles = await readdir(wheelhouseDir);
+  await Promise.all(
+    wheelhouseFiles
+      .filter(isBlockedWheelFile)
+      .map((fileName) => rm(path.join(wheelhouseDir, fileName), { force: true })),
+  );
+};
+
 const buildTargetBundle = async (target: TargetConfig): Promise<void> => {
   const targetRoot = path.join(BUNDLES_ROOT, target.id);
   const artifactsDir = path.join(targetRoot, "artifacts");
@@ -273,18 +287,27 @@ const buildTargetBundle = async (target: TargetConfig): Promise<void> => {
       BROWSER_USE_PIN,
     ];
     await runProcess(DEFAULT_BUILD_PYTHON, wheelhouseArgs, { timeoutMs: 900_000 });
+    await removeBlockedWheelFiles(wheelhouseDir);
 
     const wheelhouseFiles = await readdir(wheelhouseDir);
     const browserUseWheelName = wheelhouseFiles.find((file) => /^browser_use-[^-]+-.*\.whl$/i.test(file));
     if (browserUseWheelName === undefined) {
       throw new Error(`failed to locate browser-use wheel under ${wheelhouseDir}`);
     }
+    await runProcess(
+      DEFAULT_BUILD_PYTHON,
+      [SANITIZE_WHEEL_HELPER, path.join(wheelhouseDir, browserUseWheelName)],
+      { timeoutMs: 30_000 },
+    );
 
     const bundleVersion = `browser-use-0.12.6-python-${PYTHON_FULL_VERSION}-${target.id}`;
     const relativeFiles = await collectFiles(targetRoot);
     const manifestFiles = [];
     for (const relativePath of relativeFiles) {
       if (relativePath === "manifest.json") {
+        continue;
+      }
+      if (isBlockedWheelFile(relativePath)) {
         continue;
       }
       const absolutePath = path.join(targetRoot, relativePath);

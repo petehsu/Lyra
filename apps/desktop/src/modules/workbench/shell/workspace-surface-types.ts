@@ -17,6 +17,7 @@ export type SurfacePropsByKind = {
   readonly terminalWorkspace: ComponentProps<WorkbenchSurfaceAdapters["terminalWorkspace"]>;
   readonly fileManager: ComponentProps<WorkbenchSurfaceAdapters["fileManager"]>;
   readonly fileEditor: ComponentProps<WorkbenchSurfaceAdapters["fileEditor"]>;
+  readonly resourceMonitor: ComponentProps<WorkbenchSurfaceAdapters["resourceMonitor"]>;
   readonly notificationCenter: ComponentProps<WorkbenchSurfaceAdapters["notificationCenter"]>;
   readonly mcpCenter: ComponentProps<WorkbenchSurfaceAdapters["mcpCenter"]>;
   readonly skillsCenter: ComponentProps<WorkbenchSurfaceAdapters["skillsCenter"]>;

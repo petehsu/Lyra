@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import type { AgentPlanState } from "../../../shared/desktop-bridge";
 import { createTranslator, type WorkbenchLocale } from "../i18n";
+import { AiPanelRichContent } from "./rich-content";
 
 type PlanDraftPanelProps = {
   readonly locale?: WorkbenchLocale;
@@ -58,7 +59,9 @@ export const PlanDraftPanel = ({
           {expanded ? t("ai.planDraftHide") : t("ai.planDraftShow")}
         </button>
         {expanded && body.trim().length > 0 ? (
-          <pre className="lyra-ai-plan-bar__markdown">{body}</pre>
+          <div className="lyra-ai-plan-bar__markdown">
+            <AiPanelRichContent locale={locale} content={body} />
+          </div>
         ) : null}
       </div>
       <div className="lyra-ai-plan-bar__actions">

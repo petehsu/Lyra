@@ -17,11 +17,18 @@ import {
 import {
   renderNotificationCenterAppIcon
 } from "../notifications/icon-registry";
+import {
+  renderResourceMonitorAppIcon,
+  type ResourceMonitorAppIconKey,
+  type ResourceMonitorAppId
+} from "../resource-monitor";
 import type { WorkbenchAppId, WorkspaceAppIconKey } from "./types";
 
 const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactNode> = {
   "file-manager": (iconKey) => renderFileManagerAppIcon(iconKey as FileManagerAppIconKey),
   "file-editor": (iconKey) => renderFileEditorAppIcon(iconKey as FileEditorAppIconKey),
+  "resource-monitor": (iconKey) =>
+    renderResourceMonitorAppIcon(iconKey as ResourceMonitorAppIconKey),
   "ai-history": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
   "ai-plan-review": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
   "ai-mcp": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
@@ -48,6 +55,9 @@ export const isFileManagerAppId = (value: WorkbenchAppId): value is FileManagerA
 
 export const isFileEditorAppId = (value: WorkbenchAppId): value is FileEditorAppId =>
   value === "file-editor";
+
+export const isResourceMonitorAppId = (value: WorkbenchAppId): value is ResourceMonitorAppId =>
+  value === "resource-monitor";
 
 export const isAiHistoryAppId = (value: WorkbenchAppId): value is "ai-history" =>
   value === "ai-history";

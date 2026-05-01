@@ -6,7 +6,8 @@ import {
   isAiSkillsAppId,
   isFileEditorAppId,
   isFileManagerAppId,
-  isNotificationCenterAppId
+  isNotificationCenterAppId,
+  isResourceMonitorAppId
 } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type {
@@ -164,6 +165,16 @@ export const createAppSurfaceRenderModel = (
     return {
       kind: "fileEditor",
       props: createFileEditorProps(state, context)
+    };
+  }
+
+  if (isResourceMonitorAppId(tab.appId)) {
+    return {
+      kind: "resourceMonitor",
+      props: {
+        desktopApi: context.desktopApi,
+        labels: context.resourceMonitor.labels
+      }
     };
   }
 

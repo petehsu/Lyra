@@ -573,7 +573,7 @@ export const useSettingsAiModel = ({
       );
       setStatusMessage(labels.statusDefaultUpdated);
       setStatusTone("success");
-      await syncConfig(targetProfileId);
+      await syncConfig(selectedProfileIdRef.current);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : String(error));
       setStatusTone("error");

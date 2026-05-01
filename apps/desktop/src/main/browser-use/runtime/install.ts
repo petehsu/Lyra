@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 
 import type { BrowserUseBundle, BrowserUseBundleManifest } from "./bundle";
+import { withBrowserUsePrivacyEnv } from "./privacy-env";
 import type { BrowserUseRuntimeInstallState, BrowserUseRuntimePreflightFailureCode } from "../types";
 
 const MARKER_FILE = "install-state.json";
@@ -204,8 +205,7 @@ export const materializeBundledBrowserUseRuntime = async (
     ["-m", "ensurepip", "--upgrade"],
     {
       env: {
-        ...process.env,
-        BROWSER_USE_HOME: homeDir,
+        ...withBrowserUsePrivacyEnv(process.env, { BROWSER_USE_HOME: homeDir }),
       },
       timeoutMs: 60_000,
     },
@@ -225,8 +225,7 @@ export const materializeBundledBrowserUseRuntime = async (
     ],
     {
       env: {
-        ...process.env,
-        BROWSER_USE_HOME: homeDir,
+        ...withBrowserUsePrivacyEnv(process.env, { BROWSER_USE_HOME: homeDir }),
       },
       timeoutMs: 180_000,
     },

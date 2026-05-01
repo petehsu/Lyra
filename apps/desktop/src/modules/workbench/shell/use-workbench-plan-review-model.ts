@@ -80,6 +80,7 @@ export const useWorkbenchPlanReviewModel = ({
 
   const openPlanReview = useCallback((request: AiPlanApprovalWorkspaceOpenRequest): void => {
     const instanceId = createPlanReviewInstanceId(request.request.id);
+    const existing = statesRef.current[instanceId];
     handlersRef.current = {
       ...handlersRef.current,
       [instanceId]: request.onDecision,
@@ -90,13 +91,15 @@ export const useWorkbenchPlanReviewModel = ({
         instanceId,
         locale: request.locale,
         request: request.request,
-        annotations: statesRef.current[instanceId]?.annotations ?? [],
-        isActionable: true,
+        annotations: existing?.annotations ?? [],
+        isActionable: request.request.status === "submitted",
         isSubmitting: false,
-        lastSubmittedAt: statesRef.current[instanceId]?.lastSubmittedAt ?? null,
+        lastSubmittedAt: existing?.lastSubmittedAt ?? null,
       },
     });
-    openAppTab(createAiPlanReviewAppRequest(title, instanceId));
+    if (existing === undefined || request.request.status === "submitted") {
+      openAppTab(createAiPlanReviewAppRequest(title, instanceId));
+    }
   }, [openAppTab, publishStates, title]);
 
   const getState = useCallback(
@@ -149,9 +152,38 @@ export const useWorkbenchPlanReviewModel = ({
     });
   }, [publishStates]);
 
+  const updateAnnotation = useCallback<AiPlanReviewModel["updateAnnotation"]>(async (
+    instanceId,
+    annotationId,
+    note
+  ) => {
+    const trimmed = note.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    patchState(instanceId, (state) => ({
+      ...state,
+      annotations: state.annotations.map((annotation) =>
+        annotation.id === annotationId
+          ? { ...annotation, note: trimmed }
+          : annotation
+      ),
+    }));
+  }, [patchState]);
+
+  const deleteAnnotation = useCallback<AiPlanReviewModel["deleteAnnotation"]>(async (
+    instanceId,
+    annotationId
+  ) => {
+    patchState(instanceId, (state) => ({
+      ...state,
+      annotations: state.annotations.filter((annotation) => annotation.id !== annotationId),
+    }));
+  }, [patchState]);
+
   const submitAnnotations = useCallback<AiPlanReviewModel["submitAnnotations"]>(async (instanceId) => {
     const state = statesRef.current[instanceId];
-    if (state === undefined || state.annotations.length === 0) {
+    if (state === undefined || state.annotations.length === 0 || !state.isActionable) {
       return;
     }
     await decide(instanceId, {
@@ -166,9 +198,11 @@ export const useWorkbenchPlanReviewModel = ({
       getState,
       decide,
       addAnnotation,
+      updateAnnotation,
+      deleteAnnotation,
       submitAnnotations,
     }),
-    [addAnnotation, decide, getState, submitAnnotations]
+    [addAnnotation, decide, deleteAnnotation, getState, submitAnnotations, updateAnnotation]
   );
 
   return {

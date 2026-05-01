@@ -22,6 +22,7 @@ import {
   validateBundledBrowserUseManifest,
 } from "./install";
 import { resolveBundledBrowserUseBundle } from "./bundle";
+import { withBrowserUsePrivacyEnv } from "./privacy-env";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const AGENT_RUNNER_PATH = path.join(currentDir, "agent-runner.py");
@@ -289,10 +290,7 @@ export const createBrowserUseRuntimeManager = ({
 
       try {
         await runProcess(installState.pythonPath, ["--version"], {
-          env: {
-            ...process.env,
-            BROWSER_USE_HOME: installState.homeDir,
-          },
+          env: withBrowserUsePrivacyEnv(process.env, { BROWSER_USE_HOME: installState.homeDir }),
           timeoutMs: 2_000,
         });
         await runProcess(
@@ -302,10 +300,7 @@ export const createBrowserUseRuntimeManager = ({
             "from importlib.metadata import version; import browser_use.skill_cli.daemon; print(version('browser-use'))",
           ],
           {
-            env: {
-              ...process.env,
-              BROWSER_USE_HOME: installState.homeDir,
-            },
+            env: withBrowserUsePrivacyEnv(process.env, { BROWSER_USE_HOME: installState.homeDir }),
             timeoutMs: 3_000,
           },
         );
@@ -326,11 +321,10 @@ export const createBrowserUseRuntimeManager = ({
       try {
         const args = ["-m", "browser_use.skill_cli.daemon", "--session", smokeSessionName];
         const child = spawn(installState.pythonPath, args, {
-          env: {
-            ...process.env,
+          env: withBrowserUsePrivacyEnv(process.env, {
             BROWSER_USE_HOME: installState.homeDir,
             PYTHONUNBUFFERED: "1",
-          },
+          }),
           detached: process.platform !== "win32",
           stdio: "ignore",
         });
@@ -374,11 +368,10 @@ export const createBrowserUseRuntimeManager = ({
         args.push("--cdp-url", cdpUrl.trim());
       }
       const child = spawn(runtime.pythonPath, args, {
-        env: {
-          ...process.env,
+        env: withBrowserUsePrivacyEnv(process.env, {
           BROWSER_USE_HOME: runtime.homeDir,
           PYTHONUNBUFFERED: "1",
-        },
+        }),
         detached: process.platform !== "win32",
         stdio: "ignore",
       });
@@ -412,8 +405,7 @@ export const createBrowserUseRuntimeManager = ({
     runAgentTask: async ({ daemonSessionName, task, maxSteps, model, cdpUrl }) => {
       const runtime = await ensureInstalled();
       const result = await runProcess(runtime.pythonPath, [AGENT_RUNNER_PATH], {
-        env: {
-          ...process.env,
+        env: withBrowserUsePrivacyEnv(process.env, {
           BROWSER_USE_HOME: runtime.homeDir,
           LYRA_BROWSER_USE_SESSION: daemonSessionName,
           LYRA_BROWSER_USE_TASK: task,
@@ -424,7 +416,7 @@ export const createBrowserUseRuntimeManager = ({
           ...(typeof cdpUrl === "string" && cdpUrl.trim().length > 0
             ? { LYRA_BROWSER_USE_CDP_URL: cdpUrl.trim() }
             : {}),
-        },
+        }),
         timeoutMs: 20_000,
       });
       const parsed = JSON.parse(result.stdout) as Record<string, unknown>;

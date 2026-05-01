@@ -2,6 +2,12 @@ import type {
   BrowserUseRuntimeStatus,
 } from "./browser-use";
 import type {
+  LyraResourceEvent,
+  LyraResourceLifecycleRequest,
+  LyraResourceRegisterRequest,
+  LyraResourceSnapshot
+} from "./resource-runtime";
+import type {
   LyraClientNotificationPayload,
   LyraClientRequestPayload,
   LyraRejectServerRequestPayload,
@@ -146,6 +152,16 @@ export type {
   BrowserUseRuntimeStatus,
   BrowserUseRuntimeUnavailableReason,
 } from "./browser-use";
+export type {
+  LyraResourceCoreGroup,
+  LyraResourceEvent,
+  LyraResourceLifecycleRequest,
+  LyraResourceLifecycleState,
+  LyraResourceNode,
+  LyraResourceProcessSnapshot,
+  LyraResourceRegisterRequest,
+  LyraResourceSnapshot
+} from "./resource-runtime";
 export type {
   LyraClientNotificationPayload,
   LyraClientRequestPayload,
@@ -403,6 +419,11 @@ export const LYRA_CHANNELS = {
   workbenchBrowserEvent: "lyra:workbench-browser/event",
   browserUseReadRuntimeStatus: "lyra:browser-use/read-runtime-status",
   browserUseRuntimeStatusEvent: "lyra:browser-use/runtime-status",
+  resourcesReadSnapshot: "lyra:resources/read-snapshot",
+  resourcesRegisterOrUpdate: "lyra:resources/register-or-update",
+  resourcesRemove: "lyra:resources/remove",
+  resourcesRequestLifecycle: "lyra:resources/request-lifecycle",
+  resourcesEvent: "lyra:resources/event",
   mcpReadCatalog: "lyra:mcp/read-catalog",
   mcpReadServers: "lyra:mcp/read-servers",
   mcpReadEffectiveServers: "lyra:mcp/read-effective-servers",
@@ -1249,6 +1270,14 @@ export type WorkbenchBrowserApi = {
   readonly onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => () => void;
 };
 
+export type ResourcesApi = {
+  readonly readSnapshot: () => Promise<LyraResourceSnapshot>;
+  readonly registerOrUpdate: (request: LyraResourceRegisterRequest) => Promise<void>;
+  readonly remove: (resourceId: string) => Promise<void>;
+  readonly requestLifecycle: (request: LyraResourceLifecycleRequest) => Promise<void>;
+  readonly onEvent: (listener: (event: LyraResourceEvent) => void) => () => void;
+};
+
 export type TerminalApi = {
   readonly createSession: (request: TerminalCreateRequest) => Promise<TerminalSessionSnapshot>;
   readonly restoreSessions: (request: TerminalRestoreRequest) => Promise<readonly TerminalSessionSnapshot[]>;
@@ -1334,6 +1363,7 @@ export type LyraDesktopApi = {
   readonly files: FilesApi;
   readonly lyra?: LyraRuntimeApi;
   readonly workbenchBrowser: WorkbenchBrowserApi;
+  readonly resources?: ResourcesApi;
   readonly browserUse: BrowserUseApi;
   readonly mcp: McpApi;
   readonly skills: SkillsApi;

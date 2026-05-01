@@ -36,6 +36,7 @@ describe("workbench ui platform service", () => {
       "notificationCenter",
       "planReview",
       "pluginsCenter",
+      "resourceMonitor",
       "searchHome",
       "searchResults",
       "settings",

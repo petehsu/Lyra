@@ -173,6 +173,9 @@ export const useWorkspaceSurfaceRouterProps = ({
     planReview: {
       model: planReviewModel
     },
+    resourceMonitor: {
+      labels: labels.resourceMonitor
+    },
     notifications: {
       model: notificationModel,
       labels: labels.notificationCenter,

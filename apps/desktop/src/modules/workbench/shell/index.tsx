@@ -54,6 +54,7 @@ import { useWorkbenchLabels } from "./use-workbench-labels";
 import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
 import { useWorkbenchPlanReviewModel } from "./use-workbench-plan-review-model";
+import { useWorkbenchResourceRegistration } from "./use-workbench-resource-registration";
 import { useWorkbenchSearchIndexStatus } from "./use-workbench-search-index-status";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
 import { useWorkbenchShellAdapterProps } from "./use-workbench-shell-adapter-props";
@@ -65,38 +66,12 @@ import { useWorkbenchWorkspaceTabsProps } from "./use-workbench-workspace-tabs-p
 import { useWorkspaceSurfaceRouterProps } from "./use-workspace-surface-router-props";
 import { useTitlebarElementPickerModel } from "./use-titlebar-element-picker-model";
 import { useTitlebarNavigationModel } from "./use-titlebar-navigation-model";
+import { createInitialWorkbenchPreferences, createWorkbenchBrowserTabsConfig } from "./workbench-shell-defaults";
 import { attachWorkbenchObservationBridge } from "../observation/service";
 
 export const WorkbenchShell = () => {
   const desktopApi = getDesktopApi();
-  const preferencesModel = useWorkbenchPreferencesModel({
-    locale: WORKBENCH_CONFIG.locale,
-    theme: WORKBENCH_CONFIG.theme,
-    uiPackId: WORKBENCH_CONFIG.uiPackId,
-    terminalThemePreset: WORKBENCH_CONFIG.terminalThemePreset,
-    splitTriggerMode: "ctrl_left_drag",
-    splitThreePaneLayout: "adaptive",
-    splitOverflowPolicy: "block_with_notice",
-    aiRichRenderingEnabled: true,
-    aiStopBehavior: "turn_only",
-    preventSleepEnabled: true,
-    forceWebPageThemingEnabled: true,
-    searchScopePreset: "home",
-    searchCustomRoots: [],
-    searchEnableFuzzy: true,
-    searchEnableContent: true,
-    searchIncludeHidden: false,
-    searchWebEngineIds: WORKBENCH_CONFIG.browser.searchEngines.map((engine) => engine.id),
-    searchAutoIndexEnabled: true,
-    deepSearchDefaultBudget: "medium",
-    deepSearchRestoreViewport: false,
-    deepSearchLocalOpenBehavior: "open_file",
-    deepSearchSiteExpansionEnabled: true,
-    deepSearchProactiveDomainGuessingEnabled: true,
-    deepSearchCrawlPolicy: "accessibility_only",
-    searchResultsSourceFilter: "all",
-    omniboxNonBrowserSubmitTarget: "new_tab"
-  });
+  const preferencesModel = useWorkbenchPreferencesModel(createInitialWorkbenchPreferences());
   const { jsReplEnabled, updateJsReplSetting } = useWorkbenchJsReplSetting(desktopApi);
 
   const [isMaximized, setIsMaximized] = useState(false);
@@ -108,15 +83,7 @@ export const WorkbenchShell = () => {
   );
   const labels = useWorkbenchLabels(t);
   const rootRef = useRef<HTMLElement | null>(null);
-  const browserTabsConfig = useMemo(
-    () => ({
-      homeTabTitle: t("browser.homeTabTitle"),
-      settingsTabTitle: t("settings.tabTitle"),
-      homeSearchAddress: WORKBENCH_CONFIG.browser.homeSearchAddress,
-      maxSearchTitleLength: WORKBENCH_CONFIG.browser.maxSearchTitleLength
-    }),
-    [t]
-  );
+  const browserTabsConfig = useMemo(() => createWorkbenchBrowserTabsConfig(t), [t]);
   const tabsModel = useWorkspaceTabsModel(browserTabsConfig, {
     splitOverflowPolicy: preferencesModel.preferences.splitOverflowPolicy
   });
@@ -197,6 +164,14 @@ export const WorkbenchShell = () => {
     desktopApi,
     onMetaChange: tabsModel.updateAppTabMeta
   });
+  useWorkbenchResourceRegistration({
+    desktopApi,
+    tabsModel,
+    visibleWorkspaceLayout,
+    fileManagerModel,
+    fileEditorModel,
+    terminalModel
+  });
   const workbenchActions = useWorkbenchActionApi({
     desktopApi,
     tabsModel,
@@ -204,6 +179,7 @@ export const WorkbenchShell = () => {
     panelLayoutModel,
     docsEntryAddress: WORKBENCH_CONFIG.browser.docsEntryAddress,
     docsTabTitle: t("docs.tabTitle"),
+    activityMonitorTitle: t("resources.activityMonitorTitle"),
     locale: preferencesModel.preferences.locale,
     resolvedThemeId
   });
@@ -668,7 +644,5 @@ export const WorkbenchShell = () => {
     onRootDragStartCapture
   });
 
-  return (
-    <ShellAdapter {...shellAdapterProps} />
-  );
+  return <ShellAdapter {...shellAdapterProps} />;
 };

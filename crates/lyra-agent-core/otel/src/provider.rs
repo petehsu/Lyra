@@ -65,10 +65,11 @@ impl OtelProvider {
     }
 
     pub fn from(settings: &OtelSettings) -> Result<Option<Self>, Box<dyn Error>> {
-        let log_enabled = !matches!(settings.exporter, OtelExporter::None);
-        let trace_enabled = !matches!(settings.trace_exporter, OtelExporter::None);
-
+        let log_exporter = crate::config::resolve_exporter(&settings.exporter);
+        let trace_exporter = crate::config::resolve_exporter(&settings.trace_exporter);
         let metric_exporter = crate::config::resolve_exporter(&settings.metrics_exporter);
+        let log_enabled = !matches!(log_exporter, OtelExporter::None);
+        let trace_enabled = !matches!(trace_exporter, OtelExporter::None);
         let metrics = if matches!(metric_exporter, OtelExporter::None) {
             None
         } else {
@@ -96,11 +97,11 @@ impl OtelProvider {
         let log_resource = make_resource(settings, ResourceKind::Logs);
         let trace_resource = make_resource(settings, ResourceKind::Traces);
         let logger = log_enabled
-            .then(|| build_logger(&log_resource, &settings.exporter))
+            .then(|| build_logger(&log_resource, &log_exporter))
             .transpose()?;
 
         let tracer_provider = trace_enabled
-            .then(|| build_tracer_provider(&trace_resource, &settings.trace_exporter))
+            .then(|| build_tracer_provider(&trace_resource, &trace_exporter))
             .transpose()?;
 
         let tracer = tracer_provider

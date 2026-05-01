@@ -5689,6 +5689,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyra-resource-core"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "lyra-resource-napi"
+version = "0.1.0"
+dependencies = [
+ "lyra-resource-core",
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "once_cell",
+ "serde_json",
+]
+
+[[package]]
 name = "lyra-response-debug-context"
 version = "0.0.0"
 dependencies = [

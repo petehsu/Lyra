@@ -3,11 +3,8 @@ use std::path::PathBuf;
 
 use lyra_utils_absolute_path::AbsolutePathBuf;
 
-pub(crate) fn resolve_exporter(exporter: &OtelExporter) -> OtelExporter {
-    match exporter {
-        OtelExporter::Statsig => OtelExporter::None,
-        _ => exporter.clone(),
-    }
+pub(crate) fn resolve_exporter(_exporter: &OtelExporter) -> OtelExporter {
+    OtelExporter::None
 }
 
 #[derive(Clone, Debug)]
@@ -66,6 +63,18 @@ mod tests {
     fn statsig_exporter_resolves_to_none() {
         assert!(matches!(
             resolve_exporter(&OtelExporter::Statsig),
+            OtelExporter::None
+        ));
+    }
+
+    #[test]
+    fn otlp_exporter_resolves_to_none() {
+        assert!(matches!(
+            resolve_exporter(&OtelExporter::OtlpGrpc {
+                endpoint: "http://127.0.0.1:4317".to_string(),
+                headers: Default::default(),
+                tls: None,
+            }),
             OtelExporter::None
         ));
     }

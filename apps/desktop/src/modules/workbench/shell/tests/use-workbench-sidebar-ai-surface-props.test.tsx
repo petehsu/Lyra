@@ -17,7 +17,8 @@ const settingsAiModel = {
   defaultProviderId: "provider-1",
   defaultProfileLabel: "Default",
   defaultModelNames: ["gpt-test"],
-  profiles: []
+  profiles: [],
+  setDefaultProfile: vi.fn()
 } as unknown as SettingsAiModel;
 
 const t = (key: I18nKey): string => key;
@@ -74,6 +75,7 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
     }));
     expect(result.current.onRequestProjectBind).toBe(onRequestProjectBind);
     expect(result.current.onOpenPlanApprovalWorkspace).toBe(onOpenPlanApprovalWorkspace);
+    expect(result.current.onDefaultProfileSelect).toBe(settingsAiModel.setDefaultProfile);
     expect(result.current.openDialog).toBe(openDialog);
   });
 });

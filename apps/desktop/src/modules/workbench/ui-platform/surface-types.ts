@@ -16,6 +16,7 @@ import type { FileManagerSurfaceProps } from "../file-manager";
 import type { McpCenterSurfaceProps } from "../mcp-center";
 import type { NotificationCenterSurfaceProps } from "../notifications";
 import type { PluginsCenterSurfaceProps } from "../plugins-center";
+import type { ResourceMonitorSurfaceProps } from "../resource-monitor";
 import type { SkillsCenterSurfaceProps } from "../skills-center";
 import type {
   TerminalDockProps,
@@ -31,6 +32,7 @@ export type WorkbenchSurfaceAdapters = {
   readonly terminalWorkspace: ComponentType<TerminalWorkspaceSurfaceProps>;
   readonly fileManager: ComponentType<FileManagerSurfaceProps>;
   readonly fileEditor: ComponentType<FileEditorSurfaceProps>;
+  readonly resourceMonitor: ComponentType<ResourceMonitorSurfaceProps>;
   readonly notificationCenter: ComponentType<NotificationCenterSurfaceProps>;
   readonly mcpCenter: ComponentType<McpCenterSurfaceProps>;
   readonly skillsCenter: ComponentType<SkillsCenterSurfaceProps>;
@@ -48,6 +50,7 @@ export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
   "terminalWorkspace",
   "fileManager",
   "fileEditor",
+  "resourceMonitor",
   "notificationCenter",
   "mcpCenter",
   "skillsCenter",

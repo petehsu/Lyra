@@ -513,7 +513,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::ApplyPatchStreamingEvents,
         key: "apply_patch_streaming_events",
         stage: Stage::Internal,
-        default_enabled: false,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::ExecPermissionApprovals,

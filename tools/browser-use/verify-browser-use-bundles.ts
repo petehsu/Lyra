@@ -1,4 +1,4 @@
-import { access, cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -34,6 +34,7 @@ const TARGETS = [
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(currentDir, "../..");
 const BUNDLES_ROOT = path.join(REPO_ROOT, "apps/desktop/resources/browser-use");
+const BLOCKED_WHEEL_PATTERNS = [/^posthog-/i];
 
 const runProcess = async (
   command: string,
@@ -95,6 +96,9 @@ const ensureExists = async (filePath: string): Promise<void> => {
   await access(filePath);
 };
 
+const isBlockedWheelFile = (fileName: string): boolean =>
+  BLOCKED_WHEEL_PATTERNS.some((pattern) => pattern.test(path.basename(fileName)));
+
 const resolveCurrentTarget = (): (typeof TARGETS)[number] => {
   const target = `${process.platform}-${process.arch}`;
   if (TARGETS.includes(target as (typeof TARGETS)[number])) {
@@ -122,12 +126,18 @@ const validateManifest = async (targetRoot: string, manifest: BundleManifest): P
   if (!manifest.wheelhouseDir.trim()) {
     throw new Error("missing wheelhouseDir");
   }
+  if (isBlockedWheelFile(manifest.browserUseWheel)) {
+    throw new Error(`blocked browser-use wheel listed in manifest: ${manifest.browserUseWheel}`);
+  }
   if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
     throw new Error("manifest files list is empty");
   }
   for (const file of manifest.files) {
     if (!file.path.trim()) {
       throw new Error("manifest file path is empty");
+    }
+    if (isBlockedWheelFile(file.path)) {
+      throw new Error(`blocked browser-use wheel listed in manifest files: ${file.path}`);
     }
     if (!file.sha256.trim()) {
       throw new Error(`missing sha256 for ${file.path}`);
@@ -141,6 +151,11 @@ const validateManifest = async (targetRoot: string, manifest: BundleManifest): P
     if (file.executable === true) {
       await access(absolutePath, constants.X_OK);
     }
+  }
+  const wheelhouseFiles = await readdir(path.join(targetRoot, manifest.wheelhouseDir));
+  const blockedWheel = wheelhouseFiles.find(isBlockedWheelFile);
+  if (blockedWheel !== undefined) {
+    throw new Error(`blocked browser-use wheel present in wheelhouse: ${blockedWheel}`);
   }
 };
 

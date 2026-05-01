@@ -1,3 +1,4 @@
+import { ListPlus, RefreshCw } from "lucide-react";
 import { useId } from "react";
 
 import type { AiProviderModelEntry } from "../../../shared/ai";
@@ -53,13 +54,15 @@ export const SettingsAiModelPicker = ({
         <label htmlFor={inputId}>{labels.mainModelLabel}</label>
         <button
           type="button"
-          className="lyra-settings-ai-action lyra-settings-ai-action-inline"
+          className="lyra-settings-ai-action lyra-settings-ai-action-inline lyra-settings-ai-action-icon"
+          aria-label={discoverLabel}
+          title={discoverLabel}
           disabled={isDiscovering}
           onClick={() => {
             onDiscover();
           }}
         >
-          {discoverLabel}
+          <RefreshCw size={14} aria-hidden="true" />
         </button>
       </span>
       <input
@@ -138,13 +141,15 @@ export const SettingsAiAdditionalModelsPicker = ({
         <label htmlFor={textareaId}>{labels.additionalModelsLabel}</label>
         <button
           type="button"
-          className="lyra-settings-ai-action lyra-settings-ai-action-inline"
+          className="lyra-settings-ai-action lyra-settings-ai-action-inline lyra-settings-ai-action-icon"
+          aria-label={labels.addAllModels}
+          title={labels.addAllModels}
           disabled={models.length === 0}
           onClick={() => {
             onAddAllModels();
           }}
         >
-          {labels.addAllModels}
+          <ListPlus size={14} aria-hidden="true" />
         </button>
       </span>
       <textarea

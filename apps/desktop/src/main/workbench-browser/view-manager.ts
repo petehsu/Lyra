@@ -30,6 +30,7 @@ import type {
   BrowserTextExtractOptions
 } from "../workbench-observation/browser/types";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
+import type { ResourceRuntimeService } from "../resources/types";
 import {
   buildFrameDomProbeScript,
   normalizeFrameDomProbeResult
@@ -60,7 +61,16 @@ type BrowserPageEntry = {
   readonly disposeListeners: () => void;
 };
 
+type BrowserPageTombstone = {
+  readonly tabId: string;
+  requestedAddress: string;
+  titleHint: string | null;
+  runtime: WorkbenchBrowserPageRuntimeState;
+  readonly tombstonedAt: number;
+};
+
 const DEFAULT_PAGE_TITLE = "New Tab";
+const HIDDEN_PAGE_TOMBSTONE_DELAY_MS = 45_000;
 
 const normalizeString = (value: unknown): string | null => {
   if (typeof value !== "string") {
@@ -181,10 +191,23 @@ const normalizeLayout = (value: unknown): WorkbenchBrowserLayoutSnapshot => {
   };
 };
 
+const resolveBrowserCoreKey = (address: string): string => {
+  try {
+    const parsed = new URL(address);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch (_error) {
+    return address;
+  }
+};
+
 const toInitialRuntimeState = (spec: WorkbenchBrowserPageSpec): WorkbenchBrowserPageRuntimeState => ({
   tabId: spec.tabId,
   address: spec.address,
   title: spec.titleHint ?? DEFAULT_PAGE_TITLE,
+  lifecycleState: spec.isActive ? "foreground" : "hot-hidden",
+  coreKey: resolveBrowserCoreKey(spec.address),
+  stateKey: `web-state:${spec.tabId}`,
+  isTombstoned: false,
   isActive: spec.isActive,
   isVisible: false,
   isLoading: false,
@@ -202,6 +225,11 @@ const runtimeStateEquals = (
   && left.address === right.address
   && left.title === right.title
   && left.faviconUrl === right.faviconUrl
+  && left.lifecycleState === right.lifecycleState
+  && left.coreKey === right.coreKey
+  && left.stateKey === right.stateKey
+  && left.isTombstoned === right.isTombstoned
+  && left.restoreReason === right.restoreReason
   && left.isActive === right.isActive
   && left.isVisible === right.isVisible
   && left.isLoading === right.isLoading
@@ -290,12 +318,16 @@ const toNativeInputEvent = (event: WorkbenchBrowserNativeInputEvent):
 
 export const createWorkbenchBrowserViewManager = ({
   getWindow,
-  publishEvent
+  publishEvent,
+  resourceRuntime
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
+  readonly resourceRuntime?: ResourceRuntimeService;
 }): WorkbenchBrowserViewManager => {
   const entries = new Map<string, BrowserPageEntry>();
+  const tombstones = new Map<string, BrowserPageTombstone>();
+  const tombstoneTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const debuggerSessions = new Map<
     string,
     ReturnType<typeof createWorkbenchBrowserSharedDebuggerSession>
@@ -340,6 +372,149 @@ export const createWorkbenchBrowserViewManager = ({
       kind: "page-runtime-state",
       page: nextRuntime
     });
+    syncEntryResource(entry);
+  };
+
+  const publishRuntimeState = (runtime: WorkbenchBrowserPageRuntimeState): void => {
+    publishEvent({
+      kind: "page-runtime-state",
+      page: runtime
+    });
+  };
+
+  const syncBrowserResource = (runtime: WorkbenchBrowserPageRuntimeState): void => {
+    try {
+      resourceRuntime?.registerOrUpdate({
+        resourceId: `browser:${runtime.tabId}`,
+        kind: "browser-page",
+        label: runtime.title.length > 0 ? runtime.title : runtime.address,
+        viewId: `tab:${runtime.tabId}`,
+        stateKey: runtime.stateKey ?? `web-state:${runtime.tabId}`,
+        coreKey: runtime.coreKey ?? resolveBrowserCoreKey(runtime.address),
+        lifecycleState: runtime.lifecycleState ?? "hot-hidden",
+        tabId: runtime.tabId,
+        address: runtime.address,
+        visible: runtime.isVisible
+      });
+    } catch (error) {
+      console.warn(`[lyra-resources] browser resource sync failed ${String(error)}`);
+    }
+  };
+
+  const syncEntryResource = (entry: BrowserPageEntry): void => {
+    syncBrowserResource(entry.runtime);
+  };
+
+  const cancelTombstoneTimer = (tabId: string): void => {
+    const timer = tombstoneTimers.get(tabId);
+    if (timer === undefined) {
+      return;
+    }
+    clearTimeout(timer);
+    tombstoneTimers.delete(tabId);
+  };
+
+  const canMaterializePage = (spec: WorkbenchBrowserPageSpec): boolean => {
+    if (spec.isActive) {
+      return true;
+    }
+    const layout = findLayout(spec.tabId);
+    return layout?.visible === true;
+  };
+
+  const readTombstoneSafety = async (entry: BrowserPageEntry): Promise<boolean> => {
+    if (entry.isDestroyed || entry.webContents.isDestroyed()) {
+      return false;
+    }
+    if (
+      entry.runtime.isActive
+      || entry.runtime.isVisible
+      || entry.runtime.isLoading
+      || entry.runtime.isHtmlFullscreen
+      || debuggerSessions.has(entry.tabId)
+    ) {
+      return false;
+    }
+    try {
+      const result = await entry.webContents.executeJavaScript(
+        `(() => {
+          const fields = Array.from(document.querySelectorAll("input, textarea, select"));
+          const hasEditedField = fields.some((field) => {
+            if (field instanceof HTMLInputElement) {
+              const type = field.type.toLowerCase();
+              if (type === "checkbox" || type === "radio") {
+                return field.checked !== field.defaultChecked;
+              }
+              return field.value !== field.defaultValue;
+            }
+            if (field instanceof HTMLTextAreaElement) {
+              return field.value !== field.defaultValue;
+            }
+            if (field instanceof HTMLSelectElement) {
+              return Array.from(field.options).some((option) => option.selected !== option.defaultSelected);
+            }
+            return false;
+          });
+          const hasActiveMedia = Array.from(document.querySelectorAll("audio, video"))
+            .some((media) => media instanceof HTMLMediaElement && !media.paused && !media.ended);
+          return { hasEditedField, hasActiveMedia };
+        })()`,
+        true
+      );
+      if (result === null || typeof result !== "object") {
+        return false;
+      }
+      const record = result as Record<string, unknown>;
+      return record.hasEditedField !== true && record.hasActiveMedia !== true;
+    } catch {
+      return false;
+    }
+  };
+
+  const tombstoneEntry = (entry: BrowserPageEntry): void => {
+    if (entry.isDestroyed || entry.runtime.isVisible || entry.runtime.isActive) {
+      return;
+    }
+    cancelTombstoneTimer(entry.tabId);
+    const runtime: WorkbenchBrowserPageRuntimeState = {
+      ...entry.runtime,
+      lifecycleState: "tombstoned",
+      isTombstoned: true,
+      isVisible: false,
+      isLoading: false,
+      updatedAt: Date.now()
+    };
+    tombstones.set(entry.tabId, {
+      tabId: entry.tabId,
+      requestedAddress: entry.requestedAddress,
+      titleHint: entry.titleHint,
+      runtime,
+      tombstonedAt: Date.now()
+    });
+    destroyEntry(entry, false);
+    entries.delete(entry.tabId);
+    publishRuntimeState(runtime);
+    syncBrowserResource(runtime);
+  };
+
+  const scheduleTombstone = (entry: BrowserPageEntry): void => {
+    if (
+      entry.runtime.isActive
+      || entry.runtime.isVisible
+      || entry.runtime.isTombstoned === true
+      || tombstoneTimers.has(entry.tabId)
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      tombstoneTimers.delete(entry.tabId);
+      void readTombstoneSafety(entry).then((safe) => {
+        if (safe) {
+          tombstoneEntry(entry);
+        }
+      });
+    }, HIDDEN_PAGE_TOMBSTONE_DELAY_MS);
+    tombstoneTimers.set(entry.tabId, timer);
   };
 
   const findLayout = (tabId: string): WorkbenchBrowserPageLayout | null =>
@@ -347,10 +522,13 @@ export const createWorkbenchBrowserViewManager = ({
 
   const targetTabIdForRead = (request?: WorkbenchBrowserReadPageStateRequest): string | null => {
     const requested = normalizeString(request?.tabId);
-    if (requested !== null && entries.has(requested)) {
+    if (requested !== null && (entries.has(requested) || tombstones.has(requested))) {
       return requested;
     }
-    if (topology.activeTabId !== null && entries.has(topology.activeTabId)) {
+    if (
+      topology.activeTabId !== null
+      && (entries.has(topology.activeTabId) || tombstones.has(topology.activeTabId))
+    ) {
       return topology.activeTabId;
     }
     return topology.pages[0]?.tabId ?? null;
@@ -441,7 +619,14 @@ export const createWorkbenchBrowserViewManager = ({
       entry.layout = layout;
       updateRuntimeState(entry, {
         isActive: topology.activeTabId === entry.tabId,
-        isVisible
+        isVisible,
+        lifecycleState:
+          topology.activeTabId === entry.tabId
+            ? "foreground"
+            : isVisible
+              ? "visible"
+              : "hot-hidden",
+        isTombstoned: false
       });
 
       if (!isVisible) {
@@ -450,6 +635,9 @@ export const createWorkbenchBrowserViewManager = ({
           entry.attached = false;
         }
         entry.view.setVisible(false);
+        scheduleTombstone(entry);
+      } else {
+        cancelTombstoneTimer(entry.tabId);
       }
     }
 
@@ -484,6 +672,7 @@ export const createWorkbenchBrowserViewManager = ({
     if (entry.isDestroyed) {
       return;
     }
+    cancelTombstoneTimer(entry.tabId);
     entry.isDestroyed = true;
     void debuggerSessions.get(entry.tabId)?.dispose().catch(() => undefined);
     debuggerSessions.delete(entry.tabId);
@@ -499,6 +688,12 @@ export const createWorkbenchBrowserViewManager = ({
       entry.webContents.close({ waitForBeforeUnload: false });
     }
     if (emitClosedEvent) {
+      tombstones.delete(entry.tabId);
+      try {
+        resourceRuntime?.remove(`browser:${entry.tabId}`);
+      } catch (error) {
+        console.warn(`[lyra-resources] browser resource remove failed ${String(error)}`);
+      }
       publishEvent({
         kind: "page-closed",
         tabId: entry.tabId
@@ -530,7 +725,10 @@ export const createWorkbenchBrowserViewManager = ({
     });
   };
 
-  const createEntry = (spec: WorkbenchBrowserPageSpec): BrowserPageEntry => {
+  const createEntry = (
+    spec: WorkbenchBrowserPageSpec,
+    restoredRuntime?: WorkbenchBrowserPageRuntimeState
+  ): BrowserPageEntry => {
     const view = new WebContentsView({
       webPreferences: {
         contextIsolation: true,
@@ -549,7 +747,13 @@ export const createWorkbenchBrowserViewManager = ({
       attached: false,
       isDestroyed: false,
       layout: null,
-      runtime: toInitialRuntimeState(spec),
+      runtime: {
+        ...(restoredRuntime ?? toInitialRuntimeState(spec)),
+        lifecycleState: spec.isActive ? "restoring" : "hot-hidden",
+        isTombstoned: false,
+        ...(restoredRuntime === undefined ? {} : { restoreReason: "activated" }),
+        updatedAt: Date.now()
+      },
       disposeListeners: () => {
         webContents.removeAllListeners("page-title-updated");
         webContents.removeAllListeners("page-favicon-updated");
@@ -658,16 +862,20 @@ export const createWorkbenchBrowserViewManager = ({
       kind: "page-runtime-state",
       page: entry.runtime
     });
+    syncEntryResource(entry);
     return entry;
   };
 
-  const ensureEntry = (spec: WorkbenchBrowserPageSpec): BrowserPageEntry => {
+  const ensureEntry = (spec: WorkbenchBrowserPageSpec): BrowserPageEntry | null => {
     const existing = entries.get(spec.tabId);
     if (existing !== undefined) {
       existing.titleHint = spec.titleHint ?? existing.titleHint;
       existing.requestedAddress = spec.address;
       updateRuntimeState(existing, {
         isActive: spec.isActive,
+        coreKey: resolveBrowserCoreKey(spec.address),
+        stateKey: `web-state:${spec.tabId}`,
+        isTombstoned: false,
         title:
           existing.runtime.title.length > 0
             ? existing.runtime.title
@@ -675,7 +883,33 @@ export const createWorkbenchBrowserViewManager = ({
       });
       return existing;
     }
-    const entry = createEntry(spec);
+    const tombstone = tombstones.get(spec.tabId);
+    if (tombstone !== undefined && canMaterializePage(spec) === false) {
+      const runtime: WorkbenchBrowserPageRuntimeState = {
+        ...tombstone.runtime,
+        address: spec.address,
+        title: tombstone.runtime.title.length > 0 ? tombstone.runtime.title : spec.titleHint ?? spec.address,
+        coreKey: resolveBrowserCoreKey(spec.address),
+        stateKey: `web-state:${spec.tabId}`,
+        isActive: spec.isActive,
+        isVisible: false,
+        lifecycleState: "tombstoned",
+        isTombstoned: true,
+        updatedAt: Date.now()
+      };
+      tombstone.requestedAddress = spec.address;
+      tombstone.titleHint = spec.titleHint ?? tombstone.titleHint;
+      tombstones.set(spec.tabId, {
+        ...tombstone,
+        runtime
+      });
+      publishRuntimeState(tombstones.get(spec.tabId)!.runtime);
+      syncBrowserResource(tombstones.get(spec.tabId)!.runtime);
+      return null;
+    }
+    const restoredRuntime = tombstone?.runtime;
+    tombstones.delete(spec.tabId);
+    const entry = createEntry(spec, restoredRuntime);
     entries.set(spec.tabId, entry);
     return entry;
   };
@@ -693,9 +927,27 @@ export const createWorkbenchBrowserViewManager = ({
       destroyEntry(entry, true);
       entries.delete(tabId);
     }
+    for (const tabId of tombstones.keys()) {
+      if (nextTabIds.has(tabId)) {
+        continue;
+      }
+      tombstones.delete(tabId);
+      try {
+        resourceRuntime?.remove(`browser:${tabId}`);
+      } catch (error) {
+        console.warn(`[lyra-resources] browser tombstone remove failed ${String(error)}`);
+      }
+      publishEvent({
+        kind: "page-closed",
+        tabId
+      });
+    }
 
     for (const page of nextTopology.pages) {
       const entry = ensureEntry(page);
+      if (entry === null) {
+        continue;
+      }
       if (entry.requestedAddress !== page.address) {
         entry.requestedAddress = page.address;
       }
@@ -975,10 +1227,15 @@ export const createWorkbenchBrowserViewManager = ({
       }
       debuggerSessions.clear();
       webThemeInjector.dispose();
+      for (const timer of tombstoneTimers.values()) {
+        clearTimeout(timer);
+      }
+      tombstoneTimers.clear();
       for (const entry of entries.values()) {
         destroyEntry(entry, false);
       }
       entries.clear();
+      tombstones.clear();
       const window = getWindow();
       if (window !== null && window.isDestroyed() === false && overlayAttached) {
         window.contentView.removeChildView(overlayView);
@@ -1066,7 +1323,7 @@ export const createWorkbenchBrowserViewManager = ({
       if (targetTabId === null) {
         return null;
       }
-      return entries.get(targetTabId)?.runtime ?? null;
+      return entries.get(targetTabId)?.runtime ?? tombstones.get(targetTabId)?.runtime ?? null;
     },
     setElementPickerMode: async (request) => {
       const tabId = normalizeString(request?.tabId);

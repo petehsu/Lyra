@@ -84,6 +84,10 @@ import {
   type SearchLocalStreamStartResponse,
   type SearchRebuildIndexRequest,
   type SearchRebuildIndexResponse,
+  type LyraResourceEvent,
+  type LyraResourceLifecycleRequest,
+  type LyraResourceRegisterRequest,
+  type LyraResourceSnapshot,
   type UiuxInstallFromGitRequest,
   type UiuxInstallFromLocalRequest,
   type UiuxInstallFromNpmRequest,
@@ -151,6 +155,8 @@ const workbenchBrowserEventListeners = new Set<(event: WorkbenchBrowserEvent) =>
 let workbenchBrowserEventBridgeReady = false;
 const browserUseRuntimeStatusListeners = new Set<(status: BrowserUseRuntimeStatus) => void>();
 let browserUseRuntimeStatusBridgeReady = false;
+const resourceEventListeners = new Set<(event: LyraResourceEvent) => void>();
+let resourceEventBridgeReady = false;
 const lyraEventListeners = new Set<(event: LyraRuntimeEvent) => void>();
 let lyraEventBridgeReady = false;
 const directoryPatchListeners = new Set<(patch: FileManagerDirectoryPatch) => void>();
@@ -243,6 +249,25 @@ const ensureBrowserUseRuntimeStatusBridge = (): void => {
         return;
       }
       for (const listener of browserUseRuntimeStatusListeners) {
+        listener(payload);
+      }
+    }
+  );
+};
+
+const ensureResourceEventBridge = (): void => {
+  if (resourceEventBridgeReady) {
+    return;
+  }
+  resourceEventBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.resourcesEvent,
+    (_event: Electron.IpcRendererEvent, payload: LyraResourceEvent): void => {
+      if (payload === null || typeof payload !== "object" || typeof payload.kind !== "string") {
+        return;
+      }
+      for (const listener of resourceEventListeners) {
         listener(payload);
       }
     }
@@ -624,6 +649,31 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       workbenchBrowserEventListeners.add(listener);
       return () => {
         workbenchBrowserEventListeners.delete(listener);
+      };
+    }
+  },
+  resources: {
+    readSnapshot: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.resourcesReadSnapshot
+      ) as Promise<LyraResourceSnapshot>,
+    registerOrUpdate: (request: LyraResourceRegisterRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.resourcesRegisterOrUpdate,
+        request
+      ) as Promise<void>,
+    remove: (resourceId: string) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.resourcesRemove, resourceId) as Promise<void>,
+    requestLifecycle: (request: LyraResourceLifecycleRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.resourcesRequestLifecycle,
+        request
+      ) as Promise<void>,
+    onEvent: (listener: (event: LyraResourceEvent) => void) => {
+      ensureResourceEventBridge();
+      resourceEventListeners.add(listener);
+      return () => {
+        resourceEventListeners.delete(listener);
       };
     }
   },

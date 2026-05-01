@@ -103,25 +103,29 @@ describe("ai panel surface model", () => {
         value: `profile-openai${MODEL_OPTION_DELIMITER}gpt-5`,
         label: "gpt-5 · OpenAI",
         model: "gpt-5",
-        modelProvider: "lp-openai"
+        modelProvider: "lp-openai",
+        profileId: "profile-openai"
       },
       {
         value: `profile-openai${MODEL_OPTION_DELIMITER}gpt-5-mini`,
         label: "gpt-5-mini · OpenAI",
         model: "gpt-5-mini",
-        modelProvider: "lp-openai"
+        modelProvider: "lp-openai",
+        profileId: "profile-openai"
       },
       {
         value: `profile-openai${MODEL_OPTION_DELIMITER}gpt-5.1`,
         label: "gpt-5.1 · OpenAI",
         model: "gpt-5.1",
-        modelProvider: "lp-openai"
+        modelProvider: "lp-openai",
+        profileId: "profile-openai"
       },
       {
         value: `profile-anthropic${MODEL_OPTION_DELIMITER}claude-sonnet`,
         label: "claude-sonnet · Anthropic",
         model: "claude-sonnet",
-        modelProvider: "lp-anthropic"
+        modelProvider: "lp-anthropic",
+        profileId: "profile-anthropic"
       }
     ]);
   });

@@ -106,6 +106,7 @@ export type AiPanelSurfaceProps = {
   readonly defaultProfileName: string | null;
   readonly defaultModelNames: readonly string[];
   readonly configuredProfiles?: readonly AiProviderProfile[];
+  readonly onDefaultProfileSelect?: (profileId: string) => void | Promise<void>;
   readonly fileMentionFallbackRoots?: readonly string[];
   readonly workbenchTabMentions?: readonly AgentComposerWorkbenchTabMention[];
   readonly profileLabel: string;

@@ -81,6 +81,11 @@ export type WorkbenchBrowserPageRuntimeState = {
   readonly address: string;
   readonly title: string;
   readonly faviconUrl?: string;
+  readonly lifecycleState?: import("./resource-runtime").LyraResourceLifecycleState;
+  readonly coreKey?: string;
+  readonly stateKey?: string;
+  readonly isTombstoned?: boolean;
+  readonly restoreReason?: string;
   readonly isActive: boolean;
   readonly isVisible: boolean;
   readonly isLoading: boolean;

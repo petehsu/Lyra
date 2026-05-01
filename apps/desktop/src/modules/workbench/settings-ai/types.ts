@@ -18,7 +18,6 @@ export type SettingsAiLabels = {
   readonly saveProfile: string;
   readonly deleteProfile: string;
   readonly cancel: string;
-  readonly setDefaultProfile: string;
   readonly clearApiKey: string;
   readonly testConnection: string;
   readonly discoverModels: string;
@@ -38,8 +37,6 @@ export type SettingsAiLabels = {
   readonly modelsHelp: string;
   readonly headersLabel: string;
   readonly headersPlaceholder: string;
-  readonly defaultBadge: string;
-  readonly defaultProfileLabel: string;
   readonly statusIdle: string;
   readonly statusSaved: string;
   readonly statusDeleted: string;

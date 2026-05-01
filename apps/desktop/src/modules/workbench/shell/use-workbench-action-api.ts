@@ -5,6 +5,7 @@ import type { FileManagerModel } from "../file-manager";
 import type { I18nKey, WorkbenchLocale } from "../i18n";
 import type { WorkbenchResolvedThemeId } from "../theme";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
+import { createResourceMonitorAppRequest } from "../resource-monitor";
 import { resolveDocsEntryUrl } from "./service";
 import type { PanelLayoutModel } from "./use-panel-layout";
 
@@ -12,6 +13,7 @@ export type WorkbenchActionApi = {
   readonly openNewTab: () => void;
   readonly openSettings: () => void;
   readonly openFileManager: () => void;
+  readonly openActivityMonitor: () => void;
   readonly openDocs: () => void;
   readonly toggleAiPanel: () => void;
   readonly toggleTerminalPanel: () => void;
@@ -36,6 +38,7 @@ export type WorkbenchChromeLabels = {
   readonly moveTerminalToBottom: string;
   readonly openSettings: string;
   readonly openFiles: string;
+  readonly openActivityMonitor: string;
   readonly openDocs: string;
   readonly minimizeWindow: string;
   readonly toggleMaximizeWindow: string;
@@ -49,6 +52,7 @@ type UseWorkbenchActionApiParams = {
   readonly panelLayoutModel: PanelLayoutModel;
   readonly docsEntryAddress: string;
   readonly docsTabTitle: string;
+  readonly activityMonitorTitle: string;
   readonly locale: WorkbenchLocale;
   readonly resolvedThemeId: WorkbenchResolvedThemeId;
 };
@@ -60,6 +64,7 @@ export const useWorkbenchActionApi = ({
   panelLayoutModel,
   docsEntryAddress,
   docsTabTitle,
+  activityMonitorTitle,
   locale,
   resolvedThemeId
 }: UseWorkbenchActionApiParams): WorkbenchActionApi =>
@@ -71,6 +76,9 @@ export const useWorkbenchActionApi = ({
         const nextApp = fileManagerModel.createInstance();
         tabsModel.openAppTab(nextApp);
         void fileManagerModel.openHome(nextApp.appInstanceId);
+      },
+      openActivityMonitor: () => {
+        tabsModel.openAppTab(createResourceMonitorAppRequest(activityMonitorTitle));
       },
       openDocs: () => {
         tabsModel.openPageInNewTab(
@@ -98,6 +106,7 @@ export const useWorkbenchActionApi = ({
       desktopApi,
       docsEntryAddress,
       docsTabTitle,
+      activityMonitorTitle,
       fileManagerModel,
       locale,
       panelLayoutModel.toggleBottomPanel,
@@ -117,6 +126,7 @@ export const createWorkbenchChromeLabels = (
   moveTerminalToBottom: t("panel.moveTerminalToBottom"),
   openSettings: t("settings.open"),
   openFiles: t("files.open"),
+  openActivityMonitor: t("resources.openActivityMonitor"),
   openDocs: t("docs.open"),
   minimizeWindow: t("window.minimize"),
   toggleMaximizeWindow: t("window.toggleMaximize"),

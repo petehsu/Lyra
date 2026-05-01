@@ -70,6 +70,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       defaultProfileName: settingsAiModel.defaultProfileLabel,
       defaultModelNames: settingsAiModel.defaultModelNames,
       configuredProfiles: settingsAiModel.profiles,
+      onDefaultProfileSelect: settingsAiModel.setDefaultProfile,
       fileMentionFallbackRoots,
       workbenchTabMentions,
       profileLabel: t("ai.profileLabel"),
@@ -157,6 +158,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       settingsAiModel.defaultProviderId,
       settingsAiModel.defaultProfileLabel,
       settingsAiModel.profiles,
+      settingsAiModel.setDefaultProfile,
       t
     ]
   );

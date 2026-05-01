@@ -36,5 +36,14 @@ export type AiPlanReviewModel = {
     instanceId: string,
     annotation: Omit<AiPlanReviewAnnotation, "id" | "createdAt">
   ) => Promise<void>;
+  readonly updateAnnotation: (
+    instanceId: string,
+    annotationId: string,
+    note: string
+  ) => Promise<void>;
+  readonly deleteAnnotation: (
+    instanceId: string,
+    annotationId: string
+  ) => Promise<void>;
   readonly submitAnnotations: (instanceId: string) => Promise<void>;
 };

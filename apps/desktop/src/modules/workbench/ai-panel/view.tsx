@@ -25,6 +25,7 @@ export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
     defaultProviderId: surfaceProps.defaultProviderId,
     defaultModelNames: surfaceProps.defaultModelNames,
     configuredProfiles,
+    onDefaultProfileSelect: surfaceProps.onDefaultProfileSelect,
     runtimeQueuedLabel: surfaceProps.runtimeQueuedLabel,
     runtimeStartedLabel: surfaceProps.runtimeStartedLabel,
     runtimeFailedTurnLabel: surfaceProps.runtimeFailedTurnLabel,

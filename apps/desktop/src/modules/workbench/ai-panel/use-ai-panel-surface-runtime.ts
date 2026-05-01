@@ -88,6 +88,9 @@ const readString = (value: unknown): string | null =>
 const readNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
+const firstNonEmptyLine = (text: string): string | null =>
+  text.split(/\r?\n/u).map((line) => line.trim()).find((line) => line.length > 0) ?? null;
+
 const isAbsolutePath = (path: string): boolean =>
   path.startsWith("/") || path.startsWith("\\\\") || /^[a-z]:[\\/]/iu.test(path);
 
@@ -282,6 +285,7 @@ type UseAiPanelSurfaceRuntimeInput = {
   readonly onWriteStreamEvent?: AiPanelSurfaceProps["onWriteStreamEvent"] | undefined;
   readonly onRequestProjectBind?: AiPanelSurfaceProps["onRequestProjectBind"] | undefined;
   readonly onOpenPlanApprovalWorkspace?: AiPanelSurfaceProps["onOpenPlanApprovalWorkspace"] | undefined;
+  readonly onDefaultProfileSelect?: AiPanelSurfaceProps["onDefaultProfileSelect"] | undefined;
 };
 
 export type AiPanelSurfaceRuntimeActions = {
@@ -292,7 +296,7 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly setActiveInteractionId: LyraThreadRuntimeActions["setActiveInteractionId"];
   readonly respondToCommandApproval: LyraThreadRuntimeActions["respondToCommandApproval"];
   readonly respondToPlanQuestion: LyraThreadRuntimeActions["respondToPlanQuestion"];
-  readonly setSelectedModelOptionValue: Dispatch<SetStateAction<string>>;
+  readonly selectModelOptionValue: (value: string) => void;
   readonly setSelectedReasoningEffort: Dispatch<SetStateAction<RuntimeThreadOptions["effort"] | null>>;
   readonly setSelectedVerbosity: Dispatch<SetStateAction<RuntimeThreadOptions["verbosity"] | null>>;
   readonly setPermissionMode: Dispatch<SetStateAction<AgentPermissionMode>>;
@@ -393,7 +397,8 @@ export const useAiPanelSurfaceRuntime = ({
   onOpenFilePath,
   onWriteStreamEvent,
   onRequestProjectBind,
-  onOpenPlanApprovalWorkspace
+  onOpenPlanApprovalWorkspace,
+  onDefaultProfileSelect
 }: UseAiPanelSurfaceRuntimeInput): AiPanelSurfaceRuntime => {
   const lyraApi = desktopApi?.lyra;
   const [selectedModelOptionValue, setSelectedModelOptionValue] = useState("");
@@ -613,6 +618,28 @@ export const useAiPanelSurfaceRuntime = ({
     () => resolveSelectedRuntimeModelOption(modelOptions, selectedModelOptionValue),
     [modelOptions, selectedModelOptionValue]
   );
+
+  const persistDefaultProfileSelection = useCallback(async (profileId: string): Promise<void> => {
+    if (onDefaultProfileSelect !== undefined) {
+      await onDefaultProfileSelect(profileId);
+      return;
+    }
+    if (lyraApi === undefined) {
+      return;
+    }
+    await lyraApi.request(createRequestPayload("lyra/config/profiles/setDefault", { id: profileId }));
+  }, [lyraApi, onDefaultProfileSelect]);
+
+  const selectModelOptionValue = useCallback((value: string): void => {
+    setSelectedModelOptionValue(value);
+    const profileId = modelOptions.find((option) => option.value === value)?.profileId;
+    if (profileId === undefined || profileId === defaultProfileId) {
+      return;
+    }
+    void persistDefaultProfileSelection(profileId).catch((error: unknown) => {
+      console.warn("[lyra-ai] failed to persist default profile selection", error);
+    });
+  }, [defaultProfileId, modelOptions, persistDefaultProfileSelection]);
 
   const modelMetadata = selectedModelOption?.runtimeMetadata;
   const supportedReasoningLevels = useMemo<readonly AgentComposerReasoningEffort[]>(
@@ -1109,6 +1136,41 @@ export const useAiPanelSurfaceRuntime = ({
     openPlanApprovalInWorkspace(request);
   }, [openPlanApprovalInWorkspace, state.activeInteractionPanel, state.followEnabled]);
 
+  useEffect(() => {
+    if (
+      state.followEnabled !== true
+      || openPlanApprovalInWorkspace === undefined
+      || state.activeThreadId === null
+      || state.latestPlanTurnId === null
+    ) {
+      return;
+    }
+    const plan = state.planByTurn[state.latestPlanTurnId];
+    if (plan === undefined || plan.finalText !== null) {
+      return;
+    }
+    const draft = plan.draftText.trim();
+    if (draft.length === 0) {
+      return;
+    }
+    openPlanApprovalInWorkspace({
+      id: `plan:${state.latestPlanTurnId}`,
+      sessionId: state.activeThreadId,
+      turnId: state.latestPlanTurnId,
+      version: 0,
+      status: "draft",
+      summary: firstNonEmptyLine(draft) ?? t("ai.proposedPlanSummaryFallback"),
+      proposedMarkdown: draft,
+    });
+  }, [
+    openPlanApprovalInWorkspace,
+    state.activeThreadId,
+    state.followEnabled,
+    state.latestPlanTurnId,
+    state.planByTurn,
+    t,
+  ]);
+
   const handleForkTurn = useCallback(async (turnId: string): Promise<void> => {
     const activeThread = state.activeThread;
     if (activeThread === null) {
@@ -1243,7 +1305,7 @@ export const useAiPanelSurfaceRuntime = ({
       setActiveInteractionId,
       respondToCommandApproval,
       respondToPlanQuestion,
-      setSelectedModelOptionValue,
+      selectModelOptionValue,
       setSelectedReasoningEffort,
       setSelectedVerbosity,
       setPermissionMode,

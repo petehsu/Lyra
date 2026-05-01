@@ -20,6 +20,7 @@ import {
   type WorkbenchNotificationModel
 } from "../notifications";
 import type { PluginsCenterLabels, PluginsCenterModel } from "../plugins-center";
+import type { ResourceMonitorSurfaceLabels } from "../resource-monitor";
 import type { WorkbenchSplitThreePaneLayout } from "../preferences";
 import type { SkillsCenterLabels, SkillsCenterModel } from "../skills-center";
 import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/types";
@@ -224,6 +225,9 @@ export type WorkspaceSurfaceRouterProps = {
   readonly planReview: {
     readonly model: AiPlanReviewModel;
   };
+  readonly resourceMonitor: {
+    readonly labels: ResourceMonitorSurfaceLabels;
+  };
   readonly notifications: {
     readonly model: WorkbenchNotificationModel;
     readonly labels: NotificationCenterLabels;
@@ -267,6 +271,10 @@ const renderSurfaceModel = (
     }
     case "fileEditor": {
       const Adapter = surfaceAdapters.fileEditor;
+      return <Adapter {...model.props} />;
+    }
+    case "resourceMonitor": {
+      const Adapter = surfaceAdapters.resourceMonitor;
       return <Adapter {...model.props} />;
     }
     case "notificationCenter": {

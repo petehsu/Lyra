@@ -39,6 +39,8 @@ const resolveNotificationAppIconKey = (
       return "file-manager-home";
     case "file-editor":
       return "file-editor-code";
+    case "resource-monitor":
+      return "resource-monitor-default";
     case "ai-history":
       return "ai-panel-history";
     case "ai-mcp":
