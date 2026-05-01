@@ -498,6 +498,7 @@ export const EN_US_DICTIONARY: WorkbenchDictionary = {
   "files.viewList": "List View",
   "files.viewLarge": "Large View",
   "files.chooserBindProjectLabel": "Bind the current directory to this AI session",
+  "files.chooserSelectDirectoryPlaceholder": "Open a directory to bind a project",
   "editor.loading": "Loading file",
   "editor.unsupported": "This file cannot be edited in Lyra yet.",
   "editor.unavailable": "File editor backend unavailable.",

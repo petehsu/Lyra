@@ -116,6 +116,18 @@ const changed = (
 const findActiveTab = (state: WorkspaceTabsRuntimeState): WorkspaceTab | undefined =>
   state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0];
 
+const insertTabAfterActive = (
+  state: WorkspaceTabsRuntimeState,
+  tab: WorkspaceTab
+): readonly WorkspaceTab[] => {
+  const activeIndex = state.tabs.findIndex((candidate) => candidate.id === state.activeTabId);
+  const targetIndex = activeIndex < 0 ? state.tabs.length : activeIndex + 1;
+  return keepSplitGroupContiguous(
+    insertTabAt(state.tabs, tab, targetIndex),
+    state.splitGroupTabIds
+  );
+};
+
 const closeTabById = (
   state: WorkspaceTabsRuntimeState,
   tabId: string,
@@ -133,7 +145,7 @@ const closeTabById = (
   const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
   const nextActiveTabId =
     tabId === state.activeTabId
-      ? (nextTabs[removeIndex > 0 ? removeIndex - 1 : 0]?.id ?? nextTabs[0]!.id)
+      ? (nextTabs[removeIndex]?.id ?? nextTabs[removeIndex - 1]?.id ?? nextTabs[0]!.id)
       : state.activeTabId;
 
   const split = resolveSplitState(
@@ -275,7 +287,7 @@ export const reduceWorkspaceTabsState = (
       return changed(
         {
           ...state,
-          tabs: [...state.tabs, action.tab],
+          tabs: insertTabAfterActive(state, action.tab),
           activeTabId: action.tab.id
         },
         { consumedSerial: true }
@@ -296,7 +308,7 @@ export const reduceWorkspaceTabsState = (
       return changed(
         {
           ...state,
-          tabs: [...state.tabs, action.tab],
+          tabs: insertTabAfterActive(state, action.tab),
           activeTabId: action.tab.id
         },
         { consumedSerial: true }
@@ -330,7 +342,7 @@ export const reduceWorkspaceTabsState = (
           ...state,
           tabs: keepSplitGroupContiguous(
             action.targetIndex === undefined
-              ? [...state.tabs, action.tab]
+              ? insertTabAfterActive(state, action.tab)
               : insertTabAt(state.tabs, action.tab, action.targetIndex),
             state.splitGroupTabIds
           ),
@@ -360,7 +372,7 @@ export const reduceWorkspaceTabsState = (
       return changed(
         {
           ...state,
-          tabs: [...state.tabs, action.tab],
+          tabs: insertTabAfterActive(state, action.tab),
           activeTabId: action.tab.id
         },
         { consumedSerial: true }
@@ -440,7 +452,7 @@ export const reduceWorkspaceTabsState = (
       return changed(
         {
           ...state,
-          tabs: [...state.tabs, action.tab],
+          tabs: insertTabAfterActive(state, action.tab),
           activeTabId: action.tab.id
         },
         {
@@ -592,7 +604,7 @@ export const reduceWorkspaceTabsState = (
       return changed(
         {
           ...state,
-          tabs: [...state.tabs, action.tab],
+          tabs: insertTabAfterActive(state, action.tab),
           activeTabId: action.tab.id
         },
         {

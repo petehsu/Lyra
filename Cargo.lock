@@ -5214,10 +5214,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyra-files-core"
+version = "0.1.0"
+dependencies = [
+ "lru 0.16.4",
+ "notify",
+ "serde",
+]
+
+[[package]]
 name = "lyra-files-napi"
 version = "0.1.0"
 dependencies = [
  "dirs 6.0.0",
+ "lyra-files-core",
  "napi",
  "napi-build",
  "napi-derive",

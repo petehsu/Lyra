@@ -561,6 +561,17 @@ const normalizeTabState = (state: LyraThreadTabState): LyraThreadTabState => {
   };
 };
 
+const activeTabFromTabState = (state: LyraThreadTabState): LyraThreadTab | null =>
+  state.tabs.find((tab) => tab.tabId === state.activeTabId) ?? state.tabs[0] ?? null;
+
+const activeThreadIdFromTabState = (state: LyraThreadTabState): string | null =>
+  activeTabFromTabState(state)?.threadId ?? null;
+
+const activeRuntimeKeyFromTabState = (state: LyraThreadTabState): string | null => {
+  const tab = activeTabFromTabState(state);
+  return tab === null ? null : tabRuntimeKey(tab);
+};
+
 const closeTabState = (state: LyraThreadTabState, tabId: string): LyraThreadTabState => {
   const index = state.tabs.findIndex((tab) => tab.tabId === tabId);
   if (index < 0) {
@@ -570,11 +581,24 @@ const closeTabState = (state: LyraThreadTabState, tabId: string): LyraThreadTabS
   if (state.activeTabId !== tabId) {
     return normalizeTabState({ ...state, tabs: nextTabs });
   }
-  const nextActiveTab = nextTabs[Math.max(0, index - 1)] ?? nextTabs[0] ?? null;
+  const nextActiveTab = nextTabs[index] ?? nextTabs[index - 1] ?? nextTabs[0] ?? null;
   return normalizeTabState({
     tabs: nextTabs,
     activeTabId: nextActiveTab?.tabId ?? null,
   });
+};
+
+const insertThreadTabAfterActive = (
+  state: LyraThreadTabState,
+  tab: LyraThreadTab
+): readonly LyraThreadTab[] => {
+  const activeIndex = state.tabs.findIndex((candidate) => candidate.tabId === state.activeTabId);
+  const insertIndex = activeIndex < 0 ? state.tabs.length : activeIndex + 1;
+  return [
+    ...state.tabs.slice(0, insertIndex),
+    tab,
+    ...state.tabs.slice(insertIndex),
+  ];
 };
 
 const reorderTabState = (
@@ -1322,6 +1346,9 @@ export const useLyraThreadRuntime = ({
   const lyraApi = desktopApi?.lyra ?? null;
   const [threadById, setThreadById] = useState<Readonly<Record<string, LyraThread>>>({});
   const [tabState, setTabState] = useState<LyraThreadTabState>(readInitialTabState);
+  const restoredThreadIdsRef = useRef<Set<string>>(
+    new Set(tabState.tabs.map((tab) => tab.threadId).filter((threadId): threadId is string => threadId !== null))
+  );
   const [planModeEnabled, setPlanModeEnabled] = useState(false);
   const {
     runtimeByKey,
@@ -1338,12 +1365,13 @@ export const useLyraThreadRuntime = ({
   const [serverRequestIds, setServerRequestIds] = useState<Readonly<Record<string, string | number>>>({});
   const [activeInteractionId, setActiveInteractionId] = useState<string | null>(null);
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
+  const [hasLoadedThreadList, setHasLoadedThreadList] = useState(false);
   const [isLoadingThread, setIsLoadingThread] = useState(false);
   const [isInteractionSubmitting, setIsInteractionSubmitting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const activeTabIdRef = useRef<string | null>(tabState.activeTabId);
-  const activeThreadIdRef = useRef<string | null>(null);
-  const activeRuntimeKeyRef = useRef<string | null>(null);
+  const activeThreadIdRef = useRef<string | null>(activeThreadIdFromTabState(tabState));
+  const activeRuntimeKeyRef = useRef<string | null>(activeRuntimeKeyFromTabState(tabState));
   const activeThreadRef = useRef<LyraThread | null>(null);
   const threadByIdRef = useRef<Readonly<Record<string, LyraThread>>>({});
   const streamingTurnIdRef = useRef<string | null>(null);
@@ -1418,7 +1446,13 @@ export const useLyraThreadRuntime = ({
   }, [tabState]);
 
   const patchTabState = useCallback((updater: (current: LyraThreadTabState) => LyraThreadTabState): void => {
-    setTabState((current) => normalizeTabState(updater(current)));
+    setTabState((current) => {
+      const next = normalizeTabState(updater(current));
+      activeTabIdRef.current = next.activeTabId;
+      activeThreadIdRef.current = activeThreadIdFromTabState(next);
+      activeRuntimeKeyRef.current = activeRuntimeKeyFromTabState(next);
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -1716,7 +1750,7 @@ export const useLyraThreadRuntime = ({
     const tab = createDraftThreadTab();
     patchTabState((current) => ({
       activeTabId: tab.tabId,
-      tabs: [...current.tabs, tab],
+      tabs: insertThreadTabAfterActive(current, tab),
     }));
     return tab.tabId;
   }, [patchTabState]);
@@ -1757,7 +1791,7 @@ export const useLyraThreadRuntime = ({
       );
       return {
         activeTabId: tab.tabId,
-        tabs: [...current.tabs, tab],
+        tabs: insertThreadTabAfterActive(current, tab),
       };
     });
     void Promise.resolve().then(() => loadThreadRef.current?.(normalized));
@@ -1768,14 +1802,15 @@ export const useLyraThreadRuntime = ({
   }, [patchTabState]);
 
   const closeThreadTab = useCallback((tabId: string): void => {
-    setTabState((current) => closeTabState(current, tabId));
-  }, []);
+    patchTabState((current) => closeTabState(current, tabId));
+  }, [patchTabState]);
 
   const reorderThreadTab = useCallback((tabId: string, targetIndex: number): void => {
     patchTabState((current) => reorderTabState(current, tabId, targetIndex));
   }, [patchTabState]);
 
   const forgetThread = useCallback((threadId: string): void => {
+    restoredThreadIdsRef.current.delete(threadId);
     threadReadRequestedForIdRef.current.delete(threadId);
     setThreadById((current) => {
       const next = { ...current };
@@ -1793,6 +1828,7 @@ export const useLyraThreadRuntime = ({
   const loadThreads = useCallback(async (): Promise<void> => {
     if (lyraApi === null) {
       setThreadById({});
+      setHasLoadedThreadList(false);
       return;
     }
     setIsLoadingThreads(true);
@@ -1814,6 +1850,7 @@ export const useLyraThreadRuntime = ({
         }
         return next;
       });
+      setHasLoadedThreadList(true);
       setRuntimeError(null);
     } catch (error) {
       setRuntimeError(error instanceof Error ? error.message : String(error));
@@ -1840,6 +1877,7 @@ export const useLyraThreadRuntime = ({
       const viewModel = readThreadAiPanelViewModel(response.viewModel);
       const nextThread = rawThread === null ? null : attachThreadAiPanelViewModel(rawThread, viewModel);
       if (nextThread !== null) {
+        restoredThreadIdsRef.current.delete(nextThread.id);
         threadReadRequestedForIdRef.current.add(nextThread.id);
         upsertThread(nextThread);
         const hydratedDetail = lyraThreadToAgentDetail(nextThread);
@@ -1868,6 +1906,7 @@ export const useLyraThreadRuntime = ({
       setRuntimeError(null);
     } catch (error) {
       if (isThreadUnavailableError(error, threadId)) {
+        restoredThreadIdsRef.current.delete(threadId);
         forgetThread(threadId);
         void loadThreads();
         return;
@@ -1878,6 +1917,43 @@ export const useLyraThreadRuntime = ({
       setIsLoadingThread(false);
     }
   }, [forgetThread, loadThreads, lyraApi, patchRuntimeBucket, upsertThread]);
+
+  const resumeThread = useCallback(async (
+    threadId: string,
+    options: RuntimeThreadOptions = {}
+  ): Promise<LyraThread> => {
+    if (lyraApi === null) {
+      throw new Error("Lyra runtime unavailable");
+    }
+    const normalizedThreadId = threadId.trim();
+    if (normalizedThreadId.length === 0) {
+      throw new Error("threadId is required");
+    }
+    const response = await lyraApi.request<{ thread?: unknown }>(createRequestPayload("thread/resume", {
+      threadId: normalizedThreadId,
+      ...(options.model !== undefined && options.model.trim().length > 0 ? { model: options.model.trim() } : {}),
+      ...(options.modelProvider === null || options.modelProvider === undefined || options.modelProvider.trim().length === 0
+        ? {}
+        : { modelProvider: options.modelProvider.trim() }),
+      ...(options.cwd === null || options.cwd === undefined || options.cwd.trim().length === 0
+        ? {}
+        : { cwd: options.cwd.trim() }),
+      ...threadPermissionRequestPart(options),
+      persistExtendedHistory: true,
+    }));
+    const thread = readLyraThread(response.thread);
+    if (thread === null) {
+      throw new Error("thread/resume did not return a thread");
+    }
+    upsertThread(thread);
+    patchRuntimeBucket(thread.id, (current) => ({
+      ...current,
+      optimisticUserMessages: dropPersistedOptimisticMessages(current.optimisticUserMessages, thread),
+      planByTurn: mergePlanStates(current.planByTurn, extractPlanStatesFromThread(thread)),
+    }));
+    setRuntimeError(null);
+    return thread;
+  }, [lyraApi, patchRuntimeBucket, upsertThread]);
 
   useEffect(() => {
     loadThreadRef.current = loadThread;
@@ -2049,29 +2125,29 @@ export const useLyraThreadRuntime = ({
       await submitTurn(threadId, optimisticId);
     } catch (error) {
       if (initialThreadId !== null && isThreadUnavailableError(error, initialThreadId)) {
-        forgetThread(initialThreadId);
-        const retryTabId = createDraftTab();
-        const retryCreatedAt = Date.now();
-        const retryOptimisticId = `optimistic:${retryCreatedAt.toString()}:retry`;
-        addOptimisticMessage(retryTabId, retryOptimisticId, retryCreatedAt, null);
         try {
-          const retryThreadId = await startThread(options, false, retryTabId);
-          markOptimisticThread(retryThreadId, retryOptimisticId);
-          await submitTurn(retryThreadId, retryOptimisticId);
+          await resumeThread(initialThreadId, options);
+          markOptimisticThread(initialThreadId, optimisticId);
+          await submitTurn(initialThreadId, optimisticId);
           setRuntimeError(null);
           return;
-        } catch (retryError) {
-          removeOptimisticMessage(activeThreadIdRef.current ?? retryTabId, retryOptimisticId);
-          setRuntimeError(errorMessageOf(retryError));
-          throw retryError;
+        } catch (resumeError) {
+          removeOptimisticMessage(initialRuntimeKey, optimisticId);
+          if (isThreadUnavailableError(resumeError, initialThreadId)) {
+            forgetThread(initialThreadId);
+          }
+          setRuntimeError(errorMessageOf(resumeError));
+          throw resumeError;
         }
       }
-      const fallbackKey = activeThreadIdRef.current ?? tabId;
-      removeOptimisticMessage(fallbackKey, optimisticId);
+      removeOptimisticMessage(initialRuntimeKey, optimisticId);
+      if (initialThreadId !== null && isThreadUnavailableError(error, initialThreadId)) {
+        forgetThread(initialThreadId);
+      }
       setRuntimeError(errorMessageOf(error));
       throw error;
     }
-  }, [createDraftTab, forgetThread, lyraApi, patchRuntimeBucket, startThread]);
+  }, [createDraftTab, forgetThread, lyraApi, patchRuntimeBucket, resumeThread, startThread]);
 
   const steerTurn = useCallback(async (input: RuntimeTurnInput): Promise<void> => {
     if (lyraApi === null || activeThreadIdRef.current === null || streamingTurnIdRef.current === null) {
@@ -2161,7 +2237,7 @@ export const useLyraThreadRuntime = ({
       activeTabId: tab.tabId,
       tabs: current.tabs.some((entry) => entry.threadId === thread.id)
         ? current.tabs.map((entry) => entry.threadId === thread.id ? { ...entry, title: tab.title, updatedAt: tab.updatedAt } : entry)
-        : [...current.tabs, tab],
+        : insertThreadTabAfterActive(current, tab),
     }));
     resetRuntimeBucket(thread.id);
     patchRuntimeBucket(thread.id, (current) => ({
@@ -2561,6 +2637,14 @@ export const useLyraThreadRuntime = ({
     if (activeThreadId === null) {
       return;
     }
+    const isRestoredThread = restoredThreadIdsRef.current.has(activeThreadId);
+    if (isRestoredThread && !hasLoadedThreadList) {
+      return;
+    }
+    if (isRestoredThread && activeThread === null) {
+      forgetThread(activeThreadId);
+      return;
+    }
     const needsHydratedThread =
       activeThread === null
       || (
@@ -2571,7 +2655,7 @@ export const useLyraThreadRuntime = ({
       threadReadRequestedForIdRef.current.add(activeThreadId);
       void loadThread(activeThreadId);
     }
-  }, [activeThread, activeThreadId, loadThread]);
+  }, [activeThread, activeThreadId, forgetThread, hasLoadedThreadList, loadThread]);
 
   useEffect(() => {
     if (activeThreadId === null || latestPlanTurnId === null) {

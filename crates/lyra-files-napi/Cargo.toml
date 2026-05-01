@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 dirs = "6.0.0"
+lyra-files-core = { path = "../lyra-files-core" }
 napi = { version = "2.16.13", default-features = false, features = ["napi8"] }
 napi-derive = "2.16.13"
 serde = { version = "1.0.217", features = ["derive"] }

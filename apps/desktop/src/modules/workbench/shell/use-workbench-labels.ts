@@ -264,7 +264,8 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         contextEjectDevice: t("files.contextEjectDevice"),
         viewList: t("files.viewList"),
         viewLarge: t("files.viewLarge"),
-        chooserBindProjectLabel: t("files.chooserBindProjectLabel")
+        chooserBindProjectLabel: t("files.chooserBindProjectLabel"),
+        chooserSelectDirectoryPlaceholder: t("files.chooserSelectDirectoryPlaceholder")
       },
       fileEditor: {
         loading: t("editor.loading"),

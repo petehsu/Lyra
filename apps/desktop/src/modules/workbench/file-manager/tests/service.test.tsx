@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ContextMenuModel } from "../../context-menu";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import type {
+  FileManagerDirectoryPatch,
   FileManagerReadDirectoryResponse,
   FileManagerReadHomeResponse,
   FileManagerReadTrashResponse
@@ -59,7 +60,8 @@ const labels: FileManagerSurfaceLabels = {
   contextEjectDevice: "弹出设备",
   viewList: "列表视图",
   viewLarge: "大视图",
-  chooserBindProjectLabel: "绑定当前目录"
+  chooserBindProjectLabel: "绑定当前目录",
+  chooserSelectDirectoryPlaceholder: "先进入一个目录"
 };
 
 const homeResponse: FileManagerReadHomeResponse = {
@@ -752,6 +754,92 @@ describe("file manager model", () => {
       entries: directoryResponse.entries
     });
     expect(result.current.getState(appInstanceId)?.recentLocations).toHaveLength(1);
+  });
+
+  test("subscribes to directories and applies patch events", async () => {
+    const desktop = createDesktopApi();
+    let patchListener: ((patch: FileManagerDirectoryPatch) => void) | null = null;
+    const subscribeDirectory = vi.fn(async () => ({
+      subscriptionId: "sub-1",
+      snapshot: {
+        ...directoryResponse,
+        generation: 1
+      }
+    }));
+    const unsubscribeDirectory = vi.fn(async () => undefined);
+    Object.assign(desktop.api.files, {
+      subscribeDirectory,
+      unsubscribeDirectory,
+      onDirectoryPatch: (listener: (patch: FileManagerDirectoryPatch) => void) => {
+        patchListener = listener;
+        return () => {
+          patchListener = null;
+        };
+      }
+    });
+
+    const { result } = renderHook(() =>
+      useFileManagerModel({
+        desktopApi: desktop.api,
+        contextMenuModel: createContextMenuModel(),
+        labels,
+        onMetaChange: vi.fn()
+      })
+    );
+
+    let appInstanceId = "";
+    act(() => {
+      appInstanceId = result.current.createInstance().appInstanceId;
+    });
+
+    await act(async () => {
+      await result.current.openDirectory(appInstanceId, "/home/lyra/Documents");
+    });
+
+    expect(subscribeDirectory).toHaveBeenCalledWith({ path: "/home/lyra/Documents" });
+    expect(desktop.readDirectory).not.toHaveBeenCalled();
+
+    act(() => {
+      patchListener?.({
+        subscriptionId: "sub-1",
+        directoryPath: "/home/lyra/Documents",
+        generation: 2,
+        kind: "create",
+        path: "/home/lyra/Documents/notes.txt",
+        entry: {
+          id: "notes-file",
+          name: "notes.txt",
+          path: "/home/lyra/Documents/notes.txt",
+          kind: "file",
+          extension: "txt",
+          isHidden: false,
+          sizeBytes: 12,
+          modifiedAt: "1711111112"
+        }
+      });
+    });
+
+    expect(result.current.getState(appInstanceId)?.entries.map((entry) => entry.name)).toEqual([
+      "Projects",
+      "notes.txt",
+      "README.md"
+    ]);
+
+    act(() => {
+      patchListener?.({
+        subscriptionId: "sub-1",
+        directoryPath: "/home/lyra/Documents",
+        generation: 3,
+        kind: "remove",
+        path: "/home/lyra/Documents/README.md"
+      });
+    });
+
+    expect(result.current.getState(appInstanceId)?.entries.map((entry) => entry.name)).toEqual([
+      "Projects",
+      "notes.txt"
+    ]);
+    expect(unsubscribeDirectory).not.toHaveBeenCalled();
   });
 
   test("stores presentation mode per file manager instance", async () => {

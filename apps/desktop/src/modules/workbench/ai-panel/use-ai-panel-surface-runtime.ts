@@ -832,7 +832,9 @@ export const useAiPanelSurfaceRuntime = ({
           boundProjectRoot: trimmed
         })
       );
-      await loadThread(threadId);
+      void loadThread(threadId).catch((error: unknown) => {
+        console.error("Failed to refresh bound project thread", error);
+      });
     },
     [loadThread, lyraApi]
   );
@@ -890,7 +892,9 @@ export const useAiPanelSurfaceRuntime = ({
         next.set(activeThreadId, trimmed);
         return next;
       });
-      await persistBoundProjectRoot(activeThreadId, trimmed);
+      void persistBoundProjectRoot(activeThreadId, trimmed).catch((error: unknown) => {
+        console.error("Failed to persist bound project root", error);
+      });
     } finally {
       setIsBindingProject(false);
     }

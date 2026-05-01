@@ -1,7 +1,7 @@
-use std::cmp::Ordering;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -28,6 +28,7 @@ use sysinfo::{DiskKind, Disks};
 use trash::{os_limited, TrashItem, TrashItemSize};
 
 use eject::safely_eject_device;
+use lyra_files_core as files_core;
 use mount::mount_device as perform_mount_device;
 
 const FAVORITES_FILE_NAME: &str = "favorites.json";
@@ -125,6 +126,7 @@ pub struct FileManagerEntry {
     pub size_bytes: Option<f64>,
     pub modified_at: Option<String>,
     pub folder_state: Option<String>,
+    pub hydration_state: Option<String>,
 }
 
 #[napi(object)]
@@ -170,6 +172,47 @@ pub struct FileManagerReadDirectoryResponse {
     pub location: FileManagerLocation,
     pub parent_path: Option<String>,
     pub entries: Vec<FileManagerEntry>,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileManagerDirectorySnapshot {
+    pub location: FileManagerLocation,
+    pub parent_path: Option<String>,
+    pub entries: Vec<FileManagerEntry>,
+    pub generation: f64,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileManagerSubscribeDirectoryResponse {
+    pub subscription_id: String,
+    pub snapshot: FileManagerDirectorySnapshot,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileManagerUnsubscribeDirectoryRequest {
+    pub subscription_id: String,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileManagerDirectoryPatch {
+    pub subscription_id: String,
+    pub directory_path: String,
+    pub generation: f64,
+    pub kind: String,
+    pub entry: Option<FileManagerEntry>,
+    pub path: Option<String>,
+    pub old_path: Option<String>,
+    pub new_path: Option<String>,
+    pub snapshot: Option<FileManagerDirectorySnapshot>,
+    pub error_message: Option<String>,
 }
 
 #[napi(object)]
@@ -405,6 +448,25 @@ fn invalid_arg(message: impl Into<String>) -> Error {
 
 fn failure(message: impl Into<String>) -> Error {
     Error::new(Status::GenericFailure, message.into())
+}
+
+fn core_error(error: files_core::FilesCoreError) -> Error {
+    match error {
+        files_core::FilesCoreError::InvalidArgument(message) => invalid_arg(message),
+        other => failure(other.to_string()),
+    }
+}
+
+static DIRECTORY_SERVICE: OnceLock<Mutex<files_core::DirectoryService>> = OnceLock::new();
+
+fn with_directory_service<T>(
+    f: impl FnOnce(&mut files_core::DirectoryService) -> files_core::Result<T>,
+) -> Result<T> {
+    let service = DIRECTORY_SERVICE.get_or_init(|| Mutex::new(files_core::DirectoryService::new()));
+    let mut guard = service
+        .lock()
+        .map_err(|_| failure("directory service lock is poisoned"))?;
+    f(&mut guard).map_err(core_error)
 }
 
 fn io_error(message: impl Into<String>, error: std::io::Error) -> Error {
@@ -759,47 +821,63 @@ fn folder_state_from_path(path: &Path) -> String {
     }
 }
 
-fn entry_from_path(path: &Path) -> Result<FileManagerEntry> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| {
-        io_error(
-            format!("failed to read metadata for {}", path.display()),
-            error,
-        )
-    })?;
-    let is_dir = metadata.is_dir();
-    Ok(FileManagerEntry {
-        id: path_to_string(path),
-        name: file_name(path),
-        path: path_to_string(path),
-        kind: if is_dir {
-            "directory".to_string()
-        } else {
-            "file".to_string()
-        },
-        extension: if is_dir { None } else { file_extension(path) },
-        is_hidden: is_hidden(path),
-        size_bytes: if is_dir {
-            None
-        } else {
-            Some(metadata.len() as f64)
-        },
-        modified_at: metadata.modified().ok().and_then(seconds_since_epoch),
-        folder_state: if is_dir {
-            Some(folder_state_from_path(path))
-        } else {
-            None
-        },
-    })
+fn location_from_core(location: files_core::FileManagerLocation) -> FileManagerLocation {
+    FileManagerLocation {
+        id: location.id,
+        title: location.title,
+        kind: location.kind,
+        path: location.path,
+        special_id: location.special_id,
+    }
 }
 
-fn sort_entries(entries: &mut [FileManagerEntry]) {
-    entries.sort_by(
-        |left, right| match (left.kind.as_str(), right.kind.as_str()) {
-            ("directory", "file") => Ordering::Less,
-            ("file", "directory") => Ordering::Greater,
-            _ => left.name.to_lowercase().cmp(&right.name.to_lowercase()),
-        },
-    );
+fn entry_from_core(entry: files_core::FileManagerEntry) -> FileManagerEntry {
+    FileManagerEntry {
+        id: entry.id,
+        name: entry.name,
+        path: entry.path,
+        kind: entry.kind,
+        extension: entry.extension,
+        is_hidden: entry.is_hidden,
+        size_bytes: entry.size_bytes,
+        modified_at: entry.modified_at,
+        folder_state: entry.folder_state,
+        hydration_state: Some(entry.hydration_state),
+    }
+}
+
+fn snapshot_from_core(snapshot: files_core::DirectorySnapshot) -> FileManagerDirectorySnapshot {
+    FileManagerDirectorySnapshot {
+        location: location_from_core(snapshot.location),
+        parent_path: snapshot.parent_path,
+        entries: snapshot.entries.into_iter().map(entry_from_core).collect(),
+        generation: snapshot.generation as f64,
+    }
+}
+
+fn read_directory_response_from_core(
+    snapshot: files_core::DirectorySnapshot,
+) -> FileManagerReadDirectoryResponse {
+    FileManagerReadDirectoryResponse {
+        location: location_from_core(snapshot.location),
+        parent_path: snapshot.parent_path,
+        entries: snapshot.entries.into_iter().map(entry_from_core).collect(),
+    }
+}
+
+fn patch_from_core(patch: files_core::DirectoryPatch) -> FileManagerDirectoryPatch {
+    FileManagerDirectoryPatch {
+        subscription_id: patch.subscription_id,
+        directory_path: patch.directory_path,
+        generation: patch.generation as f64,
+        kind: patch.kind.as_str().to_string(),
+        entry: patch.entry.map(entry_from_core),
+        path: patch.path,
+        old_path: patch.old_path,
+        new_path: patch.new_path,
+        snapshot: patch.snapshot.map(snapshot_from_core),
+        error_message: patch.error_message,
+    }
 }
 
 fn create_location(
@@ -2383,46 +2461,35 @@ pub fn read_home(request: StorageRootRequest) -> Result<FileManagerReadHomeRespo
 pub fn read_directory(
     request: FileManagerReadDirectoryRequest,
 ) -> Result<FileManagerReadDirectoryResponse> {
-    let path = normalize_path(&request.path)?;
-    let canonical_path = path
-        .canonicalize()
-        .map_err(|error| io_error(format!("failed to access {}", path.display()), error))?;
-    let metadata = fs::metadata(&canonical_path).map_err(|error| {
-        io_error(
-            format!("failed to read {}", canonical_path.display()),
-            error,
-        )
-    })?;
-    if !metadata.is_dir() {
-        return Err(invalid_arg(format!(
-            "{} is not a directory",
-            canonical_path.display()
-        )));
-    }
+    let snapshot = with_directory_service(|service| service.read_directory(&request.path))?;
+    Ok(read_directory_response_from_core(snapshot))
+}
 
-    let mut entries = fs::read_dir(&canonical_path)
-        .map_err(|error| {
-            io_error(
-                format!("failed to read {}", canonical_path.display()),
-                error,
-            )
-        })?
-        .filter_map(|entry| entry.ok().map(|item| item.path()))
-        .map(|entry_path| entry_from_path(&entry_path))
-        .collect::<Result<Vec<_>>>()?;
-    sort_entries(&mut entries);
-
-    Ok(FileManagerReadDirectoryResponse {
-        location: create_location(
-            path_to_string(&canonical_path),
-            title_for_path(&canonical_path),
-            "directory",
-            Some(path_to_string(&canonical_path)),
-            None,
-        ),
-        parent_path: canonical_path.parent().map(path_to_string),
-        entries,
+#[napi]
+pub fn subscribe_directory(
+    request: FileManagerReadDirectoryRequest,
+) -> Result<FileManagerSubscribeDirectoryResponse> {
+    let subscription =
+        with_directory_service(|service| service.subscribe_directory(&request.path))?;
+    Ok(FileManagerSubscribeDirectoryResponse {
+        subscription_id: subscription.subscription_id,
+        snapshot: snapshot_from_core(subscription.snapshot),
     })
+}
+
+#[napi]
+pub fn unsubscribe_directory(request: FileManagerUnsubscribeDirectoryRequest) -> Result<bool> {
+    let subscription_id = request.subscription_id.trim().to_string();
+    if subscription_id.is_empty() {
+        return Err(invalid_arg("subscriptionId is required"));
+    }
+    with_directory_service(|service| Ok(service.unsubscribe_directory(&subscription_id)))
+}
+
+#[napi]
+pub fn poll_directory_patches() -> Result<Vec<FileManagerDirectoryPatch>> {
+    with_directory_service(|service| Ok(service.poll_patches()))
+        .map(|patches| patches.into_iter().map(patch_from_core).collect())
 }
 
 #[napi]
@@ -2478,7 +2545,9 @@ pub fn create_file(
     File::create_new(&full_path)
         .map_err(|error| io_error(format!("failed to create {}", full_path.display()), error))?;
     Ok(FileManagerDirectoryMutationResponse {
-        entry: Some(entry_from_path(&full_path)?),
+        entry: Some(entry_from_core(
+            files_core::read_entry_lazy(&full_path).map_err(core_error)?,
+        )),
     })
 }
 
@@ -2492,7 +2561,9 @@ pub fn create_folder(
     fs::create_dir(&full_path)
         .map_err(|error| io_error(format!("failed to create {}", full_path.display()), error))?;
     Ok(FileManagerDirectoryMutationResponse {
-        entry: Some(entry_from_path(&full_path)?),
+        entry: Some(entry_from_core(
+            files_core::read_entry_lazy(&full_path).map_err(core_error)?,
+        )),
     })
 }
 

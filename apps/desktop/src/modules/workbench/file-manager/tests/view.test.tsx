@@ -52,7 +52,8 @@ const labels: FileManagerSurfaceLabels = {
   contextEjectDevice: "Eject",
   viewList: "List view",
   viewLarge: "Large view",
-  chooserBindProjectLabel: "Bind project"
+  chooserBindProjectLabel: "Bind project",
+  chooserSelectDirectoryPlaceholder: "Open a directory to bind"
 };
 
 const createState = (overrides: Partial<FileManagerAppState> = {}): FileManagerAppState => ({
@@ -114,6 +115,8 @@ const createState = (overrides: Partial<FileManagerAppState> = {}): FileManagerA
     }
   ],
   trashEntries: [],
+  directorySubscriptionId: undefined,
+  directoryGeneration: undefined,
   selectedEntryId: "file-1",
   selectedTrashEntryId: undefined,
   createDraft: undefined,
@@ -220,6 +223,33 @@ describe("FileManagerSurface", () => {
 
     expect(model.openTrash).toHaveBeenCalledWith("fm-1");
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  test("shows a directory-selection placeholder before chooser confirmation is available", () => {
+    const model = createModel();
+    render(
+      <FileManagerSurface
+        state={createState({
+          viewKind: "home",
+          currentLocation: null,
+          parentPath: undefined,
+          entries: [],
+          selectedEntryId: undefined
+        })}
+        labels={labels}
+        model={model}
+        onOpenFile={vi.fn()}
+        chooser={{
+          kind: "ai-project-bind",
+          confirmLabel: "Bind",
+          onConfirm: vi.fn()
+        }}
+      />
+    );
+
+    expect(screen.getByText("Open a directory to bind")).toBeInTheDocument();
+    expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bind" })).toBeDisabled();
   });
 
   test("routes create draft input edits and keyboard decisions", () => {

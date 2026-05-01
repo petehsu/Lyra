@@ -1,6 +1,7 @@
 import type {
   FileManagerCreateFileRequest,
   FileManagerCreateFolderRequest,
+  FileManagerDirectoryPatch,
   FileManagerDirectoryMutationResponse,
   FileManagerEjectDeviceRequest,
   FileManagerEjectDeviceResult,
@@ -18,6 +19,7 @@ import type {
   FileManagerReadTrashResponse,
   FileManagerRecentLocationsPayload,
   FileManagerRestoreFromTrashRequest,
+  FileManagerSubscribeDirectoryResponse,
   FileWriteResult,
   FileWriteTextRequest
 } from "../../shared/file-manager";
@@ -27,6 +29,10 @@ type StorageRootRequest = {
 };
 
 export type NativeReadDirectoryRequest = FileManagerReadDirectoryRequest;
+export type NativeSubscribeDirectoryRequest = FileManagerReadDirectoryRequest;
+export type NativeUnsubscribeDirectoryRequest = {
+  readonly subscriptionId: string;
+};
 export type NativeCreateFileRequest = FileManagerCreateFileRequest;
 export type NativeCreateFolderRequest = FileManagerCreateFolderRequest;
 export type NativeMoveToTrashRequest = FileManagerMoveToTrashRequest & StorageRootRequest;
@@ -56,6 +62,11 @@ export type NativeWorkbenchCollectedFilePath = {
 export type FilesNativeBindings = {
   readonly readHome: (request: StorageRootRequest) => FileManagerReadHomeResponse;
   readonly readDirectory: (request: NativeReadDirectoryRequest) => FileManagerReadDirectoryResponse;
+  readonly subscribeDirectory: (
+    request: NativeSubscribeDirectoryRequest
+  ) => FileManagerSubscribeDirectoryResponse;
+  readonly unsubscribeDirectory: (request: NativeUnsubscribeDirectoryRequest) => boolean;
+  readonly pollDirectoryPatches: () => readonly FileManagerDirectoryPatch[];
   readonly readTrash: (request: StorageRootRequest) => FileManagerReadTrashResponse;
   readonly createFile: (request: NativeCreateFileRequest) => FileManagerDirectoryMutationResponse;
   readonly createFolder: (request: NativeCreateFolderRequest) => FileManagerDirectoryMutationResponse;

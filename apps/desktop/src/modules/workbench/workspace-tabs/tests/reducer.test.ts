@@ -68,6 +68,34 @@ describe("workspace tabs reducer", () => {
     expect(closed.state.activeTabId).toBe("browser-tab-1");
   });
 
+  test("opens new tabs next to the active tab and closes toward the right", () => {
+    const tabA = createSearchTabWithId("tab-a", testConfig);
+    const tabB = createSearchTabWithId("tab-b", testConfig);
+    const tabC = createSearchTabWithId("tab-c", testConfig);
+    const tabD = createPageTabWithId("tab-d", "https://example.com");
+
+    const opened = reduce(createState([tabA, tabB, tabC], "tab-a"), {
+      type: "open-page-in-new-tab",
+      tab: tabD
+    });
+
+    expect(opened.state.tabs.map((tab) => tab.id)).toEqual([
+      "tab-a",
+      "tab-d",
+      "tab-b",
+      "tab-c"
+    ]);
+    expect(opened.state.activeTabId).toBe("tab-d");
+
+    const closed = reduce(createState([tabA, tabB, tabC], "tab-b"), {
+      type: "close-tab",
+      tabId: "tab-b"
+    });
+
+    expect(closed.state.tabs.map((tab) => tab.id)).toEqual(["tab-a", "tab-c"]);
+    expect(closed.state.activeTabId).toBe("tab-c");
+  });
+
   test("keeps settings, terminal, and app tabs singleton by their identity keys", () => {
     const firstTab = createSearchTabWithId("browser-tab-1", testConfig);
     let state = createState([firstTab]);

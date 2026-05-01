@@ -10,6 +10,8 @@ export type FileManagerSpecialLocationId =
 
 export type FileManagerFolderState = "empty" | "non-empty" | "unknown";
 
+export type FileManagerEntryHydrationState = "pending" | "complete";
+
 export type FileManagerEntryKind = "file" | "directory";
 
 export type FileManagerLocationKind = "home" | "directory" | "trash" | "special";
@@ -99,6 +101,7 @@ export type FileManagerBaseEntry = {
   readonly isHidden: boolean;
   readonly sizeBytes?: number;
   readonly modifiedAt?: string;
+  readonly hydrationState?: FileManagerEntryHydrationState;
 };
 
 export type FileManagerDirectoryEntry = FileManagerBaseEntry & {
@@ -143,6 +146,37 @@ export type FileManagerReadDirectoryResponse = {
   readonly location: FileManagerLocation;
   readonly parentPath?: string;
   readonly entries: readonly FileManagerEntry[];
+};
+
+export type FileManagerDirectorySnapshot = FileManagerReadDirectoryResponse & {
+  readonly generation: number;
+};
+
+export type FileManagerSubscribeDirectoryRequest = FileManagerReadDirectoryRequest;
+
+export type FileManagerSubscribeDirectoryResponse = {
+  readonly subscriptionId: string;
+  readonly snapshot: FileManagerDirectorySnapshot;
+};
+
+export type FileManagerDirectoryPatchKind =
+  | "create"
+  | "update"
+  | "remove"
+  | "rename"
+  | "reset";
+
+export type FileManagerDirectoryPatch = {
+  readonly subscriptionId: string;
+  readonly directoryPath: string;
+  readonly generation: number;
+  readonly kind: FileManagerDirectoryPatchKind;
+  readonly entry?: FileManagerEntry;
+  readonly path?: string;
+  readonly oldPath?: string;
+  readonly newPath?: string;
+  readonly snapshot?: FileManagerDirectorySnapshot;
+  readonly errorMessage?: string;
 };
 
 export type FileManagerReadTrashResponse = {

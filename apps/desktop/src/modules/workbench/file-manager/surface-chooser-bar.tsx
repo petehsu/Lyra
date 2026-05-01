@@ -18,7 +18,7 @@ export const FileManagerChooserBar = ({
           {labels.chooserBindProjectLabel}
         </span>
         <span className="lyra-file-manager-chooser-path">
-          {chooserBar.path ?? labels.unavailable}
+          {chooserBar.path ?? labels.chooserSelectDirectoryPlaceholder}
         </span>
       </div>
       <button

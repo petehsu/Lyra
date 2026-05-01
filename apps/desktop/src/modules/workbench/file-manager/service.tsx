@@ -10,9 +10,11 @@ import {
   Trash2,
   Unplug
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  FileManagerDirectoryPatch,
+  FileManagerDirectorySnapshot,
   FileManagerDevice,
   FileManagerEntry,
   FileManagerFavorite,
@@ -61,6 +63,8 @@ const createInitialState = (
   devices: [],
   entries: [],
   trashEntries: [],
+  directorySubscriptionId: undefined,
+  directoryGeneration: undefined,
   selectedEntryId: undefined,
   selectedTrashEntryId: undefined,
   createDraft: undefined,
@@ -155,6 +159,40 @@ const findSelectedTrashEntry = (
   return state.trashEntries.find((entry) => entry.id === state.selectedTrashEntryId) ?? null;
 };
 
+const compareDirectoryEntries = (
+  left: FileManagerEntry,
+  right: FileManagerEntry
+): number => {
+  if (left.kind === "directory" && right.kind === "file") {
+    return -1;
+  }
+  if (left.kind === "file" && right.kind === "directory") {
+    return 1;
+  }
+  return left.name.toLowerCase().localeCompare(right.name.toLowerCase());
+};
+
+const sortDirectoryEntries = (
+  entries: readonly FileManagerEntry[]
+): readonly FileManagerEntry[] => [...entries].sort(compareDirectoryEntries);
+
+const upsertDirectoryEntry = (
+  entries: readonly FileManagerEntry[],
+  entry: FileManagerEntry
+): readonly FileManagerEntry[] => {
+  const next = entries.filter((item) => item.path !== entry.path);
+  next.push(entry);
+  return sortDirectoryEntries(next);
+};
+
+const directoryResponseFromSnapshot = (
+  snapshot: FileManagerDirectorySnapshot
+): FileManagerReadDirectoryResponse => ({
+  location: snapshot.location,
+  ...(snapshot.parentPath === undefined ? {} : { parentPath: snapshot.parentPath }),
+  entries: snapshot.entries
+});
+
 const isDirectoryLocation = (location: FileManagerLocation | null): boolean =>
   location?.kind === "directory" || (location?.kind === "special" && location.path !== undefined);
 
@@ -209,6 +247,8 @@ const buildHomeState = (
   devices: payload.devices,
   entries: [],
   trashEntries: [],
+  directorySubscriptionId: undefined,
+  directoryGeneration: undefined,
   selectedEntryId: undefined,
   selectedTrashEntryId: undefined,
   createDraft: undefined,
@@ -219,7 +259,11 @@ const buildDirectoryState = (
   current: FileManagerAppState,
   payload: FileManagerReadDirectoryResponse,
   labels: FileManagerSurfaceLabels,
-  addToHistory: boolean
+  addToHistory: boolean,
+  realtime?: {
+    readonly subscriptionId?: string;
+    readonly generation?: number;
+  }
 ): FileManagerAppState => ({
   ...current,
   status: "ready",
@@ -229,10 +273,12 @@ const buildDirectoryState = (
   currentLocation: withResolvedLocationTitle(payload.location, labels),
   parentPath: payload.parentPath,
   ...withHistory(current, payload.location, addToHistory),
-  entries: payload.entries,
+  entries: sortDirectoryEntries(payload.entries),
   disks: [],
   devices: [],
   trashEntries: [],
+  directorySubscriptionId: realtime?.subscriptionId,
+  directoryGeneration: realtime?.generation,
   selectedEntryId: undefined,
   selectedTrashEntryId: undefined,
   createDraft: undefined,
@@ -257,11 +303,115 @@ const buildTrashState = (
   disks: [],
   devices: [],
   trashEntries: payload.entries,
+  directorySubscriptionId: undefined,
+  directoryGeneration: undefined,
   selectedEntryId: undefined,
   selectedTrashEntryId: undefined,
   createDraft: undefined,
   errorMessage: undefined
 });
+
+const applyDirectoryPatchToState = (
+  state: FileManagerAppState,
+  patch: FileManagerDirectoryPatch,
+  labels: FileManagerSurfaceLabels
+): FileManagerAppState => {
+  if (
+    state.viewKind !== "directory"
+    || state.directorySubscriptionId !== patch.subscriptionId
+    || (
+      state.directoryGeneration !== undefined
+      && patch.generation < state.directoryGeneration
+    )
+  ) {
+    return state;
+  }
+
+  if (patch.kind === "reset") {
+    if (patch.snapshot === undefined) {
+      return {
+        ...state,
+        status: patch.errorMessage === undefined ? state.status : "error",
+        directoryGeneration: patch.generation,
+        errorMessage: patch.errorMessage
+      };
+    }
+    return {
+      ...buildDirectoryState(
+        state,
+        directoryResponseFromSnapshot(patch.snapshot),
+        labels,
+        false,
+        {
+          subscriptionId: state.directorySubscriptionId,
+          generation: patch.snapshot.generation
+        }
+      ),
+      history: state.history,
+      historyIndex: state.historyIndex
+    };
+  }
+
+  if (patch.kind === "remove") {
+    const removePath = patch.path ?? patch.oldPath;
+    if (removePath === undefined) {
+      return state;
+    }
+    const entries = state.entries.filter((entry) => entry.path !== removePath);
+    return {
+      ...state,
+      status: "ready",
+      entries,
+      iconKey: deriveDirectoryIconKey(entries),
+      directoryGeneration: patch.generation,
+      selectedEntryId:
+        state.selectedEntryId !== undefined
+        && state.entries.find((entry) => entry.id === state.selectedEntryId)?.path === removePath
+          ? undefined
+          : state.selectedEntryId,
+      errorMessage: undefined
+    };
+  }
+
+  if (patch.kind === "rename") {
+    const removePath = patch.oldPath;
+    const entry = patch.entry;
+    if (removePath === undefined || entry === undefined) {
+      return state;
+    }
+    const entries = upsertDirectoryEntry(
+      state.entries.filter((item) => item.path !== removePath),
+      entry
+    );
+    return {
+      ...state,
+      status: "ready",
+      entries,
+      iconKey: deriveDirectoryIconKey(entries),
+      directoryGeneration: patch.generation,
+      selectedEntryId:
+        state.selectedEntryId !== undefined
+        && state.entries.find((item) => item.id === state.selectedEntryId)?.path === removePath
+          ? entry.id
+          : state.selectedEntryId,
+      errorMessage: undefined
+    };
+  }
+
+  if (patch.entry === undefined) {
+    return state;
+  }
+
+  const entries = upsertDirectoryEntry(state.entries, patch.entry);
+  return {
+    ...state,
+    status: "ready",
+    entries,
+    iconKey: deriveDirectoryIconKey(entries),
+    directoryGeneration: patch.generation,
+    errorMessage: undefined
+  };
+};
 
 export const useFileManagerModel = ({
   desktopApi,
@@ -320,6 +470,51 @@ export const useFileManagerModel = ({
     });
   }, [onMetaChange, updateStates]);
 
+  const unsubscribeDirectory = useCallback((subscriptionId: string | undefined) => {
+    if (subscriptionId === undefined) {
+      return;
+    }
+    void desktopApi?.files.unsubscribeDirectory?.(subscriptionId).catch(() => undefined);
+  }, [desktopApi]);
+
+  const unsubscribeDirectoryForInstance = useCallback((instanceId: string) => {
+    unsubscribeDirectory(statesRef.current[instanceId]?.directorySubscriptionId);
+  }, [unsubscribeDirectory]);
+
+  useEffect(() => {
+    if (desktopApi?.files.onDirectoryPatch === undefined) {
+      return undefined;
+    }
+    return desktopApi.files.onDirectoryPatch((patch) => {
+      updateStates((current) => {
+        let changed = false;
+        const nextEntries = Object.entries(current).map(([instanceId, state]) => {
+          const nextState = applyDirectoryPatchToState(state, patch, labels);
+          if (nextState !== state) {
+            changed = true;
+            onMetaChange({
+              appId: "file-manager",
+              appInstanceId: instanceId,
+              title: nextState.title,
+              iconKey: nextState.iconKey
+            });
+          }
+          return [instanceId, nextState] as const;
+        });
+        return changed ? Object.fromEntries(nextEntries) : current;
+      });
+    });
+  }, [desktopApi, labels, onMetaChange, updateStates]);
+
+  useEffect(
+    () => () => {
+      for (const state of Object.values(statesRef.current)) {
+        unsubscribeDirectory(state.directorySubscriptionId);
+      }
+    },
+    [unsubscribeDirectory]
+  );
+
   const isFavoritePath = useCallback(
     (favorites: readonly FileManagerFavorite[], path: string | undefined) => {
       if (path === undefined) {
@@ -369,6 +564,7 @@ export const useFileManagerModel = ({
       return;
     }
 
+    unsubscribeDirectoryForInstance(instanceId);
     patchState(instanceId, (state) => ({ ...state, status: "loading", errorMessage: undefined }));
     try {
       const payload = await desktopApi.files.readHome();
@@ -381,7 +577,7 @@ export const useFileManagerModel = ({
         errorMessage: error instanceof Error ? error.message : String(error)
       }));
     }
-  }, [desktopApi, labels, patchState, replaceState]);
+  }, [desktopApi, labels, patchState, replaceState, unsubscribeDirectoryForInstance]);
 
   const loadDirectory = useCallback(async (instanceId: string, path: string, addToHistory = true) => {
     if (desktopApi === null) {
@@ -393,16 +589,34 @@ export const useFileManagerModel = ({
       return;
     }
 
+    unsubscribeDirectoryForInstance(instanceId);
     patchState(instanceId, (state) => ({ ...state, status: "loading", errorMessage: undefined }));
     try {
-      const payload = await desktopApi.files.readDirectory({ path });
+      const subscription = await desktopApi.files.subscribeDirectory?.({ path });
+      const payload = subscription === undefined
+        ? await desktopApi.files.readDirectory({ path })
+        : directoryResponseFromSnapshot(subscription.snapshot);
       const current = statesRef.current[instanceId] ?? createInitialState(instanceId, labels);
-      const nextState = buildDirectoryState(current, payload, labels, addToHistory);
+      const nextState = buildDirectoryState(
+        current,
+        payload,
+        labels,
+        addToHistory,
+        subscription === undefined
+          ? undefined
+          : {
+              subscriptionId: subscription.subscriptionId,
+              generation: subscription.snapshot.generation
+            }
+      );
       replaceState(instanceId, nextState);
 
       const nextRecentLocations = mergeRecentLocations(current.recentLocations, payload.location);
-      await desktopApi.files.writeRecentLocations({ recentLocations: nextRecentLocations });
-      broadcastRecentLocations(nextRecentLocations);
+      void desktopApi.files.writeRecentLocations({ recentLocations: nextRecentLocations })
+        .then((payload) => {
+          broadcastRecentLocations(payload.recentLocations);
+        })
+        .catch(() => undefined);
     } catch (error) {
       patchState(instanceId, (state) => ({
         ...state,
@@ -410,7 +624,7 @@ export const useFileManagerModel = ({
         errorMessage: error instanceof Error ? error.message : String(error)
       }));
     }
-  }, [broadcastRecentLocations, desktopApi, labels, patchState, replaceState]);
+  }, [broadcastRecentLocations, desktopApi, labels, patchState, replaceState, unsubscribeDirectoryForInstance]);
 
   const loadTrash = useCallback(async (instanceId: string, addToHistory = true) => {
     if (desktopApi === null) {
@@ -422,6 +636,7 @@ export const useFileManagerModel = ({
       return;
     }
 
+    unsubscribeDirectoryForInstance(instanceId);
     patchState(instanceId, (state) => ({ ...state, status: "loading", errorMessage: undefined }));
     try {
       const payload = await desktopApi.files.readTrash();
@@ -434,7 +649,7 @@ export const useFileManagerModel = ({
         errorMessage: error instanceof Error ? error.message : String(error)
       }));
     }
-  }, [desktopApi, labels, patchState, replaceState]);
+  }, [desktopApi, labels, patchState, replaceState, unsubscribeDirectoryForInstance]);
 
   const createInstance = useCallback(() => {
     const appInstanceId = createId("file-manager");
@@ -487,9 +702,14 @@ export const useFileManagerModel = ({
       if (nextEntries.length === currentEntries.length) {
         return current;
       }
+      for (const [, state] of currentEntries) {
+        if (keep.has(state.instanceId) === false) {
+          unsubscribeDirectory(state.directorySubscriptionId);
+        }
+      }
       return Object.fromEntries(nextEntries);
     });
-  }, [updateStates]);
+  }, [unsubscribeDirectory, updateStates]);
 
   const syncExternalInstances = useCallback((instanceIds: readonly string[]) => {
     const normalized = instanceIds

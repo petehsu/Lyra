@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { CapabilityRuntimeEvent, LyraRuntimeEvent } from "../../../../shared/desktop-bridge";
-import { resetWorkbenchStateStorageForTests } from "../../state-storage";
+import { resetWorkbenchStateStorageForTests, writeWorkbenchStateSync } from "../../state-storage";
 import { useLyraThreadRuntime } from "../use-lyra-thread-runtime";
 
 const labels = {
@@ -185,6 +185,69 @@ const makeDesktopApi = () => {
 describe("useLyraThreadRuntime", () => {
   beforeEach(() => {
     resetWorkbenchStateStorageForTests();
+  });
+
+  test("opens draft thread tabs immediately after the active tab", () => {
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: null,
+        interactionTextLabels: labels,
+      })
+    );
+
+    const firstTabId = result.current.state.activeTabId;
+    act(() => {
+      result.current.actions.selectThread(null);
+    });
+    const secondTabId = result.current.state.activeTabId;
+    act(() => {
+      result.current.actions.selectThread(null);
+    });
+    const thirdTabId = result.current.state.activeTabId;
+
+    act(() => {
+      result.current.actions.activateThreadTab(firstTabId!);
+      result.current.actions.selectThread(null);
+    });
+
+    expect(result.current.state.threadTabs.map((tab) => tab.tabId)).toEqual([
+      firstTabId,
+      result.current.state.activeTabId,
+      secondTabId,
+      thirdTabId,
+    ]);
+  });
+
+  test("closes active thread tabs toward the right", () => {
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: null,
+        interactionTextLabels: labels,
+      })
+    );
+
+    const firstTabId = result.current.state.activeTabId;
+    act(() => {
+      result.current.actions.selectThread(null);
+    });
+    const secondTabId = result.current.state.activeTabId;
+    act(() => {
+      result.current.actions.selectThread(null);
+    });
+    const thirdTabId = result.current.state.activeTabId;
+
+    act(() => {
+      result.current.actions.activateThreadTab(secondTabId!);
+      result.current.actions.closeThreadTab(secondTabId!);
+    });
+
+    expect(result.current.state.activeTabId).toBe(thirdTabId);
+
+    act(() => {
+      result.current.actions.closeThreadTab(thirdTabId!);
+    });
+
+    expect(result.current.state.activeTabId).toBe(firstTabId);
   });
 
   test("shows the user message immediately while a new thread is being created", async () => {
@@ -682,7 +745,68 @@ describe("useLyraThreadRuntime", () => {
     expect(result.current.state.runtimeError).toBeNull();
   });
 
-  test("sending from a stale loaded tab creates a fresh thread instead of surfacing thread-not-loaded", async () => {
+  test("drops restored tabs missing from the thread list without reading them", async () => {
+    writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
+      version: 1,
+      activeTabId: "thread:missing-thread",
+      tabs: [{
+        tabId: "thread:missing-thread",
+        threadId: "missing-thread",
+        title: "Missing",
+        openedAt: 100,
+        updatedAt: 100,
+      }],
+    }));
+    const request = vi.fn(async (payload: { method?: unknown }) => {
+      if (payload.method === "thread/list") {
+        return { data: [] };
+      }
+      if (payload.method === "thread/read") {
+        throw new Error("thread/read should not be called for missing restored tabs");
+      }
+      return {};
+    });
+    const desktopApi = {
+      lyra: {
+        request,
+        resolveServerRequest: vi.fn(),
+        rejectServerRequest: vi.fn(),
+        health: vi.fn(),
+        notify: vi.fn(),
+        onEvent: () => () => {},
+      },
+    } as never;
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.activeThreadId).toBeNull();
+    });
+    expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ method: "thread/read" }));
+    expect(result.current.state.runtimeError).toBeNull();
+  });
+
+  test("continues a restored missing runtime tab by resuming the original thread", async () => {
+    writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
+      version: 1,
+      activeTabId: "thread:stale-thread",
+      tabs: [{
+        tabId: "thread:stale-thread",
+        threadId: "stale-thread",
+        title: "Old",
+        openedAt: 100,
+        updatedAt: 100,
+      }],
+    }));
+    let resumed = false;
     const request = vi.fn(async (payload: { method?: unknown; params?: Record<string, unknown> }) => {
       if (payload.method === "thread/list") {
         return {
@@ -710,28 +834,29 @@ describe("useLyraThreadRuntime", () => {
           },
         };
       }
-      if (payload.method === "turn/start" && payload.params?.threadId === "stale-thread") {
+      if (payload.method === "turn/start" && payload.params?.threadId === "stale-thread" && !resumed) {
         throw new Error(
-          "Error invoking remote method 'lyra:lyra/runtime/request': Error: thread not loaded: stale-thread"
+          "Error invoking remote method 'lyra:lyra/runtime/request': Error: thread not found: stale-thread"
         );
       }
-      if (payload.method === "thread/start") {
+      if (payload.method === "thread/resume") {
+        resumed = true;
         return {
           thread: {
-            id: "fresh-thread",
-            preview: "",
+            id: "stale-thread",
+            preview: "Old",
             modelProvider: "lp-openai",
             cwd: "/repo",
-            createdAt: 200,
+            createdAt: 100,
             updatedAt: 200,
             turns: [],
           },
         };
       }
-      if (payload.method === "turn/start" && payload.params?.threadId === "fresh-thread") {
+      if (payload.method === "turn/start" && payload.params?.threadId === "stale-thread") {
         return {
           turn: {
-            id: "fresh-turn",
+            id: "resumed-turn",
             status: "inProgress",
             items: [],
             startedAt: 201,
@@ -761,10 +886,6 @@ describe("useLyraThreadRuntime", () => {
       expect(request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
     });
 
-    act(() => {
-      result.current.actions.selectThread("stale-thread");
-    });
-
     await waitFor(() => {
       expect(result.current.state.activeThreadId).toBe("stale-thread");
     });
@@ -778,17 +899,22 @@ describe("useLyraThreadRuntime", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.state.activeThreadId).toBe("fresh-thread");
+      expect(result.current.state.streamingTurnId).toBe("resumed-turn");
     });
+    expect(result.current.state.activeThreadId).toBe("stale-thread");
     expect(result.current.state.runtimeError).toBeNull();
+    expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ method: "thread/start" }));
     expect(request).toHaveBeenCalledWith(expect.objectContaining({
-      method: "turn/start",
+      method: "thread/resume",
       params: expect.objectContaining({ threadId: "stale-thread" }),
     }));
     expect(request).toHaveBeenCalledWith(expect.objectContaining({
       method: "turn/start",
-      params: expect.objectContaining({ threadId: "fresh-thread" }),
+      params: expect.objectContaining({ threadId: "stale-thread" }),
     }));
+    expect(request.mock.calls.filter(([payload]) =>
+      payload.method === "turn/start" && payload.params?.threadId === "stale-thread"
+    )).toHaveLength(2);
   });
 
   test("sends collaboration mode with turn/start when plan mode is requested", async () => {

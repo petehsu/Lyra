@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 
-import { dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 
 import { LYRA_CHANNELS } from "../../shared/desktop-bridge";
 import type {
@@ -41,6 +41,16 @@ const normalizeDirectoryRequest = (
 ): FileManagerReadDirectoryRequest => ({
   path: normalizePath(payload.path)
 });
+
+const normalizeUnsubscribeDirectoryRequest = (
+  payload: { readonly subscriptionId?: string }
+): { readonly subscriptionId: string } => {
+  const subscriptionId = payload.subscriptionId?.trim() ?? "";
+  if (subscriptionId.length === 0) {
+    throw new Error("subscriptionId is required");
+  }
+  return { subscriptionId };
+};
 
 const normalizeCreateFileRequest = (
   payload: FileManagerCreateFileRequest
@@ -167,6 +177,83 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
     );
   }
   const bindings = loadResult.bindings;
+  let patchPoller: ReturnType<typeof setInterval> | null = null;
+  const subscriptionsByWebContents = new Map<number, Set<string>>();
+
+  const broadcastDirectoryPatches = (): void => {
+    let patches;
+    try {
+      patches = bindings.pollDirectoryPatches();
+    } catch {
+      return;
+    }
+    if (patches.length === 0) {
+      return;
+    }
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.webContents.isDestroyed()) {
+        continue;
+      }
+      for (const patch of patches) {
+        window.webContents.send(LYRA_CHANNELS.filesDirectoryPatch, patch);
+      }
+    }
+  };
+
+  const ensurePatchPoller = (): void => {
+    if (patchPoller !== null) {
+      return;
+    }
+    patchPoller = setInterval(broadcastDirectoryPatches, 50);
+  };
+
+  const maybeStopPatchPoller = (): void => {
+    if (patchPoller === null || subscriptionsByWebContents.size > 0) {
+      return;
+    }
+    clearInterval(patchPoller);
+    patchPoller = null;
+  };
+
+  const trackDirectorySubscription = (
+    event: IpcMainInvokeEvent,
+    subscriptionId: string
+  ): void => {
+    const webContentsId = event.sender.id;
+    const current = subscriptionsByWebContents.get(webContentsId) ?? new Set<string>();
+    current.add(subscriptionId);
+    subscriptionsByWebContents.set(webContentsId, current);
+    event.sender.once("destroyed", () => {
+      const subscriptions = subscriptionsByWebContents.get(webContentsId);
+      subscriptionsByWebContents.delete(webContentsId);
+      if (subscriptions !== undefined) {
+        for (const id of subscriptions) {
+          try {
+            bindings.unsubscribeDirectory({ subscriptionId: id });
+          } catch {
+            // Best effort cleanup for closing renderer processes.
+          }
+        }
+      }
+      maybeStopPatchPoller();
+    });
+    ensurePatchPoller();
+  };
+
+  const untrackDirectorySubscription = (
+    event: IpcMainInvokeEvent,
+    subscriptionId: string
+  ): void => {
+    const subscriptions = subscriptionsByWebContents.get(event.sender.id);
+    if (subscriptions !== undefined) {
+      subscriptions.delete(subscriptionId);
+      if (subscriptions.size === 0) {
+        subscriptionsByWebContents.delete(event.sender.id);
+      }
+    }
+    maybeStopPatchPoller();
+  };
+
   const handlers: Array<readonly [string, (_event: IpcMainInvokeEvent, payload?: unknown) => unknown]> = [
     [
       LYRA_CHANNELS.filesReadHome,
@@ -176,6 +263,26 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
       LYRA_CHANNELS.filesReadDirectory,
       (_event, payload) =>
         bindings.readDirectory(normalizeDirectoryRequest(payload as FileManagerReadDirectoryRequest))
+    ],
+    [
+      LYRA_CHANNELS.filesSubscribeDirectory,
+      (event, payload) => {
+        const response = bindings.subscribeDirectory(
+          normalizeDirectoryRequest(payload as FileManagerReadDirectoryRequest)
+        );
+        trackDirectorySubscription(event, response.subscriptionId);
+        return response;
+      }
+    ],
+    [
+      LYRA_CHANNELS.filesUnsubscribeDirectory,
+      (event, payload) => {
+        const request = normalizeUnsubscribeDirectoryRequest(
+          payload as { readonly subscriptionId?: string }
+        );
+        bindings.unsubscribeDirectory(request);
+        untrackDirectorySubscription(event, request.subscriptionId);
+      }
     ],
     [
       LYRA_CHANNELS.filesReadTrash,
@@ -299,6 +406,11 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);
       }
+      if (patchPoller !== null) {
+        clearInterval(patchPoller);
+        patchPoller = null;
+      }
+      subscriptionsByWebContents.clear();
     }
   };
 };

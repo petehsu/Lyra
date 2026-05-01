@@ -113,6 +113,7 @@ import type {
   FileManagerCreateFileRequest,
   FileManagerCreateFolderRequest,
   FileManagerDirectoryMutationResponse,
+  FileManagerDirectoryPatch,
   FileManagerEjectDeviceRequest,
   FileManagerEjectDeviceResult,
   FileManagerFavoritesPayload,
@@ -130,6 +131,8 @@ import type {
   FileManagerRecentLocationsPayload,
   FileManagerRestoreFromTrashRequest,
   FileManagerSelectedAttachment,
+  FileManagerSubscribeDirectoryRequest,
+  FileManagerSubscribeDirectoryResponse,
   FileWriteResult,
   FileWriteTextRequest
 } from "../shared/file-manager";
@@ -150,6 +153,8 @@ const browserUseRuntimeStatusListeners = new Set<(status: BrowserUseRuntimeStatu
 let browserUseRuntimeStatusBridgeReady = false;
 const lyraEventListeners = new Set<(event: LyraRuntimeEvent) => void>();
 let lyraEventBridgeReady = false;
+const directoryPatchListeners = new Set<(patch: FileManagerDirectoryPatch) => void>();
+let directoryPatchBridgeReady = false;
 const mcpEventListeners = new Set<(event: McpRuntimeEvent) => void>();
 let mcpEventBridgeReady = false;
 const skillsEventListeners = new Set<(event: SkillRuntimeEvent) => void>();
@@ -257,6 +262,30 @@ const ensureLyraEventBridge = (): void => {
         return;
       }
       for (const listener of lyraEventListeners) {
+        listener(payload);
+      }
+    }
+  );
+};
+
+const ensureDirectoryPatchBridge = (): void => {
+  if (directoryPatchBridgeReady) {
+    return;
+  }
+  directoryPatchBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.filesDirectoryPatch,
+    (_event: Electron.IpcRendererEvent, payload: FileManagerDirectoryPatch): void => {
+      if (
+        payload === null
+        || typeof payload !== "object"
+        || typeof payload.subscriptionId !== "string"
+        || typeof payload.kind !== "string"
+      ) {
+        return;
+      }
+      for (const listener of directoryPatchListeners) {
         listener(payload);
       }
     }
@@ -512,6 +541,21 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     readHome: () => ipcRenderer.invoke(LYRA_CHANNELS.filesReadHome) as Promise<FileManagerReadHomeResponse>,
     readDirectory: (request: FileManagerReadDirectoryRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.filesReadDirectory, request) as Promise<FileManagerReadDirectoryResponse>,
+    subscribeDirectory: (request: FileManagerSubscribeDirectoryRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.filesSubscribeDirectory,
+        request
+      ) as Promise<FileManagerSubscribeDirectoryResponse>,
+    unsubscribeDirectory: async (subscriptionId: string) => {
+      await ipcRenderer.invoke(LYRA_CHANNELS.filesUnsubscribeDirectory, { subscriptionId });
+    },
+    onDirectoryPatch: (listener: (patch: FileManagerDirectoryPatch) => void) => {
+      ensureDirectoryPatchBridge();
+      directoryPatchListeners.add(listener);
+      return () => {
+        directoryPatchListeners.delete(listener);
+      };
+    },
     readTrash: () => ipcRenderer.invoke(LYRA_CHANNELS.filesReadTrash) as Promise<FileManagerReadTrashResponse>,
     createFile: (request: FileManagerCreateFileRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.filesCreateFile, request) as Promise<FileManagerDirectoryMutationResponse>,

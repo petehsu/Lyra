@@ -456,6 +456,7 @@ export type I18nKey =
   | "files.viewList"
   | "files.viewLarge"
   | "files.chooserBindProjectLabel"
+  | "files.chooserSelectDirectoryPlaceholder"
   | "editor.loading"
   | "editor.unsupported"
   | "editor.unavailable"

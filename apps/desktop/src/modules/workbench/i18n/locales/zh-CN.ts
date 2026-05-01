@@ -498,6 +498,7 @@ export const ZH_CN_DICTIONARY: WorkbenchDictionary = {
   "files.viewList": "列表视图",
   "files.viewLarge": "大视图",
   "files.chooserBindProjectLabel": "把当前目录绑定到这个 AI 会话",
+  "files.chooserSelectDirectoryPlaceholder": "先进入一个目录，再绑定项目",
   "editor.loading": "正在加载文件",
   "editor.unsupported": "当前文件暂不支持编辑",
   "editor.unavailable": "文件编辑模块不可用",

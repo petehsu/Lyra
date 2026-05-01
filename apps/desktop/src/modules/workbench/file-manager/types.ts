@@ -49,6 +49,8 @@ export type FileManagerAppState = {
   readonly devices: readonly FileManagerDevice[];
   readonly entries: readonly FileManagerEntry[];
   readonly trashEntries: readonly FileManagerTrashEntry[];
+  readonly directorySubscriptionId: string | undefined;
+  readonly directoryGeneration: number | undefined;
   readonly selectedEntryId: string | undefined;
   readonly selectedTrashEntryId: string | undefined;
   readonly createDraft: FileManagerCreateDraft | undefined;
@@ -104,6 +106,7 @@ export type FileManagerSurfaceLabels = {
   readonly viewList: string;
   readonly viewLarge: string;
   readonly chooserBindProjectLabel: string;
+  readonly chooserSelectDirectoryPlaceholder: string;
 };
 
 export type FileManagerChooserMode =

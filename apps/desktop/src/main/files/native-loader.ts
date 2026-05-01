@@ -14,6 +14,9 @@ type NodeAddonModule = NodeModule & {
 const requiredMethods: readonly (keyof FilesNativeBindings)[] = [
   "readHome",
   "readDirectory",
+  "subscribeDirectory",
+  "unsubscribeDirectory",
+  "pollDirectoryPatches",
   "readTrash",
   "createFile",
   "createFolder",

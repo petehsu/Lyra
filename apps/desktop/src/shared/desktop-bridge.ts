@@ -13,6 +13,7 @@ import type {
   FileManagerCreateFileRequest,
   FileManagerCreateFolderRequest,
   FileManagerDirectoryMutationResponse,
+  FileManagerDirectoryPatch,
   FileManagerEjectDeviceRequest,
   FileManagerEjectDeviceResult,
   FileManagerFavoritesPayload,
@@ -30,6 +31,8 @@ import type {
   FileManagerRecentLocationsPayload,
   FileManagerRestoreFromTrashRequest,
   FileManagerSelectedAttachment,
+  FileManagerSubscribeDirectoryRequest,
+  FileManagerSubscribeDirectoryResponse,
   FileWriteResult,
   FileWriteTextRequest
 } from "./file-manager";
@@ -361,6 +364,9 @@ export const LYRA_CHANNELS = {
   searchDeepExpand: "lyra:search/deep-stream/expand",
   filesReadHome: "lyra:files/read-home",
   filesReadDirectory: "lyra:files/read-directory",
+  filesSubscribeDirectory: "lyra:files/subscribe-directory",
+  filesUnsubscribeDirectory: "lyra:files/unsubscribe-directory",
+  filesDirectoryPatch: "lyra:files/directory-patch",
   filesReadTrash: "lyra:files/read-trash",
   filesCreateFile: "lyra:files/create-file",
   filesCreateFolder: "lyra:files/create-folder",
@@ -1189,6 +1195,11 @@ export type LinuxCompatApi = {
 export type FilesApi = {
   readonly readHome: () => Promise<FileManagerReadHomeResponse>;
   readonly readDirectory: (request: FileManagerReadDirectoryRequest) => Promise<FileManagerReadDirectoryResponse>;
+  readonly subscribeDirectory?: (
+    request: FileManagerSubscribeDirectoryRequest
+  ) => Promise<FileManagerSubscribeDirectoryResponse>;
+  readonly unsubscribeDirectory?: (subscriptionId: string) => Promise<void>;
+  readonly onDirectoryPatch?: (listener: (patch: FileManagerDirectoryPatch) => void) => () => void;
   readonly readTrash: () => Promise<FileManagerReadTrashResponse>;
   readonly createFile: (request: FileManagerCreateFileRequest) => Promise<FileManagerDirectoryMutationResponse>;
   readonly createFolder: (request: FileManagerCreateFolderRequest) => Promise<FileManagerDirectoryMutationResponse>;

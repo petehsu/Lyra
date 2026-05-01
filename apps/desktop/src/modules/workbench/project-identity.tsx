@@ -13,6 +13,8 @@ import type { FileManagerEntry } from "../../shared/file-manager";
 const LYRA_LOGO_URL = new URL("../../renderer/assets/logo.svg", import.meta.url).toString();
 const MAX_PROJECT_LOGO_SCAN_DIRS = 18;
 const MAX_PROJECT_LOGO_SCAN_DEPTH = 2;
+const PROJECT_LOGO_CACHE_TTL_MS = 5 * 60 * 1000;
+const PROJECT_LOGO_SCAN_DELAY_MS = 120;
 
 const PROJECT_LOGO_IMAGE_EXTENSIONS = new Set([
   "avif",
@@ -43,6 +45,13 @@ type ProjectLogoScanResult = {
   readonly path: string;
   readonly score: number;
 };
+
+type ProjectLogoCacheEntry = {
+  readonly value: string | null;
+  readonly expiresAt: number;
+};
+
+const projectLogoCache = new Map<string, ProjectLogoCacheEntry>();
 
 export const normalizeProjectRoot = (value: string | null | undefined): string | null => {
   const trimmed = value?.trim() ?? "";
@@ -170,9 +179,25 @@ export const useProjectLogoMap = (
 
   useEffect(() => {
     const nextRoots = new Set(roots);
+    const now = Date.now();
+    const cachedLogoByRoot = new Map<string, string | null>();
+    const rootsToScan: string[] = [];
+    for (const root of roots) {
+      const cached = projectLogoCache.get(root);
+      if (cached !== undefined && cached.expiresAt > now) {
+        cachedLogoByRoot.set(root, cached.value);
+        continue;
+      }
+      rootsToScan.push(root);
+    }
+
     setLogoByRoot((current) => {
       const next = new Map<string, string | null>();
       for (const root of roots) {
+        if (cachedLogoByRoot.has(root)) {
+          next.set(root, cachedLogoByRoot.get(root) ?? null);
+          continue;
+        }
         if (current.has(root)) {
           next.set(root, current.get(root) ?? null);
         }
@@ -180,26 +205,37 @@ export const useProjectLogoMap = (
       return next;
     });
 
-    if (filesApi === undefined || roots.length === 0) {
+    if (filesApi === undefined || rootsToScan.length === 0) {
       return undefined;
     }
 
     let cancelled = false;
-    for (const root of roots) {
-      void readProjectLogoUrl(filesApi, root).then((logoUrl) => {
-        if (cancelled || nextRoots.has(root) === false) {
-          return;
+    const scanHandle = globalThis.setTimeout(() => {
+      void (async () => {
+        for (const root of rootsToScan) {
+          if (cancelled || nextRoots.has(root) === false) {
+            continue;
+          }
+          const logoUrl = await readProjectLogoUrl(filesApi, root);
+          projectLogoCache.set(root, {
+            value: logoUrl,
+            expiresAt: Date.now() + PROJECT_LOGO_CACHE_TTL_MS
+          });
+          if (cancelled || nextRoots.has(root) === false) {
+            continue;
+          }
+          setLogoByRoot((current) => {
+            const next = new Map(current);
+            next.set(root, logoUrl);
+            return next;
+          });
         }
-        setLogoByRoot((current) => {
-          const next = new Map(current);
-          next.set(root, logoUrl);
-          return next;
-        });
-      });
-    }
+      })();
+    }, PROJECT_LOGO_SCAN_DELAY_MS);
 
     return () => {
       cancelled = true;
+      globalThis.clearTimeout(scanHandle);
     };
   }, [filesApi, roots, rootsKey]);
 

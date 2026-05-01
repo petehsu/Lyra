@@ -113,6 +113,11 @@ const createFakeBindings = (): FilesNativeBindings => {
   return {
     readHome: unsupportedHomeRead,
     readDirectory: unsupportedDirectoryRead,
+    subscribeDirectory: vi.fn(() => {
+      throw new Error("not implemented");
+    }),
+    unsubscribeDirectory: vi.fn(() => false),
+    pollDirectoryPatches: vi.fn(() => []),
     readTrash: unsupportedTrashRead,
     createFile: unsupportedMutation,
     createFolder: unsupportedMutation,
