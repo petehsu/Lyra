@@ -2,7 +2,7 @@ use napi::{Error, Result, Status};
 use napi_derive::napi;
 use once_cell::sync::Lazy;
 
-use lyra_resource_core::{ResourceKernel, ResourceRecord};
+use lyra_resource_core::{ActivityActionRequest, ResourceKernel, ResourceRecord};
 
 static RESOURCE_KERNEL: Lazy<ResourceKernel> =
     Lazy::new(|| ResourceKernel::new().expect("create resource kernel"));
@@ -34,4 +34,19 @@ pub fn request_lifecycle(resource_id: String, target_state: String) -> Result<u6
 #[napi(js_name = "readSnapshotJson")]
 pub fn read_snapshot_json() -> Result<String> {
     RESOURCE_KERNEL.read_snapshot_json().map_err(to_napi_error)
+}
+
+#[napi(js_name = "readSystemSnapshotJson")]
+pub fn read_system_snapshot_json() -> Result<String> {
+    RESOURCE_KERNEL
+        .read_system_snapshot_json()
+        .map_err(to_napi_error)
+}
+
+#[napi(js_name = "requestActivityActionJson")]
+pub fn request_activity_action_json(payload: String) -> Result<String> {
+    let request: ActivityActionRequest = serde_json::from_str(&payload).map_err(to_napi_error)?;
+    RESOURCE_KERNEL
+        .request_activity_action_json(request)
+        .map_err(to_napi_error)
 }

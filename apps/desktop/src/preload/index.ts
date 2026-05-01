@@ -85,6 +85,9 @@ import {
   type SearchRebuildIndexRequest,
   type SearchRebuildIndexResponse,
   type LyraResourceEvent,
+  type LyraSystemActivityActionRequest,
+  type LyraSystemActivityActionResult,
+  type LyraSystemSnapshot,
   type LyraResourceLifecycleRequest,
   type LyraResourceRegisterRequest,
   type LyraResourceSnapshot,
@@ -657,6 +660,10 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(
         LYRA_CHANNELS.resourcesReadSnapshot
       ) as Promise<LyraResourceSnapshot>,
+    readSystemSnapshot: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.resourcesReadSystemSnapshot
+      ) as Promise<LyraSystemSnapshot>,
     registerOrUpdate: (request: LyraResourceRegisterRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.resourcesRegisterOrUpdate,
@@ -669,6 +676,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.resourcesRequestLifecycle,
         request
       ) as Promise<void>,
+    requestActivityAction: (request: LyraSystemActivityActionRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.resourcesRequestActivityAction,
+        request
+      ) as Promise<LyraSystemActivityActionResult>,
     onEvent: (listener: (event: LyraResourceEvent) => void) => {
       ensureResourceEventBridge();
       resourceEventListeners.add(listener);

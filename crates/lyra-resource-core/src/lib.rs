@@ -59,6 +59,21 @@ pub struct ResourceSnapshot {
     pub resources: Vec<ResourceRecord>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityActionRequest {
+    pub activity_id: String,
+    pub action: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityActionResult {
+    pub ok: bool,
+    pub supported: bool,
+    pub message: String,
+}
+
 unsafe extern "C" {
     fn lyra_resource_kernel_create() -> *mut c_void;
     fn lyra_resource_kernel_destroy(handle: *mut c_void);
@@ -83,6 +98,12 @@ unsafe extern "C" {
         target_state: *const c_char,
     ) -> u64;
     fn lyra_resource_kernel_read_snapshot_json(handle: *mut c_void) -> *mut c_char;
+    fn lyra_resource_kernel_read_system_snapshot_json(handle: *mut c_void) -> *mut c_char;
+    fn lyra_resource_kernel_request_activity_action(
+        handle: *mut c_void,
+        activity_id: *const c_char,
+        action: *const c_char,
+    ) -> *mut c_char;
     fn lyra_resource_kernel_free_string(value: *mut c_char);
 }
 
@@ -149,6 +170,28 @@ impl ResourceKernel {
 
     pub fn read_snapshot_json(&self) -> Result<String> {
         let ptr = unsafe { lyra_resource_kernel_read_snapshot_json(self.handle.as_ptr()) };
+        self.take_native_string(ptr)
+    }
+
+    pub fn read_system_snapshot_json(&self) -> Result<String> {
+        let ptr = unsafe { lyra_resource_kernel_read_system_snapshot_json(self.handle.as_ptr()) };
+        self.take_native_string(ptr)
+    }
+
+    pub fn request_activity_action_json(&self, request: ActivityActionRequest) -> Result<String> {
+        let activity_id = CString::new(request.activity_id)?;
+        let action = CString::new(request.action)?;
+        let ptr = unsafe {
+            lyra_resource_kernel_request_activity_action(
+                self.handle.as_ptr(),
+                activity_id.as_ptr(),
+                action.as_ptr(),
+            )
+        };
+        self.take_native_string(ptr)
+    }
+
+    fn take_native_string(&self, ptr: *mut c_char) -> Result<String> {
         let ptr = NonNull::new(ptr).ok_or(ResourceKernelError::AllocationFailed)?;
         let value = unsafe { CStr::from_ptr(ptr.as_ptr()) }
             .to_str()
@@ -162,6 +205,15 @@ impl ResourceKernel {
 
     pub fn read_snapshot(&self) -> Result<ResourceSnapshot> {
         Ok(serde_json::from_str(&self.read_snapshot_json()?)?)
+    }
+
+    pub fn request_activity_action(
+        &self,
+        request: ActivityActionRequest,
+    ) -> Result<ActivityActionResult> {
+        Ok(serde_json::from_str(
+            &self.request_activity_action_json(request)?,
+        )?)
     }
 }
 
@@ -200,5 +252,43 @@ mod tests {
         let snapshot = kernel.read_snapshot().expect("snapshot");
         assert_eq!(snapshot.resources.len(), 1);
         assert_eq!(snapshot.resources[0].core_key, "site:example.com");
+    }
+
+    #[test]
+    fn system_snapshot_includes_lyra_runtime_and_activity_actions() {
+        let kernel = ResourceKernel::new().expect("kernel");
+        kernel
+            .register_or_update(ResourceRecord {
+                resource_id: "browser:test".to_string(),
+                kind: "browser-page".to_string(),
+                label: "Example".to_string(),
+                view_id: "tab:test".to_string(),
+                state_key: "state:test".to_string(),
+                core_key: "site:example.com".to_string(),
+                lifecycle_state: "foreground".to_string(),
+                tab_id: Some("test".to_string()),
+                address: Some("https://example.com/".to_string()),
+                pid: 0,
+                visible: true,
+                created_at: 0,
+                updated_at: 0,
+            })
+            .expect("register");
+
+        let snapshot: serde_json::Value =
+            serde_json::from_str(&kernel.read_system_snapshot_json().expect("system snapshot"))
+                .expect("valid system snapshot json");
+        assert_eq!(snapshot["runtimeName"], "Lyra Sentinel Runtime");
+        assert!(snapshot["activities"].as_array().expect("activities").len() >= 2);
+
+        let result = kernel
+            .request_activity_action(ActivityActionRequest {
+                activity_id: "lyra-resource:browser:test".to_string(),
+                action: "suspend".to_string(),
+            })
+            .expect("activity action");
+        assert!(result.ok);
+        let next = kernel.read_snapshot().expect("snapshot");
+        assert_eq!(next.resources[0].lifecycle_state, "warm-suspended");
     }
 }

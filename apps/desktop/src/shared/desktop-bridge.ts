@@ -5,7 +5,10 @@ import type {
   LyraResourceEvent,
   LyraResourceLifecycleRequest,
   LyraResourceRegisterRequest,
-  LyraResourceSnapshot
+  LyraResourceSnapshot,
+  LyraSystemActivityActionRequest,
+  LyraSystemActivityActionResult,
+  LyraSystemSnapshot
 } from "./resource-runtime";
 import type {
   LyraClientNotificationPayload,
@@ -160,7 +163,16 @@ export type {
   LyraResourceNode,
   LyraResourceProcessSnapshot,
   LyraResourceRegisterRequest,
-  LyraResourceSnapshot
+  LyraResourceSnapshot,
+  LyraResourceMonitorScope,
+  LyraSystemActivity,
+  LyraSystemActivityAction,
+  LyraSystemActivityActionRequest,
+  LyraSystemActivityActionResult,
+  LyraSystemActivityKind,
+  LyraSystemLoadSample,
+  LyraSystemMetricSnapshot,
+  LyraSystemSnapshot
 } from "./resource-runtime";
 export type {
   LyraClientNotificationPayload,
@@ -420,9 +432,11 @@ export const LYRA_CHANNELS = {
   browserUseReadRuntimeStatus: "lyra:browser-use/read-runtime-status",
   browserUseRuntimeStatusEvent: "lyra:browser-use/runtime-status",
   resourcesReadSnapshot: "lyra:resources/read-snapshot",
+  resourcesReadSystemSnapshot: "lyra:resources/read-system-snapshot",
   resourcesRegisterOrUpdate: "lyra:resources/register-or-update",
   resourcesRemove: "lyra:resources/remove",
   resourcesRequestLifecycle: "lyra:resources/request-lifecycle",
+  resourcesRequestActivityAction: "lyra:resources/request-activity-action",
   resourcesEvent: "lyra:resources/event",
   mcpReadCatalog: "lyra:mcp/read-catalog",
   mcpReadServers: "lyra:mcp/read-servers",
@@ -1272,9 +1286,13 @@ export type WorkbenchBrowserApi = {
 
 export type ResourcesApi = {
   readonly readSnapshot: () => Promise<LyraResourceSnapshot>;
+  readonly readSystemSnapshot: () => Promise<LyraSystemSnapshot>;
   readonly registerOrUpdate: (request: LyraResourceRegisterRequest) => Promise<void>;
   readonly remove: (resourceId: string) => Promise<void>;
   readonly requestLifecycle: (request: LyraResourceLifecycleRequest) => Promise<void>;
+  readonly requestActivityAction: (
+    request: LyraSystemActivityActionRequest
+  ) => Promise<LyraSystemActivityActionResult>;
   readonly onEvent: (listener: (event: LyraResourceEvent) => void) => () => void;
 };
 

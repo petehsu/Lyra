@@ -15,7 +15,9 @@ const requiredMethods: readonly (keyof ResourcesNativeBindings)[] = [
   "registerOrUpdateResourceJson",
   "removeResource",
   "requestLifecycle",
-  "readSnapshotJson"
+  "readSnapshotJson",
+  "readSystemSnapshotJson",
+  "requestActivityActionJson"
 ];
 
 const resolveNativeFileNames = (): readonly string[] => {

@@ -1396,6 +1396,16 @@
   gap: var(--lyra-unit-8);
 }
 
+.lyra-settings-ai-provider-picker .lyra-list-picker-open .lyra-list-picker-surface {
+  max-height: var(--lyra-unit-220);
+}
+
+.lyra-settings-ai-provider-picker .lyra-list-picker-options {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
 .lyra-settings-ai-section-label {
   color: var(--lyra-text-secondary);
   font-size: var(--lyra-unit-12);

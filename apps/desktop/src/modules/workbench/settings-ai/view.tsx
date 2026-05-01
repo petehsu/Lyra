@@ -2,6 +2,7 @@ import { Pencil, Plus, RefreshCw, Save, Trash2, Wifi, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { AiProviderPreset, AiProviderProfile } from "../../../shared/ai";
+import { LyraListPicker } from "../list-picker";
 import {
   additionalAuthFields,
   appendAdditionalConfiguredModelLines,
@@ -120,6 +121,15 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   const helpText = model.availableModels.length > 0
     ? labels.modelsHelp
     : `${labels.modelsHelp} ${labels.noDiscoveredModels}`;
+  const providerOptions = presets.length > 0
+    ? presets.map((preset) => ({
+        value: preset.id,
+        label: `${preset.label} · ${preset.protocolId}`,
+      }))
+    : [{ value: "", label: labels.selectProviderLabel, disabled: true }];
+  const selectedProviderOptionValue = providerOptions.some((option) => option.value === model.selectedPresetId)
+    ? model.selectedPresetId ?? ""
+    : providerOptions[0]?.value ?? "";
 
   const startCreate = (): void => {
     model.selectProfile(null);
@@ -344,38 +354,23 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
           </header>
 
           {activeEditorMode === "create" ? (
-            <div className="lyra-settings-ai-provider-picker">
+            <label className="lyra-settings-ai-provider-picker lyra-settings-ai-field">
               <span className="lyra-settings-ai-section-label">{labels.selectProviderLabel}</span>
-              <ul
-                className="lyra-settings-ai-selection-list lyra-settings-ai-provider-list"
-                role="listbox"
-                aria-label={labels.selectProviderLabel}
-              >
-                {presets.map((preset) => (
-                  <li key={preset.id} className="lyra-settings-ai-selection-item-slot">
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={model.selectedPresetId === preset.id}
-                      className={model.selectedPresetId === preset.id
-                        ? "lyra-settings-ai-selection-item lyra-settings-ai-selection-item-active"
-                        : "lyra-settings-ai-selection-item"}
-                      onClick={() => {
-                        model.applyPreset(preset.id);
-                      }}
-                    >
-                      <span className="lyra-settings-ai-selection-copy">
-                        <span className="lyra-settings-ai-selection-heading">
-                          <SettingsAiProviderIcon iconKey={preset.iconKey} title={preset.label} />
-                          <strong>{preset.label}</strong>
-                        </span>
-                        <small>{preset.protocolId} · {capabilityLabel(labels, preset.capability)}</small>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+              <LyraListPicker
+                className="lyra-settings-ai-list-picker"
+                ariaLabel={labels.selectProviderLabel}
+                listAriaLabel={labels.selectProviderLabel}
+                value={selectedProviderOptionValue}
+                shape="rounded"
+                options={providerOptions}
+                disabled={presets.length === 0}
+                onChange={(presetId) => {
+                  if (presetId.length > 0) {
+                    model.applyPreset(presetId);
+                  }
+                }}
+              />
+            </label>
           ) : null}
 
           <div className="lyra-settings-ai-form">

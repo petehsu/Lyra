@@ -45,6 +45,83 @@ export type LyraResourceSnapshot = {
   readonly coreGroups: readonly LyraResourceCoreGroup[];
 };
 
+export type LyraResourceMonitorScope = "lyra" | "all";
+
+export type LyraSystemLoadSample = {
+  readonly score: number;
+  readonly capturedAt: number;
+};
+
+export type LyraSystemMetricSnapshot = {
+  readonly supported: boolean;
+  readonly value: number | null;
+  readonly total?: number;
+  readonly used?: number;
+  readonly free?: number;
+  readonly unit: "percent" | "bytes" | "bytesPerSecond" | "count" | "score" | "text";
+  readonly detail?: string;
+};
+
+export type LyraSystemActivityKind = "lyra-resource" | "process" | "runtime";
+
+export type LyraSystemActivityAction =
+  | "restart"
+  | "kill"
+  | "suspend"
+  | "resume"
+  | "inspect"
+  | "reveal";
+
+export type LyraSystemActivity = {
+  readonly activityId: string;
+  readonly kind: LyraSystemActivityKind;
+  readonly label: string;
+  readonly subtitle?: string;
+  readonly pid?: number;
+  readonly state?: string;
+  readonly cpuPercent?: number;
+  readonly memoryBytes?: number;
+  readonly loadScore?: number;
+  readonly actions: readonly LyraSystemActivityAction[];
+};
+
+export type LyraSystemSnapshot = {
+  readonly capturedAt: number;
+  readonly runtimeName: string;
+  readonly kernelName: string;
+  readonly loadScore: number;
+  readonly cpu: LyraSystemMetricSnapshot & {
+    readonly logicalCores?: number;
+    readonly loadAverage1m?: number;
+  };
+  readonly memory: LyraSystemMetricSnapshot;
+  readonly buffers: LyraSystemMetricSnapshot;
+  readonly disk: LyraSystemMetricSnapshot;
+  readonly network: LyraSystemMetricSnapshot & {
+    readonly receivedBytes?: number;
+    readonly transmittedBytes?: number;
+  };
+  readonly gpu: LyraSystemMetricSnapshot;
+  readonly lyra: LyraSystemMetricSnapshot & {
+    readonly resources?: number;
+    readonly coreGroups?: number;
+    readonly tombstoned?: number;
+    readonly generation?: number;
+  };
+  readonly activities: readonly LyraSystemActivity[];
+};
+
+export type LyraSystemActivityActionRequest = {
+  readonly activityId: string;
+  readonly action: LyraSystemActivityAction;
+};
+
+export type LyraSystemActivityActionResult = {
+  readonly ok: boolean;
+  readonly supported: boolean;
+  readonly message: string;
+};
+
 export type LyraResourceRegisterRequest = {
   readonly resourceId: string;
   readonly kind: string;

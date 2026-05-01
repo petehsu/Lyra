@@ -247,6 +247,7 @@ describe("SettingsAiView", () => {
     expect(model.selectProfile).toHaveBeenCalledWith(null);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByText("Mainstream")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Choose Provider" }));
     fireEvent.click(screen.getByRole("option", { name: /OpenAI/ }));
 
     expect(model.applyPreset).toHaveBeenCalledWith("openai");

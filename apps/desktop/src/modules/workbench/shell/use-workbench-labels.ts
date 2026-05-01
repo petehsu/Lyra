@@ -313,6 +313,28 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         kind: t("resources.activityMonitorKind"),
         label: t("resources.activityMonitorLabel"),
         core: t("resources.activityMonitorCore"),
+        scopeLyra: t("resources.activityMonitorScopeLyra"),
+        scopeAll: t("resources.activityMonitorScopeAll"),
+        runtime: t("resources.activityMonitorRuntime"),
+        kernel: t("resources.activityMonitorKernel"),
+        unifiedLoad: t("resources.activityMonitorUnifiedLoad"),
+        cpu: t("resources.activityMonitorCpu"),
+        memory: t("resources.activityMonitorMemory"),
+        buffers: t("resources.activityMonitorBuffers"),
+        disk: t("resources.activityMonitorDisk"),
+        network: t("resources.activityMonitorNetwork"),
+        gpu: t("resources.activityMonitorGpu"),
+        lyra: t("resources.activityMonitorLyra"),
+        activities: t("resources.activityMonitorActivities"),
+        usage: t("resources.activityMonitorUsage"),
+        actions: t("resources.activityMonitorActions"),
+        unavailable: t("resources.activityMonitorUnavailable"),
+        cores: t("resources.activityMonitorCores"),
+        loadAverage: t("resources.activityMonitorLoadAverage"),
+        networkReceived: t("resources.activityMonitorNetworkReceived"),
+        networkTransmitted: t("resources.activityMonitorNetworkTransmitted"),
+        free: t("resources.activityMonitorFree"),
+        actionFailed: t("resources.activityMonitorActionFailed"),
         lifecycleStates: {
           foreground: t("resources.lifecycleForeground"),
           visible: t("resources.lifecycleVisible"),
@@ -322,6 +344,19 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
           tombstoned: t("resources.lifecycleTombstoned"),
           restoring: t("resources.lifecycleRestoring"),
           archived: t("resources.lifecycleArchived")
+        },
+        activityKinds: {
+          "lyra-resource": t("resources.activityKindLyraResource"),
+          process: t("resources.activityKindProcess"),
+          runtime: t("resources.activityKindRuntime")
+        },
+        activityActions: {
+          restart: t("resources.activityActionRestart"),
+          kill: t("resources.activityActionKill"),
+          suspend: t("resources.activityActionSuspend"),
+          resume: t("resources.activityActionResume"),
+          inspect: t("resources.activityActionInspect"),
+          reveal: t("resources.activityActionReveal")
         }
       },
       workspaceI18n: {

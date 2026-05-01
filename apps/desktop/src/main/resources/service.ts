@@ -6,7 +6,11 @@ import {
   type LyraResourceLifecycleRequest,
   type LyraResourceNode,
   type LyraResourceRegisterRequest,
-  type LyraResourceSnapshot
+  type LyraResourceSnapshot,
+  type LyraSystemActivityAction,
+  type LyraSystemActivityActionRequest,
+  type LyraSystemActivityActionResult,
+  type LyraSystemSnapshot
 } from "../../shared/desktop-bridge";
 import { loadResourcesNativeBindings } from "./native-loader";
 import type { ResourceRuntimeService } from "./types";
@@ -20,6 +24,15 @@ const VALID_LIFECYCLE_STATES = new Set([
   "tombstoned",
   "restoring",
   "archived"
+]);
+
+const VALID_ACTIVITY_ACTIONS = new Set<LyraSystemActivityAction>([
+  "restart",
+  "kill",
+  "suspend",
+  "resume",
+  "inspect",
+  "reveal"
 ]);
 
 const normalizeString = (value: unknown, fallback = ""): string => {
@@ -81,6 +94,23 @@ const normalizeLifecycleRequest = (
   };
 };
 
+const normalizeActivityActionRequest = (
+  request: LyraSystemActivityActionRequest
+): LyraSystemActivityActionRequest => {
+  const activityId = normalizeString(request.activityId);
+  if (activityId.length === 0) {
+    throw new Error("activityId is required");
+  }
+  const action = normalizeString(request.action) as LyraSystemActivityAction;
+  if (VALID_ACTIVITY_ACTIONS.has(action) === false) {
+    throw new Error("unsupported activity action");
+  }
+  return {
+    activityId,
+    action
+  };
+};
+
 const toCoreGroups = (
   resources: readonly LyraResourceNode[]
 ): LyraResourceSnapshot["coreGroups"] => {
@@ -125,6 +155,47 @@ const parseSnapshot = (json: string): LyraResourceSnapshot => {
   };
 };
 
+const parseSystemSnapshot = (json: string): LyraSystemSnapshot => {
+  const parsed = JSON.parse(json) as Partial<LyraSystemSnapshot>;
+  const fallbackMetric = {
+    supported: false,
+    value: null,
+    unit: "count" as const
+  };
+  return {
+    capturedAt: typeof parsed.capturedAt === "number" ? parsed.capturedAt : Date.now(),
+    runtimeName:
+      typeof parsed.runtimeName === "string" && parsed.runtimeName.length > 0
+        ? parsed.runtimeName
+        : "Lyra Sentinel Runtime",
+    kernelName:
+      typeof parsed.kernelName === "string" && parsed.kernelName.length > 0
+        ? parsed.kernelName
+        : "Lyra Native Resource Kernel",
+    loadScore:
+      typeof parsed.loadScore === "number" && Number.isFinite(parsed.loadScore)
+        ? Math.max(0, Math.min(100, parsed.loadScore))
+        : 0,
+    cpu: { ...fallbackMetric, unit: "percent", ...parsed.cpu },
+    memory: { ...fallbackMetric, unit: "bytes", ...parsed.memory },
+    buffers: { ...fallbackMetric, unit: "bytes", ...parsed.buffers },
+    disk: { ...fallbackMetric, unit: "bytes", ...parsed.disk },
+    network: { ...fallbackMetric, unit: "bytes", ...parsed.network },
+    gpu: { ...fallbackMetric, unit: "percent", ...parsed.gpu },
+    lyra: { ...fallbackMetric, unit: "count", ...parsed.lyra },
+    activities: Array.isArray(parsed.activities) ? parsed.activities : []
+  };
+};
+
+const parseActivityActionResult = (json: string): LyraSystemActivityActionResult => {
+  const parsed = JSON.parse(json) as Partial<LyraSystemActivityActionResult>;
+  return {
+    ok: parsed.ok === true,
+    supported: parsed.supported === true,
+    message: typeof parsed.message === "string" ? parsed.message : ""
+  };
+};
+
 const publishResourceEvent = (event: LyraResourceEvent): void => {
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.webContents.isDestroyed()) {
@@ -146,6 +217,9 @@ export const createResourceRuntimeService = (): ResourceRuntimeService => {
   const readSnapshot = (): LyraResourceSnapshot =>
     parseSnapshot(bindings.readSnapshotJson());
 
+  const readSystemSnapshot = (): LyraSystemSnapshot =>
+    parseSystemSnapshot(bindings.readSystemSnapshotJson());
+
   const publishSnapshot = (): void => {
     publishResourceEvent({
       kind: "snapshot",
@@ -154,6 +228,7 @@ export const createResourceRuntimeService = (): ResourceRuntimeService => {
   };
 
   ipcMain.handle(LYRA_CHANNELS.resourcesReadSnapshot, () => readSnapshot());
+  ipcMain.handle(LYRA_CHANNELS.resourcesReadSystemSnapshot, () => readSystemSnapshot());
   ipcMain.handle(
     LYRA_CHANNELS.resourcesRegisterOrUpdate,
     (_event, payload: LyraResourceRegisterRequest) => {
@@ -194,16 +269,30 @@ export const createResourceRuntimeService = (): ResourceRuntimeService => {
       publishSnapshot();
     }
   );
+  ipcMain.handle(
+    LYRA_CHANNELS.resourcesRequestActivityAction,
+    (_event, payload: LyraSystemActivityActionRequest) => {
+      const request = normalizeActivityActionRequest(payload);
+      const result = parseActivityActionResult(
+        bindings.requestActivityActionJson(JSON.stringify(request))
+      );
+      publishSnapshot();
+      return result;
+    }
+  );
 
   return {
     dispose: () => {
       ipcMain.removeHandler(LYRA_CHANNELS.resourcesReadSnapshot);
+      ipcMain.removeHandler(LYRA_CHANNELS.resourcesReadSystemSnapshot);
       ipcMain.removeHandler(LYRA_CHANNELS.resourcesRegisterOrUpdate);
       ipcMain.removeHandler(LYRA_CHANNELS.resourcesRemove);
       ipcMain.removeHandler(LYRA_CHANNELS.resourcesRequestLifecycle);
+      ipcMain.removeHandler(LYRA_CHANNELS.resourcesRequestActivityAction);
     },
     loadResult,
     readSnapshot,
+    readSystemSnapshot,
     registerOrUpdate: (request) => {
       const normalized = normalizeResourceRequest(request);
       return bindings.registerOrUpdateResourceJson(JSON.stringify(normalized));
@@ -212,6 +301,10 @@ export const createResourceRuntimeService = (): ResourceRuntimeService => {
     requestLifecycle: (request) => {
       const normalized = normalizeLifecycleRequest(request);
       return bindings.requestLifecycle(normalized.resourceId, normalized.targetState);
+    },
+    requestActivityAction: (request) => {
+      const normalized = normalizeActivityActionRequest(request);
+      return parseActivityActionResult(bindings.requestActivityActionJson(JSON.stringify(normalized)));
     }
   };
 };

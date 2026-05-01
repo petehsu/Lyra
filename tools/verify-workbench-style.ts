@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 
+import { WORKBENCH_FOUNDATION_TOKENS } from "../apps/desktop/src/modules/workbench/theme/foundation";
+
 type SelectorRule = {
   readonly selector: string;
   readonly required: readonly RegExp[];
@@ -28,6 +30,7 @@ const WORKBENCH_SHELL_ENTRYPOINT_RELATIVE = "apps/desktop/src/modules/workbench/
 const LEGACY_CSS_PATH = path.join(ROOT, "apps/desktop/src/renderer/styles/workbench.css");
 const WORKBENCH_SHELL_ENTRYPOINT_MAX_LINES = 650;
 const APPROVED_BREAKPOINTS = new Set(["720px", "860px", "980px", "1180px"]);
+const FOUNDATION_TOKEN_NAMES = new Set(Object.keys(WORKBENCH_FOUNDATION_TOKENS));
 const VISUAL_STYLE_KEYS = new Set([
   "fontSize",
   "lineHeight",
@@ -453,6 +456,16 @@ const isWithinRanges = (index: number, ranges: readonly [number, number][]): boo
 export const scanCssText = (filePath: string, text: string): string[] => {
   const violations: string[] = [];
   const fallbackRanges = findVarFallbackRanges(text);
+
+  for (const match of text.matchAll(/var\((--lyra-unit-[A-Za-z0-9-]+)/g)) {
+    const tokenName = match[1] ?? "";
+    if (FOUNDATION_TOKEN_NAMES.has(tokenName)) {
+      continue;
+    }
+    const index = match.index ?? 0;
+    const lineNumber = lineNumberAt(text, index);
+    violations.push(`${filePath}:${lineNumber} references unknown foundation token ${tokenName}`);
+  }
 
   for (const match of text.matchAll(/-?\d+(?:\.\d+)?px\b/g)) {
     const literal = match[0];

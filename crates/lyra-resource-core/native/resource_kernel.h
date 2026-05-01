@@ -39,6 +39,12 @@ uint64_t lyra_resource_kernel_request_lifecycle(
 );
 
 char *lyra_resource_kernel_read_snapshot_json(LyraResourceKernelHandle handle);
+char *lyra_resource_kernel_read_system_snapshot_json(LyraResourceKernelHandle handle);
+char *lyra_resource_kernel_request_activity_action(
+    LyraResourceKernelHandle handle,
+    const char *activity_id,
+    const char *action
+);
 void lyra_resource_kernel_free_string(char *value);
 
 #ifdef __cplusplus
