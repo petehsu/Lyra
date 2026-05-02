@@ -12,6 +12,7 @@ const WORKBENCH_STATE_KEY = "workspace-tabs" as const;
 const VALID_WORKSPACE_APP_IDS = new Set([
   "file-manager",
   "file-editor",
+  "image-viewer",
   "resource-monitor",
   "ai-history",
   "ai-plan-review",

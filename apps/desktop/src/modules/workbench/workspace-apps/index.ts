@@ -7,12 +7,15 @@ export {
   isAiSkillsAppId,
   isFileEditorAppId,
   isFileManagerAppId,
+  isImageViewerAppId,
   isNotificationCenterAppId,
   isResourceMonitorAppId
 } from "./service";
 export type {
   NotificationCenterAppIconKey,
   NotificationCenterAppId,
+  ImageViewerAppIconKey,
+  ImageViewerAppId,
   ResourceMonitorAppIconKey,
   ResourceMonitorAppId,
   WorkbenchAppId,

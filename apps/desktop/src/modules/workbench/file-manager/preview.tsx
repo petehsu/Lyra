@@ -11,7 +11,11 @@ const PREVIEWABLE_IMAGE_EXTENSIONS = new Set([
   "svg",
   "bmp",
   "ico",
-  "avif"
+  "avif",
+  "tiff",
+  "tif",
+  "heic",
+  "heif"
 ]);
 
 type PreviewableEntry = FileManagerEntry | FileManagerTrashEntry;

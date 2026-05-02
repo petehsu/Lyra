@@ -91,6 +91,12 @@ import {
   type LyraResourceLifecycleRequest,
   type LyraResourceRegisterRequest,
   type LyraResourceSnapshot,
+  type ImageViewerCloseSessionRequest,
+  type ImageViewerEvent,
+  type ImageViewerOpenRequest,
+  type ImageViewerOpenResult,
+  type ImageViewerReadTileRequest,
+  type ImageViewerTileResponse,
   type UiuxInstallFromGitRequest,
   type UiuxInstallFromLocalRequest,
   type UiuxInstallFromNpmRequest,
@@ -160,6 +166,8 @@ const browserUseRuntimeStatusListeners = new Set<(status: BrowserUseRuntimeStatu
 let browserUseRuntimeStatusBridgeReady = false;
 const resourceEventListeners = new Set<(event: LyraResourceEvent) => void>();
 let resourceEventBridgeReady = false;
+const imageViewerEventListeners = new Set<(event: ImageViewerEvent) => void>();
+let imageViewerEventBridgeReady = false;
 const lyraEventListeners = new Set<(event: LyraRuntimeEvent) => void>();
 let lyraEventBridgeReady = false;
 const directoryPatchListeners = new Set<(patch: FileManagerDirectoryPatch) => void>();
@@ -271,6 +279,21 @@ const ensureResourceEventBridge = (): void => {
         return;
       }
       for (const listener of resourceEventListeners) {
+        listener(payload);
+      }
+    }
+  );
+};
+
+const ensureImageViewerEventBridge = (): void => {
+  if (imageViewerEventBridgeReady) {
+    return;
+  }
+  imageViewerEventBridgeReady = true;
+  ipcRenderer.on(
+    LYRA_CHANNELS.imageViewerEvent,
+    (_event: Electron.IpcRendererEvent, payload: ImageViewerEvent): void => {
+      for (const listener of imageViewerEventListeners) {
         listener(payload);
       }
     }
@@ -616,6 +639,22 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.filesSelectAttachments) as Promise<readonly FileManagerSelectedAttachment[]>,
     selectDirectories: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.filesSelectDirectories) as Promise<readonly FileManagerSelectedAttachment[]>
+  },
+  imageViewer: {
+    openImage: (request: ImageViewerOpenRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.imageViewerOpenImage, request) as Promise<ImageViewerOpenResult>,
+    readTile: (request: ImageViewerReadTileRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.imageViewerReadTile, request) as Promise<ImageViewerTileResponse>,
+    closeSession: async (request: ImageViewerCloseSessionRequest) => {
+      await ipcRenderer.invoke(LYRA_CHANNELS.imageViewerCloseSession, request);
+    },
+    onEvent: (listener: (event: ImageViewerEvent) => void) => {
+      ensureImageViewerEventBridge();
+      imageViewerEventListeners.add(listener);
+      return () => {
+        imageViewerEventListeners.delete(listener);
+      };
+    }
   },
   workbenchBrowser: {
     syncTopology: (snapshot: WorkbenchBrowserTopologySnapshot) =>

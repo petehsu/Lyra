@@ -275,6 +275,25 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         openDiff: t("editor.openDiff"),
         closeDiff: t("editor.closeDiff")
       },
+      imageViewer: {
+        loading: "Loading image",
+        unavailable: "Image viewer unavailable",
+        unsupported: "This image format is not supported by native tiling.",
+        retry: "Retry",
+        fit: "Fit",
+        actualSize: "100%",
+        zoomIn: "Zoom in",
+        zoomOut: "Zoom out",
+        reset: "Reset",
+        rotateLeft: "Rotate left",
+        rotateRight: "Rotate right",
+        background: "Background",
+        previous: "Previous image",
+        next: "Next image",
+        nativeTiles: "Native tiles",
+        sourceOnly: "Original source",
+        metadata: "Metadata"
+      },
       fileEditorReview: {
         accept: t("ai.editorWorkAccept"),
         reject: t("ai.editorWorkReject"),

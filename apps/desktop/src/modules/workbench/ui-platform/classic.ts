@@ -9,6 +9,7 @@ import {
 import { BrowserResultSurface, DeepSearchResultSurface } from "../browser-search";
 import { FileEditorSurface } from "../file-editor";
 import { FileManagerSurface } from "../file-manager";
+import { ImageViewerSurface } from "../image-viewer";
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
 import { McpCenterSurface } from "../mcp-center";
 import { NotificationCenterSurface } from "../notifications";
@@ -61,6 +62,7 @@ export const CLASSIC_WORKBENCH_UI_PACK = {
       terminalWorkspace: TerminalWorkspaceSurface,
       fileManager: FileManagerSurface,
       fileEditor: FileEditorSurface,
+      imageViewer: ImageViewerSurface,
       resourceMonitor: ResourceMonitorSurface,
       notificationCenter: NotificationCenterSurface,
       mcpCenter: McpCenterSurface,

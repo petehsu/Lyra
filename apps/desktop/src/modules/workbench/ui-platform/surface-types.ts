@@ -13,6 +13,7 @@ import type {
 } from "../browser-search";
 import type { FileEditorSurfaceProps } from "../file-editor";
 import type { FileManagerSurfaceProps } from "../file-manager";
+import type { ImageViewerSurfaceProps } from "../image-viewer";
 import type { McpCenterSurfaceProps } from "../mcp-center";
 import type { NotificationCenterSurfaceProps } from "../notifications";
 import type { PluginsCenterSurfaceProps } from "../plugins-center";
@@ -32,6 +33,7 @@ export type WorkbenchSurfaceAdapters = {
   readonly terminalWorkspace: ComponentType<TerminalWorkspaceSurfaceProps>;
   readonly fileManager: ComponentType<FileManagerSurfaceProps>;
   readonly fileEditor: ComponentType<FileEditorSurfaceProps>;
+  readonly imageViewer: ComponentType<ImageViewerSurfaceProps>;
   readonly resourceMonitor: ComponentType<ResourceMonitorSurfaceProps>;
   readonly notificationCenter: ComponentType<NotificationCenterSurfaceProps>;
   readonly mcpCenter: ComponentType<McpCenterSurfaceProps>;
@@ -50,6 +52,7 @@ export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
   "terminalWorkspace",
   "fileManager",
   "fileEditor",
+  "imageViewer",
   "resourceMonitor",
   "notificationCenter",
   "mcpCenter",

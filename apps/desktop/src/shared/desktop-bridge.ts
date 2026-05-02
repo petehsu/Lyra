@@ -46,6 +46,14 @@ import type {
   FileWriteTextRequest
 } from "./file-manager";
 import type {
+  ImageViewerCloseSessionRequest,
+  ImageViewerEvent,
+  ImageViewerOpenRequest,
+  ImageViewerOpenResult,
+  ImageViewerReadTileRequest,
+  ImageViewerTileResponse
+} from "./image-viewer";
+import type {
   McpCatalogItem,
   McpCatalogQuickSetup,
   McpCatalogQuickSetupField,
@@ -155,6 +163,15 @@ export type {
   BrowserUseRuntimeStatus,
   BrowserUseRuntimeUnavailableReason,
 } from "./browser-use";
+export type {
+  ImageViewerCloseSessionRequest,
+  ImageViewerEvent,
+  ImageViewerLevel,
+  ImageViewerOpenRequest,
+  ImageViewerOpenResult,
+  ImageViewerReadTileRequest,
+  ImageViewerTileResponse
+} from "./image-viewer";
 export type {
   LyraResourceCoreGroup,
   LyraResourceEvent,
@@ -412,6 +429,10 @@ export const LYRA_CHANNELS = {
   filesStatFile: "lyra:files/stat-file",
   filesSelectAttachments: "lyra:files/select-attachments",
   filesSelectDirectories: "lyra:files/select-directories",
+  imageViewerOpenImage: "lyra:image-viewer/open-image",
+  imageViewerReadTile: "lyra:image-viewer/read-tile",
+  imageViewerCloseSession: "lyra:image-viewer/close-session",
+  imageViewerEvent: "lyra:image-viewer/event",
   lyraRuntimeHealth: "lyra:lyra/runtime/health",
   lyraRuntimeRequest: "lyra:lyra/runtime/request",
   lyraRuntimeNotify: "lyra:lyra/runtime/notify",
@@ -1256,6 +1277,13 @@ export type FilesApi = {
   readonly selectDirectories: () => Promise<readonly FileManagerSelectedAttachment[]>;
 };
 
+export type ImageViewerApi = {
+  readonly openImage: (request: ImageViewerOpenRequest) => Promise<ImageViewerOpenResult>;
+  readonly readTile: (request: ImageViewerReadTileRequest) => Promise<ImageViewerTileResponse>;
+  readonly closeSession: (request: ImageViewerCloseSessionRequest) => Promise<void>;
+  readonly onEvent: (listener: (event: ImageViewerEvent) => void) => () => void;
+};
+
 export type WorkbenchBrowserApi = {
   readonly syncTopology: (
     snapshot: WorkbenchBrowserTopologySnapshot
@@ -1379,6 +1407,7 @@ export type LyraDesktopApi = {
   readonly linuxCompat: LinuxCompatApi;
   readonly search: SearchApi;
   readonly files: FilesApi;
+  readonly imageViewer?: ImageViewerApi;
   readonly lyra?: LyraRuntimeApi;
   readonly workbenchBrowser: WorkbenchBrowserApi;
   readonly resources?: ResourcesApi;

@@ -25,6 +25,7 @@ import {
 } from "./browser-use";
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createFilesIpcBridge } from "./files";
+import { createImageViewerIpcBridge } from "./image-viewer";
 import { createLspIpcBridge } from "./lsp";
 import { createLocalSearchHostToolsBridge } from "./local-search";
 import { createLinuxCompatBridge } from "./linux-compat";
@@ -97,6 +98,7 @@ let disposeAgentCoreBridge: (() => void) | null = null;
 let disposeCapabilitiesBridge: (() => void) | null = null;
 let disposeTerminalBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
+let disposeImageViewerBridge: (() => void) | null = null;
 let disposeLspBridge: (() => void) | null = null;
 let disposeMcpBridge: (() => Promise<void>) | null = null;
 let disposeSkillsBridge: (() => Promise<void>) | null = null;
@@ -310,7 +312,13 @@ const resolveLyraFilePath = (requestUrl: string): string | null => {
   }
 };
 
-const resolvePreviewMimeType = (filePath: string): string => {
+const resolvePreviewMimeType = (filePath: string, contentType: string | null = null): string => {
+  if (
+    contentType !== null
+    && /^image\/[a-z0-9.+-]+$/iu.test(contentType)
+  ) {
+    return contentType;
+  }
   const extension = extname(filePath).replace(/^\./, "").toLowerCase();
   if (extension === "png") return "image/png";
   if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
@@ -320,6 +328,9 @@ const resolvePreviewMimeType = (filePath: string): string => {
   if (extension === "bmp") return "image/bmp";
   if (extension === "ico") return "image/x-icon";
   if (extension === "avif") return "image/avif";
+  if (extension === "tiff" || extension === "tif") return "image/tiff";
+  if (extension === "heic" || extension === "heif") return "image/heif";
+  if (extension === "jxl") return "image/jxl";
   return "application/octet-stream";
 };
 
@@ -332,11 +343,12 @@ const registerLyraFileProtocol = (): void => {
       });
     }
     try {
+      const contentType = new URL(request.url).searchParams.get("contentType");
       const fileBuffer = await readFile(filePath);
       return new Response(fileBuffer, {
         status: 200,
         headers: {
-          "content-type": resolvePreviewMimeType(filePath),
+          "content-type": resolvePreviewMimeType(filePath, contentType),
           "cache-control": "private, max-age=30"
         }
       });
@@ -585,6 +597,9 @@ const registerIpcHandlers = (): void => {
   const filesBridge = createFilesIpcBridge(storageRoots.modules.fileManager);
   console.info(`[lyra-files] native loaded: ${filesBridge.loadResult.loadedFrom}`);
   disposeFilesBridge = filesBridge.dispose;
+  const imageViewerBridge = createImageViewerIpcBridge(storageRoots.modules.imageViewer);
+  console.info(`[lyra-image-viewer] native loaded: ${imageViewerBridge.loadResult.loadedFrom}`);
+  disposeImageViewerBridge = imageViewerBridge.dispose;
   const resourceRuntimeService = createResourceRuntimeService();
   console.info(`[lyra-resources] native loaded: ${resourceRuntimeService.loadResult.loadedFrom}`);
   disposeResourceRuntimeService = resourceRuntimeService.dispose;
@@ -877,6 +892,10 @@ app.on("before-quit", () => {
   if (disposeFilesBridge !== null) {
     disposeFilesBridge();
     disposeFilesBridge = null;
+  }
+  if (disposeImageViewerBridge !== null) {
+    disposeImageViewerBridge();
+    disposeImageViewerBridge = null;
   }
   if (disposeTerminalBridge !== null) {
     disposeTerminalBridge();

@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { FileEditorModel } from "../../file-editor";
 import type { FileManagerModel } from "../../file-manager";
+import type { ImageViewerModel } from "../../image-viewer";
 import type { WorkspaceTabsModel } from "../../workspace-tabs";
 import { useWorkbenchFileActions } from "../use-workbench-file-actions";
 
@@ -36,6 +37,11 @@ describe("useWorkbenchFileActions", () => {
       openAppTab: vi.fn(),
       setActiveTab: vi.fn(),
     } as unknown as WorkspaceTabsModel;
+    const imageViewerModel = {
+      findInstanceByPath: vi.fn(() => null),
+      createInstance: vi.fn(),
+      openImage: vi.fn(),
+    } as unknown as ImageViewerModel;
 
     const { result } = renderHook(() =>
       useWorkbenchFileActions({
@@ -43,6 +49,7 @@ describe("useWorkbenchFileActions", () => {
         tabsModel,
         fileManagerModel: {} as FileManagerModel,
         fileEditorModel,
+        imageViewerModel,
       })
     );
 
@@ -57,5 +64,51 @@ describe("useWorkbenchFileActions", () => {
     expect(fileEditorModel.applyExternalContent).toHaveBeenCalledWith("editor-1", "", {
       markHydrated: true,
     });
+  });
+
+  test("routes image files to the image viewer instead of the file editor", () => {
+    const fileEditorModel = {
+      findInstanceByPath: vi.fn(),
+      createInstance: vi.fn(),
+      openFile: vi.fn(),
+    } as unknown as FileEditorModel;
+    const imageViewerModel = {
+      findInstanceByPath: vi.fn(() => null),
+      createInstance: vi.fn(() => ({
+        appId: "image-viewer" as const,
+        appInstanceId: "image-1",
+        title: "cat.png",
+        iconKey: "image-viewer-default" as const,
+        filePath: "/tmp/cat.png",
+        isDirty: false,
+      })),
+      openImage: vi.fn(),
+    } as unknown as ImageViewerModel;
+    const tabsModel = {
+      tabs: [],
+      openAppTab: vi.fn(),
+      setActiveTab: vi.fn(),
+    } as unknown as WorkspaceTabsModel;
+
+    const { result } = renderHook(() =>
+      useWorkbenchFileActions({
+        activeTab: undefined,
+        tabsModel,
+        fileManagerModel: {} as FileManagerModel,
+        fileEditorModel,
+        imageViewerModel,
+      })
+    );
+
+    act(() => {
+      result.current.onOpenFileFromManager("/tmp/cat.png");
+    });
+
+    expect(fileEditorModel.createInstance).not.toHaveBeenCalled();
+    expect(tabsModel.openAppTab).toHaveBeenCalledWith(expect.objectContaining({
+      appId: "image-viewer",
+      appInstanceId: "image-1",
+    }));
+    expect(imageViewerModel.openImage).toHaveBeenCalledWith("image-1", "/tmp/cat.png");
   });
 });

@@ -1,0 +1,7 @@
+Lyra image viewer codec boundary.
+
+No vendored codec source is committed in this native image viewer landing. The
+OpenImageIO bridge is optional and links only when headers and libraries are
+provided by the local system or a future bundled dependency. When codec source or
+prebuilt codec binaries are added under third-party/native/image-codecs, add the
+corresponding upstream license and notice files here.

@@ -2,6 +2,8 @@ import { useCallback, useMemo } from "react";
 
 import type { FileEditorModel, FileEditorRevealLocation } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
+import type { ImageViewerModel } from "../image-viewer";
+import { isImageViewerSupportedPath } from "../image-viewer";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs/types";
 
 export type WorkbenchOpenFileOptions = {
@@ -20,6 +22,7 @@ type UseWorkbenchFileActionsParams = {
   readonly tabsModel: WorkspaceTabsModel;
   readonly fileManagerModel: FileManagerModel;
   readonly fileEditorModel: FileEditorModel;
+  readonly imageViewerModel: ImageViewerModel;
 };
 
 export type WorkbenchFileActions = {
@@ -32,10 +35,37 @@ export const useWorkbenchFileActions = ({
   activeTab,
   tabsModel,
   fileManagerModel,
-  fileEditorModel
+  fileEditorModel,
+  imageViewerModel
 }: UseWorkbenchFileActionsParams): WorkbenchFileActions => {
   const onOpenFileFromManager = useCallback<WorkbenchOpenFileFromManager>(
     (filePath, location, options) => {
+      if (options?.allowMissing !== true && isImageViewerSupportedPath(filePath)) {
+        const existingInstanceId = imageViewerModel.findInstanceByPath(filePath);
+        const existingTab = tabsModel.tabs.find(
+          (tab) =>
+            tab.pageKind === "app" &&
+            tab.appId === "image-viewer" &&
+            tab.appInstanceId !== undefined &&
+            (existingInstanceId !== null
+              ? tab.appInstanceId === existingInstanceId
+              : tab.filePath === filePath)
+        );
+        if (existingTab !== undefined) {
+          tabsModel.setActiveTab(existingTab.id);
+          if (existingTab.appInstanceId !== undefined) {
+            void imageViewerModel.openImage(existingTab.appInstanceId, filePath);
+            return existingTab.appInstanceId;
+          }
+          return null;
+        }
+
+        const nextViewer = imageViewerModel.createInstance(filePath);
+        tabsModel.openAppTab(nextViewer);
+        void imageViewerModel.openImage(nextViewer.appInstanceId, filePath);
+        return nextViewer.appInstanceId;
+      }
+
       const ensureMissingPlaceholderHydrated = (instanceId: string): void => {
         const state = fileEditorModel.getState(instanceId);
         if (state === null || state.isHydrated) {
@@ -98,7 +128,7 @@ export const useWorkbenchFileActions = ({
       }
       return nextEditor.appInstanceId;
     },
-    [fileEditorModel, tabsModel]
+    [fileEditorModel, imageViewerModel, tabsModel]
   );
 
   const onRevealPathInFileManager = useCallback(async (filePath: string): Promise<void> => {

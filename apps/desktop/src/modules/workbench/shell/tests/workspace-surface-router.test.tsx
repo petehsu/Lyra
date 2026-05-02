@@ -30,6 +30,7 @@ const createSurfaceAdapters = (): WorkbenchSurfaceAdapters => ({
     <div aria-label="fake-file-manager">{state?.currentLocation?.path ?? "missing"}</div>
   ),
   fileEditor: () => <div aria-label="fake-file-editor" />,
+  imageViewer: () => <div aria-label="fake-image-viewer" />,
   resourceMonitor: () => <div aria-label="fake-resource-monitor" />,
   notificationCenter: () => <div aria-label="fake-notification-center" />,
   mcpCenter: () => <div aria-label="fake-mcp-center" />,
@@ -99,6 +100,10 @@ const createProps = (
     getState: vi.fn(() => null)
   },
   fileEditorLabels: {},
+  imageViewerModel: {
+    getState: vi.fn(() => null)
+  },
+  imageViewerLabels: {},
   onOpenFileFromManager: vi.fn(),
   onRevealPathInFileManager: vi.fn(),
   splitThreePaneLayout: "adaptive",
@@ -208,5 +213,45 @@ describe("WorkspaceSurfaceRouter", () => {
     );
 
     expect(screen.getByLabelText("fake-plan-review")).toBeInTheDocument();
+  });
+
+  test("delegates image viewer app tabs to the injected image viewer adapter", () => {
+    render(
+      <WorkspaceSurfaceRouter
+        {...createProps(
+          createTab({
+            pageKind: "app",
+            appId: "image-viewer",
+            appInstanceId: "image-1"
+          }),
+          {
+            imageViewerModel: {
+              getState: vi.fn(() => ({
+                instanceId: "image-1",
+                filePath: "/tmp/cat.png",
+                title: "cat.png",
+                iconKey: "image-viewer-default",
+                status: "ready",
+                sessionId: "session-1",
+                openResult: null,
+                importProgress: undefined,
+                message: undefined,
+                view: {
+                  zoom: 1,
+                  offsetX: 0,
+                  offsetY: 0,
+                  rotation: 0,
+                  background: "checkerboard"
+                },
+                siblingPaths: [],
+                siblingIndex: -1
+              }))
+            } as unknown as WorkspaceSurfaceRouterProps["imageViewerModel"]
+          }
+        )}
+      />
+    );
+
+    expect(screen.getByLabelText("fake-image-viewer")).toBeInTheDocument();
   });
 });

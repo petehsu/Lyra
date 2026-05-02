@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import type { FileEditorModel } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
+import type { ImageViewerModel } from "../image-viewer";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs/types";
 
 type UseWorkbenchAppRestorationParams = {
@@ -9,16 +10,19 @@ type UseWorkbenchAppRestorationParams = {
   readonly tabsModel: WorkspaceTabsModel;
   readonly fileManagerModel: FileManagerModel;
   readonly fileEditorModel: FileEditorModel;
+  readonly imageViewerModel: ImageViewerModel;
 };
 
 export const useWorkbenchAppRestoration = ({
   activeTab,
   tabsModel,
   fileManagerModel,
-  fileEditorModel
+  fileEditorModel,
+  imageViewerModel
 }: UseWorkbenchAppRestorationParams): void => {
   const restoredFileManagerInstanceIdsRef = useRef<Set<string>>(new Set());
   const restoredFileEditorInstanceIdsRef = useRef<Set<string>>(new Set());
+  const restoredImageViewerInstanceIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const fileManagerTabs = tabsModel.tabs
@@ -65,6 +69,54 @@ export const useWorkbenchAppRestoration = ({
     fileManagerModel.ensureInstance,
     fileManagerModel.openDirectory,
     fileManagerModel.openHome,
+    tabsModel.tabs
+  ]);
+
+  useEffect(() => {
+    const imageViewerTabs = tabsModel.tabs
+      .filter(
+        (tab) =>
+          tab.pageKind === "app" &&
+          tab.appId === "image-viewer" &&
+          tab.appInstanceId !== undefined
+      );
+    const imageViewerInstanceIds = imageViewerTabs
+      .map((tab) => tab.appInstanceId as string);
+    imageViewerModel.syncTabInstances(imageViewerInstanceIds);
+
+    for (const tab of imageViewerTabs) {
+      const instanceId = tab.appInstanceId;
+      if (
+        instanceId === undefined ||
+        restoredImageViewerInstanceIdsRef.current.has(instanceId)
+      ) {
+        continue;
+      }
+      if (tab.filePath === undefined || tab.filePath.trim().length === 0) {
+        continue;
+      }
+
+      restoredImageViewerInstanceIdsRef.current.add(instanceId);
+      if (imageViewerModel.getState(instanceId) !== null) {
+        continue;
+      }
+      imageViewerModel.ensureInstance(instanceId, {
+        filePath: tab.filePath
+      });
+      void imageViewerModel.openImage(instanceId, tab.filePath);
+    }
+
+    const activeIds = new Set(imageViewerInstanceIds);
+    for (const instanceId of [...restoredImageViewerInstanceIdsRef.current]) {
+      if (activeIds.has(instanceId) === false) {
+        restoredImageViewerInstanceIdsRef.current.delete(instanceId);
+      }
+    }
+  }, [
+    imageViewerModel.syncTabInstances,
+    imageViewerModel.getState,
+    imageViewerModel.ensureInstance,
+    imageViewerModel.openImage,
     tabsModel.tabs
   ]);
 
@@ -129,4 +181,14 @@ export const useWorkbenchAppRestoration = ({
       void fileEditorModel.hydrateIfNeeded(activeTab.appInstanceId);
     }
   }, [activeTab?.appId, activeTab?.appInstanceId, activeTab?.pageKind, fileEditorModel]);
+
+  useEffect(() => {
+    if (
+      activeTab?.pageKind === "app" &&
+      activeTab.appId === "image-viewer" &&
+      activeTab.appInstanceId !== undefined
+    ) {
+      imageViewerModel.touchInstance(activeTab.appInstanceId);
+    }
+  }, [activeTab?.appId, activeTab?.appInstanceId, activeTab?.pageKind, imageViewerModel]);
 };

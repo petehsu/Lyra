@@ -7,6 +7,8 @@ members = [
   "crates/lyra-terminal-core",
   "crates/lyra-files-core",
   "crates/lyra-files-napi",
+  "crates/lyra-image-core",
+  "crates/lyra-image-napi",
   "crates/lyra-resource-core",
   "crates/lyra-resource-napi",
   "crates/lyra-lsp-core",
@@ -129,6 +131,7 @@ lyra-exec-server = { path = "crates/lyra-agent-core/exec-server" }
 lyra-execpolicy = { path = "crates/lyra-agent-core/execpolicy" }
 lyra-features = { path = "crates/lyra-agent-core/features" }
 lyra-files-core = { path = "crates/lyra-files-core" }
+lyra-image-core = { path = "crates/lyra-image-core" }
 lyra-resource-core = { path = "crates/lyra-resource-core" }
 lyra-install-context = { path = "crates/lyra-agent-core/install-context" }
 lyra-local-search = { path = "crates/lyra-local-search" }

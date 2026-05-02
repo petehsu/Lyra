@@ -1,0 +1,22 @@
+[package]
+name = "lyra-image-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "lyra_image_core"
+path = "src/lib.rs"
+
+[dependencies]
+image = { workspace = true, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff"] }
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = "2.0.17"
+tiff = "0.11.3"
+
+[build-dependencies]
+cc = "1"
+
+[dev-dependencies]
+tempfile = { workspace = true }

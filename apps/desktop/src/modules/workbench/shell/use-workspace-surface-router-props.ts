@@ -5,6 +5,7 @@ import type {
   FileEditorChangeReviewItem,
   FileEditorModel
 } from "../file-editor";
+import type { ImageViewerModel } from "../image-viewer";
 import type { FileManagerChooserMode, FileManagerModel } from "../file-manager";
 import type { McpCenterModel } from "../mcp-center";
 import type { WorkbenchNotificationModel } from "../notifications";
@@ -37,6 +38,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly fileManagerModel: FileManagerModel;
   readonly resolveFileManagerChooser: (instanceId: string) => FileManagerChooserMode | null;
   readonly fileEditorModel: FileEditorModel;
+  readonly imageViewerModel: ImageViewerModel;
   readonly activeEditorReviewIndex: number;
   readonly editorReviewItems: readonly FileEditorChangeReviewItem[];
   readonly resolveActiveEditorWorkItem: (filePath: string) => FileEditorChangeReviewItem | undefined;
@@ -75,6 +77,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   fileManagerModel,
   resolveFileManagerChooser,
   fileEditorModel,
+  imageViewerModel,
   activeEditorReviewIndex,
   editorReviewItems,
   resolveActiveEditorWorkItem,
@@ -120,6 +123,8 @@ export const useWorkspaceSurfaceRouterProps = ({
     resolveFileManagerChooser,
     fileEditorModel,
     fileEditorLabels: labels.fileEditor,
+    imageViewerModel,
+    imageViewerLabels: labels.imageViewer,
     fileEditorReview: {
       editorWorkAcceptLabel: labels.fileEditorReview.accept,
       editorWorkRejectLabel: labels.fileEditorReview.reject,

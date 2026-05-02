@@ -6,6 +6,7 @@ import {
   isAiSkillsAppId,
   isFileEditorAppId,
   isFileManagerAppId,
+  isImageViewerAppId,
   isNotificationCenterAppId,
   isResourceMonitorAppId
 } from "../workspace-apps";
@@ -165,6 +166,22 @@ export const createAppSurfaceRenderModel = (
     return {
       kind: "fileEditor",
       props: createFileEditorProps(state, context)
+    };
+  }
+
+  if (isImageViewerAppId(tab.appId) && tab.appInstanceId !== undefined) {
+    const state = context.imageViewerModel.getState(tab.appInstanceId);
+    if (state === null) {
+      return { kind: "empty" };
+    }
+    return {
+      kind: "imageViewer",
+      props: {
+        state,
+        labels: context.imageViewerLabels,
+        model: context.imageViewerModel,
+        themeSignature: context.resolvedThemeId
+      }
     };
   }
 

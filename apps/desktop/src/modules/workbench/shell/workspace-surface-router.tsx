@@ -14,6 +14,7 @@ import {
   type FileEditorLabels,
   type FileEditorModel
 } from "../file-editor";
+import type { ImageViewerLabels, ImageViewerModel } from "../image-viewer";
 import type { McpCenterLabels, McpCenterModel } from "../mcp-center";
 import {
   type NotificationCenterLabels,
@@ -148,6 +149,8 @@ export type WorkspaceSurfaceRouterProps = {
   readonly resolveFileManagerChooser?: (instanceId: string) => FileManagerChooserMode | null;
   readonly fileEditorModel: FileEditorModel;
   readonly fileEditorLabels: FileEditorLabels;
+  readonly imageViewerModel: ImageViewerModel;
+  readonly imageViewerLabels: ImageViewerLabels;
   readonly fileEditorReview?: {
     readonly editorWorkAcceptLabel: string;
     readonly editorWorkRejectLabel: string;
@@ -271,6 +274,10 @@ const renderSurfaceModel = (
     }
     case "fileEditor": {
       const Adapter = surfaceAdapters.fileEditor;
+      return <Adapter {...model.props} />;
+    }
+    case "imageViewer": {
+      const Adapter = surfaceAdapters.imageViewer;
       return <Adapter {...model.props} />;
     }
     case "resourceMonitor": {

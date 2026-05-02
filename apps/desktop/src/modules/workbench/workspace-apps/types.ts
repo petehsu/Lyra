@@ -3,7 +3,13 @@ import type { ReactNode } from "react";
 import type { AiPanelAppIconKey, AiPanelAppId } from "../ai-panel/types";
 import type { FileManagerAppIconKey, FileManagerAppId } from "../file-manager/types";
 import type { FileEditorAppIconKey, FileEditorAppId } from "../file-editor/types";
+import type { ImageViewerAppIconKey, ImageViewerAppId } from "../image-viewer";
 import type { ResourceMonitorAppIconKey, ResourceMonitorAppId } from "../resource-monitor";
+
+export type {
+  ImageViewerAppIconKey,
+  ImageViewerAppId
+} from "../image-viewer";
 
 export type {
   ResourceMonitorAppIconKey,
@@ -16,6 +22,7 @@ export type NotificationCenterAppIconKey = "notification-center-default";
 export type WorkbenchAppId =
   | FileManagerAppId
   | FileEditorAppId
+  | ImageViewerAppId
   | ResourceMonitorAppId
   | AiPanelAppId
   | NotificationCenterAppId;
@@ -28,6 +35,7 @@ export type WorkspaceAppRef = {
 export type WorkspaceAppIconKey =
   | FileManagerAppIconKey
   | FileEditorAppIconKey
+  | ImageViewerAppIconKey
   | ResourceMonitorAppIconKey
   | AiPanelAppIconKey
   | NotificationCenterAppIconKey;

@@ -7,6 +7,7 @@ import type {
 } from "../../../shared/desktop-bridge";
 import type { FileEditorModel } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
+import type { ImageViewerModel } from "../image-viewer";
 import type { TerminalDockModel } from "../terminal-dock";
 import type { WorkspaceTabsModel, WorkspaceVisibleLayout } from "../workspace-tabs";
 
@@ -16,6 +17,7 @@ type UseWorkbenchResourceRegistrationParams = {
   readonly visibleWorkspaceLayout: WorkspaceVisibleLayout;
   readonly fileManagerModel: FileManagerModel;
   readonly fileEditorModel: FileEditorModel;
+  readonly imageViewerModel: ImageViewerModel;
   readonly terminalModel: TerminalDockModel;
 };
 
@@ -48,6 +50,7 @@ export const useWorkbenchResourceRegistration = ({
   visibleWorkspaceLayout,
   fileManagerModel,
   fileEditorModel,
+  imageViewerModel,
   terminalModel
 }: UseWorkbenchResourceRegistrationParams): void => {
   const previousResourceIdsRef = useRef<ReadonlySet<string>>(new Set());
@@ -112,6 +115,17 @@ export const useWorkbenchResourceRegistration = ({
         } as LyraResourceRegisterRequest;
       }
 
+      if (tab.pageKind === "app" && tab.appId === "image-viewer" && tab.appInstanceId !== undefined) {
+        const state = imageViewerModel.getState(tab.appInstanceId);
+        const filePath = state?.filePath ?? tab.filePath ?? tab.appInstanceId;
+        return {
+          ...base,
+          kind: "image-viewer-view",
+          stateKey: `image-viewer-state:${tab.appInstanceId}`,
+          coreKey: `image-buffer:${filePath}`
+        } as LyraResourceRegisterRequest;
+      }
+
       if (tab.pageKind === "app" && tab.appId !== undefined && tab.appInstanceId !== undefined) {
         return {
           ...base,
@@ -144,6 +158,7 @@ export const useWorkbenchResourceRegistration = ({
     desktopApi,
     fileEditorModel,
     fileManagerModel,
+    imageViewerModel,
     tabsModel,
     tabsModel.activeTabId,
     tabsModel.tabs,

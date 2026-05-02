@@ -3,12 +3,21 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { FileEditorModel } from "../../file-editor";
 import type { FileManagerModel } from "../../file-manager";
+import type { ImageViewerModel } from "../../image-viewer";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../../workspace-tabs";
 import { useWorkbenchAppRestoration } from "../use-workbench-app-restoration";
 
 const createTabsModel = (tabs: readonly WorkspaceTab[]): WorkspaceTabsModel => ({
   tabs
 } as unknown as WorkspaceTabsModel);
+
+const createImageViewerModel = (): ImageViewerModel => ({
+  syncTabInstances: vi.fn(),
+  getState: vi.fn(() => null),
+  ensureInstance: vi.fn(),
+  openImage: vi.fn().mockResolvedValue(undefined),
+  touchInstance: vi.fn()
+} as unknown as ImageViewerModel);
 
 describe("useWorkbenchAppRestoration", () => {
   test("restores file manager tabs into model instances", async () => {
@@ -36,13 +45,15 @@ describe("useWorkbenchAppRestoration", () => {
       hydrateIfNeeded: vi.fn().mockResolvedValue(undefined),
       touchInstance: vi.fn()
     } as unknown as FileEditorModel;
+    const imageViewerModel = createImageViewerModel();
 
     renderHook(() =>
       useWorkbenchAppRestoration({
         activeTab: tab,
         tabsModel: createTabsModel([tab]),
         fileManagerModel,
-        fileEditorModel
+        fileEditorModel,
+        imageViewerModel
       })
     );
 
@@ -78,13 +89,15 @@ describe("useWorkbenchAppRestoration", () => {
       hydrateIfNeeded: vi.fn().mockResolvedValue(undefined),
       touchInstance: vi.fn()
     } as unknown as FileEditorModel;
+    const imageViewerModel = createImageViewerModel();
 
     renderHook(() =>
       useWorkbenchAppRestoration({
         activeTab: tab,
         tabsModel: createTabsModel([tab]),
         fileManagerModel,
-        fileEditorModel
+        fileEditorModel,
+        imageViewerModel
       })
     );
 

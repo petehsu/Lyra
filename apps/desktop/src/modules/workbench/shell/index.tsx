@@ -10,9 +10,7 @@ import {
 
 import { WORKBENCH_CONFIG } from "../config";
 import { ContextMenuHost, useContextMenuModel } from "../context-menu";
-import { useFileEditorModel } from "../file-editor";
 import { useWorkbenchFeedbackModel } from "../feedback";
-import { useFileManagerModel } from "../file-manager";
 import {
   GlobalDialogHost,
   useGlobalDialogModel
@@ -47,6 +45,7 @@ import {
 import { usePanelLayoutModel } from "./use-panel-layout";
 import { useScrollbarVisibilityGuard } from "./use-scrollbar-visibility-guard";
 import { useTerminalWorkspaceActions } from "./use-terminal-workspace-actions";
+import { useWorkbenchFileAppModels } from "./use-workbench-file-app-models";
 import { useWorkbenchEditorReviewModel } from "./use-workbench-editor-review-model";
 import { useWorkbenchFileActions } from "./use-workbench-file-actions";
 import { useWorkbenchJsReplSetting } from "./use-workbench-js-repl-setting";
@@ -84,9 +83,10 @@ export const WorkbenchShell = () => {
   const labels = useWorkbenchLabels(t);
   const rootRef = useRef<HTMLElement | null>(null);
   const browserTabsConfig = useMemo(() => createWorkbenchBrowserTabsConfig(t), [t]);
-  const tabsModel = useWorkspaceTabsModel(browserTabsConfig, {
+  const browserTabsOptions = useMemo(() => ({
     splitOverflowPolicy: preferencesModel.preferences.splitOverflowPolicy
-  });
+  }), [preferencesModel.preferences.splitOverflowPolicy]);
+  const tabsModel = useWorkspaceTabsModel(browserTabsConfig, browserTabsOptions);
   const activeTab = tabsModel.activeTab;
   const activeTabPageKind = activeTab?.pageKind ?? "search";
   const activePageTabId = activeTab?.pageKind === "page" ? activeTab.id : "";
@@ -154,15 +154,11 @@ export const WorkbenchShell = () => {
     contextMenuModel,
     t
   });
-  const fileManagerModel = useFileManagerModel({
+  const { fileManagerModel, fileEditorModel, imageViewerModel } = useWorkbenchFileAppModels({
     desktopApi,
     contextMenuModel,
-    labels: labels.fileManager,
-    onMetaChange: tabsModel.updateAppTabMeta
-  });
-  const fileEditorModel = useFileEditorModel({
-    desktopApi,
-    onMetaChange: tabsModel.updateAppTabMeta
+    fileManagerLabels: labels.fileManager,
+    tabsModel
   });
   useWorkbenchResourceRegistration({
     desktopApi,
@@ -170,6 +166,7 @@ export const WorkbenchShell = () => {
     visibleWorkspaceLayout,
     fileManagerModel,
     fileEditorModel,
+    imageViewerModel,
     terminalModel
   });
   const workbenchActions = useWorkbenchActionApi({
@@ -352,7 +349,8 @@ export const WorkbenchShell = () => {
     activeTab,
     tabsModel,
     fileManagerModel,
-    fileEditorModel
+    fileEditorModel,
+    imageViewerModel
   });
 
   const {
@@ -363,7 +361,8 @@ export const WorkbenchShell = () => {
     activeTab,
     tabsModel,
     fileManagerModel,
-    fileEditorModel
+    fileEditorModel,
+    imageViewerModel
   });
   const {
     editorReviewItems,
@@ -455,6 +454,7 @@ export const WorkbenchShell = () => {
     fileManagerModel,
     resolveFileManagerChooser,
     fileEditorModel,
+    imageViewerModel,
     activeEditorReviewIndex,
     editorReviewItems,
     resolveActiveEditorWorkItem,
