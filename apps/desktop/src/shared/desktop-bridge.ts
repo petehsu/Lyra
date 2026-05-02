@@ -379,6 +379,10 @@ export const LYRA_CHANNELS = {
   readAppMeta: "lyra:shell/app/meta",
   readAppMetaSync: "lyra:shell/app/meta-sync",
   openExternal: "lyra:shell/open-external",
+  systemNotificationsReadStatus: "lyra:system-notifications/read-status",
+  systemNotificationsShow: "lyra:system-notifications/show",
+  systemNotificationsOpenSettings: "lyra:system-notifications/open-settings",
+  systemNotificationsActivated: "lyra:system-notifications/activated",
   linuxCompatReadStatus: "lyra:linux-compat/read-status",
   linuxCompatExportDiagnostics: "lyra:linux-compat/export-diagnostics",
   windowStateChanged: "lyra:shell/window/state-changed",
@@ -509,11 +513,84 @@ export type WindowStatePayload = {
 export type AppMetaPayload = {
   readonly version: string;
   readonly platform: NodeJS.Platform;
+  readonly arch?: NodeJS.Architecture | undefined;
+  readonly desktopTargetId?: string | undefined;
+  readonly desktopSupportTier?: "tier1" | "tier2" | "unsupported" | undefined;
+  readonly linuxLibc?: "glibc" | "musl" | "unknown" | null | undefined;
   readonly isPackaged: boolean;
   readonly userName?: string | undefined;
   readonly hostName?: string | undefined;
   readonly locale?: string | undefined;
   readonly timeZone?: string | undefined;
+};
+
+export type SystemNotificationMode = "off" | "background" | "all";
+export type SystemNotificationClickBehavior = "open_center" | "open_source";
+export type SystemNotificationLevel = "info" | "success" | "warning" | "error";
+export type SystemNotificationActionId = "open-center" | "open-source" | "mark-read";
+export type SystemNotificationPermission =
+  | "granted"
+  | "denied"
+  | "default"
+  | "unsupported"
+  | "unknown";
+
+export type SystemNotificationAction = {
+  readonly id: SystemNotificationActionId;
+  readonly title: string;
+};
+
+export type SystemNotificationShowRequest = {
+  readonly id: string;
+  readonly title: string;
+  readonly body?: string;
+  readonly sourceTitle?: string;
+  readonly level: SystemNotificationLevel;
+  readonly mode: SystemNotificationMode;
+  readonly clickBehavior: SystemNotificationClickBehavior;
+  readonly actionsEnabled: boolean;
+  readonly actions?: readonly SystemNotificationAction[];
+};
+
+export type SystemNotificationShowResult =
+  | {
+      readonly status: "shown";
+      readonly notificationId: string;
+    }
+  | {
+      readonly status: "skipped";
+      readonly reason: "disabled" | "foreground" | "unsupported" | "invalid" | "permission";
+    }
+  | {
+      readonly status: "failed";
+      readonly reason: "show-error";
+      readonly message: string;
+    };
+
+export type SystemNotificationStatus = {
+  readonly platform: NodeJS.Platform;
+  readonly supported: boolean;
+  readonly permission: SystemNotificationPermission;
+  readonly canNotify: boolean;
+  readonly canOpenSettings: boolean;
+  readonly appUserModelId?: string;
+  readonly actionSupport: "native" | "windows-toast" | "none";
+};
+
+export type SystemNotificationAccessRequestResult = SystemNotificationStatus & {
+  readonly openedSettings: boolean;
+};
+
+export type SystemNotificationOpenSettingsResult = {
+  readonly opened: boolean;
+  readonly target?: string;
+  readonly reason?: "unsupported-platform" | "open-failed";
+};
+
+export type SystemNotificationActivation = {
+  readonly notificationId: string;
+  readonly actionId: SystemNotificationActionId;
+  readonly activatedAt: number;
 };
 
 export type LinuxGraphicsBackend = "wayland" | "x11";
@@ -1149,6 +1226,18 @@ export type ShellEventsApi = {
   ) => () => void;
 };
 
+export type SystemNotificationsApi = {
+  readonly readStatus: () => Promise<SystemNotificationStatus>;
+  readonly requestAccess: () => Promise<SystemNotificationAccessRequestResult>;
+  readonly openSettings: () => Promise<SystemNotificationOpenSettingsResult>;
+  readonly show: (
+    request: SystemNotificationShowRequest
+  ) => Promise<SystemNotificationShowResult>;
+  readonly onActivated: (
+    listener: (event: SystemNotificationActivation) => void
+  ) => () => void;
+};
+
 export type SearchApi = {
   readonly aggregate: (request: SearchAggregateRequest) => Promise<SearchAggregateResponse>;
   readonly local: (request: SearchLocalRequest) => Promise<SearchLocalResponse>;
@@ -1394,6 +1483,7 @@ export type LyraDesktopApi = {
   readonly appMeta: AppMetaPayload;
   readonly shellEvents: ShellEventsApi;
   readonly openExternal: (url: string) => Promise<boolean>;
+  readonly systemNotifications?: SystemNotificationsApi;
   readonly linuxCompat: LinuxCompatApi;
   readonly search: SearchApi;
   readonly files: FilesApi;

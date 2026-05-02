@@ -10,6 +10,7 @@ import {
   basename,
   isRecord,
   readNumber,
+  readAgentUsage,
   readPath,
   readRawString,
   readString,
@@ -46,6 +47,7 @@ const readTurn = (value: unknown): LyraTurn | null => {
   if (id === null) {
     return null;
   }
+  const usage = readAgentUsage(value.usage);
   return {
     id,
     status: readString(value.status) ?? "completed",
@@ -55,6 +57,7 @@ const readTurn = (value: unknown): LyraTurn | null => {
     startedAt: readNumber(value.startedAt),
     completedAt: readNumber(value.completedAt),
     durationMs: readNumber(value.durationMs),
+    ...(usage === undefined ? {} : { usage }),
   };
 };
 
@@ -412,6 +415,7 @@ export const lyraThreadTurnsToAgentDetail = (thread: LyraThread): AgentSessionDe
       sessionId: thread.id,
       profileId: thread.modelProvider,
       status: turnStatusToAgent(turn.status),
+      ...(turn.usage === undefined ? {} : { usage: turn.usage }),
       createdAt,
       updatedAt,
     });

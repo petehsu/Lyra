@@ -38,7 +38,10 @@ const defaults: WorkbenchPreferences = {
   deepSearchProactiveDomainGuessingEnabled: true,
   deepSearchCrawlPolicy: "accessibility_only",
   searchResultsSourceFilter: "all",
-  omniboxNonBrowserSubmitTarget: "new_tab"
+  omniboxNonBrowserSubmitTarget: "new_tab",
+  systemNotificationMode: "background",
+  systemNotificationClickBehavior: "open_center",
+  systemNotificationActionsEnabled: true
 };
 
 describe("workbench preferences", () => {
@@ -155,6 +158,9 @@ describe("workbench preferences", () => {
       result.current.setAiRichRenderingEnabled(false);
       result.current.setAiStopBehavior("turn_and_background");
       result.current.setPreventSleepEnabled(false);
+      result.current.setSystemNotificationMode("all");
+      result.current.setSystemNotificationClickBehavior("open_source");
+      result.current.setSystemNotificationActionsEnabled(false);
     });
 
     expect(result.current.preferences).toEqual({
@@ -168,7 +174,10 @@ describe("workbench preferences", () => {
       splitOverflowPolicy: "replace_target",
       aiRichRenderingEnabled: false,
       aiStopBehavior: "turn_and_background",
-      preventSleepEnabled: false
+      preventSleepEnabled: false,
+      systemNotificationMode: "all",
+      systemNotificationClickBehavior: "open_source",
+      systemNotificationActionsEnabled: false
     });
 
     expect(readWorkbenchPreferences(defaults)).toEqual({
@@ -182,7 +191,10 @@ describe("workbench preferences", () => {
       splitOverflowPolicy: "replace_target",
       aiRichRenderingEnabled: false,
       aiStopBehavior: "turn_and_background",
-      preventSleepEnabled: false
+      preventSleepEnabled: false,
+      systemNotificationMode: "all",
+      systemNotificationClickBehavior: "open_source",
+      systemNotificationActionsEnabled: false
     });
   });
 

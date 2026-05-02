@@ -79,6 +79,16 @@ const TARGETS: Record<string, TargetConfig> = {
     platformSystem: "Windows",
     platformMachine: "AMD64",
   },
+  "win32-arm64": {
+    id: "win32-arm64",
+    pythonAsset: "cpython-3.12.13+20260408-aarch64-pc-windows-msvc-install_only.tar.gz",
+    pythonBinary: "python/python.exe",
+    pipPlatform: "win_arm64",
+    sysPlatform: "win32",
+    osName: "nt",
+    platformSystem: "Windows",
+    platformMachine: "ARM64",
+  },
 };
 
 const runProcess = async (

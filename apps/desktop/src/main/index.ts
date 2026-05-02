@@ -2,7 +2,7 @@ import {
   app,
   BrowserWindow,
   Menu,
-  nativeImage,
+  nativeTheme,
   type WebContents,
   type MenuItemConstructorOptions,
   ipcMain,
@@ -10,13 +10,20 @@ import {
   protocol,
   shell
 } from "electron";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createAgentCoreIpcBridge } from "./agent-core";
+import {
+  LYRA_APP_NAME,
+  LYRA_APP_USER_MODEL_ID,
+  resolveLyraAppIcon,
+  resolveLyraAppIconPath,
+  type LyraAppIconVariant
+} from "./app-identity";
 import { createCapabilitiesIpcBridge } from "./capabilities";
 import { createCodeIntelHostToolsBridge } from "./code-intel";
 import {
@@ -31,11 +38,13 @@ import { createLspIpcBridge } from "./lsp";
 import { createLocalSearchHostToolsBridge } from "./local-search";
 import { createLinuxCompatBridge } from "./linux-compat";
 import { createMcpIpcBridge } from "./mcp";
+import { resolveCurrentDesktopTarget } from "./platform-target";
 import { createResourceRuntimeService } from "./resources/service";
 import { createLyraRuntimeClient } from "./runtime-client";
 import { createRuntimeHostRpcService } from "./runtime-host-rpc/service";
 import { createSearchIpcBridge } from "./search";
 import { createSkillsIpcBridge } from "./skills";
+import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
 import {
   applyElectronStoragePaths,
   ensureLyraStorageRoots,
@@ -65,11 +74,6 @@ import {
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const LYRA_FILE_SCHEME = "lyra-file";
-const LYRA_APP_ICON_CANDIDATES = [
-  join(currentDir, "../renderer/assets/logo.png"),
-  join(currentDir, "../../src/renderer/assets/logo.png"),
-  join(process.cwd(), "apps/desktop/src/renderer/assets/logo.png")
-];
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -120,6 +124,8 @@ let disposeBrowserUseService: (() => void) | null = null;
 let disposeBrowserUseHostTools: (() => void) | null = null;
 let disposeBrowserUseRuntimeCoordinator: (() => void) | null = null;
 let disposePowerSaveBlocker: (() => void) | null = null;
+let disposeLyraDockIconThemeSync: (() => void) | null = null;
+let disposeSystemNotificationsBridge: (() => void) | null = null;
 let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
 
 const storageRoots = resolveLyraStorageRoots();
@@ -145,28 +151,9 @@ if (linuxCompatBridge.status.enabled) {
   }
 }
 
-const LYRA_APP_NAME = "Lyra";
 const isDevelopmentMode = (): boolean =>
   typeof process.env.ELECTRON_RENDERER_URL === "string"
   && process.env.ELECTRON_RENDERER_URL.length > 0;
-
-const resolveLyraAppIconPath = (): string | null => {
-  for (const candidate of LYRA_APP_ICON_CANDIDATES) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-};
-
-const resolveLyraAppIcon = (): Electron.NativeImage | null => {
-  const iconPath = resolveLyraAppIconPath();
-  if (iconPath === null) {
-    return null;
-  }
-  const icon = nativeImage.createFromPath(iconPath);
-  return icon.isEmpty() ? null : icon;
-};
 
 const createMacApplicationMenuTemplate = (): MenuItemConstructorOptions[] => [
   {
@@ -228,9 +215,14 @@ const readAppMetaPayload = (): AppMetaPayload => {
   } catch (_error) {
     userName = process.env.USER ?? process.env.USERNAME;
   }
+  const desktopTarget = resolveCurrentDesktopTarget();
   return {
     version: app.getVersion(),
     platform: process.platform,
+    arch: process.arch,
+    desktopTargetId: desktopTarget.id,
+    desktopSupportTier: desktopTarget.supportTier,
+    linuxLibc: desktopTarget.libc,
     isPackaged: app.isPackaged,
     ...(userName === undefined || userName.trim().length === 0
       ? {}
@@ -408,7 +400,7 @@ const attachDevelopmentDiagnostics = (window: BrowserWindow): void => {
   });
 
   window.webContents.once("did-finish-load", () => {
-    window.setTitle("Lyra");
+    window.setTitle(LYRA_APP_NAME);
 
     setTimeout(() => {
       void window.webContents
@@ -494,7 +486,7 @@ const attachDevelopmentDiagnostics = (window: BrowserWindow): void => {
         .then((image) => {
           const outputDir = join(process.cwd(), ".tmp");
           mkdirSync(outputDir, { recursive: true });
-          const outputPath = join(outputDir, "lyra-electron-startup.png");
+          const outputPath = join(outputDir, "lyra-desktop-startup.png");
           const png = image.toPNG();
           writeFileSync(outputPath, png);
           const size = image.getSize();
@@ -560,7 +552,7 @@ const createMainWindow = (): BrowserWindow => {
   const isMac = process.platform === "darwin";
   const iconPath = resolveLyraAppIconPath();
   const window = new BrowserWindow({
-    title: "Lyra",
+    title: LYRA_APP_NAME,
     width: 1460,
     height: 920,
     minWidth: 1160,
@@ -612,6 +604,28 @@ const createMainWindow = (): BrowserWindow => {
   });
 
   return window;
+};
+
+const resolveSystemAppIconVariant = (): LyraAppIconVariant =>
+  nativeTheme.shouldUseDarkColors ? "dark" : "light";
+
+const installLyraDockIconThemeSync = (): (() => void) | null => {
+  if (process.platform !== "darwin") {
+    return null;
+  }
+
+  const syncDockIcon = (): void => {
+    const appIcon = resolveLyraAppIcon(resolveSystemAppIconVariant());
+    if (appIcon !== null && app.dock !== undefined) {
+      app.dock.setIcon(appIcon);
+    }
+  };
+
+  syncDockIcon();
+  nativeTheme.on("updated", syncDockIcon);
+  return () => {
+    nativeTheme.off("updated", syncDockIcon);
+  };
 };
 
 const registerIpcHandlers = (): void => {
@@ -679,6 +693,12 @@ const registerIpcHandlers = (): void => {
     workbenchStateBridge
   });
   disposeUiuxPacksBridge = uiuxPacksBridge.dispose;
+  const systemNotificationsBridge = createSystemNotificationsIpcBridge({
+    getWindow: () => mainWindow,
+    iconPath: resolveLyraAppIconPath(),
+    appUserModelId: LYRA_APP_USER_MODEL_ID
+  });
+  disposeSystemNotificationsBridge = systemNotificationsBridge.dispose;
   const powerSaveBlockerController = createPowerSaveBlockerController();
   powerSaveBlockerController.setEnabled(
     readPreventSleepEnabledPreference(workbenchStateBridge.readState("preferences"))
@@ -853,6 +873,9 @@ const registerIpcHandlers = (): void => {
 };
 
 app.setName(LYRA_APP_NAME);
+if (process.platform === "win32") {
+  app.setAppUserModelId(LYRA_APP_USER_MODEL_ID);
+}
 process.title = LYRA_APP_NAME;
 
 app.whenReady().then(() => {
@@ -865,12 +888,7 @@ app.whenReady().then(() => {
     version: app.getVersion(),
     ...(appIconPath === null ? {} : { iconPath: appIconPath })
   });
-  if (process.platform === "darwin") {
-    const appIcon = resolveLyraAppIcon();
-    if (appIcon !== null && app.dock !== undefined) {
-      app.dock.setIcon(appIcon);
-    }
-  }
+  disposeLyraDockIconThemeSync = installLyraDockIconThemeSync();
   registerLyraFileProtocol();
   linuxCompatBridge.persistStatusSnapshot(storageRoots.modules.linuxCompat);
   registerIpcHandlers();
@@ -973,6 +991,14 @@ app.on("before-quit", () => {
   if (disposePowerSaveBlocker !== null) {
     disposePowerSaveBlocker();
     disposePowerSaveBlocker = null;
+  }
+  if (disposeLyraDockIconThemeSync !== null) {
+    disposeLyraDockIconThemeSync();
+    disposeLyraDockIconThemeSync = null;
+  }
+  if (disposeSystemNotificationsBridge !== null) {
+    disposeSystemNotificationsBridge();
+    disposeSystemNotificationsBridge = null;
   }
   workbenchBrowserBridge = null;
   if (disposeUiuxPacksBridge !== null) {

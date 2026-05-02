@@ -4,6 +4,7 @@ import type {
   AgentPlanArtifact,
   AgentRuntimeEvent,
   AgentToolCall,
+  AgentUsage,
 } from "../../../shared/desktop-bridge";
 import type { OptimisticUserMessage } from "./view-helpers";
 
@@ -17,6 +18,7 @@ export type ThreadRuntimeBucket = {
   readonly optimisticUserMessages: readonly OptimisticUserMessage[];
   readonly liveToolCalls: readonly AgentToolCall[];
   readonly latestRuntimeEventByTurn: Readonly<Record<string, AgentRuntimeEvent>>;
+  readonly turnUsageByTurn: Readonly<Record<string, AgentUsage>>;
   readonly planByTurn: Readonly<Record<string, LyraTurnPlanState>>;
   readonly streamingTurnId: string | null;
   readonly streamingAssistantText: string;
@@ -49,6 +51,7 @@ export const createEmptyRuntimeBucket = (): ThreadRuntimeBucket => ({
   optimisticUserMessages: [],
   liveToolCalls: [],
   latestRuntimeEventByTurn: {},
+  turnUsageByTurn: {},
   planByTurn: {},
   streamingTurnId: null,
   streamingAssistantText: "",
@@ -75,6 +78,10 @@ export const mergeRuntimeBuckets = (
   latestRuntimeEventByTurn: {
     ...target.latestRuntimeEventByTurn,
     ...source.latestRuntimeEventByTurn,
+  },
+  turnUsageByTurn: {
+    ...target.turnUsageByTurn,
+    ...source.turnUsageByTurn,
   },
   planByTurn: {
     ...target.planByTurn,

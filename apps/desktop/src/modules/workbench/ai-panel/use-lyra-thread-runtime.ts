@@ -8,6 +8,7 @@ import type {
   AgentRuntimeEvent,
   AgentSessionDetail,
   AgentToolCall,
+  AgentUsage,
   CapabilityRuntimeEvent,
   LyraClientRequestPayload,
   LyraDesktopApi,
@@ -47,7 +48,9 @@ import {
   writeWorkbenchStateSync,
 } from "../state-storage";
 import { isWriteToolName } from "./runtime/feed-utils";
+import { mapAgentRuntimeNotificationToWorkbenchNotification } from "./agent-runtime-notification-adapter";
 import type { AiPanelWriteStreamEvent } from "./types";
+import type { WorkbenchNotificationPublishRequest } from "../notifications";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -201,6 +204,7 @@ type UseLyraThreadRuntimeOptions = {
     readonly location?: { readonly line: number };
   }) => void;
   readonly onWriteStreamEvent?: (event: AiPanelWriteStreamEvent) => void;
+  readonly onAgentRuntimeNotification?: (request: WorkbenchNotificationPublishRequest) => void;
 };
 
 type LyraThreadTabState = {
@@ -225,6 +229,10 @@ type PersistedThreadTabState = {
 const AI_PANEL_TABS_STATE_KEY = "ai-panel-tabs" as const;
 const DRAFT_TAB_PREFIX = "draft:";
 const DEFAULT_DRAFT_TITLE = "New thread";
+const INTERNAL_AGENT_NOTIFICATION_METHODS = new Set([
+  "fuzzyFileSearch/sessionUpdated",
+  "fuzzyFileSearch/sessionCompleted",
+]);
 
 const isRecord = (value: unknown): value is JsonRecord =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -802,6 +810,169 @@ const toRuntimeEvent = ({
   toolOwner: "agent_core",
 });
 
+const readPositiveUsageNumber = (value: unknown): number | undefined => {
+  const numberValue = readNumber(value);
+  if (numberValue === null) {
+    return undefined;
+  }
+  return Math.max(0, Math.round(numberValue));
+};
+
+const readAgentUsageFromTokenUsage = (value: unknown): AgentUsage | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const total = isRecord(value.total) ? value.total : null;
+  if (total === null) {
+    return null;
+  }
+  const inputTokens = readPositiveUsageNumber(total.inputTokens);
+  const cachedInputTokens = readPositiveUsageNumber(total.cachedInputTokens);
+  const outputTokens = readPositiveUsageNumber(total.outputTokens);
+  const reasoningOutputTokens = readPositiveUsageNumber(total.reasoningOutputTokens);
+  const totalTokens = readPositiveUsageNumber(total.totalTokens);
+  const modelContextWindow = readPositiveUsageNumber(value.modelContextWindow);
+  const usage: AgentUsage = {
+    ...(inputTokens === undefined ? {} : { inputTokens }),
+    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+    ...(reasoningOutputTokens === undefined ? {} : { reasoningOutputTokens }),
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(modelContextWindow === undefined ? {} : { modelContextWindow }),
+  };
+  return Object.keys(usage).length === 0 ? null : usage;
+};
+
+const applyTurnUsageToAgentDetail = (
+  detail: AgentSessionDetail,
+  turnUsageByTurn: Readonly<Record<string, AgentUsage>>
+): AgentSessionDetail => {
+  if (Object.keys(turnUsageByTurn).length === 0) {
+    return detail;
+  }
+  let changed = false;
+  const turns = detail.turns.map((turn) => {
+    const usage = turnUsageByTurn[turn.id];
+    if (usage === undefined) {
+      return turn;
+    }
+    changed = true;
+    return {
+      ...turn,
+      usage: {
+        ...turn.usage,
+        ...usage,
+      },
+    };
+  });
+  return changed ? { ...detail, turns } : detail;
+};
+
+const runtimeEventFromObservedNotification = (
+  method: string,
+  params: JsonRecord,
+  fallbackTurnId: string | null
+): AgentRuntimeEvent | null => {
+  const threadId = readString(params.threadId);
+  if (threadId === null) {
+    return null;
+  }
+  const turn = isRecord(params.turn) ? params.turn : null;
+  const turnId = readString(params.turnId) ?? readString(turn?.id) ?? fallbackTurnId;
+  if (turnId === null) {
+    return null;
+  }
+
+  if (method === "hook/started" || method === "hook/completed") {
+    const run = isRecord(params.run) ? params.run : {};
+    const runId = readString(run.id) ?? `${turnId}:hook`;
+    const eventName = readString(run.eventName) ?? "hook";
+    const status = readString(run.status);
+    return toRuntimeEvent({
+      sessionId: threadId,
+      turnId,
+      phase: method === "hook/started" ? "tool_started" : "tool_finished",
+      payload: {
+        toolCallId: runId,
+        toolName: `hook.${eventName}`,
+        input: {
+          sourcePath: readString(run.sourcePath),
+          scope: readString(run.scope),
+        },
+        output: {
+          status,
+          statusMessage: readString(run.statusMessage),
+          durationMs: readNumber(run.durationMs),
+          entries: Array.isArray(run.entries) ? run.entries : [],
+        },
+        ...(status === null ? {} : { status }),
+      },
+    });
+  }
+
+  if (method === "item/autoApprovalReview/started" || method === "item/autoApprovalReview/completed") {
+    const review = isRecord(params.review) ? params.review : {};
+    const reviewId = readString(params.reviewId) ?? readString(params.targetItemId) ?? `${turnId}:auto-review`;
+    const status = readString(review.status);
+    return toRuntimeEvent({
+      sessionId: threadId,
+      turnId,
+      phase: method === "item/autoApprovalReview/started" ? "tool_progress" : "tool_finished",
+      payload: {
+        toolCallId: reviewId,
+        toolName: "approval.autoReview",
+        input: params.action,
+        output: {
+          review,
+          decisionSource: readString(params.decisionSource),
+        },
+        progress: {
+          status,
+          rationale: readString(review.rationale),
+        },
+        ...(status === null ? {} : { status }),
+      },
+    });
+  }
+
+  if (method === "item/mcpToolCall/progress") {
+    const itemId = readString(params.itemId) ?? `${turnId}:mcp`;
+    return toRuntimeEvent({
+      sessionId: threadId,
+      turnId,
+      phase: "tool_progress",
+      payload: {
+        toolCallId: itemId,
+        toolName: "mcp.progress",
+        progress: {
+          message: readString(params.message),
+        },
+      },
+    });
+  }
+
+  if (
+    method === "item/reasoning/summaryTextDelta"
+    || method === "item/reasoning/summaryPartAdded"
+    || method === "item/reasoning/textDelta"
+  ) {
+    return toRuntimeEvent({
+      sessionId: threadId,
+      turnId,
+      phase: "reasoning_delta",
+      payload: {
+        itemId: readString(params.itemId),
+        delta: readRawString(params.delta) ?? "",
+        summaryIndex: readNumber(params.summaryIndex),
+        contentIndex: readNumber(params.contentIndex),
+        kind: method,
+      },
+    });
+  }
+
+  return null;
+};
+
 const planApprovalPayload = (
   turnId: string,
   artifact: AgentPlanArtifact
@@ -1377,6 +1548,7 @@ export const useLyraThreadRuntime = ({
   interactionTextLabels,
   onFollowOpenFilePath,
   onWriteStreamEvent,
+  onAgentRuntimeNotification,
 }: UseLyraThreadRuntimeOptions): {
   readonly state: LyraThreadRuntimeState;
   readonly actions: LyraThreadRuntimeActions;
@@ -1448,8 +1620,13 @@ export const useLyraThreadRuntime = ({
   );
 
   const activeDetail = useMemo(
-    () => activeThread === null ? null : lyraThreadToAgentDetail(activeThread),
-    [activeThread]
+    () => activeThread === null
+      ? null
+      : applyTurnUsageToAgentDetail(
+          lyraThreadToAgentDetail(activeThread),
+          activeBucket.turnUsageByTurn
+        ),
+    [activeBucket.turnUsageByTurn, activeThread]
   );
   const latestPlanTurnId = useMemo(
     () => latestPlanTurnIdOf(activeBucket.planByTurn),
@@ -2753,16 +2930,44 @@ export const useLyraThreadRuntime = ({
     }
     return lyraApi.onEvent((event) => {
       if (event.kind === "startup_failed") {
+        onAgentRuntimeNotification?.(mapAgentRuntimeNotificationToWorkbenchNotification({
+          method: "runtime/startupFailed",
+          params: { error: event.error },
+        }));
         setRuntimeError(event.error.message);
         return;
       }
       if (event.kind === "disconnected") {
+        onAgentRuntimeNotification?.(mapAgentRuntimeNotificationToWorkbenchNotification({
+          method: "runtime/disconnected",
+          params: {
+            ...(event.message === undefined ? {} : { message: event.message }),
+            ...(event.error === undefined ? {} : { error: event.error }),
+          },
+        }));
         setRuntimeError(event.message ?? event.error?.message ?? "Lyra runtime disconnected");
         stopAllRuntimeBuckets();
         return;
       }
       if (event.kind === "ready") {
         setRuntimeError(null);
+        return;
+      }
+      if (event.kind === "lagged") {
+        flushQueuedRuntimeBucketPatches();
+        onAgentRuntimeNotification?.(mapAgentRuntimeNotificationToWorkbenchNotification({
+          method: "runtime/lagged",
+          params: {
+            skipped: event.skipped,
+            ...(activeThreadIdRef.current === null ? {} : { threadId: activeThreadIdRef.current }),
+          },
+        }));
+        setRuntimeError(`Lyra runtime skipped ${String(event.skipped)} events; refreshing thread state.`);
+        const threadId = activeThreadIdRef.current;
+        if (threadId !== null) {
+          void loadThread(threadId);
+        }
+        void loadThreads();
         return;
       }
       if (event.kind === "request") {
@@ -2812,6 +3017,33 @@ export const useLyraThreadRuntime = ({
       if (method === null) {
         return;
       }
+      if (!INTERNAL_AGENT_NOTIFICATION_METHODS.has(method)) {
+        onAgentRuntimeNotification?.(mapAgentRuntimeNotificationToWorkbenchNotification({ method, params }));
+      }
+      const observedRuntimeEvent = runtimeEventFromObservedNotification(
+        method,
+        params,
+        streamingTurnIdRef.current
+      );
+      if (observedRuntimeEvent !== null) {
+        const updateLatestRuntimeEvent = (current: typeof EMPTY_RUNTIME_BUCKET) => ({
+          ...current,
+          latestRuntimeEventByTurn: {
+            ...current.latestRuntimeEventByTurn,
+            [observedRuntimeEvent.turnId]: observedRuntimeEvent,
+          },
+        });
+        if (
+          method === "item/mcpToolCall/progress"
+          || method === "item/reasoning/summaryTextDelta"
+          || method === "item/reasoning/summaryPartAdded"
+          || method === "item/reasoning/textDelta"
+        ) {
+          queueRuntimeBucketPatch(observedRuntimeEvent.sessionId, updateLatestRuntimeEvent);
+        } else {
+          patchRuntimeBucket(observedRuntimeEvent.sessionId, updateLatestRuntimeEvent);
+        }
+      }
       if (method === "thread/started") {
         const thread = readLyraThread(params.thread);
         if (thread !== null) {
@@ -2827,6 +3059,34 @@ export const useLyraThreadRuntime = ({
         }
         forgetThread(threadId);
         void loadThreads();
+        return;
+      }
+      if (method === "thread/tokenUsage/updated") {
+        const threadId = readString(params.threadId);
+        const turnId = readString(params.turnId);
+        const usage = readAgentUsageFromTokenUsage(params.tokenUsage);
+        if (threadId !== null && turnId !== null) {
+          patchRuntimeBucket(threadId, (current) => ({
+            ...current,
+            ...(usage === null
+              ? {}
+              : {
+                  turnUsageByTurn: {
+                    ...current.turnUsageByTurn,
+                    [turnId]: usage,
+                  },
+                }),
+            latestRuntimeEventByTurn: {
+              ...current.latestRuntimeEventByTurn,
+              [turnId]: toRuntimeEvent({
+                sessionId: threadId,
+                turnId,
+                phase: "token_usage_updated",
+                payload: params,
+              }),
+            },
+          }));
+        }
         return;
       }
       if (method === "turn/started") {
@@ -3295,6 +3555,7 @@ export const useLyraThreadRuntime = ({
     loadThread,
     loadThreads,
     lyraApi,
+    onAgentRuntimeNotification,
     onFollowOpenFilePath,
     openDiffTargetInWorkspace,
     patchRuntimeBucket,

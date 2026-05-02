@@ -298,6 +298,7 @@ type UseAiPanelSurfaceRuntimeInput = {
   readonly workbenchTabMentions?: readonly AgentComposerWorkbenchTabMention[] | undefined;
   readonly onOpenFilePath?: AiPanelSurfaceProps["onOpenFilePath"] | undefined;
   readonly onWriteStreamEvent?: AiPanelSurfaceProps["onWriteStreamEvent"] | undefined;
+  readonly onAgentRuntimeNotification?: AiPanelSurfaceProps["onAgentRuntimeNotification"] | undefined;
   readonly onRequestProjectBind?: AiPanelSurfaceProps["onRequestProjectBind"] | undefined;
   readonly onOpenPlanApprovalWorkspace?: AiPanelSurfaceProps["onOpenPlanApprovalWorkspace"] | undefined;
   readonly onDefaultProfileSelect?: AiPanelSurfaceProps["onDefaultProfileSelect"] | undefined;
@@ -414,6 +415,7 @@ export const useAiPanelSurfaceRuntime = ({
   workbenchTabMentions,
   onOpenFilePath,
   onWriteStreamEvent,
+  onAgentRuntimeNotification,
   onRequestProjectBind,
   onOpenPlanApprovalWorkspace,
   onDefaultProfileSelect
@@ -451,6 +453,7 @@ export const useAiPanelSurfaceRuntime = ({
     desktopApi,
     interactionTextLabels,
     ...(onWriteStreamEvent === undefined ? {} : { onWriteStreamEvent }),
+    ...(onAgentRuntimeNotification === undefined ? {} : { onAgentRuntimeNotification }),
     ...(onOpenFilePath === undefined ? {} : { onFollowOpenFilePath: onOpenFilePath })
   });
   const {

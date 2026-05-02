@@ -81,6 +81,21 @@ describe("workbench notification model", () => {
     expect(result.current.topbarPreview).toBeNull();
   });
 
+  test("silent updates enter the center without taking over the topbar preview", () => {
+    const { result } = renderHook(() => useWorkbenchNotificationModel());
+
+    act(() => {
+      result.current.publishNotification(createRequest(1, { id: "visible" }));
+      result.current.publishNotification(createRequest(2, {
+        id: "silent",
+        previewBehavior: "silent"
+      }));
+    });
+
+    expect(result.current.notifications[0]?.id).toBe("silent");
+    expect(result.current.topbarPreview?.id).toBe("visible");
+  });
+
   test("restores persisted snapshot from workbench state storage", () => {
     const first = renderHook(() => useWorkbenchNotificationModel());
 

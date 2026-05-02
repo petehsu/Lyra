@@ -1,5 +1,4 @@
 import type {
-  WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
   WorkbenchBrowserElementPickerState,

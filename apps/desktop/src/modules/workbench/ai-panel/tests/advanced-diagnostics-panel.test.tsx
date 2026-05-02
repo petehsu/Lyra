@@ -1,5 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { GlobalDialogOpenRequest } from "../../global-dialog";
 import { AdvancedDiagnosticsPanel } from "../advanced-diagnostics-panel";
@@ -14,6 +14,10 @@ const createActions = (): AgentAdvancedRuntimeActions => ({
   injectThreadItems: vi.fn(async () => ({})),
   incrementElicitation: vi.fn(async () => ({ count: 1, paused: true })),
   decrementElicitation: vi.fn(async () => ({ count: 0, paused: false })),
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe("AdvancedDiagnosticsPanel", () => {

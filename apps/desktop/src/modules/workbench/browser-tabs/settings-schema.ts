@@ -1,6 +1,12 @@
 import type { BrowserSettingsSurfaceProps } from "./settings-surface-types";
 
-export type SettingsCategoryId = "general" | "appearance" | "workspace" | "search" | "ai";
+export type SettingsCategoryId =
+  | "general"
+  | "appearance"
+  | "workspace"
+  | "notifications"
+  | "search"
+  | "ai";
 
 export type SettingsFieldKind =
   | "choice"
@@ -21,6 +27,9 @@ export type SettingsFieldId =
   | "splitTriggerMode"
   | "splitThreePaneLayout"
   | "splitOverflowPolicy"
+  | "systemNotificationMode"
+  | "systemNotificationClickBehavior"
+  | "systemNotificationActions"
   | "omniboxNonBrowserSubmitTarget"
   | "searchScope"
   | "searchCustomRoots"
@@ -68,6 +77,7 @@ export type WorkbenchSettingsSchema = {
 type WorkbenchSettingsSchemaInput = Pick<
   BrowserSettingsSurfaceProps,
   | "aiCategoryLabel"
+  | "notificationsCategoryLabel"
   | "languageLabel"
   | "themeLabel"
   | "uiStyleLabel"
@@ -92,6 +102,9 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "deepSearchCrawlPolicyLabel"
   | "searchEnableContentLabel"
   | "omniboxNonBrowserSubmitTargetLabel"
+  | "systemNotificationModeLabel"
+  | "systemNotificationClickBehaviorLabel"
+  | "systemNotificationActionsLabel"
   | "uiStyleOptions"
 >;
 
@@ -122,6 +135,14 @@ export const createWorkbenchSettingsSchema = (
     createField("splitTriggerMode", "workspace", props.splitTriggerModeLabel, "choice"),
     createField("splitThreePaneLayout", "workspace", props.splitThreePaneLayoutLabel, "choice"),
     createField("splitOverflowPolicy", "workspace", props.splitOverflowPolicyLabel, "choice"),
+    createField("systemNotificationMode", "notifications", props.systemNotificationModeLabel, "choice"),
+    createField(
+      "systemNotificationClickBehavior",
+      "notifications",
+      props.systemNotificationClickBehaviorLabel,
+      "choice"
+    ),
+    createField("systemNotificationActions", "notifications", props.systemNotificationActionsLabel, "boolean-choice"),
     createField("omniboxNonBrowserSubmitTarget", "search", props.omniboxNonBrowserSubmitTargetLabel, "choice"),
     createField("searchScope", "search", props.searchScopeLabel, "choice"),
     createField("searchCustomRoots", "search", props.searchCustomRootsLabel, "textarea"),
@@ -162,6 +183,11 @@ export const createWorkbenchSettingsSchema = (
       id: "workspace",
       label: props.splitThreePaneLayoutLabel,
       sectionIds: sections.filter((section) => section.categoryId === "workspace").map((section) => section.id)
+    },
+    {
+      id: "notifications",
+      label: props.notificationsCategoryLabel,
+      sectionIds: sections.filter((section) => section.categoryId === "notifications").map((section) => section.id)
     },
     {
       id: "search",

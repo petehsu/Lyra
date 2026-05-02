@@ -5,7 +5,9 @@ import type { WorkbenchUiPackId } from "../ui-platform";
 import type {
   SearchDeepCrawlPolicy,
   SearchDeepBudgetPreset,
-  SearchLocalScopePreset
+  SearchLocalScopePreset,
+  SystemNotificationClickBehavior,
+  SystemNotificationMode
 } from "../../../shared/desktop-bridge";
 
 export type WorkbenchSplitTriggerMode = "ctrl_left_drag" | "right_drag";
@@ -54,6 +56,9 @@ export type WorkbenchPreferences = {
   readonly deepSearchCrawlPolicy: SearchDeepCrawlPolicy;
   readonly searchResultsSourceFilter: WorkbenchSearchResultsSourceFilter;
   readonly omniboxNonBrowserSubmitTarget: WorkbenchOmniboxNonBrowserSubmitTarget;
+  readonly systemNotificationMode: SystemNotificationMode;
+  readonly systemNotificationClickBehavior: SystemNotificationClickBehavior;
+  readonly systemNotificationActionsEnabled: boolean;
 };
 
 export type WorkbenchPreferencesModel = {
@@ -87,5 +92,10 @@ export type WorkbenchPreferencesModel = {
   readonly setOmniboxNonBrowserSubmitTarget: (
     value: WorkbenchOmniboxNonBrowserSubmitTarget
   ) => void;
+  readonly setSystemNotificationMode: (value: SystemNotificationMode) => void;
+  readonly setSystemNotificationClickBehavior: (
+    value: SystemNotificationClickBehavior
+  ) => void;
+  readonly setSystemNotificationActionsEnabled: (value: boolean) => void;
   readonly reset: () => void;
 };

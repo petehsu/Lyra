@@ -30,6 +30,10 @@ const TARGETS = [
   "linux-x64",
   "win32-x64",
 ] as const;
+const OPTIONAL_TARGETS = [
+  "win32-arm64",
+] as const;
+const KNOWN_TARGETS = [...TARGETS, ...OPTIONAL_TARGETS] as const;
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(currentDir, "../..");
@@ -99,12 +103,38 @@ const ensureExists = async (filePath: string): Promise<void> => {
 const isBlockedWheelFile = (fileName: string): boolean =>
   BLOCKED_WHEEL_PATTERNS.some((pattern) => pattern.test(path.basename(fileName)));
 
-const resolveCurrentTarget = (): (typeof TARGETS)[number] => {
+type KnownTarget = (typeof KNOWN_TARGETS)[number];
+
+const resolveCurrentTarget = (): KnownTarget => {
   const target = `${process.platform}-${process.arch}`;
-  if (TARGETS.includes(target as (typeof TARGETS)[number])) {
-    return target as (typeof TARGETS)[number];
+  if (KNOWN_TARGETS.includes(target as KnownTarget)) {
+    return target as KnownTarget;
   }
   throw new Error(`unsupported current target ${target}`);
+};
+
+const parseTargets = (): readonly KnownTarget[] => {
+  if (process.argv.includes("--all-targets")) {
+    return TARGETS;
+  }
+  const targetArg = process.argv.find((arg) => arg.startsWith("--target="));
+  if (targetArg === undefined) {
+    return [resolveCurrentTarget()];
+  }
+  const targets = targetArg
+    .slice("--target=".length)
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  if (targets.length === 0) {
+    throw new Error("--target cannot be empty");
+  }
+  return targets.map((target) => {
+    if (KNOWN_TARGETS.includes(target as KnownTarget)) {
+      return target as KnownTarget;
+    }
+    throw new Error(`unknown browser-use target ${target}`);
+  });
 };
 
 const validateManifest = async (targetRoot: string, manifest: BundleManifest): Promise<void> => {
@@ -224,7 +254,7 @@ const smokeCurrentTargetBundle = async (
 
 const main = async (): Promise<void> => {
   const allTargets = process.argv.includes("--all-targets");
-  const targets = allTargets ? TARGETS : [resolveCurrentTarget()];
+  const targets = parseTargets();
   const currentTarget = resolveCurrentTarget();
   for (const target of targets) {
     const targetRoot = path.join(BUNDLES_ROOT, target);

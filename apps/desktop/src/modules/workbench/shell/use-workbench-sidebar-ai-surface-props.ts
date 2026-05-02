@@ -8,6 +8,7 @@ import {
   type AgentComposerWorkbenchTabMention
 } from "../ai-panel";
 import type { AiPlanApprovalWorkspaceOpenRequest } from "../ai-panel";
+import type { WorkbenchNotificationModel } from "../notifications";
 import type { GlobalDialogModel } from "../global-dialog";
 import type { I18nKey } from "../i18n";
 import type { WorkbenchPreferences } from "../preferences";
@@ -36,6 +37,7 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
     currentPath?: string
   ) => Promise<string | null>;
   readonly onOpenPlanApprovalWorkspace: (request: AiPlanApprovalWorkspaceOpenRequest) => void;
+  readonly onAgentRuntimeNotification?: WorkbenchNotificationModel["publishNotification"];
   readonly openDialog: GlobalDialogModel["openDialog"];
   readonly t: (key: I18nKey) => string;
 };
@@ -52,6 +54,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   openAppTab,
   onRequestProjectBind,
   onOpenPlanApprovalWorkspace,
+  onAgentRuntimeNotification,
   openDialog,
   t
 }: UseWorkbenchSidebarAiSurfacePropsParams): WorkbenchSidebarAiSurfaceProps =>
@@ -136,6 +139,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
         openAppTab(createAiPluginsAppRequest(t("ai.pluginsTabTitle")));
       },
       onOpenPlanApprovalWorkspace,
+      ...(onAgentRuntimeNotification === undefined ? {} : { onAgentRuntimeNotification }),
       onRequestProjectBind,
       openDialog
     }),
@@ -146,6 +150,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       workbenchTabMentions,
       onRequestProjectBind,
       onOpenPlanApprovalWorkspace,
+      onAgentRuntimeNotification,
       onToggleAiPanelSide,
       openAppTab,
       openDialog,

@@ -9,7 +9,8 @@ export type BrowserUseBundleTargetId =
   | "linux-arm64"
   | "darwin-x64"
   | "darwin-arm64"
-  | "win32-x64";
+  | "win32-x64"
+  | "win32-arm64";
 
 export type BrowserUseBundleTarget = {
   readonly id: BrowserUseBundleTargetId;
@@ -71,6 +72,12 @@ const BUNDLE_TARGETS: readonly BrowserUseBundleTarget[] = [
     id: "win32-x64",
     platform: "win32",
     arch: "x64",
+    pythonBinary: "python/python.exe",
+  },
+  {
+    id: "win32-arm64",
+    platform: "win32",
+    arch: "arm64",
     pythonBinary: "python/python.exe",
   },
 ] as const;

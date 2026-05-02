@@ -9,6 +9,7 @@ import type {
 import {
   isRecord,
   normalizeStatus,
+  readAgentUsage,
   readNumber,
   readRawString,
   readString,
@@ -162,6 +163,7 @@ const readAiPanelTurn = (value: unknown): ThreadAiPanelTurn | null => {
   if (id === null || sessionId === null || createdAtMs === null || updatedAtMs === null) {
     return null;
   }
+  const usage = readAgentUsage(value.usage);
   return {
     id,
     sessionId,
@@ -171,6 +173,7 @@ const readAiPanelTurn = (value: unknown): ThreadAiPanelTurn | null => {
     ...(readNumber(value.durationMs) === null ? {} : { durationMs: readNumber(value.durationMs)! }),
     ...(readString(value.errorCode) === null ? {} : { errorCode: readString(value.errorCode)! }),
     ...(readString(value.errorMessage) === null ? {} : { errorMessage: readString(value.errorMessage)! }),
+    ...(usage === undefined ? {} : { usage }),
   };
 };
 
@@ -382,6 +385,7 @@ export const aiPanelViewModelToAgentDetail = (
     status: turnStatusToAgent(turn.status),
     ...(turn.errorCode === undefined ? {} : { errorCode: turn.errorCode }),
     ...(turn.errorMessage === undefined ? {} : { errorMessage: turn.errorMessage }),
+    ...(turn.usage === undefined ? {} : { usage: turn.usage }),
     createdAt: turn.createdAtMs,
     updatedAt: turn.updatedAtMs,
   }));

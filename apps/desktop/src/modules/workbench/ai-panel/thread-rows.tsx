@@ -54,6 +54,27 @@ const formatMessageTime = (timestamp: number, locale: WorkbenchLocale): string =
   }
 };
 
+const formatTokenCount = (value: number, locale: WorkbenchLocale): string => {
+  try {
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
+  } catch {
+    return String(Math.round(value));
+  }
+};
+
+const resolveTurnUsageLabel = (
+  turn: AgentTurn | null,
+  locale: WorkbenchLocale,
+  isZhLocale: boolean
+): string | null => {
+  const usage = turn?.usage;
+  const totalTokens = usage?.totalTokens;
+  if (typeof totalTokens !== "number" || !Number.isFinite(totalTokens) || totalTokens <= 0) {
+    return null;
+  }
+  return `${isZhLocale ? "Token" : "Tokens"} · ${formatTokenCount(totalTokens, locale)}`;
+};
+
 const planApprovalRequestFromState = (
   plan: LyraTurnPlanState,
   sessionId: string
@@ -142,6 +163,7 @@ export const AiPanelMessageRow = ({
     turn === null || turn.status === "running"
       ? null
       : resolveTurnDurationLabel(turn, turnWorkingLabel, turnWorkedForPrefix);
+  const turnUsageLabel = resolveTurnUsageLabel(turn, locale, isZhLocale);
   const turnRuntimeFeed =
     turnId !== null && message.role === "assistant"
       ? (runtimeFeedByTurn.get(turnId) ?? [])
@@ -295,6 +317,11 @@ export const AiPanelMessageRow = ({
               {turnDurationLabel === null ? null : (
                 <span className="lyra-ai-agent-turn-footer-duration">
                   {turnDurationLabel}
+                </span>
+              )}
+              {turnUsageLabel === null ? null : (
+                <span className="lyra-ai-agent-turn-footer-usage">
+                  {turnUsageLabel}
                 </span>
               )}
               <span className="lyra-ai-agent-message-footer-time">{messageTimeLabel}</span>

@@ -9,6 +9,7 @@ const createSchemaInput = (
   languageLabel: "Language",
   themeLabel: "Theme",
   uiStyleLabel: "UI style",
+  notificationsCategoryLabel: "Notifications",
   terminalThemeLabel: "Terminal theme",
   splitTriggerModeLabel: "Split trigger",
   splitThreePaneLayoutLabel: "Split layout",
@@ -30,6 +31,9 @@ const createSchemaInput = (
   deepSearchCrawlPolicyLabel: "Crawl policy",
   searchEnableContentLabel: "Index content",
   omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
+  systemNotificationModeLabel: "System notifications",
+  systemNotificationClickBehaviorLabel: "Notification click behavior",
+  systemNotificationActionsLabel: "Notification actions",
   uiStyleOptions: Array.from({ length: uiStyleOptionCount }, () => ({
     value: "classic" as const,
     label: "Classic"
@@ -44,6 +48,7 @@ describe("createWorkbenchSettingsSchema", () => {
       "general",
       "appearance",
       "workspace",
+      "notifications",
       "search",
       "ai"
     ]);

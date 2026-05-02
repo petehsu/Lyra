@@ -18,6 +18,9 @@ export type LinuxCompatWarning = {
 export type LinuxEnvironmentFacts = {
   readonly sessionType: LinuxSessionType;
   readonly desktop: string;
+  readonly distributionId: string | null;
+  readonly distributionVersion: string | null;
+  readonly distributionLike: readonly string[];
   readonly waylandDisplay: string | null;
   readonly x11Display: string | null;
   readonly isRoot: boolean;

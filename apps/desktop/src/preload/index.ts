@@ -84,6 +84,13 @@ import {
   type SearchLocalStreamStartResponse,
   type SearchRebuildIndexRequest,
   type SearchRebuildIndexResponse,
+  type SystemNotificationAccessRequestResult,
+  type SystemNotificationActivation,
+  type SystemNotificationOpenSettingsResult,
+  type SystemNotificationPermission,
+  type SystemNotificationShowRequest,
+  type SystemNotificationShowResult,
+  type SystemNotificationStatus,
   type LyraResourceEvent,
   type LyraSystemActivityActionRequest,
   type LyraSystemActivityActionResult,
@@ -153,10 +160,44 @@ import type {
 const fallbackMeta: AppMetaPayload = {
   version: "0.1.0",
   platform: process.platform,
+  arch: process.arch,
   isPackaged: false,
   userName: process.env.USER ?? process.env.USERNAME,
   locale: Intl.DateTimeFormat().resolvedOptions().locale,
   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+};
+
+const readBrowserNotificationPermission = (): SystemNotificationPermission => {
+  if (typeof window === "undefined" || typeof window.Notification === "undefined") {
+    return "unsupported";
+  }
+  const permission = window.Notification.permission;
+  return permission === "granted" || permission === "denied" || permission === "default"
+    ? permission
+    : "unknown";
+};
+
+const withBrowserNotificationPermission = (
+  status: SystemNotificationStatus,
+  permission: SystemNotificationPermission = readBrowserNotificationPermission()
+): SystemNotificationStatus => ({
+  ...status,
+  permission: status.supported ? permission : "unsupported",
+  canNotify: status.supported && permission === "granted"
+});
+
+const requestBrowserNotificationPermission = async (): Promise<SystemNotificationPermission> => {
+  if (typeof window === "undefined" || typeof window.Notification === "undefined") {
+    return "unsupported";
+  }
+  if (window.Notification.permission === "granted" || window.Notification.permission === "denied") {
+    return window.Notification.permission;
+  }
+  try {
+    return await window.Notification.requestPermission();
+  } catch (_error) {
+    return readBrowserNotificationPermission();
+  }
 };
 
 const terminalDataListeners = new Set<(event: TerminalDataEvent) => void>();
@@ -167,6 +208,10 @@ const workbenchBrowserEventListeners = new Set<(event: WorkbenchBrowserEvent) =>
 let workbenchBrowserEventBridgeReady = false;
 const browserUseRuntimeStatusListeners = new Set<(status: BrowserUseRuntimeStatus) => void>();
 let browserUseRuntimeStatusBridgeReady = false;
+const systemNotificationActivationListeners = new Set<(
+  event: SystemNotificationActivation
+) => void>();
+let systemNotificationActivationBridgeReady = false;
 const resourceEventListeners = new Set<(event: LyraResourceEvent) => void>();
 let resourceEventBridgeReady = false;
 const imageViewerEventListeners = new Set<(event: ImageViewerEvent) => void>();
@@ -282,6 +327,31 @@ const ensureResourceEventBridge = (): void => {
         return;
       }
       for (const listener of resourceEventListeners) {
+        listener(payload);
+      }
+    }
+  );
+};
+
+const ensureSystemNotificationActivationBridge = (): void => {
+  if (systemNotificationActivationBridgeReady) {
+    return;
+  }
+  systemNotificationActivationBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.systemNotificationsActivated,
+    (_event: Electron.IpcRendererEvent, payload: SystemNotificationActivation): void => {
+      if (
+        payload === null
+        || typeof payload !== "object"
+        || typeof payload.notificationId !== "string"
+        || typeof payload.actionId !== "string"
+        || typeof payload.activatedAt !== "number"
+      ) {
+        return;
+      }
+      for (const listener of systemNotificationActivationListeners) {
         listener(payload);
       }
     }
@@ -511,6 +581,59 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     }
   },
   openExternal: (url: string) => ipcRenderer.invoke(LYRA_CHANNELS.openExternal, url),
+  systemNotifications: {
+    readStatus: () =>
+      (ipcRenderer.invoke(
+        LYRA_CHANNELS.systemNotificationsReadStatus
+      ) as Promise<SystemNotificationStatus>).then((status) =>
+        withBrowserNotificationPermission(status)
+      ),
+    requestAccess: async () => {
+      const hostStatus = await ipcRenderer.invoke(
+        LYRA_CHANNELS.systemNotificationsReadStatus
+      ) as SystemNotificationStatus;
+      if (hostStatus.supported === false) {
+        return {
+          ...withBrowserNotificationPermission(hostStatus, "unsupported"),
+          openedSettings: false
+        } satisfies SystemNotificationAccessRequestResult;
+      }
+      const permission = await requestBrowserNotificationPermission();
+      const openedSettings =
+        permission === "granted"
+          ? false
+          : (await ipcRenderer.invoke(
+              LYRA_CHANNELS.systemNotificationsOpenSettings
+            ) as SystemNotificationOpenSettingsResult).opened;
+      return {
+        ...withBrowserNotificationPermission(hostStatus, permission),
+        openedSettings
+      } satisfies SystemNotificationAccessRequestResult;
+    },
+    openSettings: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.systemNotificationsOpenSettings
+      ) as Promise<SystemNotificationOpenSettingsResult>,
+    show: (request: SystemNotificationShowRequest) => {
+      if (readBrowserNotificationPermission() !== "granted") {
+        return Promise.resolve({
+          status: "skipped",
+          reason: "permission"
+        } satisfies SystemNotificationShowResult);
+      }
+      return ipcRenderer.invoke(
+        LYRA_CHANNELS.systemNotificationsShow,
+        request
+      ) as Promise<SystemNotificationShowResult>;
+    },
+    onActivated: (listener: (event: SystemNotificationActivation) => void) => {
+      ensureSystemNotificationActivationBridge();
+      systemNotificationActivationListeners.add(listener);
+      return () => {
+        systemNotificationActivationListeners.delete(listener);
+      };
+    }
+  },
   linuxCompat: {
     readStatus: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.linuxCompatReadStatus) as Promise<LinuxCompatReadStatusResponse>,

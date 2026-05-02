@@ -1,7 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { AiPanelTopbarActions } from "../topbar-actions";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("ai panel topbar actions", () => {
   test("renders actions and dispatches callbacks", () => {

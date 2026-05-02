@@ -169,7 +169,13 @@ export const runtimeEventPhasePriority = (phase: string): number => {
   if (phase === "accepted" || phase === "steer_submitted") {
     return 2;
   }
-  if (phase === "assistant_delta" || phase === "plan_delta" || phase === "plan_updated") {
+  if (
+    phase === "assistant_delta"
+    || phase === "plan_delta"
+    || phase === "plan_updated"
+    || phase === "reasoning_delta"
+    || phase === "token_usage_updated"
+  ) {
     return 1;
   }
   return 0;

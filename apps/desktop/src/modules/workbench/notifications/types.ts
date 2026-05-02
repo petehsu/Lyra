@@ -70,6 +70,7 @@ export type WorkbenchNotificationPublishRequest = Omit<
 > & {
   readonly id?: string;
   readonly createdAt?: number;
+  readonly previewBehavior?: "show" | "silent";
 };
 
 export type WorkbenchNotificationSnapshot = {

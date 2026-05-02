@@ -183,7 +183,7 @@ export const createRuntimeTurnOptions = ({
   ...(effort === null || effort === undefined ? {} : { effort }),
   ...(verbosity === null || verbosity === undefined ? {} : { verbosity }),
   ...permissionRuntimeOptions(permissionMode),
-  ...(collaborationMode === undefined || selectedModelOption?.model === undefined
+  ...(collaborationMode === undefined
     ? {}
     : { collaborationMode })
 });

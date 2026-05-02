@@ -5,7 +5,9 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -p lyra-lsp-core -p lyra-files-napi -p lyra-image-napi -p lyra-resource-napi -p lyra-skills-napi -p lyra-docs-napi -p lyra-mcp-core",
+    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -p lyra-lsp-core -p lyra-files-napi -p lyra-image-napi -p lyra-resource-napi -p lyra-skills-napi -p lyra-docs-napi -p lyra-mcp-core && npm run native:stage",
+    "native:build:release": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --release --clean",
+    "native:stage": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --stage-only",
     "browser-use:build-current-bundle": "node --import tsx ../../tools/browser-use/build-current-bundle.ts",
     "browser-use:build-bundles": "node --import tsx ../../tools/browser-use/build-current-bundle.ts --all-targets",
     "browser-use:verify-bundles": "node --import tsx ../../tools/browser-use/verify-browser-use-bundles.ts",
@@ -21,7 +23,8 @@
     "lint:ui-style": "node --import tsx ../../tools/verify-workbench-style.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "icon:mac": "bash ../../scripts/desktop/generate-macos-iconset.sh"
+    "icon:app": "node --import tsx ../../scripts/desktop/generate-app-icons.ts",
+    "icon:mac": "npm run icon:app"
   },
   "build": {
     "appId": "dev.lyra.desktop",
@@ -29,7 +32,43 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "resources/icons/macos/lyra.icns"
-    }
+    },
+    "win": {
+      "icon": "resources/icons/win/lyra.ico"
+    },
+    "linux": {
+      "icon": "resources/icons/linux"
+    },
+    "extraResources": [
+      {
+        "from": "resources/icons/app",
+        "to": "icons/app",
+        "filter": [
+          "*.png"
+        ]
+      },
+      {
+        "from": "native",
+        "to": "native",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/browser-use",
+        "to": "browser-use",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/lsp",
+        "to": "lsp",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

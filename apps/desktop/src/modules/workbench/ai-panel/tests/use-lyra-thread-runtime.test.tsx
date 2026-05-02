@@ -2563,4 +2563,242 @@ describe("useLyraThreadRuntime", () => {
       ]);
     });
   });
+
+  test("publishes lagged runtime events through unified notifications and refreshes state", async () => {
+    const desktop = makeDesktopApi();
+    const onAgentRuntimeNotification = vi.fn();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onAgentRuntimeNotification,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    await act(async () => {
+      desktop.emit({ kind: "lagged", skipped: 4 });
+      await Promise.resolve();
+    });
+
+    expect(onAgentRuntimeNotification).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agent event stream lagged",
+      level: "warning",
+      target: expect.objectContaining({
+        kind: "app-tab",
+        appId: "ai-history",
+      }),
+    }));
+    expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: "thread/read",
+      params: expect.objectContaining({ threadId: "thread-1" }),
+    }));
+  });
+
+  test("stores token usage updates on turns and publishes silent unified notifications", async () => {
+    const desktop = makeDesktopApi();
+    const onAgentRuntimeNotification = vi.fn();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onAgentRuntimeNotification,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+      await result.current.actions.loadThread("thread-1");
+    });
+
+    await act(async () => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "thread/tokenUsage/updated",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            tokenUsage: {
+              total: {
+                totalTokens: 200,
+                inputTokens: 150,
+                cachedInputTokens: 25,
+                outputTokens: 50,
+                reasoningOutputTokens: 9,
+              },
+              last: {
+                totalTokens: 20,
+                inputTokens: 13,
+                cachedInputTokens: 5,
+                outputTokens: 7,
+                reasoningOutputTokens: 1,
+              },
+              modelContextWindow: 4096,
+            },
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(onAgentRuntimeNotification).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agent token usage updated",
+      preview: "Total tokens: 200",
+      previewBehavior: "silent",
+    }));
+    expect(result.current.state.activeDetail?.turns.find((turn) => turn.id === "turn-1")?.usage).toMatchObject({
+      inputTokens: 150,
+      cachedInputTokens: 25,
+      outputTokens: 50,
+      reasoningOutputTokens: 9,
+      totalTokens: 200,
+      modelContextWindow: 4096,
+    });
+    expect(result.current.state.latestRuntimeEventByTurn["turn-1"]?.phase).toBe("token_usage_updated");
+  });
+
+  test("keeps file mention search notifications internal to the composer", async () => {
+    const desktop = makeDesktopApi();
+    const onAgentRuntimeNotification = vi.fn();
+    renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onAgentRuntimeNotification,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    act(() => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "fuzzyFileSearch/sessionUpdated",
+          params: {
+            sessionId: "mention-session-1",
+            files: [],
+          },
+        },
+      });
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "fuzzyFileSearch/sessionCompleted",
+          params: {
+            sessionId: "mention-session-1",
+          },
+        },
+      });
+    });
+
+    expect(onAgentRuntimeNotification).not.toHaveBeenCalled();
+  });
+
+  test("surfaces hook, reasoning, and config warning notifications", async () => {
+    const desktop = makeDesktopApi();
+    const onAgentRuntimeNotification = vi.fn();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onAgentRuntimeNotification,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    act(() => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "hook/started",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            run: {
+              id: "hook-1",
+              eventName: "PreToolUse",
+              sourcePath: "/repo/.lyra/hooks/pre.sh",
+              status: "inProgress",
+              entries: [],
+            },
+          },
+        },
+      });
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/reasoning/summaryTextDelta",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            itemId: "reasoning-1",
+            delta: "thinking",
+            summaryIndex: 0,
+          },
+        },
+      });
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "configWarning",
+          params: {
+            summary: "Config issue",
+            details: "Bad provider",
+            path: "/repo/.lyra/config.toml",
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.latestRuntimeEventByTurn["turn-1"]?.phase).toBe("reasoning_delta");
+    });
+    expect(onAgentRuntimeNotification).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agent hook started",
+    }));
+    expect(onAgentRuntimeNotification).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agent reasoning updated",
+      previewBehavior: "silent",
+    }));
+    expect(onAgentRuntimeNotification).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agent config warning",
+      level: "warning",
+      target: expect.objectContaining({
+        kind: "app-tab",
+        appId: "file-editor",
+        filePath: "/repo/.lyra/config.toml",
+      }),
+    }));
+  });
 });

@@ -98,8 +98,41 @@ describe("ai panel runtime feed utils", () => {
       toolLabel: "Spawn Agent",
       target: "child-thread-1 · gpt-5.4 · Inspect the failing test",
       openThreadId: "child-thread-1",
+      openThreadTargets: [{ threadId: "child-thread-1", label: "child-thread-1" }],
       icon: "agent",
       status: "completed",
+    });
+  });
+
+  test("keeps every collab receiver thread as an openable target", () => {
+    const feed = toRuntimeFeedItem({
+      sessionId: "s1",
+      turnId: "t1",
+      phase: "tool_finished",
+      timestamp: 100,
+      payload: {
+        toolName: "collab.wait",
+        toolCallId: "agent-wait-1",
+        input: {
+          receiverThreadIds: ["child-thread-1", "child-thread-2"],
+        },
+        output: {
+          receiverThreadIds: ["child-thread-2", "child-thread-3"],
+        },
+        status: "completed",
+      },
+    } as any, LABELS, "Tool");
+
+    expect(feed).toMatchObject({
+      id: "agent-wait-1",
+      toolName: "collab.wait",
+      target: "child-thread-1, child-thread-2, child-thread-3",
+      openThreadId: "child-thread-1",
+      openThreadTargets: [
+        { threadId: "child-thread-1", label: "child-thread-1" },
+        { threadId: "child-thread-2", label: "child-thread-2" },
+        { threadId: "child-thread-3", label: "child-thread-3" },
+      ],
     });
   });
 

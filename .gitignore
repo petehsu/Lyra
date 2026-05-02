@@ -3,6 +3,7 @@ node_modules/
 dist/
 coverage/
 apps/desktop/out/
+apps/desktop/native/
 
 # Python
 __pycache__/

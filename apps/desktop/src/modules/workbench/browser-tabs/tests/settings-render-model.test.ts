@@ -23,6 +23,7 @@ describe("createSettingsSurfaceModel", () => {
       "general",
       "appearance",
       "workspace",
+      "notifications",
       "search",
       "ai"
     ]);
@@ -30,6 +31,7 @@ describe("createSettingsSurfaceModel", () => {
       buildSettingsCategoryDomId("general"),
       buildSettingsCategoryDomId("appearance"),
       buildSettingsCategoryDomId("workspace"),
+      buildSettingsCategoryDomId("notifications"),
       buildSettingsCategoryDomId("search"),
       buildSettingsCategoryDomId("ai")
     ]);

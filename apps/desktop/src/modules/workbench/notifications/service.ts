@@ -341,8 +341,9 @@ export const useWorkbenchNotificationModel = (): WorkbenchNotificationModel => {
   }, [state.topbarPreviewNotificationId]);
 
   const publishNotification = useCallback((request: WorkbenchNotificationPublishRequest): WorkbenchNotificationItem => {
+    const { previewBehavior, ...itemRequest } = request;
     const nextItem: WorkbenchNotificationItem = {
-      ...request,
+      ...itemRequest,
       id: request.id ?? createNotificationId(),
       createdAt: request.createdAt ?? Date.now()
     };
@@ -353,7 +354,8 @@ export const useWorkbenchNotificationModel = (): WorkbenchNotificationModel => {
       return ensureSelectedNotification({
         ...current,
         notifications: nextNotifications,
-        topbarPreviewNotificationId: nextItem.id
+        topbarPreviewNotificationId:
+          previewBehavior === "silent" ? current.topbarPreviewNotificationId : nextItem.id
       });
     });
 

@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   LyraDesktopApi,
   SearchIndexStatusResponse,
+  SystemNotificationMode,
+  SystemNotificationStatus,
   UiuxListPacksResponse
 } from "../../../shared/desktop-bridge";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
@@ -48,6 +50,8 @@ export const useWorkbenchSettingsSurfaceProps = ({
   const preferences = preferencesModel.preferences;
   const [uiuxPacks, setUiuxPacks] = useState<UiuxListPacksResponse | null>(null);
   const [pendingUiPackId, setPendingUiPackId] = useState<WorkbenchUiPackId | null>(null);
+  const [systemNotificationStatus, setSystemNotificationStatus] =
+    useState<SystemNotificationStatus | null>(null);
 
   useEffect(() => {
     if (desktopApi?.uiux === undefined) {
@@ -74,6 +78,38 @@ export const useWorkbenchSettingsSurfaceProps = ({
       cancelled = true;
     };
   }, [desktopApi]);
+
+  useEffect(() => {
+    const systemNotifications = desktopApi?.systemNotifications;
+    if (systemNotifications === undefined) {
+      return;
+    }
+
+    let cancelled = false;
+    const readStatus = (): void => {
+      void systemNotifications.readStatus()
+        .then((status) => {
+          if (cancelled) {
+            return;
+          }
+          setSystemNotificationStatus(status.canNotify ? null : status);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) {
+            return;
+          }
+          console.warn(`[lyra-system-notifications] status read failed ${String(error)}`);
+          setSystemNotificationStatus(null);
+        });
+    };
+
+    readStatus();
+    window.addEventListener("focus", readStatus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", readStatus);
+    };
+  }, [desktopApi?.systemNotifications]);
 
   const uiStyleOptions = useMemo(
     () => [
@@ -117,6 +153,32 @@ export const useWorkbenchSettingsSurfaceProps = ({
       });
   };
 
+  const handleSystemNotificationModeChange = (value: SystemNotificationMode): void => {
+    if (value === "off") {
+      preferencesModel.setSystemNotificationMode("off");
+      return;
+    }
+
+    const systemNotifications = desktopApi?.systemNotifications;
+    if (systemNotifications === undefined) {
+      preferencesModel.setSystemNotificationMode("off");
+      return;
+    }
+
+    void systemNotifications.requestAccess()
+      .then((status) => {
+        setSystemNotificationStatus(status.canNotify ? null : status);
+        preferencesModel.setSystemNotificationMode(status.canNotify ? value : "off");
+      })
+      .catch((error: unknown) => {
+        console.warn(`[lyra-system-notifications] access request failed ${String(error)}`);
+        preferencesModel.setSystemNotificationMode("off");
+      });
+  };
+
+  const effectiveSystemNotificationMode =
+    systemNotificationStatus?.canNotify === false ? "off" : preferences.systemNotificationMode;
+
   return {
     ...labels.settingsSurface,
     localeValue: preferences.locale,
@@ -148,6 +210,9 @@ export const useWorkbenchSettingsSurfaceProps = ({
     searchIndexStatusValue: formatSearchIndexStatus(searchIndexStatus),
     searchRebuildIndexPending,
     omniboxNonBrowserSubmitTargetValue: preferences.omniboxNonBrowserSubmitTarget,
+    systemNotificationModeValue: effectiveSystemNotificationMode,
+    systemNotificationClickBehaviorValue: preferences.systemNotificationClickBehavior,
+    systemNotificationActionsValue: preferences.systemNotificationActionsEnabled,
     localeOptions: labels.settingsOptions.locale,
     themeOptions: labels.settingsOptions.theme,
     uiStyleOptions,
@@ -161,6 +226,8 @@ export const useWorkbenchSettingsSurfaceProps = ({
     deepSearchCrawlPolicyOptions: labels.settingsOptions.deepSearchCrawlPolicy,
     searchWebEngineOptions: labels.settingsOptions.searchWebEngine,
     omniboxNonBrowserSubmitTargetOptions: labels.settingsOptions.omniboxNonBrowserSubmitTarget,
+    systemNotificationModeOptions: labels.settingsOptions.systemNotificationMode,
+    systemNotificationClickBehaviorOptions: labels.settingsOptions.systemNotificationClickBehavior,
     aiLabels: labels.settingsAi,
     aiModel: settingsAiModel,
     onLocaleChange: preferencesModel.setLocale,
@@ -199,7 +266,10 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onSearchIncludeHiddenChange: preferencesModel.setSearchIncludeHidden,
     onSearchAutoIndexChange: preferencesModel.setSearchAutoIndexEnabled,
     onSearchRebuildIndex,
-    onOmniboxNonBrowserSubmitTargetChange: preferencesModel.setOmniboxNonBrowserSubmitTarget
+    onOmniboxNonBrowserSubmitTargetChange: preferencesModel.setOmniboxNonBrowserSubmitTarget,
+    onSystemNotificationModeChange: handleSystemNotificationModeChange,
+    onSystemNotificationClickBehaviorChange: preferencesModel.setSystemNotificationClickBehavior,
+    onSystemNotificationActionsChange: preferencesModel.setSystemNotificationActionsEnabled
   };
 };
 

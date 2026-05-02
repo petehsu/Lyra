@@ -35,6 +35,24 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         splitTriggerMode: createSettingSplitTriggerModeOptions(t),
         splitThreePaneLayout: createSettingSplitThreePaneLayoutOptions(t),
         splitOverflowPolicy: createSettingSplitOverflowPolicyOptions(t),
+        systemNotificationMode: [
+          { value: "off" as const, label: t("settings.systemNotificationModeOffLabel") },
+          {
+            value: "background" as const,
+            label: t("settings.systemNotificationModeBackgroundLabel")
+          },
+          { value: "all" as const, label: t("settings.systemNotificationModeAllLabel") }
+        ],
+        systemNotificationClickBehavior: [
+          {
+            value: "open_center" as const,
+            label: t("settings.systemNotificationClickOpenCenterLabel")
+          },
+          {
+            value: "open_source" as const,
+            label: t("settings.systemNotificationClickOpenSourceLabel")
+          }
+        ],
         searchScope: [
           {
             value: "home" as const,
@@ -92,6 +110,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
       settingsSurface: {
         title: t("settings.pageTitle"),
         aiCategoryLabel: t("settings.aiCategoryLabel"),
+        notificationsCategoryLabel: t("settings.notificationsCategoryLabel"),
         languageLabel: t("settings.languageLabel"),
         themeLabel: t("settings.themeLabel"),
         uiStyleLabel: t("settings.uiStyleLabel"),
@@ -141,7 +160,18 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         searchAutoIndexLabel: t("settings.searchAutoIndexLabel"),
         searchIndexStatusLabel: t("settings.searchIndexStatusLabel"),
         searchRebuildIndexLabel: t("settings.searchRebuildIndexLabel"),
-        omniboxNonBrowserSubmitTargetLabel: t("settings.omniboxNonBrowserSubmitTargetLabel")
+        omniboxNonBrowserSubmitTargetLabel: t("settings.omniboxNonBrowserSubmitTargetLabel"),
+        systemNotificationModeLabel: t("settings.systemNotificationModeLabel"),
+        systemNotificationModeOffLabel: t("settings.systemNotificationModeOffLabel"),
+        systemNotificationModeBackgroundLabel: t("settings.systemNotificationModeBackgroundLabel"),
+        systemNotificationModeAllLabel: t("settings.systemNotificationModeAllLabel"),
+        systemNotificationClickBehaviorLabel: t("settings.systemNotificationClickBehaviorLabel"),
+        systemNotificationClickOpenCenterLabel: t("settings.systemNotificationClickOpenCenterLabel"),
+        systemNotificationClickOpenSourceLabel: t("settings.systemNotificationClickOpenSourceLabel"),
+        systemNotificationActionsLabel: t("settings.systemNotificationActionsLabel"),
+        systemNotificationActionsDescription: t("settings.systemNotificationActionsDescription"),
+        systemNotificationActionsEnabled: t("settings.systemNotificationActionsEnabled"),
+        systemNotificationActionsDisabled: t("settings.systemNotificationActionsDisabled")
       },
       settingsAi: {
         categoryLabel: t("settings.aiCategoryLabel"),

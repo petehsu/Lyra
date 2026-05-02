@@ -1,7 +1,9 @@
 import type {
   SearchDeepBudgetPreset,
   SearchDeepCrawlPolicy,
-  SearchLocalScopePreset
+  SearchLocalScopePreset,
+  SystemNotificationClickBehavior,
+  SystemNotificationMode
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
 import type {
@@ -25,6 +27,7 @@ export type SettingsOption<T extends string = string> = {
 export type BrowserSettingsSurfaceProps = {
   readonly title: string;
   readonly aiCategoryLabel: string;
+  readonly notificationsCategoryLabel: string;
   readonly languageLabel: string;
   readonly themeLabel: string;
   readonly uiStyleLabel: string;
@@ -75,6 +78,17 @@ export type BrowserSettingsSurfaceProps = {
   readonly searchIndexStatusLabel: string;
   readonly searchRebuildIndexLabel: string;
   readonly omniboxNonBrowserSubmitTargetLabel: string;
+  readonly systemNotificationModeLabel: string;
+  readonly systemNotificationModeOffLabel: string;
+  readonly systemNotificationModeBackgroundLabel: string;
+  readonly systemNotificationModeAllLabel: string;
+  readonly systemNotificationClickBehaviorLabel: string;
+  readonly systemNotificationClickOpenCenterLabel: string;
+  readonly systemNotificationClickOpenSourceLabel: string;
+  readonly systemNotificationActionsLabel: string;
+  readonly systemNotificationActionsDescription: string;
+  readonly systemNotificationActionsEnabled: string;
+  readonly systemNotificationActionsDisabled: string;
   readonly localeValue: WorkbenchLocale;
   readonly themeValue: WorkbenchThemeId;
   readonly uiStyleValue: WorkbenchUiPackId;
@@ -104,6 +118,9 @@ export type BrowserSettingsSurfaceProps = {
   readonly searchIndexStatusValue: string;
   readonly searchRebuildIndexPending: boolean;
   readonly omniboxNonBrowserSubmitTargetValue: WorkbenchOmniboxNonBrowserSubmitTarget;
+  readonly systemNotificationModeValue: SystemNotificationMode;
+  readonly systemNotificationClickBehaviorValue: SystemNotificationClickBehavior;
+  readonly systemNotificationActionsValue: boolean;
   readonly localeOptions: readonly SettingsOption<WorkbenchLocale>[];
   readonly themeOptions: readonly SettingsOption<WorkbenchThemeId>[];
   readonly uiStyleOptions: readonly SettingsOption<WorkbenchUiPackId>[];
@@ -117,6 +134,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly deepSearchCrawlPolicyOptions: readonly SettingsOption<SearchDeepCrawlPolicy>[];
   readonly searchWebEngineOptions: readonly SettingsOption<string>[];
   readonly omniboxNonBrowserSubmitTargetOptions: readonly SettingsOption<WorkbenchOmniboxNonBrowserSubmitTarget>[];
+  readonly systemNotificationModeOptions: readonly SettingsOption<SystemNotificationMode>[];
+  readonly systemNotificationClickBehaviorOptions: readonly SettingsOption<SystemNotificationClickBehavior>[];
   readonly aiLabels: SettingsAiLabels;
   readonly aiModel: SettingsAiModel;
   readonly onLocaleChange: (value: WorkbenchLocale) => void;
@@ -147,4 +166,9 @@ export type BrowserSettingsSurfaceProps = {
   readonly onSearchAutoIndexChange: (value: boolean) => void;
   readonly onSearchRebuildIndex: () => void;
   readonly onOmniboxNonBrowserSubmitTargetChange: (value: WorkbenchOmniboxNonBrowserSubmitTarget) => void;
+  readonly onSystemNotificationModeChange: (value: SystemNotificationMode) => void;
+  readonly onSystemNotificationClickBehaviorChange: (
+    value: SystemNotificationClickBehavior
+  ) => void;
+  readonly onSystemNotificationActionsChange: (value: boolean) => void;
 };

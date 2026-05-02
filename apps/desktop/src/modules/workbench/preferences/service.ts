@@ -4,7 +4,9 @@ import { WORKBENCH_LOCALES, type WorkbenchLocale } from "../i18n";
 import type {
   SearchDeepCrawlPolicy,
   SearchDeepBudgetPreset,
-  SearchLocalScopePreset
+  SearchLocalScopePreset,
+  SystemNotificationClickBehavior,
+  SystemNotificationMode
 } from "../../../shared/desktop-bridge";
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
 import { isWorkbenchThemeId } from "../theme";
@@ -63,6 +65,12 @@ const isWorkbenchOmniboxNonBrowserSubmitTarget = (
   value: unknown
 ): value is WorkbenchOmniboxNonBrowserSubmitTarget =>
   value === "new_tab" || value === "replace_active_tab";
+const isSystemNotificationMode = (value: unknown): value is SystemNotificationMode =>
+  value === "off" || value === "background" || value === "all";
+const isSystemNotificationClickBehavior = (
+  value: unknown
+): value is SystemNotificationClickBehavior =>
+  value === "open_center" || value === "open_source";
 const asStringArray = (value: unknown): readonly string[] =>
   Array.isArray(value)
     ? value
@@ -110,6 +118,9 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly deepSearchCrawlPolicy?: unknown;
       readonly searchResultsSourceFilter?: unknown;
       readonly omniboxNonBrowserSubmitTarget?: unknown;
+      readonly systemNotificationMode?: unknown;
+      readonly systemNotificationClickBehavior?: unknown;
+      readonly systemNotificationActionsEnabled?: unknown;
     };
 
     const normalizedSearxngEndpoint =
@@ -193,7 +204,16 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
         : defaults.searchResultsSourceFilter,
       omniboxNonBrowserSubmitTarget: isWorkbenchOmniboxNonBrowserSubmitTarget(parsed.omniboxNonBrowserSubmitTarget)
         ? parsed.omniboxNonBrowserSubmitTarget
-        : defaults.omniboxNonBrowserSubmitTarget
+        : defaults.omniboxNonBrowserSubmitTarget,
+      systemNotificationMode: isSystemNotificationMode(parsed.systemNotificationMode)
+        ? parsed.systemNotificationMode
+        : defaults.systemNotificationMode,
+      systemNotificationClickBehavior: isSystemNotificationClickBehavior(parsed.systemNotificationClickBehavior)
+        ? parsed.systemNotificationClickBehavior
+        : defaults.systemNotificationClickBehavior,
+      systemNotificationActionsEnabled: isBoolean(parsed.systemNotificationActionsEnabled)
+        ? parsed.systemNotificationActionsEnabled
+        : defaults.systemNotificationActionsEnabled
     };
   } catch (_error) {
     return defaults;
@@ -401,6 +421,24 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         omniboxNonBrowserSubmitTarget
+      }));
+    },
+    setSystemNotificationMode: (systemNotificationMode) => {
+      commit((current) => ({
+        ...current,
+        systemNotificationMode
+      }));
+    },
+    setSystemNotificationClickBehavior: (systemNotificationClickBehavior) => {
+      commit((current) => ({
+        ...current,
+        systemNotificationClickBehavior
+      }));
+    },
+    setSystemNotificationActionsEnabled: (systemNotificationActionsEnabled) => {
+      commit((current) => ({
+        ...current,
+        systemNotificationActionsEnabled
       }));
     },
     reset: () => {

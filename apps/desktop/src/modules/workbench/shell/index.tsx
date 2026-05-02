@@ -16,17 +16,13 @@ import {
   useGlobalDialogModel
 } from "../global-dialog";
 import { createTranslator } from "../i18n";
-import {
-  mapFeedbackEventToNotification,
-  useWorkbenchNotificationModel
-} from "../notifications";
+import { useWorkbenchNotificationModel } from "../notifications";
 import { useWorkbenchPreferencesModel } from "../preferences";
 import { useTerminalDockModel } from "../terminal-dock";
 import { useWorkspaceTabsModel } from "../workspace-tabs";
 import { useWorkbenchUiRuntime } from "../ui-platform";
 import { cx } from "../ui-primitives";
 import {
-  LOGO_URL,
   getDesktopApi,
   syncCssVarsToDocumentRoot
 } from "./service";
@@ -46,12 +42,14 @@ import {
 import { usePanelLayoutModel } from "./use-panel-layout";
 import { useScrollbarVisibilityGuard } from "./use-scrollbar-visibility-guard";
 import { useTerminalWorkspaceActions } from "./use-terminal-workspace-actions";
+import { useWorkbenchAiLaunchProps } from "./use-workbench-ai-launch-props";
 import { useWorkbenchFileAppModels } from "./use-workbench-file-app-models";
 import { useWorkbenchEditorReviewModel } from "./use-workbench-editor-review-model";
 import { useWorkbenchFileActions } from "./use-workbench-file-actions";
 import { useWorkbenchJsReplSetting } from "./use-workbench-js-repl-setting";
 import { useWorkbenchLabels } from "./use-workbench-labels";
 import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
+import { useWorkbenchObservationBridge } from "./use-workbench-observation-bridge";
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
 import { useWorkbenchPlanReviewModel } from "./use-workbench-plan-review-model";
 import { useWorkbenchResourceRegistration } from "./use-workbench-resource-registration";
@@ -61,13 +59,18 @@ import { useWorkbenchShellAdapterProps } from "./use-workbench-shell-adapter-pro
 import { useWorkbenchSettingsSurfaceProps } from "./use-workbench-settings-surface-props";
 import { useWorkbenchShellSlots } from "./use-workbench-shell-slots";
 import { useWorkbenchSidebarAiSurfaceProps } from "./use-workbench-sidebar-ai-surface-props";
+import {
+  useWorkbenchFeedbackNotifications,
+  useWorkbenchSystemNotificationActivation,
+  useWorkbenchSystemNotificationPermissionGuard,
+  useWorkbenchSystemNotificationPublisher
+} from "./use-workbench-system-notifications";
 import { useWorkbenchThemeRuntime } from "./use-workbench-theme-runtime";
 import { useWorkbenchWorkspaceTabsProps } from "./use-workbench-workspace-tabs-props";
 import { useWorkspaceSurfaceRouterProps } from "./use-workspace-surface-router-props";
 import { useTitlebarElementPickerModel } from "./use-titlebar-element-picker-model";
 import { useTitlebarNavigationModel } from "./use-titlebar-navigation-model";
 import { createInitialWorkbenchPreferences, createWorkbenchBrowserTabsConfig } from "./workbench-shell-defaults";
-import { attachWorkbenchObservationBridge } from "../observation/service";
 
 export const WorkbenchShell = () => {
   const desktopApi = getDesktopApi();
@@ -181,18 +184,29 @@ export const WorkbenchShell = () => {
     locale: preferencesModel.preferences.locale,
     resolvedThemeId
   });
-  useEffect(() => {
-    return attachWorkbenchObservationBridge({
-      desktopApi,
-      tabsModel,
-      fileEditorModel,
-      fileManagerModel,
-      terminalModel
-    });
-  }, [desktopApi, fileEditorModel, fileManagerModel, tabsModel, terminalModel]);
+  useWorkbenchObservationBridge({
+    desktopApi,
+    tabsModel,
+    fileEditorModel,
+    fileManagerModel,
+    terminalModel
+  });
   const feedbackModel = useWorkbenchFeedbackModel();
   const notificationModel = useWorkbenchNotificationModel();
-  const publishNotification = notificationModel.publishNotification;
+  const publishNotification = useWorkbenchSystemNotificationPublisher({
+    desktopApi,
+    notificationModel,
+    preferences: preferencesModel.preferences,
+    t
+  });
+  useWorkbenchFeedbackNotifications({
+    feedbackModel,
+    publishNotification
+  });
+  useWorkbenchSystemNotificationPermissionGuard({
+    desktopApi,
+    preferencesModel
+  });
   const globalDialogModel = useGlobalDialogModel();
   const {
     activeFileManagerState,
@@ -278,6 +292,7 @@ export const WorkbenchShell = () => {
     openAppTab: tabsModel.openAppTab,
     onRequestProjectBind: requestProjectBind,
     onOpenPlanApprovalWorkspace: planReview.openPlanReview,
+    onAgentRuntimeNotification: publishNotification,
     openDialog: globalDialogModel.openDialog,
     t
   });
@@ -294,15 +309,6 @@ export const WorkbenchShell = () => {
       unsubscribe();
     };
   }, [desktopApi]);
-
-  useEffect(() => {
-    const unsubscribe = feedbackModel.subscribe((event) => {
-      publishNotification(mapFeedbackEventToNotification(event));
-    });
-    return () => {
-      unsubscribe();
-    };
-  }, [feedbackModel, publishNotification]);
 
   const onRootDragStartCapture = useCallback((event: ReactDragEvent<HTMLElement>) => {
     if (uiRuntime.interactions.workbenchDrag.shouldPreventDragStart(event.target)) {
@@ -405,25 +411,11 @@ export const WorkbenchShell = () => {
     layoutLabel: t("navigation.elementPickerLayout")
   });
 
-  const aiLaunchVerbs = useMemo<readonly string[]>(
-    () => [
-      t("ai.launchVerbDiscuss"),
-      t("ai.launchVerbCode"),
-      t("ai.launchVerbThink"),
-      t("ai.launchVerbExplore"),
-      t("ai.launchVerbBuild"),
-      t("ai.launchVerbDebug"),
-      t("ai.launchVerbCollaborate"),
-      t("ai.launchVerbChat")
-    ],
-    [t]
-  );
+  const aiLaunchProps = useWorkbenchAiLaunchProps(t);
 
   const sidebarAiSurfacePropsWithFileOpen = useWorkbenchAiSurfaceBridge({
-    desktopApi,
     sidebarAiSurfaceProps,
     fileEditorModel,
-    terminalModel,
     onOpenFileFromManager,
     recordCompletedEditorWorkItem
   });
@@ -440,6 +432,13 @@ export const WorkbenchShell = () => {
     notificationModel,
     openDialog: globalDialogModel.openDialog,
     t
+  });
+
+  useWorkbenchSystemNotificationActivation({
+    desktopApi,
+    notificationModel,
+    onOpenNotificationCenter,
+    onOpenNotificationSource
   });
 
   const workspaceSurfaceProps = useWorkspaceSurfaceRouterProps({
@@ -550,14 +549,6 @@ export const WorkbenchShell = () => {
       onOpenNotificationCenter,
       onOpenNotificationPreview
     ]
-  );
-  const aiLaunchProps = useMemo(
-    () => ({
-      logoUrl: LOGO_URL,
-      prefix: t("ai.launchPrefix"),
-      verbs: aiLaunchVerbs
-    }),
-    [aiLaunchVerbs, t]
   );
   const workbenchChromeSlots = useWorkbenchShellSlots({
     titlebarNavigation: (

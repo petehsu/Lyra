@@ -7,6 +7,7 @@ import type { AiProviderProfile } from "../../../shared/ai";
 import type { FileEditorRevealLocation } from "../file-editor";
 import type { GlobalDialogOpenRequest } from "../global-dialog";
 import type { WorkbenchLocale } from "../i18n";
+import type { WorkbenchNotificationPublishRequest } from "../notifications";
 import type { WorkbenchAiStopBehavior } from "../preferences";
 import type {
   AgentComposerWorkbenchTabMention,
@@ -164,13 +165,7 @@ export type AiPanelSurfaceProps = {
     }
   ) => void;
   readonly onWriteStreamEvent?: (event: AiPanelWriteStreamEvent) => void;
-  readonly onTerminalExecStarted?: (
-    command: string,
-    cwd: string | undefined,
-    toolCallId: string,
-    turnId: string,
-    sessionId: string
-  ) => void;
+  readonly onAgentRuntimeNotification?: (request: WorkbenchNotificationPublishRequest) => void;
   readonly onOpenHistory?: () => void;
   readonly onOpenMcp?: () => void;
   readonly onOpenSkills?: () => void;

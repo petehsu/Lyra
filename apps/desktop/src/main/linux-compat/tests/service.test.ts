@@ -9,12 +9,19 @@ const baseEnv = (): NodeJS.ProcessEnv => ({
   XDG_CURRENT_DESKTOP: "KDE"
 });
 
+const ubuntuRelease = [
+  "ID=ubuntu",
+  "VERSION_ID=\"24.04\"",
+  "ID_LIKE=\"debian\""
+].join("\n");
+
 describe("linux compat resolver", () => {
   test("prefers wayland backend when session is wayland", () => {
     const plan = resolveLinuxCompatPlan({
       platform: "linux",
       argv: ["lyra"],
-      env: baseEnv()
+      env: baseEnv(),
+      osReleaseText: ubuntuRelease
     });
 
     expect(plan.enabled).toBe(true);
@@ -22,6 +29,9 @@ describe("linux compat resolver", () => {
     expect(plan.gpuMode).toBe("hardware");
     expect(plan.appliedEnv.ELECTRON_OZONE_PLATFORM_HINT).toBe("wayland");
     expect(plan.appliedEnv.DISPLAY).toBe("");
+    expect(plan.facts.distributionId).toBe("ubuntu");
+    expect(plan.facts.distributionVersion).toBe("24.04");
+    expect(plan.facts.distributionLike).toEqual(["debian"]);
   });
 
   test("supports explicit backend override via argv", () => {

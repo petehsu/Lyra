@@ -263,6 +263,20 @@ describe("ai panel surface model", () => {
       sandboxMode: "workspace-write",
       collaborationMode: "plan"
     });
+
+    const planOptionsWithoutModel = createRuntimeTurnOptions({
+      selectedModelOption: null,
+      defaultProviderId: "lp-default",
+      boundProjectRoot: "/repo",
+      permissionMode: "default",
+      collaborationMode: "plan"
+    });
+    expect(planOptionsWithoutModel).toMatchObject({
+      modelProvider: "lp-default",
+      cwd: "/repo",
+      collaborationMode: "plan"
+    });
+    expect("collaborationMode" in planOptionsWithoutModel).toBe(true);
   });
 
   test("resolves bound project roots by mapped, persisted, then pending priority", () => {

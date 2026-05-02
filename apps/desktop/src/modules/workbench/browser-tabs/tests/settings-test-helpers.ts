@@ -7,6 +7,7 @@ export const createBrowserSettingsSurfaceProps = (
 ): BrowserSettingsSurfaceProps => ({
   title: "Settings",
   aiCategoryLabel: "AI",
+  notificationsCategoryLabel: "Notifications",
   languageLabel: "Language",
   themeLabel: "Theme",
   uiStyleLabel: "UI style",
@@ -57,6 +58,17 @@ export const createBrowserSettingsSurfaceProps = (
   searchIndexStatusLabel: "Index status",
   searchRebuildIndexLabel: "Rebuild",
   omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
+  systemNotificationModeLabel: "System notifications",
+  systemNotificationModeOffLabel: "Off",
+  systemNotificationModeBackgroundLabel: "When Lyra is in background",
+  systemNotificationModeAllLabel: "Every notification",
+  systemNotificationClickBehaviorLabel: "Click behavior",
+  systemNotificationClickOpenCenterLabel: "Open notification center",
+  systemNotificationClickOpenSourceLabel: "Open source",
+  systemNotificationActionsLabel: "System notification buttons",
+  systemNotificationActionsDescription: "Show supported OS action buttons.",
+  systemNotificationActionsEnabled: "Enabled",
+  systemNotificationActionsDisabled: "Disabled",
   localeValue: "en-US",
   themeValue: "lyra-light",
   uiStyleValue: "classic",
@@ -86,6 +98,9 @@ export const createBrowserSettingsSurfaceProps = (
   searchIndexStatusValue: "idle",
   searchRebuildIndexPending: false,
   omniboxNonBrowserSubmitTargetValue: "new_tab",
+  systemNotificationModeValue: "background",
+  systemNotificationClickBehaviorValue: "open_center",
+  systemNotificationActionsValue: true,
   localeOptions: [
     { value: "en-US", label: "English" },
     { value: "zh-CN", label: "Chinese" }
@@ -134,6 +149,15 @@ export const createBrowserSettingsSurfaceProps = (
     { value: "new_tab", label: "New tab" },
     { value: "replace_active_tab", label: "Replace active tab" }
   ],
+  systemNotificationModeOptions: [
+    { value: "off", label: "Off" },
+    { value: "background", label: "Background" },
+    { value: "all", label: "All" }
+  ],
+  systemNotificationClickBehaviorOptions: [
+    { value: "open_center", label: "Open center" },
+    { value: "open_source", label: "Open source" }
+  ],
   aiLabels: { categoryLabel: "AI" } as BrowserSettingsSurfaceProps["aiLabels"],
   aiModel: {} as BrowserSettingsSurfaceProps["aiModel"],
   onLocaleChange: noop,
@@ -164,5 +188,8 @@ export const createBrowserSettingsSurfaceProps = (
   onSearchAutoIndexChange: noop,
   onSearchRebuildIndex: noop,
   onOmniboxNonBrowserSubmitTargetChange: noop,
+  onSystemNotificationModeChange: noop,
+  onSystemNotificationClickBehaviorChange: noop,
+  onSystemNotificationActionsChange: noop,
   ...overrides
 });

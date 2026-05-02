@@ -22,7 +22,7 @@ const messages: DisplayMessage[] = Array.from({ length: 1000 }, (_, index) => ({
   createdAt: 1000 + index,
 }));
 
-const turnsById = new Map(messages.map((message, index) => [
+const turnsById = new Map(messages.map((_, index) => [
   `turn-${index}`,
   {
     id: `turn-${index}`,

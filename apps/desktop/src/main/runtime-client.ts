@@ -4,6 +4,8 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
+import { resolveNativeResourceCandidates } from "./native-resource-paths";
+
 const PROTOCOL_VERSION = 1;
 const HANDSHAKE_METHOD = "runtime.handshake";
 
@@ -68,39 +70,13 @@ const resolveSocketPath = (storageRoot: string): string => {
 const resolveRuntimeBinaryName = (): string =>
   process.platform === "win32" ? "lyrad.exe" : "lyrad";
 
-const resolveBaseRoots = (cwd: string): readonly string[] => {
-  const runtimeDir = typeof __dirname === "string" ? __dirname : cwd;
-  return Array.from(
-    new Set([
-      path.resolve(cwd),
-      path.resolve(runtimeDir),
-      path.resolve(runtimeDir, ".."),
-      path.resolve(runtimeDir, "../.."),
-      path.resolve(runtimeDir, "../../.."),
-      path.resolve(runtimeDir, "../../../.."),
-      path.resolve(runtimeDir, "../../../../..")
-    ])
-  );
-};
-
-const resolveRuntimeBinaryCandidates = (cwd: string): readonly string[] => {
-  const binaryName = resolveRuntimeBinaryName();
-  const baseRoots = resolveBaseRoots(cwd);
-  const candidates: string[] = [];
-
-  for (const baseRoot of baseRoots) {
-    candidates.push(path.join(baseRoot, "target/debug", binaryName));
-    candidates.push(path.join(baseRoot, "target/release", binaryName));
-    candidates.push(path.join(baseRoot, "apps/desktop/native", binaryName));
-  }
-
-  const explicit = process.env.LYRA_RUNTIME_BIN;
-  if (typeof explicit === "string" && explicit.trim().length > 0) {
-    candidates.unshift(path.resolve(cwd, explicit.trim()));
-  }
-
-  return Array.from(new Set(candidates));
-};
+export const resolveRuntimeBinaryCandidates = (cwd: string): readonly string[] =>
+  resolveNativeResourceCandidates({
+    cwd,
+    moduleDir: __dirname,
+    envVar: "LYRA_RUNTIME_BIN",
+    fileNames: [resolveRuntimeBinaryName()],
+  });
 
 const resolveRuntimeBinaryPath = (): string => {
   const candidates = resolveRuntimeBinaryCandidates(process.cwd());

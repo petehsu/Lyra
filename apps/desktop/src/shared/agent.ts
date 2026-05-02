@@ -34,8 +34,11 @@ export type PlanAnnotation = {
 
 export type AgentUsage = {
   readonly inputTokens?: number;
+  readonly cachedInputTokens?: number;
   readonly outputTokens?: number;
+  readonly reasoningOutputTokens?: number;
   readonly totalTokens?: number;
+  readonly modelContextWindow?: number;
 };
 
 export type AgentSession = {

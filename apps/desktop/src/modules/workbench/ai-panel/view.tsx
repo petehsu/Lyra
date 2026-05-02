@@ -44,6 +44,7 @@ export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
     workbenchTabMentions: surfaceProps.workbenchTabMentions,
     onOpenFilePath: surfaceProps.onOpenFilePath,
     onWriteStreamEvent: surfaceProps.onWriteStreamEvent,
+    onAgentRuntimeNotification: surfaceProps.onAgentRuntimeNotification,
     onRequestProjectBind: surfaceProps.onRequestProjectBind,
     onOpenPlanApprovalWorkspace: surfaceProps.onOpenPlanApprovalWorkspace
   });

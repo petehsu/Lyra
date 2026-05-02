@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  resolveNativeLibraryFileNames,
+  resolveNativeResourceCandidates
+} from "../native-resource-paths";
 import type { FilesNativeBindings, FilesNativeLoadResult } from "./types";
 
 type DlopenProcess = NodeJS.Process & {
@@ -36,62 +40,13 @@ const requiredMethods: readonly (keyof FilesNativeBindings)[] = [
   "collectWorkbenchFilePaths"
 ];
 
-const resolveNativeFileNames = (): readonly string[] => {
-  if (process.platform === "win32") {
-    return ["lyra_files_napi.dll", "lyra_files_napi.node"];
-  }
-
-  if (process.platform === "darwin") {
-    return ["liblyra_files_napi.dylib", "lyra_files_napi.node"];
-  }
-
-  return ["liblyra_files_napi.so", "lyra_files_napi.node"];
-};
-
-const resolveBaseRoots = (cwd: string): readonly string[] => {
-  const runtimeDir = typeof __dirname === "string" ? __dirname : cwd;
-
-  return Array.from(
-    new Set([
-      path.resolve(cwd),
-      path.resolve(runtimeDir),
-      path.resolve(runtimeDir, ".."),
-      path.resolve(runtimeDir, "../.."),
-      path.resolve(runtimeDir, "../../.."),
-      path.resolve(runtimeDir, "../../../.."),
-      path.resolve(runtimeDir, "../../../../..")
-    ])
-  );
-};
-
 export const resolveNativeCandidates = (cwd: string): readonly string[] => {
-  const fileNames = resolveNativeFileNames();
-  const baseRoots = resolveBaseRoots(cwd);
-
-  const candidates: string[] = [];
-  for (const baseRoot of baseRoots) {
-    const roots = [
-      path.resolve(baseRoot, "target/debug"),
-      path.resolve(baseRoot, "target/release"),
-      path.resolve(baseRoot, "apps/desktop/native"),
-      path.resolve(baseRoot, "native")
-    ];
-
-    for (const root of roots) {
-      for (const fileName of fileNames) {
-        candidates.push(path.join(root, fileName));
-      }
-    }
-  }
-
-  const explicit = process.env.LYRA_FILES_NATIVE_LIB;
-  if (typeof explicit === "string" && explicit.trim().length > 0) {
-    const normalized = explicit.trim();
-    const explicitPaths = [path.resolve(cwd, normalized), ...baseRoots.map((root) => path.resolve(root, normalized))];
-    candidates.unshift(...explicitPaths);
-  }
-
-  return Array.from(new Set(candidates));
+  return resolveNativeResourceCandidates({
+    cwd,
+    moduleDir: __dirname,
+    envVar: "LYRA_FILES_NATIVE_LIB",
+    fileNames: resolveNativeLibraryFileNames("lyra_files_napi"),
+  });
 };
 
 const validateBindings = (value: unknown): value is FilesNativeBindings => {

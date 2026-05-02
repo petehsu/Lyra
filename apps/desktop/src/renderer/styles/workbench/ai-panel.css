@@ -2979,6 +2979,18 @@
   color: var(--lyra-text-primary);
 }
 
+.lyra-ai-agent-runtime-feed-thread-targets {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--lyra-unit-3) var(--lyra-unit-6);
+}
+
+.lyra-ai-agent-runtime-feed-thread-targets .lyra-ai-agent-runtime-feed-target {
+  max-width: min(100%, var(--lyra-unit-160));
+}
+
 .lyra-ai-agent-runtime-feed-target-running {
   color: var(--lyra-text-secondary);
   background: none;
@@ -6015,13 +6027,15 @@
 }
 
 .lyra-ai-agent-turn-footer-index,
-.lyra-ai-agent-turn-footer-duration {
+.lyra-ai-agent-turn-footer-duration,
+.lyra-ai-agent-turn-footer-usage {
   font-size: var(--lyra-unit-10-5);
   line-height: 1.35;
   color: var(--lyra-text-muted);
 }
 
-.lyra-ai-agent-turn-footer-duration {
+.lyra-ai-agent-turn-footer-duration,
+.lyra-ai-agent-turn-footer-usage {
   white-space: nowrap;
 }
 

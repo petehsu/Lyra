@@ -8,8 +8,6 @@ import type {
   FileEditorChangeReviewItem,
   FileEditorModel
 } from "../file-editor";
-import type { TerminalDockModel } from "../terminal-dock/types";
-import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { WorkbenchOpenFileFromManager } from "./use-workbench-file-actions";
 
 export type WorkbenchSidebarAiSurfaceProps = Omit<AiPanelSurfaceProps, "variant">;
@@ -36,10 +34,8 @@ type WriteStreamEntry = {
 };
 
 type UseWorkbenchAiSurfaceBridgeParams = {
-  readonly desktopApi: LyraDesktopApi | null;
   readonly sidebarAiSurfaceProps: WorkbenchSidebarAiSurfaceProps | null;
   readonly fileEditorModel: FileEditorModel;
-  readonly terminalModel: TerminalDockModel;
   readonly onOpenFileFromManager: WorkbenchOpenFileFromManager;
   readonly recordCompletedEditorWorkItem: (item: FileEditorChangeReviewItem) => void;
 };

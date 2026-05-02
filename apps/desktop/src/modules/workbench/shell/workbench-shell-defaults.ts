@@ -31,7 +31,10 @@ export const createInitialWorkbenchPreferences = (): WorkbenchPreferences => ({
   deepSearchProactiveDomainGuessingEnabled: true,
   deepSearchCrawlPolicy: "accessibility_only",
   searchResultsSourceFilter: "all",
-  omniboxNonBrowserSubmitTarget: "new_tab"
+  omniboxNonBrowserSubmitTarget: "new_tab",
+  systemNotificationMode: "background",
+  systemNotificationClickBehavior: "open_center",
+  systemNotificationActionsEnabled: true
 });
 
 export const createWorkbenchBrowserTabsConfig = (

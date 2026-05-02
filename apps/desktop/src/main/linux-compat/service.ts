@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import type {
@@ -89,14 +89,64 @@ const toSessionType = (
   return "unknown";
 };
 
-const detectEnvironmentFacts = (env: NodeJS.ProcessEnv): LinuxEnvironmentFacts => {
+const parseOsRelease = (
+  osReleaseText: string | null
+): {
+  readonly distributionId: string | null;
+  readonly distributionVersion: string | null;
+  readonly distributionLike: readonly string[];
+} => {
+  if (osReleaseText === null) {
+    return {
+      distributionId: null,
+      distributionVersion: null,
+      distributionLike: [],
+    };
+  }
+  const values = new Map<string, string>();
+  for (const line of osReleaseText.split(/\r?\n/u)) {
+    const match = /^([A-Z0-9_]+)=(.*)$/u.exec(line.trim());
+    if (match === null) {
+      continue;
+    }
+    const rawValue = match[2] ?? "";
+    const value = rawValue.replace(/^"|"$/gu, "").replace(/\\"/gu, "\"").trim();
+    values.set(match[1] ?? "", value);
+  }
+  const distributionLike = (values.get("ID_LIKE") ?? "")
+    .split(/\s+/u)
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length > 0);
+  return {
+    distributionId: values.get("ID")?.toLowerCase() ?? null,
+    distributionVersion: values.get("VERSION_ID") ?? null,
+    distributionLike,
+  };
+};
+
+const readOsReleaseText = (): string | null => {
+  try {
+    return readFileSync("/etc/os-release", "utf8");
+  } catch {
+    return null;
+  }
+};
+
+const detectEnvironmentFacts = (
+  env: NodeJS.ProcessEnv,
+  osReleaseText: string | null
+): LinuxEnvironmentFacts => {
   const desktopRaw = env.XDG_CURRENT_DESKTOP ?? env.DESKTOP_SESSION ?? "unknown";
   const desktop = desktopRaw.trim().length > 0 ? desktopRaw : "unknown";
   const waylandDisplay = env.WAYLAND_DISPLAY?.trim();
   const x11Display = env.DISPLAY?.trim();
+  const osRelease = parseOsRelease(osReleaseText);
   return {
     sessionType: toSessionType(env.XDG_SESSION_TYPE, waylandDisplay, x11Display),
     desktop,
+    distributionId: osRelease.distributionId,
+    distributionVersion: osRelease.distributionVersion,
+    distributionLike: osRelease.distributionLike,
     waylandDisplay: waylandDisplay !== undefined && waylandDisplay.length > 0 ? waylandDisplay : null,
     x11Display: x11Display !== undefined && x11Display.length > 0 ? x11Display : null,
     isRoot: typeof process.getuid === "function" ? process.getuid() === 0 : false
@@ -225,8 +275,12 @@ export const resolveLinuxCompatPlan = (input: {
   readonly platform: NodeJS.Platform;
   readonly argv: readonly string[];
   readonly env: NodeJS.ProcessEnv;
+  readonly osReleaseText?: string | null;
 }): LinuxCompatPlan => {
-  const facts = detectEnvironmentFacts(input.env);
+  const facts = detectEnvironmentFacts(
+    input.env,
+    input.platform === "linux" ? input.osReleaseText ?? readOsReleaseText() : null
+  );
   if (input.platform !== "linux") {
     return {
       enabled: false,

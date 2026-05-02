@@ -365,6 +365,47 @@ const createSectionControl = (
           })
         ]
       });
+    case "systemNotificationMode":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.systemNotificationModeLabel,
+        controls: [
+          createChoiceControl({
+            label: props.systemNotificationModeLabel,
+            options: props.systemNotificationModeOptions,
+            value: props.systemNotificationModeValue,
+            onChange: props.onSystemNotificationModeChange
+          })
+        ]
+      });
+    case "systemNotificationClickBehavior":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.systemNotificationClickBehaviorLabel,
+        controls: [
+          createChoiceControl({
+            label: props.systemNotificationClickBehaviorLabel,
+            options: props.systemNotificationClickBehaviorOptions,
+            value: props.systemNotificationClickBehaviorValue,
+            onChange: props.onSystemNotificationClickBehaviorChange
+          })
+        ]
+      });
+    case "systemNotificationActions":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.systemNotificationActionsLabel,
+        controls: [
+          createBooleanChoiceControl({
+            label: props.systemNotificationActionsLabel,
+            value: props.systemNotificationActionsValue,
+            description: props.systemNotificationActionsDescription,
+            enabledLabel: props.systemNotificationActionsEnabled,
+            disabledLabel: props.systemNotificationActionsDisabled,
+            onChange: props.onSystemNotificationActionsChange
+          })
+        ]
+      });
     case "omniboxNonBrowserSubmitTarget":
       return createSettingsSection({
         id: sectionId,

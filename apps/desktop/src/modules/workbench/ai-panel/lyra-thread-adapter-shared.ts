@@ -4,6 +4,7 @@ import type {
   AgentSessionDetail,
   AgentToolCall,
   AgentTurn,
+  AgentUsage,
 } from "../../../shared/desktop-bridge";
 
 export type JsonRecord = Record<string, unknown>;
@@ -22,6 +23,7 @@ export type LyraTurn = {
   readonly startedAt?: number | null;
   readonly completedAt?: number | null;
   readonly durationMs?: number | null;
+  readonly usage?: AgentUsage;
 };
 
 export type LyraThread = {
@@ -69,6 +71,7 @@ export type ThreadAiPanelTurn = {
   readonly durationMs?: number;
   readonly errorCode?: string;
   readonly errorMessage?: string;
+  readonly usage?: AgentUsage;
 };
 
 export type ThreadAiPanelToolCall = {
@@ -136,6 +139,32 @@ export const readRawString = (value: unknown): string | null =>
 
 export const readNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const readUsageNumber = (value: unknown): number | undefined => {
+  const numberValue = readNumber(value);
+  return numberValue === null ? undefined : Math.max(0, Math.round(numberValue));
+};
+
+export const readAgentUsage = (value: unknown): AgentUsage | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const inputTokens = readUsageNumber(value.inputTokens);
+  const cachedInputTokens = readUsageNumber(value.cachedInputTokens);
+  const outputTokens = readUsageNumber(value.outputTokens);
+  const reasoningOutputTokens = readUsageNumber(value.reasoningOutputTokens);
+  const totalTokens = readUsageNumber(value.totalTokens);
+  const modelContextWindow = readUsageNumber(value.modelContextWindow);
+  const usage: AgentUsage = {
+    ...(inputTokens === undefined ? {} : { inputTokens }),
+    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+    ...(reasoningOutputTokens === undefined ? {} : { reasoningOutputTokens }),
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(modelContextWindow === undefined ? {} : { modelContextWindow }),
+  };
+  return Object.keys(usage).length === 0 ? undefined : usage;
+};
 
 export const readStringArray = (value: unknown): readonly string[] =>
   Array.isArray(value)

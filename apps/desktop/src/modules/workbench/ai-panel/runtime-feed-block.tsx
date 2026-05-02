@@ -133,7 +133,11 @@ export const AiPanelRuntimeFeedBlock = ({
         const openPath = item.openPath;
         const isOpenable = openPath !== undefined && canOpenPath;
         const openThreadId = item.openThreadId;
-        const isThreadOpenable = openThreadId !== undefined && onOpenThread !== undefined;
+        const openThreadTargets = item.openThreadTargets ?? (
+          openThreadId === undefined ? [] : [{ threadId: openThreadId, label: item.target }]
+        );
+        const primaryOpenThreadTarget = openThreadTargets[0];
+        const isThreadOpenable = primaryOpenThreadTarget !== undefined && onOpenThread !== undefined;
         const location =
           item.firstChangedLine === undefined
             ? undefined
@@ -152,9 +156,12 @@ export const AiPanelRuntimeFeedBlock = ({
         const statusLabel =
           item.status === "failed"
             ? statusLabels.failed
-            : item.status === "completed"
-              ? statusLabels.completed
-              : statusLabels.running;
+              : item.status === "completed"
+                ? statusLabels.completed
+                : statusLabels.running;
+        const targetClassName = isRunning
+          ? "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link lyra-ai-agent-runtime-feed-target-running"
+          : "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link";
         return (
           <div
             key={item.id}
@@ -188,11 +195,7 @@ export const AiPanelRuntimeFeedBlock = ({
             {isOpenable ? (
               <button
                 type="button"
-                className={
-                  isRunning
-                    ? "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link lyra-ai-agent-runtime-feed-target-running"
-                    : "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link"
-                }
+                className={targetClassName}
                 onClick={() => {
                   void openRuntimeTargetPath(openPath, {
                     ...(location === undefined ? {} : { location })
@@ -202,18 +205,36 @@ export const AiPanelRuntimeFeedBlock = ({
               >
                 {item.target}
               </button>
+            ) : isThreadOpenable && openThreadTargets.length > 1 ? (
+              <span
+                className="lyra-ai-agent-runtime-feed-thread-targets"
+                title={item.target}
+                aria-label={item.target}
+              >
+                {openThreadTargets.map((threadTarget) => (
+                  <button
+                    key={threadTarget.threadId}
+                    type="button"
+                    className={targetClassName}
+                    onClick={() => {
+                      onOpenThread?.(threadTarget.threadId);
+                    }}
+                    title={threadTarget.threadId}
+                  >
+                    {threadTarget.label}
+                  </button>
+                ))}
+              </span>
             ) : isThreadOpenable ? (
               <button
                 type="button"
-                className={
-                  isRunning
-                    ? "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link lyra-ai-agent-runtime-feed-target-running"
-                    : "lyra-ai-agent-runtime-feed-target lyra-ai-agent-runtime-feed-target-link"
-                }
+                className={targetClassName}
                 onClick={() => {
-                  onOpenThread(openThreadId);
+                  if (primaryOpenThreadTarget !== undefined) {
+                    onOpenThread?.(primaryOpenThreadTarget.threadId);
+                  }
                 }}
-                title={openThreadId}
+                title={primaryOpenThreadTarget?.threadId}
               >
                 {item.target}
               </button>

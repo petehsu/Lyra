@@ -34,6 +34,11 @@ export type AgentTerminalTranscript = {
   readonly durationMs?: number | null;
 };
 
+export type AgentRuntimeThreadTarget = {
+  readonly threadId: string;
+  readonly label: string;
+};
+
 export type AgentRuntimeFeedItem = {
   readonly id: string;
   readonly turnId: string;
@@ -44,6 +49,7 @@ export type AgentRuntimeFeedItem = {
   readonly sessionId?: string;
   readonly openPath?: string;
   readonly openThreadId?: string;
+  readonly openThreadTargets?: readonly AgentRuntimeThreadTarget[];
   readonly autoOpen?: boolean;
   readonly firstChangedLine?: number;
   readonly status: AgentRuntimeFeedStatus;
@@ -70,6 +76,7 @@ type RuntimeToolTarget = {
   readonly target: string;
   readonly openPath?: string;
   readonly openThreadId?: string;
+  readonly openThreadTargets?: readonly AgentRuntimeThreadTarget[];
 };
 
 export type ToolNameLabelMap = {
@@ -324,10 +331,14 @@ const resolveRuntimeToolTarget = (
       ...pickStringArray(source, "receiverThreadIds"),
       ...(output === null ? [] : pickStringArray(output, "receiverThreadIds")),
     ].filter((value, index, values) => values.indexOf(value) === index);
+    const receiverThreadTargets = receiverThreadIds.map((threadId) => ({
+      threadId,
+      label: threadId,
+    }));
     const prompt = pickString(source, "prompt") ?? (output === null ? null : pickString(output, "prompt"));
     const model = pickString(source, "model") ?? (output === null ? null : pickString(output, "model"));
     const targetParts = [
-      receiverThreadIds[0],
+      receiverThreadIds.length > 1 ? receiverThreadIds.join(", ") : receiverThreadIds[0],
       model,
       prompt,
     ].filter((value): value is string => value !== undefined && value !== null && value.length > 0);
@@ -336,6 +347,7 @@ const resolveRuntimeToolTarget = (
         ? targetParts.join(" · ")
         : normalizeToolName(toolName, labels) || labels.collabAgent,
       ...(receiverThreadIds[0] === undefined ? {} : { openThreadId: receiverThreadIds[0] }),
+      ...(receiverThreadTargets.length === 0 ? {} : { openThreadTargets: receiverThreadTargets }),
     };
   }
 
@@ -529,6 +541,7 @@ export const toRuntimeFeedItem = (
     ...(sessionId === null ? {} : { sessionId }),
     ...(target.openPath === undefined ? {} : { openPath: target.openPath }),
     ...(target.openThreadId === undefined ? {} : { openThreadId: target.openThreadId }),
+    ...(target.openThreadTargets === undefined ? {} : { openThreadTargets: target.openThreadTargets }),
     ...(isWriteToolName(toolName) || toolName === "filesystem.read_range"
       ? { autoOpen: true }
       : {}),
@@ -577,6 +590,7 @@ export const toPersistedRuntimeFeedItem = (
     ...(sessionId === null ? {} : { sessionId }),
     ...(target.openPath === undefined ? {} : { openPath: target.openPath }),
     ...(target.openThreadId === undefined ? {} : { openThreadId: target.openThreadId }),
+    ...(target.openThreadTargets === undefined ? {} : { openThreadTargets: target.openThreadTargets }),
     ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
     icon: resolveRuntimeToolIconKind(call.toolName),
     status: call.status,
