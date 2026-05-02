@@ -15,6 +15,20 @@ const LABELS: InteractionTextBundle = {
   proposedPlanSummaryFallback: "Plan"
 };
 
+const planArtifact = {
+  planId: "plan-1",
+  status: "proposed",
+  title: "Website plan",
+  summary: "Website plan",
+  objective: "Build the page",
+  assumptions: [],
+  steps: [{ id: "step-1", kind: "step", title: "Build", body: "Build the page" }],
+  interfaces: [],
+  risks: [],
+  tests: [],
+  acceptanceCriteria: [],
+};
+
 const now = 1_700_000_000_000;
 
 describe("pending interaction mappers", () => {
@@ -108,14 +122,12 @@ describe("pending interaction mappers", () => {
       kind: "plan_approval",
       status: "pending",
       payload: {
-        requestId: "plan:turn-plan",
         raw: {
-          requestId: "plan:turn-plan",
-          version: 0,
-          status: "submitted",
+          planId: "plan-1",
+          version: 2,
+          status: "proposed",
           summary: "Website plan",
-          proposedMarkdown: "# Website plan\n\n- Build the page",
-          draftMarkdown: "- draft"
+          artifact: planArtifact,
         }
       },
       createdAt: now + 3,
@@ -128,8 +140,8 @@ describe("pending interaction mappers", () => {
     }
     expect(panel.request.id).toBe("plan:turn-plan");
     expect(panel.request.turnId).toBe("turn-plan");
-    expect(panel.request.proposedMarkdown).toContain("Website plan");
-    expect(panel.request.draftMarkdown).toBe("- draft");
+    expect(panel.request.planId).toBe("plan-1");
+    expect(panel.request.artifact.title).toBe("Website plan");
   });
 
   test("sorts and merges pending interactions by timestamp and update version", () => {

@@ -32,6 +32,7 @@ const FILE_VERSION: u32 = 2;
 const PROFILES_FILENAME: &str = "profiles.v2.json";
 const LYRA_CONFIG_DIR: &str = "lyra-config";
 const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
+const MIMO_DEFAULT_MODEL: &str = "mimo-v2.5-pro";
 const RUNTIME_PROVIDER_PREFIX: &str = "lp_";
 
 #[derive(Debug, Clone)]
@@ -231,8 +232,13 @@ impl LyraAiConfigApi {
         &self,
     ) -> Result<LyraConfigProvidersCatalogReadResponse, JSONRPCErrorError> {
         let specs = provider_preset_specs();
+        let mut seen_provider_ids = BTreeSet::new();
         Ok(LyraConfigProvidersCatalogReadResponse {
-            providers: specs.iter().map(provider_catalog_item_from_spec).collect(),
+            providers: specs
+                .iter()
+                .filter(|spec| seen_provider_ids.insert(spec.provider_id.clone()))
+                .map(provider_catalog_item_from_spec)
+                .collect(),
             presets: specs.iter().map(provider_preset_from_spec).collect(),
         })
     }
@@ -296,7 +302,7 @@ fn provider_catalog_item_from_spec(spec: &ProviderPresetSpec) -> LyraAiProviderC
 
 fn provider_preset_from_spec(spec: &ProviderPresetSpec) -> LyraAiProviderPreset {
     LyraAiProviderPreset {
-        id: format!("{}-default", spec.provider_id),
+        id: provider_preset_id_from_spec(spec),
         provider_id: spec.provider_id.clone(),
         protocol_id: spec.protocol_id.clone(),
         label: spec.label.clone(),
@@ -338,6 +344,34 @@ fn provider_preset_from_spec(spec: &ProviderPresetSpec) -> LyraAiProviderPreset 
             )]
         },
     }
+}
+
+fn provider_preset_id_from_spec(spec: &ProviderPresetSpec) -> String {
+    if spec.provider_id == "mimo" {
+        let protocol_suffix = match spec.protocol_id.as_str() {
+            "mimo_openai_chat_completions" => "openai",
+            "mimo_anthropic_messages" => "anthropic",
+            _ => "custom",
+        };
+        let base_url = spec
+            .default_connection_config
+            .iter()
+            .find(|(key, _)| key == "baseUrl")
+            .map(|(_, value)| value.as_str())
+            .unwrap_or_default();
+        let plan_suffix = if base_url.contains("token-plan-cn") {
+            "token-plan-cn"
+        } else if base_url.contains("token-plan-sgp") {
+            "token-plan-sgp"
+        } else if base_url.contains("token-plan-ams") {
+            "token-plan-ams"
+        } else {
+            "api"
+        };
+        return format!("mimo-{plan_suffix}-{protocol_suffix}");
+    }
+
+    format!("{}-default", spec.provider_id)
 }
 
 fn provider_preset_specs() -> Vec<ProviderPresetSpec> {
@@ -486,6 +520,8 @@ fn provider_preset_specs() -> Vec<ProviderPresetSpec> {
         },
     ];
 
+    specs.extend(mimo_preset_specs());
+
     for (provider_id, protocol_id, label, base_url) in [
         (
             "deepseek",
@@ -570,6 +606,93 @@ fn provider_preset_specs() -> Vec<ProviderPresetSpec> {
     specs
 }
 
+fn mimo_preset_specs() -> Vec<ProviderPresetSpec> {
+    let mut specs = vec![
+        mimo_preset_spec(
+            "MiMO API - OpenAI",
+            "Xiaomi MiMO API OpenAI-compatible endpoint. Use a pay-as-you-go API key (sk-xxxxx), not a Token Plan key.",
+            "mimo_openai_chat_completions",
+            "https://api.xiaomimimo.com/v1",
+            "sk-xxxxx",
+        ),
+        mimo_preset_spec(
+            "MiMO API - Anthropic",
+            "Xiaomi MiMO API Anthropic-compatible endpoint. Use a pay-as-you-go API key (sk-xxxxx), not a Token Plan key.",
+            "mimo_anthropic_messages",
+            "https://api.xiaomimimo.com/anthropic",
+            "sk-xxxxx",
+        ),
+    ];
+
+    for (cluster, openai_base_url, anthropic_base_url) in [
+        (
+            "China",
+            "https://token-plan-cn.xiaomimimo.com/v1",
+            "https://token-plan-cn.xiaomimimo.com/anthropic",
+        ),
+        (
+            "Singapore",
+            "https://token-plan-sgp.xiaomimimo.com/v1",
+            "https://token-plan-sgp.xiaomimimo.com/anthropic",
+        ),
+        (
+            "Europe",
+            "https://token-plan-ams.xiaomimimo.com/v1",
+            "https://token-plan-ams.xiaomimimo.com/anthropic",
+        ),
+    ] {
+        specs.push(mimo_preset_spec(
+            &format!("MiMO Token Plan - {cluster} - OpenAI"),
+            &format!(
+                "MiMO Token Plan OpenAI-compatible endpoint for the {cluster} cluster. Use a Token Plan API key (tp-xxxxx), not a pay-as-you-go key."
+            ),
+            "mimo_openai_chat_completions",
+            openai_base_url,
+            "tp-xxxxx",
+        ));
+        specs.push(mimo_preset_spec(
+            &format!("MiMO Token Plan - {cluster} - Anthropic"),
+            &format!(
+                "MiMO Token Plan Anthropic-compatible endpoint for the {cluster} cluster. Use a Token Plan API key (tp-xxxxx), not a pay-as-you-go key."
+            ),
+            "mimo_anthropic_messages",
+            anthropic_base_url,
+            "tp-xxxxx",
+        ));
+    }
+
+    specs
+}
+
+fn mimo_preset_spec(
+    label: &str,
+    description: &str,
+    protocol_id: &str,
+    base_url: &str,
+    api_key_placeholder: &str,
+) -> ProviderPresetSpec {
+    ProviderPresetSpec {
+        provider_id: "mimo".to_string(),
+        protocol_id: protocol_id.to_string(),
+        label: label.to_string(),
+        description: description.to_string(),
+        section: "mainstream".to_string(),
+        default_model: MIMO_DEFAULT_MODEL.to_string(),
+        model_discovery_supported: true,
+        capability: "full".to_string(),
+        runtime_supported: true,
+        simple_fields: vec!["apiKey".to_string(), "model".to_string()],
+        default_connection_config: vec![("baseUrl".to_string(), base_url.to_string())],
+        default_auth_config: Vec::new(),
+        connection_fields: vec![url_field("baseUrl", "Base URL", false)],
+        auth_fields: vec![password_field_with_placeholder(
+            "apiKey",
+            "API Key",
+            api_key_placeholder,
+        )],
+    }
+}
+
 fn url_field(id: &str, label: &str, required: bool) -> LyraAiProviderFieldSchema {
     field(id, label, "url", "connection", required, false)
 }
@@ -592,12 +715,20 @@ fn auth_text_field(
 }
 
 fn password_field(id: &str, label: &str) -> LyraAiProviderFieldSchema {
+    password_field_with_placeholder(id, label, "")
+}
+
+fn password_field_with_placeholder(
+    id: &str,
+    label: &str,
+    placeholder: &str,
+) -> LyraAiProviderFieldSchema {
     LyraAiProviderFieldSchema {
         id: id.to_string(),
         label: label.to_string(),
         kind: "password".to_string(),
         scope: "auth".to_string(),
-        placeholder: None,
+        placeholder: trim_to_option(Some(placeholder)),
         description: None,
         required: None,
         secret: Some(true),
@@ -720,6 +851,8 @@ fn runtime_supported_for_protocol(protocol_id: &str) -> bool {
             | "together_chat_completions"
             | "fireworks_chat_completions"
             | "vercel_ai_gateway_chat_completions"
+            | "mimo_openai_chat_completions"
+            | "mimo_anthropic_messages"
             | "ollama_chat"
             | "lmstudio_chat_completions"
             | "custom_chat_completions"
@@ -740,6 +873,7 @@ fn provider_env_key(provider_id: &str) -> Option<&'static str> {
         "together" => Some("TOGETHER_API_KEY"),
         "fireworks" => Some("FIREWORKS_API_KEY"),
         "vercel_ai_gateway" => Some("VERCEL_AI_GATEWAY_API_KEY"),
+        "mimo" => Some("MIMO_API_KEY"),
         "custom_openai_compatible" => Some("CUSTOM_OPENAI_API_KEY"),
         _ => None,
     }
@@ -760,6 +894,8 @@ fn protocol_requires_api_key(protocol_id: &str) -> bool {
             | "together_chat_completions"
             | "fireworks_chat_completions"
             | "vercel_ai_gateway_chat_completions"
+            | "mimo_openai_chat_completions"
+            | "mimo_anthropic_messages"
             | "custom_chat_completions"
     )
 }
@@ -1002,6 +1138,25 @@ mod tests {
                 .iter()
                 .any(|preset| preset.protocol_id == "anthropic_messages")
         );
+        assert!(catalog.presets.iter().any(|preset| {
+            preset.id == "mimo-token-plan-cn-openai"
+                && preset.provider_id == "mimo"
+                && preset.protocol_id == "mimo_openai_chat_completions"
+                && preset
+                    .default_connection_config
+                    .get("baseUrl")
+                    .map(String::as_str)
+                    == Some("https://token-plan-cn.xiaomimimo.com/v1")
+        }));
+        assert!(catalog.presets.iter().any(|preset| {
+            preset.id == "mimo-api-anthropic"
+                && preset.protocol_id == "mimo_anthropic_messages"
+                && preset
+                    .default_connection_config
+                    .get("baseUrl")
+                    .map(String::as_str)
+                    == Some("https://api.xiaomimimo.com/anthropic")
+        }));
     }
 
     #[test]

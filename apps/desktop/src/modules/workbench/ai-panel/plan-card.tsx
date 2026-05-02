@@ -1,10 +1,10 @@
-import { Check, CheckCircle2, Circle, ExternalLink, Loader2, RotateCcw, X } from "lucide-react";
+import { Check, ExternalLink, RotateCcw, X } from "lucide-react";
 import { useMemo } from "react";
 
+import type { AgentPlanBlock } from "../../../shared/desktop-bridge";
 import { createTranslator, type WorkbenchLocale } from "../i18n";
-import { AiPanelRichContent } from "./rich-content";
 import { StatusIndicator } from "./status-primitives";
-import type { LyraPlanStepStatus, LyraTurnPlanState } from "./use-lyra-thread-runtime";
+import type { LyraTurnPlanState } from "./use-lyra-thread-runtime";
 
 type PlanCardProps = {
   readonly locale: WorkbenchLocale;
@@ -18,31 +18,28 @@ type PlanCardProps = {
   readonly onOpenInWorkspace?: () => void;
 };
 
-const statusIcon = (status: LyraPlanStepStatus) => {
-  if (status === "completed") {
-    return <CheckCircle2 size={13} aria-hidden="true" />;
+const renderBlockList = (title: string, blocks: readonly AgentPlanBlock[]) => {
+  if (blocks.length === 0) {
+    return null;
   }
-  if (status === "inProgress") {
-    return <Loader2 size={13} aria-hidden="true" className="lyra-ai-plan-card__step-spinner" />;
-  }
-  return <Circle size={12} aria-hidden="true" />;
-};
-
-const statusTone = (status: LyraPlanStepStatus) => {
-  if (status === "completed") {
-    return "success" as const;
-  }
-  if (status === "inProgress") {
-    return "info" as const;
-  }
-  return "muted" as const;
+  return (
+    <section className="lyra-ai-plan-card__section">
+      <h4>{title}</h4>
+      <div className="lyra-ai-plan-card__blocks">
+        {blocks.map((block) => (
+          <article key={block.id} className="lyra-ai-plan-card__block">
+            <div className="lyra-ai-plan-card__block-title">{block.title}</div>
+            <p>{block.body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
 };
 
 export const PlanCard = ({
   locale,
   plan,
-  richRenderingEnabled,
-  themeSignature,
   showActions,
   onApprove,
   onKeepPlanning,
@@ -50,13 +47,9 @@ export const PlanCard = ({
   onOpenInWorkspace,
 }: PlanCardProps) => {
   const t = useMemo(() => createTranslator(locale), [locale]);
-  const bodyText = (plan.finalText ?? plan.draftText).trim();
-  const hasChecklist = plan.steps.length > 0;
-  const title = plan.finalText === null ? t("ai.planDraftTitle") : t("ai.planSubmittedTitle");
-
-  if (bodyText.length === 0 && !hasChecklist && plan.explanation === null) {
-    return null;
-  }
+  const artifact = plan.artifact;
+  const title = artifact.status === "draft" ? t("ai.planDraftTitle") : t("ai.planProposedTitle");
+  const canApprove = showActions && artifact.status === "proposed";
 
   return (
     <section className="lyra-ai-plan-card" aria-label={title}>
@@ -66,41 +59,18 @@ export const PlanCard = ({
           <span>{title}</span>
         </div>
       </div>
-      {plan.explanation === null ? null : (
-        <p className="lyra-ai-plan-card__explanation">{plan.explanation}</p>
-      )}
-      {bodyText.length === 0 ? null : (
-        <div className="lyra-ai-plan-card__body">
-          {richRenderingEnabled ? (
-            <AiPanelRichContent
-              content={bodyText}
-              locale={locale}
-              {...(themeSignature === undefined ? {} : { themeSignature })}
-            />
-          ) : (
-            <pre>{bodyText}</pre>
-          )}
-        </div>
-      )}
-      {!hasChecklist ? null : (
-        <ol className="lyra-ai-plan-card__steps">
-          {plan.steps.map((step, index) => (
-            <li
-              key={`${step.step}-${String(index)}`}
-              className={`lyra-ai-plan-card__step lyra-ai-plan-card__step-${step.status}`}
-            >
-              <StatusIndicator
-                tone={statusTone(step.status)}
-                variant="icon"
-                icon={statusIcon(step.status)}
-                ariaLabel={step.status}
-              />
-              <span>{step.step}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-      {!showActions ? null : (
+      <div className="lyra-ai-plan-card__body">
+        <h3>{artifact.title}</h3>
+        <p>{artifact.summary}</p>
+        <p>{artifact.objective}</p>
+      </div>
+      {renderBlockList("Assumptions", artifact.assumptions)}
+      {renderBlockList("Steps", artifact.steps)}
+      {renderBlockList("Interfaces", artifact.interfaces)}
+      {renderBlockList("Risks", artifact.risks)}
+      {renderBlockList("Tests", artifact.tests)}
+      {renderBlockList("Acceptance", artifact.acceptanceCriteria)}
+      {!canApprove ? null : (
         <div className="lyra-ai-plan-card__actions">
           {onApprove === undefined ? null : (
             <button

@@ -71,7 +71,9 @@ use lyra_app_server_protocol::McpServerToolCallParams;
 use lyra_app_server_protocol::McpServerToolCallResponse;
 use lyra_app_server_protocol::ModelListParams;
 use lyra_app_server_protocol::ModelListResponse;
+use lyra_app_server_protocol::PlanAnnotation;
 use lyra_app_server_protocol::PlanApprovalDecision;
+use lyra_app_server_protocol::PlanArtifact;
 use lyra_app_server_protocol::PluginDetail;
 use lyra_app_server_protocol::PluginInstallParams;
 use lyra_app_server_protocol::PluginInstallResponse;
@@ -353,31 +355,38 @@ enum ThreadReadViewError {
 
 fn format_plan_approval_instruction(
     decision: PlanApprovalDecision,
+    plan_id: &str,
     feedback: Option<&str>,
-    proposed_markdown: Option<&str>,
+    artifact_snapshot: Option<&PlanArtifact>,
+    annotations: &[PlanAnnotation],
 ) -> String {
     let trimmed_feedback = feedback.unwrap_or("").trim();
-    let trimmed_plan = proposed_markdown.unwrap_or("").trim();
     let feedback_section = if trimmed_feedback.is_empty() {
         String::new()
     } else {
         format!("\n\nUser feedback:\n\n{trimmed_feedback}")
     };
-    let plan_section = if trimmed_plan.is_empty() {
+    let annotations_section = if annotations.is_empty() {
         String::new()
     } else {
-        format!("\n\nProposed plan:\n\n{trimmed_plan}")
+        serde_json::to_string_pretty(annotations)
+            .map(|json| format!("\n\nDocument annotations:\n\n```json\n{json}\n```"))
+            .unwrap_or_default()
     };
+    let plan_section = artifact_snapshot
+        .and_then(|artifact| serde_json::to_string_pretty(artifact).ok())
+        .map(|json| format!("\n\nPlan artifact snapshot for `{plan_id}`:\n\n```json\n{json}\n```"))
+        .unwrap_or_else(|| format!("\n\nPlan artifact snapshot for `{plan_id}` was not supplied."));
 
     match decision {
         PlanApprovalDecision::ApproveAndImplement => format!(
-            "The user approved the proposed plan and explicitly chose Approve and Implement. Approval is complete. Continue in Default mode and implement the approved plan now.\n\nDo not submit another plan, do not say you are waiting for approval, and do not stop after summarizing the plan. Start the implementation work immediately. If implementation is impossible, explain the concrete blocker instead of asking for approval again.{feedback_section}{plan_section}"
+            "The user approved plan `{plan_id}` and explicitly chose Approve and Implement. Approval is complete. Continue in Default mode and implement the approved structured plan now.\n\nDo not submit another plan, do not say you are waiting for approval, and do not stop after summarizing the plan. Start the implementation work immediately. If implementation is impossible, explain the concrete blocker instead of asking for approval again.{feedback_section}{annotations_section}{plan_section}"
         ),
         PlanApprovalDecision::KeepPlanning => format!(
-            "The user wants to continue planning. Read the user feedback, revise the plan in Plan mode, and submit a complete updated proposal with lyra_plan action=\"submit\". Apply every feedback item explicitly in the revised plan. Do not implement yet and do not ask the user to confirm in a plain assistant message.{feedback_section}{plan_section}"
+            "The user wants to continue planning for plan `{plan_id}`. Read the full structured artifact, every document annotation, and the overall feedback. Revise the plan in Plan mode, preserve stable block ids for unchanged blocks, and submit a complete updated proposal with lyra_plan action=\"propose\". Use lyra_plan action=\"draft\" only for intermediate visible drafts and action=\"ask\" only for blocking decisions. Do not implement yet and do not ask the user to confirm in a plain assistant message.{feedback_section}{annotations_section}{plan_section}"
         ),
         PlanApprovalDecision::Reject => format!(
-            "The user rejected the proposed plan. Do not implement it.{feedback_section}{plan_section}"
+            "The user rejected plan `{plan_id}`. Do not implement it.{feedback_section}{annotations_section}{plan_section}"
         ),
     }
 }
@@ -1837,6 +1846,54 @@ impl LyraMessageProcessor {
             base_instructions,
             developer_instructions,
             ..Default::default()
+        }
+    }
+
+    async fn derive_turn_model_provider_config(
+        &self,
+        model_provider: Option<&str>,
+        model: Option<String>,
+        cwd: Option<PathBuf>,
+        fallback_cwd: PathBuf,
+    ) -> std::io::Result<Config> {
+        let cloud_requirements = self.current_cloud_requirements();
+        let cli_overrides = self.current_cli_overrides();
+        let runtime_feature_enablement = self.current_runtime_feature_enablement();
+        derive_config_for_cwd(
+            &cli_overrides,
+            None,
+            ConfigOverrides {
+                model,
+                model_provider: model_provider.map(str::to_string),
+                cwd,
+                ..Default::default()
+            },
+            Some(fallback_cwd),
+            &cloud_requirements,
+            &self.config.lyra_home,
+            &runtime_feature_enablement,
+        )
+        .await
+    }
+
+    async fn persist_thread_model_selection(
+        &self,
+        thread_id: ThreadId,
+        model_provider: Option<&str>,
+        model: Option<&str>,
+    ) {
+        let Some(state_db_ctx) = get_state_db(&self.config).await else {
+            return;
+        };
+        if let Err(err) = state_db_ctx
+            .update_thread_model_selection(thread_id, model_provider, model)
+            .await
+        {
+            tracing::warn!(
+                thread_id = %thread_id,
+                error = %err,
+                "failed to persist thread model selection"
+            );
         }
     }
 
@@ -4310,7 +4367,7 @@ impl LyraMessageProcessor {
                     Some(providers)
                 }
             }
-            None => Some(vec![self.config.model_provider_id.clone()]),
+            None => None,
         };
         let fallback_provider = self.config.model_provider_id.clone();
         let (allowed_sources_vec, source_kind_filter) = compute_source_filters(source_kinds);
@@ -5723,7 +5780,8 @@ impl LyraMessageProcessor {
             self.outgoing.send_error(request_id, error).await;
             return;
         }
-        let (_, thread) = match self.load_thread(&params.thread_id).await {
+        let thread_id = params.thread_id.clone();
+        let (thread_uuid, thread) = match self.load_thread(&thread_id).await {
             Ok(v) => v,
             Err(error) => {
                 self.track_error_response(&request_id, &error, /*error_type*/ None);
@@ -5743,29 +5801,163 @@ impl LyraMessageProcessor {
             return;
         }
 
+        let TurnStartParams {
+            thread_id: _,
+            input,
+            responsesapi_client_metadata,
+            cwd,
+            approval_policy,
+            approvals_reviewer,
+            sandbox_policy,
+            mut model,
+            model_provider,
+            service_tier,
+            effort,
+            verbosity,
+            summary,
+            output_schema,
+            collaboration_mode,
+        } = params;
+        let model_provider = model_provider.and_then(|provider_id| {
+            let trimmed = provider_id.trim().to_string();
+            (!trimmed.is_empty()).then_some(trimmed)
+        });
         let collaboration_modes_config = CollaborationModesConfig {
             default_mode_request_user_input: thread.enabled(Feature::DefaultModeRequestUserInput),
         };
-        let collaboration_mode = params.collaboration_mode.map(|mode| {
+        let collaboration_mode = collaboration_mode.map(|mode| {
             self.normalize_turn_start_collaboration_mode(mode, collaboration_modes_config)
         });
 
         // Map v2 input items to core input items.
-        let mapped_items: Vec<CoreInputItem> = params
-            .input
-            .into_iter()
-            .map(V2UserInput::into_core)
-            .collect();
+        let mapped_items: Vec<CoreInputItem> =
+            input.into_iter().map(V2UserInput::into_core).collect();
 
-        let has_any_overrides = params.cwd.is_some()
-            || params.approval_policy.is_some()
-            || params.approvals_reviewer.is_some()
-            || params.sandbox_policy.is_some()
-            || params.model.is_some()
-            || params.service_tier.is_some()
-            || params.effort.is_some()
-            || params.verbosity.is_some()
-            || params.summary.is_some()
+        let config_snapshot = thread.config_snapshot().await;
+        let provider_config = if let Some(model_provider_id) = model_provider.as_ref() {
+            match self
+                .derive_turn_model_provider_config(
+                    Some(model_provider_id.as_str()),
+                    model.clone(),
+                    cwd.clone(),
+                    config_snapshot.cwd.to_path_buf(),
+                )
+                .await
+            {
+                Ok(config) => Some(config),
+                Err(err) if is_lyra_profile_runtime_provider(model_provider_id) => {
+                    tracing::warn!(
+                        thread_id = %thread_id,
+                        requested_model_provider = %model_provider_id,
+                        error = %err,
+                        "requested Lyra profile provider is unavailable; falling back to current default profile"
+                    );
+                    match self
+                        .derive_turn_model_provider_config(
+                            None,
+                            model.clone(),
+                            cwd.clone(),
+                            config_snapshot.cwd.to_path_buf(),
+                        )
+                        .await
+                    {
+                        Ok(config) => Some(config),
+                        Err(fallback_err) => {
+                            let error = config_load_error(&fallback_err);
+                            self.track_error_response(
+                                &request_id,
+                                &error,
+                                /*error_type*/ None,
+                            );
+                            self.outgoing.send_error(request_id, error).await;
+                            return;
+                        }
+                    }
+                }
+                Err(err) => {
+                    let error = config_load_error(&err);
+                    self.track_error_response(&request_id, &error, /*error_type*/ None);
+                    self.outgoing.send_error(request_id, error).await;
+                    return;
+                }
+            }
+        } else if is_lyra_profile_runtime_provider(config_snapshot.model_provider_id.as_str()) {
+            match self
+                .derive_turn_model_provider_config(
+                    None,
+                    model.clone(),
+                    cwd.clone(),
+                    config_snapshot.cwd.to_path_buf(),
+                )
+                .await
+            {
+                Ok(config) => {
+                    tracing::info!(
+                        thread_id = %thread_id,
+                        previous_model_provider = %config_snapshot.model_provider_id,
+                        next_model_provider = %config.model_provider_id,
+                        "refreshing Lyra profile provider for turn"
+                    );
+                    Some(config)
+                }
+                Err(err) => {
+                    let error = config_load_error(&err);
+                    self.track_error_response(&request_id, &error, /*error_type*/ None);
+                    self.outgoing.send_error(request_id, error).await;
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        if let Some(provider_config) = provider_config {
+            let next_model_provider_id = provider_config.model_provider_id.clone();
+            let next_model = if model.is_none() {
+                provider_config
+                    .model
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+            } else {
+                None
+            };
+            if let Err(err) = thread
+                .set_model_provider(
+                    next_model_provider_id.clone(),
+                    provider_config.model_provider,
+                )
+                .await
+            {
+                let error = JSONRPCErrorError {
+                    code: INVALID_REQUEST_ERROR_CODE,
+                    message: err.to_string(),
+                    data: None,
+                };
+                self.track_error_response(&request_id, &error, /*error_type*/ None);
+                self.outgoing.send_error(request_id, error).await;
+                return;
+            }
+            if let Some(next_model) = next_model {
+                model = Some(next_model);
+            }
+            self.persist_thread_model_selection(
+                thread_uuid,
+                Some(next_model_provider_id.as_str()),
+                Some(model.as_deref().unwrap_or(config_snapshot.model.as_str())),
+            )
+            .await;
+        }
+
+        let has_any_overrides = cwd.is_some()
+            || approval_policy.is_some()
+            || approvals_reviewer.is_some()
+            || sandbox_policy.is_some()
+            || model.is_some()
+            || service_tier.is_some()
+            || effort.is_some()
+            || verbosity.is_some()
+            || summary.is_some()
             || collaboration_mode.is_some();
 
         // If any overrides are provided, update the session turn context first.
@@ -5775,18 +5967,17 @@ impl LyraMessageProcessor {
                     &request_id,
                     thread.as_ref(),
                     Op::OverrideTurnContext {
-                        cwd: params.cwd,
-                        approval_policy: params.approval_policy.map(AskForApproval::to_core),
-                        approvals_reviewer: params
-                            .approvals_reviewer
+                        cwd,
+                        approval_policy: approval_policy.map(AskForApproval::to_core),
+                        approvals_reviewer: approvals_reviewer
                             .map(lyra_app_server_protocol::ApprovalsReviewer::to_core),
-                        sandbox_policy: params.sandbox_policy.map(|p| p.to_core()),
+                        sandbox_policy: sandbox_policy.map(|p| p.to_core()),
                         windows_sandbox_level: None,
-                        model: params.model,
-                        effort: params.effort.map(Some),
-                        verbosity: params.verbosity,
-                        summary: params.summary,
-                        service_tier: params.service_tier,
+                        model,
+                        effort: effort.map(Some),
+                        verbosity,
+                        summary,
+                        service_tier,
                         collaboration_mode,
                     },
                 )
@@ -5800,8 +5991,8 @@ impl LyraMessageProcessor {
                 thread.as_ref(),
                 Op::UserInput {
                     items: mapped_items,
-                    final_output_json_schema: params.output_schema,
-                    responsesapi_client_metadata: params.responsesapi_client_metadata,
+                    final_output_json_schema: output_schema,
+                    responsesapi_client_metadata,
                 },
             )
             .await;
@@ -5852,11 +6043,11 @@ impl LyraMessageProcessor {
     ) {
         let thread_id = params.thread_id.trim().to_string();
         let plan_turn_id = params.plan_turn_id.trim().to_string();
-        let approval_request_id = params.request_id.trim().to_string();
-        if thread_id.is_empty() || plan_turn_id.is_empty() || approval_request_id.is_empty() {
+        let plan_id = params.plan_id.trim().to_string();
+        if thread_id.is_empty() || plan_turn_id.is_empty() || plan_id.is_empty() {
             self.send_invalid_request_error(
                 request_id,
-                "threadId, planTurnId, and requestId must not be empty".to_string(),
+                "threadId, planTurnId, and planId must not be empty".to_string(),
             )
             .await;
             return;
@@ -5903,13 +6094,15 @@ impl LyraMessageProcessor {
             match thread
                 .resolve_plan_approval_and_start_internal_developer_turn(
                     plan_turn_id.clone(),
-                    approval_request_id.clone(),
+                    plan_id.clone(),
                     core_plan_approval_decision(params.decision),
                     collaboration_mode,
                     format_plan_approval_instruction(
                         params.decision,
+                        &plan_id,
                         params.feedback.as_deref(),
-                        params.proposed_markdown.as_deref(),
+                        params.artifact_snapshot.as_ref(),
+                        &params.annotations,
                     ),
                 )
                 .await
@@ -5941,7 +6134,7 @@ impl LyraMessageProcessor {
             thread
                 .resolve_plan_approval(
                     plan_turn_id,
-                    approval_request_id,
+                    plan_id,
                     core_plan_approval_decision(params.decision),
                 )
                 .await;
@@ -7499,6 +7692,10 @@ fn collect_resume_override_mismatches(
     mismatch_details
 }
 
+fn is_lyra_profile_runtime_provider(provider_id: &str) -> bool {
+    provider_id.trim().starts_with("lp_")
+}
+
 fn merge_persisted_resume_metadata(
     request_overrides: &mut Option<HashMap<String, serde_json::Value>>,
     typesafe_overrides: &mut ConfigOverrides,
@@ -8707,34 +8904,66 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
+    fn test_plan_artifact() -> PlanArtifact {
+        PlanArtifact {
+            plan_id: "plan-1".into(),
+            status: lyra_app_server_protocol::PlanArtifactStatus::Proposed,
+            title: "Implementation plan".into(),
+            summary: "Patch the requested behavior".into(),
+            objective: "Implement the approved request.".into(),
+            assumptions: Vec::new(),
+            steps: vec![lyra_app_server_protocol::PlanArtifactBlock {
+                id: "step-1".into(),
+                kind: "step".into(),
+                title: "Patch".into(),
+                body: "Make the implementation change.".into(),
+            }],
+            interfaces: Vec::new(),
+            risks: Vec::new(),
+            tests: Vec::new(),
+            acceptance_criteria: Vec::new(),
+        }
+    }
+
     #[test]
     fn approve_plan_instruction_forces_execution_not_waiting() {
+        let artifact = test_plan_artifact();
         let instruction = format_plan_approval_instruction(
             PlanApprovalDecision::ApproveAndImplement,
+            "plan-1",
             Some("保持中文输出"),
-            Some("# Plan\n\nDo the work."),
+            Some(&artifact),
+            &[],
         );
 
         assert!(instruction.contains("Approval is complete"));
-        assert!(instruction.contains("implement the approved plan now"));
+        assert!(instruction.contains("implement the approved structured plan now"));
         assert!(instruction.contains("Do not submit another plan"));
         assert!(instruction.contains("do not say you are waiting for approval"));
         assert!(instruction.contains("保持中文输出"));
-        assert!(instruction.contains("Do the work."));
+        assert!(instruction.contains("step-1"));
     }
 
     #[test]
     fn keep_planning_instruction_requires_feedback_application() {
+        let artifact = test_plan_artifact();
         let instruction = format_plan_approval_instruction(
             PlanApprovalDecision::KeepPlanning,
+            "plan-1",
             Some("不用蓝色；需要中英双语"),
-            Some("# Old plan"),
+            Some(&artifact),
+            &[PlanAnnotation {
+                block_id: Some("step-1".into()),
+                anchor: "Patch".into(),
+                comment: "Add rollback handling".into(),
+            }],
         );
 
         assert!(instruction.contains("continue planning"));
-        assert!(instruction.contains("Apply every feedback item explicitly"));
+        assert!(instruction.contains("lyra_plan action=\"propose\""));
         assert!(instruction.contains("Do not implement yet"));
         assert!(instruction.contains("不用蓝色；需要中英双语"));
+        assert!(instruction.contains("Add rollback handling"));
     }
 
     #[test]

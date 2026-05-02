@@ -33,9 +33,63 @@ pub struct UpdatePlanArgs {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum LyraPlanAction {
-    Draft,
     Ask,
-    Submit,
+    Draft,
+    Propose,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum PlanArtifactStatus {
+    Draft,
+    Proposed,
+    Approved,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PlanArtifactBlock {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PlanArtifact {
+    pub plan_id: String,
+    pub status: PlanArtifactStatus,
+    pub title: String,
+    pub summary: String,
+    pub objective: String,
+    #[serde(default)]
+    pub assumptions: Vec<PlanArtifactBlock>,
+    #[serde(default)]
+    pub steps: Vec<PlanArtifactBlock>,
+    #[serde(default)]
+    pub interfaces: Vec<PlanArtifactBlock>,
+    #[serde(default)]
+    pub risks: Vec<PlanArtifactBlock>,
+    #[serde(default)]
+    pub tests: Vec<PlanArtifactBlock>,
+    #[serde(default)]
+    pub acceptance_criteria: Vec<PlanArtifactBlock>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct PlanAnnotation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub block_id: Option<String>,
+    pub anchor: String,
+    pub comment: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
@@ -43,12 +97,9 @@ pub enum LyraPlanAction {
 pub struct LyraPlanArgs {
     /// Planning operation to perform.
     pub action: LyraPlanAction,
-    /// Short human-readable summary for submitted plans.
+    /// Structured draft/proposal plan content for `draft` and `propose`.
     #[serde(default)]
-    pub summary: Option<String>,
-    /// Markdown draft or final plan content.
-    #[serde(default)]
-    pub markdown: Option<String>,
+    pub plan: Option<PlanArtifact>,
     /// Structured questions for `action = "ask"`.
     #[serde(default)]
     pub questions: Option<Vec<RequestUserInputQuestion>>,

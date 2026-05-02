@@ -5,6 +5,20 @@ import { describe, expect, test, vi } from "vitest";
 import { AiPanelInteractionShell } from "../interaction-shell";
 import type { PendingInteractionPanel } from "../interaction/pending-interaction-mappers";
 
+const planArtifact = {
+  planId: "plan-1",
+  status: "proposed" as const,
+  title: "Website plan",
+  summary: "Website plan",
+  objective: "Build the page",
+  assumptions: [],
+  steps: [{ id: "step-1", kind: "step", title: "Build", body: "Build the page" }],
+  interfaces: [],
+  risks: [],
+  tests: [],
+  acceptanceCriteria: [],
+};
+
 const commandRequest = (id: string, turnId: string) => ({
   id,
   interactionId: id,
@@ -26,10 +40,11 @@ describe("ai panel interaction shell", () => {
       id: "plan:turn-1",
       sessionId: "thread-1",
       turnId: "turn-1",
-      version: 0,
-      status: "submitted" as const,
+      planId: "plan-1",
+      version: 2,
+      status: "proposed" as const,
       summary: "Website plan",
-      proposedMarkdown: "# Website plan",
+      artifact: planArtifact,
     };
     const interaction = {
       kind: "planApproval" as const,

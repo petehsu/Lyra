@@ -461,8 +461,10 @@ fn provider_env_key(provider_id: &str, protocol_id: &str) -> Option<&'static str
         "together" => Some("TOGETHER_API_KEY"),
         "fireworks" => Some("FIREWORKS_API_KEY"),
         "vercel_ai_gateway" => Some("VERCEL_AI_GATEWAY_API_KEY"),
+        "mimo" => Some("MIMO_API_KEY"),
         "custom_openai_compatible" => Some("CUSTOM_OPENAI_API_KEY"),
         _ => match protocol_id.trim() {
+            "mimo_openai_chat_completions" | "mimo_anthropic_messages" => Some("MIMO_API_KEY"),
             "anthropic_messages" => Some("ANTHROPIC_API_KEY"),
             "gemini_generate_content" => Some("GEMINI_API_KEY"),
             "azure_openai_chat_completions" => Some("AZURE_OPENAI_API_KEY"),
@@ -520,6 +522,8 @@ fn protocol_requires_api_key(protocol_id: &str) -> bool {
             | "together_chat_completions"
             | "fireworks_chat_completions"
             | "vercel_ai_gateway_chat_completions"
+            | "mimo_openai_chat_completions"
+            | "mimo_anthropic_messages"
             | "custom_chat_completions"
             | "anthropic_messages"
             | "gemini_generate_content"
@@ -550,6 +554,8 @@ fn discovery_base_url(
         "together_chat_completions" => "https://api.together.xyz/v1".to_string(),
         "fireworks_chat_completions" => "https://api.fireworks.ai/inference/v1".to_string(),
         "vercel_ai_gateway_chat_completions" => "https://ai-gateway.vercel.sh/v1".to_string(),
+        "mimo_openai_chat_completions" => "https://api.xiaomimimo.com/v1".to_string(),
+        "mimo_anthropic_messages" => "https://api.xiaomimimo.com/anthropic".to_string(),
         "anthropic_messages" => "https://api.anthropic.com".to_string(),
         "gemini_generate_content" => "https://generativelanguage.googleapis.com".to_string(),
         "ollama_chat" => "http://127.0.0.1:11434".to_string(),
@@ -766,6 +772,28 @@ fn build_headers(headers: &StringMap) -> Result<HeaderMap, RuntimeError> {
     Ok(header_map)
 }
 
+fn uses_mimo_api_key_header(context: &ResolvedProfile) -> bool {
+    context.provider_id == "mimo"
+        || matches!(
+            context.protocol_id.as_str(),
+            "mimo_openai_chat_completions" | "mimo_anthropic_messages"
+        )
+        || context.base_url.contains("xiaomimimo.com")
+}
+
+fn insert_api_key_header(
+    headers: &mut HeaderMap,
+    header_name: &'static str,
+    api_key: &str,
+) -> Result<(), RuntimeError> {
+    headers.insert(
+        HeaderName::from_static(header_name),
+        HeaderValue::from_str(api_key)
+            .map_err(|error| runtime_error("AI_CONFIG_HEADER_INVALID", error.to_string()))?,
+    );
+    Ok(())
+}
+
 async fn fetch_json(
     url: &str,
     method: reqwest::Method,
@@ -896,10 +924,13 @@ async fn discover_models(
         | "together_chat_completions"
         | "fireworks_chat_completions"
         | "vercel_ai_gateway_chat_completions"
+        | "mimo_openai_chat_completions"
         | "custom_chat_completions"
         | "lmstudio_chat_completions" => discover_openai_like_models(&context).await,
         "azure_openai_chat_completions" => discover_azure_models(&context).await,
-        "anthropic_messages" => discover_anthropic_models(&context).await,
+        "anthropic_messages" | "mimo_anthropic_messages" => {
+            discover_anthropic_models(&context).await
+        }
         "gemini_generate_content" => discover_gemini_models(&context).await,
         "ollama_chat" => discover_ollama_models(&context).await,
         _ => Ok(discovery_result(
@@ -941,12 +972,16 @@ async fn discover_openai_like_models(
     let mut headers = build_headers(&context.headers)?;
     if let Some(api_key) = context.secret_values.get("apiKey") {
         if !api_key.is_empty() {
-            headers.insert(
-                reqwest::header::AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {api_key}")).map_err(|error| {
-                    runtime_error("AI_CONFIG_HEADER_INVALID", error.to_string())
-                })?,
-            );
+            if uses_mimo_api_key_header(context) {
+                insert_api_key_header(&mut headers, "api-key", api_key)?;
+            } else {
+                headers.insert(
+                    reqwest::header::AUTHORIZATION,
+                    HeaderValue::from_str(&format!("Bearer {api_key}")).map_err(|error| {
+                        runtime_error("AI_CONFIG_HEADER_INVALID", error.to_string())
+                    })?,
+                );
+            }
         }
     }
     let models: Vec<AiProviderModelEntry> = parse_openai_like_models(
@@ -1057,22 +1092,22 @@ async fn discover_anthropic_models(
         ));
     }
     let mut headers = build_headers(&context.headers)?;
-    headers.insert(
-        HeaderName::from_static("x-api-key"),
-        HeaderValue::from_str(&api_key)
-            .map_err(|error| runtime_error("AI_CONFIG_HEADER_INVALID", error.to_string()))?,
-    );
-    let anthropic_version = context
-        .auth_config
-        .get("anthropicVersion")
-        .map(|value| trim_string(value))
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_ANTHROPIC_VERSION.to_string());
-    headers.insert(
-        HeaderName::from_static("anthropic-version"),
-        HeaderValue::from_str(&anthropic_version)
-            .map_err(|error| runtime_error("AI_CONFIG_HEADER_INVALID", error.to_string()))?,
-    );
+    if uses_mimo_api_key_header(context) {
+        insert_api_key_header(&mut headers, "api-key", &api_key)?;
+    } else {
+        insert_api_key_header(&mut headers, "x-api-key", &api_key)?;
+        let anthropic_version = context
+            .auth_config
+            .get("anthropicVersion")
+            .map(|value| trim_string(value))
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| DEFAULT_ANTHROPIC_VERSION.to_string());
+        headers.insert(
+            HeaderName::from_static("anthropic-version"),
+            HeaderValue::from_str(&anthropic_version)
+                .map_err(|error| runtime_error("AI_CONFIG_HEADER_INVALID", error.to_string()))?,
+        );
+    }
     let base_url = context.base_url.trim_end_matches('/');
     let models: Vec<AiProviderModelEntry> = parse_anthropic_models(
         fetch_json(

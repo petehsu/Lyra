@@ -105,6 +105,19 @@ impl SessionConfiguration {
         if let Some(collaboration_mode) = updates.collaboration_mode.clone() {
             next_configuration.collaboration_mode = collaboration_mode;
         }
+        if let Some((model_provider_id, model_provider)) = updates.model_provider.clone() {
+            let normalized_model_provider_id = model_provider_id.trim().to_string();
+            if normalized_model_provider_id.is_empty() {
+                return Err(crate::config::ConstraintError::empty_field(
+                    "model_provider",
+                ));
+            }
+            next_configuration.provider = model_provider.clone();
+            let mut config = (*next_configuration.original_config_do_not_use).clone();
+            config.model_provider_id = normalized_model_provider_id;
+            config.model_provider = model_provider;
+            next_configuration.original_config_do_not_use = Arc::new(config);
+        }
         if let Some(summary) = updates.reasoning_summary {
             next_configuration.model_reasoning_summary = Some(summary);
         }
@@ -187,6 +200,7 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) sandbox_policy: Option<SandboxPolicy>,
     pub(crate) windows_sandbox_level: Option<WindowsSandboxLevel>,
     pub(crate) collaboration_mode: Option<CollaborationMode>,
+    pub(crate) model_provider: Option<(String, ModelProviderInfo)>,
     pub(crate) reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(crate) model_verbosity: Option<VerbosityConfig>,
     pub(crate) service_tier: Option<Option<ServiceTier>>,

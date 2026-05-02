@@ -11,6 +11,7 @@ export const AI_PROVIDER_IDS = [
   "together",
   "fireworks",
   "vercel_ai_gateway",
+  "mimo",
   "ollama",
   "lmstudio",
   "custom_openai_compatible"
@@ -31,6 +32,8 @@ export const AI_PROTOCOL_IDS = [
   "together_chat_completions",
   "fireworks_chat_completions",
   "vercel_ai_gateway_chat_completions",
+  "mimo_openai_chat_completions",
+  "mimo_anthropic_messages",
   "ollama_chat",
   "lmstudio_chat_completions",
   "custom_chat_completions",

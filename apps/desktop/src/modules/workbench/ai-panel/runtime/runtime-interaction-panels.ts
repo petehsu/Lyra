@@ -10,8 +10,6 @@ import {
 import { toPendingInteractionPanel } from "../interaction/pending-interaction-mappers";
 import {
   isRecord,
-  pickNumber,
-  pickRawString,
   pickString,
 } from "../view-helpers";
 import type { RuntimeEventProcessingContext } from "./runtime-event-context";
@@ -125,30 +123,25 @@ export const handleInteractionPanels = (context: RuntimeEventProcessingContext):
   }
 
   if (event.phase === "plan_approval_requested") {
-    const requestId = pickString(payload, "requestId") ?? `${event.turnId}-plan-approval`;
+    const artifact = isRecord(payload.artifact) ? payload.artifact : null;
+    const planId = pickString(payload, "planId") ?? (artifact === null ? null : pickString(artifact, "planId"));
+    const requestId = planId === null ? `${event.turnId}-plan-approval` : `plan:${event.turnId}:${planId}`;
     stopStreamingForInteraction(context);
-    const proposedMarkdown = pickRawString(payload, "proposedMarkdown");
-    if (proposedMarkdown !== null) {
-      setTransientInteractionPanel({
-        kind: "planApproval",
-        request: {
-          id: requestId,
-          interactionId: requestId,
-          interactionKind: "tool_user_input" as const,
-          sessionId: event.sessionId,
-          turnId: event.turnId,
-          version: pickNumber(payload, "version") ?? 0,
-          status: "submitted",
-          summary:
-            pickString(payload, "summary")
-            ?? proposedMarkdown.split("\n").find((line) => line.trim().length > 0)
-            ?? interactionTextLabels.proposedPlanSummaryFallback,
-          proposedMarkdown,
-          ...(pickRawString(payload, "draftMarkdown") === null
-            ? {}
-            : { draftMarkdown: pickRawString(payload, "draftMarkdown")! }),
-        },
-      });
+    const panel = toPendingInteractionPanel(
+      {
+        id: requestId,
+        sessionId: event.sessionId,
+        turnId: event.turnId,
+        kind: "plan_approval",
+        status: "pending",
+        payload: { raw: payload },
+        createdAt: event.timestamp,
+        updatedAt: event.timestamp,
+      },
+      interactionTextLabels
+    );
+    if (panel?.kind === "planApproval") {
+      setTransientInteractionPanel(panel);
     }
     setActiveInteractionId(requestId);
   }

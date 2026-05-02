@@ -52,6 +52,121 @@ At most one step can be in_progress at a time.
 }
 
 pub fn create_lyra_plan_tool() -> ToolSpec {
+    let block_props = BTreeMap::from([
+        (
+            "id".to_string(),
+            JsonSchema::string(Some(
+                "Stable block id. Keep the same id when revising the same plan block.".to_string(),
+            )),
+        ),
+        (
+            "kind".to_string(),
+            JsonSchema::string(Some(
+                "Block kind, for example assumption, step, interface, risk, test, or acceptanceCriterion.".to_string(),
+            )),
+        ),
+        (
+            "title".to_string(),
+            JsonSchema::string(Some("Short block title.".to_string())),
+        ),
+        (
+            "body".to_string(),
+            JsonSchema::string(Some(
+                "Detailed professional planning content for this block.".to_string(),
+            )),
+        ),
+    ]);
+    let block_schema = JsonSchema::object(
+        block_props,
+        Some(vec![
+            "id".to_string(),
+            "kind".to_string(),
+            "title".to_string(),
+            "body".to_string(),
+        ]),
+        Some(false.into()),
+    );
+    let block_array =
+        |description: &str| JsonSchema::array(block_schema.clone(), Some(description.to_string()));
+    let plan_props = BTreeMap::from([
+        (
+            "planId".to_string(),
+            JsonSchema::string(Some(
+                "Stable id for this plan artifact and later approval payloads.".to_string(),
+            )),
+        ),
+        (
+            "status".to_string(),
+            JsonSchema::string_enum(
+                vec![
+                    json!("draft"),
+                    json!("proposed"),
+                    json!("approved"),
+                    json!("rejected"),
+                ],
+                Some(
+                    "Artifact status. draft/propose calls may send any value; Lyra normalizes it."
+                        .to_string(),
+                ),
+            ),
+        ),
+        (
+            "title".to_string(),
+            JsonSchema::string(Some("Concise plan title.".to_string())),
+        ),
+        (
+            "summary".to_string(),
+            JsonSchema::string(Some("Short executive summary.".to_string())),
+        ),
+        (
+            "objective".to_string(),
+            JsonSchema::string(Some(
+                "Concrete objective the implementation must achieve.".to_string(),
+            )),
+        ),
+        (
+            "assumptions".to_string(),
+            block_array("Assumptions that shape the plan."),
+        ),
+        (
+            "steps".to_string(),
+            block_array("Ordered implementation or investigation steps."),
+        ),
+        (
+            "interfaces".to_string(),
+            block_array("APIs, data contracts, UI surfaces, files, or module boundaries affected."),
+        ),
+        (
+            "risks".to_string(),
+            block_array("Important risks, tradeoffs, and mitigations."),
+        ),
+        (
+            "tests".to_string(),
+            block_array("Verification plan and targeted tests."),
+        ),
+        (
+            "acceptanceCriteria".to_string(),
+            block_array("User-visible acceptance criteria."),
+        ),
+    ]);
+    let plan_schema = JsonSchema::object(
+        plan_props,
+        Some(vec![
+            "planId".to_string(),
+            "status".to_string(),
+            "title".to_string(),
+            "summary".to_string(),
+            "objective".to_string(),
+            "assumptions".to_string(),
+            "steps".to_string(),
+            "interfaces".to_string(),
+            "risks".to_string(),
+            "tests".to_string(),
+            "acceptanceCriteria".to_string(),
+        ]),
+        Some(false.into()),
+    );
+
     let option_props = BTreeMap::from([
         (
             "label".to_string(),
@@ -111,29 +226,25 @@ pub fn create_lyra_plan_tool() -> ToolSpec {
         (
             "action".to_string(),
             JsonSchema::string_enum(
-                vec![json!("draft"), json!("ask"), json!("submit")],
+                vec![json!("ask"), json!("draft"), json!("propose")],
                 Some("Plan operation to perform.".to_string()),
             ),
         ),
-        (
-            "summary".to_string(),
-            JsonSchema::string(Some(
-                "One sentence summary for action=\"submit\".".to_string(),
-            )),
-        ),
-        (
-            "markdown".to_string(),
-            JsonSchema::string(Some(
-                "Markdown draft or final plan. Required for action=\"submit\".".to_string(),
-            )),
-        ),
+        ("plan".to_string(), {
+            let mut schema = plan_schema;
+            schema.description = Some(
+                "Structured plan artifact. Required for action=\"draft\" and action=\"propose\"."
+                    .to_string(),
+            );
+            schema
+        }),
         ("questions".to_string(), questions_schema),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
         name: LYRA_PLAN_TOOL_NAME.to_string(),
         description: r#"Structured Plan Mode tool.
-Use action="ask" to request user input, action="draft" to record draft planning state, and action="submit" to submit the complete approvable plan. Do not describe the final plan in a plain assistant message; submit it through this tool.
+Use action="ask" to request user input, action="draft" to record a visible non-approvable structured draft, and action="propose" to submit the complete approvable structured plan. Do not describe the official plan in a plain assistant message; propose it through this tool.
 "#
         .to_string(),
         strict: false,

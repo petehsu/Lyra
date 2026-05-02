@@ -3,6 +3,8 @@ use crate::protocol::v2::CommandExecutionStatus;
 use crate::protocol::v2::DynamicToolCallStatus;
 use crate::protocol::v2::McpToolCallStatus;
 use crate::protocol::v2::PatchApplyStatus;
+use crate::protocol::v2::PlanArtifact;
+use crate::protocol::v2::PlanArtifactStatus;
 use crate::protocol::v2::Thread;
 use crate::protocol::v2::ThreadAiPanelAttachmentKind;
 use crate::protocol::v2::ThreadAiPanelMessage;
@@ -147,24 +149,19 @@ pub fn build_thread_ai_panel_view_model(
                         created_at_ms: item_timestamp_ms,
                     });
                 }
-                ThreadItem::Plan { text, .. } => {
-                    let final_text = text.trim();
-                    if final_text.is_empty() {
-                        continue;
-                    }
+                ThreadItem::Plan { artifact, .. } => {
                     plans.push(ThreadAiPanelPlan {
                         turn_id: turn.id.clone(),
-                        draft_text: String::new(),
-                        final_text: Some(final_text.to_string()),
-                        explanation: None,
-                        steps: Vec::new(),
+                        artifact: artifact.clone(),
                         updated_at_ms: item_timestamp_ms,
                     });
-                    if matches!(turn.status, TurnStatus::Waiting) {
+                    if matches!(turn.status, TurnStatus::Waiting)
+                        && artifact.status == PlanArtifactStatus::Proposed
+                    {
                         pending_interactions.push(plan_approval_pending_interaction(
                             &session_id,
                             &turn.id,
-                            final_text,
+                            artifact,
                             item_timestamp_ms,
                         ));
                     }
@@ -215,30 +212,25 @@ pub fn build_thread_ai_panel_view_model(
 fn plan_approval_pending_interaction(
     session_id: &str,
     turn_id: &str,
-    plan_text: &str,
+    artifact: &PlanArtifact,
     timestamp_ms: i64,
 ) -> ThreadAiPanelPendingInteraction {
-    let request_id = format!("plan:{turn_id}");
-    let summary = plan_text
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or("Proposed plan");
+    let interaction_id = format!("plan:{turn_id}:{}", artifact.plan_id);
     ThreadAiPanelPendingInteraction {
-        id: request_id.clone(),
+        id: interaction_id,
         session_id: session_id.to_string(),
         turn_id: turn_id.to_string(),
         kind: ThreadAiPanelPendingInteractionKind::PlanApproval,
         status: ThreadAiPanelPendingInteractionStatus::Pending,
         payload: json!({
-            "requestId": request_id.clone(),
             "agentCoreMethod": "turn/planApproval/resolve",
             "raw": {
-                "requestId": request_id,
-                "version": 0,
-                "status": "submitted",
-                "summary": summary,
-                "proposedMarkdown": plan_text,
+                "planTurnId": turn_id,
+                "planId": artifact.plan_id.clone(),
+                "version": 2,
+                "status": "proposed",
+                "summary": artifact.summary.clone(),
+                "artifact": artifact,
             },
         }),
         created_at_ms: timestamp_ms,

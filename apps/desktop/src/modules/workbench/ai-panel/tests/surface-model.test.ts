@@ -12,6 +12,7 @@ import {
   permissionRuntimeOptions,
   resolveBoundProjectRoot,
   resolveSelectedRuntimeModelOption,
+  resolveSyncedSelectedModelOptionValue,
   shouldShowEmptySessionScene,
   uniqueModelIds
 } from "../surface-model";
@@ -195,6 +196,34 @@ describe("ai panel surface model", () => {
     expect(resolveSelectedRuntimeModelOption(options, "gpt-4")?.model).toBe("gpt-4");
     expect(resolveSelectedRuntimeModelOption(options, "missing")?.model).toBe("gpt-5");
     expect(resolveSelectedRuntimeModelOption([], "missing")).toBeNull();
+  });
+
+  test("resets stale selected model option when default profile changes", () => {
+    const options = createRuntimeModelOptions({
+      configuredProfiles: [
+        createProfile({
+          id: "profile-openai",
+          name: "OpenAI",
+          runtimeProviderId: "lp-openai",
+          model: "gpt-5",
+        }),
+        createProfile({
+          id: "profile-mimo",
+          name: "MiMO",
+          runtimeProviderId: "lp-mimo",
+          model: "mimo-v2.5-pro",
+        }),
+      ],
+      defaultProfileId: "profile-mimo",
+      defaultProviderId: "lp-mimo",
+      defaultModelNames: []
+    });
+
+    expect(resolveSyncedSelectedModelOptionValue({
+      modelOptions: options,
+      selectedModelOptionValue: `profile-openai${MODEL_OPTION_DELIMITER}gpt-5`,
+      defaultProfileId: "profile-mimo"
+    })).toBe(`profile-mimo${MODEL_OPTION_DELIMITER}mimo-v2.5-pro`);
   });
 
   test("maps permission modes into runtime turn options", () => {

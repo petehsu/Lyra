@@ -4,16 +4,12 @@ import type {
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
 
-export type AiPlanReviewAnnotationKind = "selection" | "line";
-
 export type AiPlanReviewAnnotation = {
   readonly id: string;
-  readonly kind: AiPlanReviewAnnotationKind;
+  readonly blockId?: string;
+  readonly anchor: string;
   readonly note: string;
   readonly createdAt: number;
-  readonly selectedText?: string;
-  readonly lineNumber?: number;
-  readonly lineText?: string;
 };
 
 export type AiPlanReviewState = {

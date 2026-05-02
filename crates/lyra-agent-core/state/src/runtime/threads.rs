@@ -707,6 +707,31 @@ WHERE id = ?
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn update_thread_model_selection(
+        &self,
+        thread_id: ThreadId,
+        model_provider: Option<&str>,
+        model: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        let result = sqlx::query(
+            r#"
+UPDATE threads
+SET
+    model_provider = CASE WHEN ? THEN ? ELSE model_provider END,
+    model = CASE WHEN ? THEN ? ELSE model END
+WHERE id = ?
+            "#,
+        )
+        .bind(model_provider.is_some())
+        .bind(model_provider)
+        .bind(model.is_some())
+        .bind(model)
+        .bind(thread_id.to_string())
+        .execute(self.pool.as_ref())
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn upsert_thread_with_creation_memory_mode(
         &self,
         metadata: &crate::ThreadMetadata,
@@ -1233,6 +1258,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn update_thread_model_selection_preserves_project_binding() {
+        let lyra_home = unique_temp_dir();
+        let runtime = StateRuntime::init(lyra_home.clone(), "test-provider".to_string())
+            .await
+            .expect("state db should initialize");
+        let thread_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000124").expect("valid thread id");
+        let mut metadata = test_thread_metadata(&lyra_home, thread_id, lyra_home.clone());
+        metadata.model_provider = "old-provider".to_string();
+        metadata.model = Some("old-model".to_string());
+        metadata.bound_project_root = Some(lyra_home.join("project"));
+
+        runtime
+            .upsert_thread(&metadata)
+            .await
+            .expect("initial insert should succeed");
+
+        runtime
+            .update_thread_model_selection(thread_id, Some("new-provider"), Some("new-model"))
+            .await
+            .expect("model selection update should succeed");
+
+        let updated = runtime
+            .get_thread(thread_id)
+            .await
+            .expect("thread should load")
+            .expect("thread should exist");
+        assert_eq!(updated.model_provider, "new-provider");
+        assert_eq!(updated.model.as_deref(), Some("new-model"));
+        assert_eq!(updated.bound_project_root, metadata.bound_project_root);
+    }
+
+    #[tokio::test]
     async fn list_threads_updated_after_returns_oldest_changes_first() {
         let lyra_home = unique_temp_dir();
         let runtime = StateRuntime::init(lyra_home.clone(), "test-provider".to_string())
@@ -1341,7 +1399,7 @@ mod tests {
                 forked_from_id: None,
                 timestamp: metadata.created_at.to_rfc3339(),
                 cwd: PathBuf::new(),
-                originator: String::new(),
+                client_name: String::new(),
                 cli_version: String::new(),
                 source: SessionSource::Cli,
                 agent_path: None,
@@ -1399,7 +1457,7 @@ mod tests {
                 forked_from_id: None,
                 timestamp: created_at,
                 cwd: PathBuf::new(),
-                originator: String::new(),
+                client_name: String::new(),
                 cli_version: String::new(),
                 source: SessionSource::Cli,
                 agent_path: None,

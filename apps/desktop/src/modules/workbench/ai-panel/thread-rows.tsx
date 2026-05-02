@@ -19,7 +19,6 @@ import {
 } from "./runtime/feed-utils";
 import {
   displayMessageTurnId,
-  planTextForApproval,
   type AiPanelThreadMessageMetadata,
   type AiPanelThreadRenderRow,
 } from "./thread-render-model";
@@ -55,26 +54,22 @@ const formatMessageTime = (timestamp: number, locale: WorkbenchLocale): string =
   }
 };
 
-const firstNonEmptyLine = (text: string): string | null =>
-  text.split(/\r?\n/u).map((line) => line.trim()).find((line) => line.length > 0) ?? null;
-
 const planApprovalRequestFromState = (
   plan: LyraTurnPlanState,
   sessionId: string
 ): PlanApprovalRequest | null => {
-  const proposedMarkdown = planTextForApproval(plan);
-  if (proposedMarkdown.length === 0) {
+  if (plan.artifact.status !== "proposed") {
     return null;
   }
   return {
-    id: `plan:${plan.turnId}`,
+    id: `plan:${plan.turnId}:${plan.artifact.planId}`,
     sessionId,
     turnId: plan.turnId,
-    version: 0,
-    status: "submitted",
-    summary: firstNonEmptyLine(proposedMarkdown) ?? "Proposed plan",
-    proposedMarkdown,
-    ...(plan.draftText.length === 0 ? {} : { draftMarkdown: plan.draftText }),
+    planId: plan.artifact.planId,
+    version: 2,
+    status: plan.artifact.status,
+    summary: plan.artifact.summary,
+    artifact: plan.artifact,
   };
 };
 
@@ -390,14 +385,16 @@ export const AiPanelPlanRow = ({
         showActions={canActOnPlan}
         onApprove={() => {
           void onPlanApprovalDecision({
-            requestId: `plan:${row.plan.turnId}`,
+            planId: row.plan.artifact.planId,
             decision: "approve_and_implement",
+            artifactSnapshot: row.plan.artifact,
           }, request ?? undefined);
         }}
         onKeepPlanning={() => {
           void onPlanApprovalDecision({
-            requestId: `plan:${row.plan.turnId}`,
+            planId: row.plan.artifact.planId,
             decision: "keep_planning",
+            artifactSnapshot: row.plan.artifact,
           }, request ?? undefined);
         }}
         {...(pendingRequest === null || onOpenPlanApprovalInWorkspace === undefined
@@ -409,8 +406,9 @@ export const AiPanelPlanRow = ({
             })}
         onReject={() => {
           void onPlanApprovalDecision({
-            requestId: `plan:${row.plan.turnId}`,
+            planId: row.plan.artifact.planId,
             decision: "reject",
+            artifactSnapshot: row.plan.artifact,
           }, request ?? undefined);
         }}
       />

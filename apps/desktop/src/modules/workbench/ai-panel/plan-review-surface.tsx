@@ -1,33 +1,26 @@
-import DOMPurify from "dompurify";
-import { marked } from "marked";
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { Check, MessageSquarePlus, Pencil, SendHorizontal, Trash2, X } from "lucide-react";
+import { Check, MessageSquarePlus, SendHorizontal, Trash2, X } from "lucide-react";
 
+import type { AgentPlanBlock, PlanApprovalDecision } from "../../../shared/desktop-bridge";
 import { createTranslator } from "../i18n";
-import type {
-  AiPlanReviewAnnotation,
-  AiPlanReviewModel,
-} from "./plan-review-types";
+import type { AiPlanReviewModel } from "./plan-review-types";
 
 export type AiPlanReviewSurfaceProps = {
   readonly instanceId: string;
   readonly model: AiPlanReviewModel;
 };
 
-type DraftComment = {
-  readonly kind: "selection" | "line";
-  readonly top: number;
-  readonly left: number;
-  readonly selectedText?: string;
-  readonly lineNumber?: number;
-  readonly lineText?: string;
+type PlanSection = {
+  readonly label: string;
+  readonly blocks: readonly AgentPlanBlock[];
 };
 
-const sanitizeMarkdownLine = (html: string): string =>
-  DOMPurify.sanitize(html, {
-    USE_PROFILES: { html: true },
-    ADD_ATTR: ["target", "rel", "class"],
-  });
+type DraftComment = {
+  readonly top: number;
+  readonly left: number;
+  readonly anchor: string;
+  readonly blockId?: string;
+};
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
@@ -39,24 +32,45 @@ const isNodeInside = (root: HTMLElement, node: Node): boolean => {
   return node.parentElement !== null && root.contains(node.parentElement);
 };
 
-const PlanReviewMarkdownLine = ({ line }: { readonly line: string }) => {
-  const html = useMemo(() => {
-    if (line.length === 0) {
-      return "&nbsp;";
-    }
-    const parsed = marked.parse(line, {
-      gfm: true,
-      breaks: true,
-    });
-    return sanitizeMarkdownLine(typeof parsed === "string" ? parsed : line);
-  }, [line]);
+const compactAnchor = (value: string): string => {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  return normalized.length > 96 ? `${normalized.slice(0, 96)}...` : normalized;
+};
 
-  return (
-    <div
-      className="lyra-ai-plan-review__line-rendered lyra-ai-rich-content"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
+const sectionEntries = (
+  artifact: {
+    readonly assumptions: readonly AgentPlanBlock[];
+    readonly steps: readonly AgentPlanBlock[];
+    readonly interfaces: readonly AgentPlanBlock[];
+    readonly risks: readonly AgentPlanBlock[];
+    readonly tests: readonly AgentPlanBlock[];
+    readonly acceptanceCriteria: readonly AgentPlanBlock[];
+  }
+): readonly PlanSection[] => [
+  { label: "Assumptions", blocks: artifact.assumptions },
+  { label: "Steps", blocks: artifact.steps },
+  { label: "Interfaces", blocks: artifact.interfaces },
+  { label: "Risks", blocks: artifact.risks },
+  { label: "Tests", blocks: artifact.tests },
+  { label: "Acceptance Criteria", blocks: artifact.acceptanceCriteria },
+];
+
+const closestAnchor = (
+  root: HTMLElement,
+  node: Node,
+  fallback: string
+): { readonly anchor: string; readonly blockId?: string } => {
+  const element = node instanceof HTMLElement ? node : node.parentElement;
+  const anchorElement = element?.closest<HTMLElement>("[data-plan-anchor]");
+  if (anchorElement === undefined || anchorElement === null || !root.contains(anchorElement)) {
+    return { anchor: fallback };
+  }
+  return {
+    anchor: anchorElement.dataset.planAnchor ?? fallback,
+    ...(anchorElement.dataset.planBlockId === undefined
+      ? {}
+      : { blockId: anchorElement.dataset.planBlockId }),
+  };
 };
 
 export const AiPlanReviewSurface = ({
@@ -65,19 +79,13 @@ export const AiPlanReviewSurface = ({
 }: AiPlanReviewSurfaceProps) => {
   const state = model.getState(instanceId);
   const surfaceRef = useRef<HTMLDivElement>(null);
-  const planBodyRef = useRef<HTMLDivElement>(null);
+  const documentRef = useRef<HTMLElement>(null);
+  const [overallFeedback, setOverallFeedback] = useState("");
   const [draft, setDraft] = useState<DraftComment | null>(null);
   const [draftText, setDraftText] = useState("");
-  const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState("");
   const t = useMemo(
     () => createTranslator(state?.locale ?? "en-US"),
     [state?.locale]
-  );
-
-  const lines = useMemo(
-    () => state?.request.proposedMarkdown.split(/\r?\n/u) ?? [],
-    [state?.request.proposedMarkdown]
   );
 
   if (state === null) {
@@ -88,8 +96,9 @@ export const AiPlanReviewSurface = ({
     );
   }
 
-  const openDraftAt = (
-    nextDraft: Omit<DraftComment, "top" | "left">,
+  const openDraft = (
+    anchor: string,
+    blockId: string | undefined,
     rect: DOMRect
   ): void => {
     const surface = surfaceRef.current;
@@ -98,16 +107,17 @@ export const AiPlanReviewSurface = ({
     }
     const surfaceRect = surface.getBoundingClientRect();
     setDraft({
-      ...nextDraft,
-      top: clamp(rect.top - surfaceRect.top, 12, Math.max(12, surfaceRect.height - 160)),
-      left: clamp(rect.right - surfaceRect.left + 8, 12, Math.max(12, surfaceRect.width - 300)),
+      anchor,
+      ...(blockId === undefined ? {} : { blockId }),
+      top: clamp(rect.bottom - surfaceRect.top + 8, 12, Math.max(12, surfaceRect.height - 176)),
+      left: clamp(rect.left - surfaceRect.left, 12, Math.max(12, surfaceRect.width - 324)),
     });
     setDraftText("");
   };
 
-  const handleSelectionComment = (): void => {
-    const body = planBodyRef.current;
-    if (body === null || typeof window === "undefined") {
+  const handleDocumentMouseUp = (): void => {
+    const documentElement = documentRef.current;
+    if (documentElement === null || typeof window === "undefined" || !state.isActionable) {
       return;
     }
     const selection = window.getSelection();
@@ -115,22 +125,24 @@ export const AiPlanReviewSurface = ({
       return;
     }
     const range = selection.getRangeAt(0);
-    if (!isNodeInside(body, range.commonAncestorContainer)) {
+    if (!isNodeInside(documentElement, range.commonAncestorContainer)) {
       return;
     }
-    const selectedText = selection.toString().trim();
+    const selectedText = compactAnchor(selection.toString());
     if (selectedText.length === 0) {
       return;
     }
-    const rangeRect = range.getBoundingClientRect();
-    const firstRect = range.getClientRects()[0] ?? rangeRect;
-    openDraftAt(
-      {
-        kind: "selection",
-        selectedText,
-      },
-      firstRect
-    );
+    const rect = range.getClientRects()[0] ?? range.getBoundingClientRect();
+    const anchor = closestAnchor(documentElement, range.commonAncestorContainer, selectedText);
+    openDraft(`"${selectedText}"`, anchor.blockId, rect);
+  };
+
+  const handleAnchorComment = (
+    anchor: string,
+    blockId: string | undefined,
+    event: ReactMouseEvent<HTMLButtonElement>
+  ): void => {
+    openDraft(anchor, blockId, event.currentTarget.getBoundingClientRect());
   };
 
   const addDraft = async (): Promise<void> => {
@@ -142,261 +154,213 @@ export const AiPlanReviewSurface = ({
       return;
     }
     await model.addAnnotation(instanceId, {
-      kind: draft.kind,
+      ...(draft.blockId === undefined ? {} : { blockId: draft.blockId }),
+      anchor: draft.anchor,
       note,
-      ...(draft.selectedText === undefined ? {} : { selectedText: draft.selectedText }),
-      ...(draft.lineNumber === undefined ? {} : { lineNumber: draft.lineNumber }),
-      ...(draft.lineText === undefined ? {} : { lineText: draft.lineText }),
     });
     setDraft(null);
     setDraftText("");
-  };
-
-  const startEditing = (annotation: AiPlanReviewAnnotation): void => {
-    setEditingAnnotationId(annotation.id);
-    setEditingText(annotation.note);
-  };
-
-  const cancelEditing = (): void => {
-    setEditingAnnotationId(null);
-    setEditingText("");
-  };
-
-  const saveEditing = async (): Promise<void> => {
-    if (editingAnnotationId === null) {
-      return;
+    if (typeof window !== "undefined") {
+      window.getSelection()?.removeAllRanges();
     }
-    const note = editingText.trim();
-    if (note.length === 0) {
-      return;
-    }
-    await model.updateAnnotation(instanceId, editingAnnotationId, note);
-    cancelEditing();
   };
 
-  const annotationsByLine = new Map<number, readonly AiPlanReviewAnnotation[]>();
-  for (const annotation of state.annotations) {
-    if (annotation.lineNumber === undefined) {
-      continue;
-    }
-    const current = annotationsByLine.get(annotation.lineNumber) ?? [];
-    annotationsByLine.set(annotation.lineNumber, [...current, annotation]);
-  }
-  const selectionAnnotations = state.annotations.filter(
-    (annotation) => annotation.lineNumber === undefined
-  );
+  const annotations = state.annotations.map((annotation) => ({
+    ...(annotation.blockId === undefined ? {} : { blockId: annotation.blockId }),
+    anchor: annotation.anchor,
+    comment: annotation.note,
+  }));
+  const trimmedFeedback = overallFeedback.trim();
+  const hasRevisionInput = annotations.length > 0 || trimmedFeedback.length > 0;
 
-  const renderAnnotation = (annotation: AiPlanReviewAnnotation, index: number) => {
-    const isEditing = editingAnnotationId === annotation.id;
-    return (
-      <div key={annotation.id} className="lyra-ai-plan-review__annotation">
-        <span className="lyra-ai-plan-review__annotation-index">{String(index + 1)}</span>
-        <span className="lyra-ai-plan-review__annotation-body">
-          <span className="lyra-ai-plan-review__annotation-context">
-            {annotation.kind === "line"
-              ? `${t("ai.planReviewLineComment")} ${String(annotation.lineNumber ?? "")}`
-              : t("ai.planReviewSelectionComment")}
-          </span>
-          {isEditing ? (
-            <textarea
-              className="lyra-ai-plan-review__annotation-edit"
-              value={editingText}
-              autoFocus
-              onChange={(event) => {
-                setEditingText(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                  event.preventDefault();
-                  void saveEditing();
-                }
-                if (event.key === "Escape") {
-                  cancelEditing();
-                }
-              }}
-            />
-          ) : (
-            <span className="lyra-ai-plan-review__annotation-note">{annotation.note}</span>
-          )}
-        </span>
-        {!state.isActionable ? null : (
-          <span className="lyra-ai-plan-review__annotation-actions">
-            {isEditing ? (
-              <>
-                <button
-                  type="button"
-                  className="lyra-ai-plan-review__annotation-action"
-                  aria-label={t("ai.planReviewSaveComment")}
-                  title={t("ai.planReviewSaveComment")}
-                  disabled={editingText.trim().length === 0 || state.isSubmitting}
-                  onClick={() => {
-                    void saveEditing();
-                  }}
-                >
-                  <Check size={13} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="lyra-ai-plan-review__annotation-action"
-                  aria-label={t("ai.planReviewCancelEdit")}
-                  title={t("ai.planReviewCancelEdit")}
-                  onClick={cancelEditing}
-                >
-                  <X size={13} aria-hidden="true" />
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="lyra-ai-plan-review__annotation-action"
-                  aria-label={t("ai.planReviewEditComment")}
-                  title={t("ai.planReviewEditComment")}
-                  disabled={state.isSubmitting}
-                  onClick={() => {
-                    startEditing(annotation);
-                  }}
-                >
-                  <Pencil size={13} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="lyra-ai-plan-review__annotation-action lyra-ai-plan-review__annotation-action-danger"
-                  aria-label={t("ai.planReviewDeleteComment")}
-                  title={t("ai.planReviewDeleteComment")}
-                  disabled={state.isSubmitting}
-                  onClick={() => {
-                    void model.deleteAnnotation(instanceId, annotation.id);
-                    if (editingAnnotationId === annotation.id) {
-                      cancelEditing();
-                    }
-                  }}
-                >
-                  <Trash2 size={13} aria-hidden="true" />
-                </button>
-              </>
-            )}
-          </span>
-        )}
-      </div>
-    );
+  const decide = (decision: PlanApprovalDecision): void => {
+    void model.decide(instanceId, {
+      planId: state.request.planId,
+      decision,
+      ...(trimmedFeedback.length === 0 ? {} : { feedback: trimmedFeedback }),
+      annotations,
+      artifactSnapshot: state.request.artifact,
+    });
   };
+
+  const renderCommentButton = (anchor: string, blockId?: string) =>
+    state.isActionable ? (
+      <button
+        type="button"
+        className="lyra-ai-plan-review__anchor-comment"
+        aria-label={t("ai.planReviewAddComment")}
+        title={t("ai.planReviewAddComment")}
+        disabled={state.isSubmitting}
+        onClick={(event) => {
+          handleAnchorComment(anchor, blockId, event);
+        }}
+      >
+        <MessageSquarePlus size={14} aria-hidden="true" />
+      </button>
+    ) : null;
 
   return (
     <div ref={surfaceRef} className="lyra-ai-plan-review">
-      <div className="lyra-ai-plan-review__toolbar">
-        <div className="lyra-ai-plan-review__title">
-          <span>{t("ai.planReviewTitle")}</span>
-          <small>{state.request.summary}</small>
+      <header className="lyra-ai-plan-review__header">
+        <div>
+          <div className="lyra-ai-plan-review__eyebrow">{t("ai.planProposedTitle")}</div>
+          <h2>{state.request.artifact.title}</h2>
+          <p>{state.request.artifact.summary}</p>
         </div>
-        {!state.isActionable ? null : (
-          <div className="lyra-ai-plan-review__actions">
-            <button
-              type="button"
-              className="lyra-ai-plan-review__action lyra-ai-plan-review__action-primary"
-              aria-label={t("ai.planReviewSendComments")}
-              title={t("ai.planReviewSendComments")}
-              disabled={state.annotations.length === 0 || state.isSubmitting}
-              onClick={() => {
-                void model.submitAnnotations(instanceId);
-              }}
-            >
-              <SendHorizontal size={16} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="lyra-ai-plan-review__action lyra-ai-plan-review__action-primary"
-              aria-label={t("ai.planApprovalApproveAndImplement")}
-              title={t("ai.planApprovalApproveAndImplement")}
-              disabled={state.isSubmitting}
-              onClick={() => {
-                void model.decide(instanceId, {
-                  requestId: state.request.id,
-                  decision: "approve_and_implement",
-                });
-              }}
-            >
-              <Check size={16} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="lyra-ai-plan-review__action lyra-ai-plan-review__action-danger"
-              aria-label={t("ai.planApprovalReject")}
-              title={t("ai.planApprovalReject")}
-              disabled={state.isSubmitting}
-              onClick={() => {
-                void model.decide(instanceId, {
-                  requestId: state.request.id,
-                  decision: "reject",
-                });
-              }}
-            >
-              <X size={16} aria-hidden="true" />
-            </button>
+      </header>
+
+      <div className="lyra-ai-plan-review__main">
+        <article
+          ref={documentRef}
+          className="lyra-ai-plan-review__document"
+          onMouseUp={handleDocumentMouseUp}
+        >
+          <section
+            className="lyra-ai-plan-review__doc-section"
+            data-plan-anchor="Summary"
+          >
+            <div className="lyra-ai-plan-review__doc-heading-row">
+              <h3>Summary</h3>
+              {renderCommentButton("Summary")}
+            </div>
+            <p>{state.request.artifact.summary}</p>
+          </section>
+
+          <section
+            className="lyra-ai-plan-review__doc-section"
+            data-plan-anchor="Objective"
+          >
+            <div className="lyra-ai-plan-review__doc-heading-row">
+              <h3>Objective</h3>
+              {renderCommentButton("Objective")}
+            </div>
+            <p>{state.request.artifact.objective}</p>
+          </section>
+
+          {sectionEntries(state.request.artifact).map((section) =>
+            section.blocks.length === 0 ? null : (
+              <section
+                key={section.label}
+                className="lyra-ai-plan-review__doc-section"
+                data-plan-anchor={section.label}
+              >
+                <div className="lyra-ai-plan-review__doc-heading-row">
+                  <h3>{section.label}</h3>
+                  {renderCommentButton(section.label)}
+                </div>
+                <div className="lyra-ai-plan-review__doc-blocks">
+                  {section.blocks.map((block) => (
+                    <section
+                      key={block.id}
+                      className="lyra-ai-plan-review__doc-block"
+                      data-plan-anchor={block.title}
+                      data-plan-block-id={block.id}
+                    >
+                      <div className="lyra-ai-plan-review__doc-heading-row">
+                        <h4>{block.title}</h4>
+                        {renderCommentButton(block.title, block.id)}
+                      </div>
+                      <p>{block.body}</p>
+                    </section>
+                  ))}
+                </div>
+              </section>
+            )
+          )}
+        </article>
+
+        <aside className="lyra-ai-plan-review__comments" aria-label={t("ai.planReviewTitle")}>
+          <div className="lyra-ai-plan-review__comments-header">
+            <span>{t("ai.planReviewTitle")}</span>
+            <small>{String(state.annotations.length)}</small>
           </div>
-        )}
-      </div>
-      <div
-        ref={planBodyRef}
-        className="lyra-ai-plan-review__body"
-        onMouseUp={handleSelectionComment}
-      >
-        {selectionAnnotations.length === 0 ? null : (
-          <div className="lyra-ai-plan-review__selection-comments">
-            {selectionAnnotations.map(renderAnnotation)}
-          </div>
-        )}
-        {lines.map((line, index) => {
-          const lineNumber = index + 1;
-          const lineAnnotations = annotationsByLine.get(lineNumber) ?? [];
-          return (
-            <div key={`${String(lineNumber)}-${line}`} className="lyra-ai-plan-review__line">
-              <span className="lyra-ai-plan-review__line-number">{lineNumber}</span>
-              <span className="lyra-ai-plan-review__line-content">
-                <PlanReviewMarkdownLine line={line} />
-                {state.isActionable ? (
+          {state.annotations.length === 0 ? (
+            <p className="lyra-ai-plan-review__comments-empty">
+              {t("ai.planReviewEmptyComments")}
+            </p>
+          ) : (
+            <div className="lyra-ai-plan-review__comments-list">
+              {state.annotations.map((annotation) => (
+                <div key={annotation.id} className="lyra-ai-plan-review__annotation">
+                  <div className="lyra-ai-plan-review__annotation-body">
+                    <span className="lyra-ai-plan-review__annotation-context">
+                      {annotation.anchor}
+                    </span>
+                    <span className="lyra-ai-plan-review__annotation-note">
+                      {annotation.note}
+                    </span>
+                  </div>
                   <button
                     type="button"
-                    className="lyra-ai-plan-review__line-comment"
-                    aria-label={t("ai.planReviewLineComment")}
-                    title={t("ai.planReviewLineComment")}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                    }}
-                    onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
-                      openDraftAt(
-                        {
-                          kind: "line",
-                          lineNumber,
-                          lineText: line,
-                        },
-                        event.currentTarget.getBoundingClientRect()
-                      );
+                    className="lyra-ai-plan-review__comment-cancel"
+                    aria-label={t("ai.planReviewDeleteComment")}
+                    title={t("ai.planReviewDeleteComment")}
+                    disabled={state.isSubmitting}
+                    onClick={() => {
+                      void model.deleteAnnotation(instanceId, annotation.id);
                     }}
                   >
-                    <MessageSquarePlus size={14} aria-hidden="true" />
+                    <Trash2 size={13} aria-hidden="true" />
                   </button>
-                ) : null}
-              </span>
-              {lineAnnotations.length === 0 ? null : (
-                <span className="lyra-ai-plan-review__line-comments">
-                  {lineAnnotations.map(renderAnnotation)}
-                </span>
-              )}
+                </div>
+              ))}
             </div>
-          );
-        })}
+          )}
+        </aside>
       </div>
+
+      <footer className="lyra-ai-plan-review__footer">
+        <textarea
+          className="lyra-ai-plan-review__overall-feedback"
+          value={overallFeedback}
+          placeholder={t("ai.planApprovalOptionalFeedback")}
+          onChange={(event) => {
+            setOverallFeedback(event.target.value);
+          }}
+        />
+        <div className="lyra-ai-plan-review__actions">
+          <button
+            type="button"
+            className="lyra-ai-plan-review__approve"
+            disabled={!state.isActionable || state.isSubmitting}
+            onClick={() => {
+              decide("approve_and_implement");
+            }}
+          >
+            <Check size={15} aria-hidden="true" />
+            {t("ai.planApprovalApproveAndImplement")}
+          </button>
+          <button
+            type="button"
+            className="lyra-ai-plan-review__secondary"
+            disabled={!state.isActionable || state.isSubmitting || !hasRevisionInput}
+            onClick={() => {
+              decide("keep_planning");
+            }}
+          >
+            <SendHorizontal size={15} aria-hidden="true" />
+            {t("ai.planReviewSendComments")}
+          </button>
+          <button
+            type="button"
+            className="lyra-ai-plan-review__danger"
+            disabled={!state.isActionable || state.isSubmitting}
+            onClick={() => {
+              decide("reject");
+            }}
+          >
+            <X size={15} aria-hidden="true" />
+            {t("ai.planApprovalReject")}
+          </button>
+        </div>
+      </footer>
+
       {draft === null ? null : (
         <div
           className="lyra-ai-plan-review__comment-popover"
           style={{ top: draft.top, left: draft.left }}
         >
-          <div className="lyra-ai-plan-review__comment-context">
-            {draft.kind === "selection"
-              ? t("ai.planReviewSelectionComment")
-              : `${t("ai.planReviewLineComment")} ${String(draft.lineNumber ?? "")}`}
-          </div>
+          <div className="lyra-ai-plan-review__comment-context">{draft.anchor}</div>
           <textarea
             className="lyra-ai-plan-review__comment-input"
             value={draftText}

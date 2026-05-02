@@ -25,6 +25,26 @@ const turnInput = (
   attachments,
 });
 
+const planArtifact = (overrides: Partial<{
+  readonly planId: string;
+  readonly status: "draft" | "proposed" | "approved" | "rejected";
+  readonly title: string;
+  readonly summary: string;
+  readonly objective: string;
+}> = {}) => ({
+  planId: overrides.planId ?? "plan-1",
+  status: overrides.status ?? "proposed",
+  title: overrides.title ?? "Website plan",
+  summary: overrides.summary ?? "Website plan",
+  objective: overrides.objective ?? "Inspect the app and implement the page.",
+  assumptions: [],
+  steps: [{ id: "step-1", kind: "step", title: "Inspect", body: "Inspect the app." }],
+  interfaces: [],
+  risks: [],
+  tests: [],
+  acceptanceCriteria: [],
+});
+
 const makeDesktopApi = () => {
   let listener: ((event: LyraRuntimeEvent) => void) | null = null;
   let capabilityListener: ((event: CapabilityRuntimeEvent) => void) | null = null;
@@ -357,7 +377,10 @@ describe("useLyraThreadRuntime", () => {
     });
 
     expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/start" }));
-    expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "turn/start" }));
+    expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: "turn/start",
+      params: expect.objectContaining({ modelProvider: "lp-openai" }),
+    }));
     expect(result.current.state.streamingTurnId).toBe("turn-1");
 
     await act(async () => {
@@ -996,7 +1019,7 @@ describe("useLyraThreadRuntime", () => {
     }));
   });
 
-  test("tracks streamed plan deltas and checklist updates", async () => {
+  test("does not treat plan deltas or update_plan checklists as approvable plans", async () => {
     const desktop = makeDesktopApi();
     const { result } = renderHook(() =>
       useLyraThreadRuntime({
@@ -1048,15 +1071,11 @@ describe("useLyraThreadRuntime", () => {
       await Promise.resolve();
     });
 
-    expect(result.current.state.planByTurn["turn-plan"]?.draftText).toBe("- inspect\n");
-    expect(result.current.state.planByTurn["turn-plan"]?.steps.map((step) => step.status)).toEqual([
-      "completed",
-      "inProgress",
-    ]);
-    expect(result.current.state.latestPlanTurnId).toBe("turn-plan");
+    expect(result.current.state.planByTurn["turn-plan"]).toBeUndefined();
+    expect(result.current.state.latestPlanTurnId).toBeNull();
   });
 
-  test("promotes a waiting plan draft to a submitted plan when completion arrives first", async () => {
+  test("does not promote streamed markdown into a proposed plan when completion arrives first", async () => {
     const desktop = makeDesktopApi();
     const { result } = renderHook(() =>
       useLyraThreadRuntime({
@@ -1106,9 +1125,9 @@ describe("useLyraThreadRuntime", () => {
       await Promise.resolve();
     });
 
-    expect(result.current.state.planByTurn["turn-plan"]?.finalText).toBe("# Website plan\n\n- Inspect the app");
-    expect(result.current.state.latestRuntimeEventByTurn["turn-plan"]?.phase).toBe("plan_approval_requested");
-    expect(result.current.state.streamingTurnId).toBe("turn-plan");
+    expect(result.current.state.planByTurn["turn-plan"]).toBeUndefined();
+    expect(result.current.state.latestRuntimeEventByTurn["turn-plan"]?.phase).not.toBe("plan_approval_requested");
+    expect(result.current.state.streamingTurnId).toBeNull();
   });
 
   test("does not treat checklist-only update_plan state as latest Plan Mode proposal", async () => {
@@ -1148,9 +1167,7 @@ describe("useLyraThreadRuntime", () => {
       await Promise.resolve();
     });
 
-    expect(result.current.state.planByTurn["turn-checklist"]?.steps.map((step) => step.step)).toEqual([
-      "inspect",
-    ]);
+    expect(result.current.state.planByTurn["turn-checklist"]).toBeUndefined();
     expect(result.current.state.latestPlanTurnId).toBeNull();
   });
 
@@ -1186,7 +1203,7 @@ describe("useLyraThreadRuntime", () => {
             item: {
               type: "plan",
               id: "plan-1",
-              text: "# Website plan\n\n- Inspect the app\n- Implement the page",
+              artifact: planArtifact(),
             },
           },
         },
@@ -1194,7 +1211,7 @@ describe("useLyraThreadRuntime", () => {
       await Promise.resolve();
     });
 
-    expect(result.current.state.planByTurn["turn-plan"]?.finalText).toContain("Website plan");
+    expect(result.current.state.planByTurn["turn-plan"]?.artifact.title).toContain("Website plan");
     expect(result.current.state.latestRuntimeEventByTurn["turn-plan"]?.phase).toBe("plan_approval_requested");
     expect(result.current.state.streamingTurnId).toBe("turn-plan");
     expect(result.current.state.isStreamActive).toBe(false);
@@ -1254,7 +1271,7 @@ describe("useLyraThreadRuntime", () => {
             item: {
               type: "plan",
               id: "plan-1",
-              text: "# Website plan\n\n- Inspect the app",
+              artifact: planArtifact(),
             },
           },
         },
@@ -1270,9 +1287,9 @@ describe("useLyraThreadRuntime", () => {
       await result.current.actions.resolvePlanApproval({
         threadId: "thread-1",
         planTurnId: "turn-plan",
-        requestId: "plan:turn-plan",
+        planId: "plan-1",
         decision: "approve_and_implement",
-        proposedMarkdown: "# Website plan\n\n- Inspect the app",
+        artifactSnapshot: planArtifact(),
       });
     });
 
@@ -1281,9 +1298,10 @@ describe("useLyraThreadRuntime", () => {
       params: {
         threadId: "thread-1",
         planTurnId: "turn-plan",
-        requestId: "plan:turn-plan",
+        planId: "plan-1",
         decision: "approve_and_implement",
-        proposedMarkdown: "# Website plan\n\n- Inspect the app",
+        annotations: [],
+        artifactSnapshot: planArtifact(),
       },
     }));
     expect(desktop.request.mock.calls.filter(([payload]) => payload.method === "turn/start")).toHaveLength(
@@ -1321,10 +1339,10 @@ describe("useLyraThreadRuntime", () => {
       await result.current.actions.resolvePlanApproval({
         threadId: "thread-1",
         planTurnId: "turn-plan",
-        requestId: "plan:turn-plan",
+        planId: "plan-1",
         decision: "keep_planning",
         feedback: "add tests",
-        proposedMarkdown: "# Plan",
+        artifactSnapshot: planArtifact({ title: "Plan", summary: "Plan" }),
       });
     });
 
@@ -1342,7 +1360,7 @@ describe("useLyraThreadRuntime", () => {
       await result.current.actions.resolvePlanApproval({
         threadId: "thread-1",
         planTurnId: "turn-plan",
-        requestId: "plan:turn-plan",
+        planId: "plan-1",
         decision: "reject",
       });
     });
@@ -1432,7 +1450,7 @@ describe("useLyraThreadRuntime", () => {
             item: {
               type: "plan",
               id: "plan-1",
-              text: "# Website plan\n\n- Inspect the app",
+              artifact: planArtifact(),
             },
           },
         },
@@ -1444,10 +1462,10 @@ describe("useLyraThreadRuntime", () => {
       await result.current.actions.resolvePlanApproval({
         threadId: "thread-1",
         planTurnId: "turn-plan",
-        requestId: "plan:turn-plan",
+        planId: "plan-1",
         decision: "keep_planning",
         feedback: "add a CSS step",
-        proposedMarkdown: "# Website plan\n\n- Inspect the app",
+        artifactSnapshot: planArtifact(),
       });
     });
 
@@ -1464,7 +1482,11 @@ describe("useLyraThreadRuntime", () => {
             item: {
               type: "plan",
               id: "plan-2",
-              text: "# Revised website plan\n\n- Inspect\n- Add CSS",
+              artifact: planArtifact({
+                planId: "plan-2",
+                title: "Revised website plan",
+                summary: "Revised website plan",
+              }),
             },
           },
         },
@@ -1474,7 +1496,7 @@ describe("useLyraThreadRuntime", () => {
 
     expect(result.current.state.latestPlanTurnId).toBe("turn-replan");
     expect(result.current.state.pendingInteractionQueue[0]?.kind).toBe("planApproval");
-    expect(result.current.state.pendingInteractionQueue[0]?.request.id).toBe("plan:turn-replan");
+    expect(result.current.state.pendingInteractionQueue[0]?.request.id).toBe("plan:turn-replan:plan-2");
   });
 
   test("exposes steer, fork, rollback, and review runtime actions", async () => {

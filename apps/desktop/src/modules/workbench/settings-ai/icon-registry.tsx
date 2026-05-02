@@ -26,6 +26,7 @@ const ICON_ID_BY_KEY: Record<string, string> = {
   nebius: "nebius",
   cerebras: "cerebras",
   vercel_ai_gateway: "vercel",
+  mimo: "xiaomi",
   custom_openai_compatible: "synthetic"
 };
 

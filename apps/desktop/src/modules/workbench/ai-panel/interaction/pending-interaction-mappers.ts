@@ -1,4 +1,6 @@
 import type {
+  AgentPlanArtifact,
+  AgentPlanBlock,
   AgentPendingInteraction,
   AgentPendingInteractionKind,
   PlanApprovalRequest,
@@ -49,20 +51,60 @@ const pickString = (value: Record<string, unknown>, key: string): string | null 
   return typeof next === "string" && next.trim().length > 0 ? next : null;
 };
 
-const pickRawString = (value: Record<string, unknown>, key: string): string | null => {
-  const next = value[key];
-  return typeof next === "string" ? next : null;
-};
-
 const pickNumber = (value: Record<string, unknown>, key: string): number | null => {
   const next = value[key];
   return typeof next === "number" && Number.isFinite(next) ? next : null;
 };
 
 const planStatusFromValue = (value: string | null): PlanApprovalRequest["status"] =>
-  value === "draft" || value === "approved" || value === "rejected"
+  value === "draft" || value === "proposed" || value === "approved" || value === "rejected"
     ? value
-    : "submitted";
+    : "proposed";
+
+const toPlanBlock = (value: unknown): AgentPlanBlock | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = pickString(value, "id");
+  const kind = pickString(value, "kind");
+  const title = pickString(value, "title");
+  const body = pickString(value, "body");
+  if (id === null || kind === null || title === null || body === null) {
+    return null;
+  }
+  return { id, kind, title, body };
+};
+
+const toPlanBlocks = (value: unknown): readonly AgentPlanBlock[] =>
+  Array.isArray(value)
+    ? value.map(toPlanBlock).filter((block): block is AgentPlanBlock => block !== null)
+    : [];
+
+const toPlanArtifact = (value: unknown): AgentPlanArtifact | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const planId = pickString(value, "planId");
+  const title = pickString(value, "title");
+  const summary = pickString(value, "summary");
+  const objective = pickString(value, "objective");
+  if (planId === null || title === null || summary === null || objective === null) {
+    return null;
+  }
+  return {
+    planId,
+    status: planStatusFromValue(pickString(value, "status")),
+    title,
+    summary,
+    objective,
+    assumptions: toPlanBlocks(value.assumptions),
+    steps: toPlanBlocks(value.steps),
+    interfaces: toPlanBlocks(value.interfaces),
+    risks: toPlanBlocks(value.risks),
+    tests: toPlanBlocks(value.tests),
+    acceptanceCriteria: toPlanBlocks(value.acceptanceCriteria),
+  };
+};
 
 const toCommandApprovalRequest = (
   interaction: AgentPendingInteraction,
@@ -200,31 +242,26 @@ const toPlanApprovalRequest = (
   }
   const payload = interaction.payload;
   const rawPayload = isRecord(payload.raw) ? payload.raw : payload;
-  const proposedMarkdown = pickRawString(rawPayload, "proposedMarkdown");
-  if (proposedMarkdown === null || proposedMarkdown.trim().length === 0) {
+  const artifact = toPlanArtifact(rawPayload.artifact);
+  if (artifact === null) {
     return null;
   }
-  const requestId =
-    pickString(rawPayload, "requestId")
-    ?? pickString(payload, "requestId")
-    ?? interaction.id;
+  const planId = pickString(rawPayload, "planId") ?? artifact.planId;
 
   return {
-    id: requestId,
+    id: interaction.id,
     interactionId: interaction.id,
     interactionKind: interaction.kind,
     sessionId: interaction.sessionId,
     turnId: interaction.turnId,
+    planId,
     version: pickNumber(rawPayload, "version") ?? 0,
     status: planStatusFromValue(pickString(rawPayload, "status")),
     summary:
       pickString(rawPayload, "summary")
-      ?? proposedMarkdown.split(/\r?\n/u).find((line) => line.trim().length > 0)
+      ?? artifact.summary
       ?? labels.proposedPlanSummaryFallback,
-    proposedMarkdown,
-    ...(pickRawString(rawPayload, "draftMarkdown") === null
-      ? {}
-      : { draftMarkdown: pickRawString(rawPayload, "draftMarkdown")! }),
+    artifact,
   };
 };
 

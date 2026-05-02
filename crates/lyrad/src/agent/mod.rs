@@ -7,7 +7,7 @@ use lyra_app_server_protocol::{
 };
 use lyra_runtime_protocol::{RuntimeEnvelope, RuntimeError};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -529,12 +529,10 @@ mod tests {
             normalized.get("method"),
             Some(&json!("lyra/config/providers/catalog/read"))
         );
-        assert!(
-            normalized
-                .get("id")
-                .and_then(serde_json::Value::as_i64)
-                .is_some()
-        );
+        assert!(normalized
+            .get("id")
+            .and_then(serde_json::Value::as_i64)
+            .is_some());
     }
 
     #[test]

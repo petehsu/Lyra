@@ -13,6 +13,7 @@ use crate::protocol::v2::DynamicToolCallStatus;
 use crate::protocol::v2::McpToolCallError;
 use crate::protocol::v2::McpToolCallResult;
 use crate::protocol::v2::McpToolCallStatus;
+use crate::protocol::v2::PlanArtifactStatus;
 use crate::protocol::v2::ThreadItem;
 use crate::protocol::v2::Turn;
 use crate::protocol::v2::TurnError as V2TurnError;
@@ -341,7 +342,7 @@ impl ThreadHistoryBuilder {
     fn handle_item_started(&mut self, payload: &ItemStartedEvent) {
         match &payload.item {
             lyra_protocol::items::TurnItem::Plan(plan) => {
-                if plan.text.is_empty() {
+                if plan.artifact.plan_id.is_empty() {
                     return;
                 }
                 self.upsert_item_in_turn_id(
@@ -361,7 +362,7 @@ impl ThreadHistoryBuilder {
     fn handle_item_completed(&mut self, payload: &ItemCompletedEvent) {
         match &payload.item {
             lyra_protocol::items::TurnItem::Plan(plan) => {
-                if plan.text.is_empty() {
+                if plan.artifact.plan_id.is_empty() {
                     return;
                 }
                 self.upsert_item_in_turn_id(
@@ -871,11 +872,7 @@ impl ThreadHistoryBuilder {
 
     fn handle_plan_approval_resolved(&mut self, payload: &PlanApprovalResolvedEvent) {
         let mark_resolved = |turn: &mut PendingTurn| {
-            if turn
-                .items
-                .iter()
-                .any(|item| matches!(item, ThreadItem::Plan { .. }))
-            {
+            if turn.items.iter().any(is_proposed_plan_item) {
                 turn.status = TurnStatus::Completed;
             }
         };
@@ -893,10 +890,7 @@ impl ThreadHistoryBuilder {
             .turns
             .iter_mut()
             .find(|turn| turn.id == payload.plan_turn_id)
-            && turn
-                .items
-                .iter()
-                .any(|item| matches!(item, ThreadItem::Plan { .. }))
+            && turn.items.iter().any(is_proposed_plan_item)
         {
             turn.status = TurnStatus::Completed;
         }
@@ -957,11 +951,7 @@ impl ThreadHistoryBuilder {
     fn handle_turn_complete(&mut self, payload: &TurnCompleteEvent) {
         let mark_completed = |turn: &mut PendingTurn| {
             if matches!(turn.status, TurnStatus::Completed | TurnStatus::InProgress) {
-                turn.status = if turn
-                    .items
-                    .iter()
-                    .any(|item| matches!(item, ThreadItem::Plan { .. }))
-                {
+                turn.status = if turn.items.iter().any(is_proposed_plan_item) {
                     TurnStatus::Waiting
                 } else {
                     TurnStatus::Completed
@@ -988,11 +978,7 @@ impl ThreadHistoryBuilder {
             .find(|turn| turn.id == payload.turn_id)
         {
             if matches!(turn.status, TurnStatus::Completed | TurnStatus::InProgress) {
-                turn.status = if turn
-                    .items
-                    .iter()
-                    .any(|item| matches!(item, ThreadItem::Plan { .. }))
-                {
+                turn.status = if turn.items.iter().any(is_proposed_plan_item) {
                     TurnStatus::Waiting
                 } else {
                     TurnStatus::Completed
@@ -1124,6 +1110,13 @@ impl ThreadHistoryBuilder {
 
 const REVIEW_FALLBACK_MESSAGE: &str = "Reviewer failed to output a response.";
 
+fn is_proposed_plan_item(item: &ThreadItem) -> bool {
+    matches!(
+        item,
+        ThreadItem::Plan { artifact, .. } if artifact.status == PlanArtifactStatus::Proposed
+    )
+}
+
 fn render_review_output_text(output: &ReviewOutputEvent) -> String {
     let explanation = output.overall_explanation.trim();
     if explanation.is_empty() {
@@ -1228,6 +1221,8 @@ mod tests {
     use super::*;
     use crate::protocol::v2::CommandExecutionSource;
     use crate::protocol::v2::PatchApplyStatus;
+    use crate::protocol::v2::PlanArtifact;
+    use crate::protocol::v2::PlanArtifactBlock;
     use crate::protocol::v2::SessionSource;
     use crate::protocol::v2::Thread;
     use crate::protocol::v2::ThreadAiPanelMessageRole;
@@ -1274,6 +1269,32 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
     use uuid::Uuid;
+
+    fn proposed_test_plan() -> PlanArtifact {
+        PlanArtifact {
+            plan_id: "plan-1".into(),
+            status: PlanArtifactStatus::Proposed,
+            title: "Website plan".into(),
+            summary: "Inspect and patch".into(),
+            objective: "Implement the requested change safely.".into(),
+            assumptions: Vec::new(),
+            steps: vec![PlanArtifactBlock {
+                id: "step-1".into(),
+                kind: "step".into(),
+                title: "Inspect".into(),
+                body: "Inspect the relevant code and patch it.".into(),
+            }],
+            interfaces: Vec::new(),
+            risks: Vec::new(),
+            tests: Vec::new(),
+            acceptance_criteria: vec![PlanArtifactBlock {
+                id: "acceptance-1".into(),
+                kind: "acceptanceCriterion".into(),
+                title: "Works".into(),
+                body: "The requested behavior is implemented and verified.".into(),
+            }],
+        }
+    }
 
     #[test]
     fn builds_multiple_turns_with_reasoning_items() {
@@ -2065,7 +2086,7 @@ mod tests {
                     },
                     ThreadItem::Plan {
                         id: "plan-1".into(),
-                        text: "1. Inspect\n2. Patch".into(),
+                        artifact: proposed_test_plan(),
                     },
                 ],
                 status: TurnStatus::Waiting,
@@ -2110,16 +2131,13 @@ mod tests {
 
         assert_eq!(view_model.plans.len(), 1);
         assert_eq!(view_model.plans[0].turn_id, "turn-1");
-        assert_eq!(
-            view_model.plans[0].final_text.as_deref(),
-            Some("1. Inspect\n2. Patch")
-        );
+        assert_eq!(view_model.plans[0].artifact.plan_id, "plan-1");
         assert_eq!(view_model.plans[0].updated_at_ms, 10_004);
         assert_eq!(view_model.pending_interactions.len(), 1);
-        assert_eq!(view_model.pending_interactions[0].id, "plan:turn-1");
+        assert_eq!(view_model.pending_interactions[0].id, "plan:turn-1:plan-1");
         assert_eq!(
-            view_model.pending_interactions[0].payload["raw"]["proposedMarkdown"],
-            "1. Inspect\n2. Patch"
+            view_model.pending_interactions[0].payload["raw"]["planId"],
+            "plan-1"
         );
 
         assert_eq!(view_model.turn_meta.len(), 1);
@@ -2152,7 +2170,7 @@ mod tests {
                 turn_id: "turn-plan".into(),
                 item: CoreTurnItem::Plan(lyra_protocol::items::PlanItem {
                     id: "plan-1".into(),
-                    text: "1. Inspect\n2. Patch".into(),
+                    artifact: proposed_test_plan(),
                 }),
             })),
             RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {

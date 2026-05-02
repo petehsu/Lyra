@@ -4,9 +4,9 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
-use std::os::raw::{c_char, c_uint};
 #[cfg(any(lyra_image_oiio, lyra_image_libtiff))]
 use std::os::raw::c_int;
+use std::os::raw::{c_char, c_uint};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -292,13 +292,15 @@ impl ImageKernel {
             return Err(ImageKernelError::MissingFile(path.display().to_string()));
         }
 
-        let file_metadata = fs::metadata(&path)
-            .map_err(|error| ImageKernelError::Metadata(error.to_string()))?;
+        let file_metadata =
+            fs::metadata(&path).map_err(|error| ImageKernelError::Metadata(error.to_string()))?;
         let size_bytes = file_metadata.len();
         let title = title_from_path(&path);
         let extension = extension_from_path(&path);
 
-        if matches!(extension.as_deref(), Some("tif" | "tiff")) || is_oiio_candidate(extension.as_deref()) {
+        if matches!(extension.as_deref(), Some("tif" | "tiff"))
+            || is_oiio_candidate(extension.as_deref())
+        {
             if let Some(opened) = self.try_open_oiio(
                 &path,
                 title.clone(),
@@ -553,7 +555,11 @@ impl ImageKernel {
             session_id: session_id.clone(),
             path: path.to_string_lossy().to_string(),
             title,
-            format: if format == "tif" { "tiff".to_string() } else { format },
+            format: if format == "tif" {
+                "tiff".to_string()
+            } else {
+                format
+            },
             mime_type: mime_type_from_extension(extension),
             width: info.width,
             height: info.height,
@@ -886,7 +892,15 @@ fn read_oiio_tile(
     height: u32,
     out: &mut [u8],
 ) -> Result<()> {
-    if read_cached_tile(session.cache_root.as_deref(), scale, tile_x, tile_y, width, height, out) {
+    if read_cached_tile(
+        session.cache_root.as_deref(),
+        scale,
+        tile_x,
+        tile_y,
+        width,
+        height,
+        out,
+    ) {
         return Ok(());
     }
     let raw_path = CString::new(session.path.to_string_lossy().as_bytes())
@@ -1044,7 +1058,9 @@ fn read_tiff_metadata(path: &Path, raw: Option<&RawTiffLayout>) -> Result<TiffMe
                 bit_depth: raw.bits_per_sample.first().copied().unwrap_or(8) as u8,
                 photometric: raw.photometric,
                 sample_format: raw.sample_format,
-                has_alpha: raw.extra_samples.is_empty() == false || raw.samples_per_pixel == 2 || raw.samples_per_pixel >= 4,
+                has_alpha: raw.extra_samples.is_empty() == false
+                    || raw.samples_per_pixel == 2
+                    || raw.samples_per_pixel >= 4,
             },
             chunk_type,
             chunk_width,
@@ -1092,7 +1108,15 @@ fn read_tiff_tile(
     height: u32,
     out: &mut [u8],
 ) -> Result<()> {
-    if read_cached_tile(session.cache_root.as_deref(), scale, tile_x, tile_y, width, height, out) {
+    if read_cached_tile(
+        session.cache_root.as_deref(),
+        scale,
+        tile_x,
+        tile_y,
+        width,
+        height,
+        out,
+    ) {
         return Ok(());
     }
     if libtiff_backend_available() {
@@ -1144,7 +1168,8 @@ fn read_tiff_chunked_tile(
     height: u32,
     out: &mut [u8],
 ) -> Result<()> {
-    let file = File::open(&session.path).map_err(|error| ImageKernelError::Decode(error.to_string()))?;
+    let file =
+        File::open(&session.path).map_err(|error| ImageKernelError::Decode(error.to_string()))?;
     let mut decoder =
         TiffDecoder::new(file).map_err(|error| ImageKernelError::Decode(error.to_string()))?;
     let mut chunks: HashMap<u32, (u32, u32, DecodingResult)> = HashMap::new();
@@ -1201,8 +1226,10 @@ fn read_raw_tiff_rows(
     height: u32,
     out: &mut [u8],
 ) -> Result<()> {
-    let mut file = File::open(&raw.path).map_err(|error| ImageKernelError::Decode(error.to_string()))?;
-    let bytes_per_sample = bytes_per_sample(raw.bits_per_sample.first().copied().unwrap_or(8) as u8);
+    let mut file =
+        File::open(&raw.path).map_err(|error| ImageKernelError::Decode(error.to_string()))?;
+    let bytes_per_sample =
+        bytes_per_sample(raw.bits_per_sample.first().copied().unwrap_or(8) as u8);
     let samples = raw.samples_per_pixel.max(1);
     let row_bytes = u64::from(raw.width)
         .saturating_mul(u64::from(samples))
@@ -1260,7 +1287,12 @@ fn sample_raw_row(row: &[u8], raw: &RawTiffLayout, source_x: u32) -> [u8; 4] {
         let offset = index + sample_index * bytes_per_sample;
         read_sample_as_u8(row, offset, bit_depth, raw.sample_format, raw.endian)
     };
-    rgba_from_samples(read_sample, raw.samples_per_pixel, raw.photometric, raw.extra_samples.is_empty() == false)
+    rgba_from_samples(
+        read_sample,
+        raw.samples_per_pixel,
+        raw.photometric,
+        raw.extra_samples.is_empty() == false,
+    )
 }
 
 fn sample_decoding_result(
@@ -1281,7 +1313,12 @@ fn sample_decoding_result(
             color.has_alpha,
         ),
         DecodingResult::U16(values) => rgba_from_samples(
-            |sample| values.get(index + sample).map(|value| (value / 257) as u8).unwrap_or(0),
+            |sample| {
+                values
+                    .get(index + sample)
+                    .map(|value| (value / 257) as u8)
+                    .unwrap_or(0)
+            },
             color.samples,
             color.photometric,
             color.has_alpha,
@@ -1345,7 +1382,13 @@ fn rgba_from_samples(
     }
 }
 
-fn read_sample_as_u8(row: &[u8], offset: usize, bit_depth: u8, sample_format: u16, endian: Endian) -> u8 {
+fn read_sample_as_u8(
+    row: &[u8],
+    offset: usize,
+    bit_depth: u8,
+    sample_format: u16,
+    endian: Endian,
+) -> u8 {
     match (bit_depth, sample_format) {
         (8, _) => row.get(offset).copied().unwrap_or(0),
         (16, _) => {
@@ -1392,9 +1435,20 @@ fn fill_placeholder_tile(
         for column in 0..width {
             let sx = tile_x * TILE_SIZE * scale + column * scale;
             let sy = tile_y * TILE_SIZE * scale + row * scale;
-            let shade = if ((sx / 64) + (sy / 64)) % 2 == 0 { 42 } else { 64 };
-            let edge = sx == 0 || sy == 0 || sx >= session.width.saturating_sub(1) || sy >= session.height.saturating_sub(1);
-            let rgba = if edge { [91, 120, 226, 255] } else { [shade, shade, shade, 255] };
+            let shade = if ((sx / 64) + (sy / 64)) % 2 == 0 {
+                42
+            } else {
+                64
+            };
+            let edge = sx == 0
+                || sy == 0
+                || sx >= session.width.saturating_sub(1)
+                || sy >= session.height.saturating_sub(1);
+            let rgba = if edge {
+                [91, 120, 226, 255]
+            } else {
+                [shade, shade, shade, 255]
+            };
             write_rgba(out, width, column, row, rgba);
         }
     }
@@ -1436,7 +1490,10 @@ fn raw_layout_can_read_rows(raw: Option<&RawTiffLayout>) -> bool {
             && layout.planar_config == 1
             && layout.tile_offsets.is_empty()
             && layout.strip_offsets.is_empty() == false
-            && layout.bits_per_sample.iter().all(|bits| matches!(*bits, 8 | 16 | 32))
+            && layout
+                .bits_per_sample
+                .iter()
+                .all(|bits| matches!(*bits, 8 | 16 | 32))
     })
 }
 
@@ -1452,7 +1509,10 @@ fn display_color_from_tiff_color(color_type: TiffColorType) -> TiffDisplayColor 
             TiffColorType::Multiband { .. } => 1,
             _ => 1,
         },
-        has_alpha: matches!(color_type, TiffColorType::GrayA(_) | TiffColorType::RGBA(_) | TiffColorType::CMYKA(_)),
+        has_alpha: matches!(
+            color_type,
+            TiffColorType::GrayA(_) | TiffColorType::RGBA(_) | TiffColorType::CMYKA(_)
+        ),
     }
 }
 
@@ -1476,7 +1536,8 @@ fn sample_format_name(sample_format: u16) -> &'static str {
 fn parse_tiff_layout(path: &Path) -> std::result::Result<RawTiffLayout, String> {
     let mut file = File::open(path).map_err(|error| error.to_string())?;
     let mut header = [0u8; 16];
-    file.read_exact(&mut header[0..8]).map_err(|error| error.to_string())?;
+    file.read_exact(&mut header[0..8])
+        .map_err(|error| error.to_string())?;
     let endian = match &header[0..2] {
         b"II" => Endian::Little,
         b"MM" => Endian::Big,
@@ -1486,7 +1547,8 @@ fn parse_tiff_layout(path: &Path) -> std::result::Result<RawTiffLayout, String> 
     let (big_tiff, ifd_offset) = if magic == 42 {
         (false, u64::from(read_u32(&header[4..8], endian)))
     } else if magic == 43 {
-        file.read_exact(&mut header[8..16]).map_err(|error| error.to_string())?;
+        file.read_exact(&mut header[8..16])
+            .map_err(|error| error.to_string())?;
         let offset_size = read_u16(&header[4..6], endian);
         if offset_size != 8 {
             return Err("unsupported BigTIFF offset size".to_string());
@@ -1496,14 +1558,17 @@ fn parse_tiff_layout(path: &Path) -> std::result::Result<RawTiffLayout, String> 
         return Err("unsupported TIFF magic".to_string());
     };
 
-    file.seek(SeekFrom::Start(ifd_offset)).map_err(|error| error.to_string())?;
+    file.seek(SeekFrom::Start(ifd_offset))
+        .map_err(|error| error.to_string())?;
     let entry_count = if big_tiff {
         let mut count = [0u8; 8];
-        file.read_exact(&mut count).map_err(|error| error.to_string())?;
+        file.read_exact(&mut count)
+            .map_err(|error| error.to_string())?;
         read_u64(&count, endian)
     } else {
         let mut count = [0u8; 2];
-        file.read_exact(&mut count).map_err(|error| error.to_string())?;
+        file.read_exact(&mut count)
+            .map_err(|error| error.to_string())?;
         u64::from(read_u16(&count, endian))
     };
 
@@ -1511,21 +1576,25 @@ fn parse_tiff_layout(path: &Path) -> std::result::Result<RawTiffLayout, String> 
     for _ in 0..entry_count {
         if big_tiff {
             let mut entry = [0u8; 20];
-            file.read_exact(&mut entry).map_err(|error| error.to_string())?;
+            file.read_exact(&mut entry)
+                .map_err(|error| error.to_string())?;
             let tag = read_u16(&entry[0..2], endian);
             let field_type = read_u16(&entry[2..4], endian);
             let count = read_u64(&entry[4..12], endian);
             let value_or_offset = read_u64(&entry[12..20], endian);
-            let values = read_tiff_values(&mut file, endian, true, field_type, count, value_or_offset)?;
+            let values =
+                read_tiff_values(&mut file, endian, true, field_type, count, value_or_offset)?;
             entries.insert(tag, values);
         } else {
             let mut entry = [0u8; 12];
-            file.read_exact(&mut entry).map_err(|error| error.to_string())?;
+            file.read_exact(&mut entry)
+                .map_err(|error| error.to_string())?;
             let tag = read_u16(&entry[0..2], endian);
             let field_type = read_u16(&entry[2..4], endian);
             let count = u64::from(read_u32(&entry[4..8], endian));
             let value_or_offset = u64::from(read_u32(&entry[8..12], endian));
-            let values = read_tiff_values(&mut file, endian, false, field_type, count, value_or_offset)?;
+            let values =
+                read_tiff_values(&mut file, endian, false, field_type, count, value_or_offset)?;
             entries.insert(tag, values);
         }
     }
@@ -1576,7 +1645,8 @@ fn read_tiff_values(
     count: u64,
     value_or_offset: u64,
 ) -> std::result::Result<Vec<u64>, String> {
-    let type_size = tiff_type_size(field_type).ok_or_else(|| format!("unsupported TIFF type {field_type}"))?;
+    let type_size =
+        tiff_type_size(field_type).ok_or_else(|| format!("unsupported TIFF type {field_type}"))?;
     let byte_count = type_size
         .checked_mul(count)
         .ok_or_else(|| "TIFF tag byte count overflow".to_string())?;
@@ -1599,9 +1669,12 @@ fn read_tiff_values(
         data[..byte_count as usize].copy_from_slice(&ordered[..byte_count as usize]);
     } else {
         let previous = file.stream_position().map_err(|error| error.to_string())?;
-        file.seek(SeekFrom::Start(value_or_offset)).map_err(|error| error.to_string())?;
-        file.read_exact(&mut data).map_err(|error| error.to_string())?;
-        file.seek(SeekFrom::Start(previous)).map_err(|error| error.to_string())?;
+        file.seek(SeekFrom::Start(value_or_offset))
+            .map_err(|error| error.to_string())?;
+        file.read_exact(&mut data)
+            .map_err(|error| error.to_string())?;
+        file.seek(SeekFrom::Start(previous))
+            .map_err(|error| error.to_string())?;
     }
     let mut values = Vec::with_capacity(count as usize);
     for index in 0..count as usize {
@@ -1676,7 +1749,9 @@ fn write_cache_manifest(
     metadata: &ImageViewerOpenResult,
     levels: &[ImageViewerLevel],
 ) -> Result<()> {
-    let cache_root = Path::new(storage_root).join("cache").join(&metadata.cache_id);
+    let cache_root = Path::new(storage_root)
+        .join("cache")
+        .join(&metadata.cache_id);
     fs::create_dir_all(&cache_root).map_err(|error| ImageKernelError::Cache(error.to_string()))?;
     let manifest = CacheManifest {
         source_path: &metadata.path,
@@ -1703,12 +1778,7 @@ fn cache_root_for(storage_root: &str, cache_id: &str) -> PathBuf {
     Path::new(storage_root).join("cache").join(cache_id)
 }
 
-fn tile_cache_path(
-    cache_root: &Path,
-    scale: u32,
-    tile_x: u32,
-    tile_y: u32,
-) -> PathBuf {
+fn tile_cache_path(cache_root: &Path, scale: u32, tile_x: u32, tile_y: u32) -> PathBuf {
     cache_root
         .join("tiles")
         .join(format!("s{scale}"))
@@ -1784,7 +1854,10 @@ fn cache_id_for_path(path: &Path, size_bytes: u64) -> String {
         }
     }
     let digest = hasher.finalize();
-    digest[..16].iter().map(|byte| format!("{byte:02x}")).collect()
+    digest[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn normalize_path(raw_path: &str) -> Result<PathBuf> {
@@ -2017,10 +2090,7 @@ mod tests {
     fn opens_tiff_and_reads_native_tile_without_full_image_limit() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("sample.tiff");
-        write_minimal_rgb_tiff_with_pixels(&path, 2, 2, &[
-            1, 2, 3, 4, 5, 6,
-            7, 8, 9, 10, 11, 12,
-        ]);
+        write_minimal_rgb_tiff_with_pixels(&path, 2, 2, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
 
         let kernel = ImageKernel::new();
         let opened = kernel
@@ -2071,7 +2141,9 @@ mod tests {
         write_minimal_rgb_tiff_with_pixels(&path, 1, 1, &[9, 8, 7]);
 
         let kernel = ImageKernel::new();
-        let opened = kernel.open_image(path.to_str().expect("path")).expect("open");
+        let opened = kernel
+            .open_image(path.to_str().expect("path"))
+            .expect("open");
         let error = kernel
             .read_tile(&opened.session_id, 0, 0, 0, Some("old-generation"))
             .expect_err("stale request");
@@ -2142,7 +2214,10 @@ mod tests {
             .join("s1")
             .join("0_0.rgba8");
         assert!(cached_tile.exists());
-        assert_eq!(fs::read(cached_tile).expect("read tile").len(), tile.pixels.len());
+        assert_eq!(
+            fs::read(cached_tile).expect("read tile").len(),
+            tile.pixels.len()
+        );
     }
 
     #[test]

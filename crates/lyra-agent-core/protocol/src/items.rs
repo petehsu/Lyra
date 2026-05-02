@@ -3,6 +3,7 @@ use crate::models::ContentItem;
 use crate::models::MessagePhase;
 use crate::models::ResponseItem;
 use crate::models::WebSearchAction;
+use crate::plan_tool::PlanArtifact;
 use crate::protocol::AgentReasoningEvent;
 use crate::protocol::AgentReasoningRawContentEvent;
 use crate::protocol::EventMsg;
@@ -93,7 +94,7 @@ pub struct AgentMessageItem {
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct PlanItem {
     pub id: String,
-    pub text: String,
+    pub artifact: PlanArtifact,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]

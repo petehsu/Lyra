@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 
 import type { AgentPlanState } from "../../../shared/desktop-bridge";
 import { createTranslator, type WorkbenchLocale } from "../i18n";
-import { AiPanelRichContent } from "./rich-content";
 
 type PlanDraftPanelProps = {
   readonly locale?: WorkbenchLocale;
@@ -17,24 +16,17 @@ export const PlanDraftPanel = ({
 }: PlanDraftPanelProps) => {
   const t = useMemo(() => createTranslator(locale), [locale]);
   const [expanded, setExpanded] = useState(true);
-  const headline = useMemo(() => {
-    const source =
-      plan.draftMarkdown.trim().length > 0
-        ? plan.draftMarkdown
-        : plan.proposedMarkdown ?? plan.approvedMarkdown ?? "";
-    return (
-      source
-        .split("\n")
-        .map((line) => line.trim())
-        .find((line) => line.length > 0)
-      ?? t("ai.planDraftCurrentSummary")
-    );
-  }, [plan, t]);
-
-  const body =
-    plan.draftMarkdown.trim().length > 0
-      ? plan.draftMarkdown
-      : plan.proposedMarkdown ?? plan.approvedMarkdown ?? "";
+  const blocks = useMemo(
+    () => [
+      ...plan.artifact.assumptions,
+      ...plan.artifact.steps,
+      ...plan.artifact.interfaces,
+      ...plan.artifact.risks,
+      ...plan.artifact.tests,
+      ...plan.artifact.acceptanceCriteria,
+    ],
+    [plan.artifact]
+  );
 
   return (
     <div className="lyra-ai-plan-bar">
@@ -43,11 +35,11 @@ export const PlanDraftPanel = ({
         <span className="lyra-ai-plan-bar__meta">v{plan.version} · {plan.status}</span>
       </div>
       <div className="lyra-ai-plan-bar__body">
-        <div className="lyra-ai-plan-bar__summary">{headline}</div>
+        <div className="lyra-ai-plan-bar__summary">{plan.artifact.summary || t("ai.planDraftCurrentSummary")}</div>
         <div className="lyra-ai-plan-bar__diff">
           {plan.lastSubmittedVersion === null || plan.lastSubmittedVersion === undefined
-            ? t("ai.planDraftNoSubmitted")
-            : `${t("ai.planDraftLastSubmitted")}: v${plan.lastSubmittedVersion}`}
+            ? t("ai.planDraftNoProposal")
+            : `${t("ai.planDraftLastProposal")}: v${plan.lastSubmittedVersion}`}
         </div>
         <button
           type="button"
@@ -58,9 +50,15 @@ export const PlanDraftPanel = ({
         >
           {expanded ? t("ai.planDraftHide") : t("ai.planDraftShow")}
         </button>
-        {expanded && body.trim().length > 0 ? (
+        {expanded ? (
           <div className="lyra-ai-plan-bar__markdown">
-            <AiPanelRichContent locale={locale} content={body} />
+            <p>{plan.artifact.objective}</p>
+            {blocks.map((block) => (
+              <section key={block.id} className="lyra-ai-plan-card__block">
+                <div className="lyra-ai-plan-card__block-title">{block.title}</div>
+                <p>{block.body}</p>
+              </section>
+            ))}
           </div>
         ) : null}
       </div>

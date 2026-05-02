@@ -31,17 +31,9 @@ const formatAnnotationFeedback = (
     : "Please revise the plan using these annotations:";
   const lines = annotations.map((annotation, index) => {
     const prefix = `${String(index + 1)}.`;
-    if (annotation.kind === "selection") {
-      const selectedText = annotation.selectedText?.trim() ?? "";
-      return zh
-        ? `${prefix} 选中文本「${selectedText}」：${annotation.note}`
-        : `${prefix} Selection "${selectedText}": ${annotation.note}`;
-    }
-    const lineNumber = annotation.lineNumber ?? 0;
-    const lineText = annotation.lineText?.trim() ?? "";
     return zh
-      ? `${prefix} 第 ${String(lineNumber)} 行「${lineText}」：${annotation.note}`
-      : `${prefix} Line ${String(lineNumber)} "${lineText}": ${annotation.note}`;
+      ? `${prefix} ${annotation.anchor}：${annotation.note}`
+      : `${prefix} ${annotation.anchor}: ${annotation.note}`;
   });
   return [heading, ...lines].join("\n");
 };
@@ -79,7 +71,7 @@ export const useWorkbenchPlanReviewModel = ({
   }, [publishStates]);
 
   const openPlanReview = useCallback((request: AiPlanApprovalWorkspaceOpenRequest): void => {
-    const instanceId = createPlanReviewInstanceId(request.request.id);
+    const instanceId = createPlanReviewInstanceId(request.request.planId);
     const existing = statesRef.current[instanceId];
     handlersRef.current = {
       ...handlersRef.current,
@@ -92,12 +84,12 @@ export const useWorkbenchPlanReviewModel = ({
         locale: request.locale,
         request: request.request,
         annotations: existing?.annotations ?? [],
-        isActionable: request.request.status === "submitted",
+        isActionable: request.request.status === "proposed",
         isSubmitting: false,
         lastSubmittedAt: existing?.lastSubmittedAt ?? null,
       },
     });
-    if (existing === undefined || request.request.status === "submitted") {
+    if (existing === undefined || request.request.status === "proposed") {
       openAppTab(createAiPlanReviewAppRequest(title, instanceId));
     }
   }, [openAppTab, publishStates, title]);
@@ -187,9 +179,15 @@ export const useWorkbenchPlanReviewModel = ({
       return;
     }
     await decide(instanceId, {
-      requestId: state.request.id,
+      planId: state.request.planId,
       decision: "keep_planning",
       feedback: formatAnnotationFeedback(state.annotations, state.locale),
+      annotations: state.annotations.map((annotation) => ({
+        ...(annotation.blockId === undefined ? {} : { blockId: annotation.blockId }),
+        anchor: annotation.anchor,
+        comment: annotation.note,
+      })),
+      artifactSnapshot: state.request.artifact,
     });
   }, [decide]);
 

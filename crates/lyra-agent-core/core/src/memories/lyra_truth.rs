@@ -3397,12 +3397,16 @@ fn session_dialog_entry(
         ThreadItem::AgentMessage { id, text, .. } => {
             Some(("assistant", id.clone(), text.clone(), stream_id))
         }
-        ThreadItem::Plan { id, text } => Some((
-            "assistant",
-            id.clone(),
-            format!("[plan]\n{text}"),
-            stream_id,
-        )),
+        ThreadItem::Plan { id, artifact } => {
+            let artifact_json =
+                serde_json::to_string_pretty(artifact).unwrap_or_else(|_| artifact.summary.clone());
+            Some((
+                "assistant",
+                id.clone(),
+                format!("[plan]\n{artifact_json}"),
+                stream_id,
+            ))
+        }
         ThreadItem::Reasoning { .. } => None,
         ThreadItem::CommandExecution {
             id,

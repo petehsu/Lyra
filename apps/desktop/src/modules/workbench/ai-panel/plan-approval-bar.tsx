@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 import { ExternalLink, X } from "lucide-react";
 
 import type {
+  AgentPlanBlock,
   PlanApprovalRequest,
   PlanInteractionResponse,
 } from "../../../shared/desktop-bridge";
 import { createTranslator, type WorkbenchLocale } from "../i18n";
-import { AiPanelRichContent } from "./rich-content";
 
 type PlanApprovalBarProps = {
   readonly locale?: WorkbenchLocale;
@@ -23,22 +23,38 @@ export const PlanApprovalBar = ({
 }: PlanApprovalBarProps) => {
   const t = useMemo(() => createTranslator(locale), [locale]);
   const [feedback, setFeedback] = useState("");
-  const diffLabel = useMemo(() => {
-    if (request.draftMarkdown === undefined || request.draftMarkdown === request.proposedMarkdown) {
-      return t("ai.planApprovalDraftMatches");
-    }
-    return t("ai.planApprovalDraftDiffers");
-  }, [request.draftMarkdown, request.proposedMarkdown, t]);
+  const blocks = useMemo(
+    () => [
+      ...request.artifact.assumptions,
+      ...request.artifact.steps,
+      ...request.artifact.interfaces,
+      ...request.artifact.risks,
+      ...request.artifact.tests,
+      ...request.artifact.acceptanceCriteria,
+    ],
+    [request.artifact]
+  );
 
   const trimmedFeedback = feedback.trim();
+  const responseBase = {
+    planId: request.planId,
+    ...(trimmedFeedback.length === 0 ? {} : { feedback: trimmedFeedback }),
+    artifactSnapshot: request.artifact,
+  };
 
   return (
     <div className="lyra-ai-plan-bar">
       <div className="lyra-ai-plan-bar__body">
         <div className="lyra-ai-plan-bar__summary">{request.summary}</div>
-        <div className="lyra-ai-plan-bar__diff">{diffLabel}</div>
+        <div className="lyra-ai-plan-bar__diff">{request.artifact.title}</div>
         <div className="lyra-ai-plan-bar__markdown">
-          <AiPanelRichContent locale={locale} content={request.proposedMarkdown} />
+          <p>{request.artifact.objective}</p>
+          {blocks.slice(0, 4).map((block: AgentPlanBlock) => (
+            <section key={block.id} className="lyra-ai-plan-card__block">
+              <div className="lyra-ai-plan-card__block-title">{block.title}</div>
+              <p>{block.body}</p>
+            </section>
+          ))}
         </div>
         {onOpenInWorkspace === undefined ? (
           <textarea
@@ -59,9 +75,8 @@ export const PlanApprovalBar = ({
               className="lyra-ai-plan-bar__submit"
               onClick={() => {
                 onDecision({
-                  requestId: request.id,
+                  ...responseBase,
                   decision: "approve_and_implement",
-                  ...(trimmedFeedback.length === 0 ? {} : { feedback: trimmedFeedback }),
                 });
               }}
             >
@@ -72,9 +87,8 @@ export const PlanApprovalBar = ({
               className="lyra-ai-plan-bar__secondary"
               onClick={() => {
                 onDecision({
-                  requestId: request.id,
+                  ...responseBase,
                   decision: "keep_planning",
-                  ...(trimmedFeedback.length === 0 ? {} : { feedback: trimmedFeedback }),
                 });
               }}
             >
@@ -105,9 +119,8 @@ export const PlanApprovalBar = ({
           title={t("ai.planApprovalReject")}
           onClick={() => {
             onDecision({
-              requestId: request.id,
+              ...responseBase,
               decision: "reject",
-              ...(trimmedFeedback.length === 0 ? {} : { feedback: trimmedFeedback }),
             });
           }}
         >

@@ -208,13 +208,8 @@ fn plan_tool_call_ends_turn(tool_name: &lyra_tools::ToolName, payload: &ToolPayl
             let ToolPayload::Function { arguments } = payload else {
                 return false;
             };
-            serde_json::from_str::<LyraPlanArgs>(arguments).is_ok_and(|args| {
-                if args.action != LyraPlanAction::Submit {
-                    return false;
-                }
-                args.markdown
-                    .is_some_and(|markdown| !markdown.trim().is_empty())
-            })
+            serde_json::from_str::<LyraPlanArgs>(arguments)
+                .is_ok_and(|args| args.action == LyraPlanAction::Propose && args.plan.is_some())
         }
         _ => false,
     }
@@ -523,18 +518,19 @@ mod tests {
     }
 
     #[test]
-    fn lyra_plan_final_submit_ends_turn_but_draft_and_ask_continue() {
+    fn lyra_plan_propose_ends_turn_but_draft_and_ask_continue() {
+        let plan_json = r#"{"planId":"plan-1","status":"proposed","title":"Plan","summary":"Do it.","objective":"Implement the change.","assumptions":[],"steps":[{"id":"step-1","kind":"step","title":"Patch","body":"Make the required code changes."}],"interfaces":[],"risks":[],"tests":[],"acceptanceCriteria":[]}"#;
         assert!(plan_tool_call_ends_turn(
             &ToolName::plain(LYRA_PLAN_TOOL_NAME),
-            &function_payload(r#"{"action":"submit","markdown":"Do it."}"#),
+            &function_payload(&format!(r#"{{"action":"propose","plan":{plan_json}}}"#)),
         ));
         assert!(!plan_tool_call_ends_turn(
             &ToolName::plain(LYRA_PLAN_TOOL_NAME),
-            &function_payload(r#"{"action":"submit","markdown":"   "}"#),
+            &function_payload(r#"{"action":"propose"}"#),
         ));
         assert!(!plan_tool_call_ends_turn(
             &ToolName::plain(LYRA_PLAN_TOOL_NAME),
-            &function_payload(r#"{"action":"draft","markdown":"Sketch."}"#),
+            &function_payload(&format!(r#"{{"action":"draft","plan":{plan_json}}}"#)),
         ));
         assert!(!plan_tool_call_ends_turn(
             &ToolName::plain(LYRA_PLAN_TOOL_NAME),

@@ -61,6 +61,7 @@ use lyra_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
 use lyra_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
 use lyra_model_provider_info::ModelProviderInfo;
 use lyra_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
+use lyra_model_provider_info::ProviderProtocolBehaviorConfig;
 use lyra_model_provider_info::WireApi;
 use lyra_model_provider_info::built_in_model_providers;
 use lyra_models_manager::ModelsManagerConfig;
@@ -312,7 +313,7 @@ fn model_provider_info_from_lyra_profile(
     let protocol_id = profile.protocol_id.trim();
     let provider_id = profile.provider_id.trim();
     let wire_api = match protocol_id {
-        "anthropic_messages" => WireApi::AnthropicMessages,
+        "anthropic_messages" | "mimo_anthropic_messages" => WireApi::AnthropicMessages,
         "gemini_generate_content" => WireApi::GeminiGenerateContent,
         "openai_chat_completions" | "azure_openai_chat_completions" => WireApi::Responses,
         "openrouter_chat_completions"
@@ -323,6 +324,7 @@ fn model_provider_info_from_lyra_profile(
         | "together_chat_completions"
         | "fireworks_chat_completions"
         | "vercel_ai_gateway_chat_completions"
+        | "mimo_openai_chat_completions"
         | "custom_chat_completions"
         | "ollama_chat"
         | "lmstudio_chat_completions" => WireApi::ChatCompletions,
@@ -363,13 +365,16 @@ fn model_provider_info_from_lyra_profile(
         );
     }
 
-    let env_http_headers = if protocol_id == "azure_openai_chat_completions" {
-        Some(HashMap::from([(
+    let env_http_headers = match protocol_id {
+        "azure_openai_chat_completions" => Some(HashMap::from([(
             "api-key".to_string(),
             "AZURE_OPENAI_API_KEY".to_string(),
-        )]))
-    } else {
-        None
+        )])),
+        "mimo_openai_chat_completions" | "mimo_anthropic_messages" => Some(HashMap::from([(
+            "api-key".to_string(),
+            "MIMO_API_KEY".to_string(),
+        )])),
+        _ => None,
     };
 
     let query_params = if protocol_id == "azure_openai_chat_completions" {
@@ -388,6 +393,18 @@ fn model_provider_info_from_lyra_profile(
     };
 
     let env_key = env_key_for_profile_provider(provider_id, protocol_id);
+    let protocol_behavior = if protocol_id == "mimo_openai_chat_completions" {
+        Some(ProviderProtocolBehaviorConfig {
+            reasoning_replay_field: Some("reasoning_content".to_string()),
+            preserve_empty_reasoning: Some(false),
+            require_assistant_reasoning: Some(false),
+            prompt_cache_key: Some(false),
+            tool_loop_supported: Some(true),
+            ..ProviderProtocolBehaviorConfig::default()
+        })
+    } else {
+        None
+    };
 
     Some((
         ModelProviderInfo {
@@ -407,7 +424,7 @@ fn model_provider_info_from_lyra_profile(
             websocket_connect_timeout_ms: None,
             requires_managed_auth: false,
             supports_websockets: matches!(protocol_id, "openai_chat_completions"),
-            protocol_behavior: None,
+            protocol_behavior,
         },
         model_catalog,
     ))
@@ -527,6 +544,8 @@ fn profile_base_url(profile: &LyraStoredProfile, protocol_id: &str) -> Option<St
         "together_chat_completions" => Some("https://api.together.xyz/v1"),
         "fireworks_chat_completions" => Some("https://api.fireworks.ai/inference/v1"),
         "vercel_ai_gateway_chat_completions" => Some("https://ai-gateway.vercel.sh/v1"),
+        "mimo_openai_chat_completions" => Some("https://api.xiaomimimo.com/v1"),
+        "mimo_anthropic_messages" => Some("https://api.xiaomimimo.com/anthropic"),
         "ollama_chat" => Some("http://127.0.0.1:11434"),
         "lmstudio_chat_completions" => Some("http://127.0.0.1:1234/v1"),
         _ => None,
@@ -562,9 +581,11 @@ fn env_key_for_profile_provider(provider_id: &str, protocol_id: &str) -> Option<
         "together" => Some("TOGETHER_API_KEY"),
         "fireworks" => Some("FIREWORKS_API_KEY"),
         "vercel_ai_gateway" => Some("VERCEL_AI_GATEWAY_API_KEY"),
+        "mimo" => None,
         "custom_openai_compatible" => Some("CUSTOM_OPENAI_API_KEY"),
         _ => match protocol_id {
             "azure_openai_chat_completions" => None,
+            "mimo_openai_chat_completions" | "mimo_anthropic_messages" => None,
             "anthropic_messages" => Some("ANTHROPIC_API_KEY"),
             "gemini_generate_content" => Some("GEMINI_API_KEY"),
             "openai_chat_completions"

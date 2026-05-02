@@ -213,12 +213,14 @@ pub fn build_tool_registry_plan(
         plan.register_handler("read_mcp_resource", ToolHandlerKind::McpResource);
     }
 
-    plan.push_spec(
-        create_update_plan_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    plan.register_handler("update_plan", ToolHandlerKind::Plan);
+    if config.collaboration_mode != lyra_protocol::config_types::ModeKind::Plan {
+        plan.push_spec(
+            create_update_plan_tool(),
+            /*supports_parallel_tool_calls*/ false,
+            config.code_mode_enabled,
+        );
+        plan.register_handler("update_plan", ToolHandlerKind::Plan);
+    }
 
     plan.push_spec(
         create_lyra_plan_tool(),
@@ -744,6 +746,7 @@ mod tests {
                 .iter()
                 .any(|spec| spec.name() == REQUEST_USER_INPUT_TOOL_NAME)
         );
+        assert!(!plan.specs.iter().any(|spec| spec.name() == "update_plan"));
         assert!(
             plan.handlers
                 .iter()
@@ -755,6 +758,12 @@ mod tests {
                 .handlers
                 .iter()
                 .any(|handler| handler.kind == ToolHandlerKind::RequestUserInput)
+        );
+        assert!(
+            !plan
+                .handlers
+                .iter()
+                .any(|handler| handler.kind == ToolHandlerKind::Plan)
         );
     }
 }

@@ -1,5 +1,7 @@
 import type {
   AgentMessage,
+  AgentPlanArtifact,
+  AgentPlanBlock,
   AgentPendingInteraction,
   AgentToolCall,
   AgentTurn,
@@ -20,7 +22,6 @@ import {
   type ThreadAiPanelMessageContentPart,
   type ThreadAiPanelPendingInteraction,
   type ThreadAiPanelPlan,
-  type ThreadAiPanelPlanStep,
   type ThreadAiPanelToolCall,
   type ThreadAiPanelTurn,
   type ThreadAiPanelTurnMeta,
@@ -185,28 +186,62 @@ const readAiPanelToolCall = (value: unknown): ThreadAiPanelToolCall | null => {
   };
 };
 
-const readAiPanelPlanStepStatus = (value: unknown): ThreadAiPanelPlanStep["status"] => {
-  const normalized = normalizeStatus(value);
-  if (normalized === "inprogress" || normalized === "running") {
-    return "inProgress";
-  }
-  if (normalized === "completed" || normalized === "complete" || normalized === "done") {
-    return "completed";
-  }
-  return "pending";
-};
-
-const readAiPanelPlanStep = (value: unknown): ThreadAiPanelPlanStep | null => {
+const readPlanBlock = (value: unknown): AgentPlanBlock | null => {
   if (!isRecord(value)) {
     return null;
   }
-  const step = readString(value.step);
-  if (step === null) {
+  const id = readString(value.id);
+  const kind = readString(value.kind);
+  const title = readString(value.title);
+  const body = readString(value.body);
+  if (id === null || kind === null || title === null || body === null) {
+    return null;
+  }
+  return { id, kind, title, body };
+};
+
+const readPlanBlocks = (value: unknown): readonly AgentPlanBlock[] =>
+  Array.isArray(value)
+    ? value.map(readPlanBlock).filter((block): block is AgentPlanBlock => block !== null)
+    : [];
+
+const readPlanStatus = (value: unknown): AgentPlanArtifact["status"] => {
+  const normalized = normalizeStatus(value);
+  if (normalized === "proposed" || normalized === "submitted") {
+    return "proposed";
+  }
+  if (normalized === "approved") {
+    return "approved";
+  }
+  if (normalized === "rejected") {
+    return "rejected";
+  }
+  return "draft";
+};
+
+const readPlanArtifact = (value: unknown): AgentPlanArtifact | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const planId = readString(value.planId);
+  const title = readString(value.title);
+  const summary = readString(value.summary);
+  const objective = readString(value.objective);
+  if (planId === null || title === null || summary === null || objective === null) {
     return null;
   }
   return {
-    step,
-    status: readAiPanelPlanStepStatus(value.status),
+    planId,
+    status: readPlanStatus(value.status),
+    title,
+    summary,
+    objective,
+    assumptions: readPlanBlocks(value.assumptions),
+    steps: readPlanBlocks(value.steps),
+    interfaces: readPlanBlocks(value.interfaces),
+    risks: readPlanBlocks(value.risks),
+    tests: readPlanBlocks(value.tests),
+    acceptanceCriteria: readPlanBlocks(value.acceptanceCriteria),
   };
 };
 
@@ -216,18 +251,13 @@ const readAiPanelPlan = (value: unknown): ThreadAiPanelPlan | null => {
   }
   const turnId = readString(value.turnId);
   const updatedAtMs = readNumber(value.updatedAtMs);
-  if (turnId === null || updatedAtMs === null) {
+  const artifact = readPlanArtifact(value.artifact);
+  if (turnId === null || updatedAtMs === null || artifact === null) {
     return null;
   }
-  const steps = Array.isArray(value.steps)
-    ? value.steps.map(readAiPanelPlanStep).filter((step): step is ThreadAiPanelPlanStep => step !== null)
-    : [];
   return {
     turnId,
-    draftText: readRawString(value.draftText) ?? "",
-    finalText: readRawString(value.finalText),
-    explanation: readRawString(value.explanation),
-    steps,
+    artifact,
     updatedAtMs,
   };
 };

@@ -10480,11 +10480,133 @@
           }
         ]
       },
+      "PlanAnnotation": {
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "blockId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "anchor",
+          "comment"
+        ],
+        "type": "object"
+      },
       "PlanApprovalDecision": {
         "enum": [
           "approve_and_implement",
           "keep_planning",
           "reject"
+        ],
+        "type": "string"
+      },
+      "PlanArtifact": {
+        "properties": {
+          "acceptanceCriteria": {
+            "default": [],
+            "items": {
+              "$ref": "#/definitions/v2/PlanArtifactBlock"
+            },
+            "type": "array"
+          },
+          "assumptions": {
+            "default": [],
+            "items": {
+              "$ref": "#/definitions/v2/PlanArtifactBlock"
+            },
+            "type": "array"
+          },
+          "interfaces": {
+            "default": [],
+            "items": {
+              "$ref": "#/definitions/v2/PlanArtifactBlock"
+            },
+            "type": "array"
+          },
+          "objective": {
+            "type": "string"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "risks": {
+            "default": [],
+            "items": {
+              "$ref": "#/definitions/v2/PlanArtifactBlock"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/definitions/v2/PlanArtifactStatus"
+          },
+          "steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/definitions/v2/PlanArtifactBlock"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tests": {
+            "default": [],
+            "items": {
+              "$ref": "#/definitions/v2/PlanArtifactBlock"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "objective",
+          "planId",
+          "status",
+          "summary",
+          "title"
+        ],
+        "type": "object"
+      },
+      "PlanArtifactBlock": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "kind",
+          "title"
+        ],
+        "type": "object"
+      },
+      "PlanArtifactStatus": {
+        "enum": [
+          "draft",
+          "proposed",
+          "approved",
+          "rejected"
         ],
         "type": "string"
       },
@@ -12695,26 +12817,8 @@
       },
       "ThreadAiPanelPlan": {
         "properties": {
-          "draftText": {
-            "type": "string"
-          },
-          "explanation": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "finalText": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "steps": {
-            "items": {
-              "$ref": "#/definitions/v2/ThreadAiPanelPlanStep"
-            },
-            "type": "array"
+          "artifact": {
+            "$ref": "#/definitions/v2/PlanArtifact"
           },
           "turnId": {
             "type": "string"
@@ -12725,34 +12829,11 @@
           }
         },
         "required": [
-          "draftText",
+          "artifact",
           "turnId",
           "updatedAtMs"
         ],
         "type": "object"
-      },
-      "ThreadAiPanelPlanStep": {
-        "properties": {
-          "status": {
-            "$ref": "#/definitions/v2/ThreadAiPanelPlanStepStatus"
-          },
-          "step": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "step"
-        ],
-        "type": "object"
-      },
-      "ThreadAiPanelPlanStepStatus": {
-        "enum": [
-          "pending",
-          "inProgress",
-          "completed"
-        ],
-        "type": "string"
       },
       "ThreadAiPanelToolCall": {
         "properties": {
@@ -13442,12 +13523,12 @@
             "type": "object"
           },
           {
-            "description": "proposed plan item content. The completed plan item is authoritative and may not match the concatenation of `PlanDelta` text.",
+            "description": "Structured Plan Mode artifact. Only `artifact.status == \"proposed\"` creates an approvable pending interaction.",
             "properties": {
-              "id": {
-                "type": "string"
+              "artifact": {
+                "$ref": "#/definitions/v2/PlanArtifact"
               },
-              "text": {
+              "id": {
                 "type": "string"
               },
               "type": {
@@ -13459,8 +13540,8 @@
               }
             },
             "required": [
+              "artifact",
               "id",
-              "text",
               "type"
             ],
             "title": "PlanThreadItem",
@@ -15377,6 +15458,23 @@
       "TurnPlanApprovalResolveParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
+          "annotations": {
+            "default": [],
+            "items": {
+              "$ref": "#/definitions/v2/PlanAnnotation"
+            },
+            "type": "array"
+          },
+          "artifactSnapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/PlanArtifact"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "decision": {
             "$ref": "#/definitions/v2/PlanApprovalDecision"
           },
@@ -15386,16 +15484,10 @@
               "null"
             ]
           },
-          "planTurnId": {
+          "planId": {
             "type": "string"
           },
-          "proposedMarkdown": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "requestId": {
+          "planTurnId": {
             "type": "string"
           },
           "threadId": {
@@ -15404,8 +15496,8 @@
         },
         "required": [
           "decision",
+          "planId",
           "planTurnId",
-          "requestId",
           "threadId"
         ],
         "title": "TurnPlanApprovalResolveParams",
@@ -15543,6 +15635,13 @@
           },
           "model": {
             "description": "Override the model for this turn and subsequent turns.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "modelProvider": {
+            "description": "Override the model provider for this turn and subsequent turns.",
             "type": [
               "string",
               "null"

@@ -127,6 +127,7 @@ pub(super) async fn user_input_or_turn_inner(sess: &Arc<Session>, sub_id: String
                     sandbox_policy: Some(sandbox_policy),
                     windows_sandbox_level: None,
                     collaboration_mode,
+                    model_provider: None,
                     reasoning_summary: summary,
                     model_verbosity: None,
                     service_tier,

@@ -340,13 +340,13 @@ pub enum Op {
         response: RequestPermissionsResponse,
     },
 
-    /// Record that a submitted Plan Mode approval request was resolved by the user.
+    /// Record that a proposed Plan Mode approval request was resolved by the user.
     ResolvePlanApproval {
-        /// Turn id that produced the submitted plan.
+        /// Turn id that produced the proposed plan.
         plan_turn_id: String,
         /// Client-visible approval request id.
         request_id: String,
-        /// User decision for the submitted plan.
+        /// User decision for the proposed plan.
         decision: PlanApprovalResolutionDecision,
     },
 

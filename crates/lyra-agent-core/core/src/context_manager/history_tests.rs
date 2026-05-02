@@ -101,7 +101,7 @@ fn user_input_text_msg(text: &str) -> ResponseItem {
 fn for_prompt_preserves_plain_plan_mode_messages() {
     let history = create_history_with_items(vec![
         user_input_text_msg("Plan Mode conversation can include ordinary text."),
-        developer_msg("Only lyra_plan submit creates the approvable artifact."),
+        developer_msg("Only lyra_plan propose creates the approvable artifact."),
         user_msg("real user request"),
     ]);
 
@@ -109,7 +109,7 @@ fn for_prompt_preserves_plain_plan_mode_messages() {
         history.for_prompt(&default_input_modalities()),
         vec![
             user_input_text_msg("Plan Mode conversation can include ordinary text."),
-            developer_msg("Only lyra_plan submit creates the approvable artifact."),
+            developer_msg("Only lyra_plan propose creates the approvable artifact."),
             user_msg("real user request"),
         ]
     );

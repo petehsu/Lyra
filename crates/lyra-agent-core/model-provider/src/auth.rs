@@ -16,8 +16,27 @@ pub(crate) fn auth_manager_for_provider(
 ) -> Option<Arc<AuthManager>> {
     match provider.auth.clone() {
         Some(config) => Some(AuthManager::external_bearer_only(config)),
+        None if provider_uses_header_auth(provider) => None,
         None => auth_manager,
     }
+}
+
+fn provider_uses_header_auth(provider: &ModelProviderInfo) -> bool {
+    provider
+        .env_http_headers
+        .as_ref()
+        .is_some_and(|headers| headers.keys().any(|header| is_auth_header_name(header)))
+        || provider
+            .http_headers
+            .as_ref()
+            .is_some_and(|headers| headers.keys().any(|header| is_auth_header_name(header)))
+}
+
+fn is_auth_header_name(header: &str) -> bool {
+    matches!(
+        header.trim().to_ascii_lowercase().as_str(),
+        "authorization" | "api-key" | "x-api-key"
+    )
 }
 
 fn bearer_auth_provider_from_auth(
@@ -32,6 +51,10 @@ fn bearer_auth_provider_from_auth(
 
     if let Some(token) = provider.bearer_token.clone() {
         return Ok(BearerAuthProvider { token: Some(token) });
+    }
+
+    if provider_uses_header_auth(provider) {
+        return Ok(BearerAuthProvider { token: None });
     }
 
     if let Some(auth) = auth {

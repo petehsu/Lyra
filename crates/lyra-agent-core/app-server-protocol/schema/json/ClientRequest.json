@@ -1655,11 +1655,133 @@
       ],
       "type": "string"
     },
+    "PlanAnnotation": {
+      "properties": {
+        "anchor": {
+          "type": "string"
+        },
+        "blockId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "comment": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "anchor",
+        "comment"
+      ],
+      "type": "object"
+    },
     "PlanApprovalDecision": {
       "enum": [
         "approve_and_implement",
         "keep_planning",
         "reject"
+      ],
+      "type": "string"
+    },
+    "PlanArtifact": {
+      "properties": {
+        "acceptanceCriteria": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "assumptions": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "planId": {
+          "type": "string"
+        },
+        "risks": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/definitions/PlanArtifactStatus"
+        },
+        "steps": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "tests": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "objective",
+        "planId",
+        "status",
+        "summary",
+        "title"
+      ],
+      "type": "object"
+    },
+    "PlanArtifactBlock": {
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "body",
+        "id",
+        "kind",
+        "title"
+      ],
+      "type": "object"
+    },
+    "PlanArtifactStatus": {
+      "enum": [
+        "draft",
+        "proposed",
+        "approved",
+        "rejected"
       ],
       "type": "string"
     },
@@ -3053,6 +3175,23 @@
     },
     "TurnPlanApprovalResolveParams": {
       "properties": {
+        "annotations": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanAnnotation"
+          },
+          "type": "array"
+        },
+        "artifactSnapshot": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PlanArtifact"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "decision": {
           "$ref": "#/definitions/PlanApprovalDecision"
         },
@@ -3062,16 +3201,10 @@
             "null"
           ]
         },
-        "planTurnId": {
+        "planId": {
           "type": "string"
         },
-        "proposedMarkdown": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "requestId": {
+        "planTurnId": {
           "type": "string"
         },
         "threadId": {
@@ -3080,8 +3213,8 @@
       },
       "required": [
         "decision",
+        "planId",
         "planTurnId",
-        "requestId",
         "threadId"
       ],
       "type": "object"
@@ -3147,6 +3280,13 @@
         },
         "model": {
           "description": "Override the model for this turn and subsequent turns.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelProvider": {
+          "description": "Override the model provider for this turn and subsequent turns.",
           "type": [
             "string",
             "null"

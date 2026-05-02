@@ -7,6 +7,20 @@ import {
   readLyraThread,
 } from "../lyra-thread-adapter";
 
+const planArtifact = {
+  planId: "plan-1",
+  status: "proposed",
+  title: "Plan",
+  summary: "1. Check",
+  objective: "Check the implementation.",
+  assumptions: [],
+  steps: [{ id: "step-1", kind: "step", title: "Check", body: "Check the implementation." }],
+  interfaces: [],
+  risks: [],
+  tests: [],
+  acceptanceCriteria: [],
+};
+
 describe("lyra thread adapter", () => {
   test("maps app-server thread items into messages and tool calls", () => {
     const thread = readLyraThread({
@@ -285,10 +299,7 @@ describe("lyra thread adapter", () => {
       plans: [
         {
           turnId: "turn-1",
-          draftText: "",
-          finalText: "1. Check",
-          explanation: null,
-          steps: [],
+          artifact: planArtifact,
           updatedAtMs: 102500,
         },
       ],
@@ -300,9 +311,12 @@ describe("lyra thread adapter", () => {
           kind: "planApproval",
           status: "pending",
           payload: {
-            requestId: "plan:turn-1",
             raw: {
-              proposedMarkdown: "1. Check",
+              planId: "plan-1",
+              version: 2,
+              status: "proposed",
+              summary: "1. Check",
+              artifact: planArtifact,
             },
           },
           createdAtMs: 102500,

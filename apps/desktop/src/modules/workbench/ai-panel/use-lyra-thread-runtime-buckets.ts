@@ -1,24 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  AgentPlanArtifact,
   AgentRuntimeEvent,
   AgentToolCall,
 } from "../../../shared/desktop-bridge";
 import type { OptimisticUserMessage } from "./view-helpers";
 
-export type LyraPlanStepStatus = "pending" | "inProgress" | "completed";
-
-export type LyraPlanStep = {
-  readonly step: string;
-  readonly status: LyraPlanStepStatus;
-};
-
 export type LyraTurnPlanState = {
   readonly turnId: string;
-  readonly draftText: string;
-  readonly finalText: string | null;
-  readonly explanation: string | null;
-  readonly steps: readonly LyraPlanStep[];
+  readonly artifact: AgentPlanArtifact;
   readonly updatedAt: number;
 };
 

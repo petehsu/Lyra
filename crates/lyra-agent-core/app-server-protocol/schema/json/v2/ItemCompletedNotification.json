@@ -452,6 +452,107 @@
         }
       ]
     },
+    "PlanArtifact": {
+      "properties": {
+        "acceptanceCriteria": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "assumptions": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "planId": {
+          "type": "string"
+        },
+        "risks": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/definitions/PlanArtifactStatus"
+        },
+        "steps": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "tests": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanArtifactBlock"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "objective",
+        "planId",
+        "status",
+        "summary",
+        "title"
+      ],
+      "type": "object"
+    },
+    "PlanArtifactBlock": {
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "body",
+        "id",
+        "kind",
+        "title"
+      ],
+      "type": "object"
+    },
+    "PlanArtifactStatus": {
+      "enum": [
+        "draft",
+        "proposed",
+        "approved",
+        "rejected"
+      ],
+      "type": "string"
+    },
     "ReasoningEffort": {
       "description": "See https://platform.openai.com/docs/guides/reasoning?api-mode=responses#get-started-with-reasoning",
       "enum": [
@@ -590,12 +691,12 @@
           "type": "object"
         },
         {
-          "description": "proposed plan item content. The completed plan item is authoritative and may not match the concatenation of `PlanDelta` text.",
+          "description": "Structured Plan Mode artifact. Only `artifact.status == \"proposed\"` creates an approvable pending interaction.",
           "properties": {
-            "id": {
-              "type": "string"
+            "artifact": {
+              "$ref": "#/definitions/PlanArtifact"
             },
-            "text": {
+            "id": {
               "type": "string"
             },
             "type": {
@@ -607,8 +708,8 @@
             }
           },
           "required": [
+            "artifact",
             "id",
-            "text",
             "type"
           ],
           "title": "PlanThreadItem",

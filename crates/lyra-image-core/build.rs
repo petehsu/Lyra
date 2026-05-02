@@ -57,10 +57,16 @@ fn main() {
         build.compile("lyra_image_tiff_bridge");
 
         println!("cargo:rustc-cfg=lyra_image_libtiff");
-        println!("cargo:rustc-link-search=native={}", libtiff.lib_dir.display());
+        println!(
+            "cargo:rustc-link-search=native={}",
+            libtiff.lib_dir.display()
+        );
         println!("cargo:rustc-link-lib=dylib=tiff");
         if cfg!(target_os = "macos") {
-            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", libtiff.lib_dir.display());
+            println!(
+                "cargo:rustc-link-arg=-Wl,-rpath,{}",
+                libtiff.lib_dir.display()
+            );
         }
     }
 }
@@ -88,7 +94,10 @@ fn candidate_roots() -> Vec<PathBuf> {
         }
     }
 
-    if let Ok(output) = Command::new("brew").args(["--prefix", "openimageio"]).output() {
+    if let Ok(output) = Command::new("brew")
+        .args(["--prefix", "openimageio"])
+        .output()
+    {
         if output.status.success() {
             if let Ok(value) = String::from_utf8(output.stdout) {
                 let trimmed = value.trim();
@@ -180,11 +189,7 @@ fn libtiff_location_for_root(root: &Path) -> Option<OiioLocation> {
 }
 
 fn has_libtiff_library(lib_dir: &Path) -> bool {
-    [
-        "libtiff.dylib",
-        "libtiff.so",
-        "libtiff.a",
-    ]
-    .into_iter()
-    .any(|name| lib_dir.join(name).exists())
+    ["libtiff.dylib", "libtiff.so", "libtiff.a"]
+        .into_iter()
+        .any(|name| lib_dir.join(name).exists())
 }

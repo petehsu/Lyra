@@ -39,6 +39,10 @@ sandboxPolicy?: SandboxPolicy | null,
  */
 model?: string | null,
 /**
+ * Override the model provider for this turn and subsequent turns.
+ */
+modelProvider?: string | null,
+/**
  * Override the service tier for this turn and subsequent turns.
  */
 serviceTier?: ServiceTier | null | null,

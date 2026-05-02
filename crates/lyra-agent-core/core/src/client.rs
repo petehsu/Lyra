@@ -3717,14 +3717,6 @@ impl ModelClientSession {
             return Err(stream_error("Anthropic base URL is not configured"));
         }
 
-        let api_key = self
-            .client
-            .state
-            .provider
-            .info()
-            .api_key()?
-            .ok_or_else(|| stream_error("Anthropic API key is missing"))?;
-
         let input = prompt.get_formatted_input();
         let tool_mappings = build_tool_mappings(&prompt.tools);
         let thinking_budget = anthropic_thinking_budget(effort);
@@ -3754,13 +3746,33 @@ impl ModelClientSession {
         }
 
         let mut headers = reqwest_headers_from_api_provider(&provider);
-        headers.insert(
-            reqwest::header::HeaderName::from_static("x-api-key"),
-            reqwest::header::HeaderValue::from_str(&api_key).map_err(|error| {
-                stream_error(format!("invalid Anthropic API key header: {error}"))
-            })?,
-        );
-        if !headers.contains_key("anthropic-version") {
+        let has_api_key_header =
+            headers.contains_key("api-key") || headers.contains_key("x-api-key");
+        if !has_api_key_header {
+            let api_key = self
+                .client
+                .state
+                .provider
+                .info()
+                .api_key()?
+                .ok_or_else(|| stream_error("Anthropic API key is missing"))?;
+            headers.insert(
+                reqwest::header::HeaderName::from_static("x-api-key"),
+                reqwest::header::HeaderValue::from_str(&api_key).map_err(|error| {
+                    stream_error(format!("invalid Anthropic API key header: {error}"))
+                })?,
+            );
+        }
+        let is_mimo_anthropic = provider.base_url.contains("xiaomimimo.com")
+            || self
+                .client
+                .state
+                .provider
+                .info()
+                .name
+                .to_ascii_lowercase()
+                .contains("mimo");
+        if !is_mimo_anthropic && !headers.contains_key("anthropic-version") {
             headers.insert(
                 reqwest::header::HeaderName::from_static("anthropic-version"),
                 reqwest::header::HeaderValue::from_static(DEFAULT_ANTHROPIC_VERSION),

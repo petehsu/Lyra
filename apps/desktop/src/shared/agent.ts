@@ -3,7 +3,34 @@ export type AgentTurnId = string;
 export type AgentMessageId = string;
 export type AgentToolCallId = string;
 export type AgentCollaborationMode = "default" | "plan";
-export type AgentPlanStatus = "draft" | "submitted" | "approved" | "rejected";
+export type AgentPlanStatus = "draft" | "proposed" | "approved" | "rejected";
+
+export type AgentPlanBlock = {
+  readonly id: string;
+  readonly kind: string;
+  readonly title: string;
+  readonly body: string;
+};
+
+export type AgentPlanArtifact = {
+  readonly planId: string;
+  readonly status: AgentPlanStatus;
+  readonly title: string;
+  readonly summary: string;
+  readonly objective: string;
+  readonly assumptions: readonly AgentPlanBlock[];
+  readonly steps: readonly AgentPlanBlock[];
+  readonly interfaces: readonly AgentPlanBlock[];
+  readonly risks: readonly AgentPlanBlock[];
+  readonly tests: readonly AgentPlanBlock[];
+  readonly acceptanceCriteria: readonly AgentPlanBlock[];
+};
+
+export type PlanAnnotation = {
+  readonly blockId?: string;
+  readonly anchor: string;
+  readonly comment: string;
+};
 
 export type AgentUsage = {
   readonly inputTokens?: number;
@@ -25,9 +52,7 @@ export type AgentSession = {
 export type AgentPlanState = {
   readonly status: AgentPlanStatus;
   readonly version: number;
-  readonly draftMarkdown: string;
-  readonly proposedMarkdown?: string;
-  readonly approvedMarkdown?: string;
+  readonly artifact: AgentPlanArtifact;
   readonly lastSubmittedVersion?: number;
   readonly updatedAt: number;
 };
@@ -279,26 +304,30 @@ export type PlanApprovalRequest = {
   readonly id: string;
   readonly sessionId: AgentSessionId;
   readonly turnId: AgentTurnId;
+  readonly planId: string;
   readonly version: number;
   readonly status: AgentPlanStatus;
   readonly summary: string;
-  readonly proposedMarkdown: string;
-  readonly draftMarkdown?: string;
+  readonly artifact: AgentPlanArtifact;
+  readonly annotations?: readonly PlanAnnotation[];
 };
 
 export type PlanInteractionResponse = {
-  readonly requestId: string;
+  readonly planId: string;
   readonly decision: PlanApprovalDecision;
   readonly feedback?: string;
+  readonly annotations?: readonly PlanAnnotation[];
+  readonly artifactSnapshot?: AgentPlanArtifact;
 };
 
 export type AgentResolvePlanApprovalRequest = {
   readonly sessionId: AgentSessionId;
   readonly turnId: AgentTurnId;
-  readonly requestId: string;
+  readonly planId: string;
   readonly decision: PlanApprovalDecision;
   readonly feedback?: string;
-  readonly proposedMarkdown?: string;
+  readonly annotations?: readonly PlanAnnotation[];
+  readonly artifactSnapshot?: AgentPlanArtifact;
 };
 
 export type AgentResumeExecutionRequest = {

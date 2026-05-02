@@ -1363,9 +1363,13 @@ pub(crate) async fn apply_bespoke_event_handling(
         }
         EventMsg::ItemCompleted(item_completed_event) => {
             let item: ThreadItem = item_completed_event.item.clone().into();
-            if matches!(item, ThreadItem::Plan { .. }) {
+            if matches!(
+                &item,
+                ThreadItem::Plan { artifact, .. }
+                    if artifact.status == lyra_app_server_protocol::PlanArtifactStatus::Proposed
+            ) {
                 let mut state = thread_state.lock().await;
-                state.turn_summary.plan_submitted = true;
+                state.turn_summary.plan_proposed = true;
             }
             let thread_id = conversation_id.to_string();
             let turn_id = event_turn_id.clone();
@@ -2170,11 +2174,11 @@ async fn handle_turn_complete(
     thread_watch_manager: &ThreadWatchManager,
 ) {
     let turn_summary = find_and_remove_turn_summary(conversation_id, thread_state).await;
-    let plan_approval_requested = turn_summary.last_error.is_none() && turn_summary.plan_submitted;
+    let plan_approval_requested = turn_summary.last_error.is_none() && turn_summary.plan_proposed;
 
     let (status, error) = match turn_summary.last_error {
         Some(error) => (TurnStatus::Failed, Some(error)),
-        None if turn_summary.plan_submitted => (TurnStatus::Waiting, None),
+        None if turn_summary.plan_proposed => (TurnStatus::Waiting, None),
         None => (TurnStatus::Completed, None),
     };
 
@@ -3655,7 +3659,7 @@ mod tests {
         {
             let mut state = thread_state.lock().await;
             state.turn_summary.started_at = Some(42);
-            state.turn_summary.plan_submitted = true;
+            state.turn_summary.plan_proposed = true;
         }
 
         handle_turn_complete(

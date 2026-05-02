@@ -14,7 +14,6 @@ export type {
   ThreadAiPanelMessageContentPart,
   ThreadAiPanelPendingInteraction,
   ThreadAiPanelPlan,
-  ThreadAiPanelPlanStep,
   ThreadAiPanelToolCall,
   ThreadAiPanelTurn,
   ThreadAiPanelTurnMeta,

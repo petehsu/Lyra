@@ -46,6 +46,7 @@ import {
   isAiRuntimeBusy,
   resolveBoundProjectRoot,
   resolveSelectedRuntimeModelOption,
+  resolveSyncedSelectedModelOptionValue,
   shouldShowEmptySessionScene,
   type RuntimeModelOption
 } from "./surface-model";
@@ -87,9 +88,6 @@ const readString = (value: unknown): string | null =>
 
 const readNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
-
-const firstNonEmptyLine = (text: string): string | null =>
-  text.split(/\r?\n/u).map((line) => line.trim()).find((line) => line.length > 0) ?? null;
 
 const isAbsolutePath = (path: string): boolean =>
   path.startsWith("/") || path.startsWith("\\\\") || /^[a-z]:[\\/]/iu.test(path);
@@ -619,6 +617,16 @@ export const useAiPanelSurfaceRuntime = ({
     [modelOptions, selectedModelOptionValue]
   );
 
+  useEffect(() => {
+    setSelectedModelOptionValue((current) =>
+      resolveSyncedSelectedModelOptionValue({
+        modelOptions,
+        selectedModelOptionValue: current,
+        defaultProfileId
+      })
+    );
+  }, [defaultProfileId, modelOptions]);
+
   const persistDefaultProfileSelection = useCallback(async (profileId: string): Promise<void> => {
     if (onDefaultProfileSelect !== undefined) {
       await onDefaultProfileSelect(profileId);
@@ -1059,52 +1067,34 @@ export const useAiPanelSurfaceRuntime = ({
   ): Promise<void> => {
     const feedback = response.feedback?.trim() ?? "";
     const activeThreadId = state.activeThreadId;
-    const planTurnId = requestOverride?.turnId
-      ?? response.requestId.replace(/^plan:/u, "").trim();
+    const planTurnId = requestOverride?.turnId ?? state.latestPlanTurnId ?? "";
     const threadId = requestOverride?.sessionId ?? activeThreadId;
-    if (threadId === null || threadId.trim().length === 0 || planTurnId.length === 0) {
+    const planId = requestOverride?.planId ?? response.planId;
+    if (threadId === null || threadId.trim().length === 0 || planTurnId.length === 0 || planId.trim().length === 0) {
       return;
     }
+    const resolvePayload = {
+      threadId,
+      planTurnId,
+      planId,
+      decision: response.decision,
+      ...(feedback.length === 0 ? {} : { feedback }),
+      annotations: response.annotations ?? requestOverride?.annotations ?? [],
+      artifactSnapshot: response.artifactSnapshot ?? requestOverride?.artifact,
+    };
     if (response.decision === "approve_and_implement") {
       setPlanModeEnabled(false);
-      await resolvePlanApproval({
-        threadId,
-        planTurnId,
-        requestId: response.requestId,
-        decision: response.decision,
-        ...(feedback.length === 0 ? {} : { feedback }),
-        ...(requestOverride?.proposedMarkdown === undefined
-          ? {}
-          : { proposedMarkdown: requestOverride.proposedMarkdown }),
-      });
+      await resolvePlanApproval(resolvePayload);
       return;
     }
     if (response.decision === "keep_planning") {
       setPlanModeEnabled(true);
-      await resolvePlanApproval({
-        threadId,
-        planTurnId,
-        requestId: response.requestId,
-        decision: response.decision,
-        ...(feedback.length === 0 ? {} : { feedback }),
-        ...(requestOverride?.proposedMarkdown === undefined
-          ? {}
-          : { proposedMarkdown: requestOverride.proposedMarkdown }),
-      });
+      await resolvePlanApproval(resolvePayload);
       return;
     }
     setPlanModeEnabled(false);
-    await resolvePlanApproval({
-      threadId,
-      planTurnId,
-      requestId: response.requestId,
-      decision: response.decision,
-      ...(feedback.length === 0 ? {} : { feedback }),
-      ...(requestOverride?.proposedMarkdown === undefined
-        ? {}
-        : { proposedMarkdown: requestOverride.proposedMarkdown }),
-    });
-  }, [resolvePlanApproval, setPlanModeEnabled, state.activeThreadId]);
+    await resolvePlanApproval(resolvePayload);
+  }, [resolvePlanApproval, setPlanModeEnabled, state.activeThreadId, state.latestPlanTurnId]);
 
   const openPlanApprovalInWorkspace = useMemo(
     () =>
@@ -1135,41 +1125,6 @@ export const useAiPanelSurfaceRuntime = ({
     lastAutoOpenedPlanReviewIdRef.current = request.id;
     openPlanApprovalInWorkspace(request);
   }, [openPlanApprovalInWorkspace, state.activeInteractionPanel, state.followEnabled]);
-
-  useEffect(() => {
-    if (
-      state.followEnabled !== true
-      || openPlanApprovalInWorkspace === undefined
-      || state.activeThreadId === null
-      || state.latestPlanTurnId === null
-    ) {
-      return;
-    }
-    const plan = state.planByTurn[state.latestPlanTurnId];
-    if (plan === undefined || plan.finalText !== null) {
-      return;
-    }
-    const draft = plan.draftText.trim();
-    if (draft.length === 0) {
-      return;
-    }
-    openPlanApprovalInWorkspace({
-      id: `plan:${state.latestPlanTurnId}`,
-      sessionId: state.activeThreadId,
-      turnId: state.latestPlanTurnId,
-      version: 0,
-      status: "draft",
-      summary: firstNonEmptyLine(draft) ?? t("ai.proposedPlanSummaryFallback"),
-      proposedMarkdown: draft,
-    });
-  }, [
-    openPlanApprovalInWorkspace,
-    state.activeThreadId,
-    state.followEnabled,
-    state.latestPlanTurnId,
-    state.planByTurn,
-    t,
-  ]);
 
   const handleForkTurn = useCallback(async (turnId: string): Promise<void> => {
     const activeThread = state.activeThread;

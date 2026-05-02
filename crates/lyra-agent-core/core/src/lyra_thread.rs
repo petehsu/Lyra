@@ -5,6 +5,7 @@ use crate::session::LyraSessionHandle;
 use crate::session::SteerInputError;
 use crate::session::session::SessionSettingsUpdate;
 use lyra_features::Feature;
+use lyra_model_provider_info::ModelProviderInfo;
 use lyra_protocol::config_types::ApprovalsReviewer;
 use lyra_protocol::config_types::CollaborationMode;
 use lyra_protocol::config_types::ServiceTier;
@@ -162,6 +163,20 @@ impl LyraThread {
             .await
     }
 
+    pub async fn set_model_provider(
+        &self,
+        model_provider_id: String,
+        model_provider: ModelProviderInfo,
+    ) -> ConstraintResult<()> {
+        self.session_handle
+            .session
+            .update_settings(SessionSettingsUpdate {
+                model_provider: Some((model_provider_id, model_provider)),
+                ..Default::default()
+            })
+            .await
+    }
+
     pub async fn dynamic_tools_snapshot(&self) -> Vec<DynamicToolSpec> {
         self.session_handle.session.dynamic_tools_snapshot().await
     }
@@ -276,7 +291,7 @@ impl LyraThread {
             .await
     }
 
-    /// Resolve a submitted plan and start the follow-up turn after applying its mode.
+    /// Resolve a proposed plan and start the follow-up turn after applying its mode.
     ///
     /// This path intentionally avoids queuing `OverrideTurnContext` before starting the internal
     /// developer turn. The queued override can race with direct turn startup and leave the

@@ -124,6 +124,41 @@ export const resolveSelectedRuntimeModelOption = (
   ?? modelOptions[0]
   ?? null;
 
+export const resolveDefaultRuntimeModelOptionValue = (
+  modelOptions: readonly RuntimeModelOption[],
+  defaultProfileId?: string | null | undefined
+): string => {
+  const normalizedDefaultProfileId = defaultProfileId?.trim() ?? "";
+  const defaultProfileOption = normalizedDefaultProfileId.length === 0
+    ? null
+    : modelOptions.find((option) => option.profileId === normalizedDefaultProfileId) ?? null;
+  return (defaultProfileOption ?? modelOptions[0] ?? null)?.value ?? "";
+};
+
+export const resolveSyncedSelectedModelOptionValue = ({
+  modelOptions,
+  selectedModelOptionValue,
+  defaultProfileId
+}: {
+  readonly modelOptions: readonly RuntimeModelOption[];
+  readonly selectedModelOptionValue: string;
+  readonly defaultProfileId?: string | null | undefined;
+}): string => {
+  const fallbackValue = resolveDefaultRuntimeModelOptionValue(modelOptions, defaultProfileId);
+  const selectedOption = modelOptions.find((option) => option.value === selectedModelOptionValue);
+  if (selectedOption === undefined) {
+    return fallbackValue;
+  }
+
+  const normalizedDefaultProfileId = defaultProfileId?.trim() ?? "";
+  if (normalizedDefaultProfileId.length === 0) {
+    return selectedOption.profileId === undefined ? selectedOption.value : fallbackValue;
+  }
+  return selectedOption.profileId === normalizedDefaultProfileId
+    ? selectedOption.value
+    : fallbackValue;
+};
+
 export const createRuntimeTurnOptions = ({
   selectedModelOption,
   defaultProviderId,

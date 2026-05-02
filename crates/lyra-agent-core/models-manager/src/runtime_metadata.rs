@@ -209,6 +209,18 @@ fn protocol_behavior_summary(
             require_assistant_reasoning: Some(false),
             tool_loop_supported: Some(true),
         }),
+        ("mimo", "mimo_openai_chat_completions") => Some(LyraAiProtocolBehaviorSummary {
+            reasoning_replay_field: Some("reasoning_content".to_string()),
+            preserve_empty_reasoning: Some(false),
+            require_assistant_reasoning: Some(false),
+            tool_loop_supported: Some(true),
+        }),
+        ("mimo", "mimo_anthropic_messages") => Some(LyraAiProtocolBehaviorSummary {
+            reasoning_replay_field: None,
+            preserve_empty_reasoning: Some(false),
+            require_assistant_reasoning: Some(false),
+            tool_loop_supported: Some(true),
+        }),
         _ => None,
     }
 }
@@ -372,6 +384,14 @@ fn curated_provider_models(provider_id: &str, protocol_id: &str) -> Vec<ModelInf
                 false,
             ),
         ],
+        ("mimo", "mimo_openai_chat_completions") | ("mimo", "mimo_anthropic_messages") => {
+            vec![exact_template_model(
+                "mimo-v2.5-pro",
+                "MiMO v2.5 Pro",
+                128_000,
+                false,
+            )]
+        }
         _ => Vec::new(),
     }
 }
@@ -443,6 +463,10 @@ fn baseline_model_info_for_provider_protocol(
         ("vercel_ai_gateway", "vercel_ai_gateway_chat_completions") => {
             chat_completions_baseline(false, true, true, 272_000)
         }
+        ("mimo", "mimo_openai_chat_completions") => {
+            chat_completions_baseline(false, false, true, 128_000)
+        }
+        ("mimo", "mimo_anthropic_messages") => anthropic_baseline(128_000),
         ("ollama", "ollama_chat") => chat_completions_baseline(false, false, true, 128_000),
         ("lmstudio", "lmstudio_chat_completions") => {
             chat_completions_baseline(false, false, true, 128_000)
@@ -466,6 +490,10 @@ fn baseline_model_info_for_provider_protocol(
         ("", "vercel_ai_gateway_chat_completions") => {
             chat_completions_baseline(false, true, true, 272_000)
         }
+        ("", "mimo_openai_chat_completions") => {
+            chat_completions_baseline(false, false, true, 128_000)
+        }
+        ("", "mimo_anthropic_messages") => anthropic_baseline(128_000),
         ("", "ollama_chat") => chat_completions_baseline(false, false, true, 128_000),
         ("", "lmstudio_chat_completions") => chat_completions_baseline(false, false, true, 128_000),
         ("", "custom_chat_completions") => chat_completions_baseline(false, false, true, 128_000),
@@ -825,5 +853,27 @@ mod tests {
         assert_eq!(entry.id, "deepseek-reasoner");
         assert_eq!(entry.supports_tools, Some(true));
         assert!(entry.runtime_metadata.is_some());
+    }
+
+    #[test]
+    fn mimo_openai_metadata_preserves_reasoning_content() {
+        let entry = provider_model_entry_from_id(
+            "mimo",
+            "mimo_openai_chat_completions",
+            "mimo-v2.5-pro",
+            "preset",
+        );
+        let behavior = entry
+            .runtime_metadata
+            .and_then(|metadata| metadata.protocol_behavior)
+            .expect("MiMO behavior metadata");
+
+        assert_eq!(
+            behavior.reasoning_replay_field.as_deref(),
+            Some("reasoning_content")
+        );
+        assert_eq!(behavior.preserve_empty_reasoning, Some(false));
+        assert_eq!(behavior.require_assistant_reasoning, Some(false));
+        assert_eq!(behavior.tool_loop_supported, Some(true));
     }
 }

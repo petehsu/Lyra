@@ -34,6 +34,32 @@ const turnsById = new Map(messages.map((message, index) => [
   },
 ]));
 
+const planArtifact = (
+  status: "draft" | "proposed" = "proposed",
+  title = "Final plan"
+) => ({
+  planId: "plan-1",
+  status,
+  title,
+  summary: "Plan summary",
+  objective: "Implement the plan.",
+  assumptions: [],
+  steps: [{ id: "step-1", kind: "step", title: "Inspect", body: "Inspect the app." }],
+  interfaces: [],
+  risks: [],
+  tests: [],
+  acceptanceCriteria: [],
+});
+
+const planState = (
+  status: "draft" | "proposed" = "proposed",
+  title = "Final plan"
+): LyraTurnPlanState => ({
+  turnId: "turn-plan",
+  artifact: planArtifact(status, title),
+  updatedAt: 2000,
+});
+
 afterEach(() => {
   cleanup();
 });
@@ -114,18 +140,10 @@ describe("AiPanelThreadView virtualization", () => {
 describe("AiPanelThreadRenderRows plans", () => {
   test("does not render update_plan checklists as Plan Mode plan cards", () => {
     const messageMetadata = buildAiPanelThreadMessageMetadata(messages.slice(0, 1));
-    const checklistOnlyPlan: LyraTurnPlanState = {
-      turnId: "turn-0",
-      draftText: "",
-      finalText: null,
-      explanation: "tracking",
-      steps: [{ step: "inspect", status: "completed" }],
-      updatedAt: 2000,
-    };
 
     const renderRows = buildAiPanelThreadRenderRows({
       sortedMessages: messages.slice(0, 1),
-      planByTurn: { "turn-0": checklistOnlyPlan },
+      planByTurn: {},
       typewriterText: "",
       streamingTurnRuntimeFeed: [],
       streamingStatus: null,
@@ -139,67 +157,46 @@ describe("AiPanelThreadRenderRows plans", () => {
 });
 
 describe("PlanCard", () => {
-  test("labels submitted plans separately from drafts", () => {
-    const submittedPlan: LyraTurnPlanState = {
-      turnId: "turn-plan",
-      draftText: "- draft",
-      finalText: "- final",
-      explanation: null,
-      steps: [],
-      updatedAt: 2000,
-    };
+  test("labels proposed plans separately from drafts", () => {
+    const proposedPlan = planState("proposed", "Final plan");
 
     const { container } = render(
       <PlanCard
         locale="zh-CN"
-        plan={submittedPlan}
+        plan={proposedPlan}
         richRenderingEnabled={false}
         showActions={false}
         onReject={vi.fn()}
       />
     );
 
-    expect(container.querySelector(".lyra-ai-plan-card")?.getAttribute("aria-label")).toBe("已提交计划");
-    expect(screen.getByText("已提交计划")).toBeDefined();
+    expect(container.querySelector(".lyra-ai-plan-card")?.getAttribute("aria-label")).toBe("待审批计划");
+    expect(screen.getByText("待审批计划")).toBeDefined();
     expect(screen.queryByText("计划草案")).toBeNull();
     expect(container.querySelector(".lyra-ai-status-badge")).toBeNull();
   });
 
   test("renders full plan text before approval even when checklist steps exist", () => {
-    const submittedPlan: LyraTurnPlanState = {
-      turnId: "turn-plan",
-      draftText: "- draft",
-      finalText: "# Final plan\n\n- Inspect\n- Patch",
-      explanation: "tracking",
-      steps: [{ step: "Inspect", status: "pending" }],
-      updatedAt: 2000,
-    };
+    const proposedPlan = planState("proposed", "Final plan");
 
     render(
       <PlanCard
         locale="en-US"
-        plan={submittedPlan}
+        plan={proposedPlan}
         richRenderingEnabled={false}
         showActions={false}
         onReject={vi.fn()}
       />
     );
 
-    expect(screen.getByText(/Final plan/)).toBeDefined();
+    expect(screen.getByText("Final plan")).toBeDefined();
     expect(screen.getByText("Inspect")).toBeDefined();
   });
 });
 
 describe("AiPanelPlanRow", () => {
   test("renders approval actions on the plan card when pending approval", () => {
-    const submittedPlan: LyraTurnPlanState = {
-      turnId: "turn-plan",
-      draftText: "- draft",
-      finalText: "# Final plan",
-      explanation: null,
-      steps: [],
-      updatedAt: 2000,
-    };
+    const proposedPlan = planState("proposed", "Final plan");
     const onPlanApprovalDecision = vi.fn(async () => {});
 
     render(
@@ -207,7 +204,7 @@ describe("AiPanelPlanRow", () => {
         row={{
           kind: "plan",
           key: "plan:turn-plan",
-          plan: submittedPlan,
+          plan: proposedPlan,
           sessionId: "thread-1",
         }}
         locale="en-US"
@@ -220,10 +217,11 @@ describe("AiPanelPlanRow", () => {
             id: "plan:turn-plan",
             sessionId: "thread-1",
             turnId: "turn-plan",
-            version: 0,
-            status: "submitted",
+            planId: "plan-1",
+            version: 2,
+            status: "proposed",
             summary: "Final plan",
-            proposedMarkdown: "# Final plan",
+            artifact: proposedPlan.artifact,
           },
         }]}
         onPlanApprovalDecision={onPlanApprovalDecision}
@@ -235,7 +233,7 @@ describe("AiPanelPlanRow", () => {
 
     expect(onPlanApprovalDecision).toHaveBeenCalledWith(
       expect.objectContaining({
-        requestId: "plan:turn-plan",
+        planId: "plan-1",
         decision: "approve_and_implement",
       }),
       expect.objectContaining({ id: "plan:turn-plan" })
@@ -246,21 +244,14 @@ describe("AiPanelPlanRow", () => {
   });
 
   test("hides plan approval actions when the plan is not pending approval", () => {
-    const submittedPlan: LyraTurnPlanState = {
-      turnId: "turn-plan",
-      draftText: "- draft",
-      finalText: "# Final plan",
-      explanation: null,
-      steps: [],
-      updatedAt: 2000,
-    };
+    const proposedPlan = planState("proposed", "Final plan");
 
     render(
       <AiPanelPlanRow
         row={{
           kind: "plan",
           key: "plan:turn-plan",
-          plan: submittedPlan,
+          plan: proposedPlan,
           sessionId: "thread-1",
         }}
         locale="en-US"

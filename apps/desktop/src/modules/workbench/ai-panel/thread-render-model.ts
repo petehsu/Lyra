@@ -42,11 +42,8 @@ export const displayMessageTurnId = (message: DisplayMessage): string | null =>
 export const displayMessageSessionId = (message: DisplayMessage): string | null =>
   "sessionId" in message && typeof message.sessionId === "string" ? message.sessionId : null;
 
-export const planTextForApproval = (plan: LyraTurnPlanState): string =>
-  (plan.finalText ?? plan.draftText).trim();
-
 export const shouldRenderPlanCard = (plan: LyraTurnPlanState): boolean =>
-  planTextForApproval(plan).length > 0;
+  plan.artifact.title.trim().length > 0 || plan.artifact.summary.trim().length > 0;
 
 export const buildAiPanelThreadMessageMetadata = (
   sortedMessages: readonly DisplayMessage[]

@@ -274,8 +274,6 @@ export type { ThreadAiPanelPendingInteraction } from "./ThreadAiPanelPendingInte
 export type { ThreadAiPanelPendingInteractionKind } from "./ThreadAiPanelPendingInteractionKind";
 export type { ThreadAiPanelPendingInteractionStatus } from "./ThreadAiPanelPendingInteractionStatus";
 export type { ThreadAiPanelPlan } from "./ThreadAiPanelPlan";
-export type { ThreadAiPanelPlanStep } from "./ThreadAiPanelPlanStep";
-export type { ThreadAiPanelPlanStepStatus } from "./ThreadAiPanelPlanStepStatus";
 export type { ThreadAiPanelToolCall } from "./ThreadAiPanelToolCall";
 export type { ThreadAiPanelToolCallStatus } from "./ThreadAiPanelToolCallStatus";
 export type { ThreadAiPanelTurn } from "./ThreadAiPanelTurn";

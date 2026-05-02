@@ -40,6 +40,10 @@ use lyra_protocol::openai_models::ModelAvailabilityNux as CoreModelAvailabilityN
 use lyra_protocol::openai_models::ReasoningEffort;
 use lyra_protocol::openai_models::default_input_modalities;
 use lyra_protocol::parse_command::ParsedCommand as CoreParsedCommand;
+pub use lyra_protocol::plan_tool::PlanAnnotation;
+pub use lyra_protocol::plan_tool::PlanArtifact;
+pub use lyra_protocol::plan_tool::PlanArtifactBlock;
+pub use lyra_protocol::plan_tool::PlanArtifactStatus;
 use lyra_protocol::plan_tool::PlanItemArg as CorePlanItemArg;
 use lyra_protocol::plan_tool::StepStatus as CorePlanStepStatus;
 use lyra_protocol::protocol::AgentStatus as CoreAgentStatus;
@@ -3398,15 +3402,7 @@ pub enum ThreadAiPanelToolCallStatus {
 #[ts(export_to = "v2/")]
 pub struct ThreadAiPanelPlan {
     pub turn_id: String,
-    pub draft_text: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub final_text: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub explanation: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub steps: Vec<ThreadAiPanelPlanStep>,
+    pub artifact: PlanArtifact,
     #[ts(type = "number")]
     pub updated_at_ms: i64,
 }
@@ -4181,6 +4177,9 @@ pub struct TurnStartParams {
     /// Override the model for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub model: Option<String>,
+    /// Override the model provider for this turn and subsequent turns.
+    #[ts(optional = nullable)]
+    pub model_provider: Option<String>,
     /// Override the service tier for this turn and subsequent turns.
     #[serde(
         default,
@@ -4292,12 +4291,14 @@ pub enum PlanApprovalDecision {
 pub struct TurnPlanApprovalResolveParams {
     pub thread_id: String,
     pub plan_turn_id: String,
-    pub request_id: String,
+    pub plan_id: String,
     pub decision: PlanApprovalDecision,
+    #[serde(default)]
+    pub annotations: Vec<PlanAnnotation>,
     #[ts(optional = nullable)]
     pub feedback: Option<String>,
     #[ts(optional = nullable)]
-    pub proposed_markdown: Option<String>,
+    pub artifact_snapshot: Option<PlanArtifact>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -4549,9 +4550,9 @@ pub enum ThreadItem {
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
-    /// proposed plan item content. The completed plan item is
-    /// authoritative and may not match the concatenation of `PlanDelta` text.
-    Plan { id: String, text: String },
+    /// Structured Plan Mode artifact. Only `artifact.status == "proposed"` creates an
+    /// approvable pending interaction.
+    Plan { id: String, artifact: PlanArtifact },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     Reasoning {
@@ -5085,7 +5086,7 @@ impl From<CoreTurnItem> for ThreadItem {
             }
             CoreTurnItem::Plan(plan) => ThreadItem::Plan {
                 id: plan.id,
-                text: plan.text,
+                artifact: plan.artifact,
             },
             CoreTurnItem::Reasoning(reasoning) => ThreadItem::Reasoning {
                 id: reasoning.id,
@@ -8552,9 +8553,11 @@ mod tests {
         let params: TurnStartParams = serde_json::from_value(json!({
             "threadId": "thread_123",
             "input": [],
+            "modelProvider": "lp_mimo",
             "serviceTier": null
         }))
         .expect("params should deserialize");
+        assert_eq!(params.model_provider.as_deref(), Some("lp_mimo"));
         assert_eq!(params.service_tier, Some(None));
 
         let serialized = serde_json::to_value(&params).expect("params should serialize");
@@ -8572,6 +8575,7 @@ mod tests {
             approvals_reviewer: None,
             sandbox_policy: None,
             model: None,
+            model_provider: None,
             service_tier: None,
             effort: None,
             verbosity: None,

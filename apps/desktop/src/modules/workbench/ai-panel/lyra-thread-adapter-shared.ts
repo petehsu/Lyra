@@ -1,4 +1,5 @@
 import type {
+  AgentPlanArtifact,
   AgentPendingInteraction,
   AgentSessionDetail,
   AgentToolCall,
@@ -84,17 +85,9 @@ export type ThreadAiPanelToolCall = {
   readonly errorMessage?: string;
 };
 
-export type ThreadAiPanelPlanStep = {
-  readonly step: string;
-  readonly status: "pending" | "inProgress" | "completed";
-};
-
 export type ThreadAiPanelPlan = {
   readonly turnId: string;
-  readonly draftText: string;
-  readonly finalText?: string | null;
-  readonly explanation?: string | null;
-  readonly steps: readonly ThreadAiPanelPlanStep[];
+  readonly artifact: AgentPlanArtifact;
   readonly updatedAtMs: number;
 };
 
