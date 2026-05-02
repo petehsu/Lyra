@@ -169,7 +169,6 @@ export const AiPanelSurfaceView = ({
             onRegenerateTurn={actions.regenerateTurn}
             onEditMessageTurn={actions.editMessageTurn}
             onPlanApprovalDecision={actions.planApprovalDecision}
-            onOpenPlanApprovalInPanel={actions.setActiveInteractionId}
             {...(runtime.openPlanApprovalInWorkspace === undefined
               ? {}
               : { onOpenPlanApprovalInWorkspace: runtime.openPlanApprovalInWorkspace })}
@@ -270,9 +269,7 @@ export const AiPanelSurfaceView = ({
             state.streamingTurnId === null
             || !runtime.isAgentAvailable
           }
-          onHeightChange={(height) => {
-            actions.setComposerHeight(height);
-          }}
+          onHeightChange={actions.setComposerHeight}
           onStop={actions.interruptTurn}
         />
       </div>

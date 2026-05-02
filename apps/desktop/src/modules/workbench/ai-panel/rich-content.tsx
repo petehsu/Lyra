@@ -1,19 +1,12 @@
 import DOMPurify from "dompurify";
-import { Check, ExternalLink, RotateCcw, X } from "lucide-react";
 import { marked } from "marked";
 import { memo, useEffect, useMemo, useRef } from "react";
-import { createTranslator, type WorkbenchLocale } from "../i18n";
+import type { WorkbenchLocale } from "../i18n";
 
 type AiPanelRichContentProps = {
   readonly locale?: WorkbenchLocale;
   readonly content: string;
   readonly themeSignature?: string;
-  readonly planActions?: {
-    readonly onApprove?: () => void;
-    readonly onKeepPlanning?: () => void;
-    readonly onReject?: () => void;
-    readonly onOpenInPanel?: () => void;
-  };
 };
 
 type CompiledRichContent = {
@@ -22,7 +15,6 @@ type CompiledRichContent = {
 };
 
 const MERMAID_BLOCK_PATTERN = /```mermaid[^\n]*\n([\s\S]*?)```/gi;
-const PROPOSED_PLAN_PATTERN = /<proposed_plan>([\s\S]*?)<\/proposed_plan>/gi;
 const MONO_FONT_FAMILY = "\"JetBrains Mono\", \"SF Mono\", Menlo, monospace";
 
 const FALLBACK_LIGHT = {
@@ -150,15 +142,9 @@ const sanitizeHtml = (html: string): string =>
     ADD_ATTR: ["target", "rel", "class", "data-lyra-mermaid-index"]
   });
 
-const compileRichContent = (
-  content: string,
-  options: { readonly proposedPlanTitle: string }
-): CompiledRichContent => {
+const compileRichContent = (content: string): CompiledRichContent => {
   const mermaidBlocks: string[] = [];
-  const withPlanBlocks = content.replace(PROPOSED_PLAN_PATTERN, (_match, body: string) => {
-    return `\n<div class="lyra-ai-proposed-plan"><div class="lyra-ai-proposed-plan__header">${escapeHtml(options.proposedPlanTitle)}</div><pre class="lyra-ai-proposed-plan__body">${escapeHtml(body.trim())}</pre></div>\n`;
-  });
-  const markdown = withPlanBlocks.replace(MERMAID_BLOCK_PATTERN, (_match, code: string) => {
+  const markdown = content.replace(MERMAID_BLOCK_PATTERN, (_match, code: string) => {
     const blockIndex = mermaidBlocks.push(code.trim()) - 1;
     return `\n<div class="lyra-ai-mermaid lyra-ai-mermaid-loading" data-lyra-mermaid-index="${String(blockIndex)}"><div class="lyra-ai-mermaid-skeleton"></div></div>\n`;
   });
@@ -177,22 +163,11 @@ const compileRichContent = (
 export const AiPanelRichContent = memo(({
   locale = "en-US",
   content,
-  themeSignature,
-  planActions
+  themeSignature
 }: AiPanelRichContentProps) => {
-  const t = useMemo(() => createTranslator(locale), [locale]);
+  void locale;
   const containerRef = useRef<HTMLDivElement>(null);
-  const compiled = useMemo(
-    () =>
-      compileRichContent(content, {
-        proposedPlanTitle: t("ai.proposedPlanTitle")
-      }),
-    [content, t]
-  );
-  const hasProposedPlan = useMemo(
-    () => /<proposed_plan>[\s\S]*?<\/proposed_plan>/i.test(content),
-    [content]
-  );
+  const compiled = useMemo(() => compileRichContent(content), [content]);
 
   useEffect(() => {
     const root = containerRef.current;
@@ -294,54 +269,6 @@ export const AiPanelRichContent = memo(({
         className="lyra-ai-rich-content lyra-ai-agent-message-content lyra-ai-agent-message-content-rich"
         dangerouslySetInnerHTML={{ __html: compiled.html }}
       />
-      {hasProposedPlan && planActions !== undefined ? (
-        <div className="lyra-ai-proposed-plan__actions">
-          {planActions.onApprove === undefined ? null : (
-            <button
-              type="button"
-              className="lyra-ai-proposed-plan__action lyra-ai-proposed-plan__action-primary"
-              aria-label={t("ai.planApprovalApproveAndImplement")}
-              title={t("ai.planApprovalApproveAndImplement")}
-              onClick={planActions.onApprove}
-            >
-              <Check size={14} aria-hidden="true" />
-            </button>
-          )}
-          {planActions.onKeepPlanning === undefined ? null : (
-            <button
-              type="button"
-              className="lyra-ai-proposed-plan__action lyra-ai-proposed-plan__action-secondary"
-              aria-label={t("ai.planApprovalKeepPlanning")}
-              title={t("ai.planApprovalKeepPlanning")}
-              onClick={planActions.onKeepPlanning}
-            >
-              <RotateCcw size={14} aria-hidden="true" />
-            </button>
-          )}
-          {planActions.onOpenInPanel === undefined ? null : (
-            <button
-              type="button"
-              className="lyra-ai-proposed-plan__action lyra-ai-proposed-plan__action-primary"
-              aria-label={t("ai.proposedPlanOpenInPanel")}
-              title={t("ai.proposedPlanOpenInPanel")}
-              onClick={planActions.onOpenInPanel}
-            >
-              <ExternalLink size={14} aria-hidden="true" />
-            </button>
-          )}
-          {planActions.onReject === undefined ? null : (
-            <button
-              type="button"
-              className="lyra-ai-proposed-plan__action lyra-ai-proposed-plan__action-danger"
-              aria-label={t("ai.proposedPlanReject")}
-              title={t("ai.proposedPlanReject")}
-              onClick={planActions.onReject}
-            >
-              <X size={14} aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      ) : null}
     </>
   );
 });

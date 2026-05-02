@@ -106,9 +106,7 @@ pub(crate) struct TurnState {
     mailbox_delivery_phase: MailboxDeliveryPhase,
     granted_permissions: Option<PermissionProfile>,
     strict_auto_review_enabled: bool,
-    plan_submitted: bool,
     request_user_input_called: bool,
-    plan_plain_message_violations: u8,
     pub(crate) tool_calls: u64,
     pub(crate) token_usage_at_turn_start: TokenUsage,
 }
@@ -264,21 +262,8 @@ impl TurnState {
         self.strict_auto_review_enabled
     }
 
-    pub(crate) fn mark_plan_submitted(&mut self) {
-        self.plan_submitted = true;
-    }
-
-    pub(crate) fn plan_submitted(&self) -> bool {
-        self.plan_submitted
-    }
-
     pub(crate) fn mark_request_user_input_called(&mut self) {
         self.request_user_input_called = true;
-    }
-
-    pub(crate) fn record_plan_plain_message_violation(&mut self) -> u8 {
-        self.plan_plain_message_violations = self.plan_plain_message_violations.saturating_add(1);
-        self.plan_plain_message_violations
     }
 }
 

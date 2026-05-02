@@ -322,7 +322,7 @@ impl ToolRegistry {
         let is_mutating = handler.is_mutating(&invocation).await;
         if is_mutating && invocation.turn.collaboration_mode.mode == ModeKind::Plan {
             let err = FunctionCallError::RespondToModel(
-                "Plan Mode is active, so mutating tool calls are blocked. Use read-only exploration only, then call plan_submit for user approval before implementation.".to_string(),
+                "Plan Mode is active, so mutating tool calls are blocked. Use read-only exploration only, then call lyra_plan with action=\"submit\" for user approval before implementation.".to_string(),
             );
             dispatch_trace.record_failed(&err);
             return Err(err);

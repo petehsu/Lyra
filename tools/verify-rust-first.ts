@@ -228,6 +228,80 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
         message: "MCP runtime registry and lifecycle must stay in Rust."
       }
     ]
+  },
+  {
+    name: "resources",
+    dirName: "resources",
+    crateDir: "crates/lyra-resource-napi",
+    cratePackageName: "lyra-resource-napi",
+    servicePath: "apps/desktop/src/main/resources/service.ts",
+    loaderPath: "apps/desktop/src/main/resources/native-loader.ts",
+    typesPath: "apps/desktop/src/main/resources/types.ts",
+    indexPath: "apps/desktop/src/main/resources/index.ts",
+    mainBridgeFactoryName: "createResourceRuntimeService",
+    requiredServiceRules: [
+      {
+        pattern: /from\s+["']\.\/native-loader["']/,
+        message: "Resources service must import its native loader."
+      },
+      {
+        pattern: /\bloadResourcesNativeBindings\b/,
+        message: "Resources service must load native bindings explicitly."
+      }
+    ],
+    forbiddenServiceRules: [
+      {
+        pattern: /from\s+["']node:child_process["']/,
+        message: "Resources core behavior must not fall back to child_process orchestration in TypeScript."
+      },
+      {
+        pattern: /safeStorage/,
+        message: "Resources service must not grow TypeScript secret handling."
+      },
+      {
+        pattern: /Fall through to the existing TypeScript implementation/,
+        message: "Resources service must not keep TypeScript fallback implementation notes or branches."
+      }
+    ]
+  },
+  {
+    name: "image-viewer",
+    dirName: "image-viewer",
+    crateDir: "crates/lyra-image-napi",
+    cratePackageName: "lyra-image-napi",
+    servicePath: "apps/desktop/src/main/image-viewer/service.ts",
+    loaderPath: "apps/desktop/src/main/image-viewer/native-loader.ts",
+    typesPath: "apps/desktop/src/main/image-viewer/types.ts",
+    indexPath: "apps/desktop/src/main/image-viewer/index.ts",
+    mainBridgeFactoryName: "createImageViewerIpcBridge",
+    requiredServiceRules: [
+      {
+        pattern: /from\s+["']\.\/native-loader["']/,
+        message: "Image viewer service must import its native loader."
+      },
+      {
+        pattern: /\bloadImageViewerNativeBindings\b/,
+        message: "Image viewer service must load native bindings explicitly."
+      }
+    ],
+    forbiddenServiceRules: [
+      {
+        pattern: /from\s+["']node:child_process["']/,
+        message: "Image viewer core behavior must not fall back to child_process orchestration in TypeScript."
+      },
+      {
+        pattern: /safeStorage/,
+        message: "Image viewer service must not grow TypeScript secret handling."
+      },
+      {
+        pattern: /Fall through to the existing TypeScript implementation/,
+        message: "Image viewer service must not keep TypeScript fallback implementation notes or branches."
+      },
+      {
+        pattern: /\bdecode(Image|Tile)\b|\bcanvas\b|\bsharp\b|\bjimp\b/i,
+        message: "Image viewer decoding and tile preparation must stay native-owned."
+      }
+    ]
   }
 ] as const;
 

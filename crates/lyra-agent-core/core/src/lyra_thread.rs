@@ -83,6 +83,12 @@ impl LyraThread {
         self.session_handle.shutdown_and_wait().await
     }
 
+    pub async fn drain_lyra_memory_writer_jobs(
+        &self,
+    ) -> anyhow::Result<crate::LyraMemoryWriteOutcome> {
+        crate::memories::drain_memory_writer_jobs_for_session(&self.session_handle.session).await
+    }
+
     #[doc(hidden)]
     pub async fn ensure_rollout_materialized(&self) {
         self.session_handle

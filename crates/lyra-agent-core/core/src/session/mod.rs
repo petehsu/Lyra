@@ -2708,35 +2708,11 @@ impl Session {
             .set_mailbox_delivery_phase(MailboxDeliveryPhase::CurrentTurn);
     }
 
-    pub(crate) async fn mark_plan_submitted(&self, sub_id: &str) {
-        let Some(turn_state) = self.turn_state_for_sub_id(sub_id).await else {
-            return;
-        };
-        turn_state.lock().await.mark_plan_submitted();
-    }
-
-    pub(crate) async fn plan_submitted(&self, sub_id: &str) -> bool {
-        let Some(turn_state) = self.turn_state_for_sub_id(sub_id).await else {
-            return false;
-        };
-        turn_state.lock().await.plan_submitted()
-    }
-
     pub(crate) async fn mark_request_user_input_called(&self, sub_id: &str) {
         let Some(turn_state) = self.turn_state_for_sub_id(sub_id).await else {
             return;
         };
         turn_state.lock().await.mark_request_user_input_called();
-    }
-
-    pub(crate) async fn record_plan_plain_message_violation(&self, sub_id: &str) -> u8 {
-        let Some(turn_state) = self.turn_state_for_sub_id(sub_id).await else {
-            return 0;
-        };
-        turn_state
-            .lock()
-            .await
-            .record_plan_plain_message_violation()
     }
 
     async fn turn_state_for_sub_id(

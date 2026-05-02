@@ -85,7 +85,6 @@ type AiPanelThreadViewProps = {
     response: PlanInteractionResponse,
     requestOverride?: PlanApprovalRequest
   ) => Promise<void>;
-  readonly onOpenPlanApprovalInPanel: (requestId: string) => void;
   readonly onOpenPlanApprovalInWorkspace?: (request: PlanApprovalRequest) => void;
   readonly onOpenThread?: (threadId: string) => void;
 };
@@ -135,7 +134,6 @@ export const AiPanelThreadView = memo(({
   onRegenerateTurn,
   onEditMessageTurn,
   onPlanApprovalDecision,
-  onOpenPlanApprovalInPanel,
   onOpenPlanApprovalInWorkspace,
   onOpenThread,
 }: AiPanelThreadViewProps) => {
@@ -159,7 +157,6 @@ export const AiPanelThreadView = memo(({
             toolStatusRunningLabel={toolStatusRunningLabel}
             toolStatusCompletedLabel={toolStatusCompletedLabel}
             toolStatusFailedLabel={toolStatusFailedLabel}
-            pendingInteractionQueue={pendingInteractionQueue}
             canOpenFilePath={canOpenFilePath}
             openRuntimeTargetPath={openRuntimeTargetPath}
             copyMessageLabel={copyMessageLabel}
@@ -170,11 +167,6 @@ export const AiPanelThreadView = memo(({
             onForkTurn={onForkTurn}
             onRegenerateTurn={onRegenerateTurn}
             onEditMessageTurn={onEditMessageTurn}
-            onPlanApprovalDecision={onPlanApprovalDecision}
-            onOpenPlanApprovalInPanel={onOpenPlanApprovalInPanel}
-            {...(onOpenPlanApprovalInWorkspace === undefined
-              ? {}
-              : { onOpenPlanApprovalInWorkspace })}
             {...(onOpenThread === undefined ? {} : { onOpenThread })}
           />
         );

@@ -41,6 +41,7 @@ pub(super) async fn spawn_review_thread(
         wire_api: parent_turn_context.provider.info().wire_api,
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
+        collaboration_mode: parent_turn_context.collaboration_mode.mode,
         sandbox_policy: parent_turn_context.sandbox_policy.get(),
         windows_sandbox_level: parent_turn_context.windows_sandbox_level,
     })

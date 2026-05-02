@@ -2,6 +2,7 @@ use super::*;
 use lyra_features::Feature;
 use lyra_features::Features;
 use lyra_model_provider_info::WireApi;
+use lyra_protocol::config_types::ModeKind;
 use lyra_protocol::config_types::WebSearchMode;
 use lyra_protocol::config_types::WindowsSandboxLevel;
 use lyra_protocol::openai_models::ConfigShellToolType;
@@ -88,6 +89,7 @@ fn shell_zsh_fork_prefers_shell_command_over_unified_exec() {
         wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
+        collaboration_mode: ModeKind::Default,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
@@ -149,6 +151,7 @@ fn subagents_keep_request_user_input_mode_config_and_agent_jobs_workers_opt_in_b
         session_source: SessionSource::SubAgent(SubAgentSource::Other(
             "agent_job:test".to_string(),
         )),
+        collaboration_mode: ModeKind::Default,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
@@ -178,6 +181,7 @@ fn image_generation_requires_feature_and_supported_model() {
         wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
+        collaboration_mode: ModeKind::Default,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
@@ -189,6 +193,7 @@ fn image_generation_requires_feature_and_supported_model() {
         wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
+        collaboration_mode: ModeKind::Default,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
@@ -200,6 +205,7 @@ fn image_generation_requires_feature_and_supported_model() {
         wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
+        collaboration_mode: ModeKind::Default,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
@@ -211,6 +217,7 @@ fn image_generation_requires_feature_and_supported_model() {
         wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
+        collaboration_mode: ModeKind::Default,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
@@ -236,6 +243,7 @@ fn records_whether_model_supports_image_input() {
         wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
+        collaboration_mode: ModeKind::Default,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
@@ -247,6 +255,7 @@ fn records_whether_model_supports_image_input() {
         wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
+        collaboration_mode: ModeKind::Default,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
@@ -272,6 +281,7 @@ fn provider_builtin_tools_require_responses_wire_api() {
         wire_api: WireApi::Responses,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
+        collaboration_mode: ModeKind::Default,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
@@ -283,6 +293,7 @@ fn provider_builtin_tools_require_responses_wire_api() {
         wire_api: WireApi::ChatCompletions,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
+        collaboration_mode: ModeKind::Default,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });

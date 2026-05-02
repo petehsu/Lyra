@@ -8,13 +8,16 @@ pub(crate) mod citations;
 #[cfg(test)]
 mod control;
 mod lyra_truth;
+mod model_writer;
 pub(crate) mod prompts;
 mod start;
 #[cfg(test)]
 mod tests;
 pub(crate) mod usage;
 
+pub use lyra_truth::LyraMemoryWriteOutcome;
 pub use lyra_truth::persist_thread_item_to_lyra_memory_truth;
+pub(crate) use model_writer::drain_memory_writer_jobs_for_session;
 /// Starts Lyra memory truth initialization for eligible root sessions.
 pub(crate) use start::start_memories_startup_task;
 

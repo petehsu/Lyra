@@ -42,8 +42,6 @@ export type StreamStatusItem = {
 
 const internalReflectionHeadingPattern = /(?:^|\n)\s{0,3}(?:#{1,6}\s*)?(?:reflection|反思)[\s\S]*$/i;
 
-export const proposedPlanPattern = /<proposed_plan>[\s\S]*?<\/proposed_plan>/i;
-
 export const sortByTime = <T extends { readonly createdAt: number }>(
   entries: readonly T[]
 ): readonly T[] => [...entries].sort((left, right) => left.createdAt - right.createdAt);

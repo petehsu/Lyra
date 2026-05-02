@@ -1429,6 +1429,61 @@ pub(crate) async fn apply_bespoke_event_handling(
                                 .await;
                         }
                     }
+                    let conversation = conversation.clone();
+                    let outgoing = outgoing.clone();
+                    let thread_id = thread_id.clone();
+                    let turn_id = turn_id.clone();
+                    let notify_memory_updates = matches!(api_version, ApiVersion::V2);
+                    tokio::spawn(async move {
+                        match conversation.drain_lyra_memory_writer_jobs().await {
+                            Ok(outcome) => {
+                                if notify_memory_updates {
+                                    if outcome.shared_updated {
+                                        outgoing
+                                            .send_server_notification(
+                                                ServerNotification::MemorySharedUpdated(
+                                                    MemorySharedUpdatedNotification {
+                                                        thread_id: thread_id.clone(),
+                                                        turn_id: turn_id.clone(),
+                                                    },
+                                                ),
+                                            )
+                                            .await;
+                                    }
+                                    if outcome.frozen_updated {
+                                        outgoing
+                                            .send_server_notification(
+                                                ServerNotification::MemoryFrozenUpdated(
+                                                    MemoryFrozenUpdatedNotification {
+                                                        thread_id: thread_id.clone(),
+                                                        turn_id: turn_id.clone(),
+                                                    },
+                                                ),
+                                            )
+                                            .await;
+                                    }
+                                    if outcome.prompt_cache_updated {
+                                        outgoing
+                                            .send_server_notification(
+                                                ServerNotification::MemoryPromptCacheUpdated(
+                                                    MemoryPromptCacheUpdatedNotification {
+                                                        thread_id: thread_id.clone(),
+                                                        turn_id: turn_id.clone(),
+                                                    },
+                                                ),
+                                            )
+                                            .await;
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                warn!(
+                                    "failed to drain Lyra memory writer jobs for thread {} turn {}: {err}",
+                                    thread_id, turn_id
+                                );
+                            }
+                        }
+                    });
                 }
                 Err(err) => {
                     warn!(

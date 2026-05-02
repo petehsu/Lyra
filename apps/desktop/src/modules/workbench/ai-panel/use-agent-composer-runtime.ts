@@ -1077,6 +1077,7 @@ export const useAgentComposerRuntime = ({
   const composingRef = useRef(false);
   const attachmentDragDepthRef = useRef(0);
   const mentionPanelSessionRef = useRef<MentionPanelSessionState | null>(null);
+  const lastReportedHeightRef = useRef<number | null>(null);
   const [draftValue, setDraftValue] = useState(initialValue);
   const [attachments, setAttachments] = useState<readonly AgentComposerInlineAttachment[]>([]);
   const [attachmentDragActive, setAttachmentDragActive] = useState(false);
@@ -1657,7 +1658,12 @@ export const useAgentComposerRuntime = ({
     }
 
     const reportHeight = (): void => {
-      onHeightChange(node.offsetHeight);
+      const nextHeight = node.offsetHeight;
+      if (lastReportedHeightRef.current === nextHeight) {
+        return;
+      }
+      lastReportedHeightRef.current = nextHeight;
+      onHeightChange(nextHeight);
     };
     reportHeight();
 

@@ -39,6 +39,7 @@ Desktop process rewires Electron paths to keep app state under Lyra root:
 - `~/.lyra/modules/workbench-state`
 - `~/.lyra/modules/search`
 - `~/.lyra/modules/browser-use`
+- `~/.lyra/modules/image-viewer`
 
 ## Rules
 1. New persistent module data must be placed under `~/.lyra/modules/<module-name>`.

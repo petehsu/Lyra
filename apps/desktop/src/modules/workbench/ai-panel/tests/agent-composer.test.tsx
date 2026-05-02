@@ -85,6 +85,28 @@ describe("agent composer", () => {
     expect(parentRenderCount).toBe(1);
   });
 
+  test("does not report unchanged height again when the callback identity changes", async () => {
+    const firstHeightChange = vi.fn();
+    const secondHeightChange = vi.fn();
+    const props = createProps({ onHeightChange: firstHeightChange });
+    const { rerender } = render(<AgentComposer {...props} />);
+
+    await waitFor(() => {
+      expect(firstHeightChange).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      rerender(
+        <AgentComposer
+          {...props}
+          onHeightChange={secondHeightChange}
+        />
+      );
+    });
+
+    expect(secondHeightChange).not.toHaveBeenCalled();
+  });
+
   test("resyncs local draft when the thread or initial value changes", async () => {
     const props = createProps({ initialValue: "draft a" });
     const { rerender } = render(<AgentComposer {...props} />);

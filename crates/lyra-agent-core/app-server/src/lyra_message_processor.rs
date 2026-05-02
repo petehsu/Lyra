@@ -371,10 +371,10 @@ fn format_plan_approval_instruction(
 
     match decision {
         PlanApprovalDecision::ApproveAndImplement => format!(
-            "The user approved the proposed plan. Continue in default mode and implement it without asking for another approval.{feedback_section}{plan_section}"
+            "The user approved the proposed plan and explicitly chose Approve and Implement. Approval is complete. Continue in Default mode and implement the approved plan now.\n\nDo not submit another plan, do not say you are waiting for approval, and do not stop after summarizing the plan. Start the implementation work immediately. If implementation is impossible, explain the concrete blocker instead of asking for approval again.{feedback_section}{plan_section}"
         ),
         PlanApprovalDecision::KeepPlanning => format!(
-            "The user wants to continue planning. Read the user feedback, revise the plan in plan mode, and submit a complete updated proposal with plan_submit. Do not implement yet and do not ask the user to confirm in a plain assistant message.{feedback_section}{plan_section}"
+            "The user wants to continue planning. Read the user feedback, revise the plan in Plan mode, and submit a complete updated proposal with lyra_plan action=\"submit\". Apply every feedback item explicitly in the revised plan. Do not implement yet and do not ask the user to confirm in a plain assistant message.{feedback_section}{plan_section}"
         ),
         PlanApprovalDecision::Reject => format!(
             "The user rejected the proposed plan. Do not implement it.{feedback_section}{plan_section}"
@@ -8706,6 +8706,36 @@ mod tests {
     use serde_json::json;
     use std::path::PathBuf;
     use tempfile::TempDir;
+
+    #[test]
+    fn approve_plan_instruction_forces_execution_not_waiting() {
+        let instruction = format_plan_approval_instruction(
+            PlanApprovalDecision::ApproveAndImplement,
+            Some("保持中文输出"),
+            Some("# Plan\n\nDo the work."),
+        );
+
+        assert!(instruction.contains("Approval is complete"));
+        assert!(instruction.contains("implement the approved plan now"));
+        assert!(instruction.contains("Do not submit another plan"));
+        assert!(instruction.contains("do not say you are waiting for approval"));
+        assert!(instruction.contains("保持中文输出"));
+        assert!(instruction.contains("Do the work."));
+    }
+
+    #[test]
+    fn keep_planning_instruction_requires_feedback_application() {
+        let instruction = format_plan_approval_instruction(
+            PlanApprovalDecision::KeepPlanning,
+            Some("不用蓝色；需要中英双语"),
+            Some("# Old plan"),
+        );
+
+        assert!(instruction.contains("continue planning"));
+        assert!(instruction.contains("Apply every feedback item explicitly"));
+        assert!(instruction.contains("Do not implement yet"));
+        assert!(instruction.contains("不用蓝色；需要中英双语"));
+    }
 
     #[test]
     fn validate_dynamic_tools_rejects_unsupported_input_schema() {

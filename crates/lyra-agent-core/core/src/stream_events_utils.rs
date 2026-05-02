@@ -5,7 +5,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use lyra_protocol::config_types::ModeKind;
 use lyra_protocol::items::TurnItem;
-use lyra_tools::PLAN_SUBMIT_TOOL_NAME;
+use lyra_protocol::plan_tool::LyraPlanAction;
+use lyra_protocol::plan_tool::LyraPlanArgs;
+use lyra_tools::LYRA_PLAN_TOOL_NAME;
 use lyra_utils_stream_parser::strip_citations;
 use tokio_util::sync::CancellationToken;
 
@@ -15,6 +17,7 @@ use crate::memories::citations::parse_memory_citation;
 use crate::parse_turn_item;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
+use crate::tools::context::ToolPayload;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolRouter;
 use futures::Future;
@@ -28,7 +31,6 @@ use lyra_protocol::models::ResponseInputItem;
 use lyra_protocol::models::ResponseItem;
 use lyra_rollout::state_db;
 use lyra_utils_absolute_path::AbsolutePathBuf;
-use lyra_utils_stream_parser::strip_proposed_plan_blocks;
 use tracing::debug;
 use tracing::instrument;
 
@@ -62,13 +64,9 @@ pub(crate) fn image_generation_artifact_path(
         .join(format!("{}.png", sanitize(call_id)))
 }
 
-fn strip_hidden_assistant_markup(text: &str, plan_mode: bool) -> String {
+fn strip_hidden_assistant_markup(text: &str, _plan_mode: bool) -> String {
     let (without_citations, _) = strip_citations(text);
-    if plan_mode {
-        strip_proposed_plan_blocks(&without_citations)
-    } else {
-        without_citations
-    }
+    without_citations
 }
 
 fn strip_hidden_assistant_markup_and_parse_memory_citation(
@@ -79,11 +77,8 @@ fn strip_hidden_assistant_markup_and_parse_memory_citation(
     Option<lyra_protocol::memory_citation::MemoryCitation>,
 ) {
     let (without_citations, citations) = strip_citations(text);
-    let visible_text = if plan_mode {
-        strip_proposed_plan_blocks(&without_citations)
-    } else {
-        without_citations
-    };
+    let _ = plan_mode;
+    let visible_text = without_citations;
     (visible_text, parse_memory_citation(citations))
 }
 
@@ -207,6 +202,24 @@ pub(crate) struct HandleOutputCtx {
     pub cancellation_token: CancellationToken,
 }
 
+fn plan_tool_call_ends_turn(tool_name: &lyra_tools::ToolName, payload: &ToolPayload) -> bool {
+    match tool_name.name.as_str() {
+        LYRA_PLAN_TOOL_NAME => {
+            let ToolPayload::Function { arguments } = payload else {
+                return false;
+            };
+            serde_json::from_str::<LyraPlanArgs>(arguments).is_ok_and(|args| {
+                if args.action != LyraPlanAction::Submit {
+                    return false;
+                }
+                args.markdown
+                    .is_some_and(|markdown| !markdown.trim().is_empty())
+            })
+        }
+        _ => false,
+    }
+}
+
 #[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_output_item_done(
     ctx: &mut HandleOutputCtx,
@@ -234,7 +247,7 @@ pub(crate) async fn handle_output_item_done(
             record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
 
-            let needs_follow_up = call.tool_name.name.as_str() != PLAN_SUBMIT_TOOL_NAME;
+            let needs_follow_up = !plan_tool_call_ends_turn(&call.tool_name, &call.payload);
             let cancellation_token = ctx.cancellation_token.child_token();
             let tool_future: InFlightFuture<'static> = Box::pin(
                 ctx.tool_runtime
@@ -494,5 +507,52 @@ pub(crate) fn response_input_to_response_item(input: &ResponseInputItem) -> Opti
             tools: tools.clone(),
         }),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::context::ToolPayload;
+    use lyra_tools::ToolName;
+
+    fn function_payload(arguments: &str) -> ToolPayload {
+        ToolPayload::Function {
+            arguments: arguments.to_string(),
+        }
+    }
+
+    #[test]
+    fn lyra_plan_final_submit_ends_turn_but_draft_and_ask_continue() {
+        assert!(plan_tool_call_ends_turn(
+            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
+            &function_payload(r#"{"action":"submit","markdown":"Do it."}"#),
+        ));
+        assert!(!plan_tool_call_ends_turn(
+            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
+            &function_payload(r#"{"action":"submit","markdown":"   "}"#),
+        ));
+        assert!(!plan_tool_call_ends_turn(
+            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
+            &function_payload(r#"{"action":"draft","markdown":"Sketch."}"#),
+        ));
+        assert!(!plan_tool_call_ends_turn(
+            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
+            &function_payload(r#"{"action":"ask"}"#),
+        ));
+    }
+
+    #[test]
+    fn lyra_plan_invalid_or_non_function_payload_does_not_end_turn() {
+        assert!(!plan_tool_call_ends_turn(
+            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
+            &function_payload("not json"),
+        ));
+        assert!(!plan_tool_call_ends_turn(
+            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
+            &ToolPayload::Custom {
+                input: String::new(),
+            },
+        ));
     }
 }

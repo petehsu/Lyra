@@ -1,22 +1,25 @@
 use super::*;
 
 #[test]
-fn plan_submit_tool_requires_summary_and_plan_markdown() {
-    let ToolSpec::Function(tool) = create_plan_submit_tool() else {
-        panic!("plan_submit should be a function tool");
+fn lyra_plan_tool_exposes_structured_plan_actions() {
+    let ToolSpec::Function(tool) = create_lyra_plan_tool() else {
+        panic!("lyra_plan should be a function tool");
     };
 
-    assert_eq!(tool.name, PLAN_SUBMIT_TOOL_NAME);
+    assert_eq!(tool.name, LYRA_PLAN_TOOL_NAME);
     assert_eq!(
         tool.parameters.required.as_deref(),
-        Some(&["summary".to_string(), "plan_markdown".to_string()][..])
+        Some(&["action".to_string()][..])
     );
 
     let properties = tool
         .parameters
         .properties
         .as_ref()
-        .expect("plan_submit should use an object schema");
+        .expect("lyra_plan should use an object schema");
+    assert!(properties.contains_key("action"));
     assert!(properties.contains_key("summary"));
-    assert!(properties.contains_key("plan_markdown"));
+    assert!(properties.contains_key("markdown"));
+    assert!(properties.contains_key("questions"));
+    assert!(!properties.contains_key(&format!("{}{}", "plan_", "markdown")));
 }

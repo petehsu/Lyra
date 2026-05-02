@@ -44,6 +44,8 @@ Earlier iterations allowed some native capabilities to coexist with TypeScript f
    - `lsp`
    - `skills`
    - `mcp`
+   - `resources`
+   - `image-viewer`
    - native-backed runtime ports such as `workbench-fs-port`
 9. `search` and `linux-compat` are currently TypeScript-owned shell concerns, but must move downward if they become heavier, stateful, or system-facing.
 10. New core product behavior that is stateful, OS-facing, security-sensitive, or performance-sensitive should default to the native core, not TypeScript.

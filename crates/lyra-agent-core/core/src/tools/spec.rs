@@ -83,10 +83,10 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::JsReplHandler;
     use crate::tools::handlers::JsReplResetHandler;
     use crate::tools::handlers::ListDirHandler;
+    use crate::tools::handlers::LyraPlanHandler;
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::McpResourceHandler;
     use crate::tools::handlers::PlanHandler;
-    use crate::tools::handlers::PlanSubmitHandler;
     use crate::tools::handlers::RequestPermissionsHandler;
     use crate::tools::handlers::RequestUserInputHandler;
     use crate::tools::handlers::ShellCommandHandler;
@@ -149,7 +149,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let shell_handler = Arc::new(ShellHandler);
     let unified_exec_handler = Arc::new(UnifiedExecHandler);
     let plan_handler = Arc::new(PlanHandler);
-    let plan_submit_handler = Arc::new(PlanSubmitHandler);
+    let lyra_plan_handler = Arc::new(LyraPlanHandler);
     let apply_patch_handler = Arc::new(ApplyPatchHandler);
     let dynamic_tool_handler = Arc::new(DynamicToolHandler::new(dynamic_tools));
     let view_image_handler = Arc::new(ViewImageHandler);
@@ -235,8 +235,8 @@ pub(crate) fn build_specs_with_discoverable_tools(
             ToolHandlerKind::Plan => {
                 builder.register_handler(handler.name, plan_handler.clone());
             }
-            ToolHandlerKind::PlanSubmit => {
-                builder.register_handler(handler.name, plan_submit_handler.clone());
+            ToolHandlerKind::LyraPlan => {
+                builder.register_handler(handler.name, lyra_plan_handler.clone());
             }
             ToolHandlerKind::RequestPermissions => {
                 builder.register_handler(handler.name, request_permissions_handler.clone());

@@ -1,5 +1,5 @@
 use crate::CommandToolOptions;
-use crate::PLAN_SUBMIT_TOOL_NAME;
+use crate::LYRA_PLAN_TOOL_NAME;
 use crate::REQUEST_USER_INPUT_TOOL_NAME;
 use crate::ResponsesApiNamespace;
 use crate::ResponsesApiNamespaceTool;
@@ -37,7 +37,7 @@ use crate::create_list_dir_tool;
 use crate::create_list_mcp_resource_templates_tool;
 use crate::create_list_mcp_resources_tool;
 use crate::create_local_shell_tool;
-use crate::create_plan_submit_tool;
+use crate::create_lyra_plan_tool;
 use crate::create_read_mcp_resource_tool;
 use crate::create_report_agent_job_result_tool;
 use crate::create_request_permissions_tool;
@@ -221,11 +221,11 @@ pub fn build_tool_registry_plan(
     plan.register_handler("update_plan", ToolHandlerKind::Plan);
 
     plan.push_spec(
-        create_plan_submit_tool(),
+        create_lyra_plan_tool(),
         /*supports_parallel_tool_calls*/ false,
         config.code_mode_enabled,
     );
-    plan.register_handler(PLAN_SUBMIT_TOOL_NAME, ToolHandlerKind::PlanSubmit);
+    plan.register_handler(LYRA_PLAN_TOOL_NAME, ToolHandlerKind::LyraPlan);
 
     if config.has_environment && config.js_repl_enabled {
         plan.push_spec(
@@ -242,17 +242,19 @@ pub fn build_tool_registry_plan(
         plan.register_handler("js_repl_reset", ToolHandlerKind::JsReplReset);
     }
 
-    plan.push_spec(
-        create_request_user_input_tool(request_user_input_tool_description(
-            config.default_mode_request_user_input,
-        )),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    plan.register_handler(
-        REQUEST_USER_INPUT_TOOL_NAME,
-        ToolHandlerKind::RequestUserInput,
-    );
+    if config.collaboration_mode != lyra_protocol::config_types::ModeKind::Plan {
+        plan.push_spec(
+            create_request_user_input_tool(request_user_input_tool_description(
+                config.default_mode_request_user_input,
+            )),
+            /*supports_parallel_tool_calls*/ false,
+            config.code_mode_enabled,
+        );
+        plan.register_handler(
+            REQUEST_USER_INPUT_TOOL_NAME,
+            ToolHandlerKind::RequestUserInput,
+        );
+    }
 
     if config.request_permissions_tool_enabled {
         plan.push_spec(
@@ -662,7 +664,10 @@ mod tests {
         model
     }
 
-    fn tools_config(model_info: &ModelInfo) -> ToolsConfig {
+    fn tools_config_for_mode(
+        model_info: &ModelInfo,
+        collaboration_mode: lyra_protocol::config_types::ModeKind,
+    ) -> ToolsConfig {
         let features = Features::with_defaults();
         let available_models = Vec::new();
         ToolsConfig::new(&ToolsConfigParams {
@@ -673,9 +678,14 @@ mod tests {
             wire_api: WireApi::Responses,
             web_search_mode: None,
             session_source: SessionSource::Cli,
+            collaboration_mode,
             sandbox_policy: &SandboxPolicy::DangerFullAccess,
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
         })
+    }
+
+    fn tools_config(model_info: &ModelInfo) -> ToolsConfig {
+        tools_config_for_mode(model_info, lyra_protocol::config_types::ModeKind::Default)
     }
 
     fn empty_params<'a>() -> ToolRegistryPlanParams<'a> {
@@ -714,6 +724,37 @@ mod tests {
                 .specs
                 .iter()
                 .any(|spec| spec.name() == "view_image")
+        );
+    }
+
+    #[test]
+    fn plan_mode_registry_exposes_only_lyra_plan_protocol_tool() {
+        let model = model_info(vec![InputModality::Text]);
+        let config = tools_config_for_mode(&model, lyra_protocol::config_types::ModeKind::Plan);
+        let plan = build_tool_registry_plan(&config, empty_params());
+
+        assert!(
+            plan.specs
+                .iter()
+                .any(|spec| spec.name() == LYRA_PLAN_TOOL_NAME)
+        );
+        assert!(
+            !plan
+                .specs
+                .iter()
+                .any(|spec| spec.name() == REQUEST_USER_INPUT_TOOL_NAME)
+        );
+        assert!(
+            plan.handlers
+                .iter()
+                .any(|handler| handler.name.name == LYRA_PLAN_TOOL_NAME
+                    && handler.kind == ToolHandlerKind::LyraPlan)
+        );
+        assert!(
+            !plan
+                .handlers
+                .iter()
+                .any(|handler| handler.kind == ToolHandlerKind::RequestUserInput)
         );
     }
 }

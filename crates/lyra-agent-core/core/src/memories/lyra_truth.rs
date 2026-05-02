@@ -7,6 +7,8 @@ use lyra_utils_output_truncation::approx_token_count;
 use rusqlite::Connection;
 use rusqlite::OptionalExtension;
 use rusqlite::params;
+use serde::Deserialize;
+use serde::Serialize;
 use serde_json::json;
 use sha2::Digest;
 use sha2::Sha256;
@@ -79,10 +81,7 @@ const DEFAULT_CUT_PACK_MAX_BYTES: i64 = 32 * 1024 * 1024;
 const DEFAULT_CUT_PACK_ROLL_INTERVAL_MS: i64 = 86_400_000;
 const DEFAULT_TOKEN_CHECKPOINT_LOOKBACK_TURNS: i64 = 2;
 const DEFAULT_TOKEN_CHECKPOINT_MAX_EVENTS_PER_RUN: i64 = 12;
-const DEFAULT_TOKEN_TRIGGER_COOLDOWN_MS: i64 = 2_000;
-const DEFAULT_TOKEN_TRIGGER_BATCH_LIMIT: i64 = 48;
-const DEFAULT_TOKEN_TRIGGER_MAX_CPU_MS: i64 = 120;
-const DEFAULT_SHARED_CLASSIFY_SCORE_THRESHOLD: f64 = 0.72;
+const MIN_MODEL_PROMOTION_CONFIDENCE: f64 = 0.72;
 
 #[derive(Debug, Clone, Default)]
 pub struct LyraMemoryWriteOutcome {
@@ -163,10 +162,6 @@ struct MemoryControllerConfig {
     cut_pack_roll_interval_ms: i64,
     token_checkpoint_lookback_turns: i64,
     token_checkpoint_max_events_per_run: i64,
-    token_trigger_cooldown_ms: i64,
-    token_trigger_batch_limit: i64,
-    token_trigger_max_cpu_ms: i64,
-    shared_classify_score_threshold: f64,
 }
 
 impl Default for MemoryControllerConfig {
@@ -212,12 +207,29 @@ impl Default for MemoryControllerConfig {
             cut_pack_roll_interval_ms: DEFAULT_CUT_PACK_ROLL_INTERVAL_MS,
             token_checkpoint_lookback_turns: DEFAULT_TOKEN_CHECKPOINT_LOOKBACK_TURNS,
             token_checkpoint_max_events_per_run: DEFAULT_TOKEN_CHECKPOINT_MAX_EVENTS_PER_RUN,
-            token_trigger_cooldown_ms: DEFAULT_TOKEN_TRIGGER_COOLDOWN_MS,
-            token_trigger_batch_limit: DEFAULT_TOKEN_TRIGGER_BATCH_LIMIT,
-            token_trigger_max_cpu_ms: DEFAULT_TOKEN_TRIGGER_MAX_CPU_MS,
-            shared_classify_score_threshold: DEFAULT_SHARED_CLASSIFY_SCORE_THRESHOLD,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct MemoryModelDecision {
+    #[serde(default)]
+    pub(crate) salience: f64,
+    #[serde(default)]
+    pub(crate) promotions: Vec<MemoryPromotionDecision>,
+    #[serde(default)]
+    pub(crate) rationale: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct MemoryPromotionDecision {
+    pub(crate) target_space: String,
+    pub(crate) namespace: String,
+    pub(crate) kind: String,
+    pub(crate) value: String,
+    pub(crate) confidence: f64,
+    #[serde(default)]
+    pub(crate) rationale: String,
 }
 
 #[derive(Debug, Clone)]
@@ -446,12 +458,15 @@ create table if not exists memory_jobs (
     status text not null,
     payload_json text not null,
     attempt_count integer not null,
+    decision_json text,
+    audit_json text,
     error_message text,
     created_at_ms integer not null,
     created_at_iso text not null,
     updated_at_ms integer not null,
     updated_at_iso text not null
 );
+create index if not exists idx_memory_jobs_status on memory_jobs(status, updated_at_ms asc);
 create table if not exists review_candidates (
     candidate_id text primary key,
     session_id text not null,
@@ -464,6 +479,8 @@ create table if not exists review_candidates (
 );
         "#,
     )?;
+    ensure_column_if_missing(&memory_jobs_db, "memory_jobs", "decision_json", "text")?;
+    ensure_column_if_missing(&memory_jobs_db, "memory_jobs", "audit_json", "text")?;
 
     let prompt_cache_db = Connection::open(runtime_root.join(PROMPT_CACHE_DB_NAME))?;
     prompt_cache_db.execute_batch(
@@ -599,10 +616,16 @@ insert into session_dialog (
         outcome.trimmed = true;
     }
 
-    let promote_outcome =
-        process_trigger_candidates(&root, &session_id, turn_index, item, &controller_config)?;
-    outcome.shared_updated = promote_outcome.shared_updated;
-    outcome.frozen_updated = promote_outcome.frozen_updated;
+    enqueue_memory_writer_job(
+        &root,
+        &session_id,
+        &db_path,
+        turn_index,
+        msg_id.as_str(),
+        item,
+        now_ms,
+        now_iso.as_str(),
+    )?;
 
     write_dynamic_prompt_cache_snapshot(&root, &session_id, &db_path)?;
     outcome.prompt_cache_updated = true;
@@ -870,6 +893,37 @@ fn read_text_file(path: PathBuf) -> anyhow::Result<String> {
         return Ok(String::new());
     }
     Ok(fs::read_to_string(path)?.trim().to_string())
+}
+
+fn read_conflict_sets_snapshot(root: &Path) -> anyhow::Result<serde_json::Value> {
+    let path = root.join("shared").join(CONFLICT_SETS_DB_NAME);
+    if !path.exists() {
+        return Ok(json!([]));
+    }
+    let connection = Connection::open(path)?;
+    let mut statement = connection.prepare(
+        r#"
+select namespace, conflict_key, candidate_memory_ids, decision_status, updated_at_iso
+from conflict_sets
+where decision_status in ('open', 'needs_review')
+order by updated_at_ms desc
+limit 20
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(json!({
+            "namespace": row.get::<_, String>(0)?,
+            "conflict_key": row.get::<_, String>(1)?,
+            "candidate_memory_ids": row.get::<_, String>(2)?,
+            "decision_status": row.get::<_, String>(3)?,
+            "updated_at_iso": row.get::<_, String>(4)?,
+        }))
+    })?;
+    let mut conflicts = Vec::new();
+    for row in rows {
+        conflicts.push(row?);
+    }
+    Ok(json!(conflicts))
 }
 
 fn truncate_for_prompt(input: &str, limit: usize) -> String {
@@ -1182,19 +1236,6 @@ fn load_memory_controller_config(lyra_home: &Path) -> MemoryControllerConfig {
     if let Some(v) = read_i64("token_checkpoint_max_events_per_run") {
         config.token_checkpoint_max_events_per_run = v.max(1);
     }
-    if let Some(v) = read_i64("token_trigger_cooldown_ms") {
-        config.token_trigger_cooldown_ms = v.max(0);
-    }
-    if let Some(v) = read_i64("token_trigger_batch_limit") {
-        config.token_trigger_batch_limit = v.max(1);
-    }
-    if let Some(v) = read_i64("token_trigger_max_cpu_ms") {
-        config.token_trigger_max_cpu_ms = v.max(1);
-    }
-    if let Some(v) = read_f64("shared_classify_score_threshold") {
-        config.shared_classify_score_threshold = clamp01(v);
-    }
-
     config
 }
 
@@ -1502,7 +1543,7 @@ fn archive_removed_messages(
     let mut archived_count = 0_i64;
     let mut dedupe_ref_count = 0_i64;
     for message in removed {
-        let content_kind = classify_content_kind(message.content_raw.as_str());
+        let content_kind = neutral_content_kind();
         let normalized = normalize_content(message.content_raw.as_str(), content_kind.as_str());
         let raw_digest = sha256_hex(message.content_raw.as_bytes());
         let normalized_digest = sha256_hex(normalized.as_bytes());
@@ -2256,8 +2297,8 @@ fn select_keep_msg_ids(
         .filter(|message| !selected.contains(&message.msg_id))
         .collect();
     candidates.sort_by(|left, right| {
-        let left_score = salience_score(connection, left);
-        let right_score = salience_score(connection, right);
+        let left_score = mechanical_selection_score(connection, left);
+        let right_score = mechanical_selection_score(connection, right);
         right_score
             .partial_cmp(&left_score)
             .unwrap_or(Ordering::Equal)
@@ -2275,34 +2316,13 @@ fn select_keep_msg_ids(
     Ok(selected.into_iter().collect())
 }
 
-fn salience_score(connection: &Connection, message: &SessionMessage) -> f64 {
-    let mut score = 0.0;
-    if message.role == "user" {
-        score += 1.2;
-    } else if message.role == "assistant" {
-        score += 0.9;
-    } else {
-        score += 0.4;
-    }
-    let lower = message.content_raw.to_lowercase();
-    if lower.contains("must") || lower.contains("required") || lower.contains("constraint") {
-        score += 1.4;
-    }
-    if lower.contains("todo") || lower.contains("fixme") || lower.contains("next step") {
-        score += 1.1;
-    }
-    if lower.contains("failed") || lower.contains("error") {
-        score += 0.8;
-    }
-    if message.role == "tool" && message.token_count > 160 {
-        score -= 0.5;
-    }
+fn mechanical_selection_score(connection: &Connection, message: &SessionMessage) -> f64 {
     if let Ok(pinned_ids) = load_active_pinned_msg_ids(connection) {
         if pinned_ids.contains(&message.msg_id) {
-            score += 3.0;
+            return 1.0;
         }
     }
-    score
+    0.0
 }
 
 fn load_session_messages(connection: &Connection) -> anyhow::Result<Vec<SessionMessage>> {
@@ -2372,32 +2392,67 @@ fn percentile_i64(values: &[i64], percentile: f64) -> Option<i64> {
     sorted.get(index).copied()
 }
 
-fn process_trigger_candidates(
+fn enqueue_memory_writer_job(
     root: &Path,
     session_id: &str,
-    current_turn_index: i64,
+    session_db_path: &Path,
+    turn_index: i64,
+    msg_id: &str,
     item: &ThreadItem,
-    config: &MemoryControllerConfig,
-) -> anyhow::Result<LyraMemoryWriteOutcome> {
-    let mut outcome = LyraMemoryWriteOutcome::default();
-    let runtime_db = Connection::open(root.join("runtime").join(TRIGGER_MARKS_DB_NAME))?;
-    let now = Utc::now();
-    let now_ms = now.timestamp_millis();
-    let now_iso = now.to_rfc3339();
-    let mark_id = format!("mark_{}", Uuid::new_v4());
-    let source_ref = format!("{session_id}:{current_turn_index}:{}", item_type_name(item));
-    runtime_db.execute(
+    now_ms: i64,
+    now_iso: &str,
+) -> anyhow::Result<()> {
+    let session_db = Connection::open(session_db_path)?;
+    ensure_session_dialog_schema(&session_db)?;
+    let Some(message) = fetch_session_message_by_msg_id(&session_db, msg_id)? else {
+        return Ok(());
+    };
+    let shared_root = root.join("shared");
+    let payload = json!({
+        "schema": "lyra.memory_writer.v1",
+        "output_contract": {
+            "salience": "number between 0 and 1",
+            "promotions": [{
+                "target_space": "shared or frozen",
+                "namespace": "stable namespace",
+                "kind": "stable kind",
+                "value": "memory value",
+                "confidence": "number between 0 and 1",
+                "rationale": "short reason"
+            }],
+            "rationale": "short reason for the whole decision"
+        },
+        "candidate": {
+            "session_id": session_id,
+            "source_ref": format!("{session_id}:{turn_index}:{}", item_type_name(item)),
+            "msg_id": message.msg_id,
+            "turn_index": message.turn_index,
+            "role": message.role,
+            "content_raw": message.content_raw,
+            "token_count": message.token_count,
+            "created_at_ms": message.created_at_ms,
+            "created_at_iso": message.created_at_iso,
+            "metadata_json": message.metadata_json,
+        },
+        "current_session_summary": read_current_session_excerpt(session_db_path, CURRENT_SESSION_PROMPT_LIMIT)?,
+        "shared_truth": read_text_file(shared_root.join(SHARED_MEMORY_FILE))?,
+        "frozen_truth": read_text_file(shared_root.join(FROZEN_MEMORY_FILE))?,
+        "conflict_truth": read_conflict_sets_snapshot(root)?,
+    });
+
+    let jobs_db = Connection::open(root.join("runtime").join(MEMORY_JOBS_DB_NAME))?;
+    let job_id = format!("memory_writer_{msg_id}");
+    jobs_db.execute(
         r#"
-insert or replace into trigger_marks (
-    mark_id, session_id, trigger_kind, source_ref, analysis_result, candidate_state,
-    score, last_analyzed_turn_index, needs_recheck, created_at_ms, created_at_iso, updated_at_ms, updated_at_iso
-) values (?1, ?2, ?3, ?4, 'pending', 'candidate', 0.0, null, 0, ?5, ?6, ?7, ?8)
+insert or ignore into memory_jobs (
+    job_id, session_id, job_kind, status, payload_json, attempt_count,
+    decision_json, audit_json, error_message, created_at_ms, created_at_iso, updated_at_ms, updated_at_iso
+) values (?1, ?2, 'model_writer_decision', 'pending_model', ?3, 0, null, null, null, ?4, ?5, ?6, ?7)
         "#,
         params![
-            mark_id,
+            job_id,
             session_id,
-            item_type_name(item),
-            source_ref,
+            serde_json::to_string(&payload)?,
             now_ms,
             now_iso,
             now_ms,
@@ -2405,19 +2460,69 @@ insert or replace into trigger_marks (
         ],
     )?;
 
-    let last_checkpoint_ms =
-        read_controller_state_i64_from_runtime(&runtime_db, "token_checkpoint_last_ms")?
-            .unwrap_or(0);
-    if now_ms.saturating_sub(last_checkpoint_ms) < config.token_trigger_cooldown_ms {
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PendingMemoryJob {
+    pub(crate) job_id: String,
+    pub(crate) session_id: String,
+    pub(crate) payload_json: serde_json::Value,
+}
+
+#[cfg(test)]
+pub(crate) fn drain_memory_jobs_with_model_writer<F>(
+    root: &Path,
+    limit: usize,
+    mut writer: F,
+) -> anyhow::Result<LyraMemoryWriteOutcome>
+where
+    F: FnMut(&PendingMemoryJob) -> anyhow::Result<MemoryModelDecision>,
+{
+    let jobs = claim_pending_memory_jobs(root, limit)?;
+    let mut aggregate = LyraMemoryWriteOutcome::default();
+    for job in jobs {
+        match writer(&job) {
+            Ok(decision) => {
+                let outcome = apply_memory_model_decision(root, &job.job_id, decision)?;
+                aggregate.shared_updated |= outcome.shared_updated;
+                aggregate.frozen_updated |= outcome.frozen_updated;
+            }
+            Err(err) => {
+                mark_memory_model_job_failed(root, &job.job_id, err.to_string())?;
+            }
+        }
+    }
+    Ok(aggregate)
+}
+
+pub(crate) fn apply_memory_model_decision(
+    root: &Path,
+    job_id: &str,
+    decision: MemoryModelDecision,
+) -> anyhow::Result<LyraMemoryWriteOutcome> {
+    let mut outcome = LyraMemoryWriteOutcome::default();
+    let now = Utc::now();
+    let now_ms = now.timestamp_millis();
+    let now_iso = now.to_rfc3339();
+    let jobs_db = Connection::open(root.join("runtime").join(MEMORY_JOBS_DB_NAME))?;
+    let job_row: Option<(String, String)> = jobs_db
+        .query_row(
+            "select status, coalesce(session_id, '') from memory_jobs where job_id = ?1",
+            params![job_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((job_status, session_id)) = job_row else {
+        return Ok(outcome);
+    };
+    if !matches!(
+        job_status.as_str(),
+        "pending_model" | "running_model" | "failed_recoverable"
+    ) {
         return Ok(outcome);
     }
 
-    let session_db = Connection::open(
-        root.join("sessions")
-            .join(session_id)
-            .join("session.sqlite"),
-    )?;
-    ensure_session_dialog_schema(&session_db)?;
     let shared_db_path = root.join("shared").join(SHARED_TRUTH_DB_NAME);
     let frozen_db_path = root.join("shared").join(FROZEN_TRUTH_DB_NAME);
     let conflict_db_path = root.join("shared").join(CONFLICT_SETS_DB_NAME);
@@ -2427,89 +2532,63 @@ insert or replace into trigger_marks (
     ensure_truth_db_schema(&frozen_db)?;
     let conflict_db = Connection::open(&conflict_db_path)?;
 
-    let lookback_start = current_turn_index.saturating_sub(config.token_checkpoint_lookback_turns);
-    let mut statement = runtime_db.prepare(
-        r#"
-select mark_id, source_ref
-from trigger_marks
-where session_id = ?1
-  and candidate_state = 'candidate'
-order by created_at_ms asc
-limit ?2
-        "#,
-    )?;
-    let rows = statement.query_map(
-        params![
-            session_id,
-            config
-                .token_checkpoint_max_events_per_run
-                .min(config.token_trigger_batch_limit)
-        ],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-    )?;
-
-    for row in rows {
-        let (candidate_id, source_ref) = row?;
-        let turn_index =
-            parse_turn_index_from_source_ref(source_ref.as_str()).unwrap_or(current_turn_index);
-        if turn_index < lookback_start {
-            runtime_db.execute(
-                "update trigger_marks set candidate_state='expired', analysis_result='lookback_expired', updated_at_ms=?2, updated_at_iso=?3 where mark_id=?1",
-                params![candidate_id, now_ms, now_iso],
-            )?;
+    let mut eligible_count = 0_i64;
+    let mut rejected_low_confidence = 0_i64;
+    for promotion in &decision.promotions {
+        if promotion.confidence < MIN_MODEL_PROMOTION_CONFIDENCE {
+            rejected_low_confidence += 1;
             continue;
         }
-        let message = fetch_session_message_by_turn_index(&session_db, turn_index)?;
-        let Some(message) = message else {
-            runtime_db.execute(
-                "update trigger_marks set candidate_state='rejected', analysis_result='missing_source', updated_at_ms=?2, updated_at_iso=?3 where mark_id=?1",
-                params![candidate_id, now_ms, now_iso],
-            )?;
-            continue;
-        };
-        let classification = classify_shared_candidate(&message);
-        if classification.score < config.shared_classify_score_threshold {
-            runtime_db.execute(
-                "update trigger_marks set candidate_state='rejected', score=?2, analysis_result='below_threshold', last_analyzed_turn_index=?3, updated_at_ms=?4, updated_at_iso=?5 where mark_id=?1",
-                params![candidate_id, classification.score, message.turn_index, now_ms, now_iso],
-            )?;
+        let target_space = promotion.target_space.trim();
+        let namespace = promotion.namespace.trim();
+        let kind = promotion.kind.trim();
+        let value = promotion.value.trim();
+        if namespace.is_empty() || kind.is_empty() || value.is_empty() {
+            rejected_low_confidence += 1;
             continue;
         }
-
-        if classification.target_space == "frozen" {
-            promote_memory_entry(
-                &frozen_db,
-                &conflict_db,
-                "frozen",
-                &classification.namespace,
-                &classification.kind,
-                &classification.value,
-                classification.score,
-                now_ms,
-                now_iso.as_str(),
-                root,
-            )?;
-            outcome.frozen_updated = true;
-        } else {
-            promote_memory_entry(
-                &shared_db,
-                &conflict_db,
-                "shared",
-                &classification.namespace,
-                &classification.kind,
-                &classification.value,
-                classification.score,
-                now_ms,
-                now_iso.as_str(),
-                root,
-            )?;
-            outcome.shared_updated = true;
+        match target_space {
+            "shared" => {
+                promote_memory_entry(
+                    &shared_db,
+                    &conflict_db,
+                    "shared",
+                    namespace,
+                    kind,
+                    value,
+                    promotion.confidence,
+                    now_ms,
+                    now_iso.as_str(),
+                    root,
+                )?;
+                outcome.shared_updated = true;
+                eligible_count += 1;
+            }
+            "frozen" => {
+                promote_memory_entry(
+                    &frozen_db,
+                    &conflict_db,
+                    "frozen",
+                    namespace,
+                    kind,
+                    value,
+                    promotion.confidence,
+                    now_ms,
+                    now_iso.as_str(),
+                    root,
+                )?;
+                outcome.frozen_updated = true;
+                eligible_count += 1;
+            }
+            other => {
+                mark_memory_model_job_failed(
+                    root,
+                    job_id,
+                    format!("model returned unsupported target_space: {other}"),
+                )?;
+                return Ok(outcome);
+            }
         }
-
-        runtime_db.execute(
-            "update trigger_marks set candidate_state='promoted', score=?2, analysis_result='promoted', last_analyzed_turn_index=?3, updated_at_ms=?4, updated_at_iso=?5 where mark_id=?1",
-            params![candidate_id, classification.score, message.turn_index, now_ms, now_iso],
-        )?;
     }
 
     if outcome.shared_updated {
@@ -2517,80 +2596,154 @@ limit ?2
             &shared_db_path,
             &root.join("shared").join(SHARED_MEMORY_FILE),
         )?;
+        append_truth_audit(root, "shared", now_ms, now_iso.as_str())?;
     }
     if outcome.frozen_updated {
         rebuild_truth_projection(
             &frozen_db_path,
             &root.join("shared").join(FROZEN_MEMORY_FILE),
         )?;
+        append_truth_audit(root, "frozen", now_ms, now_iso.as_str())?;
     }
-
     if outcome.shared_updated || outcome.frozen_updated {
-        append_truth_audit(
-            root,
-            if outcome.frozen_updated {
-                "frozen"
-            } else {
-                "shared"
-            },
-            now_ms,
-            now_iso.as_str(),
-        )?;
+        let session_db_path = root
+            .join("sessions")
+            .join(session_id.as_str())
+            .join("session.sqlite");
+        if session_db_path.exists() {
+            write_dynamic_prompt_cache_snapshot(root, session_id.as_str(), &session_db_path)?;
+            outcome.prompt_cache_updated = true;
+        }
     }
 
-    upsert_controller_state_i64_from_runtime(
-        &runtime_db,
-        "token_checkpoint_last_ms",
-        now_ms,
-        now_ms,
-        now_iso.as_str(),
+    let status = if eligible_count > 0 {
+        "promoted"
+    } else if rejected_low_confidence > 0 {
+        "rejected_low_confidence"
+    } else {
+        "rejected_no_promotion"
+    };
+    let audit = json!({
+        "state": status,
+        "min_confidence": MIN_MODEL_PROMOTION_CONFIDENCE,
+        "eligible_promotions": eligible_count,
+        "rejected_low_confidence": rejected_low_confidence,
+        "updated_at_ms": now_ms,
+        "updated_at_iso": now_iso,
+    });
+    jobs_db.execute(
+        r#"
+update memory_jobs
+set status = ?2,
+    decision_json = ?3,
+    audit_json = ?4,
+    error_message = null,
+    updated_at_ms = ?5,
+    updated_at_iso = ?6
+where job_id = ?1
+        "#,
+        params![
+            job_id,
+            status,
+            serde_json::to_string(&decision)?,
+            serde_json::to_string(&audit)?,
+            now_ms,
+            now_iso,
+        ],
     )?;
 
     Ok(outcome)
 }
 
-#[derive(Debug, Clone)]
-struct SharedCandidateClassification {
-    target_space: String,
-    namespace: String,
-    kind: String,
-    value: String,
-    score: f64,
+pub(crate) fn claim_pending_memory_jobs(
+    root: &Path,
+    limit: usize,
+) -> anyhow::Result<Vec<PendingMemoryJob>> {
+    let now = Utc::now();
+    let now_ms = now.timestamp_millis();
+    let now_iso = now.to_rfc3339();
+    let jobs_db = Connection::open(root.join("runtime").join(MEMORY_JOBS_DB_NAME))?;
+    let mut statement = jobs_db.prepare(
+        r#"
+select job_id, coalesce(session_id, ''), payload_json
+from memory_jobs
+where job_kind = 'model_writer_decision'
+  and status = 'pending_model'
+order by created_at_ms asc
+limit ?1
+        "#,
+    )?;
+    let rows = statement.query_map(params![i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
+        let payload_json: String = row.get(2)?;
+        let payload_json =
+            serde_json::from_str(&payload_json).unwrap_or_else(|_| json!({"invalid": true}));
+        Ok(PendingMemoryJob {
+            job_id: row.get(0)?,
+            session_id: row.get(1)?,
+            payload_json,
+        })
+    })?;
+    let mut candidates = Vec::new();
+    for row in rows {
+        candidates.push(row?);
+    }
+    drop(statement);
+
+    let mut jobs = Vec::new();
+    for job in candidates {
+        let claimed = jobs_db.execute(
+            r#"
+update memory_jobs
+set status = 'running_model',
+    updated_at_ms = ?2,
+    updated_at_iso = ?3
+where job_id = ?1
+  and status = 'pending_model'
+            "#,
+            params![job.job_id, now_ms, now_iso],
+        )?;
+        if claimed > 0 {
+            jobs.push(job);
+        }
+    }
+    Ok(jobs)
 }
 
-fn classify_shared_candidate(message: &SessionMessage) -> SharedCandidateClassification {
-    let lower = message.content_raw.to_lowercase();
-    let mut result = SharedCandidateClassification {
-        target_space: "shared".to_string(),
-        namespace: "conversation".to_string(),
-        kind: "fact".to_string(),
-        value: message.content_raw.trim().to_string(),
-        score: 0.0,
-    };
-    if lower.contains("my name is") || lower.contains("i am ") {
-        result.target_space = "frozen".to_string();
-        result.namespace = "user_profile".to_string();
-        result.kind = "name".to_string();
-        result.score = 0.92;
-        result.value = extract_after_keyword(message.content_raw.as_str(), &["my name is", "i am"])
-            .unwrap_or_else(|| message.content_raw.trim().to_string());
-        return result;
-    }
-    if lower.contains("i prefer") || lower.contains("please always") || lower.contains("i usually")
-    {
-        result.namespace = "user_preference".to_string();
-        result.kind = "preference".to_string();
-        result.score = 0.81;
-        return result;
-    }
-    if lower.contains("must") || lower.contains("constraint") || lower.contains("do not") {
-        result.namespace = "project_constraint".to_string();
-        result.kind = "constraint".to_string();
-        result.score = 0.78;
-        return result;
-    }
-    result.score = if message.role == "user" { 0.64 } else { 0.52 };
-    result
+pub(crate) fn mark_memory_model_job_failed(
+    root: &Path,
+    job_id: &str,
+    error: String,
+) -> anyhow::Result<()> {
+    let now = Utc::now();
+    let now_ms = now.timestamp_millis();
+    let now_iso = now.to_rfc3339();
+    let jobs_db = Connection::open(root.join("runtime").join(MEMORY_JOBS_DB_NAME))?;
+    let audit = json!({
+        "state": "failed_recoverable",
+        "error": error,
+        "updated_at_ms": now_ms,
+        "updated_at_iso": now_iso,
+    });
+    jobs_db.execute(
+        r#"
+update memory_jobs
+set status = 'failed_recoverable',
+    attempt_count = attempt_count + 1,
+    error_message = ?2,
+    audit_json = ?3,
+    updated_at_ms = ?4,
+    updated_at_iso = ?5
+where job_id = ?1
+        "#,
+        params![
+            job_id,
+            audit["error"].as_str().unwrap_or("model writer failed"),
+            serde_json::to_string(&audit)?,
+            now_ms,
+            now_iso,
+        ],
+    )?;
+    Ok(())
 }
 
 fn promote_memory_entry(
@@ -3022,20 +3175,19 @@ where trim_batch_id = ?1
     Ok(())
 }
 
-fn fetch_session_message_by_turn_index(
+fn fetch_session_message_by_msg_id(
     connection: &Connection,
-    turn_index: i64,
+    msg_id: &str,
 ) -> anyhow::Result<Option<SessionMessage>> {
     connection
         .query_row(
             r#"
 select msg_id, turn_index, role, content_raw, coalesce(token_count, 0), created_at_ms, created_at_iso, metadata_json
 from session_dialog
-where turn_index = ?1
-order by created_at_ms desc
+where msg_id = ?1
 limit 1
             "#,
-            params![turn_index],
+            params![msg_id],
             |row| {
                 Ok(SessionMessage {
                     msg_id: row.get(0)?,
@@ -3051,12 +3203,6 @@ limit 1
         )
         .optional()
         .map_err(Into::into)
-}
-
-fn parse_turn_index_from_source_ref(source_ref: &str) -> Option<i64> {
-    let mut parts = source_ref.split(':');
-    let _session = parts.next()?;
-    parts.next()?.parse::<i64>().ok()
 }
 
 fn read_controller_state_i64(connection: &Connection, key: &str) -> anyhow::Result<Option<i64>> {
@@ -3127,37 +3273,6 @@ on conflict(key) do update set
     Ok(())
 }
 
-fn read_controller_state_i64_from_runtime(
-    connection: &Connection,
-    key: &str,
-) -> anyhow::Result<Option<i64>> {
-    let result = connection
-        .query_row(
-            "select value_int from runtime_state where key = ?1",
-            params![key],
-            |row| row.get(0),
-        )
-        .optional();
-    match result {
-        Ok(value) => Ok(value),
-        Err(rusqlite::Error::SqliteFailure(error, _))
-            if error.code == rusqlite::ErrorCode::Unknown
-                || error.code == rusqlite::ErrorCode::CannotOpen =>
-        {
-            Ok(None)
-        }
-        Err(rusqlite::Error::SqliteFailure(error, maybe_message))
-            if maybe_message
-                .as_deref()
-                .is_some_and(|message| message.contains("no such table: runtime_state")) =>
-        {
-            let _ = error;
-            Ok(None)
-        }
-        Err(error) => Err(error.into()),
-    }
-}
-
 fn upsert_controller_state_i64_from_runtime(
     connection: &Connection,
     key: &str,
@@ -3215,33 +3330,8 @@ fn normalize_content(content: &str, content_kind: &str) -> String {
         .to_lowercase()
 }
 
-fn classify_content_kind(content: &str) -> String {
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        return "prose".to_string();
-    }
-    if trimmed.contains('\n')
-        && (trimmed.contains('{') || trimmed.contains("fn ") || trimmed.contains("class "))
-    {
-        return "code".to_string();
-    }
-    if trimmed.starts_with('/') || trimmed.starts_with("./") || trimmed.starts_with("~/") {
-        return "path".to_string();
-    }
-    if trimmed.starts_with("git ")
-        || trimmed.starts_with("npm ")
-        || trimmed.starts_with("cargo ")
-        || trimmed.starts_with("pnpm ")
-    {
-        return "command".to_string();
-    }
-    if trimmed.contains('=') && trimmed.contains('\n') {
-        return "config".to_string();
-    }
-    if trimmed.contains("```") {
-        return "mixed".to_string();
-    }
-    "prose".to_string()
+fn neutral_content_kind() -> String {
+    "unknown".to_string()
 }
 
 fn tokenize_for_overlap(value: &str) -> HashSet<String> {
@@ -3254,20 +3344,6 @@ fn tokenize_for_overlap(value: &str) -> HashSet<String> {
 
 fn clamp01(value: f64) -> f64 {
     value.clamp(0.0, 1.0)
-}
-
-fn extract_after_keyword(input: &str, keywords: &[&str]) -> Option<String> {
-    let lower = input.to_lowercase();
-    for keyword in keywords {
-        if let Some(index) = lower.find(keyword) {
-            let start = index + keyword.len();
-            let suffix = input.get(start..)?.trim();
-            if !suffix.is_empty() {
-                return Some(suffix.to_string());
-            }
-        }
-    }
-    None
 }
 
 fn sanitize_session_id(thread_id: &str) -> String {
@@ -3581,6 +3657,7 @@ fn render_user_input(input: &UserInput) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn session_dialog_entry_skips_reasoning_items() {
@@ -3606,5 +3683,155 @@ mod tests {
         assert_eq!(entry.0, "assistant");
         assert_eq!(entry.1, "message-1");
         assert_eq!(entry.2, "visible answer");
+    }
+
+    fn user_message_item(id: &str, text: &str) -> ThreadItem {
+        ThreadItem::UserMessage {
+            id: id.to_string(),
+            content: vec![UserInput::Text {
+                text: text.to_string(),
+                text_elements: Vec::new(),
+            }],
+        }
+    }
+
+    fn memory_count(root: &Path, target_space: &str) -> i64 {
+        let db_name = if target_space == "frozen" {
+            FROZEN_TRUTH_DB_NAME
+        } else {
+            SHARED_TRUTH_DB_NAME
+        };
+        let connection = Connection::open(root.join("shared").join(db_name)).unwrap();
+        connection
+            .query_row("select count(*) from memory_entries", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    fn job_status(root: &Path, job_id: &str) -> String {
+        let connection = Connection::open(root.join("runtime").join(MEMORY_JOBS_DB_NAME)).unwrap();
+        connection
+            .query_row(
+                "select status from memory_jobs where job_id = ?1",
+                params![job_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn memory_writer_model_decision_promotes_high_confidence() {
+        let temp = tempdir().unwrap();
+        let item = user_message_item("msg-promote", "Remember this project uses API v2.");
+        persist_thread_item_sync(temp.path(), "thread-1", "turn-1", &item).unwrap();
+        let root = lyra_truth_root_path(temp.path());
+
+        let outcome = apply_memory_model_decision(
+            &root,
+            "memory_writer_msg-promote",
+            MemoryModelDecision {
+                salience: 0.9,
+                promotions: vec![MemoryPromotionDecision {
+                    target_space: "shared".to_string(),
+                    namespace: "project".to_string(),
+                    kind: "api_version".to_string(),
+                    value: "Project uses API v2.".to_string(),
+                    confidence: 0.91,
+                    rationale: "explicit project fact".to_string(),
+                }],
+                rationale: "candidate is durable".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert!(outcome.shared_updated);
+        assert_eq!(memory_count(&root, "shared"), 1);
+        assert_eq!(job_status(&root, "memory_writer_msg-promote"), "promoted");
+    }
+
+    #[test]
+    fn memory_writer_low_confidence_does_not_promote() {
+        let temp = tempdir().unwrap();
+        let item = user_message_item("msg-low", "Maybe remember this later.");
+        persist_thread_item_sync(temp.path(), "thread-1", "turn-1", &item).unwrap();
+        let root = lyra_truth_root_path(temp.path());
+
+        let outcome = apply_memory_model_decision(
+            &root,
+            "memory_writer_msg-low",
+            MemoryModelDecision {
+                salience: 0.4,
+                promotions: vec![MemoryPromotionDecision {
+                    target_space: "shared".to_string(),
+                    namespace: "conversation".to_string(),
+                    kind: "note".to_string(),
+                    value: "Maybe remember this later.".to_string(),
+                    confidence: 0.2,
+                    rationale: "uncertain".to_string(),
+                }],
+                rationale: "low confidence".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert!(!outcome.shared_updated);
+        assert_eq!(memory_count(&root, "shared"), 0);
+        assert_eq!(
+            job_status(&root, "memory_writer_msg-low"),
+            "rejected_low_confidence"
+        );
+    }
+
+    #[test]
+    fn memory_writer_failure_does_not_fallback_to_keyword_promotion() {
+        let temp = tempdir().unwrap();
+        let item = user_message_item("msg-fail", &format!("{} {}", "my name", "is Casey"));
+        persist_thread_item_sync(temp.path(), "thread-1", "turn-1", &item).unwrap();
+        let root = lyra_truth_root_path(temp.path());
+
+        drain_memory_jobs_with_model_writer(&root, 10, |_job| {
+            Err(anyhow::anyhow!("model unavailable"))
+        })
+        .unwrap();
+
+        assert_eq!(memory_count(&root, "frozen"), 0);
+        assert_eq!(
+            job_status(&root, "memory_writer_msg-fail"),
+            "failed_recoverable"
+        );
+    }
+
+    #[test]
+    fn trim_selection_score_is_neutral_without_model_salience() {
+        let connection = Connection::open_in_memory().unwrap();
+        ensure_session_dialog_schema(&connection).unwrap();
+        let keyword_message = SessionMessage {
+            msg_id: "keyword".to_string(),
+            turn_index: 1,
+            role: "user".to_string(),
+            content_raw: format!("{} {} {} {}", "must", "required", "todo", "error"),
+            token_count: 10,
+            created_at_ms: 1,
+            created_at_iso: "now".to_string(),
+            metadata_json: "{}".to_string(),
+        };
+        let neutral_message = SessionMessage {
+            msg_id: "neutral".to_string(),
+            turn_index: 2,
+            role: "assistant".to_string(),
+            content_raw: "ordinary text".to_string(),
+            token_count: 10,
+            created_at_ms: 2,
+            created_at_iso: "now".to_string(),
+            metadata_json: "{}".to_string(),
+        };
+
+        assert_eq!(
+            mechanical_selection_score(&connection, &keyword_message),
+            0.0
+        );
+        assert_eq!(
+            mechanical_selection_score(&connection, &neutral_message),
+            0.0
+        );
     }
 }

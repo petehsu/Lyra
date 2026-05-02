@@ -1352,6 +1352,54 @@ describe("useLyraThreadRuntime", () => {
     expect(result.current.state.isStreamActive).toBe(false);
   });
 
+  test("server error notification stops spinner and surfaces failure", async () => {
+    const desktop = makeDesktopApi();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Plan"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    expect(result.current.state.isStreamActive).toBe(true);
+
+    await act(async () => {
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "error",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            willRetry: false,
+            error: {
+              message: "Plan Mode finished without a structured plan submission.",
+            },
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.runtimeError).toBe("Plan Mode finished without a structured plan submission.");
+    expect(result.current.state.isStreamActive).toBe(false);
+    expect(result.current.state.streamingTurnId).toBeNull();
+    expect(result.current.state.finalizingTurnId).toBe("turn-1");
+    expect(result.current.state.latestRuntimeEventByTurn["turn-1"]?.phase).toBe("failed");
+  });
+
   test("accepts a revised plan for approval after keep-planning feedback", async () => {
     const desktop = makeDesktopApi();
     const { result } = renderHook(() =>

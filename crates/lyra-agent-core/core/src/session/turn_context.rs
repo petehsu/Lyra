@@ -132,6 +132,7 @@ impl TurnContext {
             wire_api: self.provider.info().wire_api,
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
+            collaboration_mode: self.collaboration_mode.mode,
             sandbox_policy: self.sandbox_policy.get(),
             windows_sandbox_level: self.windows_sandbox_level,
         })
@@ -354,6 +355,7 @@ impl Session {
             wire_api: provider_wire_api,
             web_search_mode: Some(per_turn_config.web_search_mode.value()),
             session_source: session_source.clone(),
+            collaboration_mode: session_configuration.collaboration_mode.mode,
             sandbox_policy: session_configuration.sandbox_policy.get(),
             windows_sandbox_level: session_configuration.windows_sandbox_level,
         })

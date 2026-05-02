@@ -2807,6 +2807,34 @@ export const useLyraThreadRuntime = ({
         }
         return;
       }
+      if (method === "error") {
+        const threadId = readString(params.threadId);
+        const turnId = readString(params.turnId);
+        const error = isRecord(params.error) ? params.error : {};
+        const message = readString(error.message) ?? "Lyra turn failed";
+        const willRetry = params.willRetry === true;
+        setRuntimeError(message);
+        if (threadId !== null && turnId !== null) {
+          patchRuntimeBucket(threadId, (current) => ({
+            ...current,
+            isSending: false,
+            isStreamActive: willRetry ? current.isStreamActive : false,
+            streamingAssistantText: willRetry ? current.streamingAssistantText : "",
+            streamingTurnId: willRetry ? (current.streamingTurnId ?? turnId) : null,
+            finalizingTurnId: willRetry ? current.finalizingTurnId : turnId,
+            latestRuntimeEventByTurn: {
+              ...current.latestRuntimeEventByTurn,
+              [turnId]: toRuntimeEvent({
+                sessionId: threadId,
+                turnId,
+                phase: willRetry ? "tool_progress" : "failed",
+                payload: params,
+              }),
+            },
+          }));
+        }
+        return;
+      }
       if (method === "item/agentMessage/delta") {
         const threadId = readString(params.threadId);
         const turnId = readString(params.turnId);

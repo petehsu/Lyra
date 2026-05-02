@@ -25,6 +25,8 @@ These modules must route core behavior to the matching native core boundary:
 | lsp | `apps/desktop/src/main/lsp` | `crates/lyra-lsp-core` |
 | skills | `apps/desktop/src/main/skills` | `crates/lyra-skills-napi` |
 | mcp | `apps/desktop/src/main/mcp` | `crates/lyra-mcp-core` |
+| resources | `apps/desktop/src/main/resources` | `crates/lyra-resource-napi` / `crates/lyra-resource-core` |
+| image-viewer | `apps/desktop/src/main/image-viewer` | `crates/lyra-image-napi` / `crates/lyra-image-core` |
 | ai | `apps/desktop/src/main/ai` | `vendor/lyra-core/lyra-rs` |
 
 Requirements:

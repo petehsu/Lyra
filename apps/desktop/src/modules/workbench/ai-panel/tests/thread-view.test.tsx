@@ -1,6 +1,6 @@
 import { createRef } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { AiPanelThreadView } from "../thread-view";
 import { PlanCard } from "../plan-card";
@@ -33,6 +33,10 @@ const turnsById = new Map(messages.map((message, index) => [
     updatedAt: 1000 + index,
   },
 ]));
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("AiPanelThreadView virtualization", () => {
   test("renders only the visible overscan slice for long threads", () => {
@@ -98,7 +102,6 @@ describe("AiPanelThreadView virtualization", () => {
         onRegenerateTurn={vi.fn()}
         onEditMessageTurn={vi.fn()}
         onPlanApprovalDecision={vi.fn(async () => {})}
-        onOpenPlanApprovalInPanel={vi.fn()}
       />
     );
 

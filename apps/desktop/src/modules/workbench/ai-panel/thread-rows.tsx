@@ -26,7 +26,6 @@ import {
 import type { LyraTurnPlanState } from "./use-lyra-thread-runtime";
 import {
   isOptimisticUserMessage,
-  proposedPlanPattern,
   resolveAssistantDisplayContent,
   resolveTurnDurationLabel,
   sanitizeAssistantDisplayContent,
@@ -95,7 +94,6 @@ type AiPanelMessageRowProps = {
   readonly toolStatusRunningLabel: string;
   readonly toolStatusCompletedLabel: string;
   readonly toolStatusFailedLabel: string;
-  readonly pendingInteractionQueue: readonly PendingInteractionPanel[];
   readonly canOpenFilePath: boolean;
   readonly openRuntimeTargetPath: OpenRuntimeTargetPath;
   readonly copyMessageLabel: string;
@@ -106,12 +104,6 @@ type AiPanelMessageRowProps = {
   readonly onForkTurn: (turnId: string) => void;
   readonly onRegenerateTurn: (turnId: string) => void;
   readonly onEditMessageTurn: (turnId: string, content: string) => void;
-  readonly onPlanApprovalDecision: (
-    response: PlanInteractionResponse,
-    requestOverride?: PlanApprovalRequest
-  ) => Promise<void>;
-  readonly onOpenPlanApprovalInPanel: (requestId: string) => void;
-  readonly onOpenPlanApprovalInWorkspace?: (request: PlanApprovalRequest) => void;
   readonly onOpenThread?: (threadId: string) => void;
 };
 
@@ -131,7 +123,6 @@ export const AiPanelMessageRow = ({
   toolStatusRunningLabel,
   toolStatusCompletedLabel,
   toolStatusFailedLabel,
-  pendingInteractionQueue,
   canOpenFilePath,
   openRuntimeTargetPath,
   copyMessageLabel,
@@ -142,12 +133,8 @@ export const AiPanelMessageRow = ({
   onForkTurn,
   onRegenerateTurn,
   onEditMessageTurn,
-  onPlanApprovalDecision,
-  onOpenPlanApprovalInPanel,
-  onOpenPlanApprovalInWorkspace,
   onOpenThread,
 }: AiPanelMessageRowProps) => {
-  const interactionQueue = pendingInteractionQueue ?? [];
   const message = row.message;
   const messageIndex = row.messageIndex;
   const isUserMessage = message.role === "user";
@@ -197,26 +184,10 @@ export const AiPanelMessageRow = ({
     }
     displayTimeline.push({ ...entry, content });
   }
-  const lastAssistantTimelineIndex = displayTimeline.reduce(
-    (lastIndex, entry, index) => (entry.kind === "assistant" ? index : lastIndex),
-    -1
-  );
   const displayMessageContent = isUserMessage
     ? message.content
     : resolveAssistantDisplayContent(message);
   const messageTimeLabel = formatMessageTime(message.createdAt, locale);
-  const messagePlanApprovalRequest =
-    turnId === null
-      ? null
-      : interactionQueue.find(
-          (interaction): interaction is Extract<PendingInteractionPanel, { kind: "planApproval" }> =>
-            interaction.kind === "planApproval" && interaction.request.turnId === turnId
-        )?.request
-        ?? null;
-  const hasPlanActions =
-    message.role === "assistant"
-    && proposedPlanPattern.test(message.content)
-    && messagePlanApprovalRequest !== null;
   const isLastAssistantMessageForTurn =
     !isUserMessage
     && turnId !== null
@@ -289,9 +260,6 @@ export const AiPanelMessageRow = ({
                   timelineIndex = groupEndIndex;
                   continue;
                 }
-                const shouldAttachPlanActions =
-                  hasPlanActions
-                  && timelineIndex === lastAssistantTimelineIndex;
                 nodes.push(
                   <div
                     key={timelineEntry.id}
@@ -300,37 +268,6 @@ export const AiPanelMessageRow = ({
                     <AiPanelRichContent
                       content={timelineEntry.content}
                       locale={locale}
-                      {...(shouldAttachPlanActions
-                        ? {
-                            planActions: {
-                              onApprove: () => {
-                                void onPlanApprovalDecision({
-                                  requestId: messagePlanApprovalRequest!.id,
-                                  decision: "approve_and_implement",
-                                }, messagePlanApprovalRequest!);
-                              },
-                              onKeepPlanning: () => {
-                                void onPlanApprovalDecision({
-                                  requestId: messagePlanApprovalRequest!.id,
-                                  decision: "keep_planning",
-                                }, messagePlanApprovalRequest!);
-                              },
-                              onReject: () => {
-                                void onPlanApprovalDecision({
-                                  requestId: messagePlanApprovalRequest!.id,
-                                  decision: "reject",
-                                }, messagePlanApprovalRequest!);
-                              },
-                              onOpenInPanel: () => {
-                                if (onOpenPlanApprovalInWorkspace === undefined) {
-                                  onOpenPlanApprovalInPanel(messagePlanApprovalRequest!.id);
-                                  return;
-                                }
-                                onOpenPlanApprovalInWorkspace(messagePlanApprovalRequest!);
-                              },
-                            },
-                          }
-                        : {})}
                       {...(themeSignature === undefined ? {} : { themeSignature })}
                     />
                   </div>

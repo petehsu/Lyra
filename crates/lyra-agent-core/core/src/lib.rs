@@ -50,6 +50,7 @@ mod original_image_detail;
 pub use lyra_mcp::SandboxState;
 mod mcp_tool_call;
 mod memories;
+pub use memories::LyraMemoryWriteOutcome;
 pub use memories::persist_thread_item_to_lyra_memory_truth;
 pub(crate) mod mention_syntax;
 pub(crate) mod message_history;

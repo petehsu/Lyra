@@ -2,6 +2,7 @@ use crate::can_request_original_image_detail;
 use lyra_features::Feature;
 use lyra_features::Features;
 use lyra_model_provider_info::WireApi;
+use lyra_protocol::config_types::ModeKind;
 use lyra_protocol::config_types::WebSearchConfig;
 use lyra_protocol::config_types::WebSearchMode;
 use lyra_protocol::config_types::WindowsSandboxLevel;
@@ -110,6 +111,7 @@ pub struct ToolsConfig {
     pub spawn_agent_usage_hint: bool,
     pub spawn_agent_usage_hint_text: Option<String>,
     pub default_mode_request_user_input: bool,
+    pub collaboration_mode: ModeKind,
     pub supported_tools: Vec<String>,
     pub agent_jobs_tools: bool,
     pub agent_jobs_worker_tools: bool,
@@ -124,6 +126,7 @@ pub struct ToolsConfigParams<'a> {
     pub wire_api: WireApi,
     pub web_search_mode: Option<WebSearchMode>,
     pub session_source: SessionSource,
+    pub collaboration_mode: ModeKind,
     pub sandbox_policy: &'a SandboxPolicy,
     pub windows_sandbox_level: WindowsSandboxLevel,
 }
@@ -138,6 +141,7 @@ impl ToolsConfig {
             wire_api,
             web_search_mode,
             session_source,
+            collaboration_mode,
             sandbox_policy,
             windows_sandbox_level,
         } = params;
@@ -238,6 +242,7 @@ impl ToolsConfig {
             spawn_agent_usage_hint: true,
             spawn_agent_usage_hint_text: None,
             default_mode_request_user_input: include_default_mode_request_user_input,
+            collaboration_mode: *collaboration_mode,
             supported_tools: model_info.supported_tools.clone(),
             agent_jobs_tools: include_agent_jobs,
             agent_jobs_worker_tools,
