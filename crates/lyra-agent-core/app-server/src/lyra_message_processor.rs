@@ -422,7 +422,7 @@ pub(crate) struct LyraMessageProcessor {
     pending_fuzzy_searches: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     fuzzy_search_sessions: Arc<Mutex<HashMap<String, FuzzyFileSearchSession>>>,
     background_tasks: TaskTracker,
-    log_db: Option<LogDbLayer>,
+    _log_db: Option<LogDbLayer>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -626,6 +626,208 @@ impl LyraMessageProcessor {
 
         Ok((thread_id, thread))
     }
+
+    async fn load_or_resume_thread_for_runtime_request(
+        &self,
+        request_id: &ConnectionRequestId,
+        thread_id: &str,
+        operation_label: &'static str,
+    ) -> Result<(ThreadId, Arc<LyraThread>), JSONRPCErrorError> {
+        let thread_id = ThreadId::from_string(thread_id).map_err(|err| JSONRPCErrorError {
+            code: INVALID_REQUEST_ERROR_CODE,
+            message: format!("invalid thread id: {err}"),
+            data: None,
+        })?;
+
+        if let Ok(thread) = self.thread_manager.get_thread(thread_id).await {
+            return Ok((thread_id, thread));
+        }
+
+        let thread = self
+            .resume_thread_for_runtime_request(request_id, thread_id, operation_label)
+            .await?;
+        Ok((thread_id, thread))
+    }
+
+    async fn resume_thread_for_runtime_request(
+        &self,
+        request_id: &ConnectionRequestId,
+        thread_id: ThreadId,
+        operation_label: &'static str,
+    ) -> Result<Arc<LyraThread>, JSONRPCErrorError> {
+        if self
+            .pending_thread_unloads
+            .lock()
+            .await
+            .contains(&thread_id)
+        {
+            return Err(JSONRPCErrorError {
+                code: INVALID_REQUEST_ERROR_CODE,
+                message: format!(
+                    "thread {thread_id} is closing; retry {operation_label} after the thread is closed"
+                ),
+                data: None,
+            });
+        }
+
+        let rollout_path = match find_thread_path_by_id_str(
+            &self.config.lyra_home,
+            &thread_id.to_string(),
+        )
+        .await
+        {
+            Ok(Some(path)) => path,
+            Ok(None) => {
+                return Err(JSONRPCErrorError {
+                    code: INVALID_REQUEST_ERROR_CODE,
+                    message: format!("no rollout found for thread id {thread_id}"),
+                    data: None,
+                });
+            }
+            Err(err) => {
+                return Err(JSONRPCErrorError {
+                    code: INVALID_REQUEST_ERROR_CODE,
+                    message: format!("failed to locate thread id {thread_id}: {err}"),
+                    data: None,
+                });
+            }
+        };
+
+        let thread_history = RolloutRecorder::get_rollout_history(&rollout_path)
+            .await
+            .map_err(|err| JSONRPCErrorError {
+                code: INVALID_REQUEST_ERROR_CODE,
+                message: format!("failed to load rollout `{}`: {err}", rollout_path.display()),
+                data: None,
+            })?;
+        let history_cwd = thread_history.session_cwd();
+        let mut request_overrides = None;
+        let mut typesafe_overrides = self.build_thread_config_overrides(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            self.lyra_runtime_api.merge_developer_instructions(None),
+        );
+        let persisted_resume_metadata = self
+            .load_and_apply_persisted_resume_metadata(
+                &thread_history,
+                &mut request_overrides,
+                &mut typesafe_overrides,
+            )
+            .await;
+
+        let cloud_requirements = self.current_cloud_requirements();
+        let cli_overrides = self.current_cli_overrides();
+        let runtime_feature_enablement = self.current_runtime_feature_enablement();
+        let config = derive_config_for_cwd(
+            &cli_overrides,
+            request_overrides,
+            typesafe_overrides,
+            history_cwd,
+            &cloud_requirements,
+            &self.config.lyra_home,
+            &runtime_feature_enablement,
+        )
+        .await
+        .map_err(|err| config_load_error(&err))?;
+        let fallback_model_provider = config.model_provider_id.clone();
+        let response_history = thread_history.clone();
+
+        match self
+            .thread_manager
+            .resume_thread_with_history(
+                config,
+                thread_history,
+                self.auth_manager.clone(),
+                /*persist_extended_history*/ true,
+                self.request_trace_context(request_id).await,
+            )
+            .await
+        {
+            Ok(NewThread {
+                thread_id: resumed_thread_id,
+                thread: lyra_thread,
+                session_configured,
+                ..
+            }) => {
+                let SessionConfiguredEvent { rollout_path, .. } = session_configured;
+                let Some(rollout_path) = rollout_path else {
+                    return Err(JSONRPCErrorError {
+                        code: INTERNAL_ERROR_CODE,
+                        message: format!("rollout path missing for thread {resumed_thread_id}"),
+                        data: None,
+                    });
+                };
+
+                Self::log_listener_attach_result(
+                    self.ensure_conversation_listener(
+                        resumed_thread_id,
+                        request_id.connection_id,
+                        /*raw_events_enabled*/ false,
+                        ApiVersion::V2,
+                    )
+                    .await,
+                    resumed_thread_id,
+                    request_id.connection_id,
+                    operation_label,
+                );
+
+                let thread_summary = self
+                    .load_thread_from_resume_source_or_send_internal(
+                        resumed_thread_id,
+                        lyra_thread.as_ref(),
+                        &response_history,
+                        rollout_path.as_path(),
+                        fallback_model_provider.as_str(),
+                        persisted_resume_metadata.as_ref(),
+                    )
+                    .await
+                    .map_err(|message| JSONRPCErrorError {
+                        code: INTERNAL_ERROR_CODE,
+                        message,
+                        data: None,
+                    })?;
+                self.thread_watch_manager
+                    .upsert_thread(thread_summary)
+                    .await;
+
+                let current_host_tools = self.lyra_runtime_api.current_host_tools();
+                let current_host_tool_names = current_host_tools
+                    .iter()
+                    .map(|tool| tool.name.clone())
+                    .collect::<HashSet<_>>();
+                let mut merged_dynamic_tools = lyra_thread
+                    .dynamic_tools_snapshot()
+                    .await
+                    .into_iter()
+                    .filter(|tool| !current_host_tool_names.contains(&tool.name))
+                    .collect::<Vec<_>>();
+                merged_dynamic_tools
+                    .extend(current_host_tools.into_iter().map(api_dynamic_tool_to_core));
+                let _ = lyra_thread.set_dynamic_tools(merged_dynamic_tools).await;
+                let merged_developer_instructions = self
+                    .lyra_runtime_api
+                    .merge_developer_instructions(strip_persona_context_block(
+                        lyra_thread.developer_instructions_snapshot().await,
+                    ));
+                let _ = lyra_thread
+                    .set_developer_instructions(merged_developer_instructions)
+                    .await;
+
+                Ok(lyra_thread)
+            }
+            Err(err) => Err(JSONRPCErrorError {
+                code: INTERNAL_ERROR_CODE,
+                message: format!("error resuming thread for {operation_label}: {err}"),
+                data: None,
+            }),
+        }
+    }
     pub fn new(args: LyraMessageProcessorArgs) -> Self {
         let LyraMessageProcessorArgs {
             auth_manager,
@@ -660,7 +862,7 @@ impl LyraMessageProcessor {
             pending_fuzzy_searches: Arc::new(Mutex::new(HashMap::new())),
             fuzzy_search_sessions: Arc::new(Mutex::new(HashMap::new())),
             background_tasks: TaskTracker::new(),
-            log_db,
+            _log_db: log_db,
         }
     }
 
@@ -3094,8 +3296,18 @@ impl LyraMessageProcessor {
                 return;
             }
         };
-        let view_model = view_model_params
-            .map(|params| build_thread_ai_panel_view_model(&thread, params.runtime_feed_limit()));
+        let pending_server_requests = if view_model_params.is_some() {
+            self.outgoing.pending_requests_for_thread(thread_uuid).await
+        } else {
+            Vec::new()
+        };
+        let view_model = view_model_params.map(|params| {
+            build_thread_ai_panel_view_model(
+                &thread,
+                params.runtime_feed_limit(),
+                pending_server_requests.as_slice(),
+            )
+        });
         if !include_turns {
             thread.turns.clear();
         }
@@ -5781,7 +5993,10 @@ impl LyraMessageProcessor {
             return;
         }
         let thread_id = params.thread_id.clone();
-        let (thread_uuid, thread) = match self.load_thread(&thread_id).await {
+        let (thread_uuid, thread) = match self
+            .load_or_resume_thread_for_runtime_request(&request_id, &thread_id, "turn start")
+            .await
+        {
             Ok(v) => v,
             Err(error) => {
                 self.track_error_response(&request_id, &error, /*error_type*/ None);
@@ -6053,7 +6268,10 @@ impl LyraMessageProcessor {
             return;
         }
 
-        let (_, thread) = match self.load_thread(&thread_id).await {
+        let (_, thread) = match self
+            .load_or_resume_thread_for_runtime_request(&request_id, &thread_id, "plan approval")
+            .await
+        {
             Ok(v) => v,
             Err(error) => {
                 self.track_error_response(&request_id, &error, /*error_type*/ None);

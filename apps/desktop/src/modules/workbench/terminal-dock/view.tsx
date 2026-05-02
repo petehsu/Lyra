@@ -264,7 +264,7 @@ export const TerminalDock = ({
                   onRequestCloseTab(tab.id);
                 }}
               >
-                <X size={11} />
+                <X size={12} />
               </ChromeIconButton>
             </ChromeTabFrame>
           ))}

@@ -32,7 +32,6 @@ export type SearchResultOfficialCategoryLabels = {
 export type WebResultSourceChip = {
   readonly id: string;
   readonly label: string;
-  readonly accentColor: string;
 };
 
 export type WebResultViewModel = {
@@ -67,11 +66,6 @@ export const resolveEngineLabel = (
   engineById: ReadonlyMap<string, SearchEngineDefinition>,
   engineId: string
 ): string => engineById.get(engineId)?.label ?? engineId;
-
-export const resolveEngineAccent = (
-  engineById: ReadonlyMap<string, SearchEngineDefinition>,
-  engineId: string
-): string => engineById.get(engineId)?.accentColor ?? "var(--lyra-text-accent)";
 
 export const resolveOfficialCategoryLabel = (
   category: SearchOfficialCategory | undefined,
@@ -109,7 +103,6 @@ export const createWebResultViewModel = (
   ),
   sourceChips: result.sourceEngineIds.map((engineId) => ({
     id: engineId,
-    label: resolveEngineLabel(engineById, engineId),
-    accentColor: resolveEngineAccent(engineById, engineId)
+    label: resolveEngineLabel(engineById, engineId)
   }))
 });

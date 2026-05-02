@@ -37,6 +37,7 @@ const labels: FileManagerSurfaceLabels = {
   noRecentLocations: "暂无最近位置",
   emptyDirectory: "目录为空",
   emptyTrashState: "回收站为空",
+  noFavorites: "暂无收藏",
   loading: "加载中",
   unavailable: "文件能力不可用",
   diskAvailable: "可用",

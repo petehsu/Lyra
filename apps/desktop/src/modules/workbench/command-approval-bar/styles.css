@@ -50,7 +50,7 @@
 
 .lyra-command-approval-bar__repeat-badge {
   font-size: var(--lyra-unit-10);
-  color: color-mix(in srgb, var(--lyra-line-focused) 72%, var(--lyra-text-secondary) 28%);
+  color: var(--lyra-text-secondary);
   flex-shrink: 0;
 }
 
@@ -121,15 +121,24 @@
 }
 
 .lyra-command-approval-bar__icon-action--allow {
-  color: color-mix(in srgb, var(--lyra-terminal-green, #22c55e) 80%, var(--lyra-text-secondary) 20%);
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-command-approval-bar__icon-action--allow-once {
-  color: color-mix(in srgb, var(--lyra-terminal-green, #22c55e) 66%, var(--lyra-text-secondary) 34%);
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-command-approval-bar__icon-action--deny {
-  color: color-mix(in srgb, var(--lyra-danger-500, #ef4444) 80%, var(--lyra-text-secondary) 20%);
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-command-approval-bar__icon-action--allow:hover,
+.lyra-command-approval-bar__icon-action--allow-once:hover {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-command-approval-bar__icon-action--deny:hover {
+  color: var(--lyra-danger-500, #ef4444);
 }
 
 .lyra-command-approval-bar__details {

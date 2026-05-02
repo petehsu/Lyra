@@ -8,10 +8,7 @@ import {
 } from "react";
 
 import { ChromeTabButton, ChromeTabShape, cx } from "../ui-primitives";
-import {
-  ProjectIdentityIcon,
-  projectLogoUrlForRoot
-} from "../project-identity";
+import { ProjectIdentityIcon } from "../project-identity";
 import type { LyraThreadTab } from "./use-lyra-thread-runtime";
 
 const AI_THREAD_TAB_DRAG_MIME = "application/x-lyra-ai-thread-tab";
@@ -39,7 +36,6 @@ type AiPanelThreadTabsProps = {
   readonly closeThreadLabel: string;
   readonly draftTitle: string;
   readonly tabProjectRootById?: ReadonlyMap<string, string | null> | undefined;
-  readonly projectLogoByRoot?: ReadonlyMap<string, string | null> | undefined;
   readonly onActivateTab: (tabId: string) => void;
   readonly onCloseTab: (tabId: string) => void;
   readonly onCreateTab: () => void;
@@ -87,7 +83,6 @@ export const AiPanelThreadTabs = ({
   closeThreadLabel,
   draftTitle,
   tabProjectRootById,
-  projectLogoByRoot,
   onActivateTab,
   onCloseTab,
   onCreateTab,
@@ -166,10 +161,6 @@ export const AiPanelThreadTabs = ({
           const title = tab.threadId === null ? draftTitle : tab.title;
           const isActive = tab.tabId === activeTabId;
           const projectRoot = tabProjectRootById?.get(tab.tabId) ?? null;
-          const projectLogoUrl =
-            projectLogoByRoot === undefined
-              ? null
-              : projectLogoUrlForRoot(projectLogoByRoot, projectRoot);
           return (
             <div
               key={tab.tabId}
@@ -207,7 +198,7 @@ export const AiPanelThreadTabs = ({
                 <ProjectIdentityIcon
                   className="lyra-browser-tab-icon lyra-ai-thread-tab-icon"
                   projectRoot={projectRoot}
-                  projectLogoUrl={projectLogoUrl}
+                  projectLogoUrl={null}
                   title={title}
                 />
                 <ScrollableTabTitle title={title} />

@@ -360,57 +360,6 @@ impl AutoReviewSessionManager {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) async fn cache_for_test(&self, session_handle: LyraSessionHandle) {
-        let reuse_key = AutoReviewSessionReuseKey::from_spawn_config(
-            session_handle.session.get_config().await.as_ref(),
-        );
-        self.state.lock().await.trunk = Some(Arc::new(AutoReviewSession {
-            reuse_key,
-            session_handle,
-            cancel_token: CancellationToken::new(),
-            review_lock: Mutex::new(()),
-            state: Mutex::new(AutoReviewState {
-                prior_review_count: 0,
-                last_reviewed_transcript_cursor: None,
-                last_committed_fork_snapshot: None,
-            }),
-        }));
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn register_ephemeral_for_test(&self, session_handle: LyraSessionHandle) {
-        let reuse_key = AutoReviewSessionReuseKey::from_spawn_config(
-            session_handle.session.get_config().await.as_ref(),
-        );
-        self.state
-            .lock()
-            .await
-            .ephemeral_reviews
-            .push(Arc::new(AutoReviewSession {
-                reuse_key,
-                session_handle,
-                cancel_token: CancellationToken::new(),
-                review_lock: Mutex::new(()),
-                state: Mutex::new(AutoReviewState {
-                    prior_review_count: 0,
-                    last_reviewed_transcript_cursor: None,
-                    last_committed_fork_snapshot: None,
-                }),
-            }));
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn committed_fork_rollout_items_for_test(&self) -> Option<Vec<RolloutItem>> {
-        let trunk = self.state.lock().await.trunk.clone()?;
-        let state = trunk.state.lock().await;
-        let snapshot = state.last_committed_fork_snapshot.as_ref()?;
-        match &snapshot.initial_history {
-            InitialHistory::Forked(items) => Some(items.clone()),
-            InitialHistory::New | InitialHistory::Cleared | InitialHistory::Resumed(_) => None,
-        }
-    }
-
     async fn remove_trunk_if_current(
         &self,
         trunk: &Arc<AutoReviewSession>,

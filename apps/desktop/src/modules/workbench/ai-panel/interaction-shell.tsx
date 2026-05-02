@@ -7,6 +7,7 @@ import {
   type CommandApprovalResponse,
 } from "../command-approval-bar";
 import type { PlanQuestionRequest } from "../../../shared/desktop-bridge";
+import { McpElicitationPanel } from "./mcp-elicitation-panel";
 import { PlanQuestionBar } from "./plan-question-bar";
 import type { WorkbenchLocale } from "../i18n";
 import type {
@@ -28,6 +29,13 @@ type AiPanelInteractionShellProps = {
   readonly onPlanQuestionSubmit: (
     payload: { readonly answers: Record<string, unknown>; readonly note?: string }
   ) => Promise<void>;
+  readonly onMcpElicitationSubmit?: ((
+    payload: {
+      readonly action: "accept" | "decline" | "cancel";
+      readonly content?: Record<string, unknown>;
+      readonly meta?: Record<string, unknown>;
+    }
+  ) => Promise<void>) | undefined;
 };
 
 export const AiPanelInteractionShell = memo(({
@@ -42,6 +50,7 @@ export const AiPanelInteractionShell = memo(({
   onSelectInteractionId,
   onCommandApprovalDecision,
   onPlanQuestionSubmit,
+  onMcpElicitationSubmit,
 }: AiPanelInteractionShellProps) => {
   if (activeInteractionPanel === null || activeInteractionPanel.kind === "planApproval") {
     return null;
@@ -97,6 +106,15 @@ export const AiPanelInteractionShell = memo(({
           request={activeInteractionPanel.request as PlanQuestionRequest}
           onSubmit={(payload) => {
             void onPlanQuestionSubmit(payload);
+          }}
+        />
+      ) : null}
+      {activeInteractionPanel.kind === "mcpElicitation" ? (
+        <McpElicitationPanel
+          locale={locale}
+          request={activeInteractionPanel.request}
+          onSubmit={(payload) => {
+            void onMcpElicitationSubmit?.(payload);
           }}
         />
       ) : null}

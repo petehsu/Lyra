@@ -1,10 +1,10 @@
 import {
   Archive,
+  ArchiveRestore,
   ArrowLeft,
   Check,
   ExternalLink,
   Pencil,
-  Plus,
   Trash2,
   X
 } from "lucide-react";
@@ -15,14 +15,12 @@ import { StatusEmptyState } from "../ai-panel/status-primitives";
 import { resolveAssistantDisplayContent } from "../ai-panel/view-helpers";
 import {
   ProjectIdentityIcon,
-  normalizeProjectRoot,
-  projectLogoUrlForRoot
+  normalizeProjectRoot
 } from "../project-identity";
 import {
   buildPreviewDisplayMessages,
   formatSessionTime,
   resolveThreadPreviewText,
-  type HistoryScope,
   type LyraThreadSummary
 } from "./model";
 import type { AiHistorySurfaceProps } from "./types";
@@ -40,6 +38,7 @@ type AiHistoryLabels = {
   readonly renameConversationLabel: string;
   readonly deleteConversationLabel: string;
   readonly archiveConversationLabel: string;
+  readonly unarchiveConversationLabel: string;
   readonly archivedConversationLabel: string;
   readonly archivedProjectLabel: string;
   readonly deleteArchivedConversationCancel: string;
@@ -65,6 +64,7 @@ const toAiHistoryLabels = (props: AiHistorySurfaceProps): AiHistoryLabels => ({
   renameConversationLabel: props.renameConversationLabel ?? "Rename conversation",
   deleteConversationLabel: props.deleteConversationLabel,
   archiveConversationLabel: props.archiveConversationLabel,
+  unarchiveConversationLabel: props.unarchiveConversationLabel,
   archivedConversationLabel: props.archivedConversationLabel,
   archivedProjectLabel: props.archivedProjectLabel,
   deleteArchivedConversationCancel: props.deleteArchivedConversationCancel,
@@ -83,41 +83,12 @@ const toAiHistoryLabels = (props: AiHistorySurfaceProps): AiHistoryLabels => ({
   previewLoadingLabel: props.previewLoadingLabel
 });
 
-const AiHistoryTopbar = ({
-  labels,
-  runtime
-}: {
-  readonly labels: AiHistoryLabels;
-  readonly runtime: AiHistoryRuntime;
-}) => (
-  <header className="lyra-ai-history-topbar">
-    <div className="lyra-ai-history-topbar-title">{labels.title}</div>
-    <div className="lyra-ai-history-topbar-actions">
-      <button
-        type="button"
-        className="lyra-ai-history-topbar-action"
-        onClick={() => {
-          void runtime.actions.createThread();
-        }}
-        aria-label={labels.newConversationLabel}
-        title={labels.newConversationLabel}
-        disabled={runtime.isCreating}
-      >
-        <Plus size={14} />
-      </button>
-    </div>
-  </header>
-);
-
 const AiHistoryUnavailableSurface = ({
   labels
 }: {
   readonly labels: AiHistoryLabels;
 }) => (
   <section className="lyra-ai-history-surface" aria-label={labels.title}>
-    <header className="lyra-ai-history-topbar">
-      <div className="lyra-ai-history-topbar-title">{labels.title}</div>
-    </header>
     <StatusEmptyState
       title={labels.emptyStateTitle}
       description={labels.emptyStateDescription}
@@ -126,82 +97,20 @@ const AiHistoryUnavailableSurface = ({
   </section>
 );
 
-const AiHistoryScopeTabs = ({
-  labels,
-  runtime
-}: {
-  readonly labels: AiHistoryLabels;
-  readonly runtime: AiHistoryRuntime;
-}) => {
-  const tabs: readonly {
-    readonly scope: HistoryScope;
-    readonly label: string;
-    readonly count: number;
-  }[] = [
-    {
-      scope: "global",
-      label: labels.scopeGlobalLabel,
-      count: runtime.activeThreads.length
-    },
-    {
-      scope: "project",
-      label: labels.scopeProjectLabel,
-      count: runtime.activeProjectGroupCount
-    },
-    {
-      scope: "archivedGlobal",
-      label: labels.archivedConversationLabel,
-      count: runtime.archivedThreads.length
-    },
-    {
-      scope: "archivedProject",
-      label: labels.archivedProjectLabel,
-      count: runtime.archivedProjectGroupCount
-    }
-  ];
-
-  return (
-    <div className="lyra-ai-history-scope-tabs" role="tablist">
-      {tabs.map((tab) => (
-        <button
-          key={tab.scope}
-          type="button"
-          role="tab"
-          aria-selected={runtime.scope === tab.scope}
-          className={
-            runtime.scope === tab.scope
-              ? "lyra-ai-history-scope-tab lyra-ai-history-scope-tab-active"
-              : "lyra-ai-history-scope-tab"
-          }
-          onClick={() => {
-            runtime.actions.selectScope(tab.scope);
-          }}
-        >
-          {tab.label}
-          <small>{tab.count}</small>
-        </button>
-      ))}
-    </div>
-  );
-};
-
 const AiHistoryThreadRow = ({
   thread,
   labels,
   runtime,
-  locale,
-  projectLogoByRoot
+  locale
 }: {
   readonly thread: LyraThreadSummary;
   readonly labels: AiHistoryLabels;
   readonly runtime: AiHistoryRuntime;
   readonly locale: string;
-  readonly projectLogoByRoot: ReadonlyMap<string, string | null>;
 }) => {
   const previewText = resolveThreadPreviewText(thread, labels.threadPreviewEmptyLabel);
   const updatedAtMs = thread.updatedAt ?? Date.now();
   const projectRoot = normalizeProjectRoot(thread.boundProjectRoot);
-  const projectLogoUrl = projectLogoUrlForRoot(projectLogoByRoot, projectRoot);
   const rowClassName =
     runtime.activeThreadId === thread.id
       ? "lyra-ai-history-row lyra-ai-history-row-active"
@@ -272,7 +181,7 @@ const AiHistoryThreadRow = ({
           <ProjectIdentityIcon
             className="lyra-ai-history-row-project-icon"
             projectRoot={projectRoot}
-            projectLogoUrl={projectLogoUrl}
+            projectLogoUrl={null}
             title={projectRoot ?? previewText}
           />
           <strong>{previewText}</strong>
@@ -302,21 +211,44 @@ const AiHistoryThreadRow = ({
         >
           <ExternalLink size={14} />
         </button>
-        <button
-          type="button"
-          className="lyra-ai-history-row-action"
-          onClick={() => {
-            if (runtime.isArchivedScope) {
-              runtime.actions.requestDeleteThread(thread);
-              return;
-            }
-            void runtime.actions.archiveThread(thread.id);
-          }}
-          aria-label={runtime.isArchivedScope ? labels.deleteConversationLabel : labels.archiveConversationLabel}
-          title={runtime.isArchivedScope ? labels.deleteConversationLabel : labels.archiveConversationLabel}
-        >
-          {runtime.isArchivedScope ? <Trash2 size={14} /> : <Archive size={14} />}
-        </button>
+        {runtime.isArchivedScope ? (
+          <>
+            <button
+              type="button"
+              className="lyra-ai-history-row-action"
+              onClick={() => {
+                void runtime.actions.unarchiveThread(thread.id);
+              }}
+              aria-label={labels.unarchiveConversationLabel}
+              title={labels.unarchiveConversationLabel}
+            >
+              <ArchiveRestore size={14} />
+            </button>
+            <button
+              type="button"
+              className="lyra-ai-history-row-action"
+              onClick={() => {
+                runtime.actions.requestDeleteThread(thread);
+              }}
+              aria-label={labels.deleteConversationLabel}
+              title={labels.deleteConversationLabel}
+            >
+              <Trash2 size={14} />
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="lyra-ai-history-row-action"
+            onClick={() => {
+              void runtime.actions.archiveThread(thread.id);
+            }}
+            aria-label={labels.archiveConversationLabel}
+            title={labels.archiveConversationLabel}
+          >
+            <Archive size={14} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -326,14 +258,12 @@ const AiHistoryThreadRows = ({
   labels,
   runtime,
   locale,
-  threads,
-  projectLogoByRoot
+  threads
 }: {
   readonly labels: AiHistoryLabels;
   readonly runtime: AiHistoryRuntime;
   readonly locale: string;
   readonly threads: readonly LyraThreadSummary[];
-  readonly projectLogoByRoot: ReadonlyMap<string, string | null>;
 }) => (
   <div className="lyra-ai-history-rows">
     {threads.map((thread) => (
@@ -343,7 +273,6 @@ const AiHistoryThreadRows = ({
         labels={labels}
         runtime={runtime}
         locale={locale}
-        projectLogoByRoot={projectLogoByRoot}
       />
     ))}
   </div>
@@ -352,13 +281,11 @@ const AiHistoryThreadRows = ({
 const AiHistoryScopeBody = ({
   labels,
   runtime,
-  locale,
-  projectLogoByRoot
+  locale
 }: {
   readonly labels: AiHistoryLabels;
   readonly runtime: AiHistoryRuntime;
   readonly locale: string;
-  readonly projectLogoByRoot: ReadonlyMap<string, string | null>;
 }) => {
   if (!runtime.isProjectScope) {
     if (runtime.isLoading && runtime.threads.length === 0) {
@@ -387,7 +314,6 @@ const AiHistoryScopeBody = ({
         runtime={runtime}
         locale={locale}
         threads={runtime.threads}
-        projectLogoByRoot={projectLogoByRoot}
       />
     );
   }
@@ -418,7 +344,6 @@ const AiHistoryScopeBody = ({
           runtime={runtime}
           locale={locale}
           threads={runtime.selectedProject.threads}
-          projectLogoByRoot={projectLogoByRoot}
         />
       </div>
     );
@@ -463,7 +388,7 @@ const AiHistoryScopeBody = ({
           <ProjectIdentityIcon
             className="lyra-ai-history-project-card-icon"
             projectRoot={group.projectRoot}
-            projectLogoUrl={projectLogoUrlForRoot(projectLogoByRoot, group.projectRoot)}
+            projectLogoUrl={null}
             title={group.displayName}
           />
           <span className="lyra-ai-history-project-card-main">
@@ -588,16 +513,12 @@ export const AiHistorySurfaceView = ({
 
   return (
     <section className="lyra-ai-history-surface" aria-label={labels.title}>
-      <AiHistoryTopbar labels={labels} runtime={runtime} />
-      <AiHistoryScopeTabs labels={labels} runtime={runtime} />
-
       <div className="lyra-ai-history-body">
         <div className="lyra-ai-history-list-pane">
           <AiHistoryScopeBody
             labels={labels}
             runtime={runtime}
             locale={surfaceProps.locale}
-            projectLogoByRoot={runtime.projectLogoByRoot}
           />
           {runtime.errorMessage === null ? null : (
             <div className="lyra-ai-history-error">{runtime.errorMessage}</div>

@@ -1,5 +1,7 @@
 import { AgentComposer } from "./agent-composer";
 import type { AgentComposerFileAttachment } from "./agent-composer";
+import { AdvancedDiagnosticsPanel } from "./advanced-diagnostics-panel";
+import { resolveAiPanelEmptyGreetingCandidates } from "./empty-greeting";
 import { AiPanelInteractionShell } from "./interaction-shell";
 import { AiPermissionsPanel } from "./permissions-panel";
 import { ReviewStartPanel } from "./review-start-panel";
@@ -13,6 +15,7 @@ import type { AiPanelSurfaceRuntime } from "./use-ai-panel-surface-runtime";
 import type { WorkbenchLocale } from "../i18n";
 
 const LOGO_URL = new URL("../../../renderer/assets/logo.svg", import.meta.url).toString();
+const LOGO_BLINK_URL = new URL("../../../renderer/assets/logo-blink.svg", import.meta.url).toString();
 
 type AiPanelSurfaceViewProps = {
   readonly surfaceProps: AiPanelSurfaceProps;
@@ -61,6 +64,15 @@ export const AiPanelSurfaceView = ({
     onRequestProjectBind
   } = surfaceProps;
   const { state, viewModel, actions } = runtime;
+  const emptyGreetingLabels = resolveAiPanelEmptyGreetingCandidates({
+    locale,
+    appMeta: desktopApi?.appMeta,
+    boundProjectRoot: runtime.boundProjectRootForActiveThread,
+    fileMentionSearchRoots: runtime.fileMentionSearchRoots,
+    workbenchTabMentions: runtime.workbenchTabMentions,
+    fallbackLabel: emptyThreadLabel,
+    textLabels: textLabels.emptyGreeting
+  });
 
   const topbarStart = (
     <AiPanelThreadTabs
@@ -70,7 +82,6 @@ export const AiPanelSurfaceView = ({
       closeThreadLabel={textLabels.closeThread}
       draftTitle={newSessionTitle}
       tabProjectRootById={runtime.tabProjectRootById}
-      projectLogoByRoot={runtime.projectLogoByRoot}
       onActivateTab={actions.activateThreadTab}
       onCloseTab={actions.closeThreadTab}
       onCreateTab={() => {
@@ -98,11 +109,15 @@ export const AiPanelSurfaceView = ({
       onOpenPermissions={() => {
         actions.setIsPermissionsPanelOpen(true);
       }}
+      onOpenAdvancedTools={() => {
+        actions.setIsAdvancedPanelOpen(true);
+      }}
       openHistoryLabel={openHistoryLabel}
       openMcpLabel={openMcpLabel}
       openSkillsLabel={openSkillsLabel}
       openPluginsLabel={surfaceProps.openPluginsLabel}
       openPermissionsLabel={textLabels.permissions}
+      advancedToolsLabel={textLabels.advancedTools}
       onStartReview={runtime.canOpenReviewChanges ? actions.openReviewPanel : undefined}
       reviewChangesLabel={textLabels.reviewChanges}
       aiPanelSide={aiPanelSide}
@@ -124,6 +139,7 @@ export const AiPanelSurfaceView = ({
         <div className="lyra-ai-agent-thread-shell">
           <AiPanelThreadView
             logoUrl={LOGO_URL}
+            blinkLogoUrl={LOGO_BLINK_URL}
             locale={locale}
             isZhLocale={locale === "zh-CN"}
             title={title}
@@ -133,6 +149,7 @@ export const AiPanelSurfaceView = ({
             isLoading={state.isLoadingThread || state.isLoadingThreads}
             loadingSessionLabel={loadingSessionLabel}
             emptyThreadLabel={emptyThreadLabel}
+            emptyGreetingLabels={emptyGreetingLabels}
             threadRef={runtime.threadViewportRef}
             threadStyle={EMPTY_THREAD_STYLE}
             messageMetadata={runtime.messageMetadata}
@@ -188,6 +205,7 @@ export const AiPanelSurfaceView = ({
           onSelectInteractionId={actions.setActiveInteractionId}
           onCommandApprovalDecision={actions.respondToCommandApproval}
           onPlanQuestionSubmit={actions.respondToPlanQuestion}
+          onMcpElicitationSubmit={actions.respondToMcpElicitation}
         />
 
         {runtime.isPermissionsPanelOpen ? (
@@ -196,6 +214,18 @@ export const AiPanelSurfaceView = ({
             locale={locale}
             onClose={() => {
               actions.setIsPermissionsPanelOpen(false);
+            }}
+          />
+        ) : null}
+
+        {runtime.isAdvancedPanelOpen ? (
+          <AdvancedDiagnosticsPanel
+            locale={locale}
+            activeThreadId={state.activeThreadId}
+            actions={actions.advanced}
+            openDialog={surfaceProps.openDialog}
+            onClose={() => {
+              actions.setIsAdvancedPanelOpen(false);
             }}
           />
         ) : null}

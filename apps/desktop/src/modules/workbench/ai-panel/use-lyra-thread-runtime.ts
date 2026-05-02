@@ -127,6 +127,13 @@ export type LyraThreadRuntimeActions = {
   readonly respondToPlanQuestion: (
     payload: { readonly answers: Record<string, unknown>; readonly note?: string }
   ) => Promise<void>;
+  readonly respondToMcpElicitation: (
+    payload: {
+      readonly action: "accept" | "decline" | "cancel";
+      readonly content?: Record<string, unknown>;
+      readonly meta?: Record<string, unknown>;
+    }
+  ) => Promise<void>;
   readonly resolvePlanApproval: (input: ResolvePlanApprovalInput) => Promise<void>;
 };
 
@@ -1347,6 +1354,14 @@ const responseValueToAnswerStrings = (value: unknown): readonly string[] => {
   return direct === null ? [] : [direct];
 };
 
+const serverRequestIdFromInteraction = (
+  interaction: AgentPendingInteraction
+): string | number | null => {
+  const payload = isRecord(interaction.payload) ? interaction.payload : null;
+  const requestId = payload?.requestId;
+  return typeof requestId === "string" || typeof requestId === "number" ? requestId : null;
+};
+
 const commandDecisionToAgentCore = (decision: CommandApprovalResponse["decision"]): string => {
   if (decision === "allow_always") {
     return "acceptForSession";
@@ -1387,6 +1402,7 @@ export const useLyraThreadRuntime = ({
   const [pendingInteractions, setPendingInteractions] = useState<readonly AgentPendingInteraction[]>([]);
   const [serverRequestIds, setServerRequestIds] = useState<Readonly<Record<string, string | number>>>({});
   const [activeInteractionId, setActiveInteractionId] = useState<string | null>(null);
+  const pendingInteractionsRef = useRef<readonly AgentPendingInteraction[]>([]);
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
   const [hasLoadedThreadList, setHasLoadedThreadList] = useState(false);
   const [isLoadingThread, setIsLoadingThread] = useState(false);
@@ -1459,6 +1475,10 @@ export const useLyraThreadRuntime = ({
   useEffect(() => {
     threadByIdRef.current = threadById;
   }, [threadById]);
+
+  useEffect(() => {
+    pendingInteractionsRef.current = pendingInteractions;
+  }, [pendingInteractions]);
 
   useEffect(() => {
     streamingTurnIdRef.current = activeBucket.streamingTurnId;
@@ -1904,21 +1924,35 @@ export const useLyraThreadRuntime = ({
         threadReadRequestedForIdRef.current.add(nextThread.id);
         upsertThread(nextThread);
         const hydratedDetail = lyraThreadToAgentDetail(nextThread);
-        const hydratedPlanInteractions = hydratedDetail.pendingInteractions.filter(
-          (interaction) => interaction.kind === "plan_approval"
-        );
+        const hydratedPendingInteractions = hydratedDetail.pendingInteractions;
         setPendingInteractions((current) => {
-          const withoutHydratedPlanApprovals = current.filter(
+          const withoutHydratedThreadInteractions = current.filter(
             (interaction) =>
-              interaction.sessionId !== nextThread.id || interaction.kind !== "plan_approval"
+              interaction.sessionId !== nextThread.id
           );
           return mergePendingInteractionLists(
-            withoutHydratedPlanApprovals,
-            hydratedPlanInteractions
+            withoutHydratedThreadInteractions,
+            hydratedPendingInteractions
           );
         });
-        if (hydratedPlanInteractions.length > 0) {
-          setActiveInteractionId((current) => current ?? hydratedPlanInteractions[0]!.id);
+        setServerRequestIds((current) => {
+          const next = { ...current };
+          for (const key of Object.keys(next)) {
+            const currentInteraction = pendingInteractionsRef.current.find((interaction) => interaction.id === key);
+            if (currentInteraction?.sessionId === nextThread.id) {
+              delete next[key];
+            }
+          }
+          for (const interaction of hydratedPendingInteractions) {
+            const requestId = serverRequestIdFromInteraction(interaction);
+            if (requestId !== null) {
+              next[interaction.id] = requestId;
+            }
+          }
+          return next;
+        });
+        if (hydratedPendingInteractions.length > 0) {
+          setActiveInteractionId((current) => current ?? hydratedPendingInteractions[0]!.id);
         }
         patchRuntimeBucket(nextThread.id, (current) => ({
           ...current,
@@ -1940,43 +1974,6 @@ export const useLyraThreadRuntime = ({
       setIsLoadingThread(false);
     }
   }, [forgetThread, loadThreads, lyraApi, patchRuntimeBucket, upsertThread]);
-
-  const resumeThread = useCallback(async (
-    threadId: string,
-    options: RuntimeThreadOptions = {}
-  ): Promise<LyraThread> => {
-    if (lyraApi === null) {
-      throw new Error("Lyra runtime unavailable");
-    }
-    const normalizedThreadId = threadId.trim();
-    if (normalizedThreadId.length === 0) {
-      throw new Error("threadId is required");
-    }
-    const response = await lyraApi.request<{ thread?: unknown }>(createRequestPayload("thread/resume", {
-      threadId: normalizedThreadId,
-      ...(options.model !== undefined && options.model.trim().length > 0 ? { model: options.model.trim() } : {}),
-      ...(options.modelProvider === null || options.modelProvider === undefined || options.modelProvider.trim().length === 0
-        ? {}
-        : { modelProvider: options.modelProvider.trim() }),
-      ...(options.cwd === null || options.cwd === undefined || options.cwd.trim().length === 0
-        ? {}
-        : { cwd: options.cwd.trim() }),
-      ...threadPermissionRequestPart(options),
-      persistExtendedHistory: true,
-    }));
-    const thread = readLyraThread(response.thread);
-    if (thread === null) {
-      throw new Error("thread/resume did not return a thread");
-    }
-    upsertThread(thread);
-    patchRuntimeBucket(thread.id, (current) => ({
-      ...current,
-      optimisticUserMessages: dropPersistedOptimisticMessages(current.optimisticUserMessages, thread),
-      planByTurn: mergePlanStates(current.planByTurn, extractPlanStatesFromThread(thread)),
-    }));
-    setRuntimeError(null);
-    return thread;
-  }, [lyraApi, patchRuntimeBucket, upsertThread]);
 
   useEffect(() => {
     loadThreadRef.current = loadThread;
@@ -2150,22 +2147,6 @@ export const useLyraThreadRuntime = ({
       markOptimisticThread(threadId, optimisticId);
       await submitTurn(threadId, optimisticId);
     } catch (error) {
-      if (initialThreadId !== null && isThreadUnavailableError(error, initialThreadId)) {
-        try {
-          await resumeThread(initialThreadId, options);
-          markOptimisticThread(initialThreadId, optimisticId);
-          await submitTurn(initialThreadId, optimisticId);
-          setRuntimeError(null);
-          return;
-        } catch (resumeError) {
-          removeOptimisticMessage(initialRuntimeKey, optimisticId);
-          if (isThreadUnavailableError(resumeError, initialThreadId)) {
-            forgetThread(initialThreadId);
-          }
-          setRuntimeError(errorMessageOf(resumeError));
-          throw resumeError;
-        }
-      }
       removeOptimisticMessage(initialRuntimeKey, optimisticId);
       if (initialThreadId !== null && isThreadUnavailableError(error, initialThreadId)) {
         forgetThread(initialThreadId);
@@ -2173,7 +2154,7 @@ export const useLyraThreadRuntime = ({
       setRuntimeError(errorMessageOf(error));
       throw error;
     }
-  }, [createDraftTab, forgetThread, lyraApi, patchRuntimeBucket, resumeThread, startThread]);
+  }, [createDraftTab, forgetThread, lyraApi, patchRuntimeBucket, startThread]);
 
   const steerTurn = useCallback(async (input: RuntimeTurnInput): Promise<void> => {
     if (lyraApi === null || activeThreadIdRef.current === null || streamingTurnIdRef.current === null) {
@@ -2481,6 +2462,12 @@ export const useLyraThreadRuntime = ({
         },
       });
       setPendingInteractions((current) => current.filter((interaction) => interaction.id !== interactionId));
+      setServerRequestIds((current) => {
+        const next = { ...current };
+        delete next[interactionId];
+        return next;
+      });
+      setActiveInteractionId((current) => current === interactionId ? null : current);
     } catch (error) {
       setRuntimeError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -2493,10 +2480,6 @@ export const useLyraThreadRuntime = ({
   ): Promise<void> => {
     const interaction = pendingInteractions.find((entry) => entry.id === response.requestId) ?? null;
     if (interaction === null) {
-      return;
-    }
-    if (response.decision === "deny" && interaction.kind === "mcp_elicitation") {
-      await rejectInteraction(interaction.id);
       return;
     }
     if (interaction.kind === "file_change_approval") {
@@ -2529,13 +2512,6 @@ export const useLyraThreadRuntime = ({
     if (interaction === null) {
       return;
     }
-    if (interaction.kind === "mcp_elicitation") {
-      await resolveInteraction(interaction.id, {
-        action: "accept",
-        content: payload.answers,
-      });
-      return;
-    }
     const answers = Object.fromEntries(
       Object.entries(payload.answers).map(([id, value]) => [
         id,
@@ -2543,6 +2519,28 @@ export const useLyraThreadRuntime = ({
       ])
     );
     await resolveInteraction(interaction.id, { answers });
+  }, [activeInteractionId, pendingInteractions, resolveInteraction]);
+
+  const respondToMcpElicitation = useCallback(async (
+    payload: {
+      readonly action: "accept" | "decline" | "cancel";
+      readonly content?: Record<string, unknown>;
+      readonly meta?: Record<string, unknown>;
+    }
+  ): Promise<void> => {
+    const activeId = activeInteractionId ?? pendingInteractions[0]?.id ?? null;
+    if (activeId === null) {
+      return;
+    }
+    const interaction = pendingInteractions.find((entry) => entry.id === activeId) ?? null;
+    if (interaction === null || interaction.kind !== "mcp_elicitation") {
+      return;
+    }
+    await resolveInteraction(interaction.id, {
+      action: payload.action,
+      content: payload.action === "accept" ? payload.content ?? {} : null,
+      ...(payload.meta === undefined ? {} : { _meta: payload.meta }),
+    });
   }, [activeInteractionId, pendingInteractions, resolveInteraction]);
 
   const resolvePlanApproval = useCallback(async ({
@@ -3388,6 +3386,7 @@ export const useLyraThreadRuntime = ({
       setActiveInteractionId,
       respondToCommandApproval,
       respondToPlanQuestion,
+      respondToMcpElicitation,
       resolvePlanApproval,
     },
   };

@@ -44,6 +44,7 @@ export type AiHistoryRuntimeActions = {
   readonly previewThread: (threadId: string, options?: { readonly silent?: boolean }) => Promise<void>;
   readonly openThread: (threadId: string) => void;
   readonly archiveThread: (threadId: string) => Promise<void>;
+  readonly unarchiveThread: (threadId: string) => Promise<void>;
   readonly requestDeleteThread: (thread: LyraThreadSummary) => void;
   readonly beginRenameThread: (thread: LyraThreadSummary) => void;
   readonly cancelRenameThread: () => void;
@@ -367,6 +368,37 @@ export const useAiHistoryRuntime = ({
     [activeThreadId, clearPreview, loadThreads, lyraApi]
   );
 
+  const unarchiveThread = useCallback(
+    async (threadId: string): Promise<void> => {
+      if (lyraApi === undefined) {
+        return;
+      }
+      setErrorMessage(null);
+      try {
+        const response = await lyraApi.request<{ thread?: unknown }>(
+          createAiHistoryRequestPayload("thread/unarchive", {
+            threadId
+          })
+        );
+        const restored = toThreadSummary(response.thread);
+        if (activeThreadId === threadId) {
+          clearPreview();
+        }
+        setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId));
+        if (restored !== null) {
+          setActiveThreads((current) => sortThreadsByRecency([
+            restored,
+            ...current.filter((thread) => thread.id !== threadId)
+          ]));
+        }
+        void loadThreads();
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [activeThreadId, clearPreview, loadThreads, lyraApi]
+  );
+
   const deleteThread = useCallback(
     async (threadId: string): Promise<void> => {
       if (lyraApi === undefined) {
@@ -618,6 +650,7 @@ export const useAiHistoryRuntime = ({
       previewThread,
       openThread,
       archiveThread,
+      unarchiveThread,
       requestDeleteThread,
       beginRenameThread,
       cancelRenameThread,

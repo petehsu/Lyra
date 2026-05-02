@@ -7,6 +7,7 @@ import type {
 } from "../../../shared/desktop-bridge";
 import { LyraBrandLogo } from "../brand";
 import type { WorkbenchLocale } from "../i18n";
+import { AiPanelEmptyGreetingRotator } from "./empty-greeting-rotator";
 import type {
   PendingInteractionPanel,
 } from "./interaction/pending-interaction-mappers";
@@ -23,7 +24,6 @@ import {
   AiPanelPlanRow,
   AiPanelStreamingRow,
 } from "./thread-rows";
-import { StatusEmptyState } from "./status-primitives";
 import {
   type AiPanelThreadMessageMetadata,
   type AiPanelThreadRenderRow,
@@ -32,6 +32,7 @@ import type { AiPanelThreadVirtualRow } from "./use-ai-panel-thread-virtual-rows
 
 type AiPanelThreadViewProps = {
   readonly logoUrl: string;
+  readonly blinkLogoUrl?: string | undefined;
   readonly locale: WorkbenchLocale;
   readonly isZhLocale: boolean;
   readonly title: string;
@@ -41,6 +42,7 @@ type AiPanelThreadViewProps = {
   readonly isLoading: boolean;
   readonly loadingSessionLabel: string;
   readonly emptyThreadLabel: string;
+  readonly emptyGreetingLabels?: readonly string[] | undefined;
   readonly threadRef: RefObject<HTMLDivElement>;
   readonly threadStyle: CSSProperties;
   readonly messageMetadata: AiPanelThreadMessageMetadata;
@@ -91,6 +93,7 @@ type AiPanelThreadViewProps = {
 
 export const AiPanelThreadView = memo(({
   logoUrl,
+  blinkLogoUrl,
   locale,
   isZhLocale,
   title,
@@ -100,6 +103,7 @@ export const AiPanelThreadView = memo(({
   isLoading,
   loadingSessionLabel,
   emptyThreadLabel,
+  emptyGreetingLabels,
   threadRef,
   threadStyle,
   messageMetadata,
@@ -227,15 +231,20 @@ export const AiPanelThreadView = memo(({
           <div className="lyra-ai-agent-empty-hero">
             <LyraBrandLogo
               logoUrl={logoUrl}
+              blinkEyes
+              {...(blinkLogoUrl === undefined ? {} : { blinkLogoUrl })}
               className="lyra-ai-agent-empty-logo"
             />
-            <StatusEmptyState
-              title={isLoading ? loadingSessionLabel : emptyThreadLabel}
-              loading={isLoading}
-              spinnerVariant={isLoading ? "sand" : "dots"}
-              tone={isLoading ? "info" : "muted"}
-              className="lyra-ai-agent-empty-state-card"
-            />
+            {isLoading ? (
+              <p className="lyra-ai-agent-empty-greeting" role="status">
+                {loadingSessionLabel}
+              </p>
+            ) : (
+              <AiPanelEmptyGreetingRotator
+                labels={emptyGreetingLabels}
+                fallbackLabel={emptyThreadLabel}
+              />
+            )}
           </div>
         </div>
       ) : null}

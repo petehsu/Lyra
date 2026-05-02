@@ -55,6 +55,7 @@ fn is_standard_contextual_user_text(text: &str) -> bool {
 /// not improve the resulting memory. We keep environment context and
 /// subagent notifications because they can carry useful execution context or
 /// subtask outcomes that should remain visible to memory generation.
+#[cfg(test)]
 pub(crate) fn is_memory_excluded_contextual_user_fragment(content_item: &ContentItem) -> bool {
     let ContentItem::InputText { text } = content_item else {
         return false;

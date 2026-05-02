@@ -45,19 +45,19 @@ type BrowserTabStripViewProps = Pick<
 
 const renderTabIcon = (tab: WorkspaceTab) => {
   if (tab.pageKind === "settings") {
-    return <Settings2 size={13} className="lyra-browser-tab-icon-svg" />;
+    return <Settings2 size={14} className="lyra-browser-tab-icon-svg" />;
   }
 
   if (tab.pageKind === "results") {
-    return <Search size={13} className="lyra-browser-tab-icon-svg" />;
+    return <Search size={14} className="lyra-browser-tab-icon-svg" />;
   }
 
   if (tab.pageKind === "search") {
-    return <House size={13} className="lyra-browser-tab-icon-svg" />;
+    return <House size={14} className="lyra-browser-tab-icon-svg" />;
   }
 
   if (tab.pageKind === "terminal") {
-    return <SquareTerminal size={13} className="lyra-browser-tab-icon-svg" />;
+    return <SquareTerminal size={14} className="lyra-browser-tab-icon-svg" />;
   }
 
   if (tab.pageKind === "app" && tab.appId !== undefined && tab.appIconKey !== undefined) {
@@ -76,7 +76,7 @@ const renderTabIcon = (tab: WorkspaceTab) => {
     );
   }
 
-  return <Globe size={13} className="lyra-browser-tab-icon-svg" />;
+  return <Globe size={14} className="lyra-browser-tab-icon-svg" />;
 };
 
 export const BrowserTabStripView = ({
@@ -197,14 +197,14 @@ export const BrowserTabStripView = ({
           ) : null}
         </ChromeTabFrame>
       ))}
-      <ChromeIconButton
-        className="lyra-browser-tab-add"
-        aria-label={openNewTabLabel}
-        onClick={onOpenNewTab}
-      >
-        <Plus size={14} />
-      </ChromeIconButton>
     </div>
+    <ChromeIconButton
+      className="lyra-browser-tab-add"
+      aria-label={openNewTabLabel}
+      onClick={onOpenNewTab}
+    >
+      <Plus size={14} />
+    </ChromeIconButton>
     {renderModel.preview !== null ? (
       <div
         className="lyra-browser-tab-right-drag-preview-shell"

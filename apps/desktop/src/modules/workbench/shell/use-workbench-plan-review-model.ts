@@ -18,8 +18,12 @@ type UseWorkbenchPlanReviewModelParams = {
 
 type PlanReviewDecisionHandler = AiPlanApprovalWorkspaceOpenRequest["onDecision"];
 
-const createPlanReviewInstanceId = (requestId: string): string =>
-  `ai-plan-review-${requestId.replace(/[^a-z0-9_-]+/giu, "-")}`;
+const createPlanReviewInstanceId = (
+  request: AiPlanApprovalWorkspaceOpenRequest["request"]
+): string => {
+  const key = `${request.sessionId}:${request.turnId}:${request.planId}`;
+  return `ai-plan-review-${key.replace(/[^a-z0-9_-]+/giu, "-")}`;
+};
 
 const formatAnnotationFeedback = (
   annotations: readonly AiPlanReviewAnnotation[],
@@ -71,7 +75,7 @@ export const useWorkbenchPlanReviewModel = ({
   }, [publishStates]);
 
   const openPlanReview = useCallback((request: AiPlanApprovalWorkspaceOpenRequest): void => {
-    const instanceId = createPlanReviewInstanceId(request.request.planId);
+    const instanceId = createPlanReviewInstanceId(request.request);
     const existing = statesRef.current[instanceId];
     handlersRef.current = {
       ...handlersRef.current,

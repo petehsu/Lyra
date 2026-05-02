@@ -34,6 +34,7 @@ import {
   createWorkspaceSurfaceRenderModel,
   type WorkspaceSurfaceRenderModel
 } from "./workspace-surface-render-model";
+import { WorkbenchTitlebarScopeProvider } from "./titlebar-context";
 
 export type WorkspaceSurfaceSettingsProps = BrowserSettingsSurfaceProps;
 
@@ -197,6 +198,7 @@ export type WorkspaceSurfaceRouterProps = {
     readonly renameConversationLabel?: string;
     readonly deleteConversationLabel: string;
     readonly archiveConversationLabel: string;
+    readonly unarchiveConversationLabel: string;
     readonly archivedConversationLabel: string;
     readonly archivedProjectLabel: string;
     readonly deleteArchivedConversationTitle: string;
@@ -322,14 +324,17 @@ export const WorkspaceSurfaceRouter = ({
   splitThreePaneLayout,
   ...renderContext
 }: WorkspaceSurfaceRouterProps) => {
-  const renderTabSurface = (tab: WorkspaceTab): ReactNode =>
-    renderSurfaceModel(
-      createWorkspaceSurfaceRenderModel(tab, {
-        ...renderContext,
-        tabsModel
-      }),
-      surfaceAdapters
-    );
+  const renderTabSurface = (tab: WorkspaceTab): ReactNode => (
+    <WorkbenchTitlebarScopeProvider scopeId={tab.id}>
+      {renderSurfaceModel(
+        createWorkspaceSurfaceRenderModel(tab, {
+          ...renderContext,
+          tabsModel
+        }),
+        surfaceAdapters
+      )}
+    </WorkbenchTitlebarScopeProvider>
+  );
 
   const visibleLayout = tabsModel.getVisibleWorkspaceLayout();
   const tabById = new Map(tabsModel.tabs.map((tab) => [tab.id, tab] as const));

@@ -1,10 +1,13 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  scanWorkbenchDesignContracts,
   scanCssText,
   scanInlineStyleLiterals,
+  validateGlobalPatterns,
   scanWorkbenchShellEntrypointSize,
-  scanWorkbenchUiComposition
+  scanWorkbenchUiComposition,
+  validateSelectorRules
 } from "../../../../../../../tools/verify-workbench-style";
 
 describe("workbench UI guard", () => {
@@ -23,6 +26,122 @@ describe("workbench UI guard", () => {
   test("flags raw px literals in CSS", () => {
     const css = `.demo { padding: 12px; }`;
     expect(scanCssText("apps/desktop/src/renderer/styles/workbench/demo.css", css)[0]).toContain("raw length literal 12px");
+  });
+
+  test("keeps composer send ready state icon-only", () => {
+    const css = `
+      .lyra-ai-agent-send-ready {
+        border-color: color-mix(in srgb, var(--lyra-text-accent) 68%, transparent);
+        background: color-mix(in srgb, var(--lyra-text-accent) 82%, var(--lyra-bg-panel) 18%);
+        box-shadow: 0 var(--lyra-unit-4) var(--lyra-unit-11) color-mix(in srgb, var(--lyra-line-focused) 34%, transparent);
+      }
+    `;
+    const violations = validateSelectorRules(css);
+    expect(violations.some((violation) => violation.includes(".lyra-ai-agent-send-ready"))).toBe(true);
+  });
+
+  test("keeps tab hover from changing the tab chrome", () => {
+    const css = `
+      .lyra-browser-tab-item:hover {
+        z-index: 4;
+      }
+
+      .lyra-browser-tab-item:hover .lyra-chrome-tab-background {
+        opacity: 1;
+      }
+
+      .lyra-browser-tab-item:hover .lyra-chrome-tab-dividers::before {
+        opacity: 0;
+      }
+    `;
+    const violations = validateGlobalPatterns(css);
+    expect(violations.some((violation) => violation.includes("tab shape"))).toBe(true);
+    expect(violations.some((violation) => violation.includes("tab dividers"))).toBe(true);
+    expect(violations.some((violation) => violation.includes("tab stacking"))).toBe(true);
+  });
+
+  test("keeps plan cards free of decorative status dots", () => {
+    const source = `
+      import { StatusIndicator } from "./status-primitives";
+      export const PlanCard = () => <StatusIndicator tone="info" variant="dot" />;
+    `;
+    expect(scanWorkbenchDesignContracts(
+      "apps/desktop/src/modules/workbench/ai-panel/plan-card.tsx",
+      source
+    )[0]).toContain("must not render a decorative status dot");
+  });
+
+  test("keeps AI history rows free of colored project logos", () => {
+    const source = `
+      import { projectLogoUrlForRoot } from "../project-identity";
+      export const Row = () => <ProjectIdentityIcon projectLogoUrl={projectLogoUrlForRoot(logos, root)} />;
+    `;
+    expect(scanWorkbenchDesignContracts(
+      "apps/desktop/src/modules/workbench/ai-history/surface-view.tsx",
+      source
+    )[0]).toContain("neutral project symbols");
+  });
+
+  test("keeps AI thread tabs free of colored project logos", () => {
+    const source = `
+      import { projectLogoUrlForRoot } from "../project-identity";
+      export const Tab = () => <ProjectIdentityIcon projectLogoUrl={projectLogoUrlForRoot(logos, root)} />;
+    `;
+    expect(scanWorkbenchDesignContracts(
+      "apps/desktop/src/modules/workbench/ai-panel/thread-tabs.tsx",
+      source
+    )[0]).toContain("AI thread tabs");
+  });
+
+  test("keeps browser search engine accents out of visible result chips", () => {
+    const source = `
+      export const Row = ({ bucket }) => <span style={{ background: bucket.engine.accentColor }} />;
+    `;
+    expect(scanWorkbenchDesignContracts(
+      "apps/desktop/src/modules/workbench/browser-search/result-engine-overview.tsx",
+      source
+    )[0]).toContain("per-engine accent colors");
+  });
+
+  test("keeps browser search source markers from becoming decorative dots", () => {
+    const source = `
+      export const Row = () => <span className="lyra-engine-dot" />;
+    `;
+    expect(scanWorkbenchDesignContracts(
+      "apps/desktop/src/modules/workbench/browser-search/result-engine-overview.tsx",
+      source
+    )[0]).toContain("decorative dot");
+  });
+
+  test("keeps command approval risk labels neutral", () => {
+    const source = `
+      const risk = { color: "#eab308" };
+      export const Risk = () => <span style={{ color: risk.color }} />;
+    `;
+    expect(scanWorkbenchDesignContracts(
+      "apps/desktop/src/modules/workbench/command-approval-bar/view.tsx",
+      source
+    )[0]).toContain("risk display must stay neutral");
+  });
+
+  test("keeps element picker appearance away from accent tokens", () => {
+    const source = `
+      const lineFocused = readVar(styles, "--lyra-line-focused", "#7d82e8");
+    `;
+    expect(scanWorkbenchDesignContracts(
+      "apps/desktop/src/modules/workbench/shell/element-picker-appearance.ts",
+      source
+    )[0]).toContain("neutral workbench tones");
+  });
+
+  test("keeps plan question navigation from using decorative dots", () => {
+    const source = `
+      export const PlanQuestion = () => <button className="lyra-ai-plan-bar__progress-dot" />;
+    `;
+    expect(scanWorkbenchDesignContracts(
+      "apps/desktop/src/modules/workbench/ai-panel/plan-question-bar.tsx",
+      source
+    )[0]).toContain("decorative dot");
   });
 
   test("flags raw inline style literals in TSX", () => {

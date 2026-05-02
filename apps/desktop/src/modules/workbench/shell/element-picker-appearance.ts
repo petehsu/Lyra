@@ -7,10 +7,10 @@ const FALLBACK_APPEARANCE: WorkbenchBrowserElementPickerAppearance = {
   surfaceBorder: "color-mix(in srgb, #c9c9ca 74%, transparent)",
   surfaceShadow: "0 7px 22px color-mix(in srgb, #dcdcdd 18%, transparent)",
   surfaceBackdropFilter: "blur(10px) saturate(1.08)",
-  accentColor: "#7d82e8",
-  accentFill: "color-mix(in srgb, #7d82e8 14%, transparent)",
-  tagBackground: "color-mix(in srgb, #7d82e8 16%, transparent)",
-  tagText: "#5c78e2",
+  accentColor: "#7e8086",
+  accentFill: "color-mix(in srgb, #7e8086 14%, transparent)",
+  tagBackground: "color-mix(in srgb, #7e8086 12%, transparent)",
+  tagText: "#58585a",
   textPrimary: "#242529",
   textSecondary: "#58585a",
   textMuted: "#7e8086",
@@ -53,8 +53,7 @@ export const readElementPickerAppearance = (): WorkbenchBrowserElementPickerAppe
   const bgSurface = readVar(styles, "--lyra-bg-surface-elevated", "#ebebec");
   const bgEditor = readVar(styles, "--lyra-bg-editor", "#fafafa");
   const lineDefault = readVar(styles, "--lyra-line-default", FALLBACK_APPEARANCE.surfaceBorder);
-  const lineFocused = readVar(styles, "--lyra-line-focused", FALLBACK_APPEARANCE.accentColor);
-  const textAccent = readVar(styles, "--lyra-text-accent", FALLBACK_APPEARANCE.tagText);
+  const textSecondary = readVar(styles, "--lyra-text-secondary", FALLBACK_APPEARANCE.textSecondary);
 
   return {
     fontFamily: resolveVarValue(
@@ -71,10 +70,10 @@ export const readElementPickerAppearance = (): WorkbenchBrowserElementPickerAppe
       "--lyra-backdrop-blur-sm",
       FALLBACK_APPEARANCE.surfaceBackdropFilter
     ),
-    accentColor: lineFocused,
-    accentFill: `color-mix(in srgb, ${lineFocused} 14%, transparent)`,
-    tagBackground: `color-mix(in srgb, ${lineFocused} 16%, transparent)`,
-    tagText: textAccent,
+    accentColor: textSecondary,
+    accentFill: `color-mix(in srgb, ${textSecondary} 12%, transparent)`,
+    tagBackground: `color-mix(in srgb, ${textSecondary} 10%, transparent)`,
+    tagText: textSecondary,
     textPrimary: readVar(styles, "--lyra-text-primary", FALLBACK_APPEARANCE.textPrimary),
     textSecondary: readVar(styles, "--lyra-text-secondary", FALLBACK_APPEARANCE.textSecondary),
     textMuted: readVar(styles, "--lyra-text-muted", FALLBACK_APPEARANCE.textMuted),

@@ -294,29 +294,7 @@ export const DeepSearchCanvas = ({
         }}
       >
         <Background gap={24} size={1} />
-        <MiniMap
-          pannable
-          zoomable
-          nodeColor={(node) => {
-            const kind = (node.data as DeepSearchCanvasNodeData).kind;
-            if (kind === "root_query") {
-              return "#E8A93E";
-            }
-          if (kind === "derived_query") {
-            return "#6D9EEB";
-          }
-          if (kind === "site_domain") {
-            return "#2E9B5F";
-          }
-          if (kind === "site_subdomain") {
-            return "#3EAF7B";
-          }
-          if (kind === "web_page") {
-            return "#39A275";
-          }
-          return "#D57A45";
-          }}
-        />
+        <MiniMap pannable zoomable nodeColor={() => "var(--lyra-text-muted)"} />
         <Controls showInteractive={false} />
       </ReactFlow>
       {selectedNodeId === null ? null : (

@@ -1,3 +1,4 @@
+use crate::protocol::common::ServerRequest;
 use crate::protocol::v2::CollabAgentToolCallStatus;
 use crate::protocol::v2::CommandExecutionStatus;
 use crate::protocol::v2::DynamicToolCallStatus;
@@ -24,12 +25,15 @@ use crate::protocol::v2::ThreadItem;
 use crate::protocol::v2::Turn;
 use crate::protocol::v2::TurnStatus;
 use crate::protocol::v2::UserInput;
+use serde_json::Map;
+use serde_json::Value;
 use serde_json::json;
 use std::path::Path;
 
 pub fn build_thread_ai_panel_view_model(
     thread: &Thread,
     runtime_feed_limit: Option<u32>,
+    pending_server_requests: &[ServerRequest],
 ) -> ThreadAiPanelViewModel {
     let session_id = thread.id.clone();
     let thread_created_at_ms = timestamp_to_epoch_ms(thread.created_at);
@@ -199,6 +203,17 @@ pub fn build_thread_ai_panel_view_model(
         tool_calls = tool_calls.split_off(tool_calls.len() - limit);
     }
 
+    for request in pending_server_requests {
+        if let Some(interaction) =
+            pending_interaction_from_server_request(request, thread_updated_at_ms)
+            && pending_interactions
+                .iter()
+                .all(|existing| existing.id != interaction.id)
+        {
+            pending_interactions.push(interaction);
+        }
+    }
+
     ThreadAiPanelViewModel {
         messages,
         turns,
@@ -207,6 +222,158 @@ pub fn build_thread_ai_panel_view_model(
         pending_interactions,
         turn_meta,
     }
+}
+
+fn pending_interaction_from_server_request(
+    request: &ServerRequest,
+    timestamp_ms: i64,
+) -> Option<ThreadAiPanelPendingInteraction> {
+    match request {
+        ServerRequest::CommandExecutionRequestApproval { request_id, params } => {
+            let raw = normalized_command_approval_payload(params);
+            Some(server_request_pending_interaction(
+                request_id.clone(),
+                params.thread_id.clone(),
+                params.turn_id.clone(),
+                ThreadAiPanelPendingInteractionKind::CommandExecutionApproval,
+                "item/commandExecution/requestApproval",
+                raw,
+                timestamp_ms,
+            ))
+        }
+        ServerRequest::FileChangeRequestApproval { request_id, params } => {
+            let raw = normalized_file_change_approval_payload(params);
+            Some(server_request_pending_interaction(
+                request_id.clone(),
+                params.thread_id.clone(),
+                params.turn_id.clone(),
+                ThreadAiPanelPendingInteractionKind::FileChangeApproval,
+                "item/fileChange/requestApproval",
+                raw,
+                timestamp_ms,
+            ))
+        }
+        ServerRequest::PermissionsRequestApproval { request_id, params } => {
+            let raw = normalized_permissions_approval_payload(params);
+            Some(server_request_pending_interaction(
+                request_id.clone(),
+                params.thread_id.clone(),
+                params.turn_id.clone(),
+                ThreadAiPanelPendingInteractionKind::PermissionsApproval,
+                "item/permissions/requestApproval",
+                raw,
+                timestamp_ms,
+            ))
+        }
+        ServerRequest::ToolRequestUserInput { request_id, params } => {
+            Some(server_request_pending_interaction(
+                request_id.clone(),
+                params.thread_id.clone(),
+                params.turn_id.clone(),
+                ThreadAiPanelPendingInteractionKind::ToolUserInput,
+                "item/tool/requestUserInput",
+                serde_json::to_value(params).unwrap_or_else(|_| json!({})),
+                timestamp_ms,
+            ))
+        }
+        ServerRequest::McpServerElicitationRequest { request_id, params } => {
+            Some(server_request_pending_interaction(
+                request_id.clone(),
+                params.thread_id.clone(),
+                params
+                    .turn_id
+                    .clone()
+                    .unwrap_or_else(|| "unknown-turn".to_string()),
+                ThreadAiPanelPendingInteractionKind::McpElicitation,
+                "mcpServer/elicitation/request",
+                serde_json::to_value(params).unwrap_or_else(|_| json!({})),
+                timestamp_ms,
+            ))
+        }
+        ServerRequest::DynamicToolCall { .. }
+        | ServerRequest::ApplyPatchApproval { .. }
+        | ServerRequest::ExecCommandApproval { .. } => None,
+    }
+}
+
+fn server_request_pending_interaction(
+    request_id: crate::RequestId,
+    session_id: String,
+    turn_id: String,
+    kind: ThreadAiPanelPendingInteractionKind,
+    agent_core_method: &str,
+    raw: Value,
+    timestamp_ms: i64,
+) -> ThreadAiPanelPendingInteraction {
+    let interaction_id = request_id.to_string();
+    ThreadAiPanelPendingInteraction {
+        id: interaction_id,
+        session_id,
+        turn_id,
+        kind,
+        status: ThreadAiPanelPendingInteractionStatus::Pending,
+        payload: json!({
+            "requestId": request_id,
+            "agentCoreMethod": agent_core_method,
+            "raw": raw,
+        }),
+        created_at_ms: timestamp_ms,
+        updated_at_ms: timestamp_ms,
+    }
+}
+
+fn object_value(value: Value) -> Map<String, Value> {
+    value.as_object().cloned().unwrap_or_default()
+}
+
+fn normalized_command_approval_payload(
+    params: &crate::protocol::v2::CommandExecutionRequestApprovalParams,
+) -> Value {
+    let mut raw = object_value(serde_json::to_value(params).unwrap_or_else(|_| json!({})));
+    raw.insert("toolName".to_string(), json!("terminal.exec"));
+    raw.insert(
+        "input".to_string(),
+        json!({
+            "command": params.command.clone().unwrap_or_default(),
+            "cwd": params.cwd.as_ref().map(|path| path.to_string_lossy().to_string()),
+        }),
+    );
+    raw.insert(
+        "metadata".to_string(),
+        json!({
+            "command": params.command.clone().unwrap_or_default(),
+            "riskLevel": "medium",
+        }),
+    );
+    Value::Object(raw)
+}
+
+fn normalized_file_change_approval_payload(
+    params: &crate::protocol::v2::FileChangeRequestApprovalParams,
+) -> Value {
+    let mut raw = object_value(serde_json::to_value(params).unwrap_or_else(|_| json!({})));
+    raw.insert("toolName".to_string(), json!("filesystem.write"));
+    raw.insert(
+        "input".to_string(),
+        json!({
+            "path": params.grant_root.as_ref().map(|path| path.to_string_lossy().to_string()).unwrap_or_default(),
+        }),
+    );
+    raw.insert("metadata".to_string(), json!({ "riskLevel": "medium" }));
+    Value::Object(raw)
+}
+
+fn normalized_permissions_approval_payload(
+    params: &crate::protocol::v2::PermissionsRequestApprovalParams,
+) -> Value {
+    let mut raw = object_value(serde_json::to_value(params).unwrap_or_else(|_| json!({})));
+    raw.insert("toolName".to_string(), json!("permissions.request"));
+    raw.insert(
+        "input".to_string(),
+        json!({ "permissions": params.permissions.clone() }),
+    );
+    raw.insert("metadata".to_string(), json!({ "riskLevel": "medium" }));
+    Value::Object(raw)
 }
 
 fn plan_approval_pending_interaction(
@@ -309,6 +476,133 @@ fn ai_panel_collab_status(status: &CollabAgentToolCallStatus) -> ThreadAiPanelTo
         CollabAgentToolCallStatus::InProgress => ThreadAiPanelToolCallStatus::Running,
         CollabAgentToolCallStatus::Completed => ThreadAiPanelToolCallStatus::Completed,
         CollabAgentToolCallStatus::Failed => ThreadAiPanelToolCallStatus::Failed,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::RequestId;
+    use crate::protocol::v2::CommandExecutionRequestApprovalParams;
+    use crate::protocol::v2::SessionSource;
+    use crate::protocol::v2::ThreadStatus;
+    use lyra_utils_absolute_path::test_support::PathBufExt;
+    use lyra_utils_absolute_path::test_support::test_path_buf;
+
+    fn absolute_path(path: &str) -> lyra_utils_absolute_path::AbsolutePathBuf {
+        let path = format!("/{}", path.trim_start_matches('/'));
+        test_path_buf(&path).abs()
+    }
+
+    fn empty_thread() -> Thread {
+        Thread {
+            id: "thread-1".to_string(),
+            forked_from_id: None,
+            preview: String::new(),
+            ephemeral: false,
+            model_provider: "openai".to_string(),
+            created_at: 100,
+            updated_at: 120,
+            status: ThreadStatus::Idle,
+            path: None,
+            cwd: absolute_path("tmp"),
+            bound_project_root: None,
+            cli_version: "test".to_string(),
+            source: SessionSource::AppServer,
+            agent_nickname: None,
+            agent_role: None,
+            git_info: None,
+            name: None,
+            turns: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn pending_interaction_kind_serializes_all_desktop_restorable_variants() {
+        assert_eq!(
+            serde_json::to_value(ThreadAiPanelPendingInteractionKind::CommandExecutionApproval)
+                .expect("serialize kind"),
+            json!("commandExecutionApproval")
+        );
+        assert_eq!(
+            serde_json::to_value(ThreadAiPanelPendingInteractionKind::McpElicitation)
+                .expect("serialize kind"),
+            json!("mcpElicitation")
+        );
+    }
+
+    #[test]
+    fn view_model_includes_live_command_approval_request() {
+        let request = ServerRequest::CommandExecutionRequestApproval {
+            request_id: RequestId::String("request-1".to_string()),
+            params: CommandExecutionRequestApprovalParams {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "item-1".to_string(),
+                approval_id: None,
+                reason: Some("needs approval".to_string()),
+                network_approval_context: None,
+                command: Some("echo hi".to_string()),
+                cwd: Some(absolute_path("tmp")),
+                command_actions: None,
+                additional_permissions: None,
+                proposed_execpolicy_amendment: None,
+                proposed_network_policy_amendments: None,
+                available_decisions: None,
+            },
+        };
+
+        let view_model = build_thread_ai_panel_view_model(&empty_thread(), None, &[request]);
+        let interaction = view_model
+            .pending_interactions
+            .first()
+            .expect("pending interaction");
+
+        assert_eq!(interaction.id, "request-1");
+        assert_eq!(
+            interaction.kind,
+            ThreadAiPanelPendingInteractionKind::CommandExecutionApproval
+        );
+        assert_eq!(
+            interaction.payload["agentCoreMethod"],
+            json!("item/commandExecution/requestApproval")
+        );
+        assert_eq!(interaction.payload["requestId"], json!("request-1"));
+        assert_eq!(
+            interaction.payload["raw"]["input"]["command"],
+            json!("echo hi")
+        );
+    }
+
+    #[test]
+    fn view_model_preserves_numeric_server_request_id_in_payload() {
+        let request = ServerRequest::CommandExecutionRequestApproval {
+            request_id: RequestId::Integer(3),
+            params: CommandExecutionRequestApprovalParams {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "item-1".to_string(),
+                approval_id: None,
+                reason: Some("needs approval".to_string()),
+                network_approval_context: None,
+                command: Some("echo hi".to_string()),
+                cwd: Some(absolute_path("tmp")),
+                command_actions: None,
+                additional_permissions: None,
+                proposed_execpolicy_amendment: None,
+                proposed_network_policy_amendments: None,
+                available_decisions: None,
+            },
+        };
+
+        let view_model = build_thread_ai_panel_view_model(&empty_thread(), None, &[request]);
+        let interaction = view_model
+            .pending_interactions
+            .first()
+            .expect("pending interaction");
+
+        assert_eq!(interaction.id, "3");
+        assert_eq!(interaction.payload["requestId"], json!(3));
     }
 }
 

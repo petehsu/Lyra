@@ -22,6 +22,7 @@ import {
 import type { ImageViewerOpenResult } from "../../../shared/image-viewer";
 import type { ImageViewerSurfaceProps } from "./surface-types";
 import type { ImageViewerAppState, ImageViewerLabels, ImageViewerModel } from "./types";
+import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
 export type { ImageViewerSurfaceProps } from "./surface-types";
 
@@ -36,6 +37,128 @@ type NaturalImageSize = {
   readonly sessionId: string;
   readonly width: number;
   readonly height: number;
+};
+
+const ImageViewerTitlebarBridge = ({
+  state,
+  labels,
+  model,
+  metadata,
+  canGoAdjacent,
+  fitToViewport,
+  cycleBackground
+}: {
+  readonly state: ImageViewerAppState;
+  readonly labels: ImageViewerLabels;
+  readonly model: ImageViewerModel;
+  readonly metadata: string;
+  readonly canGoAdjacent: boolean;
+  readonly fitToViewport: () => boolean;
+  readonly cycleBackground: () => void;
+}) => {
+  const contribution = useMemo(
+    () => ({
+      ariaLabel: state.title,
+      content: (
+        <>
+          {metadata.length === 0 ? null : (
+            <span className="lyra-titlebar-context-chip">{metadata}</span>
+          )}
+          <div className="lyra-titlebar-context-controls">
+            <button
+              type="button"
+              className="lyra-titlebar-context-icon-button"
+              aria-label={labels.previous}
+              disabled={!canGoAdjacent}
+              onClick={() => {
+                void model.openAdjacent(state.instanceId, -1);
+              }}
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-icon-button"
+              aria-label={labels.next}
+              disabled={!canGoAdjacent}
+              onClick={() => {
+                void model.openAdjacent(state.instanceId, 1);
+              }}
+            >
+              <ChevronRight size={15} />
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-icon-button"
+              aria-label={labels.zoomOut}
+              onClick={() => model.setViewport(state.instanceId, { zoom: state.view.zoom * 0.8 })}
+            >
+              <ZoomOut size={15} />
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-icon-button"
+              aria-label={labels.zoomIn}
+              onClick={() => model.setViewport(state.instanceId, { zoom: state.view.zoom * 1.25 })}
+            >
+              <ZoomIn size={15} />
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button"
+              aria-label={labels.actualSize}
+              onClick={() => model.setViewport(state.instanceId, { zoom: 1, offsetX: 0, offsetY: 0 })}
+            >
+              {labels.actualSize}
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-icon-button"
+              aria-label={labels.fit}
+              onClick={fitToViewport}
+            >
+              <Maximize2 size={15} />
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-icon-button"
+              aria-label={labels.rotateLeft}
+              onClick={() => model.setViewport(state.instanceId, { rotation: state.view.rotation - 90 })}
+            >
+              <RotateCcw size={15} />
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-icon-button"
+              aria-label={labels.rotateRight}
+              onClick={() => model.setViewport(state.instanceId, { rotation: state.view.rotation + 90 })}
+            >
+              <RotateCw size={15} />
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-icon-button"
+              aria-label={labels.reset}
+              onClick={() => model.resetViewport(state.instanceId)}
+            >
+              <RefreshCcw size={15} />
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-icon-button"
+              aria-label={labels.background}
+              onClick={cycleBackground}
+            >
+              <PaintBucket size={15} />
+            </button>
+          </div>
+        </>
+      )
+    }),
+    [canGoAdjacent, cycleBackground, fitToViewport, labels, metadata, model, state]
+  );
+  useWorkbenchTitlebarContribution(contribution);
+  return null;
 };
 
 type WebGlProgram = {
@@ -800,100 +923,15 @@ export const ImageViewerSurface = ({
 
   return (
     <section className="lyra-image-viewer-surface" aria-label="image-viewer-surface">
-      <header className="lyra-image-viewer-toolbar">
-        <div className="lyra-image-viewer-title">
-          <strong>{state.title}</strong>
-          <small>{metadata}</small>
-        </div>
-        <div className="lyra-image-viewer-actions">
-          <button
-            type="button"
-            className="lyra-image-viewer-icon-button"
-            aria-label={labels.previous}
-            disabled={!canGoAdjacent}
-            onClick={() => {
-              void model.openAdjacent(state.instanceId, -1);
-            }}
-          >
-            <ChevronLeft size={15} />
-          </button>
-          <button
-            type="button"
-            className="lyra-image-viewer-icon-button"
-            aria-label={labels.next}
-            disabled={!canGoAdjacent}
-            onClick={() => {
-              void model.openAdjacent(state.instanceId, 1);
-            }}
-          >
-            <ChevronRight size={15} />
-          </button>
-          <button
-            type="button"
-            className="lyra-image-viewer-icon-button"
-            aria-label={labels.zoomOut}
-            onClick={() => model.setViewport(state.instanceId, { zoom: state.view.zoom * 0.8 })}
-          >
-            <ZoomOut size={15} />
-          </button>
-          <button
-            type="button"
-            className="lyra-image-viewer-icon-button"
-            aria-label={labels.zoomIn}
-            onClick={() => model.setViewport(state.instanceId, { zoom: state.view.zoom * 1.25 })}
-          >
-            <ZoomIn size={15} />
-          </button>
-          <button
-            type="button"
-            className="lyra-image-viewer-button"
-            aria-label={labels.actualSize}
-            onClick={() => model.setViewport(state.instanceId, { zoom: 1, offsetX: 0, offsetY: 0 })}
-          >
-            {labels.actualSize}
-          </button>
-          <button
-            type="button"
-            className="lyra-image-viewer-icon-button"
-            aria-label={labels.fit}
-            onClick={fitToViewport}
-          >
-            <Maximize2 size={15} />
-          </button>
-          <button
-            type="button"
-            className="lyra-image-viewer-icon-button"
-            aria-label={labels.rotateLeft}
-            onClick={() => model.setViewport(state.instanceId, { rotation: state.view.rotation - 90 })}
-          >
-            <RotateCcw size={15} />
-          </button>
-          <button
-            type="button"
-            className="lyra-image-viewer-icon-button"
-            aria-label={labels.rotateRight}
-            onClick={() => model.setViewport(state.instanceId, { rotation: state.view.rotation + 90 })}
-          >
-            <RotateCw size={15} />
-          </button>
-          <button
-            type="button"
-            className="lyra-image-viewer-icon-button"
-            aria-label={labels.reset}
-            onClick={() => model.resetViewport(state.instanceId)}
-          >
-            <RefreshCcw size={15} />
-          </button>
-          <button
-            type="button"
-            className="lyra-image-viewer-icon-button"
-            aria-label={labels.background}
-            onClick={cycleBackground}
-          >
-            <PaintBucket size={15} />
-          </button>
-        </div>
-      </header>
+      <ImageViewerTitlebarBridge
+        state={state}
+        labels={labels}
+        model={model}
+        metadata={metadata}
+        canGoAdjacent={canGoAdjacent}
+        fitToViewport={fitToViewport}
+        cycleBackground={cycleBackground}
+      />
       {renderBody()}
       <footer className="lyra-image-viewer-status">
         <span>{useNativeTiles ? labels.nativeTiles : labels.sourceOnly}</span>

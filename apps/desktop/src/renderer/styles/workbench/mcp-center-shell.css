@@ -15,11 +15,7 @@
   min-height: 0;
   display: grid;
   grid-template-columns: var(--lyra-unit-220) minmax(0, 1fr);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--lyra-bg-editor) 96%, var(--lyra-bg-surface) 4%) 0%,
-    color-mix(in srgb, var(--lyra-bg-editor) 90%, var(--lyra-bg-panel) 10%) 100%
-  );
+  background: var(--lyra-bg-editor);
 }
 
 .lyra-mcp-center-sidebar {
@@ -30,11 +26,7 @@
   gap: var(--lyra-unit-14);
   padding: var(--lyra-unit-16) var(--lyra-unit-12);
   border-right: var(--lyra-unit-0-5) solid var(--lyra-line-default);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--lyra-bg-panel) 82%, var(--lyra-bg-editor) 18%) 0%,
-    color-mix(in srgb, var(--lyra-bg-panel) 68%, var(--lyra-bg-editor) 32%) 100%
-  );
+  background: color-mix(in srgb, var(--lyra-bg-panel) 78%, var(--lyra-bg-editor) 22%);
 }
 
 .lyra-mcp-center-sidebar-header {
@@ -113,7 +105,7 @@
   inset: var(--lyra-unit-8) auto var(--lyra-unit-8) 0;
   width: var(--lyra-unit-2);
   border-radius: var(--lyra-unit-999);
-  background: var(--lyra-line-focused);
+  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
 }
 
 .lyra-mcp-center-side-button strong,

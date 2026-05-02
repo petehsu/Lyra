@@ -211,11 +211,6 @@ impl ToolRegistry {
         self.handlers.get(name).map(Arc::clone)
     }
 
-    #[cfg(test)]
-    pub(crate) fn has_handler(&self, name: &ToolName) -> bool {
-        self.handler(name).is_some()
-    }
-
     pub(crate) fn create_diff_consumer(
         &self,
         name: &ToolName,

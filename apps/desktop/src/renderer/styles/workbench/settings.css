@@ -72,7 +72,7 @@
   bottom: var(--lyra-unit-6);
   width: var(--lyra-unit-2);
   border-radius: var(--lyra-unit-999);
-  background: color-mix(in srgb, var(--lyra-line-focused) 82%, var(--lyra-text-primary) 18%);
+  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
 }
 
 .lyra-settings-main {
@@ -421,7 +421,7 @@
 .lyra-settings-split-layout-preview-adaptive .lyra-settings-split-layout-pane-3 {
   grid-column: 1 / span 2;
   grid-row: 2;
-  background: color-mix(in srgb, var(--lyra-line-focused) 34%, transparent);
+  background: color-mix(in srgb, var(--lyra-text-primary) 22%, transparent);
 }
 
 .lyra-settings-terminal-preview-line {
@@ -656,7 +656,7 @@
 }
 
 .lyra-settings-choice:hover::before {
-  background: color-mix(in srgb, var(--lyra-line-focused) 28%, transparent);
+  background: color-mix(in srgb, var(--lyra-text-primary) 22%, transparent);
 }
 
 .lyra-settings-choice-active {
@@ -666,12 +666,12 @@
 }
 
 .lyra-settings-choice-active::before {
-  background: color-mix(in srgb, var(--lyra-line-focused) 82%, var(--lyra-text-primary) 18%);
+  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
 }
 
 .lyra-settings-choice:focus-visible {
   outline: 0;
-  box-shadow: inset 0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-focused) 45%, transparent);
+  box-shadow: inset 0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-settings-inline-status-row {
@@ -767,8 +767,8 @@
 
 .lyra-settings-ai-input:focus-visible {
   outline: 0;
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 60%, transparent);
-  box-shadow: 0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-focused) 24%, transparent);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  box-shadow: 0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-default) 52%, transparent);
 }
 
 .lyra-settings-ai-input[readonly] {
@@ -802,8 +802,8 @@
 }
 
 .lyra-settings-ai-list-picker:focus-within .lyra-list-picker-surface {
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 60%, transparent);
-  box-shadow: 0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-focused) 24%, transparent);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  box-shadow: 0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-default) 52%, transparent);
 }
 
 .lyra-settings-ai-model-input {
@@ -880,7 +880,7 @@
 
 .lyra-settings-ai-selection-item:hover::before,
 .lyra-settings-ai-model-option:hover::before {
-  background: color-mix(in srgb, var(--lyra-line-focused) 28%, transparent);
+  background: color-mix(in srgb, var(--lyra-text-primary) 18%, transparent);
 }
 
 .lyra-settings-ai-selection-item-active,
@@ -890,13 +890,13 @@
 
 .lyra-settings-ai-selection-item-active::before,
 .lyra-settings-ai-model-option-active::before {
-  background: color-mix(in srgb, var(--lyra-line-focused) 82%, var(--lyra-text-primary) 18%);
+  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
 }
 
 .lyra-settings-ai-selection-item:focus-visible,
 .lyra-settings-ai-model-option:focus-visible {
   outline: 0;
-  box-shadow: inset 0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-focused) 45%, transparent);
+  box-shadow: inset 0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-settings-ai-selection-copy,
@@ -1025,6 +1025,10 @@
   width: var(--lyra-unit-30);
   min-width: var(--lyra-unit-30);
   padding: 0;
+  border-color: transparent;
+  border-radius: var(--lyra-unit-5);
+  background: transparent;
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-settings-ai-action-inline.lyra-settings-ai-action-icon {
@@ -1034,18 +1038,32 @@
 
 .lyra-settings-ai-action:hover {
   color: var(--lyra-text-primary);
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 42%, transparent);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 54%, var(--lyra-text-secondary) 46%);
 }
 
 .lyra-settings-ai-action-primary {
-  color: var(--lyra-text-primary);
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 52%, transparent);
-  background: color-mix(in srgb, var(--lyra-line-focused) 12%, transparent);
+  color: var(--lyra-text-secondary);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 78%, transparent);
+  background: transparent;
 }
 
 .lyra-settings-ai-action-primary:hover {
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 68%, transparent);
-  background: color-mix(in srgb, var(--lyra-line-focused) 18%, transparent);
+  color: var(--lyra-text-primary);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 54%, var(--lyra-text-secondary) 46%);
+  background: transparent;
+}
+
+.lyra-settings-ai-action-icon:hover,
+.lyra-settings-ai-action-primary.lyra-settings-ai-action-icon:hover {
+  color: var(--lyra-text-primary);
+  border-color: transparent;
+  background: transparent;
+}
+
+.lyra-settings-ai-action-primary.lyra-settings-ai-action-icon {
+  color: var(--lyra-text-secondary);
+  border-color: transparent;
+  background: transparent;
 }
 
 .lyra-settings-ai-action:disabled {
@@ -1087,7 +1105,7 @@
 }
 
 .lyra-settings-ai-status-row-success {
-  border-color: color-mix(in srgb, var(--lyra-accent-positive) 32%, var(--lyra-line-default) 68%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
 }
 
 .lyra-settings-ai-status-row-error {
@@ -1104,7 +1122,7 @@
 }
 
 .lyra-settings-ai-status-tone-success {
-  color: color-mix(in srgb, var(--lyra-accent-positive) 80%, var(--lyra-text-primary) 20%);
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-settings-ai-status-tone-error {
@@ -1321,7 +1339,7 @@
   bottom: var(--lyra-unit-10);
   width: var(--lyra-unit-2);
   border-radius: var(--lyra-unit-999);
-  background: color-mix(in srgb, var(--lyra-line-focused) 82%, var(--lyra-text-primary) 18%);
+  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
 }
 
 .lyra-settings-ai-delete-confirm {

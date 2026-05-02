@@ -1,6 +1,12 @@
+import type { ComponentProps } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
+import {
+  WorkbenchTitlebarContextProvider,
+  WorkbenchTitlebarContextSlot,
+  WorkbenchTitlebarScopeProvider
+} from "../../shell/titlebar-context";
 import { FileEditorSurface } from "../view";
 import type { FileEditorModel } from "../types";
 import { createFileEditorState, createReviewItem, labels } from "./test-helpers";
@@ -30,31 +36,44 @@ const flushEditorRuntime = async (): Promise<void> => {
   });
 };
 
+const fileEditorScopeId = "file-editor-test";
+
+const renderFileEditorSurfaceElement = (
+  props: ComponentProps<typeof FileEditorSurface>
+) => (
+  <WorkbenchTitlebarContextProvider activeScopeId={fileEditorScopeId}>
+    <WorkbenchTitlebarScopeProvider scopeId={fileEditorScopeId}>
+      <FileEditorSurface {...props} />
+    </WorkbenchTitlebarScopeProvider>
+    <WorkbenchTitlebarContextSlot />
+  </WorkbenchTitlebarContextProvider>
+);
+
+const renderFileEditorSurface = (
+  props: ComponentProps<typeof FileEditorSurface>
+) => render(renderFileEditorSurfaceElement(props));
+
 describe("FileEditorSurface", () => {
   test("routes save and retry actions through the file editor model", async () => {
     const model = createModel();
     const dirtyState = createFileEditorState({ isDirty: true });
-    const { rerender } = render(
-      <FileEditorSurface
-        state={dirtyState}
-        labels={labels}
-        themeSignature="test-theme"
-        model={model}
-      />
-    );
+    const { rerender } = renderFileEditorSurface({
+      state: dirtyState,
+      labels,
+      themeSignature: "test-theme",
+      model
+    });
     await flushEditorRuntime();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(model.save).toHaveBeenCalledWith("editor-1", "manual");
 
-    rerender(
-      <FileEditorSurface
-        state={createFileEditorState({ status: "unsupported", message: "Binary file" })}
-        labels={labels}
-        themeSignature="test-theme"
-        model={model}
-      />
-    );
+    rerender(renderFileEditorSurfaceElement({
+      state: createFileEditorState({ status: "unsupported", message: "Binary file" }),
+      labels,
+      themeSignature: "test-theme",
+      model
+    }));
     await flushEditorRuntime();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -63,18 +82,16 @@ describe("FileEditorSurface", () => {
 
   test("does not auto-hydrate a failed missing-file state", async () => {
     const model = createModel();
-    render(
-      <FileEditorSurface
-        state={createFileEditorState({
-          status: "error",
-          isHydrated: false,
-          message: "No such file or directory"
-        })}
-        labels={labels}
-        themeSignature="test-theme"
-        model={model}
-      />
-    );
+    renderFileEditorSurface({
+      state: createFileEditorState({
+        status: "error",
+        isHydrated: false,
+        message: "No such file or directory"
+      }),
+      labels,
+      themeSignature: "test-theme",
+      model
+    });
     await flushEditorRuntime();
 
     expect(model.hydrateIfNeeded).not.toHaveBeenCalled();
@@ -91,29 +108,27 @@ describe("FileEditorSurface", () => {
     const onAccept = vi.fn();
     const onReject = vi.fn();
 
-    render(
-      <FileEditorSurface
-        state={createFileEditorState()}
-        labels={labels}
-        themeSignature="test-theme"
-        model={createModel()}
-        activeEditorWorkItem={reviewItem}
-        editorWorkAcceptLabel="Accept"
-        editorWorkRejectLabel="Reject"
-        editorWorkUndoLabel="Undo"
-        editorWorkPrevLabel="Previous"
-        editorWorkNextLabel="Next"
-        editorWorkAcceptAllLabel="Accept all"
-        canGoToPreviousEditorWorkItem
-        canGoToNextEditorWorkItem
-        canAcceptAllEditorWorkItems
-        onGoToPreviousEditorWorkItem={onPrevious}
-        onGoToNextEditorWorkItem={onNext}
-        onAcceptAllEditorWorkItems={onAcceptAll}
-        onAcceptEditorWorkItem={onAccept}
-        onRejectEditorWorkItem={onReject}
-      />
-    );
+    renderFileEditorSurface({
+      state: createFileEditorState(),
+      labels,
+      themeSignature: "test-theme",
+      model: createModel(),
+      activeEditorWorkItem: reviewItem,
+      editorWorkAcceptLabel: "Accept",
+      editorWorkRejectLabel: "Reject",
+      editorWorkUndoLabel: "Undo",
+      editorWorkPrevLabel: "Previous",
+      editorWorkNextLabel: "Next",
+      editorWorkAcceptAllLabel: "Accept all",
+      canGoToPreviousEditorWorkItem: true,
+      canGoToNextEditorWorkItem: true,
+      canAcceptAllEditorWorkItems: true,
+      onGoToPreviousEditorWorkItem: onPrevious,
+      onGoToNextEditorWorkItem: onNext,
+      onAcceptAllEditorWorkItems: onAcceptAll,
+      onAcceptEditorWorkItem: onAccept,
+      onRejectEditorWorkItem: onReject
+    });
     await flushEditorRuntime();
 
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
@@ -130,18 +145,16 @@ describe("FileEditorSurface", () => {
   });
 
   test("toggles diff mode from the toolbar", async () => {
-    render(
-      <FileEditorSurface
-        state={createFileEditorState({
-          content: "const value = 2;\n",
-          lastSavedContent: "const value = 1;\n"
-        })}
-        labels={labels}
-        themeSignature="test-theme"
-        model={createModel()}
-        activeEditorWorkItem={createReviewItem({ baselineContent: undefined })}
-      />
-    );
+    renderFileEditorSurface({
+      state: createFileEditorState({
+        content: "const value = 2;\n",
+        lastSavedContent: "const value = 1;\n"
+      }),
+      labels,
+      themeSignature: "test-theme",
+      model: createModel(),
+      activeEditorWorkItem: createReviewItem({ baselineContent: undefined })
+    });
     await flushEditorRuntime();
 
     const diffToggle = await screen.findByRole("button", { name: "Open diff" });

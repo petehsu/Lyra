@@ -27,7 +27,6 @@ use lyra_protocol::protocol::Op;
 use lyra_protocol::protocol::RolloutItem;
 use lyra_protocol::protocol::SessionSource;
 use lyra_protocol::protocol::SubAgentSource;
-use lyra_protocol::protocol::TokenUsage;
 use lyra_protocol::user_input::UserInput;
 use lyra_rollout::state_db;
 use lyra_state::DirectionalThreadSpawnEdgeStatus;
@@ -789,16 +788,6 @@ impl AgentControl {
         let state = self.upgrade()?;
         let thread = state.get_thread(agent_id).await?;
         Ok(thread.subscribe_status())
-    }
-
-    pub(crate) async fn get_total_token_usage(&self, agent_id: ThreadId) -> Option<TokenUsage> {
-        let Ok(state) = self.upgrade() else {
-            return None;
-        };
-        let Ok(thread) = state.get_thread(agent_id).await else {
-            return None;
-        };
-        thread.total_token_usage().await
     }
 
     pub(crate) async fn format_environment_context_subagents(

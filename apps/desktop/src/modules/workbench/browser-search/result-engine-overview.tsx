@@ -84,7 +84,7 @@ export const ResultEngineOverview = ({
         ? payload.web.payload.engineBuckets.map((bucket) => (
             <section key={bucket.engine.id} className="lyra-engine-panel">
               <header>
-                <span className="lyra-engine-dot" style={{ background: bucket.engine.accentColor }} />
+                <span className="lyra-engine-marker" />
                 <strong>{bucket.engine.label}</strong>
                 <small>{bucket.latencyMs ?? 0}ms</small>
               </header>
@@ -102,7 +102,7 @@ export const ResultEngineOverview = ({
 
       <section className="lyra-engine-panel">
         <header>
-          <span className="lyra-engine-dot" />
+          <span className="lyra-engine-marker" />
           <strong>{localPanelTitleLabel}</strong>
           <small>{localStatusLabel} · {payload.local.payload.elapsedMs}ms</small>
         </header>

@@ -4,11 +4,7 @@
   min-height: 0;
   overflow: auto;
   padding: var(--lyra-unit-14) var(--lyra-unit-16) var(--lyra-unit-18);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--lyra-bg-editor) 94%, transparent) 0%,
-    color-mix(in srgb, var(--lyra-bg-panel) 12%, var(--lyra-bg-editor) 88%) 100%
-  );
+  background: var(--lyra-bg-editor);
 }
 
 .lyra-mcp-center-panel-shell {
@@ -146,8 +142,8 @@
 }
 
 .lyra-mcp-center-alert-success {
-  border-color: color-mix(in srgb, var(--lyra-terminal-green) 38%, var(--lyra-line-default) 62%);
-  background: color-mix(in srgb, var(--lyra-terminal-green) 8%, transparent);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-panel) 42%, transparent);
 }
 
 .lyra-mcp-center-alert-error {

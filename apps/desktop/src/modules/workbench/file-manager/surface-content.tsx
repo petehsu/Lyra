@@ -1,5 +1,5 @@
 import { FileManagerDirectoryContent } from "./surface-directory";
-import { FileManagerHomeContent } from "./surface-home";
+import { FileManagerFavoritesContent, FileManagerHomeContent } from "./surface-home";
 import { FileManagerLoadingSkeleton } from "./surface-loading";
 import { FileManagerTrashContent } from "./surface-trash";
 import type { FileManagerSurfaceViewProps } from "./surface-view-types";
@@ -34,6 +34,11 @@ export const FileManagerContent = ({
     ) : null}
 
     <FileManagerHomeContent
+      renderModel={renderModel}
+      labels={labels}
+      actions={actions}
+    />
+    <FileManagerFavoritesContent
       renderModel={renderModel}
       labels={labels}
       actions={actions}

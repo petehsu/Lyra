@@ -4,6 +4,7 @@ import { Check, MessageSquarePlus, SendHorizontal, Trash2, X } from "lucide-reac
 import type { AgentPlanBlock, PlanApprovalDecision } from "../../../shared/desktop-bridge";
 import { createTranslator } from "../i18n";
 import type { AiPlanReviewModel } from "./plan-review-types";
+import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
 export type AiPlanReviewSurfaceProps = {
   readonly instanceId: string;
@@ -14,6 +15,8 @@ type PlanSection = {
   readonly label: string;
   readonly blocks: readonly AgentPlanBlock[];
 };
+
+type AiPlanReviewState = NonNullable<ReturnType<AiPlanReviewModel["getState"]>>;
 
 type DraftComment = {
   readonly top: number;
@@ -45,15 +48,103 @@ const sectionEntries = (
     readonly risks: readonly AgentPlanBlock[];
     readonly tests: readonly AgentPlanBlock[];
     readonly acceptanceCriteria: readonly AgentPlanBlock[];
+  },
+  labels: {
+    readonly assumptions: string;
+    readonly steps: string;
+    readonly interfaces: string;
+    readonly risks: string;
+    readonly tests: string;
+    readonly acceptanceCriteria: string;
   }
 ): readonly PlanSection[] => [
-  { label: "Assumptions", blocks: artifact.assumptions },
-  { label: "Steps", blocks: artifact.steps },
-  { label: "Interfaces", blocks: artifact.interfaces },
-  { label: "Risks", blocks: artifact.risks },
-  { label: "Tests", blocks: artifact.tests },
-  { label: "Acceptance Criteria", blocks: artifact.acceptanceCriteria },
+  { label: labels.assumptions, blocks: artifact.assumptions },
+  { label: labels.steps, blocks: artifact.steps },
+  { label: labels.interfaces, blocks: artifact.interfaces },
+  { label: labels.risks, blocks: artifact.risks },
+  { label: labels.tests, blocks: artifact.tests },
+  { label: labels.acceptanceCriteria, blocks: artifact.acceptanceCriteria },
 ];
+
+const AiPlanReviewTitlebarBridge = ({
+  state,
+  titleLabel,
+  commentsLabel,
+  approveLabel,
+  sendCommentsLabel,
+  rejectLabel,
+  hasRevisionInput,
+  onDecide
+}: {
+  readonly state: AiPlanReviewState;
+  readonly titleLabel: string;
+  readonly commentsLabel: string;
+  readonly approveLabel: string;
+  readonly sendCommentsLabel: string;
+  readonly rejectLabel: string;
+  readonly hasRevisionInput: boolean;
+  readonly onDecide: (decision: PlanApprovalDecision) => void;
+}) => {
+  const contribution = useMemo(
+    () => ({
+      ariaLabel: titleLabel,
+      content: (
+        <>
+          <span className="lyra-titlebar-context-chip">
+            {commentsLabel} {state.annotations.length}
+          </span>
+          <div className="lyra-titlebar-context-controls">
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button"
+              disabled={!state.isActionable || state.isSubmitting}
+              onClick={() => {
+                onDecide("approve_and_implement");
+              }}
+            >
+              <Check size={15} aria-hidden="true" />
+              {approveLabel}
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button"
+              disabled={!state.isActionable || state.isSubmitting || !hasRevisionInput}
+              onClick={() => {
+                onDecide("keep_planning");
+              }}
+            >
+              <SendHorizontal size={15} aria-hidden="true" />
+              {sendCommentsLabel}
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button lyra-titlebar-context-danger"
+              disabled={!state.isActionable || state.isSubmitting}
+              onClick={() => {
+                onDecide("reject");
+              }}
+            >
+              <X size={15} aria-hidden="true" />
+              {rejectLabel}
+            </button>
+          </div>
+        </>
+      )
+    }),
+    [
+      approveLabel,
+      commentsLabel,
+      hasRevisionInput,
+      onDecide,
+      rejectLabel,
+      sendCommentsLabel,
+      state,
+      titleLabel
+    ]
+  );
+  useWorkbenchTitlebarContribution(contribution);
+  return null;
+};
 
 const closestAnchor = (
   root: HTMLElement,
@@ -86,6 +177,17 @@ export const AiPlanReviewSurface = ({
   const t = useMemo(
     () => createTranslator(state?.locale ?? "en-US"),
     [state?.locale]
+  );
+  const sectionLabels = useMemo(
+    () => ({
+      assumptions: t("ai.planSectionAssumptions"),
+      steps: t("ai.planSectionSteps"),
+      interfaces: t("ai.planSectionInterfaces"),
+      risks: t("ai.planSectionRisks"),
+      tests: t("ai.planSectionTests"),
+      acceptanceCriteria: t("ai.planSectionAcceptanceCriteria"),
+    }),
+    [t]
   );
 
   if (state === null) {
@@ -201,13 +303,16 @@ export const AiPlanReviewSurface = ({
 
   return (
     <div ref={surfaceRef} className="lyra-ai-plan-review">
-      <header className="lyra-ai-plan-review__header">
-        <div>
-          <div className="lyra-ai-plan-review__eyebrow">{t("ai.planProposedTitle")}</div>
-          <h2>{state.request.artifact.title}</h2>
-          <p>{state.request.artifact.summary}</p>
-        </div>
-      </header>
+      <AiPlanReviewTitlebarBridge
+        state={state}
+        titleLabel={t("ai.planProposedTitle")}
+        commentsLabel={t("ai.planReviewTitle")}
+        approveLabel={t("ai.planApprovalApproveAndImplement")}
+        sendCommentsLabel={t("ai.planReviewSendComments")}
+        rejectLabel={t("ai.planApprovalReject")}
+        hasRevisionInput={hasRevisionInput}
+        onDecide={decide}
+      />
 
       <div className="lyra-ai-plan-review__main">
         <article
@@ -217,27 +322,27 @@ export const AiPlanReviewSurface = ({
         >
           <section
             className="lyra-ai-plan-review__doc-section"
-            data-plan-anchor="Summary"
+            data-plan-anchor={t("ai.planSectionSummary")}
           >
             <div className="lyra-ai-plan-review__doc-heading-row">
-              <h3>Summary</h3>
-              {renderCommentButton("Summary")}
+              <h3>{t("ai.planSectionSummary")}</h3>
+              {renderCommentButton(t("ai.planSectionSummary"))}
             </div>
             <p>{state.request.artifact.summary}</p>
           </section>
 
           <section
             className="lyra-ai-plan-review__doc-section"
-            data-plan-anchor="Objective"
+            data-plan-anchor={t("ai.planSectionObjective")}
           >
             <div className="lyra-ai-plan-review__doc-heading-row">
-              <h3>Objective</h3>
-              {renderCommentButton("Objective")}
+              <h3>{t("ai.planSectionObjective")}</h3>
+              {renderCommentButton(t("ai.planSectionObjective"))}
             </div>
             <p>{state.request.artifact.objective}</p>
           </section>
 
-          {sectionEntries(state.request.artifact).map((section) =>
+          {sectionEntries(state.request.artifact, sectionLabels).map((section) =>
             section.blocks.length === 0 ? null : (
               <section
                 key={section.label}
@@ -318,41 +423,6 @@ export const AiPlanReviewSurface = ({
             setOverallFeedback(event.target.value);
           }}
         />
-        <div className="lyra-ai-plan-review__actions">
-          <button
-            type="button"
-            className="lyra-ai-plan-review__approve"
-            disabled={!state.isActionable || state.isSubmitting}
-            onClick={() => {
-              decide("approve_and_implement");
-            }}
-          >
-            <Check size={15} aria-hidden="true" />
-            {t("ai.planApprovalApproveAndImplement")}
-          </button>
-          <button
-            type="button"
-            className="lyra-ai-plan-review__secondary"
-            disabled={!state.isActionable || state.isSubmitting || !hasRevisionInput}
-            onClick={() => {
-              decide("keep_planning");
-            }}
-          >
-            <SendHorizontal size={15} aria-hidden="true" />
-            {t("ai.planReviewSendComments")}
-          </button>
-          <button
-            type="button"
-            className="lyra-ai-plan-review__danger"
-            disabled={!state.isActionable || state.isSubmitting}
-            onClick={() => {
-              decide("reject");
-            }}
-          >
-            <X size={15} aria-hidden="true" />
-            {t("ai.planApprovalReject")}
-          </button>
-        </div>
       </footer>
 
       {draft === null ? null : (

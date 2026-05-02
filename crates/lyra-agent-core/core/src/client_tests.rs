@@ -7,7 +7,6 @@ use super::X_LYRA_PARENT_THREAD_ID_HEADER;
 use super::X_LYRA_SUBAGENT_HEADER;
 use super::X_LYRA_TURN_METADATA_HEADER;
 use super::X_LYRA_WINDOW_ID_HEADER;
-use lyra_app_server_protocol::AuthMode;
 use lyra_model_provider::BearerAuthProvider;
 use lyra_model_provider_info::WireApi;
 use lyra_model_provider_info::create_oss_provider_with_base_url;
@@ -38,7 +37,6 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         provider,
         session_source,
         /*model_verbosity*/ None,
-        /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
     )
 }
@@ -994,7 +992,6 @@ async fn summarize_memories_returns_empty_for_empty_input() {
 #[test]
 fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
     let auth_context = AuthRequestTelemetryContext::new(
-        Some(AuthMode::ApiKey),
         &BearerAuthProvider::for_test(Some("access-token")),
         PendingUnauthorizedRetry::from_recovery(UnauthorizedRecoveryExecution {
             mode: "managed",
@@ -1002,7 +999,6 @@ fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
         }),
     );
 
-    assert_eq!(auth_context.auth_mode, Some("ApiKey"));
     assert!(auth_context.auth_header_attached);
     assert_eq!(auth_context.auth_header_name, Some("authorization"));
     assert!(auth_context.retry_after_unauthorized);

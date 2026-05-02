@@ -10331,7 +10331,12 @@
     },
     "ThreadAiPanelPendingInteractionKind": {
       "enum": [
-        "planApproval"
+        "planApproval",
+        "commandExecutionApproval",
+        "fileChangeApproval",
+        "permissionsApproval",
+        "toolUserInput",
+        "mcpElicitation"
       ],
       "type": "string"
     },

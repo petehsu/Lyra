@@ -12,6 +12,7 @@ import {
 } from "electron";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { hostname, userInfo } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -219,6 +220,26 @@ const toWindowState = (window: BrowserWindow): WindowStatePayload => ({
   isFocused: window.isFocused(),
   isMaximized: window.isMaximized()
 });
+
+const readAppMetaPayload = (): AppMetaPayload => {
+  let userName: string | undefined;
+  try {
+    userName = userInfo().username;
+  } catch (_error) {
+    userName = process.env.USER ?? process.env.USERNAME;
+  }
+  return {
+    version: app.getVersion(),
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    ...(userName === undefined || userName.trim().length === 0
+      ? {}
+      : { userName: userName.trim() }),
+    hostName: hostname(),
+    locale: app.getLocale(),
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+  };
+};
 
 const publishWindowState = (window: BrowserWindow): void => {
   window.webContents.send(LYRA_CHANNELS.windowStateChanged, toWindowState(window));
@@ -795,11 +816,7 @@ const registerIpcHandlers = (): void => {
     mainWindow?.close();
   });
 
-  ipcMain.handle(LYRA_CHANNELS.readAppMeta, (): AppMetaPayload => ({
-    version: app.getVersion(),
-    platform: process.platform,
-    isPackaged: app.isPackaged
-  }));
+  ipcMain.handle(LYRA_CHANNELS.readAppMeta, (): AppMetaPayload => readAppMetaPayload());
 
   ipcMain.handle(
     LYRA_CHANNELS.browserUseReadRuntimeStatus,
@@ -807,11 +824,7 @@ const registerIpcHandlers = (): void => {
   );
 
   ipcMain.on(LYRA_CHANNELS.readAppMetaSync, (event) => {
-    event.returnValue = {
-      version: app.getVersion(),
-      platform: process.platform,
-      isPackaged: app.isPackaged
-    } satisfies AppMetaPayload;
+    event.returnValue = readAppMetaPayload();
   });
 
   ipcMain.handle(LYRA_CHANNELS.openExternal, async (_event, url: string): Promise<boolean> => {

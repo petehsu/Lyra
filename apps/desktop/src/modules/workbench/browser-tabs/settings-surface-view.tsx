@@ -393,7 +393,6 @@ export const SettingsSurfaceView = ({
   <section className="lyra-settings-surface" aria-label="settings-surface">
     <div className="lyra-settings-shell">
       <aside className="lyra-settings-nav" aria-label="settings-nav">
-        <h2>{model.title}</h2>
         <div className="lyra-settings-nav-list">
           {model.categories.map((category) => (
             <button

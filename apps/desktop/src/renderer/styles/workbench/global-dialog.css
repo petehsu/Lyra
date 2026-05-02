@@ -7,8 +7,8 @@
   place-items: center;
   padding: var(--lyra-unit-22);
   background: color-mix(in srgb, var(--lyra-bg-app) 36%, transparent);
-  -webkit-backdrop-filter: blur(var(--lyra-unit-14)) saturate(1.06);
-  backdrop-filter: blur(var(--lyra-unit-14)) saturate(1.06);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .lyra-global-dialog {
@@ -20,12 +20,8 @@
   padding: var(--lyra-dialog-pad);
   border-radius: var(--lyra-surface-radius-lg);
   border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 78%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--lyra-bg-surface) 94%, transparent) 0%,
-    color-mix(in srgb, var(--lyra-bg-editor) 96%, transparent) 100%
-  );
-  box-shadow: var(--lyra-shadow-elevated);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 94%, var(--lyra-bg-editor) 6%);
+  box-shadow: none;
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
@@ -63,11 +59,11 @@
 }
 
 .lyra-global-dialog-source-icon-accent {
-  color: color-mix(in srgb, var(--lyra-line-focused) 82%, var(--lyra-text-primary) 18%);
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-global-dialog-source-icon-success {
-  color: color-mix(in srgb, var(--lyra-terminal-green) 78%, var(--lyra-text-primary) 22%);
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-global-dialog-source-icon-danger {
@@ -148,14 +144,14 @@
 }
 
 .lyra-global-dialog-copy-action:hover {
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 48%, var(--lyra-line-default) 52%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
   color: var(--lyra-text-primary);
   opacity: 1;
 }
 
 .lyra-global-dialog-copy-action-copied {
-  border-color: color-mix(in srgb, var(--lyra-terminal-green) 56%, var(--lyra-line-default) 44%);
-  color: color-mix(in srgb, var(--lyra-terminal-green) 76%, var(--lyra-text-primary) 24%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  color: var(--lyra-text-primary);
   opacity: 1;
 }
 
@@ -215,7 +211,7 @@
 }
 
 .lyra-global-dialog-action:hover:enabled {
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 52%, var(--lyra-line-default) 48%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-global-dialog-action:disabled {
@@ -224,8 +220,8 @@
 }
 
 .lyra-global-dialog-action-primary {
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 68%, transparent);
-  color: color-mix(in srgb, var(--lyra-line-focused) 78%, var(--lyra-text-primary) 22%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  color: var(--lyra-text-primary);
 }
 
 .lyra-global-dialog-action-danger {

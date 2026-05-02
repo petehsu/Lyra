@@ -3,5 +3,4 @@ mod normalize;
 pub(crate) mod updates;
 
 pub(crate) use history::ContextManager;
-pub(crate) use history::TotalTokenUsageBreakdown;
 pub(crate) use history::is_user_turn_boundary;

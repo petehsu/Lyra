@@ -39,7 +39,7 @@
   width: var(--lyra-unit-2);
   height: calc(100% - var(--lyra-unit-14));
   border-radius: var(--lyra-unit-999);
-  background: var(--lyra-line-focused);
+  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
 }
 
 .lyra-mcp-center-server-row {

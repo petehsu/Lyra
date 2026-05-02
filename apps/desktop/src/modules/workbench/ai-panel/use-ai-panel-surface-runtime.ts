@@ -17,7 +17,6 @@ import type {
 import type { createTranslator, I18nKey, WorkbenchLocale } from "../i18n";
 import {
   normalizeProjectRoot,
-  useProjectLogoMap
 } from "../project-identity";
 import { subscribeThreadSelected } from "../thread-selection-events";
 import type { LyraThread } from "./lyra-thread-adapter";
@@ -162,6 +161,24 @@ type FuzzyFileSearchResult = {
   readonly indices?: readonly number[] | null;
 };
 
+export type AgentAdvancedMemoryMode = "enabled" | "disabled";
+
+export type AgentAdvancedElicitationResponse = {
+  readonly count?: number;
+  readonly paused?: boolean;
+};
+
+export type AgentAdvancedRuntimeActions = {
+  readonly listLoadedThreads: () => Promise<unknown>;
+  readonly listThreadTurns: (threadId: string) => Promise<unknown>;
+  readonly listCollaborationModes: () => Promise<unknown>;
+  readonly setThreadMemoryMode: (threadId: string, mode: AgentAdvancedMemoryMode) => Promise<unknown>;
+  readonly runThreadShellCommand: (threadId: string, command: string) => Promise<unknown>;
+  readonly injectThreadItems: (threadId: string, items: readonly unknown[]) => Promise<unknown>;
+  readonly incrementElicitation: (threadId: string) => Promise<AgentAdvancedElicitationResponse>;
+  readonly decrementElicitation: (threadId: string) => Promise<AgentAdvancedElicitationResponse>;
+};
+
 const readThreadRecentMessages = (thread: LyraThread): readonly string[] => {
   const viewModelMessages = thread.aiPanelViewModel?.messages;
   if (viewModelMessages !== undefined && viewModelMessages.length > 0) {
@@ -294,12 +311,14 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly setActiveInteractionId: LyraThreadRuntimeActions["setActiveInteractionId"];
   readonly respondToCommandApproval: LyraThreadRuntimeActions["respondToCommandApproval"];
   readonly respondToPlanQuestion: LyraThreadRuntimeActions["respondToPlanQuestion"];
+  readonly respondToMcpElicitation: LyraThreadRuntimeActions["respondToMcpElicitation"];
   readonly selectModelOptionValue: (value: string) => void;
   readonly setSelectedReasoningEffort: Dispatch<SetStateAction<RuntimeThreadOptions["effort"] | null>>;
   readonly setSelectedVerbosity: Dispatch<SetStateAction<RuntimeThreadOptions["verbosity"] | null>>;
   readonly setPermissionMode: Dispatch<SetStateAction<AgentPermissionMode>>;
   readonly setComposerHeight: Dispatch<SetStateAction<number>>;
   readonly setIsPermissionsPanelOpen: Dispatch<SetStateAction<boolean>>;
+  readonly setIsAdvancedPanelOpen: Dispatch<SetStateAction<boolean>>;
   readonly createThread: () => void;
   readonly bindProject: () => Promise<void>;
   readonly openReviewPanel: () => void;
@@ -321,6 +340,7 @@ export type AiPanelSurfaceRuntimeActions = {
     response: PlanInteractionResponse,
     requestOverride?: PlanApprovalRequest
   ) => Promise<void>;
+  readonly advanced: AgentAdvancedRuntimeActions;
 };
 
 export type AiPanelSurfaceRuntime = {
@@ -353,9 +373,9 @@ export type AiPanelSurfaceRuntime = {
   readonly boundProjectRootForActiveThread: string | null;
   readonly boundProjectRootByThreadId: ReadonlyMap<string, string>;
   readonly tabProjectRootById: ReadonlyMap<string, string | null>;
-  readonly projectLogoByRoot: ReadonlyMap<string, string | null>;
   readonly isBindingProject: boolean;
   readonly isPermissionsPanelOpen: boolean;
+  readonly isAdvancedPanelOpen: boolean;
   readonly isReviewPanelOpen: boolean;
   readonly isReviewStarting: boolean;
   readonly canOpenReviewChanges: boolean;
@@ -414,6 +434,7 @@ export const useAiPanelSurfaceRuntime = ({
   const [pendingBoundProjectRoot, setPendingBoundProjectRoot] = useState<string | null>(null);
   const [isBindingProject, setIsBindingProject] = useState(false);
   const [isPermissionsPanelOpen, setIsPermissionsPanelOpen] = useState(false);
+  const [isAdvancedPanelOpen, setIsAdvancedPanelOpen] = useState(false);
   const [fileMentionSearchResults, setFileMentionSearchResults] =
     useState<readonly FuzzyFileSearchResult[]>([]);
   const [isReviewPanelOpen, setIsReviewPanelOpen] = useState(false);
@@ -440,6 +461,7 @@ export const useAiPanelSurfaceRuntime = ({
     rollbackThread,
     respondToCommandApproval,
     respondToPlanQuestion,
+    respondToMcpElicitation,
     selectThread,
     activateThreadTab,
     closeThreadTab,
@@ -535,12 +557,6 @@ export const useAiPanelSurfaceRuntime = ({
         };
       });
   }, [state.activeTabId, state.threadTabs, state.threads, tabProjectRootById]);
-  const tabProjectRoots = useMemo(
-    () => [...tabProjectRootById.values()].filter((root): root is string => root !== null),
-    [tabProjectRootById]
-  );
-  const projectLogoByRoot = useProjectLogoMap(desktopApi?.files, tabProjectRoots);
-
   useEffect(() => {
     const filesApi = desktopApi?.files;
     const probePaths =
@@ -1183,6 +1199,54 @@ export const useAiPanelSurfaceRuntime = ({
     })();
   }, [appendToComposer, rollbackThread]);
 
+  const requestAdvanced = useCallback(async <T,>(
+    method: string,
+    params: Record<string, unknown> = {}
+  ): Promise<T> => {
+    if (lyraApi === undefined || lyraApi === null) {
+      throw new Error("Lyra runtime unavailable");
+    }
+    return await lyraApi.request<T>(createRequestPayload(method, params));
+  }, [lyraApi]);
+
+  const advancedActions = useMemo<AgentAdvancedRuntimeActions>(() => ({
+    listLoadedThreads: async () =>
+      await requestAdvanced("thread/loaded/list", {
+        limit: 50,
+      }),
+    listThreadTurns: async (threadId) =>
+      await requestAdvanced("thread/turns/list", {
+        threadId,
+        limit: 20,
+        sortDirection: "desc",
+      }),
+    listCollaborationModes: async () =>
+      await requestAdvanced("collaborationMode/list"),
+    setThreadMemoryMode: async (threadId, mode) =>
+      await requestAdvanced("thread/memoryMode/set", {
+        threadId,
+        mode,
+      }),
+    runThreadShellCommand: async (threadId, command) =>
+      await requestAdvanced("thread/shellCommand", {
+        threadId,
+        command,
+      }),
+    injectThreadItems: async (threadId, items) =>
+      await requestAdvanced("thread/inject_items", {
+        threadId,
+        items,
+      }),
+    incrementElicitation: async (threadId) =>
+      await requestAdvanced<AgentAdvancedElicitationResponse>("thread/increment_elicitation", {
+        threadId,
+      }),
+    decrementElicitation: async (threadId) =>
+      await requestAdvanced<AgentAdvancedElicitationResponse>("thread/decrement_elicitation", {
+        threadId,
+      }),
+  }), [requestAdvanced]);
+
   const handleRegenerateTurn = useCallback((turnId: string): void => {
     const sourceUserMessage = viewModel.sortedMessages.find(
       (message) => message.role === "user"
@@ -1249,6 +1313,41 @@ export const useAiPanelSurfaceRuntime = ({
     state.activeThreadId
   ]);
 
+  const setPermissionsPanelOpen = useCallback<Dispatch<SetStateAction<boolean>>>((value) => {
+    setIsPermissionsPanelOpen((previous) => {
+      const next = typeof value === "function" ? value(previous) : value;
+      if (next) {
+        setIsAdvancedPanelOpen(false);
+        setIsReviewPanelOpen(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const setAdvancedPanelOpen = useCallback<Dispatch<SetStateAction<boolean>>>((value) => {
+    setIsAdvancedPanelOpen((previous) => {
+      const next = typeof value === "function" ? value(previous) : value;
+      if (next) {
+        setIsPermissionsPanelOpen(false);
+        setIsReviewPanelOpen(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const openReviewPanel = useCallback((): void => {
+    if (!canOpenReviewPanel) {
+      return;
+    }
+    setIsPermissionsPanelOpen(false);
+    setIsAdvancedPanelOpen(false);
+    setIsReviewPanelOpen(true);
+  }, [canOpenReviewPanel]);
+
+  const closeReviewPanel = useCallback((): void => {
+    setIsReviewPanelOpen(false);
+  }, []);
+
   return {
     state,
     viewModel,
@@ -1260,22 +1359,18 @@ export const useAiPanelSurfaceRuntime = ({
       setActiveInteractionId,
       respondToCommandApproval,
       respondToPlanQuestion,
+      respondToMcpElicitation,
       selectModelOptionValue,
       setSelectedReasoningEffort,
       setSelectedVerbosity,
       setPermissionMode,
       setComposerHeight,
-      setIsPermissionsPanelOpen,
+      setIsPermissionsPanelOpen: setPermissionsPanelOpen,
+      setIsAdvancedPanelOpen: setAdvancedPanelOpen,
       createThread,
       bindProject: handleBindProject,
-      openReviewPanel: () => {
-        if (canOpenReviewPanel) {
-          setIsReviewPanelOpen(true);
-        }
-      },
-      closeReviewPanel: () => {
-        setIsReviewPanelOpen(false);
-      },
+      openReviewPanel,
+      closeReviewPanel,
       startReview: handleStartReview,
       togglePlanMode: handlePlanModeToggle,
       toggleFollow: handleFollowToggle,
@@ -1289,7 +1384,8 @@ export const useAiPanelSurfaceRuntime = ({
       forkTurn: handleForkTurn,
       regenerateTurn: handleRegenerateTurn,
       editMessageTurn: handleEditMessageTurn,
-      planApprovalDecision: handlePlanApprovalDecision
+      planApprovalDecision: handlePlanApprovalDecision,
+      advanced: advancedActions
     },
     threadViewportRef,
     interactionPanelRef,
@@ -1317,9 +1413,9 @@ export const useAiPanelSurfaceRuntime = ({
     boundProjectRootForActiveThread,
     boundProjectRootByThreadId: boundProjectRootByThread,
     tabProjectRootById,
-    projectLogoByRoot,
     isBindingProject,
     isPermissionsPanelOpen,
+    isAdvancedPanelOpen,
     isReviewPanelOpen,
     isReviewStarting,
     canOpenReviewChanges: canOpenReviewPanel,

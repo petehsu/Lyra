@@ -1,7 +1,9 @@
 import {
   type DragEvent as ReactDragEvent,
   useEffect,
-  useRef
+  useMemo,
+  useRef,
+  useState
 } from "react";
 
 import {
@@ -22,12 +24,14 @@ import {
   FileManagerSurfaceView,
   type FileManagerSurfaceActions
 } from "./surface-view";
+import { FileManagerToolbarContent } from "./surface-toolbar";
 import type {
   FileManagerAppState,
   FileManagerChooserMode,
   FileManagerModel,
   FileManagerSurfaceLabels
 } from "./types";
+import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
 export type FileManagerSurfaceProps = {
   readonly state: FileManagerAppState | null;
@@ -72,6 +76,32 @@ const createFileManagerDragPreview = (
   return preview;
 };
 
+const FileManagerTitlebarBridge = ({
+  renderModel,
+  labels,
+  actions
+}: {
+  readonly renderModel: ReturnType<typeof deriveFileManagerSurfaceModel>;
+  readonly labels: FileManagerSurfaceLabels;
+  readonly actions: FileManagerSurfaceActions;
+}) => {
+  const contribution = useMemo(
+    () => ({
+      ariaLabel: labels.title,
+      content: (
+        <FileManagerToolbarContent
+          renderModel={renderModel}
+          labels={labels}
+          actions={actions}
+        />
+      )
+    }),
+    [actions, labels, renderModel]
+  );
+  useWorkbenchTitlebarContribution(contribution);
+  return null;
+};
+
 export const FileManagerSurface = ({
   state,
   labels,
@@ -85,6 +115,7 @@ export const FileManagerSurface = ({
     minVisibleMs: 180
   });
   const dragPreviewRef = useRef<HTMLElement | null>(null);
+  const [pageKindOverride, setPageKindOverride] = useState<"favorites" | null>(null);
 
   const clearEntryDragPreview = (): void => {
     const currentPreview = dragPreviewRef.current;
@@ -102,6 +133,10 @@ export const FileManagerSurface = ({
     []
   );
 
+  useEffect(() => {
+    setPageKindOverride(null);
+  }, [state?.instanceId]);
+
   if (state === null) {
     return null;
   }
@@ -109,7 +144,8 @@ export const FileManagerSurface = ({
   const renderModel = deriveFileManagerSurfaceModel(
     state,
     chooser,
-    showLoadingSkeleton
+    showLoadingSkeleton,
+    pageKindOverride ?? state.viewKind
   );
 
   const onEntryDragEnd = (): void => {
@@ -132,18 +168,22 @@ export const FileManagerSurface = ({
 
   const actions: FileManagerSurfaceActions = {
     onGoBack: () => {
+      setPageKindOverride(null);
       void model.goBack(state.instanceId);
     },
     onGoForward: () => {
+      setPageKindOverride(null);
       void model.goForward(state.instanceId);
     },
     onGoUp: () => {
+      setPageKindOverride(null);
       void model.goUp(state.instanceId);
     },
     onRefresh: () => {
       void model.refresh(state.instanceId);
     },
     onOpenBreadcrumb: (path) => {
+      setPageKindOverride(null);
       void model.openDirectory(state.instanceId, path);
     },
     onSetPresentationMode: (mode) => {
@@ -165,9 +205,14 @@ export const FileManagerSurface = ({
       void model.emptyTrash(state.instanceId);
     },
     onOpenHome: () => {
+      setPageKindOverride(null);
       void model.openHome(state.instanceId);
     },
+    onOpenFavorites: () => {
+      setPageKindOverride("favorites");
+    },
     onOpenLocation: (location) => {
+      setPageKindOverride(null);
       if (location.specialId === "trash") {
         void model.openTrash(state.instanceId);
         return;
@@ -177,12 +222,15 @@ export const FileManagerSurface = ({
       }
     },
     onOpenDirectoryPath: (path) => {
+      setPageKindOverride(null);
       void model.openDirectory(state.instanceId, path);
     },
     onOpenDisk: (disk) => {
+      setPageKindOverride(null);
       void model.openDirectory(state.instanceId, disk.mountPath);
     },
     onOpenRecentLocation: (recent) => {
+      setPageKindOverride(null);
       void model.openDirectory(state.instanceId, recent.path);
     },
     onFavoriteContextMenu: (favorite, anchorX, anchorY) => {
@@ -223,6 +271,7 @@ export const FileManagerSurface = ({
     },
     onOpenEntry: (entry) => {
       if (entry.kind === "directory") {
+        setPageKindOverride(null);
         void model.openDirectory(state.instanceId, entry.path);
         return;
       }
@@ -259,12 +308,18 @@ export const FileManagerSurface = ({
       chooser?.onConfirm();
     }
   };
-
   return (
-    <FileManagerSurfaceView
-      renderModel={renderModel}
-      labels={labels}
-      actions={actions}
-    />
+    <>
+      <FileManagerTitlebarBridge
+        renderModel={renderModel}
+        labels={labels}
+        actions={actions}
+      />
+      <FileManagerSurfaceView
+        renderModel={renderModel}
+        labels={labels}
+        actions={actions}
+      />
+    </>
   );
 };

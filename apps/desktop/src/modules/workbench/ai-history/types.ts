@@ -11,6 +11,7 @@ export type AiHistorySurfaceProps = {
   readonly renameConversationLabel?: string;
   readonly deleteConversationLabel: string;
   readonly archiveConversationLabel: string;
+  readonly unarchiveConversationLabel: string;
   readonly archivedConversationLabel: string;
   readonly archivedProjectLabel: string;
   readonly deleteArchivedConversationTitle: string;

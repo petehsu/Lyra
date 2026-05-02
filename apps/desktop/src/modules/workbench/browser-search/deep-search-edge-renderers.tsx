@@ -36,19 +36,10 @@ const DEEP_SEARCH_EDGE_TOKENS = {
 } as const;
 
 const resolveStrokeColor = (kind: DeepSearchCanvasEdgeData["kind"]): string => {
-  if (kind === "expanded_to") {
-    return "rgba(109, 158, 235, 0.86)";
-  }
-  if (kind === "hosts_subdomain") {
-    return "rgba(84, 168, 124, 0.84)";
-  }
-  if (kind === "contains_page") {
-    return "rgba(61, 136, 201, 0.82)";
-  }
   if (kind === "related_to") {
     return "rgba(191, 189, 182, 0.58)";
   }
-  return "rgba(248, 197, 93, 0.82)";
+  return "rgba(148, 148, 148, 0.78)";
 };
 
 const DeepSearchEdgeView = ({

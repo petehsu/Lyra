@@ -66,6 +66,7 @@ const createAiHistoryProps = (
     : { renameConversationLabel: context.aiHistory.renameConversationLabel }),
   deleteConversationLabel: context.aiHistory.deleteConversationLabel,
   archiveConversationLabel: context.aiHistory.archiveConversationLabel,
+  unarchiveConversationLabel: context.aiHistory.unarchiveConversationLabel,
   archivedConversationLabel: context.aiHistory.archivedConversationLabel,
   archivedProjectLabel: context.aiHistory.archivedProjectLabel,
   deleteArchivedConversationTitle: context.aiHistory.deleteArchivedConversationTitle,
@@ -128,6 +129,17 @@ export const createTerminalWorkspaceModel = (
       panes: context.terminalModel.getTabPanes(terminalTab.id),
       onFocusPane: (paneId) => {
         context.terminalModel.focusPane(terminalTab.id, paneId);
+      },
+      onOpenTab: context.terminalModel.openTab,
+      onSplitHorizontal: () => {
+        context.terminalModel.splitTab(terminalTab.id, "horizontal");
+      },
+      onSplitVertical: () => {
+        context.terminalModel.splitTab(terminalTab.id, "vertical");
+      },
+      onMoveToDock: () => {
+        context.terminalModel.moveTabToDock(terminalTab.id);
+        context.tabsModel.closeTerminalTab(terminalTab.id);
       }
     }
   };

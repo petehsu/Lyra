@@ -45,6 +45,9 @@ export type FileManagerBreadcrumbModel =
       readonly kind: "home";
     }
   | {
+      readonly kind: "favorites";
+    }
+  | {
       readonly kind: "trash";
       readonly title: string;
     }
@@ -82,6 +85,7 @@ export type FileManagerSidebarLocationItem = {
 
 export type FileManagerSidebarModel = {
   readonly homeActive: boolean;
+  readonly favoritesActive: boolean;
   readonly favorites: readonly FileManagerSidebarFavoriteItem[];
   readonly locations: readonly FileManagerSidebarLocationItem[];
 };
@@ -102,12 +106,16 @@ export type FileManagerHomeDeviceItem = {
 };
 
 export type FileManagerHomeModel = {
-  readonly favorites: readonly FileManagerFavorite[];
   readonly locations: readonly FileManagerLocation[];
   readonly disks: readonly FileManagerHomeDiskItem[];
   readonly devices: readonly FileManagerHomeDeviceItem[];
   readonly recentLocations: readonly FileManagerRecentLocation[];
   readonly isRecentEmpty: boolean;
+};
+
+export type FileManagerFavoritesModel = {
+  readonly favorites: readonly FileManagerFavorite[];
+  readonly isEmpty: boolean;
 };
 
 export type FileManagerDirectoryEntryItem = {
@@ -145,6 +153,10 @@ export type FileManagerBodyModel =
       readonly home: FileManagerHomeModel;
     }
   | {
+      readonly kind: "favorites";
+      readonly favorites: FileManagerFavoritesModel;
+    }
+  | {
       readonly kind: "directory";
       readonly directory: FileManagerDirectoryModel;
     }
@@ -165,8 +177,10 @@ export type FileManagerChooserBarModel =
     }
   | null;
 
+export type FileManagerSurfacePageKind = FileManagerAppState["viewKind"] | "favorites";
+
 export type FileManagerSurfaceRenderModel = {
-  readonly viewKind: FileManagerAppState["viewKind"];
+  readonly viewKind: FileManagerSurfacePageKind;
   readonly presentationMode: FileManagerAppState["presentationMode"];
   readonly breadcrumb: FileManagerBreadcrumbModel;
   readonly toolbar: FileManagerToolbarModel;
@@ -400,8 +414,12 @@ const deriveLoadingSkeletonMetrics = (
 
 const deriveBreadcrumbModel = (
   state: FileManagerAppState,
-  breadcrumbs: readonly FileManagerBreadcrumbPart[]
+  breadcrumbs: readonly FileManagerBreadcrumbPart[],
+  pageKind: FileManagerSurfacePageKind
 ): FileManagerBreadcrumbModel => {
+  if (pageKind === "favorites") {
+    return { kind: "favorites" };
+  }
   if (state.viewKind === "home") {
     return { kind: "home" };
   }
@@ -425,6 +443,7 @@ const deriveBreadcrumbModel = (
 
 const deriveBodyModel = (
   state: FileManagerAppState,
+  pageKind: FileManagerSurfacePageKind,
   showLoadingSkeleton: boolean,
   loadingSkeletonMetrics: FileManagerSkeletonMetrics,
   canRenderBodyContent: boolean
@@ -447,11 +466,20 @@ const deriveBodyModel = (
     return { kind: "none" };
   }
 
+  if (pageKind === "favorites") {
+    return {
+      kind: "favorites",
+      favorites: {
+        favorites: state.favorites,
+        isEmpty: state.favorites.length === 0
+      }
+    };
+  }
+
   if (state.viewKind === "home") {
     return {
       kind: "home",
       home: {
-        favorites: state.favorites,
         locations: state.systemLocations,
         disks: state.disks.map((disk) => ({
           disk,
@@ -499,7 +527,8 @@ const deriveBodyModel = (
 export const deriveFileManagerSurfaceModel = (
   state: FileManagerAppState,
   chooser: FileManagerChooserMode | null | undefined,
-  showLoadingSkeleton: boolean
+  showLoadingSkeleton: boolean,
+  pageKind: FileManagerSurfacePageKind = state.viewKind
 ): FileManagerSurfaceRenderModel => {
   const breadcrumbs = state.currentLocation?.path
     ? splitFileManagerBreadcrumbs(state.currentLocation.path)
@@ -508,7 +537,7 @@ export const deriveFileManagerSurfaceModel = (
   const canGoBack = state.historyIndex > 0;
   const canGoForward =
     state.historyIndex >= 0 && state.historyIndex < state.history.length - 1;
-  const canGoUp = state.parentPath !== undefined;
+  const canGoUp = pageKind === "favorites" ? false : state.parentPath !== undefined;
   const favoriteActive = isCurrentFavorite(state);
   const canConfirmCurrentDirectory =
     chooser?.kind === "ai-project-bind"
@@ -521,28 +550,29 @@ export const deriveFileManagerSurfaceModel = (
     (state.status !== "loading" || showLoadingSkeleton === false);
 
   return {
-    viewKind: state.viewKind,
+    viewKind: pageKind,
     presentationMode: state.presentationMode,
-    breadcrumb: deriveBreadcrumbModel(state, breadcrumbs),
+    breadcrumb: deriveBreadcrumbModel(state, breadcrumbs, pageKind),
     toolbar: {
       canGoBack,
       canGoForward,
       canGoUp,
       isLargeMode,
       favoriteActive,
-      favoriteDisabled: state.currentLocation?.path === undefined,
-      canCreateDraft: state.viewKind === "directory",
+      favoriteDisabled: pageKind === "favorites" || state.currentLocation?.path === undefined,
+      canCreateDraft: pageKind === "directory",
       canMoveSelectionToTrash:
-        state.viewKind === "directory" && state.selectedEntryId !== undefined,
+        pageKind === "directory" && state.selectedEntryId !== undefined,
       canRestoreSelectionFromTrash:
-        state.viewKind === "trash" && state.selectedTrashEntryId !== undefined,
-      canEmptyTrash: state.viewKind === "trash"
+        pageKind === "trash" && state.selectedTrashEntryId !== undefined,
+      canEmptyTrash: pageKind === "trash" && state.trashEntries.length > 0
     },
     sidebar: {
-      homeActive: state.viewKind === "home",
+      homeActive: pageKind === "home",
+      favoritesActive: pageKind === "favorites",
       favorites: state.favorites.map((favorite) => ({
         favorite,
-        active: isFileManagerActiveFavorite(state, favorite)
+        active: pageKind !== "favorites" && isFileManagerActiveFavorite(state, favorite)
       })),
       locations: state.systemLocations.map((location) => ({
         location,
@@ -551,6 +581,7 @@ export const deriveFileManagerSurfaceModel = (
     },
     body: deriveBodyModel(
       state,
+      pageKind,
       showLoadingSkeleton,
       loadingSkeletonMetrics,
       canRenderBodyContent

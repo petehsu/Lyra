@@ -24,7 +24,7 @@ const FALLBACK_LIGHT = {
   bgPanel: "#eef2f7",
   bgEditor: "#ffffff",
   lineDefault: "#b9c4d3",
-  lineFocused: "#4d88ff"
+  lineFocused: "#8b95a5"
 };
 
 const FALLBACK_DARK = {
@@ -34,7 +34,7 @@ const FALLBACK_DARK = {
   bgPanel: "#212734",
   bgEditor: "#0e1218",
   lineDefault: "#4d5767",
-  lineFocused: "#7aa2ff"
+  lineFocused: "#8e98aa"
 };
 
 const readThemeTone = (): "light" | "dark" => {
@@ -70,7 +70,7 @@ const resolveMermaidThemeConfig = (): {
         fontFamily: MONO_FONT_FAMILY,
         primaryColor: fallback.bgPanel,
         primaryTextColor: fallback.textPrimary,
-        primaryBorderColor: fallback.lineFocused,
+        primaryBorderColor: fallback.lineDefault,
         lineColor: fallback.lineDefault,
         textColor: fallback.textPrimary,
         mainBkg: fallback.bgSurface,
@@ -87,7 +87,7 @@ const resolveMermaidThemeConfig = (): {
   const bgPanel = readCssVariable(style, "--lyra-bg-panel", fallback.bgPanel);
   const bgEditor = readCssVariable(style, "--lyra-bg-editor", fallback.bgEditor);
   const lineDefault = readCssVariable(style, "--lyra-line-default", fallback.lineDefault);
-  const lineFocused = readCssVariable(style, "--lyra-line-focused", fallback.lineFocused);
+  const lineFocused = readCssVariable(style, "--lyra-line-default", fallback.lineFocused);
 
   return {
     theme: "base",

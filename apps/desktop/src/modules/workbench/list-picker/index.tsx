@@ -39,6 +39,11 @@ export const LyraListPicker = <T extends string>({
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const activeOption = options.find((option) => option.value === value) ?? options[0];
+  const sizeProbeLabel = options.reduce(
+    (longestLabel, option) =>
+      option.label.length > longestLabel.length ? option.label : longestLabel,
+    activeOption?.label ?? ""
+  );
   const pickerStyle = {
     ...style,
     "--lyra-list-picker-option-count": String(Math.max(1, options.length))
@@ -101,6 +106,9 @@ export const LyraListPicker = <T extends string>({
       ref={rootRef}
       style={pickerStyle}
     >
+      <span className="lyra-list-picker-size-probe" aria-hidden="true">
+        {sizeProbeLabel}
+      </span>
       <div className="lyra-list-picker-surface">
         <ul
           className="lyra-list-picker-options"

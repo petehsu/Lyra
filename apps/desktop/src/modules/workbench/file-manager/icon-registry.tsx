@@ -54,7 +54,7 @@ import {
 } from "./entry-icon-classifier";
 import type { FileManagerAppIconKey } from "./types";
 
-const DEFAULT_ICON_SIZE = 15;
+const DEFAULT_ICON_SIZE = 14;
 
 const renderIcon = (node: ReactNode, className?: string) => (
   <span

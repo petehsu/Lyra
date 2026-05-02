@@ -3,7 +3,6 @@ import { useMemo } from "react";
 
 import type { AgentPlanBlock } from "../../../shared/desktop-bridge";
 import { createTranslator, type WorkbenchLocale } from "../i18n";
-import { StatusIndicator } from "./status-primitives";
 import type { LyraTurnPlanState } from "./use-lyra-thread-runtime";
 
 type PlanCardProps = {
@@ -55,7 +54,6 @@ export const PlanCard = ({
     <section className="lyra-ai-plan-card" aria-label={title}>
       <div className="lyra-ai-plan-card__header">
         <div className="lyra-ai-plan-card__title">
-          <StatusIndicator tone="info" variant="dot" ariaLabel={title} />
           <span>{title}</span>
         </div>
       </div>
@@ -64,12 +62,12 @@ export const PlanCard = ({
         <p>{artifact.summary}</p>
         <p>{artifact.objective}</p>
       </div>
-      {renderBlockList("Assumptions", artifact.assumptions)}
-      {renderBlockList("Steps", artifact.steps)}
-      {renderBlockList("Interfaces", artifact.interfaces)}
-      {renderBlockList("Risks", artifact.risks)}
-      {renderBlockList("Tests", artifact.tests)}
-      {renderBlockList("Acceptance", artifact.acceptanceCriteria)}
+      {renderBlockList(t("ai.planSectionAssumptions"), artifact.assumptions)}
+      {renderBlockList(t("ai.planSectionSteps"), artifact.steps)}
+      {renderBlockList(t("ai.planSectionInterfaces"), artifact.interfaces)}
+      {renderBlockList(t("ai.planSectionRisks"), artifact.risks)}
+      {renderBlockList(t("ai.planSectionTests"), artifact.tests)}
+      {renderBlockList(t("ai.planSectionAcceptanceCriteria"), artifact.acceptanceCriteria)}
       {!canApprove ? null : (
         <div className="lyra-ai-plan-card__actions">
           {onApprove === undefined ? null : (

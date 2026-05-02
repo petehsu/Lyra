@@ -69,7 +69,7 @@
 
 .lyra-mcp-center-input:focus,
 .lyra-mcp-center-textarea:focus {
-  border-color: var(--lyra-line-focused);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-mcp-center-checkbox {

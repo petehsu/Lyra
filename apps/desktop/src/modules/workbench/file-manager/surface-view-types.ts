@@ -29,6 +29,7 @@ export type FileManagerSurfaceActions = {
   readonly onRestoreSelectionFromTrash: () => void;
   readonly onEmptyTrash: () => void;
   readonly onOpenHome: () => void;
+  readonly onOpenFavorites: () => void;
   readonly onOpenLocation: (location: FileManagerLocation) => void;
   readonly onOpenDirectoryPath: (path: string) => void;
   readonly onOpenDisk: (disk: FileManagerDisk) => void;

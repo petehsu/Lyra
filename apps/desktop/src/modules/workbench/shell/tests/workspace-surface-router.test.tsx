@@ -125,6 +125,7 @@ const createProps = (
     openConversationLabel: "Open",
     deleteConversationLabel: "Delete",
     archiveConversationLabel: "Archive",
+    unarchiveConversationLabel: "Restore",
     archivedConversationLabel: "Archived",
     archivedProjectLabel: "Archived project",
     deleteArchivedConversationTitle: "Delete",

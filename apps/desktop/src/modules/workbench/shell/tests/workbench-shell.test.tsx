@@ -676,12 +676,14 @@ describe("workbench shell", () => {
     expect(screen.getByLabelText("file-manager-surface")).toBeInTheDocument();
   });
 
-  test("opens notification center from topbar bell", () => {
+  test("disables notification center button when there are no notifications", () => {
     render(<WorkbenchShell />);
 
-    fireEvent.click(screen.getByRole("button", { name: "打开通知中心" }));
+    const notificationButton = screen.getByRole("button", { name: "打开通知中心" });
+    expect(notificationButton).toBeDisabled();
 
-    expect(screen.getByLabelText("notification-center-surface")).toBeInTheDocument();
+    fireEvent.click(notificationButton);
+    expect(screen.queryByLabelText("notification-center-surface")).toBeNull();
   });
 
   test("opens mcp and skills tabs from ai topbar buttons", () => {

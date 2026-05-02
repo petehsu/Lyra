@@ -19,7 +19,7 @@ use metadata::find_marketplace_root_by_name;
 use metadata::installed_marketplace_root_for_source;
 use metadata::record_added_marketplace_entry;
 use source::MarketplaceSource;
-pub(crate) use source::parse_marketplace_source;
+use source::parse_marketplace_source;
 use source::stage_marketplace_source;
 use source::validate_marketplace_source_root;
 
@@ -53,16 +53,6 @@ pub async fn add_marketplace(
     tokio::task::spawn_blocking(move || add_marketplace_sync(lyra_home.as_path(), request))
         .await
         .map_err(|err| MarketplaceAddError::Internal(format!("failed to add marketplace: {err}")))?
-}
-
-pub(crate) fn is_local_marketplace_source(
-    source: &str,
-    explicit_ref: Option<String>,
-) -> Result<bool, MarketplaceAddError> {
-    Ok(matches!(
-        parse_marketplace_source(source, explicit_ref)?,
-        source::MarketplaceSource::Local { .. }
-    ))
 }
 
 fn add_marketplace_sync(

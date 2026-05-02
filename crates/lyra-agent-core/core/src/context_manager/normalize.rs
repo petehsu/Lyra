@@ -194,6 +194,7 @@ pub(crate) fn remove_orphan_outputs(items: &mut Vec<ResponseItem>) {
     });
 }
 
+#[cfg(test)]
 pub(crate) fn remove_corresponding_for(items: &mut Vec<ResponseItem>, item: &ResponseItem) {
     match item {
         ResponseItem::FunctionCall { call_id, .. } => {
@@ -281,6 +282,7 @@ pub(crate) fn remove_corresponding_for(items: &mut Vec<ResponseItem>, item: &Res
     }
 }
 
+#[cfg(test)]
 fn remove_first_matching<F>(items: &mut Vec<ResponseItem>, predicate: F)
 where
     F: Fn(&ResponseItem) -> bool,

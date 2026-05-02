@@ -1,6 +1,12 @@
+import type { ComponentProps } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
+import {
+  WorkbenchTitlebarContextProvider,
+  WorkbenchTitlebarContextSlot,
+  WorkbenchTitlebarScopeProvider
+} from "../../shell/titlebar-context";
 import type { FileManagerAppState, FileManagerModel, FileManagerSurfaceLabels } from "../types";
 import { FileManagerSurface } from "../view";
 
@@ -29,6 +35,7 @@ const labels: FileManagerSurfaceLabels = {
   noRecentLocations: "No recent",
   emptyDirectory: "Empty directory",
   emptyTrashState: "Empty trash state",
+  noFavorites: "No favorites",
   loading: "Loading",
   unavailable: "Unavailable",
   diskAvailable: "available",
@@ -159,17 +166,29 @@ const createModel = (): FileManagerModel => ({
   openTrashContextMenu: vi.fn()
 });
 
+const renderFileManagerSurface = (
+  props: ComponentProps<typeof FileManagerSurface>
+) => {
+  const scopeId = "file-manager-test";
+  return render(
+    <WorkbenchTitlebarContextProvider activeScopeId={scopeId}>
+      <WorkbenchTitlebarScopeProvider scopeId={scopeId}>
+        <FileManagerSurface {...props} />
+      </WorkbenchTitlebarScopeProvider>
+      <WorkbenchTitlebarContextSlot />
+    </WorkbenchTitlebarContextProvider>
+  );
+};
+
 describe("FileManagerSurface", () => {
   test("routes toolbar actions through the file manager model", () => {
     const model = createModel();
-    render(
-      <FileManagerSurface
-        state={createState()}
-        labels={labels}
-        model={model}
-        onOpenFile={vi.fn()}
-      />
-    );
+    renderFileManagerSurface({
+      state: createState(),
+      labels,
+      model,
+      onOpenFile: vi.fn()
+    });
 
     fireEvent.click(screen.getByLabelText("Back"));
     fireEvent.click(screen.getByLabelText("Large view"));
@@ -185,14 +204,12 @@ describe("FileManagerSurface", () => {
   test("opens files and directories from directory rows", () => {
     const model = createModel();
     const onOpenFile = vi.fn();
-    render(
-      <FileManagerSurface
-        state={createState()}
-        labels={labels}
-        model={model}
-        onOpenFile={onOpenFile}
-      />
-    );
+    renderFileManagerSurface({
+      state: createState(),
+      labels,
+      model,
+      onOpenFile
+    });
 
     fireEvent.doubleClick(screen.getByText("README.md").closest("button")!);
     fireEvent.doubleClick(screen.getByText("src").closest("button")!);
@@ -204,19 +221,17 @@ describe("FileManagerSurface", () => {
   test("routes special trash locations and chooser confirmation", () => {
     const model = createModel();
     const onConfirm = vi.fn();
-    render(
-      <FileManagerSurface
-        state={createState()}
-        labels={labels}
-        model={model}
-        onOpenFile={vi.fn()}
-        chooser={{
-          kind: "ai-project-bind",
-          confirmLabel: "Bind",
-          onConfirm
-        }}
-      />
-    );
+    renderFileManagerSurface({
+      state: createState(),
+      labels,
+      model,
+      onOpenFile: vi.fn(),
+      chooser: {
+        kind: "ai-project-bind",
+        confirmLabel: "Bind",
+        onConfirm
+      }
+    });
 
     fireEvent.click(screen.getByText("Trash"));
     fireEvent.click(screen.getByRole("button", { name: "Bind" }));
@@ -227,25 +242,23 @@ describe("FileManagerSurface", () => {
 
   test("shows a directory-selection placeholder before chooser confirmation is available", () => {
     const model = createModel();
-    render(
-      <FileManagerSurface
-        state={createState({
-          viewKind: "home",
-          currentLocation: null,
-          parentPath: undefined,
-          entries: [],
-          selectedEntryId: undefined
-        })}
-        labels={labels}
-        model={model}
-        onOpenFile={vi.fn()}
-        chooser={{
-          kind: "ai-project-bind",
-          confirmLabel: "Bind",
-          onConfirm: vi.fn()
-        }}
-      />
-    );
+    renderFileManagerSurface({
+      state: createState({
+        viewKind: "home",
+        currentLocation: null,
+        parentPath: undefined,
+        entries: [],
+        selectedEntryId: undefined
+      }),
+      labels,
+      model,
+      onOpenFile: vi.fn(),
+      chooser: {
+        kind: "ai-project-bind",
+        confirmLabel: "Bind",
+        onConfirm: vi.fn()
+      }
+    });
 
     expect(screen.getByText("Open a directory to bind")).toBeInTheDocument();
     expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
@@ -254,19 +267,17 @@ describe("FileManagerSurface", () => {
 
   test("routes create draft input edits and keyboard decisions", () => {
     const model = createModel();
-    render(
-      <FileManagerSurface
-        state={createState({
-          createDraft: {
-            kind: "file",
-            value: "notes.md"
-          }
-        })}
-        labels={labels}
-        model={model}
-        onOpenFile={vi.fn()}
-      />
-    );
+    renderFileManagerSurface({
+      state: createState({
+        createDraft: {
+          kind: "file",
+          value: "notes.md"
+        }
+      }),
+      labels,
+      model,
+      onOpenFile: vi.fn()
+    });
 
     const input = screen.getByPlaceholderText("File name");
 

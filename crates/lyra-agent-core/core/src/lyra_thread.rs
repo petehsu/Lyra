@@ -27,7 +27,6 @@ use lyra_protocol::protocol::SandboxPolicy;
 use lyra_protocol::protocol::SessionSource;
 use lyra_protocol::protocol::Submission;
 use lyra_protocol::protocol::ThreadMemoryMode;
-use lyra_protocol::protocol::TokenUsage;
 use lyra_protocol::protocol::TokenUsageInfo;
 use lyra_protocol::protocol::W3cTraceContext;
 use lyra_protocol::user_input::UserInput;
@@ -203,10 +202,6 @@ impl LyraThread {
 
     pub(crate) fn subscribe_status(&self) -> watch::Receiver<AgentStatus> {
         self.session_handle.agent_status.clone()
-    }
-
-    pub(crate) async fn total_token_usage(&self) -> Option<TokenUsage> {
-        self.session_handle.session.total_token_usage().await
     }
 
     /// Returns the complete token usage snapshot currently cached for this thread.

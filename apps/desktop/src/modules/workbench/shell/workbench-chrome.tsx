@@ -34,6 +34,7 @@ export type WorkbenchChromeLayoutActions = Pick<
 
 export type WorkbenchChromeSlots = {
   readonly titlebarNavigation: ReactNode;
+  readonly titlebarContext: ReactNode;
   readonly leftPanel: ReactNode;
   readonly workspace: ReactNode;
   readonly browserTabs: ReactNode;
@@ -190,6 +191,7 @@ export const WorkbenchChrome = ({
         />
       ) : null}
       {slots.titlebarNavigation}
+      {slots.titlebarContext}
       <div className="lyra-titlebar-fill" aria-hidden="true" />
       <div className="lyra-window-controls lyra-no-drag">
         <WorkbenchTitlebarActions

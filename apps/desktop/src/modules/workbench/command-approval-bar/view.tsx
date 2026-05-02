@@ -27,12 +27,12 @@ interface CommandApprovalBarProps {
   locale?: WorkbenchLocale;
 }
 
-const RISK_CONFIG: Record<RiskLevel, { color: string; icon: typeof Shield }> = {
-  safe: { color: "#22c55e", icon: ShieldCheck },
-  low: { color: "#84cc16", icon: ShieldCheck },
-  medium: { color: "#eab308", icon: Shield },
-  high: { color: "#f97316", icon: ShieldAlert },
-  critical: { color: "#ef4444", icon: ShieldAlert },
+const RISK_CONFIG: Record<RiskLevel, { icon: typeof Shield }> = {
+  safe: { icon: ShieldCheck },
+  low: { icon: ShieldCheck },
+  medium: { icon: Shield },
+  high: { icon: ShieldAlert },
+  critical: { icon: ShieldAlert },
 };
 
 const RISK_LEVEL_LABEL_KEYS: Record<RiskLevel, "permission.riskLevel.safe" | "permission.riskLevel.low" | "permission.riskLevel.medium" | "permission.riskLevel.high" | "permission.riskLevel.critical"> = {
@@ -93,12 +93,8 @@ export function CommandApprovalBar({
           <RiskIcon
             className="lyra-command-approval-bar__risk-icon"
             size={14}
-            style={{ color: risk.color }}
           />
-          <span
-            className="lyra-command-approval-bar__risk-label"
-            style={{ color: risk.color }}
-          >
+          <span className="lyra-command-approval-bar__risk-label">
             {t(RISK_LEVEL_LABEL_KEYS[request.riskLevel])}
           </span>
           <button

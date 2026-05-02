@@ -3445,6 +3445,11 @@ pub struct ThreadAiPanelPendingInteraction {
 #[ts(export_to = "v2/")]
 pub enum ThreadAiPanelPendingInteractionKind {
     PlanApproval,
+    CommandExecutionApproval,
+    FileChangeApproval,
+    PermissionsApproval,
+    ToolUserInput,
+    McpElicitation,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]

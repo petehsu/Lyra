@@ -4,6 +4,7 @@ import type { WorkbenchChromeSlots } from "./workbench-chrome";
 
 type UseWorkbenchShellSlotsParams = {
   readonly titlebarNavigation: ReactNode;
+  readonly titlebarContext: ReactNode;
   readonly leftPanel: ReactNode;
   readonly workspace: ReactNode;
   readonly browserTabs: ReactNode;
@@ -13,6 +14,7 @@ type UseWorkbenchShellSlotsParams = {
 
 export const useWorkbenchShellSlots = ({
   titlebarNavigation,
+  titlebarContext,
   leftPanel,
   workspace,
   browserTabs,
@@ -22,6 +24,7 @@ export const useWorkbenchShellSlots = ({
   useMemo(
     () => ({
       titlebarNavigation,
+      titlebarContext,
       leftPanel,
       workspace,
       browserTabs,
@@ -33,6 +36,7 @@ export const useWorkbenchShellSlots = ({
       leftPanel,
       overlays,
       terminalPanel,
+      titlebarContext,
       titlebarNavigation,
       workspace
     ]

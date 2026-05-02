@@ -124,7 +124,7 @@ export const LinearProgress = ({
       <span
         className={joinClassNames(
           "lyra-ai-linear-progress-fill",
-          `lyra-ai-linear-progress-tone-${tone}`
+          `lyra-ai-linear-progress-fill-tone-${tone}`
         )}
         style={{ transform: `scaleX(${String(ratio)})` }}
       />

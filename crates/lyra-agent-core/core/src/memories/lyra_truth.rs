@@ -110,13 +110,13 @@ pub(crate) struct LyraMemoryPromptContext {
 
 #[derive(Debug)]
 struct SessionDialogPromptEntry {
-    msg_id: String,
-    turn_index: i64,
+    _msg_id: String,
+    _turn_index: i64,
     role: String,
     content_raw: String,
     created_at_iso: String,
-    created_at_ms: i64,
-    token_count: i64,
+    _created_at_ms: i64,
+    _token_count: i64,
     item_type: String,
 }
 
@@ -247,20 +247,11 @@ struct SessionMessage {
 #[derive(Debug, Clone)]
 struct TrimDecision {
     should_trim: bool,
-    force_trim: bool,
     trim_amount: i64,
     b_budget: i64,
     l_live_tokens: i64,
     t_trigger: i64,
     t_keep: i64,
-    u_pressure: f64,
-    g_growth: f64,
-    d_dirt: f64,
-    r_retrieval: f64,
-    s_reserved: i64,
-    s_raw: i64,
-    s_hist: i64,
-    output_reserve: i64,
 }
 
 pub(crate) fn lyra_truth_root_path(lyra_home: &Path) -> PathBuf {
@@ -856,13 +847,13 @@ limit ?1
         let computed_token_count = token_count
             .unwrap_or_else(|| i64::try_from(approx_token_count(&content_raw)).unwrap_or(i64::MAX));
         Ok(SessionDialogPromptEntry {
-            msg_id,
-            turn_index,
+            _msg_id: msg_id,
+            _turn_index: turn_index,
             role,
             content_raw,
-            created_at_ms,
+            _created_at_ms: created_at_ms,
             created_at_iso,
-            token_count: computed_token_count,
+            _token_count: computed_token_count,
             item_type,
         })
     })?;
@@ -1299,10 +1290,6 @@ insert into trim_signal_samples (
         g_growth,
         d_dirt,
         r_retrieval,
-        s_reserved,
-        s_raw,
-        s_hist,
-        output_reserve,
         current_turn_index,
         connection,
     )?;
@@ -1521,7 +1508,6 @@ insert into trim_signal_samples (
 struct ArchiveResult {
     pack_id: String,
     archived_count: i64,
-    dedupe_ref_count: i64,
     dup_ratio: f64,
 }
 
@@ -1672,7 +1658,6 @@ insert or replace into cut_shard_map (
     Ok(ArchiveResult {
         pack_id,
         archived_count,
-        dedupe_ref_count,
         dup_ratio,
     })
 }
@@ -1950,16 +1935,10 @@ fn compute_trim_decision(
     g_growth: f64,
     d_dirt: f64,
     r_retrieval: f64,
-    s_reserved: i64,
-    s_raw: i64,
-    s_hist: i64,
-    output_reserve: i64,
     current_turn_index: i64,
     connection: &Connection,
 ) -> anyhow::Result<TrimDecision> {
     let b = b_budget.max(1) as f64;
-    let l = l_live_tokens.max(0) as f64;
-    let u_pressure = (l / b).clamp(0.0, 10.0);
     let rho_trigger = (config.trim_trigger_base_ratio
         - config.trim_trigger_dirt_coef * d_dirt
         - config.trim_trigger_growth_coef * g_growth
@@ -1988,20 +1967,11 @@ fn compute_trim_decision(
 
     Ok(TrimDecision {
         should_trim,
-        force_trim,
         trim_amount,
         b_budget: b_budget.max(0),
         l_live_tokens,
         t_trigger,
         t_keep,
-        u_pressure,
-        g_growth,
-        d_dirt,
-        r_retrieval,
-        s_reserved,
-        s_raw,
-        s_hist,
-        output_reserve,
     })
 }
 

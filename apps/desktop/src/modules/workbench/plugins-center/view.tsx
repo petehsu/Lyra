@@ -10,6 +10,7 @@ import type {
   PluginsCenterLabels,
   PluginsCenterModel
 } from "./types";
+import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
 export type PluginsCenterSurfaceProps = {
   readonly model: PluginsCenterModel;
@@ -74,61 +75,56 @@ export const PluginsCenterSurface = ({ model, labels }: PluginsCenterSurfaceProp
   }, [model, selectedDetail, selectedEntry, selectedPluginKey, state.busyPluginKey]);
 
   const busy = selectedPluginKey !== null && state.busyPluginKey === selectedPluginKey;
+  const titlebarContribution = useMemo(
+    () => ({
+      ariaLabel: labels.title,
+      content: (
+        <>
+          <div className="lyra-titlebar-context-controls">
+            {([
+              ["all", labels.statusAll],
+              ["installed", labels.statusInstalled],
+              ["enabled", labels.statusEnabled],
+              ["disabled", labels.statusDisabled],
+              ["available", labels.statusAvailable],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={
+                  state.statusFilter === value
+                    ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                    : "lyra-titlebar-context-text-button"
+                }
+                onClick={() => {
+                  model.setStatusFilter(value);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button"
+              onClick={() => {
+                void model.load();
+              }}
+            >
+              <RefreshCw size={14} aria-hidden="true" />
+              <span>{labels.actionRefresh}</span>
+            </button>
+          </div>
+        </>
+      )
+    }),
+    [labels, model, state.statusFilter]
+  );
+  useWorkbenchTitlebarContribution(titlebarContribution);
 
   return (
     <section className="lyra-plugins-center-surface lyra-mcp-center-surface" aria-label="ai-plugins-surface">
       <div className="lyra-mcp-center-shell lyra-mcp-center-shell-no-sidebar lyra-plugins-center-shell">
         <section className="lyra-mcp-center-main lyra-plugins-center-main">
-          <header className="lyra-mcp-center-toolbar lyra-plugins-center-toolbar">
-            <div className="lyra-mcp-center-toolbar-filters">
-              <div className="lyra-mcp-center-scope-tabs">
-                <span className="lyra-plugins-center-heading">
-                  <Boxes size={15} aria-hidden="true" />
-                  <span>
-                    <strong>{labels.title}</strong>
-                    <small>{labels.description}</small>
-                  </span>
-                </span>
-              </div>
-              <div className="lyra-mcp-center-status-pills">
-                {([
-                  ["all", labels.statusAll],
-                  ["installed", labels.statusInstalled],
-                  ["enabled", labels.statusEnabled],
-                  ["disabled", labels.statusDisabled],
-                  ["available", labels.statusAvailable],
-                ] as const).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={
-                      state.statusFilter === value
-                        ? "lyra-mcp-center-pill lyra-mcp-center-pill-active"
-                        : "lyra-mcp-center-pill"
-                    }
-                    onClick={() => {
-                      model.setStatusFilter(value);
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="lyra-mcp-center-actions">
-              <button
-                type="button"
-                className="lyra-mcp-center-button lyra-mcp-center-button-ghost"
-                onClick={() => {
-                  void model.load();
-                }}
-              >
-                <RefreshCw size={14} aria-hidden="true" />
-                <span>{labels.actionRefresh}</span>
-              </button>
-            </div>
-          </header>
-
           {state.errorMessage === null ? null : (
             <div className="lyra-mcp-center-banner">
               <AlertTriangle size={14} aria-hidden="true" />

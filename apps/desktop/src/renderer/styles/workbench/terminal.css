@@ -22,9 +22,9 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-focused) 74%, transparent);
-  background: color-mix(in srgb, var(--lyra-line-focused) 12%, transparent);
-  box-shadow: inset 0 0 0 var(--lyra-unit-0-5) color-mix(in srgb, var(--lyra-line-focused) 32%, transparent);
+  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 16%, transparent);
+  box-shadow: none;
 }
 
 .lyra-terminal-side {
@@ -66,7 +66,7 @@
   right: 0;
   bottom: 0;
   height: var(--lyra-unit-1-5);
-  background: color-mix(in srgb, var(--lyra-line-focused) 82%, transparent);
+  background: color-mix(in srgb, var(--lyra-text-primary) 64%, transparent);
   pointer-events: none;
 }
 
@@ -94,7 +94,7 @@
   right: 0;
   top: calc(var(--lyra-unit-0-5) * -1);
   height: var(--lyra-unit-1-5);
-  background: color-mix(in srgb, var(--lyra-line-focused) 82%, transparent);
+  background: color-mix(in srgb, var(--lyra-text-primary) 64%, transparent);
   pointer-events: none;
 }
 
@@ -130,11 +130,23 @@
 }
 
 .lyra-terminal-tab-close {
+  align-self: stretch;
+  justify-self: center;
+  width: var(--lyra-unit-24);
+  height: 100%;
+  padding: 0;
   border: 0;
   background: transparent;
   opacity: 0;
+  display: grid;
+  place-items: center;
+  line-height: 1;
   transition: opacity var(--lyra-transition-fast);
   color: var(--lyra-text-muted);
+}
+
+.lyra-terminal-tab-close svg {
+  display: block;
 }
 
 .lyra-terminal-tab:hover .lyra-terminal-tab-close,

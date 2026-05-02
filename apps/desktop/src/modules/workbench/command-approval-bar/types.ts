@@ -43,13 +43,3 @@ export interface CommandApprovalResponse {
   /** Timestamp when the decision was made */
   timestamp: number;
 }
-
-/** State of the approval bar */
-export interface CommandApprovalBarState {
-  /** Current pending request, null if none */
-  pendingRequest: CommandApprovalRequest | null;
-  /** Whether the bar is visible */
-  isVisible: boolean;
-  /** Whether the user has expanded details */
-  isExpanded: boolean;
-}

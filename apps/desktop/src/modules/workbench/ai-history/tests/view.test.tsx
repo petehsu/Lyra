@@ -1,7 +1,13 @@
+import type { ComponentProps } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import type { GlobalDialogOpenRequest } from "../../global-dialog";
+import {
+  WorkbenchTitlebarContextProvider,
+  WorkbenchTitlebarContextSlot,
+  WorkbenchTitlebarScopeProvider
+} from "../../shell/titlebar-context";
 import { subscribeThreadSelected } from "../../thread-selection-events";
 import { AiHistorySurface } from "../view";
 
@@ -120,6 +126,7 @@ const baseLabels = {
   openConversationLabel: "打开会话",
   deleteConversationLabel: "删除会话",
   archiveConversationLabel: "归档会话",
+  unarchiveConversationLabel: "恢复会话",
   archivedConversationLabel: "已归档会话",
   archivedProjectLabel: "已归档项目会话",
   deleteArchivedConversationTitle: "永久删除已归档会话？",
@@ -144,16 +151,26 @@ const baseLabels = {
   previewLoadingLabel: "正在加载预览"
 } as const;
 
+type AiHistorySurfaceTestProps = ComponentProps<typeof AiHistorySurface>;
+
+const renderHistorySurface = (props: AiHistorySurfaceTestProps) =>
+  render(
+    <WorkbenchTitlebarContextProvider activeScopeId="ai-history-test">
+      <WorkbenchTitlebarScopeProvider scopeId="ai-history-test">
+        <AiHistorySurface {...props} />
+      </WorkbenchTitlebarScopeProvider>
+      <WorkbenchTitlebarContextSlot />
+    </WorkbenchTitlebarContextProvider>
+  );
+
 describe("AiHistorySurface", () => {
   test("shows all threads by default and keeps project groups available", async () => {
     const desktop = createDesktopApi();
-    render(
-      <AiHistorySurface
-        desktopApi={desktop.api}
-        locale="en-US"
-        {...baseLabels}
-      />
-    );
+    renderHistorySurface({
+      desktopApi: desktop.api,
+      locale: "en-US",
+      ...baseLabels
+    });
 
     await waitFor(() => {
       expect(desktop.request).toHaveBeenCalledWith(
@@ -186,13 +203,11 @@ describe("AiHistorySurface", () => {
       captured.push(threadId);
     });
 
-    render(
-      <AiHistorySurface
-        desktopApi={desktop.api}
-        locale="en-US"
-        {...baseLabels}
-      />
-    );
+    renderHistorySurface({
+      desktopApi: desktop.api,
+      locale: "en-US",
+      ...baseLabels
+    });
 
     await waitFor(() => {
       expect(screen.getByText("Brainstorm ideas")).toBeDefined();
@@ -226,13 +241,11 @@ describe("AiHistorySurface", () => {
       captured.push(threadId);
     });
 
-    render(
-      <AiHistorySurface
-        desktopApi={desktop.api}
-        locale="en-US"
-        {...baseLabels}
-      />
-    );
+    renderHistorySurface({
+      desktopApi: desktop.api,
+      locale: "en-US",
+      ...baseLabels
+    });
 
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: /^项目会话/u })).toBeDefined();
@@ -267,7 +280,7 @@ describe("AiHistorySurface", () => {
     unsubscribe();
   });
 
-	 test("shows project-bound sessions in the default all-sessions scope", async () => {
+  test("shows project-bound sessions in the default all-sessions scope", async () => {
     const requestImpl = vi.fn(async (payload: LyraRequest) => {
       if (payload.method === "thread/list") {
         if (payload.params?.archived === true) {
@@ -290,22 +303,20 @@ describe("AiHistorySurface", () => {
       return {};
     });
 
-    render(
-      <AiHistorySurface
-        desktopApi={{
-          lyra: {
-            request: requestImpl,
-            resolveServerRequest: vi.fn(),
-            rejectServerRequest: vi.fn(),
-            health: vi.fn(),
-            notify: vi.fn(),
-            onEvent: () => () => undefined
-          }
-        } as never}
-        locale="en-US"
-        {...baseLabels}
-      />
-    );
+    renderHistorySurface({
+      desktopApi: {
+        lyra: {
+          request: requestImpl,
+          resolveServerRequest: vi.fn(),
+          rejectServerRequest: vi.fn(),
+          health: vi.fn(),
+          notify: vi.fn(),
+          onEvent: () => () => undefined
+        }
+      } as never,
+      locale: "en-US",
+      ...baseLabels
+    });
 
     await waitFor(() => {
       expect(screen.getByText("Only project")).toBeDefined();
@@ -331,25 +342,23 @@ describe("AiHistorySurface", () => {
     });
     const dialogRequests: GlobalDialogOpenRequest[] = [];
 
-    render(
-      <AiHistorySurface
-        desktopApi={{
-          lyra: {
-            request,
-            resolveServerRequest: vi.fn(),
-            rejectServerRequest: vi.fn(),
-            health: vi.fn(),
-            notify: vi.fn(),
-            onEvent: () => () => undefined
-          }
-        } as never}
-        locale="en-US"
-        {...baseLabels}
-        openDialog={(requestPayload) => {
-          dialogRequests.push(requestPayload);
-        }}
-      />
-    );
+    renderHistorySurface({
+      desktopApi: {
+        lyra: {
+          request,
+          resolveServerRequest: vi.fn(),
+          rejectServerRequest: vi.fn(),
+          health: vi.fn(),
+          notify: vi.fn(),
+          onEvent: () => () => undefined
+        }
+      } as never,
+      locale: "en-US",
+      ...baseLabels,
+      openDialog: (requestPayload) => {
+        dialogRequests.push(requestPayload);
+      }
+    });
 
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: /^已归档会话/u })).toBeDefined();
@@ -369,6 +378,59 @@ describe("AiHistorySurface", () => {
       expect(request).toHaveBeenCalledWith(
         expect.objectContaining({
           method: "thread/delete",
+          params: { threadId: "thread-archived" }
+        })
+      );
+    });
+  });
+
+  test("archived scope can restore a conversation", async () => {
+    const archivedThread = {
+      id: "thread-archived",
+      name: "Archived thread",
+      preview: "Archived preview",
+      modelProvider: "lp-openai",
+      cwd: "/Users/dev/project-a",
+      boundProjectRoot: "/Users/dev/project-a",
+      updatedAt: 1_700_000_600
+    };
+    const request = vi.fn(async (payload: LyraRequest) => {
+      if (payload.method === "thread/list") {
+        return { data: payload.params?.archived === true ? [archivedThread] : [] };
+      }
+      if (payload.method === "thread/unarchive") {
+        return { thread: archivedThread };
+      }
+      return {};
+    });
+
+    renderHistorySurface({
+      desktopApi: {
+        lyra: {
+          request,
+          resolveServerRequest: vi.fn(),
+          rejectServerRequest: vi.fn(),
+          health: vi.fn(),
+          notify: vi.fn(),
+          onEvent: () => () => undefined
+        }
+      } as never,
+      locale: "en-US",
+      ...baseLabels
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /^已归档会话/u })).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: /^已归档会话/u }));
+    await screen.findByText("Archived thread");
+    fireEvent.click(screen.getByRole("button", { name: "恢复会话" }));
+
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "thread/unarchive",
           params: { threadId: "thread-archived" }
         })
       );

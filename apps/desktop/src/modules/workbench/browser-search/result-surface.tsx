@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+
 import type {
   BrowserSearchPayload,
   SearchEngineDefinition
@@ -10,9 +12,8 @@ import {
   type SearchResultOfficialCategoryLabels,
   type SearchResultsSourceFilter
 } from "./result-surface-model";
-import { ResultSurfaceTopbar } from "./result-surface-topbar";
 import { ResultWebSection } from "./result-web-section";
-import { useSearchPillTransition } from "./use-search-pill-transition";
+import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
 export type BrowserResultSurfaceProps = {
   readonly logoUrl: string;
@@ -117,10 +118,6 @@ export const BrowserResultSurface = ({
   onOpenUrl,
   onSharedAnimationDone
 }: BrowserResultSurfaceProps) => {
-  const pillRef = useSearchPillTransition({
-    sharedStartRect,
-    onSharedAnimationDone
-  });
   const { showWebResults, showLocalResults } =
     resolveSearchResultChannelVisibility(sourceFilter);
   const localStatusLabel = resolveLocalSearchStatusLabel(payload.local.status, {
@@ -138,25 +135,80 @@ export const BrowserResultSurface = ({
     download: officialDownloadLabel,
     support: officialSupportLabel
   };
+  const titlebarContribution = useMemo(
+    () => ({
+      ariaLabel: headingLabel,
+      content: (
+        <>
+          <span className="lyra-titlebar-context-chip">{payload.query}</span>
+          <div className="lyra-titlebar-context-controls">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={deepSearchEnabled}
+              className={
+                deepSearchEnabled
+                  ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                  : "lyra-titlebar-context-text-button"
+              }
+              aria-label={deepSearchToggleLabel}
+              onClick={onToggleDeepSearch}
+            >
+              {deepSearchChipLabel}
+            </button>
+            {([
+              ["all", allTabLabel],
+              ["web", webTabLabel],
+              ["local", localTabLabel]
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={
+                  sourceFilter === value
+                    ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                    : "lyra-titlebar-context-text-button"
+                }
+                aria-label={`${sourceFilterLabel}: ${label}`}
+                onClick={() => {
+                  onSourceFilterChange(value);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )
+    }),
+    [
+      allTabLabel,
+      deepSearchChipLabel,
+      deepSearchEnabled,
+      deepSearchToggleLabel,
+      headingLabel,
+      localTabLabel,
+      onSourceFilterChange,
+      onToggleDeepSearch,
+      payload.query,
+      sourceFilter,
+      sourceFilterLabel,
+      webTabLabel
+    ]
+  );
+  useWorkbenchTitlebarContribution(titlebarContribution);
+
+  void inputValue;
+  void logoUrl;
+  void onInputChange;
+  void onSharedAnimationDone;
+  void onSubmit;
+  void placeholder;
+  void searchActionLabel;
+  void sharedStartRect;
 
   return (
     <section className="lyra-results-shell" aria-label="search-results-surface">
-      <ResultSurfaceTopbar
-        pillRef={pillRef}
-        logoUrl={logoUrl}
-        inputValue={inputValue}
-        placeholder={placeholder}
-        searchActionLabel={searchActionLabel}
-        deepSearchToggleLabel={deepSearchToggleLabel}
-        deepSearchEnabled={deepSearchEnabled}
-        deepSearchChipLabel={deepSearchChipLabel}
-        headingLabel={headingLabel}
-        query={payload.query}
-        onInputChange={onInputChange}
-        onSubmit={onSubmit}
-        onToggleDeepSearch={onToggleDeepSearch}
-      />
-
       <div className="lyra-results-grid">
         <section className="lyra-results-main">
           {showWebResults ? (

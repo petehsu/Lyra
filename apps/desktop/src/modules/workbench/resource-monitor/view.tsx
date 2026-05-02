@@ -13,6 +13,7 @@ import type {
   LyraSystemMetricSnapshot,
   LyraSystemSnapshot
 } from "../../../shared/desktop-bridge";
+import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
 export type ResourceMonitorSurfaceProps = {
   readonly desktopApi: LyraDesktopApi | null;
@@ -424,21 +425,21 @@ export const ResourceMonitorSurface = ({
     "resume",
     "kill"
   ];
-
-  return (
-    <section className="lyra-resource-monitor" aria-label="resource-monitor-surface">
-      <header className="lyra-resource-monitor-header">
-        <div>
-          <h2>{labels.title}</h2>
-          <p>{scope === "all" ? systemSnapshot.runtimeName : labels.subtitle}</p>
-        </div>
-        <div className="lyra-resource-monitor-header-actions">
-          <div className="lyra-resource-monitor-scope" role="tablist" aria-label={labels.title}>
+  const titlebarContribution = useMemo(
+    () => ({
+      ariaLabel: labels.title,
+      content: (
+        <>
+          <div className="lyra-titlebar-context-controls">
             <button
               type="button"
               role="tab"
               aria-selected={scope === "lyra"}
-              className={scope === "lyra" ? "lyra-resource-monitor-scope-active" : undefined}
+              className={
+                scope === "lyra"
+                  ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active lyra-resource-monitor-titlebar-scope-button"
+                  : "lyra-titlebar-context-text-button lyra-resource-monitor-titlebar-scope-button"
+              }
               onClick={() => {
                 setScope("lyra");
               }}
@@ -449,7 +450,11 @@ export const ResourceMonitorSurface = ({
               type="button"
               role="tab"
               aria-selected={scope === "all"}
-              className={scope === "all" ? "lyra-resource-monitor-scope-active" : undefined}
+              className={
+                scope === "all"
+                  ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active lyra-resource-monitor-titlebar-scope-button"
+                  : "lyra-titlebar-context-text-button lyra-resource-monitor-titlebar-scope-button"
+              }
               onClick={() => {
                 setScope("all");
               }}
@@ -457,13 +462,26 @@ export const ResourceMonitorSurface = ({
               {labels.scopeAll}
             </button>
           </div>
-          <div className="lyra-resource-monitor-process">
-            <span>{labels.pid} {snapshot.process.pid}</span>
-            <strong>{formatBytes(snapshot.process.memoryBytes)}</strong>
-          </div>
-        </div>
-      </header>
+          <span className="lyra-titlebar-context-chip lyra-resource-monitor-titlebar-pid">
+            {labels.pid} {snapshot.process.pid}
+          </span>
+          <span className="lyra-titlebar-context-chip lyra-resource-monitor-titlebar-memory">
+            {formatBytes(snapshot.process.memoryBytes)}
+          </span>
+        </>
+      )
+    }),
+    [
+      labels,
+      scope,
+      snapshot.process.memoryBytes,
+      snapshot.process.pid
+    ]
+  );
+  useWorkbenchTitlebarContribution(titlebarContribution);
 
+  return (
+    <section className="lyra-resource-monitor" aria-label="resource-monitor-surface">
       {scope === "lyra" ? (
         <>
           <section className="lyra-resource-monitor-metrics" aria-label="resource-monitor-metrics">
@@ -540,8 +558,8 @@ export const ResourceMonitorSurface = ({
           <section className="lyra-resource-monitor-system-head" aria-label="resource-monitor-system-load">
             <div>
               <span>{labels.runtime}</span>
-              <strong>{systemSnapshot.runtimeName}</strong>
-              <small>{labels.kernel}: {systemSnapshot.kernelName}</small>
+              <strong>{labels.scopeAll}</strong>
+              <small>{labels.kernel}</small>
             </div>
             <div className="lyra-resource-monitor-load">
               <span>{labels.unifiedLoad}</span>

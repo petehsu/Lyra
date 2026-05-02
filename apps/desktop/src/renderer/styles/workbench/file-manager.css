@@ -5,7 +5,7 @@
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   background: var(--lyra-bg-editor);
 }
 
@@ -104,6 +104,28 @@
   font-style: normal;
 }
 
+.lyra-file-manager-titlebar-breadcrumbs {
+  max-width: min(var(--lyra-unit-420), 42vw);
+  overflow: hidden;
+}
+
+.lyra-file-manager-titlebar-breadcrumb-current {
+  max-width: var(--lyra-unit-150);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-file-manager-titlebar-breadcrumb-separator {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-text-size-11);
+  line-height: 1;
+}
+
+.lyra-file-manager-titlebar-breadcrumbs .lyra-titlebar-context-text-button:first-child {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-text-size-11);
+}
+
 .lyra-file-manager-layout {
   min-width: 0;
   min-height: 0;
@@ -171,7 +193,7 @@
   bottom: var(--lyra-unit-6);
   width: var(--lyra-unit-2);
   border-radius: var(--lyra-unit-999);
-  background: color-mix(in srgb, var(--lyra-line-focused) 82%, var(--lyra-text-primary) 18%);
+  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
 }
 
 .lyra-file-manager-nav-item:hover .lyra-file-manager-icon-shell,
@@ -202,6 +224,79 @@
   display: grid;
   gap: var(--lyra-unit-18);
   padding: var(--lyra-unit-16);
+}
+
+.lyra-file-manager-favorites-page {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: var(--lyra-unit-12);
+  padding: var(--lyra-unit-16);
+}
+
+.lyra-file-manager-favorites-header {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-8);
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-file-manager-favorites-header h3 {
+  margin: 0;
+  color: inherit;
+  font-size: var(--lyra-unit-12);
+  font-weight: 600;
+}
+
+.lyra-file-manager-favorites-list {
+  min-width: 0;
+  display: grid;
+  gap: 0;
+  border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 58%, transparent);
+}
+
+.lyra-file-manager-favorite-row {
+  min-width: 0;
+  min-height: var(--lyra-unit-34);
+  display: grid;
+  grid-template-columns: var(--lyra-unit-20) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-6) var(--lyra-unit-8);
+  border: 0;
+  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 52%, transparent);
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  text-align: left;
+  transition: color var(--lyra-transition-fast);
+}
+
+.lyra-file-manager-favorite-row:hover {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-manager-favorite-row > span {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-2);
+}
+
+.lyra-file-manager-favorite-row strong,
+.lyra-file-manager-favorite-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-file-manager-favorite-row strong {
+  color: inherit;
+  font-size: var(--lyra-unit-13);
+}
+
+.lyra-file-manager-favorite-row small {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
 }
 
 .lyra-file-manager-skeleton-home {
@@ -336,7 +431,7 @@
 
 .lyra-file-manager-home-card:hover {
   color: var(--lyra-text-primary);
-  border-color: var(--lyra-line-focused);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-file-manager-home-card strong,
@@ -401,23 +496,23 @@
 }
 
 .lyra-file-manager-disk-kind-system {
-  color: color-mix(in srgb, var(--lyra-terminal-green) 80%, var(--lyra-text-primary) 20%);
-  background: color-mix(in srgb, var(--lyra-terminal-green) 18%, transparent);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 32%, transparent);
 }
 
 .lyra-file-manager-disk-kind-local {
-  color: color-mix(in srgb, var(--lyra-terminal-blue) 78%, var(--lyra-text-primary) 22%);
-  background: color-mix(in srgb, var(--lyra-terminal-blue) 16%, transparent);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 32%, transparent);
 }
 
 .lyra-file-manager-disk-kind-removable {
-  color: color-mix(in srgb, var(--lyra-terminal-yellow) 84%, var(--lyra-text-primary) 16%);
-  background: color-mix(in srgb, var(--lyra-terminal-yellow) 18%, transparent);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 32%, transparent);
 }
 
 .lyra-file-manager-disk-kind-external {
-  color: color-mix(in srgb, var(--lyra-line-focused) 78%, var(--lyra-text-primary) 22%);
-  background: color-mix(in srgb, var(--lyra-line-focused) 16%, transparent);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 32%, transparent);
 }
 
 .lyra-file-manager-disk-meter {
@@ -431,19 +526,19 @@
 .lyra-file-manager-disk-meter-fill {
   height: 100%;
   border-radius: inherit;
-  background: color-mix(in srgb, var(--lyra-line-focused) 78%, var(--lyra-terminal-green) 22%);
+  background: color-mix(in srgb, var(--lyra-text-secondary) 52%, transparent);
 }
 
 .lyra-file-manager-disk-meter-fill-healthy {
-  background: color-mix(in srgb, var(--lyra-terminal-green) 82%, var(--lyra-line-focused) 18%);
+  background: color-mix(in srgb, var(--lyra-text-secondary) 52%, transparent);
 }
 
 .lyra-file-manager-disk-meter-fill-warning {
-  background: color-mix(in srgb, var(--lyra-terminal-yellow) 86%, var(--lyra-line-focused) 14%);
+  background: color-mix(in srgb, var(--lyra-text-primary) 58%, transparent);
 }
 
 .lyra-file-manager-disk-meter-fill-danger {
-  background: color-mix(in srgb, var(--lyra-terminal-red) 84%, var(--lyra-line-focused) 16%);
+  background: color-mix(in srgb, var(--lyra-window-close-hover-bg) 84%, transparent);
 }
 
 .lyra-file-manager-disk-meta {
@@ -808,14 +903,17 @@
   height: var(--lyra-unit-36);
   display: block;
   object-fit: contain;
+  opacity: 0.78;
+  filter: grayscale(1) saturate(0);
 }
 
-[data-lyra-theme-tone="dark"] .lyra-file-manager-disk-brand-image-adaptive {
+[data-lyra-theme-tone="dark"] .lyra-file-manager-disk-brand-image {
+  opacity: 0.72;
   filter: brightness(0) invert(1) saturate(0) contrast(1.1);
 }
 
-[data-lyra-theme-tone="light"] .lyra-file-manager-disk-brand-image-adaptive {
-  filter: none;
+[data-lyra-theme-tone="light"] .lyra-file-manager-disk-brand-image {
+  filter: grayscale(1) saturate(0) contrast(1.05);
 }
 
 .lyra-file-manager-disk-vector {
@@ -826,19 +924,19 @@
 }
 
 .lyra-file-manager-disk-vector-system {
-  color: color-mix(in srgb, var(--lyra-terminal-green) 80%, var(--lyra-text-primary) 20%);
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-file-manager-disk-vector-local {
-  color: color-mix(in srgb, var(--lyra-terminal-blue) 80%, var(--lyra-text-primary) 20%);
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-file-manager-disk-vector-removable {
-  color: color-mix(in srgb, var(--lyra-terminal-yellow) 88%, var(--lyra-text-primary) 12%);
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-file-manager-disk-vector-external {
-  color: color-mix(in srgb, var(--lyra-terminal-cyan) 80%, var(--lyra-text-primary) 20%);
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-file-manager-create-input {
@@ -935,9 +1033,13 @@
   display: inline-flex;
   align-items: center;
   gap: var(--lyra-unit-6);
-  background: color-mix(in srgb, var(--lyra-line-focused) 14%, transparent);
-  color: var(--lyra-text-primary);
+  background: transparent;
+  color: var(--lyra-text-secondary);
   cursor: pointer;
+}
+
+.lyra-file-manager-chooser-confirm:hover:enabled {
+  color: var(--lyra-text-primary);
 }
 
 .lyra-file-manager-chooser-confirm:disabled {
@@ -956,12 +1058,7 @@
   padding: 0 var(--lyra-unit-10);
   border-radius: var(--lyra-unit-999);
   border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--lyra-bg-surface) 90%, transparent) 0%,
-      color-mix(in srgb, var(--lyra-bg-panel) 72%, transparent) 100%
-    );
+  background: color-mix(in srgb, var(--lyra-bg-surface) 90%, transparent);
   color: var(--lyra-text-primary);
   font-size: var(--lyra-unit-11);
   line-height: 1.35;
@@ -969,7 +1066,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
-  -webkit-backdrop-filter: blur(var(--lyra-unit-8)) saturate(1.04);
-  backdrop-filter: blur(var(--lyra-unit-8)) saturate(1.04);
-  box-shadow: 0 var(--lyra-unit-8) var(--lyra-unit-20) color-mix(in srgb, var(--lyra-bg-app) 24%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
 }

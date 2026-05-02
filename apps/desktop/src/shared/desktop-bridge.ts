@@ -208,35 +208,17 @@ export type {
   LyraRuntimeStartupFailedEvent
 } from "./lyra-runtime";
 export type {
-  AiMemoryConfig,
-  AgentAnswerQuestionRequest,
-  AgentAnswerPlanQuestionRequest,
-  AgentBindSessionProjectRequest,
-  AgentEnterPlanModeRequest,
-  AgentCreateSessionRequest,
-  AgentDeleteSessionRequest,
-  AgentGetPendingInteractionsRequest,
-  AgentGetPlanRequest,
-  AgentGetSessionRequest,
   AgentPlanArtifact,
   AgentPlanBlock,
-  AgentPlanState,
   AgentPendingInteraction,
-  AgentSubmitInteractionRequest,
   AgentPendingInteractionKind,
   AgentPendingInteractionStatus,
   AgentToolOwner,
-  AgentResumeExecutionRequest,
-  AgentResolvePlanApprovalRequest,
   AgentMessage,
   AgentMessageContentPart,
   AgentRuntimeEvent,
-  AgentRuntimePhase,
-  AgentSendTurnRequest,
-  AgentSendTurnResult,
   AgentSession,
   AgentSessionDetail,
-  CommandApprovalSubmitRequest,
   PlanAnnotation,
   PlanApprovalDecision,
   PlanApprovalRequest,
@@ -528,6 +510,10 @@ export type AppMetaPayload = {
   readonly version: string;
   readonly platform: NodeJS.Platform;
   readonly isPackaged: boolean;
+  readonly userName?: string | undefined;
+  readonly hostName?: string | undefined;
+  readonly locale?: string | undefined;
+  readonly timeZone?: string | undefined;
 };
 
 export type LinuxGraphicsBackend = "wayland" | "x11";

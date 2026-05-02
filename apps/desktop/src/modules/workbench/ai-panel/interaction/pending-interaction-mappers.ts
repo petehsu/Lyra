@@ -4,6 +4,8 @@ import type {
   AgentPendingInteraction,
   AgentPendingInteractionKind,
   PlanApprovalRequest,
+  PlanQuestionItem,
+  PlanQuestionOption,
   PlanQuestionRequest,
 } from "../../../../shared/desktop-bridge";
 import type {
@@ -28,9 +30,38 @@ type InteractionCommandApprovalRequest = CommandApprovalRequest
 type InteractionPlanQuestionRequest = PlanQuestionRequest & InteractionPanelRequestMeta;
 type InteractionPlanApprovalRequest = PlanApprovalRequest & InteractionPanelRequestMeta;
 
+export type McpElicitationFieldOption = {
+  readonly value: string;
+  readonly label: string;
+};
+
+export type McpElicitationField = {
+  readonly id: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly kind: "string" | "number" | "boolean" | "single_select" | "multi_select";
+  readonly required: boolean;
+  readonly options: readonly McpElicitationFieldOption[];
+  readonly defaultValue?: string | number | boolean | readonly string[];
+};
+
+export type InteractionMcpElicitationRequest = InteractionPanelRequestMeta & {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly serverName: string;
+  readonly mode: "form" | "url";
+  readonly message: string;
+  readonly url?: string;
+  readonly elicitationId?: string;
+  readonly fields: readonly McpElicitationField[];
+  readonly meta?: Record<string, unknown>;
+};
+
 export type PendingInteractionPanel =
   | { readonly kind: "commandApproval"; readonly request: InteractionCommandApprovalRequest }
   | { readonly kind: "planQuestion"; readonly request: InteractionPlanQuestionRequest }
+  | { readonly kind: "mcpElicitation"; readonly request: InteractionMcpElicitationRequest }
   | { readonly kind: "planApproval"; readonly request: InteractionPlanApprovalRequest };
 
 export type ActiveInteractionPanel = PendingInteractionPanel | null;
@@ -56,6 +87,16 @@ const pickNumber = (value: Record<string, unknown>, key: string): number | null 
   return typeof next === "number" && Number.isFinite(next) ? next : null;
 };
 
+const pickBoolean = (value: Record<string, unknown>, key: string): boolean | null => {
+  const next = value[key];
+  return typeof next === "boolean" ? next : null;
+};
+
+const pickRecord = (value: Record<string, unknown>, key: string): Record<string, unknown> | null => {
+  const next = value[key];
+  return isRecord(next) ? next : null;
+};
+
 const planStatusFromValue = (value: string | null): PlanApprovalRequest["status"] =>
   value === "draft" || value === "proposed" || value === "approved" || value === "rejected"
     ? value
@@ -79,6 +120,51 @@ const toPlanBlocks = (value: unknown): readonly AgentPlanBlock[] =>
   Array.isArray(value)
     ? value.map(toPlanBlock).filter((block): block is AgentPlanBlock => block !== null)
     : [];
+
+const normalizeQuestionOption = (value: unknown): PlanQuestionOption | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const label = pickString(value, "label");
+  const description = pickString(value, "description");
+  if (label === null) {
+    return null;
+  }
+  return {
+    label,
+    description: description ?? "",
+    ...(pickString(value, "preview") === null ? {} : { preview: pickString(value, "preview")! }),
+  };
+};
+
+const normalizeQuestion = (value: unknown): PlanQuestionItem | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = pickString(value, "id");
+  const header = pickString(value, "header");
+  const question = pickString(value, "question");
+  if (id === null || header === null || question === null) {
+    return null;
+  }
+  const options = Array.isArray(value.options)
+    ? value.options.map(normalizeQuestionOption).filter((option): option is PlanQuestionOption => option !== null)
+    : [];
+  const explicitOther =
+    pickBoolean(value, "allowOther")
+    ?? pickBoolean(value, "isOther")
+    ?? pickBoolean(value, "is_other")
+    ?? false;
+  const isSecret = pickBoolean(value, "isSecret") ?? pickBoolean(value, "is_secret") ?? false;
+  return {
+    id,
+    header,
+    question,
+    options,
+    allowOther: explicitOther || options.length === 0,
+    ...(isSecret ? { isSecret } : {}),
+  };
+};
 
 const toPlanArtifact = (value: unknown): AgentPlanArtifact | null => {
   if (!isRecord(value)) {
@@ -189,8 +275,10 @@ const toPlanQuestionRequest = (
   const rawPayload = isRecord(payload.raw) ? payload.raw : payload;
 
   if (interaction.kind === "tool_user_input") {
-    const questions = Array.isArray(rawPayload.questions) ? rawPayload.questions : null;
-    if (questions === null || questions.length === 0) {
+    const questions = Array.isArray(rawPayload.questions)
+      ? rawPayload.questions.map(normalizeQuestion).filter((question): question is PlanQuestionItem => question !== null)
+      : [];
+    if (questions.length === 0) {
       return null;
     }
     return {
@@ -199,38 +287,143 @@ const toPlanQuestionRequest = (
       interactionKind: interaction.kind,
       sessionId: interaction.sessionId,
       turnId: interaction.turnId,
-      questions: questions as PlanQuestionRequest["questions"],
-      allowNote: true,
-    };
-  }
-
-  if (interaction.kind === "mcp_elicitation") {
-    const header = pickString(rawPayload, "serverName") ?? "MCP";
-    const question =
-      pickString(rawPayload, "message")
-      ?? pickString(rawPayload, "title")
-      ?? pickString(rawPayload, "prompt")
-      ?? "Provide input for MCP request";
-    return {
-      id: interaction.id,
-      interactionId: interaction.id,
-      interactionKind: interaction.kind,
-      sessionId: interaction.sessionId,
-      turnId: interaction.turnId,
-      questions: [
-        {
-          id: "response",
-          header,
-          question,
-          options: [],
-          allowOther: true,
-        },
-      ],
+      questions,
       allowNote: true,
     };
   }
 
   return null;
+};
+
+const enumOptions = (schema: Record<string, unknown>): readonly McpElicitationFieldOption[] => {
+  if (Array.isArray(schema.oneOf)) {
+    return schema.oneOf
+      .map((entry): McpElicitationFieldOption | null => {
+        if (!isRecord(entry)) {
+          return null;
+        }
+        const value = pickString(entry, "const");
+        if (value === null) {
+          return null;
+        }
+        return { value, label: pickString(entry, "title") ?? value };
+      })
+      .filter((entry): entry is McpElicitationFieldOption => entry !== null);
+  }
+  if (Array.isArray(schema.enum)) {
+    const names = Array.isArray(schema.enumNames) ? schema.enumNames : undefined;
+    return schema.enum
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((value, index) => ({
+        value,
+        label: typeof names?.[index] === "string" ? names[index] : value,
+      }));
+  }
+  const items = pickRecord(schema, "items");
+  const anyOf = items === null ? undefined : (Array.isArray(items.anyOf) ? items.anyOf : items.oneOf);
+  if (Array.isArray(anyOf)) {
+    return anyOf
+      .map((entry): McpElicitationFieldOption | null => {
+        if (!isRecord(entry)) {
+          return null;
+        }
+        const value = pickString(entry, "const");
+        if (value === null) {
+          return null;
+        }
+        return { value, label: pickString(entry, "title") ?? value };
+      })
+      .filter((entry): entry is McpElicitationFieldOption => entry !== null);
+  }
+  if (items !== null && Array.isArray(items.enum)) {
+    return items.enum
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((value) => ({ value, label: value }));
+  }
+  return [];
+};
+
+const mcpFieldDefault = (schema: Record<string, unknown>): string | number | boolean | readonly string[] | undefined => {
+  const value = schema.default;
+  if (
+    typeof value === "string"
+    || typeof value === "number"
+    || typeof value === "boolean"
+    || (Array.isArray(value) && value.every((entry) => typeof entry === "string"))
+  ) {
+    return value;
+  }
+  return undefined;
+};
+
+const mcpFieldKind = (
+  schema: Record<string, unknown>,
+  options: readonly McpElicitationFieldOption[]
+): McpElicitationField["kind"] => {
+  if (schema.type === "boolean") {
+    return "boolean";
+  }
+  if (schema.type === "number" || schema.type === "integer") {
+    return "number";
+  }
+  if (schema.type === "array") {
+    return "multi_select";
+  }
+  return options.length > 0 ? "single_select" : "string";
+};
+
+const toMcpElicitationRequest = (
+  interaction: AgentPendingInteraction
+): InteractionMcpElicitationRequest | null => {
+  if (!isRecord(interaction.payload)) {
+    return null;
+  }
+  const payload = interaction.payload;
+  const rawPayload = isRecord(payload.raw) ? payload.raw : payload;
+  const mode = pickString(rawPayload, "mode") === "url" ? "url" : "form";
+  const serverName = pickString(rawPayload, "serverName") ?? "MCP";
+  const message = pickString(rawPayload, "message") ?? "MCP request needs input";
+  const meta = pickRecord(rawPayload, "_meta");
+  const requestedSchema = pickRecord(rawPayload, "requestedSchema");
+  const properties = requestedSchema === null ? null : pickRecord(requestedSchema, "properties");
+  const required = requestedSchema !== null && Array.isArray(requestedSchema.required)
+    ? new Set(requestedSchema.required.filter((entry): entry is string => typeof entry === "string"))
+    : new Set<string>();
+  const fields = properties === null
+    ? []
+    : Object.entries(properties)
+        .map(([id, schema]): McpElicitationField | null => {
+          if (!isRecord(schema)) {
+            return null;
+          }
+          const options = enumOptions(schema);
+          const defaultValue = mcpFieldDefault(schema);
+          return {
+            id,
+            label: pickString(schema, "title") ?? id,
+            ...(pickString(schema, "description") === null ? {} : { description: pickString(schema, "description")! }),
+            kind: mcpFieldKind(schema, options),
+            required: required.has(id),
+            options,
+            ...(defaultValue === undefined ? {} : { defaultValue }),
+          };
+        })
+        .filter((field): field is McpElicitationField => field !== null);
+
+  return {
+    id: interaction.id,
+    interactionId: interaction.id,
+    interactionKind: interaction.kind,
+    sessionId: interaction.sessionId,
+    turnId: interaction.turnId,
+    serverName,
+    mode,
+    message,
+    fields,
+    ...(pickString(rawPayload, "url") === null ? {} : { url: pickString(rawPayload, "url")! }),
+    ...(pickString(rawPayload, "elicitationId") === null ? {} : { elicitationId: pickString(rawPayload, "elicitationId")! }),
+    ...(meta === null ? {} : { meta }),
+  };
 };
 
 const toPlanApprovalRequest = (
@@ -277,9 +470,13 @@ export const toPendingInteractionPanel = (
     const request = toCommandApprovalRequest(interaction, labels);
     return request === null ? null : { kind: "commandApproval", request };
   }
-  if (interaction.kind === "tool_user_input" || interaction.kind === "mcp_elicitation") {
+  if (interaction.kind === "tool_user_input") {
     const request = toPlanQuestionRequest(interaction);
     return request === null ? null : { kind: "planQuestion", request };
+  }
+  if (interaction.kind === "mcp_elicitation") {
+    const request = toMcpElicitationRequest(interaction);
+    return request === null ? null : { kind: "mcpElicitation", request };
   }
   if (interaction.kind === "plan_approval") {
     const request = toPlanApprovalRequest(interaction, labels);

@@ -1,9 +1,8 @@
 import "@xyflow/react/dist/style.css";
 
-import { Search } from "lucide-react";
+import { useMemo } from "react";
 
 import type { SearchDeepSnapshot } from "../../../shared/desktop-bridge";
-import { LyraBrandLogo } from "../brand";
 import { DeepSearchCanvas } from "./deep-search-canvas";
 import {
   DeepSearchOverview,
@@ -14,6 +13,7 @@ import type {
   DeepSearchSourceFilter
 } from "./deep-search-surface-model";
 import { useDeepSearchSurfaceRuntime } from "./use-deep-search-surface-runtime";
+import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
 export type DeepSearchResultSurfaceLabels = DeepSearchOverviewLabels & {
   readonly headingLabel: string;
@@ -99,70 +99,103 @@ export const DeepSearchResultSurface = ({
     onRevealLocalPath,
     onSharedAnimationDone
   });
+  const titlebarContribution = useMemo(
+    () => ({
+      ariaLabel: labels.headingLabel,
+      content: (
+        <>
+          <span className="lyra-titlebar-context-chip">{snapshot.query}</span>
+          <span className="lyra-titlebar-context-chip">
+            {labels.budgetLabel} {snapshot.budgetPreset}
+          </span>
+          <div className="lyra-titlebar-context-controls">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={deepSearchEnabled}
+              className={
+                deepSearchEnabled
+                  ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                  : "lyra-titlebar-context-text-button"
+              }
+              aria-label={labels.deepSearchToggleLabel}
+              onClick={onToggleDeepSearch}
+            >
+              {labels.deepSearchChipLabel}
+            </button>
+            {([
+              ["all", labels.allLabel],
+              ["web", labels.webLabel],
+              ["local", labels.localLabel]
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={
+                  sourceFilter === value
+                    ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                    : "lyra-titlebar-context-text-button"
+                }
+                aria-label={`${labels.sourceFilterLabel}: ${label}`}
+                onClick={() => {
+                  onSourceFilterChange(value);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button"
+              onClick={onCancel}
+              disabled={!searching}
+            >
+              {labels.stopLabel}
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button"
+              onClick={runtime.onFitView}
+            >
+              {labels.fitViewLabel}
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button"
+              onClick={runtime.onResetLayout}
+            >
+              {labels.resetLayoutLabel}
+            </button>
+          </div>
+        </>
+      )
+    }),
+    [
+      deepSearchEnabled,
+      labels,
+      onCancel,
+      onSourceFilterChange,
+      onToggleDeepSearch,
+      runtime.onFitView,
+      runtime.onResetLayout,
+      searching,
+      snapshot.budgetPreset,
+      snapshot.query,
+      sourceFilter
+    ]
+  );
+  useWorkbenchTitlebarContribution(titlebarContribution);
+
+  void inputValue;
+  void logoUrl;
+  void onInputChange;
+  void onSubmit;
+  void placeholder;
+  void searchActionLabel;
+  void runtime.pillRef;
 
   return (
     <section className="lyra-results-shell lyra-deep-search-shell" aria-label="deep-search-results-surface">
-      <header className="lyra-results-topbar lyra-deep-search-topbar">
-        <div className="lyra-browser-pill lyra-browser-pill-compact" ref={runtime.pillRef}>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={deepSearchEnabled}
-            aria-label={labels.deepSearchToggleLabel}
-            title={labels.deepSearchToggleLabel}
-            className={
-              deepSearchEnabled
-                ? "lyra-logo-circle lyra-logo-toggle lyra-logo-toggle-active"
-                : "lyra-logo-circle lyra-logo-toggle"
-            }
-            onClick={onToggleDeepSearch}
-          >
-            <LyraBrandLogo logoUrl={logoUrl} />
-          </button>
-          <input
-            aria-label="browser-address-input"
-            value={inputValue}
-            placeholder={placeholder}
-            onChange={(event) => {
-              onInputChange(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                onSubmit();
-              }
-            }}
-          />
-          {deepSearchEnabled ? (
-            <span className="lyra-browser-mode-chip">{labels.deepSearchChipLabel}</span>
-          ) : null}
-          <button className="lyra-search-circle" aria-label={searchActionLabel} onClick={onSubmit}>
-            <Search size={14} />
-          </button>
-        </div>
-
-        <div className="lyra-deep-search-summary">
-          <strong>{labels.headingLabel}</strong>
-          <span>{snapshot.query}</span>
-        </div>
-
-        <div className="lyra-deep-search-toolbar">
-          <span className="lyra-browser-mode-chip">{labels.budgetLabel} {snapshot.budgetPreset}</span>
-          <button type="button" onClick={onCancel} disabled={!searching}>{labels.stopLabel}</button>
-          <button
-            type="button"
-            onClick={runtime.onFitView}
-          >
-            {labels.fitViewLabel}
-          </button>
-          <button
-            type="button"
-            onClick={runtime.onResetLayout}
-          >
-            {labels.resetLayoutLabel}
-          </button>
-        </div>
-      </header>
-
       <div className="lyra-deep-search-grid">
         <DeepSearchCanvas
           snapshot={runtime.filteredSnapshot}

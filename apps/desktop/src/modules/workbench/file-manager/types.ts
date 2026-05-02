@@ -82,6 +82,7 @@ export type FileManagerSurfaceLabels = {
   readonly noRecentLocations: string;
   readonly emptyDirectory: string;
   readonly emptyTrashState: string;
+  readonly noFavorites: string;
   readonly loading: string;
   readonly unavailable: string;
   readonly diskAvailable: string;

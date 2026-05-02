@@ -24,6 +24,9 @@ export const TitlebarNavigation = ({
   onBlur,
   trailingControl
 }: TitlebarNavigationProps) => {
+  const hasValue = value.length > 0;
+  const hasTrailingControl = trailingControl !== undefined && trailingControl !== null;
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     void onSubmit();
@@ -41,6 +44,8 @@ export const TitlebarNavigation = ({
             ? "lyra-titlebar-navigation-shell lyra-titlebar-navigation-shell-contextual"
             : "lyra-titlebar-navigation-shell"
         }
+        data-has-value={hasValue ? "true" : "false"}
+        data-has-trailing-control={hasTrailingControl ? "true" : "false"}
       >
         <span className="lyra-titlebar-navigation-icon" aria-hidden="true">
           <Search size={14} />
@@ -58,26 +63,30 @@ export const TitlebarNavigation = ({
           onFocus={onFocus}
           onBlur={onBlur}
         />
-        {trailingControl}
-        {value.length > 0 ? (
+        <span className="lyra-titlebar-navigation-actions">
+          {trailingControl}
+          {hasValue ? (
+            <button
+              type="button"
+              className="lyra-titlebar-navigation-action"
+              aria-label={`Clear ${ariaLabel}`}
+              title={`Clear ${ariaLabel}`}
+              onClick={() => {
+                onChange("");
+              }}
+            >
+              <X size={14} />
+            </button>
+          ) : null}
           <button
-            type="button"
+            type="submit"
             className="lyra-titlebar-navigation-action"
-            aria-label={placeholder}
-            onClick={() => {
-              onChange("");
-            }}
+            aria-label={ariaLabel}
+            title={ariaLabel}
           >
-            <X size={14} />
+            <ArrowRight size={14} />
           </button>
-        ) : null}
-        <button
-          type="submit"
-          className="lyra-titlebar-navigation-action"
-          aria-label={ariaLabel}
-        >
-          <ArrowRight size={14} />
-        </button>
+        </span>
       </div>
     </form>
   );

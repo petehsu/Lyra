@@ -153,7 +153,10 @@ import type {
 const fallbackMeta: AppMetaPayload = {
   version: "0.1.0",
   platform: process.platform,
-  isPackaged: false
+  isPackaged: false,
+  userName: process.env.USER ?? process.env.USERNAME,
+  locale: Intl.DateTimeFormat().resolvedOptions().locale,
+  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
 };
 
 const terminalDataListeners = new Set<(event: TerminalDataEvent) => void>();

@@ -82,10 +82,8 @@ describe("pending interaction mappers", () => {
             id: "q1",
             header: "mode",
             question: "Pick one",
-            options: [
-              { label: "A", description: "a" },
-              { label: "B", description: "b" }
-            ]
+            options: null,
+            isSecret: true
           }
         ]
       },
@@ -93,6 +91,12 @@ describe("pending interaction mappers", () => {
       updatedAt: now + 1
     } as any, LABELS);
     expect(questionPanel?.kind).toBe("planQuestion");
+    if (questionPanel?.kind !== "planQuestion") {
+      throw new Error("expected planQuestion panel");
+    }
+    expect(questionPanel.request.questions[0]?.options).toEqual([]);
+    expect(questionPanel.request.questions[0]?.allowOther).toBe(true);
+    expect(questionPanel.request.questions[0]?.isSecret).toBe(true);
 
     const mcpPanel = toPendingInteractionPanel({
       id: "ia-m",
@@ -102,16 +106,51 @@ describe("pending interaction mappers", () => {
       status: "pending",
       payload: {
         message: "Need a value from user",
-        serverName: "Filesystem MCP"
+        serverName: "Filesystem MCP",
+        mode: "form",
+        _meta: { persist: ["session", "always"] },
+        requestedSchema: {
+          type: "object",
+          properties: {
+            email: {
+              type: "string",
+              title: "Email",
+              description: "Account email",
+            },
+            mode: {
+              type: "string",
+              title: "Mode",
+              enum: ["read", "write"],
+              enumNames: ["Read", "Write"],
+            },
+            confirmed: {
+              type: "boolean",
+              title: "Confirmed",
+              default: true,
+            }
+          },
+          required: ["email"]
+        }
       },
       createdAt: now + 2,
       updatedAt: now + 2
     } as any, LABELS);
-    expect(mcpPanel?.kind).toBe("planQuestion");
-    if (mcpPanel?.kind !== "planQuestion") {
-      throw new Error("expected planQuestion panel");
+    expect(mcpPanel?.kind).toBe("mcpElicitation");
+    if (mcpPanel?.kind !== "mcpElicitation") {
+      throw new Error("expected mcpElicitation panel");
     }
-    expect(mcpPanel.request.questions[0]?.header).toBe("Filesystem MCP");
+    expect(mcpPanel.request.serverName).toBe("Filesystem MCP");
+    expect(mcpPanel.request.meta).toEqual({ persist: ["session", "always"] });
+    expect(mcpPanel.request.fields.map((field) => [field.id, field.kind, field.required])).toEqual([
+      ["email", "string", true],
+      ["mode", "single_select", false],
+      ["confirmed", "boolean", false],
+    ]);
+    expect(mcpPanel.request.fields[1]?.options).toEqual([
+      { value: "read", label: "Read" },
+      { value: "write", label: "Write" },
+    ]);
+    expect(mcpPanel.request.fields[2]?.defaultValue).toBe(true);
   });
 
   test("maps plan approval interactions", () => {

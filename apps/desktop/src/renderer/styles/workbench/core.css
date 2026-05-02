@@ -127,6 +127,21 @@
   isolation: isolate;
 }
 
+.lyra-list-picker-size-probe {
+  height: var(--lyra-list-picker-row-height);
+  width: max-content;
+  display: var(--lyra-list-picker-size-probe-display, none);
+  align-items: center;
+  padding: 0 calc(var(--lyra-list-picker-padding-inline) + var(--lyra-unit-18)) 0
+    var(--lyra-list-picker-padding-inline);
+  color: transparent;
+  font: inherit;
+  font-size: var(--lyra-list-picker-font-size);
+  white-space: nowrap;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .lyra-list-picker-compact {
   --lyra-list-picker-row-height: var(--lyra-unit-27);
   --lyra-list-picker-option-height: var(--lyra-unit-26);
@@ -183,7 +198,7 @@
 }
 
 .lyra-list-picker:focus-within .lyra-list-picker-surface {
-  border-color: var(--lyra-line-focused);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-list-picker-open .lyra-list-picker-surface {
@@ -317,7 +332,11 @@
 .lyra-titlebar {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, var(--lyra-unit-280)) minmax(0, 1fr) auto;
+  grid-template-columns:
+    minmax(0, var(--lyra-unit-280))
+    minmax(0, 1fr)
+    minmax(var(--lyra-unit-220), var(--lyra-unit-280))
+    auto;
   align-items: center;
   gap: var(--lyra-unit-10);
   padding: 0 var(--lyra-unit-10);
@@ -329,7 +348,12 @@
 }
 
 .lyra-titlebar-macos {
-  grid-template-columns: auto minmax(0, var(--lyra-unit-280)) minmax(0, 1fr) auto;
+  grid-template-columns:
+    auto
+    minmax(0, var(--lyra-unit-280))
+    minmax(0, 1fr)
+    minmax(var(--lyra-unit-220), var(--lyra-unit-280))
+    auto;
   padding-left: var(--lyra-unit-8);
 }
 
@@ -342,6 +366,8 @@
 
 .lyra-titlebar-fill {
   min-width: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .lyra-titlebar-navigation {
@@ -356,10 +382,10 @@
   min-width: 0;
   min-height: var(--lyra-shell-titlebar-nav-h);
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-columns: var(--lyra-shell-titlebar-nav-h) minmax(0, 1fr);
   align-items: center;
-  gap: var(--lyra-unit-4);
-  padding: 0 var(--lyra-control-pad-x-default);
+  gap: 0;
+  padding: 0;
   border: var(--lyra-stroke-hairline) solid
     color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
   border-radius: var(--lyra-control-radius-pill);
@@ -378,6 +404,7 @@
     border-color var(--lyra-transition-fast),
     box-shadow var(--lyra-transition-fast),
     background-color var(--lyra-transition-fast);
+  position: relative;
 }
 
 .lyra-titlebar-navigation-shell:hover,
@@ -392,10 +419,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: var(--lyra-shell-titlebar-nav-h);
+  height: var(--lyra-shell-titlebar-nav-h);
   color: var(--lyra-text-muted);
 }
 
 .lyra-titlebar-navigation-input {
+  box-sizing: border-box;
   min-width: 0;
   width: 100%;
   height: calc(var(--lyra-shell-titlebar-nav-h) - var(--lyra-unit-2));
@@ -406,6 +436,16 @@
   font-size: var(--lyra-text-size-12);
   line-height: 1.5;
   outline: none;
+  padding-right: var(--lyra-shell-titlebar-nav-h);
+}
+
+.lyra-titlebar-navigation-shell[data-has-value="true"] .lyra-titlebar-navigation-input,
+.lyra-titlebar-navigation-shell[data-has-trailing-control="true"] .lyra-titlebar-navigation-input {
+  padding-right: calc(var(--lyra-shell-titlebar-nav-h) * 2);
+}
+
+.lyra-titlebar-navigation-shell[data-has-value="true"][data-has-trailing-control="true"] .lyra-titlebar-navigation-input {
+  padding-right: calc(var(--lyra-shell-titlebar-nav-h) * 3);
 }
 
 .lyra-titlebar-navigation-input::placeholder {
@@ -416,9 +456,18 @@
   color: var(--lyra-text-secondary);
 }
 
+.lyra-titlebar-navigation-actions {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  transform: translateY(-50%);
+}
+
 .lyra-titlebar-navigation-action {
-  width: var(--lyra-size-icon-button-w);
-  height: var(--lyra-size-icon-button-h);
+  width: var(--lyra-shell-titlebar-nav-h);
+  height: var(--lyra-shell-titlebar-nav-h);
   border: 0;
   border-radius: var(--lyra-radius-pill);
   background: transparent;
@@ -438,6 +487,134 @@
   opacity: 1;
 }
 
+.lyra-titlebar-context {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  justify-self: stretch;
+}
+
+.lyra-titlebar-context-empty {
+  pointer-events: none;
+}
+
+.lyra-titlebar-context-scroll {
+  max-width: 100%;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-8);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.lyra-titlebar-context-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.lyra-titlebar-context-leading,
+.lyra-titlebar-context-meta,
+.lyra-titlebar-context-controls,
+.lyra-titlebar-context-group {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-6);
+  flex: 0 0 auto;
+}
+
+.lyra-titlebar-context-meta,
+.lyra-titlebar-context-chip,
+.lyra-titlebar-context-text {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-text-size-11);
+  line-height: 1;
+}
+
+.lyra-titlebar-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-4);
+  min-height: var(--lyra-size-icon-button-h);
+  max-width: var(--lyra-unit-180);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-titlebar-context-icon-button,
+.lyra-titlebar-context-text-button {
+  min-width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
+  border: 0;
+  border-radius: var(--lyra-unit-5);
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-unit-5);
+  padding: 0 var(--lyra-unit-4);
+  cursor: pointer;
+  opacity: 0.72;
+  transition:
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.lyra-titlebar-context-text-button {
+  width: auto;
+  min-width: 0;
+  padding: 0 var(--lyra-unit-6);
+  font: inherit;
+  font-size: var(--lyra-text-size-11);
+}
+
+.lyra-titlebar-context-icon-button:hover:enabled,
+.lyra-titlebar-context-text-button:hover:enabled {
+  background: transparent;
+  color: var(--lyra-text-primary);
+  opacity: 1;
+}
+
+.lyra-titlebar-context-icon-button:disabled,
+.lyra-titlebar-context-text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.36;
+}
+
+.lyra-titlebar-context-button-active {
+  color: var(--lyra-text-primary);
+  opacity: 1;
+}
+
+.lyra-resource-monitor-titlebar-pid,
+.lyra-resource-monitor-titlebar-memory,
+.lyra-resource-monitor-titlebar-scope-button {
+  font-variant-numeric: tabular-nums;
+}
+
+.lyra-resource-monitor-titlebar-pid {
+  min-width: var(--lyra-unit-58);
+}
+
+.lyra-resource-monitor-titlebar-memory {
+  min-width: var(--lyra-unit-64);
+}
+
+.lyra-resource-monitor-titlebar-scope-button {
+  width: var(--lyra-unit-52);
+  min-width: var(--lyra-unit-52);
+}
+
+.lyra-titlebar-context-danger {
+  color: var(--lyra-window-close-hover-bg);
+}
+
 .lyra-titlebar-picker-button {
   color: var(--lyra-text-secondary);
 }
@@ -449,7 +626,7 @@
 }
 
 .lyra-titlebar-picker-button-layout {
-  color: color-mix(in srgb, var(--lyra-accent-primary) 72%, var(--lyra-text-primary) 28%);
+  color: var(--lyra-text-primary);
   background: transparent;
   box-shadow: none;
 }
@@ -636,18 +813,18 @@
   height: 100%;
   background: var(--lyra-bg-editor);
   display: grid;
-  grid-template-rows: var(--lyra-size-browser-tab-h) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) var(--lyra-size-browser-tab-h);
   overflow: hidden;
   position: relative;
 }
 
 .lyra-workspace > .lyra-browser-tabs {
-  grid-row: 1;
+  grid-row: 2;
 }
 
 .lyra-workspace-surface-single,
 .lyra-workspace-surface-split {
-  grid-row: 2;
+  grid-row: 1;
   position: relative;
   width: 100%;
   height: 100%;
@@ -675,7 +852,7 @@
 }
 
 .lyra-workspace-split-pane-active {
-  border-color: color-mix(in srgb, var(--lyra-line-focused) 58%, transparent);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-workspace-split-count-2 {
@@ -922,7 +1099,7 @@
 
 @media (max-width: 980px) {
   .lyra-titlebar {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr minmax(0, 1fr);
     padding: 0 var(--lyra-unit-8);
   }
 
@@ -931,6 +1108,10 @@
   }
 
   .lyra-window-controls {
+    display: none;
+  }
+
+  .lyra-titlebar-fill {
     display: none;
   }
 

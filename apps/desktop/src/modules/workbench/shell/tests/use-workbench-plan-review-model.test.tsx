@@ -151,4 +151,41 @@ describe("useWorkbenchPlanReviewModel", () => {
 
     expect(onDecision).not.toHaveBeenCalled();
   });
+
+  test("keeps plan review instances separate when different threads reuse the same plan id", () => {
+    const openAppTab = vi.fn();
+    const onDecision = vi.fn<AiPlanApprovalWorkspaceOpenRequest["onDecision"]>(async () => {});
+    const { result } = renderHook(() =>
+      useWorkbenchPlanReviewModel({
+        openAppTab: openAppTab as unknown as WorkspaceTabsModel["openAppTab"],
+        title: "Plan Review",
+      })
+    );
+
+    act(() => {
+      result.current.openPlanReview({
+        locale: "en-US",
+        request,
+        onDecision,
+      });
+      result.current.openPlanReview({
+        locale: "en-US",
+        request: {
+          ...request,
+          id: "plan:turn-2",
+          sessionId: "thread-2",
+          turnId: "turn-2",
+          artifact: { ...artifact, title: "Second thread plan" },
+        },
+        onDecision,
+      });
+    });
+
+    const firstInstanceId = openAppTab.mock.calls[0]?.[0]?.appInstanceId as string;
+    const secondInstanceId = openAppTab.mock.calls[1]?.[0]?.appInstanceId as string;
+
+    expect(firstInstanceId).not.toBe(secondInstanceId);
+    expect(result.current.model.getState(firstInstanceId)?.request.sessionId).toBe("thread-1");
+    expect(result.current.model.getState(secondInstanceId)?.request.sessionId).toBe("thread-2");
+  });
 });

@@ -1,26 +1,46 @@
 import { Bell } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { renderNotificationSourceIcon } from "./icon-registry";
 import type { NotificationTopbarLabels, WorkbenchNotificationItem } from "./types";
 
-type WorkbenchNotificationTopbarProps = {
+const MAX_TOPBAR_QUICK_ACTIONS = 4;
+
+export type WorkbenchNotificationTopbarQuickAction = {
+  readonly id: string;
+  readonly label: string;
+  readonly icon: ReactNode;
+  readonly disabled?: boolean;
+  readonly tone?: "default" | "danger";
+  readonly onSelect: () => void;
+};
+
+export type WorkbenchNotificationTopbarProps = {
   readonly labels: NotificationTopbarLabels;
+  readonly notificationCount: number;
   readonly unreadCount: number;
   readonly preview: WorkbenchNotificationItem | null;
+  readonly quickActions?: readonly WorkbenchNotificationTopbarQuickAction[];
   readonly onOpenCenter: () => void;
   readonly onOpenPreview: () => void;
 };
 
 export const WorkbenchNotificationTopbar = ({
   labels,
+  notificationCount,
   unreadCount,
   preview,
+  quickActions = [],
   onOpenCenter,
   onOpenPreview
 }: WorkbenchNotificationTopbarProps) => {
   const previewText = preview === null
     ? ""
     : `${preview.source.title} · ${preview.preview}`;
+  const visibleQuickActions = preview === null
+    ? []
+    : quickActions.slice(0, MAX_TOPBAR_QUICK_ACTIONS);
+  const canOpenCenter = notificationCount > 0;
 
   return (
     <section className="lyra-notification-topbar" aria-label="notification-topbar">
@@ -43,6 +63,25 @@ export const WorkbenchNotificationTopbar = ({
         </button>
       )}
 
+      {visibleQuickActions.length === 0 ? null : (
+        <div className="lyra-notification-topbar-quick-actions">
+          {visibleQuickActions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              className="lyra-notification-topbar-quick-action"
+              data-tone={action.tone ?? "default"}
+              aria-label={action.label}
+              title={action.label}
+              disabled={action.disabled === true}
+              onClick={action.onSelect}
+            >
+              {action.icon}
+            </button>
+          ))}
+        </div>
+      )}
+
       <button
         type="button"
         className={
@@ -51,6 +90,7 @@ export const WorkbenchNotificationTopbar = ({
             : "lyra-notification-topbar-entry lyra-notification-topbar-entry-active"
         }
         aria-label={labels.openCenter}
+        disabled={!canOpenCenter}
         onClick={onOpenCenter}
       >
         <Bell size={14} />

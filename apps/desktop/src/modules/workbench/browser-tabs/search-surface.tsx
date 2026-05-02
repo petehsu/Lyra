@@ -1,6 +1,7 @@
 import { Search } from "lucide-react";
 
 import { LyraBrandLogo } from "../brand";
+import { LyraListPicker, type LyraListPickerOption } from "../list-picker";
 
 export type BrowserSearchSurfaceProps = {
   readonly logoUrl: string;
@@ -28,43 +29,58 @@ export const BrowserSearchSurface = ({
   onInputChange,
   onSubmit,
   onToggleDeepSearch
-}: BrowserSearchSurfaceProps) => (
-  <div className="lyra-workspace-browser-shell">
-    <div className="lyra-browser-pill" ref={onPillRef}>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={deepSearchEnabled}
-        aria-label={deepSearchToggleLabel}
-        title={deepSearchToggleLabel}
-        className={
-          deepSearchEnabled
-            ? "lyra-logo-circle lyra-logo-toggle lyra-logo-toggle-active"
-            : "lyra-logo-circle lyra-logo-toggle"
-        }
-        onClick={onToggleDeepSearch}
-      >
-        <LyraBrandLogo logoUrl={logoUrl} />
-      </button>
-      <input
-        aria-label="browser-address-input"
-        value={inputValue}
-        placeholder={placeholder}
-        onChange={(event) => {
-          onInputChange(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            onSubmit();
-          }
-        }}
-      />
-      {deepSearchEnabled ? (
-        <span className="lyra-browser-mode-chip">{deepSearchChipLabel}</span>
-      ) : null}
-      <button className="lyra-search-circle" aria-label={searchActionLabel} onClick={onSubmit}>
-        <Search size={14} />
-      </button>
+}: BrowserSearchSurfaceProps) => {
+  type SearchMode = "standard" | "deep";
+  const searchMode: SearchMode = deepSearchEnabled ? "deep" : "standard";
+  const searchModeOptions: readonly LyraListPickerOption<SearchMode>[] = [
+    { value: "standard", label: searchActionLabel },
+    { value: "deep", label: deepSearchChipLabel }
+  ];
+
+  return (
+    <div className="lyra-workspace-browser-shell">
+      <div className="lyra-browser-search-row">
+        <div className="lyra-browser-pill" ref={onPillRef}>
+          <span className="lyra-logo-circle lyra-logo-static">
+            <LyraBrandLogo logoUrl={logoUrl} />
+          </span>
+          <input
+            aria-label="browser-address-input"
+            value={inputValue}
+            placeholder={placeholder}
+            onChange={(event) => {
+              onInputChange(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                onSubmit();
+              }
+            }}
+          />
+          <button
+            className="lyra-search-circle"
+            aria-label={searchActionLabel}
+            title={searchActionLabel}
+            onClick={onSubmit}
+          >
+            <Search size={20} />
+          </button>
+        </div>
+        <LyraListPicker
+          className="lyra-browser-search-mode-picker"
+          ariaLabel={deepSearchToggleLabel}
+          value={searchMode}
+          options={searchModeOptions}
+          variant="compact"
+          shape="pill"
+          onChange={(nextMode) => {
+            const nextDeepSearchEnabled = nextMode === "deep";
+            if (nextDeepSearchEnabled !== deepSearchEnabled) {
+              onToggleDeepSearch();
+            }
+          }}
+        />
+      </div>
     </div>
-  </div>
-);
+  );
+};

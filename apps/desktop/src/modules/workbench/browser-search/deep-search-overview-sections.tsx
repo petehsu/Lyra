@@ -131,10 +131,7 @@ export const DeepSearchMetricsSection = ({
       {snapshot.web.engineBuckets.map((bucket) => (
         <section key={bucket.engine.id} className="lyra-deep-search-engine-card">
           <header>
-            <span
-              className="lyra-deep-search-engine-dot"
-              style={{ backgroundColor: bucket.engine.accentColor }}
-            />
+            <span className="lyra-deep-search-engine-marker" />
             <strong>{bucket.engine.label}</strong>
             <small>{bucket.latencyMs ?? 0}ms</small>
           </header>
@@ -150,7 +147,7 @@ export const DeepSearchMetricsSection = ({
       ))}
       <section className="lyra-deep-search-engine-card">
         <header>
-          <span className="lyra-deep-search-engine-dot" />
+          <span className="lyra-deep-search-engine-marker" />
           <strong>{labels.localStatusLabel}</strong>
           <small>{snapshot.local.elapsedMs}ms</small>
         </header>

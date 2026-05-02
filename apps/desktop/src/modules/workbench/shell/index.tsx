@@ -32,6 +32,7 @@ import {
 } from "./service";
 import type { AgentComposerWorkbenchTabMention } from "../ai-panel";
 import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
+import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "./titlebar-context";
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "../browser-search";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
@@ -535,6 +536,7 @@ export const WorkbenchShell = () => {
   const notificationTopbarProps = useMemo(
     () => ({
       labels: labels.notificationTopbar,
+      notificationCount: notificationModel.notifications.length,
       unreadCount: notificationModel.unreadCount,
       preview: notificationModel.topbarPreview,
       onOpenCenter: onOpenNotificationCenter,
@@ -542,6 +544,7 @@ export const WorkbenchShell = () => {
     }),
     [
       labels.notificationTopbar,
+      notificationModel.notifications.length,
       notificationModel.topbarPreview,
       notificationModel.unreadCount,
       onOpenNotificationCenter,
@@ -573,15 +576,9 @@ export const WorkbenchShell = () => {
         }
       />
     ),
-    leftPanel: (
-      <>
-        {sidebarAiSurfacePropsWithFileOpen === null ? null : (
-          <AiPanelAdapter
-            variant="sidebar"
-            {...sidebarAiSurfacePropsWithFileOpen}
-          />
-        )}
-      </>
+    titlebarContext: <WorkbenchTitlebarContextSlot />,
+    leftPanel: sidebarAiSurfacePropsWithFileOpen === null ? null : (
+      <AiPanelAdapter variant="sidebar" {...sidebarAiSurfacePropsWithFileOpen} />
     ),
     workspace: (
       <WorkspaceSurfaceAdapter
@@ -589,9 +586,7 @@ export const WorkbenchShell = () => {
         surfaceAdapters={uiRuntime.adapters.surfaces}
       />
     ),
-    browserTabs: (
-      <WorkspaceTabsAdapter {...workspaceTabsProps} />
-    ),
+    browserTabs: <WorkspaceTabsAdapter {...workspaceTabsProps} />,
     terminalPanel: (
       <TerminalDockAdapter
         desktopApi={desktopApi}
@@ -644,5 +639,9 @@ export const WorkbenchShell = () => {
     onRootDragStartCapture
   });
 
-  return <ShellAdapter {...shellAdapterProps} />;
+  return (
+    <WorkbenchTitlebarContextProvider activeScopeId={visibleWorkspaceLayout.mode === "split" ? visibleWorkspaceLayout.focusedSplitTabId : visibleWorkspaceLayout.activeTabId}>
+      <ShellAdapter {...shellAdapterProps} />
+    </WorkbenchTitlebarContextProvider>
+  );
 };

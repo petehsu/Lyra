@@ -1,6 +1,7 @@
 import type { AiModelRuntimeMetadata, AiProviderProfile } from "../../../shared/ai";
 import type { LyraClientRequestPayload } from "../../../shared/desktop-bridge";
 import type { createTranslator } from "../i18n";
+import type { AiPanelEmptyGreetingTextLabels } from "./empty-greeting";
 import type { AgentComposerModelOption, AgentPermissionMode } from "./agent-composer";
 import type { ToolNameLabelMap } from "./runtime/feed-utils";
 import type { RuntimeThreadOptions } from "./use-lyra-thread-runtime";
@@ -274,7 +275,9 @@ export const canOpenReviewChanges = ({
 
 export type AiPanelSurfaceTextLabels = {
   readonly closeThread: string;
+  readonly emptyGreeting: AiPanelEmptyGreetingTextLabels;
   readonly permissions: string;
+  readonly advancedTools: string;
   readonly reviewChanges: string;
   readonly moreActions: string;
   readonly model: string;
@@ -294,7 +297,21 @@ export type AiPanelSurfaceTextLabels = {
 
 export const createSurfaceTextLabels = (t: Translator): AiPanelSurfaceTextLabels => ({
   closeThread: t("menu.close"),
+  emptyGreeting: {
+    fallbackName: t("ai.emptyGreetingFallbackName"),
+    late: t("ai.emptyGreetingLate"),
+    morning: t("ai.emptyGreetingMorning"),
+    day: t("ai.emptyGreetingDay"),
+    evening: t("ai.emptyGreetingEvening"),
+    place: t("ai.emptyGreetingPlace"),
+    project: t("ai.emptyGreetingProject"),
+    host: t("ai.emptyGreetingHost"),
+    file: t("ai.emptyGreetingFile"),
+    tab: t("ai.emptyGreetingTab"),
+    general: t("ai.emptyGreetingGeneral")
+  },
   permissions: t("ai.permissionsLabel"),
+  advancedTools: t("ai.advancedTools"),
   reviewChanges: t("ai.reviewChanges"),
   moreActions: t("ai.moreActions"),
   model: t("ai.modelLabel"),

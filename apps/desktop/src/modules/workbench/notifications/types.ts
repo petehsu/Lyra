@@ -99,8 +99,6 @@ export type WorkbenchNotificationModel = {
 export type NotificationCenterLabels = {
   readonly title: string;
   readonly listTitle: string;
-  readonly emptyState: string;
-  readonly detailEmpty: string;
   readonly markAllRead: string;
   readonly clearAll: string;
   readonly openSource: string;

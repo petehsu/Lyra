@@ -28,7 +28,6 @@ const createPreviewDetail = (): AgentSessionDetail => ({
     createdAt: 1,
     updatedAt: 4
   },
-  executionCheckpoints: [],
   pendingInteractions: [],
   turns: [],
   messages: [

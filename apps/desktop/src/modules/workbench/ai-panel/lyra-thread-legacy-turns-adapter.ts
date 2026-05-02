@@ -429,7 +429,6 @@ export const lyraThreadTurnsToAgentDetail = (thread: LyraThread): AgentSessionDe
 
   return {
     session,
-    executionCheckpoints: [],
     pendingInteractions: [],
     turns,
     messages,

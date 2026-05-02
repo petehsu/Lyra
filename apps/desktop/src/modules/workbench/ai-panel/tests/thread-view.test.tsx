@@ -172,6 +172,7 @@ describe("PlanCard", () => {
 
     expect(container.querySelector(".lyra-ai-plan-card")?.getAttribute("aria-label")).toBe("待审批计划");
     expect(screen.getByText("待审批计划")).toBeDefined();
+    expect(screen.getByText("步骤")).toBeDefined();
     expect(screen.queryByText("计划草案")).toBeNull();
     expect(container.querySelector(".lyra-ai-status-badge")).toBeNull();
   });

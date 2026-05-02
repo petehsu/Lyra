@@ -13,6 +13,7 @@ import {
   renderSourceLabel,
   renderTypeLabel
 } from "./view-panels";
+import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
 export type SkillsCenterSurfaceProps = {
   readonly model: SkillsCenterModel;
@@ -41,89 +42,99 @@ export const SkillsCenterSurface = ({ model, labels }: SkillsCenterSurfaceProps)
     }
     void model.readSkillDetails(selectedSkill.skillId);
   }, [model, selectedDetails, selectedSkill]);
+  const titlebarContribution = useMemo(
+    () => ({
+      ariaLabel: labels.title,
+      content: (
+        <>
+          <div className="lyra-titlebar-context-controls">
+            <button
+              type="button"
+              className={
+                state.preferredScope === "global"
+                  ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                  : "lyra-titlebar-context-text-button"
+              }
+              onClick={() => { model.setPreferredScope("global"); }}
+            >
+              {labels.scopeGlobal}
+              <span>{state.globalSkills.length}</span>
+            </button>
+            <button
+              type="button"
+              className={
+                state.preferredScope === "project"
+                  ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                  : "lyra-titlebar-context-text-button"
+              }
+              disabled={state.projectSkills.length === 0}
+              onClick={() => { model.setPreferredScope("project"); }}
+            >
+              {labels.scopeProject}
+              <span>{state.projectSkills.length > 0 ? String(state.projectSkills.length) : "—"}</span>
+            </button>
+            {([
+              ["all", labels.statusAll],
+              ["enabled", labels.statusEnabled],
+              ["disabled", labels.statusDisabled],
+              ["untrusted", labels.statusUntrusted]
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={
+                  state.statusFilter === value
+                    ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                    : "lyra-titlebar-context-text-button"
+                }
+                onClick={() => { model.setStatusFilter(value); }}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="lyra-titlebar-context-icon-button"
+              aria-label={labels.actionRefresh}
+              onClick={() => { void model.load(); }}
+            >
+              <RefreshCw size={14} />
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button"
+              onClick={model.openCatalog}
+            >
+              <Package size={14} />
+              <span>{labels.actionOpenCatalog}</span>
+            </button>
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button"
+              onClick={model.openCreate}
+            >
+              <FilePlus2 size={14} />
+              <span>{labels.actionOpenCreate}</span>
+            </button>
+          </div>
+        </>
+      )
+    }),
+    [
+      labels,
+      model,
+      state.globalSkills.length,
+      state.preferredScope,
+      state.projectSkills.length,
+      state.statusFilter
+    ]
+  );
+  useWorkbenchTitlebarContribution(titlebarContribution);
 
   return (
     <section className="lyra-skills-center-surface lyra-mcp-center-surface" aria-label="ai-skills-surface">
       <div className="lyra-mcp-center-shell lyra-mcp-center-shell-no-sidebar lyra-skills-center-shell">
         <section className="lyra-mcp-center-main lyra-skills-center-main">
-          <header className="lyra-mcp-center-toolbar lyra-skills-center-toolbar">
-            <div className="lyra-mcp-center-toolbar-filters">
-              <div className="lyra-mcp-center-scope-tabs">
-                <button
-                  type="button"
-                  className={
-                    state.preferredScope === "global"
-                      ? "lyra-mcp-center-tab lyra-mcp-center-tab-active"
-                      : "lyra-mcp-center-tab"
-                  }
-                  onClick={() => { model.setPreferredScope("global"); }}
-                >
-                  {labels.scopeGlobal}
-                  <small>{state.globalSkills.length}</small>
-                </button>
-                <button
-                  type="button"
-                  className={
-                    state.preferredScope === "project"
-                      ? "lyra-mcp-center-tab lyra-mcp-center-tab-active"
-                      : "lyra-mcp-center-tab"
-                  }
-                  disabled={state.projectSkills.length === 0}
-                  onClick={() => { model.setPreferredScope("project"); }}
-                >
-                  {labels.scopeProject}
-                  <small>
-                    {state.projectSkills.length > 0
-                      ? String(state.projectSkills.length)
-                      : "—"}
-                  </small>
-                </button>
-              </div>
-              <div className="lyra-mcp-center-status-pills">
-                {([
-                  ["all", labels.statusAll],
-                  ["enabled", labels.statusEnabled],
-                  ["disabled", labels.statusDisabled],
-                  ["untrusted", labels.statusUntrusted]
-                ] as const).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={
-                      state.statusFilter === value
-                        ? "lyra-mcp-center-pill lyra-mcp-center-pill-active"
-                        : "lyra-mcp-center-pill"
-                    }
-                    onClick={() => { model.setStatusFilter(value); }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="lyra-mcp-center-actions">
-              <button
-                type="button"
-                className="lyra-mcp-center-button lyra-mcp-center-button-ghost"
-                onClick={() => { void model.load(); }}
-              >
-                <RefreshCw size={14} />
-              </button>
-              <button
-                type="button"
-                className="lyra-mcp-center-button lyra-mcp-center-button-ghost"
-                onClick={model.openCatalog}
-              >
-                <Package size={14} />
-                <span>{labels.actionOpenCatalog}</span>
-              </button>
-              <button type="button" className="lyra-mcp-center-button" onClick={model.openCreate}>
-                <FilePlus2 size={14} />
-                <span>{labels.actionOpenCreate}</span>
-              </button>
-            </div>
-          </header>
-
           {state.errorMessage === null ? null : (
             <div className="lyra-mcp-center-banner">
               <AlertTriangle size={14} />

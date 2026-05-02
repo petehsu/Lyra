@@ -59,6 +59,21 @@ const readPendingInteractionKind = (
   if (normalized === "planapproval") {
     return "plan_approval";
   }
+  if (normalized === "commandexecutionapproval") {
+    return "command_execution_approval";
+  }
+  if (normalized === "filechangeapproval") {
+    return "file_change_approval";
+  }
+  if (normalized === "permissionsapproval") {
+    return "permissions_approval";
+  }
+  if (normalized === "tooluserinput") {
+    return "tool_user_input";
+  }
+  if (normalized === "mcpelicitation") {
+    return "mcp_elicitation";
+  }
   return null;
 };
 
@@ -432,7 +447,6 @@ export const aiPanelViewModelToAgentDetail = (
   }
   return {
     session,
-    executionCheckpoints: [],
     pendingInteractions,
     turns: [...turnById.values()].sort((left, right) => left.createdAt - right.createdAt),
     messages: [...messageById.values()].sort((left, right) => left.createdAt - right.createdAt),

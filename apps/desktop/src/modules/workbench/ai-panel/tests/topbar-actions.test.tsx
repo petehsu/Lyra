@@ -62,6 +62,27 @@ describe("ai panel topbar actions", () => {
     expect(onReview).toHaveBeenCalledTimes(1);
   });
 
+  test("exposes advanced tools from the more menu", () => {
+    const onAdvanced = vi.fn();
+
+    render(
+      <AiPanelTopbarActions
+        activeBoundProjectName={null}
+        isBindingProject={false}
+        bindProjectLabel="Bind Project"
+        isAgentAvailable
+        onOpenAdvancedTools={onAdvanced}
+        advancedToolsLabel="Advanced tools"
+        moreActionsLabel="More"
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText("More"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Advanced tools" }));
+
+    expect(onAdvanced).toHaveBeenCalledTimes(1);
+  });
+
   test("omits review when no usable review action is provided", () => {
     render(
       <AiPanelTopbarActions

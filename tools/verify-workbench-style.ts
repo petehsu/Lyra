@@ -85,6 +85,24 @@ const REACT_STATEFUL_VIEW_IMPORTS = new Set([
 ]);
 
 const STATEFUL_VIEW_HOOK_PATTERN = /\bReact\.use(?:Callback|Effect|LayoutEffect|Memo|Reducer|Ref|State)\b/;
+const DISALLOWED_TITLEBAR_CONTEXT_TITLE_CLASS = "lyra-titlebar-context-title";
+const DISALLOWED_LOCAL_TITLEBAR_CLASSES = [
+  "lyra-file-manager-toolbar",
+  "lyra-file-editor-toolbar",
+  "lyra-results-topbar",
+  "lyra-deep-search-topbar",
+  "lyra-deep-search-toolbar",
+  "lyra-image-viewer-toolbar",
+  "lyra-mcp-center-toolbar",
+  "lyra-skills-center-toolbar",
+  "lyra-plugins-center-toolbar",
+  "lyra-notification-center-header",
+  "lyra-resource-monitor-header",
+  "lyra-ai-history-topbar",
+  "lyra-ai-history-scope-tabs",
+  "lyra-ai-plan-review__header",
+  "lyra-ai-plan-review__toolbar"
+] as const;
 
 const selectorRules: readonly SelectorRule[] = [
   {
@@ -127,11 +145,216 @@ const selectorRules: readonly SelectorRule[] = [
   {
     selector: ".lyra-context-menu-item:hover:enabled",
     required: [/background:\s*transparent\s*;/]
+  },
+  {
+    selector: ".lyra-ai-panel-project-bind-active",
+    required: [/background:\s*transparent\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused)\)/]
+  },
+  {
+    selector: ".lyra-ai-plan-card__action-primary",
+    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
+  },
+  {
+    selector: ".lyra-ai-plan-card__action-secondary",
+    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
+  },
+  {
+    selector: ".lyra-ai-agent-follow-toggle-active",
+    required: [/color:\s*var\(--lyra-text-primary\)\s*;/, /background:\s*transparent\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
+  },
+  {
+    selector: ".lyra-ai-agent-send-ready",
+    required: [
+      /color:\s*var\(--lyra-text-primary\)\s*;/,
+      /border-color:\s*transparent\s*;/,
+      /background:\s*transparent\s*;/,
+      /box-shadow:\s*none\s*;/
+    ],
+    forbidden: [/#ffffff/i, /var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
+  },
+  {
+    selector: ".lyra-ai-agent-send-ready .lyra-ai-agent-send-icon",
+    required: [/transform:\s*none\s*;/]
+  },
+  {
+    selector: ".lyra-ai-agent-send-sending",
+    required: [/border-color:\s*transparent\s*;/, /background:\s*transparent\s*;/],
+    forbidden: [/animation\s*:/, /var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
+  },
+  {
+    selector: ".lyra-ai-history-row-project-icon",
+    required: [/color:\s*var\(--lyra-text-muted\)\s*;/],
+    forbidden: [/var\(--lyra-line-focused\)/]
+  },
+  {
+    selector: ".lyra-ai-history-project-card-icon",
+    required: [/color:\s*var\(--lyra-text-muted\)\s*;/],
+    forbidden: [/var\(--lyra-line-focused\)/]
+  },
+  {
+    selector: ".lyra-settings-ai-action-icon",
+    required: [/border-color:\s*transparent\s*;/, /background:\s*transparent\s*;/]
+  },
+  {
+    selector: ".lyra-settings-ai-action-primary.lyra-settings-ai-action-icon",
+    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/, /border-color:\s*transparent\s*;/, /background:\s*transparent\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
+  },
+  {
+    selector: ".lyra-command-approval-bar__icon-action--allow",
+    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/],
+    forbidden: [/var\(--lyra-terminal-green/]
+  },
+  {
+    selector: ".lyra-command-approval-bar__icon-action--allow-once",
+    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/],
+    forbidden: [/var\(--lyra-terminal-green/]
+  },
+  {
+    selector: ".lyra-logo-toggle-active",
+    required: [/color:\s*var\(--lyra-text-primary\)\s*;/],
+    forbidden: [/#f8c55d/i, /var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/, /radial-gradient\(/, /box-shadow\s*:/]
+  },
+  {
+    selector: ".lyra-browser-mode-chip",
+    required: [/background:\s*color-mix\(/],
+    forbidden: [/#f8c55d/i, /rgba\(248/i, /linear-gradient\(/, /var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-deep-search-filter-chip-active",
+    required: [/color:\s*var\(--lyra-text-primary\)\s*;/],
+    forbidden: [/#f8c55d/i, /rgba\(109/i, /linear-gradient\(/, /var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-deep-search-node-selected",
+    required: [/border-color:\s*color-mix\(/],
+    forbidden: [/#f8c55d/i, /var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-engine-marker",
+    required: [/background:\s*color-mix\(in srgb,\s*var\(--lyra-text-muted\)/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-notification-topbar-preview",
+    required: [/background:\s*color-mix\(/, /backdrop-filter:\s*none\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/, /linear-gradient\(/]
+  },
+  {
+    selector: ".lyra-notification-topbar-preview-marquee",
+    required: [/animation:\s*none\s*;/]
+  },
+  {
+    selector: ".lyra-file-manager-disk-kind-system",
+    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/],
+    forbidden: [/var\(--lyra-terminal-green/]
+  },
+  {
+    selector: ".lyra-file-manager-disk-meter-fill-healthy",
+    required: [/background:\s*color-mix\(in srgb,\s*var\(--lyra-text-secondary\)/],
+    forbidden: [/var\(--lyra-terminal-green/]
+  },
+  {
+    selector: ".lyra-file-manager-disk-vector-system",
+    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/],
+    forbidden: [/var\(--lyra-terminal-green/]
+  },
+  {
+    selector: ".lyra-file-manager-chooser-confirm",
+    required: [/background:\s*transparent\s*;/, /color:\s*var\(--lyra-text-secondary\)\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-ai-plan-bar__progress-step",
+    required: [/width:\s*var\(--lyra-unit-18\)\s*;/, /height:\s*var\(--lyra-unit-2\)\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-ai-plan-review__approve",
+    required: [/background:\s*transparent\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-ai-agent-runtime-feed-target-running",
+    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/, /animation:\s*none\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/, /linear-gradient\(/]
+  },
+  {
+    selector: ".lyra-ai-thread-tab-item[data-status=\"running\"] .lyra-ai-thread-tab-icon",
+    required: [/color:\s*var\(--lyra-text-primary\)\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-mcp-center-side-button-active::before",
+    required: [/background:\s*color-mix\(in srgb,\s*var\(--lyra-text-primary\)/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-mcp-center-server-row-active::before",
+    required: [/background:\s*color-mix\(in srgb,\s*var\(--lyra-text-primary\)/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-global-dialog-action-primary",
+    required: [/color:\s*var\(--lyra-text-primary\)\s*;/],
+    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
+  },
+  {
+    selector: ".lyra-workspace",
+    required: [/grid-template-rows:\s*minmax\(0,\s*1fr\)\s*var\(--lyra-size-browser-tab-h\)\s*;/]
+  },
+  {
+    selector: ".lyra-workspace > .lyra-browser-tabs",
+    required: [/grid-row:\s*2\s*;/]
+  },
+  {
+    selector: ".lyra-workspace-surface-single",
+    required: [/grid-row:\s*1\s*;/]
+  },
+  {
+    selector: ".lyra-workspace-surface-split",
+    required: [/grid-row:\s*1\s*;/]
+  },
+  {
+    selector: ".lyra-browser-tabs::before",
+    required: [/top:\s*0\s*;/],
+    forbidden: [/bottom:\s*0\s*;/]
+  },
+  {
+    selector: ".lyra-browser-tab-item",
+    required: [/margin-top:\s*var\(--lyra-unit-3\)\s*;/, /margin-bottom:\s*0\s*;/]
+  },
+  {
+    selector: ".lyra-browser-tabs .lyra-browser-tab-item",
+    required: [/margin-bottom:\s*var\(--lyra-unit-3\)\s*;/],
+    forbidden: [/margin-top:\s*var\(--lyra-unit-3\)\s*;/]
+  },
+  {
+    selector: ".lyra-browser-tabs .lyra-chrome-tab-background-svg",
+    required: [/transform:\s*scaleY\(-1\)\s*;/]
+  },
+  {
+    selector: ".lyra-browser-tabs .lyra-browser-tab-item-active::before",
+    required: [/top:\s*calc\(var\(--lyra-unit-0-5\)\s*\*\s*-1\)\s*;/, /bottom:\s*auto\s*;/]
+  },
+  {
+    selector: ".lyra-browser-tabs .lyra-browser-tab-item-split-group-active::before",
+    required: [/top:\s*calc\(var\(--lyra-unit-0-5\)\s*\*\s*-1\)\s*;/, /bottom:\s*auto\s*;/]
+  },
+  {
+    selector: ".lyra-browser-tab-item:hover .lyra-browser-tab-title",
+    required: [/color:\s*var\(--lyra-text-primary\)\s*;/]
   }
 ];
 
 const iconOnlyHoverRules: readonly IconOnlyHoverRule[] = [
   { selector: ".lyra-titlebar-navigation-action:hover" },
+  { selector: ".lyra-titlebar-context-icon-button:hover:enabled" },
+  { selector: ".lyra-titlebar-context-text-button:hover:enabled" },
   { selector: ".lyra-window-button:hover" },
   { selector: ".lyra-window-button-close:hover" },
   { selector: ".lyra-browser-nav-button:hover" },
@@ -185,6 +408,18 @@ const globalForbiddenPatterns: readonly { readonly pattern: RegExp; readonly mes
   {
     pattern: /\.lyra-settings-choice-active\s*\{[^}]*background:\s*color-mix\(/gs,
     message: "Settings choice active block must stay transparent."
+  },
+  {
+    pattern: /\.lyra-browser-tab-item:hover\s+\.lyra-chrome-tab-background\s*\{/gs,
+    message: "Tab hover must not reveal or alter the tab shape; only text brightness may change."
+  },
+  {
+    pattern: /\.lyra-browser-tab-item:hover\s+\.lyra-chrome-tab-dividers/gs,
+    message: "Tab hover must not alter tab dividers; only text brightness may change."
+  },
+  {
+    pattern: /\.lyra-browser-tab-item:hover\s*\{[^}]*z-index\s*:/gs,
+    message: "Tab hover must not change tab stacking style; only text brightness may change."
   }
 ];
 
@@ -206,7 +441,10 @@ const collectSelectorBlocks = (css: string): CssSelectorBlock[] =>
     .filter((block) => block.selectors.length > 0);
 
 const findSelectorBlock = (css: string, selector: string): string | null => {
-  const matchingBlock = collectSelectorBlocks(css).find((block) => block.selectors.includes(selector));
+  const blocks = collectSelectorBlocks(css);
+  const matchingBlock =
+    blocks.find((block) => block.selectors.length === 1 && block.selectors[0] === selector)
+    ?? blocks.find((block) => block.selectors.includes(selector));
   return matchingBlock?.body ?? null;
 };
 
@@ -300,6 +538,9 @@ const isRuntimeModuleSpecifier = (moduleSpecifier: string): boolean => {
     || basename.endsWith("-runtime")
     || basename.endsWith("-task");
 };
+
+const hasExactClassToken = (text: string, className: string): boolean =>
+  new RegExp(`(?<![A-Za-z0-9_-])${escapeRegex(className)}(?![A-Za-z0-9_-])`, "u").test(text);
 
 export const collectFiles = (rootDir: string, predicate: (filePath: string) => boolean): string[] => {
   if (!fs.existsSync(rootDir)) {
@@ -709,6 +950,102 @@ export const scanWorkbenchUiComposition = (filePath: string, text: string): stri
   return violations;
 };
 
+export const scanWorkbenchDesignContracts = (filePath: string, text: string): string[] => {
+  const normalizedPath = normalizePath(filePath);
+  const relativePath = reportPath(filePath);
+  const violations: string[] = [];
+
+  if (normalizedPath.endsWith(".tsx")) {
+    if (hasExactClassToken(text, DISALLOWED_TITLEBAR_CONTEXT_TITLE_CLASS)) {
+      violations.push(`${relativePath}:1 Global titlebar contributions must not render visible title blocks; the active tab already carries the surface title.`);
+    }
+    for (const className of DISALLOWED_LOCAL_TITLEBAR_CLASSES) {
+      if (hasExactClassToken(text, className)) {
+        violations.push(`${relativePath}:1 Workspace surfaces must move ${className} controls into the global titlebar contribution.`);
+      }
+    }
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/ai-panel\/plan-card\.tsx$/.test(normalizedPath)
+    && /\bStatusIndicator\b/.test(text)
+  ) {
+    violations.push(`${relativePath}:1 PlanCard title must not render a decorative status dot.`);
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/ai-history\/surface-view\.tsx$/.test(normalizedPath)
+    && (/\bprojectLogoUrlForRoot\b/.test(text) || /projectLogoUrl=\{(?!null\})/u.test(text))
+  ) {
+    violations.push(`${relativePath}:1 AI history rows must use neutral project symbols, not colored project logos.`);
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/ai-panel\/thread-tabs\.tsx$/.test(normalizedPath)
+    && (/\bprojectLogoUrlForRoot\b/.test(text) || /projectLogoUrl=\{(?!null\})/u.test(text))
+  ) {
+    violations.push(`${relativePath}:1 AI thread tabs must use neutral project symbols, not colored project logos.`);
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/ai-panel\/plan-question-bar\.tsx$/.test(normalizedPath)
+    && /progress-dot/.test(text)
+  ) {
+    violations.push(`${relativePath}:1 Plan question navigation must not use decorative dot indicators.`);
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/browser-search\/(?:result-engine-overview|deep-search-overview-sections|result-web-section)\.tsx$/.test(normalizedPath)
+    && /style=\{\{[^}]*accentColor/u.test(text)
+  ) {
+    violations.push(`${relativePath}:1 Browser search surfaces must not render per-engine accent colors inline.`);
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/browser-search\/(?:result-engine-overview|deep-search-overview-sections)\.tsx$/.test(normalizedPath)
+    && /engine-dot/.test(text)
+  ) {
+    violations.push(`${relativePath}:1 Browser search source markers must not use decorative dot indicators.`);
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/browser-search\/deep-search-canvas\.tsx$/.test(normalizedPath)
+    && /#[0-9a-fA-F]{6}/u.test(text)
+  ) {
+    violations.push(`${relativePath}:1 Deep search minimap nodes must stay neutral, not per-kind accent colors.`);
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/browser-search\/result-surface-model\.ts$/.test(normalizedPath)
+    && /sourceChips:[\s\S]*accentColor/u.test(text)
+  ) {
+    violations.push(`${relativePath}:1 Browser result source chips must stay neutral and not carry accentColor.`);
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/command-approval-bar\/view\.tsx$/.test(normalizedPath)
+    && (/risk\.color/.test(text) || /style=\{\{[^}]*color/u.test(text) || /#[0-9a-fA-F]{6}/u.test(text))
+  ) {
+    violations.push(`${relativePath}:1 Command approval risk display must stay neutral; reserve red for deny/error actions.`);
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/shell\/element-picker-appearance\.ts$/.test(normalizedPath)
+    && (/--lyra-(?:line-focused|text-accent)/.test(text) || /#7d82e8|#5c78e2/i.test(text))
+  ) {
+    violations.push(`${relativePath}:1 Browser element picker appearance must use neutral workbench tones, not accent tokens.`);
+  }
+
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/ai-panel\/rich-content\.tsx$/.test(normalizedPath)
+    && /--lyra-line-focused/.test(text)
+  ) {
+    violations.push(`${relativePath}:1 AI rich content diagrams must use neutral line tokens, not focused accent tokens.`);
+  }
+
+  return violations;
+};
+
 export const scanWorkbenchShellEntrypointSize = (filePath: string, text: string): string[] => {
   const normalizedPath = normalizePath(filePath);
   if (
@@ -745,6 +1082,7 @@ export const runUiStyleGuard = (): string[] => {
     const text = fs.readFileSync(filePath, "utf8");
     violations.push(...scanInlineStyleLiterals(filePath, text));
     violations.push(...scanWorkbenchUiComposition(filePath, text));
+    violations.push(...scanWorkbenchDesignContracts(filePath, text));
     violations.push(...scanWorkbenchShellEntrypointSize(filePath, text));
   }
 

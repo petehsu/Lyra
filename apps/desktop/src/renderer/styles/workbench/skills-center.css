@@ -27,12 +27,12 @@
 }
 
 .lyra-skills-center-preview-item:hover {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 88%, var(--lyra-line-focused) 12%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
   background: color-mix(in srgb, var(--lyra-bg-hover) 24%, transparent);
 }
 
 .lyra-skills-center-preview-item-selected {
-  border-color: var(--lyra-line-focused);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 46%, var(--lyra-text-secondary) 54%);
   background: color-mix(in srgb, var(--lyra-bg-hover) 34%, transparent);
 }
 
@@ -88,11 +88,7 @@
 }
 
 .lyra-skills-center-sidebar {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--lyra-bg-panel) 74%, var(--lyra-bg-editor) 26%) 0%,
-    color-mix(in srgb, var(--lyra-bg-panel) 58%, var(--lyra-bg-editor) 42%) 100%
-  );
+  background: color-mix(in srgb, var(--lyra-bg-panel) 68%, var(--lyra-bg-editor) 32%);
 }
 
 .lyra-skills-center-toolbar {
@@ -104,11 +100,7 @@
 }
 
 .lyra-skills-center-detail-panel {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--lyra-bg-editor) 96%, transparent) 0%,
-    color-mix(in srgb, var(--lyra-bg-panel) 8%, var(--lyra-bg-editor) 92%) 100%
-  );
+  background: var(--lyra-bg-editor);
 }
 
 .lyra-skills-center-panel-shell .lyra-mcp-center-field,

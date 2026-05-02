@@ -4,7 +4,8 @@ import {
   MoreHorizontal,
   PanelLeftOpen,
   PanelRightOpen,
-  ShieldCheck
+  ShieldCheck,
+  SlidersHorizontal
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -23,11 +24,13 @@ type AiPanelTopbarActionsProps = {
   readonly onOpenSkills?: (() => void) | undefined;
   readonly onOpenPlugins?: (() => void) | undefined;
   readonly onOpenPermissions?: (() => void) | undefined;
+  readonly onOpenAdvancedTools?: (() => void) | undefined;
   readonly openHistoryLabel?: string | undefined;
   readonly openMcpLabel?: string | undefined;
   readonly openSkillsLabel?: string | undefined;
   readonly openPluginsLabel?: string | undefined;
   readonly openPermissionsLabel?: string | undefined;
+  readonly advancedToolsLabel?: string | undefined;
   readonly onStartReview?: (() => void) | undefined;
   readonly reviewChangesLabel?: string | undefined;
   readonly aiPanelSide?: AiPanelSide | undefined;
@@ -58,11 +61,13 @@ export const AiPanelTopbarActions = ({
   onOpenSkills,
   onOpenPlugins,
   onOpenPermissions,
+  onOpenAdvancedTools,
   openHistoryLabel,
   openMcpLabel,
   openSkillsLabel,
   openPluginsLabel,
   openPermissionsLabel,
+  advancedToolsLabel,
   onStartReview,
   reviewChangesLabel,
   aiPanelSide = "left",
@@ -78,6 +83,7 @@ export const AiPanelTopbarActions = ({
     || (onOpenSkills !== undefined && openSkillsLabel !== undefined)
     || (onOpenPlugins !== undefined && openPluginsLabel !== undefined)
     || (onOpenPermissions !== undefined && openPermissionsLabel !== undefined)
+    || (onOpenAdvancedTools !== undefined && advancedToolsLabel !== undefined)
     || onToggleAiPanelSide !== undefined
     || onStartReview !== undefined;
   const movePanelLabel =
@@ -128,7 +134,7 @@ export const AiPanelTopbarActions = ({
             title={`${bindProjectLabel}: ${activeBoundProjectName ?? activeProjectName}`}
             onClick={onRequestProjectBind}
           >
-            <FolderOpen size={13} aria-hidden="true" />
+            <FolderOpen size={14} aria-hidden="true" />
             <span>{activeProjectName}</span>
           </ChromeIconButton>
         )
@@ -155,7 +161,7 @@ export const AiPanelTopbarActions = ({
             aria-expanded={isMoreOpen}
             title={moreActionsLabel}
           >
-            <MoreHorizontal size={15} aria-hidden="true" />
+            <MoreHorizontal size={14} aria-hidden="true" />
           </ChromeIconButton>
           {isMoreOpen ? (
             <div className="lyra-ai-panel-topbar-more-menu" role="menu">
@@ -213,6 +219,20 @@ export const AiPanelTopbarActions = ({
                 >
                   <ShieldCheck size={14} aria-hidden="true" />
                   <span>{openPermissionsLabel}</span>
+                </button>
+              )}
+              {onOpenAdvancedTools === undefined || advancedToolsLabel === undefined ? null : (
+                <button
+                  type="button"
+                  className="lyra-ai-panel-topbar-more-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setIsMoreOpen(false);
+                    onOpenAdvancedTools();
+                  }}
+                >
+                  <SlidersHorizontal size={14} aria-hidden="true" />
+                  <span>{advancedToolsLabel}</span>
                 </button>
               )}
               {onToggleAiPanelSide === undefined ? null : (

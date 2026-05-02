@@ -258,16 +258,6 @@ impl OutgoingMessageSender {
         self.request_contexts.lock().await.len()
     }
 
-    pub(crate) async fn send_request(
-        &self,
-        request: ServerRequestPayload,
-    ) -> (RequestId, oneshot::Receiver<ClientRequestResult>) {
-        self.send_request_to_connections(
-            /*connection_ids*/ None, request, /*thread_id*/ None,
-        )
-        .await
-    }
-
     fn next_request_id(&self) -> RequestId {
         RequestId::Integer(self.next_server_request_id.fetch_add(1, Ordering::Relaxed))
     }
@@ -385,10 +375,6 @@ impl OutgoingMessageSender {
                 warn!("could not find callback for {id:?}");
             }
         }
-    }
-
-    pub(crate) async fn cancel_request(&self, id: &RequestId) -> bool {
-        self.take_request_callback(id).await.is_some()
     }
 
     pub(crate) async fn cancel_all_requests(&self, error: Option<JSONRPCErrorError>) {
@@ -892,9 +878,14 @@ mod tests {
     #[tokio::test]
     async fn notify_client_error_forwards_error_to_waiter() {
         let (tx, _rx) = mpsc::channel::<OutgoingEnvelope>(4);
-        let outgoing = OutgoingMessageSender::new(tx);
+        let outgoing = Arc::new(OutgoingMessageSender::new(tx));
+        let thread_outgoing = ThreadScopedOutgoingMessageSender::new(
+            outgoing.clone(),
+            vec![ConnectionId(1)],
+            ThreadId::new(),
+        );
 
-        let (request_id, wait_for_result) = outgoing
+        let (request_id, wait_for_result) = thread_outgoing
             .send_request(ServerRequestPayload::ApplyPatchApproval(
                 ApplyPatchApprovalParams {
                     conversation_id: ThreadId::new(),

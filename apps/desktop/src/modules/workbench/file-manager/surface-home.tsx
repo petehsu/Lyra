@@ -40,26 +40,6 @@ export const FileManagerHomeContent = ({
   const home = renderModel.body.home;
   return (
     <div className="lyra-file-manager-home">
-      <HomeSection title={labels.homeSectionFavorites} section="favorites">
-        {home.favorites.map((favorite) => (
-          <button
-            key={favorite.id}
-            className="lyra-file-manager-home-card"
-            onClick={() => {
-              actions.onOpenDirectoryPath(favorite.path);
-            }}
-            onContextMenu={(event) => {
-              preventContextMenuDefaults(event);
-              actions.onFavoriteContextMenu(favorite, event.clientX, event.clientY);
-            }}
-          >
-            {renderFileManagerLocationIcon(favorite)}
-            <strong>{favorite.title}</strong>
-            <small>{favorite.path}</small>
-          </button>
-        ))}
-      </HomeSection>
-
       <HomeSection title={labels.homeSectionLocations} section="locations">
         {home.locations.map((location) => (
           <button
@@ -184,6 +164,55 @@ export const FileManagerHomeContent = ({
           </button>
         ))}
       </HomeSection>
+    </div>
+  );
+};
+
+export const FileManagerFavoritesContent = ({
+  renderModel,
+  labels,
+  actions
+}: FileManagerSurfaceViewProps) => {
+  if (renderModel.body.kind !== "favorites") {
+    return null;
+  }
+
+  const favorites = renderModel.body.favorites;
+
+  return (
+    <div className="lyra-file-manager-favorites-page">
+      <header className="lyra-file-manager-favorites-header">
+        {renderFileManagerSectionIcon("favorites")}
+        <h3>{labels.homeSectionFavorites}</h3>
+      </header>
+      {favorites.isEmpty ? (
+        <div className="lyra-file-manager-empty-state">
+          {labels.noFavorites}
+        </div>
+      ) : (
+        <div className="lyra-file-manager-favorites-list">
+          {favorites.favorites.map((favorite) => (
+            <button
+              key={favorite.id}
+              type="button"
+              className="lyra-file-manager-favorite-row"
+              onClick={() => {
+                actions.onOpenDirectoryPath(favorite.path);
+              }}
+              onContextMenu={(event) => {
+                preventContextMenuDefaults(event);
+                actions.onFavoriteContextMenu(favorite, event.clientX, event.clientY);
+              }}
+            >
+              {renderFileManagerLocationIcon(favorite)}
+              <span>
+                <strong>{favorite.title}</strong>
+                <small>{favorite.path}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

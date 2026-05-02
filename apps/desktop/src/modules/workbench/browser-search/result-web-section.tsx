@@ -89,7 +89,6 @@ export const ResultWebSection = ({
                   <span
                     key={`${result.id}-${chip.id}`}
                     className="lyra-result-source-chip"
-                    style={{ borderColor: chip.accentColor }}
                   >
                     {chip.label}
                   </span>

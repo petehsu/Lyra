@@ -817,7 +817,7 @@ describe("useLyraThreadRuntime", () => {
     expect(result.current.state.runtimeError).toBeNull();
   });
 
-  test("continues a restored missing runtime tab by resuming the original thread", async () => {
+  test("continues a restored cold runtime tab through turn start without frontend resume", async () => {
     writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
       version: 1,
       activeTabId: "thread:stale-thread",
@@ -829,7 +829,6 @@ describe("useLyraThreadRuntime", () => {
         updatedAt: 100,
       }],
     }));
-    let resumed = false;
     const request = vi.fn(async (payload: { method?: unknown; params?: Record<string, unknown> }) => {
       if (payload.method === "thread/list") {
         return {
@@ -853,25 +852,6 @@ describe("useLyraThreadRuntime", () => {
             cwd: "/repo",
             createdAt: 100,
             updatedAt: 100,
-            turns: [],
-          },
-        };
-      }
-      if (payload.method === "turn/start" && payload.params?.threadId === "stale-thread" && !resumed) {
-        throw new Error(
-          "Error invoking remote method 'lyra:lyra/runtime/request': Error: thread not found: stale-thread"
-        );
-      }
-      if (payload.method === "thread/resume") {
-        resumed = true;
-        return {
-          thread: {
-            id: "stale-thread",
-            preview: "Old",
-            modelProvider: "lp-openai",
-            cwd: "/repo",
-            createdAt: 100,
-            updatedAt: 200,
             turns: [],
           },
         };
@@ -927,17 +907,221 @@ describe("useLyraThreadRuntime", () => {
     expect(result.current.state.activeThreadId).toBe("stale-thread");
     expect(result.current.state.runtimeError).toBeNull();
     expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ method: "thread/start" }));
-    expect(request).toHaveBeenCalledWith(expect.objectContaining({
-      method: "thread/resume",
-      params: expect.objectContaining({ threadId: "stale-thread" }),
-    }));
+    expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ method: "thread/resume" }));
     expect(request).toHaveBeenCalledWith(expect.objectContaining({
       method: "turn/start",
       params: expect.objectContaining({ threadId: "stale-thread" }),
     }));
     expect(request.mock.calls.filter(([payload]) =>
       payload.method === "turn/start" && payload.params?.threadId === "stale-thread"
-    )).toHaveLength(2);
+    )).toHaveLength(1);
+  });
+
+  test("resolves hydrated numeric server request ids without stringifying the runtime request id", async () => {
+    const resolveServerRequest = vi.fn();
+    const request = vi.fn(async (payload: { method?: unknown }) => {
+      if (payload.method === "thread/list") {
+        return {
+          data: [{
+            id: "thread-1",
+            preview: "Needs approval",
+            modelProvider: "lp-openai",
+            cwd: "/repo",
+            createdAt: 100,
+            updatedAt: 100,
+            turns: [],
+          }],
+        };
+      }
+      if (payload.method === "thread/read") {
+        return {
+          thread: {
+            id: "thread-1",
+            preview: "Needs approval",
+            modelProvider: "lp-openai",
+            cwd: "/repo",
+            createdAt: 100,
+            updatedAt: 100,
+            turns: [],
+          },
+          viewModel: {
+            messages: [],
+            turns: [],
+            toolCalls: [],
+            plans: [],
+            pendingInteractions: [{
+              id: "3",
+              sessionId: "thread-1",
+              turnId: "turn-1",
+              kind: "commandExecutionApproval",
+              status: "pending",
+              payload: {
+                requestId: 3,
+                raw: {
+                  toolName: "terminal.exec",
+                  input: { command: "pwd" },
+                  metadata: { riskLevel: "low", mode: "command" },
+                },
+              },
+              createdAtMs: 1,
+              updatedAtMs: 1,
+            }],
+            turnMeta: [],
+          },
+        };
+      }
+      return {};
+    });
+    const desktopApi = {
+      lyra: {
+        request,
+        resolveServerRequest,
+        rejectServerRequest: vi.fn(),
+        health: vi.fn(),
+        notify: vi.fn(),
+        onEvent: () => () => {},
+      },
+    } as never;
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    act(() => {
+      result.current.actions.selectThread("thread-1");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.activeInteractionPanel?.kind).toBe("commandApproval");
+    });
+
+    await act(async () => {
+      await result.current.actions.respondToCommandApproval({
+        requestId: "3",
+        decision: "allow_once",
+        timestamp: 123,
+      });
+    });
+
+    expect(resolveServerRequest).toHaveBeenCalledWith({
+      requestId: 3,
+      result: { decision: "accept" },
+    });
+  });
+
+  test("resolves mcp elicitations with structured content and metadata", async () => {
+    const resolveServerRequest = vi.fn();
+    const request = vi.fn(async (payload: { method?: unknown }) => {
+      if (payload.method === "thread/list") {
+        return {
+          data: [{
+            id: "thread-1",
+            preview: "MCP",
+            modelProvider: "lp-openai",
+            cwd: "/repo",
+            createdAt: 100,
+            updatedAt: 100,
+            turns: [],
+          }],
+        };
+      }
+      if (payload.method === "thread/read") {
+        return {
+          thread: {
+            id: "thread-1",
+            preview: "MCP",
+            modelProvider: "lp-openai",
+            cwd: "/repo",
+            createdAt: 100,
+            updatedAt: 100,
+            turns: [],
+          },
+          viewModel: {
+            messages: [],
+            turns: [],
+            toolCalls: [],
+            plans: [],
+            pendingInteractions: [{
+              id: "mcp-1",
+              sessionId: "thread-1",
+              turnId: "turn-1",
+              kind: "mcpElicitation",
+              status: "pending",
+              payload: {
+                requestId: "server-1",
+                raw: {
+                  serverName: "Filesystem MCP",
+                  mode: "form",
+                  message: "Need input",
+                  requestedSchema: {
+                    type: "object",
+                    properties: {
+                      email: { type: "string", title: "Email" },
+                    },
+                    required: ["email"],
+                  },
+                },
+              },
+              createdAtMs: 1,
+              updatedAtMs: 1,
+            }],
+            turnMeta: [],
+          },
+        };
+      }
+      return {};
+    });
+    const desktopApi = {
+      lyra: {
+        request,
+        resolveServerRequest,
+        rejectServerRequest: vi.fn(),
+        health: vi.fn(),
+        notify: vi.fn(),
+        onEvent: () => () => {},
+      },
+    } as never;
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi,
+        interactionTextLabels: labels,
+      })
+    );
+
+    await waitFor(() => {
+      expect(request).toHaveBeenCalledWith(expect.objectContaining({ method: "thread/list" }));
+    });
+
+    act(() => {
+      result.current.actions.selectThread("thread-1");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.activeInteractionPanel?.kind).toBe("mcpElicitation");
+    });
+
+    await act(async () => {
+      await result.current.actions.respondToMcpElicitation({
+        action: "accept",
+        content: { email: "dev@example.com" },
+        meta: { persist: "session" },
+      });
+    });
+
+    expect(resolveServerRequest).toHaveBeenCalledWith({
+      requestId: "server-1",
+      result: {
+        action: "accept",
+        content: { email: "dev@example.com" },
+        _meta: { persist: "session" },
+      },
+    });
   });
 
   test("sends collaboration mode with turn/start when plan mode is requested", async () => {

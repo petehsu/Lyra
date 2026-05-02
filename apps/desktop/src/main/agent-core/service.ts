@@ -13,7 +13,10 @@ import {
 import type { LyraRuntimeClient } from "../runtime-client";
 import type { AgentCoreIpcBridge } from "./types";
 
-const PERSONA_SYNC_BUDGET_MS = 3_000;
+const IP_GEO_LOOKUP_BUDGET_MS = 3_000;
+const IP_GEO_WAIT_BUDGET_MS = 500;
+const IP_GEO_CACHE_TTL_MS = 15 * 60 * 1000;
+const IP_GEO_FAILURE_CACHE_TTL_MS = 60 * 1000;
 const IP_GEO_ENDPOINTS = [
   "https://ipapi.co/json/",
   "https://ipwho.is/"
@@ -51,6 +54,14 @@ type PersonaContextPayload = {
   readonly cpuCores: string;
   readonly memoryGb: string;
 };
+
+type IpLocationCache = {
+  readonly candidate: LocationCandidate | null;
+  readonly expiresAt: number;
+};
+
+let ipLocationCache: IpLocationCache | null = null;
+let ipLocationInFlight: Promise<LocationCandidate | null> | null = null;
 
 const readTrimmedString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -163,11 +174,12 @@ const parseIpLocationCandidate = (
 };
 
 const resolveIpLocation = async (
-  budgetStart: number
+  budgetStart: number,
+  budgetMs: number
 ): Promise<LocationCandidate | null> => {
   for (const endpoint of IP_GEO_ENDPOINTS) {
     const elapsed = Date.now() - budgetStart;
-    const remaining = PERSONA_SYNC_BUDGET_MS - elapsed;
+    const remaining = budgetMs - elapsed;
     if (remaining <= 300) {
       return null;
     }
@@ -181,6 +193,46 @@ const resolveIpLocation = async (
     }
   }
   return null;
+};
+
+const refreshIpLocationCache = (): Promise<LocationCandidate | null> => {
+  if (ipLocationInFlight !== null) {
+    return ipLocationInFlight;
+  }
+  ipLocationInFlight = resolveIpLocation(Date.now(), IP_GEO_LOOKUP_BUDGET_MS)
+    .then((candidate) => {
+      ipLocationCache = {
+        candidate,
+        expiresAt: Date.now() + (candidate === null ? IP_GEO_FAILURE_CACHE_TTL_MS : IP_GEO_CACHE_TTL_MS)
+      };
+      return candidate;
+    })
+    .finally(() => {
+      ipLocationInFlight = null;
+    });
+  return ipLocationInFlight;
+};
+
+const resolveCachedIpLocation = async (): Promise<LocationCandidate | null> => {
+  const now = Date.now();
+  if (ipLocationCache !== null && ipLocationCache.expiresAt > now) {
+    return ipLocationCache.candidate;
+  }
+
+  const refresh = refreshIpLocationCache();
+  let timeout: NodeJS.Timeout | null = null;
+  const timedOut = new Promise<null>((resolve) => {
+    timeout = setTimeout(() => {
+      resolve(null);
+    }, IP_GEO_WAIT_BUDGET_MS);
+  });
+  try {
+    return await Promise.race([refresh, timedOut]);
+  } finally {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
+  }
 };
 
 const toMemoryGb = (bytes: number): string => (bytes / (1024 ** 3)).toFixed(1);
@@ -201,7 +253,7 @@ const buildPersonaContextPayload = async (): Promise<PersonaContextPayload> => {
   const memoryGb = toMemoryGb(os.totalmem());
   const deviceProfile = `${osName} ${osVersion} (${architecture}), CPU ${cpuModel} x${cpuCores}, RAM ${memoryGb} GB`;
   const physicalLocation = inferPhysicalLocation(locale, timezone);
-  const ipLocation = await resolveIpLocation(Date.now());
+  const ipLocation = await resolveCachedIpLocation();
   const primaryLocation = physicalLocation ?? ipLocation;
   const locationDetailParts = [
     physicalLocation === null ? null : `physical=${physicalLocation.detail}`,
@@ -239,6 +291,13 @@ const shouldSyncPersonaContext = (request: LyraClientRequestPayload): boolean =>
   const method = readTrimmedString(request.method);
   return method === "thread/start" || method === "thread/resume" || method === "turn/start";
 };
+
+export const resetAgentCorePersonaContextCacheForTests = (): void => {
+  ipLocationCache = null;
+  ipLocationInFlight = null;
+};
+
+export const buildAgentCorePersonaContextForTests = buildPersonaContextPayload;
 
 export const createAgentCoreIpcBridge = (
   runtimeClient: LyraRuntimeClient

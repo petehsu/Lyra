@@ -45,6 +45,9 @@ export const PlanQuestionBar = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const activeQuestion = request.questions[activeIndex] ?? request.questions[0];
   const activeSelection = activeQuestion === undefined ? undefined : selected[activeQuestion.id];
+  const activeOptions = activeQuestion?.options ?? [];
+  const showFreeformInput = activeOptions.length === 0 || activeSelection?.kind === "other";
+  const allowOther = activeQuestion?.allowOther === true || activeOptions.length === 0;
 
   const isReady = useMemo(
     () => request.questions.every((question) => isSelectedAnswerReady(selected[question.id])),
@@ -83,9 +86,9 @@ export const PlanQuestionBar = ({
                 key={question.id}
                 type="button"
                 className={[
-                  "lyra-ai-plan-bar__progress-dot",
-                  active ? "lyra-ai-plan-bar__progress-dot-active" : "",
-                  answered ? "lyra-ai-plan-bar__progress-dot-answered" : "",
+                  "lyra-ai-plan-bar__progress-step",
+                  active ? "lyra-ai-plan-bar__progress-step-active" : "",
+                  answered ? "lyra-ai-plan-bar__progress-step-answered" : "",
                 ].filter(Boolean).join(" ")}
                 aria-label={question.header}
                 onClick={() => {
@@ -97,11 +100,12 @@ export const PlanQuestionBar = ({
         </div>
       ) : null}
       <div className="lyra-ai-plan-bar__body">
-        <div className="lyra-ai-plan-bar__question">
-          <div className="lyra-ai-plan-bar__question-header">{activeQuestion.header}</div>
-          <div className="lyra-ai-plan-bar__question-text">{activeQuestion.question}</div>
+          <div className="lyra-ai-plan-bar__question">
+            <div className="lyra-ai-plan-bar__question-header">{activeQuestion.header}</div>
+            <div className="lyra-ai-plan-bar__question-text">{activeQuestion.question}</div>
+          {activeOptions.length === 0 && !allowOther ? null : (
           <div className="lyra-ai-plan-bar__options">
-            {activeQuestion.options.map((option) => {
+            {activeOptions.map((option) => {
               const active =
                 activeSelection?.kind === "option" && activeSelection.option.label === option.label;
               return (
@@ -125,6 +129,7 @@ export const PlanQuestionBar = ({
                 </button>
               );
             })}
+            {allowOther && activeOptions.length > 0 ? (
             <button
               type="button"
               className={
@@ -149,20 +154,38 @@ export const PlanQuestionBar = ({
                 {t("ai.planQuestionCustomReplyDescription")}
               </span>
             </button>
+            ) : null}
           </div>
-          {activeSelection?.kind === "other" ? (
-            <textarea
-              className="lyra-ai-plan-bar__note"
-              placeholder={t("ai.planQuestionCustomReplyPlaceholder")}
-              value={activeSelection.value}
-              onChange={(event) => {
-                const value = event.target.value;
-                setSelected((current) => ({
-                  ...current,
-                  [activeQuestion.id]: { kind: "other", value },
-                }));
-              }}
-            />
+          )}
+          {showFreeformInput ? (
+            activeQuestion.isSecret === true ? (
+              <input
+                type="password"
+                className="lyra-ai-plan-bar__note lyra-ai-plan-bar__secret"
+                placeholder={t("ai.planQuestionCustomReplyPlaceholder")}
+                value={activeSelection?.kind === "other" ? activeSelection.value : ""}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setSelected((current) => ({
+                    ...current,
+                    [activeQuestion.id]: { kind: "other", value },
+                  }));
+                }}
+              />
+            ) : (
+              <textarea
+                className="lyra-ai-plan-bar__note"
+                placeholder={t("ai.planQuestionCustomReplyPlaceholder")}
+                value={activeSelection?.kind === "other" ? activeSelection.value : ""}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setSelected((current) => ({
+                    ...current,
+                    [activeQuestion.id]: { kind: "other", value },
+                  }));
+                }}
+              />
+            )
           ) : null}
           {preview === null ? null : (
             <pre className="lyra-ai-plan-bar__preview">{preview}</pre>

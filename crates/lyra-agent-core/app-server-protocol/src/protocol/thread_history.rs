@@ -2097,7 +2097,7 @@ mod tests {
             }],
         };
 
-        let view_model = build_thread_ai_panel_view_model(&thread, None);
+        let view_model = build_thread_ai_panel_view_model(&thread, None, &[]);
 
         assert_eq!(view_model.turns.len(), 1);
         assert_eq!(view_model.turns[0].created_at_ms, 10_000);
@@ -2212,7 +2212,7 @@ mod tests {
             name: None,
             turns,
         };
-        let view_model = build_thread_ai_panel_view_model(&thread, None);
+        let view_model = build_thread_ai_panel_view_model(&thread, None, &[]);
         assert!(view_model.pending_interactions.is_empty());
     }
 

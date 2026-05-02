@@ -17,7 +17,8 @@
     var(--lyra-size-browser-nav-slot)
     var(--lyra-size-browser-nav-slot)
     var(--lyra-size-browser-nav-slot)
-    minmax(0, 1fr);
+    minmax(0, 1fr)
+    var(--lyra-size-browser-nav-slot);
   background: var(--lyra-tabstrip-bg);
   overflow: hidden;
 }
@@ -27,7 +28,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
+  top: 0;
   height: var(--lyra-unit-0-5);
   background: var(--lyra-tabstrip-line);
   pointer-events: none;
@@ -42,9 +43,9 @@
   top: 0;
   bottom: 0;
   pointer-events: none;
-  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-focused) 74%, transparent);
-  background: color-mix(in srgb, var(--lyra-line-focused) 14%, transparent);
-  box-shadow: inset 0 0 0 var(--lyra-unit-0-5) color-mix(in srgb, var(--lyra-line-focused) 38%, transparent);
+  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 18%, transparent);
+  box-shadow: none;
   z-index: 0;
 }
 
@@ -56,16 +57,16 @@
   top: 0;
   bottom: 0;
   pointer-events: none;
-  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-focused) 52%, transparent);
-  background: color-mix(in srgb, var(--lyra-line-focused) 8%, transparent);
+  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 14%, transparent);
   z-index: 0;
 }
 
 .lyra-browser-tabs-reorder-active {
   background-image: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--lyra-line-focused) 82%, transparent),
-    color-mix(in srgb, var(--lyra-line-focused) 82%, transparent)
+    color-mix(in srgb, var(--lyra-text-primary) 64%, transparent),
+    color-mix(in srgb, var(--lyra-text-primary) 64%, transparent)
   );
   background-repeat: no-repeat;
   background-size: var(--lyra-unit-1-5) 100%;
@@ -74,6 +75,11 @@
 
 .lyra-browser-nav-button {
   box-sizing: border-box;
+  align-self: center;
+  justify-self: center;
+  margin-bottom: var(--lyra-unit-3);
+  width: var(--lyra-size-icon-button-w);
+  height: var(--lyra-size-icon-button-h);
   border: 0;
   background: transparent;
   color: var(--lyra-text-muted);
@@ -110,6 +116,7 @@
   min-width: 0;
   display: flex;
   align-items: stretch;
+  grid-column: 4;
   padding-left: var(--lyra-unit-3);
   overflow-x: auto;
   overflow-y: hidden;
@@ -163,6 +170,7 @@
   max-width: var(--lyra-tab-max-w);
   height: calc(var(--lyra-size-browser-tab-h) - var(--lyra-unit-3));
   margin-top: var(--lyra-unit-3);
+  margin-bottom: 0;
   margin-left: 0;
   padding-inline: var(--lyra-tab-content-margin);
   display: grid;
@@ -174,16 +182,13 @@
   isolation: isolate;
 }
 
+.lyra-browser-tabs .lyra-browser-tab-item {
+  margin-top: 0;
+  margin-bottom: var(--lyra-unit-3);
+}
+
 .lyra-browser-tab-strip > .lyra-browser-tab-item + .lyra-browser-tab-item {
   margin-left: calc(var(--lyra-tab-overlap) * -1);
-}
-
-.lyra-browser-tab-item:hover {
-  z-index: 4;
-}
-
-.lyra-browser-tab-item:hover .lyra-chrome-tab-background {
-  opacity: 1;
 }
 
 .lyra-chrome-tab-shape {
@@ -245,6 +250,10 @@
   display: block;
 }
 
+.lyra-browser-tabs .lyra-chrome-tab-background-svg {
+  transform: scaleY(-1);
+}
+
 .lyra-chrome-tab-geometry {
   fill: var(--lyra-tab-shape-fill);
 }
@@ -255,18 +264,14 @@
 .lyra-browser-tab-item-active .lyra-chrome-tab-dividers::after,
 .lyra-browser-tab-item-split-group-active .lyra-chrome-tab-dividers::before,
 .lyra-browser-tab-item-split-group-active .lyra-chrome-tab-dividers::after,
-.lyra-browser-tab-item:hover .lyra-chrome-tab-dividers::before,
-.lyra-browser-tab-item:hover .lyra-chrome-tab-dividers::after,
 .lyra-browser-tab-item-active + .lyra-browser-tab-item .lyra-chrome-tab-dividers::before,
 .lyra-browser-tab-item-split-group-active + .lyra-browser-tab-item .lyra-chrome-tab-dividers::before,
-.lyra-browser-tab-item:hover + .lyra-browser-tab-item .lyra-chrome-tab-dividers::before,
 .lyra-browser-tab-item-split-joined-next .lyra-chrome-tab-dividers::after {
   opacity: 0;
 }
 
 .lyra-browser-tab-item:has(+ .lyra-browser-tab-item-active) .lyra-chrome-tab-dividers::after,
-.lyra-browser-tab-item:has(+ .lyra-browser-tab-item-split-group-active) .lyra-chrome-tab-dividers::after,
-.lyra-browser-tab-item:has(+ .lyra-browser-tab-item:hover) .lyra-chrome-tab-dividers::after {
+.lyra-browser-tab-item:has(+ .lyra-browser-tab-item-split-group-active) .lyra-chrome-tab-dividers::after {
   opacity: 0;
 }
 
@@ -322,6 +327,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color var(--lyra-transition-fast);
+}
+
+.lyra-browser-tab-item:hover .lyra-browser-tab-title,
+.lyra-browser-tab-item:focus-within .lyra-browser-tab-title {
+  color: var(--lyra-text-primary);
 }
 
 .lyra-browser-tab-close {
@@ -374,6 +385,12 @@
   z-index: 1;
 }
 
+.lyra-browser-tabs .lyra-browser-tab-item-active::before,
+.lyra-browser-tabs .lyra-browser-tab-item-split-group-active::before {
+  top: calc(var(--lyra-unit-0-5) * -1);
+  bottom: auto;
+}
+
 .lyra-browser-tab-item-active .lyra-browser-tab-main,
 .lyra-browser-tab-item-split-group-active .lyra-browser-tab-main {
   color: var(--lyra-text-primary);
@@ -412,7 +429,7 @@
   --lyra-tab-shape-fill: color-mix(in srgb, var(--lyra-bg-editor) 94%, var(--lyra-bg-surface) 6%);
   box-shadow:
     0 var(--lyra-unit-10) var(--lyra-unit-26) color-mix(in srgb, var(--lyra-text-primary) 24%, transparent),
-    0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-focused) 18%, transparent);
+    0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-default) 52%, transparent);
 }
 
 .lyra-browser-tab-right-drag-preview-tab .lyra-chrome-tab-background {
@@ -440,7 +457,7 @@
   bottom: var(--lyra-unit-6);
   width: var(--lyra-unit-2);
   border-radius: var(--lyra-unit-999);
-  background: color-mix(in srgb, var(--lyra-line-focused) 82%, var(--lyra-text-primary) 18%);
+  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
 }
 
 .lyra-browser-tab-main-collapsed.lyra-browser-tab-main-split-focused::before {
@@ -452,34 +469,55 @@
   position: absolute;
   inset: var(--lyra-unit-2);
   border-radius: var(--lyra-unit-6);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-focused) 68%, transparent);
-  background: color-mix(in srgb, var(--lyra-line-focused) 14%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  background: color-mix(in srgb, var(--lyra-bg-hover) 14%, transparent);
   pointer-events: none;
   z-index: 3;
 }
 
 .lyra-browser-tab-add {
   box-sizing: border-box;
-  flex: 0 0 var(--lyra-size-browser-nav-slot);
+  align-self: start;
+  justify-self: stretch;
   width: var(--lyra-size-browser-nav-slot);
   min-width: var(--lyra-size-browser-nav-slot);
   height: calc(var(--lyra-size-browser-tab-h) - var(--lyra-unit-3));
   margin-top: var(--lyra-unit-3);
+  padding: 0;
   border: 0;
-  background: transparent;
+  border-radius: 0;
+  background: var(--lyra-tabstrip-bg);
   color: var(--lyra-text-muted);
-  opacity: 0.56;
+  opacity: 0.72;
   cursor: pointer;
-  position: sticky;
-  right: 0;
+  position: relative;
   z-index: 4;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+  line-height: 1;
   transition:
     color var(--lyra-transition-fast),
     opacity var(--lyra-transition-fast);
+}
+
+.lyra-browser-tab-add::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--lyra-tabstrip-bg);
+  pointer-events: none;
 }
 
 .lyra-browser-tab-add:hover {
   background: transparent;
   opacity: 1;
   color: var(--lyra-text-primary);
+}
+
+.lyra-browser-tabs .lyra-browser-tab-add {
+  margin-top: 0;
+  margin-bottom: var(--lyra-unit-3);
 }

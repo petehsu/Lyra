@@ -63,8 +63,8 @@ describe("result surface model", () => {
     })).toBe("Official");
     expect(model.officialCategoryLabel).toBe("Docs");
     expect(model.sourceChips).toEqual([
-      { id: "bing", label: "Bing", accentColor: "#008373" },
-      { id: "unknown", label: "unknown", accentColor: "var(--lyra-text-accent)" }
+      { id: "bing", label: "Bing" },
+      { id: "unknown", label: "unknown" }
     ]);
   });
 });

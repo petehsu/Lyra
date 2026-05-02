@@ -322,6 +322,25 @@ describe("lyra thread adapter", () => {
           createdAtMs: 102500,
           updatedAtMs: 102500,
         },
+        {
+          id: "request-1",
+          sessionId: "thread-projected",
+          turnId: "turn-1",
+          kind: "commandExecutionApproval",
+          status: "pending",
+          payload: {
+            requestId: "request-1",
+            agentCoreMethod: "item/commandExecution/requestApproval",
+            raw: {
+              command: "echo hi",
+              toolName: "terminal.exec",
+              input: { command: "echo hi" },
+              metadata: { riskLevel: "medium" },
+            },
+          },
+          createdAtMs: 102600,
+          updatedAtMs: 102600,
+        },
       ],
       turnMeta: [
         {
@@ -360,6 +379,12 @@ describe("lyra thread adapter", () => {
     expect(detail.pendingInteractions[0]).toMatchObject({
       id: "plan:turn-1",
       kind: "plan_approval",
+      status: "pending",
+      turnId: "turn-1",
+    });
+    expect(detail.pendingInteractions[1]).toMatchObject({
+      id: "request-1",
+      kind: "command_execution_approval",
       status: "pending",
       turnId: "turn-1",
     });
