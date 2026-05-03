@@ -8,7 +8,7 @@ import type { FileEditorRevealLocation } from "../file-editor";
 import type { GlobalDialogOpenRequest } from "../global-dialog";
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchNotificationPublishRequest } from "../notifications";
-import type { WorkbenchAiStopBehavior } from "../preferences";
+import type { WorkbenchAiStopBehavior, WorkbenchAiToolDisplayMode } from "../preferences";
 import type {
   AgentComposerWorkbenchTabMention,
 } from "./agent-composer";
@@ -104,6 +104,7 @@ export type AiPanelSurfaceProps = {
   readonly themeSignature?: string;
   readonly richRenderingEnabled?: boolean;
   readonly stopBehavior?: WorkbenchAiStopBehavior;
+  readonly aiToolDisplayMode?: WorkbenchAiToolDisplayMode;
   readonly newSessionTitle: string;
   readonly defaultProfileId?: string | null;
   readonly defaultProviderId?: string | null;

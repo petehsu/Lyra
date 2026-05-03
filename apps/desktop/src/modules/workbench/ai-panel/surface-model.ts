@@ -293,6 +293,10 @@ export type AiPanelSurfaceTextLabels = {
   readonly forkResponse: string;
   readonly regenerateResponse: string;
   readonly editMessage: string;
+  readonly showFullOutput: string;
+  readonly expandToolOutput: string;
+  readonly collapseToolOutput: string;
+  readonly fileChanges: string;
 };
 
 export const createSurfaceTextLabels = (t: Translator): AiPanelSurfaceTextLabels => ({
@@ -326,7 +330,11 @@ export const createSurfaceTextLabels = (t: Translator): AiPanelSurfaceTextLabels
   copiedMessage: t("dialog.copiedAction"),
   forkResponse: t("ai.forkFromResponse"),
   regenerateResponse: t("ai.regenerateResponse"),
-  editMessage: t("ai.editMessage")
+  editMessage: t("ai.editMessage"),
+  showFullOutput: t("ai.showFullOutput"),
+  expandToolOutput: t("ai.expandToolOutput"),
+  collapseToolOutput: t("ai.collapseToolOutput"),
+  fileChanges: t("ai.fileChanges")
 });
 
 export const createInteractionTextLabels = (

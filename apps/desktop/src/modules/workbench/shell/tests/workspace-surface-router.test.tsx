@@ -120,8 +120,6 @@ const createProps = (
   aiHistory: {
     locale: "en-US",
     title: "History",
-    newSessionTitle: "New",
-    newConversationLabel: "New",
     openConversationLabel: "Open",
     deleteConversationLabel: "Delete",
     archiveConversationLabel: "Archive",
@@ -132,7 +130,6 @@ const createProps = (
     deleteArchivedConversationDescription: "Delete",
     deleteArchivedConversationConfirm: "Delete",
     deleteArchivedConversationCancel: "Cancel",
-    profileLabel: "Profile",
     sessionIdLabel: "Session",
     loadingSessionsLabel: "Loading",
     emptyStateTitle: "Empty",
@@ -144,8 +141,6 @@ const createProps = (
     backToProjectsLabel: "Back",
     projectPathLabel: "Path",
     threadPreviewEmptyLabel: "Empty",
-    previewEmptyTitle: "Empty",
-    previewEmptyDescription: "Empty",
     previewLoadingLabel: "Loading"
   },
   planReview: {

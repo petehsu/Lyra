@@ -121,8 +121,6 @@ const createDesktopApi = () => {
 
 const baseLabels = {
   title: "历史",
-  newSessionTitle: "新建会话",
-  newConversationLabel: "新建会话",
   openConversationLabel: "打开会话",
   deleteConversationLabel: "删除会话",
   archiveConversationLabel: "归档会话",
@@ -133,7 +131,6 @@ const baseLabels = {
   deleteArchivedConversationDescription: "删除后无法恢复",
   deleteArchivedConversationConfirm: "永久删除",
   deleteArchivedConversationCancel: "取消",
-  profileLabel: "配置",
   sessionIdLabel: "Session ID",
   loadingSessionsLabel: "加载中",
   emptyStateTitle: "空",
@@ -145,8 +142,6 @@ const baseLabels = {
   backToProjectsLabel: "返回项目列表",
   projectPathLabel: "项目路径",
   threadPreviewEmptyLabel: "未命名会话",
-  previewEmptyTitle: "选择一个会话",
-  previewEmptyDescription: "点击左侧会话预览",
   previewLoadingLabel: "正在加载预览"
 } as const;
 
@@ -184,6 +179,16 @@ describe("AiHistorySurface", () => {
       expect(within(globalTab).getByText("4")).toBeDefined();
       expect(within(projectTab).getByText("2")).toBeDefined();
     });
+    expect(screen.queryByRole("button", { name: /新建/u })).toBeNull();
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "thread/read",
+          params: { threadId: "thread-a", includeTurns: true }
+        })
+      );
+    });
+    expect(screen.getByText("Reply for Start refactor agent runtime")).toBeDefined();
 
     expect(screen.getByText("Brainstorm ideas")).toBeDefined();
     expect(screen.getByText("Refactor agent runtime")).toBeDefined();

@@ -10,7 +10,8 @@ import { useWorkbenchSidebarAiSurfaceProps } from "../use-workbench-sidebar-ai-s
 const preferences = {
   locale: "en-US",
   aiRichRenderingEnabled: true,
-  aiStopBehavior: "turn_only"
+  aiStopBehavior: "turn_only",
+  aiToolDisplayMode: "collapsed"
 } as WorkbenchPreferences;
 
 const settingsAiModel = {
@@ -68,6 +69,7 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
       title: "ai.tabTitle",
       themeSignature: "lyra-light",
       aiPanelSide: "right",
+      aiToolDisplayMode: "collapsed",
       defaultProfileId: "profile-1"
     });
 

@@ -33,7 +33,6 @@ type AiHistorySurfaceViewProps = {
 
 type AiHistoryLabels = {
   readonly title: string;
-  readonly newConversationLabel: string;
   readonly openConversationLabel: string;
   readonly renameConversationLabel: string;
   readonly deleteConversationLabel: string;
@@ -52,14 +51,11 @@ type AiHistoryLabels = {
   readonly backToProjectsLabel: string;
   readonly projectPathLabel: string;
   readonly threadPreviewEmptyLabel: string;
-  readonly previewEmptyTitle: string;
-  readonly previewEmptyDescription: string;
   readonly previewLoadingLabel: string;
 };
 
 const toAiHistoryLabels = (props: AiHistorySurfaceProps): AiHistoryLabels => ({
   title: props.title,
-  newConversationLabel: props.newConversationLabel,
   openConversationLabel: props.openConversationLabel,
   renameConversationLabel: props.renameConversationLabel ?? "Rename conversation",
   deleteConversationLabel: props.deleteConversationLabel,
@@ -78,8 +74,6 @@ const toAiHistoryLabels = (props: AiHistorySurfaceProps): AiHistoryLabels => ({
   backToProjectsLabel: props.backToProjectsLabel,
   projectPathLabel: props.projectPathLabel,
   threadPreviewEmptyLabel: props.threadPreviewEmptyLabel,
-  previewEmptyTitle: props.previewEmptyTitle,
-  previewEmptyDescription: props.previewEmptyDescription,
   previewLoadingLabel: props.previewLoadingLabel
 });
 
@@ -442,8 +436,10 @@ const AiHistoryPreviewPane = ({
   if (runtime.previewDetail === null) {
     return (
       <StatusEmptyState
-        title={labels.previewEmptyTitle}
-        description={labels.previewEmptyDescription}
+        title={labels.previewLoadingLabel}
+        loading
+        spinnerVariant="sand"
+        tone="info"
         className="lyra-ai-history-preview-empty"
       />
     );

@@ -1790,7 +1790,7 @@ describe("useLyraThreadRuntime", () => {
     }));
   });
 
-  test("createThread resets streaming state", async () => {
+  test("createThread starts a real backend thread and resets streaming state", async () => {
     const desktop = makeDesktopApi();
     const { result } = renderHook(() =>
       useLyraThreadRuntime({
@@ -1830,10 +1830,25 @@ describe("useLyraThreadRuntime", () => {
       expect(result.current.state.finalizingTurnId).toBe("turn-1");
     });
 
+    desktop.request.mockClear();
+
     await act(async () => {
-      await result.current.actions.createThread();
+      await result.current.actions.createThread({
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
     });
 
+    expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
+      method: "thread/start",
+      params: expect.objectContaining({
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+        persistExtendedHistory: true,
+      }),
+    }));
     expect(result.current.state.finalizingTurnId).toBeNull();
     expect(result.current.state.streamingTurnId).toBeNull();
     expect(result.current.state.streamingAssistantText).toBe("");

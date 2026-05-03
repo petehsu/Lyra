@@ -16,6 +16,7 @@ import { resolveWorkbenchUiPackId } from "../ui-platform";
 import type { WorkbenchUiPackId } from "../ui-platform";
 import type {
   WorkbenchAiStopBehavior,
+  WorkbenchAiToolDisplayMode,
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchPreferences,
   WorkbenchPreferencesModel,
@@ -49,6 +50,8 @@ const isSplitOverflowPolicy = (value: unknown): value is WorkbenchSplitOverflowP
 const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
 const isWorkbenchAiStopBehavior = (value: unknown): value is WorkbenchAiStopBehavior =>
   value === "turn_only" || value === "turn_and_background";
+const isWorkbenchAiToolDisplayMode = (value: unknown): value is WorkbenchAiToolDisplayMode =>
+  value === "inner_scroll" || value === "collapsed";
 const isSearchScopePreset = (value: unknown): value is SearchLocalScopePreset =>
   value === "home" || value === "full_system" || value === "workspace" || value === "custom";
 const isSearchDeepBudgetPreset = (value: unknown): value is SearchDeepBudgetPreset =>
@@ -100,6 +103,7 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly splitOverflowPolicy?: unknown;
       readonly aiRichRenderingEnabled?: unknown;
       readonly aiStopBehavior?: unknown;
+      readonly aiToolDisplayMode?: unknown;
       readonly preventSleepEnabled?: unknown;
       readonly forceWebPageThemingEnabled?: unknown;
       readonly searchScopePreset?: unknown;
@@ -155,6 +159,9 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       aiStopBehavior: isWorkbenchAiStopBehavior(parsed.aiStopBehavior)
         ? parsed.aiStopBehavior
         : defaults.aiStopBehavior,
+      aiToolDisplayMode: isWorkbenchAiToolDisplayMode(parsed.aiToolDisplayMode)
+        ? parsed.aiToolDisplayMode
+        : defaults.aiToolDisplayMode,
       preventSleepEnabled: isBoolean(parsed.preventSleepEnabled)
         ? parsed.preventSleepEnabled
         : defaults.preventSleepEnabled,
@@ -298,6 +305,12 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         aiStopBehavior
+      }));
+    },
+    setAiToolDisplayMode: (aiToolDisplayMode) => {
+      commit((current) => ({
+        ...current,
+        aiToolDisplayMode
       }));
     },
     setPreventSleepEnabled: (preventSleepEnabled) => {

@@ -58,8 +58,6 @@ const createAiHistoryProps = (
   desktopApi: context.desktopApi,
   locale: context.aiHistory.locale,
   title: context.aiHistory.title,
-  newSessionTitle: context.aiHistory.newSessionTitle,
-  newConversationLabel: context.aiHistory.newConversationLabel,
   openConversationLabel: context.aiHistory.openConversationLabel,
   ...(context.aiHistory.renameConversationLabel === undefined
     ? {}
@@ -73,7 +71,6 @@ const createAiHistoryProps = (
   deleteArchivedConversationDescription: context.aiHistory.deleteArchivedConversationDescription,
   deleteArchivedConversationConfirm: context.aiHistory.deleteArchivedConversationConfirm,
   deleteArchivedConversationCancel: context.aiHistory.deleteArchivedConversationCancel,
-  profileLabel: context.aiHistory.profileLabel,
   sessionIdLabel: context.aiHistory.sessionIdLabel,
   loadingSessionsLabel: context.aiHistory.loadingSessionsLabel,
   emptyStateTitle: context.aiHistory.emptyStateTitle,
@@ -85,8 +82,6 @@ const createAiHistoryProps = (
   backToProjectsLabel: context.aiHistory.backToProjectsLabel,
   projectPathLabel: context.aiHistory.projectPathLabel,
   threadPreviewEmptyLabel: context.aiHistory.threadPreviewEmptyLabel,
-  previewEmptyTitle: context.aiHistory.previewEmptyTitle,
-  previewEmptyDescription: context.aiHistory.previewEmptyDescription,
   previewLoadingLabel: context.aiHistory.previewLoadingLabel,
   ...(context.aiHistory.richRenderingEnabled === undefined
     ? {}
@@ -94,12 +89,6 @@ const createAiHistoryProps = (
   ...(context.aiHistory.themeSignature === undefined
     ? {}
     : { themeSignature: context.aiHistory.themeSignature }),
-  ...(context.aiHistory.defaultProfileId === undefined
-    ? {}
-    : { defaultProfileId: context.aiHistory.defaultProfileId }),
-  ...(context.aiHistory.defaultProviderId === undefined
-    ? {}
-    : { defaultProviderId: context.aiHistory.defaultProviderId }),
   ...(context.aiHistory.openDialog === undefined
     ? {}
     : { openDialog: context.aiHistory.openDialog }),

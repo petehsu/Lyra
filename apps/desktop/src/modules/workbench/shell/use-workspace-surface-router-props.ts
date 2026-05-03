@@ -11,7 +11,6 @@ import type { McpCenterModel } from "../mcp-center";
 import type { WorkbenchNotificationModel } from "../notifications";
 import type { PluginsCenterModel } from "../plugins-center";
 import type { WorkbenchPreferencesModel } from "../preferences";
-import type { SettingsAiModel } from "../settings-ai";
 import type { SkillsCenterModel } from "../skills-center";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel, WorkspaceTab } from "../workspace-tabs/types";
@@ -53,7 +52,6 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly mcpCenterModel: McpCenterModel;
   readonly skillsCenterModel: SkillsCenterModel;
   readonly pluginsCenterModel: PluginsCenterModel;
-  readonly settingsAiModel: SettingsAiModel;
   readonly notificationModel: WorkbenchNotificationModel;
   readonly labels: WorkbenchLabels;
   readonly openDialog: NonNullable<WorkspaceSurfaceRouterProps["aiHistory"]["openDialog"]>;
@@ -93,7 +91,6 @@ export const useWorkspaceSurfaceRouterProps = ({
   mcpCenterModel,
   skillsCenterModel,
   pluginsCenterModel,
-  settingsAiModel,
   notificationModel,
   labels,
   openDialog,
@@ -173,8 +170,6 @@ export const useWorkspaceSurfaceRouterProps = ({
       ...labels.aiHistory,
       richRenderingEnabled: preferences.aiRichRenderingEnabled,
       themeSignature: resolvedThemeId,
-      defaultProfileId: settingsAiModel.defaultProfileId,
-      defaultProviderId: settingsAiModel.defaultProviderId,
       openDialog,
       onHistoryEmptied
     },

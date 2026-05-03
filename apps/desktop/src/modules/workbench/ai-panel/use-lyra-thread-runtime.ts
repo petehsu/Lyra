@@ -2273,7 +2273,16 @@ export const useLyraThreadRuntime = ({
     return thread.id;
   }, [bindTabToThread, createDraftTab, lyraApi, resetRuntimeBucket, upsertThread]);
 
-  const createThread = useCallback(async (): Promise<string> => createDraftTab(), [createDraftTab]);
+  const createThread = useCallback(async (options: RuntimeThreadOptions = {}): Promise<string> => {
+    const tabId = createDraftTab();
+    try {
+      return await startThread(options, true, tabId);
+    } catch (error) {
+      patchTabState((current) => closeTabState(current, tabId));
+      setRuntimeError(errorMessageOf(error));
+      throw error;
+    }
+  }, [createDraftTab, patchTabState, startThread]);
 
   const sendTurn = useCallback(async (
     input: RuntimeTurnInput,

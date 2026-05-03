@@ -53,6 +53,8 @@ export type AgentRuntimeFeedItem = {
   readonly openThreadTargets?: readonly AgentRuntimeThreadTarget[];
   readonly autoOpen?: boolean;
   readonly firstChangedLine?: number;
+  readonly addedLines?: number;
+  readonly removedLines?: number;
   readonly status: AgentRuntimeFeedStatus;
   readonly timestamp: number;
   readonly liveOutput?: string;
@@ -497,6 +499,27 @@ const resolveFirstChangedLine = (payload: Record<string, unknown>): number | und
   return undefined;
 };
 
+const resolveRuntimeLineCount = (
+  payload: Record<string, unknown>,
+  keys: readonly string[]
+): number | undefined => {
+  const sources = [
+    payload,
+    isRecord(payload.output) ? payload.output : null,
+    isRecord(payload.progress) ? payload.progress : null,
+    isRecord(payload.input) ? payload.input : null,
+  ].filter((source): source is Record<string, unknown> => source !== null);
+  for (const source of sources) {
+    for (const key of keys) {
+      const value = pickNumber(source, key);
+      if (value !== null && Number.isFinite(value)) {
+        return Math.max(0, Math.round(value));
+      }
+    }
+  }
+  return undefined;
+};
+
 export const toRuntimeFeedItem = (
   event: AgentRuntimeEvent,
   toolNameLabels: ToolNameLabelMap,
@@ -533,6 +556,8 @@ export const toRuntimeFeedItem = (
       ? normalizeToolName(toolName, toolNameLabels)
       : toolFallbackLabel;
   const firstChangedLine = resolveFirstChangedLine(payload);
+  const addedLines = resolveRuntimeLineCount(payload, ["addedLines", "added_lines"]);
+  const removedLines = resolveRuntimeLineCount(payload, ["removedLines", "removed_lines"]);
   const status: AgentRuntimeFeedStatus =
     event.phase === "tool_started" || event.phase === "tool_progress"
       ? "running"
@@ -554,6 +579,8 @@ export const toRuntimeFeedItem = (
       ? { autoOpen: true }
       : {}),
     ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
+    ...(addedLines === undefined ? {} : { addedLines }),
+    ...(removedLines === undefined ? {} : { removedLines }),
     icon: resolveRuntimeToolIconKind(toolName),
     status,
     timestamp: event.timestamp,
@@ -588,6 +615,8 @@ export const toPersistedRuntimeFeedItem = (
     (outputPayload === null ? null : pickString(outputPayload, "sessionId"))
     ?? (inputPayload === null ? null : pickString(inputPayload, "sessionId"));
   const firstChangedLine = resolveFirstChangedLine(payload);
+  const addedLines = resolveRuntimeLineCount(payload, ["addedLines", "added_lines"]);
+  const removedLines = resolveRuntimeLineCount(payload, ["removedLines", "removed_lines"]);
   const target = resolveRuntimeToolTarget(call.toolName, payload, toolNameLabels, toolFallbackLabel);
   return {
     id: call.id,
@@ -600,6 +629,8 @@ export const toPersistedRuntimeFeedItem = (
     ...(target.openThreadId === undefined ? {} : { openThreadId: target.openThreadId }),
     ...(target.openThreadTargets === undefined ? {} : { openThreadTargets: target.openThreadTargets }),
     ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
+    ...(addedLines === undefined ? {} : { addedLines }),
+    ...(removedLines === undefined ? {} : { removedLines }),
     icon: resolveRuntimeToolIconKind(call.toolName),
     status: call.status,
     timestamp: call.startedAt,

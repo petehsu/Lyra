@@ -320,7 +320,7 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly setComposerHeight: Dispatch<SetStateAction<number>>;
   readonly setIsPermissionsPanelOpen: Dispatch<SetStateAction<boolean>>;
   readonly setIsAdvancedPanelOpen: Dispatch<SetStateAction<boolean>>;
-  readonly createThread: () => void;
+  readonly createThread: () => Promise<void>;
   readonly bindProject: () => Promise<void>;
   readonly openReviewPanel: () => void;
   readonly closeReviewPanel: () => void;
@@ -375,6 +375,7 @@ export type AiPanelSurfaceRuntime = {
   readonly boundProjectRootByThreadId: ReadonlyMap<string, string>;
   readonly tabProjectRootById: ReadonlyMap<string, string | null>;
   readonly isBindingProject: boolean;
+  readonly isCreatingThread: boolean;
   readonly isPermissionsPanelOpen: boolean;
   readonly isAdvancedPanelOpen: boolean;
   readonly isReviewPanelOpen: boolean;
@@ -435,6 +436,7 @@ export const useAiPanelSurfaceRuntime = ({
   >(() => new Map());
   const [pendingBoundProjectRoot, setPendingBoundProjectRoot] = useState<string | null>(null);
   const [isBindingProject, setIsBindingProject] = useState(false);
+  const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [isPermissionsPanelOpen, setIsPermissionsPanelOpen] = useState(false);
   const [isAdvancedPanelOpen, setIsAdvancedPanelOpen] = useState(false);
   const [fileMentionSearchResults, setFileMentionSearchResults] =
@@ -466,6 +468,7 @@ export const useAiPanelSurfaceRuntime = ({
     respondToPlanQuestion,
     respondToMcpElicitation,
     selectThread,
+    createThread: createRuntimeThread,
     activateThreadTab,
     closeThreadTab,
     reorderThreadTab,
@@ -1020,6 +1023,22 @@ export const useAiPanelSurfaceRuntime = ({
     selectedVerbosity
   ]);
 
+  const newThreadOptions = useCallback(() =>
+    createRuntimeTurnOptions({
+      selectedModelOption,
+      defaultProviderId,
+      boundProjectRoot: null,
+      permissionMode,
+      effort: selectedReasoningEffort,
+      verbosity: selectedVerbosity
+    }), [
+    defaultProviderId,
+    permissionMode,
+    selectedModelOption,
+    selectedReasoningEffort,
+    selectedVerbosity
+  ]);
+
   const sendTurn = useCallback(async (payload: AgentComposerSubmitPayload): Promise<void> => {
     const text = payload.text.trim();
     if (text.length === 0 && payload.attachments.length === 0) {
@@ -1064,10 +1083,20 @@ export const useAiPanelSurfaceRuntime = ({
     })();
   }, [cleanBackgroundTerminals, interruptTurn, stopBehavior]);
 
-  const createThread = useCallback((): void => {
+  const createThread = useCallback(async (): Promise<void> => {
+    if (isCreatingThread) {
+      return;
+    }
+    setIsCreatingThread(true);
     setPendingBoundProjectRoot(null);
-    selectThread(null);
-  }, [selectThread]);
+    try {
+      await createRuntimeThread(newThreadOptions());
+    } catch {
+      // The runtime has already surfaced the error state for the active tab.
+    } finally {
+      setIsCreatingThread(false);
+    }
+  }, [createRuntimeThread, isCreatingThread, newThreadOptions]);
 
   const appendToComposer = useCallback((text: string): void => {
     const trimmed = text.trim();
@@ -1418,6 +1447,7 @@ export const useAiPanelSurfaceRuntime = ({
     boundProjectRootByThreadId: boundProjectRootByThread,
     tabProjectRootById,
     isBindingProject,
+    isCreatingThread,
     isPermissionsPanelOpen,
     isAdvancedPanelOpen,
     isReviewPanelOpen,

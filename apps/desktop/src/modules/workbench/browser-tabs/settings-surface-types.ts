@@ -8,6 +8,7 @@ import type {
 import type { WorkbenchLocale } from "../i18n";
 import type {
   WorkbenchAiStopBehavior,
+  WorkbenchAiToolDisplayMode,
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchSplitOverflowPolicy,
   WorkbenchSplitThreePaneLayout,
@@ -47,6 +48,9 @@ export type BrowserSettingsSurfaceProps = {
   readonly aiStopBehaviorTurnOnlyDescription: string;
   readonly aiStopBehaviorTurnAndBackgroundLabel: string;
   readonly aiStopBehaviorTurnAndBackgroundDescription: string;
+  readonly aiToolDisplayModeLabel: string;
+  readonly aiToolDisplayModeInnerScrollLabel: string;
+  readonly aiToolDisplayModeCollapsedLabel: string;
   readonly preventSleepLabel: string;
   readonly preventSleepDescription: string;
   readonly preventSleepEnabledLabel: string;
@@ -98,6 +102,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly splitOverflowPolicyValue: WorkbenchSplitOverflowPolicy;
   readonly aiRichRenderValue: boolean;
   readonly aiStopBehaviorValue: WorkbenchAiStopBehavior;
+  readonly aiToolDisplayModeValue: WorkbenchAiToolDisplayMode;
   readonly preventSleepValue: boolean;
   readonly jsReplValue: boolean;
   readonly forceWebPageThemingValue: boolean;
@@ -147,6 +152,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly onSplitOverflowPolicyChange: (value: WorkbenchSplitOverflowPolicy) => void;
   readonly onAiRichRenderChange: (value: boolean) => void;
   readonly onAiStopBehaviorChange: (value: WorkbenchAiStopBehavior) => void;
+  readonly onAiToolDisplayModeChange: (value: WorkbenchAiToolDisplayMode) => void;
   readonly onPreventSleepChange: (value: boolean) => void;
   readonly onJsReplChange: (value: boolean) => void;
   readonly onForceWebPageThemingChange: (value: boolean) => void;

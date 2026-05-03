@@ -34,6 +34,11 @@ describe("AiPanelRuntimeFeedBlock", () => {
         items={[item]}
         canOpenPath={false}
         statusLabels={statusLabels}
+        displayMode="inner_scroll"
+        showFullOutputLabel="Show full output"
+        expandToolOutputLabel="Expand output"
+        collapseToolOutputLabel="Collapse output"
+        fileChangesLabel="File changes"
         openRuntimeTargetPath={vi.fn(async () => {})}
         onOpenThread={onOpenThread}
       />
@@ -44,5 +49,39 @@ describe("AiPanelRuntimeFeedBlock", () => {
     expect(screen.getByRole("button", { name: "child-thread-1" })).toBeDefined();
     expect(onOpenThread).toHaveBeenCalledTimes(1);
     expect(onOpenThread).toHaveBeenCalledWith("child-thread-2");
+  });
+
+  test("keeps completed tool details folded in collapsed display mode", () => {
+    const item: AgentRuntimeFeedItem = {
+      id: "terminal-1",
+      turnId: "turn-1",
+      toolName: "terminal.exec",
+      toolLabel: "terminal command",
+      target: "npm test",
+      icon: "tool",
+      status: "completed",
+      timestamp: 100,
+      liveOutput: "test output",
+    };
+
+    render(
+      <AiPanelRuntimeFeedBlock
+        items={[item]}
+        canOpenPath={false}
+        statusLabels={statusLabels}
+        displayMode="collapsed"
+        showFullOutputLabel="Show full output"
+        expandToolOutputLabel="Expand output"
+        collapseToolOutputLabel="Collapse output"
+        fileChangesLabel="File changes"
+        openRuntimeTargetPath={vi.fn(async () => {})}
+      />
+    );
+
+    expect(screen.queryByText("test output")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand output" }));
+
+    expect(screen.getByText("test output")).toBeDefined();
   });
 });

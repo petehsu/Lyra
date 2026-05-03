@@ -21,7 +21,7 @@ import type { WorkbenchSidebarAiSurfaceProps } from "./use-workbench-ai-surface-
 
 type SidebarAiPreferences = Pick<
   WorkbenchPreferences,
-  "locale" | "aiRichRenderingEnabled" | "aiStopBehavior"
+  "locale" | "aiRichRenderingEnabled" | "aiStopBehavior" | "aiToolDisplayMode"
 >;
 
 type UseWorkbenchSidebarAiSurfacePropsParams = {
@@ -68,6 +68,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       themeSignature: resolvedThemeId,
       richRenderingEnabled: preferences.aiRichRenderingEnabled,
       stopBehavior: preferences.aiStopBehavior,
+      aiToolDisplayMode: preferences.aiToolDisplayMode,
       newSessionTitle: t("ai.sessionDefaultTitle"),
       defaultProfileId: settingsAiModel.defaultProfileId,
       defaultProviderId: settingsAiModel.defaultProviderId,
@@ -161,6 +162,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       openDialog,
       preferences.aiRichRenderingEnabled,
       preferences.aiStopBehavior,
+      preferences.aiToolDisplayMode,
       preferences.locale,
       resolvedThemeId,
       settingsAiModel.defaultModelNames,

@@ -4,6 +4,7 @@ import type {
   PlanInteractionResponse,
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
+import type { WorkbenchAiToolDisplayMode } from "../preferences";
 import type { PendingInteractionPanel } from "./interaction/pending-interaction-mappers";
 import { InlineMessageContent } from "./inline-message-content";
 import { MessageActions } from "./message-actions";
@@ -113,6 +114,11 @@ type AiPanelMessageRowProps = {
   readonly toolStatusRunningLabel: string;
   readonly toolStatusCompletedLabel: string;
   readonly toolStatusFailedLabel: string;
+  readonly aiToolDisplayMode: WorkbenchAiToolDisplayMode;
+  readonly showFullOutputLabel: string;
+  readonly expandToolOutputLabel: string;
+  readonly collapseToolOutputLabel: string;
+  readonly fileChangesLabel: string;
   readonly canOpenFilePath: boolean;
   readonly openRuntimeTargetPath: OpenRuntimeTargetPath;
   readonly copyMessageLabel: string;
@@ -150,6 +156,11 @@ export const AiPanelMessageRow = ({
   toolStatusRunningLabel,
   toolStatusCompletedLabel,
   toolStatusFailedLabel,
+  aiToolDisplayMode,
+  showFullOutputLabel,
+  expandToolOutputLabel,
+  collapseToolOutputLabel,
+  fileChangesLabel,
   canOpenFilePath,
   openRuntimeTargetPath,
   copyMessageLabel,
@@ -278,6 +289,11 @@ export const AiPanelMessageRow = ({
                           completed: toolStatusCompletedLabel,
                           failed: toolStatusFailedLabel,
                         }}
+                        displayMode={aiToolDisplayMode}
+                        showFullOutputLabel={showFullOutputLabel}
+                        expandToolOutputLabel={expandToolOutputLabel}
+                        collapseToolOutputLabel={collapseToolOutputLabel}
+                        fileChangesLabel={fileChangesLabel}
                         openRuntimeTargetPath={openRuntimeTargetPath}
                         {...(onOpenThread === undefined ? {} : { onOpenThread })}
                       />
@@ -530,6 +546,11 @@ type AiPanelStreamingRowProps = {
   readonly toolStatusRunningLabel: string;
   readonly toolStatusCompletedLabel: string;
   readonly toolStatusFailedLabel: string;
+  readonly aiToolDisplayMode: WorkbenchAiToolDisplayMode;
+  readonly showFullOutputLabel: string;
+  readonly expandToolOutputLabel: string;
+  readonly collapseToolOutputLabel: string;
+  readonly fileChangesLabel: string;
   readonly onOpenThread?: (threadId: string) => void;
 };
 
@@ -545,6 +566,11 @@ export const AiPanelStreamingRow = ({
   toolStatusRunningLabel,
   toolStatusCompletedLabel,
   toolStatusFailedLabel,
+  aiToolDisplayMode,
+  showFullOutputLabel,
+  expandToolOutputLabel,
+  collapseToolOutputLabel,
+  fileChangesLabel,
   onOpenThread,
 }: AiPanelStreamingRowProps) => (
   <div className="lyra-ai-agent-message lyra-ai-agent-message-assistant">
@@ -568,6 +594,11 @@ export const AiPanelStreamingRow = ({
           completed: toolStatusCompletedLabel,
           failed: toolStatusFailedLabel,
         }}
+        displayMode={aiToolDisplayMode}
+        showFullOutputLabel={showFullOutputLabel}
+        expandToolOutputLabel={expandToolOutputLabel}
+        collapseToolOutputLabel={collapseToolOutputLabel}
+        fileChangesLabel={fileChangesLabel}
         openRuntimeTargetPath={openRuntimeTargetPath}
         {...(onOpenThread === undefined ? {} : { onOpenThread })}
       />
@@ -585,6 +616,11 @@ type AiPanelOrphanRuntimeFeedRowProps = {
   readonly toolStatusRunningLabel: string;
   readonly toolStatusCompletedLabel: string;
   readonly toolStatusFailedLabel: string;
+  readonly aiToolDisplayMode: WorkbenchAiToolDisplayMode;
+  readonly showFullOutputLabel: string;
+  readonly expandToolOutputLabel: string;
+  readonly collapseToolOutputLabel: string;
+  readonly fileChangesLabel: string;
   readonly onOpenThread?: (threadId: string) => void;
 };
 
@@ -595,6 +631,11 @@ export const AiPanelOrphanRuntimeFeedRow = ({
   toolStatusRunningLabel,
   toolStatusCompletedLabel,
   toolStatusFailedLabel,
+  aiToolDisplayMode,
+  showFullOutputLabel,
+  expandToolOutputLabel,
+  collapseToolOutputLabel,
+  fileChangesLabel,
   onOpenThread,
 }: AiPanelOrphanRuntimeFeedRowProps) => (
   <div className="lyra-ai-agent-runtime-block-orphan">
@@ -606,6 +647,11 @@ export const AiPanelOrphanRuntimeFeedRow = ({
         completed: toolStatusCompletedLabel,
         failed: toolStatusFailedLabel,
       }}
+      displayMode={aiToolDisplayMode}
+      showFullOutputLabel={showFullOutputLabel}
+      expandToolOutputLabel={expandToolOutputLabel}
+      collapseToolOutputLabel={collapseToolOutputLabel}
+      fileChangesLabel={fileChangesLabel}
       openRuntimeTargetPath={openRuntimeTargetPath}
       {...(onOpenThread === undefined ? {} : { onOpenThread })}
     />

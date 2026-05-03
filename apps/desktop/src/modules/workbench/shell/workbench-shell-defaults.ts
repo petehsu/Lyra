@@ -15,6 +15,7 @@ export const createInitialWorkbenchPreferences = (): WorkbenchPreferences => ({
   splitOverflowPolicy: "block_with_notice",
   aiRichRenderingEnabled: true,
   aiStopBehavior: "turn_only",
+  aiToolDisplayMode: "inner_scroll",
   preventSleepEnabled: true,
   forceWebPageThemingEnabled: true,
   searchScopePreset: "home",

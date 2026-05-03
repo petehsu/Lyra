@@ -44,6 +44,7 @@ export type SettingsFieldId =
   | "jsRepl"
   | "aiRichRender"
   | "aiStopBehavior"
+  | "aiToolDisplayMode"
   | "aiProviderSettings";
 
 export type WorkbenchSettingsCategory = {
@@ -87,6 +88,7 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "splitOverflowPolicyLabel"
   | "aiRichRenderLabel"
   | "aiStopBehaviorLabel"
+  | "aiToolDisplayModeLabel"
   | "preventSleepLabel"
   | "jsReplLabel"
   | "forceWebPageThemingLabel"
@@ -156,6 +158,7 @@ export const createWorkbenchSettingsSchema = (
     createField("searchIndexingFlags", "search", props.searchEnableContentLabel, "custom"),
     createField("jsRepl", "ai", props.jsReplLabel, "boolean-choice"),
     createField("aiRichRender", "ai", props.aiRichRenderLabel, "boolean-choice"),
+    createField("aiToolDisplayMode", "ai", props.aiToolDisplayModeLabel, "choice"),
     createField("aiStopBehavior", "ai", props.aiStopBehaviorLabel, "choice"),
     createField("aiProviderSettings", "ai", props.aiCategoryLabel, "custom")
   ];

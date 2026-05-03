@@ -1,7 +1,42 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { AiPanelSurface } from "../view";
+
+const createDesktopApi = () => {
+  const request = vi.fn(async (payload: { readonly method?: unknown }) => {
+    if (payload.method === "thread/list") {
+      return { data: [] };
+    }
+    if (payload.method === "thread/start") {
+      return {
+        thread: {
+          id: "thread-created",
+          preview: "",
+          modelProvider: "lp-openai",
+          cwd: null,
+          createdAt: 100,
+          updatedAt: 100,
+          turns: []
+        }
+      };
+    }
+    return {};
+  });
+  return {
+    api: {
+      lyra: {
+        request,
+        resolveServerRequest: vi.fn(),
+        rejectServerRequest: vi.fn(),
+        health: vi.fn(),
+        notify: vi.fn(),
+        onEvent: () => () => undefined
+      }
+    } as never,
+    request
+  };
+};
 
 describe("ai panel surface topbar", () => {
   test("does not render the generic panel title and keeps icon actions accessible", () => {
@@ -73,5 +108,78 @@ describe("ai panel surface topbar", () => {
     expect(screen.getByRole("button", { name: "历史记录" })).toBeDefined();
     expect(screen.getByRole("button", { name: "更多操作" })).toBeDefined();
     expect(screen.getByRole("button", { name: "绑定项目" })).toBeDisabled();
+  });
+
+  test("new conversation button creates a real Lyra thread", async () => {
+    const desktop = createDesktopApi();
+
+    render(
+      <AiPanelSurface
+        variant="sidebar"
+        desktopApi={desktop.api}
+        locale="zh-CN"
+        title="AI 面板"
+        description="AI 面板描述"
+        themeSignature="test-theme"
+        newSessionTitle="新会话"
+        defaultProviderId="lp-openai"
+        defaultProfileName="Lyra Agent"
+        defaultModelNames={["gpt-test"]}
+        profileLabel="配置"
+        modelLabel="模型"
+        modelsLabel="模型列表"
+        composeAriaLabel="输入"
+        composePlaceholder="输入内容"
+        composeSendLabel="发送"
+        emptyStateTitle="空状态"
+        emptyStateDescription="暂无内容"
+        readOnlyBannerLabel="只读"
+        loadingSessionLabel="加载中"
+        emptyThreadLabel="暂无会话"
+        turnNoToolCallsLabel="无工具调用"
+        turnWorkingLabel="处理中"
+        turnFailedLabel="失败"
+        turnWorkedForPrefix="耗时"
+        runtimeQueuedLabel="已排队"
+        runtimeStartedLabel="已开始"
+        runtimeRunningPrefix="运行中"
+        runtimeCompletedPrefix="已完成"
+        runtimeFailedPrefix="失败"
+        runtimeCompletedTurnLabel="回合完成"
+        runtimeFailedTurnLabel="回合失败"
+        runtimePhasePrefixLabel="阶段"
+        runtimePhaseIdleLabel="空闲"
+        runtimePhaseAcceptedLabel="已接受"
+        runtimePhaseStartedLabel="已开始"
+        runtimePhaseToolStartedLabel="工具开始"
+        runtimePhaseToolFinishedLabel="工具完成"
+        runtimePhaseCompletedLabel="已完成"
+        runtimePhaseFailedLabel="失败"
+        runtimeToolFallbackLabel="工具"
+        toolNameSearchLabel="搜索"
+        toolNameReadRangeLabel="读取范围"
+        toolNameListLabel="列表"
+        toolNameGlobLabel="匹配"
+        toolNameWriteLabel="写入"
+        toolNameEditLabel="编辑"
+        toolNameMultiEditLabel="批量编辑"
+        toolStatusRunningLabel="运行中"
+        toolStatusCompletedLabel="已完成"
+        toolStatusFailedLabel="失败"
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "新会话" }));
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(expect.objectContaining({
+        method: "thread/start",
+        params: expect.objectContaining({
+          model: "gpt-test",
+          modelProvider: "lp-openai",
+          persistExtendedHistory: true
+        })
+      }));
+    });
   });
 });

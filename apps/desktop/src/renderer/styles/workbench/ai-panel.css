@@ -334,6 +334,12 @@
   opacity: 1;
 }
 
+.lyra-ai-thread-tab-new:disabled {
+  color: var(--lyra-text-muted);
+  cursor: default;
+  opacity: 0.32;
+}
+
 @keyframes lyra-ai-thread-tab-title-scroll {
   from {
     transform: translateX(0);
@@ -2661,6 +2667,13 @@
   display: none;
 }
 
+.lyra-ai-agent-turn-timeline-item-tool .lyra-ai-agent-runtime-feed-shell-collapsed .lyra-ai-agent-runtime-feed {
+  max-height: none;
+  overflow: visible;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
 .lyra-ai-agent-message-plan {
   align-self: stretch;
 }
@@ -3015,6 +3028,159 @@
   white-space: pre-wrap;
   word-break: break-all;
   overflow-wrap: break-word;
+}
+
+.lyra-ai-agent-runtime-feed-shell-collapsed .lyra-ai-agent-runtime-feed {
+  max-height: none;
+  overflow: visible;
+  gap: var(--lyra-unit-2);
+  padding: 0;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.lyra-ai-agent-runtime-feed-item-collapsed {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 0;
+  padding: 0;
+}
+
+.lyra-ai-agent-runtime-feed-collapsed-main,
+.lyra-ai-agent-runtime-feed-group {
+  min-width: 0;
+  min-height: var(--lyra-unit-22);
+  display: grid;
+  align-items: center;
+  gap: var(--lyra-unit-5);
+  padding: var(--lyra-unit-2) 0;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-agent-runtime-feed-collapsed-main {
+  grid-template-columns:
+    var(--lyra-unit-14)
+    var(--lyra-unit-12)
+    var(--lyra-unit-14)
+    minmax(var(--lyra-unit-52), var(--lyra-unit-120))
+    minmax(0, 1fr)
+    max-content;
+}
+
+.lyra-ai-agent-runtime-feed-group {
+  grid-template-columns:
+    var(--lyra-unit-14)
+    var(--lyra-unit-12)
+    minmax(var(--lyra-unit-52), var(--lyra-unit-120))
+    minmax(0, 1fr)
+    max-content;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lyra-ai-agent-runtime-feed-group:hover {
+  color: var(--lyra-text-primary);
+  background: transparent;
+}
+
+.lyra-ai-agent-runtime-feed-disclosure,
+.lyra-ai-agent-runtime-feed-disclosure-spacer {
+  width: var(--lyra-unit-14);
+  height: var(--lyra-unit-20);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-ai-agent-runtime-feed-disclosure {
+  border: 0;
+  background: transparent;
+  color: var(--lyra-text-muted);
+  padding: 0;
+  cursor: pointer;
+  transition: color var(--lyra-transition-fast);
+}
+
+.lyra-ai-agent-runtime-feed-disclosure:hover {
+  color: var(--lyra-text-primary);
+  background: transparent;
+}
+
+.lyra-ai-agent-runtime-feed-disclosure svg {
+  transition: transform var(--lyra-transition-fast);
+}
+
+.lyra-ai-agent-runtime-feed-item-collapsed[data-expanded="true"] .lyra-ai-agent-runtime-feed-disclosure svg,
+.lyra-ai-agent-runtime-feed-group[data-expanded="true"] .lyra-ai-agent-runtime-feed-disclosure svg {
+  transform: rotate(90deg);
+}
+
+.lyra-ai-agent-runtime-feed-tool-label,
+.lyra-ai-agent-runtime-feed-group-title,
+.lyra-ai-agent-runtime-feed-group-target,
+.lyra-ai-agent-runtime-feed-status-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--lyra-text-size-11);
+  line-height: 1.4;
+}
+
+.lyra-ai-agent-runtime-feed-tool-label,
+.lyra-ai-agent-runtime-feed-group-title {
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-agent-runtime-feed-group-target {
+  color: var(--lyra-text-muted);
+}
+
+.lyra-ai-agent-runtime-feed-status-label {
+  color: var(--lyra-text-muted);
+  justify-self: end;
+}
+
+.lyra-ai-agent-runtime-feed-collapsed-main:hover .lyra-ai-agent-runtime-feed-tool-label,
+.lyra-ai-agent-runtime-feed-group:hover .lyra-ai-agent-runtime-feed-group-title,
+.lyra-ai-agent-runtime-feed-group:hover .lyra-ai-agent-runtime-feed-group-target {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-ai-agent-runtime-feed-details {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin:
+    var(--lyra-unit-2)
+    0
+    var(--lyra-unit-4)
+    calc(var(--lyra-unit-12) + var(--lyra-unit-14) + var(--lyra-unit-16));
+  display: flex;
+  align-items: baseline;
+  gap: var(--lyra-unit-7);
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-10-5);
+  line-height: 1.4;
+}
+
+.lyra-ai-agent-runtime-feed-details-label {
+  flex: 0 0 auto;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-agent-runtime-feed-details-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-agent-runtime-feed-item-collapsed > .lyra-ai-agent-terminal-card {
+  margin-left: calc(var(--lyra-unit-12) + var(--lyra-unit-14) + var(--lyra-unit-16));
 }
 
 .lyra-ai-agent-terminal-card {

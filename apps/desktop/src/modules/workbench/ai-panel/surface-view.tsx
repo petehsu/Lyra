@@ -13,6 +13,7 @@ import { AiPanelTopbarActions } from "./topbar-actions";
 import type { AiPanelSide, AiPanelSurfaceProps } from "./types";
 import type { AiPanelSurfaceRuntime } from "./use-ai-panel-surface-runtime";
 import type { WorkbenchLocale } from "../i18n";
+import type { WorkbenchAiToolDisplayMode } from "../preferences";
 
 const LOGO_URL = new URL("../../../renderer/assets/logo.svg", import.meta.url).toString();
 const LOGO_BLINK_URL = new URL("../../../renderer/assets/logo-blink.svg", import.meta.url).toString();
@@ -21,6 +22,7 @@ type AiPanelSurfaceViewProps = {
   readonly surfaceProps: AiPanelSurfaceProps;
   readonly locale: WorkbenchLocale;
   readonly richRenderingEnabled: boolean;
+  readonly aiToolDisplayMode: WorkbenchAiToolDisplayMode;
   readonly aiPanelSide: AiPanelSide;
   readonly textLabels: AiPanelSurfaceTextLabels;
   readonly runtime: AiPanelSurfaceRuntime;
@@ -30,6 +32,7 @@ export const AiPanelSurfaceView = ({
   surfaceProps,
   locale,
   richRenderingEnabled,
+  aiToolDisplayMode,
   aiPanelSide,
   textLabels,
   runtime
@@ -82,10 +85,11 @@ export const AiPanelSurfaceView = ({
       closeThreadLabel={textLabels.closeThread}
       draftTitle={newSessionTitle}
       tabProjectRootById={runtime.tabProjectRootById}
+      isCreatePending={runtime.isCreatingThread}
       onActivateTab={actions.activateThreadTab}
       onCloseTab={actions.closeThreadTab}
       onCreateTab={() => {
-        actions.createThread();
+        void actions.createThread();
       }}
       onReorderTab={actions.reorderThreadTab}
     />
@@ -144,6 +148,7 @@ export const AiPanelSurfaceView = ({
             isZhLocale={locale === "zh-CN"}
             title={title}
             richRenderingEnabled={richRenderingEnabled}
+            aiToolDisplayMode={aiToolDisplayMode}
             {...(themeSignature === undefined ? {} : { themeSignature })}
             showEmptySessionScene={runtime.showEmptySessionScene}
             isLoading={state.isLoadingThread || state.isLoadingThreads}
@@ -166,6 +171,10 @@ export const AiPanelSurfaceView = ({
             toolStatusRunningLabel={toolStatusRunningLabel}
             toolStatusCompletedLabel={toolStatusCompletedLabel}
             toolStatusFailedLabel={toolStatusFailedLabel}
+            showFullOutputLabel={textLabels.showFullOutput}
+            expandToolOutputLabel={textLabels.expandToolOutput}
+            collapseToolOutputLabel={textLabels.collapseToolOutput}
+            fileChangesLabel={textLabels.fileChanges}
             pendingInteractionQueue={state.pendingInteractionQueue}
             canOpenFilePath={runtime.canOpenFilePath}
             openRuntimeTargetPath={runtime.openRuntimeTargetPath}

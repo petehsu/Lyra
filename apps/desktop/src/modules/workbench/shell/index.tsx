@@ -474,7 +474,6 @@ export const WorkbenchShell = () => {
     mcpCenterModel,
     skillsCenterModel,
     pluginsCenterModel,
-    settingsAiModel,
     planReviewModel: planReview.model,
     notificationModel,
     labels,

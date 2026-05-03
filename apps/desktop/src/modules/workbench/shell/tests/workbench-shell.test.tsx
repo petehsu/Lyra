@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("../../browser-tabs", () => ({
@@ -57,6 +57,10 @@ vi.mock("../use-terminal-workspace-actions", () => ({
     closeTerminalTabEverywhere: vi.fn(),
     openDockTabContextMenu: vi.fn()
   })
+}));
+
+vi.mock("../../ai-history/availability", () => ({
+  readAiHistoryHasThreads: vi.fn(async () => true)
 }));
 
 vi.mock("../../browser-search", async () => {
@@ -716,11 +720,13 @@ describe("workbench shell", () => {
     expect(main).toHaveClass("lyra-main-ai-panel-left");
   });
 
-  test("opens history tab from ai topbar button", () => {
+  test("opens history tab from ai topbar button", async () => {
     render(<WorkbenchShell />);
 
     fireEvent.click(screen.getByRole("button", { name: "打开历史对话" }));
-    expect(screen.getByLabelText("ai-history-surface")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByLabelText("ai-history-surface")).toBeInTheDocument();
+    });
   });
 
   test("applies language and theme changes immediately", () => {

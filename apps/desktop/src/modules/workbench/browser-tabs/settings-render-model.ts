@@ -673,6 +673,28 @@ const createSectionControl = (
           })
         ]
       });
+    case "aiToolDisplayMode":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.aiToolDisplayModeLabel,
+        controls: [
+          createChoiceControl({
+            label: props.aiToolDisplayModeLabel,
+            options: [
+              {
+                value: "inner_scroll",
+                label: props.aiToolDisplayModeInnerScrollLabel,
+              },
+              {
+                value: "collapsed",
+                label: props.aiToolDisplayModeCollapsedLabel,
+              }
+            ],
+            value: props.aiToolDisplayModeValue,
+            onChange: props.onAiToolDisplayModeChange
+          })
+        ]
+      });
     case "aiProviderSettings":
       return createSettingsSection({
         id: sectionId,

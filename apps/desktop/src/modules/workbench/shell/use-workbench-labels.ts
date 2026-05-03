@@ -130,6 +130,9 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         aiStopBehaviorTurnOnlyDescription: t("settings.aiStopBehaviorTurnOnlyDescription"),
         aiStopBehaviorTurnAndBackgroundLabel: t("settings.aiStopBehaviorTurnAndBackgroundLabel"),
         aiStopBehaviorTurnAndBackgroundDescription: t("settings.aiStopBehaviorTurnAndBackgroundDescription"),
+        aiToolDisplayModeLabel: t("settings.aiToolDisplayModeLabel"),
+        aiToolDisplayModeInnerScrollLabel: t("settings.aiToolDisplayModeInnerScrollLabel"),
+        aiToolDisplayModeCollapsedLabel: t("settings.aiToolDisplayModeCollapsedLabel"),
         preventSleepLabel: t("settings.preventSleepLabel"),
         preventSleepDescription: t("settings.preventSleepDescription"),
         preventSleepEnabledLabel: t("settings.preventSleepEnabled"),
@@ -500,8 +503,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
       } satisfies WorkspaceSurfaceI18nProps,
       aiHistory: {
         title: t("ai.historyTitle"),
-        newSessionTitle: t("ai.sessionDefaultTitle"),
-        newConversationLabel: t("ai.newConversation"),
         openConversationLabel: t("ai.openConversation"),
         renameConversationLabel: t("ai.renameConversation"),
         deleteConversationLabel: t("ai.deleteConversation"),
@@ -513,7 +514,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         deleteArchivedConversationDescription: t("ai.deleteArchivedConversationDescription"),
         deleteArchivedConversationConfirm: t("ai.deleteArchivedConversationConfirm"),
         deleteArchivedConversationCancel: t("ai.deleteArchivedConversationCancel"),
-        profileLabel: t("ai.profileLabel"),
         sessionIdLabel: t("ai.historySessionIdLabel"),
         loadingSessionsLabel: t("ai.historyLoadingSessions"),
         emptyStateTitle: t("settings.aiEmptyTitle"),
@@ -525,8 +525,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         backToProjectsLabel: t("ai.historyBackToProjects"),
         projectPathLabel: t("ai.historyProjectPathLabel"),
         threadPreviewEmptyLabel: t("ai.historyThreadPreviewEmpty"),
-        previewEmptyTitle: t("ai.historyPreviewEmptyTitle"),
-        previewEmptyDescription: t("ai.historyPreviewEmptyDescription"),
         previewLoadingLabel: t("ai.historyPreviewLoading")
       },
       skillsCenter: {

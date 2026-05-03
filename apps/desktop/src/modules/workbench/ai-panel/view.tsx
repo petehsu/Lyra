@@ -11,6 +11,7 @@ export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
     locale = "en-US",
     richRenderingEnabled = true,
     stopBehavior = "turn_only",
+    aiToolDisplayMode = "inner_scroll",
     configuredProfiles = [],
     aiPanelSide = "left"
   } = surfaceProps;
@@ -54,6 +55,7 @@ export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
       surfaceProps={surfaceProps}
       locale={locale}
       richRenderingEnabled={richRenderingEnabled}
+      aiToolDisplayMode={aiToolDisplayMode}
       aiPanelSide={aiPanelSide}
       textLabels={textLabels}
       runtime={runtime}

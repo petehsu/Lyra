@@ -85,4 +85,21 @@ describe("createSettingsSurfaceModel", () => {
     expect(section?.controls).toHaveLength(1);
     expect(section?.controls[0]?.kind).toBe("custom");
   });
+
+  test("exposes AI tool display mode as a choice section", () => {
+    const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps({
+      aiToolDisplayModeValue: "collapsed",
+    }));
+    const section = findSection(model, "aiToolDisplayMode");
+
+    expect(section?.label).toBe("Tool display");
+    expect(section?.controls[0]).toMatchObject({
+      kind: "choice",
+      value: "collapsed",
+      options: [
+        { value: "inner_scroll", label: "Inner scroll" },
+        { value: "collapsed", label: "Collapsed" },
+      ],
+    });
+  });
 });

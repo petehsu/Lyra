@@ -192,8 +192,6 @@ export type WorkspaceSurfaceRouterProps = {
   readonly aiHistory: {
     readonly locale: string;
     readonly title: string;
-    readonly newSessionTitle: string;
-    readonly newConversationLabel: string;
     readonly openConversationLabel: string;
     readonly renameConversationLabel?: string;
     readonly deleteConversationLabel: string;
@@ -205,7 +203,6 @@ export type WorkspaceSurfaceRouterProps = {
     readonly deleteArchivedConversationDescription: string;
     readonly deleteArchivedConversationConfirm: string;
     readonly deleteArchivedConversationCancel: string;
-    readonly profileLabel: string;
     readonly sessionIdLabel: string;
     readonly loadingSessionsLabel: string;
     readonly emptyStateTitle: string;
@@ -217,13 +214,9 @@ export type WorkspaceSurfaceRouterProps = {
     readonly backToProjectsLabel: string;
     readonly projectPathLabel: string;
     readonly threadPreviewEmptyLabel: string;
-    readonly previewEmptyTitle: string;
-    readonly previewEmptyDescription: string;
     readonly previewLoadingLabel: string;
     readonly richRenderingEnabled?: boolean;
     readonly themeSignature?: string;
-    readonly defaultProfileId?: string | null;
-    readonly defaultProviderId?: string | null;
     readonly openDialog?: AiHistorySurfaceProps["openDialog"];
     readonly onHistoryEmptied?: AiHistorySurfaceProps["onHistoryEmptied"];
   };

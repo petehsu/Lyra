@@ -16,6 +16,7 @@ const createSchemaInput = (
   splitOverflowPolicyLabel: "Split overflow",
   aiRichRenderLabel: "Rich render",
   aiStopBehaviorLabel: "Stop behavior",
+  aiToolDisplayModeLabel: "Tool display",
   preventSleepLabel: "Prevent sleep",
   jsReplLabel: "JS REPL",
   forceWebPageThemingLabel: "Web page theming",

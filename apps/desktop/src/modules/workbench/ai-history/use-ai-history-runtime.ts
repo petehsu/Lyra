@@ -29,8 +29,6 @@ import type { AiHistorySurfaceProps } from "./types";
 
 type UseAiHistoryRuntimeOptions = {
   readonly desktopApi: AiHistorySurfaceProps["desktopApi"];
-  readonly newSessionTitle: string;
-  readonly defaultProviderId: string | null | undefined;
   readonly openDialog: AiHistorySurfaceProps["openDialog"] | undefined;
   readonly deleteArchivedConversationTitle: string;
   readonly deleteArchivedConversationDescription: string;
@@ -40,7 +38,6 @@ type UseAiHistoryRuntimeOptions = {
 };
 
 export type AiHistoryRuntimeActions = {
-  readonly createThread: () => Promise<void>;
   readonly previewThread: (threadId: string, options?: { readonly silent?: boolean }) => Promise<void>;
   readonly openThread: (threadId: string) => void;
   readonly archiveThread: (threadId: string) => Promise<void>;
@@ -73,7 +70,6 @@ export type AiHistoryRuntime = {
   readonly livePreviewByThread: ReadonlyMap<string, LivePreviewEntry>;
   readonly hasLoadedThreads: boolean;
   readonly isLoading: boolean;
-  readonly isCreating: boolean;
   readonly editingThreadId: string | null;
   readonly editingThreadName: string;
   readonly isRenamingThread: boolean;
@@ -87,8 +83,6 @@ export type AiHistoryRuntime = {
 
 export const useAiHistoryRuntime = ({
   desktopApi,
-  newSessionTitle,
-  defaultProviderId,
   openDialog,
   deleteArchivedConversationTitle,
   deleteArchivedConversationDescription,
@@ -110,7 +104,6 @@ export const useAiHistoryRuntime = ({
   );
   const [hasLoadedThreads, setHasLoadedThreads] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingThreadName, setEditingThreadName] = useState("");
   const [isRenamingThread, setIsRenamingThread] = useState(false);
@@ -147,6 +140,17 @@ export const useAiHistoryRuntime = ({
     [activeThreads, archivedThreads]
   );
   const projectLogoByRoot = useProjectLogoMap(desktopApi?.files, projectRoots);
+  const latestThread = useMemo(() => {
+    const latestActive = activeThreads[0] ?? null;
+    const latestArchived = archivedThreads[0] ?? null;
+    if (latestActive === null) {
+      return latestArchived === null ? null : { thread: latestArchived, archived: true };
+    }
+    if (latestArchived === null || (latestActive.updatedAt ?? 0) >= (latestArchived.updatedAt ?? 0)) {
+      return { thread: latestActive, archived: false };
+    }
+    return { thread: latestArchived, archived: true };
+  }, [activeThreads, archivedThreads]);
 
   const loadThreads = useCallback(async (): Promise<void> => {
     if (lyraApi === undefined) {
@@ -310,42 +314,6 @@ export const useAiHistoryRuntime = ({
     },
     [lyraApi]
   );
-
-  const createThread = useCallback(async (): Promise<void> => {
-    if (lyraApi === undefined || isCreating) {
-      return;
-    }
-    setIsCreating(true);
-    setErrorMessage(null);
-    try {
-      const response = await lyraApi.request<{ thread?: unknown }>(
-        createAiHistoryRequestPayload("thread/start", {
-          ...(defaultProviderId === null || defaultProviderId === undefined
-            ? {}
-            : { modelProvider: defaultProviderId })
-        })
-      );
-      const created = toThreadSummary(response.thread);
-      if (created === null) {
-        throw new Error("Lyra thread/start did not return a thread");
-      }
-      const normalizedName = newSessionTitle.trim();
-      if (normalizedName.length > 0) {
-        await lyraApi.request(
-          createAiHistoryRequestPayload("thread/name/set", {
-            threadId: created.id,
-            name: normalizedName
-          })
-        );
-      }
-      emitThreadSelected(created.id);
-      await loadThreads();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsCreating(false);
-    }
-  }, [defaultProviderId, isCreating, loadThreads, lyraApi, newSessionTitle]);
 
   const archiveThread = useCallback(
     async (threadId: string): Promise<void> => {
@@ -520,18 +488,15 @@ export const useAiHistoryRuntime = ({
   const selectScope = useCallback((nextScope: HistoryScope): void => {
     setScope(nextScope);
     setSelectedProjectRoot(null);
-    clearPreview();
-  }, [clearPreview]);
+  }, []);
 
   const selectProject = useCallback((projectRoot: string): void => {
     setSelectedProjectRoot(projectRoot);
-    clearPreview();
-  }, [clearPreview]);
+  }, []);
 
   const clearSelectedProject = useCallback((): void => {
     setSelectedProjectRoot(null);
-    clearPreview();
-  }, [clearPreview]);
+  }, []);
 
   const getThreadSummaryById = useCallback((threadId: string): LyraThreadSummary | null =>
     activeThreads.find((thread) => thread.id === threadId)
@@ -545,6 +510,27 @@ export const useAiHistoryRuntime = ({
     }
     void loadThreads();
   }, [lyraApi, loadThreads]);
+
+  useEffect(() => {
+    if (
+      lyraApi === undefined ||
+      hasLoadedThreads === false ||
+      isLoading ||
+      activeThreadId !== null ||
+      latestThread === null
+    ) {
+      return;
+    }
+    setScope(latestThread.archived ? "archivedGlobal" : "global");
+    void previewThread(latestThread.thread.id);
+  }, [
+    activeThreadId,
+    hasLoadedThreads,
+    isLoading,
+    latestThread,
+    lyraApi,
+    previewThread
+  ]);
 
   useEffect(() => {
     if (selectedProjectRoot === null || selectedProject !== null) {
@@ -640,7 +626,6 @@ export const useAiHistoryRuntime = ({
     livePreviewByThread,
     hasLoadedThreads,
     isLoading,
-    isCreating,
     editingThreadId,
     editingThreadName,
     isRenamingThread,
@@ -650,7 +635,6 @@ export const useAiHistoryRuntime = ({
     projectLogoByRoot,
     getThreadSummaryById,
     actions: {
-      createThread,
       previewThread,
       openThread,
       archiveThread,

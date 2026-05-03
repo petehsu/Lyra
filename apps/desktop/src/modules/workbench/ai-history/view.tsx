@@ -1,5 +1,4 @@
 import { useEffect, useMemo } from "react";
-import { Plus } from "lucide-react";
 
 import { AiHistorySurfaceView } from "./surface-view";
 import type { AiHistorySurfaceProps } from "./types";
@@ -9,8 +8,6 @@ import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 export const AiHistorySurface = (surfaceProps: AiHistorySurfaceProps) => {
   const runtime = useAiHistoryRuntime({
     desktopApi: surfaceProps.desktopApi,
-    newSessionTitle: surfaceProps.newSessionTitle,
-    defaultProviderId: surfaceProps.defaultProviderId,
     openDialog: surfaceProps.openDialog,
     deleteArchivedConversationTitle: surfaceProps.deleteArchivedConversationTitle,
     deleteArchivedConversationDescription: surfaceProps.deleteArchivedConversationDescription,
@@ -43,18 +40,6 @@ export const AiHistorySurface = (surfaceProps: AiHistorySurfaceProps) => {
       ariaLabel: surfaceProps.title,
       content: (
         <div className="lyra-titlebar-context-controls">
-          <button
-            type="button"
-            className="lyra-titlebar-context-icon-button"
-            onClick={() => {
-              void runtime.actions.createThread();
-            }}
-            aria-label={surfaceProps.newConversationLabel}
-            title={surfaceProps.newConversationLabel}
-            disabled={runtime.isCreating}
-          >
-            <Plus size={14} />
-          </button>
           {([
             ["global", surfaceProps.scopeGlobalLabel, runtime.activeThreads.length],
             ["project", surfaceProps.scopeProjectLabel, runtime.activeProjectGroupCount],

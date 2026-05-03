@@ -36,6 +36,7 @@ type AiPanelThreadTabsProps = {
   readonly closeThreadLabel: string;
   readonly draftTitle: string;
   readonly tabProjectRootById?: ReadonlyMap<string, string | null> | undefined;
+  readonly isCreatePending?: boolean | undefined;
   readonly onActivateTab: (tabId: string) => void;
   readonly onCloseTab: (tabId: string) => void;
   readonly onCreateTab: () => void;
@@ -83,6 +84,7 @@ export const AiPanelThreadTabs = ({
   closeThreadLabel,
   draftTitle,
   tabProjectRootById,
+  isCreatePending = false,
   onActivateTab,
   onCloseTab,
   onCreateTab,
@@ -225,6 +227,7 @@ export const AiPanelThreadTabs = ({
         className="lyra-ai-thread-tab-new"
         aria-label={newThreadLabel}
         title={newThreadLabel}
+        disabled={isCreatePending}
         onClick={onCreateTab}
       >
         <Plus size={14} aria-hidden="true" />
