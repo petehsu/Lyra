@@ -1,6 +1,8 @@
 [workspace]
 members = [
   "crates/lyra-code-intel-core",
+  "crates/lyra-calculator-core",
+  "crates/lyra-calculator-napi",
   "crates/lyrad",
   "crates/lyra-runtime-protocol",
   "crates/lyra-sandbox",
@@ -120,6 +122,7 @@ lyra-apply-patch = { path = "crates/lyra-agent-core/apply-patch" }
 lyra-arg0 = { path = "crates/lyra-agent-core/arg0" }
 lyra-async-utils = { path = "crates/lyra-agent-core/async-utils" }
 lyra-client = { path = "crates/lyra-agent-core/lyra-client" }
+lyra-calculator-core = { path = "crates/lyra-calculator-core" }
 lyra-collaboration-mode-templates = { path = "crates/lyra-agent-core/collaboration-mode-templates" }
 lyra-code-mode = { path = "crates/lyra-agent-core/code-mode" }
 lyra-config = { path = "crates/lyra-agent-core/config" }

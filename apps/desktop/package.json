@@ -5,7 +5,7 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -p lyra-lsp-core -p lyra-files-napi -p lyra-image-napi -p lyra-resource-napi -p lyra-skills-napi -p lyra-docs-napi -p lyra-mcp-core && npm run native:stage",
+    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -p lyra-lsp-core -p lyra-calculator-napi -p lyra-files-napi -p lyra-image-napi -p lyra-resource-napi -p lyra-skills-napi -p lyra-docs-napi -p lyra-mcp-core && npm run native:stage",
     "native:build:release": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --release --clean",
     "native:stage": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --stage-only",
     "browser-use:build-current-bundle": "node --import tsx ../../tools/browser-use/build-current-bundle.ts",
@@ -50,6 +50,13 @@
       {
         "from": "native",
         "to": "native",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/calculator",
+        "to": "calculator",
         "filter": [
           "**/*"
         ]

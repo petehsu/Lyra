@@ -6043,6 +6043,10 @@ impl LyraMessageProcessor {
         let collaboration_mode = collaboration_mode.map(|mode| {
             self.normalize_turn_start_collaboration_mode(mode, collaboration_modes_config)
         });
+        let response_collaboration_mode = match collaboration_mode.as_ref() {
+            Some(mode) => mode.mode,
+            None => thread.collaboration_mode().await.mode,
+        };
 
         // Map v2 input items to core input items.
         let mapped_items: Vec<CoreInputItem> =
@@ -6219,6 +6223,7 @@ impl LyraMessageProcessor {
                     .await;
                 let turn = Turn {
                     id: turn_id.clone(),
+                    collaboration_mode: response_collaboration_mode,
                     items: vec![],
                     error: None,
                     status: TurnStatus::InProgress,
@@ -6308,6 +6313,7 @@ impl LyraMessageProcessor {
                 },
                 collaboration_modes_config,
             );
+            let response_collaboration_mode = collaboration_mode.mode;
 
             match thread
                 .resolve_plan_approval_and_start_internal_developer_turn(
@@ -6331,6 +6337,7 @@ impl LyraMessageProcessor {
                         .await;
                     response_turn = Some(Turn {
                         id: turn_id,
+                        collaboration_mode: response_collaboration_mode,
                         items: vec![],
                         error: None,
                         status: TurnStatus::InProgress,
@@ -6562,7 +6569,11 @@ impl LyraMessageProcessor {
         }
     }
 
-    fn build_review_turn(turn_id: String, display_text: &str) -> Turn {
+    fn build_review_turn(
+        turn_id: String,
+        display_text: &str,
+        collaboration_mode: ModeKind,
+    ) -> Turn {
         let items = if display_text.is_empty() {
             Vec::new()
         } else {
@@ -6578,6 +6589,7 @@ impl LyraMessageProcessor {
 
         Turn {
             id: turn_id,
+            collaboration_mode,
             items,
             error: None,
             status: TurnStatus::InProgress,
@@ -6620,7 +6632,8 @@ impl LyraMessageProcessor {
 
         match turn_id {
             Ok(turn_id) => {
-                let turn = Self::build_review_turn(turn_id, display_text);
+                let collaboration_mode = parent_thread.collaboration_mode().await.mode;
+                let turn = Self::build_review_turn(turn_id, display_text, collaboration_mode);
                 self.emit_review_started(request_id, turn, parent_thread_id)
                     .await;
                 Ok(())
@@ -6744,7 +6757,8 @@ impl LyraMessageProcessor {
                 data: None,
             })?;
 
-        let turn = Self::build_review_turn(turn_id, display_text);
+        let collaboration_mode = review_thread.collaboration_mode().await.mode;
+        let turn = Self::build_review_turn(turn_id, display_text, collaboration_mode);
         let review_thread_id = thread_id.to_string();
         self.emit_review_started(request_id, turn, review_thread_id)
             .await;

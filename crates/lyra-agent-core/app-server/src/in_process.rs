@@ -821,6 +821,7 @@ mod tests {
                 thread_id: "thread-1".to_string(),
                 turn: Turn {
                     id: "turn-1".to_string(),
+                    collaboration_mode: Default::default(),
                     items: Vec::new(),
                     status: TurnStatus::Completed,
                     error: None,

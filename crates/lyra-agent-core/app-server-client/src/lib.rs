@@ -1186,6 +1186,7 @@ mod tests {
             thread_id: "thread".to_string(),
             turn: lyra_app_server_protocol::Turn {
                 id: "turn".to_string(),
+                collaboration_mode: Default::default(),
                 items: Vec::new(),
                 status: lyra_app_server_protocol::TurnStatus::Completed,
                 error: None,
@@ -1947,6 +1948,7 @@ mod tests {
                         thread_id: "thread".to_string(),
                         turn: lyra_app_server_protocol::Turn {
                             id: "turn".to_string(),
+                            collaboration_mode: Default::default(),
                             items: Vec::new(),
                             status: lyra_app_server_protocol::TurnStatus::Completed,
                             error: None,

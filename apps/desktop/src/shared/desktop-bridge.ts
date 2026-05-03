@@ -208,6 +208,7 @@ export type {
   LyraRuntimeStartupFailedEvent
 } from "./lyra-runtime";
 export type {
+  AgentCollaborationMode,
   AgentPlanArtifact,
   AgentPlanBlock,
   AgentPendingInteraction,

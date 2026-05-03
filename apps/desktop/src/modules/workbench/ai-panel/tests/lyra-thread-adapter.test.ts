@@ -36,6 +36,7 @@ describe("lyra thread adapter", () => {
         {
           id: "turn-1",
           status: "completed",
+          collaborationMode: "plan",
           startedAt: 101,
           completedAt: 119,
           items: [
@@ -100,8 +101,10 @@ describe("lyra thread adapter", () => {
     const detail = lyraThreadToAgentDetail(thread!);
 
     expect(detail.session.title).toBe("Panel work");
+    expect(detail.session.collaborationMode).toBe("plan");
     expect(detail.session.projectRoot).toBe("/repo");
     expect(detail.session.projectName).toBe("repo");
+    expect(detail.turns[0]?.collaborationMode).toBe("plan");
     expect(detail.messages.map((message) => [message.role, message.content])).toEqual([
       ["user", "Implement this"],
       ["assistant", "Checked the failing path"],
@@ -278,6 +281,7 @@ describe("lyra thread adapter", () => {
           id: "turn-1",
           sessionId: "thread-projected",
           status: "completed",
+          collaborationMode: "plan",
           createdAtMs: 101000,
           updatedAtMs: 103000,
           durationMs: 2000,
@@ -398,10 +402,12 @@ describe("lyra thread adapter", () => {
     ]);
     expect(detail.turns[0]).toMatchObject({
       id: "turn-1",
+      collaborationMode: "plan",
       status: "completed",
       createdAt: 101000,
       updatedAt: 103000,
     });
+    expect(detail.session.collaborationMode).toBe("plan");
     expect(detail.toolCalls[0]).toMatchObject({
       id: "tool-1",
       toolName: "terminal.exec",

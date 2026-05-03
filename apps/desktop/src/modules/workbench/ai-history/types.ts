@@ -28,6 +28,7 @@ export type AiHistorySurfaceProps = {
   readonly projectPathLabel: string;
   readonly threadPreviewEmptyLabel: string;
   readonly previewLoadingLabel: string;
+  readonly planModeLabel?: string;
   readonly richRenderingEnabled?: boolean;
   readonly themeSignature?: string;
   readonly openDialog?: (request: GlobalDialogOpenRequest) => void;

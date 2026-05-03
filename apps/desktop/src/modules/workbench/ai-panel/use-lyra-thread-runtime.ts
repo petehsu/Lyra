@@ -1171,6 +1171,7 @@ const upsertLiveThreadItem = (
   const baseTurn: LyraTurn = existingTurn ?? {
     id: turnId,
     status: "inProgress",
+    collaborationMode: "default",
     items: [],
     startedAt: now,
   };
@@ -3481,6 +3482,7 @@ export const useLyraThreadRuntime = ({
           const turn = findThreadTurn(thread, turnId) ?? {
             id: turnId,
             status: method === "item/started" ? "inProgress" : "completed",
+            collaborationMode: "default",
             items: [],
           };
           const call = threadItemToToolCall(thread, turn, item, 0);

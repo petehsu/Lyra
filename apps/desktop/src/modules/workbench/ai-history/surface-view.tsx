@@ -52,6 +52,7 @@ type AiHistoryLabels = {
   readonly projectPathLabel: string;
   readonly threadPreviewEmptyLabel: string;
   readonly previewLoadingLabel: string;
+  readonly planModeLabel: string;
 };
 
 const toAiHistoryLabels = (props: AiHistorySurfaceProps): AiHistoryLabels => ({
@@ -74,7 +75,8 @@ const toAiHistoryLabels = (props: AiHistorySurfaceProps): AiHistoryLabels => ({
   backToProjectsLabel: props.backToProjectsLabel,
   projectPathLabel: props.projectPathLabel,
   threadPreviewEmptyLabel: props.threadPreviewEmptyLabel,
-  previewLoadingLabel: props.previewLoadingLabel
+  previewLoadingLabel: props.previewLoadingLabel,
+  planModeLabel: props.planModeLabel ?? "Plan mode"
 });
 
 const AiHistoryUnavailableSurface = ({
@@ -449,9 +451,17 @@ const AiHistoryPreviewPane = ({
     ? null
     : (runtime.livePreviewByThread.get(runtime.activeThreadId) ?? null);
   const displayMessages = buildPreviewDisplayMessages(runtime.previewDetail, livePreview);
+  const isPlanModePreview = runtime.previewDetail.session.collaborationMode === "plan";
 
   return (
     <article className="lyra-ai-history-preview-card">
+      {isPlanModePreview ? (
+        <div className="lyra-ai-history-preview-meta">
+          <span className="lyra-ai-history-preview-mode-badge">
+            {labels.planModeLabel}
+          </span>
+        </div>
+      ) : null}
       {displayMessages.length === 0 ? (
         <StatusEmptyState
           title={labels.threadPreviewEmptyLabel}

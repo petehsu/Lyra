@@ -547,6 +547,14 @@
         }
       ]
     },
+    "ModeKind": {
+      "description": "Initial collaboration mode to use when the TUI starts.",
+      "enum": [
+        "plan",
+        "default"
+      ],
+      "type": "string"
+    },
     "NonSteerableTurnKind": {
       "enum": [
         "review"
@@ -1727,6 +1735,14 @@
     },
     "Turn": {
       "properties": {
+        "collaborationMode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModeKind"
+            }
+          ],
+          "default": "default"
+        },
         "completedAt": {
           "description": "Unix timestamp (in seconds) when the turn completed.",
           "format": "int64",

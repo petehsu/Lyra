@@ -7,6 +7,7 @@ use lyra_app_server_protocol::TurnError;
 use lyra_core::LyraThread;
 use lyra_core::ThreadConfigSnapshot;
 use lyra_protocol::ThreadId;
+use lyra_protocol::config_types::ModeKind;
 use lyra_protocol::protocol::EventMsg;
 use lyra_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashMap;
@@ -49,6 +50,7 @@ pub(crate) enum ThreadListenerCommand {
 #[derive(Default, Clone)]
 pub(crate) struct TurnSummary {
     pub(crate) started_at: Option<i64>,
+    pub(crate) collaboration_mode: ModeKind,
     pub(crate) file_change_started: HashSet<String>,
     pub(crate) file_change_metadata: HashMap<String, FileChangeStreamMetadata>,
     pub(crate) command_execution_started: HashSet<String>,
@@ -131,6 +133,7 @@ impl ThreadState {
     pub(crate) fn track_current_turn_event(&mut self, event: &EventMsg) {
         if let EventMsg::TurnStarted(payload) = event {
             self.turn_summary.started_at = payload.started_at;
+            self.turn_summary.collaboration_mode = payload.collaboration_mode_kind;
         }
         self.current_turn_history.handle_event(event);
         if matches!(event, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_))

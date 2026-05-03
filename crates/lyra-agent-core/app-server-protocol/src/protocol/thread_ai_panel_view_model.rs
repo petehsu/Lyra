@@ -75,6 +75,7 @@ pub fn build_thread_ai_panel_view_model(
             id: turn.id.clone(),
             session_id: session_id.clone(),
             status: ai_panel_turn_status(&turn.status),
+            collaboration_mode: turn.collaboration_mode,
             created_at_ms: turn_created_at_ms,
             updated_at_ms: turn_updated_at_ms,
             duration_ms,

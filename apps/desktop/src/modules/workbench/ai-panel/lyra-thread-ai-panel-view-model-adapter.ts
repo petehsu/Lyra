@@ -9,6 +9,7 @@ import type {
 import {
   isRecord,
   normalizeStatus,
+  readCollaborationMode,
   readAgentUsage,
   readNumber,
   readRawString,
@@ -170,6 +171,7 @@ const readAiPanelTurn = (value: unknown): ThreadAiPanelTurn | null => {
     id,
     sessionId,
     status: readAgentTurnStatus(value.status),
+    collaborationMode: readCollaborationMode(value.collaborationMode ?? value.collaborationModeKind),
     createdAtMs,
     updatedAtMs,
     ...(readNumber(value.durationMs) === null ? {} : { durationMs: readNumber(value.durationMs)! }),
@@ -428,12 +430,21 @@ export const aiPanelViewModelToAgentDetail = (
   thread: LyraThread,
   viewModel: ThreadAiPanelViewModel
 ): AiPanelAgentSessionDetail => {
-  const session = createAgentSession(thread);
+  const latestViewModelTurn = [...viewModel.turns].sort((left, right) =>
+    right.updatedAtMs - left.updatedAtMs
+  )[0];
+  const session = {
+    ...createAgentSession(thread),
+    ...(latestViewModelTurn === undefined
+      ? {}
+      : { collaborationMode: latestViewModelTurn.collaborationMode }),
+  };
   const turns: AgentTurn[] = viewModel.turns.map((turn) => ({
     id: turn.id,
     sessionId: turn.sessionId,
     profileId: thread.modelProvider,
     status: turnStatusToAgent(turn.status),
+    collaborationMode: turn.collaborationMode,
     ...(turn.errorCode === undefined ? {} : { errorCode: turn.errorCode }),
     ...(turn.errorMessage === undefined ? {} : { errorMessage: turn.errorMessage }),
     ...(turn.usage === undefined ? {} : { usage: turn.usage }),

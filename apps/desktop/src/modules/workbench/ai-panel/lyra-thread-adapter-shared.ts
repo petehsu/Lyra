@@ -1,4 +1,5 @@
 import type {
+  AgentCollaborationMode,
   AgentPlanArtifact,
   AgentPendingInteraction,
   AgentSessionDetail,
@@ -19,6 +20,7 @@ export type LyraThreadItem = JsonRecord & {
 export type LyraTurn = {
   readonly id: string;
   readonly status: string;
+  readonly collaborationMode: AgentCollaborationMode;
   readonly items: readonly LyraThreadItem[];
   readonly startedAt?: number | null;
   readonly completedAt?: number | null;
@@ -66,6 +68,7 @@ export type ThreadAiPanelTurn = {
   readonly id: string;
   readonly sessionId: string;
   readonly status: AgentTurnStatus | string;
+  readonly collaborationMode: AgentCollaborationMode;
   readonly createdAtMs: number;
   readonly updatedAtMs: number;
   readonly durationMs?: number;
@@ -188,6 +191,9 @@ export const readStringArray = (value: unknown): readonly string[] =>
   Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
     : [];
+
+export const readCollaborationMode = (value: unknown): AgentCollaborationMode =>
+  readString(value) === "plan" ? "plan" : "default";
 
 export const toMs = (value: number | null | undefined, fallback: number): number => {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {

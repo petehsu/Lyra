@@ -1570,6 +1570,14 @@
         }
       ]
     },
+    "ModeKind": {
+      "description": "Initial collaboration mode to use when the TUI starts.",
+      "enum": [
+        "plan",
+        "default"
+      ],
+      "type": "string"
+    },
     "ModelRerouteReason": {
       "enum": [
         "highRiskCyberActivity"
@@ -3149,6 +3157,14 @@
     },
     "Turn": {
       "properties": {
+        "collaborationMode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModeKind"
+            }
+          ],
+          "default": "default"
+        },
         "completedAt": {
           "description": "Unix timestamp (in seconds) when the turn completed.",
           "format": "int64",

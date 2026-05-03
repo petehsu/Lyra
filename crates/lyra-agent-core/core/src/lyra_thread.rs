@@ -401,6 +401,10 @@ impl LyraThread {
         self.session_handle.thread_config_snapshot().await
     }
 
+    pub async fn collaboration_mode(&self) -> lyra_protocol::config_types::CollaborationMode {
+        self.session_handle.session.collaboration_mode().await
+    }
+
     pub async fn read_mcp_resource(
         &self,
         server: &str,

@@ -74,6 +74,7 @@ const createThreadDetail = (threadId: string): Record<string, unknown> | null =>
       {
         id: `${thread.id}-turn`,
         status: "completed",
+        collaborationMode: thread.id === "thread-a" ? "plan" : "default",
         startedAt: thread.updatedAt - 30,
         completedAt: thread.updatedAt,
         items: [
@@ -142,7 +143,8 @@ const baseLabels = {
   backToProjectsLabel: "返回项目列表",
   projectPathLabel: "项目路径",
   threadPreviewEmptyLabel: "未命名会话",
-  previewLoadingLabel: "正在加载预览"
+  previewLoadingLabel: "正在加载预览",
+  planModeLabel: "规划模式"
 } as const;
 
 type AiHistorySurfaceTestProps = ComponentProps<typeof AiHistorySurface>;
@@ -188,6 +190,7 @@ describe("AiHistorySurface", () => {
         })
       );
     });
+    expect(screen.getByText("规划模式")).toBeDefined();
     expect(screen.getByText("Reply for Start refactor agent runtime")).toBeDefined();
 
     expect(screen.getByText("Brainstorm ideas")).toBeDefined();
@@ -228,6 +231,9 @@ describe("AiHistorySurface", () => {
       );
     });
     expect(screen.getByText("Reply for Brainstorm ideas")).toBeDefined();
+    await waitFor(() => {
+      expect(screen.queryByText("规划模式")).toBeNull();
+    });
     expect(captured).toEqual([]);
 
     const row = screen.getAllByText("Brainstorm ideas")[0]?.closest(".lyra-ai-history-row");

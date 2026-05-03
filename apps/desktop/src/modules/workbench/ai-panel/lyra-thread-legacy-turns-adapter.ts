@@ -9,6 +9,7 @@ import type {
 import {
   basename,
   isRecord,
+  readCollaborationMode,
   readNumber,
   readAgentUsage,
   readPath,
@@ -51,6 +52,7 @@ const readTurn = (value: unknown): LyraTurn | null => {
   return {
     id,
     status: readString(value.status) ?? "completed",
+    collaborationMode: readCollaborationMode(value.collaborationMode ?? value.collaborationModeKind),
     items: Array.isArray(value.items)
       ? value.items.map(readThreadItem).filter((item): item is LyraThreadItem => item !== null)
       : [],
@@ -387,13 +389,21 @@ const messageFromItem = (
 export const threadTitle = (thread: LyraThread): string =>
   thread.name?.trim() || thread.preview.trim() || "New thread";
 
+const latestThreadCollaborationMode = (thread: LyraThread): AgentSession["collaborationMode"] => {
+  const latestTurn = [...thread.turns].sort((left, right) =>
+    toMs(right.startedAt ?? right.completedAt ?? null, thread.updatedAt)
+    - toMs(left.startedAt ?? left.completedAt ?? null, thread.updatedAt)
+  )[0];
+  return latestTurn?.collaborationMode ?? "default";
+};
+
 export const createAgentSession = (thread: LyraThread): AgentSession => {
   const projectRoot = thread.boundProjectRoot ?? null;
   return {
     id: thread.id,
     title: threadTitle(thread),
     profileId: thread.modelProvider,
-    collaborationMode: "default",
+    collaborationMode: latestThreadCollaborationMode(thread),
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     ...(projectRoot === null || projectRoot === undefined ? {} : { projectRoot }),
@@ -415,6 +425,7 @@ export const lyraThreadTurnsToAgentDetail = (thread: LyraThread): AgentSessionDe
       sessionId: thread.id,
       profileId: thread.modelProvider,
       status: turnStatusToAgent(turn.status),
+      collaborationMode: turn.collaborationMode,
       ...(turn.usage === undefined ? {} : { usage: turn.usage }),
       createdAt,
       updatedAt,

@@ -25,6 +25,7 @@ import {
   type LyraAppIconVariant
 } from "./app-identity";
 import { createCapabilitiesIpcBridge } from "./capabilities";
+import { createCalculatorHostToolsBridge } from "./calculator";
 import { createCodeIntelHostToolsBridge } from "./code-intel";
 import {
   createBrowserUseHostToolsBridge,
@@ -120,6 +121,7 @@ let disposeWorkbenchDocumentsService: (() => void) | null = null;
 let disposeWorkbenchObservationHostTools: (() => void) | null = null;
 let disposeCodeIntelHostTools: (() => void) | null = null;
 let disposeLocalSearchHostTools: (() => void) | null = null;
+let disposeCalculatorHostTools: (() => void) | null = null;
 let disposeBrowserUseService: (() => void) | null = null;
 let disposeBrowserUseHostTools: (() => void) | null = null;
 let disposeBrowserUseRuntimeCoordinator: (() => void) | null = null;
@@ -775,6 +777,19 @@ const registerIpcHandlers = (): void => {
   void localSearchHostTools.sync().catch((error: unknown) => {
     console.warn(`[lyra-local-search] host tool sync failed ${String(error)}`);
   });
+  const calculatorHostTools = createCalculatorHostToolsBridge({
+    runtimeClient,
+    runtimeHostRpc
+  });
+  disposeCalculatorHostTools = calculatorHostTools.dispose;
+  console.info(
+    calculatorHostTools.nativeLoadResult.ok
+      ? `[lyra-calculator] native loaded from ${calculatorHostTools.nativeLoadResult.loadedFrom}`
+      : `[lyra-calculator] native unavailable ${calculatorHostTools.nativeLoadResult.errorMessage}`
+  );
+  void calculatorHostTools.sync().catch((error: unknown) => {
+    console.warn(`[lyra-calculator] host tool sync failed ${String(error)}`);
+  });
   const browserUseHostTools = createBrowserUseHostToolsBridge({
     capabilitiesBridge,
     runtimeClient,
@@ -975,6 +990,10 @@ app.on("before-quit", () => {
   if (disposeLocalSearchHostTools !== null) {
     disposeLocalSearchHostTools();
     disposeLocalSearchHostTools = null;
+  }
+  if (disposeCalculatorHostTools !== null) {
+    disposeCalculatorHostTools();
+    disposeCalculatorHostTools = null;
   }
   if (disposeBrowserUseRuntimeCoordinator !== null) {
     disposeBrowserUseRuntimeCoordinator();

@@ -233,6 +233,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                     let state = thread_state.lock().await;
                     state.active_turn_snapshot().unwrap_or_else(|| Turn {
                         id: payload.turn_id.clone(),
+                        collaboration_mode: payload.collaboration_mode_kind,
                         items: Vec::new(),
                         error: None,
                         status: TurnStatus::InProgress,
@@ -2028,6 +2029,7 @@ async fn handle_turn_plan_update(
 
 struct TurnCompletionMetadata {
     status: TurnStatus,
+    collaboration_mode: lyra_protocol::config_types::ModeKind,
     error: Option<TurnError>,
     started_at: Option<i64>,
     completed_at: Option<i64>,
@@ -2045,6 +2047,7 @@ async fn emit_turn_completed_with_status(
         thread_id: conversation_id.to_string(),
         turn: Turn {
             id: event_turn_id,
+            collaboration_mode: turn_completion_metadata.collaboration_mode,
             items: vec![],
             error: turn_completion_metadata.error,
             status: turn_completion_metadata.status,
@@ -2249,6 +2252,7 @@ async fn handle_turn_complete(
         event_turn_id,
         TurnCompletionMetadata {
             status,
+            collaboration_mode: turn_summary.collaboration_mode,
             error,
             started_at: turn_summary.started_at,
             completed_at: turn_complete_event.completed_at,
@@ -2281,6 +2285,7 @@ async fn handle_turn_interrupted(
         event_turn_id,
         TurnCompletionMetadata {
             status: TurnStatus::Interrupted,
+            collaboration_mode: turn_summary.collaboration_mode,
             error: None,
             started_at: turn_summary.started_at,
             completed_at: turn_aborted_event.completed_at,
@@ -3670,7 +3675,7 @@ mod tests {
                     turn_id: event_turn_id.clone(),
                     started_at: Some(42),
                     model_context_window: None,
-                    collaboration_mode_kind: Default::default(),
+                    collaboration_mode_kind: lyra_protocol::config_types::ModeKind::Plan,
                 },
             ));
             state.track_current_turn_event(&EventMsg::TurnComplete(turn_complete_event(
@@ -3694,6 +3699,10 @@ mod tests {
             OutgoingMessage::AppServerNotification(ServerNotification::TurnCompleted(n)) => {
                 assert_eq!(n.turn.id, event_turn_id);
                 assert_eq!(n.turn.status, TurnStatus::Completed);
+                assert_eq!(
+                    n.turn.collaboration_mode,
+                    lyra_protocol::config_types::ModeKind::Plan
+                );
                 assert_eq!(n.turn.error, None);
                 assert_eq!(n.turn.started_at, Some(42));
                 assert_eq!(n.turn.completed_at, Some(TEST_TURN_COMPLETED_AT));

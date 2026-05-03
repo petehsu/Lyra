@@ -3361,6 +3361,8 @@ pub struct ThreadAiPanelTurn {
     pub id: String,
     pub session_id: String,
     pub status: ThreadAiPanelTurnStatus,
+    #[serde(default)]
+    pub collaboration_mode: ModeKind,
     #[ts(type = "number")]
     pub created_at_ms: i64,
     #[ts(type = "number")]
@@ -4092,6 +4094,8 @@ impl From<CoreTokenUsage> for TokenUsageBreakdown {
 #[ts(export_to = "v2/")]
 pub struct Turn {
     pub id: String,
+    #[serde(default)]
+    pub collaboration_mode: ModeKind,
     /// Only populated on a `thread/resume` or `thread/fork` response.
     /// For all other responses and notifications returning a Turn,
     /// the items field will be an empty list.

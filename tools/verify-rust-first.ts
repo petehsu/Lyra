@@ -302,6 +302,37 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
         message: "Image viewer decoding and tile preparation must stay native-owned."
       }
     ]
+  },
+  {
+    name: "calculator",
+    dirName: "calculator",
+    crateDir: "crates/lyra-calculator-napi",
+    cratePackageName: "lyra-calculator-napi",
+    servicePath: "apps/desktop/src/main/calculator/service.ts",
+    loaderPath: "apps/desktop/src/main/calculator/native-loader.ts",
+    typesPath: "apps/desktop/src/main/calculator/types.ts",
+    indexPath: "apps/desktop/src/main/calculator/index.ts",
+    mainBridgeFactoryName: "createCalculatorHostToolsBridge",
+    requiredServiceRules: [
+      {
+        pattern: /from\s+["']\.\/native-loader["']/,
+        message: "Calculator service must import its native loader."
+      },
+      {
+        pattern: /\bloadCalculatorNativeBindings\b/,
+        message: "Calculator service must load native bindings explicitly."
+      }
+    ],
+    forbiddenServiceRules: [
+      {
+        pattern: /safeStorage/,
+        message: "Calculator service must not grow TypeScript secret handling."
+      },
+      {
+        pattern: /Fall through to the existing TypeScript implementation/,
+        message: "Calculator service must not keep TypeScript fallback implementation notes or branches."
+      }
+    ]
   }
 ] as const;
 

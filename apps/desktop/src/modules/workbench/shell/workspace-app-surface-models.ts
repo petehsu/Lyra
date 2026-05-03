@@ -83,6 +83,9 @@ const createAiHistoryProps = (
   projectPathLabel: context.aiHistory.projectPathLabel,
   threadPreviewEmptyLabel: context.aiHistory.threadPreviewEmptyLabel,
   previewLoadingLabel: context.aiHistory.previewLoadingLabel,
+  ...(context.aiHistory.planModeLabel === undefined
+    ? {}
+    : { planModeLabel: context.aiHistory.planModeLabel }),
   ...(context.aiHistory.richRenderingEnabled === undefined
     ? {}
     : { richRenderingEnabled: context.aiHistory.richRenderingEnabled }),

@@ -86,6 +86,7 @@ export type AgentTurn = {
   readonly sessionId: AgentSessionId;
   readonly profileId: string;
   readonly status: AgentTurnStatus;
+  readonly collaborationMode?: AgentCollaborationMode;
   readonly errorCode?: string;
   readonly errorMessage?: string;
   readonly usage?: AgentUsage;

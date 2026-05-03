@@ -215,6 +215,7 @@ export type WorkspaceSurfaceRouterProps = {
     readonly projectPathLabel: string;
     readonly threadPreviewEmptyLabel: string;
     readonly previewLoadingLabel: string;
+    readonly planModeLabel?: string;
     readonly richRenderingEnabled?: boolean;
     readonly themeSignature?: string;
     readonly openDialog?: AiHistorySurfaceProps["openDialog"];

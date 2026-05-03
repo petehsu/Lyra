@@ -525,7 +525,8 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         backToProjectsLabel: t("ai.historyBackToProjects"),
         projectPathLabel: t("ai.historyProjectPathLabel"),
         threadPreviewEmptyLabel: t("ai.historyThreadPreviewEmpty"),
-        previewLoadingLabel: t("ai.historyPreviewLoading")
+        previewLoadingLabel: t("ai.historyPreviewLoading"),
+        planModeLabel: t("ai.planMode")
       },
       skillsCenter: {
         title: t("skills.title"),

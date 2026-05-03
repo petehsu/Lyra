@@ -5883,9 +5883,30 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
   background: transparent;
+}
+
+.lyra-ai-history-preview-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: var(--lyra-unit-12) var(--lyra-unit-14) 0;
+}
+
+.lyra-ai-history-preview-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  height: var(--lyra-unit-22);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-radius: var(--lyra-unit-7);
+  padding: 0 var(--lyra-unit-8);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 86%, transparent);
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-unit-11);
+  line-height: 1;
 }
 
 .lyra-ai-history-preview-messages {

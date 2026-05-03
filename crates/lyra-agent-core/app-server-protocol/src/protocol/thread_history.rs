@@ -21,6 +21,7 @@ use crate::protocol::v2::TurnError;
 use crate::protocol::v2::TurnStatus;
 use crate::protocol::v2::UserInput;
 use crate::protocol::v2::WebSearchAction;
+use lyra_protocol::config_types::ModeKind;
 use lyra_protocol::items::parse_hook_prompt_message;
 use lyra_protocol::models::MessagePhase;
 use lyra_protocol::protocol::AgentReasoningEvent;
@@ -944,6 +945,7 @@ impl ThreadHistoryBuilder {
             self.new_turn(Some(payload.turn_id.clone()))
                 .with_status(TurnStatus::InProgress)
                 .with_started_at(payload.started_at)
+                .with_collaboration_mode(payload.collaboration_mode_kind)
                 .opened_explicitly(),
         );
     }
@@ -1029,6 +1031,7 @@ impl ThreadHistoryBuilder {
         });
         PendingTurn {
             id,
+            collaboration_mode: ModeKind::Default,
             items: Vec::new(),
             error: None,
             status: TurnStatus::Completed,
@@ -1156,6 +1159,7 @@ fn upsert_turn_item(items: &mut Vec<ThreadItem>, item: ThreadItem) {
 
 struct PendingTurn {
     id: String,
+    collaboration_mode: ModeKind,
     items: Vec<ThreadItem>,
     error: Option<TurnError>,
     status: TurnStatus,
@@ -1184,12 +1188,18 @@ impl PendingTurn {
         self.started_at = started_at;
         self
     }
+
+    fn with_collaboration_mode(mut self, collaboration_mode: ModeKind) -> Self {
+        self.collaboration_mode = collaboration_mode;
+        self
+    }
 }
 
 impl From<PendingTurn> for Turn {
     fn from(value: PendingTurn) -> Self {
         Self {
             id: value.id,
+            collaboration_mode: value.collaboration_mode,
             items: value.items,
             error: value.error,
             status: value.status,
@@ -1204,6 +1214,7 @@ impl From<&PendingTurn> for Turn {
     fn from(value: &PendingTurn) -> Self {
         Self {
             id: value.id.clone(),
+            collaboration_mode: value.collaboration_mode,
             items: value.items.clone(),
             error: value.error.clone(),
             status: value.status.clone(),
@@ -1452,6 +1463,36 @@ mod tests {
     }
 
     #[test]
+    fn preserves_turn_collaboration_mode_from_turn_started() {
+        let turn_id = "turn-plan";
+        let items = vec![
+            RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: turn_id.to_string(),
+                started_at: None,
+                model_context_window: None,
+                collaboration_mode_kind: ModeKind::Plan,
+            })),
+            RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
+                message: "Plan this".into(),
+                images: None,
+                text_elements: Vec::new(),
+                local_images: Vec::new(),
+            })),
+            RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id: turn_id.to_string(),
+                last_agent_message: None,
+                completed_at: None,
+                duration_ms: None,
+            })),
+        ];
+
+        let turns = build_turns_from_rollout_items(&items);
+
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].collaboration_mode, ModeKind::Plan);
+    }
+
+    #[test]
     fn preserves_agent_message_phase_in_history() {
         let events = vec![EventMsg::AgentMessage(AgentMessageEvent {
             message: "Final reply".into(),
@@ -1569,6 +1610,7 @@ mod tests {
             turns[0],
             Turn {
                 id: "turn-image".into(),
+                collaboration_mode: ModeKind::Default,
                 status: TurnStatus::Completed,
                 error: None,
                 started_at: None,
@@ -2044,6 +2086,7 @@ mod tests {
             name: None,
             turns: vec![Turn {
                 id: "turn-1".into(),
+                collaboration_mode: ModeKind::Default,
                 items: vec![
                     ThreadItem::UserMessage {
                         id: "user-1".into(),
@@ -3255,6 +3298,7 @@ mod tests {
             turns[0],
             Turn {
                 id: "turn-a".into(),
+                collaboration_mode: ModeKind::Default,
                 status: TurnStatus::Completed,
                 error: None,
                 started_at: None,
