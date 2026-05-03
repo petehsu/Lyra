@@ -20,6 +20,7 @@ const MAX_TIMEOUT_MS = 10_000;
 const MAX_EXPRESSION_BYTES = 20_000;
 
 const PYTHON_FIRST_MODES = new Set<CalculatorMode>([
+  "exact",
   "symbolic",
   "matrix",
   "statistics",

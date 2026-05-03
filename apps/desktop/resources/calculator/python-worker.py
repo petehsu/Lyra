@@ -6,6 +6,7 @@ import re
 import statistics
 import sys
 import time
+from fractions import Fraction
 
 
 FORBIDDEN = (
@@ -100,6 +101,56 @@ def try_statistics(expression, started):
     else:
         value = statistics.pvariance(values)
     success(value, started, decimal=str(value))
+    return True
+
+
+def eval_fraction_node(node):
+    if isinstance(node, ast.Expression):
+        return eval_fraction_node(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return Fraction(node.value, 1)
+    if isinstance(node, ast.Constant) and isinstance(node.value, float):
+        return Fraction(str(node.value))
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return -eval_fraction_node(node.operand)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd):
+        return eval_fraction_node(node.operand)
+    if isinstance(node, ast.BinOp):
+        left = eval_fraction_node(node.left)
+        right = eval_fraction_node(node.right)
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        if isinstance(node.op, ast.Div):
+            return left / right
+        if isinstance(node.op, ast.Pow):
+            if right.denominator != 1:
+                raise ValueError("fractional powers require SymPy")
+            exponent = int(right)
+            if abs(exponent) > 10_000:
+                raise ValueError("exponent too large")
+            return left ** exponent
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "factorial":
+        if len(node.args) != 1:
+            raise ValueError("factorial expects one argument")
+        value = eval_fraction_node(node.args[0])
+        if value.denominator != 1 or value < 0 or value > 10000:
+            raise ValueError("factorial requires an integer from 0 to 10000")
+        return Fraction(math.factorial(int(value)), 1)
+    raise ValueError("unsupported exact expression without SymPy")
+
+
+def try_fraction_exact(expression, started):
+    try:
+        parsed = ast.parse(expression.replace("^", "**"), mode="eval")
+        value = eval_fraction_node(parsed)
+    except Exception:
+        return False
+    exact = str(value.numerator) if value.denominator == 1 else f"{value.numerator}/{value.denominator}"
+    success(exact, started, exact=exact, decimal=str(float(value)))
     return True
 
 
@@ -204,6 +255,8 @@ def main():
         if mode == "statistics" or re.match(r"\s*(mean|median|stdev|pstdev|variance|pvariance)\s*\(", expression, re.I):
             if try_statistics(expression, started):
                 return
+        if mode == "exact" and try_fraction_exact(expression, started):
+            return
         if mode == "unit" or re.search(r"\s(?:to|in)\s", expression, re.I):
             if try_units(expression, started):
                 return
