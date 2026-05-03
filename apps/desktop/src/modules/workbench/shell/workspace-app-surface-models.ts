@@ -80,7 +80,6 @@ const createAiHistoryProps = (
   emptyStateDescription: context.aiHistory.emptyStateDescription,
   scopeGlobalLabel: context.aiHistory.scopeGlobalLabel,
   scopeProjectLabel: context.aiHistory.scopeProjectLabel,
-  noProjectSessionsEmptyLabel: context.aiHistory.noProjectSessionsEmptyLabel,
   noProjectsEmptyLabel: context.aiHistory.noProjectsEmptyLabel,
   projectSessionCountLabel: context.aiHistory.projectSessionCountLabel,
   backToProjectsLabel: context.aiHistory.backToProjectsLabel,
@@ -103,7 +102,10 @@ const createAiHistoryProps = (
     : { defaultProviderId: context.aiHistory.defaultProviderId }),
   ...(context.aiHistory.openDialog === undefined
     ? {}
-    : { openDialog: context.aiHistory.openDialog })
+    : { openDialog: context.aiHistory.openDialog }),
+  ...(context.aiHistory.onHistoryEmptied === undefined
+    ? {}
+    : { onHistoryEmptied: context.aiHistory.onHistoryEmptied })
 });
 
 export const createTerminalWorkspaceModel = (

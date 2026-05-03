@@ -240,7 +240,6 @@ export const ZH_CN_DICTIONARY: WorkbenchDictionary = {
   "ai.historySessionIdLabel": "会话 ID",
   "ai.historyScopeGlobal": "全部会话",
   "ai.historyScopeProject": "项目会话",
-  "ai.historyNoProjectSessionsEmpty": "还没有历史会话",
   "ai.historyNoProjectsEmpty": "还没有绑定到项目的会话",
   "ai.historyProjectSessionCount": "个会话",
   "ai.historyBackToProjects": "返回项目列表",

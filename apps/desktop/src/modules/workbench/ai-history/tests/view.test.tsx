@@ -140,7 +140,6 @@ const baseLabels = {
   emptyStateDescription: "暂无会话",
   scopeGlobalLabel: "全部会话",
   scopeProjectLabel: "项目会话",
-  noProjectSessionsEmptyLabel: "还没有历史会话",
   noProjectsEmptyLabel: "还没有绑定到项目的会话",
   projectSessionCountLabel: "个会话",
   backToProjectsLabel: "返回项目列表",
@@ -321,7 +320,36 @@ describe("AiHistorySurface", () => {
     await waitFor(() => {
       expect(screen.getByText("Only project")).toBeDefined();
     });
-    expect(screen.queryByText("还没有历史会话")).toBeNull();
+  });
+
+  test("calls onHistoryEmptied after loading an empty history", async () => {
+    const request = vi.fn(async (payload: LyraRequest) => {
+      if (payload.method === "thread/list") {
+        return { data: [] };
+      }
+      return {};
+    });
+    const onHistoryEmptied = vi.fn();
+
+    renderHistorySurface({
+      desktopApi: {
+        lyra: {
+          request,
+          resolveServerRequest: vi.fn(),
+          rejectServerRequest: vi.fn(),
+          health: vi.fn(),
+          notify: vi.fn(),
+          onEvent: () => () => undefined
+        }
+      } as never,
+      locale: "en-US",
+      ...baseLabels,
+      onHistoryEmptied
+    });
+
+    await waitFor(() => {
+      expect(onHistoryEmptied).toHaveBeenCalled();
+    });
   });
 
   test("archived scope permanently deletes after dialog confirmation", async () => {

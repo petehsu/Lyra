@@ -45,6 +45,7 @@ import { useTerminalWorkspaceActions } from "./use-terminal-workspace-actions";
 import { useWorkbenchAiLaunchProps } from "./use-workbench-ai-launch-props";
 import { useWorkbenchFileAppModels } from "./use-workbench-file-app-models";
 import { useWorkbenchEditorReviewModel } from "./use-workbench-editor-review-model";
+import { useWorkbenchEmptyAppTabGuards } from "./use-workbench-empty-app-tab-guards";
 import { useWorkbenchFileActions } from "./use-workbench-file-actions";
 import { useWorkbenchJsReplSetting } from "./use-workbench-js-repl-setting";
 import { useWorkbenchLabels } from "./use-workbench-labels";
@@ -419,6 +420,10 @@ export const WorkbenchShell = () => {
     onOpenFileFromManager,
     recordCompletedEditorWorkItem
   });
+  const emptyAppTabGuards = useWorkbenchEmptyAppTabGuards({
+    tabsModel,
+    notificationCount: notificationModel.notifications.length
+  });
 
   const {
     onOpenNotificationCenter,
@@ -477,7 +482,8 @@ export const WorkbenchShell = () => {
     onOpenFileFromManager,
     onRevealPathInFileManager,
     onOpenNotificationSource,
-    onRequestClearNotifications
+    onRequestClearNotifications,
+    onHistoryEmptied: emptyAppTabGuards.onHistoryEmptied
   });
 
   const rootClassName = cx(

@@ -52,6 +52,40 @@ const createNotificationModel = (
 });
 
 describe("useWorkbenchNotificationNavigation", () => {
+  test("does not open the notification center when there are no notifications and closes stale center tabs", () => {
+    const notificationModel = createNotificationModel(null);
+    const tabsModel = {
+      tabs: [
+        {
+          id: "notification-center-tab",
+          pageKind: "app",
+          appId: "notification-center",
+          appInstanceId: "notification-center"
+        }
+      ],
+      closeTab: vi.fn(),
+      openAppTab: vi.fn(),
+      setActiveTab: vi.fn()
+    } as unknown as WorkspaceTabsModel;
+    const { result } = renderHook(() =>
+      useWorkbenchNotificationNavigation({
+        tabsModel,
+        fileManagerModel: {} as FileManagerModel,
+        fileEditorModel: {} as FileEditorModel,
+        notificationModel,
+        openDialog: vi.fn(),
+        t: t as never
+      })
+    );
+
+    result.current.onOpenNotificationCenter();
+
+    expect(notificationModel.acknowledgeTopbarPreview).toHaveBeenCalled();
+    expect(tabsModel.openAppTab).not.toHaveBeenCalled();
+    expect(tabsModel.setActiveTab).not.toHaveBeenCalled();
+    expect(tabsModel.closeTab).toHaveBeenCalledWith("notification-center-tab");
+  });
+
   test("opens page-tab notification previews and marks them read", () => {
     const notification = createNotification({
       target: {

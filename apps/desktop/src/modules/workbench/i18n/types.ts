@@ -240,7 +240,6 @@ export type I18nKey =
   | "ai.historySessionIdLabel"
   | "ai.historyScopeGlobal"
   | "ai.historyScopeProject"
-  | "ai.historyNoProjectSessionsEmpty"
   | "ai.historyNoProjectsEmpty"
   | "ai.historyProjectSessionCount"
   | "ai.historyBackToProjects"

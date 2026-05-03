@@ -139,7 +139,6 @@ const createProps = (
     emptyStateDescription: "Empty",
     scopeGlobalLabel: "Global",
     scopeProjectLabel: "Project",
-    noProjectSessionsEmptyLabel: "None",
     noProjectsEmptyLabel: "None",
     projectSessionCountLabel: "sessions",
     backToProjectsLabel: "Back",

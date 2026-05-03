@@ -62,7 +62,23 @@ export const useWorkbenchNotificationNavigation = ({
   openDialog,
   t
 }: UseWorkbenchNotificationNavigationParams): WorkbenchNotificationNavigation => {
+  const closeNotificationCenterTabs = useCallback((): void => {
+    tabsModel.tabs
+      .filter((tab) =>
+        tab.pageKind === "app" &&
+        tab.appId === "notification-center"
+      )
+      .forEach((tab) => {
+        tabsModel.closeTab(tab.id);
+      });
+  }, [tabsModel.closeTab, tabsModel.tabs]);
+
   const openNotificationCenterTab = useCallback((notificationId?: string): void => {
+    if (notificationModel.notifications.length === 0) {
+      closeNotificationCenterTabs();
+      return;
+    }
+
     const trimmedNotificationId =
       typeof notificationId === "string" ? notificationId.trim() : "";
     if (trimmedNotificationId.length > 0) {
@@ -83,6 +99,8 @@ export const useWorkbenchNotificationNavigation = ({
 
     tabsModel.openAppTab(createNotificationCenterAppRequest(t("notification.centerTabTitle")));
   }, [
+    closeNotificationCenterTabs,
+    notificationModel.notifications.length,
     notificationModel.selectNotification,
     t,
     tabsModel.openAppTab,

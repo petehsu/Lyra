@@ -520,7 +520,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         emptyStateDescription: t("settings.aiEmptyDescription"),
         scopeGlobalLabel: t("ai.historyScopeGlobal"),
         scopeProjectLabel: t("ai.historyScopeProject"),
-        noProjectSessionsEmptyLabel: t("ai.historyNoProjectSessionsEmpty"),
         noProjectsEmptyLabel: t("ai.historyNoProjectsEmpty"),
         projectSessionCountLabel: t("ai.historyProjectSessionCount"),
         backToProjectsLabel: t("ai.historyBackToProjects"),

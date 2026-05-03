@@ -212,7 +212,6 @@ export type WorkspaceSurfaceRouterProps = {
     readonly emptyStateDescription: string;
     readonly scopeGlobalLabel: string;
     readonly scopeProjectLabel: string;
-    readonly noProjectSessionsEmptyLabel: string;
     readonly noProjectsEmptyLabel: string;
     readonly projectSessionCountLabel: string;
     readonly backToProjectsLabel: string;
@@ -226,6 +225,7 @@ export type WorkspaceSurfaceRouterProps = {
     readonly defaultProfileId?: string | null;
     readonly defaultProviderId?: string | null;
     readonly openDialog?: AiHistorySurfaceProps["openDialog"];
+    readonly onHistoryEmptied?: AiHistorySurfaceProps["onHistoryEmptied"];
   };
   readonly planReview: {
     readonly model: AiPlanReviewModel;

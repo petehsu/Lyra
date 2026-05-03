@@ -62,6 +62,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly onRevealPathInFileManager: (filePath: string) => void;
   readonly onOpenNotificationSource: (notificationId: string) => void;
   readonly onRequestClearNotifications: () => void;
+  readonly onHistoryEmptied: () => void;
 };
 
 export const useWorkspaceSurfaceRouterProps = ({
@@ -100,7 +101,8 @@ export const useWorkspaceSurfaceRouterProps = ({
   onOpenFileFromManager,
   onRevealPathInFileManager,
   onOpenNotificationSource,
-  onRequestClearNotifications
+  onRequestClearNotifications,
+  onHistoryEmptied
 }: UseWorkspaceSurfaceRouterPropsParams): WorkspaceSurfaceRouterCoreProps => {
   const preferences = preferencesModel.preferences;
 
@@ -173,7 +175,8 @@ export const useWorkspaceSurfaceRouterProps = ({
       themeSignature: resolvedThemeId,
       defaultProfileId: settingsAiModel.defaultProfileId,
       defaultProviderId: settingsAiModel.defaultProviderId,
-      openDialog
+      openDialog,
+      onHistoryEmptied
     },
     planReview: {
       model: planReviewModel

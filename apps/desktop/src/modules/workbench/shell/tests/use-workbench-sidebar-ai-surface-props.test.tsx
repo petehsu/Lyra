@@ -1,9 +1,10 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import type { I18nKey } from "../../i18n";
 import type { WorkbenchPreferences } from "../../preferences";
 import type { SettingsAiModel } from "../../settings-ai";
+import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import { useWorkbenchSidebarAiSurfaceProps } from "../use-workbench-sidebar-ai-surface-props";
 
 const preferences = {
@@ -23,15 +24,30 @@ const settingsAiModel = {
 
 const t = (key: I18nKey): string => key;
 
+const createDesktopApi = (hasThreads: boolean) => {
+  const request = vi.fn(async (payload: { readonly params?: { readonly archived?: boolean } }) => ({
+    data: hasThreads && payload.params?.archived !== true ? [{ id: "thread-1" }] : []
+  }));
+  return {
+    api: {
+      lyra: {
+        request
+      }
+    } as unknown as LyraDesktopApi,
+    request
+  };
+};
+
 describe("useWorkbenchSidebarAiSurfaceProps", () => {
-  test("builds AI sidebar props and delegates app launch actions", () => {
+  test("builds AI sidebar props and delegates app launch actions", async () => {
+    const desktop = createDesktopApi(true);
     const openAppTab = vi.fn();
     const onRequestProjectBind = vi.fn().mockResolvedValue("/workspace");
     const onOpenPlanApprovalWorkspace = vi.fn();
     const openDialog = vi.fn();
     const { result } = renderHook(() =>
       useWorkbenchSidebarAiSurfaceProps({
-        desktopApi: null,
+        desktopApi: desktop.api,
         preferences,
         settingsAiModel,
         resolvedThemeId: "lyra-light",
@@ -61,10 +77,12 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
       result.current.onOpenSkills!();
     });
 
-    expect(openAppTab).toHaveBeenCalledWith(expect.objectContaining({
-      appId: "ai-history",
-      title: "ai.historyTitle"
-    }));
+    await waitFor(() => {
+      expect(openAppTab).toHaveBeenCalledWith(expect.objectContaining({
+        appId: "ai-history",
+        title: "ai.historyTitle"
+      }));
+    });
     expect(openAppTab).toHaveBeenCalledWith(expect.objectContaining({
       appId: "ai-mcp",
       title: "ai.mcpTabTitle"
@@ -77,5 +95,36 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
     expect(result.current.onOpenPlanApprovalWorkspace).toBe(onOpenPlanApprovalWorkspace);
     expect(result.current.onDefaultProfileSelect).toBe(settingsAiModel.setDefaultProfile);
     expect(result.current.openDialog).toBe(openDialog);
+  });
+
+  test("does not open history when there are no history sessions", async () => {
+    const desktop = createDesktopApi(false);
+    const openAppTab = vi.fn();
+    const { result } = renderHook(() =>
+      useWorkbenchSidebarAiSurfaceProps({
+        desktopApi: desktop.api,
+        preferences,
+        settingsAiModel,
+        resolvedThemeId: "lyra-light",
+        aiPanelSide: "right",
+        fileMentionFallbackRoots: [],
+        workbenchTabMentions: [],
+        onToggleAiPanelSide: vi.fn(),
+        openAppTab,
+        onRequestProjectBind: vi.fn().mockResolvedValue("/workspace"),
+        onOpenPlanApprovalWorkspace: vi.fn(),
+        openDialog: vi.fn(),
+        t
+      })
+    );
+
+    act(() => {
+      result.current.onOpenHistory!();
+    });
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledTimes(2);
+    });
+    expect(openAppTab).not.toHaveBeenCalled();
   });
 });

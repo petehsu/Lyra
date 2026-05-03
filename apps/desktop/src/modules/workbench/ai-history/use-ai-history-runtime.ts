@@ -71,6 +71,7 @@ export type AiHistoryRuntime = {
   readonly isPreviewLoading: boolean;
   readonly previewError: string | null;
   readonly livePreviewByThread: ReadonlyMap<string, LivePreviewEntry>;
+  readonly hasLoadedThreads: boolean;
   readonly isLoading: boolean;
   readonly isCreating: boolean;
   readonly editingThreadId: string | null;
@@ -107,6 +108,7 @@ export const useAiHistoryRuntime = ({
   const [livePreviewByThread, setLivePreviewByThread] = useState<ReadonlyMap<string, LivePreviewEntry>>(
     () => new Map()
   );
+  const [hasLoadedThreads, setHasLoadedThreads] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
@@ -188,6 +190,7 @@ export const useAiHistoryRuntime = ({
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
+      setHasLoadedThreads(true);
       setIsLoading(false);
     }
   }, [lyraApi]);
@@ -635,6 +638,7 @@ export const useAiHistoryRuntime = ({
     isPreviewLoading,
     previewError,
     livePreviewByThread,
+    hasLoadedThreads,
     isLoading,
     isCreating,
     editingThreadId,

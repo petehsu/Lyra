@@ -25,7 +25,6 @@ export type AiHistorySurfaceProps = {
   readonly emptyStateDescription: string;
   readonly scopeGlobalLabel: string;
   readonly scopeProjectLabel: string;
-  readonly noProjectSessionsEmptyLabel: string;
   readonly noProjectsEmptyLabel: string;
   readonly projectSessionCountLabel: string;
   readonly backToProjectsLabel: string;
@@ -39,4 +38,5 @@ export type AiHistorySurfaceProps = {
   readonly defaultProfileId?: string | null;
   readonly defaultProviderId?: string | null;
   readonly openDialog?: (request: GlobalDialogOpenRequest) => void;
+  readonly onHistoryEmptied?: () => void;
 };

@@ -240,7 +240,6 @@ export const EN_US_DICTIONARY: WorkbenchDictionary = {
   "ai.historySessionIdLabel": "Session ID",
   "ai.historyScopeGlobal": "All sessions",
   "ai.historyScopeProject": "Project sessions",
-  "ai.historyNoProjectSessionsEmpty": "No sessions yet",
   "ai.historyNoProjectsEmpty": "No sessions bound to a project yet",
   "ai.historyProjectSessionCount": "sessions",
   "ai.historyBackToProjects": "Back to projects",

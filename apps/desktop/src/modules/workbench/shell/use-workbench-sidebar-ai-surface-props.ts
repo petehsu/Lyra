@@ -7,6 +7,7 @@ import {
   createAiSkillsAppRequest,
   type AgentComposerWorkbenchTabMention
 } from "../ai-panel";
+import { readAiHistoryHasThreads } from "../ai-history/availability";
 import type { AiPlanApprovalWorkspaceOpenRequest } from "../ai-panel";
 import type { WorkbenchNotificationModel } from "../notifications";
 import type { GlobalDialogModel } from "../global-dialog";
@@ -127,7 +128,11 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       toolStatusCompletedLabel: t("ai.toolStatusCompleted"),
       toolStatusFailedLabel: t("ai.toolStatusFailed"),
       onOpenHistory: () => {
-        openAppTab(createAiHistoryAppRequest(t("ai.historyTitle")));
+        void readAiHistoryHasThreads(desktopApi).then((hasThreads) => {
+          if (hasThreads) {
+            openAppTab(createAiHistoryAppRequest(t("ai.historyTitle")));
+          }
+        });
       },
       onOpenMcp: () => {
         openAppTab(createAiMcpAppRequest(t("ai.mcpTabTitle")));

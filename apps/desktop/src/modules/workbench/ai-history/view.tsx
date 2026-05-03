@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Plus } from "lucide-react";
 
 import { AiHistorySurfaceView } from "./surface-view";
@@ -18,6 +18,26 @@ export const AiHistorySurface = (surfaceProps: AiHistorySurfaceProps) => {
     deleteArchivedConversationCancel: surfaceProps.deleteArchivedConversationCancel,
     threadPreviewEmptyLabel: surfaceProps.threadPreviewEmptyLabel
   });
+  const totalThreadCount = runtime.activeThreads.length + runtime.archivedThreads.length;
+
+  useEffect(() => {
+    if (
+      runtime.lyraAvailable === false ||
+      runtime.hasLoadedThreads === false ||
+      runtime.isLoading ||
+      totalThreadCount > 0
+    ) {
+      return;
+    }
+    surfaceProps.onHistoryEmptied?.();
+  }, [
+    runtime.hasLoadedThreads,
+    runtime.isLoading,
+    runtime.lyraAvailable,
+    surfaceProps.onHistoryEmptied,
+    totalThreadCount
+  ]);
+
   const titlebarContribution = useMemo(
     () => ({
       ariaLabel: surfaceProps.title,
