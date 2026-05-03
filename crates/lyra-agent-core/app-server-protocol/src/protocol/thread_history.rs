@@ -1226,6 +1226,7 @@ mod tests {
     use crate::protocol::v2::SessionSource;
     use crate::protocol::v2::Thread;
     use crate::protocol::v2::ThreadAiPanelMessageRole;
+    use crate::protocol::v2::ThreadAiPanelTimelineEntryKind;
     use crate::protocol::v2::ThreadAiPanelToolCallStatus;
     use crate::protocol::v2::ThreadAiPanelTurnStatus;
     use crate::protocol::v2::ThreadStatus;
@@ -2138,6 +2139,26 @@ mod tests {
         assert_eq!(
             view_model.pending_interactions[0].payload["raw"]["planId"],
             "plan-1"
+        );
+        assert_eq!(
+            view_model
+                .timeline_entries
+                .iter()
+                .map(|entry| (&entry.kind, entry.ref_id.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (&ThreadAiPanelTimelineEntryKind::UserMessage, "user-1"),
+                (
+                    &ThreadAiPanelTimelineEntryKind::AssistantMessage,
+                    "assistant-1"
+                ),
+                (
+                    &ThreadAiPanelTimelineEntryKind::AssistantMessage,
+                    "reasoning-1"
+                ),
+                (&ThreadAiPanelTimelineEntryKind::ToolCall, "exec-1"),
+                (&ThreadAiPanelTimelineEntryKind::Plan, "plan-1"),
+            ]
         );
 
         assert_eq!(view_model.turn_meta.len(), 1);

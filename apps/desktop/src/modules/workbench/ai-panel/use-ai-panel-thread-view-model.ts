@@ -7,6 +7,9 @@ import type {
   AgentTurn,
 } from "../../../shared/desktop-bridge";
 import type { ActiveInteractionPanel } from "./interaction/pending-interaction-mappers";
+import type {
+  ThreadAiPanelTimelineEntry,
+} from "./lyra-thread-adapter";
 import {
   buildTurnTimelineItems,
   mergeRuntimeFeedItem,
@@ -25,6 +28,7 @@ import {
   type OptimisticUserMessage,
   type StreamStatusItem,
 } from "./view-helpers";
+import type { LyraTurnPlanState } from "./use-lyra-thread-runtime";
 
 const FEED_ITEM_LIMIT = 48;
 
@@ -51,6 +55,7 @@ type UseAiPanelThreadViewModelParams = {
   readonly isStreamActive: boolean;
   readonly streamingAssistantText: string;
   readonly finalizingTurnId: string | null;
+  readonly planByTurn?: Readonly<Record<string, LyraTurnPlanState>>;
   readonly toolNameLabels: ToolNameLabelMap;
   readonly runtimeToolFallbackLabel: string;
   readonly labels: RuntimeStatusLabels;
@@ -70,6 +75,53 @@ type UseAiPanelThreadViewModelResult = {
   readonly orphanRuntimeFeed: readonly AgentRuntimeFeedItem[];
 };
 
+const shouldRenderTimelinePlan = (plan: LyraTurnPlanState): boolean =>
+  plan.artifact.title.trim().length > 0 || plan.artifact.summary.trim().length > 0;
+
+const compareTimelineItems = (
+  left: AgentTurnTimelineItem,
+  right: AgentTurnTimelineItem
+): number => {
+  if (left.timestamp !== right.timestamp) {
+    return left.timestamp - right.timestamp;
+  }
+  const priority = (item: AgentTurnTimelineItem): number => {
+    switch (item.kind) {
+      case "assistant":
+        return 0;
+      case "tool":
+        return 1;
+      case "plan":
+        return 2;
+    }
+  };
+  const priorityDiff = priority(left) - priority(right);
+  return priorityDiff === 0 ? left.id.localeCompare(right.id) : priorityDiff;
+};
+
+const groupTimelineEntriesByTurn = (
+  entries: readonly ThreadAiPanelTimelineEntry[]
+): ReadonlyMap<string, readonly ThreadAiPanelTimelineEntry[]> => {
+  const map = new Map<string, ThreadAiPanelTimelineEntry[]>();
+  for (const entry of entries) {
+    const current = map.get(entry.turnId);
+    if (current === undefined) {
+      map.set(entry.turnId, [entry]);
+    } else {
+      current.push(entry);
+    }
+  }
+  for (const values of map.values()) {
+    values.sort((left, right) => {
+      if (left.createdAtMs !== right.createdAtMs) {
+        return left.createdAtMs - right.createdAtMs;
+      }
+      return left.id.localeCompare(right.id);
+    });
+  }
+  return map;
+};
+
 export const useAiPanelThreadViewModel = ({
   activeDetail,
   optimisticUserMessages,
@@ -82,6 +134,7 @@ export const useAiPanelThreadViewModel = ({
   isStreamActive,
   streamingAssistantText,
   finalizingTurnId,
+  planByTurn = {},
   toolNameLabels,
   runtimeToolFallbackLabel,
   labels,
@@ -271,7 +324,9 @@ export const useAiPanelThreadViewModel = ({
   const turnTimelineByTurn = useMemo(() => {
     const map = new Map<string, readonly AgentTurnTimelineItem[]>();
     const assistantMessagesByTurn = new Map<string, DisplayMessage[]>();
+    const messageById = new Map<string, DisplayMessage>();
     for (const message of persistedMessages) {
+      messageById.set(message.id, message);
       if (message.role !== "assistant" || typeof message.turnId !== "string") {
         continue;
       }
@@ -282,17 +337,120 @@ export const useAiPanelThreadViewModel = ({
         current.push(message);
       }
     }
-    for (const [turnId, messages] of assistantMessagesByTurn.entries()) {
+    const runtimeItemById = new Map(displayRuntimeFeed.map((item) => [item.id, item]));
+    const timelineEntries = (
+      activeDetail as { readonly aiPanelTimelineEntries?: readonly ThreadAiPanelTimelineEntry[] } | null
+    )?.aiPanelTimelineEntries ?? [];
+    const timelineEntriesByTurn = groupTimelineEntriesByTurn(timelineEntries);
+    const turnIds = new Set<string>([
+      ...assistantMessagesByTurn.keys(),
+      ...runtimeFeedByTurn.keys(),
+      ...timelineEntriesByTurn.keys(),
+      ...Object.keys(planByTurn),
+    ]);
+
+    for (const turnId of turnIds) {
+      const messages = assistantMessagesByTurn.get(turnId) ?? [];
       const runtimeEvents = runtimeEventsByTurn.get(turnId) ?? [];
       const runtimeFeedItems = runtimeFeedByTurn.get(turnId) ?? [];
       const hasAssistantDeltaEvents = runtimeEvents.some((event) => event.phase === "assistant_delta");
       const sortedAssistantMessages = sortByTime(messages);
+      const plan = planByTurn[turnId];
+      const shouldRenderPlan = plan !== undefined && shouldRenderTimelinePlan(plan);
+      const entries = timelineEntriesByTurn.get(turnId) ?? [];
+
+      if (entries.length > 0) {
+        const timelineItems: AgentTurnTimelineItem[] = [];
+        const seenMessageIds = new Set<string>();
+        const seenToolIds = new Set<string>();
+        let renderedPlan = false;
+        for (const entry of entries) {
+          if (entry.kind === "assistantMessage") {
+            const message = messageById.get(entry.refId);
+            if (message === undefined) {
+              continue;
+            }
+            const content = resolveAssistantDisplayContent(message);
+            if (content.trim().length === 0) {
+              continue;
+            }
+            seenMessageIds.add(message.id);
+            timelineItems.push({
+              kind: "assistant",
+              id: message.id,
+              timestamp: entry.createdAtMs,
+              content,
+            });
+            continue;
+          }
+          if (entry.kind === "toolCall") {
+            const item = runtimeItemById.get(entry.refId);
+            if (item === undefined) {
+              continue;
+            }
+            seenToolIds.add(item.id);
+            timelineItems.push({
+              kind: "tool",
+              id: `tool-${item.id}`,
+              timestamp: entry.createdAtMs,
+              tool: item,
+            });
+            continue;
+          }
+          if (entry.kind === "plan" && shouldRenderPlan) {
+            renderedPlan = true;
+            timelineItems.push({
+              kind: "plan",
+              id: `plan-${turnId}`,
+              timestamp: entry.createdAtMs,
+              plan,
+              sessionId: entry.sessionId,
+            });
+          }
+        }
+        for (const message of sortedAssistantMessages) {
+          if (seenMessageIds.has(message.id)) {
+            continue;
+          }
+          const content = resolveAssistantDisplayContent(message);
+          if (content.trim().length === 0) {
+            continue;
+          }
+          timelineItems.push({
+            kind: "assistant",
+            id: message.id,
+            timestamp: message.createdAt,
+            content,
+          });
+        }
+        for (const item of runtimeFeedItems) {
+          if (seenToolIds.has(item.id)) {
+            continue;
+          }
+          timelineItems.push({
+            kind: "tool",
+            id: `tool-${item.id}`,
+            timestamp: item.timestamp,
+            tool: item,
+          });
+        }
+        if (shouldRenderPlan && !renderedPlan) {
+          timelineItems.push({
+            kind: "plan",
+            id: `plan-${turnId}`,
+            timestamp: plan.updatedAt,
+            plan,
+            sessionId: entries[0]?.sessionId ?? "",
+          });
+        }
+        map.set(turnId, timelineItems);
+        continue;
+      }
 
       if (hasAssistantDeltaEvents) {
         const finalMessage = sortedAssistantMessages.at(-1);
-        map.set(
-          turnId,
-          buildTurnTimelineItems({
+        const timelineItems = [
+          ...buildTurnTimelineItems({
             turnId,
             messageContent: finalMessage === undefined ? "" : resolveAssistantDisplayContent(finalMessage),
             messageCreatedAt: finalMessage?.createdAt ?? Date.now(),
@@ -300,8 +458,19 @@ export const useAiPanelThreadViewModel = ({
             runtimeFeedItems,
             toolNameLabels,
             runtimeToolFallbackLabel,
-          })
-        );
+          }),
+        ];
+        if (shouldRenderPlan) {
+          timelineItems.push({
+            kind: "plan",
+            id: `plan-${turnId}`,
+            timestamp: plan.updatedAt,
+            plan,
+            sessionId: finalMessage?.sessionId ?? "",
+          });
+          timelineItems.sort(compareTimelineItems);
+        }
+        map.set(turnId, timelineItems);
         continue;
       }
 
@@ -326,19 +495,23 @@ export const useAiPanelThreadViewModel = ({
           tool: item,
         });
       }
-      timelineItems.sort((left, right) => {
-        if (left.timestamp !== right.timestamp) {
-          return left.timestamp - right.timestamp;
-        }
-        if (left.kind === right.kind) {
-          return left.id.localeCompare(right.id);
-        }
-        return left.kind === "assistant" ? -1 : 1;
-      });
+      if (shouldRenderPlan) {
+        timelineItems.push({
+          kind: "plan",
+          id: `plan-${turnId}`,
+          timestamp: plan.updatedAt,
+          plan,
+          sessionId: sortedAssistantMessages[0]?.sessionId ?? "",
+        });
+      }
+      timelineItems.sort(compareTimelineItems);
       map.set(turnId, timelineItems);
     }
     return map;
   }, [
+    activeDetail,
+    displayRuntimeFeed,
+    planByTurn,
     persistedMessages,
     runtimeEventsByTurn,
     runtimeFeedByTurn,

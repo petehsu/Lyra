@@ -2189,6 +2189,70 @@ describe("useLyraThreadRuntime", () => {
     expect(onWriteStreamEvent).toHaveBeenCalledTimes(writeEventCount);
   });
 
+  test("streams file change output deltas into the workspace when follow is enabled", async () => {
+    const desktop = makeDesktopApi();
+    const onWriteStreamEvent = vi.fn();
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi: desktop.api as never,
+        interactionTextLabels: labels,
+        onWriteStreamEvent,
+      })
+    );
+
+    await waitFor(() => {
+      expect(desktop.request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: "thread/list" })
+      );
+    });
+    await act(async () => {
+      await result.current.actions.sendTurn(turnInput("Hello"), {
+        model: "gpt-test",
+        modelProvider: "lp-openai",
+        cwd: "/repo",
+      });
+    });
+
+    act(() => {
+      result.current.actions.setFollowEnabled(true);
+      desktop.emit({
+        kind: "notification",
+        notification: {
+          method: "item/fileChange/outputDelta",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            itemId: "patch-live",
+            delta: "+line\n",
+            filePath: "/repo/src/main.ts",
+            firstChangedLine: 4,
+          },
+        },
+      });
+    });
+
+    expect(onWriteStreamEvent).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      kind: "started",
+      sessionId: "thread-1",
+      turnId: "turn-1",
+      toolCallId: "patch-live",
+      toolName: "filesystem.write",
+      filePath: "/repo/src/main.ts",
+      reveal: true,
+    }));
+    expect(onWriteStreamEvent).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      kind: "delta",
+      sessionId: "thread-1",
+      turnId: "turn-1",
+      toolCallId: "patch-live",
+      toolName: "filesystem.write",
+      filePath: "/repo/src/main.ts",
+      chunkText: "+line\n",
+      firstChangedLine: 4,
+      reveal: true,
+    }));
+  });
+
   test("opens files from turn diff updates before file change completion", async () => {
     const desktop = makeDesktopApi();
     const onFollowOpenFilePath = vi.fn();

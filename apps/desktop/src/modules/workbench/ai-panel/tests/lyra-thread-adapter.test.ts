@@ -342,6 +342,40 @@ describe("lyra thread adapter", () => {
           updatedAtMs: 102600,
         },
       ],
+      timelineEntries: [
+        {
+          id: "timeline:turn-1:user:user-1",
+          sessionId: "thread-projected",
+          turnId: "turn-1",
+          kind: "userMessage",
+          refId: "user-1",
+          createdAtMs: 101000,
+        },
+        {
+          id: "timeline:turn-1:assistant:assistant-1",
+          sessionId: "thread-projected",
+          turnId: "turn-1",
+          kind: "assistantMessage",
+          refId: "assistant-1",
+          createdAtMs: 102000,
+        },
+        {
+          id: "timeline:turn-1:tool:tool-1",
+          sessionId: "thread-projected",
+          turnId: "turn-1",
+          kind: "toolCall",
+          refId: "tool-1",
+          createdAtMs: 101500,
+        },
+        {
+          id: "timeline:turn-1:plan:plan-1",
+          sessionId: "thread-projected",
+          turnId: "turn-1",
+          kind: "plan",
+          refId: "plan-1",
+          createdAtMs: 102500,
+        },
+      ],
       turnMeta: [
         {
           turnId: "turn-1",
@@ -376,6 +410,12 @@ describe("lyra thread adapter", () => {
       finishedAt: 101512,
     });
     expect(detail.aiPanelTurnMeta?.[0]?.assistantOrder).toBe(1);
+    expect(detail.aiPanelTimelineEntries?.map((entry) => [entry.kind, entry.refId])).toEqual([
+      ["userMessage", "user-1"],
+      ["assistantMessage", "assistant-1"],
+      ["toolCall", "tool-1"],
+      ["plan", "plan-1"],
+    ]);
     expect(detail.pendingInteractions[0]).toMatchObject({
       id: "plan:turn-1",
       kind: "plan_approval",

@@ -7,6 +7,7 @@ use crate::lyra_message_processor::summary_to_thread;
 use crate::outgoing_message::ClientRequestResult;
 use crate::outgoing_message::ThreadScopedOutgoingMessageSender;
 use crate::server_request_error::is_turn_transition_server_request_error;
+use crate::thread_state::FileChangeStreamMetadata;
 use crate::thread_state::ThreadState;
 use crate::thread_state::TurnSummary;
 use crate::thread_state::resolve_server_request_on_thread_listener;
@@ -119,6 +120,7 @@ use lyra_protocol::protocol::Event;
 use lyra_protocol::protocol::EventMsg;
 use lyra_protocol::protocol::ExecApprovalRequestEvent;
 use lyra_protocol::protocol::ExecOutputStream as CoreExecOutputStream;
+use lyra_protocol::protocol::FileChange as CoreFileChange;
 use lyra_protocol::protocol::LyraErrorInfo as CoreLyraErrorInfo;
 use lyra_protocol::protocol::McpToolCallBeginEvent;
 use lyra_protocol::protocol::McpToolCallEndEvent;
@@ -151,6 +153,41 @@ fn command_output_stream_to_v2(stream: &CoreExecOutputStream) -> CommandExecOutp
     match stream {
         CoreExecOutputStream::Stdout => CommandExecOutputStream::Stdout,
         CoreExecOutputStream::Stderr => CommandExecOutputStream::Stderr,
+    }
+}
+
+fn first_changed_line_from_unified_diff(diff: &str) -> Option<u32> {
+    for line in diff.lines() {
+        let Some(hunk) = line.strip_prefix("@@ ") else {
+            continue;
+        };
+        let new_range_start = hunk.find('+')? + 1;
+        let new_range = &hunk[new_range_start..];
+        let number = new_range
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit())
+            .collect::<String>();
+        let parsed = number.parse::<u32>().ok()?;
+        return Some(parsed.max(1));
+    }
+    None
+}
+
+fn file_change_stream_metadata(
+    changes: &HashMap<std::path::PathBuf, CoreFileChange>,
+) -> FileChangeStreamMetadata {
+    let Some((path, change)) = changes.iter().min_by(|left, right| left.0.cmp(right.0)) else {
+        return FileChangeStreamMetadata::default();
+    };
+    let first_changed_line = match change {
+        CoreFileChange::Add { .. } | CoreFileChange::Delete { .. } => Some(1),
+        CoreFileChange::Update { unified_diff, .. } => {
+            first_changed_line_from_unified_diff(unified_diff)
+        }
+    };
+    FileChangeStreamMetadata {
+        file_path: Some(path.to_string_lossy().to_string()),
+        first_changed_line,
     }
 }
 
@@ -415,8 +452,13 @@ pub(crate) async fn apply_bespoke_event_handling(
                     // and emit the corresponding EventMsg, we repurpose the call_id as the item_id.
                     let item_id = event.call_id.clone();
                     let patch_changes = convert_patch_changes(&event.changes);
+                    let stream_metadata = file_change_stream_metadata(&event.changes);
                     let first_start = {
                         let mut state = thread_state.lock().await;
+                        state
+                            .turn_summary
+                            .file_change_metadata
+                            .insert(item_id.clone(), stream_metadata);
                         state
                             .turn_summary
                             .file_change_started
@@ -1564,6 +1606,10 @@ pub(crate) async fn apply_bespoke_event_handling(
 
             let first_start = {
                 let mut state = thread_state.lock().await;
+                state.turn_summary.file_change_metadata.insert(
+                    item_id.clone(),
+                    file_change_stream_metadata(&patch_begin_event.changes),
+                );
                 state
                     .turn_summary
                     .file_change_started
@@ -1586,6 +1632,10 @@ pub(crate) async fn apply_bespoke_event_handling(
                 let item_id = patch_updated_event.call_id.clone();
                 {
                     let mut state = thread_state.lock().await;
+                    state.turn_summary.file_change_metadata.insert(
+                        item_id.clone(),
+                        file_change_stream_metadata(&patch_updated_event.changes),
+                    );
                     state
                         .turn_summary
                         .file_change_started
@@ -1679,9 +1729,16 @@ pub(crate) async fn apply_bespoke_event_handling(
             //
             // We need to detect which item type it is so we can emit the right notification.
             // We already have state tracking FileChange items on item/started, so let's use that.
-            let is_file_change = {
+            let (is_file_change, file_change_metadata) = {
                 let state = thread_state.lock().await;
-                state.turn_summary.file_change_started.contains(&item_id)
+                (
+                    state.turn_summary.file_change_started.contains(&item_id),
+                    state
+                        .turn_summary
+                        .file_change_metadata
+                        .get(&item_id)
+                        .cloned(),
+                )
             };
             if is_file_change {
                 let delta =
@@ -1691,6 +1748,12 @@ pub(crate) async fn apply_bespoke_event_handling(
                     turn_id: event_turn_id.clone(),
                     item_id,
                     delta,
+                    file_path: file_change_metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.file_path.clone()),
+                    first_changed_line: file_change_metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.first_changed_line),
                 };
                 outgoing
                     .send_server_notification(ServerNotification::FileChangeOutputDelta(
@@ -2007,12 +2070,11 @@ async fn complete_file_change_item(
     outgoing: &ThreadScopedOutgoingMessageSender,
     thread_state: &Arc<Mutex<ThreadState>>,
 ) {
-    thread_state
-        .lock()
-        .await
-        .turn_summary
-        .file_change_started
-        .remove(&item_id);
+    {
+        let mut state = thread_state.lock().await;
+        state.turn_summary.file_change_started.remove(&item_id);
+        state.turn_summary.file_change_metadata.remove(&item_id);
+    }
 
     let notification = ItemCompletedNotification {
         thread_id: conversation_id.to_string(),

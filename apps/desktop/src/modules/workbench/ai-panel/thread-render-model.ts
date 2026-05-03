@@ -113,21 +113,6 @@ export const buildAiPanelThreadRenderRows = ({
       message,
       messageIndex,
     });
-    const planForTurn = turnId === null ? undefined : planByTurn[turnId];
-    if (
-      planForTurn !== undefined &&
-      shouldRenderPlanCard(planForTurn) &&
-      message.role === "assistant" &&
-      turnId !== null &&
-      messageMetadata.firstAssistantIndexByTurn.get(turnId) === messageIndex
-    ) {
-      rows.push({
-        kind: "plan",
-        key: `plan:${turnId}`,
-        plan: planForTurn,
-        sessionId: displayMessageSessionId(message) ?? "",
-      });
-    }
   });
   for (const plan of Object.values(planByTurn)) {
     if (!shouldRenderPlanCard(plan) || messageMetadata.assistantTurnIds.has(plan.turnId)) {

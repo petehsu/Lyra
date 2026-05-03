@@ -23,6 +23,8 @@ import {
   type ThreadAiPanelMessageContentPart,
   type ThreadAiPanelPendingInteraction,
   type ThreadAiPanelPlan,
+  type ThreadAiPanelTimelineEntry,
+  type ThreadAiPanelTimelineEntryKind,
   type ThreadAiPanelToolCall,
   type ThreadAiPanelTurn,
   type ThreadAiPanelTurnMeta,
@@ -337,6 +339,50 @@ const readAiPanelPendingInteraction = (value: unknown): ThreadAiPanelPendingInte
   };
 };
 
+const readAiPanelTimelineEntryKind = (value: unknown): ThreadAiPanelTimelineEntryKind | null => {
+  const kind = readString(value);
+  if (
+    kind === "userMessage" ||
+    kind === "assistantMessage" ||
+    kind === "toolCall" ||
+    kind === "plan" ||
+    kind === "pendingInteraction"
+  ) {
+    return kind;
+  }
+  return null;
+};
+
+const readAiPanelTimelineEntry = (value: unknown): ThreadAiPanelTimelineEntry | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = readString(value.id);
+  const sessionId = readString(value.sessionId);
+  const turnId = readString(value.turnId);
+  const kind = readAiPanelTimelineEntryKind(value.kind);
+  const refId = readString(value.refId);
+  const createdAtMs = readNumber(value.createdAtMs);
+  if (
+    id === null ||
+    sessionId === null ||
+    turnId === null ||
+    kind === null ||
+    refId === null ||
+    createdAtMs === null
+  ) {
+    return null;
+  }
+  return {
+    id,
+    sessionId,
+    turnId,
+    kind,
+    refId,
+    createdAtMs,
+  };
+};
+
 export const readThreadAiPanelViewModel = (value: unknown): ThreadAiPanelViewModel | null => {
   if (!isRecord(value)) {
     return null;
@@ -358,6 +404,11 @@ export const readThreadAiPanelViewModel = (value: unknown): ThreadAiPanelViewMod
       ? value.pendingInteractions
           .map(readAiPanelPendingInteraction)
           .filter((interaction): interaction is ThreadAiPanelPendingInteraction => interaction !== null)
+      : [],
+    timelineEntries: Array.isArray(value.timelineEntries)
+      ? value.timelineEntries
+          .map(readAiPanelTimelineEntry)
+          .filter((entry): entry is ThreadAiPanelTimelineEntry => entry !== null)
       : [],
     turnMeta: Array.isArray(value.turnMeta)
       ? value.turnMeta.map(readAiPanelTurnMeta).filter((meta): meta is ThreadAiPanelTurnMeta => meta !== null)
@@ -457,5 +508,6 @@ export const aiPanelViewModelToAgentDetail = (
     toolCalls: [...toolCallById.values()].sort((left, right) => left.startedAt - right.startedAt),
     runtimeEvents: [],
     aiPanelTurnMeta: viewModel.turnMeta,
+    aiPanelTimelineEntries: viewModel.timelineEntries,
   };
 };

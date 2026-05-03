@@ -57,6 +57,7 @@ export type AiPanelWriteStreamEvent =
       readonly toolName: string;
       readonly filePath: string;
       readonly timestamp: number;
+      readonly reveal?: boolean;
       readonly created?: boolean;
       readonly baselineContent?: string;
     }
@@ -68,6 +69,7 @@ export type AiPanelWriteStreamEvent =
       readonly toolName: string;
       readonly filePath: string;
       readonly timestamp: number;
+      readonly reveal?: boolean;
       readonly chunkText: string;
       readonly firstChangedLine?: number;
       readonly bytesWritten?: number;
@@ -83,6 +85,7 @@ export type AiPanelWriteStreamEvent =
       readonly filePath: string;
       readonly timestamp: number;
       readonly status: "completed" | "failed";
+      readonly reveal?: boolean;
       readonly created?: boolean;
       readonly baselineContent?: string;
       readonly firstChangedLine?: number;

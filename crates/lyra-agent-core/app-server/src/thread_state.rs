@@ -50,9 +50,16 @@ pub(crate) enum ThreadListenerCommand {
 pub(crate) struct TurnSummary {
     pub(crate) started_at: Option<i64>,
     pub(crate) file_change_started: HashSet<String>,
+    pub(crate) file_change_metadata: HashMap<String, FileChangeStreamMetadata>,
     pub(crate) command_execution_started: HashSet<String>,
     pub(crate) plan_proposed: bool,
     pub(crate) last_error: Option<TurnError>,
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct FileChangeStreamMetadata {
+    pub(crate) file_path: Option<String>,
+    pub(crate) first_changed_line: Option<u32>,
 }
 
 #[derive(Clone)]

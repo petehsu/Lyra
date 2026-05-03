@@ -375,4 +375,113 @@ describe("useAiPanelThreadViewModel", () => {
     expect(result.current.streamingTurnRuntimeFeed).toEqual([]);
     expect(result.current.runtimeFeedByTurn.get("t-1")).toHaveLength(1);
   });
+
+  test("uses ai panel timeline entries to preserve assistant tool and plan order", () => {
+    const { result } = renderHook(() =>
+      useAiPanelThreadViewModel({
+        activeDetail: {
+          messages: [
+            {
+              id: "assistant-late",
+              role: "assistant",
+              content: "Final answer",
+              turnId: "turn-1",
+              createdAt: 50,
+            },
+            {
+              id: "assistant-first",
+              role: "assistant",
+              content: "I will inspect it",
+              turnId: "turn-1",
+              createdAt: 100,
+            },
+          ],
+          turns: [],
+          toolCalls: [
+            {
+              id: "tool-1",
+              sessionId: "thread-1",
+              turnId: "turn-1",
+              toolName: "terminal.exec",
+              input: { command: "pnpm test" },
+              output: { aggregatedOutput: "ok\n" },
+              status: "completed",
+              startedAt: 120,
+              finishedAt: 130,
+            },
+          ],
+          runtimeEvents: [],
+          aiPanelTimelineEntries: [
+            {
+              id: "timeline:turn-1:assistant:assistant-first",
+              sessionId: "thread-1",
+              turnId: "turn-1",
+              kind: "assistantMessage",
+              refId: "assistant-first",
+              createdAtMs: 100,
+            },
+            {
+              id: "timeline:turn-1:tool:tool-1",
+              sessionId: "thread-1",
+              turnId: "turn-1",
+              kind: "toolCall",
+              refId: "tool-1",
+              createdAtMs: 110,
+            },
+            {
+              id: "timeline:turn-1:plan:plan-1",
+              sessionId: "thread-1",
+              turnId: "turn-1",
+              kind: "plan",
+              refId: "plan-1",
+              createdAtMs: 115,
+            },
+            {
+              id: "timeline:turn-1:assistant:assistant-late",
+              sessionId: "thread-1",
+              turnId: "turn-1",
+              kind: "assistantMessage",
+              refId: "assistant-late",
+              createdAtMs: 140,
+            },
+          ],
+        } as any,
+        optimisticUserMessages: [],
+        runtimeFeed: [],
+        streamingTurnId: null,
+        latestRuntimeEventByTurn: {},
+        activeInteractionPanel: null,
+        isInteractionSubmitting: false,
+        isSending: false,
+        isStreamActive: false,
+        streamingAssistantText: "",
+        finalizingTurnId: null,
+        planByTurn: {
+          "turn-1": {
+            turnId: "turn-1",
+            artifact: planArtifact,
+            updatedAt: 115,
+          },
+        },
+        toolNameLabels,
+        runtimeToolFallbackLabel: "Tool",
+        labels,
+      })
+    );
+
+    expect(result.current.turnTimelineByTurn.get("turn-1")?.map((entry) => {
+      if (entry.kind === "assistant") {
+        return `assistant:${entry.content}`;
+      }
+      if (entry.kind === "tool") {
+        return `tool:${entry.tool.id}`;
+      }
+      return `plan:${entry.plan.artifact.planId}`;
+    })).toEqual([
+      "assistant:I will inspect it",
+      "tool:tool-1",
+      "plan:plan-1",
+      "assistant:Final answer",
+    ]);
+  });
 });

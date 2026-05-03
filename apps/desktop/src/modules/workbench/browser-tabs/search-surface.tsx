@@ -2,6 +2,7 @@ import { Search } from "lucide-react";
 
 import { LyraBrandLogo } from "../brand";
 import { LyraListPicker, type LyraListPickerOption } from "../list-picker";
+import { SearchSilkBackground } from "./search-silk-background";
 
 export type BrowserSearchSurfaceProps = {
   readonly logoUrl: string;
@@ -39,6 +40,7 @@ export const BrowserSearchSurface = ({
 
   return (
     <div className="lyra-workspace-browser-shell">
+      <SearchSilkBackground />
       <div className="lyra-browser-search-row">
         <div className="lyra-browser-pill" ref={onPillRef}>
           <span className="lyra-logo-circle lyra-logo-static">

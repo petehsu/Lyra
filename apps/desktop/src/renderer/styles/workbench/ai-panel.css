@@ -2291,17 +2291,11 @@
   min-height: 0;
   position: relative;
   overflow: hidden;
-  background: color-mix(in srgb, var(--lyra-bg-editor) 88%, var(--lyra-bg-panel) 12%);
+  background: var(--lyra-bg-editor);
 }
 
 .lyra-ai-agent-thread-shell-empty {
-  background:
-    radial-gradient(
-      circle at 50% 42%,
-      color-mix(in srgb, var(--lyra-bg-surface) 72%, transparent) 0%,
-      color-mix(in srgb, var(--lyra-bg-surface) 46%, transparent) 46%,
-      color-mix(in srgb, var(--lyra-bg-panel) 84%, transparent) 100%
-    );
+  background: var(--lyra-bg-editor);
 }
 
 .lyra-ai-agent-thread {
@@ -2311,11 +2305,13 @@
   overflow: auto;
   scrollbar-gutter: stable;
   padding:
-    var(--lyra-unit-12)
-    var(--lyra-unit-14)
-    calc(var(--lyra-ai-thread-bottom-reserve, var(--lyra-ai-composer-reserve, var(--lyra-unit-96))) + var(--lyra-unit-12));
+    var(--lyra-unit-18)
+    var(--lyra-unit-18)
+    calc(var(--lyra-ai-thread-bottom-reserve, var(--lyra-ai-composer-reserve, var(--lyra-unit-96))) + var(--lyra-unit-18));
   display: grid;
-  gap: var(--lyra-unit-9);
+  grid-template-columns: minmax(0, min(100%, var(--lyra-unit-690)));
+  justify-content: center;
+  gap: var(--lyra-unit-13);
   align-content: start;
   position: relative;
   z-index: 1;
@@ -2445,13 +2441,13 @@
   position: relative;
   min-width: 0;
   width: fit-content;
-  max-width: min(88%, var(--lyra-unit-690));
+  max-width: min(82%, var(--lyra-unit-560));
   display: grid;
   content-visibility: auto;
   contain-intrinsic-size: var(--lyra-unit-96);
-  border-radius: var(--lyra-unit-10);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
-  box-shadow: 0 var(--lyra-unit-4) var(--lyra-unit-12) color-mix(in srgb, var(--lyra-bg-app) 18%, transparent);
+  border-radius: var(--lyra-unit-8);
+  border: 0;
+  box-shadow: none;
 }
 
 .lyra-ai-agent-message-user {
@@ -2466,10 +2462,10 @@
   width: fit-content;
   max-width: 100%;
   justify-self: end;
-  border-radius: var(--lyra-unit-10);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
-  box-shadow: 0 var(--lyra-unit-4) var(--lyra-unit-12) color-mix(in srgb, var(--lyra-bg-app) 18%, transparent);
-  background: color-mix(in srgb, var(--lyra-bg-surface) 92%, var(--lyra-bg-editor) 8%);
+  border-radius: var(--lyra-unit-8);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  box-shadow: none;
+  background: color-mix(in srgb, var(--lyra-bg-surface) 72%, var(--lyra-bg-editor) 28%);
 }
 
 .lyra-ai-agent-message-assistant {
@@ -2485,6 +2481,8 @@
 .lyra-ai-agent-thread-row {
   min-width: 0;
   width: 100%;
+  max-width: min(100%, var(--lyra-unit-690));
+  justify-self: center;
   display: grid;
 }
 
@@ -2495,11 +2493,12 @@
 }
 
 .lyra-ai-agent-message-content {
-  font-size: var(--lyra-unit-12);
-  line-height: 1.55;
+  font-size: var(--lyra-text-size-12);
+  line-height: 1.62;
   white-space: pre-wrap;
   word-break: break-word;
-  padding: var(--lyra-unit-9) var(--lyra-unit-10);
+  padding: var(--lyra-unit-8) var(--lyra-unit-10);
+  color: var(--lyra-text-primary);
 }
 
 .lyra-ai-agent-inline-content {
@@ -2533,7 +2532,7 @@
 }
 
 .lyra-ai-agent-message-assistant .lyra-ai-agent-message-content {
-  padding: var(--lyra-unit-2) 0 var(--lyra-unit-4);
+  padding: var(--lyra-unit-1) 0 var(--lyra-unit-2);
 }
 
 .lyra-ai-agent-message-content-rich {
@@ -2624,7 +2623,7 @@
 
 .lyra-ai-agent-turn-timeline {
   display: grid;
-  gap: var(--lyra-unit-8);
+  gap: var(--lyra-unit-7);
 }
 
 .lyra-ai-agent-turn-timeline-item {
@@ -2667,14 +2666,14 @@
 }
 
 .lyra-ai-plan-card {
-  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 58%, transparent);
   border-radius: var(--lyra-unit-8);
-  background: color-mix(in srgb, var(--lyra-bg-panel) 92%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-panel) 54%, transparent);
   box-shadow: none;
-  padding: var(--lyra-unit-12);
+  padding: var(--lyra-unit-10);
   display: grid;
   align-content: start;
-  gap: var(--lyra-unit-10);
+  gap: var(--lyra-unit-9);
   max-height: var(--lyra-unit-420);
   min-height: 0;
   overflow: auto;
@@ -2885,7 +2884,7 @@
   overflow: auto;
   display: grid;
   gap: var(--lyra-unit-3);
-  padding: var(--lyra-unit-2) 0;
+  padding: var(--lyra-unit-1) 0;
   position: relative;
   -webkit-mask-image: linear-gradient(
     to bottom,
@@ -2910,19 +2909,19 @@
 
 .lyra-ai-agent-runtime-feed-item {
   min-width: 0;
-  min-height: var(--lyra-unit-20);
+  min-height: var(--lyra-unit-22);
   display: grid;
-  grid-template-columns: auto var(--lyra-unit-12) minmax(0, 1fr);
+  grid-template-columns: var(--lyra-unit-12) var(--lyra-unit-14) minmax(0, 1fr);
   grid-template-rows: auto auto;
   align-items: center;
-  gap: var(--lyra-unit-4) var(--lyra-unit-7);
-  padding: var(--lyra-unit-3) 0;
+  gap: var(--lyra-unit-4) var(--lyra-unit-6);
+  padding: var(--lyra-unit-2) 0;
   color: var(--lyra-text-secondary);
   animation: lyra-ai-runtime-item-fade-in 200ms ease-out;
 }
 
 .lyra-ai-agent-runtime-feed-leading {
-  min-width: var(--lyra-unit-14);
+  min-width: var(--lyra-unit-12);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2961,7 +2960,7 @@
   background: transparent;
   padding: 0;
   margin: 0;
-  font-size: var(--lyra-unit-10-5);
+  font-size: var(--lyra-text-size-11);
   line-height: 1.4;
   text-align: left;
   color: var(--lyra-text-secondary);
@@ -3006,9 +3005,9 @@
   overflow-y: auto;
   margin: var(--lyra-unit-4) 0 0;
   padding: var(--lyra-unit-6) var(--lyra-unit-8);
-  border-radius: var(--lyra-unit-6);
-  background: color-mix(in srgb, var(--lyra-terminal-bg, var(--lyra-bg-surface)) 60%, transparent);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 50%, transparent);
+  border-radius: var(--lyra-unit-5);
+  background: color-mix(in srgb, var(--lyra-terminal-bg, var(--lyra-bg-surface)) 48%, transparent);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 44%, transparent);
   font-family: var(--lyra-font-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: var(--lyra-unit-10);
   line-height: 1.5;
@@ -3022,9 +3021,9 @@
   grid-column: 1 / -1;
   min-width: 0;
   margin-top: var(--lyra-unit-4);
-  border-radius: var(--lyra-unit-8);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 54%, transparent);
-  background: color-mix(in srgb, var(--lyra-bg-editor) 76%, var(--lyra-bg-panel) 24%);
+  border-radius: var(--lyra-unit-7);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-editor) 82%, var(--lyra-bg-panel) 18%);
   overflow: hidden;
 }
 

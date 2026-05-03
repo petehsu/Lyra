@@ -110,6 +110,9 @@ export const useWorkbenchAiSurfaceBridge = ({
       if (existing !== undefined) {
         return existing;
       }
+      if (event.kind !== "finished" && event.reveal === false) {
+        return null;
+      }
       const instanceId = onOpenFileFromManager(event.filePath, undefined, { allowMissing: true });
       if (instanceId === null) {
         return null;

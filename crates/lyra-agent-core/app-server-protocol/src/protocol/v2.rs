@@ -3268,7 +3268,33 @@ pub struct ThreadAiPanelViewModel {
     pub plans: Vec<ThreadAiPanelPlan>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_interactions: Vec<ThreadAiPanelPendingInteraction>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub timeline_entries: Vec<ThreadAiPanelTimelineEntry>,
     pub turn_meta: Vec<ThreadAiPanelTurnMeta>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadAiPanelTimelineEntry {
+    pub id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub kind: ThreadAiPanelTimelineEntryKind,
+    pub ref_id: String,
+    #[ts(type = "number")]
+    pub created_at_ms: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum ThreadAiPanelTimelineEntryKind {
+    UserMessage,
+    AssistantMessage,
+    ToolCall,
+    Plan,
+    PendingInteraction,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -5666,6 +5692,12 @@ pub struct FileChangeOutputDeltaNotification {
     pub turn_id: String,
     pub item_id: String,
     pub delta: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub file_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub first_changed_line: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -7294,6 +7326,36 @@ mod tests {
         );
 
         let decoded = serde_json::from_value::<CommandExecutionOutputDeltaNotification>(value)
+            .expect("deserialize round-trip");
+        assert_eq!(decoded, notification);
+    }
+
+    #[test]
+    fn file_change_output_delta_round_trips_with_follow_metadata() {
+        let notification = FileChangeOutputDeltaNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "patch-1".to_string(),
+            delta: "+line\n".to_string(),
+            file_path: Some("/repo/src/main.ts".to_string()),
+            first_changed_line: Some(12),
+        };
+
+        let value = serde_json::to_value(&notification)
+            .expect("serialize item/fileChange/outputDelta notification");
+        assert_eq!(
+            value,
+            json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "patch-1",
+                "delta": "+line\n",
+                "filePath": "/repo/src/main.ts",
+                "firstChangedLine": 12,
+            })
+        );
+
+        let decoded = serde_json::from_value::<FileChangeOutputDeltaNotification>(value)
             .expect("deserialize round-trip");
         assert_eq!(decoded, notification);
     }

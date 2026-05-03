@@ -8,9 +8,18 @@
   gap: 0;
   border: var(--lyra-unit-0-5) solid var(--lyra-line-default);
   border-radius: var(--lyra-unit-999);
-  background: color-mix(in srgb, var(--lyra-bg-editor) 86%, var(--lyra-bg-surface) 14%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-bg-editor) 62%, transparent),
+      color-mix(in srgb, var(--lyra-bg-surface) 44%, transparent)
+    );
   padding: 0;
-  box-shadow: inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 80%, transparent);
+  box-shadow:
+    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-editor) 76%, transparent),
+    0 var(--lyra-unit-16) var(--lyra-unit-40) color-mix(in srgb, var(--lyra-bg-app) 18%, transparent);
+  -webkit-backdrop-filter: var(--lyra-backdrop-blur-md);
+  backdrop-filter: var(--lyra-backdrop-blur-md);
 }
 
 .lyra-browser-pill:hover {
@@ -18,6 +27,9 @@
 }
 
 .lyra-workspace-browser-shell {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -26,9 +38,78 @@
   justify-items: center;
   gap: var(--lyra-unit-14);
   padding: var(--lyra-unit-24) var(--lyra-unit-32) var(--lyra-unit-32);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-bg-surface) 38%, transparent),
+      color-mix(in srgb, var(--lyra-bg-app) 92%, var(--lyra-bg-editor) 8%)
+    );
+}
+
+.lyra-search-silk-background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  contain: strict;
+  pointer-events: none;
+  opacity: 0.44;
+  background:
+    linear-gradient(
+      140deg,
+      color-mix(in srgb, var(--lyra-bg-app) 86%, var(--lyra-text-muted) 14%),
+      color-mix(in srgb, var(--lyra-bg-editor) 82%, var(--lyra-bg-app) 18%)
+    );
+}
+
+.lyra-search-silk-background::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-bg-app) 72%, transparent),
+      color-mix(in srgb, var(--lyra-bg-app) 22%, transparent) 46%,
+      color-mix(in srgb, var(--lyra-bg-app) 78%, transparent)
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--lyra-bg-app) 58%, transparent),
+      transparent 34%,
+      transparent 66%,
+      color-mix(in srgb, var(--lyra-bg-app) 58%, transparent)
+    );
+}
+
+.lyra-search-silk-canvas-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.lyra-search-silk-canvas-layer canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+:root[data-lyra-theme-tone="dark"] .lyra-search-silk-background {
+  opacity: 0.38;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyra-search-silk-canvas-layer {
+    display: none;
+  }
+
+  .lyra-search-silk-background {
+    opacity: 0.34;
+  }
 }
 
 .lyra-browser-search-row {
+  position: relative;
+  z-index: 1;
   width: clamp(var(--lyra-unit-320), 50%, var(--lyra-unit-560));
   max-width: calc(100% - var(--lyra-unit-32));
   display: grid;
@@ -215,6 +296,32 @@
   --lyra-list-picker-size-probe-display: flex;
   width: fit-content;
   min-width: fit-content;
+}
+
+.lyra-browser-search-mode-picker .lyra-list-picker-surface {
+  border-color: color-mix(in srgb, var(--lyra-line-default) 58%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-bg-editor) 58%, transparent),
+      color-mix(in srgb, var(--lyra-bg-surface) 42%, transparent)
+    );
+  box-shadow:
+    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-editor) 72%, transparent),
+    0 var(--lyra-unit-16) var(--lyra-unit-40) color-mix(in srgb, var(--lyra-bg-app) 16%, transparent);
+  -webkit-backdrop-filter: var(--lyra-backdrop-blur-md);
+  backdrop-filter: var(--lyra-backdrop-blur-md);
+}
+
+.lyra-browser-search-mode-picker.lyra-list-picker-open .lyra-list-picker-surface {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lyra-bg-editor) 64%, transparent),
+      color-mix(in srgb, var(--lyra-bg-surface) 48%, transparent)
+    );
+  -webkit-backdrop-filter: var(--lyra-backdrop-blur-lg);
+  backdrop-filter: var(--lyra-backdrop-blur-lg);
 }
 
 .lyra-browser-search-mode-picker .lyra-list-picker-option {

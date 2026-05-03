@@ -1589,6 +1589,7 @@ export const useLyraThreadRuntime = ({
   const loadThreadRef = useRef<((threadId: string) => Promise<void>) | null>(null);
   const threadReadRequestedForIdRef = useRef<Set<string>>(new Set());
   const capabilityWriteMetadataByCallRef = useRef<Record<string, WriteStreamCallMetadata>>({});
+  const fileChangeWriteMetadataByCallRef = useRef<Record<string, WriteStreamCallMetadata>>({});
   const openedDiffTargetsRef = useRef<Set<string>>(new Set());
 
   const rawThreadTabs = tabState.tabs;
@@ -1723,8 +1724,23 @@ export const useLyraThreadRuntime = ({
       input.removedLines,
       input.removed_lines
     );
+    const reveal = runtimeByKeyRef.current[call.sessionId]?.followEnabled === true;
+    const metadata: WriteStreamCallMetadata = {
+      sessionId: call.sessionId,
+      turnId: call.turnId,
+      toolCallId: call.id,
+      toolName: call.toolName,
+      filePath: target.path,
+      timestamp: call.startedAt,
+      ...(created === undefined ? {} : { created }),
+      ...(baselineContent === undefined ? {} : { baselineContent }),
+      ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
+      ...(addedLines === undefined ? {} : { addedLines }),
+      ...(removedLines === undefined ? {} : { removedLines }),
+    };
 
     if (call.status === "running") {
+      fileChangeWriteMetadataByCallRef.current[call.id] = metadata;
       onWriteStreamEvent({
         kind: "started",
         sessionId: call.sessionId,
@@ -1733,6 +1749,7 @@ export const useLyraThreadRuntime = ({
         toolName: call.toolName,
         filePath: target.path,
         timestamp: call.startedAt,
+        reveal,
         ...(created === undefined ? {} : { created }),
         ...(baselineContent === undefined ? {} : { baselineContent }),
       });
@@ -1748,6 +1765,7 @@ export const useLyraThreadRuntime = ({
       filePath: target.path,
       timestamp: call.finishedAt ?? Date.now(),
       status: call.status === "failed" ? "failed" : "completed",
+      reveal,
       ...(created === undefined ? {} : { created }),
       ...(baselineContent === undefined ? {} : { baselineContent }),
       ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
@@ -1756,7 +1774,65 @@ export const useLyraThreadRuntime = ({
       ...(call.errorCode === undefined ? {} : { errorCode: call.errorCode }),
       ...(call.errorMessage === undefined ? {} : { errorMessage: call.errorMessage }),
     });
-  }, [onWriteStreamEvent]);
+    delete fileChangeWriteMetadataByCallRef.current[call.id];
+  }, [onWriteStreamEvent, runtimeByKeyRef]);
+
+  const emitFileChangeOutputDeltaInWorkspace = useCallback((
+    threadId: string,
+    turnId: string,
+    itemId: string,
+    params: JsonRecord,
+    delta: string
+  ): void => {
+    if (onWriteStreamEvent === undefined || delta.length === 0) {
+      return;
+    }
+    const previous = fileChangeWriteMetadataByCallRef.current[itemId];
+    const filePath =
+      readPathString(params.filePath)
+      ?? previous?.filePath
+      ?? null;
+    if (filePath === null) {
+      return;
+    }
+    const firstChangedLine =
+      readOptionalLine(params.firstChangedLine, previous?.firstChangedLine);
+    const timestamp = Date.now();
+    const reveal = runtimeByKeyRef.current[threadId]?.followEnabled === true;
+    if (previous === undefined) {
+      fileChangeWriteMetadataByCallRef.current[itemId] = {
+        sessionId: threadId,
+        turnId,
+        toolCallId: itemId,
+        toolName: "filesystem.write",
+        filePath,
+        timestamp,
+        ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
+      };
+      onWriteStreamEvent({
+        kind: "started",
+        sessionId: threadId,
+        turnId,
+        toolCallId: itemId,
+        toolName: "filesystem.write",
+        filePath,
+        timestamp,
+        reveal,
+      });
+    }
+    onWriteStreamEvent({
+      kind: "delta",
+      sessionId: threadId,
+      turnId,
+      toolCallId: itemId,
+      toolName: previous?.toolName ?? "filesystem.write",
+      filePath,
+      timestamp,
+      reveal,
+      chunkText: delta,
+      ...(firstChangedLine === undefined ? {} : { firstChangedLine }),
+    });
+  }, [onWriteStreamEvent, runtimeByKeyRef]);
 
   const emitCapabilityWriteEvent = useCallback((event: CapabilityRuntimeEvent): void => {
     if (onWriteStreamEvent === undefined || !isWriteToolName(event.capabilityId)) {
@@ -3269,6 +3345,7 @@ export const useLyraThreadRuntime = ({
         const itemId = readString(params.itemId);
         const delta = typeof params.delta === "string" ? params.delta : "";
         if (threadId !== null && turnId !== null && itemId !== null) {
+          emitFileChangeOutputDeltaInWorkspace(threadId, turnId, itemId, params, delta);
           queueRuntimeBucketPatch(threadId, (current) => ({
             ...current,
             streamingTurnId: turnId,
@@ -3548,6 +3625,7 @@ export const useLyraThreadRuntime = ({
     });
   }, [
     appendTerminalTranscriptChunk,
+    emitFileChangeOutputDeltaInWorkspace,
     emitWriteToolCallInWorkspace,
     flushQueuedRuntimeBucketPatches,
     followToolCallInWorkspace,

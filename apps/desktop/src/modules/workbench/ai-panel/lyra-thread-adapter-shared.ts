@@ -114,17 +114,35 @@ export type ThreadAiPanelPendingInteraction = {
   readonly updatedAtMs: number;
 };
 
+export type ThreadAiPanelTimelineEntryKind =
+  | "userMessage"
+  | "assistantMessage"
+  | "toolCall"
+  | "plan"
+  | "pendingInteraction";
+
+export type ThreadAiPanelTimelineEntry = {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly kind: ThreadAiPanelTimelineEntryKind;
+  readonly refId: string;
+  readonly createdAtMs: number;
+};
+
 export type ThreadAiPanelViewModel = {
   readonly messages: readonly ThreadAiPanelMessage[];
   readonly turns: readonly ThreadAiPanelTurn[];
   readonly toolCalls: readonly ThreadAiPanelToolCall[];
   readonly plans: readonly ThreadAiPanelPlan[];
   readonly pendingInteractions?: readonly ThreadAiPanelPendingInteraction[];
+  readonly timelineEntries: readonly ThreadAiPanelTimelineEntry[];
   readonly turnMeta: readonly ThreadAiPanelTurnMeta[];
 };
 
 export type AiPanelAgentSessionDetail = AgentSessionDetail & {
   readonly aiPanelTurnMeta?: readonly ThreadAiPanelTurnMeta[];
+  readonly aiPanelTimelineEntries?: readonly ThreadAiPanelTimelineEntry[];
   readonly pendingInteractions: readonly AgentPendingInteraction[];
 };
 

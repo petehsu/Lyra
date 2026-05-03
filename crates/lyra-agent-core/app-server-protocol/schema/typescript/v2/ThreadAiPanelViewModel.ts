@@ -4,8 +4,9 @@
 import type { ThreadAiPanelMessage } from "./ThreadAiPanelMessage";
 import type { ThreadAiPanelPendingInteraction } from "./ThreadAiPanelPendingInteraction";
 import type { ThreadAiPanelPlan } from "./ThreadAiPanelPlan";
+import type { ThreadAiPanelTimelineEntry } from "./ThreadAiPanelTimelineEntry";
 import type { ThreadAiPanelToolCall } from "./ThreadAiPanelToolCall";
 import type { ThreadAiPanelTurn } from "./ThreadAiPanelTurn";
 import type { ThreadAiPanelTurnMeta } from "./ThreadAiPanelTurnMeta";
 
-export type ThreadAiPanelViewModel = { messages: Array<ThreadAiPanelMessage>, turns: Array<ThreadAiPanelTurn>, toolCalls: Array<ThreadAiPanelToolCall>, plans: Array<ThreadAiPanelPlan>, pendingInteractions?: Array<ThreadAiPanelPendingInteraction>, turnMeta: Array<ThreadAiPanelTurnMeta>, };
+export type ThreadAiPanelViewModel = { messages: Array<ThreadAiPanelMessage>, turns: Array<ThreadAiPanelTurn>, toolCalls: Array<ThreadAiPanelToolCall>, plans: Array<ThreadAiPanelPlan>, pendingInteractions?: Array<ThreadAiPanelPendingInteraction>, timelineEntries?: Array<ThreadAiPanelTimelineEntry>, turnMeta: Array<ThreadAiPanelTurnMeta>, };

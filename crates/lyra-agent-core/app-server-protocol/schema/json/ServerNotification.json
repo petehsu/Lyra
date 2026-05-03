@@ -692,6 +692,20 @@
         "delta": {
           "type": "string"
         },
+        "filePath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "firstChangedLine": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "itemId": {
           "type": "string"
         },

@@ -105,6 +105,9 @@ type AiPanelMessageRowProps = {
   readonly runtimeFeedByTurn: ReadonlyMap<string, AgentRuntimeFeedItem[]>;
   readonly turnTimelineByTurn: ReadonlyMap<string, readonly AgentTurnTimelineItem[]>;
   readonly assistantMessageOrderById: ReadonlyMap<string, number>;
+  readonly latestPlanTurnId: string | null;
+  readonly planActionsEnabled: boolean;
+  readonly pendingInteractionQueue: readonly PendingInteractionPanel[];
   readonly turnWorkingLabel: string;
   readonly turnWorkedForPrefix: string;
   readonly toolStatusRunningLabel: string;
@@ -120,6 +123,11 @@ type AiPanelMessageRowProps = {
   readonly onForkTurn: (turnId: string) => void;
   readonly onRegenerateTurn: (turnId: string) => void;
   readonly onEditMessageTurn: (turnId: string, content: string) => void;
+  readonly onPlanApprovalDecision: (
+    response: PlanInteractionResponse,
+    requestOverride?: PlanApprovalRequest
+  ) => Promise<void>;
+  readonly onOpenPlanApprovalInWorkspace?: (request: PlanApprovalRequest) => void;
   readonly onOpenThread?: (threadId: string) => void;
 };
 
@@ -134,6 +142,9 @@ export const AiPanelMessageRow = ({
   runtimeFeedByTurn,
   turnTimelineByTurn,
   assistantMessageOrderById,
+  latestPlanTurnId,
+  planActionsEnabled,
+  pendingInteractionQueue,
   turnWorkingLabel,
   turnWorkedForPrefix,
   toolStatusRunningLabel,
@@ -149,6 +160,8 @@ export const AiPanelMessageRow = ({
   onForkTurn,
   onRegenerateTurn,
   onEditMessageTurn,
+  onPlanApprovalDecision,
+  onOpenPlanApprovalInWorkspace,
   onOpenThread,
 }: AiPanelMessageRowProps) => {
   const message = row.message;
@@ -222,16 +235,12 @@ export const AiPanelMessageRow = ({
           : "lyra-ai-agent-message lyra-ai-agent-message-assistant"
       }
     >
-      {isUserMessage || !richRenderingEnabled ? (
+      {isUserMessage ? (
         <div className="lyra-ai-agent-message-content">
-          {isUserMessage ? (
-            <InlineMessageContent
-              content={displayMessageContent}
-              parts={message.contentParts}
-            />
-          ) : (
-            displayMessageContent
-          )}
+          <InlineMessageContent
+            content={displayMessageContent}
+            parts={message.contentParts}
+          />
         </div>
       ) : (
         <>
@@ -277,16 +286,82 @@ export const AiPanelMessageRow = ({
                   timelineIndex = groupEndIndex;
                   continue;
                 }
+                if (timelineEntry.kind === "plan") {
+                  const interactionQueue = pendingInteractionQueue ?? [];
+                  const pendingRequest =
+                    interactionQueue.find(
+                      (interaction): interaction is Extract<PendingInteractionPanel, { kind: "planApproval" }> =>
+                        interaction.kind === "planApproval" && interaction.request.turnId === timelineEntry.plan.turnId
+                    )?.request
+                    ?? null;
+                  const request = pendingRequest
+                    ?? (
+                      timelineEntry.sessionId.length === 0
+                        ? null
+                        : planApprovalRequestFromState(timelineEntry.plan, timelineEntry.sessionId)
+                    );
+                  const canActOnPlan =
+                    planActionsEnabled
+                    && timelineEntry.plan.turnId === latestPlanTurnId
+                    && pendingRequest !== null;
+                  nodes.push(
+                    <div
+                      key={timelineEntry.id}
+                      className="lyra-ai-agent-turn-timeline-item lyra-ai-agent-turn-timeline-item-plan"
+                    >
+                      <PlanCard
+                        locale={locale}
+                        plan={timelineEntry.plan}
+                        richRenderingEnabled={richRenderingEnabled}
+                        {...(themeSignature === undefined ? {} : { themeSignature })}
+                        showActions={canActOnPlan}
+                        onApprove={() => {
+                          void onPlanApprovalDecision({
+                            planId: timelineEntry.plan.artifact.planId,
+                            decision: "approve_and_implement",
+                            artifactSnapshot: timelineEntry.plan.artifact,
+                          }, request ?? undefined);
+                        }}
+                        onKeepPlanning={() => {
+                          void onPlanApprovalDecision({
+                            planId: timelineEntry.plan.artifact.planId,
+                            decision: "keep_planning",
+                            artifactSnapshot: timelineEntry.plan.artifact,
+                          }, request ?? undefined);
+                        }}
+                        {...(pendingRequest === null || onOpenPlanApprovalInWorkspace === undefined
+                          ? {}
+                          : {
+                              onOpenInWorkspace: () => {
+                                onOpenPlanApprovalInWorkspace(pendingRequest);
+                              },
+                            })}
+                        onReject={() => {
+                          void onPlanApprovalDecision({
+                            planId: timelineEntry.plan.artifact.planId,
+                            decision: "reject",
+                            artifactSnapshot: timelineEntry.plan.artifact,
+                          }, request ?? undefined);
+                        }}
+                      />
+                    </div>
+                  );
+                  continue;
+                }
                 nodes.push(
                   <div
                     key={timelineEntry.id}
                     className="lyra-ai-agent-turn-timeline-item lyra-ai-agent-turn-timeline-item-assistant"
                   >
-                    <AiPanelRichContent
-                      content={timelineEntry.content}
-                      locale={locale}
-                      {...(themeSignature === undefined ? {} : { themeSignature })}
-                    />
+                    {richRenderingEnabled ? (
+                      <AiPanelRichContent
+                        content={timelineEntry.content}
+                        locale={locale}
+                        {...(themeSignature === undefined ? {} : { themeSignature })}
+                      />
+                    ) : (
+                      <div className="lyra-ai-agent-message-content">{timelineEntry.content}</div>
+                    )}
                   </div>
                 );
               }

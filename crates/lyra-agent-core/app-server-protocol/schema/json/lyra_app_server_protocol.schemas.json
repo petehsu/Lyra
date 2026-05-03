@@ -7616,6 +7616,20 @@
           "delta": {
             "type": "string"
           },
+          "filePath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "firstChangedLine": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "itemId": {
             "type": "string"
           },
@@ -12840,6 +12854,48 @@
         ],
         "type": "object"
       },
+      "ThreadAiPanelTimelineEntry": {
+        "properties": {
+          "createdAtMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/v2/ThreadAiPanelTimelineEntryKind"
+          },
+          "refId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAtMs",
+          "id",
+          "kind",
+          "refId",
+          "sessionId",
+          "turnId"
+        ],
+        "type": "object"
+      },
+      "ThreadAiPanelTimelineEntryKind": {
+        "enum": [
+          "userMessage",
+          "assistantMessage",
+          "toolCall",
+          "plan",
+          "pendingInteraction"
+        ],
+        "type": "string"
+      },
       "ThreadAiPanelToolCall": {
         "properties": {
           "errorCode": {
@@ -13015,6 +13071,12 @@
           "plans": {
             "items": {
               "$ref": "#/definitions/v2/ThreadAiPanelPlan"
+            },
+            "type": "array"
+          },
+          "timelineEntries": {
+            "items": {
+              "$ref": "#/definitions/v2/ThreadAiPanelTimelineEntry"
             },
             "type": "array"
           },

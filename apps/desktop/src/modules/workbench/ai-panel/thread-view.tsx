@@ -156,6 +156,9 @@ export const AiPanelThreadView = memo(({
             runtimeFeedByTurn={runtimeFeedByTurn}
             turnTimelineByTurn={turnTimelineByTurn}
             assistantMessageOrderById={assistantMessageOrderById}
+            latestPlanTurnId={latestPlanTurnId}
+            planActionsEnabled={planActionsEnabled}
+            pendingInteractionQueue={pendingInteractionQueue}
             turnWorkingLabel={turnWorkingLabel}
             turnWorkedForPrefix={turnWorkedForPrefix}
             toolStatusRunningLabel={toolStatusRunningLabel}
@@ -171,6 +174,10 @@ export const AiPanelThreadView = memo(({
             onForkTurn={onForkTurn}
             onRegenerateTurn={onRegenerateTurn}
             onEditMessageTurn={onEditMessageTurn}
+            onPlanApprovalDecision={onPlanApprovalDecision}
+            {...(onOpenPlanApprovalInWorkspace === undefined
+              ? {}
+              : { onOpenPlanApprovalInWorkspace })}
             {...(onOpenThread === undefined ? {} : { onOpenThread })}
           />
         );

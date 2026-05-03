@@ -15,6 +15,8 @@ use crate::protocol::v2::ThreadAiPanelPendingInteraction;
 use crate::protocol::v2::ThreadAiPanelPendingInteractionKind;
 use crate::protocol::v2::ThreadAiPanelPendingInteractionStatus;
 use crate::protocol::v2::ThreadAiPanelPlan;
+use crate::protocol::v2::ThreadAiPanelTimelineEntry;
+use crate::protocol::v2::ThreadAiPanelTimelineEntryKind;
 use crate::protocol::v2::ThreadAiPanelToolCall;
 use crate::protocol::v2::ThreadAiPanelToolCallStatus;
 use crate::protocol::v2::ThreadAiPanelTurn;
@@ -43,6 +45,7 @@ pub fn build_thread_ai_panel_view_model(
     let mut tool_calls = Vec::new();
     let mut plans = Vec::new();
     let mut pending_interactions = Vec::new();
+    let mut timeline_entries = Vec::new();
     let mut turn_meta = Vec::new();
     let mut assistant_order = 0_u32;
 
@@ -102,6 +105,13 @@ pub fn build_thread_ai_panel_view_model(
                         content_parts: user_input_content_parts(content),
                         created_at_ms: item_timestamp_ms,
                     });
+                    timeline_entries.push(ai_panel_timeline_entry(
+                        &session_id,
+                        &turn.id,
+                        ThreadAiPanelTimelineEntryKind::UserMessage,
+                        id,
+                        item_timestamp_ms,
+                    ));
                 }
                 ThreadItem::AgentMessage { id, text, .. } => {
                     let content = text.trim().to_string();
@@ -125,6 +135,13 @@ pub fn build_thread_ai_panel_view_model(
                         content_parts: Vec::new(),
                         created_at_ms: item_timestamp_ms,
                     });
+                    timeline_entries.push(ai_panel_timeline_entry(
+                        &session_id,
+                        &turn.id,
+                        ThreadAiPanelTimelineEntryKind::AssistantMessage,
+                        id,
+                        item_timestamp_ms,
+                    ));
                 }
                 ThreadItem::Reasoning {
                     id,
@@ -152,6 +169,13 @@ pub fn build_thread_ai_panel_view_model(
                         content_parts: Vec::new(),
                         created_at_ms: item_timestamp_ms,
                     });
+                    timeline_entries.push(ai_panel_timeline_entry(
+                        &session_id,
+                        &turn.id,
+                        ThreadAiPanelTimelineEntryKind::AssistantMessage,
+                        id,
+                        item_timestamp_ms,
+                    ));
                 }
                 ThreadItem::Plan { artifact, .. } => {
                     plans.push(ThreadAiPanelPlan {
@@ -159,6 +183,13 @@ pub fn build_thread_ai_panel_view_model(
                         artifact: artifact.clone(),
                         updated_at_ms: item_timestamp_ms,
                     });
+                    timeline_entries.push(ai_panel_timeline_entry(
+                        &session_id,
+                        &turn.id,
+                        ThreadAiPanelTimelineEntryKind::Plan,
+                        &artifact.plan_id,
+                        item_timestamp_ms,
+                    ));
                     if matches!(turn.status, TurnStatus::Waiting)
                         && artifact.status == PlanArtifactStatus::Proposed
                     {
@@ -181,6 +212,13 @@ pub fn build_thread_ai_panel_view_model(
                         turn_updated_at_ms,
                     ) {
                         tool_calls.push(tool_call);
+                        timeline_entries.push(ai_panel_timeline_entry(
+                            &session_id,
+                            &turn.id,
+                            ThreadAiPanelTimelineEntryKind::ToolCall,
+                            &tool_calls.last().expect("tool call was just pushed").id,
+                            item_timestamp_ms,
+                        ));
                     }
                 }
             }
@@ -210,6 +248,13 @@ pub fn build_thread_ai_panel_view_model(
                 .iter()
                 .all(|existing| existing.id != interaction.id)
         {
+            timeline_entries.push(ai_panel_timeline_entry(
+                &interaction.session_id,
+                &interaction.turn_id,
+                ThreadAiPanelTimelineEntryKind::PendingInteraction,
+                &interaction.id,
+                interaction.created_at_ms,
+            ));
             pending_interactions.push(interaction);
         }
     }
@@ -220,7 +265,32 @@ pub fn build_thread_ai_panel_view_model(
         tool_calls,
         plans,
         pending_interactions,
+        timeline_entries,
         turn_meta,
+    }
+}
+
+fn ai_panel_timeline_entry(
+    session_id: &str,
+    turn_id: &str,
+    kind: ThreadAiPanelTimelineEntryKind,
+    ref_id: &str,
+    created_at_ms: i64,
+) -> ThreadAiPanelTimelineEntry {
+    let kind_key = match kind {
+        ThreadAiPanelTimelineEntryKind::UserMessage => "user",
+        ThreadAiPanelTimelineEntryKind::AssistantMessage => "assistant",
+        ThreadAiPanelTimelineEntryKind::ToolCall => "tool",
+        ThreadAiPanelTimelineEntryKind::Plan => "plan",
+        ThreadAiPanelTimelineEntryKind::PendingInteraction => "pending",
+    };
+    ThreadAiPanelTimelineEntry {
+        id: format!("timeline:{turn_id}:{kind_key}:{ref_id}"),
+        session_id: session_id.to_string(),
+        turn_id: turn_id.to_string(),
+        kind,
+        ref_id: ref_id.to_string(),
+        created_at_ms,
     }
 }
 

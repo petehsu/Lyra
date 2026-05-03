@@ -2,6 +2,7 @@ import type {
   AgentRuntimeEvent,
   AgentToolCall,
 } from "../../../../shared/desktop-bridge";
+import type { LyraTurnPlanState } from "../use-lyra-thread-runtime";
 
 export type AgentRuntimeFeedStatus = "running" | "completed" | "failed";
 
@@ -70,6 +71,13 @@ export type AgentTurnTimelineItem =
       readonly id: string;
       readonly timestamp: number;
       readonly content: string;
+    }
+  | {
+      readonly kind: "plan";
+      readonly id: string;
+      readonly timestamp: number;
+      readonly plan: LyraTurnPlanState;
+      readonly sessionId: string;
     };
 
 type RuntimeToolTarget = {

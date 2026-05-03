@@ -797,6 +797,7 @@ export const useAiPanelSurfaceRuntime = ({
     isStreamActive: state.isStreamActive,
     streamingAssistantText: state.streamingAssistantText,
     finalizingTurnId: state.finalizingTurnId,
+    planByTurn: state.planByTurn,
     toolNameLabels,
     runtimeToolFallbackLabel,
     labels: {

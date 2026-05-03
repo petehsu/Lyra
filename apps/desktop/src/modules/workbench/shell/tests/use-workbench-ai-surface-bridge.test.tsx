@@ -142,6 +142,48 @@ describe("useWorkbenchAiSurfaceBridge", () => {
     expect(fileEditorModel.applyExternalContent).not.toHaveBeenCalled();
   });
 
+  test("does not open editors for non-follow live write deltas", () => {
+    vi.useFakeTimers();
+    const fileEditorModel = {
+      applyExternalContent: vi.fn(),
+      revealLocation: vi.fn()
+    } as unknown as FileEditorModel;
+    const onOpenFileFromManager = vi.fn(() => "editor-1");
+    const recordCompletedEditorWorkItem = vi.fn();
+    const sidebarAiSurfaceProps = {
+      desktopApi: null,
+      title: "AI"
+    } as WorkbenchSidebarAiSurfaceProps;
+    const { result } = renderHook(() =>
+      useWorkbenchAiSurfaceBridge({
+        sidebarAiSurfaceProps,
+        fileEditorModel,
+        onOpenFileFromManager,
+        recordCompletedEditorWorkItem
+      })
+    );
+
+    act(() => {
+      result.current?.onWriteStreamEvent?.(createWriteEvent({
+        kind: "started",
+        baselineContent: "before\n",
+        reveal: false
+      }));
+      result.current?.onWriteStreamEvent?.(createWriteEvent({
+        kind: "delta",
+        chunkText: "after",
+        firstChangedLine: 2,
+        timestamp: 1010,
+        reveal: false
+      }));
+      vi.advanceTimersByTime(120);
+    });
+
+    expect(onOpenFileFromManager).not.toHaveBeenCalled();
+    expect(fileEditorModel.applyExternalContent).not.toHaveBeenCalled();
+    expect(recordCompletedEditorWorkItem).not.toHaveBeenCalled();
+  });
+
   test("does not expose terminal auto-open hooks for agent commands", () => {
     const write = vi.fn().mockResolvedValue(undefined);
     const terminalModel = {
