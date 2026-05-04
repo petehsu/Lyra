@@ -5,6 +5,28 @@ use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 
 #[test]
+fn agent_question_tool_is_global_and_includes_reason_schema() {
+    let ToolSpec::Function(tool) = create_agent_question_tool() else {
+        panic!("expected function tool");
+    };
+    assert_eq!(tool.name, "agent_question");
+    assert!(
+        tool.description
+            .contains("available in all collaboration modes")
+    );
+    let properties = tool
+        .parameters
+        .properties
+        .expect("expected object properties");
+    assert!(properties.contains_key("reason"));
+    assert!(properties.contains_key("questions"));
+    assert_eq!(
+        tool.parameters.required,
+        Some(vec!["questions".to_string()])
+    );
+}
+
+#[test]
 fn request_user_input_tool_includes_questions_schema() {
     assert_eq!(
         create_request_user_input_tool("Ask the user to choose.".to_string()),

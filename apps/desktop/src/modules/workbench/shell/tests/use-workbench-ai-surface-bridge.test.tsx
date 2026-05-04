@@ -184,6 +184,47 @@ describe("useWorkbenchAiSurfaceBridge", () => {
     expect(recordCompletedEditorWorkItem).not.toHaveBeenCalled();
   });
 
+  test("applies live content snapshots without waiting for completion", () => {
+    const fileEditorModel = {
+      applyExternalContent: vi.fn(),
+      revealLocation: vi.fn()
+    } as unknown as FileEditorModel;
+    const onOpenFileFromManager = vi.fn(() => "editor-1");
+    const recordCompletedEditorWorkItem = vi.fn();
+    const sidebarAiSurfaceProps = {
+      desktopApi: null,
+      title: "AI"
+    } as WorkbenchSidebarAiSurfaceProps;
+    const { result } = renderHook(() =>
+      useWorkbenchAiSurfaceBridge({
+        sidebarAiSurfaceProps,
+        fileEditorModel,
+        onOpenFileFromManager,
+        recordCompletedEditorWorkItem
+      })
+    );
+
+    act(() => {
+      result.current?.onWriteStreamEvent?.(createWriteEvent({
+        kind: "started",
+        reveal: true
+      }));
+      result.current?.onWriteStreamEvent?.(createWriteEvent({
+        kind: "delta",
+        chunkText: "partial",
+        contentSnapshot: "const value = 1;\n",
+        firstChangedLine: 1,
+        reveal: true
+      }));
+    });
+
+    expect(fileEditorModel.applyExternalContent).toHaveBeenLastCalledWith("editor-1", "const value = 1;\n", {
+      markHydrated: true
+    });
+    expect(fileEditorModel.revealLocation).toHaveBeenCalledWith("editor-1", { line: 1 });
+    expect(recordCompletedEditorWorkItem).not.toHaveBeenCalled();
+  });
+
   test("does not expose terminal auto-open hooks for agent commands", () => {
     const write = vi.fn().mockResolvedValue(undefined);
     const terminalModel = {

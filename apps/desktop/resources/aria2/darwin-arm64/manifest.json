@@ -1,0 +1,136 @@
+{
+  "bundleVersion": "aria2-1.37.0-conda-forge-darwin-arm64",
+  "target": "darwin-arm64",
+  "binary": "bin/aria2c",
+  "source": "conda-forge",
+  "packages": [
+    "aria2-1.37.0-h01cec69_4.conda",
+    "c-ares-1.34.6-hc919400_0.conda",
+    "ca-certificates-2025.1.31-hf0a4a13_0.conda",
+    "gmp-6.3.0-h7bae524_2.conda",
+    "libcxx-22.1.4-h55c6f16_0.conda",
+    "libiconv-1.18-h23cfdf5_2.conda",
+    "liblzma-5.8.3-h8088a28_0.conda",
+    "libsqlite-3.53.0-h1b79a29_0.conda",
+    "libssh2-1.11.1-h1590b86_0.conda",
+    "libxml2-2.15.3-heed7d32_0.conda",
+    "libxml2-16-2.15.3-h6967ea9_0.conda",
+    "libzlib-1.3.2-h8088a28_2.conda",
+    "openssl-3.6.2-hd24854e_0.conda"
+  ],
+  "files": [
+    {
+      "path": "bin/aria2c",
+      "sha256": "811be9c461a922075863865917752e3cb5fa255bc078603fe978af60909cdeeb",
+      "executable": true
+    },
+    {
+      "path": "etc/conda/activate.d/libxml2-split_activate.sh",
+      "sha256": "631478a9cfbd337b86ee1df94497c21821cd561312c94892d156e43f499cf5c4"
+    },
+    {
+      "path": "lib/libaria2.0.dylib",
+      "sha256": "6b998e93f0561284cca9051dbdc81d7ea94d5b964d39dd59b6aaa069a93fc3e6",
+      "executable": true
+    },
+    {
+      "path": "lib/libc++.1.0.dylib",
+      "sha256": "f84d96f9f0a5fc80261c420f8be66162b5637142095c9225d9dfd3997092623c",
+      "executable": true
+    },
+    {
+      "path": "lib/libcares.2.19.5.dylib",
+      "sha256": "02e3f53557f43a6ff3cb5574f5db8e202142ae5d4fab3a712005c215f09b7099",
+      "executable": true
+    },
+    {
+      "path": "lib/libcharset.1.dylib",
+      "sha256": "8ac0778067613842e24f24831ba2b193ed9bda82ec48177cba4f6fcb8703dd7f",
+      "executable": true
+    },
+    {
+      "path": "lib/libcrypto.3.dylib",
+      "sha256": "c62505582b61d8db2cde563b4c12e574caa1c6e47a384157588649f5bfdce201",
+      "executable": true
+    },
+    {
+      "path": "lib/libgmp.10.dylib",
+      "sha256": "43d7babd2a6d8a293f6d76f1db581bf3f17613560d4db82fb9c495340f260e6e",
+      "executable": true
+    },
+    {
+      "path": "lib/libgmpxx.4.dylib",
+      "sha256": "9255c39954b509b731b967a8afe4de6555c1681861eb471624b45cd5d6bb5465",
+      "executable": true
+    },
+    {
+      "path": "lib/libiconv.2.dylib",
+      "sha256": "6ac7d047d1158c2f59e0b86aedaec03d766386a5b73094fd1905d9a3d54e85a9",
+      "executable": true
+    },
+    {
+      "path": "lib/liblzma.5.dylib",
+      "sha256": "6ecd2f758b723bcafb14bdaa3609ac5366c9969108e2a3a34cb1f8b3f2f0efac",
+      "executable": true
+    },
+    {
+      "path": "lib/libsqlite3.3.53.0.dylib",
+      "sha256": "8bf9ff7466d0e404dcb6e9f8eeef9fb3d8db2b54b1feebc126d6c4bf0748880a",
+      "executable": true
+    },
+    {
+      "path": "lib/libssh2.1.0.1.dylib",
+      "sha256": "18c999de80f58d4e0b7baf1eb5ee1e88dfe0d152e0757cd9995e9f5aa872705c",
+      "executable": true
+    },
+    {
+      "path": "lib/libssl.3.dylib",
+      "sha256": "59af9edbfc045a5f0cc76104913415e7084705266bbcbc99ce9cac0482c09e99",
+      "executable": true
+    },
+    {
+      "path": "lib/libxml2.16.dylib",
+      "sha256": "735dd6be89f8584dd99532453bf3c5cb34c5f9d1214ad79dce1823113e28f292",
+      "executable": true
+    },
+    {
+      "path": "lib/libz.1.3.2.dylib",
+      "sha256": "5aedf4488edbe21dd7c46f3aa47dc4f47e2e5bc42c153482650388f89e414e87",
+      "executable": true
+    },
+    {
+      "path": "ssl/cacert.pem",
+      "sha256": "c55b21f907f7f86d48add093552fb5651749ff5f860508ccbb423d6c1fbd80c7"
+    },
+    {
+      "path": "ssl/certs/.keep",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "ssl/ct_log_list.cnf",
+      "sha256": "f1c1803d13d1d0b755b13b23c28bd4e20e07baf9f2b744c9337ba5866aa0ec3b"
+    },
+    {
+      "path": "ssl/ct_log_list.cnf.dist",
+      "sha256": "f1c1803d13d1d0b755b13b23c28bd4e20e07baf9f2b744c9337ba5866aa0ec3b"
+    },
+    {
+      "path": "ssl/misc/CA.pl",
+      "sha256": "68dc4fbb6c2cdd94bdf7e8dc24659d6d890ce7e71f8200282d7555ad227265fd",
+      "executable": true
+    },
+    {
+      "path": "ssl/misc/tsget.pl",
+      "sha256": "3a3f266cea40882157d4586132c7484bfcced52d169ab16f71c81a1cc48b383e",
+      "executable": true
+    },
+    {
+      "path": "ssl/openssl.cnf",
+      "sha256": "a65a2cb9f4ee8ffdc7ef4f0ac600c0bdafb95b7b1ab457188ac610a62f5ad6b3"
+    },
+    {
+      "path": "ssl/openssl.cnf.dist",
+      "sha256": "a65a2cb9f4ee8ffdc7ef4f0ac600c0bdafb95b7b1ab457188ac610a62f5ad6b3"
+    }
+  ]
+}

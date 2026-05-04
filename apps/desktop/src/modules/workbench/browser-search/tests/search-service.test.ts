@@ -69,9 +69,12 @@ describe("aggregated search service", () => {
           readStatus: vi.fn(async () => ({
             platform: "linux" as const,
             enabled: true,
+            profile: "native" as const,
+            recommendedProfile: "native" as const,
             safeMode: false,
             backend: "wayland" as const,
             gpuMode: "hardware" as const,
+            profileSource: "auto" as const,
             backendSource: "auto" as const,
             gpuSource: "auto" as const,
             warnings: [],
@@ -80,13 +83,50 @@ describe("aggregated search service", () => {
             appliedSwitches: {},
             facts: {
               sessionType: "wayland" as const,
+              architecture: "x64" as const,
+              kernelRelease: "6.8.0",
+              libc: "glibc" as const,
               desktop: "KDE",
+              desktopRaw: "KDE",
+              distributionId: "ubuntu",
+              distributionVersion: "24.04",
+              distributionLike: ["debian"],
+              packageType: "dev" as const,
               waylandDisplay: "wayland-0",
               x11Display: null,
-              isRoot: false
+              isContainer: false,
+              isRoot: false,
+              gpu: {
+                vendor: "intel" as const,
+                deviceCount: 1,
+                hasDiscreteGpu: false,
+                driverHint: null,
+                hardwareAccelerationEnabled: true,
+                featureStatus: null
+              }
+            },
+            recovery: {
+              active: false,
+              autoRestarted: false,
+              launchId: "test",
+              previousFailureReason: null
             },
             generatedAt: "2026-03-27T00:00:00.000Z"
           })),
+          readConfig: vi.fn(async () => ({
+            version: 1 as const,
+            profile: "native" as const,
+            updatedAt: "2026-03-27T00:00:00.000Z"
+          })),
+          updateConfig: vi.fn(async () => ({
+            ok: true as const,
+            config: {
+              version: 1 as const,
+              profile: "native" as const,
+              updatedAt: "2026-03-27T00:00:00.000Z"
+            }
+          })),
+          requestRestart: vi.fn(async () => ({ ok: true as const })),
           exportDiagnostics: vi.fn(async () => ({
             ok: true,
             filePath: "/tmp/linux-compat.json"

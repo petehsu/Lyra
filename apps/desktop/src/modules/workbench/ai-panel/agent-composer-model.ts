@@ -5,8 +5,6 @@ import type { AgentComposerModelOption, AgentPermissionMode } from "./agent-comp
 
 export const AGENT_COMPOSER_MIN_HEIGHT = 44;
 export const AGENT_COMPOSER_MAX_HEIGHT = 184;
-export const AGENT_COMPOSER_MAX_TEXT_EFFECT_SEGMENTS = 10;
-export const AGENT_COMPOSER_TEXT_EFFECT_LIFETIME_MS = 260;
 
 type Translator = ReturnType<typeof createTranslator>;
 
@@ -27,43 +25,6 @@ export type AgentComposerModelState = {
   readonly selectedModelLabel: string;
   readonly modelMenuStyle: CSSProperties;
   readonly permissionModeOptions: readonly AgentComposerPermissionModeOption[];
-};
-
-export type AgentComposerDiff = {
-  readonly start: number;
-  readonly removed: string;
-  readonly inserted: string;
-};
-
-export const diffComposerText = (
-  previousValue: string,
-  nextValue: string
-): AgentComposerDiff => {
-  let start = 0;
-  while (
-    start < previousValue.length &&
-    start < nextValue.length &&
-    previousValue[start] === nextValue[start]
-  ) {
-    start += 1;
-  }
-
-  let previousEnd = previousValue.length;
-  let nextEnd = nextValue.length;
-  while (
-    previousEnd > start &&
-    nextEnd > start &&
-    previousValue[previousEnd - 1] === nextValue[nextEnd - 1]
-  ) {
-    previousEnd -= 1;
-    nextEnd -= 1;
-  }
-
-  return {
-    start,
-    removed: previousValue.slice(start, previousEnd),
-    inserted: nextValue.slice(start, nextEnd)
-  };
 };
 
 export const normalizeComposerModelOptions = ({

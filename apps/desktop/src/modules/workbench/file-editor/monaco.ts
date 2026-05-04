@@ -117,6 +117,9 @@ const createMonacoTestMock = (): typeof Monaco => {
       dispose: () => {
         blurListeners.clear();
       },
+      setModel: (nextModel: Monaco.editor.ITextModel | null) => {
+        currentModel = nextModel;
+      },
       getModel: () => currentModel,
       __setModel: (nextModel: Monaco.editor.ITextModel | null) => {
         currentModel = nextModel;
@@ -147,8 +150,8 @@ const createMonacoTestMock = (): typeof Monaco => {
           setModel: (models: {
             readonly original: Monaco.editor.ITextModel;
             readonly modified: Monaco.editor.ITextModel;
-          }) => {
-            modifiedEditor.__setModel(models.modified);
+          } | null) => {
+            modifiedEditor.__setModel(models?.modified ?? null);
           },
           getModifiedEditor: () =>
             modifiedEditor as unknown as Monaco.editor.IStandaloneCodeEditor,

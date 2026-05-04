@@ -5186,6 +5186,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyra-download-core"
+version = "0.0.0"
+dependencies = [
+ "cc",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lyra-download-napi"
+version = "0.1.0"
+dependencies = [
+ "lyra-download-core",
+ "napi",
+ "napi-build",
+ "napi-derive",
+]
+
+[[package]]
 name = "lyra-exec-server"
 version = "0.0.0"
 dependencies = [

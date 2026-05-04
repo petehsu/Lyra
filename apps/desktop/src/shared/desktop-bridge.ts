@@ -46,6 +46,19 @@ import type {
   FileWriteTextRequest
 } from "./file-manager";
 import type {
+  DownloadManagerBatchRequest,
+  DownloadManagerEnqueueRequest,
+  DownloadManagerEvent,
+  DownloadManagerRemoteApiStartRequest,
+  DownloadManagerRemoteApiStatus,
+  DownloadManagerSetPriorityRequest,
+  DownloadManagerSettings,
+  DownloadManagerSnapshot,
+  DownloadManagerTask,
+  DownloadManagerTaskRequest,
+  DownloadManagerUpdateSettingsRequest
+} from "./download-manager";
+import type {
   ImageViewerCloseSessionRequest,
   ImageViewerEvent,
   ImageViewerOpenRequest,
@@ -209,6 +222,9 @@ export type {
 } from "./lyra-runtime";
 export type {
   AgentCollaborationMode,
+  AgentQuestionItem,
+  AgentQuestionOption,
+  AgentQuestionRequest,
   AgentPlanArtifact,
   AgentPlanBlock,
   AgentPendingInteraction,
@@ -224,13 +240,30 @@ export type {
   PlanApprovalDecision,
   PlanApprovalRequest,
   PlanInteractionResponse,
-  PlanQuestionItem,
-  PlanQuestionOption,
-  PlanQuestionRequest,
   AgentToolCall,
   AgentTurn,
   AgentUsage
 } from "./agent";
+export type {
+  DownloadManagerBtTaskOptions,
+  DownloadManagerChecksum,
+  DownloadManagerChecksumAlgorithm,
+  DownloadManagerBatchRequest,
+  DownloadManagerEnqueueRequest,
+  DownloadManagerEvent,
+  DownloadManagerPriority,
+  DownloadManagerRemoteApiStartRequest,
+  DownloadManagerRemoteApiStatus,
+  DownloadManagerSaveRule,
+  DownloadManagerSetPriorityRequest,
+  DownloadManagerSettings,
+  DownloadManagerSnapshot,
+  DownloadManagerTask,
+  DownloadManagerTaskRequest,
+  DownloadManagerTaskSource,
+  DownloadManagerTaskState,
+  DownloadManagerUpdateSettingsRequest
+} from "./download-manager";
 export type {
   McpCatalogItem,
   McpCatalogQuickSetup,
@@ -385,6 +418,9 @@ export const LYRA_CHANNELS = {
   systemNotificationsOpenSettings: "lyra:system-notifications/open-settings",
   systemNotificationsActivated: "lyra:system-notifications/activated",
   linuxCompatReadStatus: "lyra:linux-compat/read-status",
+  linuxCompatReadConfig: "lyra:linux-compat/read-config",
+  linuxCompatUpdateConfig: "lyra:linux-compat/update-config",
+  linuxCompatRestart: "lyra:linux-compat/restart",
   linuxCompatExportDiagnostics: "lyra:linux-compat/export-diagnostics",
   windowStateChanged: "lyra:shell/window/state-changed",
   aggregateSearch: "lyra:search/aggregate",
@@ -420,6 +456,26 @@ export const LYRA_CHANNELS = {
   filesStatFile: "lyra:files/stat-file",
   filesSelectAttachments: "lyra:files/select-attachments",
   filesSelectDirectories: "lyra:files/select-directories",
+  downloadsList: "lyra:downloads/list",
+  downloadsEnqueue: "lyra:downloads/enqueue",
+  downloadsImportExternalBrowser: "lyra:downloads/import-external-browser",
+  downloadsPause: "lyra:downloads/pause",
+  downloadsResume: "lyra:downloads/resume",
+  downloadsCancel: "lyra:downloads/cancel",
+  downloadsRetry: "lyra:downloads/retry",
+  downloadsRemove: "lyra:downloads/remove",
+  downloadsSetPriority: "lyra:downloads/set-priority",
+  downloadsPauseAll: "lyra:downloads/pause-all",
+  downloadsResumeAll: "lyra:downloads/resume-all",
+  downloadsCancelAll: "lyra:downloads/cancel-all",
+  downloadsReadSettings: "lyra:downloads/settings/read",
+  downloadsUpdateSettings: "lyra:downloads/settings/update",
+  downloadsRemoteStatus: "lyra:downloads/remote/status",
+  downloadsRemoteStart: "lyra:downloads/remote/start",
+  downloadsRemoteStop: "lyra:downloads/remote/stop",
+  downloadsOpenFile: "lyra:downloads/open-file",
+  downloadsRevealFile: "lyra:downloads/reveal-file",
+  downloadsEvent: "lyra:downloads/event",
   imageViewerOpenImage: "lyra:image-viewer/open-image",
   imageViewerReadTile: "lyra:image-viewer/read-tile",
   imageViewerCloseSession: "lyra:image-viewer/close-session",
@@ -598,33 +654,92 @@ export type LinuxGraphicsBackend = "wayland" | "x11";
 
 export type LinuxGpuMode = "hardware" | "software";
 
+export type LinuxCompatProfile = "reliable" | "native" | "performance";
+
+export type LinuxPackageType =
+  | "appimage"
+  | "deb"
+  | "dev"
+  | "flatpak"
+  | "rpm"
+  | "snap"
+  | "tar"
+  | "unknown";
+
+export type LinuxGpuVendor =
+  | "amd"
+  | "intel"
+  | "nvidia"
+  | "software"
+  | "virtio"
+  | "unknown";
+
 export type LinuxSessionType = "wayland" | "x11" | "unknown";
 
-export type LinuxStrategySource = "auto" | "cli" | "env";
+export type LinuxStrategySource = "auto" | "cli" | "config" | "env" | "history" | "recovery";
 
 export type LinuxCompatWarning = {
   readonly code:
     | "both-display-servers-detected"
+    | "gpu-compat-fallback"
+    | "missing-display-server"
+    | "previous-launch-failed"
+    | "recovery-mode"
     | "session-env-mismatch"
     | "unknown-session"
     | "unknown-desktop";
   readonly message: string;
 };
 
+export type LinuxCompatConfig = {
+  readonly version: 1;
+  readonly profile: LinuxCompatProfile;
+  readonly updatedAt: string;
+};
+
+export type LinuxGpuFacts = {
+  readonly vendor: LinuxGpuVendor;
+  readonly deviceCount: number;
+  readonly hasDiscreteGpu: boolean;
+  readonly driverHint: string | null;
+  readonly hardwareAccelerationEnabled: boolean | null;
+  readonly featureStatus: Readonly<Record<string, unknown>> | null;
+};
+
 export type LinuxEnvironmentFacts = {
   readonly sessionType: LinuxSessionType;
+  readonly architecture: NodeJS.Architecture;
+  readonly kernelRelease: string;
+  readonly libc: "glibc" | "musl" | "unknown" | null;
   readonly desktop: string;
+  readonly desktopRaw: string;
+  readonly distributionId: string | null;
+  readonly distributionVersion: string | null;
+  readonly distributionLike: readonly string[];
+  readonly packageType: LinuxPackageType;
   readonly waylandDisplay: string | null;
   readonly x11Display: string | null;
+  readonly isContainer: boolean;
   readonly isRoot: boolean;
+  readonly gpu: LinuxGpuFacts;
+};
+
+export type LinuxCompatRecoveryStatus = {
+  readonly active: boolean;
+  readonly autoRestarted: boolean;
+  readonly launchId: string;
+  readonly previousFailureReason: string | null;
 };
 
 export type LinuxCompatReadStatusResponse = {
   readonly platform: NodeJS.Platform;
   readonly enabled: boolean;
+  readonly profile: LinuxCompatProfile;
+  readonly recommendedProfile: LinuxCompatProfile;
   readonly safeMode: boolean;
   readonly backend: LinuxGraphicsBackend;
   readonly gpuMode: LinuxGpuMode;
+  readonly profileSource: LinuxStrategySource;
   readonly backendSource: LinuxStrategySource;
   readonly gpuSource: LinuxStrategySource;
   readonly warnings: readonly LinuxCompatWarning[];
@@ -632,12 +747,35 @@ export type LinuxCompatReadStatusResponse = {
   readonly appliedEnv: Readonly<Record<string, string>>;
   readonly appliedSwitches: Readonly<Record<string, string>>;
   readonly facts: LinuxEnvironmentFacts;
+  readonly recovery: LinuxCompatRecoveryStatus;
   readonly generatedAt: string;
+};
+
+export type LinuxCompatReadConfigResponse = LinuxCompatConfig;
+
+export type LinuxCompatUpdateConfigRequest = {
+  readonly profile: LinuxCompatProfile;
+};
+
+export type LinuxCompatUpdateConfigResponse = {
+  readonly ok: boolean;
+  readonly config?: LinuxCompatConfig;
+  readonly error?: string;
 };
 
 export type LinuxCompatExportResponse = {
   readonly ok: boolean;
   readonly filePath?: string;
+  readonly error?: string;
+};
+
+export type LinuxCompatRestartRequest = {
+  readonly recovery?: boolean;
+  readonly reason?: string;
+};
+
+export type LinuxCompatRestartResponse = {
+  readonly ok: boolean;
   readonly error?: string;
 };
 
@@ -1325,6 +1463,13 @@ export type SkillsApi = {
 
 export type LinuxCompatApi = {
   readonly readStatus: () => Promise<LinuxCompatReadStatusResponse>;
+  readonly readConfig: () => Promise<LinuxCompatReadConfigResponse>;
+  readonly updateConfig: (
+    request: LinuxCompatUpdateConfigRequest
+  ) => Promise<LinuxCompatUpdateConfigResponse>;
+  readonly requestRestart: (
+    request?: LinuxCompatRestartRequest
+  ) => Promise<LinuxCompatRestartResponse>;
   readonly exportDiagnostics: () => Promise<LinuxCompatExportResponse>;
 };
 
@@ -1355,6 +1500,33 @@ export type FilesApi = {
   readonly statFile: (request: FileStatRequest) => Promise<FileStatResult>;
   readonly selectAttachments: () => Promise<readonly FileManagerSelectedAttachment[]>;
   readonly selectDirectories: () => Promise<readonly FileManagerSelectedAttachment[]>;
+};
+
+export type DownloadManagerApi = {
+  readonly list: () => Promise<DownloadManagerSnapshot>;
+  readonly enqueue: (request: DownloadManagerEnqueueRequest) => Promise<DownloadManagerSnapshot>;
+  readonly importExternalBrowser: () => Promise<DownloadManagerSnapshot>;
+  readonly pause: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
+  readonly resume: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
+  readonly cancel: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
+  readonly retry: (request: DownloadManagerTaskRequest) => Promise<DownloadManagerTask | null>;
+  readonly remove: (request: DownloadManagerTaskRequest) => Promise<void>;
+  readonly setPriority: (request: DownloadManagerSetPriorityRequest) => Promise<DownloadManagerTask | null>;
+  readonly pauseAll: (request?: DownloadManagerBatchRequest) => Promise<DownloadManagerSnapshot>;
+  readonly resumeAll: (request?: DownloadManagerBatchRequest) => Promise<DownloadManagerSnapshot>;
+  readonly cancelAll: (request?: DownloadManagerBatchRequest) => Promise<DownloadManagerSnapshot>;
+  readonly readSettings: () => Promise<DownloadManagerSettings>;
+  readonly updateSettings: (
+    request: DownloadManagerUpdateSettingsRequest
+  ) => Promise<DownloadManagerSettings>;
+  readonly readRemoteApiStatus: () => Promise<DownloadManagerRemoteApiStatus>;
+  readonly startRemoteApi: (
+    request?: DownloadManagerRemoteApiStartRequest
+  ) => Promise<DownloadManagerRemoteApiStatus>;
+  readonly stopRemoteApi: () => Promise<DownloadManagerRemoteApiStatus>;
+  readonly openFile: (request: DownloadManagerTaskRequest) => Promise<boolean>;
+  readonly revealFile: (request: DownloadManagerTaskRequest) => Promise<boolean>;
+  readonly onEvent: (listener: (event: DownloadManagerEvent) => void) => () => void;
 };
 
 export type ImageViewerApi = {
@@ -1488,6 +1660,7 @@ export type LyraDesktopApi = {
   readonly linuxCompat: LinuxCompatApi;
   readonly search: SearchApi;
   readonly files: FilesApi;
+  readonly downloads?: DownloadManagerApi;
   readonly imageViewer?: ImageViewerApi;
   readonly lyra?: LyraRuntimeApi;
   readonly workbenchBrowser: WorkbenchBrowserApi;

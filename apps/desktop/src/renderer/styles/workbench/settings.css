@@ -702,6 +702,41 @@
   word-break: break-word;
 }
 
+.lyra-settings-status-list {
+  min-width: 0;
+  border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 64%, transparent);
+  padding-top: var(--lyra-unit-10);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--lyra-unit-10);
+  align-items: start;
+}
+
+.lyra-settings-status-list-rows {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-7);
+}
+
+.lyra-settings-status-list-row {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-3);
+}
+
+.lyra-settings-status-list-row small {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+}
+
+.lyra-settings-status-list-row strong {
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-unit-12);
+  font-weight: 500;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
 .lyra-settings-ai-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

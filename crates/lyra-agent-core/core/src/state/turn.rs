@@ -98,6 +98,7 @@ impl ActiveTurn {
 #[derive(Default)]
 pub(crate) struct TurnState {
     pending_approvals: HashMap<String, oneshot::Sender<ReviewDecision>>,
+    queued_approvals: HashMap<String, ReviewDecision>,
     pending_request_permissions: HashMap<String, PendingRequestPermissions>,
     pending_user_input: HashMap<String, oneshot::Sender<RequestUserInputResponse>>,
     pending_elicitations: HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>,
@@ -133,8 +134,21 @@ impl TurnState {
         self.pending_approvals.remove(key)
     }
 
+    pub(crate) fn insert_queued_approval(
+        &mut self,
+        key: String,
+        decision: ReviewDecision,
+    ) -> Option<ReviewDecision> {
+        self.queued_approvals.insert(key, decision)
+    }
+
+    pub(crate) fn remove_queued_approval(&mut self, key: &str) -> Option<ReviewDecision> {
+        self.queued_approvals.remove(key)
+    }
+
     pub(crate) fn clear_pending(&mut self) {
         self.pending_approvals.clear();
+        self.queued_approvals.clear();
         self.pending_request_permissions.clear();
         self.pending_user_input.clear();
         self.pending_elicitations.clear();

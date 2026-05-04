@@ -7,6 +7,7 @@ use super::X_LYRA_PARENT_THREAD_ID_HEADER;
 use super::X_LYRA_SUBAGENT_HEADER;
 use super::X_LYRA_TURN_METADATA_HEADER;
 use super::X_LYRA_WINDOW_ID_HEADER;
+use crate::client_common::ResponseEvent;
 use lyra_model_provider::BearerAuthProvider;
 use lyra_model_provider_info::WireApi;
 use lyra_model_provider_info::create_oss_provider_with_base_url;
@@ -123,6 +124,44 @@ fn test_session_telemetry() -> SessionTelemetry {
         "test-terminal".to_string(),
         SessionSource::Cli,
     )
+}
+
+#[test]
+fn chat_completions_system_prompt_includes_developer_instructions() {
+    let input = vec![
+        ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "<collaboration_mode>Plan Mode rules</collaboration_mode>".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "Build a website".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        },
+    ];
+
+    let system = super::build_system_prompt("base instructions", &input)
+        .expect("system prompt should include base and developer instructions");
+    assert!(system.contains("base instructions"));
+    assert!(system.contains("<collaboration_mode>Plan Mode rules</collaboration_mode>"));
+
+    let messages = super::build_chat_messages(&input, &deepseek_chat_behavior());
+    assert_eq!(
+        messages,
+        vec![json!({
+            "role": "user",
+            "content": "Build a website",
+        })]
+    );
 }
 
 #[test]
@@ -343,6 +382,95 @@ fn streaming_chat_completions_accumulates_reasoning_text_and_tool_calls() {
         mapped.token_usage.as_ref().map(|usage| usage.total_tokens),
         Some(5)
     );
+}
+
+#[test]
+fn streaming_chat_completions_emits_tool_argument_deltas() {
+    let behavior = deepseek_chat_behavior();
+    let mappings = super::ToolMappings::default();
+    let mut state = super::StreamingChatCompletionsState::default();
+
+    let update = super::apply_streaming_chat_completions_chunk(
+        &mut state,
+        &json!({
+            "id": "chatcmpl-stream",
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "exec_command",
+                            "arguments": "{\"cmd\":"
+                        }
+                    }]
+                }
+            }]
+        }),
+        &behavior,
+    );
+    let events = super::collect_streaming_chat_tool_call_events(
+        &mut state,
+        &mappings,
+        &update.tool_call_indexes,
+    );
+    assert_eq!(events.len(), 2);
+    match &events[0] {
+        ResponseEvent::OutputItemAdded(ResponseItem::FunctionCall {
+            name,
+            namespace,
+            arguments,
+            call_id,
+            ..
+        }) => {
+            assert_eq!(name, "exec_command");
+            assert_eq!(namespace, &None);
+            assert_eq!(arguments, "");
+            assert_eq!(call_id, "call_1");
+        }
+        other => panic!("expected function call item start, got {other:?}"),
+    }
+    match &events[1] {
+        ResponseEvent::ToolCallInputDelta {
+            item_id,
+            call_id,
+            delta,
+        } => {
+            assert_eq!(item_id, "call_1");
+            assert_eq!(call_id.as_deref(), Some("call_1"));
+            assert_eq!(delta, "{\"cmd\":");
+        }
+        other => panic!("expected tool input delta, got {other:?}"),
+    }
+
+    let update = super::apply_streaming_chat_completions_chunk(
+        &mut state,
+        &json!({
+            "id": "chatcmpl-stream",
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "function": {
+                            "arguments": "\"pwd\"}"
+                        }
+                    }]
+                }
+            }]
+        }),
+        &behavior,
+    );
+    let events = super::collect_streaming_chat_tool_call_events(
+        &mut state,
+        &mappings,
+        &update.tool_call_indexes,
+    );
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ResponseEvent::ToolCallInputDelta { delta, .. } => assert_eq!(delta, "\"pwd\"}"),
+        other => panic!("expected second tool input delta, got {other:?}"),
+    }
 }
 
 #[test]

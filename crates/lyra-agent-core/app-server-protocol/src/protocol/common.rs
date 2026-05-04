@@ -1111,6 +1111,7 @@ server_notification_definitions! {
     TurnDiffUpdated => "turn/diff/updated" (v2::TurnDiffUpdatedNotification),
     TurnPlanUpdated => "turn/plan/updated" (v2::TurnPlanUpdatedNotification),
     ItemStarted => "item/started" (v2::ItemStartedNotification),
+    ItemUpdated => "item/updated" (v2::ItemUpdatedNotification),
     ItemAutoApprovalReviewStarted => "item/autoApprovalReview/started" (v2::ItemAutoApprovalReviewStartedNotification),
     ItemAutoApprovalReviewCompleted => "item/autoApprovalReview/completed" (v2::ItemAutoApprovalReviewCompletedNotification),
     ItemCompleted => "item/completed" (v2::ItemCompletedNotification),

@@ -1,0 +1,175 @@
+{
+  "bundleVersion": "aria2-1.37.0-conda-forge-darwin-x64",
+  "target": "darwin-x64",
+  "binary": "bin/aria2c",
+  "source": "conda-forge",
+  "packages": [
+    "aria2-1.37.0-hb6a4411_4.conda",
+    "c-ares-1.34.6-hb5e19a0_0.conda",
+    "ca-certificates-2025.1.31-h8857fd0_0.conda",
+    "gmp-6.3.0-hf036a51_2.conda",
+    "icu-78.3-h25d91c4_0.conda",
+    "libcxx-22.1.4-h19cb2f5_0.conda",
+    "libiconv-1.18-h57a12c2_2.conda",
+    "liblzma-5.8.3-hbb4bfdb_0.conda",
+    "libsqlite-3.53.0-h8f8c405_0.conda",
+    "libssh2-1.11.1-hed3591d_0.conda",
+    "libxml2-2.15.3-h0712280_0.conda",
+    "libxml2-16-2.15.3-h0d7f165_0.conda",
+    "libzlib-1.3.2-hbb4bfdb_2.conda",
+    "openssl-3.6.2-hc881268_0.conda"
+  ],
+  "files": [
+    {
+      "path": "bin/aria2c",
+      "sha256": "1f204230f0743a7a88a2f144ac6c4e8da3ae021da098a5ebfcd8ea426d5584dc",
+      "executable": true
+    },
+    {
+      "path": "etc/conda/activate.d/libxml2-split_activate.sh",
+      "sha256": "631478a9cfbd337b86ee1df94497c21821cd561312c94892d156e43f499cf5c4"
+    },
+    {
+      "path": "lib/icu/78.3/Makefile.inc",
+      "sha256": "1cfb61835fe2953cd80f4b9a7d5d197c67c41ec9dc7ca04e5e3751195f7687fe"
+    },
+    {
+      "path": "lib/icu/78.3/pkgdata.inc",
+      "sha256": "255229a1e1673ac6d60c3e9bb543958757ef43b842dce1ed11899a9ca6761201"
+    },
+    {
+      "path": "lib/libaria2.0.dylib",
+      "sha256": "48fcb13e87e87821c4757d4f7024d2bd8c40b4ca81171e38292ae509c0dda41b",
+      "executable": true
+    },
+    {
+      "path": "lib/libc++.1.0.dylib",
+      "sha256": "fe7e793642cac14be2b674d4484676e6545ae7771ca8a1e77b8778a3b1f9fc7c",
+      "executable": true
+    },
+    {
+      "path": "lib/libcares.2.19.5.dylib",
+      "sha256": "e028e8bc6d527c0d00d76840e8dfd4687690c974f0e624c647eadd9293383b36",
+      "executable": true
+    },
+    {
+      "path": "lib/libcharset.1.dylib",
+      "sha256": "e240eaf3d3073ca3058ed43c2deb21b7f87681630a568bdd9f4f90da18a6f0fd",
+      "executable": true
+    },
+    {
+      "path": "lib/libcrypto.3.dylib",
+      "sha256": "dbffac3b57d0c42bc9a38b05fea69d6c01196a19787aac48f535da61bc72e4f7",
+      "executable": true
+    },
+    {
+      "path": "lib/libgmp.10.dylib",
+      "sha256": "c1107c0c3e0cdfcaace7d4327151184c19be6b3f3730165145c840011bc0a65a",
+      "executable": true
+    },
+    {
+      "path": "lib/libgmpxx.4.dylib",
+      "sha256": "1bb98a925f44686e22018f3262f508d2f5b013a2bbedd216e3fe4bad0680c6cb",
+      "executable": true
+    },
+    {
+      "path": "lib/libiconv.2.dylib",
+      "sha256": "93067c47b029bac5d727c04de1392e4fcb5fb69ca616eefdde9e0954ff2891f8",
+      "executable": true
+    },
+    {
+      "path": "lib/libicudata.78.3.dylib",
+      "sha256": "cad679fd63bef0562314ba0aa86f3fa2dcad20ea28f44c0f6fe2c2b303220b48",
+      "executable": true
+    },
+    {
+      "path": "lib/libicui18n.78.3.dylib",
+      "sha256": "6fd5f533676897438b5022c44c5edfda1d62e70eadee7a6dbb9006fd230c6076",
+      "executable": true
+    },
+    {
+      "path": "lib/libicuio.78.3.dylib",
+      "sha256": "252e3e58e6ba487a3bff9685f27fe42b5d4da33fc5756be570e561599aa7555f",
+      "executable": true
+    },
+    {
+      "path": "lib/libicutest.78.3.dylib",
+      "sha256": "1af49e8863bfc170d041d6fce990391566651981f3b34c0c82d6f237b290db52",
+      "executable": true
+    },
+    {
+      "path": "lib/libicutu.78.3.dylib",
+      "sha256": "9e868d1992fa42643ec84b1a415223eac461264b8047747048f304187d47779b",
+      "executable": true
+    },
+    {
+      "path": "lib/libicuuc.78.3.dylib",
+      "sha256": "e7273b65bd06a9effc60540a2522b9b9fc5dcb863723f1c4356f980379e235b0",
+      "executable": true
+    },
+    {
+      "path": "lib/liblzma.5.dylib",
+      "sha256": "bc2ea21cc660603d3add86d7369d8a62b4037b8c3044bcba67379d45b7e85cd5",
+      "executable": true
+    },
+    {
+      "path": "lib/libsqlite3.3.53.0.dylib",
+      "sha256": "67d8cb8f3ccd82ca2ae3b396c9747daa4370204917718bfec581b3c403327126",
+      "executable": true
+    },
+    {
+      "path": "lib/libssh2.1.0.1.dylib",
+      "sha256": "494387539d814b002840a7a0b1f3c708788d3f1067c1d4690fe1cbeb7fb0223b",
+      "executable": true
+    },
+    {
+      "path": "lib/libssl.3.dylib",
+      "sha256": "b3e04c7a5b40c64dafeb04f605a43a41336d4e0ffaa763948da9d74879407bf0",
+      "executable": true
+    },
+    {
+      "path": "lib/libxml2.16.dylib",
+      "sha256": "8aacaa3b02de0ea1fc6b23c46ab10a507ef20d7075e58f7e9da97bfeb99c7970",
+      "executable": true
+    },
+    {
+      "path": "lib/libz.1.3.2.dylib",
+      "sha256": "907e0f98b2d9fc4bad055e2c65ae667d42b34980812972ddef01e564a4232558",
+      "executable": true
+    },
+    {
+      "path": "ssl/cacert.pem",
+      "sha256": "c55b21f907f7f86d48add093552fb5651749ff5f860508ccbb423d6c1fbd80c7"
+    },
+    {
+      "path": "ssl/certs/.keep",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "ssl/ct_log_list.cnf",
+      "sha256": "f1c1803d13d1d0b755b13b23c28bd4e20e07baf9f2b744c9337ba5866aa0ec3b"
+    },
+    {
+      "path": "ssl/ct_log_list.cnf.dist",
+      "sha256": "f1c1803d13d1d0b755b13b23c28bd4e20e07baf9f2b744c9337ba5866aa0ec3b"
+    },
+    {
+      "path": "ssl/misc/CA.pl",
+      "sha256": "68dc4fbb6c2cdd94bdf7e8dc24659d6d890ce7e71f8200282d7555ad227265fd",
+      "executable": true
+    },
+    {
+      "path": "ssl/misc/tsget.pl",
+      "sha256": "3a3f266cea40882157d4586132c7484bfcced52d169ab16f71c81a1cc48b383e",
+      "executable": true
+    },
+    {
+      "path": "ssl/openssl.cnf",
+      "sha256": "a65a2cb9f4ee8ffdc7ef4f0ac600c0bdafb95b7b1ab457188ac610a62f5ad6b3"
+    },
+    {
+      "path": "ssl/openssl.cnf.dist",
+      "sha256": "a65a2cb9f4ee8ffdc7ef4f0ac600c0bdafb95b7b1ab457188ac610a62f5ad6b3"
+    }
+  ]
+}

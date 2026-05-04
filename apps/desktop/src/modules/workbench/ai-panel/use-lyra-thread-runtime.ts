@@ -127,7 +127,7 @@ export type LyraThreadRuntimeActions = {
   readonly setFollowEnabled: (enabled: boolean) => void;
   readonly setActiveInteractionId: (interactionId: string | null) => void;
   readonly respondToCommandApproval: (response: CommandApprovalResponse) => Promise<void>;
-  readonly respondToPlanQuestion: (
+  readonly respondToAgentQuestion: (
     payload: { readonly answers: Record<string, unknown>; readonly note?: string }
   ) => Promise<void>;
   readonly respondToMcpElicitation: (
@@ -193,6 +193,7 @@ export type ResolvePlanApprovalInput = {
   readonly feedback?: string | undefined;
   readonly annotations?: readonly PlanAnnotation[] | undefined;
   readonly artifactSnapshot?: AgentPlanArtifact | undefined;
+  readonly options?: RuntimeThreadOptions | undefined;
 };
 
 type UseLyraThreadRuntimeOptions = {
@@ -411,6 +412,90 @@ const readCreatedFromChanges = (value: unknown): boolean | undefined => {
   const firstChange = value.changes.find(isRecord);
   const kind = isRecord(firstChange?.kind) ? readString(firstChange.kind.type) : null;
   return kind === null ? undefined : kind === "add";
+};
+
+type LiveFileChangePreview = {
+  readonly filePath: string;
+  readonly contentSnapshot: string;
+  readonly firstChangedLine?: number;
+  readonly created?: boolean;
+  readonly addedLines?: number;
+  readonly removedLines?: number;
+};
+
+const countTextLines = (text: string): number =>
+  text.length === 0 ? 0 : text.split(/\r?\n/).filter((line, index, lines) =>
+    index < lines.length - 1 || line.length > 0
+  ).length;
+
+const countChangedLinesFromUnifiedDiff = (
+  diff: string
+): { readonly addedLines: number; readonly removedLines: number } => {
+  let addedLines = 0;
+  let removedLines = 0;
+  for (const line of diff.split(/\r?\n/)) {
+    if (line.startsWith("+++") || line.startsWith("---")) {
+      continue;
+    }
+    if (line.startsWith("+")) {
+      addedLines += 1;
+      continue;
+    }
+    if (line.startsWith("-")) {
+      removedLines += 1;
+    }
+  }
+  return { addedLines, removedLines };
+};
+
+const readLiveFileChangePreview = (value: unknown): LiveFileChangePreview | null => {
+  if (!isRecord(value) || !Array.isArray(value.changes)) {
+    return null;
+  }
+  for (const change of value.changes) {
+    if (!isRecord(change)) {
+      continue;
+    }
+    const filePath = readPathLike(change);
+    const kind = isRecord(change.kind) ? readString(change.kind.type) : null;
+    const diff = readRawString(change.diff);
+    if (filePath === null || kind === null || diff === null) {
+      continue;
+    }
+    const firstChangedLine = kind === "update" ? readFirstChangeLineFromDiff(diff) : 1;
+    if (kind === "add") {
+      return {
+        filePath,
+        contentSnapshot: diff,
+        firstChangedLine: 1,
+        created: true,
+        addedLines: countTextLines(diff),
+        removedLines: 0,
+      };
+    }
+    if (kind === "delete") {
+      return {
+        filePath,
+        contentSnapshot: "",
+        firstChangedLine: 1,
+        created: false,
+        addedLines: 0,
+        removedLines: countTextLines(diff),
+      };
+    }
+    if (kind === "update") {
+      const counts = countChangedLinesFromUnifiedDiff(diff);
+      return {
+        filePath,
+        contentSnapshot: diff,
+        ...(firstChangedLine === null ? {} : { firstChangedLine }),
+        created: false,
+        addedLines: counts.addedLines,
+        removedLines: counts.removedLines,
+      };
+    }
+  }
+  return null;
 };
 
 const readOptionalLine = (...values: readonly unknown[]): number | undefined => {
@@ -985,28 +1070,6 @@ const planApprovalPayload = (
   artifact,
 });
 
-const planApprovalInteraction = (
-  threadId: string,
-  turnId: string,
-  artifact: AgentPlanArtifact,
-  timestamp: number
-): AgentPendingInteraction => {
-  const interactionId = `plan:${turnId}:${artifact.planId}`;
-  return {
-    id: interactionId,
-    sessionId: threadId,
-    turnId,
-    kind: "plan_approval",
-    status: "pending",
-    payload: {
-      agentCoreMethod: "turn/planApproval/resolve",
-      raw: planApprovalPayload(turnId, artifact),
-    },
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-};
-
 const toolCallFollowTarget = (
   call: AgentToolCall
 ): { readonly path: string; readonly line?: number } | null => {
@@ -1057,8 +1120,11 @@ const requestKindFromMethod = (method: string): AgentPendingInteraction["kind"] 
   if (method === "item/permissions/requestApproval") {
     return "permissions_approval";
   }
+  if (method === "item/agentQuestion/request") {
+    return "agent_question";
+  }
   if (method === "item/tool/requestUserInput") {
-    return "tool_user_input";
+    return "agent_question";
   }
   if (method === "mcpServer/elicitation/request") {
     return "mcp_elicitation";
@@ -1591,6 +1657,7 @@ export const useLyraThreadRuntime = ({
   const threadReadRequestedForIdRef = useRef<Set<string>>(new Set());
   const capabilityWriteMetadataByCallRef = useRef<Record<string, WriteStreamCallMetadata>>({});
   const fileChangeWriteMetadataByCallRef = useRef<Record<string, WriteStreamCallMetadata>>({});
+  const fileChangeSnapshotByCallRef = useRef<Record<string, string>>({});
   const openedDiffTargetsRef = useRef<Set<string>>(new Set());
 
   const rawThreadTabs = tabState.tabs;
@@ -1741,19 +1808,47 @@ export const useLyraThreadRuntime = ({
     };
 
     if (call.status === "running") {
+      const previousMetadata = fileChangeWriteMetadataByCallRef.current[call.id];
       fileChangeWriteMetadataByCallRef.current[call.id] = metadata;
-      onWriteStreamEvent({
-        kind: "started",
-        sessionId: call.sessionId,
-        turnId: call.turnId,
-        toolCallId: call.id,
-        toolName: call.toolName,
-        filePath: target.path,
-        timestamp: call.startedAt,
-        reveal,
-        ...(created === undefined ? {} : { created }),
-        ...(baselineContent === undefined ? {} : { baselineContent }),
-      });
+      if (previousMetadata === undefined) {
+        onWriteStreamEvent({
+          kind: "started",
+          sessionId: call.sessionId,
+          turnId: call.turnId,
+          toolCallId: call.id,
+          toolName: call.toolName,
+          filePath: target.path,
+          timestamp: call.startedAt,
+          reveal,
+          ...(created === undefined ? {} : { created }),
+          ...(baselineContent === undefined ? {} : { baselineContent }),
+        });
+      }
+      const preview = readLiveFileChangePreview(output) ?? readLiveFileChangePreview(input);
+      if (
+        preview !== null
+        && (preview.contentSnapshot.length > 0 || (preview.removedLines ?? 0) > 0)
+      ) {
+        const snapshotKey = `${preview.filePath}\0${preview.contentSnapshot}`;
+        if (fileChangeSnapshotByCallRef.current[call.id] !== snapshotKey) {
+          fileChangeSnapshotByCallRef.current[call.id] = snapshotKey;
+          onWriteStreamEvent({
+            kind: "delta",
+            sessionId: call.sessionId,
+            turnId: call.turnId,
+            toolCallId: call.id,
+            toolName: call.toolName,
+            filePath: preview.filePath,
+            timestamp: Date.now(),
+            reveal,
+            chunkText: preview.contentSnapshot,
+            contentSnapshot: preview.contentSnapshot,
+            ...(preview.firstChangedLine === undefined ? {} : { firstChangedLine: preview.firstChangedLine }),
+            bytesWritten: preview.contentSnapshot.length,
+            bytesTotal: preview.contentSnapshot.length,
+          });
+        }
+      }
       return;
     }
 
@@ -1776,6 +1871,7 @@ export const useLyraThreadRuntime = ({
       ...(call.errorMessage === undefined ? {} : { errorMessage: call.errorMessage }),
     });
     delete fileChangeWriteMetadataByCallRef.current[call.id];
+    delete fileChangeSnapshotByCallRef.current[call.id];
   }, [onWriteStreamEvent, runtimeByKeyRef]);
 
   const emitFileChangeOutputDeltaInWorkspace = useCallback((
@@ -2764,7 +2860,7 @@ export const useLyraThreadRuntime = ({
     await resolveInteraction(interaction.id, { decision: commandDecisionToAgentCore(response.decision) });
   }, [pendingInteractions, rejectInteraction, resolveInteraction]);
 
-  const respondToPlanQuestion = useCallback(async (
+  const respondToAgentQuestion = useCallback(async (
     payload: { readonly answers: Record<string, unknown>; readonly note?: string }
   ): Promise<void> => {
     const activeId = activeInteractionId ?? pendingInteractions[0]?.id ?? null;
@@ -2814,6 +2910,7 @@ export const useLyraThreadRuntime = ({
     feedback,
     annotations,
     artifactSnapshot,
+    options,
   }: ResolvePlanApprovalInput): Promise<void> => {
     if (lyraApi === null) {
       return;
@@ -2829,19 +2926,38 @@ export const useLyraThreadRuntime = ({
       return;
     }
     const trimmedFeedback = feedback?.trim() ?? "";
+    const resolvedArtifactSnapshot =
+      artifactSnapshot ?? activeBucket.planByTurn[normalizedPlanTurnId]?.artifact;
+    if (decision !== "reject" && resolvedArtifactSnapshot === undefined) {
+      return;
+    }
     setIsInteractionSubmitting(true);
     try {
-      const response = await lyraApi.request<{ turn?: unknown }>(
-        createRequestPayload("turn/planApproval/resolve", {
-          threadId: normalizedThreadId,
-          planTurnId: normalizedPlanTurnId,
-          planId: normalizedPlanId,
-          decision,
-          annotations: annotations ?? [],
-          ...(trimmedFeedback.length === 0 ? {} : { feedback: trimmedFeedback }),
-          ...(artifactSnapshot === undefined ? {} : { artifactSnapshot }),
-        })
-      );
+      const reviewAction =
+        decision === "approve_and_implement"
+          ? "approve_and_execute"
+          : decision === "keep_planning"
+            ? "revision_request"
+            : "reject";
+      const shouldStartTurn = decision !== "reject" && resolvedArtifactSnapshot !== undefined;
+      const response = shouldStartTurn
+        ? await lyraApi.request<{ turn?: unknown }>(
+            createRequestPayload("turn/start", {
+              threadId: normalizedThreadId,
+              input: [],
+              planReviewContext: {
+                action: reviewAction,
+                planTurnId: normalizedPlanTurnId,
+                planId: normalizedPlanId,
+                annotations: annotations ?? [],
+                ...(trimmedFeedback.length === 0 ? {} : { overallFeedback: trimmedFeedback }),
+                artifactSnapshot: resolvedArtifactSnapshot,
+              },
+              ...turnPermissionRequestPart(options ?? {}),
+              ...collaborationModeRequestPart(options ?? {}),
+            })
+          )
+        : {};
       const nextTurnId = isRecord(response.turn) ? readString(response.turn.id) : null;
       const planPhase =
         decision === "approve_and_implement"
@@ -2939,7 +3055,7 @@ export const useLyraThreadRuntime = ({
     } finally {
       setIsInteractionSubmitting(false);
     }
-  }, [lyraApi, patchRuntimeBucket]);
+  }, [activeBucket.planByTurn, lyraApi, patchRuntimeBucket]);
 
   useEffect(() => {
     void loadThreads();
@@ -2968,47 +3084,6 @@ export const useLyraThreadRuntime = ({
       void loadThread(activeThreadId);
     }
   }, [activeThread, activeThreadId, forgetThread, hasLoadedThreadList, loadThread]);
-
-  useEffect(() => {
-    if (activeThreadId === null || latestPlanTurnId === null) {
-      return;
-    }
-    const latestPlan = activeBucket.planByTurn[latestPlanTurnId];
-    if (latestPlan === undefined) {
-      return;
-    }
-    if (latestPlan.artifact.status !== "proposed") {
-      return;
-    }
-    const interactionId = `plan:${latestPlanTurnId}:${latestPlan.artifact.planId}`;
-    if (pendingInteractions.some((interaction) => interaction.id === interactionId)) {
-      return;
-    }
-    const latestEvent = activeBucket.latestRuntimeEventByTurn[latestPlanTurnId] ?? null;
-    const planTurn = activeThread?.turns.find((turn) => turn.id === latestPlanTurnId) ?? null;
-    const shouldRestorePendingApproval =
-      latestEvent?.phase === "plan_approval_requested"
-      || (latestEvent === null && normalizeStatus(planTurn?.status) === "waiting");
-    if (!shouldRestorePendingApproval) {
-      return;
-    }
-    const interaction = planApprovalInteraction(
-      activeThreadId,
-      latestPlanTurnId,
-      latestPlan.artifact,
-      Date.now()
-    );
-    setPendingInteractions((current) => mergePendingInteractionLists(current, [interaction]));
-    setActiveInteractionId((current) => current ?? interaction.id);
-    setIsInteractionSubmitting(false);
-  }, [
-    activeBucket.latestRuntimeEventByTurn,
-    activeBucket.planByTurn,
-    activeThread,
-    activeThreadId,
-    latestPlanTurnId,
-    pendingInteractions,
-  ]);
 
   useEffect(() => {
     if (lyraApi === null) {
@@ -3406,7 +3481,7 @@ export const useLyraThreadRuntime = ({
         }
         return;
       }
-      if (method === "item/started" || method === "item/completed") {
+      if (method === "item/started" || method === "item/updated" || method === "item/completed") {
         if (method === "item/completed") {
           flushQueuedRuntimeBucketPatches();
         }
@@ -3457,18 +3532,12 @@ export const useLyraThreadRuntime = ({
                     [turnId]: toRuntimeEvent({
                       sessionId: threadId,
                       turnId,
-                      phase: isProposedPlan ? "plan_approval_requested" : "plan_draft_recorded",
+                      phase: isProposedPlan ? "plan_proposed" : "plan_draft_recorded",
                       payload: planApprovalPayload(turnId, artifact),
                     }),
                   },
                 };
               });
-              if (isProposedPlan) {
-                const interaction = planApprovalInteraction(threadId, turnId, artifact, updatedAt);
-                setPendingInteractions((current) => mergePendingInteractionLists(current, [interaction]));
-                setActiveInteractionId((current) => current ?? interaction.id);
-                setIsInteractionSubmitting(false);
-              }
             }
           }
           const thread = threadByIdRef.current[threadId] ?? {
@@ -3481,7 +3550,7 @@ export const useLyraThreadRuntime = ({
           };
           const turn = findThreadTurn(thread, turnId) ?? {
             id: turnId,
-            status: method === "item/started" ? "inProgress" : "completed",
+            status: method === "item/completed" ? "completed" : "inProgress",
             collaborationMode: "default",
             items: [],
           };
@@ -3512,100 +3581,34 @@ export const useLyraThreadRuntime = ({
               }
             }
           }
-          const bucketBeforeCompletion = runtimeByKeyRef.current[threadId] ?? null;
-          const resolvedTurnIdForApproval = turnId ?? bucketBeforeCompletion?.streamingTurnId ?? null;
-          const turnStatusForApproval = normalizeStatus(turn?.status);
-          const existingPlanForApproval = resolvedTurnIdForApproval === null
-            ? undefined
-            : bucketBeforeCompletion?.planByTurn[resolvedTurnIdForApproval];
-          const currentLatestEventForApproval = resolvedTurnIdForApproval === null
-            ? null
-            : bucketBeforeCompletion?.latestRuntimeEventByTurn[resolvedTurnIdForApproval] ?? null;
-          const shouldEnqueuePlanApproval =
-            resolvedTurnIdForApproval !== null
-            && turnStatusForApproval !== "failed"
-            && existingPlanForApproval !== undefined
-            && existingPlanForApproval.artifact.status === "proposed"
-            && (
-              currentLatestEventForApproval?.phase === "plan_approval_requested"
-              || turnStatusForApproval === "waiting"
-            );
-          const pendingPlanApprovalInteraction = shouldEnqueuePlanApproval && resolvedTurnIdForApproval !== null
-            ? planApprovalInteraction(
-                threadId,
-                resolvedTurnIdForApproval,
-                existingPlanForApproval.artifact,
-                Date.now()
-              )
-            : null;
           patchRuntimeBucket(threadId, (current) => {
             const resolvedTurnId = turnId ?? current.streamingTurnId;
-            const currentLatestEvent = resolvedTurnId === null
-              ? null
-              : current.latestRuntimeEventByTurn[resolvedTurnId] ?? null;
             const turnStatus = normalizeStatus(turn?.status);
-            const existingPlan = resolvedTurnId === null
-              ? undefined
-              : current.planByTurn[resolvedTurnId];
-            const keepPlanApprovalWaiting =
-              resolvedTurnId !== null
-              && existingPlan !== undefined
-              && existingPlan.artifact.status === "proposed"
-              && turnStatus !== "failed"
-              && (
-                turnStatus === "waiting"
-                || currentLatestEvent?.phase === "plan_approval_requested"
-              );
-            const planApprovalEvent =
-              keepPlanApprovalWaiting && resolvedTurnId !== null && existingPlan !== undefined
-                ? currentLatestEvent?.phase === "plan_approval_requested"
-                  ? currentLatestEvent
-                  : toRuntimeEvent({
-                      sessionId: threadId,
-                      turnId: resolvedTurnId,
-                      phase: "plan_approval_requested",
-                      payload: planApprovalPayload(resolvedTurnId, existingPlan.artifact),
-                    })
-                : null;
             return {
               ...current,
               isSending: false,
               isStreamActive: false,
               streamingAssistantText: "",
-              streamingTurnId: keepPlanApprovalWaiting ? resolvedTurnId : null,
-              finalizingTurnId: keepPlanApprovalWaiting ? null : resolvedTurnId,
+              streamingTurnId: null,
+              finalizingTurnId: resolvedTurnId,
               planByTurn: current.planByTurn,
               latestRuntimeEventByTurn: resolvedTurnId === null
                 ? current.latestRuntimeEventByTurn
                 : {
                     ...current.latestRuntimeEventByTurn,
-                    [resolvedTurnId]: keepPlanApprovalWaiting
-                      ? planApprovalEvent ?? toRuntimeEvent({
-                          sessionId: threadId,
-                          turnId: resolvedTurnId,
-                          phase: "plan_approval_requested",
-                          payload: params,
-                        })
-                      : toRuntimeEvent({
-                          sessionId: threadId,
-                          turnId: resolvedTurnId,
-                          phase: turnStatus === "failed"
-                            ? "failed"
-                            : turnStatus === "waiting"
-                              ? "paused"
-                              : "completed",
-                          payload: params,
-                        }),
+                    [resolvedTurnId]: toRuntimeEvent({
+                      sessionId: threadId,
+                      turnId: resolvedTurnId,
+                      phase: turnStatus === "failed"
+                        ? "failed"
+                        : turnStatus === "waiting"
+                          ? "paused"
+                          : "completed",
+                      payload: params,
+                    }),
                   },
             };
           });
-          if (pendingPlanApprovalInteraction !== null) {
-            setPendingInteractions((current) =>
-              mergePendingInteractionLists(current, [pendingPlanApprovalInteraction])
-            );
-            setActiveInteractionId((current) => current ?? pendingPlanApprovalInteraction.id);
-            setIsInteractionSubmitting(false);
-          }
           void loadThread(threadId);
           void loadThreads();
         }
@@ -3735,7 +3738,7 @@ export const useLyraThreadRuntime = ({
       setFollowEnabled,
       setActiveInteractionId,
       respondToCommandApproval,
-      respondToPlanQuestion,
+      respondToAgentQuestion,
       respondToMcpElicitation,
       resolvePlanApproval,
     },

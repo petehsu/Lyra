@@ -105,6 +105,7 @@ use lyra_protocol::request_permissions::RequestPermissionsEvent;
 use lyra_protocol::request_permissions::RequestPermissionsResponse;
 use lyra_protocol::request_user_input::RequestUserInputArgs;
 use lyra_protocol::request_user_input::RequestUserInputResponse;
+use lyra_protocol::request_user_input::RequestUserInputSource;
 use lyra_rmcp_client::ElicitationResponse;
 use lyra_rollout::RolloutConfig;
 use lyra_rollout::state_db;
@@ -1289,6 +1290,16 @@ impl Session {
 
     /// Persist the event to rollout and send it to clients.
     pub(crate) async fn send_event(&self, turn_context: &TurnContext, msg: EventMsg) {
+        self.send_event_with_id(turn_context.sub_id.clone(), turn_context, msg)
+            .await;
+    }
+
+    pub(crate) async fn send_event_with_id(
+        &self,
+        event_id: String,
+        turn_context: &TurnContext,
+        msg: EventMsg,
+    ) {
         let runtime_source = msg.clone();
         self.services
             .rollout_thread_trace
@@ -1296,10 +1307,7 @@ impl Session {
         self.services
             .rollout_thread_trace
             .record_tool_call_event(turn_context.sub_id.clone(), &runtime_source);
-        let event = Event {
-            id: turn_context.sub_id.clone(),
-            msg,
-        };
+        let event = Event { id: event_id, msg };
         self.send_event_raw(event).await;
         self.maybe_notify_parent_of_terminal_turn(turn_context, &runtime_source)
             .await;
@@ -1716,6 +1724,20 @@ impl Session {
         // Add the tx_approve callback to the map before sending the request.
         let (tx_approve, rx_approve) = oneshot::channel();
         let approval_id = call_id.clone();
+        let queued_decision = {
+            let mut active = self.active_turn.lock().await;
+            match active.as_mut() {
+                Some(at) => {
+                    let mut ts = at.turn_state.lock().await;
+                    ts.remove_queued_approval(&approval_id)
+                }
+                None => None,
+            }
+        };
+        if let Some(decision) = queued_decision {
+            tx_approve.send(decision).ok();
+            return rx_approve;
+        }
         let prev_entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
@@ -1840,17 +1862,32 @@ impl Session {
         call_id: String,
         args: RequestUserInputArgs,
     ) -> Option<RequestUserInputResponse> {
+        self.request_user_input_with_source(turn_context, call_id, args, None)
+            .await
+    }
+
+    pub async fn request_user_input_with_source(
+        &self,
+        turn_context: &TurnContext,
+        call_id: String,
+        args: RequestUserInputArgs,
+        source_override: Option<RequestUserInputSource>,
+    ) -> Option<RequestUserInputResponse> {
         self.mark_request_user_input_called(&turn_context.sub_id)
             .await;
-        let sub_id = turn_context.sub_id.clone();
+        let pending_id = if source_override.is_some() {
+            format!("{}:{call_id}", turn_context.sub_id)
+        } else {
+            turn_context.sub_id.clone()
+        };
         let (tx_response, rx_response) = oneshot::channel();
-        let event_id = sub_id.clone();
+        let event_id = pending_id.clone();
         let prev_entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_user_input(sub_id, tx_response)
+                    ts.insert_pending_user_input(pending_id.clone(), tx_response)
                 }
                 None => None,
             }
@@ -1862,9 +1899,15 @@ impl Session {
         let event = EventMsg::RequestUserInput(RequestUserInputEvent {
             call_id,
             turn_id: turn_context.sub_id.clone(),
+            reason: args.reason,
+            source: source_override.unwrap_or_else(|| RequestUserInputSource {
+                agent_thread_id: Some(self.conversation_id.to_string()),
+                agent_nickname: turn_context.session_source.get_nickname(),
+                agent_role: turn_context.session_source.get_agent_role(),
+            }),
             questions: args.questions,
         });
-        self.send_event(turn_context, event).await;
+        self.send_event_with_id(event_id, turn_context, event).await;
         rx_response.await.ok()
     }
 
@@ -2042,7 +2085,20 @@ impl Session {
                 tx_approve.send(decision).ok();
             }
             None => {
-                warn!("No pending approval found for call_id: {approval_id}");
+                let queued = {
+                    let mut active = self.active_turn.lock().await;
+                    match active.as_mut() {
+                        Some(at) => {
+                            let mut ts = at.turn_state.lock().await;
+                            ts.insert_queued_approval(approval_id.to_string(), decision);
+                            true
+                        }
+                        None => false,
+                    }
+                };
+                if !queued {
+                    warn!("No pending approval found for call_id: {approval_id}");
+                }
             }
         }
     }

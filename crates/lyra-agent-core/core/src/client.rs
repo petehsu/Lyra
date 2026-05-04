@@ -521,6 +521,8 @@ struct StreamingChatToolCall {
     call_id: Option<String>,
     name: String,
     arguments: String,
+    item_started: bool,
+    emitted_arguments_len: usize,
 }
 
 #[derive(Debug, Default)]
@@ -540,6 +542,7 @@ struct StreamingChatCompletionsState {
 struct StreamingChatCompletionsChunkUpdate {
     text_delta: Option<String>,
     reasoning_delta: Option<String>,
+    tool_call_indexes: Vec<usize>,
 }
 
 fn stream_error(message: impl Into<String>) -> LyraErr {
@@ -837,7 +840,7 @@ fn build_system_prompt(base_instructions: &str, input: &[ResponseItem]) -> Optio
     add_system_fragment(&mut fragments, base_instructions);
     for item in input {
         if let ResponseItem::Message { role, content, .. } = item
-            && role == "system"
+            && (role == "system" || role == "developer")
             && let Some(text) = crate::content_items::content_items_to_text(content)
         {
             add_system_fragment(&mut fragments, &text);
@@ -1209,7 +1212,7 @@ fn build_chat_messages(
                 push_pending_chat_reasoning(&mut pending_reasoning, item, behavior);
                 index += 1;
             }
-            ResponseItem::Message { role, .. } if role == "system" => {
+            ResponseItem::Message { role, .. } if role == "system" || role == "developer" => {
                 index += 1;
             }
             ResponseItem::Message { role, content, .. } if role == "user" => {
@@ -1468,7 +1471,7 @@ fn apply_streaming_chat_tool_call_delta(
     state: &mut StreamingChatCompletionsState,
     tool_call: &JsonValue,
     fallback_index: usize,
-) {
+) -> usize {
     let index = tool_call
         .get("index")
         .and_then(JsonValue::as_u64)
@@ -1488,6 +1491,50 @@ fn apply_streaming_chat_tool_call_delta(
             entry.arguments.push_str(arguments);
         }
     }
+    index
+}
+
+fn streaming_chat_tool_call_id(index: usize, call: &StreamingChatToolCall) -> String {
+    call.call_id
+        .clone()
+        .unwrap_or_else(|| format!("chat-tool-call-{}", index + 1))
+}
+
+fn collect_streaming_chat_tool_call_events(
+    state: &mut StreamingChatCompletionsState,
+    mappings: &ToolMappings,
+    indexes: &[usize],
+) -> Vec<ResponseEvent> {
+    let mut events = Vec::new();
+    for index in indexes {
+        let Some(call) = state.tool_calls.get_mut(index) else {
+            continue;
+        };
+        if !call.item_started && !call.name.trim().is_empty() && !call.arguments.is_empty() {
+            call.item_started = true;
+            let call_id = streaming_chat_tool_call_id(*index, call);
+            let (namespace, name) = resolve_canonical_tool_name(mappings, &call.name);
+            events.push(ResponseEvent::OutputItemAdded(ResponseItem::FunctionCall {
+                id: None,
+                name,
+                namespace,
+                arguments: String::new(),
+                call_id,
+            }));
+        }
+        if !call.item_started || call.emitted_arguments_len >= call.arguments.len() {
+            continue;
+        }
+        let call_id = streaming_chat_tool_call_id(*index, call);
+        let delta = call.arguments[call.emitted_arguments_len..].to_string();
+        call.emitted_arguments_len = call.arguments.len();
+        events.push(ResponseEvent::ToolCallInputDelta {
+            item_id: call_id.clone(),
+            call_id: Some(call_id),
+            delta,
+        });
+    }
+    events
 }
 
 fn apply_streaming_chat_completions_chunk(
@@ -1555,7 +1602,11 @@ fn apply_streaming_chat_completions_chunk(
 
         if let Some(tool_calls) = delta.get("tool_calls").and_then(JsonValue::as_array) {
             for (index, tool_call) in tool_calls.iter().enumerate() {
-                apply_streaming_chat_tool_call_delta(state, tool_call, index);
+                update
+                    .tool_call_indexes
+                    .push(apply_streaming_chat_tool_call_delta(
+                        state, tool_call, index,
+                    ));
             }
         }
     }
@@ -1902,6 +1953,16 @@ fn response_stream_from_chat_completions_sse(
                     }
                 }
                 if !send_chat_event(&tx, ResponseEvent::OutputTextDelta(text_delta)).await {
+                    return;
+                }
+            }
+
+            for event in collect_streaming_chat_tool_call_events(
+                &mut state,
+                &mappings,
+                &update.tool_call_indexes,
+            ) {
+                if !send_chat_event(&tx, event).await {
                     return;
                 }
             }

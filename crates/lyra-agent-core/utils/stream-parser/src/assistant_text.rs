@@ -1,4 +1,6 @@
 use crate::CitationStreamParser;
+use crate::InlineHiddenTagParser;
+use crate::InlineTagSpec;
 use crate::StreamTextParser;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -18,15 +20,36 @@ impl AssistantTextChunk {
 #[derive(Debug, Default)]
 pub struct AssistantTextStreamParser {
     citations: CitationStreamParser,
+    plan_tags: Option<InlineHiddenTagParser<AssistantHiddenTag>>,
 }
 
 impl AssistantTextStreamParser {
-    pub fn new(_plan_mode: bool) -> Self {
-        Self::default()
+    pub fn new(plan_mode: bool) -> Self {
+        Self {
+            citations: CitationStreamParser::default(),
+            plan_tags: plan_mode.then(|| {
+                InlineHiddenTagParser::new(vec![
+                    InlineTagSpec {
+                        tag: AssistantHiddenTag::ProposedPlan,
+                        open: "<proposed_plan>",
+                        close: "</proposed_plan>",
+                    },
+                    InlineTagSpec {
+                        tag: AssistantHiddenTag::DraftPlan,
+                        open: "<draft_plan>",
+                        close: "</draft_plan>",
+                    },
+                ])
+            }),
+        }
     }
 
     pub fn push_str(&mut self, chunk: &str) -> AssistantTextChunk {
-        let citation_chunk = self.citations.push_str(chunk);
+        let visible_chunk = match self.plan_tags.as_mut() {
+            Some(parser) => parser.push_str(chunk).visible_text,
+            None => chunk.to_string(),
+        };
+        let citation_chunk = self.citations.push_str(&visible_chunk);
         AssistantTextChunk {
             visible_text: citation_chunk.visible_text,
             citations: citation_chunk.extracted,
@@ -34,12 +57,28 @@ impl AssistantTextStreamParser {
     }
 
     pub fn finish(&mut self) -> AssistantTextChunk {
+        let mut citations = Vec::new();
+        let mut visible_text = String::new();
+        if let Some(parser) = self.plan_tags.as_mut() {
+            let plan_tail = parser.finish();
+            let citation_tail = self.citations.push_str(&plan_tail.visible_text);
+            visible_text.push_str(&citation_tail.visible_text);
+            citations.extend(citation_tail.extracted);
+        }
         let citation_chunk = self.citations.finish();
+        visible_text.push_str(&citation_chunk.visible_text);
+        citations.extend(citation_chunk.extracted);
         AssistantTextChunk {
-            visible_text: citation_chunk.visible_text,
-            citations: citation_chunk.extracted,
+            visible_text,
+            citations,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AssistantHiddenTag {
+    ProposedPlan,
+    DraftPlan,
 }
 
 #[cfg(test)]
@@ -64,7 +103,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_tags_are_plain_visible_text() {
+    fn plan_tags_are_hidden_in_plan_mode() {
         let mut parser = AssistantTextStreamParser::new(/*plan_mode*/ true);
 
         let seeded = parser.push_str("Intro\n<draft");
@@ -72,10 +111,22 @@ mod tests {
         let tail = parser.push_str("</draft_plan>\nOutro");
         let finish = parser.finish();
 
-        assert_eq!(seeded.visible_text, "Intro\n<draft");
-        assert_eq!(parsed.visible_text, "_plan>\n- step \n");
-        assert_eq!(parsed.citations, vec!["doc".to_string()]);
-        assert_eq!(tail.visible_text, "</draft_plan>\nOutro");
+        assert_eq!(seeded.visible_text, "Intro\n");
+        assert_eq!(parsed.visible_text, "");
+        assert_eq!(parsed.citations, Vec::<String>::new());
+        assert_eq!(tail.visible_text, "\nOutro");
         assert!(finish.is_empty());
+    }
+
+    #[test]
+    fn plan_tags_are_plain_visible_text_outside_plan_mode() {
+        let mut parser = AssistantTextStreamParser::new(/*plan_mode*/ false);
+
+        let parsed = parser.push_str("<proposed_plan>\n- step\n</proposed_plan>");
+
+        assert_eq!(
+            parsed.visible_text,
+            "<proposed_plan>\n- step\n</proposed_plan>"
+        );
     }
 }

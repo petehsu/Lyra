@@ -17,6 +17,8 @@ members = [
   "crates/lyra-skills-napi",
   "crates/lyra-docs-core",
   "crates/lyra-docs-napi",
+  "crates/lyra-download-core",
+  "crates/lyra-download-napi",
   "crates/lyra-mcp-core",
   "crates/lyra-agent-core/analytics",
   "crates/lyra-agent-core/ansi-escape",
@@ -130,6 +132,7 @@ lyra-connectors = { path = "crates/lyra-agent-core/connectors" }
 lyra-core = { path = "crates/lyra-agent-core/core" }
 lyra-core-plugins = { path = "crates/lyra-agent-core/core-plugins" }
 lyra-core-skills = { path = "crates/lyra-agent-core/core-skills" }
+lyra-download-core = { path = "crates/lyra-download-core" }
 lyra-exec-server = { path = "crates/lyra-agent-core/exec-server" }
 lyra-execpolicy = { path = "crates/lyra-agent-core/execpolicy" }
 lyra-features = { path = "crates/lyra-agent-core/features" }

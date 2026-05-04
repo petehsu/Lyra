@@ -646,6 +646,17 @@
   -webkit-app-region: no-drag;
 }
 
+.lyra-titlebar-context button,
+.lyra-titlebar-context input,
+.lyra-titlebar-context select,
+.lyra-titlebar-context textarea,
+.lyra-titlebar-context a,
+.lyra-titlebar-context [role="button"],
+.lyra-titlebar-context [role="menuitem"],
+.lyra-titlebar-context [tabindex]:not([tabindex="-1"]) {
+  -webkit-app-region: no-drag;
+}
+
 .lyra-window-controls {
   display: inline-flex;
   align-items: center;
@@ -785,6 +796,7 @@
 
 .lyra-panel {
   overflow: hidden;
+  position: relative;
   visibility: visible;
   transition: visibility 0s linear 0s;
 }
@@ -792,20 +804,32 @@
 .lyra-panel-content {
   min-width: 0;
   min-height: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
+  flex: 0 0 auto;
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
-  will-change: transform;
-  transition: transform var(--lyra-motion-panel-layout);
 }
 
 .lyra-panel-left-content {
   width: var(--left-panel-content-width, var(--lyra-unit-260));
 }
 
+.lyra-main-ai-panel-right .lyra-panel-left-content {
+  right: 0;
+  left: auto;
+}
+
 .lyra-panel-bottom-content {
   height: var(--bottom-panel-content-height, var(--lyra-unit-180));
+}
+
+.lyra-center-stack-terminal-bottom > .lyra-panel-bottom > .lyra-panel-bottom-content {
+  top: auto;
+  bottom: 0;
 }
 
 .lyra-workspace {
@@ -976,26 +1000,10 @@
   transition: visibility 0s linear var(--lyra-motion-panel-layout-duration);
 }
 
-.lyra-main-ai-panel-left .lyra-panel-left-hidden > .lyra-panel-left-content {
-  transform: translate3d(calc(var(--lyra-motion-panel-hidden-offset) * -1), 0, 0);
-}
-
-.lyra-main-ai-panel-right .lyra-panel-left-hidden > .lyra-panel-left-content {
-  transform: translate3d(var(--lyra-motion-panel-hidden-offset), 0, 0);
-}
-
 .lyra-panel-bottom-hidden {
   pointer-events: none;
   visibility: hidden;
   transition: visibility 0s linear var(--lyra-motion-panel-layout-duration);
-}
-
-.lyra-center-stack-terminal-top > .lyra-panel-bottom-hidden > .lyra-panel-bottom-content {
-  transform: translate3d(0, calc(var(--lyra-motion-panel-hidden-offset) * -1), 0);
-}
-
-.lyra-center-stack-terminal-bottom > .lyra-panel-bottom-hidden > .lyra-panel-bottom-content {
-  transform: translate3d(0, var(--lyra-motion-panel-hidden-offset), 0);
 }
 
 .lyra-resizer {
@@ -1148,11 +1156,6 @@
   .lyra-panel-left-content {
     width: 100%;
     height: var(--left-panel-content-mobile-height, var(--lyra-unit-180));
-  }
-
-  .lyra-main-ai-panel-left .lyra-panel-left-hidden > .lyra-panel-left-content,
-  .lyra-main-ai-panel-right .lyra-panel-left-hidden > .lyra-panel-left-content {
-    transform: translate3d(0, calc(var(--lyra-motion-panel-hidden-offset) * -1), 0);
   }
 
   .lyra-main > .lyra-resizer-vertical::after {

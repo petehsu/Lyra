@@ -157,7 +157,10 @@ impl ToolHandler for UnifiedExecHandler {
 
     fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
         if invocation.tool_name.namespace.is_some()
-            || invocation.tool_name.name.as_str() != "exec_command"
+            || !matches!(
+                invocation.tool_name.name.as_str(),
+                "exec_command" | "inspect_command"
+            )
         {
             return None;
         }
@@ -234,7 +237,7 @@ impl ToolHandler for UnifiedExecHandler {
         let context = UnifiedExecContext::new(session.clone(), turn.clone(), call_id.clone());
 
         let response = match tool_name.name.as_str() {
-            "exec_command" => {
+            "exec_command" | "inspect_command" => {
                 let cwd = resolve_workdir_base_path(&arguments, &context.turn.cwd)?;
                 let args: ExecCommandArgs = parse_arguments_with_base_path(&arguments, &cwd)?;
                 let workdir = context.turn.resolve_path(args.workdir.clone());

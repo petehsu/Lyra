@@ -89,6 +89,51 @@ pub fn create_exec_command_tool(options: CommandToolOptions) -> ToolSpec {
     })
 }
 
+pub fn create_inspect_command_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "cmd".to_string(),
+            JsonSchema::string(Some(
+                "Read-only shell command for inspecting files, directories, configs, logs, and environment facts. Do not write, edit, delete, move, install, format, generate, or start long-running processes."
+                    .to_string(),
+            )),
+        ),
+        (
+            "workdir".to_string(),
+            JsonSchema::string(Some(
+                "Optional working directory to run the command in; defaults to the turn cwd."
+                    .to_string(),
+            )),
+        ),
+        (
+            "yield_time_ms".to_string(),
+            JsonSchema::number(Some(
+                "How long to wait (in milliseconds) for output before yielding.".to_string(),
+            )),
+        ),
+        (
+            "max_output_tokens".to_string(),
+            JsonSchema::number(Some(
+                "Maximum number of tokens to return. Excess output will be truncated.".to_string(),
+            )),
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "inspect_command".to_string(),
+        description: "Plan Mode read-only command runner. Use it only to gather facts for a plan, such as listing files, reading source, searching text, checking configuration, or running non-mutating diagnostics. Mutating commands are rejected."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::object(
+            properties,
+            Some(vec!["cmd".to_string()]),
+            Some(false.into()),
+        ),
+        output_schema: Some(unified_exec_output_schema()),
+    })
+}
+
 pub fn create_write_stdin_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (

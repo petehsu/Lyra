@@ -242,6 +242,7 @@ async fn should_install_mcp_dependencies(
         ]),
     };
     let args = RequestUserInputArgs {
+        reason: Some("MCP server dependencies require a user installation decision.".to_string()),
         questions: vec![question],
     };
     let sub_id = &turn_context.sub_id;

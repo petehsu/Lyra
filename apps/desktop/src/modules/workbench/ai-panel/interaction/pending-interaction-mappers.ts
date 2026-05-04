@@ -3,10 +3,10 @@ import type {
   AgentPlanBlock,
   AgentPendingInteraction,
   AgentPendingInteractionKind,
+  AgentQuestionItem,
+  AgentQuestionOption,
+  AgentQuestionRequest,
   PlanApprovalRequest,
-  PlanQuestionItem,
-  PlanQuestionOption,
-  PlanQuestionRequest,
 } from "../../../../shared/desktop-bridge";
 import type {
   CommandApprovalRequest,
@@ -27,7 +27,7 @@ type InteractionCommandApprovalRequest = CommandApprovalRequest
     readonly requestedPermissions?: unknown;
   };
 
-type InteractionPlanQuestionRequest = PlanQuestionRequest & InteractionPanelRequestMeta;
+type InteractionAgentQuestionRequest = AgentQuestionRequest & InteractionPanelRequestMeta;
 type InteractionPlanApprovalRequest = PlanApprovalRequest & InteractionPanelRequestMeta;
 
 export type McpElicitationFieldOption = {
@@ -60,7 +60,7 @@ export type InteractionMcpElicitationRequest = InteractionPanelRequestMeta & {
 
 export type PendingInteractionPanel =
   | { readonly kind: "commandApproval"; readonly request: InteractionCommandApprovalRequest }
-  | { readonly kind: "planQuestion"; readonly request: InteractionPlanQuestionRequest }
+  | { readonly kind: "agentQuestion"; readonly request: InteractionAgentQuestionRequest }
   | { readonly kind: "mcpElicitation"; readonly request: InteractionMcpElicitationRequest }
   | { readonly kind: "planApproval"; readonly request: InteractionPlanApprovalRequest };
 
@@ -121,7 +121,7 @@ const toPlanBlocks = (value: unknown): readonly AgentPlanBlock[] =>
     ? value.map(toPlanBlock).filter((block): block is AgentPlanBlock => block !== null)
     : [];
 
-const normalizeQuestionOption = (value: unknown): PlanQuestionOption | null => {
+const normalizeQuestionOption = (value: unknown): AgentQuestionOption | null => {
   if (!isRecord(value)) {
     return null;
   }
@@ -137,7 +137,7 @@ const normalizeQuestionOption = (value: unknown): PlanQuestionOption | null => {
   };
 };
 
-const normalizeQuestion = (value: unknown): PlanQuestionItem | null => {
+const normalizeQuestion = (value: unknown): AgentQuestionItem | null => {
   if (!isRecord(value)) {
     return null;
   }
@@ -148,7 +148,7 @@ const normalizeQuestion = (value: unknown): PlanQuestionItem | null => {
     return null;
   }
   const options = Array.isArray(value.options)
-    ? value.options.map(normalizeQuestionOption).filter((option): option is PlanQuestionOption => option !== null)
+    ? value.options.map(normalizeQuestionOption).filter((option): option is AgentQuestionOption => option !== null)
     : [];
   const explicitOther =
     pickBoolean(value, "allowOther")
@@ -163,6 +163,19 @@ const normalizeQuestion = (value: unknown): PlanQuestionItem | null => {
     options,
     allowOther: explicitOther || options.length === 0,
     ...(isSecret ? { isSecret } : {}),
+  };
+};
+
+const normalizeAgentQuestionSource = (
+  value: Record<string, unknown>
+): NonNullable<AgentQuestionRequest["source"]> => {
+  const agentThreadId = pickString(value, "agentThreadId") ?? pickString(value, "agent_thread_id");
+  const agentNickname = pickString(value, "agentNickname") ?? pickString(value, "agent_nickname");
+  const agentRole = pickString(value, "agentRole") ?? pickString(value, "agent_role");
+  return {
+    ...(agentThreadId === null ? {} : { agentThreadId }),
+    ...(agentNickname === null ? {} : { agentNickname }),
+    ...(agentRole === null ? {} : { agentRole }),
   };
 };
 
@@ -265,28 +278,32 @@ const toCommandApprovalRequest = (
   };
 };
 
-const toPlanQuestionRequest = (
+const toAgentQuestionRequest = (
   interaction: AgentPendingInteraction
-): InteractionPlanQuestionRequest | null => {
+): InteractionAgentQuestionRequest | null => {
   if (!isRecord(interaction.payload)) {
     return null;
   }
   const payload = interaction.payload;
   const rawPayload = isRecord(payload.raw) ? payload.raw : payload;
 
-  if (interaction.kind === "tool_user_input") {
+  if (interaction.kind === "agent_question" || interaction.kind === "tool_user_input") {
     const questions = Array.isArray(rawPayload.questions)
-      ? rawPayload.questions.map(normalizeQuestion).filter((question): question is PlanQuestionItem => question !== null)
+      ? rawPayload.questions.map(normalizeQuestion).filter((question): question is AgentQuestionItem => question !== null)
       : [];
     if (questions.length === 0) {
       return null;
     }
+    const source = pickRecord(rawPayload, "source");
+    const reason = pickString(rawPayload, "reason");
     return {
       id: interaction.id,
       interactionId: interaction.id,
       interactionKind: interaction.kind,
       sessionId: interaction.sessionId,
       turnId: interaction.turnId,
+      ...(reason === null ? {} : { reason }),
+      ...(source === null ? {} : { source: normalizeAgentQuestionSource(source) }),
       questions,
       allowNote: true,
     };
@@ -470,9 +487,9 @@ export const toPendingInteractionPanel = (
     const request = toCommandApprovalRequest(interaction, labels);
     return request === null ? null : { kind: "commandApproval", request };
   }
-  if (interaction.kind === "tool_user_input") {
-    const request = toPlanQuestionRequest(interaction);
-    return request === null ? null : { kind: "planQuestion", request };
+  if (interaction.kind === "agent_question" || interaction.kind === "tool_user_input") {
+    const request = toAgentQuestionRequest(interaction);
+    return request === null ? null : { kind: "agentQuestion", request };
   }
   if (interaction.kind === "mcp_elicitation") {
     const request = toMcpElicitationRequest(interaction);

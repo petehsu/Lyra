@@ -16,6 +16,7 @@ const labels: FileManagerSurfaceLabels = {
   locationDesktop: "Desktop",
   locationDocuments: "Documents",
   locationDownloads: "Downloads",
+  downloadManagerTitle: "Download Manager",
   locationTrash: "Trash",
   homeSectionFavorites: "Favorites",
   homeSectionLocations: "Locations",
@@ -36,6 +37,7 @@ const labels: FileManagerSurfaceLabels = {
   emptyDirectory: "Empty directory",
   emptyTrashState: "Empty trash state",
   noFavorites: "No favorites",
+  emptyDownloads: "No downloads",
   loading: "Loading",
   unavailable: "Unavailable",
   diskAvailable: "available",
@@ -59,6 +61,107 @@ const labels: FileManagerSurfaceLabels = {
   contextEjectDevice: "Eject",
   viewList: "List view",
   viewLarge: "Large view",
+  downloadAddUrl: "Add download",
+  downloadImportClipboard: "Import from clipboard",
+  downloadImportExternalBrowser: "Import browser downloads",
+  downloadUrlPlaceholder: "Paste URL",
+  downloadOpenFile: "Open file",
+  downloadRevealFile: "Reveal file",
+  downloadPause: "Pause",
+  downloadResume: "Resume",
+  downloadCancel: "Cancel",
+  downloadRetry: "Retry",
+  downloadRemove: "Remove",
+  downloadPauseAll: "Pause all",
+  downloadResumeAll: "Resume all",
+  downloadCancelAll: "Cancel all",
+  downloadPriority: "Priority",
+  downloadPriorityLow: "Low",
+  downloadPriorityNormal: "Normal",
+  downloadPriorityHigh: "High",
+  downloadStateQueued: "Queued",
+  downloadStateDownloading: "Downloading",
+  downloadStatePaused: "Paused",
+  downloadStateCompleted: "Completed",
+  downloadStateFailed: "Failed",
+  downloadStateCanceled: "Canceled",
+  downloadSourceBrowser: "Browser",
+  downloadSourceManual: "Manual",
+  downloadConnections: "{count} connections",
+  downloadUnknownSize: "Unknown",
+  downloadSpeedIdle: "Idle",
+  downloadDurationSeconds: "{seconds}s",
+  downloadDurationMinutes: "{minutes}m {seconds}s",
+  downloadDurationHours: "{hours}h {minutes}m",
+  downloadEta: "{duration} left",
+  downloadChecksumPending: "{algorithm} pending",
+  downloadChecksumVerified: "{algorithm} verified",
+  downloadChecksumFailed: "{algorithm} mismatch",
+  downloadSettings: "Download settings",
+  downloadSettingsSave: "Save download settings",
+  downloadSettingsSpeedLimit: "Speed limit",
+  downloadSettingsNoLimit: "No limit",
+  downloadAdvancedOptions: "Advanced download options",
+  downloadAdvancedCookie: "Cookie",
+  downloadAdvancedHeaders: "Request headers",
+  downloadAdvancedMirrors: "Mirror URLs",
+  downloadAdvancedBtSelectedFiles: "BT file indexes",
+  downloadAdvancedBtTrackers: "BT trackers",
+  downloadAdvancedPartialFile: "Existing partial file",
+  downloadAdvancedChecksumAlgorithm: "Checksum",
+  downloadAdvancedChecksumNone: "None",
+  downloadAdvancedChecksumExpected: "Checksum value",
+  downloadAdvancedMaxRetries: "Max retries",
+  downloadAdvancedRetryDelay: "Retry delay",
+  downloadAdvancedProxyMode: "Proxy mode",
+  downloadAdvancedProxyUrl: "Proxy URL",
+  downloadSettingsSchedule: "Schedule",
+  downloadSettingsScheduleEnabled: "Enable schedule",
+  downloadSettingsScheduleStart: "Start",
+  downloadSettingsScheduleEnd: "End",
+  downloadSettingsScheduleOutsideAction: "Outside window",
+  downloadSettingsSchedulePause: "Pause",
+  downloadSettingsScheduleSpeedLimit: "Limit speed",
+  downloadSettingsScheduleLimit: "Outside speed limit",
+  downloadSettingsSaveRules: "Save rules",
+  downloadSettingsAddSaveRule: "Add save rule",
+  downloadSettingsRemoveSaveRule: "Remove save rule",
+  downloadSettingsRuleEnabled: "Enabled",
+  downloadSettingsRuleName: "Rule name",
+  downloadSettingsRuleDirectory: "Save directory",
+  downloadSettingsRuleExtensions: "Extensions",
+  downloadSettingsRuleHosts: "Host contains",
+  downloadSettingsRuleProtocols: "Protocols",
+  downloadSettingsRuleTags: "Tags",
+  downloadSettingsProxyMode: "Proxy mode",
+  downloadSettingsProxySystem: "System",
+  downloadSettingsProxyDirect: "Direct",
+  downloadSettingsProxyHttp: "HTTP",
+  downloadSettingsProxySocks5: "SOCKS5",
+  downloadSettingsProxyUrl: "Proxy URL",
+  downloadSettingsCookie: "Cookie",
+  downloadSettingsHeaders: "Headers",
+  downloadSettingsPostProcessing: "Post-processing",
+  downloadSettingsAutoExtract: "Auto extract",
+  downloadSettingsDeleteArchive: "Delete archive",
+  downloadSettingsDetectSplitArchives: "Detect split archives",
+  downloadSettingsExtractDirectory: "Extract directory",
+  downloadSettingsBt: "BT",
+  downloadSettingsBtDht: "DHT",
+  downloadSettingsBtPeerExchange: "PEX",
+  downloadSettingsBtLocalPeerDiscovery: "Local peer discovery",
+  downloadSettingsBtSeedTime: "Seed time",
+  downloadSettingsBtTrackers: "Trackers",
+  downloadSettingsBtUploadLimit: "BT upload limit",
+  downloadRemoteApi: "Remote API",
+  downloadRemoteApiStart: "Start remote API",
+  downloadRemoteApiStop: "Stop remote API",
+  downloadRemoteApiRunning: "Running",
+  downloadRemoteApiStopped: "Stopped",
+  downloadRemoteApiHost: "Host",
+  downloadRemoteApiPort: "Port",
+  downloadRemoteApiAllowLan: "Allow LAN",
+  downloadRemoteApiToken: "Token available",
   chooserBindProjectLabel: "Bind project",
   chooserSelectDirectoryPlaceholder: "Open a directory to bind"
 };
@@ -122,6 +225,55 @@ const createState = (overrides: Partial<FileManagerAppState> = {}): FileManagerA
     }
   ],
   trashEntries: [],
+  downloadTasks: [],
+  downloadStatus: "ready",
+  downloadUrlDraft: "",
+  downloadAdvancedDraft: {
+    advancedOpen: false,
+    cookieHeader: "",
+    headersText: "",
+    mirrorsText: "",
+    btSelectedFileIndexesText: "",
+    btTrackerUrlsText: "",
+    partialFilePath: "",
+    checksumAlgorithm: "none",
+    checksumExpected: "",
+    maxRetries: "",
+    retryDelaySeconds: "",
+    proxyMode: "system",
+    proxyUrl: ""
+  },
+  downloadErrorMessage: undefined,
+  downloadSettings: null,
+  downloadRemoteApiStatus: null,
+  downloadSettingsOpen: false,
+  downloadSettingsDraft: {
+    speedLimitKibPerSecond: "",
+    scheduleEnabled: false,
+    scheduleStartTime: "00:00",
+    scheduleEndTime: "23:59",
+    scheduleOutsideAction: "pause",
+    scheduleOutsideSpeedLimitKibPerSecond: "",
+    proxyMode: "system",
+    proxyUrl: "",
+    defaultCookieHeader: "",
+    defaultHeadersText: "",
+    autoExtract: false,
+    deleteArchiveAfterExtract: false,
+    detectSplitArchives: true,
+    extractDirectory: "",
+    btDhtEnabled: true,
+    btPeerExchangeEnabled: true,
+    btLocalPeerDiscoveryEnabled: true,
+    btSeedTimeMinutes: "0",
+    btTrackerUrlsText: "",
+    btUploadLimitKibPerSecond: "",
+    remoteHost: "127.0.0.1",
+    remotePort: "",
+    remoteAllowLan: false,
+    saveRules: []
+  },
+  downloadSettingsErrorMessage: undefined,
   directorySubscriptionId: undefined,
   directoryGeneration: undefined,
   selectedEntryId: "file-1",
@@ -140,6 +292,7 @@ const createModel = (): FileManagerModel => ({
   openHome: vi.fn().mockResolvedValue(undefined),
   openDirectory: vi.fn().mockResolvedValue(undefined),
   openTrash: vi.fn().mockResolvedValue(undefined),
+  openDownloads: vi.fn().mockResolvedValue(undefined),
   goBack: vi.fn().mockResolvedValue(undefined),
   goForward: vi.fn().mockResolvedValue(undefined),
   goUp: vi.fn().mockResolvedValue(undefined),
@@ -154,6 +307,31 @@ const createModel = (): FileManagerModel => ({
   moveSelectionToTrash: vi.fn().mockResolvedValue(undefined),
   restoreSelectionFromTrash: vi.fn().mockResolvedValue(undefined),
   emptyTrash: vi.fn().mockResolvedValue(undefined),
+  updateDownloadUrlDraft: vi.fn(),
+  toggleDownloadAdvancedOptions: vi.fn(),
+  updateDownloadAdvancedDraft: vi.fn(),
+  submitDownloadUrlDraft: vi.fn().mockResolvedValue(undefined),
+  submitDownloadText: vi.fn().mockResolvedValue(undefined),
+  importExternalBrowserDownloads: vi.fn().mockResolvedValue(undefined),
+  pauseDownload: vi.fn().mockResolvedValue(undefined),
+  resumeDownload: vi.fn().mockResolvedValue(undefined),
+  cancelDownload: vi.fn().mockResolvedValue(undefined),
+  retryDownload: vi.fn().mockResolvedValue(undefined),
+  removeDownload: vi.fn().mockResolvedValue(undefined),
+  setDownloadPriority: vi.fn().mockResolvedValue(undefined),
+  pauseAllDownloads: vi.fn().mockResolvedValue(undefined),
+  resumeAllDownloads: vi.fn().mockResolvedValue(undefined),
+  cancelAllDownloads: vi.fn().mockResolvedValue(undefined),
+  openDownloadedFile: vi.fn().mockResolvedValue(undefined),
+  revealDownloadedFile: vi.fn().mockResolvedValue(undefined),
+  toggleDownloadSettings: vi.fn().mockResolvedValue(undefined),
+  updateDownloadSettingsDraft: vi.fn(),
+  addDownloadSaveRuleDraft: vi.fn(),
+  removeDownloadSaveRuleDraft: vi.fn(),
+  updateDownloadSaveRuleDraft: vi.fn(),
+  saveDownloadSettings: vi.fn().mockResolvedValue(undefined),
+  startDownloadRemoteApi: vi.fn().mockResolvedValue(undefined),
+  stopDownloadRemoteApi: vi.fn().mockResolvedValue(undefined),
   toggleCurrentDirectoryFavorite: vi.fn().mockResolvedValue(undefined),
   openEntryContextMenu: vi.fn(),
   openFavoriteContextMenu: vi.fn(),
@@ -238,6 +416,311 @@ describe("FileManagerSurface", () => {
 
     expect(model.openTrash).toHaveBeenCalledWith("fm-1");
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  test("opens the download manager from the file manager sidebar", () => {
+    const model = createModel();
+    renderFileManagerSurface({
+      state: createState(),
+      labels,
+      model,
+      onOpenFile: vi.fn()
+    });
+
+    fireEvent.click(screen.getByText("Download Manager"));
+
+    expect(model.openDownloads).toHaveBeenCalledWith("fm-1");
+  });
+
+  test("routes download manager form and row actions", () => {
+    const model = createModel();
+    renderFileManagerSurface({
+      state: createState({
+        viewKind: "downloads",
+        title: "Download Manager",
+        iconKey: "file-manager-download-manager",
+        currentLocation: {
+          id: "download-manager",
+          title: "Download Manager",
+          kind: "special",
+          specialId: "downloadManager"
+        },
+        parentPath: undefined,
+        entries: [],
+        selectedEntryId: undefined,
+        downloadUrlDraft: "https://example.com/build.zip",
+        downloadTasks: [
+          {
+            id: "download-1",
+            url: "https://example.com/build.zip",
+            fileName: "build.zip",
+            savePath: "/tmp/build.zip",
+            directory: "/tmp",
+            protocol: "https",
+            source: "manual",
+            state: "downloading",
+            receivedBytes: 512,
+            totalBytes: 1024,
+            speedBytesPerSecond: 256,
+            estimatedRemainingMs: 120_000,
+            priority: "normal",
+            connectionsRequested: 1,
+            connectionsActive: 1,
+            canResume: true,
+            checksum: {
+              algorithm: "sha256",
+              expected: "abc123",
+              verified: true
+            },
+            createdAt: "2026-05-04T00:00:00.000Z",
+            updatedAt: "2026-05-04T00:00:01.000Z",
+            tags: []
+          }
+        ]
+      }),
+      labels,
+      model,
+      onOpenFile: vi.fn()
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Paste URL"), {
+      target: { value: "https://example.com/next.zip" }
+    });
+    fireEvent.submit(screen.getByPlaceholderText("Paste URL").closest("form")!);
+    fireEvent.click(screen.getByLabelText("Pause"));
+    fireEvent.click(screen.getByLabelText("Pause all"));
+    fireEvent.click(screen.getByLabelText("Cancel"));
+    fireEvent.click(screen.getByLabelText("Cancel all"));
+    fireEvent.change(screen.getByLabelText("Priority: build.zip"), {
+      target: { value: "high" }
+    });
+
+    expect(screen.getByText("2m 0s left")).toBeInTheDocument();
+    expect(screen.getByText("SHA256 verified")).toBeInTheDocument();
+    expect(model.updateDownloadUrlDraft).toHaveBeenCalledWith("fm-1", "https://example.com/next.zip");
+    expect(model.submitDownloadUrlDraft).toHaveBeenCalledWith("fm-1");
+    expect(model.pauseDownload).toHaveBeenCalledWith("download-1");
+    expect(model.pauseAllDownloads).toHaveBeenCalledTimes(1);
+    expect(model.cancelDownload).toHaveBeenCalledWith("download-1");
+    expect(model.cancelAllDownloads).toHaveBeenCalledTimes(1);
+    expect(model.setDownloadPriority).toHaveBeenCalledWith("download-1", "high");
+  });
+
+  test("routes advanced download draft edits", () => {
+    const model = createModel();
+    renderFileManagerSurface({
+      state: createState({
+        viewKind: "downloads",
+        title: "Download Manager",
+        iconKey: "file-manager-download-manager",
+        currentLocation: {
+          id: "download-manager",
+          title: "Download Manager",
+          kind: "special",
+          specialId: "downloadManager"
+        },
+        parentPath: undefined,
+        entries: [],
+        selectedEntryId: undefined,
+        downloadAdvancedDraft: {
+          advancedOpen: true,
+          cookieHeader: "",
+          headersText: "",
+          mirrorsText: "",
+          btSelectedFileIndexesText: "",
+          btTrackerUrlsText: "",
+          partialFilePath: "",
+          checksumAlgorithm: "sha256",
+          checksumExpected: "",
+          maxRetries: "",
+          retryDelaySeconds: "",
+          proxyMode: "http",
+          proxyUrl: ""
+        }
+      }),
+      labels,
+      model,
+      onOpenFile: vi.fn()
+    });
+
+    fireEvent.change(screen.getByLabelText("Cookie"), {
+      target: { value: "sid=1" }
+    });
+    fireEvent.change(screen.getByLabelText("Request headers"), {
+      target: { value: "Authorization: Bearer token" }
+    });
+    fireEvent.change(screen.getByLabelText("Mirror URLs"), {
+      target: { value: "https://mirror.example.com/file.zip" }
+    });
+    fireEvent.change(screen.getByLabelText("BT file indexes"), {
+      target: { value: "1,3" }
+    });
+    fireEvent.change(screen.getByLabelText("BT trackers"), {
+      target: { value: "udp://tracker.example.com:80/announce" }
+    });
+    fireEvent.change(screen.getByLabelText("Existing partial file"), {
+      target: { value: "/tmp/file.zip.crdownload" }
+    });
+    fireEvent.change(screen.getByLabelText("Checksum"), {
+      target: { value: "sha1" }
+    });
+    fireEvent.change(screen.getByLabelText("Checksum value"), {
+      target: { value: "abc123" }
+    });
+    fireEvent.change(screen.getByLabelText("Max retries"), {
+      target: { value: "5" }
+    });
+    fireEvent.change(screen.getByLabelText("Retry delay"), {
+      target: { value: "3" }
+    });
+    fireEvent.change(screen.getByLabelText("Proxy URL"), {
+      target: { value: "http://127.0.0.1:8080" }
+    });
+
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      cookieHeader: "sid=1"
+    });
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      headersText: "Authorization: Bearer token"
+    });
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      mirrorsText: "https://mirror.example.com/file.zip"
+    });
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      btSelectedFileIndexesText: "1,3"
+    });
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      btTrackerUrlsText: "udp://tracker.example.com:80/announce"
+    });
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      partialFilePath: "/tmp/file.zip.crdownload"
+    });
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      checksumAlgorithm: "sha1"
+    });
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      checksumExpected: "abc123"
+    });
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      maxRetries: "5"
+    });
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      retryDelaySeconds: "3"
+    });
+    expect(model.updateDownloadAdvancedDraft).toHaveBeenCalledWith("fm-1", {
+      proxyUrl: "http://127.0.0.1:8080"
+    });
+  });
+
+  test("routes download settings edits and remote API actions", () => {
+    const model = createModel();
+    renderFileManagerSurface({
+      state: createState({
+        viewKind: "downloads",
+        title: "Download Manager",
+        iconKey: "file-manager-download-manager",
+        currentLocation: {
+          id: "download-manager",
+          title: "Download Manager",
+          kind: "special",
+          specialId: "downloadManager"
+        },
+        parentPath: undefined,
+        entries: [],
+        selectedEntryId: undefined,
+        downloadSettingsOpen: true,
+        downloadSettingsDraft: {
+          speedLimitKibPerSecond: "",
+          scheduleEnabled: true,
+          scheduleStartTime: "01:00",
+          scheduleEndTime: "09:00",
+          scheduleOutsideAction: "speed-limit",
+          scheduleOutsideSpeedLimitKibPerSecond: "",
+          proxyMode: "system",
+          proxyUrl: "",
+          defaultCookieHeader: "",
+          defaultHeadersText: "",
+          autoExtract: false,
+          deleteArchiveAfterExtract: false,
+          detectSplitArchives: true,
+          extractDirectory: "",
+          btDhtEnabled: true,
+          btPeerExchangeEnabled: true,
+          btLocalPeerDiscoveryEnabled: true,
+          btSeedTimeMinutes: "0",
+          btTrackerUrlsText: "",
+          btUploadLimitKibPerSecond: "",
+          remoteHost: "127.0.0.1",
+          remotePort: "",
+          remoteAllowLan: false,
+          saveRules: [
+            {
+              id: "rule-1",
+              enabled: true,
+              name: "Archives",
+              directory: "/tmp/archives",
+              extensionsText: "zip",
+              hostContainsText: "example.com",
+              protocolsText: "https",
+              tagsText: "archive"
+            }
+          ]
+        }
+      }),
+      labels,
+      model,
+      onOpenFile: vi.fn()
+    });
+
+    fireEvent.change(screen.getByLabelText("Speed limit"), {
+      target: { value: "512" }
+    });
+    fireEvent.change(screen.getByLabelText("Start"), {
+      target: { value: "02:00" }
+    });
+    fireEvent.change(screen.getByLabelText("Outside speed limit"), {
+      target: { value: "128" }
+    });
+    fireEvent.change(screen.getByLabelText("Proxy mode"), {
+      target: { value: "socks5" }
+    });
+    fireEvent.click(screen.getByLabelText("Auto extract"));
+    fireEvent.click(screen.getByLabelText("Add save rule"));
+    fireEvent.change(screen.getByLabelText("Rule name"), {
+      target: { value: "Installers" }
+    });
+    fireEvent.change(screen.getByLabelText("Save directory"), {
+      target: { value: "/tmp/installers" }
+    });
+    fireEvent.click(screen.getByLabelText("Remove save rule: Archives"));
+    fireEvent.click(screen.getByLabelText("Save download settings"));
+    fireEvent.click(screen.getByLabelText("Start remote API"));
+
+    expect(model.updateDownloadSettingsDraft).toHaveBeenCalledWith("fm-1", {
+      speedLimitKibPerSecond: "512"
+    });
+    expect(model.updateDownloadSettingsDraft).toHaveBeenCalledWith("fm-1", {
+      scheduleStartTime: "02:00"
+    });
+    expect(model.updateDownloadSettingsDraft).toHaveBeenCalledWith("fm-1", {
+      scheduleOutsideSpeedLimitKibPerSecond: "128"
+    });
+    expect(model.updateDownloadSettingsDraft).toHaveBeenCalledWith("fm-1", {
+      proxyMode: "socks5"
+    });
+    expect(model.updateDownloadSettingsDraft).toHaveBeenCalledWith("fm-1", {
+      autoExtract: true
+    });
+    expect(model.addDownloadSaveRuleDraft).toHaveBeenCalledWith("fm-1");
+    expect(model.updateDownloadSaveRuleDraft).toHaveBeenCalledWith("fm-1", "rule-1", {
+      name: "Installers"
+    });
+    expect(model.updateDownloadSaveRuleDraft).toHaveBeenCalledWith("fm-1", "rule-1", {
+      directory: "/tmp/installers"
+    });
+    expect(model.removeDownloadSaveRuleDraft).toHaveBeenCalledWith("fm-1", "rule-1");
+    expect(model.saveDownloadSettings).toHaveBeenCalledWith("fm-1");
+    expect(model.startDownloadRemoteApi).toHaveBeenCalledWith("fm-1");
   });
 
   test("shows a directory-selection placeholder before chooser confirmation is available", () => {

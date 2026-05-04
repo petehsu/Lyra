@@ -310,25 +310,6 @@
   background-color: var(--lyra-terminal-bg) !important;
 }
 
-.lyra-terminal-caret-layer {
-  z-index: 2;
-}
-
-.lyra-modern-caret-terminal {
-  --lyra-modern-caret-width: var(--lyra-stroke-thin);
-  --lyra-modern-caret-length: var(--lyra-space-18);
-  --lyra-modern-caret-color: color-mix(in srgb, var(--lyra-terminal-cursor) 88%, var(--lyra-terminal-fg) 12%);
-  opacity: 0.94;
-}
-
-.lyra-modern-caret-terminal.lyra-modern-caret-focused {
-  opacity: 1;
-}
-
-.lyra-terminal-host .xterm-helper-textarea {
-  caret-color: transparent;
-}
-
 .lyra-terminal-status {
   position: absolute;
   inset: auto var(--lyra-unit-8) var(--lyra-unit-8) var(--lyra-unit-8);

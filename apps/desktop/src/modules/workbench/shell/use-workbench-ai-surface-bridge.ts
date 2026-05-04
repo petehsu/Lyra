@@ -156,6 +156,20 @@ export const useWorkbenchAiSurfaceBridge = ({
       if (entry === null) {
         return;
       }
+      if (typeof event.contentSnapshot === "string") {
+        entry.content = event.contentSnapshot;
+        if (typeof event.firstChangedLine === "number") {
+          entry.firstChangedLine = event.firstChangedLine;
+        }
+        if (typeof event.bytesWritten === "number") {
+          entry.bytesWritten = event.bytesWritten;
+        }
+        if (typeof event.bytesTotal === "number") {
+          entry.bytesTotal = event.bytesTotal;
+        }
+        applyContent(entry);
+        return;
+      }
       entry.chunkQueue.push(event.chunkText);
       if (typeof event.firstChangedLine === "number") {
         entry.firstChangedLine = event.firstChangedLine;

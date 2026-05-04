@@ -524,10 +524,7 @@ export const useAiPanelThreadViewModel = ({
       if (streamingTurnId === null) {
         return [];
       }
-      if (
-        streamingAssistantText.length === 0
-        && persistedAssistantDisplayByTurn.has(streamingTurnId)
-      ) {
+      if (persistedAssistantDisplayByTurn.has(streamingTurnId)) {
         return [];
       }
       return runtimeFeedByTurn.get(streamingTurnId) ?? [];
@@ -535,7 +532,6 @@ export const useAiPanelThreadViewModel = ({
     [
       persistedAssistantDisplayByTurn,
       runtimeFeedByTurn,
-      streamingAssistantText.length,
       streamingTurnId,
     ]
   );
@@ -611,7 +607,7 @@ export const useAiPanelThreadViewModel = ({
           tone: "completed",
         };
       }
-      if (phase === "plan_approval_requested") {
+      if (phase === "plan_proposed" || phase === "plan_approval_requested") {
         return null;
       }
       if (

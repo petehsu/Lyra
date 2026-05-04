@@ -4,8 +4,6 @@ use crate::protocol::v2::CommandExecutionStatus;
 use crate::protocol::v2::DynamicToolCallStatus;
 use crate::protocol::v2::McpToolCallStatus;
 use crate::protocol::v2::PatchApplyStatus;
-use crate::protocol::v2::PlanArtifact;
-use crate::protocol::v2::PlanArtifactStatus;
 use crate::protocol::v2::Thread;
 use crate::protocol::v2::ThreadAiPanelAttachmentKind;
 use crate::protocol::v2::ThreadAiPanelMessage;
@@ -44,7 +42,7 @@ pub fn build_thread_ai_panel_view_model(
     let mut turns = Vec::new();
     let mut tool_calls = Vec::new();
     let mut plans = Vec::new();
-    let mut pending_interactions = Vec::new();
+    let mut pending_interactions: Vec<ThreadAiPanelPendingInteraction> = Vec::new();
     let mut timeline_entries = Vec::new();
     let mut turn_meta = Vec::new();
     let mut assistant_order = 0_u32;
@@ -191,16 +189,6 @@ pub fn build_thread_ai_panel_view_model(
                         &artifact.plan_id,
                         item_timestamp_ms,
                     ));
-                    if matches!(turn.status, TurnStatus::Waiting)
-                        && artifact.status == PlanArtifactStatus::Proposed
-                    {
-                        pending_interactions.push(plan_approval_pending_interaction(
-                            &session_id,
-                            &turn.id,
-                            artifact,
-                            item_timestamp_ms,
-                        ));
-                    }
                 }
                 _ => {
                     if let Some(tool_call) = ai_panel_tool_call_from_item(
@@ -341,8 +329,8 @@ fn pending_interaction_from_server_request(
                 request_id.clone(),
                 params.thread_id.clone(),
                 params.turn_id.clone(),
-                ThreadAiPanelPendingInteractionKind::ToolUserInput,
-                "item/tool/requestUserInput",
+                ThreadAiPanelPendingInteractionKind::AgentQuestion,
+                "item/agentQuestion/request",
                 serde_json::to_value(params).unwrap_or_else(|_| json!({})),
                 timestamp_ms,
             ))
@@ -445,35 +433,6 @@ fn normalized_permissions_approval_payload(
     );
     raw.insert("metadata".to_string(), json!({ "riskLevel": "medium" }));
     Value::Object(raw)
-}
-
-fn plan_approval_pending_interaction(
-    session_id: &str,
-    turn_id: &str,
-    artifact: &PlanArtifact,
-    timestamp_ms: i64,
-) -> ThreadAiPanelPendingInteraction {
-    let interaction_id = format!("plan:{turn_id}:{}", artifact.plan_id);
-    ThreadAiPanelPendingInteraction {
-        id: interaction_id,
-        session_id: session_id.to_string(),
-        turn_id: turn_id.to_string(),
-        kind: ThreadAiPanelPendingInteractionKind::PlanApproval,
-        status: ThreadAiPanelPendingInteractionStatus::Pending,
-        payload: json!({
-            "agentCoreMethod": "turn/planApproval/resolve",
-            "raw": {
-                "planTurnId": turn_id,
-                "planId": artifact.plan_id.clone(),
-                "version": 2,
-                "status": "proposed",
-                "summary": artifact.summary.clone(),
-                "artifact": artifact,
-            },
-        }),
-        created_at_ms: timestamp_ms,
-        updated_at_ms: timestamp_ms,
-    }
 }
 
 fn timestamp_to_epoch_ms(value: i64) -> i64 {

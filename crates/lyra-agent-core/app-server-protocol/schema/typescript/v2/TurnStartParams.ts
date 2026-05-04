@@ -9,6 +9,7 @@ import type { Verbosity } from "../Verbosity";
 import type { JsonValue } from "../serde_json/JsonValue";
 import type { ApprovalsReviewer } from "./ApprovalsReviewer";
 import type { AskForApproval } from "./AskForApproval";
+import type { PlanReviewTurnContext } from "./PlanReviewTurnContext";
 import type { SandboxPolicy } from "./SandboxPolicy";
 import type { UserInput } from "./UserInput";
 
@@ -63,6 +64,10 @@ summary?: ReasoningSummary | null,
  * this turn.
  */
 outputSchema?: JsonValue | null,
+/**
+ * Optional context for turning a plan review action into a normal user turn.
+ */
+planReviewContext?: PlanReviewTurnContext | null,
 /**
  * Set a pre-set collaboration mode.
  * Takes precedence over model, reasoning_effort, and developer instructions if set.

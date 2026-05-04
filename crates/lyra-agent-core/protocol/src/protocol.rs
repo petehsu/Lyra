@@ -2957,6 +2957,10 @@ pub struct PatchApplyBeginEvent {
 pub struct PatchApplyUpdatedEvent {
     /// Identifier for the originating `apply_patch` tool call.
     pub call_id: String,
+    /// Turn ID that this patch belongs to.
+    /// Uses `#[serde(default)]` for backwards compatibility.
+    #[serde(default)]
+    pub turn_id: String,
     /// Structured file changes parsed from the model-generated patch input so far.
     pub changes: HashMap<PathBuf, FileChange>,
 }

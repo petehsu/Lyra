@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 
 import type { FileEditorRevealLocation } from "../file-editor";
-import type { WorkbenchAiToolDisplayMode } from "../preferences";
 import {
   isTerminalToolName,
   isWriteToolName,
@@ -26,7 +25,6 @@ type AiPanelRuntimeFeedBlockProps = {
   readonly items: readonly AgentRuntimeFeedItem[];
   readonly canOpenPath: boolean;
   readonly statusLabels: RuntimeFeedStatusLabels;
-  readonly displayMode: WorkbenchAiToolDisplayMode;
   readonly showFullOutputLabel: string;
   readonly expandToolOutputLabel: string;
   readonly collapseToolOutputLabel: string;
@@ -228,7 +226,8 @@ const RuntimeFeedTarget = ({
       <button
         type="button"
         className={targetClassName}
-        onClick={() => {
+        onClick={(event) => {
+          event.stopPropagation();
           void openRuntimeTargetPath(openPath, {
             ...(location === undefined ? {} : { location })
           });
@@ -252,7 +251,8 @@ const RuntimeFeedTarget = ({
             key={threadTarget.threadId}
             type="button"
             className={targetClassName}
-            onClick={() => {
+            onClick={(event) => {
+              event.stopPropagation();
               onOpenThread(threadTarget.threadId);
             }}
             title={threadTarget.threadId}
@@ -269,7 +269,8 @@ const RuntimeFeedTarget = ({
       <button
         type="button"
         className={targetClassName}
-        onClick={() => {
+        onClick={(event) => {
+          event.stopPropagation();
           onOpenThread(primaryOpenThreadTarget.threadId);
         }}
         title={primaryOpenThreadTarget.threadId}
@@ -324,57 +325,6 @@ const RuntimeFeedDetails = ({
   );
 };
 
-const InnerRuntimeFeedItem = ({
-  item,
-  canOpenPath,
-  statusLabels,
-  showFullOutputLabel,
-  fileChangesLabel,
-  openRuntimeTargetPath,
-  onOpenThread,
-}: Omit<AiPanelRuntimeFeedBlockProps, "items" | "displayMode" | "expandToolOutputLabel" | "collapseToolOutputLabel"> & {
-  readonly item: AgentRuntimeFeedItem;
-}) => {
-  const status = runtimeFeedStatusModel(item, statusLabels);
-  const targetProps = {
-    item,
-    canOpenPath,
-    targetClassName: status.targetClassName,
-    openRuntimeTargetPath,
-    ...(onOpenThread === undefined ? {} : { onOpenThread }),
-  };
-
-  return (
-    <div className={status.itemClassName}>
-      <span className="lyra-ai-agent-runtime-feed-leading">
-        <StatusIndicator
-          tone={status.statusTone}
-          variant="dot"
-          ariaLabel={status.statusLabel}
-          className={
-            status.isRunning
-              ? "lyra-ai-agent-runtime-feed-indicator lyra-ai-agent-runtime-feed-indicator-running"
-              : "lyra-ai-agent-runtime-feed-indicator"
-          }
-        />
-      </span>
-      <span
-        className="lyra-ai-agent-runtime-feed-icon"
-        title={item.toolLabel}
-        aria-label={item.toolLabel}
-      >
-        {renderRuntimeFeedIcon(item.icon)}
-      </span>
-      <RuntimeFeedTarget {...targetProps} />
-      <RuntimeFeedDetails
-        item={item}
-        showFullOutputLabel={showFullOutputLabel}
-        fileChangesLabel={fileChangesLabel}
-      />
-    </div>
-  );
-};
-
 const CollapsedRuntimeFeedItem = ({
   item,
   canOpenPath,
@@ -388,7 +338,7 @@ const CollapsedRuntimeFeedItem = ({
   onToggleItem,
   openRuntimeTargetPath,
   onOpenThread,
-}: Omit<AiPanelRuntimeFeedBlockProps, "items" | "displayMode"> & {
+}: Omit<AiPanelRuntimeFeedBlockProps, "items"> & {
   readonly item: AgentRuntimeFeedItem;
   readonly expandedItemIds: ReadonlySet<string>;
   readonly collapsedItemIds: ReadonlySet<string>;
@@ -401,6 +351,12 @@ const CollapsedRuntimeFeedItem = ({
   const defaultExpanded = status.isRunning || item.status === "failed";
   const expanded =
     expandedItemIds.has(item.id) || (defaultExpanded && !collapsedItemIds.has(item.id));
+  const toggleExpanded = (): void => {
+    if (!hasDetails) {
+      return;
+    }
+    onToggleItem(item.id, !expanded);
+  };
   const targetProps = {
     item,
     canOpenPath,
@@ -414,15 +370,23 @@ const CollapsedRuntimeFeedItem = ({
       className={`${status.itemClassName} lyra-ai-agent-runtime-feed-item-collapsed`}
       data-expanded={expanded ? "true" : "false"}
     >
-      <div className="lyra-ai-agent-runtime-feed-collapsed-main">
+      <div
+        className={
+          hasDetails
+            ? "lyra-ai-agent-runtime-feed-collapsed-main lyra-ai-agent-runtime-feed-collapsed-main-toggleable"
+            : "lyra-ai-agent-runtime-feed-collapsed-main"
+        }
+        onClick={hasDetails ? toggleExpanded : undefined}
+      >
         {hasDetails ? (
           <button
             type="button"
             className="lyra-ai-agent-runtime-feed-disclosure"
             aria-label={expanded ? collapseToolOutputLabel : expandToolOutputLabel}
             title={expanded ? collapseToolOutputLabel : expandToolOutputLabel}
-            onClick={() => {
-              onToggleItem(item.id, !expanded);
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleExpanded();
             }}
           >
             <ChevronRight size={13} aria-hidden="true" />
@@ -537,7 +501,6 @@ export const AiPanelRuntimeFeedBlock = ({
   items,
   canOpenPath,
   statusLabels,
-  displayMode,
   showFullOutputLabel,
   expandToolOutputLabel,
   collapseToolOutputLabel,
@@ -580,52 +543,36 @@ export const AiPanelRuntimeFeedBlock = ({
     });
   };
 
-  if (displayMode === "collapsed") {
-    return (
-      <div className="lyra-ai-agent-runtime-feed-shell lyra-ai-agent-runtime-feed-shell-collapsed">
-        <div className="lyra-ai-agent-runtime-feed lyra-ai-agent-runtime-feed-collapsed">
-          {items.length <= 1 ? null : (
-            <CollapsedRuntimeFeedGroupHeader
-              items={items}
-              expanded={groupExpanded}
-              statusLabels={statusLabels}
-              expandToolOutputLabel={expandToolOutputLabel}
-              collapseToolOutputLabel={collapseToolOutputLabel}
-              fileChangesLabel={fileChangesLabel}
-              onToggle={() => {
-                setGroupExpandedOverride(!groupExpanded);
-              }}
-            />
-          )}
-          {items.length > 1 && !groupExpanded
-            ? null
-            : items.map((item) => (
-                <CollapsedRuntimeFeedItem
-                  key={item.id}
-                  item={item}
-                  {...sharedProps}
-                  expandToolOutputLabel={expandToolOutputLabel}
-                  collapseToolOutputLabel={collapseToolOutputLabel}
-                  expandedItemIds={expandedItemIds}
-                  collapsedItemIds={collapsedItemIds}
-                  onToggleItem={toggleItem}
-                />
-              ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="lyra-ai-agent-runtime-feed-shell">
-      <div className="lyra-ai-agent-runtime-feed">
-        {items.map((item) => (
-          <InnerRuntimeFeedItem
-            key={item.id}
-            item={item}
-            {...sharedProps}
+    <div className="lyra-ai-agent-runtime-feed-shell lyra-ai-agent-runtime-feed-shell-collapsed">
+      <div className="lyra-ai-agent-runtime-feed lyra-ai-agent-runtime-feed-collapsed">
+        {items.length <= 1 ? null : (
+          <CollapsedRuntimeFeedGroupHeader
+            items={items}
+            expanded={groupExpanded}
+            statusLabels={statusLabels}
+            expandToolOutputLabel={expandToolOutputLabel}
+            collapseToolOutputLabel={collapseToolOutputLabel}
+            fileChangesLabel={fileChangesLabel}
+            onToggle={() => {
+              setGroupExpandedOverride(!groupExpanded);
+            }}
           />
-        ))}
+        )}
+        {items.length > 1 && !groupExpanded
+          ? null
+          : items.map((item) => (
+              <CollapsedRuntimeFeedItem
+                key={item.id}
+                item={item}
+                {...sharedProps}
+                expandToolOutputLabel={expandToolOutputLabel}
+                collapseToolOutputLabel={collapseToolOutputLabel}
+                expandedItemIds={expandedItemIds}
+                collapsedItemIds={collapsedItemIds}
+                onToggleItem={toggleItem}
+              />
+            ))}
       </div>
     </div>
   );

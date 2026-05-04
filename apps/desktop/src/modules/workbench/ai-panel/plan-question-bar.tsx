@@ -1,17 +1,17 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, SendHorizontal } from "lucide-react";
 
-import type { PlanQuestionOption, PlanQuestionRequest } from "../../../shared/desktop-bridge";
+import type { AgentQuestionOption, AgentQuestionRequest } from "../../../shared/desktop-bridge";
 import { createTranslator, type WorkbenchLocale } from "../i18n";
 
-type PlanQuestionBarProps = {
+type AgentQuestionBarProps = {
   readonly locale?: WorkbenchLocale;
-  readonly request: PlanQuestionRequest;
+  readonly request: AgentQuestionRequest;
   readonly onSubmit: (payload: { readonly answers: Record<string, unknown>; readonly note?: string }) => void;
 };
 
 type SelectedAnswer =
-  | { readonly kind: "option"; readonly option: PlanQuestionOption }
+  | { readonly kind: "option"; readonly option: AgentQuestionOption }
   | { readonly kind: "other"; readonly value: string };
 
 const isSelectedAnswerReady = (answer: SelectedAnswer | undefined): boolean => {
@@ -34,11 +34,11 @@ const serializeAnswer = (answer: SelectedAnswer, otherLabel: string): unknown =>
   };
 };
 
-export const PlanQuestionBar = ({
+export const AgentQuestionBar = ({
   locale = "en-US",
   request,
   onSubmit
-}: PlanQuestionBarProps) => {
+}: AgentQuestionBarProps) => {
   const t = useMemo(() => createTranslator(locale), [locale]);
   const [selected, setSelected] = useState<Record<string, SelectedAnswer>>({});
   const [note, setNote] = useState("");
@@ -59,7 +59,7 @@ export const PlanQuestionBar = ({
       Object.fromEntries(
         Object.entries(selected)
           .filter(([, answer]) => isSelectedAnswerReady(answer))
-          .map(([id, answer]) => [id, serializeAnswer(answer, t("ai.planQuestionCustomReply"))])
+          .map(([id, answer]) => [id, serializeAnswer(answer, t("ai.agentQuestionCustomReply"))])
       ),
     [selected, t]
   );
@@ -77,7 +77,7 @@ export const PlanQuestionBar = ({
   return (
     <div className="lyra-ai-plan-bar">
       {request.questions.length > 1 ? (
-        <div className="lyra-ai-plan-bar__progress" aria-label={t("ai.planQuestionNavigation")}>
+        <div className="lyra-ai-plan-bar__progress" aria-label={t("ai.agentQuestionNavigation")}>
           {request.questions.map((question, index) => {
             const answered = isSelectedAnswerReady(selected[question.id]);
             const active = index === activeIndex;
@@ -149,9 +149,9 @@ export const PlanQuestionBar = ({
                 }));
               }}
             >
-              <span className="lyra-ai-plan-bar__option-label">{t("ai.planQuestionCustomReply")}</span>
+              <span className="lyra-ai-plan-bar__option-label">{t("ai.agentQuestionCustomReply")}</span>
               <span className="lyra-ai-plan-bar__option-description">
-                {t("ai.planQuestionCustomReplyDescription")}
+                {t("ai.agentQuestionCustomReplyDescription")}
               </span>
             </button>
             ) : null}
@@ -162,7 +162,7 @@ export const PlanQuestionBar = ({
               <input
                 type="password"
                 className="lyra-ai-plan-bar__note lyra-ai-plan-bar__secret"
-                placeholder={t("ai.planQuestionCustomReplyPlaceholder")}
+                placeholder={t("ai.agentQuestionCustomReplyPlaceholder")}
                 value={activeSelection?.kind === "other" ? activeSelection.value : ""}
                 onChange={(event) => {
                   const value = event.target.value;
@@ -175,7 +175,7 @@ export const PlanQuestionBar = ({
             ) : (
               <textarea
                 className="lyra-ai-plan-bar__note"
-                placeholder={t("ai.planQuestionCustomReplyPlaceholder")}
+                placeholder={t("ai.agentQuestionCustomReplyPlaceholder")}
                 value={activeSelection?.kind === "other" ? activeSelection.value : ""}
                 onChange={(event) => {
                   const value = event.target.value;
@@ -194,7 +194,7 @@ export const PlanQuestionBar = ({
         {showOptionalNote ? (
           <textarea
             className="lyra-ai-plan-bar__note"
-            placeholder={t("ai.planQuestionOptionalNote")}
+            placeholder={t("ai.agentQuestionOptionalNote")}
             value={note}
             onChange={(event) => {
               setNote(event.target.value);
@@ -235,8 +235,8 @@ export const PlanQuestionBar = ({
           <button
             type="button"
             className="lyra-ai-plan-bar__submit lyra-ai-plan-bar__icon-action lyra-ai-plan-bar__icon-action-submit"
-            aria-label={t("ai.planQuestionContinue")}
-            title={t("ai.planQuestionContinue")}
+            aria-label={t("ai.agentQuestionContinue")}
+            title={t("ai.agentQuestionContinue")}
             onClick={() => {
               onSubmit({
                 answers,

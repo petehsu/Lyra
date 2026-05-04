@@ -90,9 +90,9 @@ describe("pending interaction mappers", () => {
       createdAt: now + 1,
       updatedAt: now + 1
     } as any, LABELS);
-    expect(questionPanel?.kind).toBe("planQuestion");
-    if (questionPanel?.kind !== "planQuestion") {
-      throw new Error("expected planQuestion panel");
+    expect(questionPanel?.kind).toBe("agentQuestion");
+    if (questionPanel?.kind !== "agentQuestion") {
+      throw new Error("expected agentQuestion panel");
     }
     expect(questionPanel.request.questions[0]?.options).toEqual([]);
     expect(questionPanel.request.questions[0]?.allowOther).toBe(true);

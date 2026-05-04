@@ -117,7 +117,7 @@ export const WorkbenchTitlebarContextSlot = () => {
 
   return (
     <section
-      className={cx("lyra-titlebar-context lyra-no-drag", contribution.className)}
+      className={cx("lyra-titlebar-context", contribution.className)}
       aria-label={contribution.ariaLabel}
     >
       <div className="lyra-titlebar-context-scroll">

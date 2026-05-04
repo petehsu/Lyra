@@ -5,15 +5,10 @@ use crate::tools::context::ToolPayload;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
-use lyra_protocol::protocol::SessionSource;
 use lyra_protocol::request_user_input::RequestUserInputArgs;
-use lyra_tools::REQUEST_USER_INPUT_TOOL_NAME;
 use lyra_tools::normalize_request_user_input_args;
-use lyra_tools::request_user_input_unavailable_message;
 
-pub struct RequestUserInputHandler {
-    pub default_mode_request_user_input: bool,
-}
+pub struct RequestUserInputHandler;
 
 impl ToolHandler for RequestUserInputHandler {
     type Output = FunctionToolOutput;
@@ -27,31 +22,20 @@ impl ToolHandler for RequestUserInputHandler {
             session,
             turn,
             call_id,
+            tool_name,
             payload,
             ..
         } = invocation;
+        let tool_name = tool_name.to_string();
 
         let arguments = match payload {
             ToolPayload::Function { arguments } => arguments,
             _ => {
                 return Err(FunctionCallError::RespondToModel(format!(
-                    "{REQUEST_USER_INPUT_TOOL_NAME} handler received unsupported payload"
+                    "{tool_name} handler received unsupported payload"
                 )));
             }
         };
-
-        if matches!(turn.session_source, SessionSource::SubAgent(_)) {
-            return Err(FunctionCallError::RespondToModel(
-                "request_user_input can only be used by the root thread".to_string(),
-            ));
-        }
-
-        let mode = session.collaboration_mode().await.mode;
-        if let Some(message) =
-            request_user_input_unavailable_message(mode, self.default_mode_request_user_input)
-        {
-            return Err(FunctionCallError::RespondToModel(message));
-        }
 
         let args: RequestUserInputArgs = parse_arguments(&arguments)?;
         let args =
@@ -61,14 +45,12 @@ impl ToolHandler for RequestUserInputHandler {
             .await
             .ok_or_else(|| {
                 FunctionCallError::RespondToModel(format!(
-                    "{REQUEST_USER_INPUT_TOOL_NAME} was cancelled before receiving a response"
+                    "{tool_name} was cancelled before receiving a response"
                 ))
             })?;
 
         let content = serde_json::to_string(&response).map_err(|err| {
-            FunctionCallError::Fatal(format!(
-                "failed to serialize {REQUEST_USER_INPUT_TOOL_NAME} response: {err}"
-            ))
+            FunctionCallError::Fatal(format!("failed to serialize {tool_name} response: {err}"))
         })?;
 
         Ok(FunctionToolOutput::from_text(content, Some(true)))

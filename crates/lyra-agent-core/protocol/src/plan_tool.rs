@@ -3,8 +3,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::request_user_input::RequestUserInputQuestion;
-
 // Types for the TODO tool arguments matching lyra-vscode/todo-mcp/src/main.rs
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
@@ -28,14 +26,6 @@ pub struct UpdatePlanArgs {
     #[serde(default)]
     pub explanation: Option<String>,
     pub plan: Vec<PlanItemArg>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum LyraPlanAction {
-    Ask,
-    Draft,
-    Propose,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
@@ -90,17 +80,4 @@ pub struct PlanAnnotation {
     pub block_id: Option<String>,
     pub anchor: String,
     pub comment: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct LyraPlanArgs {
-    /// Planning operation to perform.
-    pub action: LyraPlanAction,
-    /// Structured draft/proposal plan content for `draft` and `propose`.
-    #[serde(default)]
-    pub plan: Option<PlanArtifact>,
-    /// Structured questions for `action = "ask"`.
-    #[serde(default)]
-    pub questions: Option<Vec<RequestUserInputQuestion>>,
 }

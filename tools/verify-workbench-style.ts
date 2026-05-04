@@ -157,11 +157,6 @@ const selectorRules: readonly SelectorRule[] = [
     forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
   },
   {
-    selector: ".lyra-ai-plan-card__action-secondary",
-    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/],
-    forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
-  },
-  {
     selector: ".lyra-ai-agent-follow-toggle-active",
     required: [/color:\s*var\(--lyra-text-primary\)\s*;/, /background:\s*transparent\s*;/],
     forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]

@@ -32,6 +32,7 @@ import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "../browser-search";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
+import { useWorkbenchAiFileMentionFallbackRoots } from "./use-workbench-ai-file-mention-fallback-roots";
 import { useWorkbenchAiSurfaceBridge } from "./use-workbench-ai-surface-bridge";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
 import { useWorkbenchBrowserRuntime } from "./use-workbench-browser-runtime";
@@ -49,6 +50,7 @@ import { useWorkbenchEmptyAppTabGuards } from "./use-workbench-empty-app-tab-gua
 import { useWorkbenchFileActions } from "./use-workbench-file-actions";
 import { useWorkbenchJsReplSetting } from "./use-workbench-js-repl-setting";
 import { useWorkbenchLabels } from "./use-workbench-labels";
+import { useWorkbenchLinuxCompatNotice } from "./use-workbench-linux-compat-notice";
 import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
 import { useWorkbenchObservationBridge } from "./use-workbench-observation-bridge";
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
@@ -231,8 +233,16 @@ export const WorkbenchShell = () => {
     jsReplEnabled,
     searchIndexStatus,
     searchRebuildIndexPending,
+    openDialog: globalDialogModel.openDialog,
+    publishNotification,
     onJsReplChange: updateJsReplSetting,
     onSearchRebuildIndex
+  });
+  useWorkbenchLinuxCompatNotice({
+    desktopApi,
+    labels,
+    openDialog: globalDialogModel.openDialog,
+    publishNotification
   });
   const { requestProjectBind, resolveFileManagerChooser } =
     useWorkbenchProjectBindChooser({
@@ -240,25 +250,10 @@ export const WorkbenchShell = () => {
       tabsModel,
       confirmLabel: t("ai.bindProjectConfirm")
     });
-  const aiFileMentionFallbackRoots = useMemo(
-    () => {
-      const currentPath = activeFileManagerState?.currentLocation?.path?.trim();
-      const roots = [
-        currentPath === undefined || currentPath.length === 0 ? null : currentPath,
-        ...tabsModel.tabs.map((tab) => {
-          const filePath = tab.filePath?.trim();
-          if (filePath === undefined || filePath.length === 0) {
-            return null;
-          }
-          const normalized = filePath.replace(/\\/gu, "/");
-          const separatorIndex = normalized.lastIndexOf("/");
-          return separatorIndex <= 0 ? null : normalized.slice(0, separatorIndex);
-        }),
-      ].filter((root): root is string => root !== null);
-      return roots.filter((root, index, values) => values.indexOf(root) === index);
-    },
-    [activeFileManagerState?.currentLocation?.path, tabsModel.tabs]
-  );
+  const aiFileMentionFallbackRoots = useWorkbenchAiFileMentionFallbackRoots({
+    currentPath: activeFileManagerState?.currentLocation?.path,
+    tabs: tabsModel.tabs
+  });
   const planReview = useWorkbenchPlanReviewModel({
     openAppTab: tabsModel.openAppTab,
     title: t("ai.planReviewTitle")

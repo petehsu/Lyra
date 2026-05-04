@@ -77,6 +77,8 @@ const renderSettingsProps = ({
       jsReplEnabled: true,
       searchIndexStatus: null,
       searchRebuildIndexPending: false,
+      openDialog: vi.fn(),
+      publishNotification: vi.fn(),
       onJsReplChange: vi.fn(),
       onSearchRebuildIndex: vi.fn()
     });

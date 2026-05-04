@@ -1,4 +1,4 @@
-import { Check, ExternalLink, RotateCcw, X } from "lucide-react";
+import { Check, ExternalLink, X } from "lucide-react";
 import { useMemo } from "react";
 
 import type { AgentPlanBlock } from "../../../shared/desktop-bridge";
@@ -12,7 +12,6 @@ type PlanCardProps = {
   readonly themeSignature?: string;
   readonly showActions: boolean;
   readonly onApprove?: () => void;
-  readonly onKeepPlanning?: () => void;
   readonly onReject: () => void;
   readonly onOpenInWorkspace?: () => void;
 };
@@ -41,7 +40,6 @@ export const PlanCard = ({
   plan,
   showActions,
   onApprove,
-  onKeepPlanning,
   onReject,
   onOpenInWorkspace,
 }: PlanCardProps) => {
@@ -79,17 +77,6 @@ export const PlanCard = ({
               onClick={onApprove}
             >
               <Check size={14} aria-hidden="true" />
-            </button>
-          )}
-          {onKeepPlanning === undefined ? null : (
-            <button
-              type="button"
-              className="lyra-ai-plan-card__action lyra-ai-plan-card__action-secondary"
-              aria-label={t("ai.planApprovalKeepPlanning")}
-              title={t("ai.planApprovalKeepPlanning")}
-              onClick={onKeepPlanning}
-            >
-              <RotateCcw size={14} aria-hidden="true" />
             </button>
           )}
           {onOpenInWorkspace === undefined ? null : (

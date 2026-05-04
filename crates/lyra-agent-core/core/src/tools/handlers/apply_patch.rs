@@ -73,7 +73,18 @@ impl ToolArgumentDiffConsumer for ApplyPatchArgumentDiffConsumer {
             return None;
         }
 
-        self.push_delta(call_id, diff)
+        self.push_delta(call_id, turn.sub_id.clone(), diff)
+            .map(EventMsg::PatchApplyUpdated)
+    }
+
+    fn consume_complete(
+        &mut self,
+        turn: &TurnContext,
+        call_id: String,
+        payload: &ToolPayload,
+    ) -> Option<EventMsg> {
+        let patch_input = apply_patch_input(payload)?;
+        self.push_complete(call_id, turn.sub_id.clone(), patch_input)
             .map(EventMsg::PatchApplyUpdated)
     }
 
@@ -84,10 +95,16 @@ impl ToolArgumentDiffConsumer for ApplyPatchArgumentDiffConsumer {
 }
 
 impl ApplyPatchArgumentDiffConsumer {
-    fn push_delta(&mut self, call_id: String, delta: &str) -> Option<PatchApplyUpdatedEvent> {
+    fn push_delta(
+        &mut self,
+        call_id: String,
+        turn_id: String,
+        delta: &str,
+    ) -> Option<PatchApplyUpdatedEvent> {
         self.input.push_str(delta);
 
-        let ApplyPatchArgs { hunks, .. } = parse_patch_streaming(&self.input).ok()?;
+        let patch_input = apply_patch_streaming_preview_input(&self.input)?;
+        let ApplyPatchArgs { hunks, .. } = parse_patch_streaming(&patch_input).ok()?;
         if hunks.is_empty() {
             return None;
         }
@@ -97,7 +114,11 @@ impl ApplyPatchArgumentDiffConsumer {
 
         let changes = convert_apply_patch_hunks_to_protocol(&hunks);
         self.last_progress = Some(hunks);
-        let event = PatchApplyUpdatedEvent { call_id, changes };
+        let event = PatchApplyUpdatedEvent {
+            call_id,
+            turn_id,
+            changes,
+        };
         let now = Instant::now();
         match self.last_sent_at {
             Some(last_sent_at)
@@ -114,6 +135,28 @@ impl ApplyPatchArgumentDiffConsumer {
         }
     }
 
+    fn push_complete(
+        &mut self,
+        call_id: String,
+        turn_id: String,
+        patch_input: String,
+    ) -> Option<PatchApplyUpdatedEvent> {
+        self.input = patch_input;
+        let ApplyPatchArgs { hunks, .. } = parse_patch_streaming(&self.input).ok()?;
+        if hunks.is_empty() || self.last_progress.as_ref() == Some(&hunks) {
+            return None;
+        }
+
+        self.pending = None;
+        self.last_sent_at = Some(Instant::now());
+        self.last_progress = Some(hunks.clone());
+        Some(PatchApplyUpdatedEvent {
+            call_id,
+            turn_id,
+            changes: convert_apply_patch_hunks_to_protocol(&hunks),
+        })
+    }
+
     fn flush_update_on_complete(&mut self) -> Option<PatchApplyUpdatedEvent> {
         let event = self.pending.take();
         if event.is_some() {
@@ -121,6 +164,75 @@ impl ApplyPatchArgumentDiffConsumer {
         }
         event
     }
+}
+
+fn apply_patch_streaming_preview_input(input: &str) -> Option<String> {
+    if input.trim_start().starts_with("*** Begin Patch") {
+        return Some(input.to_string());
+    }
+    if let Ok(args) = parse_arguments::<ApplyPatchToolArgs>(input) {
+        return Some(args.input);
+    }
+    extract_partial_json_string_field(input, "input")
+}
+
+fn extract_partial_json_string_field(input: &str, field_name: &str) -> Option<String> {
+    let key = format!("\"{field_name}\"");
+    let key_start = input.find(&key)?;
+    let after_key = &input[key_start + key.len()..];
+    let colon = after_key.find(':')?;
+    let mut chars = after_key[colon + 1..].char_indices().peekable();
+
+    while let Some((_, ch)) = chars.peek().copied() {
+        if !ch.is_whitespace() {
+            break;
+        }
+        chars.next();
+    }
+    if !matches!(chars.next(), Some((_, '"'))) {
+        return None;
+    }
+
+    let mut value = String::new();
+    while let Some((_, ch)) = chars.next() {
+        match ch {
+            '"' => return Some(value),
+            '\\' => {
+                let Some((_, escaped)) = chars.next() else {
+                    return (!value.is_empty()).then_some(value);
+                };
+                match escaped {
+                    '"' | '\\' | '/' => value.push(escaped),
+                    'b' => value.push('\u{0008}'),
+                    'f' => value.push('\u{000C}'),
+                    'n' => value.push('\n'),
+                    'r' => value.push('\r'),
+                    't' => value.push('\t'),
+                    'u' => {
+                        let mut code = String::with_capacity(4);
+                        for _ in 0..4 {
+                            let Some((_, hex)) = chars.next() else {
+                                return (!value.is_empty()).then_some(value);
+                            };
+                            if !hex.is_ascii_hexdigit() {
+                                return (!value.is_empty()).then_some(value);
+                            }
+                            code.push(hex);
+                        }
+                        if let Ok(codepoint) = u32::from_str_radix(&code, 16)
+                            && let Some(decoded) = char::from_u32(codepoint)
+                        {
+                            value.push(decoded);
+                        }
+                    }
+                    other => value.push(other),
+                }
+            }
+            other => value.push(other),
+        }
+    }
+
+    (!value.is_empty()).then_some(value)
 }
 
 fn apply_patch_input(payload: &ToolPayload) -> Option<String> {
@@ -555,5 +667,77 @@ pub(crate) async fn intercept_apply_patch(
             Ok(None)
         }
         lyra_apply_patch::MaybeApplyPatchVerified::NotApplyPatch => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn streaming_preview_extracts_raw_patch() {
+        let input = "*** Begin Patch\n*** Add File: src/hello.txt\n+hel";
+
+        let preview = apply_patch_streaming_preview_input(input).expect("preview input");
+
+        assert_eq!(preview, input);
+        let parsed = parse_patch_streaming(&preview).expect("partial patch should parse");
+        assert_eq!(parsed.hunks.len(), 1);
+    }
+
+    #[test]
+    fn streaming_preview_extracts_partial_function_arguments() {
+        let input = "{\"input\":\"*** Begin Patch\\n*** Add File: src/hello.txt\\n+hel";
+
+        let preview = apply_patch_streaming_preview_input(input).expect("preview input");
+
+        assert!(preview.starts_with("*** Begin Patch\n*** Add File: src/hello.txt\n+hel"));
+        let parsed = parse_patch_streaming(&preview).expect("partial patch should parse");
+        assert_eq!(parsed.hunks.len(), 1);
+    }
+
+    #[test]
+    fn streaming_preview_extracts_complete_function_arguments() {
+        let input = "{\"input\":\"*** Begin Patch\\n*** Add File: src/hello.txt\\n+hello\\n*** End Patch\"}";
+
+        let preview = apply_patch_streaming_preview_input(input).expect("preview input");
+
+        assert!(preview.contains("+hello\n*** End Patch"));
+        let parsed = parse_patch_streaming(&preview).expect("complete patch should parse");
+        assert_eq!(parsed.hunks.len(), 1);
+    }
+
+    #[test]
+    fn streaming_delta_preview_emits_file_change_update() {
+        let mut consumer = ApplyPatchArgumentDiffConsumer::default();
+        let event = consumer
+            .push_delta(
+                "patch-1".to_string(),
+                "turn-1".to_string(),
+                "*** Begin Patch\n*** Add File: src/hello.txt\n+hello\n*** End Patch",
+            )
+            .expect("streaming update");
+
+        assert_eq!(event.turn_id, "turn-1");
+        assert_eq!(event.changes.len(), 1);
+    }
+
+    #[test]
+    fn complete_payload_skips_identical_preview_snapshot() {
+        let patch = "*** Begin Patch\n*** Add File: src/hello.txt\n+hello\n*** End Patch";
+        let mut consumer = ApplyPatchArgumentDiffConsumer::default();
+        consumer
+            .push_delta("patch-1".to_string(), "turn-1".to_string(), patch)
+            .expect("streaming update");
+
+        assert!(
+            consumer
+                .push_complete(
+                    "patch-1".to_string(),
+                    "turn-1".to_string(),
+                    patch.to_string()
+                )
+                .is_none()
+        );
     }
 }

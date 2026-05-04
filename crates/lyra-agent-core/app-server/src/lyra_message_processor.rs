@@ -74,6 +74,8 @@ use lyra_app_server_protocol::ModelListResponse;
 use lyra_app_server_protocol::PlanAnnotation;
 use lyra_app_server_protocol::PlanApprovalDecision;
 use lyra_app_server_protocol::PlanArtifact;
+use lyra_app_server_protocol::PlanReviewTurnAction;
+use lyra_app_server_protocol::PlanReviewTurnContext;
 use lyra_app_server_protocol::PluginDetail;
 use lyra_app_server_protocol::PluginInstallParams;
 use lyra_app_server_protocol::PluginInstallResponse;
@@ -383,11 +385,62 @@ fn format_plan_approval_instruction(
             "The user approved plan `{plan_id}` and explicitly chose Approve and Implement. Approval is complete. Continue in Default mode and implement the approved structured plan now.\n\nDo not submit another plan, do not say you are waiting for approval, and do not stop after summarizing the plan. Start the implementation work immediately. If implementation is impossible, explain the concrete blocker instead of asking for approval again.{feedback_section}{annotations_section}{plan_section}"
         ),
         PlanApprovalDecision::KeepPlanning => format!(
-            "The user wants to continue planning for plan `{plan_id}`. Read the full structured artifact, every document annotation, and the overall feedback. Revise the plan in Plan mode, preserve stable block ids for unchanged blocks, and submit a complete updated proposal with lyra_plan action=\"propose\". Use lyra_plan action=\"draft\" only for intermediate visible drafts and action=\"ask\" only for blocking decisions. Do not implement yet and do not ask the user to confirm in a plain assistant message.{feedback_section}{annotations_section}{plan_section}"
+            "The user wants to continue planning for plan `{plan_id}`. Read the full structured artifact, every document annotation, and the overall feedback. Revise the plan in Plan mode, preserve stable block ids for unchanged blocks, and submit a complete updated proposal in `<proposed_plan>...</proposed_plan>`. Use `agent_question` only for truly blocking decisions. Do not implement yet and do not ask the user to confirm in a plain assistant message.{feedback_section}{annotations_section}{plan_section}"
         ),
         PlanApprovalDecision::Reject => format!(
             "The user rejected plan `{plan_id}`. Do not implement it.{feedback_section}{annotations_section}{plan_section}"
         ),
+    }
+}
+
+fn format_plan_review_turn_input(context: &PlanReviewTurnContext) -> String {
+    let feedback = context.overall_feedback.as_deref().unwrap_or("").trim();
+    let feedback_section = if feedback.is_empty() {
+        String::new()
+    } else {
+        format!("\n\nOverall feedback:\n\n{feedback}")
+    };
+    let annotations_section = if context.annotations.is_empty() {
+        String::new()
+    } else {
+        serde_json::to_string_pretty(&context.annotations)
+            .map(|json| format!("\n\nInline plan annotations:\n\n```json\n{json}\n```"))
+            .unwrap_or_default()
+    };
+    let plan_section = serde_json::to_string_pretty(&context.artifact_snapshot)
+        .map(|json| {
+            format!(
+                "\n\nCurrent plan artifact snapshot for `{}`:\n\n```json\n{json}\n```",
+                context.plan_id
+            )
+        })
+        .unwrap_or_default();
+
+    match context.action {
+        PlanReviewTurnAction::RevisionRequest => {
+            format!(
+                "I reviewed plan `{}` from turn `{}`. Revise the plan using the current plan snapshot, every inline annotation, and the overall feedback. Stay in Plan Mode, do not implement yet, and return a complete updated proposal in `<proposed_plan>...</proposed_plan>`.",
+                context.plan_id, context.plan_turn_id
+            ) + &feedback_section
+                + &annotations_section
+                + &plan_section
+        }
+        PlanReviewTurnAction::ApproveAndExecute => {
+            format!(
+                "I approve plan `{}` from turn `{}`. Execute this approved plan now. Do not submit another plan and do not ask for approval again unless implementation hits a concrete blocker.",
+                context.plan_id, context.plan_turn_id
+            ) + &feedback_section
+                + &annotations_section
+                + &plan_section
+        }
+        PlanReviewTurnAction::Reject => {
+            format!(
+                "I rejected plan `{}` from turn `{}`. Do not implement it.",
+                context.plan_id, context.plan_turn_id
+            ) + &feedback_section
+                + &annotations_section
+                + &plan_section
+        }
     }
 }
 
@@ -6018,7 +6071,7 @@ impl LyraMessageProcessor {
 
         let TurnStartParams {
             thread_id: _,
-            input,
+            mut input,
             responsesapi_client_metadata,
             cwd,
             approval_policy,
@@ -6031,8 +6084,24 @@ impl LyraMessageProcessor {
             verbosity,
             summary,
             output_schema,
+            plan_review_context,
             collaboration_mode,
         } = params;
+        if let Some(context) = plan_review_context.as_ref() {
+            input.push(V2UserInput::Text {
+                text: format_plan_review_turn_input(context),
+                text_elements: Vec::new(),
+            });
+        }
+        if let Err(error) = Self::validate_v2_input_limit(&input) {
+            self.track_error_response(
+                &request_id,
+                &error,
+                Some(AnalyticsJsonRpcError::Input(InputError::TooLarge)),
+            );
+            self.outgoing.send_error(request_id, error).await;
+            return;
+        }
         let model_provider = model_provider.and_then(|provider_id| {
             let trimmed = provider_id.trim().to_string();
             (!trimmed.is_empty()).then_some(trimmed)
@@ -9192,7 +9261,8 @@ mod tests {
         );
 
         assert!(instruction.contains("continue planning"));
-        assert!(instruction.contains("lyra_plan action=\"propose\""));
+        assert!(instruction.contains("<proposed_plan>"));
+        assert!(instruction.contains("agent_question"));
         assert!(instruction.contains("Do not implement yet"));
         assert!(instruction.contains("不用蓝色；需要中英双语"));
         assert!(instruction.contains("Add rollback handling"));
@@ -9832,6 +9902,8 @@ mod tests {
                     thread_id: thread_id.to_string(),
                     turn_id: "turn-1".to_string(),
                     item_id: "call-1".to_string(),
+                    reason: None,
+                    source: Default::default(),
                     questions: vec![],
                 },
             ))

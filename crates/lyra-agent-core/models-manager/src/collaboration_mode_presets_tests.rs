@@ -31,23 +31,18 @@ fn default_mode_instructions_replace_mode_names_placeholder() {
     let expected_snippet = format!("Known mode names are {known_mode_names}.");
     assert!(default_instructions.contains(&expected_snippet));
 
-    let expected_availability_message = request_user_input_availability_message(
-        ModeKind::Default,
-        /*default_mode_request_user_input*/ true,
-    );
+    let expected_availability_message = agent_question_availability_message(ModeKind::Default);
     assert!(default_instructions.contains(&expected_availability_message));
-    assert!(default_instructions.contains("prefer using the `request_user_input` tool"));
+    assert!(default_instructions.contains("call `agent_question`"));
 }
 
 #[test]
-fn default_mode_instructions_use_plain_text_questions_when_feature_disabled() {
+fn default_mode_instructions_use_agent_question_when_feature_disabled() {
     let default_instructions = default_preset(CollaborationModesConfig::default())
         .developer_instructions
         .expect("default preset should include instructions")
         .expect("default instructions should be set");
 
-    assert!(!default_instructions.contains("prefer using the `request_user_input` tool"));
-    assert!(
-        default_instructions.contains("ask the user directly with a concise plain-text question")
-    );
+    assert!(default_instructions.contains("call `agent_question`"));
+    assert!(!default_instructions.contains("request_user_input"));
 }

@@ -33,6 +33,7 @@ use lyra_protocol::protocol::ExecCommandEndEvent;
 use lyra_protocol::protocol::FileChange;
 use lyra_protocol::protocol::PatchApplyBeginEvent;
 use lyra_protocol::protocol::PatchApplyEndEvent;
+use lyra_protocol::protocol::PatchApplyUpdatedEvent;
 use lyra_shell_command::parse_command::parse_command;
 use lyra_shell_command::parse_command::shlex_join;
 use std::collections::HashMap;
@@ -49,6 +50,14 @@ pub fn build_file_change_approval_request_item(
 }
 
 pub fn build_file_change_begin_item(payload: &PatchApplyBeginEvent) -> ThreadItem {
+    ThreadItem::FileChange {
+        id: payload.call_id.clone(),
+        changes: convert_patch_changes(&payload.changes),
+        status: PatchApplyStatus::InProgress,
+    }
+}
+
+pub fn build_file_change_updated_item(payload: &PatchApplyUpdatedEvent) -> ThreadItem {
     ThreadItem::FileChange {
         id: payload.call_id.clone(),
         changes: convert_patch_changes(&payload.changes),

@@ -48,6 +48,7 @@ use lyra_app_server_protocol::HookStartedNotification;
 use lyra_app_server_protocol::InterruptConversationResponse;
 use lyra_app_server_protocol::ItemCompletedNotification;
 use lyra_app_server_protocol::ItemStartedNotification;
+use lyra_app_server_protocol::ItemUpdatedNotification;
 use lyra_app_server_protocol::JSONRPCErrorError;
 use lyra_app_server_protocol::LyraErrorInfo as V2LyraErrorInfo;
 use lyra_app_server_protocol::McpServerElicitationAction;
@@ -87,6 +88,7 @@ use lyra_app_server_protocol::ToolRequestUserInputOption;
 use lyra_app_server_protocol::ToolRequestUserInputParams;
 use lyra_app_server_protocol::ToolRequestUserInputQuestion;
 use lyra_app_server_protocol::ToolRequestUserInputResponse;
+use lyra_app_server_protocol::ToolRequestUserInputSource;
 use lyra_app_server_protocol::Turn;
 use lyra_app_server_protocol::TurnCompletedNotification;
 use lyra_app_server_protocol::TurnDiffUpdatedNotification;
@@ -269,15 +271,10 @@ pub(crate) async fn apply_bespoke_event_handling(
                 analytics_events_client.as_ref(),
                 &outgoing,
                 &thread_state,
-                &thread_watch_manager,
             )
             .await;
         }
-        EventMsg::PlanApprovalResolved(_) => {
-            thread_watch_manager
-                .note_plan_approval_resolved(&conversation_id.to_string())
-                .await;
-        }
+        EventMsg::PlanApprovalResolved(_) => {}
         EventMsg::SkillsUpdateAvailable => {
             if let ApiVersion::V2 = api_version {
                 outgoing
@@ -427,11 +424,11 @@ pub(crate) async fn apply_bespoke_event_handling(
             }
         }
         EventMsg::ApplyPatchApprovalRequest(event) => {
-            let permission_guard = thread_watch_manager
-                .note_permission_requested(&conversation_id.to_string())
-                .await;
             match api_version {
                 ApiVersion::V1 => {
+                    let permission_guard = thread_watch_manager
+                        .note_permission_requested(&conversation_id.to_string())
+                        .await;
                     let params = ApplyPatchApprovalParams {
                         conversation_id,
                         call_id: event.call_id.clone(),
@@ -454,16 +451,21 @@ pub(crate) async fn apply_bespoke_event_handling(
                     let item_id = event.call_id.clone();
                     let patch_changes = convert_patch_changes(&event.changes);
                     let stream_metadata = file_change_stream_metadata(&event.changes);
-                    let first_start = {
+                    let (first_start, approval_already_requested) = {
                         let mut state = thread_state.lock().await;
                         state
                             .turn_summary
                             .file_change_metadata
                             .insert(item_id.clone(), stream_metadata);
-                        state
+                        let first_start = state
                             .turn_summary
                             .file_change_started
-                            .insert(item_id.clone())
+                            .insert(item_id.clone());
+                        let approval_already_requested = !state
+                            .turn_summary
+                            .file_change_approval_requested
+                            .insert(item_id.clone());
+                        (first_start, approval_already_requested)
                     };
                     if first_start {
                         let item = build_file_change_approval_request_item(&event);
@@ -475,8 +477,24 @@ pub(crate) async fn apply_bespoke_event_handling(
                         outgoing
                             .send_server_notification(ServerNotification::ItemStarted(notification))
                             .await;
+                    } else {
+                        let item = build_file_change_approval_request_item(&event);
+                        let notification = ItemUpdatedNotification {
+                            thread_id: conversation_id.to_string(),
+                            turn_id: event_turn_id.clone(),
+                            item,
+                        };
+                        outgoing
+                            .send_server_notification(ServerNotification::ItemUpdated(notification))
+                            .await;
+                    }
+                    if approval_already_requested {
+                        return;
                     }
 
+                    let permission_guard = thread_watch_manager
+                        .note_permission_requested(&conversation_id.to_string())
+                        .await;
                     let params = FileChangeRequestApprovalParams {
                         thread_id: conversation_id.to_string(),
                         turn_id: event.turn_id.clone(),
@@ -682,6 +700,12 @@ pub(crate) async fn apply_bespoke_event_handling(
                     thread_id: conversation_id.to_string(),
                     turn_id: request.turn_id,
                     item_id: request.call_id,
+                    reason: request.reason,
+                    source: ToolRequestUserInputSource {
+                        agent_thread_id: request.source.agent_thread_id,
+                        agent_nickname: request.source.agent_nickname,
+                        agent_role: request.source.agent_role,
+                    },
                     questions,
                 };
                 let (pending_request_id, rx) = outgoing
@@ -1406,14 +1430,6 @@ pub(crate) async fn apply_bespoke_event_handling(
         }
         EventMsg::ItemCompleted(item_completed_event) => {
             let item: ThreadItem = item_completed_event.item.clone().into();
-            if matches!(
-                &item,
-                ThreadItem::Plan { artifact, .. }
-                    if artifact.status == lyra_app_server_protocol::PlanArtifactStatus::Proposed
-            ) {
-                let mut state = thread_state.lock().await;
-                state.turn_summary.plan_proposed = true;
-            }
             let thread_id = conversation_id.to_string();
             let turn_id = event_turn_id.clone();
             let notification = ItemCompletedNotification {
@@ -1626,12 +1642,23 @@ pub(crate) async fn apply_bespoke_event_handling(
                 outgoing
                     .send_server_notification(ServerNotification::ItemStarted(notification))
                     .await;
+            } else {
+                let item = build_file_change_begin_item(&patch_begin_event);
+                let notification = ItemUpdatedNotification {
+                    thread_id: conversation_id.to_string(),
+                    turn_id: event_turn_id.clone(),
+                    item,
+                };
+                outgoing
+                    .send_server_notification(ServerNotification::ItemUpdated(notification))
+                    .await;
             }
         }
         EventMsg::PatchApplyUpdated(patch_updated_event) => {
             if matches!(api_version, ApiVersion::V2) {
                 let item_id = patch_updated_event.call_id.clone();
-                {
+                let patch_changes = convert_patch_changes(&patch_updated_event.changes);
+                let first_start = {
                     let mut state = thread_state.lock().await;
                     state.turn_summary.file_change_metadata.insert(
                         item_id.clone(),
@@ -1640,21 +1667,32 @@ pub(crate) async fn apply_bespoke_event_handling(
                     state
                         .turn_summary
                         .file_change_started
-                        .insert(item_id.clone());
-                }
+                        .insert(item_id.clone())
+                };
                 let item = ThreadItem::FileChange {
-                    id: item_id,
-                    changes: convert_patch_changes(&patch_updated_event.changes),
+                    id: item_id.clone(),
+                    changes: patch_changes,
                     status: PatchApplyStatus::InProgress,
                 };
-                let notification = ItemStartedNotification {
-                    thread_id: conversation_id.to_string(),
-                    turn_id: event_turn_id.clone(),
-                    item,
-                };
-                outgoing
-                    .send_server_notification(ServerNotification::ItemStarted(notification))
-                    .await;
+                if first_start {
+                    let notification = ItemStartedNotification {
+                        thread_id: conversation_id.to_string(),
+                        turn_id: event_turn_id.clone(),
+                        item,
+                    };
+                    outgoing
+                        .send_server_notification(ServerNotification::ItemStarted(notification))
+                        .await;
+                } else {
+                    let notification = ItemUpdatedNotification {
+                        thread_id: conversation_id.to_string(),
+                        turn_id: event_turn_id.clone(),
+                        item,
+                    };
+                    outgoing
+                        .send_server_notification(ServerNotification::ItemUpdated(notification))
+                        .await;
+                }
             }
         }
         EventMsg::PatchApplyEnd(patch_end_event) => {
@@ -2236,14 +2274,10 @@ async fn handle_turn_complete(
     analytics_events_client: Option<&AnalyticsEventsClient>,
     outgoing: &ThreadScopedOutgoingMessageSender,
     thread_state: &Arc<Mutex<ThreadState>>,
-    thread_watch_manager: &ThreadWatchManager,
 ) {
     let turn_summary = find_and_remove_turn_summary(conversation_id, thread_state).await;
-    let plan_approval_requested = turn_summary.last_error.is_none() && turn_summary.plan_proposed;
-
     let (status, error) = match turn_summary.last_error {
         Some(error) => (TurnStatus::Failed, Some(error)),
-        None if turn_summary.plan_proposed => (TurnStatus::Waiting, None),
         None => (TurnStatus::Completed, None),
     };
 
@@ -2262,12 +2296,6 @@ async fn handle_turn_complete(
         outgoing,
     )
     .await;
-
-    if plan_approval_requested {
-        thread_watch_manager
-            .note_plan_approval_requested(&conversation_id.to_string())
-            .await;
-    }
 }
 
 async fn handle_turn_interrupted(
@@ -3667,7 +3695,6 @@ mod tests {
             ThreadId::new(),
         );
         let thread_state = new_thread_state();
-        let thread_watch_manager = ThreadWatchManager::new();
         {
             let mut state = thread_state.lock().await;
             state.track_current_turn_event(&EventMsg::TurnStarted(
@@ -3690,7 +3717,6 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
-            &thread_watch_manager,
         )
         .await;
 
@@ -3715,9 +3741,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_turn_complete_emits_waiting_for_submitted_plan() -> Result<()> {
+    async fn test_handle_turn_complete_emits_completed_for_submitted_plan() -> Result<()> {
         let conversation_id = ThreadId::new();
-        let event_turn_id = "plan-waiting".to_string();
+        let event_turn_id = "plan-completed".to_string();
         let (tx, mut rx) = mpsc::channel(CHANNEL_CAPACITY);
         let outgoing = Arc::new(OutgoingMessageSender::new(tx));
         let outgoing = ThreadScopedOutgoingMessageSender::new(
@@ -3726,11 +3752,9 @@ mod tests {
             ThreadId::new(),
         );
         let thread_state = new_thread_state();
-        let thread_watch_manager = ThreadWatchManager::new();
         {
             let mut state = thread_state.lock().await;
             state.turn_summary.started_at = Some(42);
-            state.turn_summary.plan_proposed = true;
         }
 
         handle_turn_complete(
@@ -3740,7 +3764,6 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
-            &thread_watch_manager,
         )
         .await;
 
@@ -3748,7 +3771,7 @@ mod tests {
         match msg {
             OutgoingMessage::AppServerNotification(ServerNotification::TurnCompleted(n)) => {
                 assert_eq!(n.turn.id, event_turn_id);
-                assert_eq!(n.turn.status, TurnStatus::Waiting);
+                assert_eq!(n.turn.status, TurnStatus::Completed);
                 assert_eq!(n.turn.error, None);
                 assert_eq!(n.turn.started_at, Some(42));
             }
@@ -3828,8 +3851,6 @@ mod tests {
             vec![ConnectionId(1)],
             ThreadId::new(),
         );
-        let thread_watch_manager = ThreadWatchManager::new();
-
         handle_turn_complete(
             conversation_id,
             event_turn_id.clone(),
@@ -3837,7 +3858,6 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
-            &thread_watch_manager,
         )
         .await;
 
@@ -4075,8 +4095,6 @@ mod tests {
             vec![ConnectionId(1)],
             ThreadId::new(),
         );
-        let thread_watch_manager = ThreadWatchManager::new();
-
         // Turn 1 on conversation A
         let a_turn1 = "a_turn1".to_string();
         handle_error(
@@ -4096,7 +4114,6 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
-            &thread_watch_manager,
         )
         .await;
 
@@ -4119,7 +4136,6 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
-            &thread_watch_manager,
         )
         .await;
 
@@ -4132,7 +4148,6 @@ mod tests {
             /*analytics_events_client*/ None,
             &outgoing,
             &thread_state,
-            &thread_watch_manager,
         )
         .await;
 

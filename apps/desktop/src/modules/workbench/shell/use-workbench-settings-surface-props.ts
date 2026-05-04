@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type {
+  LinuxCompatConfig,
+  LinuxCompatProfile,
+  LinuxCompatReadStatusResponse,
   LyraDesktopApi,
   SearchIndexStatusResponse,
   SystemNotificationMode,
@@ -8,6 +11,8 @@ import type {
   UiuxListPacksResponse
 } from "../../../shared/desktop-bridge";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
+import type { GlobalDialogModel } from "../global-dialog";
+import type { WorkbenchNotificationModel } from "../notifications";
 import type { WorkbenchPreferencesModel } from "../preferences";
 import type { SettingsAiModel } from "../settings-ai";
 import {
@@ -24,6 +29,8 @@ type UseWorkbenchSettingsSurfacePropsParams = {
   readonly jsReplEnabled: boolean;
   readonly searchIndexStatus: SearchIndexStatusResponse | null;
   readonly searchRebuildIndexPending: boolean;
+  readonly openDialog: GlobalDialogModel["openDialog"];
+  readonly publishNotification: WorkbenchNotificationModel["publishNotification"];
   readonly onJsReplChange: (enabled: boolean) => void;
   readonly onSearchRebuildIndex: () => void;
 };
@@ -44,6 +51,8 @@ export const useWorkbenchSettingsSurfaceProps = ({
   jsReplEnabled,
   searchIndexStatus,
   searchRebuildIndexPending,
+  openDialog,
+  publishNotification,
   onJsReplChange,
   onSearchRebuildIndex
 }: UseWorkbenchSettingsSurfacePropsParams): BrowserSettingsSurfaceProps => {
@@ -52,6 +61,10 @@ export const useWorkbenchSettingsSurfaceProps = ({
   const [pendingUiPackId, setPendingUiPackId] = useState<WorkbenchUiPackId | null>(null);
   const [systemNotificationStatus, setSystemNotificationStatus] =
     useState<SystemNotificationStatus | null>(null);
+  const [linuxCompatStatus, setLinuxCompatStatus] =
+    useState<LinuxCompatReadStatusResponse | null>(null);
+  const [linuxCompatConfig, setLinuxCompatConfig] =
+    useState<LinuxCompatConfig | null>(null);
 
   useEffect(() => {
     if (desktopApi?.uiux === undefined) {
@@ -110,6 +123,45 @@ export const useWorkbenchSettingsSurfaceProps = ({
       window.removeEventListener("focus", readStatus);
     };
   }, [desktopApi?.systemNotifications]);
+
+  useEffect(() => {
+    const linuxCompat = desktopApi?.linuxCompat;
+    if (linuxCompat === undefined) {
+      setLinuxCompatStatus(null);
+      setLinuxCompatConfig(null);
+      return;
+    }
+
+    let cancelled = false;
+    const readLinuxCompat = (): void => {
+      void Promise.all([
+        linuxCompat.readStatus(),
+        linuxCompat.readConfig()
+      ])
+        .then(([status, config]) => {
+          if (cancelled) {
+            return;
+          }
+          setLinuxCompatStatus(status);
+          setLinuxCompatConfig(config);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) {
+            return;
+          }
+          console.warn(`[lyra-linux] status read failed ${String(error)}`);
+          setLinuxCompatStatus(null);
+          setLinuxCompatConfig(null);
+        });
+    };
+
+    readLinuxCompat();
+    window.addEventListener("focus", readLinuxCompat);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", readLinuxCompat);
+    };
+  }, [desktopApi?.linuxCompat]);
 
   const uiStyleOptions = useMemo(
     () => [
@@ -176,8 +228,138 @@ export const useWorkbenchSettingsSurfaceProps = ({
       });
   };
 
+  const publishLinuxCompatNotification = (
+    title: string,
+    preview: string,
+    level: "info" | "success" | "warning" | "error" = "info"
+  ): void => {
+    publishNotification({
+      title,
+      preview,
+      level,
+      source: {
+        id: "linux-compat",
+        title: labels.settingsSurface.linuxCategoryLabel,
+        iconKey: "system"
+      },
+      target: { kind: "none" }
+    });
+  };
+
+  const requestLinuxCompatRestart = (reason: string): void => {
+    const linuxCompat = desktopApi?.linuxCompat;
+    if (linuxCompat === undefined) {
+      return;
+    }
+    void linuxCompat.requestRestart({ reason })
+      .then((response) => {
+        if (response.ok) {
+          return;
+        }
+        publishLinuxCompatNotification(
+          labels.settingsSurface.linuxCompatRestartLabel,
+          response.error ?? labels.settingsSurface.linuxCompatDiagnosticsFailed,
+          "error"
+        );
+      })
+      .catch((error: unknown) => {
+        publishLinuxCompatNotification(
+          labels.settingsSurface.linuxCompatRestartLabel,
+          String(error),
+          "error"
+        );
+      });
+  };
+
+  const openLinuxCompatRestartDialog = (reason: string): void => {
+    openDialog({
+      title: labels.settingsSurface.linuxCompatRestartDialogTitle,
+      description: labels.settingsSurface.linuxCompatRestartDialogDescription,
+      source: {
+        title: labels.settingsSurface.linuxCategoryLabel,
+        iconLabel: "L",
+        ...(linuxCompatStatus === null
+          ? {}
+          : { subtitle: `${linuxCompatStatus.profile} · ${linuxCompatStatus.backend} · ${linuxCompatStatus.gpuMode}` })
+      },
+      actions: [
+        {
+          id: "cancel",
+          label: labels.settingsSurface.linuxCompatRestartDialogCancel
+        },
+        {
+          id: "restart",
+          label: labels.settingsSurface.linuxCompatRestartNowLabel,
+          tone: "primary",
+          onSelect: () => {
+            requestLinuxCompatRestart(reason);
+          }
+        }
+      ]
+    });
+  };
+
+  const handleLinuxCompatProfileChange = (profile: LinuxCompatProfile): void => {
+    const linuxCompat = desktopApi?.linuxCompat;
+    if (linuxCompat === undefined) {
+      return;
+    }
+    void linuxCompat.updateConfig({ profile })
+      .then((response) => {
+        if (response.ok && response.config !== undefined) {
+          setLinuxCompatConfig(response.config);
+          publishLinuxCompatNotification(
+            labels.settingsSurface.linuxCompatProfileLabel,
+            labels.settingsSurface.linuxCompatRestartDescription,
+            "info"
+          );
+          openLinuxCompatRestartDialog("linux-compat-profile-change");
+          return;
+        }
+        publishLinuxCompatNotification(
+          labels.settingsSurface.linuxCompatProfileLabel,
+          response.error ?? labels.settingsSurface.linuxCompatDiagnosticsFailed,
+          "error"
+        );
+      })
+      .catch((error: unknown) => {
+        publishLinuxCompatNotification(
+          labels.settingsSurface.linuxCompatProfileLabel,
+          String(error),
+          "error"
+        );
+      });
+  };
+
+  const handleLinuxCompatExportDiagnostics = (): void => {
+    const linuxCompat = desktopApi?.linuxCompat;
+    if (linuxCompat === undefined) {
+      return;
+    }
+    void linuxCompat.exportDiagnostics()
+      .then((response) => {
+        publishLinuxCompatNotification(
+          labels.settingsSurface.linuxCompatExportDiagnosticsLabel,
+          response.ok
+            ? `${labels.settingsSurface.linuxCompatDiagnosticsExported}${response.filePath === undefined ? "" : ` ${response.filePath}`}`
+            : response.error ?? labels.settingsSurface.linuxCompatDiagnosticsFailed,
+          response.ok ? "success" : "error"
+        );
+      })
+      .catch((error: unknown) => {
+        publishLinuxCompatNotification(
+          labels.settingsSurface.linuxCompatExportDiagnosticsLabel,
+          String(error),
+          "error"
+        );
+      });
+  };
+
   const effectiveSystemNotificationMode =
     systemNotificationStatus?.canNotify === false ? "off" : preferences.systemNotificationMode;
+  const linuxCompatVisible = linuxCompatStatus?.platform === "linux" && linuxCompatStatus.enabled;
+  const linuxCompatProfileValue =
+    linuxCompatConfig?.profile ?? linuxCompatStatus?.profile ?? "reliable";
 
   return {
     ...labels.settingsSurface,
@@ -190,7 +372,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     splitOverflowPolicyValue: preferences.splitOverflowPolicy,
     aiRichRenderValue: preferences.aiRichRenderingEnabled,
     aiStopBehaviorValue: preferences.aiStopBehavior,
-    aiToolDisplayModeValue: preferences.aiToolDisplayMode,
     preventSleepValue: preferences.preventSleepEnabled,
     jsReplValue: jsReplEnabled,
     forceWebPageThemingValue: preferences.forceWebPageThemingEnabled,
@@ -214,6 +395,10 @@ export const useWorkbenchSettingsSurfaceProps = ({
     systemNotificationModeValue: effectiveSystemNotificationMode,
     systemNotificationClickBehaviorValue: preferences.systemNotificationClickBehavior,
     systemNotificationActionsValue: preferences.systemNotificationActionsEnabled,
+    linuxCompatVisible,
+    linuxCompatStatus,
+    linuxCompatConfig,
+    linuxCompatProfileValue,
     localeOptions: labels.settingsOptions.locale,
     themeOptions: labels.settingsOptions.theme,
     uiStyleOptions,
@@ -229,6 +414,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     omniboxNonBrowserSubmitTargetOptions: labels.settingsOptions.omniboxNonBrowserSubmitTarget,
     systemNotificationModeOptions: labels.settingsOptions.systemNotificationMode,
     systemNotificationClickBehaviorOptions: labels.settingsOptions.systemNotificationClickBehavior,
+    linuxCompatProfileOptions: labels.settingsOptions.linuxCompatProfile,
     aiLabels: labels.settingsAi,
     aiModel: settingsAiModel,
     onLocaleChange: preferencesModel.setLocale,
@@ -240,7 +426,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onSplitOverflowPolicyChange: preferencesModel.setSplitOverflowPolicy,
     onAiRichRenderChange: preferencesModel.setAiRichRenderingEnabled,
     onAiStopBehaviorChange: preferencesModel.setAiStopBehavior,
-    onAiToolDisplayModeChange: preferencesModel.setAiToolDisplayMode,
     onPreventSleepChange: preferencesModel.setPreventSleepEnabled,
     onJsReplChange,
     onForceWebPageThemingChange: preferencesModel.setForceWebPageThemingEnabled,
@@ -271,7 +456,12 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onOmniboxNonBrowserSubmitTargetChange: preferencesModel.setOmniboxNonBrowserSubmitTarget,
     onSystemNotificationModeChange: handleSystemNotificationModeChange,
     onSystemNotificationClickBehaviorChange: preferencesModel.setSystemNotificationClickBehavior,
-    onSystemNotificationActionsChange: preferencesModel.setSystemNotificationActionsEnabled
+    onSystemNotificationActionsChange: preferencesModel.setSystemNotificationActionsEnabled,
+    onLinuxCompatProfileChange: handleLinuxCompatProfileChange,
+    onLinuxCompatExportDiagnostics: handleLinuxCompatExportDiagnostics,
+    onLinuxCompatRestart: () => {
+      openLinuxCompatRestartDialog("linux-compat-settings");
+    }
   };
 };
 

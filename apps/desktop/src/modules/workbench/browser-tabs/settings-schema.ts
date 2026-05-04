@@ -5,6 +5,7 @@ export type SettingsCategoryId =
   | "appearance"
   | "workspace"
   | "notifications"
+  | "linux"
   | "search"
   | "ai";
 
@@ -30,6 +31,9 @@ export type SettingsFieldId =
   | "systemNotificationMode"
   | "systemNotificationClickBehavior"
   | "systemNotificationActions"
+  | "linuxCompatProfile"
+  | "linuxCompatStatus"
+  | "linuxCompatRestart"
   | "omniboxNonBrowserSubmitTarget"
   | "searchScope"
   | "searchCustomRoots"
@@ -44,7 +48,6 @@ export type SettingsFieldId =
   | "jsRepl"
   | "aiRichRender"
   | "aiStopBehavior"
-  | "aiToolDisplayMode"
   | "aiProviderSettings";
 
 export type WorkbenchSettingsCategory = {
@@ -79,6 +82,7 @@ type WorkbenchSettingsSchemaInput = Pick<
   BrowserSettingsSurfaceProps,
   | "aiCategoryLabel"
   | "notificationsCategoryLabel"
+  | "linuxCategoryLabel"
   | "languageLabel"
   | "themeLabel"
   | "uiStyleLabel"
@@ -88,7 +92,6 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "splitOverflowPolicyLabel"
   | "aiRichRenderLabel"
   | "aiStopBehaviorLabel"
-  | "aiToolDisplayModeLabel"
   | "preventSleepLabel"
   | "jsReplLabel"
   | "forceWebPageThemingLabel"
@@ -107,6 +110,10 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "systemNotificationModeLabel"
   | "systemNotificationClickBehaviorLabel"
   | "systemNotificationActionsLabel"
+  | "linuxCompatProfileLabel"
+  | "linuxCompatStatusLabel"
+  | "linuxCompatRestartLabel"
+  | "linuxCompatVisible"
   | "uiStyleOptions"
 >;
 
@@ -145,6 +152,9 @@ export const createWorkbenchSettingsSchema = (
       "choice"
     ),
     createField("systemNotificationActions", "notifications", props.systemNotificationActionsLabel, "boolean-choice"),
+    createField("linuxCompatProfile", "linux", props.linuxCompatProfileLabel, "choice", props.linuxCompatVisible),
+    createField("linuxCompatStatus", "linux", props.linuxCompatStatusLabel, "custom", props.linuxCompatVisible),
+    createField("linuxCompatRestart", "linux", props.linuxCompatRestartLabel, "action", props.linuxCompatVisible),
     createField("omniboxNonBrowserSubmitTarget", "search", props.omniboxNonBrowserSubmitTargetLabel, "choice"),
     createField("searchScope", "search", props.searchScopeLabel, "choice"),
     createField("searchCustomRoots", "search", props.searchCustomRootsLabel, "textarea"),
@@ -158,7 +168,6 @@ export const createWorkbenchSettingsSchema = (
     createField("searchIndexingFlags", "search", props.searchEnableContentLabel, "custom"),
     createField("jsRepl", "ai", props.jsReplLabel, "boolean-choice"),
     createField("aiRichRender", "ai", props.aiRichRenderLabel, "boolean-choice"),
-    createField("aiToolDisplayMode", "ai", props.aiToolDisplayModeLabel, "choice"),
     createField("aiStopBehavior", "ai", props.aiStopBehaviorLabel, "choice"),
     createField("aiProviderSettings", "ai", props.aiCategoryLabel, "custom")
   ];
@@ -191,6 +200,11 @@ export const createWorkbenchSettingsSchema = (
       id: "notifications",
       label: props.notificationsCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "notifications").map((section) => section.id)
+    },
+    {
+      id: "linux",
+      label: props.linuxCategoryLabel,
+      sectionIds: sections.filter((section) => section.categoryId === "linux").map((section) => section.id)
     },
     {
       id: "search",

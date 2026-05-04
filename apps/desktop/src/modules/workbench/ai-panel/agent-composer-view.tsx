@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
-import { ModernCaretOverlay } from "../caret/modern-caret";
 import { renderFileManagerEntryIconByKind } from "../file-manager/icon-registry";
 import { resolveFileManagerEntryIconKind } from "../file-manager/entry-icon-classifier";
 import {
@@ -490,6 +489,8 @@ export const AgentComposerView = ({
       )
     : null;
 
+  const hasInlineAttachments = runtime.attachments.length > 0;
+
   return (
   <div
     ref={runtime.containerRef}
@@ -506,39 +507,47 @@ export const AgentComposerView = ({
       onDragLeave={runtime.onInputShellDragLeave}
       onDrop={runtime.onInputShellDrop}
     >
-      <div className="lyra-ai-agent-composer-input-stack">
-        <div
-          className="lyra-ai-agent-composer-input-renderer"
-          style={{
-            transform: `translateY(-${String(runtime.inputScrollTop)}px)`
-          }}
-        >
-          {runtime.draftParts.map((part, index) => (
-            part.type === "text" ? (
-              <span key={`text-${String(index)}`} aria-hidden="true">{part.text}</span>
-            ) : (
-              <span
-                key={`attachment-${part.attachment.id}-${String(index)}`}
-                className="lyra-ai-agent-composer-attachment-chip lyra-ai-agent-composer-attachment-chip-inline"
-                title={part.attachment.path}
-              >
-                {renderAttachmentIcon(part.attachment.kind)}
-                <span>{part.attachment.name}</span>
-                <button
-                  type="button"
-                  className="lyra-ai-agent-composer-attachment-remove"
-                  aria-label={`${removeAttachmentLabel} ${part.attachment.name}`}
-                  title={`${removeAttachmentLabel} ${part.attachment.name}`}
-                  onClick={() => {
-                    runtime.removeAttachment(part.attachment.id);
-                  }}
+      <div
+        className={
+          hasInlineAttachments
+            ? "lyra-ai-agent-composer-input-stack lyra-ai-agent-composer-input-stack-has-attachments"
+            : "lyra-ai-agent-composer-input-stack"
+        }
+      >
+        {hasInlineAttachments ? (
+          <div
+            className="lyra-ai-agent-composer-input-renderer"
+            style={{
+              transform: `translateY(-${String(runtime.inputScrollTop)}px)`
+            }}
+          >
+            {runtime.draftParts.map((part, index) => (
+              part.type === "text" ? (
+                <span key={`text-${String(index)}`} aria-hidden="true">{part.text}</span>
+              ) : (
+                <span
+                  key={`attachment-${part.attachment.id}-${String(index)}`}
+                  className="lyra-ai-agent-composer-attachment-chip lyra-ai-agent-composer-attachment-chip-inline"
+                  title={part.attachment.path}
                 >
-                  <X size={11} aria-hidden="true" />
-                </button>
-              </span>
-            )
-          ))}
-        </div>
+                  {renderAttachmentIcon(part.attachment.kind)}
+                  <span>{part.attachment.name}</span>
+                  <button
+                    type="button"
+                    className="lyra-ai-agent-composer-attachment-remove"
+                    aria-label={`${removeAttachmentLabel} ${part.attachment.name}`}
+                    title={`${removeAttachmentLabel} ${part.attachment.name}`}
+                    onClick={() => {
+                      runtime.removeAttachment(part.attachment.id);
+                    }}
+                  >
+                    <X size={11} aria-hidden="true" />
+                  </button>
+                </span>
+              )
+            ))}
+          </div>
+        ) : null}
         <textarea
           ref={runtime.inputRef}
           className="lyra-ai-agent-composer-input"
@@ -559,32 +568,6 @@ export const AgentComposerView = ({
           onKeyDown={runtime.onTextareaKeyDown}
           onKeyUp={runtime.onTextareaKeyUp}
         />
-        <div className="lyra-ai-agent-composer-text-fx-layer">
-          {runtime.textEffects.map((effect) => (
-            <span
-              key={effect.id}
-              aria-hidden="true"
-              className={`lyra-ai-agent-text-fx lyra-ai-agent-text-fx-${effect.kind}`}
-              style={{
-                left: `${String(effect.left)}px`,
-                top: `${String(effect.top)}px`
-              }}
-            >
-              {effect.text === " " ? "\u00a0" : effect.text}
-            </span>
-          ))}
-        </div>
-        <div className="lyra-modern-caret-layer lyra-ai-agent-composer-caret-layer">
-          <ModernCaretOverlay
-            rect={runtime.caretRect}
-            focused={runtime.inputFocused}
-            blinking={runtime.isCaretIdle && !runtime.isCaretPressed}
-            pressed={runtime.isCaretPressed}
-            motionToken={runtime.caretMotionToken}
-            motionTrail={runtime.caretMotionTrail}
-            className="lyra-modern-caret-composer"
-          />
-        </div>
       </div>
     </div>
     <div className="lyra-ai-agent-composer-toolbar">

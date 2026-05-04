@@ -1,0 +1,22 @@
+[package]
+name = "lyra-download-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lyra_download_core"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[build-dependencies]
+cc = "1"
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

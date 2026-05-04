@@ -10,13 +10,13 @@ const createSchemaInput = (
   themeLabel: "Theme",
   uiStyleLabel: "UI style",
   notificationsCategoryLabel: "Notifications",
+  linuxCategoryLabel: "Linux",
   terminalThemeLabel: "Terminal theme",
   splitTriggerModeLabel: "Split trigger",
   splitThreePaneLayoutLabel: "Split layout",
   splitOverflowPolicyLabel: "Split overflow",
   aiRichRenderLabel: "Rich render",
   aiStopBehaviorLabel: "Stop behavior",
-  aiToolDisplayModeLabel: "Tool display",
   preventSleepLabel: "Prevent sleep",
   jsReplLabel: "JS REPL",
   forceWebPageThemingLabel: "Web page theming",
@@ -35,6 +35,10 @@ const createSchemaInput = (
   systemNotificationModeLabel: "System notifications",
   systemNotificationClickBehaviorLabel: "Notification click behavior",
   systemNotificationActionsLabel: "Notification actions",
+  linuxCompatProfileLabel: "Linux startup profile",
+  linuxCompatStatusLabel: "Linux status",
+  linuxCompatRestartLabel: "Restart Lyra",
+  linuxCompatVisible: false,
   uiStyleOptions: Array.from({ length: uiStyleOptionCount }, () => ({
     value: "classic" as const,
     label: "Classic"
@@ -50,6 +54,7 @@ describe("createWorkbenchSettingsSchema", () => {
       "appearance",
       "workspace",
       "notifications",
+      "linux",
       "search",
       "ai"
     ]);

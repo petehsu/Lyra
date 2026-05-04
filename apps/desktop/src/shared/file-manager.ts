@@ -1,10 +1,11 @@
-export type FileManagerViewKind = "home" | "directory" | "trash";
+export type FileManagerViewKind = "home" | "directory" | "trash" | "downloads";
 
 export type FileManagerSpecialLocationId =
   | "home"
   | "desktop"
   | "documents"
   | "downloads"
+  | "downloadManager"
   | "trash"
   | "favorites";
 

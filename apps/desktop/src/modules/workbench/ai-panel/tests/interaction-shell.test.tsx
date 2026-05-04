@@ -63,7 +63,7 @@ describe("ai panel interaction shell", () => {
         navNextLabel="Next"
         onSelectInteractionId={vi.fn()}
         onCommandApprovalDecision={async () => {}}
-        onPlanQuestionSubmit={async () => {}}
+        onAgentQuestionSubmit={async () => {}}
       />
     );
 
@@ -95,7 +95,7 @@ describe("ai panel interaction shell", () => {
         navNextLabel="Next"
         onSelectInteractionId={onSelectInteractionId}
         onCommandApprovalDecision={async () => {}}
-        onPlanQuestionSubmit={async () => {}}
+        onAgentQuestionSubmit={async () => {}}
       />
     );
 
@@ -147,7 +147,7 @@ describe("ai panel interaction shell", () => {
         navNextLabel="Next"
         onSelectInteractionId={vi.fn()}
         onCommandApprovalDecision={async () => {}}
-        onPlanQuestionSubmit={async () => {}}
+        onAgentQuestionSubmit={async () => {}}
         onMcpElicitationSubmit={onSubmit}
       />
     );

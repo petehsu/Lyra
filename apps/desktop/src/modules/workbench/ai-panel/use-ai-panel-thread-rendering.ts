@@ -17,7 +17,7 @@ import type { DisplayMessage, StreamStatusItem } from "./view-helpers";
 type UseAiPanelThreadRenderingParams = {
   readonly sortedMessages: readonly DisplayMessage[];
   readonly planByTurn: Readonly<Record<string, LyraTurnPlanState>>;
-  readonly typewriterText: string;
+  readonly streamingAssistantText: string;
   readonly streamingTurnRuntimeFeed: readonly AgentRuntimeFeedItem[];
   readonly streamingStatus: StreamStatusItem | null;
   readonly orphanRuntimeFeed: readonly AgentRuntimeFeedItem[];
@@ -25,7 +25,6 @@ type UseAiPanelThreadRenderingParams = {
   readonly activeThreadId: string | null;
   readonly optimisticUserMessages: readonly unknown[];
   readonly pendingInteractions: readonly unknown[];
-  readonly streamingAssistantText: string;
 };
 
 export type AiPanelThreadRendering = {
@@ -41,7 +40,7 @@ export type AiPanelThreadRendering = {
 export const useAiPanelThreadRendering = ({
   sortedMessages,
   planByTurn,
-  typewriterText,
+  streamingAssistantText,
   streamingTurnRuntimeFeed,
   streamingStatus,
   orphanRuntimeFeed,
@@ -49,7 +48,6 @@ export const useAiPanelThreadRendering = ({
   activeThreadId,
   optimisticUserMessages,
   pendingInteractions,
-  streamingAssistantText,
 }: UseAiPanelThreadRenderingParams): AiPanelThreadRendering => {
   const threadViewportRef = useRef<HTMLDivElement>(null);
   const shouldStickToThreadBottomRef = useRef(true);
@@ -63,7 +61,7 @@ export const useAiPanelThreadRendering = ({
     () => buildAiPanelThreadRenderRows({
       sortedMessages,
       planByTurn,
-      typewriterText,
+      streamingAssistantText,
       streamingTurnRuntimeFeed,
       streamingStatus,
       orphanRuntimeFeed,
@@ -78,7 +76,7 @@ export const useAiPanelThreadRendering = ({
       sortedMessages,
       streamingStatus,
       streamingTurnRuntimeFeed,
-      typewriterText,
+      streamingAssistantText,
     ]
   );
 
@@ -135,7 +133,6 @@ export const useAiPanelThreadRendering = ({
     renderRows,
     sortedMessages,
     streamingAssistantText,
-    typewriterText,
   ]);
 
   return {

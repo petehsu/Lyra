@@ -57,6 +57,7 @@ export type AgentPendingInteractionKind =
   | "file_change_approval"
   | "permissions_approval"
   | "plan_approval"
+  | "agent_question"
   | "tool_user_input"
   | "mcp_elicitation";
 export type AgentPendingInteractionStatus = "pending" | "resolved" | "cancelled" | "expired";
@@ -163,13 +164,15 @@ export type AgentQuestionRequest = {
   readonly id: string;
   readonly sessionId: AgentSessionId;
   readonly turnId: AgentTurnId;
+  readonly reason?: string;
+  readonly source?: {
+    readonly agentThreadId?: string;
+    readonly agentNickname?: string;
+    readonly agentRole?: string;
+  };
   readonly questions: readonly AgentQuestionItem[];
   readonly allowNote?: boolean;
 };
-
-export type PlanQuestionOption = AgentQuestionOption;
-export type PlanQuestionItem = AgentQuestionItem;
-export type PlanQuestionRequest = AgentQuestionRequest;
 
 export type PlanApprovalDecision = "approve_and_implement" | "keep_planning" | "reject";
 

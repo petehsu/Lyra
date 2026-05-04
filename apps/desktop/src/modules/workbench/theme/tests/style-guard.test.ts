@@ -134,9 +134,9 @@ describe("workbench UI guard", () => {
     )[0]).toContain("neutral workbench tones");
   });
 
-  test("keeps plan question navigation from using decorative dots", () => {
+  test("keeps agent question navigation from using decorative dots", () => {
     const source = `
-      export const PlanQuestion = () => <button className="lyra-ai-plan-bar__progress-dot" />;
+      export const AgentQuestion = () => <button className="lyra-ai-plan-bar__progress-dot" />;
     `;
     expect(scanWorkbenchDesignContracts(
       "apps/desktop/src/modules/workbench/ai-panel/plan-question-bar.tsx",

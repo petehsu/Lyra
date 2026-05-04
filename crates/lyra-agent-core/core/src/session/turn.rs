@@ -1384,8 +1384,17 @@ async fn try_run_sampling_request(
                     active_tool_argument_diff_consumer = tool_runtime
                         .create_diff_consumer(&tool_name)
                         .map(|consumer| (call_id.clone(), consumer));
-                } else if matches!(&item, ResponseItem::FunctionCall { .. }) {
-                    active_tool_argument_diff_consumer = None;
+                } else if let ResponseItem::FunctionCall {
+                    name,
+                    namespace,
+                    call_id,
+                    ..
+                } = &item
+                {
+                    let tool_name = ToolName::new(namespace.clone(), name.clone());
+                    active_tool_argument_diff_consumer = tool_runtime
+                        .create_diff_consumer(&tool_name)
+                        .map(|consumer| (call_id.clone(), consumer));
                 }
                 if let Some(turn_item) = handle_non_tool_response_item(
                     sess.as_ref(),

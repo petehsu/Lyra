@@ -66,7 +66,6 @@ import {
   type ReviewTarget,
   type RuntimeThreadOptions
 } from "./use-lyra-thread-runtime";
-import { useTypewriter } from "./use-typewriter";
 
 type Translator = ReturnType<typeof createTranslator>;
 
@@ -311,7 +310,7 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly openThreadTab: LyraThreadRuntimeActions["openThreadTab"];
   readonly setActiveInteractionId: LyraThreadRuntimeActions["setActiveInteractionId"];
   readonly respondToCommandApproval: LyraThreadRuntimeActions["respondToCommandApproval"];
-  readonly respondToPlanQuestion: LyraThreadRuntimeActions["respondToPlanQuestion"];
+  readonly respondToAgentQuestion: LyraThreadRuntimeActions["respondToAgentQuestion"];
   readonly respondToMcpElicitation: LyraThreadRuntimeActions["respondToMcpElicitation"];
   readonly selectModelOptionValue: (value: string) => void;
   readonly setSelectedReasoningEffort: Dispatch<SetStateAction<RuntimeThreadOptions["effort"] | null>>;
@@ -364,7 +363,7 @@ export type AiPanelSurfaceRuntime = {
   readonly aiThreadMentions: readonly AgentComposerAiThreadMention[];
   readonly permissionMode: AgentPermissionMode;
   readonly toolNameLabels: ToolNameLabelMap;
-  readonly typewriterText: string;
+  readonly streamingAssistantText: string;
   readonly messageMetadata: AiPanelThreadMessageMetadata;
   readonly renderRows: readonly AiPanelThreadRenderRow[];
   readonly virtualRows: readonly AiPanelThreadVirtualRow[];
@@ -465,7 +464,7 @@ export const useAiPanelSurfaceRuntime = ({
     loadThread,
     rollbackThread,
     respondToCommandApproval,
-    respondToPlanQuestion,
+    respondToAgentQuestion,
     respondToMcpElicitation,
     selectThread,
     createThread: createRuntimeThread,
@@ -778,15 +777,7 @@ export const useAiPanelSurfaceRuntime = ({
     [runtimeToolFallbackLabel, state.liveToolCalls, toolNameLabels]
   );
 
-  const typewriterText = useTypewriter(
-    state.streamingAssistantText,
-    state.isStreamActive,
-    {
-      charsPerSecond: 72,
-      minChunkSize: 4,
-      resetKey: state.streamingTurnId
-    }
-  );
+  const streamingAssistantText = state.streamingAssistantText;
 
   const viewModel = useAiPanelThreadViewModel({
     activeDetail: state.activeDetail,
@@ -826,7 +817,7 @@ export const useAiPanelSurfaceRuntime = ({
   } = useAiPanelThreadRendering({
     sortedMessages: viewModel.sortedMessages,
     planByTurn: state.planByTurn,
-    typewriterText,
+    streamingAssistantText,
     streamingTurnRuntimeFeed: viewModel.streamingTurnRuntimeFeed,
     streamingStatus: viewModel.streamingStatus,
     orphanRuntimeFeed: viewModel.orphanRuntimeFeed,
@@ -834,7 +825,6 @@ export const useAiPanelSurfaceRuntime = ({
     activeThreadId: state.activeThreadId,
     optimisticUserMessages: state.optimisticUserMessages,
     pendingInteractions: state.pendingInteractions,
-    streamingAssistantText: state.streamingAssistantText,
   });
 
   useEffect(() => {
@@ -1133,17 +1123,29 @@ export const useAiPanelSurfaceRuntime = ({
     };
     if (response.decision === "approve_and_implement") {
       setPlanModeEnabled(false);
-      await resolvePlanApproval(resolvePayload);
+      await resolvePlanApproval({
+        ...resolvePayload,
+        options: runtimeTurnOptions("default"),
+      });
       return;
     }
     if (response.decision === "keep_planning") {
       setPlanModeEnabled(true);
-      await resolvePlanApproval(resolvePayload);
+      await resolvePlanApproval({
+        ...resolvePayload,
+        options: runtimeTurnOptions("plan"),
+      });
       return;
     }
     setPlanModeEnabled(false);
     await resolvePlanApproval(resolvePayload);
-  }, [resolvePlanApproval, setPlanModeEnabled, state.activeThreadId, state.latestPlanTurnId]);
+  }, [
+    resolvePlanApproval,
+    runtimeTurnOptions,
+    setPlanModeEnabled,
+    state.activeThreadId,
+    state.latestPlanTurnId,
+  ]);
 
   const openPlanApprovalInWorkspace = useMemo(
     () =>
@@ -1163,17 +1165,37 @@ export const useAiPanelSurfaceRuntime = ({
     if (
       state.followEnabled !== true
       || openPlanApprovalInWorkspace === undefined
-      || state.activeInteractionPanel?.kind !== "planApproval"
+      || state.activeThreadId === null
+      || state.latestPlanTurnId === null
     ) {
       return;
     }
-    const request = state.activeInteractionPanel.request;
+    const latestPlan = state.planByTurn[state.latestPlanTurnId];
+    if (latestPlan === undefined || latestPlan.artifact.status !== "proposed") {
+      return;
+    }
+    const request: PlanApprovalRequest = {
+      id: `plan:${latestPlan.turnId}:${latestPlan.artifact.planId}`,
+      sessionId: state.activeThreadId,
+      turnId: latestPlan.turnId,
+      planId: latestPlan.artifact.planId,
+      version: 2,
+      status: latestPlan.artifact.status,
+      summary: latestPlan.artifact.summary,
+      artifact: latestPlan.artifact,
+    };
     if (lastAutoOpenedPlanReviewIdRef.current === request.id) {
       return;
     }
     lastAutoOpenedPlanReviewIdRef.current = request.id;
     openPlanApprovalInWorkspace(request);
-  }, [openPlanApprovalInWorkspace, state.activeInteractionPanel, state.followEnabled]);
+  }, [
+    openPlanApprovalInWorkspace,
+    state.activeThreadId,
+    state.followEnabled,
+    state.latestPlanTurnId,
+    state.planByTurn,
+  ]);
 
   const handleForkTurn = useCallback(async (turnId: string): Promise<void> => {
     const activeThread = state.activeThread;
@@ -1391,7 +1413,7 @@ export const useAiPanelSurfaceRuntime = ({
       openThreadTab,
       setActiveInteractionId,
       respondToCommandApproval,
-      respondToPlanQuestion,
+      respondToAgentQuestion,
       respondToMcpElicitation,
       selectModelOptionValue,
       setSelectedReasoningEffort,
@@ -1436,7 +1458,7 @@ export const useAiPanelSurfaceRuntime = ({
     aiThreadMentions,
     permissionMode,
     toolNameLabels,
-    typewriterText,
+    streamingAssistantText,
     messageMetadata,
     renderRows,
     virtualRows,

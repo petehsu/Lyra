@@ -83,7 +83,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::JsReplHandler;
     use crate::tools::handlers::JsReplResetHandler;
     use crate::tools::handlers::ListDirHandler;
-    use crate::tools::handlers::LyraPlanHandler;
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::McpResourceHandler;
     use crate::tools::handlers::PlanHandler;
@@ -149,7 +148,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let shell_handler = Arc::new(ShellHandler);
     let unified_exec_handler = Arc::new(UnifiedExecHandler);
     let plan_handler = Arc::new(PlanHandler);
-    let lyra_plan_handler = Arc::new(LyraPlanHandler);
     let apply_patch_handler = Arc::new(ApplyPatchHandler);
     let dynamic_tool_handler = Arc::new(DynamicToolHandler::new(dynamic_tools));
     let view_image_handler = Arc::new(ViewImageHandler);
@@ -157,9 +155,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let mcp_resource_handler = Arc::new(McpResourceHandler);
     let shell_command_handler = Arc::new(ShellCommandHandler::from(config.shell_command_backend));
     let request_permissions_handler = Arc::new(RequestPermissionsHandler);
-    let request_user_input_handler = Arc::new(RequestUserInputHandler {
-        default_mode_request_user_input: config.default_mode_request_user_input,
-    });
+    let request_user_input_handler = Arc::new(RequestUserInputHandler);
     let deferred_dynamic_tools = dynamic_tools
         .iter()
         .filter(|tool| tool.defer_loading)
@@ -234,9 +230,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
             }
             ToolHandlerKind::Plan => {
                 builder.register_handler(handler.name, plan_handler.clone());
-            }
-            ToolHandlerKind::LyraPlan => {
-                builder.register_handler(handler.name, lyra_plan_handler.clone());
             }
             ToolHandlerKind::RequestPermissions => {
                 builder.register_handler(handler.name, request_permissions_handler.clone());

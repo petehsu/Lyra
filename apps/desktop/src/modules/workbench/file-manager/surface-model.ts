@@ -8,6 +8,7 @@ import type {
   FileManagerRecentLocation,
   FileManagerTrashEntry
 } from "../../../shared/file-manager";
+import type { DownloadManagerTask } from "../../../shared/download-manager";
 import type {
   FileManagerAppState,
   FileManagerChooserMode,
@@ -48,6 +49,10 @@ export type FileManagerBreadcrumbModel =
       readonly kind: "favorites";
     }
   | {
+      readonly kind: "downloads";
+      readonly title: string;
+    }
+  | {
       readonly kind: "trash";
       readonly title: string;
     }
@@ -86,6 +91,7 @@ export type FileManagerSidebarLocationItem = {
 export type FileManagerSidebarModel = {
   readonly homeActive: boolean;
   readonly favoritesActive: boolean;
+  readonly downloadsActive: boolean;
   readonly favorites: readonly FileManagerSidebarFavoriteItem[];
   readonly locations: readonly FileManagerSidebarLocationItem[];
 };
@@ -139,6 +145,20 @@ export type FileManagerTrashModel = {
   readonly isEmpty: boolean;
 };
 
+export type FileManagerDownloadsModel = {
+  readonly tasks: readonly DownloadManagerTask[];
+  readonly status: FileManagerAppState["downloadStatus"];
+  readonly urlDraft: string;
+  readonly advancedDraft: FileManagerAppState["downloadAdvancedDraft"];
+  readonly errorMessage: string | undefined;
+  readonly settings: FileManagerAppState["downloadSettings"];
+  readonly remoteApiStatus: FileManagerAppState["downloadRemoteApiStatus"];
+  readonly settingsOpen: boolean;
+  readonly settingsDraft: FileManagerAppState["downloadSettingsDraft"];
+  readonly settingsErrorMessage: string | undefined;
+  readonly isEmpty: boolean;
+};
+
 export type FileManagerBodyModel =
   | {
       readonly kind: "loading";
@@ -163,6 +183,10 @@ export type FileManagerBodyModel =
   | {
       readonly kind: "trash";
       readonly trash: FileManagerTrashModel;
+    }
+  | {
+      readonly kind: "downloads";
+      readonly downloads: FileManagerDownloadsModel;
     }
   | {
       readonly kind: "none";
@@ -420,6 +444,12 @@ const deriveBreadcrumbModel = (
   if (pageKind === "favorites") {
     return { kind: "favorites" };
   }
+  if (pageKind === "downloads") {
+    return {
+      kind: "downloads",
+      title: state.currentLocation?.title ?? ""
+    };
+  }
   if (state.viewKind === "home") {
     return { kind: "home" };
   }
@@ -512,6 +542,25 @@ const deriveBodyModel = (
     };
   }
 
+  if (state.viewKind === "downloads") {
+    return {
+      kind: "downloads",
+      downloads: {
+        tasks: state.downloadTasks,
+        status: state.downloadStatus,
+        urlDraft: state.downloadUrlDraft,
+        advancedDraft: state.downloadAdvancedDraft,
+        errorMessage: state.downloadErrorMessage,
+        settings: state.downloadSettings,
+        remoteApiStatus: state.downloadRemoteApiStatus,
+        settingsOpen: state.downloadSettingsOpen,
+        settingsDraft: state.downloadSettingsDraft,
+        settingsErrorMessage: state.downloadSettingsErrorMessage,
+        isEmpty: state.downloadTasks.length === 0
+      }
+    };
+  }
+
   return {
     kind: "trash",
     trash: {
@@ -537,7 +586,7 @@ export const deriveFileManagerSurfaceModel = (
   const canGoBack = state.historyIndex > 0;
   const canGoForward =
     state.historyIndex >= 0 && state.historyIndex < state.history.length - 1;
-  const canGoUp = pageKind === "favorites" ? false : state.parentPath !== undefined;
+  const canGoUp = pageKind === "favorites" || pageKind === "downloads" ? false : state.parentPath !== undefined;
   const favoriteActive = isCurrentFavorite(state);
   const canConfirmCurrentDirectory =
     chooser?.kind === "ai-project-bind"
@@ -559,7 +608,7 @@ export const deriveFileManagerSurfaceModel = (
       canGoUp,
       isLargeMode,
       favoriteActive,
-      favoriteDisabled: pageKind === "favorites" || state.currentLocation?.path === undefined,
+      favoriteDisabled: pageKind === "favorites" || pageKind === "downloads" || state.currentLocation?.path === undefined,
       canCreateDraft: pageKind === "directory",
       canMoveSelectionToTrash:
         pageKind === "directory" && state.selectedEntryId !== undefined,
@@ -570,6 +619,7 @@ export const deriveFileManagerSurfaceModel = (
     sidebar: {
       homeActive: pageKind === "home",
       favoritesActive: pageKind === "favorites",
+      downloadsActive: pageKind === "downloads",
       favorites: state.favorites.map((favorite) => ({
         favorite,
         active: pageKind !== "favorites" && isFileManagerActiveFavorite(state, favorite)

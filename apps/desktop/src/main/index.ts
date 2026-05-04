@@ -34,6 +34,7 @@ import {
 } from "./browser-use";
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createFilesIpcBridge } from "./files";
+import { createDownloadManagerIpcBridge } from "./download-manager";
 import { createImageViewerIpcBridge } from "./image-viewer";
 import { createLspIpcBridge } from "./lsp";
 import { createLocalSearchHostToolsBridge } from "./local-search";
@@ -70,6 +71,11 @@ import {
   type AppMetaPayload,
   type BrowserUseRuntimeStatus,
   type LinuxCompatExportResponse,
+  type LinuxCompatReadConfigResponse,
+  type LinuxCompatRestartRequest,
+  type LinuxCompatRestartResponse,
+  type LinuxCompatUpdateConfigRequest,
+  type LinuxCompatUpdateConfigResponse,
   type WindowStatePayload
 } from "../shared/desktop-bridge";
 
@@ -104,6 +110,7 @@ let disposeAgentCoreBridge: (() => void) | null = null;
 let disposeCapabilitiesBridge: (() => void) | null = null;
 let disposeTerminalBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
+let disposeDownloadManagerBridge: (() => void) | null = null;
 let disposeImageViewerBridge: (() => void) | null = null;
 let disposeLspBridge: (() => void) | null = null;
 let disposeMcpBridge: (() => Promise<void>) | null = null;
@@ -137,7 +144,8 @@ applyElectronStoragePaths(storageRoots);
 const linuxCompatBridge = createLinuxCompatBridge({
   platform: process.platform,
   argv: process.argv,
-  env: process.env
+  env: process.env,
+  storageRoot: storageRoots.modules.linuxCompat
 });
 
 linuxCompatBridge.applyToProcessEnv();
@@ -146,12 +154,16 @@ linuxCompatBridge.applyToElectronApp(app);
 if (linuxCompatBridge.status.enabled) {
   const status = linuxCompatBridge.status;
   console.info(
-    `[lyra-linux] backend=${status.backend} gpu=${status.gpuMode} safeMode=${status.safeMode} backendSource=${status.backendSource} gpuSource=${status.gpuSource}`
+    `[lyra-linux] profile=${status.profile} backend=${status.backend} gpu=${status.gpuMode} safeMode=${status.safeMode} profileSource=${status.profileSource} backendSource=${status.backendSource} gpuSource=${status.gpuSource}`
   );
   for (const warning of status.warnings) {
     console.warn(`[lyra-linux] warning ${warning.code}: ${warning.message}`);
   }
 }
+
+app.on("child-process-gone", (_event, details) => {
+  linuxCompatBridge.recordChildProcessGone(details);
+});
 
 const isDevelopmentMode = (): boolean =>
   typeof process.env.ELECTRON_RENDERER_URL === "string"
@@ -209,6 +221,14 @@ const toWindowState = (window: BrowserWindow): WindowStatePayload => ({
   isFocused: window.isFocused(),
   isMaximized: window.isMaximized()
 });
+
+const isLinuxRendererStartupFailure = (
+  details: Electron.RenderProcessGoneDetails
+): boolean =>
+  details.reason === "crashed" ||
+  details.reason === "oom" ||
+  details.reason === "launch-failed" ||
+  details.reason === "integrity-failure";
 
 const readAppMetaPayload = (): AppMetaPayload => {
   let userName: string | undefined;
@@ -581,7 +601,31 @@ const createMainWindow = (): BrowserWindow => {
     void window.loadFile(join(currentDir, "../renderer/index.html"));
   }
 
+  let didFinishLoad = false;
+  let recoveryRestartRequested = false;
   attachDevelopmentDiagnostics(window);
+  window.webContents.once("did-finish-load", () => {
+    didFinishLoad = true;
+    linuxCompatBridge.markWindowReady();
+  });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    linuxCompatBridge.recordRendererGone(details);
+    if (
+      recoveryRestartRequested ||
+      didFinishLoad ||
+      isDevelopmentMode() ||
+      linuxCompatBridge.status.enabled === false ||
+      linuxCompatBridge.status.recovery.active ||
+      isLinuxRendererStartupFailure(details) === false
+    ) {
+      return;
+    }
+    recoveryRestartRequested = true;
+    linuxCompatBridge.requestRestart(app, {
+      recovery: true,
+      reason: `renderer-startup-${details.reason}-${details.exitCode}`
+    });
+  });
 
   window.on("focus", () => {
     publishWindowState(window);
@@ -634,6 +678,11 @@ const registerIpcHandlers = (): void => {
   const filesBridge = createFilesIpcBridge(storageRoots.modules.fileManager);
   console.info(`[lyra-files] native loaded: ${filesBridge.loadResult.loadedFrom}`);
   disposeFilesBridge = filesBridge.dispose;
+  const downloadManagerBridge = createDownloadManagerIpcBridge({
+    storageRoot: storageRoots.modules.downloadManager,
+    getWindow: () => mainWindow
+  });
+  disposeDownloadManagerBridge = downloadManagerBridge.dispose;
   const imageViewerBridge = createImageViewerIpcBridge(storageRoots.modules.imageViewer);
   console.info(`[lyra-image-viewer] native loaded: ${imageViewerBridge.loadResult.loadedFrom}`);
   disposeImageViewerBridge = imageViewerBridge.dispose;
@@ -683,7 +732,8 @@ const registerIpcHandlers = (): void => {
 
   workbenchBrowserBridge = createWorkbenchBrowserIpcBridge({
     getWindow: () => mainWindow,
-    resourceRuntime: resourceRuntimeService
+    resourceRuntime: resourceRuntimeService,
+    downloadManager: downloadManagerBridge
   });
   disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
   const workbenchStateBridge = createWorkbenchStateIpcBridge(
@@ -779,7 +829,8 @@ const registerIpcHandlers = (): void => {
   });
   const calculatorHostTools = createCalculatorHostToolsBridge({
     runtimeClient,
-    runtimeHostRpc
+    runtimeHostRpc,
+    storageRoot: storageRoots.modules.calculator
   });
   disposeCalculatorHostTools = calculatorHostTools.dispose;
   console.info(
@@ -880,6 +931,23 @@ const registerIpcHandlers = (): void => {
   );
 
   ipcMain.handle(
+    LYRA_CHANNELS.linuxCompatReadConfig,
+    (): LinuxCompatReadConfigResponse => linuxCompatBridge.readConfig()
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.linuxCompatUpdateConfig,
+    (_event, request: LinuxCompatUpdateConfigRequest): LinuxCompatUpdateConfigResponse =>
+      linuxCompatBridge.updateConfig(request)
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.linuxCompatRestart,
+    (_event, request?: LinuxCompatRestartRequest): LinuxCompatRestartResponse =>
+      linuxCompatBridge.requestRestart(app, request)
+  );
+
+  ipcMain.handle(
     LYRA_CHANNELS.linuxCompatExportDiagnostics,
     (): LinuxCompatExportResponse =>
       linuxCompatBridge.exportDiagnosticsSnapshot(storageRoots.modules.linuxCompat)
@@ -896,6 +964,9 @@ process.title = LYRA_APP_NAME;
 app.whenReady().then(() => {
   configureApplicationMenu();
   registerDevelopmentShortcuts();
+  app.once("gpu-info-update", () => {
+    void linuxCompatBridge.captureGpuSnapshot(app);
+  });
   const appIconPath = resolveLyraAppIconPath();
   app.setAboutPanelOptions({
     applicationName: LYRA_APP_NAME,
@@ -938,6 +1009,10 @@ app.on("before-quit", () => {
   if (disposeFilesBridge !== null) {
     disposeFilesBridge();
     disposeFilesBridge = null;
+  }
+  if (disposeDownloadManagerBridge !== null) {
+    disposeDownloadManagerBridge();
+    disposeDownloadManagerBridge = null;
   }
   if (disposeImageViewerBridge !== null) {
     disposeImageViewerBridge();

@@ -81,7 +81,7 @@ export const buildAiPanelThreadMessageMetadata = (
 export const buildAiPanelThreadRenderRows = ({
   sortedMessages,
   planByTurn,
-  typewriterText,
+  streamingAssistantText,
   streamingTurnRuntimeFeed,
   streamingStatus,
   orphanRuntimeFeed,
@@ -90,7 +90,7 @@ export const buildAiPanelThreadRenderRows = ({
 }: {
   readonly sortedMessages: readonly DisplayMessage[];
   readonly planByTurn: Readonly<Record<string, LyraTurnPlanState>>;
-  readonly typewriterText: string;
+  readonly streamingAssistantText: string;
   readonly streamingTurnRuntimeFeed: readonly AgentRuntimeFeedItem[];
   readonly streamingStatus: StreamStatusItem | null;
   readonly orphanRuntimeFeed: readonly AgentRuntimeFeedItem[];
@@ -125,7 +125,7 @@ export const buildAiPanelThreadRenderRows = ({
       sessionId: messageMetadata.messageSessionIdByTurn.get(plan.turnId) ?? "",
     });
   }
-  if (typewriterText.length > 0 || streamingTurnRuntimeFeed.length > 0 || streamingStatus !== null) {
+  if (streamingAssistantText.length > 0 || streamingTurnRuntimeFeed.length > 0 || streamingStatus !== null) {
     rows.push({ kind: "streaming", key: "streaming" });
   }
   if (orphanRuntimeFeed.length > 0) {

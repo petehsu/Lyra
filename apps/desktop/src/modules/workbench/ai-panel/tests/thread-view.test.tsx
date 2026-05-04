@@ -70,7 +70,7 @@ describe("AiPanelThreadView virtualization", () => {
     const renderRows = buildAiPanelThreadRenderRows({
       sortedMessages: messages,
       planByTurn: {},
-      typewriterText: "",
+      streamingAssistantText: "",
       streamingTurnRuntimeFeed: [],
       streamingStatus: null,
       orphanRuntimeFeed: [],
@@ -90,7 +90,6 @@ describe("AiPanelThreadView virtualization", () => {
         isZhLocale={false}
         title="Thread"
         richRenderingEnabled={false}
-        aiToolDisplayMode="inner_scroll"
         showEmptySessionScene={false}
         isLoading={false}
         loadingSessionLabel="Loading"
@@ -118,7 +117,7 @@ describe("AiPanelThreadView virtualization", () => {
         pendingInteractionQueue={[]}
         canOpenFilePath={false}
         openRuntimeTargetPath={vi.fn(async () => {})}
-        typewriterText=""
+        streamingAssistantText=""
         streamingTurnRuntimeFeed={[]}
         streamingStatus={null}
         orphanRuntimeFeed={[]}
@@ -149,7 +148,7 @@ describe("AiPanelThreadRenderRows plans", () => {
     const renderRows = buildAiPanelThreadRenderRows({
       sortedMessages: messages.slice(0, 1),
       planByTurn: {},
-      typewriterText: "",
+      streamingAssistantText: "",
       streamingTurnRuntimeFeed: [],
       streamingStatus: null,
       orphanRuntimeFeed: [],
@@ -244,12 +243,11 @@ describe("AiPanelPlanRow", () => {
       }),
       expect.objectContaining({ id: "plan:turn-plan" })
     );
-    expect(screen.getByRole("button", { name: "Keep Planning" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Open in Workspace" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Reject" })).toBeDefined();
   });
 
-  test("hides plan approval actions when the plan is not pending approval", () => {
+  test("hides plan review actions when the plan is not the latest proposal", () => {
     const proposedPlan = planState("proposed", "Final plan");
 
     render(
@@ -262,7 +260,7 @@ describe("AiPanelPlanRow", () => {
         }}
         locale="en-US"
         richRenderingEnabled={false}
-        latestPlanTurnId="turn-plan"
+        latestPlanTurnId="turn-later"
         planActionsEnabled={true}
         pendingInteractionQueue={[]}
         onPlanApprovalDecision={vi.fn(async () => {})}

@@ -3476,6 +3476,7 @@ pub enum ThreadAiPanelPendingInteractionKind {
     CommandExecutionApproval,
     FileChangeApproval,
     PermissionsApproval,
+    AgentQuestion,
     ToolUserInput,
     McpElicitation,
 }
@@ -4238,6 +4239,15 @@ pub struct TurnStartParams {
     #[ts(optional = nullable)]
     pub output_schema: Option<JsonValue>,
 
+    /// Optional context for turning a plan review action into a normal user turn.
+    #[serde(
+        default,
+        rename = "planReviewContext",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional = nullable, rename = "planReviewContext")]
+    pub plan_review_context: Option<PlanReviewTurnContext>,
+
     /// Set a pre-set collaboration mode.
     /// Takes precedence over model, reasoning_effort, and developer instructions if set.
     ///
@@ -4245,6 +4255,29 @@ pub struct TurnStartParams {
     /// "use the built-in instructions for the selected mode".
     #[ts(optional = nullable)]
     pub collaboration_mode: Option<CollaborationMode>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct PlanReviewTurnContext {
+    pub action: PlanReviewTurnAction,
+    pub plan_turn_id: String,
+    pub plan_id: String,
+    #[serde(default)]
+    pub annotations: Vec<PlanAnnotation>,
+    #[ts(optional = nullable)]
+    pub overall_feedback: Option<String>,
+    pub artifact_snapshot: PlanArtifact,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case", export_to = "v2/")]
+pub enum PlanReviewTurnAction {
+    RevisionRequest,
+    ApproveAndExecute,
+    Reject,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -5528,6 +5561,15 @@ pub struct ItemStartedNotification {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+pub struct ItemUpdatedNotification {
+    pub item: ThreadItem,
+    pub thread_id: String,
+    pub turn_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
 /// [UNSTABLE] Temporary notification payload for approval auto-review. This
 /// shape is expected to change soon.
 pub struct ItemAutoApprovalReviewStartedNotification {
@@ -6480,14 +6522,35 @@ pub struct ToolRequestUserInputQuestion {
     pub options: Option<Vec<ToolRequestUserInputOption>>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+/// Identifies the agent thread that requested input.
+pub struct ToolRequestUserInputSource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub agent_thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub agent_nickname: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub agent_role: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-/// Params sent with a request_user_input event.
+/// Params sent with an agent_question/request_user_input event.
 pub struct ToolRequestUserInputParams {
     pub thread_id: String,
     pub turn_id: String,
     pub item_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub source: ToolRequestUserInputSource,
     pub questions: Vec<ToolRequestUserInputQuestion>,
 }
 
@@ -8652,6 +8715,7 @@ mod tests {
             verbosity: None,
             summary: None,
             output_schema: None,
+            plan_review_context: None,
             collaboration_mode: None,
         };
         let serialized_without_override =

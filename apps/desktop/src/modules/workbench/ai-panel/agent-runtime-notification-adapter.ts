@@ -421,10 +421,13 @@ const notificationShape = (
         target,
       };
     case "item/started":
+    case "item/updated":
     case "item/completed":
       return {
         title: asTitle(method),
-        preview: `${itemType(params) ?? "Item"} ${method.endsWith("started") ? "started" : "completed"}.`,
+        preview: `${itemType(params) ?? "Item"} ${
+          method === "item/completed" ? "completed" : method === "item/updated" ? "updated" : "started"
+        }.`,
         level: method === "item/completed"
           ? statusLevel(readString(isRecord(params.item) ? params.item.status : null), "info")
           : "info",

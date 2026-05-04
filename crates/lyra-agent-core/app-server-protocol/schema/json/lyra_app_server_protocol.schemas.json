@@ -4739,6 +4739,26 @@
           "properties": {
             "method": {
               "enum": [
+                "item/updated"
+              ],
+              "title": "Item/updatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ItemUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Item/updatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "item/autoApprovalReview/started"
               ],
               "title": "Item/autoApprovalReview/startedNotificationMethod",
@@ -5561,7 +5581,7 @@
     },
     "ToolRequestUserInputParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "Params sent with a request_user_input event.",
+      "description": "Params sent with an agent_question/request_user_input event.",
       "properties": {
         "itemId": {
           "type": "string"
@@ -5571,6 +5591,20 @@
             "$ref": "#/definitions/ToolRequestUserInputQuestion"
           },
           "type": "array"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ToolRequestUserInputSource"
+            }
+          ],
+          "default": {}
         },
         "threadId": {
           "type": "string"
@@ -5640,6 +5674,30 @@
         "answers"
       ],
       "title": "ToolRequestUserInputResponse",
+      "type": "object"
+    },
+    "ToolRequestUserInputSource": {
+      "description": "Identifies the agent thread that requested input.",
+      "properties": {
+        "agentNickname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agentRole": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agentThreadId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "W3cTraceContext": {
@@ -8430,6 +8488,27 @@
         "title": "ItemStartedNotification",
         "type": "object"
       },
+      "ItemUpdatedNotification": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "item": {
+            "$ref": "#/definitions/v2/ThreadItem"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "threadId",
+          "turnId"
+        ],
+        "title": "ItemUpdatedNotification",
+        "type": "object"
+      },
       "ListMcpServerStatusParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
@@ -10650,6 +10729,50 @@
         "title": "PlanDeltaNotification",
         "type": "object"
       },
+      "PlanReviewTurnAction": {
+        "enum": [
+          "revision_request",
+          "approve_and_execute",
+          "reject"
+        ],
+        "type": "string"
+      },
+      "PlanReviewTurnContext": {
+        "properties": {
+          "action": {
+            "$ref": "#/definitions/v2/PlanReviewTurnAction"
+          },
+          "annotations": {
+            "default": [],
+            "items": {
+              "$ref": "#/definitions/v2/PlanAnnotation"
+            },
+            "type": "array"
+          },
+          "artifactSnapshot": {
+            "$ref": "#/definitions/v2/PlanArtifact"
+          },
+          "overallFeedback": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "planId": {
+            "type": "string"
+          },
+          "planTurnId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "artifactSnapshot",
+          "planId",
+          "planTurnId"
+        ],
+        "type": "object"
+      },
       "PluginAuthPolicy": {
         "enum": [
           "ON_INSTALL",
@@ -12820,6 +12943,7 @@
           "commandExecutionApproval",
           "fileChangeApproval",
           "permissionsApproval",
+          "agentQuestion",
           "toolUserInput",
           "mcpElicitation"
         ],
@@ -15732,6 +15856,17 @@
           },
           "outputSchema": {
             "description": "Optional JSON Schema used to constrain the final assistant message for this turn."
+          },
+          "planReviewContext": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/PlanReviewTurnContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional context for turning a plan review action into a normal user turn."
           },
           "responsesapiClientMetadata": {
             "additionalProperties": {

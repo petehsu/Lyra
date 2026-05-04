@@ -16,6 +16,7 @@ export type LyraModuleStorageRoots = {
   readonly calculator: string;
   readonly browserUse: string;
   readonly imageViewer: string;
+  readonly downloadManager: string;
 };
 
 export type LyraStorageRoots = {
@@ -49,7 +50,8 @@ export const resolveLyraStorageRoots = (): LyraStorageRoots => {
       search: path.join(modulesRoot, "search"),
       calculator: path.join(modulesRoot, "calculator"),
       browserUse: path.join(modulesRoot, "browser-use"),
-      imageViewer: path.join(modulesRoot, "image-viewer")
+      imageViewer: path.join(modulesRoot, "image-viewer"),
+      downloadManager: path.join(modulesRoot, "download-manager")
     }
   };
 };

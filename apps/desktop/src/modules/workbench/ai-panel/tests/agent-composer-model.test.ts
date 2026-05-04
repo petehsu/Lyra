@@ -4,7 +4,6 @@ import { createTranslator } from "../../i18n";
 import {
   createAgentComposerModelState,
   createComposerModelMenuStyle,
-  diffComposerText,
   normalizeComposerModelOptions,
   resolveAgentComposerClassName,
   resolveComposerSendVisualState,
@@ -82,7 +81,7 @@ describe("agent composer model", () => {
     ]);
   });
 
-  test("computes visual state, class name, and text diff", () => {
+  test("computes visual state and class name", () => {
     expect(resolveComposerSendVisualState({
       sending: true,
       sendDisabled: false,
@@ -106,15 +105,5 @@ describe("agent composer model", () => {
       surfaceDimmed: true,
       sending: true
     })).toBe("lyra-ai-agent-composer");
-    expect(diffComposerText("hello world", "hello brave world")).toEqual({
-      start: 6,
-      removed: "",
-      inserted: "brave "
-    });
-    expect(diffComposerText("hello brave world", "hello world")).toEqual({
-      start: 6,
-      removed: "brave ",
-      inserted: ""
-    });
   });
 });

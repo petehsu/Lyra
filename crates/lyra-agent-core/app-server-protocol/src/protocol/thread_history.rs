@@ -3,6 +3,7 @@ use crate::protocol::item_builders::build_command_execution_end_item;
 use crate::protocol::item_builders::build_file_change_approval_request_item;
 use crate::protocol::item_builders::build_file_change_begin_item;
 use crate::protocol::item_builders::build_file_change_end_item;
+use crate::protocol::item_builders::build_file_change_updated_item;
 use crate::protocol::item_builders::build_item_from_auto_review_event;
 use crate::protocol::v2::CollabAgentState;
 use crate::protocol::v2::CollabAgentTool;
@@ -13,7 +14,6 @@ use crate::protocol::v2::DynamicToolCallStatus;
 use crate::protocol::v2::McpToolCallError;
 use crate::protocol::v2::McpToolCallResult;
 use crate::protocol::v2::McpToolCallStatus;
-use crate::protocol::v2::PlanArtifactStatus;
 use crate::protocol::v2::ThreadItem;
 use crate::protocol::v2::Turn;
 use crate::protocol::v2::TurnError as V2TurnError;
@@ -43,6 +43,7 @@ use lyra_protocol::protocol::McpToolCallBeginEvent;
 use lyra_protocol::protocol::McpToolCallEndEvent;
 use lyra_protocol::protocol::PatchApplyBeginEvent;
 use lyra_protocol::protocol::PatchApplyEndEvent;
+use lyra_protocol::protocol::PatchApplyUpdatedEvent;
 use lyra_protocol::protocol::PlanApprovalResolvedEvent;
 use lyra_protocol::protocol::ReviewOutputEvent;
 use lyra_protocol::protocol::RolloutItem;
@@ -178,6 +179,7 @@ impl ThreadHistoryBuilder {
             EventMsg::ApplyPatchApprovalRequest(payload) => {
                 self.handle_apply_patch_approval_request(payload)
             }
+            EventMsg::PatchApplyUpdated(payload) => self.handle_patch_apply_updated(payload),
             EventMsg::PatchApplyBegin(payload) => self.handle_patch_apply_begin(payload),
             EventMsg::PatchApplyEnd(payload) => self.handle_patch_apply_end(payload),
             EventMsg::DynamicToolCallRequest(payload) => {
@@ -458,6 +460,15 @@ impl ThreadHistoryBuilder {
 
     fn handle_patch_apply_begin(&mut self, payload: &PatchApplyBeginEvent) {
         let item = build_file_change_begin_item(payload);
+        if payload.turn_id.is_empty() {
+            self.upsert_item_in_current_turn(item);
+        } else {
+            self.upsert_item_in_turn_id(&payload.turn_id, item);
+        }
+    }
+
+    fn handle_patch_apply_updated(&mut self, payload: &PatchApplyUpdatedEvent) {
+        let item = build_file_change_updated_item(payload);
         if payload.turn_id.is_empty() {
             self.upsert_item_in_current_turn(item);
         } else {
@@ -872,18 +883,12 @@ impl ThreadHistoryBuilder {
     }
 
     fn handle_plan_approval_resolved(&mut self, payload: &PlanApprovalResolvedEvent) {
-        let mark_resolved = |turn: &mut PendingTurn| {
-            if turn.items.iter().any(is_proposed_plan_item) {
-                turn.status = TurnStatus::Completed;
-            }
-        };
-
         if let Some(current_turn) = self
             .current_turn
             .as_mut()
             .filter(|turn| turn.id == payload.plan_turn_id)
         {
-            mark_resolved(current_turn);
+            current_turn.status = TurnStatus::Completed;
             return;
         }
 
@@ -891,7 +896,6 @@ impl ThreadHistoryBuilder {
             .turns
             .iter_mut()
             .find(|turn| turn.id == payload.plan_turn_id)
-            && turn.items.iter().any(is_proposed_plan_item)
         {
             turn.status = TurnStatus::Completed;
         }
@@ -953,11 +957,7 @@ impl ThreadHistoryBuilder {
     fn handle_turn_complete(&mut self, payload: &TurnCompleteEvent) {
         let mark_completed = |turn: &mut PendingTurn| {
             if matches!(turn.status, TurnStatus::Completed | TurnStatus::InProgress) {
-                turn.status = if turn.items.iter().any(is_proposed_plan_item) {
-                    TurnStatus::Waiting
-                } else {
-                    TurnStatus::Completed
-                };
+                turn.status = TurnStatus::Completed;
             }
             turn.completed_at = payload.completed_at;
             turn.duration_ms = payload.duration_ms;
@@ -980,11 +980,7 @@ impl ThreadHistoryBuilder {
             .find(|turn| turn.id == payload.turn_id)
         {
             if matches!(turn.status, TurnStatus::Completed | TurnStatus::InProgress) {
-                turn.status = if turn.items.iter().any(is_proposed_plan_item) {
-                    TurnStatus::Waiting
-                } else {
-                    TurnStatus::Completed
-                };
+                turn.status = TurnStatus::Completed;
             }
             turn.completed_at = payload.completed_at;
             turn.duration_ms = payload.duration_ms;
@@ -1113,13 +1109,6 @@ impl ThreadHistoryBuilder {
 
 const REVIEW_FALLBACK_MESSAGE: &str = "Reviewer failed to output a response.";
 
-fn is_proposed_plan_item(item: &ThreadItem) -> bool {
-    matches!(
-        item,
-        ThreadItem::Plan { artifact, .. } if artifact.status == PlanArtifactStatus::Proposed
-    )
-}
-
 fn render_review_output_text(output: &ReviewOutputEvent) -> String {
     let explanation = output.overall_explanation.trim();
     if explanation.is_empty() {
@@ -1234,6 +1223,7 @@ mod tests {
     use crate::protocol::v2::PatchApplyStatus;
     use crate::protocol::v2::PlanArtifact;
     use crate::protocol::v2::PlanArtifactBlock;
+    use crate::protocol::v2::PlanArtifactStatus;
     use crate::protocol::v2::SessionSource;
     use crate::protocol::v2::Thread;
     use crate::protocol::v2::ThreadAiPanelMessageRole;
@@ -1266,6 +1256,7 @@ mod tests {
     use lyra_protocol::protocol::McpInvocation;
     use lyra_protocol::protocol::McpToolCallEndEvent;
     use lyra_protocol::protocol::PatchApplyBeginEvent;
+    use lyra_protocol::protocol::PatchApplyUpdatedEvent;
     use lyra_protocol::protocol::PlanApprovalResolutionDecision;
     use lyra_protocol::protocol::PlanApprovalResolvedEvent;
     use lyra_protocol::protocol::ThreadRolledBackEvent;
@@ -2133,7 +2124,7 @@ mod tests {
                         artifact: proposed_test_plan(),
                     },
                 ],
-                status: TurnStatus::Waiting,
+                status: TurnStatus::Completed,
                 error: None,
                 started_at: Some(10),
                 completed_at: Some(11),
@@ -2147,7 +2138,10 @@ mod tests {
         assert_eq!(view_model.turns[0].created_at_ms, 10_000);
         assert_eq!(view_model.turns[0].updated_at_ms, 11_000);
         assert_eq!(view_model.turns[0].duration_ms, Some(1000));
-        assert_eq!(view_model.turns[0].status, ThreadAiPanelTurnStatus::Paused);
+        assert_eq!(
+            view_model.turns[0].status,
+            ThreadAiPanelTurnStatus::Completed
+        );
 
         assert_eq!(view_model.messages.len(), 3);
         assert_eq!(view_model.messages[0].id, "user-1");
@@ -2177,12 +2171,7 @@ mod tests {
         assert_eq!(view_model.plans[0].turn_id, "turn-1");
         assert_eq!(view_model.plans[0].artifact.plan_id, "plan-1");
         assert_eq!(view_model.plans[0].updated_at_ms, 10_004);
-        assert_eq!(view_model.pending_interactions.len(), 1);
-        assert_eq!(view_model.pending_interactions[0].id, "plan:turn-1:plan-1");
-        assert_eq!(
-            view_model.pending_interactions[0].payload["raw"]["planId"],
-            "plan-1"
-        );
+        assert_eq!(view_model.pending_interactions.len(), 0);
         assert_eq!(
             view_model
                 .timeline_entries
@@ -2220,7 +2209,41 @@ mod tests {
     }
 
     #[test]
-    fn plan_approval_resolution_marks_waiting_plan_completed() {
+    fn proposed_plan_turn_completes_without_waiting_for_approval() {
+        let thread_id = ThreadId::new();
+        let items = vec![
+            RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: "turn-plan".into(),
+                started_at: Some(10),
+                model_context_window: None,
+                collaboration_mode_kind: Default::default(),
+            })),
+            RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {
+                thread_id,
+                turn_id: "turn-plan".into(),
+                item: CoreTurnItem::Plan(lyra_protocol::items::PlanItem {
+                    id: "plan-1".into(),
+                    artifact: proposed_test_plan(),
+                }),
+            })),
+            RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id: "turn-plan".into(),
+                last_agent_message: None,
+                completed_at: Some(11),
+                duration_ms: Some(1000),
+            })),
+        ];
+
+        let turns = build_turns_from_rollout_items(&items);
+
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].status, TurnStatus::Completed);
+        assert_eq!(turns[0].completed_at, Some(11));
+        assert_eq!(turns[0].duration_ms, Some(1000));
+    }
+
+    #[test]
+    fn legacy_plan_approval_resolution_keeps_plan_completed() {
         let thread_id = ThreadId::new();
         let items = vec![
             RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
@@ -2865,6 +2888,64 @@ mod tests {
                     status: PatchApplyStatus::InProgress,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn patch_apply_updated_upserts_active_file_change_snapshot() {
+        let turn_id = "turn-1";
+        let mut builder = ThreadHistoryBuilder::new();
+        let events = vec![
+            EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: turn_id.to_string(),
+                started_at: None,
+                model_context_window: None,
+                collaboration_mode_kind: Default::default(),
+            }),
+            EventMsg::PatchApplyUpdated(PatchApplyUpdatedEvent {
+                call_id: "patch-call".into(),
+                turn_id: turn_id.to_string(),
+                changes: [(
+                    PathBuf::from("README.md"),
+                    lyra_protocol::protocol::FileChange::Add {
+                        content: "hello\n".into(),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }),
+            EventMsg::PatchApplyUpdated(PatchApplyUpdatedEvent {
+                call_id: "patch-call".into(),
+                turn_id: turn_id.to_string(),
+                changes: [(
+                    PathBuf::from("README.md"),
+                    lyra_protocol::protocol::FileChange::Add {
+                        content: "hello\nworld\n".into(),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }),
+        ];
+
+        for event in &events {
+            builder.handle_event(event);
+        }
+
+        let snapshot = builder
+            .active_turn_snapshot()
+            .expect("active turn snapshot");
+        assert_eq!(
+            snapshot.items,
+            vec![ThreadItem::FileChange {
+                id: "patch-call".into(),
+                changes: vec![FileUpdateChange {
+                    path: "README.md".into(),
+                    kind: PatchChangeKind::Add,
+                    diff: "hello\nworld\n".into(),
+                }],
+                status: PatchApplyStatus::InProgress,
+            }]
         );
     }
 

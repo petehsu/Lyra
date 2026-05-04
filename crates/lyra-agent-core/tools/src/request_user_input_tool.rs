@@ -2,13 +2,29 @@ use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::ToolSpec;
 use lyra_protocol::config_types::ModeKind;
-use lyra_protocol::config_types::TUI_VISIBLE_COLLABORATION_MODES;
 use lyra_protocol::request_user_input::RequestUserInputArgs;
 use std::collections::BTreeMap;
 
+pub const AGENT_QUESTION_TOOL_NAME: &str = "agent_question";
 pub const REQUEST_USER_INPUT_TOOL_NAME: &str = "request_user_input";
 
+pub fn create_agent_question_tool() -> ToolSpec {
+    create_question_tool(
+        AGENT_QUESTION_TOOL_NAME,
+        agent_question_tool_description(),
+        /*include_reason*/ true,
+    )
+}
+
 pub fn create_request_user_input_tool(description: String) -> ToolSpec {
+    create_question_tool(
+        REQUEST_USER_INPUT_TOOL_NAME,
+        description,
+        /*include_reason*/ false,
+    )
+}
+
+fn create_question_tool(name: &str, description: String, include_reason: bool) -> ToolSpec {
     let option_props = BTreeMap::from([
         (
             "label".to_string(),
@@ -67,10 +83,19 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
         Some("Questions to show the user. Prefer 1 and do not exceed 3".to_string()),
     );
 
-    let properties = BTreeMap::from([("questions".to_string(), questions_schema)]);
+    let mut properties = BTreeMap::from([("questions".to_string(), questions_schema)]);
+    if include_reason {
+        properties.insert(
+            "reason".to_string(),
+            JsonSchema::string(Some(
+                "Short internal reason for why this question is blocking or materially clarifying."
+                    .to_string(),
+            )),
+        );
+    }
 
     ToolSpec::Function(ResponsesApiTool {
-        name: REQUEST_USER_INPUT_TOOL_NAME.to_string(),
+        name: name.to_string(),
         description,
         strict: false,
         defer_loading: None,
@@ -105,7 +130,7 @@ pub fn normalize_request_user_input_args(
         .iter()
         .any(|question| question.options.as_ref().is_none_or(Vec::is_empty));
     if missing_options {
-        return Err("request_user_input requires non-empty options for every question".to_string());
+        return Err("agent_question requires non-empty options for every question".to_string());
     }
 
     for question in &mut args.questions {
@@ -113,6 +138,10 @@ pub fn normalize_request_user_input_args(
     }
 
     Ok(args)
+}
+
+pub fn agent_question_tool_description() -> String {
+    "Ask the user one to three structured questions when the agent is blocked by ambiguity, missing truth, or a material decision. This tool is available in all collaboration modes and from all agent threads; call it instead of writing a plain questionnaire. The turn waits for the user's answer and then continues.".to_string()
 }
 
 pub fn request_user_input_tool_description(default_mode_request_user_input: bool) -> String {
@@ -128,17 +157,10 @@ fn request_user_input_is_available(mode: ModeKind, default_mode_request_user_inp
 }
 
 fn format_allowed_modes(default_mode_request_user_input: bool) -> String {
-    let mode_names: Vec<&str> = TUI_VISIBLE_COLLABORATION_MODES
-        .into_iter()
-        .filter(|mode| request_user_input_is_available(*mode, default_mode_request_user_input))
-        .map(ModeKind::display_name)
-        .collect();
-
-    match mode_names.as_slice() {
-        [] => "no modes".to_string(),
-        [mode] => format!("{mode} mode"),
-        [first, second] => format!("{first} or {second} mode"),
-        [..] => format!("modes: {}", mode_names.join(",")),
+    if default_mode_request_user_input {
+        "Default or Plan mode".to_string()
+    } else {
+        "Plan mode".to_string()
     }
 }
 

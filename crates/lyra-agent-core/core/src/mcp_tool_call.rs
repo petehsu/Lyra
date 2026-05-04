@@ -769,6 +769,7 @@ async fn maybe_request_mcp_tool_approval(
     }
 
     let args = RequestUserInputArgs {
+        reason: Some("MCP tool approval requires an explicit user decision.".to_string()),
         questions: vec![question],
     };
     let response = sess

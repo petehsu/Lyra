@@ -20,10 +20,26 @@ import {
   type CapabilityRuntimeEvent,
   type CreateLyraSkillRequest,
   type DeleteSkillRequest,
+  type DownloadManagerBatchRequest,
+  type DownloadManagerEnqueueRequest,
+  type DownloadManagerEvent,
+  type DownloadManagerRemoteApiStartRequest,
+  type DownloadManagerRemoteApiStatus,
+  type DownloadManagerSetPriorityRequest,
+  type DownloadManagerSettings,
+  type DownloadManagerSnapshot,
+  type DownloadManagerTask,
+  type DownloadManagerTaskRequest,
+  type DownloadManagerUpdateSettingsRequest,
   type EffectiveSkillConfig,
   type InstalledSkillConfig,
   type LinuxCompatExportResponse,
+  type LinuxCompatReadConfigResponse,
   type LinuxCompatReadStatusResponse,
+  type LinuxCompatRestartRequest,
+  type LinuxCompatRestartResponse,
+  type LinuxCompatUpdateConfigRequest,
+  type LinuxCompatUpdateConfigResponse,
   type ReadEffectiveSkillsRequest,
   type ReadInstalledSkillsRequest,
   type McpCatalogItem,
@@ -220,6 +236,8 @@ const lyraEventListeners = new Set<(event: LyraRuntimeEvent) => void>();
 let lyraEventBridgeReady = false;
 const directoryPatchListeners = new Set<(patch: FileManagerDirectoryPatch) => void>();
 let directoryPatchBridgeReady = false;
+const downloadEventListeners = new Set<(event: DownloadManagerEvent) => void>();
+let downloadEventBridgeReady = false;
 const mcpEventListeners = new Set<(event: McpRuntimeEvent) => void>();
 let mcpEventBridgeReady = false;
 const skillsEventListeners = new Set<(event: SkillRuntimeEvent) => void>();
@@ -410,6 +428,25 @@ const ensureDirectoryPatchBridge = (): void => {
         return;
       }
       for (const listener of directoryPatchListeners) {
+        listener(payload);
+      }
+    }
+  );
+};
+
+const ensureDownloadEventBridge = (): void => {
+  if (downloadEventBridgeReady) {
+    return;
+  }
+  downloadEventBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.downloadsEvent,
+    (_event: Electron.IpcRendererEvent, payload: DownloadManagerEvent): void => {
+      if (payload === null || typeof payload !== "object" || typeof payload.kind !== "string") {
+        return;
+      }
+      for (const listener of downloadEventListeners) {
         listener(payload);
       }
     }
@@ -637,6 +674,18 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
   linuxCompat: {
     readStatus: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.linuxCompatReadStatus) as Promise<LinuxCompatReadStatusResponse>,
+    readConfig: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.linuxCompatReadConfig) as Promise<LinuxCompatReadConfigResponse>,
+    updateConfig: (request: LinuxCompatUpdateConfigRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.linuxCompatUpdateConfig,
+        request
+      ) as Promise<LinuxCompatUpdateConfigResponse>,
+    requestRestart: (request?: LinuxCompatRestartRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.linuxCompatRestart,
+        request
+      ) as Promise<LinuxCompatRestartResponse>,
     exportDiagnostics: () =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.linuxCompatExportDiagnostics
@@ -765,6 +814,54 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.filesSelectAttachments) as Promise<readonly FileManagerSelectedAttachment[]>,
     selectDirectories: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.filesSelectDirectories) as Promise<readonly FileManagerSelectedAttachment[]>
+  },
+  downloads: {
+    list: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsList) as Promise<DownloadManagerSnapshot>,
+    enqueue: (request: DownloadManagerEnqueueRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsEnqueue, request) as Promise<DownloadManagerSnapshot>,
+    importExternalBrowser: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsImportExternalBrowser) as Promise<DownloadManagerSnapshot>,
+    pause: (request: DownloadManagerTaskRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsPause, request) as Promise<DownloadManagerTask | null>,
+    resume: (request: DownloadManagerTaskRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsResume, request) as Promise<DownloadManagerTask | null>,
+    cancel: (request: DownloadManagerTaskRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsCancel, request) as Promise<DownloadManagerTask | null>,
+    retry: (request: DownloadManagerTaskRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsRetry, request) as Promise<DownloadManagerTask | null>,
+    remove: async (request: DownloadManagerTaskRequest) => {
+      await ipcRenderer.invoke(LYRA_CHANNELS.downloadsRemove, request);
+    },
+    setPriority: (request: DownloadManagerSetPriorityRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsSetPriority, request) as Promise<DownloadManagerTask | null>,
+    pauseAll: (request?: DownloadManagerBatchRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsPauseAll, request) as Promise<DownloadManagerSnapshot>,
+    resumeAll: (request?: DownloadManagerBatchRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsResumeAll, request) as Promise<DownloadManagerSnapshot>,
+    cancelAll: (request?: DownloadManagerBatchRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsCancelAll, request) as Promise<DownloadManagerSnapshot>,
+    readSettings: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsReadSettings) as Promise<DownloadManagerSettings>,
+    updateSettings: (request: DownloadManagerUpdateSettingsRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsUpdateSettings, request) as Promise<DownloadManagerSettings>,
+    readRemoteApiStatus: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsRemoteStatus) as Promise<DownloadManagerRemoteApiStatus>,
+    startRemoteApi: (request?: DownloadManagerRemoteApiStartRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsRemoteStart, request) as Promise<DownloadManagerRemoteApiStatus>,
+    stopRemoteApi: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsRemoteStop) as Promise<DownloadManagerRemoteApiStatus>,
+    openFile: (request: DownloadManagerTaskRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsOpenFile, request) as Promise<boolean>,
+    revealFile: (request: DownloadManagerTaskRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.downloadsRevealFile, request) as Promise<boolean>,
+    onEvent: (listener: (event: DownloadManagerEvent) => void) => {
+      ensureDownloadEventBridge();
+      downloadEventListeners.add(listener);
+      return () => {
+        downloadEventListeners.delete(listener);
+      };
+    }
   },
   imageViewer: {
     openImage: (request: ImageViewerOpenRequest) =>

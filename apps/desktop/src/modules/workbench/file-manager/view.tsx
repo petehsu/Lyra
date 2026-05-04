@@ -211,10 +211,18 @@ export const FileManagerSurface = ({
     onOpenFavorites: () => {
       setPageKindOverride("favorites");
     },
+    onOpenDownloads: () => {
+      setPageKindOverride(null);
+      void model.openDownloads(state.instanceId);
+    },
     onOpenLocation: (location) => {
       setPageKindOverride(null);
       if (location.specialId === "trash") {
         void model.openTrash(state.instanceId);
+        return;
+      }
+      if (location.specialId === "downloadManager") {
+        void model.openDownloads(state.instanceId);
         return;
       }
       if (location.path !== undefined) {
@@ -306,6 +314,92 @@ export const FileManagerSurface = ({
         return;
       }
       chooser?.onConfirm();
+    },
+    onDownloadUrlDraftChange: (value) => {
+      model.updateDownloadUrlDraft(state.instanceId, value);
+    },
+    onToggleDownloadAdvancedOptions: () => {
+      model.toggleDownloadAdvancedOptions(state.instanceId);
+    },
+    onDownloadAdvancedDraftChange: (patch) => {
+      model.updateDownloadAdvancedDraft(state.instanceId, patch);
+    },
+    onSubmitDownloadUrlDraft: () => {
+      void model.submitDownloadUrlDraft(state.instanceId);
+    },
+    onImportDownloadUrlsFromClipboard: () => {
+      const clipboard = navigator.clipboard;
+      if (clipboard === undefined) {
+        return;
+      }
+      void clipboard.readText()
+        .then((text) => {
+          if (text.trim().length === 0) {
+            return;
+          }
+          void model.submitDownloadText(state.instanceId, text);
+        })
+        .catch(() => undefined);
+    },
+    onImportExternalBrowserDownloads: () => {
+      void model.importExternalBrowserDownloads(state.instanceId);
+    },
+    onPauseDownload: (taskId) => {
+      void model.pauseDownload(taskId);
+    },
+    onResumeDownload: (taskId) => {
+      void model.resumeDownload(taskId);
+    },
+    onCancelDownload: (taskId) => {
+      void model.cancelDownload(taskId);
+    },
+    onRetryDownload: (taskId) => {
+      void model.retryDownload(taskId);
+    },
+    onRemoveDownload: (taskId) => {
+      void model.removeDownload(taskId);
+    },
+    onSetDownloadPriority: (taskId, priority) => {
+      void model.setDownloadPriority(taskId, priority);
+    },
+    onPauseAllDownloads: () => {
+      void model.pauseAllDownloads();
+    },
+    onResumeAllDownloads: () => {
+      void model.resumeAllDownloads();
+    },
+    onCancelAllDownloads: () => {
+      void model.cancelAllDownloads();
+    },
+    onOpenDownloadedFile: (taskId) => {
+      void model.openDownloadedFile(taskId);
+    },
+    onRevealDownloadedFile: (taskId) => {
+      void model.revealDownloadedFile(taskId);
+    },
+    onToggleDownloadSettings: () => {
+      void model.toggleDownloadSettings(state.instanceId);
+    },
+    onDownloadSettingsDraftChange: (patch) => {
+      model.updateDownloadSettingsDraft(state.instanceId, patch);
+    },
+    onAddDownloadSaveRule: () => {
+      model.addDownloadSaveRuleDraft(state.instanceId);
+    },
+    onRemoveDownloadSaveRule: (ruleId) => {
+      model.removeDownloadSaveRuleDraft(state.instanceId, ruleId);
+    },
+    onDownloadSaveRuleDraftChange: (ruleId, patch) => {
+      model.updateDownloadSaveRuleDraft(state.instanceId, ruleId, patch);
+    },
+    onSaveDownloadSettings: () => {
+      void model.saveDownloadSettings(state.instanceId);
+    },
+    onStartDownloadRemoteApi: () => {
+      void model.startDownloadRemoteApi(state.instanceId);
+    },
+    onStopDownloadRemoteApi: () => {
+      void model.stopDownloadRemoteApi(state.instanceId);
     }
   };
   return (

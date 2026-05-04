@@ -53,9 +53,33 @@
         "question"
       ],
       "type": "object"
+    },
+    "ToolRequestUserInputSource": {
+      "description": "Identifies the agent thread that requested input.",
+      "properties": {
+        "agentNickname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agentRole": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agentThreadId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     }
   },
-  "description": "Params sent with a request_user_input event.",
+  "description": "Params sent with an agent_question/request_user_input event.",
   "properties": {
     "itemId": {
       "type": "string"
@@ -65,6 +89,20 @@
         "$ref": "#/definitions/ToolRequestUserInputQuestion"
       },
       "type": "array"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ToolRequestUserInputSource"
+        }
+      ],
+      "default": {}
     },
     "threadId": {
       "type": "string"

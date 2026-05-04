@@ -1379,7 +1379,6 @@
 
 .lyra-ai-editor-work-scan-char {
   display: inline-block;
-  animation: lyra-ai-editor-work-char-scan 1.2s linear infinite;
 }
 
 .lyra-ai-editor-work-scan-char-path {
@@ -1776,16 +1775,6 @@
   text-shadow: none;
 }
 
-.lyra-ai-message-stream-token {
-  display: inline-block;
-  opacity: 0;
-  filter: blur(var(--lyra-unit-4));
-  transform: translateY(var(--lyra-unit-3));
-  text-shadow: none;
-  animation: lyra-ai-message-stream-token-in 240ms cubic-bezier(0.2, 0.85, 0.25, 1) forwards;
-  will-change: transform, filter, opacity, text-shadow;
-}
-
 .lyra-ai-message-actions {
   position: static;
   grid-area: 1 / 1;
@@ -1894,43 +1883,6 @@
   width: min(100%, var(--lyra-unit-420));
 }
 
-.lyra-ai-message-typing-copy {
-  min-width: 0;
-  max-width: 100%;
-  display: inline-block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--lyra-unit-11);
-  font-weight: 520;
-  letter-spacing: 0;
-  color: var(--lyra-text-secondary);
-  text-shadow: none;
-  animation: none;
-  will-change: auto;
-}
-
-[data-lyra-theme-tone="light"] .lyra-ai-message-typing-copy {
-  color: var(--lyra-text-secondary);
-  text-shadow: none;
-}
-
-@keyframes lyra-ai-message-typing-copy-breathe {
-  0%,
-  60%,
-  100% {
-    opacity: 0.58;
-    filter: saturate(0.9);
-    text-shadow: none;
-  }
-
-  30% {
-    opacity: 0.96;
-    filter: saturate(1.12);
-    text-shadow: none;
-  }
-}
-
 @keyframes lyra-ai-editor-work-scan {
   0% {
     transform: translateX(-115%);
@@ -1949,42 +1901,6 @@
 
   50% {
     box-shadow: none;
-  }
-}
-
-@keyframes lyra-ai-editor-work-char-scan {
-  0%,
-  100% {
-    opacity: 0.56;
-    filter: brightness(0.86);
-  }
-
-  45% {
-    opacity: 1;
-    filter: brightness(1.26);
-  }
-}
-
-@keyframes lyra-ai-message-stream-token-in {
-  0% {
-    opacity: 0;
-    filter: blur(var(--lyra-unit-4));
-    transform: translateY(var(--lyra-unit-3));
-    text-shadow: none;
-  }
-
-  64% {
-    opacity: 1;
-    filter: blur(var(--lyra-unit-0-4));
-    transform: translateY(calc(var(--lyra-unit-0-8) * -1));
-    text-shadow: none;
-  }
-
-  100% {
-    opacity: 1;
-    filter: blur(0);
-    transform: translateY(calc(var(--lyra-unit-0-8) * -1));
-    text-shadow: none;
   }
 }
 
@@ -2645,22 +2561,10 @@
 }
 
 .lyra-ai-agent-turn-timeline-item-tool .lyra-ai-agent-runtime-feed {
-  max-height: calc((var(--lyra-unit-20) * 6) + (var(--lyra-unit-3) * 5) + var(--lyra-unit-4));
-  overflow: auto;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--lyra-unit-3),
-    #000 calc(100% - var(--lyra-unit-3)),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--lyra-unit-3),
-    #000 calc(100% - var(--lyra-unit-3)),
-    transparent 100%
-  );
+  max-height: none;
+  overflow: visible;
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 .lyra-ai-agent-turn-timeline-item-tool .lyra-ai-agent-runtime-feed::before {
@@ -2687,9 +2591,9 @@
   display: grid;
   align-content: start;
   gap: var(--lyra-unit-9);
-  max-height: var(--lyra-unit-420);
+  max-height: none;
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
   scrollbar-width: thin;
   scrollbar-color:
     color-mix(in srgb, var(--lyra-text-muted) 30%, transparent)
@@ -2862,10 +2766,6 @@
   color: var(--lyra-text-secondary);
 }
 
-.lyra-ai-plan-card__action-secondary {
-  color: var(--lyra-text-secondary);
-}
-
 .lyra-ai-plan-card__action-danger:hover {
   color: var(--lyra-danger-500, #d95c4f);
 }
@@ -2893,26 +2793,14 @@
 .lyra-ai-agent-runtime-feed {
   min-width: 0;
   min-height: 0;
-  max-height: calc((var(--lyra-unit-20) * 6) + (var(--lyra-unit-3) * 5) + var(--lyra-unit-4));
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   display: grid;
-  gap: var(--lyra-unit-3);
-  padding: var(--lyra-unit-1) 0;
+  gap: var(--lyra-unit-2);
+  padding: 0;
   position: relative;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--lyra-unit-3),
-    #000 calc(100% - var(--lyra-unit-3)),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--lyra-unit-3),
-    #000 calc(100% - var(--lyra-unit-3)),
-    transparent 100%
-  );
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 .lyra-ai-agent-runtime-feed::before {
@@ -3014,8 +2902,8 @@
 .lyra-ai-agent-runtime-feed-output {
   grid-column: 1 / -1;
   min-width: 0;
-  max-height: var(--lyra-unit-140);
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
   margin: var(--lyra-unit-4) 0 0;
   padding: var(--lyra-unit-6) var(--lyra-unit-8);
   border-radius: var(--lyra-unit-5);
@@ -3067,6 +2955,10 @@
     minmax(var(--lyra-unit-52), var(--lyra-unit-120))
     minmax(0, 1fr)
     max-content;
+}
+
+.lyra-ai-agent-runtime-feed-collapsed-main-toggleable {
+  cursor: pointer;
 }
 
 .lyra-ai-agent-runtime-feed-group {
@@ -3225,7 +3117,7 @@
 }
 
 .lyra-ai-agent-terminal-card-output {
-  max-height: var(--lyra-unit-220);
+  max-height: none;
   margin: 0;
   border: 0;
   border-radius: 0;
@@ -3546,7 +3438,7 @@
 
 .lyra-ai-agent-composer-input {
   position: relative;
-  z-index: 2;
+  z-index: 4;
   min-width: 0;
   width: 100%;
   min-height: var(--lyra-size-titlebar-h);
@@ -3554,13 +3446,18 @@
   resize: none;
   border: 0;
   background: transparent;
-  color: transparent;
-  caret-color: transparent;
+  color: var(--lyra-text-primary);
+  caret-color: var(--lyra-text-primary);
   font-size: var(--lyra-text-size-12);
   line-height: 1.5;
   padding: var(--lyra-space-8) var(--lyra-space-12);
   margin: 0;
   border-radius: var(--lyra-radius-14) var(--lyra-radius-14) 0 0;
+  -webkit-text-fill-color: currentColor;
+}
+
+.lyra-ai-agent-composer-input-stack-has-attachments .lyra-ai-agent-composer-input {
+  color: transparent;
   -webkit-text-fill-color: transparent;
 }
 
@@ -3575,80 +3472,14 @@
 
 .lyra-ai-agent-composer-input:disabled {
   background: transparent;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  color: var(--lyra-text-muted);
+  -webkit-text-fill-color: currentColor;
   opacity: 1;
 }
 
-.lyra-ai-agent-composer-caret-layer {
-  border-radius: var(--lyra-radius-14) var(--lyra-radius-14) 0 0;
-}
-
-.lyra-modern-caret-composer {
-  --lyra-modern-caret-width: var(--lyra-stroke-thin);
-  --lyra-modern-caret-length: var(--lyra-space-18);
-  --lyra-modern-caret-offset-y: calc(var(--lyra-space-0) - var(--lyra-stroke-thin));
-  --lyra-modern-caret-color: var(--lyra-text-primary);
-}
-
-.lyra-ai-agent-composer-text-fx-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-  color: var(--lyra-text-primary);
-  font-size: var(--lyra-text-size-12);
-  line-height: 1.5;
-}
-
-.lyra-ai-agent-text-fx {
-  position: absolute;
-  white-space: pre;
-  will-change: transform, opacity, filter, text-shadow;
-}
-
-.lyra-ai-agent-text-fx-insert {
-  animation: lyra-ai-agent-text-insert 240ms cubic-bezier(0.2, 0.9, 0.24, 1) 1 forwards;
-}
-
-.lyra-ai-agent-text-fx-delete {
-  animation: lyra-ai-agent-text-delete 220ms cubic-bezier(0.18, 0.8, 0.24, 1) 1 forwards;
-}
-
-@keyframes lyra-ai-agent-text-insert {
-  0% {
-    opacity: 0;
-    transform: translateY(var(--lyra-space-4)) scale(0.94);
-    filter: blur(var(--lyra-space-6));
-    text-shadow: none;
-  }
-
-  42% {
-    opacity: 0.9;
-    transform: translateY(var(--lyra-space-1)) scale(1.02);
-    filter: blur(var(--lyra-space-2));
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
-    text-shadow: 0 0 0 transparent;
-  }
-}
-
-@keyframes lyra-ai-agent-text-delete {
-  0% {
-    opacity: 0.9;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateY(var(--lyra-space-1)) scale(0.56);
-    filter: blur(calc(var(--lyra-space-6) + var(--lyra-stroke-thin)));
-  }
+.lyra-ai-agent-composer-input-stack-has-attachments .lyra-ai-agent-composer-input:disabled {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .lyra-ai-agent-composer-toolbar {
@@ -6193,16 +6024,6 @@
   }
 }
 
-/* ============================================
-   Agent UX Overhaul — Typewriter, Thinking, Stream Indicator
-   ============================================ */
-
-/* Typewriter blinking cursor — disabled */
-.lyra-ai-agent-message-content::after {
-  content: "";
-  display: none;
-}
-
 .lyra-ai-agent-turn-footer {
   min-width: 0;
   margin-top: var(--lyra-unit-6);
@@ -6491,20 +6312,4 @@
   padding: var(--lyra-unit-6) 0;
   border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 40%, transparent);
   border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 40%, transparent);
-}
-
-/* Work items typing animation for code generation */
-.lyra-ai-editor-work-item-streaming {
-  position: relative;
-}
-
-.lyra-ai-editor-work-item-streaming::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: var(--lyra-unit-2);
-  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
-  animation: none;
 }

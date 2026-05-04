@@ -5,19 +5,25 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -p lyra-lsp-core -p lyra-calculator-napi -p lyra-files-napi -p lyra-image-napi -p lyra-resource-napi -p lyra-skills-napi -p lyra-docs-napi -p lyra-mcp-core && npm run native:stage",
+    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -p lyra-lsp-core -p lyra-calculator-napi -p lyra-files-napi -p lyra-image-napi -p lyra-resource-napi -p lyra-skills-napi -p lyra-docs-napi -p lyra-download-napi -p lyra-mcp-core && npm run native:stage",
     "native:build:release": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --release --clean",
     "native:stage": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --stage-only",
     "browser-use:build-current-bundle": "node --import tsx ../../tools/browser-use/build-current-bundle.ts",
     "browser-use:build-bundles": "node --import tsx ../../tools/browser-use/build-current-bundle.ts --all-targets",
     "browser-use:verify-bundles": "node --import tsx ../../tools/browser-use/verify-browser-use-bundles.ts",
+    "calculator:build-current-bundle": "node --import tsx ../../tools/calculator/build-current-bundle.ts",
+    "calculator:build-bundles": "node --import tsx ../../tools/calculator/build-current-bundle.ts --all-targets",
+    "calculator:verify-bundles": "node --import tsx ../../tools/calculator/verify-calculator-bundles.ts",
+    "downloads:build-aria2-bundles": "node --import tsx ../../tools/download-manager/build-aria2-bundles.ts",
+    "downloads:verify-aria2-bundles": "node --import tsx ../../tools/download-manager/verify-aria2-bundles.ts",
     "lsp:bundle:rust-analyzer": "node --import tsx ../../tools/lsp/install-rust-analyzer.ts",
     "lsp:preflight": "node --import tsx ../../tools/lsp/preflight-lsp.ts",
-    "release:preflight": "npm run typecheck && npm run test && npm run browser-use:verify-bundles -- --all-targets && node --import tsx ../../tools/lsp/preflight-lsp.ts --all-targets",
+    "release:preflight": "npm run typecheck && npm run test && npm run browser-use:verify-bundles -- --all-targets && npm run calculator:verify-bundles -- --all-targets && npm run downloads:verify-aria2-bundles -- --all-targets && node --import tsx ../../tools/lsp/preflight-lsp.ts --all-targets",
     "dev:electron-vite": "node --input-type=module -e \"import { spawn } from 'node:child_process'; import { join } from 'node:path'; const env = { ...process.env, ELECTRON_RUN_AS_NODE: '' }; const isLinuxWayland = process.platform === 'linux' && (((env.XDG_SESSION_TYPE ?? '').toLowerCase() === 'wayland') || (typeof env.WAYLAND_DISPLAY === 'string' && env.WAYLAND_DISPLAY.length > 0)); if (isLinuxWayland) { env.ELECTRON_OZONE_PLATFORM_HINT = 'wayland'; env.DISPLAY = ''; } const bin = join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'electron-vite.cmd' : 'electron-vite'); const child = spawn(bin, ['dev'], { stdio: 'inherit', env }); child.on('exit', (code, signal) => { if (signal) { process.kill(process.pid, signal); return; } process.exit(code ?? 0); });\"",
     "dev": "npm run native:build && npm run dev:electron-vite",
     "dev:fast": "npm run dev:electron-vite",
     "build": "npm run native:build && electron-vite build",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb rpm tar.gz",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint:ui-style": "node --import tsx ../../tools/verify-workbench-style.ts",
@@ -29,6 +35,7 @@
   "build": {
     "appId": "dev.lyra.desktop",
     "productName": "Lyra",
+    "executableName": "Lyra",
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "resources/icons/macos/lyra.icns"
@@ -37,8 +44,17 @@
       "icon": "resources/icons/win/lyra.ico"
     },
     "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm",
+        "tar.gz"
+      ],
+      "category": "Development",
       "icon": "resources/icons/linux"
     },
+    "afterPack": "../../scripts/desktop/after-pack-linux.cjs",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "extraResources": [
       {
         "from": "resources/icons/app",
@@ -59,6 +75,22 @@
         "to": "calculator",
         "filter": [
           "**/*"
+        ]
+      },
+      {
+        "from": "resources/aria2",
+        "to": "aria2",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/download-manager",
+        "to": "download-manager",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
         ]
       },
       {
@@ -110,6 +142,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "cross-env": "^7.0.3",
     "electron": "41.2.0",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^2.3.0",
     "jsdom": "^25.0.1",
     "pyright": "^1.1.408",

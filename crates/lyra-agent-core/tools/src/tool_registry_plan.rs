@@ -1,5 +1,5 @@
+use crate::AGENT_QUESTION_TOOL_NAME;
 use crate::CommandToolOptions;
-use crate::LYRA_PLAN_TOOL_NAME;
 use crate::REQUEST_USER_INPUT_TOOL_NAME;
 use crate::ResponsesApiNamespace;
 use crate::ResponsesApiNamespaceTool;
@@ -22,6 +22,7 @@ use crate::coalesce_loadable_tool_specs;
 use crate::collect_code_mode_exec_prompt_tool_definitions;
 use crate::collect_tool_search_source_infos;
 use crate::collect_tool_suggest_entries;
+use crate::create_agent_question_tool;
 use crate::create_apply_patch_freeform_tool;
 use crate::create_apply_patch_json_tool;
 use crate::create_close_agent_tool_v1;
@@ -30,6 +31,7 @@ use crate::create_code_mode_tool;
 use crate::create_exec_command_tool;
 use crate::create_followup_task_tool;
 use crate::create_image_generation_tool;
+use crate::create_inspect_command_tool;
 use crate::create_js_repl_reset_tool;
 use crate::create_js_repl_tool;
 use crate::create_list_agents_tool;
@@ -37,11 +39,9 @@ use crate::create_list_dir_tool;
 use crate::create_list_mcp_resource_templates_tool;
 use crate::create_list_mcp_resources_tool;
 use crate::create_local_shell_tool;
-use crate::create_lyra_plan_tool;
 use crate::create_read_mcp_resource_tool;
 use crate::create_report_agent_job_result_tool;
 use crate::create_request_permissions_tool;
-use crate::create_request_user_input_tool;
 use crate::create_resume_agent_tool;
 use crate::create_send_input_tool_v1;
 use crate::create_send_message_tool;
@@ -64,7 +64,6 @@ use crate::default_namespace_description;
 use crate::dynamic_tool_to_loadable_tool_spec;
 use crate::mcp_tool_to_responses_api_tool;
 use crate::request_permissions_tool_description;
-use crate::request_user_input_tool_description;
 use crate::tool_registry_plan_types::agent_type_description;
 use lyra_protocol::openai_models::ApplyPatchToolType;
 use lyra_protocol::openai_models::ConfigShellToolType;
@@ -76,8 +75,9 @@ pub fn build_tool_registry_plan(
 ) -> ToolRegistryPlan {
     let mut plan = ToolRegistryPlan::new();
     let exec_permission_approvals_enabled = config.exec_permission_approvals_enabled;
+    let plan_mode = config.collaboration_mode == lyra_protocol::config_types::ModeKind::Plan;
 
-    if config.code_mode_enabled {
+    if config.code_mode_enabled && !plan_mode {
         let namespace_descriptions = params
             .tool_namespaces
             .into_iter()
@@ -136,7 +136,15 @@ pub fn build_tool_registry_plan(
         );
     }
 
-    if config.has_environment {
+    if config.has_environment && plan_mode && config.shell_type == ConfigShellToolType::UnifiedExec
+    {
+        plan.push_spec(
+            create_inspect_command_tool(),
+            /*supports_parallel_tool_calls*/ true,
+            /*code_mode_enabled*/ false,
+        );
+        plan.register_handler("inspect_command", ToolHandlerKind::UnifiedExec);
+    } else if config.has_environment && !plan_mode {
         match &config.shell_type {
             ConfigShellToolType::Default => {
                 plan.push_spec(
@@ -185,7 +193,7 @@ pub fn build_tool_registry_plan(
         }
     }
 
-    if config.has_environment && config.shell_type != ConfigShellToolType::Disabled {
+    if config.has_environment && !plan_mode && config.shell_type != ConfigShellToolType::Disabled {
         plan.register_handler("shell", ToolHandlerKind::Shell);
         plan.register_handler("container.exec", ToolHandlerKind::Shell);
         plan.register_handler("local_shell", ToolHandlerKind::Shell);
@@ -213,7 +221,7 @@ pub fn build_tool_registry_plan(
         plan.register_handler("read_mcp_resource", ToolHandlerKind::McpResource);
     }
 
-    if config.collaboration_mode != lyra_protocol::config_types::ModeKind::Plan {
+    if !plan_mode {
         plan.push_spec(
             create_update_plan_tool(),
             /*supports_parallel_tool_calls*/ false,
@@ -222,14 +230,7 @@ pub fn build_tool_registry_plan(
         plan.register_handler("update_plan", ToolHandlerKind::Plan);
     }
 
-    plan.push_spec(
-        create_lyra_plan_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    plan.register_handler(LYRA_PLAN_TOOL_NAME, ToolHandlerKind::LyraPlan);
-
-    if config.has_environment && config.js_repl_enabled {
+    if config.has_environment && config.js_repl_enabled && !plan_mode {
         plan.push_spec(
             create_js_repl_tool(),
             /*supports_parallel_tool_calls*/ false,
@@ -244,21 +245,18 @@ pub fn build_tool_registry_plan(
         plan.register_handler("js_repl_reset", ToolHandlerKind::JsReplReset);
     }
 
-    if config.collaboration_mode != lyra_protocol::config_types::ModeKind::Plan {
-        plan.push_spec(
-            create_request_user_input_tool(request_user_input_tool_description(
-                config.default_mode_request_user_input,
-            )),
-            /*supports_parallel_tool_calls*/ false,
-            config.code_mode_enabled,
-        );
-        plan.register_handler(
-            REQUEST_USER_INPUT_TOOL_NAME,
-            ToolHandlerKind::RequestUserInput,
-        );
-    }
+    plan.push_spec(
+        create_agent_question_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    plan.register_handler(AGENT_QUESTION_TOOL_NAME, ToolHandlerKind::RequestUserInput);
+    plan.register_handler(
+        REQUEST_USER_INPUT_TOOL_NAME,
+        ToolHandlerKind::RequestUserInput,
+    );
 
-    if config.request_permissions_tool_enabled {
+    if config.request_permissions_tool_enabled && !plan_mode {
         plan.push_spec(
             create_request_permissions_tool(request_permissions_tool_description()),
             /*supports_parallel_tool_calls*/ false,
@@ -273,7 +271,8 @@ pub fn build_tool_registry_plan(
         .filter(|tool| tool.defer_loading)
         .collect::<Vec<_>>();
 
-    if config.search_tool
+    if !plan_mode
+        && config.search_tool
         && (params.deferred_mcp_tools.is_some() || !deferred_dynamic_tools.is_empty())
     {
         let mut search_source_infos = params
@@ -310,7 +309,8 @@ pub fn build_tool_registry_plan(
         }
     }
 
-    if config.tool_suggest
+    if !plan_mode
+        && config.tool_suggest
         && let Some(discoverable_tools) =
             params.discoverable_tools.filter(|tools| !tools.is_empty())
     {
@@ -323,6 +323,7 @@ pub fn build_tool_registry_plan(
     }
 
     if config.has_environment
+        && !plan_mode
         && let Some(apply_patch_tool_type) = &config.apply_patch_tool_type
     {
         match apply_patch_tool_type {
@@ -353,10 +354,11 @@ pub fn build_tool_registry_plan(
         plan.register_handler("list_dir", ToolHandlerKind::ListDir);
     }
 
-    if config
-        .supported_tools
-        .iter()
-        .any(|tool| tool == "test_sync_tool")
+    if !plan_mode
+        && config
+            .supported_tools
+            .iter()
+            .any(|tool| tool == "test_sync_tool")
     {
         plan.push_spec(
             create_test_sync_tool(),
@@ -378,7 +380,7 @@ pub fn build_tool_registry_plan(
         );
     }
 
-    if config.image_gen_tool {
+    if config.image_gen_tool && !plan_mode {
         plan.push_spec(
             create_image_generation_tool("png"),
             /*supports_parallel_tool_calls*/ false,
@@ -397,7 +399,7 @@ pub fn build_tool_registry_plan(
         plan.register_handler("view_image", ToolHandlerKind::ViewImage);
     }
 
-    if config.collab_tools {
+    if config.collab_tools && !plan_mode {
         if config.multi_agent_v2 {
             let agent_type_description =
                 agent_type_description(config, params.default_agent_type_description);
@@ -485,7 +487,7 @@ pub fn build_tool_registry_plan(
         }
     }
 
-    if config.agent_jobs_tools {
+    if config.agent_jobs_tools && !plan_mode {
         plan.push_spec(
             create_spawn_agents_on_csv_tool(),
             /*supports_parallel_tool_calls*/ false,
@@ -502,7 +504,7 @@ pub fn build_tool_registry_plan(
         }
     }
 
-    if let Some(mcp_tools) = params.mcp_tools {
+    if !plan_mode && let Some(mcp_tools) = params.mcp_tools {
         let mut entries = mcp_tools.to_vec();
         entries.sort_by_key(|tool| tool.name.display());
         let mut namespace_entries = BTreeMap::new();
@@ -565,28 +567,30 @@ pub fn build_tool_registry_plan(
         }
     }
 
-    let mut dynamic_tool_specs = Vec::new();
-    for tool in params.dynamic_tools {
-        match dynamic_tool_to_loadable_tool_spec(tool) {
-            Ok(loadable_tool) => {
-                let handler_name = ToolName::new(tool.namespace.clone(), tool.name.clone());
-                dynamic_tool_specs.push(loadable_tool);
-                plan.register_handler(handler_name, ToolHandlerKind::DynamicTool);
-            }
-            Err(error) => {
-                tracing::error!(
-                    "Failed to convert dynamic tool {:?} to OpenAI tool: {error:?}",
-                    tool.name
-                );
+    if !plan_mode {
+        let mut dynamic_tool_specs = Vec::new();
+        for tool in params.dynamic_tools {
+            match dynamic_tool_to_loadable_tool_spec(tool) {
+                Ok(loadable_tool) => {
+                    let handler_name = ToolName::new(tool.namespace.clone(), tool.name.clone());
+                    dynamic_tool_specs.push(loadable_tool);
+                    plan.register_handler(handler_name, ToolHandlerKind::DynamicTool);
+                }
+                Err(error) => {
+                    tracing::error!(
+                        "Failed to convert dynamic tool {:?} to OpenAI tool: {error:?}",
+                        tool.name
+                    );
+                }
             }
         }
-    }
-    for spec in coalesce_loadable_tool_specs(dynamic_tool_specs) {
-        plan.push_spec(
-            spec.into(),
-            /*supports_parallel_tool_calls*/ false,
-            config.code_mode_enabled,
-        );
+        for spec in coalesce_loadable_tool_specs(dynamic_tool_specs) {
+            plan.push_spec(
+                spec.into(),
+                /*supports_parallel_tool_calls*/ false,
+                config.code_mode_enabled,
+            );
+        }
     }
 
     plan
@@ -730,7 +734,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_mode_registry_exposes_only_lyra_plan_protocol_tool() {
+    fn plan_mode_registry_exposes_proposed_plan_text_protocol_and_agent_question_tools() {
         let model = model_info(vec![InputModality::Text]);
         let config = tools_config_for_mode(&model, lyra_protocol::config_types::ModeKind::Plan);
         let plan = build_tool_registry_plan(&config, empty_params());
@@ -738,7 +742,12 @@ mod tests {
         assert!(
             plan.specs
                 .iter()
-                .any(|spec| spec.name() == LYRA_PLAN_TOOL_NAME)
+                .any(|spec| spec.name() == "inspect_command")
+        );
+        assert!(
+            plan.specs
+                .iter()
+                .any(|spec| spec.name() == AGENT_QUESTION_TOOL_NAME)
         );
         assert!(
             !plan
@@ -746,16 +755,43 @@ mod tests {
                 .iter()
                 .any(|spec| spec.name() == REQUEST_USER_INPUT_TOOL_NAME)
         );
-        assert!(!plan.specs.iter().any(|spec| spec.name() == "update_plan"));
+        assert!(!plan.specs.iter().any(|spec| spec.name() == "exec_command"));
+        assert!(!plan.specs.iter().any(|spec| spec.name() == "write_stdin"));
+        assert!(!plan.specs.iter().any(|spec| spec.name() == "shell"));
+        assert!(!plan.specs.iter().any(|spec| spec.name() == "shell_command"));
+        assert!(!plan.specs.iter().any(|spec| spec.name() == "js_repl"));
+        assert!(!plan.specs.iter().any(|spec| spec.name() == "js_repl_reset"));
         assert!(
-            plan.handlers
+            !plan
+                .specs
                 .iter()
-                .any(|handler| handler.name.name == LYRA_PLAN_TOOL_NAME
-                    && handler.kind == ToolHandlerKind::LyraPlan)
+                .any(|spec| spec.name() == "request_permissions")
+        );
+        assert!(!plan.specs.iter().any(|spec| spec.name() == "update_plan"));
+        assert!(!plan.specs.iter().any(|spec| spec.name() == "apply_patch"));
+        assert!(
+            !plan
+                .handlers
+                .iter()
+                .any(|handler| handler.kind == ToolHandlerKind::ApplyPatch)
+        );
+        assert!(plan.handlers.iter().any(|handler| {
+            handler.name.name == "inspect_command" && handler.kind == ToolHandlerKind::UnifiedExec
+        }));
+        assert!(
+            !plan
+                .handlers
+                .iter()
+                .any(|handler| handler.name.name == "exec_command")
         );
         assert!(
             !plan
                 .handlers
+                .iter()
+                .any(|handler| handler.name.name == "write_stdin")
+        );
+        assert!(
+            plan.handlers
                 .iter()
                 .any(|handler| handler.kind == ToolHandlerKind::RequestUserInput)
         );

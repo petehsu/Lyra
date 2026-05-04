@@ -22,7 +22,6 @@ const defaults: WorkbenchPreferences = {
   splitOverflowPolicy: "block_with_notice",
   aiRichRenderingEnabled: true,
   aiStopBehavior: "turn_only",
-  aiToolDisplayMode: "inner_scroll",
   preventSleepEnabled: true,
   forceWebPageThemingEnabled: true,
   searchScopePreset: "home",
@@ -136,6 +135,15 @@ describe("workbench preferences", () => {
     expect(readWorkbenchPreferences(defaults).uiPackId).toBe("classic");
   });
 
+  test("ignores legacy AI tool display mode preference", () => {
+    writeWorkbenchStateSync("preferences", JSON.stringify({
+      ...defaults,
+      aiToolDisplayMode: "inner_scroll"
+    }));
+
+    expect(readWorkbenchPreferences(defaults)).toEqual(defaults);
+  });
+
   test("preserves external UIUX pack ids after activation", () => {
     writeWorkbenchPreferences({
       ...defaults,
@@ -158,7 +166,6 @@ describe("workbench preferences", () => {
       result.current.setSplitOverflowPolicy("replace_target");
       result.current.setAiRichRenderingEnabled(false);
       result.current.setAiStopBehavior("turn_and_background");
-      result.current.setAiToolDisplayMode("collapsed");
       result.current.setPreventSleepEnabled(false);
       result.current.setSystemNotificationMode("all");
       result.current.setSystemNotificationClickBehavior("open_source");
@@ -176,7 +183,6 @@ describe("workbench preferences", () => {
       splitOverflowPolicy: "replace_target",
       aiRichRenderingEnabled: false,
       aiStopBehavior: "turn_and_background",
-      aiToolDisplayMode: "collapsed",
       preventSleepEnabled: false,
       systemNotificationMode: "all",
       systemNotificationClickBehavior: "open_source",
@@ -194,7 +200,6 @@ describe("workbench preferences", () => {
       splitOverflowPolicy: "replace_target",
       aiRichRenderingEnabled: false,
       aiStopBehavior: "turn_and_background",
-      aiToolDisplayMode: "collapsed",
       preventSleepEnabled: false,
       systemNotificationMode: "all",
       systemNotificationClickBehavior: "open_source",

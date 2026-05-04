@@ -13,7 +13,6 @@ import { AiPanelTopbarActions } from "./topbar-actions";
 import type { AiPanelSide, AiPanelSurfaceProps } from "./types";
 import type { AiPanelSurfaceRuntime } from "./use-ai-panel-surface-runtime";
 import type { WorkbenchLocale } from "../i18n";
-import type { WorkbenchAiToolDisplayMode } from "../preferences";
 
 const LOGO_URL = new URL("../../../renderer/assets/logo.svg", import.meta.url).toString();
 const LOGO_BLINK_URL = new URL("../../../renderer/assets/logo-blink.svg", import.meta.url).toString();
@@ -22,7 +21,6 @@ type AiPanelSurfaceViewProps = {
   readonly surfaceProps: AiPanelSurfaceProps;
   readonly locale: WorkbenchLocale;
   readonly richRenderingEnabled: boolean;
-  readonly aiToolDisplayMode: WorkbenchAiToolDisplayMode;
   readonly aiPanelSide: AiPanelSide;
   readonly textLabels: AiPanelSurfaceTextLabels;
   readonly runtime: AiPanelSurfaceRuntime;
@@ -32,7 +30,6 @@ export const AiPanelSurfaceView = ({
   surfaceProps,
   locale,
   richRenderingEnabled,
-  aiToolDisplayMode,
   aiPanelSide,
   textLabels,
   runtime
@@ -148,7 +145,6 @@ export const AiPanelSurfaceView = ({
             isZhLocale={locale === "zh-CN"}
             title={title}
             richRenderingEnabled={richRenderingEnabled}
-            aiToolDisplayMode={aiToolDisplayMode}
             {...(themeSignature === undefined ? {} : { themeSignature })}
             showEmptySessionScene={runtime.showEmptySessionScene}
             isLoading={state.isLoadingThread || state.isLoadingThreads}
@@ -178,7 +174,7 @@ export const AiPanelSurfaceView = ({
             pendingInteractionQueue={state.pendingInteractionQueue}
             canOpenFilePath={runtime.canOpenFilePath}
             openRuntimeTargetPath={runtime.openRuntimeTargetPath}
-            typewriterText={runtime.typewriterText}
+            streamingAssistantText={runtime.streamingAssistantText}
             streamingTurnRuntimeFeed={viewModel.streamingTurnRuntimeFeed}
             streamingStatus={viewModel.streamingStatus}
             orphanRuntimeFeed={viewModel.orphanRuntimeFeed}
@@ -213,7 +209,7 @@ export const AiPanelSurfaceView = ({
           navNextLabel={textLabels.navNext}
           onSelectInteractionId={actions.setActiveInteractionId}
           onCommandApprovalDecision={actions.respondToCommandApproval}
-          onPlanQuestionSubmit={actions.respondToPlanQuestion}
+          onAgentQuestionSubmit={actions.respondToAgentQuestion}
           onMcpElicitationSubmit={actions.respondToMcpElicitation}
         />
 

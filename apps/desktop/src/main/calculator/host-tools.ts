@@ -99,12 +99,14 @@ const buildHostToolsPayload = () => ({
 
 export const createCalculatorHostToolsBridge = ({
   runtimeClient,
-  runtimeHostRpc
+  runtimeHostRpc,
+  storageRoot
 }: {
   readonly runtimeClient: LyraRuntimeClient;
   readonly runtimeHostRpc: RuntimeHostRpcService;
+  readonly storageRoot: string;
 }) => {
-  const calculatorService = createCalculatorService();
+  const calculatorService = createCalculatorService({ storageRoot });
   const requestLyraRuntime = async <T>(method: string, params: unknown): Promise<T> =>
     await runtimeClient.request<T>("lyra.runtime.request", { method, params });
   const disposeHandler = runtimeHostRpc.registerHandler(

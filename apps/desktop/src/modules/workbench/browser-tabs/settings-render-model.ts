@@ -78,12 +78,24 @@ export type SettingsCustomControlDescriptor = {
   readonly model: SettingsAiModel;
 };
 
+export type SettingsStatusListControlDescriptor = {
+  readonly kind: "status-list";
+  readonly label: string;
+  readonly rows: readonly {
+    readonly label: string;
+    readonly value: string;
+  }[];
+  readonly actionLabel: string;
+  readonly onAction: () => void;
+};
+
 export type SettingsControlDescriptor =
   | SettingsBooleanChoiceControlDescriptor
   | SettingsChoiceControlDescriptor
   | SettingsCustomControlDescriptor
   | SettingsInlineStatusActionControlDescriptor
   | SettingsMultiChoiceControlDescriptor
+  | SettingsStatusListControlDescriptor
   | SettingsTextControlDescriptor
   | SettingsToggleGroupControlDescriptor;
 
@@ -211,6 +223,56 @@ const createSettingsSection = ({
   frame
 });
 
+const formatLinuxCompatStatusRows = (
+  props: BrowserSettingsSurfaceProps
+): SettingsStatusListControlDescriptor["rows"] => {
+  const status = props.linuxCompatStatus;
+  if (status === null) {
+    return [
+      {
+        label: props.linuxCompatCurrentStatusLabel,
+        value: "unknown"
+      }
+    ];
+  }
+  const distro = [
+    status.facts.distributionId ?? "unknown",
+    status.facts.distributionVersion ?? ""
+  ].filter((entry) => entry.length > 0).join(" ");
+  return [
+    {
+      label: props.linuxCompatCurrentStatusLabel,
+      value: `${status.profile} · ${status.backend} · ${status.gpuMode}`
+    },
+    {
+      label: props.linuxCompatSystemLabel,
+      value: `${distro} · ${status.facts.architecture} · ${status.facts.libc ?? "unknown"}`
+    },
+    {
+      label: props.linuxCompatDesktopLabel,
+      value: `${status.facts.desktop} · ${status.facts.sessionType}`
+    },
+    {
+      label: props.linuxCompatGpuLabel,
+      value: `${status.facts.gpu.vendor} · ${status.facts.gpu.hardwareAccelerationEnabled ?? "unknown"}`
+    },
+    {
+      label: props.linuxCompatSwitchesLabel,
+      value: Object.keys(status.appliedSwitches).length === 0
+        ? "none"
+        : Object.entries(status.appliedSwitches)
+            .map(([key, value]) => `${key}=${value}`)
+            .join(" · ")
+    },
+    ...(status.warnings.length === 0
+      ? []
+      : [{
+          label: props.linuxCompatWarningsLabel,
+          value: status.warnings.map((warning) => warning.code).join(" · ")
+        }])
+  ];
+};
+
 const resolveCategoryHeading = (
   categoryId: SettingsCategoryId,
   props: BrowserSettingsSurfaceProps
@@ -224,6 +286,8 @@ const resolveCategoryHeading = (
       return props.splitTriggerModeLabel;
     case "search":
       return props.searchCategoryLabel;
+    case "linux":
+      return props.linuxCategoryLabel;
     case "ai":
       return props.aiCategoryLabel;
     default:
@@ -404,6 +468,50 @@ const createSectionControl = (
             disabledLabel: props.systemNotificationActionsDisabled,
             onChange: props.onSystemNotificationActionsChange
           })
+        ]
+      });
+    case "linuxCompatProfile":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.linuxCompatProfileLabel,
+        controls: [
+          createChoiceControl({
+            label: props.linuxCompatProfileLabel,
+            options: props.linuxCompatProfileOptions,
+            value: props.linuxCompatProfileValue,
+            onChange: props.onLinuxCompatProfileChange,
+            description: props.linuxCompatProfileDescription
+          })
+        ]
+      });
+    case "linuxCompatStatus":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.linuxCompatStatusLabel,
+        controls: [
+          {
+            kind: "status-list",
+            label: props.linuxCompatStatusLabel,
+            rows: formatLinuxCompatStatusRows(props),
+            actionLabel: props.linuxCompatExportDiagnosticsLabel,
+            onAction: props.onLinuxCompatExportDiagnostics
+          }
+        ]
+      });
+    case "linuxCompatRestart":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.linuxCompatRestartLabel,
+        controls: [
+          {
+            kind: "inline-status-action",
+            label: props.linuxCompatRestartLabel,
+            statusLabel: props.linuxCompatRestartLabel,
+            statusValue: props.linuxCompatRestartDescription,
+            actionLabel: props.linuxCompatRestartNowLabel,
+            actionDisabled: false,
+            onAction: props.onLinuxCompatRestart
+          }
         ]
       });
     case "omniboxNonBrowserSubmitTarget":
@@ -673,28 +781,6 @@ const createSectionControl = (
           })
         ]
       });
-    case "aiToolDisplayMode":
-      return createSettingsSection({
-        id: sectionId,
-        label: props.aiToolDisplayModeLabel,
-        controls: [
-          createChoiceControl({
-            label: props.aiToolDisplayModeLabel,
-            options: [
-              {
-                value: "inner_scroll",
-                label: props.aiToolDisplayModeInnerScrollLabel,
-              },
-              {
-                value: "collapsed",
-                label: props.aiToolDisplayModeCollapsedLabel,
-              }
-            ],
-            value: props.aiToolDisplayModeValue,
-            onChange: props.onAiToolDisplayModeChange
-          })
-        ]
-      });
     case "aiProviderSettings":
       return createSettingsSection({
         id: sectionId,
@@ -719,10 +805,8 @@ export const createSettingsSurfaceModel = (
 ): SettingsSurfaceModel => {
   const schema = createWorkbenchSettingsSchema(props);
   const sectionById = new Map(schema.sections.map((section) => [section.id, section] as const));
-
-  return {
-    title: props.title,
-    categories: schema.categories.map((category) => ({
+  const categories = schema.categories
+    .map((category) => ({
       id: category.id,
       domId: buildSettingsCategoryDomId(category.id),
       navLabel: category.label,
@@ -736,5 +820,10 @@ export const createSettingsSurfaceModel = (
         return renderedSection === null ? [] : [renderedSection];
       })
     }))
+    .filter((category) => category.sections.length > 0);
+
+  return {
+    title: props.title,
+    categories
   };
 };

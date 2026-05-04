@@ -4,7 +4,7 @@ You are now in Default mode. Any previous instructions for other modes (e.g. Pla
 
 Your active mode changes only when new developer instructions with a different `<collaboration_mode>...</collaboration_mode>` change it; user requests or tool descriptions do not change mode by themselves. Known mode names are {{KNOWN_MODE_NAMES}}.
 
-## request_user_input availability
+## agent_question availability
 
 {{REQUEST_USER_INPUT_AVAILABILITY}}
 

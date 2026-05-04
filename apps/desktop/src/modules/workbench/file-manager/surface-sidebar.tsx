@@ -37,6 +37,17 @@ export const FileManagerSidebar = ({
           {renderFileManagerSectionIcon("favorites")}
           <span>{labels.homeSectionFavorites}</span>
         </button>
+        <button
+          className={
+            renderModel.sidebar.downloadsActive
+              ? "lyra-file-manager-nav-item lyra-file-manager-nav-item-active"
+              : "lyra-file-manager-nav-item"
+          }
+          onClick={actions.onOpenDownloads}
+        >
+          {renderFileManagerSectionIcon("downloads")}
+          <span>{labels.downloadManagerTitle}</span>
+        </button>
         {renderModel.sidebar.locations.map(({ location, active }) => (
           <button
             key={location.id}

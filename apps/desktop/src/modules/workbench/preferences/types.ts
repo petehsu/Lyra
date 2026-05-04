@@ -27,7 +27,6 @@ export type WorkbenchSplitOverflowPolicy =
 export type WorkbenchSearchResultsSourceFilter = "all" | "web" | "local";
 export type WorkbenchOmniboxNonBrowserSubmitTarget = "new_tab" | "replace_active_tab";
 export type WorkbenchAiStopBehavior = "turn_only" | "turn_and_background";
-export type WorkbenchAiToolDisplayMode = "inner_scroll" | "collapsed";
 
 export type WorkbenchPreferences = {
   readonly locale: WorkbenchLocale;
@@ -39,7 +38,6 @@ export type WorkbenchPreferences = {
   readonly splitOverflowPolicy: WorkbenchSplitOverflowPolicy;
   readonly aiRichRenderingEnabled: boolean;
   readonly aiStopBehavior: WorkbenchAiStopBehavior;
-  readonly aiToolDisplayMode: WorkbenchAiToolDisplayMode;
   readonly preventSleepEnabled: boolean;
   readonly forceWebPageThemingEnabled: boolean;
   readonly searchScopePreset: SearchLocalScopePreset;
@@ -74,7 +72,6 @@ export type WorkbenchPreferencesModel = {
   readonly setSplitOverflowPolicy: (policy: WorkbenchSplitOverflowPolicy) => void;
   readonly setAiRichRenderingEnabled: (enabled: boolean) => void;
   readonly setAiStopBehavior: (value: WorkbenchAiStopBehavior) => void;
-  readonly setAiToolDisplayMode: (value: WorkbenchAiToolDisplayMode) => void;
   readonly setPreventSleepEnabled: (enabled: boolean) => void;
   readonly setForceWebPageThemingEnabled: (enabled: boolean) => void;
   readonly setSearchScopePreset: (value: SearchLocalScopePreset) => void;

@@ -1,4 +1,7 @@
 import type {
+  LinuxCompatConfig,
+  LinuxCompatProfile,
+  LinuxCompatReadStatusResponse,
   SearchDeepBudgetPreset,
   SearchDeepCrawlPolicy,
   SearchLocalScopePreset,
@@ -8,7 +11,6 @@ import type {
 import type { WorkbenchLocale } from "../i18n";
 import type {
   WorkbenchAiStopBehavior,
-  WorkbenchAiToolDisplayMode,
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchSplitOverflowPolicy,
   WorkbenchSplitThreePaneLayout,
@@ -29,6 +31,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly title: string;
   readonly aiCategoryLabel: string;
   readonly notificationsCategoryLabel: string;
+  readonly linuxCategoryLabel: string;
   readonly languageLabel: string;
   readonly themeLabel: string;
   readonly uiStyleLabel: string;
@@ -48,9 +51,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly aiStopBehaviorTurnOnlyDescription: string;
   readonly aiStopBehaviorTurnAndBackgroundLabel: string;
   readonly aiStopBehaviorTurnAndBackgroundDescription: string;
-  readonly aiToolDisplayModeLabel: string;
-  readonly aiToolDisplayModeInnerScrollLabel: string;
-  readonly aiToolDisplayModeCollapsedLabel: string;
   readonly preventSleepLabel: string;
   readonly preventSleepDescription: string;
   readonly preventSleepEnabledLabel: string;
@@ -93,6 +93,32 @@ export type BrowserSettingsSurfaceProps = {
   readonly systemNotificationActionsDescription: string;
   readonly systemNotificationActionsEnabled: string;
   readonly systemNotificationActionsDisabled: string;
+  readonly linuxCompatProfileLabel: string;
+  readonly linuxCompatProfileDescription: string;
+  readonly linuxCompatProfileReliableLabel: string;
+  readonly linuxCompatProfileReliableDescription: string;
+  readonly linuxCompatProfileNativeLabel: string;
+  readonly linuxCompatProfileNativeDescription: string;
+  readonly linuxCompatProfilePerformanceLabel: string;
+  readonly linuxCompatProfilePerformanceDescription: string;
+  readonly linuxCompatStatusLabel: string;
+  readonly linuxCompatCurrentStatusLabel: string;
+  readonly linuxCompatSystemLabel: string;
+  readonly linuxCompatDesktopLabel: string;
+  readonly linuxCompatGpuLabel: string;
+  readonly linuxCompatSwitchesLabel: string;
+  readonly linuxCompatWarningsLabel: string;
+  readonly linuxCompatExportDiagnosticsLabel: string;
+  readonly linuxCompatRestartLabel: string;
+  readonly linuxCompatRestartDescription: string;
+  readonly linuxCompatRestartNowLabel: string;
+  readonly linuxCompatRestartDialogTitle: string;
+  readonly linuxCompatRestartDialogDescription: string;
+  readonly linuxCompatRestartDialogCancel: string;
+  readonly linuxCompatRecoveryTitle: string;
+  readonly linuxCompatRecoveryDescription: string;
+  readonly linuxCompatDiagnosticsExported: string;
+  readonly linuxCompatDiagnosticsFailed: string;
   readonly localeValue: WorkbenchLocale;
   readonly themeValue: WorkbenchThemeId;
   readonly uiStyleValue: WorkbenchUiPackId;
@@ -102,7 +128,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly splitOverflowPolicyValue: WorkbenchSplitOverflowPolicy;
   readonly aiRichRenderValue: boolean;
   readonly aiStopBehaviorValue: WorkbenchAiStopBehavior;
-  readonly aiToolDisplayModeValue: WorkbenchAiToolDisplayMode;
   readonly preventSleepValue: boolean;
   readonly jsReplValue: boolean;
   readonly forceWebPageThemingValue: boolean;
@@ -126,6 +151,10 @@ export type BrowserSettingsSurfaceProps = {
   readonly systemNotificationModeValue: SystemNotificationMode;
   readonly systemNotificationClickBehaviorValue: SystemNotificationClickBehavior;
   readonly systemNotificationActionsValue: boolean;
+  readonly linuxCompatVisible: boolean;
+  readonly linuxCompatStatus: LinuxCompatReadStatusResponse | null;
+  readonly linuxCompatConfig: LinuxCompatConfig | null;
+  readonly linuxCompatProfileValue: LinuxCompatProfile;
   readonly localeOptions: readonly SettingsOption<WorkbenchLocale>[];
   readonly themeOptions: readonly SettingsOption<WorkbenchThemeId>[];
   readonly uiStyleOptions: readonly SettingsOption<WorkbenchUiPackId>[];
@@ -141,6 +170,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly omniboxNonBrowserSubmitTargetOptions: readonly SettingsOption<WorkbenchOmniboxNonBrowserSubmitTarget>[];
   readonly systemNotificationModeOptions: readonly SettingsOption<SystemNotificationMode>[];
   readonly systemNotificationClickBehaviorOptions: readonly SettingsOption<SystemNotificationClickBehavior>[];
+  readonly linuxCompatProfileOptions: readonly SettingsOption<LinuxCompatProfile>[];
   readonly aiLabels: SettingsAiLabels;
   readonly aiModel: SettingsAiModel;
   readonly onLocaleChange: (value: WorkbenchLocale) => void;
@@ -152,7 +182,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly onSplitOverflowPolicyChange: (value: WorkbenchSplitOverflowPolicy) => void;
   readonly onAiRichRenderChange: (value: boolean) => void;
   readonly onAiStopBehaviorChange: (value: WorkbenchAiStopBehavior) => void;
-  readonly onAiToolDisplayModeChange: (value: WorkbenchAiToolDisplayMode) => void;
   readonly onPreventSleepChange: (value: boolean) => void;
   readonly onJsReplChange: (value: boolean) => void;
   readonly onForceWebPageThemingChange: (value: boolean) => void;
@@ -177,4 +206,7 @@ export type BrowserSettingsSurfaceProps = {
     value: SystemNotificationClickBehavior
   ) => void;
   readonly onSystemNotificationActionsChange: (value: boolean) => void;
+  readonly onLinuxCompatProfileChange: (value: LinuxCompatProfile) => void;
+  readonly onLinuxCompatExportDiagnostics: () => void;
+  readonly onLinuxCompatRestart: () => void;
 };

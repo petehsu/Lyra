@@ -209,7 +209,11 @@ const resultToDynamicToolResponse = (result: CalculatorResult): DynamicToolCallR
   success: result.ok
 });
 
-export const createCalculatorService = () => {
+export const createCalculatorService = ({
+  storageRoot
+}: {
+  readonly storageRoot: string;
+}) => {
   const nativeLoadResult = loadCalculatorNativeBindings();
 
   const evaluate = async (payload: HostToolInvocationPayload): Promise<DynamicToolCallResponse> => {
@@ -219,7 +223,7 @@ export const createCalculatorService = () => {
       : unavailableNativeResult(nativeLoadResult);
 
     if (shouldUsePythonFirst(request)) {
-      const pythonResult = await runPythonCalculator(request);
+      const pythonResult = await runPythonCalculator(storageRoot, request);
       if (pythonResult.ok) {
         return resultToDynamicToolResponse(pythonResult);
       }
@@ -236,7 +240,7 @@ export const createCalculatorService = () => {
       return resultToDynamicToolResponse(nativeResult);
     }
 
-    const pythonResult = await runPythonCalculator(request);
+    const pythonResult = await runPythonCalculator(storageRoot, request);
     if (pythonResult.ok) {
       return resultToDynamicToolResponse(withFallbackWarning(
         pythonResult,

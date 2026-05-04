@@ -38,6 +38,53 @@ const createState = (overrides: Partial<FileManagerAppState> = {}): FileManagerA
   devices: [],
   entries: [],
   trashEntries: [],
+  downloadTasks: [],
+  downloadStatus: "ready",
+  downloadUrlDraft: "",
+  downloadAdvancedDraft: {
+    advancedOpen: false,
+    cookieHeader: "",
+    headersText: "",
+    mirrorsText: "",
+    partialFilePath: "",
+    checksumAlgorithm: "none",
+    checksumExpected: "",
+    maxRetries: "",
+    retryDelaySeconds: "",
+    proxyMode: "system",
+    proxyUrl: ""
+  },
+  downloadErrorMessage: undefined,
+  downloadSettings: null,
+  downloadRemoteApiStatus: null,
+  downloadSettingsOpen: false,
+  downloadSettingsDraft: {
+    speedLimitKibPerSecond: "",
+    scheduleEnabled: false,
+    scheduleStartTime: "00:00",
+    scheduleEndTime: "23:59",
+    scheduleOutsideAction: "pause",
+    scheduleOutsideSpeedLimitKibPerSecond: "",
+    proxyMode: "system",
+    proxyUrl: "",
+    defaultCookieHeader: "",
+    defaultHeadersText: "",
+    autoExtract: false,
+    deleteArchiveAfterExtract: false,
+    detectSplitArchives: true,
+    extractDirectory: "",
+    btDhtEnabled: true,
+    btPeerExchangeEnabled: true,
+    btLocalPeerDiscoveryEnabled: true,
+    btSeedTimeMinutes: "0",
+    btTrackerUrlsText: "",
+    btUploadLimitKibPerSecond: "",
+    remoteHost: "127.0.0.1",
+    remotePort: "",
+    remoteAllowLan: false,
+    saveRules: []
+  },
+  downloadSettingsErrorMessage: undefined,
   ...overrides
 } as FileManagerAppState);
 
@@ -119,6 +166,52 @@ describe("deriveFileManagerSurfaceModel", () => {
     expect(model.toolbar.canEmptyTrash).toBe(true);
     expect(model.body.kind).toBe("trash");
     expect(model.body.kind === "trash" ? model.body.trash.entries[0]?.active : false).toBe(true);
+  });
+
+  test("derives download manager body and disables file toolbar actions", () => {
+    const model = deriveFileManagerSurfaceModel(
+      createState({
+        viewKind: "downloads",
+        currentLocation: {
+          id: "download-manager",
+          title: "Download Manager",
+          kind: "special",
+          specialId: "downloadManager"
+        },
+        parentPath: undefined,
+        downloadUrlDraft: "https://example.com/file.zip",
+        downloadTasks: [
+          {
+            id: "download-1",
+            url: "https://example.com/file.zip",
+            fileName: "file.zip",
+            savePath: "/tmp/file.zip",
+            directory: "/tmp",
+            protocol: "https",
+            source: "manual",
+            state: "queued",
+            receivedBytes: 0,
+            totalBytes: 0,
+            speedBytesPerSecond: 0,
+            priority: "normal",
+            connectionsRequested: 1,
+            connectionsActive: 0,
+            canResume: false,
+            createdAt: "2026-05-04T00:00:00.000Z",
+            updatedAt: "2026-05-04T00:00:00.000Z",
+            tags: []
+          }
+        ]
+      }),
+      null,
+      false
+    );
+
+    expect(model.toolbar.canCreateDraft).toBe(false);
+    expect(model.toolbar.favoriteDisabled).toBe(true);
+    expect(model.sidebar.downloadsActive).toBe(true);
+    expect(model.body.kind).toBe("downloads");
+    expect(model.body.kind === "downloads" ? model.body.downloads.urlDraft : "").toBe("https://example.com/file.zip");
   });
 
   test("derives home disk, device, and recent render state", () => {

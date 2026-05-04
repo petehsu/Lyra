@@ -7,7 +7,6 @@ import type {
 } from "../../../shared/desktop-bridge";
 import { LyraBrandLogo } from "../brand";
 import type { WorkbenchLocale } from "../i18n";
-import type { WorkbenchAiToolDisplayMode } from "../preferences";
 import { AiPanelEmptyGreetingRotator } from "./empty-greeting-rotator";
 import type {
   PendingInteractionPanel,
@@ -38,7 +37,6 @@ type AiPanelThreadViewProps = {
   readonly isZhLocale: boolean;
   readonly title: string;
   readonly richRenderingEnabled: boolean;
-  readonly aiToolDisplayMode: WorkbenchAiToolDisplayMode;
   readonly themeSignature?: string;
   readonly showEmptySessionScene: boolean;
   readonly isLoading: boolean;
@@ -75,7 +73,7 @@ type AiPanelThreadViewProps = {
       readonly location?: { readonly line: number };
     }
   ) => Promise<void>;
-  readonly typewriterText: string;
+  readonly streamingAssistantText: string;
   readonly streamingTurnRuntimeFeed: readonly AgentRuntimeFeedItem[];
   readonly streamingStatus: StreamStatusItem | null;
   readonly orphanRuntimeFeed: readonly AgentRuntimeFeedItem[];
@@ -104,7 +102,6 @@ export const AiPanelThreadView = memo(({
   isZhLocale,
   title,
   richRenderingEnabled,
-  aiToolDisplayMode,
   themeSignature,
   showEmptySessionScene,
   isLoading,
@@ -134,7 +131,7 @@ export const AiPanelThreadView = memo(({
   pendingInteractionQueue,
   canOpenFilePath,
   openRuntimeTargetPath,
-  typewriterText,
+  streamingAssistantText,
   streamingTurnRuntimeFeed,
   streamingStatus,
   orphanRuntimeFeed,
@@ -175,7 +172,6 @@ export const AiPanelThreadView = memo(({
             toolStatusRunningLabel={toolStatusRunningLabel}
             toolStatusCompletedLabel={toolStatusCompletedLabel}
             toolStatusFailedLabel={toolStatusFailedLabel}
-            aiToolDisplayMode={aiToolDisplayMode}
             showFullOutputLabel={showFullOutputLabel}
             expandToolOutputLabel={expandToolOutputLabel}
             collapseToolOutputLabel={collapseToolOutputLabel}
@@ -219,7 +215,7 @@ export const AiPanelThreadView = memo(({
             locale={locale}
             richRenderingEnabled={richRenderingEnabled}
             {...(themeSignature === undefined ? {} : { themeSignature })}
-            typewriterText={typewriterText}
+            streamingAssistantText={streamingAssistantText}
             streamingTurnRuntimeFeed={streamingTurnRuntimeFeed}
             streamingStatus={streamingStatus}
             canOpenFilePath={canOpenFilePath}
@@ -227,7 +223,6 @@ export const AiPanelThreadView = memo(({
             toolStatusRunningLabel={toolStatusRunningLabel}
             toolStatusCompletedLabel={toolStatusCompletedLabel}
             toolStatusFailedLabel={toolStatusFailedLabel}
-            aiToolDisplayMode={aiToolDisplayMode}
             showFullOutputLabel={showFullOutputLabel}
             expandToolOutputLabel={expandToolOutputLabel}
             collapseToolOutputLabel={collapseToolOutputLabel}
@@ -244,7 +239,6 @@ export const AiPanelThreadView = memo(({
             toolStatusRunningLabel={toolStatusRunningLabel}
             toolStatusCompletedLabel={toolStatusCompletedLabel}
             toolStatusFailedLabel={toolStatusFailedLabel}
-            aiToolDisplayMode={aiToolDisplayMode}
             showFullOutputLabel={showFullOutputLabel}
             expandToolOutputLabel={expandToolOutputLabel}
             collapseToolOutputLabel={collapseToolOutputLabel}

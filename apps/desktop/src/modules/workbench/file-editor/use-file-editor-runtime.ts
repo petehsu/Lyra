@@ -290,10 +290,18 @@ export const useFileEditorRuntime = ({
         disposable.dispose();
       }
       const editor = editorRef.current;
+      const diffEditor = diffEditorRef.current;
       const textModel = textModelRef.current;
+      const diffOriginalModel = diffOriginalModelRef.current;
       editorRef.current = null;
+      diffEditorRef.current = null;
       textModelRef.current = null;
+      diffOriginalModelRef.current = null;
+      diffEditor?.setModel(null);
+      diffEditor?.dispose();
+      editor?.setModel(null);
       editor?.dispose();
+      diffOriginalModel?.dispose();
       textModel?.dispose();
     };
   }, [canShowEditor, isAiOnly, requestCompletion, save, setContent, stateId]);
@@ -456,6 +464,7 @@ export const useFileEditorRuntime = ({
       const activeOriginalModel = diffOriginalModelRef.current;
       diffEditorRef.current = null;
       diffOriginalModelRef.current = null;
+      activeDiffEditor?.setModel(null);
       activeDiffEditor?.dispose();
       activeOriginalModel?.dispose();
     };

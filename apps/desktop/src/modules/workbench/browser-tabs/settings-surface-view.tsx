@@ -9,6 +9,7 @@ import type {
   SettingsInlineStatusActionControlDescriptor,
   SettingsMultiChoiceControlDescriptor,
   SettingsRenderedSection,
+  SettingsStatusListControlDescriptor,
   SettingsSurfaceModel,
   SettingsTextControlDescriptor,
   SettingsToggleGroupControlDescriptor
@@ -344,6 +345,30 @@ const SettingsInlineStatusAction = ({
   </div>
 );
 
+const SettingsStatusList = ({
+  control
+}: {
+  readonly control: SettingsStatusListControlDescriptor;
+}) => (
+  <div className="lyra-settings-status-list" role="group" aria-label={control.label}>
+    <div className="lyra-settings-status-list-rows">
+      {control.rows.map((row) => (
+        <div key={row.label} className="lyra-settings-status-list-row">
+          <small>{row.label}</small>
+          <strong>{row.value}</strong>
+        </div>
+      ))}
+    </div>
+    <button
+      className="lyra-settings-ai-action"
+      type="button"
+      onClick={control.onAction}
+    >
+      {control.actionLabel}
+    </button>
+  </div>
+);
+
 const renderControl = (control: SettingsControlDescriptor): ReactNode => {
   switch (control.kind) {
     case "boolean-choice":
@@ -356,6 +381,8 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
       return <SettingsInlineStatusAction control={control} />;
     case "multi-choice":
       return <SettingsMultiChoice control={control} />;
+    case "status-list":
+      return <SettingsStatusList control={control} />;
     case "text":
     case "textarea":
       return <SettingsTextControl control={control} />;

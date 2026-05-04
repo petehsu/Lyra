@@ -10,12 +10,18 @@ import type { FileManagerSurfaceLabels } from "../types";
 
 const labels: Pick<
   FileManagerSurfaceLabels,
-  "locationHome" | "locationDesktop" | "locationDocuments" | "locationDownloads" | "locationTrash"
+  | "locationHome"
+  | "locationDesktop"
+  | "locationDocuments"
+  | "locationDownloads"
+  | "downloadManagerTitle"
+  | "locationTrash"
 > = {
   locationHome: "Home",
   locationDesktop: "Desktop",
   locationDocuments: "Documents",
   locationDownloads: "Downloads",
+  downloadManagerTitle: "Download Manager",
   locationTrash: "Trash"
 };
 

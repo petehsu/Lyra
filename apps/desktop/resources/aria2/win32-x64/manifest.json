@@ -1,0 +1,44 @@
+{
+  "bundleVersion": "aria2-1.37.0-official-win64-win32-x64",
+  "target": "win32-x64",
+  "binary": "aria2c.exe",
+  "source": "github.com/aria2/aria2 win64 package",
+  "packages": [
+    "aria2-1.37.0-win-64bit-build1.zip"
+  ],
+  "files": [
+    {
+      "path": "AUTHORS",
+      "sha256": "674f3d71beaed6015a9fc189fb28835e3bc538aa30dd5c9b4c7effd7024250c1"
+    },
+    {
+      "path": "COPYING",
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "path": "ChangeLog",
+      "sha256": "cb407c10210b919b398cfb846b0f8250a489e430c3cd1cf87b639eb6a3323022"
+    },
+    {
+      "path": "LICENSE.OpenSSL",
+      "sha256": "8bf8790acc763bbae4e03f90fd28ee25acdf6daadd3b2adc90101365a403ed07"
+    },
+    {
+      "path": "NEWS",
+      "sha256": "3d1c0eca6005ab666cfe531ea8a3902350e87491450f84186ef3f6a5058ad580"
+    },
+    {
+      "path": "README.html",
+      "sha256": "edcd2c4e4ed1e87b6ca1f4f820f3f078a86561a07fcbe6cc28ffb52c47118e33"
+    },
+    {
+      "path": "README.mingw",
+      "sha256": "a27706a20cbdd5af86b137441afd9e2d55504df18aa4906235aa73489ffe5e23"
+    },
+    {
+      "path": "aria2c.exe",
+      "sha256": "be2099c214f63a3cb4954b09a0becd6e2e34660b886d4c898d260febfe9d70c2",
+      "executable": true
+    }
+  ]
+}

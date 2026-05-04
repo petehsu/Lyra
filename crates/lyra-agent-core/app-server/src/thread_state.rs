@@ -53,8 +53,8 @@ pub(crate) struct TurnSummary {
     pub(crate) collaboration_mode: ModeKind,
     pub(crate) file_change_started: HashSet<String>,
     pub(crate) file_change_metadata: HashMap<String, FileChangeStreamMetadata>,
+    pub(crate) file_change_approval_requested: HashSet<String>,
     pub(crate) command_execution_started: HashSet<String>,
-    pub(crate) plan_proposed: bool,
     pub(crate) last_error: Option<TurnError>,
 }
 

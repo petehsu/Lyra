@@ -4,7 +4,6 @@ import type {
   PlanInteractionResponse,
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
-import type { WorkbenchAiToolDisplayMode } from "../preferences";
 import type { PendingInteractionPanel } from "./interaction/pending-interaction-mappers";
 import { InlineMessageContent } from "./inline-message-content";
 import { MessageActions } from "./message-actions";
@@ -114,7 +113,6 @@ type AiPanelMessageRowProps = {
   readonly toolStatusRunningLabel: string;
   readonly toolStatusCompletedLabel: string;
   readonly toolStatusFailedLabel: string;
-  readonly aiToolDisplayMode: WorkbenchAiToolDisplayMode;
   readonly showFullOutputLabel: string;
   readonly expandToolOutputLabel: string;
   readonly collapseToolOutputLabel: string;
@@ -156,7 +154,6 @@ export const AiPanelMessageRow = ({
   toolStatusRunningLabel,
   toolStatusCompletedLabel,
   toolStatusFailedLabel,
-  aiToolDisplayMode,
   showFullOutputLabel,
   expandToolOutputLabel,
   collapseToolOutputLabel,
@@ -289,7 +286,6 @@ export const AiPanelMessageRow = ({
                           completed: toolStatusCompletedLabel,
                           failed: toolStatusFailedLabel,
                         }}
-                        displayMode={aiToolDisplayMode}
                         showFullOutputLabel={showFullOutputLabel}
                         expandToolOutputLabel={expandToolOutputLabel}
                         collapseToolOutputLabel={collapseToolOutputLabel}
@@ -319,7 +315,7 @@ export const AiPanelMessageRow = ({
                   const canActOnPlan =
                     planActionsEnabled
                     && timelineEntry.plan.turnId === latestPlanTurnId
-                    && pendingRequest !== null;
+                    && request !== null;
                   nodes.push(
                     <div
                       key={timelineEntry.id}
@@ -338,18 +334,11 @@ export const AiPanelMessageRow = ({
                             artifactSnapshot: timelineEntry.plan.artifact,
                           }, request ?? undefined);
                         }}
-                        onKeepPlanning={() => {
-                          void onPlanApprovalDecision({
-                            planId: timelineEntry.plan.artifact.planId,
-                            decision: "keep_planning",
-                            artifactSnapshot: timelineEntry.plan.artifact,
-                          }, request ?? undefined);
-                        }}
-                        {...(pendingRequest === null || onOpenPlanApprovalInWorkspace === undefined
+                        {...(request === null || onOpenPlanApprovalInWorkspace === undefined
                           ? {}
                           : {
                               onOpenInWorkspace: () => {
-                                onOpenPlanApprovalInWorkspace(pendingRequest);
+                                onOpenPlanApprovalInWorkspace(request);
                               },
                             })}
                         onReject={() => {
@@ -492,7 +481,7 @@ export const AiPanelPlanRow = ({
   const canActOnPlan =
     planActionsEnabled
     && row.plan.turnId === latestPlanTurnId
-    && pendingRequest !== null;
+    && request !== null;
   return (
     <div className="lyra-ai-agent-message lyra-ai-agent-message-assistant lyra-ai-agent-message-plan">
       <PlanCard
@@ -508,18 +497,11 @@ export const AiPanelPlanRow = ({
             artifactSnapshot: row.plan.artifact,
           }, request ?? undefined);
         }}
-        onKeepPlanning={() => {
-          void onPlanApprovalDecision({
-            planId: row.plan.artifact.planId,
-            decision: "keep_planning",
-            artifactSnapshot: row.plan.artifact,
-          }, request ?? undefined);
-        }}
-        {...(pendingRequest === null || onOpenPlanApprovalInWorkspace === undefined
+        {...(request === null || onOpenPlanApprovalInWorkspace === undefined
           ? {}
           : {
               onOpenInWorkspace: () => {
-                onOpenPlanApprovalInWorkspace(pendingRequest);
+                onOpenPlanApprovalInWorkspace(request);
               },
             })}
         onReject={() => {
@@ -538,7 +520,7 @@ type AiPanelStreamingRowProps = {
   readonly locale: WorkbenchLocale;
   readonly richRenderingEnabled: boolean;
   readonly themeSignature?: string;
-  readonly typewriterText: string;
+  readonly streamingAssistantText: string;
   readonly streamingTurnRuntimeFeed: readonly AgentRuntimeFeedItem[];
   readonly streamingStatus: StreamStatusItem | null;
   readonly canOpenFilePath: boolean;
@@ -546,7 +528,6 @@ type AiPanelStreamingRowProps = {
   readonly toolStatusRunningLabel: string;
   readonly toolStatusCompletedLabel: string;
   readonly toolStatusFailedLabel: string;
-  readonly aiToolDisplayMode: WorkbenchAiToolDisplayMode;
   readonly showFullOutputLabel: string;
   readonly expandToolOutputLabel: string;
   readonly collapseToolOutputLabel: string;
@@ -558,7 +539,7 @@ export const AiPanelStreamingRow = ({
   locale,
   richRenderingEnabled,
   themeSignature,
-  typewriterText,
+  streamingAssistantText,
   streamingTurnRuntimeFeed,
   streamingStatus,
   canOpenFilePath,
@@ -566,7 +547,6 @@ export const AiPanelStreamingRow = ({
   toolStatusRunningLabel,
   toolStatusCompletedLabel,
   toolStatusFailedLabel,
-  aiToolDisplayMode,
   showFullOutputLabel,
   expandToolOutputLabel,
   collapseToolOutputLabel,
@@ -574,15 +554,15 @@ export const AiPanelStreamingRow = ({
   onOpenThread,
 }: AiPanelStreamingRowProps) => (
   <div className="lyra-ai-agent-message lyra-ai-agent-message-assistant">
-    {typewriterText.length === 0 ? null : (
+    {streamingAssistantText.length === 0 ? null : (
       richRenderingEnabled ? (
         <AiPanelRichContent
-          content={typewriterText}
+          content={streamingAssistantText}
           locale={locale}
           {...(themeSignature === undefined ? {} : { themeSignature })}
         />
       ) : (
-        <div className="lyra-ai-agent-message-content">{typewriterText}</div>
+        <div className="lyra-ai-agent-message-content">{streamingAssistantText}</div>
       )
     )}
     {streamingTurnRuntimeFeed.length === 0 ? null : (
@@ -594,7 +574,6 @@ export const AiPanelStreamingRow = ({
           completed: toolStatusCompletedLabel,
           failed: toolStatusFailedLabel,
         }}
-        displayMode={aiToolDisplayMode}
         showFullOutputLabel={showFullOutputLabel}
         expandToolOutputLabel={expandToolOutputLabel}
         collapseToolOutputLabel={collapseToolOutputLabel}
@@ -616,7 +595,6 @@ type AiPanelOrphanRuntimeFeedRowProps = {
   readonly toolStatusRunningLabel: string;
   readonly toolStatusCompletedLabel: string;
   readonly toolStatusFailedLabel: string;
-  readonly aiToolDisplayMode: WorkbenchAiToolDisplayMode;
   readonly showFullOutputLabel: string;
   readonly expandToolOutputLabel: string;
   readonly collapseToolOutputLabel: string;
@@ -631,7 +609,6 @@ export const AiPanelOrphanRuntimeFeedRow = ({
   toolStatusRunningLabel,
   toolStatusCompletedLabel,
   toolStatusFailedLabel,
-  aiToolDisplayMode,
   showFullOutputLabel,
   expandToolOutputLabel,
   collapseToolOutputLabel,
@@ -647,7 +624,6 @@ export const AiPanelOrphanRuntimeFeedRow = ({
         completed: toolStatusCompletedLabel,
         failed: toolStatusFailedLabel,
       }}
-      displayMode={aiToolDisplayMode}
       showFullOutputLabel={showFullOutputLabel}
       expandToolOutputLabel={expandToolOutputLabel}
       collapseToolOutputLabel={collapseToolOutputLabel}

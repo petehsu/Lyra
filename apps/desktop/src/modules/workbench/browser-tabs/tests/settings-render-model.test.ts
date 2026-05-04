@@ -86,20 +86,71 @@ describe("createSettingsSurfaceModel", () => {
     expect(section?.controls[0]?.kind).toBe("custom");
   });
 
-  test("exposes AI tool display mode as a choice section", () => {
-    const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps({
-      aiToolDisplayModeValue: "collapsed",
-    }));
-    const section = findSection(model, "aiToolDisplayMode");
+  test("does not expose AI tool display mode settings", () => {
+    const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps());
 
-    expect(section?.label).toBe("Tool display");
-    expect(section?.controls[0]).toMatchObject({
+    expect(findSection(model, "aiToolDisplayMode")).toBeUndefined();
+  });
+
+  test("shows Linux compatibility sections only when Linux status is available", () => {
+    const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps({
+      linuxCompatVisible: true,
+      linuxCompatStatus: {
+        platform: "linux",
+        enabled: true,
+        profile: "reliable",
+        recommendedProfile: "native",
+        safeMode: false,
+        backend: "x11",
+        gpuMode: "software",
+        profileSource: "config",
+        backendSource: "auto",
+        gpuSource: "auto",
+        warnings: [],
+        notes: [],
+        appliedEnv: {},
+        appliedSwitches: { "ozone-platform": "x11" },
+        facts: {
+          sessionType: "wayland",
+          architecture: "x64",
+          kernelRelease: "6.8.0",
+          libc: "glibc",
+          desktop: "gnome",
+          desktopRaw: "GNOME",
+          distributionId: "ubuntu",
+          distributionVersion: "24.04",
+          distributionLike: ["debian"],
+          packageType: "dev",
+          waylandDisplay: "wayland-0",
+          x11Display: ":1",
+          isContainer: false,
+          isRoot: false,
+          gpu: {
+            vendor: "intel",
+            deviceCount: 1,
+            hasDiscreteGpu: false,
+            driverHint: null,
+            hardwareAccelerationEnabled: null,
+            featureStatus: null
+          }
+        },
+        recovery: {
+          active: false,
+          autoRestarted: false,
+          launchId: "test",
+          previousFailureReason: null
+        },
+        generatedAt: "2026-05-04T00:00:00.000Z"
+      }
+    }));
+
+    expect(model.categories.map((category) => category.id)).toContain("linux");
+    expect(findSection(model, "linuxCompatProfile")?.controls[0]).toMatchObject({
       kind: "choice",
-      value: "collapsed",
-      options: [
-        { value: "inner_scroll", label: "Inner scroll" },
-        { value: "collapsed", label: "Collapsed" },
-      ],
+      value: "reliable"
+    });
+    expect(findSection(model, "linuxCompatStatus")?.controls[0]).toMatchObject({
+      kind: "status-list"
     });
   });
 });

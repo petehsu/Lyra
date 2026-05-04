@@ -1785,6 +1785,50 @@
       ],
       "type": "string"
     },
+    "PlanReviewTurnAction": {
+      "enum": [
+        "revision_request",
+        "approve_and_execute",
+        "reject"
+      ],
+      "type": "string"
+    },
+    "PlanReviewTurnContext": {
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/PlanReviewTurnAction"
+        },
+        "annotations": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PlanAnnotation"
+          },
+          "type": "array"
+        },
+        "artifactSnapshot": {
+          "$ref": "#/definitions/PlanArtifact"
+        },
+        "overallFeedback": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "planId": {
+          "type": "string"
+        },
+        "planTurnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "artifactSnapshot",
+        "planId",
+        "planTurnId"
+      ],
+      "type": "object"
+    },
     "PluginInstallParams": {
       "properties": {
         "marketplacePath": {
@@ -3294,6 +3338,17 @@
         },
         "outputSchema": {
           "description": "Optional JSON Schema used to constrain the final assistant message for this turn."
+        },
+        "planReviewContext": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PlanReviewTurnContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional context for turning a plan review action into a normal user turn."
         },
         "responsesapiClientMetadata": {
           "additionalProperties": {

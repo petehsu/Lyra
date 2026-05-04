@@ -1,13 +1,17 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use lyra_protocol::config_types::ModeKind;
+use lyra_protocol::items::PlanItem;
 use lyra_protocol::items::TurnItem;
-use lyra_protocol::plan_tool::LyraPlanAction;
-use lyra_protocol::plan_tool::LyraPlanArgs;
-use lyra_tools::LYRA_PLAN_TOOL_NAME;
+use lyra_protocol::plan_tool::PlanArtifact;
+use lyra_protocol::plan_tool::PlanArtifactBlock;
+use lyra_protocol::plan_tool::PlanArtifactStatus;
 use lyra_utils_stream_parser::strip_citations;
 use tokio_util::sync::CancellationToken;
 
@@ -17,7 +21,6 @@ use crate::memories::citations::parse_memory_citation;
 use crate::parse_turn_item;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use crate::tools::context::ToolPayload;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolRouter;
 use futures::Future;
@@ -35,6 +38,10 @@ use tracing::debug;
 use tracing::instrument;
 
 const GENERATED_IMAGE_ARTIFACTS_DIR: &str = "generated_images";
+const PROPOSED_PLAN_OPEN: &str = "<proposed_plan>";
+const PROPOSED_PLAN_CLOSE: &str = "</proposed_plan>";
+const DRAFT_PLAN_OPEN: &str = "<draft_plan>";
+const DRAFT_PLAN_CLOSE: &str = "</draft_plan>";
 
 pub(crate) fn image_generation_artifact_path(
     lyra_home: &AbsolutePathBuf,
@@ -64,9 +71,9 @@ pub(crate) fn image_generation_artifact_path(
         .join(format!("{}.png", sanitize(call_id)))
 }
 
-fn strip_hidden_assistant_markup(text: &str, _plan_mode: bool) -> String {
+fn strip_hidden_assistant_markup(text: &str, plan_mode: bool) -> String {
     let (without_citations, _) = strip_citations(text);
-    without_citations
+    strip_plan_tags_from_visible_text(&without_citations, plan_mode)
 }
 
 fn strip_hidden_assistant_markup_and_parse_memory_citation(
@@ -77,9 +84,381 @@ fn strip_hidden_assistant_markup_and_parse_memory_citation(
     Option<lyra_protocol::memory_citation::MemoryCitation>,
 ) {
     let (without_citations, citations) = strip_citations(text);
-    let _ = plan_mode;
-    let visible_text = without_citations;
+    let visible_text = strip_plan_tags_from_visible_text(&without_citations, plan_mode);
     (visible_text, parse_memory_citation(citations))
+}
+
+fn strip_plan_tags_from_visible_text(text: &str, plan_mode: bool) -> String {
+    if !plan_mode {
+        return text.to_string();
+    }
+    let without_proposed = strip_tag_sections(text, PROPOSED_PLAN_OPEN, PROPOSED_PLAN_CLOSE);
+    let without_draft = strip_tag_sections(&without_proposed, DRAFT_PLAN_OPEN, DRAFT_PLAN_CLOSE);
+    if looks_like_untagged_plan_proposal(&without_draft) {
+        return String::new();
+    }
+    without_draft
+}
+
+fn strip_tag_sections(text: &str, open: &str, close: &str) -> String {
+    let mut rest = text;
+    let mut out = String::new();
+    while let Some(start) = rest.find(open) {
+        out.push_str(&rest[..start]);
+        let after_open = &rest[start + open.len()..];
+        if let Some(end) = after_open.find(close) {
+            rest = &after_open[end + close.len()..];
+        } else {
+            rest = "";
+            break;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn extract_plan_artifacts_from_assistant_text(text: &str) -> Vec<PlanArtifact> {
+    let mut artifacts = Vec::new();
+    artifacts.extend(
+        extract_tag_sections(text, DRAFT_PLAN_OPEN, DRAFT_PLAN_CLOSE)
+            .map(|content| markdown_plan_artifact(content, PlanArtifactStatus::Draft)),
+    );
+    artifacts.extend(
+        extract_tag_sections(text, PROPOSED_PLAN_OPEN, PROPOSED_PLAN_CLOSE)
+            .map(|content| markdown_plan_artifact(content, PlanArtifactStatus::Proposed)),
+    );
+    if artifacts.is_empty() && looks_like_untagged_plan_proposal(text) {
+        artifacts.push(markdown_plan_artifact(text, PlanArtifactStatus::Proposed));
+    }
+    artifacts
+}
+
+fn looks_like_untagged_plan_proposal(text: &str) -> bool {
+    let normalized = text.to_lowercase();
+    if normalized.contains(PROPOSED_PLAN_OPEN) || normalized.contains(DRAFT_PLAN_OPEN) {
+        return false;
+    }
+
+    let has_plan_marker = normalized.contains(" plan")
+        || normalized.contains("plan:")
+        || normalized.contains("planning")
+        || text.contains("计划")
+        || text.contains("方案");
+    if !has_plan_marker {
+        return false;
+    }
+
+    let heading_count = text
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            trimmed.starts_with("# ") || trimmed.starts_with("## ") || trimmed.starts_with("### ")
+        })
+        .count();
+    let list_count = text
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            trimmed.starts_with("- ")
+                || trimmed.starts_with("* ")
+                || trimmed.chars().next().is_some_and(|ch| ch.is_ascii_digit())
+                    && trimmed.contains(". ")
+        })
+        .count();
+    let has_implementation_terms = normalized.contains("implementation")
+        || normalized.contains("acceptance")
+        || normalized.contains("test")
+        || text.contains("实施")
+        || text.contains("步骤")
+        || text.contains("技术方案")
+        || text.contains("验收")
+        || text.contains("测试");
+
+    has_implementation_terms && heading_count > 0 && (list_count >= 2 || heading_count >= 2)
+}
+
+fn extract_tag_sections<'a>(
+    text: &'a str,
+    open: &'static str,
+    close: &'static str,
+) -> impl Iterator<Item = &'a str> {
+    let mut rest = text;
+    std::iter::from_fn(move || {
+        let start = rest.find(open)?;
+        let after_open = &rest[start + open.len()..];
+        let end = after_open.find(close)?;
+        let content = &after_open[..end];
+        rest = &after_open[end + close.len()..];
+        Some(content.trim())
+    })
+}
+
+fn markdown_plan_artifact(markdown: &str, status: PlanArtifactStatus) -> PlanArtifact {
+    let normalized_markdown = official_plan_markdown(markdown);
+    let title = first_markdown_heading(&normalized_markdown).unwrap_or_else(|| "Plan".to_string());
+    let body_without_title = remove_first_markdown_heading(&normalized_markdown);
+    let summary = first_non_heading_text(&body_without_title).unwrap_or_else(|| title.clone());
+    let sections = markdown_sections(&body_without_title);
+    let mut artifact = PlanArtifact {
+        plan_id: stable_plan_id(&title, &normalized_markdown),
+        status,
+        title,
+        summary: summary.clone(),
+        objective: summary,
+        assumptions: Vec::new(),
+        steps: Vec::new(),
+        interfaces: Vec::new(),
+        risks: Vec::new(),
+        tests: Vec::new(),
+        acceptance_criteria: Vec::new(),
+    };
+
+    if sections.is_empty() {
+        artifact.steps.push(markdown_plan_block(
+            "step",
+            "Plan",
+            normalized_markdown.trim(),
+            0,
+        ));
+        return artifact;
+    }
+
+    for (index, (heading, body)) in sections.into_iter().enumerate() {
+        let block = markdown_plan_block(section_kind(&heading), &heading, &body, index);
+        match section_bucket(&heading) {
+            PlanSectionBucket::Assumptions => artifact.assumptions.push(block),
+            PlanSectionBucket::Interfaces => artifact.interfaces.push(block),
+            PlanSectionBucket::Risks => artifact.risks.push(block),
+            PlanSectionBucket::Tests => artifact.tests.push(block),
+            PlanSectionBucket::AcceptanceCriteria => artifact.acceptance_criteria.push(block),
+            PlanSectionBucket::Steps => artifact.steps.push(block),
+        }
+    }
+
+    if artifact.steps.is_empty()
+        && artifact.assumptions.is_empty()
+        && artifact.interfaces.is_empty()
+        && artifact.risks.is_empty()
+        && artifact.tests.is_empty()
+        && artifact.acceptance_criteria.is_empty()
+    {
+        artifact
+            .steps
+            .push(markdown_plan_block("step", "Plan", markdown.trim(), 0));
+    }
+    artifact
+}
+
+fn official_plan_markdown(markdown: &str) -> String {
+    if let Some((byte_index, _)) = markdown
+        .char_indices()
+        .find(|(index, _)| is_markdown_heading_at(markdown, *index))
+    {
+        markdown[byte_index..].trim().to_string()
+    } else {
+        markdown.trim().to_string()
+    }
+}
+
+fn is_markdown_heading_at(markdown: &str, byte_index: usize) -> bool {
+    if byte_index > 0 && !markdown[..byte_index].ends_with('\n') {
+        return false;
+    }
+    let rest = &markdown[byte_index..];
+    rest.starts_with("# ") || rest.starts_with("## ") || rest.starts_with("### ")
+}
+
+fn first_markdown_heading(markdown: &str) -> Option<String> {
+    markdown.lines().find_map(|line| {
+        let trimmed = line.trim();
+        trimmed
+            .strip_prefix("# ")
+            .or_else(|| trimmed.strip_prefix("## "))
+            .or_else(|| trimmed.strip_prefix("### "))
+            .map(str::trim)
+            .filter(|heading| !heading.is_empty())
+            .map(ToOwned::to_owned)
+    })
+}
+
+fn remove_first_markdown_heading(markdown: &str) -> String {
+    let mut removed = false;
+    markdown
+        .lines()
+        .filter(|line| {
+            if removed {
+                return true;
+            }
+            let trimmed = line.trim();
+            if trimmed.starts_with("# ")
+                || trimmed.starts_with("## ")
+                || trimmed.starts_with("### ")
+            {
+                removed = true;
+                return false;
+            }
+            true
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn first_non_heading_text(markdown: &str) -> Option<String> {
+    markdown.lines().find_map(|line| {
+        let trimmed = line
+            .trim()
+            .trim_start_matches("- ")
+            .trim_start_matches("* ")
+            .trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || trimmed == "---"
+            || trimmed == "***"
+            || trimmed == "___"
+        {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn markdown_sections(markdown: &str) -> Vec<(String, String)> {
+    let mut sections = Vec::new();
+    let mut current_heading: Option<String> = None;
+    let mut current_body = Vec::new();
+
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if let Some(heading) = trimmed
+            .strip_prefix("## ")
+            .or_else(|| trimmed.strip_prefix("### "))
+            .map(str::trim)
+            .filter(|heading| !heading.is_empty())
+        {
+            if let Some(previous_heading) = current_heading.replace(heading.to_string()) {
+                sections.push((previous_heading, current_body.join("\n").trim().to_string()));
+                current_body.clear();
+            }
+            continue;
+        }
+        if current_heading.is_some() {
+            current_body.push(line.to_string());
+        }
+    }
+
+    if let Some(heading) = current_heading {
+        sections.push((heading, current_body.join("\n").trim().to_string()));
+    }
+    sections
+}
+
+fn markdown_plan_block(kind: &str, title: &str, body: &str, index: usize) -> PlanArtifactBlock {
+    let title = title.trim();
+    let body = body.trim();
+    PlanArtifactBlock {
+        id: stable_block_id(kind, title, body, index),
+        kind: kind.to_string(),
+        title: if title.is_empty() {
+            "Plan".to_string()
+        } else {
+            title.to_string()
+        },
+        body: if body.is_empty() {
+            title.to_string()
+        } else {
+            body.to_string()
+        },
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlanSectionBucket {
+    Assumptions,
+    Steps,
+    Interfaces,
+    Risks,
+    Tests,
+    AcceptanceCriteria,
+}
+
+fn section_bucket(heading: &str) -> PlanSectionBucket {
+    let normalized = heading.to_lowercase();
+    if normalized.contains("assumption") || normalized.contains("假设") {
+        PlanSectionBucket::Assumptions
+    } else if normalized.contains("interface")
+        || normalized.contains("api")
+        || normalized.contains("protocol")
+        || normalized.contains("schema")
+        || normalized.contains("接口")
+        || normalized.contains("协议")
+        || normalized.contains("数据流")
+    {
+        PlanSectionBucket::Interfaces
+    } else if normalized.contains("risk")
+        || normalized.contains("tradeoff")
+        || normalized.contains("edge")
+        || normalized.contains("风险")
+    {
+        PlanSectionBucket::Risks
+    } else if normalized.contains("test")
+        || normalized.contains("verify")
+        || normalized.contains("验证")
+        || normalized.contains("测试")
+    {
+        PlanSectionBucket::Tests
+    } else if normalized.contains("acceptance")
+        || normalized.contains("criteria")
+        || normalized.contains("验收")
+        || normalized.contains("标准")
+    {
+        PlanSectionBucket::AcceptanceCriteria
+    } else {
+        PlanSectionBucket::Steps
+    }
+}
+
+fn section_kind(heading: &str) -> &'static str {
+    match section_bucket(heading) {
+        PlanSectionBucket::Assumptions => "assumption",
+        PlanSectionBucket::Steps => "step",
+        PlanSectionBucket::Interfaces => "interface",
+        PlanSectionBucket::Risks => "risk",
+        PlanSectionBucket::Tests => "test",
+        PlanSectionBucket::AcceptanceCriteria => "acceptanceCriterion",
+    }
+}
+
+fn stable_plan_id(title: &str, body: &str) -> String {
+    format!("plan-{:016x}", stable_hash(&(title, body)))
+}
+
+fn stable_block_id(kind: &str, title: &str, body: &str, index: usize) -> String {
+    format!(
+        "{kind}-{:02}-{:016x}",
+        index + 1,
+        stable_hash(&(kind, title, body))
+    )
+}
+
+fn stable_hash<T: Hash>(value: &T) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
+}
+
+async fn emit_assistant_plan_artifacts(sess: &Session, turn_context: &TurnContext, raw_text: &str) {
+    for artifact in extract_plan_artifacts_from_assistant_text(raw_text) {
+        let item = TurnItem::Plan(PlanItem {
+            id: format!(
+                "{}-assistant-plan-{}",
+                turn_context.sub_id, artifact.plan_id
+            ),
+            artifact,
+        });
+        sess.emit_turn_item_started(turn_context, &item).await;
+        sess.emit_turn_item_completed(turn_context, item).await;
+    }
 }
 
 pub(crate) fn raw_assistant_output_text_from_item(item: &ResponseItem) -> Option<String> {
@@ -202,19 +581,6 @@ pub(crate) struct HandleOutputCtx {
     pub cancellation_token: CancellationToken,
 }
 
-fn plan_tool_call_ends_turn(tool_name: &lyra_tools::ToolName, payload: &ToolPayload) -> bool {
-    match tool_name.name.as_str() {
-        LYRA_PLAN_TOOL_NAME => {
-            let ToolPayload::Function { arguments } = payload else {
-                return false;
-            };
-            serde_json::from_str::<LyraPlanArgs>(arguments)
-                .is_ok_and(|args| args.action == LyraPlanAction::Propose && args.plan.is_some())
-        }
-        _ => false,
-    }
-}
-
 #[instrument(level = "trace", skip_all)]
 pub(crate) async fn handle_output_item_done(
     ctx: &mut HandleOutputCtx,
@@ -239,10 +605,19 @@ pub(crate) async fn handle_output_item_done(
                 payload_preview
             );
 
+            if let Some(mut consumer) = ctx.tool_runtime.create_diff_consumer(&call.tool_name)
+                && let Some(event) = consumer.consume_complete(
+                    ctx.turn_context.as_ref(),
+                    call.call_id.clone(),
+                    &call.payload,
+                )
+            {
+                ctx.sess.send_event(&ctx.turn_context, event).await;
+            }
+
             record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
 
-            let needs_follow_up = !plan_tool_call_ends_turn(&call.tool_name, &call.payload);
             let cancellation_token = ctx.cancellation_token.child_token();
             let tool_future: InFlightFuture<'static> = Box::pin(
                 ctx.tool_runtime
@@ -250,7 +625,7 @@ pub(crate) async fn handle_output_item_done(
                     .handle_tool_call(call, cancellation_token),
             );
 
-            output.needs_follow_up = needs_follow_up;
+            output.needs_follow_up = true;
             output.tool_future = Some(tool_future);
         }
         // No tool call: convert messages/reasoning into turn items and mark them as complete.
@@ -283,6 +658,14 @@ pub(crate) async fn handle_output_item_done(
             record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
             let last_agent_message = last_assistant_message_from_item(&item, plan_mode);
+            if plan_mode && let Some(raw_text) = raw_assistant_output_text_from_item(&item) {
+                emit_assistant_plan_artifacts(
+                    ctx.sess.as_ref(),
+                    ctx.turn_context.as_ref(),
+                    &raw_text,
+                )
+                .await;
+            }
 
             output.last_agent_message = last_agent_message;
         }
@@ -508,47 +891,115 @@ pub(crate) fn response_input_to_response_item(input: &ResponseInputItem) -> Opti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::context::ToolPayload;
-    use lyra_tools::ToolName;
+    #[test]
+    fn proposed_plan_markdown_becomes_plan_artifact() {
+        let artifacts = extract_plan_artifacts_from_assistant_text(
+            r#"Intro
+<proposed_plan>
+# Plan Mode Fix
 
-    fn function_payload(arguments: &str) -> ToolPayload {
-        ToolPayload::Function {
-            arguments: arguments.to_string(),
-        }
+## Summary
+Make plan review a normal completed turn.
+
+## Tests
+- Verify proposed plans complete the turn.
+</proposed_plan>
+Outro"#,
+        );
+
+        assert_eq!(artifacts.len(), 1);
+        let artifact = &artifacts[0];
+        assert_eq!(artifact.status, PlanArtifactStatus::Proposed);
+        assert_eq!(artifact.title, "Plan Mode Fix");
+        assert_eq!(
+            artifact.summary,
+            "Make plan review a normal completed turn."
+        );
+        assert_eq!(artifact.steps.len(), 1);
+        assert_eq!(artifact.tests.len(), 1);
     }
 
     #[test]
-    fn lyra_plan_propose_ends_turn_but_draft_and_ask_continue() {
-        let plan_json = r#"{"planId":"plan-1","status":"proposed","title":"Plan","summary":"Do it.","objective":"Implement the change.","assumptions":[],"steps":[{"id":"step-1","kind":"step","title":"Patch","body":"Make the required code changes."}],"interfaces":[],"risks":[],"tests":[],"acceptanceCriteria":[]}"#;
-        assert!(plan_tool_call_ends_turn(
-            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
-            &function_payload(&format!(r#"{{"action":"propose","plan":{plan_json}}}"#)),
-        ));
-        assert!(!plan_tool_call_ends_turn(
-            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
-            &function_payload(r#"{"action":"propose"}"#),
-        ));
-        assert!(!plan_tool_call_ends_turn(
-            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
-            &function_payload(&format!(r#"{{"action":"draft","plan":{plan_json}}}"#)),
-        ));
-        assert!(!plan_tool_call_ends_turn(
-            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
-            &function_payload(r#"{"action":"ask"}"#),
-        ));
+    fn untagged_plan_markdown_becomes_plan_artifact() {
+        let artifacts = extract_plan_artifacts_from_assistant_text(
+            r#"看起来当前处于计划模式，我无法直接写入文件。让我为你整理一个实施计划：
+
+## 实施计划：简约现代风格企业官网
+
+**技术方案**：纯 HTML/CSS/JS 单文件，无外部依赖
+
+**网站结构**：
+1. 导航栏
+2. Hero 区
+3. 联系我们
+
+需要我开始创建吗？"#,
+        );
+
+        assert_eq!(artifacts.len(), 1);
+        let artifact = &artifacts[0];
+        assert_eq!(artifact.status, PlanArtifactStatus::Proposed);
+        assert_eq!(artifact.title, "实施计划：简约现代风格企业官网");
+        assert_eq!(
+            artifact.summary,
+            "**技术方案**：纯 HTML/CSS/JS 单文件，无外部依赖"
+        );
+        assert_eq!(artifact.steps.len(), 1);
     }
 
     #[test]
-    fn lyra_plan_invalid_or_non_function_payload_does_not_end_turn() {
-        assert!(!plan_tool_call_ends_turn(
-            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
-            &function_payload("not json"),
-        ));
-        assert!(!plan_tool_call_ends_turn(
-            &ToolName::plain(LYRA_PLAN_TOOL_NAME),
-            &ToolPayload::Custom {
-                input: String::new(),
-            },
-        ));
+    fn plan_artifact_ignores_conversational_preamble_before_heading() {
+        let artifacts = extract_plan_artifacts_from_assistant_text(
+            r#"好的，我处于计划模式，需要先提交方案供您确认。以下是完整的官网建设计划：
+
+---
+
+## 官网建设计划
+
+### 项目概述
+为 **MyBrand** 创建一个现代、专业的中文企业官网，纯前端实现（HTML + CSS + JS），无需构建工具，直接浏览器打开即可预览。
+
+### 文件结构
+```
+Webtest/
+├── index.html
+├── style.css
+└── script.js
+```
+
+### 测试
+- 直接打开 index.html 验证页面。"#,
+        );
+
+        assert_eq!(artifacts.len(), 1);
+        let artifact = &artifacts[0];
+        assert_eq!(artifact.title, "官网建设计划");
+        assert_eq!(
+            artifact.summary,
+            "为 **MyBrand** 创建一个现代、专业的中文企业官网，纯前端实现（HTML + CSS + JS），无需构建工具，直接浏览器打开即可预览。"
+        );
+        assert_eq!(artifact.objective, artifact.summary);
+        assert!(artifact.steps.iter().any(|block| block.title == "项目概述"));
+        assert_eq!(artifact.tests.len(), 1);
+    }
+
+    #[test]
+    fn plan_tags_are_stripped_from_visible_assistant_text_in_plan_mode() {
+        let visible = strip_hidden_assistant_markup(
+            "Before\n<proposed_plan>\n# Hidden\n</proposed_plan>\nAfter",
+            true,
+        );
+
+        assert_eq!(visible, "Before\n\nAfter");
+    }
+
+    #[test]
+    fn untagged_plan_markdown_is_stripped_from_visible_assistant_text_in_plan_mode() {
+        let visible = strip_hidden_assistant_markup(
+            "## 实施计划：简约现代风格企业官网\n\n**技术方案**：纯 HTML/CSS/JS\n\n1. 创建 HTML\n2. 验证响应式",
+            true,
+        );
+
+        assert_eq!(visible, "");
     }
 }

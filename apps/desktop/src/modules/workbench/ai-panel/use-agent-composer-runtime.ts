@@ -18,19 +18,8 @@ import {
   readFileManagerEntryDragPayload
 } from "../file-manager/drag-transfer";
 import {
-  measureTextAreaCaretRect,
-  measureTextAreaTextRects,
-  useCaretMotionState,
-  useCaretPressState,
-  type ModernCaretMotionTrail,
-  type ModernCaretRect
-} from "../caret/modern-caret";
-import {
   AGENT_COMPOSER_MAX_HEIGHT,
-  AGENT_COMPOSER_MAX_TEXT_EFFECT_SEGMENTS,
-  AGENT_COMPOSER_MIN_HEIGHT,
-  AGENT_COMPOSER_TEXT_EFFECT_LIFETIME_MS,
-  diffComposerText
+  AGENT_COMPOSER_MIN_HEIGHT
 } from "./agent-composer-model";
 import type {
   AgentComposerAppendRequest,
@@ -42,8 +31,6 @@ import type {
   AgentComposerSubmitAction,
   AgentComposerSubmitPayload,
   AgentComposerWorkbenchTabMention,
-  ComposerTextEffect,
-  ComposerTextEffectDraft
 } from "./agent-composer-types";
 
 type UseAgentComposerRuntimeInput = {
@@ -85,12 +72,6 @@ export type AgentComposerRuntime = {
   readonly toolsMenuOpen: boolean;
   readonly modelSubmenuOpen: boolean;
   readonly permissionSubmenuOpen: boolean;
-  readonly caretRect: ModernCaretRect | null;
-  readonly isCaretIdle: boolean;
-  readonly isCaretPressed: boolean;
-  readonly caretMotionToken: number;
-  readonly caretMotionTrail: ModernCaretMotionTrail | null;
-  readonly textEffects: readonly ComposerTextEffect[];
   readonly attachments: readonly AgentComposerInlineAttachment[];
   readonly draftParts: readonly AgentComposerContentPart[];
   readonly inputScrollTop: number;
@@ -1066,15 +1047,11 @@ export const useAgentComposerRuntime = ({
   const toolsMenuRef = useRef<HTMLDivElement>(null);
   const toolsMenuPortalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const previousValueRef = useRef(initialValue);
   const previousExternalDraftRef = useRef({
     currentThreadId,
     initialValue
   });
   const lastAppendRequestIdRef = useRef<number | null>(null);
-  const textEffectIdRef = useRef(0);
-  const textEffectTimeoutsRef = useRef<number[]>([]);
-  const composingRef = useRef(false);
   const attachmentDragDepthRef = useRef(0);
   const mentionPanelSessionRef = useRef<MentionPanelSessionState | null>(null);
   const lastReportedHeightRef = useRef<number | null>(null);
@@ -1096,9 +1073,6 @@ export const useAgentComposerRuntime = ({
   const [mentionPanelQuery, setMentionPanelQuery] = useState("");
   const [mentionPanelSelectedIndex, setMentionPanelSelectedIndex] = useState(0);
   const [mentionPanelStyle, setMentionPanelStyle] = useState<CSSProperties>({});
-  const [caretRect, setCaretRect] = useState<ModernCaretRect | null>(null);
-  const [caretActivityVersion, setCaretActivityVersion] = useState(0);
-  const [textEffects, setTextEffects] = useState<readonly ComposerTextEffect[]>([]);
   const draftParts = buildContentParts(draftValue, attachments);
   const submitParts = trimSubmitParts(draftParts);
   const hasContent = submitParts.length > 0;
@@ -1182,29 +1156,6 @@ export const useAgentComposerRuntime = ({
     );
   }, [normalizedMentionPanelResults.length]);
 
-  const markCaretActivity = useCallback((): void => {
-    setCaretActivityVersion((current) => current + 1);
-  }, []);
-
-  const {
-    pressed: isCaretPressed,
-    pressKey: pressCaretKey,
-    releaseKey: releaseCaretKey,
-    resetPressed: resetCaretPressed
-  } = useCaretPressState({
-    enabled: inputFocused,
-    onActivity: markCaretActivity
-  });
-  const {
-    motionToken: caretMotionToken,
-    isIdle: isCaretIdle,
-    motionTrail: caretMotionTrail
-  } = useCaretMotionState(caretRect, {
-    enabled: inputFocused,
-    activityKey: caretActivityVersion,
-    suppressMotion: isCaretPressed
-  });
-
   const smartResize = useCallback((): void => {
     const input = inputRef.current;
     if (input === null) {
@@ -1218,15 +1169,6 @@ export const useAgentComposerRuntime = ({
     input.style.height = `${String(nextHeight)}px`;
     input.style.overflowY = input.scrollHeight > AGENT_COMPOSER_MAX_HEIGHT ? "auto" : "hidden";
   }, []);
-
-  const syncCaret = useCallback((): void => {
-    const input = inputRef.current;
-    if (input === null || inputDisabled || input.ownerDocument.activeElement !== input) {
-      setCaretRect(null);
-      return;
-    }
-    setCaretRect(measureTextAreaCaretRect(input));
-  }, [inputDisabled]);
 
   const stopMentionPanel = useCallback((): void => {
     const session = mentionPanelSessionRef.current;
@@ -1319,25 +1261,6 @@ export const useAgentComposerRuntime = ({
     stopMentionPanel
   ]);
 
-  const pushTextEffects = useCallback((nextEffects: readonly ComposerTextEffectDraft[]): void => {
-    if (nextEffects.length === 0) {
-      return;
-    }
-
-    const createdEffects = nextEffects.map((effect) => ({
-      ...effect,
-      id: textEffectIdRef.current++
-    }));
-    setTextEffects((current) => [...current, ...createdEffects]);
-    for (const effect of createdEffects) {
-      const timeoutId = window.setTimeout(() => {
-        setTextEffects((current) => current.filter((entry) => entry.id !== effect.id));
-        textEffectTimeoutsRef.current = textEffectTimeoutsRef.current.filter((entry) => entry !== timeoutId);
-      }, AGENT_COMPOSER_TEXT_EFFECT_LIFETIME_MS);
-      textEffectTimeoutsRef.current.push(timeoutId);
-    }
-  }, []);
-
   const setDraftValueAndSyncAttachments = useCallback((value: string): void => {
     setDraftValue(value);
     setAttachments((current) => current.filter((attachment) => value.includes(attachment.placeholder)));
@@ -1351,15 +1274,12 @@ export const useAgentComposerRuntime = ({
     const nextValue = `${draftValue.slice(0, start)}${replacement}${draftValue.slice(end)}`;
     const nextCursor = start + replacement.length;
     setDraftValueAndSyncAttachments(nextValue);
-    previousValueRef.current = draftValue;
-    markCaretActivity();
     window.requestAnimationFrame(() => {
       const input = inputRef.current;
       input?.setSelectionRange(nextCursor, nextCursor);
       smartResize();
-      syncCaret();
     });
-  }, [draftValue, markCaretActivity, setDraftValueAndSyncAttachments, smartResize, syncCaret]);
+  }, [draftValue, setDraftValueAndSyncAttachments, smartResize]);
 
   const normalizeAttachmentSelection = useCallback((): boolean => {
     const input = inputRef.current;
@@ -1445,16 +1365,13 @@ export const useAgentComposerRuntime = ({
 
     setAttachments((current) => [...current, ...normalizedAttachments]);
     setDraftValue(nextValue);
-    previousValueRef.current = draftValue;
-    markCaretActivity();
     window.requestAnimationFrame(() => {
       const target = inputRef.current;
       target?.focus();
       target?.setSelectionRange(nextCursor, nextCursor);
       smartResize();
-      syncCaret();
     });
-  }, [attachments, draftValue, markCaretActivity, smartResize, syncCaret]);
+  }, [attachments, draftValue, smartResize]);
 
   const removeAttachment = useCallback((id: string): void => {
     setAttachments((current) => {
@@ -1497,16 +1414,9 @@ export const useAgentComposerRuntime = ({
       currentThreadId,
       initialValue
     };
-    previousValueRef.current = initialValue;
-    for (const timeoutId of textEffectTimeoutsRef.current) {
-      window.clearTimeout(timeoutId);
-    }
-    textEffectTimeoutsRef.current = [];
-    setTextEffects([]);
     setDraftValue(initialValue);
     setAttachments([]);
-    markCaretActivity();
-  }, [currentThreadId, initialValue, markCaretActivity]);
+  }, [currentThreadId, initialValue]);
 
   useLayoutEffect(() => {
     if (appendRequest === null || lastAppendRequestIdRef.current === appendRequest.id) {
@@ -1522,63 +1432,11 @@ export const useAgentComposerRuntime = ({
         ? text
         : `${current.trimEnd()}\n\n${text}`
     ));
-    markCaretActivity();
     window.requestAnimationFrame(() => {
       inputRef.current?.focus();
       smartResize();
-      syncCaret();
     });
-  }, [appendRequest, markCaretActivity, smartResize, syncCaret]);
-
-  useLayoutEffect(() => {
-    const previousValue = previousValueRef.current;
-    const input = inputRef.current;
-    if (
-      previousValue !== draftValue &&
-      input !== null &&
-      input.ownerDocument.activeElement === input &&
-      composingRef.current === false
-    ) {
-      const diff = diffComposerText(previousValue, draftValue);
-      const nextEffects: ComposerTextEffectDraft[] = [];
-      if (diff.removed.length > 0) {
-        nextEffects.push(
-          ...measureTextAreaTextRects(
-            input,
-            previousValue,
-            diff.start,
-            diff.start + diff.removed.length,
-            AGENT_COMPOSER_MAX_TEXT_EFFECT_SEGMENTS
-          ).map((entry) => ({
-            kind: "delete" as const,
-            text: entry.text,
-            left: entry.left,
-            top: entry.top
-          }))
-        );
-      }
-      if (diff.inserted.length > 0) {
-        nextEffects.push(
-          ...measureTextAreaTextRects(
-            input,
-            draftValue,
-            diff.start,
-            diff.start + diff.inserted.length,
-            AGENT_COMPOSER_MAX_TEXT_EFFECT_SEGMENTS
-          ).map((entry) => ({
-            kind: "insert" as const,
-            text: entry.text,
-            left: entry.left,
-            top: entry.top
-          }))
-        );
-      }
-      pushTextEffects(nextEffects);
-    }
-
-    previousValueRef.current = draftValue;
-    syncCaret();
-  }, [draftValue, pushTextEffects, syncCaret]);
+  }, [appendRequest, smartResize]);
 
   useEffect(() => {
     if (!inputFocused) {
@@ -1590,8 +1448,6 @@ export const useAgentComposerRuntime = ({
       if (ownerDocument.activeElement === inputRef.current) {
         normalizeAttachmentSelection();
         syncMentionPanel();
-        markCaretActivity();
-        syncCaret();
       }
     };
 
@@ -1599,7 +1455,7 @@ export const useAgentComposerRuntime = ({
     return () => {
       ownerDocument.removeEventListener("selectionchange", handleSelectionChange);
     };
-  }, [inputFocused, markCaretActivity, normalizeAttachmentSelection, syncCaret, syncMentionPanel]);
+  }, [inputFocused, normalizeAttachmentSelection, syncMentionPanel]);
 
   useEffect(() => {
     if (inputFocused) {
@@ -1631,9 +1487,7 @@ export const useAgentComposerRuntime = ({
     setDraftValue("");
     setAttachments([]);
     stopMentionPanel();
-    previousValueRef.current = "";
     setInputScrollTop(0);
-    markCaretActivity();
     try {
       if (action === "steer") {
         await onSteer?.(payload);
@@ -1643,10 +1497,8 @@ export const useAgentComposerRuntime = ({
     } catch {
       setDraftValue(draftValue);
       setAttachments(submittedInlineAttachments);
-      previousValueRef.current = draftValue;
-      markCaretActivity();
     }
-  }, [attachments, draftValue, markCaretActivity, onSend, onSteer, stopMentionPanel]);
+  }, [attachments, draftValue, onSend, onSteer, stopMentionPanel]);
 
   useEffect(() => {
     if (onHeightChange === undefined) {
@@ -1787,10 +1639,6 @@ export const useAgentComposerRuntime = ({
       if (session?.fileSearchSessionId !== null && session?.fileSearchSessionId !== undefined) {
         void onFileMentionSearchStop?.(session.fileSearchSessionId);
       }
-      for (const timeoutId of textEffectTimeoutsRef.current) {
-        window.clearTimeout(timeoutId);
-      }
-      textEffectTimeoutsRef.current = [];
     };
   }, [onFileMentionSearchStop]);
 
@@ -1839,47 +1687,32 @@ export const useAgentComposerRuntime = ({
     closeMenus();
   }, [closeMenus, insertAttachments]);
 
-  const onTextareaCompositionStart = useCallback((): void => {
-    composingRef.current = true;
-    markCaretActivity();
-  }, [markCaretActivity]);
+  const onTextareaCompositionStart = useCallback((): void => {}, []);
 
-  const onTextareaCompositionEnd = useCallback((): void => {
-    composingRef.current = false;
-    markCaretActivity();
-  }, [markCaretActivity]);
+  const onTextareaCompositionEnd = useCallback((): void => {}, []);
 
   const onTextareaFocus = useCallback((): void => {
     setInputFocused(true);
-    markCaretActivity();
-    syncCaret();
-  }, [markCaretActivity, syncCaret]);
+  }, []);
 
   const onTextareaBlur = useCallback((): void => {
-    resetCaretPressed();
     setInputFocused(false);
-    setCaretRect(null);
-  }, [resetCaretPressed]);
+  }, []);
 
   const onTextareaScroll = useCallback((): void => {
     setInputScrollTop(inputRef.current?.scrollTop ?? 0);
-    markCaretActivity();
-    syncCaret();
-  }, [markCaretActivity, syncCaret]);
+  }, []);
 
   const onTextareaInput = useCallback((): void => {
     setInputScrollTop(inputRef.current?.scrollTop ?? 0);
     smartResize();
-    markCaretActivity();
     window.requestAnimationFrame(() => {
       normalizeAttachmentSelection();
       syncMentionPanel();
-      syncCaret();
     });
-  }, [markCaretActivity, normalizeAttachmentSelection, smartResize, syncCaret, syncMentionPanel]);
+  }, [normalizeAttachmentSelection, smartResize, syncMentionPanel]);
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
-    pressCaretKey(event.key, event.repeat);
     const input = event.currentTarget;
     if (mentionPanelOpen) {
       if (event.key === "Escape") {
@@ -1939,8 +1772,6 @@ export const useAgentComposerRuntime = ({
         if (range !== undefined) {
           event.preventDefault();
           input.setSelectionRange(range.start, range.start);
-          markCaretActivity();
-          window.requestAnimationFrame(syncCaret);
           return;
         }
       }
@@ -1952,8 +1783,6 @@ export const useAgentComposerRuntime = ({
         if (range !== undefined) {
           event.preventDefault();
           input.setSelectionRange(range.end, range.end);
-          markCaretActivity();
-          window.requestAnimationFrame(syncCaret);
           return;
         }
       }
@@ -1987,25 +1816,21 @@ export const useAgentComposerRuntime = ({
     attachments,
     draftValue,
     hasContent,
-    markCaretActivity,
     mentionPanelOpen,
     mentionPanelSelectedIndex,
     normalizedMentionPanelResults,
     onSendWithFollow,
-    pressCaretKey,
     replaceDraftRange,
     selectMentionPanelResult,
     sendDisabled,
     sending,
     stopMentionPanel,
-    submit,
-    syncCaret
+    submit
   ]);
 
-  const onTextareaKeyUp = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
-    releaseCaretKey(event.key);
+  const onTextareaKeyUp = useCallback((): void => {
     window.requestAnimationFrame(syncMentionPanel);
-  }, [releaseCaretKey, syncMentionPanel]);
+  }, [syncMentionPanel]);
 
   const onTextareaPaste = useCallback((event: ReactClipboardEvent<HTMLTextAreaElement>): void => {
     const clipboardData = event.clipboardData;
@@ -2022,9 +1847,8 @@ export const useAgentComposerRuntime = ({
         return;
       }
       insertAttachments(nextAttachments);
-      markCaretActivity();
     });
-  }, [insertAttachments, markCaretActivity]);
+  }, [insertAttachments]);
 
   const onInputShellDragEnter = useCallback((event: ReactDragEvent<HTMLDivElement>): void => {
     if (!hasAttachmentDataTransfer(event.dataTransfer)) {
@@ -2085,12 +1909,6 @@ export const useAgentComposerRuntime = ({
     toolsMenuOpen,
     modelSubmenuOpen,
     permissionSubmenuOpen,
-    caretRect,
-    isCaretIdle,
-    isCaretPressed,
-    caretMotionToken,
-    caretMotionTrail,
-    textEffects,
     attachments,
     draftParts,
     inputScrollTop,

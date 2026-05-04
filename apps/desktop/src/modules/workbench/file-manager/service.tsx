@@ -26,12 +26,33 @@ import type {
   FileManagerRecentLocation,
   FileManagerTrashEntry
 } from "../../../shared/file-manager";
-import type { FileManagerModel, FileManagerSurfaceLabels, UseFileManagerModelOptions, FileManagerAppState } from "./types";
+import type {
+  DownloadManagerPriority,
+  DownloadManagerRemoteApiStatus,
+  DownloadManagerSettings,
+  DownloadManagerTask
+} from "../../../shared/download-manager";
+import type {
+  FileManagerDownloadAdvancedDraft,
+  FileManagerDownloadSaveRuleDraft,
+  FileManagerDownloadSettingsDraft,
+  FileManagerModel,
+  FileManagerSurfaceLabels,
+  UseFileManagerModelOptions,
+  FileManagerAppState
+} from "./types";
 import {
   isSameLocationPath,
   resolveLocationTitle,
   withResolvedLocationTitle
 } from "./location-utils";
+import {
+  buildDownloadEnqueueRequest,
+  buildDownloadSettingsUpdate,
+  createDownloadAdvancedDraft,
+  createDownloadSaveRuleDraft,
+  createDownloadSettingsDraft
+} from "./download-drafts";
 
 const MAX_RECENT_LOCATIONS = 12;
 
@@ -42,9 +63,28 @@ const createId = (prefix: string): string => {
   return `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
 };
 
+const parseRemoteApiPort = (value: string): number | undefined => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  const port = Number(trimmed);
+  if (Number.isInteger(port) === false || port < 0 || port > 65_535) {
+    throw new Error("Remote API port must be between 0 and 65535.");
+  }
+  return port;
+};
+
 const createInitialState = (
   instanceId: string,
-  labels: FileManagerSurfaceLabels
+  labels: FileManagerSurfaceLabels,
+  downloads?: {
+    readonly tasks: readonly DownloadManagerTask[];
+    readonly status: FileManagerAppState["downloadStatus"];
+    readonly errorMessage: string | undefined;
+    readonly settings: DownloadManagerSettings | null;
+    readonly remoteApiStatus: DownloadManagerRemoteApiStatus | null;
+  }
 ): FileManagerAppState => ({
   instanceId,
   status: "idle",
@@ -63,6 +103,19 @@ const createInitialState = (
   devices: [],
   entries: [],
   trashEntries: [],
+  downloadTasks: downloads?.tasks ?? [],
+  downloadStatus: downloads?.status ?? "idle",
+  downloadUrlDraft: "",
+  downloadAdvancedDraft: createDownloadAdvancedDraft(),
+  downloadErrorMessage: downloads?.errorMessage,
+  downloadSettings: downloads?.settings ?? null,
+  downloadRemoteApiStatus: downloads?.remoteApiStatus ?? null,
+  downloadSettingsOpen: false,
+  downloadSettingsDraft: createDownloadSettingsDraft(
+    downloads?.settings ?? null,
+    downloads?.remoteApiStatus ?? null
+  ),
+  downloadSettingsErrorMessage: undefined,
   directorySubscriptionId: undefined,
   directoryGeneration: undefined,
   selectedEntryId: undefined,
@@ -311,6 +364,39 @@ const buildTrashState = (
   errorMessage: undefined
 });
 
+const buildDownloadsState = (
+  current: FileManagerAppState,
+  labels: FileManagerSurfaceLabels,
+  addToHistory: boolean
+): FileManagerAppState => {
+  const location: FileManagerLocation = {
+    id: "download-manager",
+    title: labels.downloadManagerTitle,
+    kind: "special",
+    specialId: "downloadManager"
+  };
+  return {
+    ...current,
+    status: "ready",
+    viewKind: "downloads",
+    title: labels.downloadManagerTitle,
+    iconKey: "file-manager-download-manager",
+    currentLocation: location,
+    parentPath: undefined,
+    ...withHistory(current, location, addToHistory),
+    entries: [],
+    disks: [],
+    devices: [],
+    trashEntries: [],
+    directorySubscriptionId: undefined,
+    directoryGeneration: undefined,
+    selectedEntryId: undefined,
+    selectedTrashEntryId: undefined,
+    createDraft: undefined,
+    errorMessage: undefined
+  };
+};
+
 const applyDirectoryPatchToState = (
   state: FileManagerAppState,
   patch: FileManagerDirectoryPatch,
@@ -423,7 +509,24 @@ export const useFileManagerModel = ({
   const statesRef = useRef<Record<string, FileManagerAppState>>({});
   const tabInstanceIdsRef = useRef<ReadonlySet<string>>(new Set());
   const externalInstanceIdsRef = useRef<ReadonlySet<string>>(new Set());
+  const downloadTasksRef = useRef<readonly DownloadManagerTask[]>([]);
+  const downloadStatusRef = useRef<FileManagerAppState["downloadStatus"]>("idle");
+  const downloadErrorMessageRef = useRef<string | undefined>(undefined);
+  const downloadSettingsRef = useRef<DownloadManagerSettings | null>(null);
+  const downloadRemoteApiStatusRef = useRef<DownloadManagerRemoteApiStatus | null>(null);
   const platform = desktopApi?.appMeta.platform ?? null;
+
+  const createState = useCallback(
+    (instanceId: string) =>
+      createInitialState(instanceId, labels, {
+        tasks: downloadTasksRef.current,
+        status: downloadStatusRef.current,
+        errorMessage: downloadErrorMessageRef.current,
+        settings: downloadSettingsRef.current,
+        remoteApiStatus: downloadRemoteApiStatusRef.current
+      }),
+    [labels]
+  );
 
   const updateStates = useCallback(
     (
@@ -442,7 +545,7 @@ export const useFileManagerModel = ({
 
   const patchState = useCallback((instanceId: string, updater: (state: FileManagerAppState) => FileManagerAppState) => {
     updateStates((current) => {
-      const base = current[instanceId] ?? createInitialState(instanceId, labels);
+      const base = current[instanceId] ?? createState(instanceId);
       const nextState = updater(base);
       onMetaChange({
         appId: "file-manager",
@@ -455,7 +558,7 @@ export const useFileManagerModel = ({
         [instanceId]: nextState
       };
     });
-  }, [labels, onMetaChange, updateStates]);
+  }, [createState, onMetaChange, updateStates]);
 
   const replaceState = useCallback((instanceId: string, nextState: FileManagerAppState) => {
     updateStates((current) => ({
@@ -481,6 +584,53 @@ export const useFileManagerModel = ({
     unsubscribeDirectory(statesRef.current[instanceId]?.directorySubscriptionId);
   }, [unsubscribeDirectory]);
 
+  const applyDownloadState = useCallback((
+    tasks: readonly DownloadManagerTask[],
+    status: FileManagerAppState["downloadStatus"],
+    errorMessage: string | undefined
+  ) => {
+    downloadTasksRef.current = tasks;
+    downloadStatusRef.current = status;
+    downloadErrorMessageRef.current = errorMessage;
+    updateStates((current) => Object.fromEntries(
+      Object.entries(current).map(([instanceId, state]) => [
+        instanceId,
+        {
+          ...state,
+          downloadTasks: tasks,
+          downloadStatus: status,
+          downloadErrorMessage: errorMessage
+        }
+      ])
+    ));
+  }, [updateStates]);
+
+  const applyDownloadConfiguration = useCallback((
+    settings: DownloadManagerSettings | null,
+    remoteApiStatus: DownloadManagerRemoteApiStatus | null,
+    errorMessage: string | undefined
+  ) => {
+    downloadSettingsRef.current = settings;
+    downloadRemoteApiStatusRef.current = remoteApiStatus;
+    updateStates((current) => Object.fromEntries(
+      Object.entries(current).map(([instanceId, state]) => {
+        const nextDraft = createDownloadSettingsDraft(settings, remoteApiStatus);
+        return [
+          instanceId,
+          {
+            ...state,
+            downloadSettings: settings,
+            downloadRemoteApiStatus: remoteApiStatus,
+            downloadSettingsDraft: state.downloadSettingsOpen
+              ? state.downloadSettingsDraft
+              : nextDraft,
+            downloadSettingsErrorMessage: errorMessage
+          }
+        ];
+      })
+    ));
+  }, [updateStates]);
+
   useEffect(() => {
     if (desktopApi?.files.onDirectoryPatch === undefined) {
       return undefined;
@@ -505,6 +655,72 @@ export const useFileManagerModel = ({
       });
     });
   }, [desktopApi, labels, onMetaChange, updateStates]);
+
+  useEffect(() => {
+    const downloadsApi = desktopApi?.downloads;
+    if (downloadsApi === undefined) {
+      applyDownloadState(downloadTasksRef.current, "error", labels.unavailable);
+      applyDownloadConfiguration(
+        downloadSettingsRef.current,
+        downloadRemoteApiStatusRef.current,
+        labels.unavailable
+      );
+      return undefined;
+    }
+
+    let disposed = false;
+    applyDownloadState(downloadTasksRef.current, "loading", undefined);
+    void Promise.all([
+      downloadsApi.list(),
+      downloadsApi.readSettings(),
+      downloadsApi.readRemoteApiStatus()
+    ])
+      .then(([snapshot, settings, remoteApiStatus]) => {
+        if (disposed) {
+          return;
+        }
+        applyDownloadState(snapshot.tasks, "ready", undefined);
+        applyDownloadConfiguration(settings, remoteApiStatus, undefined);
+      })
+      .catch((error: unknown) => {
+        if (disposed) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        applyDownloadState(
+          downloadTasksRef.current,
+          "error",
+          message
+        );
+        applyDownloadConfiguration(
+          downloadSettingsRef.current,
+          downloadRemoteApiStatusRef.current,
+          message
+        );
+      });
+
+    const unsubscribe = downloadsApi.onEvent((event) => {
+      if (event.kind === "snapshot") {
+        applyDownloadState(event.snapshot.tasks, "ready", undefined);
+        return;
+      }
+      if (event.kind === "task-updated") {
+        const nextTasks = [
+          event.task,
+          ...downloadTasksRef.current.filter((task) => task.id !== event.task.id)
+        ].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+        applyDownloadState(nextTasks, "ready", undefined);
+        return;
+      }
+      const nextTasks = downloadTasksRef.current.filter((task) => task.id !== event.taskId);
+      applyDownloadState(nextTasks, "ready", undefined);
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [applyDownloadConfiguration, applyDownloadState, desktopApi, labels.unavailable]);
 
   useEffect(
     () => () => {
@@ -557,7 +773,7 @@ export const useFileManagerModel = ({
   const loadHome = useCallback(async (instanceId: string, addToHistory = true) => {
     if (desktopApi === null) {
       replaceState(instanceId, {
-        ...createInitialState(instanceId, labels),
+        ...createState(instanceId),
         status: "error",
         errorMessage: labels.unavailable
       });
@@ -568,7 +784,7 @@ export const useFileManagerModel = ({
     patchState(instanceId, (state) => ({ ...state, status: "loading", errorMessage: undefined }));
     try {
       const payload = await desktopApi.files.readHome();
-      const current = statesRef.current[instanceId] ?? createInitialState(instanceId, labels);
+      const current = statesRef.current[instanceId] ?? createState(instanceId);
       replaceState(instanceId, buildHomeState(current, payload, labels, addToHistory));
     } catch (error) {
       patchState(instanceId, (state) => ({
@@ -582,7 +798,7 @@ export const useFileManagerModel = ({
   const loadDirectory = useCallback(async (instanceId: string, path: string, addToHistory = true) => {
     if (desktopApi === null) {
       replaceState(instanceId, {
-        ...createInitialState(instanceId, labels),
+        ...createState(instanceId),
         status: "error",
         errorMessage: labels.unavailable
       });
@@ -596,7 +812,7 @@ export const useFileManagerModel = ({
       const payload = subscription === undefined
         ? await desktopApi.files.readDirectory({ path })
         : directoryResponseFromSnapshot(subscription.snapshot);
-      const current = statesRef.current[instanceId] ?? createInitialState(instanceId, labels);
+      const current = statesRef.current[instanceId] ?? createState(instanceId);
       const nextState = buildDirectoryState(
         current,
         payload,
@@ -629,7 +845,7 @@ export const useFileManagerModel = ({
   const loadTrash = useCallback(async (instanceId: string, addToHistory = true) => {
     if (desktopApi === null) {
       replaceState(instanceId, {
-        ...createInitialState(instanceId, labels),
+        ...createState(instanceId),
         status: "error",
         errorMessage: labels.unavailable
       });
@@ -640,7 +856,7 @@ export const useFileManagerModel = ({
     patchState(instanceId, (state) => ({ ...state, status: "loading", errorMessage: undefined }));
     try {
       const payload = await desktopApi.files.readTrash();
-      const current = statesRef.current[instanceId] ?? createInitialState(instanceId, labels);
+      const current = statesRef.current[instanceId] ?? createState(instanceId);
       replaceState(instanceId, buildTrashState(current, payload, labels, addToHistory));
     } catch (error) {
       patchState(instanceId, (state) => ({
@@ -651,9 +867,51 @@ export const useFileManagerModel = ({
     }
   }, [desktopApi, labels, patchState, replaceState, unsubscribeDirectoryForInstance]);
 
+  const loadDownloads = useCallback(async (instanceId: string, addToHistory = true) => {
+    unsubscribeDirectoryForInstance(instanceId);
+    patchState(instanceId, (state) => ({ ...state, downloadStatus: "loading", downloadErrorMessage: undefined }));
+    try {
+      const downloadsApi = desktopApi?.downloads;
+      const [snapshot, settings, remoteApiStatus] = downloadsApi === undefined
+        ? [undefined, null, null] as const
+        : await Promise.all([
+            downloadsApi.list(),
+            downloadsApi.readSettings(),
+            downloadsApi.readRemoteApiStatus()
+          ]);
+      const current = statesRef.current[instanceId] ?? createState(instanceId);
+      const nextTasks = snapshot?.tasks ?? downloadTasksRef.current;
+      downloadTasksRef.current = nextTasks;
+      downloadStatusRef.current = snapshot === undefined ? "error" : "ready";
+      downloadErrorMessageRef.current = snapshot === undefined ? labels.unavailable : undefined;
+      downloadSettingsRef.current = settings;
+      downloadRemoteApiStatusRef.current = remoteApiStatus;
+      replaceState(instanceId, {
+        ...buildDownloadsState(current, labels, addToHistory),
+        downloadTasks: nextTasks,
+        downloadStatus: snapshot === undefined ? "error" : "ready",
+        downloadErrorMessage: snapshot === undefined ? labels.unavailable : undefined,
+        downloadSettings: settings,
+        downloadRemoteApiStatus: remoteApiStatus,
+        downloadSettingsDraft: createDownloadSettingsDraft(settings, remoteApiStatus),
+        downloadSettingsErrorMessage: snapshot === undefined ? labels.unavailable : undefined
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      downloadStatusRef.current = "error";
+      downloadErrorMessageRef.current = message;
+      patchState(instanceId, (state) => ({
+        ...buildDownloadsState(state, labels, addToHistory),
+        downloadStatus: "error",
+        downloadErrorMessage: message,
+        downloadSettingsErrorMessage: message
+      }));
+    }
+  }, [createState, desktopApi, labels, patchState, replaceState, unsubscribeDirectoryForInstance]);
+
   const createInstance = useCallback(() => {
     const appInstanceId = createId("file-manager");
-    const initialState = createInitialState(appInstanceId, labels);
+    const initialState = createState(appInstanceId);
     replaceState(appInstanceId, initialState);
     return {
       appId: "file-manager" as const,
@@ -672,10 +930,14 @@ export const useFileManagerModel = ({
       await loadTrash(instanceId, addToHistory);
       return;
     }
+    if (location.specialId === "downloadManager") {
+      await loadDownloads(instanceId, addToHistory);
+      return;
+    }
     if (location.path !== undefined && location.path.length > 0) {
       await loadDirectory(instanceId, location.path, addToHistory);
     }
-  }, [loadDirectory, loadHome, loadTrash]);
+  }, [loadDirectory, loadDownloads, loadHome, loadTrash]);
 
   const ensureInstance = useCallback((instanceId: string) => {
     updateStates((current) => {
@@ -684,7 +946,7 @@ export const useFileManagerModel = ({
       }
       return {
         ...current,
-        [instanceId]: createInitialState(instanceId, labels)
+        [instanceId]: createState(instanceId)
       };
     });
   }, [labels, updateStates]);
@@ -767,12 +1029,16 @@ export const useFileManagerModel = ({
 
   const refresh = useCallback(async (instanceId: string) => {
     const state = statesRef.current[instanceId];
+    if (state?.viewKind === "downloads") {
+      await loadDownloads(instanceId, false);
+      return;
+    }
     if (state === undefined || state.currentLocation === null) {
       await loadHome(instanceId, false);
       return;
     }
     await openLocation(instanceId, state.currentLocation, false);
-  }, [loadHome, openLocation]);
+  }, [loadDownloads, loadHome, openLocation]);
 
   const setPresentationMode = useCallback((instanceId: string, mode: "list" | "large") => {
     patchState(instanceId, (state) => ({
@@ -900,6 +1166,318 @@ export const useFileManagerModel = ({
     await desktopApi.files.emptyTrash();
     await loadTrash(instanceId, false);
   }, [desktopApi, loadTrash]);
+
+  const updateDownloadUrlDraft = useCallback((instanceId: string, value: string) => {
+    patchState(instanceId, (state) => ({
+      ...state,
+      downloadUrlDraft: value
+    }));
+  }, [patchState]);
+
+  const toggleDownloadAdvancedOptions = useCallback((instanceId: string) => {
+    patchState(instanceId, (state) => ({
+      ...state,
+      downloadAdvancedDraft: {
+        ...state.downloadAdvancedDraft,
+        advancedOpen: state.downloadAdvancedDraft.advancedOpen === false
+      }
+    }));
+  }, [patchState]);
+
+  const updateDownloadAdvancedDraft = useCallback((
+    instanceId: string,
+    patch: Partial<FileManagerDownloadAdvancedDraft>
+  ) => {
+    patchState(instanceId, (state) => ({
+      ...state,
+      downloadAdvancedDraft: {
+        ...state.downloadAdvancedDraft,
+        ...patch
+      },
+      downloadErrorMessage: undefined
+    }));
+  }, [patchState]);
+
+  const submitDownloadText = useCallback(async (instanceId: string, rawText: string) => {
+    const text = rawText.trim();
+    if (text.length === 0 || desktopApi?.downloads === undefined) {
+      return;
+    }
+    patchState(instanceId, (current) => ({
+      ...current,
+      downloadStatus: "loading",
+      downloadErrorMessage: undefined
+    }));
+    try {
+      const state = statesRef.current[instanceId] ?? createState(instanceId);
+      const snapshot = await desktopApi.downloads.enqueue(
+        buildDownloadEnqueueRequest(text, state.downloadAdvancedDraft)
+      );
+      applyDownloadState(snapshot.tasks, "ready", undefined);
+      patchState(instanceId, (current) => ({
+        ...current,
+        downloadUrlDraft: ""
+      }));
+    } catch (error) {
+      applyDownloadState(
+        downloadTasksRef.current,
+        "error",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }, [applyDownloadState, desktopApi, patchState]);
+
+  const submitDownloadUrlDraft = useCallback(async (instanceId: string) => {
+    const state = statesRef.current[instanceId];
+    await submitDownloadText(instanceId, state?.downloadUrlDraft ?? "");
+  }, [submitDownloadText]);
+
+  const importExternalBrowserDownloads = useCallback(async (instanceId: string) => {
+    const downloadsApi = desktopApi?.downloads;
+    if (downloadsApi === undefined) {
+      return;
+    }
+    patchState(instanceId, (current) => ({
+      ...current,
+      downloadStatus: "loading",
+      downloadErrorMessage: undefined
+    }));
+    try {
+      const snapshot = await downloadsApi.importExternalBrowser();
+      applyDownloadState(snapshot.tasks, "ready", undefined);
+    } catch (error) {
+      applyDownloadState(
+        downloadTasksRef.current,
+        "error",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }, [applyDownloadState, desktopApi, patchState]);
+
+  const pauseDownload = useCallback(async (taskId: string) => {
+    await desktopApi?.downloads?.pause({ taskId });
+  }, [desktopApi]);
+
+  const resumeDownload = useCallback(async (taskId: string) => {
+    await desktopApi?.downloads?.resume({ taskId });
+  }, [desktopApi]);
+
+  const cancelDownload = useCallback(async (taskId: string) => {
+    await desktopApi?.downloads?.cancel({ taskId });
+  }, [desktopApi]);
+
+  const retryDownload = useCallback(async (taskId: string) => {
+    await desktopApi?.downloads?.retry({ taskId });
+  }, [desktopApi]);
+
+  const removeDownload = useCallback(async (taskId: string) => {
+    await desktopApi?.downloads?.remove({ taskId });
+  }, [desktopApi]);
+
+  const setDownloadPriority = useCallback(async (
+    taskId: string,
+    priority: DownloadManagerPriority
+  ) => {
+    await desktopApi?.downloads?.setPriority({ taskId, priority });
+  }, [desktopApi]);
+
+  const pauseAllDownloads = useCallback(async () => {
+    const snapshot = await desktopApi?.downloads?.pauseAll();
+    if (snapshot !== undefined) {
+      applyDownloadState(snapshot.tasks, "ready", undefined);
+    }
+  }, [applyDownloadState, desktopApi]);
+
+  const resumeAllDownloads = useCallback(async () => {
+    const snapshot = await desktopApi?.downloads?.resumeAll();
+    if (snapshot !== undefined) {
+      applyDownloadState(snapshot.tasks, "ready", undefined);
+    }
+  }, [applyDownloadState, desktopApi]);
+
+  const cancelAllDownloads = useCallback(async () => {
+    const snapshot = await desktopApi?.downloads?.cancelAll();
+    if (snapshot !== undefined) {
+      applyDownloadState(snapshot.tasks, "ready", undefined);
+    }
+  }, [applyDownloadState, desktopApi]);
+
+  const openDownloadedFile = useCallback(async (taskId: string) => {
+    await desktopApi?.downloads?.openFile({ taskId });
+  }, [desktopApi]);
+
+  const revealDownloadedFile = useCallback(async (taskId: string) => {
+    await desktopApi?.downloads?.revealFile({ taskId });
+  }, [desktopApi]);
+
+  const toggleDownloadSettings = useCallback(async (instanceId: string) => {
+    const willOpen = statesRef.current[instanceId]?.downloadSettingsOpen !== true;
+    patchState(instanceId, (state) => ({
+      ...state,
+      downloadSettingsOpen: willOpen,
+      downloadSettingsErrorMessage: undefined
+    }));
+    if (willOpen === false || desktopApi?.downloads === undefined) {
+      return;
+    }
+    try {
+      const [settings, remoteApiStatus] = await Promise.all([
+        desktopApi.downloads.readSettings(),
+        desktopApi.downloads.readRemoteApiStatus()
+      ]);
+      downloadSettingsRef.current = settings;
+      downloadRemoteApiStatusRef.current = remoteApiStatus;
+      patchState(instanceId, (state) => ({
+        ...state,
+        downloadSettings: settings,
+        downloadRemoteApiStatus: remoteApiStatus,
+        downloadSettingsDraft: createDownloadSettingsDraft(settings, remoteApiStatus),
+        downloadSettingsErrorMessage: undefined
+      }));
+    } catch (error) {
+      patchState(instanceId, (state) => ({
+        ...state,
+        downloadSettingsErrorMessage: error instanceof Error ? error.message : String(error)
+      }));
+    }
+  }, [desktopApi, patchState]);
+
+  const updateDownloadSettingsDraft = useCallback((
+    instanceId: string,
+    patch: Partial<FileManagerDownloadSettingsDraft>
+  ) => {
+    patchState(instanceId, (state) => ({
+      ...state,
+      downloadSettingsDraft: {
+        ...state.downloadSettingsDraft,
+        ...patch
+      },
+      downloadSettingsErrorMessage: undefined
+    }));
+  }, [patchState]);
+
+  const addDownloadSaveRuleDraft = useCallback((instanceId: string) => {
+    patchState(instanceId, (state) => ({
+      ...state,
+      downloadSettingsDraft: {
+        ...state.downloadSettingsDraft,
+        saveRules: [
+          ...state.downloadSettingsDraft.saveRules,
+          createDownloadSaveRuleDraft()
+        ]
+      },
+      downloadSettingsErrorMessage: undefined
+    }));
+  }, [patchState]);
+
+  const removeDownloadSaveRuleDraft = useCallback((instanceId: string, ruleId: string) => {
+    patchState(instanceId, (state) => ({
+      ...state,
+      downloadSettingsDraft: {
+        ...state.downloadSettingsDraft,
+        saveRules: state.downloadSettingsDraft.saveRules.filter((rule) => rule.id !== ruleId)
+      },
+      downloadSettingsErrorMessage: undefined
+    }));
+  }, [patchState]);
+
+  const updateDownloadSaveRuleDraft = useCallback((
+    instanceId: string,
+    ruleId: string,
+    patch: Partial<FileManagerDownloadSaveRuleDraft>
+  ) => {
+    patchState(instanceId, (state) => ({
+      ...state,
+      downloadSettingsDraft: {
+        ...state.downloadSettingsDraft,
+        saveRules: state.downloadSettingsDraft.saveRules.map((rule) =>
+          rule.id === ruleId ? { ...rule, ...patch } : rule
+        )
+      },
+      downloadSettingsErrorMessage: undefined
+    }));
+  }, [patchState]);
+
+  const saveDownloadSettings = useCallback(async (instanceId: string) => {
+    const downloadsApi = desktopApi?.downloads;
+    const state = statesRef.current[instanceId];
+    if (downloadsApi === undefined || state === undefined) {
+      return;
+    }
+    try {
+      const nextSettings = await downloadsApi.updateSettings(
+        buildDownloadSettingsUpdate(state.downloadSettingsDraft)
+      );
+      downloadSettingsRef.current = nextSettings;
+      patchState(instanceId, (current) => ({
+        ...current,
+        downloadSettings: nextSettings,
+        downloadSettingsDraft: createDownloadSettingsDraft(
+          nextSettings,
+          current.downloadRemoteApiStatus
+        ),
+        downloadSettingsErrorMessage: undefined
+      }));
+    } catch (error) {
+      patchState(instanceId, (current) => ({
+        ...current,
+        downloadSettingsErrorMessage: error instanceof Error ? error.message : String(error)
+      }));
+    }
+  }, [desktopApi, patchState]);
+
+  const startDownloadRemoteApi = useCallback(async (instanceId: string) => {
+    const downloadsApi = desktopApi?.downloads;
+    const state = statesRef.current[instanceId];
+    if (downloadsApi === undefined || state === undefined) {
+      return;
+    }
+    try {
+      const draft = state.downloadSettingsDraft;
+      const nextStatus = await downloadsApi.startRemoteApi({
+        host: draft.remoteHost.trim() || undefined,
+        port: parseRemoteApiPort(draft.remotePort),
+        allowLan: draft.remoteAllowLan
+      });
+      downloadRemoteApiStatusRef.current = nextStatus;
+      patchState(instanceId, (current) => ({
+        ...current,
+        downloadRemoteApiStatus: nextStatus,
+        downloadSettingsDraft: {
+          ...current.downloadSettingsDraft,
+          remoteHost: nextStatus.host,
+          remotePort: nextStatus.port === null ? "" : String(nextStatus.port)
+        },
+        downloadSettingsErrorMessage: undefined
+      }));
+    } catch (error) {
+      patchState(instanceId, (current) => ({
+        ...current,
+        downloadSettingsErrorMessage: error instanceof Error ? error.message : String(error)
+      }));
+    }
+  }, [desktopApi, patchState]);
+
+  const stopDownloadRemoteApi = useCallback(async (instanceId: string) => {
+    const downloadsApi = desktopApi?.downloads;
+    if (downloadsApi === undefined) {
+      return;
+    }
+    try {
+      const nextStatus = await downloadsApi.stopRemoteApi();
+      downloadRemoteApiStatusRef.current = nextStatus;
+      patchState(instanceId, (current) => ({
+        ...current,
+        downloadRemoteApiStatus: nextStatus,
+        downloadSettingsErrorMessage: undefined
+      }));
+    } catch (error) {
+      patchState(instanceId, (current) => ({
+        ...current,
+        downloadSettingsErrorMessage: error instanceof Error ? error.message : String(error)
+      }));
+    }
+  }, [desktopApi, patchState]);
 
   const ejectDisk = useCallback(async (instanceId: string, disk: FileManagerDisk) => {
     if (desktopApi === null || disk.canEject === false) {
@@ -1392,6 +1970,7 @@ export const useFileManagerModel = ({
     openHome: loadHome,
     openDirectory: loadDirectory,
     openTrash: loadTrash,
+    openDownloads: loadDownloads,
     goBack,
     goForward,
     goUp,
@@ -1406,6 +1985,31 @@ export const useFileManagerModel = ({
     moveSelectionToTrash,
     restoreSelectionFromTrash,
     emptyTrash,
+    updateDownloadUrlDraft,
+    toggleDownloadAdvancedOptions,
+    updateDownloadAdvancedDraft,
+    submitDownloadUrlDraft,
+    submitDownloadText,
+    importExternalBrowserDownloads,
+    pauseDownload,
+    resumeDownload,
+    cancelDownload,
+    retryDownload,
+    removeDownload,
+    setDownloadPriority,
+    pauseAllDownloads,
+    resumeAllDownloads,
+    cancelAllDownloads,
+    openDownloadedFile,
+    revealDownloadedFile,
+    toggleDownloadSettings,
+    updateDownloadSettingsDraft,
+    addDownloadSaveRuleDraft,
+    removeDownloadSaveRuleDraft,
+    updateDownloadSaveRuleDraft,
+    saveDownloadSettings,
+    startDownloadRemoteApi,
+    stopDownloadRemoteApi,
     toggleCurrentDirectoryFavorite,
     openDiskContextMenu,
     openDeviceContextMenu,
@@ -1417,6 +2021,7 @@ export const useFileManagerModel = ({
     openDirectoryContextMenu,
     openTrashContextMenu
   }), [
+    addDownloadSaveRuleDraft,
     beginCreateDraft,
     cancelCreateDraft,
     commitCreateDraft,
@@ -1428,10 +2033,15 @@ export const useFileManagerModel = ({
     goForward,
     goUp,
     loadDirectory,
+    loadDownloads,
     loadHome,
     loadTrash,
+    importExternalBrowserDownloads,
     moveSelectionToTrash,
+    cancelAllDownloads,
+    cancelDownload,
     openDiskContextMenu,
+    openDownloadedFile,
     openDeviceContextMenu,
     openDirectoryContextMenu,
     openEntryContextMenu,
@@ -1440,14 +2050,34 @@ export const useFileManagerModel = ({
     openRecentLocationContextMenu,
     openTrashContextMenu,
     openTrashEntryContextMenu,
+    pauseDownload,
+    pauseAllDownloads,
     refresh,
+    removeDownload,
+    removeDownloadSaveRuleDraft,
+    resumeDownload,
+    resumeAllDownloads,
+    retryDownload,
+    setDownloadPriority,
     setPresentationMode,
+    saveDownloadSettings,
+    startDownloadRemoteApi,
+    stopDownloadRemoteApi,
+    submitDownloadText,
+    submitDownloadUrlDraft,
+    revealDownloadedFile,
     restoreSelectionFromTrash,
     selectEntry,
     selectTrashEntry,
     syncExternalInstances,
     syncTabInstances,
+    toggleDownloadSettings,
     toggleCurrentDirectoryFavorite,
+    toggleDownloadAdvancedOptions,
+    updateDownloadAdvancedDraft,
+    updateDownloadSettingsDraft,
+    updateDownloadSaveRuleDraft,
+    updateDownloadUrlDraft,
     updateCreateDraft
   ]);
 

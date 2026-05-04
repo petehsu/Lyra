@@ -72,6 +72,9 @@ const readPendingInteractionKind = (
   if (normalized === "permissionsapproval") {
     return "permissions_approval";
   }
+  if (normalized === "agentquestion") {
+    return "agent_question";
+  }
   if (normalized === "tooluserinput") {
     return "tool_user_input";
   }

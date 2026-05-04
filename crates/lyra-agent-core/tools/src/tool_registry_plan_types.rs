@@ -25,7 +25,6 @@ pub enum ToolHandlerKind {
     Mcp,
     McpResource,
     Plan,
-    LyraPlan,
     RequestPermissions,
     RequestUserInput,
     ResumeAgentV1,

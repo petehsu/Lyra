@@ -165,14 +165,4 @@ export type AgentComposerProps = {
   readonly onFileMentionSearchStop?: (sessionId: string) => void | Promise<void>;
 };
 
-export type ComposerTextEffect = {
-  readonly id: number;
-  readonly kind: "insert" | "delete";
-  readonly text: string;
-  readonly left: number;
-  readonly top: number;
-};
-
-export type ComposerTextEffectDraft = Omit<ComposerTextEffect, "id">;
-
 export type AgentComposerSubmitAction = "send" | "steer";

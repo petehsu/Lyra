@@ -376,6 +376,68 @@ describe("useAiPanelThreadViewModel", () => {
     expect(result.current.runtimeFeedByTurn.get("t-1")).toHaveLength(1);
   });
 
+  test("does not repeat persisted turn tools below later streaming assistant text", () => {
+    const { result } = renderHook(() =>
+      useAiPanelThreadViewModel({
+        activeDetail: {
+          messages: [
+            {
+              id: "m-1",
+              role: "assistant",
+              content: "I will write the files.",
+              turnId: "t-1",
+              createdAt: 1,
+            },
+          ],
+          turns: [],
+          toolCalls: [
+            {
+              id: "tool-1",
+              sessionId: "thread-1",
+              turnId: "t-1",
+              toolName: "filesystem.write",
+              input: { path: "/tmp/index.html" },
+              output: { changes: [{ path: "/tmp/index.html" }] },
+              status: "completed",
+              startedAt: 2,
+              finishedAt: 3,
+            },
+          ],
+          runtimeEvents: [],
+        } as any,
+        optimisticUserMessages: [],
+        runtimeFeed: [
+          {
+            id: "tool-1",
+            turnId: "t-1",
+            toolName: "filesystem.write",
+            toolLabel: "Write",
+            target: "/tmp/index.html",
+            icon: "write",
+            status: "completed",
+            timestamp: 2,
+          },
+        ] as any,
+        streamingTurnId: "t-1",
+        latestRuntimeEventByTurn: {},
+        activeInteractionPanel: null,
+        isInteractionSubmitting: false,
+        isSending: false,
+        isStreamActive: true,
+        streamingAssistantText: "CSS is done. I am creating JS now.",
+        finalizingTurnId: null,
+        toolNameLabels,
+        runtimeToolFallbackLabel: "Tool",
+        labels,
+      })
+    );
+
+    expect(result.current.streamingTurnRuntimeFeed).toEqual([]);
+    expect(result.current.turnTimelineByTurn.get("t-1")?.some((entry) =>
+      entry.kind === "tool" && entry.tool.id === "tool-1"
+    )).toBe(true);
+  });
+
   test("uses ai panel timeline entries to preserve assistant tool and plan order", () => {
     const { result } = renderHook(() =>
       useAiPanelThreadViewModel({

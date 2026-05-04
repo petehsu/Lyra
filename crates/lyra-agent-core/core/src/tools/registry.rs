@@ -98,6 +98,17 @@ pub(crate) trait ToolArgumentDiffConsumer: Send {
     fn consume_diff(&mut self, turn: &TurnContext, call_id: String, diff: &str)
     -> Option<EventMsg>;
 
+    /// Consume the complete tool payload when the provider did not expose a
+    /// useful argument stream, or to publish the final snapshot after streaming.
+    fn consume_complete(
+        &mut self,
+        _turn: &TurnContext,
+        _call_id: String,
+        _payload: &ToolPayload,
+    ) -> Option<EventMsg> {
+        None
+    }
+
     fn flush_on_complete(&mut self) -> Option<EventMsg> {
         None
     }
@@ -317,7 +328,7 @@ impl ToolRegistry {
         let is_mutating = handler.is_mutating(&invocation).await;
         if is_mutating && invocation.turn.collaboration_mode.mode == ModeKind::Plan {
             let err = FunctionCallError::RespondToModel(
-                "Plan Mode is active, so mutating tool calls are blocked. Use read-only exploration only, then call lyra_plan with action=\"propose\" and a structured plan for user approval before implementation.".to_string(),
+                "Plan Mode is active, so mutating tool calls are blocked. Use read-only exploration only, then submit a `<proposed_plan>` review document for user approval before implementation. Use `agent_question` only for truly blocking clarification.".to_string(),
             );
             dispatch_trace.record_failed(&err);
             return Err(err);

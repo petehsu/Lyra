@@ -1,0 +1,156 @@
+{
+  "bundleVersion": "aria2-1.37.0-conda-forge-linux-arm64",
+  "target": "linux-arm64",
+  "binary": "bin/aria2c",
+  "source": "conda-forge",
+  "packages": [
+    "_openmp_mutex-4.5-20_gnu.conda",
+    "aria2-1.37.0-h7ddbacd_4.conda",
+    "c-ares-1.34.6-he30d5cf_0.conda",
+    "ca-certificates-2025.1.31-hcefe29a_0.conda",
+    "libgcc-15.2.0-h8acb6b2_18.conda",
+    "libgomp-15.2.0-h8acb6b2_18.conda",
+    "libiconv-1.18-h90929bb_2.conda",
+    "liblzma-5.8.3-he30d5cf_0.conda",
+    "libsqlite-3.53.0-h022381a_0.conda",
+    "libssh2-1.11.1-h18c354c_0.conda",
+    "libstdcxx-15.2.0-hef695bb_18.conda",
+    "libxml2-2.15.3-h9ba8346_0.conda",
+    "libxml2-16-2.15.3-h064b767_0.conda",
+    "libzlib-1.3.2-hdc9db2a_2.conda",
+    "openssl-3.6.2-h546c87b_0.conda"
+  ],
+  "files": [
+    {
+      "path": "bin/aria2c",
+      "sha256": "b28640bf705d1572a224bda20001eb5a0ba7a2bcbfb071150555a27b45f45b3d",
+      "executable": true
+    },
+    {
+      "path": "etc/conda/activate.d/libxml2-split_activate.sh",
+      "sha256": "631478a9cfbd337b86ee1df94497c21821cd561312c94892d156e43f499cf5c4"
+    },
+    {
+      "path": "lib/libaria2.so.0.0.0",
+      "sha256": "dfcfad3206a871003511016804f30cb51bf01135d68f436bb682e2a87cb35ef0",
+      "executable": true
+    },
+    {
+      "path": "lib/libatomic.so.1.2.0",
+      "sha256": "28be3b55096c2479fc345da302a99f380ce216c21441cd7ca9715c0f69ac3604",
+      "executable": true
+    },
+    {
+      "path": "lib/libcares.so.2.19.5",
+      "sha256": "62d10c48f8ff346bbbda6d9cde8dfd35f4c9196eccfe077733c3da6c2438009a",
+      "executable": true
+    },
+    {
+      "path": "lib/libcharset.so.1.0.0",
+      "sha256": "c9865e5c7fe2cd468a77b278d7b43c4e62d765a824ec83364e1f18e76763fbb3",
+      "executable": true
+    },
+    {
+      "path": "lib/libcrypto.so.3",
+      "sha256": "bcca07b5f49d5a867416ba1b82768913bcc07867840231f3b91da68fc1b0bc07",
+      "executable": true
+    },
+    {
+      "path": "lib/libgcc_s.so",
+      "sha256": "69a56a9993b7729b29b274e65016031c81f2397f176ed5ad44d59bd50425e0bd"
+    },
+    {
+      "path": "lib/libgcc_s.so.1",
+      "sha256": "cd56065bd6ee942759325b3d78b87443df37bfbc3f0b2397a9896e9e06b4d163"
+    },
+    {
+      "path": "lib/libgomp.so.1.0.0",
+      "sha256": "1a8e06f13cf4d096ccaa9a7f3274e65ef4c6095e740fd7353e0090ebb6a8239c",
+      "executable": true
+    },
+    {
+      "path": "lib/libiconv.so.2.7.0",
+      "sha256": "c020ac3bf3a1eaa01b897aa2874c95bb39e3d013745b7a8ed3601efefe32df56",
+      "executable": true
+    },
+    {
+      "path": "lib/libitm.so.1.0.0",
+      "sha256": "26ef235b5a80ad3d8386c5217a7f6ae4b222ae2ef730902ea5f93a90854fa747",
+      "executable": true
+    },
+    {
+      "path": "lib/liblzma.so.5",
+      "sha256": "66fc3e298be5fcb287bac4b1ff0bebce20ca1a2b10835cd07b3f7533bd6a1d2c",
+      "executable": true
+    },
+    {
+      "path": "lib/liblzma.so.5.8.3",
+      "sha256": "66fc3e298be5fcb287bac4b1ff0bebce20ca1a2b10835cd07b3f7533bd6a1d2c",
+      "executable": true
+    },
+    {
+      "path": "lib/libsqlite3.so.3.53.0",
+      "sha256": "d2b9d6169180aa379089f99d57e5ad4a062fabc00fb3d793090a463db06f2d44",
+      "executable": true
+    },
+    {
+      "path": "lib/libssh2.so.1.0.1",
+      "sha256": "45cb00491d17f5c286ea12ce9c5bc4f737c9a74bb930f792c1d01e800cee0797",
+      "executable": true
+    },
+    {
+      "path": "lib/libssl.so.3",
+      "sha256": "e5f394252141779dba78faa3a868e0351995aa9647b15fdba93b25e456ea9934",
+      "executable": true
+    },
+    {
+      "path": "lib/libstdc++.so.6.0.34",
+      "sha256": "d153c7fbca3f2430aecbb1e8927b36ed41ff95444710ec0ed71b46d56c9accd9",
+      "executable": true
+    },
+    {
+      "path": "lib/libxml2.so.16.1.3",
+      "sha256": "fdf496da2615f7a69f5e8e21f4302cee186cb0b20bf6e4fd750a20180ba5b0ee",
+      "executable": true
+    },
+    {
+      "path": "lib/libz.so.1.3.2",
+      "sha256": "c99a8db846910b85d244c5a4188d7a45a3fb93f07cb80c9a4c646a16d7a48bf7",
+      "executable": true
+    },
+    {
+      "path": "ssl/cacert.pem",
+      "sha256": "c55b21f907f7f86d48add093552fb5651749ff5f860508ccbb423d6c1fbd80c7"
+    },
+    {
+      "path": "ssl/certs/.keep",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "ssl/ct_log_list.cnf",
+      "sha256": "f1c1803d13d1d0b755b13b23c28bd4e20e07baf9f2b744c9337ba5866aa0ec3b"
+    },
+    {
+      "path": "ssl/ct_log_list.cnf.dist",
+      "sha256": "f1c1803d13d1d0b755b13b23c28bd4e20e07baf9f2b744c9337ba5866aa0ec3b"
+    },
+    {
+      "path": "ssl/misc/CA.pl",
+      "sha256": "68dc4fbb6c2cdd94bdf7e8dc24659d6d890ce7e71f8200282d7555ad227265fd",
+      "executable": true
+    },
+    {
+      "path": "ssl/misc/tsget.pl",
+      "sha256": "3a3f266cea40882157d4586132c7484bfcced52d169ab16f71c81a1cc48b383e",
+      "executable": true
+    },
+    {
+      "path": "ssl/openssl.cnf",
+      "sha256": "a65a2cb9f4ee8ffdc7ef4f0ac600c0bdafb95b7b1ab457188ac610a62f5ad6b3"
+    },
+    {
+      "path": "ssl/openssl.cnf.dist",
+      "sha256": "a65a2cb9f4ee8ffdc7ef4f0ac600c0bdafb95b7b1ab457188ac610a62f5ad6b3"
+    }
+  ]
+}

@@ -639,10 +639,15 @@ async fn handle_request_user_input(
     }
 
     let args = RequestUserInputArgs {
+        reason: event.reason.clone(),
         questions: event.questions,
     };
-    let response_fut =
-        parent_session.request_user_input(parent_ctx, parent_ctx.sub_id.clone(), args);
+    let response_fut = parent_session.request_user_input_with_source(
+        parent_ctx,
+        event.call_id,
+        args,
+        Some(event.source),
+    );
     let response = await_user_input_with_cancel(
         response_fut,
         parent_session,

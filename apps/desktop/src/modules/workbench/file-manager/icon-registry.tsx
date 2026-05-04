@@ -26,6 +26,7 @@ import {
   HardDrive,
   History,
   House,
+  ListChecks,
   Monitor,
   Package,
   ScrollText,
@@ -77,6 +78,8 @@ export const renderFileManagerAppIcon = (iconKey: FileManagerAppIconKey) => {
       return renderIcon(<Folder size={DEFAULT_ICON_SIZE} />);
     case "file-manager-directory-non-empty":
       return renderIcon(<FolderOpen size={DEFAULT_ICON_SIZE} />);
+    case "file-manager-download-manager":
+      return renderIcon(<ListChecks size={DEFAULT_ICON_SIZE} />);
     case "file-manager-trash":
       return renderIcon(<Trash2 size={DEFAULT_ICON_SIZE} />);
     default:
@@ -96,6 +99,8 @@ export const renderFileManagerLocationIcon = (
       return renderIcon(<FilesIcon />);
     case "downloads":
       return renderIcon(<Download size={DEFAULT_ICON_SIZE} />);
+    case "downloadManager":
+      return renderIcon(<ListChecks size={DEFAULT_ICON_SIZE} />);
     case "trash":
       return renderIcon(<Trash2 size={DEFAULT_ICON_SIZE} />);
     case "favorites":
@@ -235,10 +240,13 @@ export const renderFileManagerDiskIcon = (disk: FileManagerDisk | FileManagerDev
 };
 
 export const renderFileManagerSectionIcon = (
-  section: "favorites" | "locations" | "devices" | "recent"
+  section: "favorites" | "locations" | "devices" | "recent" | "downloads"
 ) => {
   if (section === "favorites") {
     return renderIcon(<Star size={DEFAULT_ICON_SIZE} />);
+  }
+  if (section === "downloads") {
+    return renderIcon(<ListChecks size={DEFAULT_ICON_SIZE} />);
   }
   if (section === "devices") {
     return renderIcon(<HardDrive size={DEFAULT_ICON_SIZE} />);

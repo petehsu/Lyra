@@ -319,11 +319,13 @@ const toNativeInputEvent = (event: WorkbenchBrowserNativeInputEvent):
 export const createWorkbenchBrowserViewManager = ({
   getWindow,
   publishEvent,
-  resourceRuntime
+  resourceRuntime,
+  onWebContentsCreated
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
   readonly resourceRuntime?: ResourceRuntimeService;
+  readonly onWebContentsCreated?: (tabId: string, webContents: WebContents) => () => void;
 }): WorkbenchBrowserViewManager => {
   const entries = new Map<string, BrowserPageEntry>();
   const tombstones = new Map<string, BrowserPageTombstone>();
@@ -738,6 +740,7 @@ export const createWorkbenchBrowserViewManager = ({
       }
     });
     const { webContents } = view;
+    const disposeDownloadTracking = onWebContentsCreated?.(spec.tabId, webContents) ?? (() => undefined);
     const entry: BrowserPageEntry = {
       tabId: spec.tabId,
       view,
@@ -755,6 +758,7 @@ export const createWorkbenchBrowserViewManager = ({
         updatedAt: Date.now()
       },
       disposeListeners: () => {
+        disposeDownloadTracking();
         webContents.removeAllListeners("page-title-updated");
         webContents.removeAllListeners("page-favicon-updated");
         webContents.removeAllListeners("did-start-loading");

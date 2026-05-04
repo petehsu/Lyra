@@ -145,7 +145,7 @@ export const runtimeEventPhasePriority = (phase: string): number => {
   if (phase === "failed") {
     return 8;
   }
-  if (phase === "plan_approval_requested" || phase === "plan_question_requested") {
+  if (phase === "plan_proposed" || phase === "plan_approval_requested" || phase === "plan_question_requested") {
     return 8;
   }
   if (phase === "completed") {

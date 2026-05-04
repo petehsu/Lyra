@@ -1,4 +1,5 @@
 import { FileManagerDirectoryContent } from "./surface-directory";
+import { FileManagerDownloadsContent } from "./surface-downloads";
 import { FileManagerFavoritesContent, FileManagerHomeContent } from "./surface-home";
 import { FileManagerLoadingSkeleton } from "./surface-loading";
 import { FileManagerTrashContent } from "./surface-trash";
@@ -49,6 +50,11 @@ export const FileManagerContent = ({
       actions={actions}
     />
     <FileManagerTrashContent
+      renderModel={renderModel}
+      labels={labels}
+      actions={actions}
+    />
+    <FileManagerDownloadsContent
       renderModel={renderModel}
       labels={labels}
       actions={actions}

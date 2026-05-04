@@ -164,7 +164,6 @@ impl ThreadWatchManager {
             runtime.running = false;
             runtime.pending_permission_requests = 0;
             runtime.pending_user_input_requests = 0;
-            runtime.pending_plan_approval_requests = 0;
             runtime.is_loaded = false;
         })
         .await;
@@ -175,7 +174,6 @@ impl ThreadWatchManager {
             runtime.running = false;
             runtime.pending_permission_requests = 0;
             runtime.pending_user_input_requests = 0;
-            runtime.pending_plan_approval_requests = 0;
             runtime.has_system_error = true;
         })
         .await;
@@ -186,23 +184,6 @@ impl ThreadWatchManager {
             runtime.running = false;
             runtime.pending_permission_requests = 0;
             runtime.pending_user_input_requests = 0;
-        })
-        .await;
-    }
-
-    pub(crate) async fn note_plan_approval_requested(&self, thread_id: &str) {
-        self.update_runtime_for_thread(thread_id, |runtime| {
-            runtime.is_loaded = true;
-            runtime.pending_plan_approval_requests =
-                runtime.pending_plan_approval_requests.saturating_add(1);
-        })
-        .await;
-    }
-
-    pub(crate) async fn note_plan_approval_resolved(&self, thread_id: &str) {
-        self.update_runtime_for_thread(thread_id, |runtime| {
-            runtime.pending_plan_approval_requests =
-                runtime.pending_plan_approval_requests.saturating_sub(1);
         })
         .await;
     }
@@ -442,7 +423,6 @@ struct RuntimeFacts {
     running: bool,
     pending_permission_requests: u32,
     pending_user_input_requests: u32,
-    pending_plan_approval_requests: u32,
     has_system_error: bool,
 }
 
@@ -452,7 +432,7 @@ fn loaded_thread_status(runtime: &RuntimeFacts) -> ThreadStatus {
     }
 
     let mut active_flags = Vec::new();
-    if runtime.pending_permission_requests > 0 || runtime.pending_plan_approval_requests > 0 {
+    if runtime.pending_permission_requests > 0 {
         active_flags.push(ThreadActiveFlag::WaitingOnApproval);
     }
     if runtime.pending_user_input_requests > 0 {

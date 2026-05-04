@@ -1714,6 +1714,8 @@ mod tests {
                         thread_id: "thread-1".to_string(),
                         turn_id: "turn-1".to_string(),
                         item_id: "call-1".to_string(),
+                        reason: None,
+                        source: Default::default(),
                         questions: vec![ToolRequestUserInputQuestion {
                             id: "question-1".to_string(),
                             header: "Mode".to_string(),
@@ -1775,6 +1777,8 @@ mod tests {
                             thread_id: "thread-1".to_string(),
                             turn_id: "turn-1".to_string(),
                             item_id: "call-1".to_string(),
+                            reason: None,
+                            source: Default::default(),
                             questions: vec![ToolRequestUserInputQuestion {
                                 id: "question-1".to_string(),
                                 header: "Mode".to_string(),

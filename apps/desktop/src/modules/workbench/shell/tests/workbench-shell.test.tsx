@@ -317,26 +317,66 @@ const setDesktopApiPlatform = (platform: NodeJS.Platform) => {
     openExternal: vi.fn(async () => false),
     linuxCompat: {
       readStatus: vi.fn(async () => ({
-        platform: "linux" as const,
+        platform,
         enabled: false,
+        profile: "reliable" as const,
+        recommendedProfile: "reliable" as const,
         safeMode: false,
         backend: "x11" as const,
         gpuMode: "hardware" as const,
-        backendSource: "default" as const,
-        gpuSource: "default" as const,
+        profileSource: "auto" as const,
+        backendSource: "auto" as const,
+        gpuSource: "auto" as const,
         warnings: [],
         notes: [],
         appliedEnv: {},
         appliedSwitches: {},
         facts: {
           sessionType: "unknown" as const,
-          desktop: null,
+          architecture: "x64" as const,
+          kernelRelease: "6.8.0",
+          libc: "glibc" as const,
+          desktop: "unknown",
+          desktopRaw: "unknown",
+          distributionId: null,
+          distributionVersion: null,
+          distributionLike: [],
+          packageType: "dev" as const,
           waylandDisplay: null,
           x11Display: null,
-          isRoot: false
+          isContainer: false,
+          isRoot: false,
+          gpu: {
+            vendor: "unknown" as const,
+            deviceCount: 0,
+            hasDiscreteGpu: false,
+            driverHint: null,
+            hardwareAccelerationEnabled: null,
+            featureStatus: null
+          }
+        },
+        recovery: {
+          active: false,
+          autoRestarted: false,
+          launchId: "test",
+          previousFailureReason: null
         },
         generatedAt: new Date().toISOString()
       })),
+      readConfig: vi.fn(async () => ({
+        version: 1 as const,
+        profile: "reliable" as const,
+        updatedAt: new Date().toISOString()
+      })),
+      updateConfig: vi.fn(async () => ({
+        ok: true as const,
+        config: {
+          version: 1 as const,
+          profile: "reliable" as const,
+          updatedAt: new Date().toISOString()
+        }
+      })),
+      requestRestart: vi.fn(async () => ({ ok: true as const })),
       exportDiagnostics: vi.fn(async () => ({
         ok: true as const,
         filePath: "/tmp/linux-compat.json"

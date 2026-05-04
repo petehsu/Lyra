@@ -110,6 +110,7 @@ export type { ItemAutoApprovalReviewCompletedNotification } from "./ItemAutoAppr
 export type { ItemAutoApprovalReviewStartedNotification } from "./ItemAutoApprovalReviewStartedNotification";
 export type { ItemCompletedNotification } from "./ItemCompletedNotification";
 export type { ItemStartedNotification } from "./ItemStartedNotification";
+export type { ItemUpdatedNotification } from "./ItemUpdatedNotification";
 export type { ListMcpServerStatusParams } from "./ListMcpServerStatusParams";
 export type { ListMcpServerStatusResponse } from "./ListMcpServerStatusResponse";
 export type { LyraAiModelDiscoveryState } from "./LyraAiModelDiscoveryState";
@@ -213,6 +214,8 @@ export type { PermissionsRequestApprovalParams } from "./PermissionsRequestAppro
 export type { PermissionsRequestApprovalResponse } from "./PermissionsRequestApprovalResponse";
 export type { PlanApprovalDecision } from "./PlanApprovalDecision";
 export type { PlanDeltaNotification } from "./PlanDeltaNotification";
+export type { PlanReviewTurnAction } from "./PlanReviewTurnAction";
+export type { PlanReviewTurnContext } from "./PlanReviewTurnContext";
 export type { PluginAuthPolicy } from "./PluginAuthPolicy";
 export type { PluginDetail } from "./PluginDetail";
 export type { PluginInstallParams } from "./PluginInstallParams";
@@ -345,6 +348,7 @@ export type { ToolRequestUserInputOption } from "./ToolRequestUserInputOption";
 export type { ToolRequestUserInputParams } from "./ToolRequestUserInputParams";
 export type { ToolRequestUserInputQuestion } from "./ToolRequestUserInputQuestion";
 export type { ToolRequestUserInputResponse } from "./ToolRequestUserInputResponse";
+export type { ToolRequestUserInputSource } from "./ToolRequestUserInputSource";
 export type { ToolsV2 } from "./ToolsV2";
 export type { Turn } from "./Turn";
 export type { TurnCompletedNotification } from "./TurnCompletedNotification";
