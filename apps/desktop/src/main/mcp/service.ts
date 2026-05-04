@@ -30,8 +30,6 @@ import type {
 } from "../../shared/mcp";
 import type {
   McpIpcBridge,
-  McpToolCallRequest,
-  McpToolCallResult,
   PersistedMcpEnvironmentEntry,
   PersistedMcpScopeDocument,
   PersistedMcpSecretStore,
@@ -311,8 +309,6 @@ const isInstallKind = (value: unknown): value is McpInstallKind =>
 const nowIso = (): string => new Date().toISOString();
 
 const createId = (prefix: string): string => `${prefix}-${randomUUID()}`;
-
-const MCP_DEFAULT_TOOL_TIMEOUT_MS = 60_000;
 
 function createReadOnlyTool(
   name: string,
@@ -847,9 +843,6 @@ export const createMcpIpcBridge = (
       result.validation.ok ? undefined : result.validation.summary
     );
     const decorated = decorateServer(server);
-    if (result.validation.ok) {
-      await syncMcpToolsToAgent(server);
-    }
     return decorated;
   };
 
@@ -862,7 +855,6 @@ export const createMcpIpcBridge = (
       transport: server.transport,
       reason
     });
-    await removeMcpToolsFromAgent(server.id);
     return status;
   };
 
@@ -888,9 +880,6 @@ export const createMcpIpcBridge = (
       result.validation.ok ? undefined : result.validation.summary
     );
     const decorated = decorateServer(server);
-    if (result.validation.ok) {
-      await syncMcpToolsToAgent(server);
-    }
     return decorated;
   };
 
@@ -906,52 +895,6 @@ export const createMcpIpcBridge = (
     );
 
     return snapshot ?? buildCatalogIntrospection(server.id, server.templateId);
-  };
-
-  // --- MCP ↔ Agent tool bridge ---
-
-  const syncMcpToolsToAgent = async (server: PersistedMcpServerConfig): Promise<void> => {
-    void server;
-  };
-
-  const removeMcpToolsFromAgent = async (serverId: string): Promise<void> => {
-    void serverId;
-  };
-
-  const callToolPort = async (
-    request: McpToolCallRequest
-  ): Promise<McpToolCallResult> => {
-    const { server } = await resolvePersistedServer(request);
-    if (server.transport !== "stdio") {
-      throw new Error(
-        `MCP tool execution is currently supported only for stdio servers. ${server.id} uses ${server.transport}.`
-      );
-    }
-    const toolName = trimOrUndefined(request.toolName);
-    if (toolName === undefined) {
-      throw new Error("toolName is required");
-    }
-    const snapshot = await readRuntimeIntrospectionPort(server);
-    if (snapshot.tools.some((tool) => tool.name === toolName) === false) {
-      throw new Error(`tool not found in MCP snapshot: ${toolName}`);
-    }
-    const toolArguments =
-      request.arguments !== undefined
-      && request.arguments !== null
-      && Array.isArray(request.arguments) === false
-      ? request.arguments
-      : {};
-    const timeoutMs =
-      typeof request.timeoutMs === "number" && Number.isFinite(request.timeoutMs)
-        ? Math.max(1_000, Math.round(request.timeoutMs))
-        : MCP_DEFAULT_TOOL_TIMEOUT_MS;
-    return await requestRuntime<McpToolCallResult>("mcp.call_tool", {
-      server,
-      toolName,
-      arguments: toolArguments,
-      timeoutMs,
-      ...(request.aiSessionId === undefined ? {} : { aiSessionId: request.aiSessionId })
-    });
   };
 
   const handlers: Array<readonly [string, (event: IpcMainInvokeEvent, payload?: unknown) => Promise<unknown>]> = [
@@ -1209,7 +1152,6 @@ export const createMcpIpcBridge = (
       const { server } = await resolvePersistedServer(request);
       return await readRuntimeIntrospectionPort(server);
     },
-    callTool: async (request: McpToolCallRequest) => await callToolPort(request),
     dispose: async () => {
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);

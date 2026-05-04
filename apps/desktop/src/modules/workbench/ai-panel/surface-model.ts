@@ -1,9 +1,7 @@
 import type { AiModelRuntimeMetadata, AiProviderProfile } from "../../../shared/ai";
-import type { LyraClientRequestPayload } from "../../../shared/desktop-bridge";
 import type { createTranslator } from "../i18n";
 import type { AiPanelEmptyGreetingTextLabels } from "./empty-greeting";
-import type { AgentComposerModelOption, AgentPermissionMode } from "./agent-composer";
-import type { ToolNameLabelMap } from "./runtime/feed-utils";
+import type { AgentComposerModelOption } from "./agent-composer";
 import type { RuntimeThreadOptions } from "./use-lyra-thread-runtime";
 
 export type RuntimeModelOption = AgentComposerModelOption & {
@@ -15,44 +13,12 @@ export type RuntimeModelOption = AgentComposerModelOption & {
 
 type Translator = ReturnType<typeof createTranslator>;
 
-type JsonRecord = Record<string, unknown>;
-
 export const MODEL_OPTION_DELIMITER = "\u001F";
-export const EMPTY_THREAD_STYLE = {};
-
-export const createRequestPayload = (
-  method: string,
-  params: JsonRecord = {}
-): LyraClientRequestPayload => ({ method, params });
 
 export const uniqueModelIds = (entries: readonly string[]): readonly string[] =>
   entries
     .map((entry) => entry.trim())
     .filter((entry, index, values) => entry.length > 0 && values.indexOf(entry) === index);
-
-export const permissionRuntimeOptions = (
-  mode: AgentPermissionMode
-): Pick<RuntimeThreadOptions, "approvalPolicy" | "approvalsReviewer" | "sandboxMode"> => {
-  if (mode === "auto_review") {
-    return {
-      approvalPolicy: "on-request",
-      approvalsReviewer: "auto_review",
-      sandboxMode: "workspace-write"
-    };
-  }
-  if (mode === "full_access") {
-    return {
-      approvalPolicy: "never",
-      approvalsReviewer: "user",
-      sandboxMode: "danger-full-access"
-    };
-  }
-  return {
-    approvalPolicy: "on-request",
-    approvalsReviewer: "user",
-    sandboxMode: "workspace-write"
-  };
-};
 
 export const createRuntimeModelOptions = ({
   configuredProfiles,
@@ -164,7 +130,6 @@ export const createRuntimeTurnOptions = ({
   selectedModelOption,
   defaultProviderId,
   boundProjectRoot,
-  permissionMode,
   collaborationMode,
   effort,
   verbosity
@@ -172,7 +137,6 @@ export const createRuntimeTurnOptions = ({
   readonly selectedModelOption: RuntimeModelOption | null;
   readonly defaultProviderId?: string | null | undefined;
   readonly boundProjectRoot: string | null;
-  readonly permissionMode: AgentPermissionMode;
   readonly collaborationMode?: "default" | "plan" | undefined;
   readonly effort?: RuntimeThreadOptions["effort"] | null | undefined;
   readonly verbosity?: RuntimeThreadOptions["verbosity"] | null | undefined;
@@ -182,7 +146,6 @@ export const createRuntimeTurnOptions = ({
   cwd: boundProjectRoot,
   ...(effort === null || effort === undefined ? {} : { effort }),
   ...(verbosity === null || verbosity === undefined ? {} : { verbosity }),
-  ...permissionRuntimeOptions(permissionMode),
   ...(collaborationMode === undefined
     ? {}
     : { collaborationMode })
@@ -217,86 +180,15 @@ export const resolveBoundProjectRoot = ({
   return null;
 };
 
-const withoutTrailingSeparators = (value: string): string =>
-  value.replace(/[\\/]+$/u, "");
-
-const parentPathOf = (value: string): string | null => {
-  const trimmed = withoutTrailingSeparators(value.trim());
-  if (trimmed.length === 0 || trimmed === "/" || /^[A-Za-z]:$/u.test(trimmed)) {
-    return null;
-  }
-  const match = /[\\/][^\\/]*$/u.exec(trimmed);
-  if (match === null || match.index === 0) {
-    return trimmed.startsWith("/") ? "/" : null;
-  }
-  const parent = trimmed.slice(0, match.index);
-  return /^[A-Za-z]:$/u.test(parent) ? `${parent}\\` : parent;
-};
-
-export const gitMetadataProbePaths = (projectRoot: string): readonly string[] => {
-  const trimmed = withoutTrailingSeparators(projectRoot.trim());
-  if (trimmed.length === 0) {
-    return [];
-  }
-  const paths: string[] = [];
-  const seen = new Set<string>();
-  let current: string | null = trimmed;
-  while (current !== null && !seen.has(current)) {
-    seen.add(current);
-    const separator = current.endsWith("/") || current.endsWith("\\") ? "" : "/";
-    paths.push(`${current}${separator}.git`);
-    current = parentPathOf(current);
-  }
-  return paths;
-};
-
-export const canOpenReviewChanges = ({
-  activeThreadId,
-  boundProjectRoot,
-  gitMetadataAvailable,
-  isAgentAvailable,
-  isBusy,
-  isReviewStarting
-}: {
-  readonly activeThreadId: string | null;
-  readonly boundProjectRoot: string | null;
-  readonly gitMetadataAvailable: boolean;
-  readonly isAgentAvailable: boolean;
-  readonly isBusy: boolean;
-  readonly isReviewStarting: boolean;
-}): boolean =>
-  activeThreadId !== null
-  && boundProjectRoot !== null
-  && boundProjectRoot.trim().length > 0
-  && gitMetadataAvailable
-  && isAgentAvailable
-  && !isBusy
-  && !isReviewStarting;
-
 export type AiPanelSurfaceTextLabels = {
   readonly closeThread: string;
   readonly emptyGreeting: AiPanelEmptyGreetingTextLabels;
-  readonly permissions: string;
-  readonly advancedTools: string;
-  readonly reviewChanges: string;
   readonly moreActions: string;
   readonly model: string;
   readonly planMode: string;
   readonly planModeArmed: string;
   readonly followMode: string;
   readonly steerTurn: string;
-  readonly pendingInteractions: string;
-  readonly navPrevious: string;
-  readonly navNext: string;
-  readonly copyMessage: string;
-  readonly copiedMessage: string;
-  readonly forkResponse: string;
-  readonly regenerateResponse: string;
-  readonly editMessage: string;
-  readonly showFullOutput: string;
-  readonly expandToolOutput: string;
-  readonly collapseToolOutput: string;
-  readonly fileChanges: string;
 };
 
 export const createSurfaceTextLabels = (t: Translator): AiPanelSurfaceTextLabels => ({
@@ -314,93 +206,13 @@ export const createSurfaceTextLabels = (t: Translator): AiPanelSurfaceTextLabels
     tab: t("ai.emptyGreetingTab"),
     general: t("ai.emptyGreetingGeneral")
   },
-  permissions: t("ai.permissionsLabel"),
-  advancedTools: t("ai.advancedTools"),
-  reviewChanges: t("ai.reviewChanges"),
   moreActions: t("ai.moreActions"),
   model: t("ai.modelLabel"),
   planMode: t("ai.planMode"),
   planModeArmed: t("ai.planModeArmed"),
   followMode: t("ai.followMode"),
-  steerTurn: t("ai.steerTurn"),
-  pendingInteractions: t("ai.pendingInteractions"),
-  navPrevious: t("ai.navPrevious"),
-  navNext: t("ai.navNext"),
-  copyMessage: t("ai.actionCopy"),
-  copiedMessage: t("dialog.copiedAction"),
-  forkResponse: t("ai.forkFromResponse"),
-  regenerateResponse: t("ai.regenerateResponse"),
-  editMessage: t("ai.editMessage"),
-  showFullOutput: t("ai.showFullOutput"),
-  expandToolOutput: t("ai.expandToolOutput"),
-  collapseToolOutput: t("ai.collapseToolOutput"),
-  fileChanges: t("ai.fileChanges")
+  steerTurn: t("ai.steerTurn")
 });
-
-export const createInteractionTextLabels = (
-  t: Translator
-) => ({
-  toolTerminalSession: t("ai.toolNameTerminalSession"),
-  toolTerminalInput: t("ai.toolNameTerminalInput"),
-  toolTerminalExec: t("ai.toolNameTerminalExec"),
-  commandNeedsApproval: t("ai.commandNeedsApproval"),
-  proposedPlanSummaryFallback: t("ai.proposedPlanSummaryFallback")
-});
-
-export const createToolNameLabels = ({
-  t,
-  toolNameSearchLabel,
-  toolNameReadRangeLabel,
-  toolNameListLabel,
-  toolNameGlobLabel,
-  toolNameWriteLabel,
-  toolNameEditLabel,
-  toolNameMultiEditLabel
-}: {
-  readonly t: Translator;
-  readonly toolNameSearchLabel: string;
-  readonly toolNameReadRangeLabel: string;
-  readonly toolNameListLabel: string;
-  readonly toolNameGlobLabel: string;
-  readonly toolNameWriteLabel: string;
-  readonly toolNameEditLabel: string;
-  readonly toolNameMultiEditLabel: string;
-}): ToolNameLabelMap => ({
-  search: toolNameSearchLabel,
-  readRange: toolNameReadRangeLabel,
-  list: toolNameListLabel,
-  glob: toolNameGlobLabel,
-  write: toolNameWriteLabel,
-  edit: toolNameEditLabel,
-  multiEdit: toolNameMultiEditLabel,
-  terminalSession: t("ai.toolNameTerminalSession"),
-  terminalRead: t("ai.toolNameTerminalRead"),
-  terminalInput: t("ai.toolNameTerminalInput"),
-  terminalClose: t("ai.toolNameTerminalClose"),
-  terminalExec: t("ai.toolNameTerminalExec"),
-  collabSpawnAgent: t("ai.toolNameCollabSpawnAgent"),
-  collabSendInput: t("ai.toolNameCollabSendInput"),
-  collabResumeAgent: t("ai.toolNameCollabResumeAgent"),
-  collabWait: t("ai.toolNameCollabWait"),
-  collabCloseAgent: t("ai.toolNameCollabCloseAgent"),
-  collabAgent: t("ai.toolNameCollabAgent")
-});
-
-export const shouldShowEmptySessionScene = ({
-  messageCount,
-  optimisticMessageCount,
-  streamingAssistantText,
-  isStreamActive
-}: {
-  readonly messageCount: number;
-  readonly optimisticMessageCount: number;
-  readonly streamingAssistantText: string;
-  readonly isStreamActive: boolean;
-}): boolean =>
-  messageCount === 0 &&
-  optimisticMessageCount === 0 &&
-  streamingAssistantText.length === 0 &&
-  !isStreamActive;
 
 export const isAiRuntimeBusy = ({
   isSending,

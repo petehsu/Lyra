@@ -2,7 +2,6 @@ import { ipcMain, type BrowserWindow } from "electron";
 
 import {
   LYRA_CHANNELS,
-  type WorkbenchBrowserAgentTargetInfo,
   type WorkbenchBrowserEvent,
   type WorkbenchBrowserLayoutSnapshot,
   type WorkbenchBrowserNavigateRequest,
@@ -66,13 +65,6 @@ export type WorkbenchBrowserIpcBridge = {
   ) => Promise<void>;
   readonly applyWebTheme: (
     snapshot: WorkbenchBrowserWebThemeSnapshot
-  ) => Promise<void>;
-  readonly showAgentElementPickerTarget: (
-    target: WorkbenchBrowserAgentTargetInfo
-  ) => Promise<boolean>;
-  readonly clearAgentElementPickerTarget: (
-    tabId: string,
-    options?: { readonly preserveManualMode?: boolean }
   ) => Promise<void>;
   readonly readActiveTabId: () => string | null;
   readonly listFrames: (tabId: string) => readonly WorkbenchBrowserFrameDescriptor[];
@@ -206,8 +198,6 @@ export const createWorkbenchBrowserIpcBridge = ({
     readPageState: manager.readPageState,
     setElementPickerMode: manager.setElementPickerMode,
     applyWebTheme: manager.applyWebTheme,
-    showAgentElementPickerTarget: manager.showAgentElementPickerTarget,
-    clearAgentElementPickerTarget: manager.clearAgentElementPickerTarget,
     readActiveTabId: manager.readActiveTabId,
     listFrames: manager.listFrames,
     probeFrameDom: manager.probeFrameDom,

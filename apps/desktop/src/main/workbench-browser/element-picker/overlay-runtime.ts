@@ -1,14 +1,9 @@
-import type {
-  WorkbenchBrowserAgentTargetInfo,
-  WorkbenchBrowserElementPickerAppearance
-} from "../../../shared/desktop-bridge";
+import type { WorkbenchBrowserElementPickerAppearance } from "../../../shared/desktop-bridge";
 import type { WorkbenchBrowserElementPickerMode } from "../../../shared/workbench-browser";
 import type { WorkbenchBrowserFrameDescriptor } from "../types";
 import {
-  buildElementPickerClearAgentTargetScript,
   buildElementPickerDisableScript,
   buildElementPickerPrimeScript,
-  buildElementPickerSetAgentTargetScript,
   buildElementPickerSetManualModeScript,
 } from "./overlay-script";
 import type {
@@ -122,38 +117,6 @@ export const createWorkbenchElementPickerOverlayRuntime = ({
       scriptBuilder: () => buildElementPickerSetManualModeScript(true, mode)
     });
     return primed;
-  },
-  setAgentTarget: async (
-    target: WorkbenchBrowserAgentTargetInfo,
-    appearance: WorkbenchBrowserElementPickerAppearance
-  ) => {
-    const primed = await runScriptAcrossFrames({
-      host,
-      tabId,
-      scriptBuilder: (frameTreeNodeId) => buildElementPickerPrimeScript(frameTreeNodeId, appearance)
-    });
-    if (primed.mainFrameSucceeded === false) {
-      return primed;
-    }
-    await runScriptAcrossFrames({
-      host,
-      tabId,
-      scriptBuilder: () => buildElementPickerClearAgentTargetScript()
-    });
-    await runScriptAcrossFrames({
-      host,
-      tabId,
-      onlyFrameTreeNodeId: target.frameTreeNodeId,
-      scriptBuilder: () => buildElementPickerSetAgentTargetScript(target)
-    });
-    return primed;
-  },
-  clearAgentTarget: async () => {
-    await runScriptAcrossFrames({
-      host,
-      tabId,
-      scriptBuilder: () => buildElementPickerClearAgentTargetScript()
-    });
   },
   disable: async () => {
     await runScriptAcrossFrames({

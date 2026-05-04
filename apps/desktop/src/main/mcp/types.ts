@@ -80,23 +80,6 @@ export type RuntimeSnapshot = {
   readonly introspection?: McpIntrospectionSnapshot;
 };
 
-export type McpToolCallRequest = McpServerRequest & {
-  readonly toolName: string;
-  readonly arguments?: Readonly<Record<string, unknown>>;
-  readonly timeoutMs?: number;
-  readonly aiSessionId?: string;
-};
-
-export type McpToolCallResult = {
-  readonly serverId: McpServerId;
-  readonly toolName: string;
-  readonly transport: McpTransport;
-  readonly content: readonly unknown[];
-  readonly structuredContent?: unknown;
-  readonly isError: boolean;
-  readonly raw: Readonly<Record<string, unknown>>;
-};
-
 export type McpIpcBridge = {
   readonly dispose: () => Promise<void>;
   readonly readCatalog: () => readonly McpCatalogItem[];
@@ -106,7 +89,6 @@ export type McpIpcBridge = {
   readonly readServerIntrospection: (
     request: McpServerRequest
   ) => Promise<McpIntrospectionSnapshot>;
-  readonly callTool: (request: McpToolCallRequest) => Promise<McpToolCallResult>;
   readonly readServers: (
     scope: McpScope,
     projectRoot?: string

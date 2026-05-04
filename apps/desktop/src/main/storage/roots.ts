@@ -5,7 +5,7 @@ import path from "node:path";
 
 export type LyraModuleStorageRoots = {
   readonly fileManager: string;
-  readonly ai: string;
+  readonly runtime: string;
   readonly mcp: string;
   readonly skills: string;
   readonly linuxCompat: string;
@@ -13,8 +13,6 @@ export type LyraModuleStorageRoots = {
   readonly workbenchState: string;
   readonly uiuxPacks: string;
   readonly search: string;
-  readonly calculator: string;
-  readonly browserUse: string;
   readonly imageViewer: string;
   readonly downloadManager: string;
 };
@@ -40,7 +38,7 @@ export const resolveLyraStorageRoots = (): LyraStorageRoots => {
     electronDesktopRoot,
     modules: {
       fileManager: path.join(modulesRoot, "file-manager"),
-      ai: path.join(modulesRoot, "ai"),
+      runtime: path.join(modulesRoot, "runtime"),
       mcp: path.join(modulesRoot, "mcp"),
       skills: path.join(modulesRoot, "skills"),
       linuxCompat: path.join(modulesRoot, "linux-compat"),
@@ -48,8 +46,6 @@ export const resolveLyraStorageRoots = (): LyraStorageRoots => {
       workbenchState: path.join(modulesRoot, "workbench-state"),
       uiuxPacks: path.join(modulesRoot, "uiux-packs"),
       search: path.join(modulesRoot, "search"),
-      calculator: path.join(modulesRoot, "calculator"),
-      browserUse: path.join(modulesRoot, "browser-use"),
       imageViewer: path.join(modulesRoot, "image-viewer"),
       downloadManager: path.join(modulesRoot, "download-manager")
     }

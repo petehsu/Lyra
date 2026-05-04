@@ -2,22 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import {
   LYRA_CHANNELS,
-  type BrowserUseRuntimeStatus,
-  type LyraClientNotificationPayload,
-  type LyraClientRequestPayload,
-  type LyraRejectServerRequestPayload,
-  type LyraResolveServerRequestPayload,
-  type LyraRuntimeEvent,
-  type LyraRuntimeHealth,
   type AppMetaPayload,
-  type CapabilityCallResult,
-  type CapabilityDescriptor,
-  type CapabilityApprovalResolveRequest,
-  type CapabilityInvokeRequest,
-  type CapabilityListRequest,
-  type CapabilityReadRegistryResponse,
-  type CapabilityResolveApprovalResponse,
-  type CapabilityRuntimeEvent,
   type CreateLyraSkillRequest,
   type DeleteSkillRequest,
   type DownloadManagerBatchRequest,
@@ -222,8 +207,6 @@ const terminalErrorListeners = new Set<(event: TerminalErrorEvent) => void>();
 let terminalEventBridgeReady = false;
 const workbenchBrowserEventListeners = new Set<(event: WorkbenchBrowserEvent) => void>();
 let workbenchBrowserEventBridgeReady = false;
-const browserUseRuntimeStatusListeners = new Set<(status: BrowserUseRuntimeStatus) => void>();
-let browserUseRuntimeStatusBridgeReady = false;
 const systemNotificationActivationListeners = new Set<(
   event: SystemNotificationActivation
 ) => void>();
@@ -232,8 +215,6 @@ const resourceEventListeners = new Set<(event: LyraResourceEvent) => void>();
 let resourceEventBridgeReady = false;
 const imageViewerEventListeners = new Set<(event: ImageViewerEvent) => void>();
 let imageViewerEventBridgeReady = false;
-const lyraEventListeners = new Set<(event: LyraRuntimeEvent) => void>();
-let lyraEventBridgeReady = false;
 const directoryPatchListeners = new Set<(patch: FileManagerDirectoryPatch) => void>();
 let directoryPatchBridgeReady = false;
 const downloadEventListeners = new Set<(event: DownloadManagerEvent) => void>();
@@ -244,8 +225,6 @@ const skillsEventListeners = new Set<(event: SkillRuntimeEvent) => void>();
 let skillsEventBridgeReady = false;
 const lspEventListeners = new Set<(event: LspRuntimeEvent) => void>();
 let lspEventBridgeReady = false;
-const capabilityEventListeners = new Set<(event: CapabilityRuntimeEvent) => void>();
-let capabilityEventBridgeReady = false;
 let workbenchObservationHandler:
   | ((
       request: WorkbenchObservationQueryRequest
@@ -308,30 +287,6 @@ const ensureWorkbenchBrowserEventBridge = (): void => {
   );
 };
 
-const ensureBrowserUseRuntimeStatusBridge = (): void => {
-  if (browserUseRuntimeStatusBridgeReady) {
-    return;
-  }
-  browserUseRuntimeStatusBridgeReady = true;
-
-  ipcRenderer.on(
-    LYRA_CHANNELS.browserUseRuntimeStatusEvent,
-    (_event: Electron.IpcRendererEvent, payload: BrowserUseRuntimeStatus): void => {
-      if (
-        payload === null
-        || typeof payload !== "object"
-        || typeof payload.state !== "string"
-        || typeof payload.checkedAt !== "number"
-      ) {
-        return;
-      }
-      for (const listener of browserUseRuntimeStatusListeners) {
-        listener(payload);
-      }
-    }
-  );
-};
-
 const ensureResourceEventBridge = (): void => {
   if (resourceEventBridgeReady) {
     return;
@@ -385,25 +340,6 @@ const ensureImageViewerEventBridge = (): void => {
     LYRA_CHANNELS.imageViewerEvent,
     (_event: Electron.IpcRendererEvent, payload: ImageViewerEvent): void => {
       for (const listener of imageViewerEventListeners) {
-        listener(payload);
-      }
-    }
-  );
-};
-
-const ensureLyraEventBridge = (): void => {
-  if (lyraEventBridgeReady) {
-    return;
-  }
-  lyraEventBridgeReady = true;
-
-  ipcRenderer.on(
-    LYRA_CHANNELS.lyraEvent,
-    (_event: Electron.IpcRendererEvent, payload: LyraRuntimeEvent): void => {
-      if (payload === null || typeof payload !== "object" || typeof payload.kind !== "string") {
-        return;
-      }
-      for (const listener of lyraEventListeners) {
         listener(payload);
       }
     }
@@ -504,30 +440,6 @@ const ensureSkillsEventBridge = (): void => {
         return;
       }
       for (const listener of skillsEventListeners) {
-        listener(payload);
-      }
-    }
-  );
-};
-
-const ensureCapabilityEventBridge = (): void => {
-  if (capabilityEventBridgeReady) {
-    return;
-  }
-  capabilityEventBridgeReady = true;
-
-  ipcRenderer.on(
-    LYRA_CHANNELS.capabilityEvent,
-    (_event: Electron.IpcRendererEvent, payload: CapabilityRuntimeEvent): void => {
-      if (
-        payload === null ||
-        typeof payload !== "object" ||
-        typeof payload.phase !== "string" ||
-        typeof payload.capabilityId !== "string"
-      ) {
-        return;
-      }
-      for (const listener of capabilityEventListeners) {
         listener(payload);
       }
     }
@@ -744,25 +656,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         request
       ) as Promise<SearchDeepExpandResponse>
   },
-  lyra: {
-    health: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.lyraRuntimeHealth) as Promise<LyraRuntimeHealth>,
-    request: <T = unknown>(payload: LyraClientRequestPayload) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.lyraRuntimeRequest, payload) as Promise<T>,
-    notify: (payload: LyraClientNotificationPayload) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.lyraRuntimeNotify, payload) as Promise<void>,
-    resolveServerRequest: (payload: LyraResolveServerRequestPayload) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.lyraRuntimeResolveServerRequest, payload) as Promise<void>,
-    rejectServerRequest: (payload: LyraRejectServerRequestPayload) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.lyraRuntimeRejectServerRequest, payload) as Promise<void>,
-    onEvent: (listener: (event: LyraRuntimeEvent) => void) => {
-      ensureLyraEventBridge();
-      lyraEventListeners.add(listener);
-      return () => {
-        lyraEventListeners.delete(listener);
-      };
-    },
-  },
   files: {
     readHome: () => ipcRenderer.invoke(LYRA_CHANNELS.filesReadHome) as Promise<FileManagerReadHomeResponse>,
     readDirectory: (request: FileManagerReadDirectoryRequest) =>
@@ -951,19 +844,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       };
     }
   },
-  browserUse: {
-    readRuntimeStatus: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.browserUseReadRuntimeStatus
-      ) as Promise<BrowserUseRuntimeStatus>,
-    onRuntimeStatus: (listener: (status: BrowserUseRuntimeStatus) => void) => {
-      ensureBrowserUseRuntimeStatusBridge();
-      browserUseRuntimeStatusListeners.add(listener);
-      return () => {
-        browserUseRuntimeStatusListeners.delete(listener);
-      };
-    }
-  },
   mcp: {
     readCatalog: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.mcpReadCatalog) as Promise<readonly McpCatalogItem[]>,
@@ -1096,34 +976,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       terminalErrorListeners.add(listener);
       return () => {
         terminalErrorListeners.delete(listener);
-      };
-    }
-  },
-  capabilities: {
-    readRegistry: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.capabilityReadRegistry
-      ) as Promise<CapabilityReadRegistryResponse>,
-    listCapabilities: (request?: CapabilityListRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.capabilityList,
-        request ?? {}
-      ) as Promise<readonly CapabilityDescriptor[]>,
-    invokeCapability: (request: CapabilityInvokeRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.capabilityInvoke,
-        request
-      ) as Promise<CapabilityCallResult>,
-    resolveApproval: (request: CapabilityApprovalResolveRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.capabilityResolveApproval,
-        request
-      ) as Promise<CapabilityResolveApprovalResponse>,
-    onEvent: (listener: (event: CapabilityRuntimeEvent) => void) => {
-      ensureCapabilityEventBridge();
-      capabilityEventListeners.add(listener);
-      return () => {
-        capabilityEventListeners.delete(listener);
       };
     }
   },

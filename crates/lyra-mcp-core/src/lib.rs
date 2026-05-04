@@ -389,30 +389,6 @@ struct MaterializeRuntimeEnvironmentRequest {
     base_env: HashMap<String, String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CallMcpToolRequest {
-    server: PersistedMcpServerConfig,
-    tool_name: String,
-    #[serde(default)]
-    arguments: Option<serde_json::Map<String, serde_json::Value>>,
-    timeout_ms: Option<u64>,
-    ai_session_id: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CallMcpToolResult {
-    server_id: String,
-    tool_name: String,
-    transport: String,
-    content: Vec<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    structured_content: Option<serde_json::Value>,
-    is_error: bool,
-    raw: serde_json::Value,
-}
-
 #[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1855,88 +1831,6 @@ fn probe_stdio_runtime_introspection(
     )
 }
 
-fn call_mcp_tool_blocking(request: CallMcpToolRequest) -> Result<CallMcpToolResult> {
-    let CallMcpToolRequest {
-        server,
-        tool_name,
-        arguments,
-        timeout_ms,
-        ai_session_id,
-    } = request;
-
-    if server.transport != "stdio" {
-        return Err(to_error(format!(
-            "MCP tool execution is currently supported only for stdio servers. {} uses {}.",
-            server.id, server.transport
-        )));
-    }
-
-    let tool_name = trim_or_none(&tool_name).ok_or_else(|| to_error("toolName is required"))?;
-    let environment = materialize_runtime_environment(MaterializeRuntimeEnvironmentRequest {
-        entries: server.environment.clone(),
-        base_env: std::env::vars().collect(),
-    })?;
-    let server_id = server.id.clone();
-    let timeout = Duration::from_millis(timeout_ms.unwrap_or(60_000));
-    let arguments = arguments.unwrap_or_default();
-
-    with_stdio_mcp_session(
-        &server,
-        environment,
-        timeout,
-        "MCP tool call",
-        |stdin, stdout| {
-            write_mcp_message(
-                stdin,
-                &json!({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "tools/call",
-                    "params": {
-                        "name": tool_name,
-                        "arguments": arguments,
-                        "_meta": {
-                            "progressToken": 0,
-                            "agent-session-id": ai_session_id
-                        }
-                    }
-                }),
-            )?;
-
-            let response = read_mcp_response(stdout, 1)?;
-            if response.get("error").is_some() {
-                return Err(to_error(format!(
-                    "MCP tools/call failed: {}",
-                    read_mcp_error_message(&response)
-                )));
-            }
-            let raw = response
-                .get("result")
-                .cloned()
-                .ok_or_else(|| to_error("MCP tools/call response missing result"))?;
-            let raw_object = raw
-                .as_object()
-                .ok_or_else(|| to_error("MCP tools/call result must be an object"))?;
-            Ok(CallMcpToolResult {
-                server_id,
-                tool_name,
-                transport: "stdio".to_string(),
-                content: raw_object
-                    .get("content")
-                    .and_then(|value| value.as_array())
-                    .cloned()
-                    .unwrap_or_default(),
-                structured_content: raw_object.get("structuredContent").cloned(),
-                is_error: raw_object
-                    .get("isError")
-                    .and_then(|value| value.as_bool())
-                    .unwrap_or(false),
-                raw,
-            })
-        },
-    )
-}
-
 fn build_posix_launch_script(server: &PersistedMcpServerConfig) -> Option<String> {
     if server.transport != "stdio" {
         return None;
@@ -2615,13 +2509,6 @@ pub fn materialize_mcp_runtime_environment_json(request_json: String) -> Result<
     let request: MaterializeRuntimeEnvironmentRequest = parse_json(&request_json)?;
     let environment = materialize_runtime_environment(request)?;
     to_json(&environment)
-}
-
-#[cfg_attr(feature = "node-api", napi(js_name = "callMcpToolJson"))]
-pub fn call_mcp_tool_json(request_json: String) -> Result<String> {
-    let request: CallMcpToolRequest = parse_json(&request_json)?;
-    let result = call_mcp_tool_blocking(request)?;
-    to_json(&result)
 }
 
 #[cfg_attr(

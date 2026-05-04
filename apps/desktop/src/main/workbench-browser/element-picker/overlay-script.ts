@@ -1,15 +1,10 @@
-import type {
-  WorkbenchBrowserAgentTargetInfo,
-  WorkbenchBrowserElementPickerAppearance
-} from "../../../shared/desktop-bridge";
+import type { WorkbenchBrowserElementPickerAppearance } from "../../../shared/desktop-bridge";
 import { WORKBENCH_ELEMENT_PICKER_CONSOLE_PREFIX } from "./types";
 
 const OVERLAY_ROOT_ID = "__lyra_element_picker_root";
 const SESSION_KEY = "__lyraElementPickerSession";
 
 const quote = (value: string): string => JSON.stringify(value);
-
-const serializeAgentTarget = (target: WorkbenchBrowserAgentTargetInfo): string => JSON.stringify(target);
 
 export const buildElementPickerPrimeScript = (
   frameTreeNodeId: number,
@@ -377,7 +372,6 @@ export const buildElementPickerPrimeScript = (
       manualMode: 'inspect',
       currentElement: null,
       currentSnapshot: null,
-      agentTarget: null,
       lastHoverKey: '',
       rafId: 0,
       pointerMove: null,
@@ -389,8 +383,6 @@ export const buildElementPickerPrimeScript = (
       renderSnapshot: null,
       renderActive: null,
       setManualMode: null,
-      setAgentTarget: null,
-      clearAgentTarget: null,
       dispose: null,
       teardown: null,
     };
@@ -401,27 +393,6 @@ export const buildElementPickerPrimeScript = (
       session.containerFrame.style.display = 'none';
       session.frame.style.display = 'none';
       session.bubble.style.display = 'none';
-    };
-
-    const renderIntervention = (snapshot) => {
-      const isActiveIntervention = snapshot
-        && typeof snapshot === 'object'
-        && snapshot.owner
-        && snapshot.owner !== 'agent_scan';
-      if (!isActiveIntervention) {
-        session.interventionGlow.style.display = 'none';
-        session.interventionPill.style.display = 'none';
-        session.interventionCopy.textContent = '';
-        return;
-      }
-      const phase = normalizeText(String(snapshot.phase || ''), 40);
-      const phaseLabel = phase.length > 0 ? ' · ' + phase : '';
-      const copy = snapshot.owner === 'agent_wait'
-        ? 'Lyra is monitoring this page' + phaseLabel
-        : 'Lyra is interacting with this page · avoid typing';
-      session.interventionGlow.style.display = 'block';
-      session.interventionPill.style.display = 'inline-flex';
-      session.interventionCopy.textContent = copy;
     };
 
     const placeBubble = (rect) => {
@@ -443,7 +414,9 @@ export const buildElementPickerPrimeScript = (
         session.hideOverlay();
         return;
       }
-      renderIntervention(snapshot);
+      session.interventionGlow.style.display = 'none';
+      session.interventionPill.style.display = 'none';
+      session.interventionCopy.textContent = '';
       const bounds = snapshot.bounds;
       if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
         session.hideOverlay();
@@ -524,10 +497,6 @@ export const buildElementPickerPrimeScript = (
     };
 
     session.renderActive = () => {
-      if (session.agentTarget && typeof session.agentTarget === 'object') {
-        session.renderSnapshot(session.agentTarget, String(session.agentTarget.phase || '').trim());
-        return;
-      }
       if (session.manualEnabled !== true) {
         session.hideOverlay();
         return;
@@ -701,10 +670,6 @@ export const buildElementPickerPrimeScript = (
     };
 
     session.refresh = () => {
-      if (session.agentTarget !== null) {
-        session.renderActive();
-        return;
-      }
       if (!(session.currentElement instanceof Element)) {
         session.currentSnapshot = null;
         session.renderActive();
@@ -715,7 +680,7 @@ export const buildElementPickerPrimeScript = (
     };
 
     session.keydown = (event) => {
-      if (event.key !== 'Escape' || session.manualEnabled !== true || session.agentTarget !== null) {
+      if (event.key !== 'Escape' || session.manualEnabled !== true) {
         return;
       }
       event.stopPropagation();
@@ -739,16 +704,6 @@ export const buildElementPickerPrimeScript = (
       session.manualEnabled = enabled === true;
       session.manualMode = mode === 'layout' ? 'layout' : 'inspect';
       document.documentElement.style.cursor = session.manualEnabled ? 'crosshair' : session.previousCursor;
-      session.renderActive();
-    };
-
-    session.setAgentTarget = (target) => {
-      session.agentTarget = target && typeof target === 'object' ? target : null;
-      session.renderActive();
-    };
-
-    session.clearAgentTarget = () => {
-      session.agentTarget = null;
       session.renderActive();
     };
 
@@ -813,31 +768,6 @@ export const buildElementPickerSetManualModeScript = (
 })();
 `;
 
-export const buildElementPickerSetAgentTargetScript = (
-  target: WorkbenchBrowserAgentTargetInfo
-): string => `
-(() => {
-  const SESSION_KEY = ${quote(SESSION_KEY)};
-  const session = window[SESSION_KEY];
-  if (!session || typeof session.setAgentTarget !== 'function') {
-    return false;
-  }
-  session.setAgentTarget(${serializeAgentTarget(target)});
-  return true;
-})();
-`;
-
-export const buildElementPickerClearAgentTargetScript = (): string => `
-(() => {
-  const SESSION_KEY = ${quote(SESSION_KEY)};
-  const session = window[SESSION_KEY];
-  if (!session || typeof session.clearAgentTarget !== 'function') {
-    return false;
-  }
-  session.clearAgentTarget();
-  return true;
-})();
-`;
 
 export const buildElementPickerDisableScript = (): string => `
 (() => {

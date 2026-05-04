@@ -17,7 +17,6 @@ import {
   Plus,
   Search,
   Settings2,
-  ShieldCheck,
   Square,
   SquareTerminal,
   X
@@ -40,8 +39,7 @@ import type {
   AgentComposerModelControlOption,
   AgentComposerReasoningEffort,
   AgentComposerSubmitPayload,
-  AgentComposerVerbosity,
-  AgentPermissionMode
+  AgentComposerVerbosity
 } from "./agent-composer-types";
 import type {
   AgentComposerMentionPanelResult,
@@ -159,7 +157,6 @@ const renderMentionIcon = (result: AgentComposerMentionPanelResult) => {
 type AgentComposerViewProps = {
   readonly composerClassName: string;
   readonly composerMenuLabel: string;
-  readonly permissionModeLabel: string;
   readonly sendVisualState: AgentComposerSendVisualState;
   readonly modelState: AgentComposerModelState;
   readonly runtime: AgentComposerRuntime;
@@ -178,9 +175,6 @@ type AgentComposerViewProps = {
   readonly planModeEnabled?: boolean | undefined;
   readonly planModeLocked?: boolean | undefined;
   readonly onPlanModeToggle?: (() => void) | undefined;
-  readonly permissionMode?: AgentPermissionMode | undefined;
-  readonly permissionModeDisabled?: boolean | undefined;
-  readonly onPermissionModeSelect?: ((mode: AgentPermissionMode) => void) | undefined;
   readonly onModelSelect?: ((modelName: string) => void) | undefined;
   readonly reasoningEffortOptions: readonly AgentComposerModelControlOption<AgentComposerReasoningEffort>[];
   readonly selectedReasoningEffort: AgentComposerReasoningEffort | null;
@@ -201,7 +195,6 @@ type AgentComposerViewProps = {
 export const AgentComposerView = ({
   composerClassName,
   composerMenuLabel,
-  permissionModeLabel,
   sendVisualState,
   modelState,
   runtime,
@@ -220,9 +213,6 @@ export const AgentComposerView = ({
   planModeEnabled = false,
   planModeLocked = false,
   onPlanModeToggle,
-  permissionMode = "default",
-  permissionModeDisabled = false,
-  onPermissionModeSelect,
   onModelSelect,
   reasoningEffortOptions,
   selectedReasoningEffort,
@@ -239,10 +229,6 @@ export const AgentComposerView = ({
   onStop,
   stopDisabled = false
 }: AgentComposerViewProps) => {
-  const selectedPermissionOption =
-    modelState.permissionModeOptions.find((option) => option.value === permissionMode)
-    ?? modelState.permissionModeOptions[0]
-    ?? null;
   const menuLayer = runtime.toolsMenuOpen
     ? createPortal(
         <div
@@ -266,24 +252,26 @@ export const AgentComposerView = ({
               <FilePlus2 size={13} aria-hidden="true" />
               <span>{addFileLabel}</span>
             </button>
-            <button
-              type="button"
-              role="menuitemcheckbox"
-              aria-checked={planModeEnabled}
-              className={
-                planModeEnabled
-                  ? "lyra-ai-agent-composer-menu-item lyra-ai-agent-composer-menu-item-active"
-                  : "lyra-ai-agent-composer-menu-item"
-              }
-              disabled={onPlanModeToggle === undefined || planModeLocked}
-              onClick={() => {
-                onPlanModeToggle?.();
-              }}
-            >
-              <ClipboardList size={13} aria-hidden="true" />
-              <span>{modelState.resolvedPlanModeLabel}</span>
-              {planModeEnabled ? <Check size={13} aria-hidden="true" /> : null}
-            </button>
+            {onPlanModeToggle === undefined ? null : (
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={planModeEnabled}
+                className={
+                  planModeEnabled
+                    ? "lyra-ai-agent-composer-menu-item lyra-ai-agent-composer-menu-item-active"
+                    : "lyra-ai-agent-composer-menu-item"
+                }
+                disabled={planModeLocked}
+                onClick={() => {
+                  onPlanModeToggle();
+                }}
+              >
+                <ClipboardList size={13} aria-hidden="true" />
+                <span>{modelState.resolvedPlanModeLabel}</span>
+                {planModeEnabled ? <Check size={13} aria-hidden="true" /> : null}
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"
@@ -296,20 +284,6 @@ export const AgentComposerView = ({
               <Bot size={13} aria-hidden="true" />
               <span>{modelState.resolvedModelAriaLabel}</span>
               <small>{modelState.selectedModelLabel}</small>
-              <ChevronRight size={13} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              aria-haspopup="menu"
-              aria-expanded={runtime.permissionSubmenuOpen}
-              className="lyra-ai-agent-composer-menu-item lyra-ai-agent-composer-menu-item-nested"
-              disabled={permissionModeDisabled || onPermissionModeSelect === undefined}
-              onClick={runtime.togglePermissionSubmenu}
-            >
-              <ShieldCheck size={13} aria-hidden="true" />
-              <span>{permissionModeLabel}</span>
-              {selectedPermissionOption === null ? null : <small>{selectedPermissionOption.label}</small>}
               <ChevronRight size={13} aria-hidden="true" />
             </button>
           </div>
@@ -397,35 +371,6 @@ export const AgentComposerView = ({
                   ))}
                 </>
               ) : null}
-            </div>
-          ) : null}
-          {runtime.permissionSubmenuOpen ? (
-            <div
-              className="lyra-ai-agent-composer-submenu lyra-ai-agent-composer-permission-submenu"
-              role="menu"
-              style={runtime.submenuStyle}
-            >
-              {modelState.permissionModeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={permissionMode === option.value}
-                  className={
-                    permissionMode === option.value
-                      ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
-                      : "lyra-ai-agent-composer-submenu-item"
-                  }
-                  disabled={permissionModeDisabled || onPermissionModeSelect === undefined}
-                  onClick={() => {
-                    onPermissionModeSelect?.(option.value as AgentPermissionMode);
-                    runtime.closeMenus();
-                  }}
-                >
-                  <span>{option.label}</span>
-                  {permissionMode === option.value ? <Check size={13} aria-hidden="true" /> : null}
-                </button>
-              ))}
             </div>
           ) : null}
         </div>,
@@ -602,23 +547,24 @@ export const AgentComposerView = ({
             {modelState.resolvedSteerLabel}
           </button>
         ) : null}
-        <button
-          type="button"
-          className={
-            followEnabled
-              ? "lyra-ai-agent-follow-toggle lyra-ai-agent-follow-toggle-active"
-              : "lyra-ai-agent-follow-toggle"
-          }
-          aria-pressed={followEnabled}
-          aria-label={followLabel}
-          title={followLabel}
-          disabled={onFollowToggle === undefined}
-          onClick={() => {
-            onFollowToggle?.();
-          }}
-        >
-          <Crosshair size={14} aria-hidden="true" />
-        </button>
+        {onFollowToggle === undefined ? null : (
+          <button
+            type="button"
+            className={
+              followEnabled
+                ? "lyra-ai-agent-follow-toggle lyra-ai-agent-follow-toggle-active"
+                : "lyra-ai-agent-follow-toggle"
+            }
+            aria-pressed={followEnabled}
+            aria-label={followLabel}
+            title={followLabel}
+            onClick={() => {
+              onFollowToggle();
+            }}
+          >
+            <Crosshair size={14} aria-hidden="true" />
+          </button>
+        )}
         <button
           type="button"
           className={`lyra-ai-agent-send lyra-ai-agent-send-${sendVisualState}`}

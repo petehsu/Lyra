@@ -1,7 +1,4 @@
 import type {
-  BrowserUseRuntimeStatus,
-} from "./browser-use";
-import type {
   LyraResourceEvent,
   LyraResourceLifecycleRequest,
   LyraResourceRegisterRequest,
@@ -10,14 +7,6 @@ import type {
   LyraSystemActivityActionResult,
   LyraSystemSnapshot
 } from "./resource-runtime";
-import type {
-  LyraClientNotificationPayload,
-  LyraClientRequestPayload,
-  LyraRejectServerRequestPayload,
-  LyraResolveServerRequestPayload,
-  LyraRuntimeEvent,
-  LyraRuntimeHealth
-} from "./lyra-runtime";
 import type {
   FileManagerCreateFileRequest,
   FileManagerCreateFolderRequest,
@@ -101,19 +90,8 @@ import type {
   SkillRequest,
   UpdateSkillStateRequest
 } from "./skills";
-import type {
-  CapabilityApprovalResolveRequest,
-  CapabilityCallResult,
-  CapabilityDescriptor,
-  CapabilityInvokeRequest,
-  CapabilityListRequest,
-  CapabilityReadRegistryResponse,
-  CapabilityResolveApprovalResponse,
-  CapabilityRuntimeEvent
-} from "./capabilities";
 import type { TerminalThemePresetId } from "./terminal-theme";
 import type {
-  WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
   WorkbenchBrowserElementPickerMode,
@@ -172,11 +150,6 @@ export type {
   AiValidateProfileRequest
 } from "./ai";
 export type {
-  BrowserUseRuntimeHealthState,
-  BrowserUseRuntimeStatus,
-  BrowserUseRuntimeUnavailableReason,
-} from "./browser-use";
-export type {
   ImageViewerCloseSessionRequest,
   ImageViewerEvent,
   ImageViewerLevel,
@@ -204,46 +177,6 @@ export type {
   LyraSystemMetricSnapshot,
   LyraSystemSnapshot
 } from "./resource-runtime";
-export type {
-  LyraClientNotificationPayload,
-  LyraClientRequestPayload,
-  LyraRejectServerRequestPayload,
-  LyraResolveServerRequestPayload,
-  LyraRuntimeDisconnectedEvent,
-  LyraRuntimeErrorPayload,
-  LyraRuntimeEvent,
-  LyraRuntimeHealth,
-  LyraRuntimeLaggedEvent,
-  LyraRuntimeNotificationEvent,
-  LyraRuntimeReadyEvent,
-  LyraRuntimeRequestEvent,
-  LyraRuntimeRequestId,
-  LyraRuntimeStartupFailedEvent
-} from "./lyra-runtime";
-export type {
-  AgentCollaborationMode,
-  AgentQuestionItem,
-  AgentQuestionOption,
-  AgentQuestionRequest,
-  AgentPlanArtifact,
-  AgentPlanBlock,
-  AgentPendingInteraction,
-  AgentPendingInteractionKind,
-  AgentPendingInteractionStatus,
-  AgentToolOwner,
-  AgentMessage,
-  AgentMessageContentPart,
-  AgentRuntimeEvent,
-  AgentSession,
-  AgentSessionDetail,
-  PlanAnnotation,
-  PlanApprovalDecision,
-  PlanApprovalRequest,
-  PlanInteractionResponse,
-  AgentToolCall,
-  AgentTurn,
-  AgentUsage
-} from "./agent";
 export type {
   DownloadManagerBtTaskOptions,
   DownloadManagerChecksum,
@@ -293,28 +226,6 @@ export type {
   McpValidationResult
 } from "./mcp";
 export type {
-  CapabilityAiExposure,
-  CapabilityApprovalDecision,
-  CapabilityApprovalMode,
-  CapabilityApprovalRequest,
-  CapabilityApprovalResolution,
-  CapabilityCallRequest,
-  CapabilityCallResult,
-  CapabilityDescriptor,
-  CapabilityDomain,
-  CapabilityEvent,
-  CapabilityError,
-  CapabilityApprovalResolveRequest,
-  CapabilityInvokeRequest,
-  CapabilityListRequest,
-  CapabilityListResponse,
-  CapabilityRegistrySnapshot,
-  CapabilityReadRegistryResponse,
-  CapabilityResolveApprovalResponse,
-  CapabilityRuntimeEvent,
-  LyraAppManifest
-} from "./capabilities";
-export type {
   CreateLyraSkillRequest,
   DeleteSkillRequest,
   EffectiveSkillConfig,
@@ -342,7 +253,6 @@ export type {
   UpdateSkillStateRequest
 } from "./skills";
 export type {
-  WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
   WorkbenchBrowserElementPickerMode,
@@ -480,12 +390,6 @@ export const LYRA_CHANNELS = {
   imageViewerReadTile: "lyra:image-viewer/read-tile",
   imageViewerCloseSession: "lyra:image-viewer/close-session",
   imageViewerEvent: "lyra:image-viewer/event",
-  lyraRuntimeHealth: "lyra:lyra/runtime/health",
-  lyraRuntimeRequest: "lyra:lyra/runtime/request",
-  lyraRuntimeNotify: "lyra:lyra/runtime/notify",
-  lyraRuntimeResolveServerRequest: "lyra:lyra/runtime/resolve-server-request",
-  lyraRuntimeRejectServerRequest: "lyra:lyra/runtime/reject-server-request",
-  lyraEvent: "lyra:lyra/event",
   workbenchBrowserSyncTopology: "lyra:workbench-browser/sync-topology",
   workbenchBrowserSyncLayout: "lyra:workbench-browser/sync-layout",
   workbenchBrowserNavigate: "lyra:workbench-browser/navigate",
@@ -497,8 +401,6 @@ export const LYRA_CHANNELS = {
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
   workbenchBrowserApplyWebTheme: "lyra:workbench-browser/apply-web-theme",
   workbenchBrowserEvent: "lyra:workbench-browser/event",
-  browserUseReadRuntimeStatus: "lyra:browser-use/read-runtime-status",
-  browserUseRuntimeStatusEvent: "lyra:browser-use/runtime-status",
   resourcesReadSnapshot: "lyra:resources/read-snapshot",
   resourcesReadSystemSnapshot: "lyra:resources/read-system-snapshot",
   resourcesRegisterOrUpdate: "lyra:resources/register-or-update",
@@ -543,11 +445,6 @@ export const LYRA_CHANNELS = {
   terminalResizeSession: "lyra:terminal/resize-session",
   terminalCloseSession: "lyra:terminal/close-session",
   terminalEvent: "lyra:terminal/event",
-  capabilityReadRegistry: "lyra:capabilities/read-registry",
-  capabilityList: "lyra:capabilities/list",
-  capabilityInvoke: "lyra:capabilities/invoke",
-  capabilityResolveApproval: "lyra:capabilities/resolve-approval",
-  capabilityEvent: "lyra:capabilities/event",
   workbenchObservationQuery: "lyra:workbench-observation/query",
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
   uiuxListPacks: "lyra:uiux/list-packs",
@@ -1159,7 +1056,7 @@ export type SearchDeepExpandResponse = {
 
 export type TerminalSessionId = string;
 
-export type TerminalCommandSource = "user" | "ai" | "capability";
+export type TerminalCommandSource = "user";
 export type TerminalSessionMode = "command" | "shell";
 
 export type TerminalCreateRequest = {
@@ -1407,19 +1304,6 @@ export type SearchApi = {
   ) => Promise<SearchDeepExpandResponse>;
 };
 
-export type LyraRuntimeApi = {
-  readonly health: () => Promise<LyraRuntimeHealth>;
-  readonly request: <T = unknown>(payload: LyraClientRequestPayload) => Promise<T>;
-  readonly notify: (payload: LyraClientNotificationPayload) => Promise<void>;
-  readonly resolveServerRequest: (
-    payload: LyraResolveServerRequestPayload
-  ) => Promise<void>;
-  readonly rejectServerRequest: (
-    payload: LyraRejectServerRequestPayload
-  ) => Promise<void>;
-  readonly onEvent: (listener: (event: LyraRuntimeEvent) => void) => () => void;
-};
-
 export type McpApi = {
   readonly readCatalog: () => Promise<readonly McpCatalogItem[]>;
   readonly readServers: (request: McpReadServersRequest) => Promise<readonly McpServerConfig[]>;
@@ -1589,20 +1473,6 @@ export type TerminalApi = {
   readonly onError: (listener: (event: TerminalErrorEvent) => void) => () => void;
 };
 
-export type CapabilitiesApi = {
-  readonly readRegistry: () => Promise<CapabilityReadRegistryResponse>;
-  readonly listCapabilities: (
-    request?: CapabilityListRequest
-  ) => Promise<readonly CapabilityDescriptor[]>;
-  readonly invokeCapability: (
-    request: CapabilityInvokeRequest
-  ) => Promise<CapabilityCallResult>;
-  readonly resolveApproval: (
-    request: CapabilityApprovalResolveRequest
-  ) => Promise<CapabilityResolveApprovalResponse>;
-  readonly onEvent: (listener: (event: CapabilityRuntimeEvent) => void) => () => void;
-};
-
 export type LspApi = {
   readonly openDocument: (request: LspDocumentRequest) => Promise<void>;
   readonly changeDocument: (request: LspDocumentRequest) => Promise<void>;
@@ -1634,11 +1504,6 @@ export type WorkbenchObservationBridgeApi = {
   ) => () => void;
 };
 
-export type BrowserUseApi = {
-  readonly readRuntimeStatus: () => Promise<BrowserUseRuntimeStatus>;
-  readonly onRuntimeStatus: (listener: (status: BrowserUseRuntimeStatus) => void) => () => void;
-};
-
 export type UiuxPacksApi = {
   readonly listPacks: () => Promise<UiuxListPacksResponse>;
   readonly installFromLocal: (request: UiuxInstallFromLocalRequest) => Promise<InstalledUiuxPack>;
@@ -1662,15 +1527,12 @@ export type LyraDesktopApi = {
   readonly files: FilesApi;
   readonly downloads?: DownloadManagerApi;
   readonly imageViewer?: ImageViewerApi;
-  readonly lyra?: LyraRuntimeApi;
   readonly workbenchBrowser: WorkbenchBrowserApi;
   readonly resources?: ResourcesApi;
-  readonly browserUse: BrowserUseApi;
   readonly mcp: McpApi;
   readonly skills: SkillsApi;
   readonly lsp: LspApi;
   readonly terminal: TerminalApi;
-  readonly capabilities: CapabilitiesApi;
   readonly workbenchObservation: WorkbenchObservationBridgeApi;
   readonly uiux: UiuxPacksApi;
   readonly workbenchState: WorkbenchStateApi;

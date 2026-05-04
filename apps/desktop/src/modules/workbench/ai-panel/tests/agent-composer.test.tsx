@@ -190,26 +190,6 @@ describe("agent composer", () => {
     expect(onModelSelect).toHaveBeenCalledWith("gpt-b");
   });
 
-  test("renders permission modes inside the portal plus menu", () => {
-    const onPermissionModeSelect = vi.fn();
-    render(
-      <AgentComposer
-        {...createProps({
-          permissionMode: "default",
-          onPermissionModeSelect,
-        })}
-      />
-    );
-
-    expect(screen.queryByRole("button", { name: "Auto review" })).toBeNull();
-
-    fireEvent.click(screen.getByLabelText("Composer menu"));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Permission mode/i }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Auto review" }));
-    expect(onPermissionModeSelect).toHaveBeenCalledWith("auto_review");
-    expect(screen.queryByRole("menu")).toBeNull();
-  });
-
   test("closes the portal plus menu on outside click and Escape", () => {
     render(<AgentComposer {...createProps({ initialValue: "" })} />);
 

@@ -1,15 +1,7 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import {
-  access,
-  mkdir,
-  readFile,
-  rm,
-  writeFile
-} from "node:fs/promises";
+import { access } from "node:fs/promises";
 import path from "node:path";
-
-import { resolveCurrentDesktopTarget } from "../platform-target";
 
 export type ExternalBrowserDownloadCandidate = {
   readonly browser: string;
@@ -25,24 +17,6 @@ export type ExternalBrowserDownloadCandidate = {
   readonly startedAt?: string | undefined;
 };
 
-type BrowserUseBundleManifest = {
-  readonly bundleVersion: string;
-  readonly target: string;
-  readonly pythonBinary: string;
-  readonly pythonArchive: string;
-};
-
-type BrowserUseBundle = {
-  readonly rootPath: string;
-  readonly manifest: BrowserUseBundleManifest;
-};
-
-type BrowserImportRuntimeMarker = {
-  readonly bundleVersion: string;
-  readonly bundleRoot: string;
-  readonly pythonPath: string;
-};
-
 type BrowserProbeResult = {
   readonly ok?: boolean;
   readonly candidates?: readonly unknown[];
@@ -51,7 +25,6 @@ type BrowserProbeResult = {
 const DEFAULT_LIMIT = 24;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_STDIO_BYTES = 2_000_000;
-const RUNTIME_MARKER_FILE = "install-state.json";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && Array.isArray(value) === false;
@@ -196,140 +169,6 @@ const runProcess = async (
   });
 };
 
-const resolveBrowserUseResourceRoots = ({
-  appPath,
-  resourcesPath,
-  cwd
-}: {
-  readonly appPath?: string | undefined;
-  readonly resourcesPath?: string | undefined;
-  readonly cwd?: string | undefined;
-}): readonly string[] => Array.from(new Set([
-  resourcesPath === undefined ? "" : path.join(resourcesPath, "browser-use"),
-  resourcesPath === undefined ? "" : path.join(resourcesPath, "resources", "browser-use"),
-  appPath === undefined ? "" : path.join(appPath, "resources", "browser-use"),
-  cwd === undefined ? "" : path.join(cwd, "apps/desktop/resources/browser-use")
-].filter((value) => value.length > 0)));
-
-const readBrowserUseManifest = async (
-  manifestPath: string
-): Promise<BrowserUseBundleManifest | null> => {
-  try {
-    const raw = await readFile(manifestPath, "utf8");
-    const parsed = JSON.parse(raw) as Partial<BrowserUseBundleManifest>;
-    if (
-      typeof parsed.bundleVersion !== "string"
-      || typeof parsed.target !== "string"
-      || typeof parsed.pythonBinary !== "string"
-      || typeof parsed.pythonArchive !== "string"
-    ) {
-      return null;
-    }
-    return {
-      bundleVersion: parsed.bundleVersion,
-      target: parsed.target,
-      pythonBinary: parsed.pythonBinary,
-      pythonArchive: parsed.pythonArchive
-    };
-  } catch {
-    return null;
-  }
-};
-
-const resolveBrowserUseBundle = async (options: {
-  readonly appPath?: string | undefined;
-  readonly resourcesPath?: string | undefined;
-  readonly cwd?: string | undefined;
-}): Promise<BrowserUseBundle | null> => {
-  const target = resolveCurrentDesktopTarget();
-  for (const root of resolveBrowserUseResourceRoots(options)) {
-    const targetRoot = path.join(root, target.id);
-    const manifest = await readBrowserUseManifest(path.join(targetRoot, "manifest.json"));
-    if (manifest !== null && manifest.target === target.id) {
-      return {
-        rootPath: targetRoot,
-        manifest
-      };
-    }
-  }
-  return null;
-};
-
-const resolveRuntimePaths = (storageRoot: string, bundleVersion: string) => {
-  const runtimeRoot = path.join(storageRoot, "browser-import-runtime");
-  const bundleRoot = path.join(runtimeRoot, bundleVersion);
-  const markerPath = path.join(runtimeRoot, RUNTIME_MARKER_FILE);
-  return {
-    runtimeRoot,
-    bundleRoot,
-    markerPath
-  };
-};
-
-const readRuntimeMarker = async (storageRoot: string): Promise<BrowserImportRuntimeMarker | null> => {
-  try {
-    const markerPath = path.join(storageRoot, "browser-import-runtime", RUNTIME_MARKER_FILE);
-    const parsed = JSON.parse(await readFile(markerPath, "utf8")) as Partial<BrowserImportRuntimeMarker>;
-    if (
-      typeof parsed.bundleVersion !== "string"
-      || typeof parsed.bundleRoot !== "string"
-      || typeof parsed.pythonPath !== "string"
-      || await isAccessible(parsed.pythonPath, true) === false
-    ) {
-      return null;
-    }
-    return parsed as BrowserImportRuntimeMarker;
-  } catch {
-    return null;
-  }
-};
-
-const writeRuntimeMarker = async (
-  storageRoot: string,
-  marker: BrowserImportRuntimeMarker
-): Promise<void> => {
-  const { runtimeRoot, markerPath } = resolveRuntimePaths(storageRoot, marker.bundleVersion);
-  await mkdir(runtimeRoot, { recursive: true });
-  await writeFile(markerPath, JSON.stringify(marker, null, 2), "utf8");
-};
-
-const materializeBundledPython = async (
-  storageRoot: string,
-  bundle: BrowserUseBundle
-): Promise<string | null> => {
-  const existing = await readRuntimeMarker(storageRoot);
-  if (
-    existing !== null
-    && existing.bundleVersion === bundle.manifest.bundleVersion
-    && await isAccessible(existing.pythonPath, true)
-  ) {
-    return existing.pythonPath;
-  }
-  const { runtimeRoot, bundleRoot } = resolveRuntimePaths(storageRoot, bundle.manifest.bundleVersion);
-  const archivePath = path.join(bundle.rootPath, bundle.manifest.pythonArchive);
-  try {
-    await access(archivePath, constants.F_OK);
-    await mkdir(runtimeRoot, { recursive: true });
-    await rm(bundleRoot, { recursive: true, force: true });
-    await mkdir(bundleRoot, { recursive: true });
-    await runProcess("tar", ["-xzf", archivePath, "-C", bundleRoot], {
-      timeoutMs: 120_000
-    });
-    const pythonPath = path.join(bundleRoot, bundle.manifest.pythonBinary);
-    if (await isAccessible(pythonPath, true) === false) {
-      return null;
-    }
-    await writeRuntimeMarker(storageRoot, {
-      bundleVersion: bundle.manifest.bundleVersion,
-      bundleRoot,
-      pythonPath
-    });
-    return pythonPath;
-  } catch {
-    return null;
-  }
-};
-
 export const resolveDownloadManagerProbeScriptCandidates = ({
   appPath,
   resourcesPath,
@@ -382,13 +221,11 @@ const runBrowserProbe = async (
 };
 
 export const scanExternalBrowserDownloads = async ({
-  storageRoot,
   appPath,
   resourcesPath,
   cwd,
   limit
 }: {
-  readonly storageRoot: string;
   readonly appPath?: string | undefined;
   readonly resourcesPath?: string | undefined;
   readonly cwd?: string | undefined;
@@ -400,13 +237,8 @@ export const scanExternalBrowserDownloads = async ({
   }
   const normalizedLimit = normalizeLimit(limit);
   const explicitPython = process.env.LYRA_DOWNLOAD_BROWSER_IMPORT_PYTHON?.trim();
-  const browserUseBundle = await resolveBrowserUseBundle({ appPath, resourcesPath, cwd });
-  const bundledPython = browserUseBundle === null
-    ? null
-    : await materializeBundledPython(storageRoot, browserUseBundle);
   const candidates = [
     ...(explicitPython === undefined || explicitPython.length === 0 ? [] : [explicitPython]),
-    ...(bundledPython === null ? [] : [bundledPython]),
     "python3",
     "python"
   ];

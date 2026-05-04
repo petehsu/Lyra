@@ -16,7 +16,6 @@ import { hostname, userInfo } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createAgentCoreIpcBridge } from "./agent-core";
 import {
   LYRA_APP_NAME,
   LYRA_APP_USER_MODEL_ID,
@@ -24,26 +23,16 @@ import {
   resolveLyraAppIconPath,
   type LyraAppIconVariant
 } from "./app-identity";
-import { createCapabilitiesIpcBridge } from "./capabilities";
-import { createCalculatorHostToolsBridge } from "./calculator";
-import { createCodeIntelHostToolsBridge } from "./code-intel";
-import {
-  createBrowserUseHostToolsBridge,
-  createBrowserUseRuntimeCoordinator,
-  createBrowserUseService
-} from "./browser-use";
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createFilesIpcBridge } from "./files";
 import { createDownloadManagerIpcBridge } from "./download-manager";
 import { createImageViewerIpcBridge } from "./image-viewer";
 import { createLspIpcBridge } from "./lsp";
-import { createLocalSearchHostToolsBridge } from "./local-search";
 import { createLinuxCompatBridge } from "./linux-compat";
 import { createMcpIpcBridge } from "./mcp";
 import { resolveCurrentDesktopTarget } from "./platform-target";
 import { createResourceRuntimeService } from "./resources/service";
 import { createLyraRuntimeClient } from "./runtime-client";
-import { createRuntimeHostRpcService } from "./runtime-host-rpc/service";
 import { createSearchIpcBridge } from "./search";
 import { createSkillsIpcBridge } from "./skills";
 import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
@@ -62,14 +51,12 @@ import {
   createUiuxPacksIpcBridge
 } from "./uiux-packs";
 import { createWorkbenchObservationRendererClient } from "./workbench-observation/local-tabs";
-import { createWorkbenchObservationHostToolsBridge } from "./workbench-observation/host-tools";
 import { createWorkbenchObservationService } from "./workbench-observation/service";
 import { createWorkbenchDocumentsService } from "./workbench-documents/service";
 import { createWorkbenchStateIpcBridge } from "./workbench-state";
 import {
   LYRA_CHANNELS,
   type AppMetaPayload,
-  type BrowserUseRuntimeStatus,
   type LinuxCompatExportResponse,
   type LinuxCompatReadConfigResponse,
   type LinuxCompatRestartRequest,
@@ -106,8 +93,6 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
-let disposeAgentCoreBridge: (() => void) | null = null;
-let disposeCapabilitiesBridge: (() => void) | null = null;
 let disposeTerminalBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
 let disposeDownloadManagerBridge: (() => void) | null = null;
@@ -120,18 +105,10 @@ let disposeResourceRuntimeService: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
 let disposeUiuxPacksBridge: (() => void) | null = null;
 let disposeRuntimeClient: (() => void) | null = null;
-let disposeRuntimeHostRpc: (() => void) | null = null;
 let disposeSearchBridge: (() => void) | null = null;
 let disposeWorkbenchObservationRendererClient: (() => void) | null = null;
 let disposeWorkbenchObservationService: (() => void) | null = null;
 let disposeWorkbenchDocumentsService: (() => void) | null = null;
-let disposeWorkbenchObservationHostTools: (() => void) | null = null;
-let disposeCodeIntelHostTools: (() => void) | null = null;
-let disposeLocalSearchHostTools: (() => void) | null = null;
-let disposeCalculatorHostTools: (() => void) | null = null;
-let disposeBrowserUseService: (() => void) | null = null;
-let disposeBrowserUseHostTools: (() => void) | null = null;
-let disposeBrowserUseRuntimeCoordinator: (() => void) | null = null;
 let disposePowerSaveBlocker: (() => void) | null = null;
 let disposeLyraDockIconThemeSync: (() => void) | null = null;
 let disposeSystemNotificationsBridge: (() => void) | null = null;
@@ -691,11 +668,9 @@ const registerIpcHandlers = (): void => {
   disposeResourceRuntimeService = resourceRuntimeService.dispose;
 
   const runtimeClient = createLyraRuntimeClient({
-    storageRoot: storageRoots.modules.ai
+    storageRoot: storageRoots.modules.runtime
   });
   disposeRuntimeClient = runtimeClient.dispose;
-  const runtimeHostRpc = createRuntimeHostRpcService({ runtimeClient });
-  disposeRuntimeHostRpc = runtimeHostRpc.dispose;
 
   const terminalBridge = createTerminalIpcBridge(
     storageRoots.modules.terminal,
@@ -755,13 +730,15 @@ const registerIpcHandlers = (): void => {
   powerSaveBlockerController.setEnabled(
     readPreventSleepEnabledPreference(workbenchStateBridge.readState("preferences"))
   );
-  disposePowerSaveBlocker = powerSaveBlockerController.dispose;
-  const browserUseService = createBrowserUseService({
-    browserBridge: workbenchBrowserBridge,
-    storageRoot: storageRoots.modules.browserUse
+  const unsubscribeWorkbenchPreferenceState = workbenchStateBridge.subscribe((event) => {
+    if (event.key !== "preferences") {
+      return;
+    }
+    powerSaveBlockerController.setEnabled(readPreventSleepEnabledPreference(event.json));
   });
-  disposeBrowserUseService = () => {
-    void browserUseService.dispose();
+  disposePowerSaveBlocker = () => {
+    unsubscribeWorkbenchPreferenceState();
+    powerSaveBlockerController.dispose();
   };
   const docsNativeLoadResult = loadDocsNativeBindings();
   if (docsNativeLoadResult.ok === false) {
@@ -787,102 +764,6 @@ const registerIpcHandlers = (): void => {
   });
   disposeWorkbenchObservationService = workbenchObservationService.dispose;
 
-  const capabilitiesBridge = createCapabilitiesIpcBridge({
-    filesNativeBindings: filesBridge.nativeBindings,
-    filesStorageRoot: storageRoots.modules.fileManager,
-    codeIntelStorageRoot: storageRoots.modules.search,
-    runtimeClient,
-    terminalBridge,
-    mcpBridge,
-    workbenchBrowserBridge,
-    workbenchObservationService,
-    workbenchDocumentsService,
-    browserUseService,
-    getWindow: () => mainWindow
-  });
-  disposeCapabilitiesBridge = capabilitiesBridge.dispose;
-  const codeIntelHostTools = createCodeIntelHostToolsBridge({
-    capabilitiesBridge,
-    runtimeClient,
-    runtimeHostRpc
-  });
-  disposeCodeIntelHostTools = codeIntelHostTools.dispose;
-  void codeIntelHostTools.sync().catch((error: unknown) => {
-    console.warn(`[lyra-code-intel] host tool sync failed ${String(error)}`);
-  });
-  const workbenchObservationHostTools = createWorkbenchObservationHostToolsBridge({
-    capabilitiesBridge,
-    runtimeClient,
-    runtimeHostRpc
-  });
-  disposeWorkbenchObservationHostTools = workbenchObservationHostTools.dispose;
-  void workbenchObservationHostTools.sync().catch((error: unknown) => {
-    console.warn(`[lyra-workbench-observation] host tool sync failed ${String(error)}`);
-  });
-  const localSearchHostTools = createLocalSearchHostToolsBridge({
-    runtimeClient,
-    runtimeHostRpc
-  });
-  disposeLocalSearchHostTools = localSearchHostTools.dispose;
-  void localSearchHostTools.sync().catch((error: unknown) => {
-    console.warn(`[lyra-local-search] host tool sync failed ${String(error)}`);
-  });
-  const calculatorHostTools = createCalculatorHostToolsBridge({
-    runtimeClient,
-    runtimeHostRpc,
-    storageRoot: storageRoots.modules.calculator
-  });
-  disposeCalculatorHostTools = calculatorHostTools.dispose;
-  console.info(
-    calculatorHostTools.nativeLoadResult.ok
-      ? `[lyra-calculator] native loaded from ${calculatorHostTools.nativeLoadResult.loadedFrom}`
-      : `[lyra-calculator] native unavailable ${calculatorHostTools.nativeLoadResult.errorMessage}`
-  );
-  void calculatorHostTools.sync().catch((error: unknown) => {
-    console.warn(`[lyra-calculator] host tool sync failed ${String(error)}`);
-  });
-  const browserUseHostTools = createBrowserUseHostToolsBridge({
-    capabilitiesBridge,
-    runtimeClient,
-    runtimeHostRpc
-  });
-  disposeBrowserUseHostTools = browserUseHostTools.dispose;
-
-  let browserUseRuntimeStatus: BrowserUseRuntimeStatus = {
-    state: "checking",
-    checkedAt: Date.now()
-  };
-  const browserUseRuntimeCoordinator = createBrowserUseRuntimeCoordinator({
-    runtime: browserUseService.runtime,
-    hostTools: browserUseHostTools
-  });
-  const publishBrowserUseRuntimeStatus = (status: BrowserUseRuntimeStatus): void => {
-    browserUseRuntimeStatus = status;
-    if (mainWindow === null || mainWindow.isDestroyed()) {
-      return;
-    }
-    mainWindow.webContents.send(LYRA_CHANNELS.browserUseRuntimeStatusEvent, status);
-  };
-  const unsubscribeBrowserUseRuntimeStatus = browserUseRuntimeCoordinator.subscribe((status) => {
-    publishBrowserUseRuntimeStatus(status);
-  });
-  const unsubscribeWorkbenchPreferenceState = workbenchStateBridge.subscribe((event) => {
-    if (event.key !== "preferences") {
-      return;
-    }
-    powerSaveBlockerController.setEnabled(readPreventSleepEnabledPreference(event.json));
-  });
-  disposeBrowserUseRuntimeCoordinator = () => {
-    unsubscribeBrowserUseRuntimeStatus();
-    unsubscribeWorkbenchPreferenceState();
-    void browserUseRuntimeCoordinator.dispose();
-  };
-  browserUseRuntimeCoordinator.start();
-
-  const agentCoreBridge = createAgentCoreIpcBridge(runtimeClient);
-  console.info(`[lyra-agent-core] runtime bridge ready`);
-  disposeAgentCoreBridge = agentCoreBridge.dispose;
-
   ipcMain.handle(LYRA_CHANNELS.minimizeWindow, () => {
     mainWindow?.minimize();
   });
@@ -903,11 +784,6 @@ const registerIpcHandlers = (): void => {
   });
 
   ipcMain.handle(LYRA_CHANNELS.readAppMeta, (): AppMetaPayload => readAppMetaPayload());
-
-  ipcMain.handle(
-    LYRA_CHANNELS.browserUseReadRuntimeStatus,
-    (): BrowserUseRuntimeStatus => browserUseRuntimeStatus
-  );
 
   ipcMain.on(LYRA_CHANNELS.readAppMetaSync, (event) => {
     event.returnValue = readAppMetaPayload();
@@ -998,14 +874,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  if (disposeAgentCoreBridge !== null) {
-    disposeAgentCoreBridge();
-    disposeAgentCoreBridge = null;
-  }
-  if (disposeCapabilitiesBridge !== null) {
-    disposeCapabilitiesBridge();
-    disposeCapabilitiesBridge = null;
-  }
   if (disposeFilesBridge !== null) {
     disposeFilesBridge();
     disposeFilesBridge = null;
@@ -1054,34 +922,6 @@ app.on("before-quit", () => {
     disposeWorkbenchDocumentsService();
     disposeWorkbenchDocumentsService = null;
   }
-  if (disposeWorkbenchObservationHostTools !== null) {
-    disposeWorkbenchObservationHostTools();
-    disposeWorkbenchObservationHostTools = null;
-  }
-  if (disposeCodeIntelHostTools !== null) {
-    disposeCodeIntelHostTools();
-    disposeCodeIntelHostTools = null;
-  }
-  if (disposeLocalSearchHostTools !== null) {
-    disposeLocalSearchHostTools();
-    disposeLocalSearchHostTools = null;
-  }
-  if (disposeCalculatorHostTools !== null) {
-    disposeCalculatorHostTools();
-    disposeCalculatorHostTools = null;
-  }
-  if (disposeBrowserUseRuntimeCoordinator !== null) {
-    disposeBrowserUseRuntimeCoordinator();
-    disposeBrowserUseRuntimeCoordinator = null;
-  }
-  if (disposeBrowserUseHostTools !== null) {
-    disposeBrowserUseHostTools();
-    disposeBrowserUseHostTools = null;
-  }
-  if (disposeBrowserUseService !== null) {
-    disposeBrowserUseService();
-    disposeBrowserUseService = null;
-  }
   if (disposePowerSaveBlocker !== null) {
     disposePowerSaveBlocker();
     disposePowerSaveBlocker = null;
@@ -1110,9 +950,5 @@ app.on("before-quit", () => {
   if (disposeRuntimeClient !== null) {
     disposeRuntimeClient();
     disposeRuntimeClient = null;
-  }
-  if (disposeRuntimeHostRpc !== null) {
-    disposeRuntimeHostRpc();
-    disposeRuntimeHostRpc = null;
   }
 });

@@ -1,5 +1,4 @@
 import type {
-  WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerMode,
   WorkbenchBrowserElementPickerDisableCause,
@@ -7,11 +6,9 @@ import type {
   WorkbenchBrowserSetElementPickerModeRequest
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchBrowserElementPickerController } from "../types";
-import { createWorkbenchAgentElementPickerSession } from "./agent-session";
 import { createWorkbenchManualElementPickerSession } from "./manual-session";
 import { routeElementPickerConsoleMessage } from "./session";
 import type {
-  WorkbenchAgentElementPickerSession,
   WorkbenchElementPickerControllerDeps,
   WorkbenchElementPickerSessionHost,
   WorkbenchManualElementPickerSession
@@ -70,8 +67,6 @@ export const createWorkbenchBrowserElementPickerController = ({
   let manualSession: WorkbenchManualElementPickerSession | null = null;
   let manualAppearance: WorkbenchBrowserElementPickerAppearance | null = null;
   let manualMode: WorkbenchBrowserElementPickerMode = "inspect";
-  let agentSession: WorkbenchAgentElementPickerSession | null = null;
-  let restoreManualState: RestorableManualState | null = null;
   let lastState: WorkbenchBrowserElementPickerState | null = null;
 
   const publishTrackingHost: WorkbenchElementPickerSessionHost = {
@@ -112,11 +107,6 @@ export const createWorkbenchBrowserElementPickerController = ({
       }
     });
 
-  const createAgentSession = (tabId: string) => createWorkbenchAgentElementPickerSession({
-    host: publishTrackingHost,
-    tabId
-  });
-
   const disableManual = async (
     cause: WorkbenchBrowserElementPickerDisableCause,
     tabId?: string,
@@ -134,39 +124,9 @@ export const createWorkbenchBrowserElementPickerController = ({
     await session.disable(cause, { publishState });
   };
 
-  const disableAgent = async (
-    cause: WorkbenchBrowserElementPickerDisableCause,
-    tabId?: string,
-    publishState = true
-  ): Promise<void> => {
-    if (agentSession === null) {
-      return;
-    }
-    if (tabId !== undefined && agentSession.tabId !== tabId) {
-      return;
-    }
-    const session = agentSession;
-    agentSession = null;
-    restoreManualState = null;
-    await session.disable(cause, { publishState });
-  };
-
-  const restoreManualIfNeeded = async (tabId: string): Promise<void> => {
-    if (restoreManualState === null || restoreManualState.tabId !== tabId) {
-      return;
-    }
-    const next = restoreManualState;
-    restoreManualState = null;
-    manualAppearance = next.appearance;
-    manualMode = next.mode;
-    manualSession = createManualSession(tabId, next.appearance, next.mode);
-    await manualSession.enable();
-  };
-
   return {
     dispose: async () => {
       await enqueue(async () => {
-        await disableAgent("user_toggle", undefined, false);
         await disableManual("user_toggle", undefined, false);
         lastState = null;
       });
@@ -175,19 +135,7 @@ export const createWorkbenchBrowserElementPickerController = ({
       await enqueue(async () => {
         const appearance = normalizeAppearance(request.appearance);
         if (request.enabled !== true) {
-          if (restoreManualState?.tabId === request.tabId) {
-            restoreManualState = null;
-          }
           await disableManual("user_toggle", request.tabId);
-          return;
-        }
-
-        if (agentSession?.tabId === request.tabId) {
-          restoreManualState = {
-            tabId: request.tabId,
-            appearance,
-            mode: request.mode ?? "inspect"
-          };
           return;
         }
 
@@ -208,66 +156,23 @@ export const createWorkbenchBrowserElementPickerController = ({
         await manualSession.enable();
       });
     },
-    showAgentTarget: async (target: WorkbenchBrowserAgentTargetInfo) => {
-      let shown = false;
-      await enqueue(async () => {
-        if (manualSession?.tabId === target.tabId) {
-          restoreManualState = {
-            tabId: target.tabId,
-            appearance: manualAppearance ?? DEFAULT_APPEARANCE,
-            mode: manualMode
-          };
-          await disableManual("user_toggle", target.tabId, false);
-        }
-        if (agentSession !== null && agentSession.tabId !== target.tabId) {
-          await disableAgent("tab_switched", undefined, false);
-        }
-        if (agentSession === null || agentSession.tabId !== target.tabId) {
-          agentSession = createAgentSession(target.tabId);
-        }
-        shown = await agentSession.showTarget(target, manualAppearance ?? DEFAULT_APPEARANCE);
-      });
-      return shown;
-    },
-    clearAgentTarget: async (tabId: string, options?: { readonly preserveManualMode?: boolean }) => {
-      await enqueue(async () => {
-        if (agentSession?.tabId !== tabId) {
-          return;
-        }
-        const session = agentSession;
-        agentSession = null;
-        await session.clearTarget(options?.preserveManualMode !== true);
-        if (options?.preserveManualMode !== false) {
-          await restoreManualIfNeeded(tabId);
-        } else {
-          restoreManualState = null;
-        }
-      });
-    },
     handleActiveTabChanged: (activeTabId) => {
       if (manualSession !== null && activeTabId !== manualSession.tabId) {
         void enqueue(async () => {
           await disableManual("tab_switched");
         });
       }
-      if (agentSession !== null && activeTabId !== agentSession.tabId) {
-        void enqueue(async () => {
-          await disableAgent("tab_switched");
-        });
-      }
     },
     handlePageNavigated: (tabId) => {
-      if (manualSession?.tabId === tabId || agentSession?.tabId === tabId) {
+      if (manualSession?.tabId === tabId) {
         void enqueue(async () => {
-          await disableAgent("page_navigated", tabId);
           await disableManual("page_navigated", tabId);
         });
       }
     },
     handlePageClosed: (tabId) => {
-      if (manualSession?.tabId === tabId || agentSession?.tabId === tabId) {
+      if (manualSession?.tabId === tabId) {
         void enqueue(async () => {
-          await disableAgent("page_closed", tabId);
           await disableManual("page_closed", tabId);
         });
       }

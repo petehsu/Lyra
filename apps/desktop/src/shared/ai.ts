@@ -88,7 +88,6 @@ export type AiModelRuntimeMetadata = {
   readonly shellType?: string;
   readonly applyPatchToolType?: string;
   readonly supportsSearchTool?: boolean;
-  readonly supportsParallelToolCalls?: boolean;
   readonly supportsReasoningSummaries?: boolean;
   readonly defaultReasoningLevel?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
   readonly supportedReasoningLevels?: readonly ("none" | "minimal" | "low" | "medium" | "high" | "xhigh")[];

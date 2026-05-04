@@ -758,7 +758,7 @@ export const resolveLinuxCompatPlan = (input: {
     notes.push("detected explicit ozone override; linux-compat skipped automatic ozone switches");
   }
   if (facts.isRoot) {
-    notes.push("running as root: sandbox/runtime characteristics may differ from normal user sessions");
+    notes.push("running as root: runtime characteristics may differ from normal user sessions");
   }
   if (facts.isContainer) {
     notes.push("containerized runtime detected; desktop integration may depend on host portals");

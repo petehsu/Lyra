@@ -64,8 +64,7 @@ const COLOR_EXEMPT_FILES = [
   /apps\/desktop\/src\/renderer\/styles\/workbench\/settings\.css$/,
   /apps\/desktop\/src\/renderer\/styles\/workbench\/browser-search\.css$/,
   /apps\/desktop\/src\/renderer\/styles\/workbench\/ai-panel\.css$/,
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/notification-center\.css$/,
-  /apps\/desktop\/src\/modules\/workbench\/command-approval-bar\/styles\.css$/
+  /apps\/desktop\/src\/renderer\/styles\/workbench\/notification-center\.css$/
 ];
 
 const TS_INLINE_PX_ALLOWLIST = [
@@ -152,11 +151,6 @@ const selectorRules: readonly SelectorRule[] = [
     forbidden: [/var\(--lyra-(?:text-accent|line-focused)\)/]
   },
   {
-    selector: ".lyra-ai-plan-card__action-primary",
-    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/],
-    forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
-  },
-  {
     selector: ".lyra-ai-agent-follow-toggle-active",
     required: [/color:\s*var\(--lyra-text-primary\)\s*;/, /background:\s*transparent\s*;/],
     forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
@@ -198,16 +192,6 @@ const selectorRules: readonly SelectorRule[] = [
     selector: ".lyra-settings-ai-action-primary.lyra-settings-ai-action-icon",
     required: [/color:\s*var\(--lyra-text-secondary\)\s*;/, /border-color:\s*transparent\s*;/, /background:\s*transparent\s*;/],
     forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
-  },
-  {
-    selector: ".lyra-command-approval-bar__icon-action--allow",
-    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/],
-    forbidden: [/var\(--lyra-terminal-green/]
-  },
-  {
-    selector: ".lyra-command-approval-bar__icon-action--allow-once",
-    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/],
-    forbidden: [/var\(--lyra-terminal-green/]
   },
   {
     selector: ".lyra-logo-toggle-active",
@@ -264,19 +248,9 @@ const selectorRules: readonly SelectorRule[] = [
     forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
   },
   {
-    selector: ".lyra-ai-plan-bar__progress-step",
-    required: [/width:\s*var\(--lyra-unit-18\)\s*;/, /height:\s*var\(--lyra-unit-2\)\s*;/],
-    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
-  },
-  {
     selector: ".lyra-ai-plan-review__approve",
     required: [/background:\s*transparent\s*;/],
     forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
-  },
-  {
-    selector: ".lyra-ai-agent-runtime-feed-target-running",
-    required: [/color:\s*var\(--lyra-text-secondary\)\s*;/, /animation:\s*none\s*;/],
-    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/, /linear-gradient\(/]
   },
   {
     selector: ".lyra-ai-thread-tab-item[data-status=\"running\"] .lyra-ai-thread-tab-icon",
@@ -359,18 +333,10 @@ const iconOnlyHoverRules: readonly IconOnlyHoverRule[] = [
   { selector: ".lyra-ai-thread-tab-new:hover" },
   { selector: ".lyra-ai-panel-topbar-action:hover" },
   { selector: ".lyra-ai-panel-topbar-more-item:hover:enabled" },
-  { selector: ".lyra-ai-permissions-panel__icon:hover" },
-  { selector: ".lyra-ai-review-panel__icon:hover" },
-  { selector: ".lyra-ai-proposed-plan__action:hover" },
-  { selector: ".lyra-ai-message-action:hover" },
-  { selector: ".lyra-ai-message-copy-button:hover" },
   { selector: ".lyra-ai-panel-history-item-delete:hover:enabled" },
-  { selector: ".lyra-ai-plan-card__action:hover" },
   { selector: ".lyra-ai-agent-composer-attachment-remove:hover" },
   { selector: ".lyra-ai-agent-composer-menu-item:hover:enabled" },
   { selector: ".lyra-ai-agent-composer-submenu-item:hover" },
-  { selector: ".lyra-ai-plan-bar__icon-action:hover:enabled" },
-  { selector: ".lyra-ai-interaction-shell__button:hover:enabled" },
   { selector: ".lyra-ai-plan-review__action:hover:enabled" },
   { selector: ".lyra-ai-plan-review__comment-submit:hover:enabled" },
   { selector: ".lyra-ai-plan-review__comment-cancel:hover:enabled" },
@@ -382,8 +348,7 @@ const iconOnlyHoverRules: readonly IconOnlyHoverRule[] = [
   { selector: ".lyra-ai-agent-send-sending:hover:enabled", requireTransparentBackground: false },
   { selector: ".lyra-ai-history-topbar-action:hover:enabled" },
   { selector: ".lyra-ai-history-row-action:hover" },
-  { selector: ".lyra-ai-history-row-action-open:hover" },
-  { selector: ".lyra-command-approval-bar__icon-action:hover" }
+  { selector: ".lyra-ai-history-row-action-open:hover" }
 ];
 
 const transparentMenuSelectionSelectors = [
@@ -962,13 +927,6 @@ export const scanWorkbenchDesignContracts = (filePath: string, text: string): st
   }
 
   if (
-    /apps\/desktop\/src\/modules\/workbench\/ai-panel\/plan-card\.tsx$/.test(normalizedPath)
-    && /\bStatusIndicator\b/.test(text)
-  ) {
-    violations.push(`${relativePath}:1 PlanCard title must not render a decorative status dot.`);
-  }
-
-  if (
     /apps\/desktop\/src\/modules\/workbench\/ai-history\/surface-view\.tsx$/.test(normalizedPath)
     && (/\bprojectLogoUrlForRoot\b/.test(text) || /projectLogoUrl=\{(?!null\})/u.test(text))
   ) {
@@ -980,13 +938,6 @@ export const scanWorkbenchDesignContracts = (filePath: string, text: string): st
     && (/\bprojectLogoUrlForRoot\b/.test(text) || /projectLogoUrl=\{(?!null\})/u.test(text))
   ) {
     violations.push(`${relativePath}:1 AI thread tabs must use neutral project symbols, not colored project logos.`);
-  }
-
-  if (
-    /apps\/desktop\/src\/modules\/workbench\/ai-panel\/plan-question-bar\.tsx$/.test(normalizedPath)
-    && /progress-dot/.test(text)
-  ) {
-    violations.push(`${relativePath}:1 Plan question navigation must not use decorative dot indicators.`);
   }
 
   if (
@@ -1015,13 +966,6 @@ export const scanWorkbenchDesignContracts = (filePath: string, text: string): st
     && /sourceChips:[\s\S]*accentColor/u.test(text)
   ) {
     violations.push(`${relativePath}:1 Browser result source chips must stay neutral and not carry accentColor.`);
-  }
-
-  if (
-    /apps\/desktop\/src\/modules\/workbench\/command-approval-bar\/view\.tsx$/.test(normalizedPath)
-    && (/risk\.color/.test(text) || /style=\{\{[^}]*color/u.test(text) || /#[0-9a-fA-F]{6}/u.test(text))
-  ) {
-    violations.push(`${relativePath}:1 Command approval risk display must stay neutral; reserve red for deny/error actions.`);
   }
 
   if (

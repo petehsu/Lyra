@@ -1,6 +1,6 @@
 import { Folder, Image as ImageIcon, Paperclip } from "lucide-react";
 
-import type { AgentMessageContentPart } from "../../../shared/desktop-bridge";
+import type { AgentMessageContentPart } from "./agent-ui-types";
 
 type InlineMessageContentProps = {
   readonly content: string;

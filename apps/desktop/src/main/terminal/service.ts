@@ -34,12 +34,6 @@ import {
   type PromptStreamState
 } from "./prompt-stream";
 import type {
-  TerminalCapabilitySessionCloseRequest,
-  TerminalCapabilitySessionReadRequest,
-  TerminalCapabilitySessionStartRequest,
-  TerminalCapabilitySessionWriteRequest,
-  TerminalExecRequest,
-  TerminalExecResult,
   TerminalIpcBridge
 } from "./types";
 
@@ -132,10 +126,7 @@ const createAppliedResult = (): TerminalReloadPromptResult => ({
   deferred: false
 });
 
-const CAPABILITY_EXIT_PREFIX = "__LYRA_CAPABILITY_EXIT__";
 const TERMINAL_PROMPT_SCRIPT_DIR = "prompt-scripts";
-
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const quotePosixShellLiteral = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`;
 
@@ -149,20 +140,6 @@ const createPromptScriptHash = (shellFamily: PromptShellFamily, script: string):
     .update(script)
     .digest("hex")
     .slice(0, 24);
-
-const stripCommandMarker = (
-  output: string,
-  marker: string,
-  fallbackExitCode: number
-): { readonly output: string; readonly exitCode: number } => {
-  const pattern = new RegExp(`${escapeRegExp(marker)}(\\d+)`);
-  const match = output.match(pattern);
-  const parsedExitCode = match === null ? fallbackExitCode : Number.parseInt(match[1] ?? "", 10);
-  return {
-    output: output.replace(pattern, "").trimEnd(),
-    exitCode: Number.isFinite(parsedExitCode) ? parsedExitCode : fallbackExitCode
-  };
-};
 
 export const createTerminalIpcBridge = (
   storageRoot: string,
@@ -180,7 +157,7 @@ export const createTerminalIpcBridge = (
     {
       readonly terminalThemePreset: TerminalThemeMode;
       readonly uiThemeId: string;
-      readonly source: "user" | "ai" | "capability";
+      readonly source: "user";
     }
   >();
   const promptScriptRoot = join(storageRoot, TERMINAL_PROMPT_SCRIPT_DIR);
@@ -219,7 +196,7 @@ export const createTerminalIpcBridge = (
     readonly shell: string;
     readonly terminalThemePreset: TerminalThemeMode;
     readonly uiThemeId: string;
-    readonly source: "user" | "ai" | "capability";
+    readonly source: "user";
     readonly resetInteractiveState?: boolean;
   }): Promise<TerminalReloadPromptResult> => {
     const shellFamily = resolvePromptShellFamily(input.shell);
@@ -474,89 +451,16 @@ export const createTerminalIpcBridge = (
     ipcMain.handle(channel, async (event, payload) => handler(event, payload));
   }
 
-  const executeCommand = async (
-    request: TerminalExecRequest
-  ): Promise<TerminalExecResult> => {
-    const trimmedCommand = request.command.trim();
-    if (trimmedCommand.length === 0) {
-      throw new Error("command is required");
-    }
-    return await requestRuntime<TerminalExecResult>("terminal.exec", {
-      command: trimmedCommand,
-      ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
-      timeoutMs: request.timeoutMs
-    });
-  };
-
-  const startCapabilitySession = (
-    request: TerminalCapabilitySessionStartRequest
-  ): Promise<TerminalSessionSnapshot> =>
-    (async () => {
-      const snapshot = await requestRuntime<TerminalSessionSnapshot>(
-        "terminal.sessions.create",
-        normalizeCreateRequest({
-          title: request.title ?? "Capability Terminal Session",
-          ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
-          cols: request.cols ?? 120,
-          rows: request.rows ?? 40,
-          ...(request.shell === undefined ? {} : { shell: request.shell }),
-          ...(request.mode === undefined ? {} : { mode: request.mode }),
-          ...(request.command === undefined ? {} : { command: request.command }),
-          ...(typeof request.persist === "boolean" ? { persist: request.persist } : {}),
-          source: "capability"
-        })
-      );
-      sessionShellById.set(snapshot.sessionId, snapshot.shell);
-      sessionPromptModeById.set(snapshot.sessionId, "follow-app");
-      sessionPromptStreamById.set(snapshot.sessionId, createPromptStreamState());
-      return snapshot;
-    })();
-
-  const readCapabilitySession = (
-    request: TerminalCapabilitySessionReadRequest
+  const readObservation = (
+    request: TerminalReadRequest
   ): Promise<TerminalReadResponse> =>
     requestRuntime<TerminalReadResponse>("terminal.sessions.read", request);
-
-  const writeCapabilitySession = (
-    request: TerminalCapabilitySessionWriteRequest
-  ): Promise<void> =>
-    (async () => {
-      notePromptUserInput(ensurePromptStreamState(request.sessionId));
-      await requestRuntime<void>("terminal.sessions.write", {
-        sessionId: request.sessionId,
-        ...(typeof request.data === "string" ? { data: request.data } : {}),
-        ...(typeof request.text === "string" ? { text: request.text } : {}),
-        ...(Array.isArray(request.keys) ? { keys: request.keys } : {}),
-        ...(typeof request.appendNewline === "boolean"
-          ? { appendNewline: request.appendNewline }
-          : {}),
-        source: "capability"
-      });
-    })();
-
-  const closeCapabilitySession = (
-    request: TerminalCapabilitySessionCloseRequest
-  ): Promise<void> =>
-    (async () => {
-      try {
-        await requestRuntime<void>("terminal.sessions.close", request);
-      } finally {
-        sessionShellById.delete(request.sessionId);
-        sessionPromptModeById.delete(request.sessionId);
-        sessionPromptStreamById.delete(request.sessionId);
-        sessionPendingReloadById.delete(request.sessionId);
-      }
-    })();
 
   return {
     loadResult: {
       loadedFrom: "lyrad"
     },
-    executeCommand,
-    startCapabilitySession,
-    readCapabilitySession,
-    writeCapabilitySession,
-    closeCapabilitySession,
+    readObservation,
     dispose: () => {
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);

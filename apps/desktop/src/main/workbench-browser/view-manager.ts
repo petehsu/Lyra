@@ -9,7 +9,6 @@ import {
 } from "electron";
 
 import type {
-  WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserEvent,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
@@ -1353,35 +1352,6 @@ export const createWorkbenchBrowserViewManager = ({
             }
           : {})
       });
-    },
-    showAgentElementPickerTarget: async (target: WorkbenchBrowserAgentTargetInfo) => {
-      const tabId = normalizeString(target?.tabId);
-      if (tabId === null || entries.has(tabId) === false) {
-        publishEvent({
-          kind: "element-picker-state",
-          state: {
-            tabId: tabId ?? "unknown",
-            enabled: false,
-            cause: "script_error",
-            errorCode: "tab_not_found"
-          }
-        });
-        return false;
-      }
-      return await elementPickerController.showAgentTarget({
-        ...target,
-        tabId
-      });
-    },
-    clearAgentElementPickerTarget: async (
-      tabId: string,
-      options?: { readonly preserveManualMode?: boolean }
-    ) => {
-      const normalizedTabId = normalizeString(tabId);
-      if (normalizedTabId === null || entries.has(normalizedTabId) === false) {
-        return;
-      }
-      await elementPickerController.clearAgentTarget(normalizedTabId, options);
     },
     readActiveTabId: () => getActiveOrFocusedTabId(),
     listFrames: (tabId: string) => {

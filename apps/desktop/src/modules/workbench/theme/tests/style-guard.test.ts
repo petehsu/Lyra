@@ -60,17 +60,6 @@ describe("workbench UI guard", () => {
     expect(violations.some((violation) => violation.includes("tab stacking"))).toBe(true);
   });
 
-  test("keeps plan cards free of decorative status dots", () => {
-    const source = `
-      import { StatusIndicator } from "./status-primitives";
-      export const PlanCard = () => <StatusIndicator tone="info" variant="dot" />;
-    `;
-    expect(scanWorkbenchDesignContracts(
-      "apps/desktop/src/modules/workbench/ai-panel/plan-card.tsx",
-      source
-    )[0]).toContain("must not render a decorative status dot");
-  });
-
   test("keeps AI history rows free of colored project logos", () => {
     const source = `
       import { projectLogoUrlForRoot } from "../project-identity";
@@ -113,17 +102,6 @@ describe("workbench UI guard", () => {
     )[0]).toContain("decorative dot");
   });
 
-  test("keeps command approval risk labels neutral", () => {
-    const source = `
-      const risk = { color: "#eab308" };
-      export const Risk = () => <span style={{ color: risk.color }} />;
-    `;
-    expect(scanWorkbenchDesignContracts(
-      "apps/desktop/src/modules/workbench/command-approval-bar/view.tsx",
-      source
-    )[0]).toContain("risk display must stay neutral");
-  });
-
   test("keeps element picker appearance away from accent tokens", () => {
     const source = `
       const lineFocused = readVar(styles, "--lyra-line-focused", "#7d82e8");
@@ -132,16 +110,6 @@ describe("workbench UI guard", () => {
       "apps/desktop/src/modules/workbench/shell/element-picker-appearance.ts",
       source
     )[0]).toContain("neutral workbench tones");
-  });
-
-  test("keeps agent question navigation from using decorative dots", () => {
-    const source = `
-      export const AgentQuestion = () => <button className="lyra-ai-plan-bar__progress-dot" />;
-    `;
-    expect(scanWorkbenchDesignContracts(
-      "apps/desktop/src/modules/workbench/ai-panel/plan-question-bar.tsx",
-      source
-    )[0]).toContain("decorative dot");
   });
 
   test("flags raw inline style literals in TSX", () => {

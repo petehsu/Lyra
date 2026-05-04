@@ -216,7 +216,7 @@ const enrichTerminalObservation = async (
     throw createObservationError("tab_not_found", `Unknown terminal pane: ${paneId}`);
   }
 
-  const session = await terminalBridge.readCapabilitySession({
+  const session = await terminalBridge.readObservation({
     sessionId: pane.sessionId,
     maxBytes: request.maxBytes,
     waitMs: 50

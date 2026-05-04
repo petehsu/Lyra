@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 
 import type { createTranslator } from "../i18n";
-import type { AgentComposerModelOption, AgentPermissionMode } from "./agent-composer-types";
+import type { AgentComposerModelOption } from "./agent-composer-types";
 
 export const AGENT_COMPOSER_MIN_HEIGHT = 44;
 export const AGENT_COMPOSER_MAX_HEIGHT = 184;
@@ -9,11 +9,6 @@ export const AGENT_COMPOSER_MAX_HEIGHT = 184;
 type Translator = ReturnType<typeof createTranslator>;
 
 export type AgentComposerSendVisualState = "idle" | "ready" | "sending";
-
-export type AgentComposerPermissionModeOption = {
-  readonly value: AgentPermissionMode;
-  readonly label: string;
-};
 
 export type AgentComposerModelState = {
   readonly resolvedPlanModeLabel: string;
@@ -24,7 +19,6 @@ export type AgentComposerModelState = {
   readonly canOpenModelMenu: boolean;
   readonly selectedModelLabel: string;
   readonly modelMenuStyle: CSSProperties;
-  readonly permissionModeOptions: readonly AgentComposerPermissionModeOption[];
 };
 
 export const normalizeComposerModelOptions = ({
@@ -95,14 +89,6 @@ export const createComposerModelMenuStyle = (
   } as CSSProperties;
 };
 
-export const createComposerPermissionModeOptions = (
-  t: Translator
-): readonly AgentComposerPermissionModeOption[] => [
-  { value: "default", label: t("ai.permissionModeDefault") },
-  { value: "auto_review", label: t("ai.permissionModeAutoReview") },
-  { value: "full_access", label: t("ai.permissionModeFullAccess") }
-];
-
 const resolveLabel = (value: string | undefined, fallback: string): string =>
   value !== undefined && value.trim().length > 0 ? value : fallback;
 
@@ -149,7 +135,6 @@ export const createAgentComposerModelState = ({
     canOpenModelMenu:
       resolvedModelOptions.length > 1 && !modelSwitchDisabled && onModelSelectAvailable,
     selectedModelLabel,
-    modelMenuStyle: createComposerModelMenuStyle(resolvedModelOptions),
-    permissionModeOptions: createComposerPermissionModeOptions(t)
+    modelMenuStyle: createComposerModelMenuStyle(resolvedModelOptions)
   };
 };

@@ -74,11 +74,6 @@ describe("agent composer model", () => {
     expect(model.resolvedSelectedModelName).toBe("gpt-a");
     expect(model.canOpenModelMenu).toBe(true);
     expect(model.selectedModelLabel).toBe("gpt-a");
-    expect(model.permissionModeOptions.map((option) => option.value)).toEqual([
-      "default",
-      "auto_review",
-      "full_access"
-    ]);
   });
 
   test("computes visual state and class name", () => {

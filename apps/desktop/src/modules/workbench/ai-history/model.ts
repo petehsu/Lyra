@@ -1,7 +1,7 @@
 import type {
   AgentMessage,
   AgentSessionDetail
-} from "../../../shared/desktop-bridge";
+} from "../ai-panel/agent-ui-types";
 import type { StatusTone } from "../ai-panel/status-primitives";
 
 export type JsonRecord = Record<string, unknown>;

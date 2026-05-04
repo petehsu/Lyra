@@ -371,29 +371,6 @@ describe("aggregated search service", () => {
           onExit: vi.fn(() => () => undefined),
           onError: vi.fn(() => () => undefined)
         },
-        capabilities: {
-          readRegistry: vi.fn(async () => ({
-            updatedAt: new Date().toISOString(),
-            apps: [],
-            capabilities: []
-          })),
-          listCapabilities: vi.fn(async () => []),
-          invokeCapability: vi.fn(async () => ({
-            callId: "call-1",
-            capabilityId: "filesystem.read",
-            ok: true,
-            result: null,
-            completedAt: new Date().toISOString()
-          })),
-          resolveApproval: vi.fn(async () => ({
-            approvalId: "approval-1",
-            callId: "call-1",
-            capabilityId: "filesystem.read",
-            decision: "approved_once" as const,
-            resolvedAt: new Date().toISOString()
-          })),
-          onEvent: vi.fn(() => () => undefined)
-        },
         workbenchState: {
           readSync: vi.fn(() => null),
           writeSync: vi.fn(),
@@ -411,14 +388,6 @@ describe("aggregated search service", () => {
             activated: request.packId === "classic"
           })),
           resolveRuntime: vi.fn(async () => null)
-        },
-        browserUse: {
-          readRuntimeStatus: vi.fn(async () => ({
-            state: "unavailable" as const,
-            checkedAt: Date.now(),
-            reason: "missing_bundle" as const,
-          })),
-          onRuntimeStatus: vi.fn(() => () => undefined)
         },
         workbenchObservation: {
           registerHandler: vi.fn(() => () => undefined)

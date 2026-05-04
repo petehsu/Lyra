@@ -3,9 +3,7 @@ import {
   FolderOpen,
   MoreHorizontal,
   PanelLeftOpen,
-  PanelRightOpen,
-  ShieldCheck,
-  SlidersHorizontal
+  PanelRightOpen
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -23,14 +21,10 @@ type AiPanelTopbarActionsProps = {
   readonly onOpenMcp?: (() => void) | undefined;
   readonly onOpenSkills?: (() => void) | undefined;
   readonly onOpenPlugins?: (() => void) | undefined;
-  readonly onOpenPermissions?: (() => void) | undefined;
-  readonly onOpenAdvancedTools?: (() => void) | undefined;
   readonly openHistoryLabel?: string | undefined;
   readonly openMcpLabel?: string | undefined;
   readonly openSkillsLabel?: string | undefined;
   readonly openPluginsLabel?: string | undefined;
-  readonly openPermissionsLabel?: string | undefined;
-  readonly advancedToolsLabel?: string | undefined;
   readonly onStartReview?: (() => void) | undefined;
   readonly reviewChangesLabel?: string | undefined;
   readonly aiPanelSide?: AiPanelSide | undefined;
@@ -60,14 +54,10 @@ export const AiPanelTopbarActions = ({
   onOpenMcp,
   onOpenSkills,
   onOpenPlugins,
-  onOpenPermissions,
-  onOpenAdvancedTools,
   openHistoryLabel,
   openMcpLabel,
   openSkillsLabel,
   openPluginsLabel,
-  openPermissionsLabel,
-  advancedToolsLabel,
   onStartReview,
   reviewChangesLabel,
   aiPanelSide = "left",
@@ -82,8 +72,6 @@ export const AiPanelTopbarActions = ({
     (onOpenMcp !== undefined && openMcpLabel !== undefined)
     || (onOpenSkills !== undefined && openSkillsLabel !== undefined)
     || (onOpenPlugins !== undefined && openPluginsLabel !== undefined)
-    || (onOpenPermissions !== undefined && openPermissionsLabel !== undefined)
-    || (onOpenAdvancedTools !== undefined && advancedToolsLabel !== undefined)
     || onToggleAiPanelSide !== undefined
     || onStartReview !== undefined;
   const movePanelLabel =
@@ -205,34 +193,6 @@ export const AiPanelTopbarActions = ({
                 >
                   {renderAiPanelTopbarIcon("plugins")}
                   <span>{openPluginsLabel}</span>
-                </button>
-              )}
-              {onOpenPermissions === undefined || openPermissionsLabel === undefined ? null : (
-                <button
-                  type="button"
-                  className="lyra-ai-panel-topbar-more-item"
-                  role="menuitem"
-                  onClick={() => {
-                    setIsMoreOpen(false);
-                    onOpenPermissions();
-                  }}
-                >
-                  <ShieldCheck size={14} aria-hidden="true" />
-                  <span>{openPermissionsLabel}</span>
-                </button>
-              )}
-              {onOpenAdvancedTools === undefined || advancedToolsLabel === undefined ? null : (
-                <button
-                  type="button"
-                  className="lyra-ai-panel-topbar-more-item"
-                  role="menuitem"
-                  onClick={() => {
-                    setIsMoreOpen(false);
-                    onOpenAdvancedTools();
-                  }}
-                >
-                  <SlidersHorizontal size={14} aria-hidden="true" />
-                  <span>{advancedToolsLabel}</span>
                 </button>
               )}
               {onToggleAiPanelSide === undefined ? null : (

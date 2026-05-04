@@ -3,9 +3,8 @@ import type {
   AgentPlanArtifact,
   AgentPlanBlock,
   AgentPendingInteraction,
-  AgentToolCall,
   AgentTurn,
-} from "../../../shared/desktop-bridge";
+} from "./agent-ui-types";
 import {
   isRecord,
   normalizeStatus,
@@ -14,9 +13,7 @@ import {
   readNumber,
   readRawString,
   readString,
-  toolStatusToAgent,
   turnStatusToAgent,
-  type AgentToolCallStatus,
   type AgentTurnStatus,
   type AiPanelAgentSessionDetail,
   type LyraThread,
@@ -26,7 +23,6 @@ import {
   type ThreadAiPanelPlan,
   type ThreadAiPanelTimelineEntry,
   type ThreadAiPanelTimelineEntryKind,
-  type ThreadAiPanelToolCall,
   type ThreadAiPanelTurn,
   type ThreadAiPanelTurnMeta,
   type ThreadAiPanelViewModel,
@@ -35,8 +31,6 @@ import {
   createAgentSession,
   lyraThreadTurnsToAgentDetail,
 } from "./lyra-thread-legacy-turns-adapter";
-
-const readAgentToolStatus = (value: unknown): AgentToolCallStatus => toolStatusToAgent(value, "completed");
 
 const readAgentTurnStatus = (value: unknown): AgentTurnStatus => turnStatusToAgent(readString(value) ?? "");
 
@@ -63,20 +57,8 @@ const readPendingInteractionKind = (
   if (normalized === "planapproval") {
     return "plan_approval";
   }
-  if (normalized === "commandexecutionapproval") {
-    return "command_execution_approval";
-  }
-  if (normalized === "filechangeapproval") {
-    return "file_change_approval";
-  }
-  if (normalized === "permissionsapproval") {
-    return "permissions_approval";
-  }
   if (normalized === "agentquestion") {
     return "agent_question";
-  }
-  if (normalized === "tooluserinput") {
-    return "tool_user_input";
   }
   if (normalized === "mcpelicitation") {
     return "mcp_elicitation";
@@ -181,33 +163,6 @@ const readAiPanelTurn = (value: unknown): ThreadAiPanelTurn | null => {
     ...(readString(value.errorCode) === null ? {} : { errorCode: readString(value.errorCode)! }),
     ...(readString(value.errorMessage) === null ? {} : { errorMessage: readString(value.errorMessage)! }),
     ...(usage === undefined ? {} : { usage }),
-  };
-};
-
-const readAiPanelToolCall = (value: unknown): ThreadAiPanelToolCall | null => {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const id = readString(value.id);
-  const sessionId = readString(value.sessionId);
-  const turnId = readString(value.turnId);
-  const toolName = readString(value.toolName);
-  const startedAtMs = readNumber(value.startedAtMs);
-  if (id === null || sessionId === null || turnId === null || toolName === null || startedAtMs === null) {
-    return null;
-  }
-  return {
-    id,
-    sessionId,
-    turnId,
-    toolName,
-    input: value.input,
-    ...(value.output === undefined ? {} : { output: value.output }),
-    status: readAgentToolStatus(value.status),
-    startedAtMs,
-    ...(readNumber(value.finishedAtMs) === null ? {} : { finishedAtMs: readNumber(value.finishedAtMs)! }),
-    ...(readString(value.errorCode) === null ? {} : { errorCode: readString(value.errorCode)! }),
-    ...(readString(value.errorMessage) === null ? {} : { errorMessage: readString(value.errorMessage)! }),
   };
 };
 
@@ -349,7 +304,6 @@ const readAiPanelTimelineEntryKind = (value: unknown): ThreadAiPanelTimelineEntr
   if (
     kind === "userMessage" ||
     kind === "assistantMessage" ||
-    kind === "toolCall" ||
     kind === "plan" ||
     kind === "pendingInteraction"
   ) {
@@ -398,9 +352,6 @@ export const readThreadAiPanelViewModel = (value: unknown): ThreadAiPanelViewMod
       : [],
     turns: Array.isArray(value.turns)
       ? value.turns.map(readAiPanelTurn).filter((turn): turn is ThreadAiPanelTurn => turn !== null)
-      : [],
-    toolCalls: Array.isArray(value.toolCalls)
-      ? value.toolCalls.map(readAiPanelToolCall).filter((call): call is ThreadAiPanelToolCall => call !== null)
       : [],
     plans: Array.isArray(value.plans)
       ? value.plans.map(readAiPanelPlan).filter((plan): plan is ThreadAiPanelPlan => plan !== null)
@@ -464,19 +415,6 @@ export const aiPanelViewModelToAgentDetail = (
     ...(message.displayContent === undefined ? {} : { displayContent: message.displayContent }),
     createdAt: message.createdAtMs,
   }));
-  const toolCalls: AgentToolCall[] = viewModel.toolCalls.map((call) => ({
-    id: call.id,
-    sessionId: call.sessionId,
-    turnId: call.turnId,
-    toolName: call.toolName,
-    input: call.input,
-    ...(call.output === undefined ? {} : { output: call.output }),
-    status: toolStatusToAgent(call.status, "completed"),
-    ...(call.errorCode === undefined ? {} : { errorCode: call.errorCode }),
-    ...(call.errorMessage === undefined ? {} : { errorMessage: call.errorMessage }),
-    startedAt: call.startedAtMs,
-    ...(call.finishedAtMs === undefined ? {} : { finishedAt: call.finishedAtMs }),
-  }));
   const pendingInteractions: AgentPendingInteraction[] = (viewModel.pendingInteractions ?? [])
     .map((interaction): AgentPendingInteraction | null => {
       const kind = readPendingInteractionKind(interaction.kind);
@@ -508,18 +446,11 @@ export const aiPanelViewModelToAgentDetail = (
       turnById.set(turn.id, turn);
     }
   }
-  const toolCallById = new Map(toolCalls.map((call) => [call.id, call]));
-  for (const call of fallbackDetail.toolCalls) {
-    if (!toolCallById.has(call.id)) {
-      toolCallById.set(call.id, call);
-    }
-  }
   return {
     session,
     pendingInteractions,
     turns: [...turnById.values()].sort((left, right) => left.createdAt - right.createdAt),
     messages: [...messageById.values()].sort((left, right) => left.createdAt - right.createdAt),
-    toolCalls: [...toolCallById.values()].sort((left, right) => left.startedAt - right.startedAt),
     runtimeEvents: [],
     aiPanelTurnMeta: viewModel.turnMeta,
     aiPanelTimelineEntries: viewModel.timelineEntries,

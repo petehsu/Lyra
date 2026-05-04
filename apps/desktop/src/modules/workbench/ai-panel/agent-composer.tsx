@@ -23,7 +23,6 @@ export type {
   AgentComposerProps,
   AgentComposerSubmitPayload,
   AgentComposerWorkbenchTabMention,
-  AgentPermissionMode
 } from "./agent-composer-types";
 
 export const AgentComposer = memo(({
@@ -58,9 +57,6 @@ export const AgentComposer = memo(({
   planModeLocked = false,
   planModeLabel,
   onPlanModeToggle,
-  permissionMode = "default",
-  permissionModeDisabled = false,
-  onPermissionModeSelect,
   onHeightChange,
   onSend,
   onSendWithFollow,
@@ -139,7 +135,6 @@ export const AgentComposer = memo(({
     <AgentComposerView
       composerClassName={composerClassName}
       composerMenuLabel={t("ai.composerMenuLabel")}
-      permissionModeLabel={t("ai.permissionModeLabel")}
       sendVisualState={sendVisualState}
       modelState={modelState}
       runtime={runtime}
@@ -158,9 +153,6 @@ export const AgentComposer = memo(({
       planModeEnabled={planModeEnabled}
       planModeLocked={planModeLocked}
       onPlanModeToggle={onPlanModeToggle}
-      permissionMode={permissionMode}
-      permissionModeDisabled={permissionModeDisabled}
-      onPermissionModeSelect={onPermissionModeSelect}
       onModelSelect={onModelSelect}
       reasoningEffortOptions={reasoningEffortOptions}
       selectedReasoningEffort={selectedReasoningEffort}

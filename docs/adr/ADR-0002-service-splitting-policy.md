@@ -9,6 +9,6 @@ Split runtime capabilities into independent services:
 - browser-automation
 
 ## Service Boundary Rules
-- Transport contracts only through `packages/capability-protocol`
+- Transport contracts stay in the owning shared bridge or native protocol crate.
 - No direct imports between service internals
 - Cross-service calls must be explicit RPC/event interfaces

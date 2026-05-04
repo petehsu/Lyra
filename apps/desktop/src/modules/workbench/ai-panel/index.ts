@@ -15,7 +15,6 @@ export type {
   AiPanelAppIconKey,
   AiPanelAppOpenRequest,
   AiPlanApprovalWorkspaceOpenRequest,
-  AiPanelWriteStreamEvent,
   AiPanelSurfaceProps
 } from "./types";
 export type {

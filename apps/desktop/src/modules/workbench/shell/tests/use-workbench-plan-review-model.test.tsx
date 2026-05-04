@@ -1,8 +1,8 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
-import type { PlanApprovalRequest } from "../../../../shared/desktop-bridge";
 import type { AiPlanApprovalWorkspaceOpenRequest } from "../../ai-panel";
+import type { PlanApprovalRequest } from "../../ai-panel/agent-ui-types";
 import type { WorkspaceTabsModel } from "../../workspace-tabs";
 import { useWorkbenchPlanReviewModel } from "../use-workbench-plan-review-model";
 

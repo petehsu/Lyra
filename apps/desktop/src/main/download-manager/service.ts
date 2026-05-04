@@ -2339,7 +2339,6 @@ export const createDownloadManagerIpcBridge = ({
 
   const importExternalBrowserDownloads = async (): Promise<DownloadManagerSnapshot> => {
     const candidates = await scanExternalBrowserDownloads({
-      storageRoot,
       appPath: app.getAppPath(),
       resourcesPath: process.resourcesPath,
       cwd: process.cwd()

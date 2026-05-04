@@ -38,7 +38,6 @@ Desktop process rewires Electron paths to keep app state under Lyra root:
 - `~/.lyra/modules/terminal`
 - `~/.lyra/modules/workbench-state`
 - `~/.lyra/modules/search`
-- `~/.lyra/modules/browser-use`
 - `~/.lyra/modules/image-viewer`
 
 ## Rules

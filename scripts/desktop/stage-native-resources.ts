@@ -26,7 +26,6 @@ const runtimePackages = ["lyrad"] as const;
 const nativeAddonPackages = [
   "lyra-terminal-core",
   "lyra-lsp-core",
-  "lyra-calculator-napi",
   "lyra-files-napi",
   "lyra-image-napi",
   "lyra-resource-napi",
@@ -39,7 +38,6 @@ const nativeAddonPackages = [
 const artifactStems = [
   "lyra_terminal_core",
   "lyra_lsp_core",
-  "lyra_calculator_napi",
   "lyra_files_napi",
   "lyra_image_napi",
   "lyra_resource_napi",

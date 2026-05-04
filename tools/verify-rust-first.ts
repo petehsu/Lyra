@@ -302,53 +302,10 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
         message: "Image viewer decoding and tile preparation must stay native-owned."
       }
     ]
-  },
-  {
-    name: "calculator",
-    dirName: "calculator",
-    crateDir: "crates/lyra-calculator-napi",
-    cratePackageName: "lyra-calculator-napi",
-    servicePath: "apps/desktop/src/main/calculator/service.ts",
-    loaderPath: "apps/desktop/src/main/calculator/native-loader.ts",
-    typesPath: "apps/desktop/src/main/calculator/types.ts",
-    indexPath: "apps/desktop/src/main/calculator/index.ts",
-    mainBridgeFactoryName: "createCalculatorHostToolsBridge",
-    requiredServiceRules: [
-      {
-        pattern: /from\s+["']\.\/native-loader["']/,
-        message: "Calculator service must import its native loader."
-      },
-      {
-        pattern: /\bloadCalculatorNativeBindings\b/,
-        message: "Calculator service must load native bindings explicitly."
-      }
-    ],
-    forbiddenServiceRules: [
-      {
-        pattern: /safeStorage/,
-        message: "Calculator service must not grow TypeScript secret handling."
-      },
-      {
-        pattern: /Fall through to the existing TypeScript implementation/,
-        message: "Calculator service must not keep TypeScript fallback implementation notes or branches."
-      }
-    ]
   }
 ] as const;
 
 const tsOwnedMainModules = new Map<string, string>([
-  [
-    "agent-core",
-    "TypeScript-owned shell module: Agent Core IPC bridge and host persona context enrichment above the Rust runtime."
-  ],
-  [
-    "browser-use",
-    "TypeScript-owned shell module: browser-use runtime coordination, bundle lifecycle, and host-tool bridging."
-  ],
-  [
-    "capabilities",
-    "TypeScript-owned shell module: unified capability registry, app manifests, and invoke/event orchestration."
-  ],
   [
     "workbench-browser",
     "TypeScript-owned shell module: embedded browser tab/view orchestration in Electron."
@@ -356,6 +313,10 @@ const tsOwnedMainModules = new Map<string, string>([
   [
     "workbench-documents",
     "TypeScript-owned shell module: document detection/fetch/view coordination above native parsers."
+  ],
+  [
+    "download-manager",
+    "TypeScript-owned shell module: download orchestration with native planning and bundled helper runtimes."
   ],
   [
     "workbench-observation",
@@ -374,20 +335,8 @@ const tsOwnedMainModules = new Map<string, string>([
 
 const bridgeOnlyMainModules = new Map<string, string>([
   [
-    "code-intel",
-    "Bridge-only module: host tool registration and runtime wiring for native code intelligence."
-  ],
-  [
     "documents",
     "Bridge-only module: native document parser loader/types exposed to shell services."
-  ],
-  [
-    "runtime-host-rpc",
-    "Bridge-only module: registers host RPC handlers onto the shared runtime client."
-  ],
-  [
-    "local-search",
-    "Bridge-only module: registers local search host tools backed by Rust app-server RPC."
   ],
   ["runtime", "Bridge-only utilities. Runtime ports must stay thin and native-backed where declared."]
 ]);

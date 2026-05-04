@@ -1,11 +1,7 @@
 import { AgentComposer } from "./agent-composer";
 import type { AgentComposerFileAttachment } from "./agent-composer";
-import { AdvancedDiagnosticsPanel } from "./advanced-diagnostics-panel";
 import { resolveAiPanelEmptyGreetingCandidates } from "./empty-greeting";
-import { AiPanelInteractionShell } from "./interaction-shell";
-import { AiPermissionsPanel } from "./permissions-panel";
-import { ReviewStartPanel } from "./review-start-panel";
-import { EMPTY_THREAD_STYLE, type AiPanelSurfaceTextLabels } from "./surface-model";
+import type { AiPanelSurfaceTextLabels } from "./surface-model";
 import { AiPanelSurfaceFrame } from "./surface-frame";
 import { AiPanelThreadTabs } from "./thread-tabs";
 import { AiPanelThreadView } from "./thread-view";
@@ -20,7 +16,6 @@ const LOGO_BLINK_URL = new URL("../../../renderer/assets/logo-blink.svg", import
 type AiPanelSurfaceViewProps = {
   readonly surfaceProps: AiPanelSurfaceProps;
   readonly locale: WorkbenchLocale;
-  readonly richRenderingEnabled: boolean;
   readonly aiPanelSide: AiPanelSide;
   readonly textLabels: AiPanelSurfaceTextLabels;
   readonly runtime: AiPanelSurfaceRuntime;
@@ -29,7 +24,6 @@ type AiPanelSurfaceViewProps = {
 export const AiPanelSurfaceView = ({
   surfaceProps,
   locale,
-  richRenderingEnabled,
   aiPanelSide,
   textLabels,
   runtime
@@ -38,7 +32,6 @@ export const AiPanelSurfaceView = ({
     variant,
     desktopApi,
     title,
-    themeSignature,
     newSessionTitle,
     onToggleAiPanelSide,
     movePanelToLeftLabel,
@@ -51,19 +44,13 @@ export const AiPanelSurfaceView = ({
     composePlaceholder,
     composeSendLabel,
     emptyThreadLabel,
-    loadingSessionLabel,
-    turnWorkingLabel,
-    turnWorkedForPrefix,
-    toolStatusRunningLabel,
-    toolStatusCompletedLabel,
-    toolStatusFailedLabel,
     onOpenHistory,
     onOpenMcp,
     onOpenSkills,
     onOpenPlugins,
     onRequestProjectBind
   } = surfaceProps;
-  const { state, viewModel, actions } = runtime;
+  const { state, actions } = runtime;
   const emptyGreetingLabels = resolveAiPanelEmptyGreetingCandidates({
     locale,
     appMeta: desktopApi?.appMeta,
@@ -107,20 +94,10 @@ export const AiPanelSurfaceView = ({
       onOpenMcp={onOpenMcp}
       onOpenSkills={onOpenSkills}
       onOpenPlugins={onOpenPlugins}
-      onOpenPermissions={() => {
-        actions.setIsPermissionsPanelOpen(true);
-      }}
-      onOpenAdvancedTools={() => {
-        actions.setIsAdvancedPanelOpen(true);
-      }}
       openHistoryLabel={openHistoryLabel}
       openMcpLabel={openMcpLabel}
       openSkillsLabel={openSkillsLabel}
       openPluginsLabel={surfaceProps.openPluginsLabel}
-      openPermissionsLabel={textLabels.permissions}
-      advancedToolsLabel={textLabels.advancedTools}
-      onStartReview={runtime.canOpenReviewChanges ? actions.openReviewPanel : undefined}
-      reviewChangesLabel={textLabels.reviewChanges}
       aiPanelSide={aiPanelSide}
       onToggleAiPanelSide={onToggleAiPanelSide}
       movePanelToLeftLabel={movePanelToLeftLabel}
@@ -141,108 +118,10 @@ export const AiPanelSurfaceView = ({
           <AiPanelThreadView
             logoUrl={LOGO_URL}
             blinkLogoUrl={LOGO_BLINK_URL}
-            locale={locale}
-            isZhLocale={locale === "zh-CN"}
-            title={title}
-            richRenderingEnabled={richRenderingEnabled}
-            {...(themeSignature === undefined ? {} : { themeSignature })}
-            showEmptySessionScene={runtime.showEmptySessionScene}
-            isLoading={state.isLoadingThread || state.isLoadingThreads}
-            loadingSessionLabel={loadingSessionLabel}
             emptyThreadLabel={emptyThreadLabel}
             emptyGreetingLabels={emptyGreetingLabels}
-            threadRef={runtime.threadViewportRef}
-            threadStyle={EMPTY_THREAD_STYLE}
-            messageMetadata={runtime.messageMetadata}
-            virtualRows={runtime.virtualRows}
-            topSpacerHeight={runtime.topSpacerHeight}
-            bottomSpacerHeight={runtime.bottomSpacerHeight}
-            measureRow={runtime.measureThreadRow}
-            turnsById={viewModel.turnsById}
-            runtimeFeedByTurn={viewModel.runtimeFeedByTurn}
-            turnTimelineByTurn={viewModel.turnTimelineByTurn}
-            assistantMessageOrderById={viewModel.assistantMessageOrderById}
-            turnWorkingLabel={turnWorkingLabel}
-            turnWorkedForPrefix={turnWorkedForPrefix}
-            toolStatusRunningLabel={toolStatusRunningLabel}
-            toolStatusCompletedLabel={toolStatusCompletedLabel}
-            toolStatusFailedLabel={toolStatusFailedLabel}
-            showFullOutputLabel={textLabels.showFullOutput}
-            expandToolOutputLabel={textLabels.expandToolOutput}
-            collapseToolOutputLabel={textLabels.collapseToolOutput}
-            fileChangesLabel={textLabels.fileChanges}
-            pendingInteractionQueue={state.pendingInteractionQueue}
-            canOpenFilePath={runtime.canOpenFilePath}
-            openRuntimeTargetPath={runtime.openRuntimeTargetPath}
-            streamingAssistantText={runtime.streamingAssistantText}
-            streamingTurnRuntimeFeed={viewModel.streamingTurnRuntimeFeed}
-            streamingStatus={viewModel.streamingStatus}
-            orphanRuntimeFeed={viewModel.orphanRuntimeFeed}
-            latestPlanTurnId={state.latestPlanTurnId}
-            planActionsEnabled={!state.isSending && !state.isStreamActive}
-            copyMessageLabel={textLabels.copyMessage}
-            copiedMessageLabel={textLabels.copiedMessage}
-            forkResponseLabel={textLabels.forkResponse}
-            regenerateResponseLabel={textLabels.regenerateResponse}
-            editMessageLabel={textLabels.editMessage}
-            onForkTurn={(turnId) => {
-              void actions.forkTurn(turnId);
-            }}
-            onRegenerateTurn={actions.regenerateTurn}
-            onEditMessageTurn={actions.editMessageTurn}
-            onPlanApprovalDecision={actions.planApprovalDecision}
-            {...(runtime.openPlanApprovalInWorkspace === undefined
-              ? {}
-              : { onOpenPlanApprovalInWorkspace: runtime.openPlanApprovalInWorkspace })}
-            onOpenThread={actions.openThreadTab}
           />
         </div>
-
-        <AiPanelInteractionShell
-          locale={locale}
-          panelRef={runtime.interactionPanelRef}
-          activeInteractionPanel={state.activeInteractionPanel}
-          activePendingInteraction={state.activePendingInteraction}
-          pendingInteractionQueue={state.pendingInteractionQueue}
-          activeInteractionPosition={state.activeInteractionPosition}
-          navPreviousLabel={textLabels.navPrevious}
-          navNextLabel={textLabels.navNext}
-          onSelectInteractionId={actions.setActiveInteractionId}
-          onCommandApprovalDecision={actions.respondToCommandApproval}
-          onAgentQuestionSubmit={actions.respondToAgentQuestion}
-          onMcpElicitationSubmit={actions.respondToMcpElicitation}
-        />
-
-        {runtime.isPermissionsPanelOpen ? (
-          <AiPermissionsPanel
-            desktopApi={desktopApi}
-            locale={locale}
-            onClose={() => {
-              actions.setIsPermissionsPanelOpen(false);
-            }}
-          />
-        ) : null}
-
-        {runtime.isAdvancedPanelOpen ? (
-          <AdvancedDiagnosticsPanel
-            locale={locale}
-            activeThreadId={state.activeThreadId}
-            actions={actions.advanced}
-            openDialog={surfaceProps.openDialog}
-            onClose={() => {
-              actions.setIsAdvancedPanelOpen(false);
-            }}
-          />
-        ) : null}
-
-        {runtime.isReviewPanelOpen ? (
-          <ReviewStartPanel
-            locale={locale}
-            isStarting={runtime.isReviewStarting}
-            onClose={actions.closeReviewPanel}
-            onStart={actions.startReview}
-          />
-        ) : null}
 
         <AgentComposer
           locale={locale}
@@ -259,16 +138,9 @@ export const AiPanelSurfaceView = ({
           verbosityOptions={runtime.verbosityOptions}
           selectedVerbosity={runtime.selectedVerbosity ?? null}
           onVerbositySelect={actions.setSelectedVerbosity}
-          permissionMode={runtime.permissionMode}
-          permissionModeDisabled={runtime.isBusy}
-          onPermissionModeSelect={actions.setPermissionMode}
           ariaLabel={composeAriaLabel ?? title}
           placeholder={composePlaceholder ?? ""}
           sendLabel={composeSendLabel ?? "Send"}
-          followEnabled={state.followEnabled}
-          followLabel={textLabels.followMode}
-          onFollowToggle={actions.toggleFollow}
-          onSendWithFollow={actions.enableFollow}
           inputDisabled={!runtime.isAgentAvailable}
           sendDisabled={!runtime.isAgentAvailable}
           sending={runtime.isBusy}
@@ -276,10 +148,6 @@ export const AiPanelSurfaceView = ({
             state.streamingTurnId === null
             || !runtime.isAgentAvailable
           }
-          planModeEnabled={state.planModeEnabled}
-          planModeLocked={runtime.selectedModelOption === null || runtime.isBusy}
-          planModeLabel={state.planModeEnabled ? textLabels.planModeArmed : textLabels.planMode}
-          onPlanModeToggle={actions.togglePlanMode}
           onRequestFileAttachments={
             desktopApi?.files === undefined
               ? undefined

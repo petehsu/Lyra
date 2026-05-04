@@ -9,7 +9,6 @@ import { useAiPanelSurfaceRuntime } from "./use-ai-panel-surface-runtime";
 export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
   const {
     locale = "en-US",
-    richRenderingEnabled = true,
     stopBehavior = "turn_only",
     configuredProfiles = [],
     aiPanelSide = "left"
@@ -18,7 +17,6 @@ export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
   const textLabels = useMemo(() => createSurfaceTextLabels(t), [t]);
   const runtime = useAiPanelSurfaceRuntime({
     desktopApi: surfaceProps.desktopApi,
-    locale,
     t,
     stopBehavior,
     defaultProfileId: surfaceProps.defaultProfileId,
@@ -26,34 +24,15 @@ export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
     defaultModelNames: surfaceProps.defaultModelNames,
     configuredProfiles,
     onDefaultProfileSelect: surfaceProps.onDefaultProfileSelect,
-    runtimeQueuedLabel: surfaceProps.runtimeQueuedLabel,
-    runtimeStartedLabel: surfaceProps.runtimeStartedLabel,
-    runtimeFailedTurnLabel: surfaceProps.runtimeFailedTurnLabel,
-    runtimeCompletedTurnLabel: surfaceProps.runtimeCompletedTurnLabel,
-    runtimePhaseToolStartedLabel: surfaceProps.runtimePhaseToolStartedLabel,
-    runtimePhaseToolFinishedLabel: surfaceProps.runtimePhaseToolFinishedLabel,
-    runtimeToolFallbackLabel: surfaceProps.runtimeToolFallbackLabel,
-    toolNameSearchLabel: surfaceProps.toolNameSearchLabel,
-    toolNameReadRangeLabel: surfaceProps.toolNameReadRangeLabel,
-    toolNameListLabel: surfaceProps.toolNameListLabel,
-    toolNameGlobLabel: surfaceProps.toolNameGlobLabel,
-    toolNameWriteLabel: surfaceProps.toolNameWriteLabel,
-    toolNameEditLabel: surfaceProps.toolNameEditLabel,
-    toolNameMultiEditLabel: surfaceProps.toolNameMultiEditLabel,
     fileMentionFallbackRoots: surfaceProps.fileMentionFallbackRoots,
     workbenchTabMentions: surfaceProps.workbenchTabMentions,
-    onOpenFilePath: surfaceProps.onOpenFilePath,
-    onWriteStreamEvent: surfaceProps.onWriteStreamEvent,
-    onAgentRuntimeNotification: surfaceProps.onAgentRuntimeNotification,
     onRequestProjectBind: surfaceProps.onRequestProjectBind,
-    onOpenPlanApprovalWorkspace: surfaceProps.onOpenPlanApprovalWorkspace
   });
 
   return (
     <AiPanelSurfaceView
       surfaceProps={surfaceProps}
       locale={locale}
-      richRenderingEnabled={richRenderingEnabled}
       aiPanelSide={aiPanelSide}
       textLabels={textLabels}
       runtime={runtime}

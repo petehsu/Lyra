@@ -1,5 +1,4 @@
 import type {
-  WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerState,
   WorkbenchBrowserEvent,
   WorkbenchBrowserLayoutSnapshot,
@@ -143,13 +142,6 @@ export type WorkbenchBrowserViewManager = {
   readonly applyWebTheme: (
     snapshot: WorkbenchBrowserWebThemeSnapshot
   ) => Promise<void>;
-  readonly showAgentElementPickerTarget: (
-    target: WorkbenchBrowserAgentTargetInfo
-  ) => Promise<boolean>;
-  readonly clearAgentElementPickerTarget: (
-    tabId: string,
-    options?: { readonly preserveManualMode?: boolean }
-  ) => Promise<void>;
   readonly readActiveTabId: () => string | null;
   readonly listFrames: (tabId: string) => readonly WorkbenchBrowserFrameDescriptor[];
   readonly probeFrameDom: (
@@ -195,11 +187,6 @@ export type WorkbenchBrowserViewManager = {
 export type WorkbenchBrowserElementPickerController = {
   readonly dispose: () => Promise<void>;
   readonly setMode: (request: WorkbenchBrowserSetElementPickerModeRequest) => Promise<void>;
-  readonly showAgentTarget: (target: WorkbenchBrowserAgentTargetInfo) => Promise<boolean>;
-  readonly clearAgentTarget: (
-    tabId: string,
-    options?: { readonly preserveManualMode?: boolean }
-  ) => Promise<void>;
   readonly handleActiveTabChanged: (activeTabId: string | null) => void;
   readonly handlePageNavigated: (tabId: string) => void;
   readonly handlePageClosed: (tabId: string) => void;

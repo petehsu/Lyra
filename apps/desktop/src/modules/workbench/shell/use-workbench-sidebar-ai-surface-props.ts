@@ -8,27 +8,23 @@ import {
   type AgentComposerWorkbenchTabMention
 } from "../ai-panel";
 import { readAiHistoryHasThreads } from "../ai-history/availability";
-import type { AiPlanApprovalWorkspaceOpenRequest } from "../ai-panel";
-import type { WorkbenchNotificationModel } from "../notifications";
-import type { GlobalDialogModel } from "../global-dialog";
 import type { I18nKey } from "../i18n";
 import type { WorkbenchPreferences } from "../preferences";
 import type { SettingsAiModel } from "../settings-ai";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { AiPanelSide } from "./use-panel-layout";
-import type { WorkbenchSidebarAiSurfaceProps } from "./use-workbench-ai-surface-bridge";
+import type { AiPanelSurfaceProps } from "../ai-panel";
 
 type SidebarAiPreferences = Pick<
   WorkbenchPreferences,
-  "locale" | "aiRichRenderingEnabled" | "aiStopBehavior"
+  "locale" | "aiStopBehavior"
 >;
 
 type UseWorkbenchSidebarAiSurfacePropsParams = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly preferences: SidebarAiPreferences;
   readonly settingsAiModel: SettingsAiModel;
-  readonly resolvedThemeId: string;
   readonly aiPanelSide: AiPanelSide;
   readonly fileMentionFallbackRoots: readonly string[];
   readonly workbenchTabMentions: readonly AgentComposerWorkbenchTabMention[];
@@ -37,9 +33,6 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   readonly onRequestProjectBind: (
     currentPath?: string
   ) => Promise<string | null>;
-  readonly onOpenPlanApprovalWorkspace: (request: AiPlanApprovalWorkspaceOpenRequest) => void;
-  readonly onAgentRuntimeNotification?: WorkbenchNotificationModel["publishNotification"];
-  readonly openDialog: GlobalDialogModel["openDialog"];
   readonly t: (key: I18nKey) => string;
 };
 
@@ -47,39 +40,29 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   desktopApi,
   preferences,
   settingsAiModel,
-  resolvedThemeId,
   aiPanelSide,
   fileMentionFallbackRoots,
   workbenchTabMentions,
   onToggleAiPanelSide,
   openAppTab,
   onRequestProjectBind,
-  onOpenPlanApprovalWorkspace,
-  onAgentRuntimeNotification,
-  openDialog,
   t
-}: UseWorkbenchSidebarAiSurfacePropsParams): WorkbenchSidebarAiSurfaceProps =>
+}: UseWorkbenchSidebarAiSurfacePropsParams): AiPanelSurfaceProps =>
   useMemo(
     () => ({
+      variant: "sidebar",
       desktopApi,
       locale: preferences.locale,
       title: t("ai.tabTitle"),
-      description: t("settings.aiCategoryLabel"),
-      themeSignature: resolvedThemeId,
-      richRenderingEnabled: preferences.aiRichRenderingEnabled,
       stopBehavior: preferences.aiStopBehavior,
       newSessionTitle: t("ai.sessionDefaultTitle"),
       defaultProfileId: settingsAiModel.defaultProfileId,
       defaultProviderId: settingsAiModel.defaultProviderId,
-      defaultProfileName: settingsAiModel.defaultProfileLabel,
       defaultModelNames: settingsAiModel.defaultModelNames,
       configuredProfiles: settingsAiModel.profiles,
       onDefaultProfileSelect: settingsAiModel.setDefaultProfile,
       fileMentionFallbackRoots,
       workbenchTabMentions,
-      profileLabel: t("ai.profileLabel"),
-      modelLabel: t("ai.modelLabel"),
-      modelsLabel: t("ai.modelsLabel"),
       openHistoryLabel: t("ai.openHistory"),
       openMcpLabel: t("ai.openMcp"),
       openSkillsLabel: t("ai.openSkills"),
@@ -92,41 +75,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       composeAriaLabel: t("sidebar.composeAriaLabel"),
       composePlaceholder: t("sidebar.composePlaceholder"),
       composeSendLabel: t("sidebar.composeSend"),
-      emptyStateTitle: t("settings.aiEmptyTitle"),
-      emptyStateDescription: t("settings.aiEmptyDescription"),
-      readOnlyBannerLabel: t("ai.readonlyBanner"),
-      loadingSessionLabel: t("ai.loadingSession"),
       emptyThreadLabel: t("ai.startBySending"),
-      turnNoToolCallsLabel: t("ai.turnNoToolCalls"),
-      turnWorkingLabel: t("ai.turnWorking"),
-      turnFailedLabel: t("ai.turnFailed"),
-      turnWorkedForPrefix: t("ai.turnWorkedForPrefix"),
-      runtimeQueuedLabel: t("ai.runtimeQueued"),
-      runtimeStartedLabel: t("ai.runtimeStarted"),
-      runtimeRunningPrefix: t("ai.runtimeRunningPrefix"),
-      runtimeCompletedPrefix: t("ai.runtimeCompletedPrefix"),
-      runtimeFailedPrefix: t("ai.runtimeFailedPrefix"),
-      runtimeCompletedTurnLabel: t("ai.runtimeCompletedTurn"),
-      runtimeFailedTurnLabel: t("ai.runtimeFailedTurn"),
-      runtimePhasePrefixLabel: t("ai.runtimePhasePrefix"),
-      runtimePhaseIdleLabel: t("ai.runtimePhaseIdle"),
-      runtimePhaseAcceptedLabel: t("ai.runtimePhaseAccepted"),
-      runtimePhaseStartedLabel: t("ai.runtimePhaseStarted"),
-      runtimePhaseToolStartedLabel: t("ai.runtimePhaseToolStarted"),
-      runtimePhaseToolFinishedLabel: t("ai.runtimePhaseToolFinished"),
-      runtimePhaseCompletedLabel: t("ai.runtimePhaseCompleted"),
-      runtimePhaseFailedLabel: t("ai.runtimePhaseFailed"),
-      runtimeToolFallbackLabel: t("ai.runtimeToolFallback"),
-      toolNameSearchLabel: t("ai.toolNameSearch"),
-      toolNameReadRangeLabel: t("ai.toolNameReadRange"),
-      toolNameListLabel: t("ai.toolNameList"),
-      toolNameGlobLabel: t("ai.toolNameGlob"),
-      toolNameWriteLabel: t("ai.toolNameWrite"),
-      toolNameEditLabel: t("ai.toolNameEdit"),
-      toolNameMultiEditLabel: t("ai.toolNameMultiEdit"),
-      toolStatusRunningLabel: t("ai.toolStatusRunning"),
-      toolStatusCompletedLabel: t("ai.toolStatusCompleted"),
-      toolStatusFailedLabel: t("ai.toolStatusFailed"),
       onOpenHistory: () => {
         void readAiHistoryHasThreads(desktopApi).then((hasThreads) => {
           if (hasThreads) {
@@ -143,10 +92,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenPlugins: () => {
         openAppTab(createAiPluginsAppRequest(t("ai.pluginsTabTitle")));
       },
-      onOpenPlanApprovalWorkspace,
-      ...(onAgentRuntimeNotification === undefined ? {} : { onAgentRuntimeNotification }),
-      onRequestProjectBind,
-      openDialog
+      onRequestProjectBind
     }),
     [
       aiPanelSide,
@@ -154,19 +100,13 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       fileMentionFallbackRoots,
       workbenchTabMentions,
       onRequestProjectBind,
-      onOpenPlanApprovalWorkspace,
-      onAgentRuntimeNotification,
       onToggleAiPanelSide,
       openAppTab,
-      openDialog,
-      preferences.aiRichRenderingEnabled,
       preferences.aiStopBehavior,
       preferences.locale,
-      resolvedThemeId,
       settingsAiModel.defaultModelNames,
       settingsAiModel.defaultProfileId,
       settingsAiModel.defaultProviderId,
-      settingsAiModel.defaultProfileLabel,
       settingsAiModel.profiles,
       settingsAiModel.setDefaultProfile,
       t

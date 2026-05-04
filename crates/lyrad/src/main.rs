@@ -1,12 +1,8 @@
-mod agent;
-mod host_rpc;
 mod modules;
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::Duration;
 
 use lyra_lsp_core::{
     change_document as lsp_change_document, clear_rust_event_callback as clear_lsp_event_callback,
@@ -18,7 +14,7 @@ use lyra_lsp_core::{
     LspDiagnosticsRequest, LspDocumentRequest, LspPositionRequest,
 };
 use lyra_mcp_core::{
-    call_mcp_tool_json, clear_rust_event_callback as clear_mcp_event_callback,
+    clear_rust_event_callback as clear_mcp_event_callback,
     create_mcp_server_from_template_json, delete_mcp_secret_refs_json,
     materialize_mcp_runtime_environment_json, merge_mcp_effective_config_json,
     normalize_mcp_environment_input_json, read_mcp_runtime_introspection_json,
@@ -58,9 +54,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
-use crate::agent::AgentRuntime;
-use crate::host_rpc::HostRpcClient;
-
 const RUNTIME_NAME: &str = "lyrad";
 const TERMINAL_RUNTIME_EVENT_NAME: &str = "terminal.runtime";
 const MCP_RUNTIME_EVENT_NAME: &str = "mcp.runtime";
@@ -70,8 +63,6 @@ const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 #[derive(Clone)]
 struct ConnectionContext {
     outgoing: UnboundedSender<RuntimeEnvelope>,
-    host_rpc: HostRpcClient,
-    agent_runtime: AgentRuntime,
 }
 
 #[derive(Debug, Deserialize)]
@@ -127,26 +118,6 @@ struct RuntimeTerminalResizeRequest {
 #[serde(rename_all = "camelCase")]
 struct RuntimeTerminalCloseRequest {
     session_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeTerminalExecRequest {
-    command: String,
-    cwd: Option<String>,
-    timeout_ms: Option<u64>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeTerminalExecResult {
-    session_id: String,
-    command: String,
-    exit_code: Option<i32>,
-    stdout: String,
-    stderr: String,
-    output: String,
-    timed_out: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -274,83 +245,6 @@ fn normalize_terminal_restore_request(
     }
 }
 
-fn run_terminal_exec(payload: Value) -> Result<Value, RuntimeError> {
-    let request: RuntimeTerminalExecRequest = serde_json::from_value(payload)
-        .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-    let command = request.command.trim().to_string();
-    if command.is_empty() {
-        return Err(runtime_error("BAD_REQUEST", "command is required"));
-    }
-
-    let cwd = request
-        .cwd
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    let timeout = Duration::from_millis(request.timeout_ms.unwrap_or(90_000).max(1_000));
-
-    #[cfg(target_os = "windows")]
-    let mut child = Command::new("cmd")
-        .args(["/C", command.as_str()])
-        .current_dir(&cwd)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| runtime_error("TERMINAL_EXEC_FAILED", error.to_string()))?;
-    #[cfg(not(target_os = "windows"))]
-    let mut child = Command::new("/bin/sh")
-        .args(["-lc", command.as_str()])
-        .current_dir(&cwd)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| runtime_error("TERMINAL_EXEC_FAILED", error.to_string()))?;
-
-    let started_at = std::time::Instant::now();
-    let mut timed_out = false;
-    loop {
-        if child
-            .try_wait()
-            .map_err(|error| runtime_error("TERMINAL_EXEC_FAILED", error.to_string()))?
-            .is_some()
-        {
-            break;
-        }
-        if started_at.elapsed() >= timeout {
-            timed_out = true;
-            child
-                .kill()
-                .map_err(|error| runtime_error("TERMINAL_EXEC_FAILED", error.to_string()))?;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|error| runtime_error("TERMINAL_EXEC_FAILED", error.to_string()))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let combined_output = match (stdout.trim().is_empty(), stderr.trim().is_empty()) {
-        (false, false) => format!("{stdout}\n{stderr}"),
-        (false, true) => stdout.clone(),
-        (true, false) => stderr.clone(),
-        (true, true) => String::new(),
-    };
-
-    to_value(&RuntimeTerminalExecResult {
-        session_id: format!("runtime-exec-{}", uuid::Uuid::new_v4()),
-        command,
-        exit_code: output.status.code(),
-        stdout,
-        stderr,
-        output: combined_output,
-        timed_out,
-    })
-}
-
 fn handle_terminal_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
     match method {
         "terminal.sessions.create" => {
@@ -413,7 +307,6 @@ fn handle_terminal_request(method: &str, payload: Value) -> Result<Value, Runtim
             .map_err(map_runtime_error)?;
             Ok(Value::Null)
         }
-        "terminal.exec" => run_terminal_exec(payload),
         _ => Err(runtime_error(
             "METHOD_NOT_FOUND",
             format!("unknown terminal runtime method: {method}"),
@@ -570,7 +463,6 @@ fn handle_mcp_request(method: &str, payload: Value) -> Result<Value, RuntimeErro
         "mcp.materialize_runtime_environment" => {
             call_json(payload, materialize_mcp_runtime_environment_json)
         }
-        "mcp.call_tool" => call_json(payload, call_mcp_tool_json),
         "mcp.create_server_from_template" => {
             call_json(payload, create_mcp_server_from_template_json)
         }
@@ -706,20 +598,6 @@ fn resolve_socket_path() -> PathBuf {
     panic!("missing required --socket argument");
 }
 
-fn resolve_runtime_storage_root() -> PathBuf {
-    let socket_path = resolve_socket_path();
-    socket_path
-        .parent()
-        .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| {
-            socket_path
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| PathBuf::from("."))
-        })
-}
-
 async fn write_loop(
     mut writer: tokio::net::unix::OwnedWriteHalf,
     mut receiver: tokio::sync::mpsc::UnboundedReceiver<RuntimeEnvelope>,
@@ -745,48 +623,25 @@ async fn handle_request_envelope(
     payload: Value,
 ) {
     let outgoing = connection.outgoing.clone();
-    let is_agent_method = method.starts_with("agent.") || method.starts_with("lyra.");
-
-    let response = if is_agent_method {
-        match connection
-            .agent_runtime
-            .handle_request(&method, payload)
-            .await
-        {
-            Ok(result) => RuntimeEnvelope::Response {
-                id,
-                ok: true,
-                result: Some(result),
-                error: None,
-            },
-            Err(error) => RuntimeEnvelope::Response {
-                id,
-                ok: false,
-                result: None,
-                error: Some(error),
-            },
-        }
-    } else {
-        match tokio::task::spawn_blocking(move || handle_runtime_request(&method, payload)).await {
-            Ok(Ok(result)) => RuntimeEnvelope::Response {
-                id,
-                ok: true,
-                result: Some(result),
-                error: None,
-            },
-            Ok(Err(error)) => RuntimeEnvelope::Response {
-                id,
-                ok: false,
-                result: None,
-                error: Some(error),
-            },
-            Err(error) => RuntimeEnvelope::Response {
-                id,
-                ok: false,
-                result: None,
-                error: Some(runtime_error("TASK_JOIN_FAILED", error.to_string())),
-            },
-        }
+    let response = match tokio::task::spawn_blocking(move || handle_runtime_request(&method, payload)).await {
+        Ok(Ok(result)) => RuntimeEnvelope::Response {
+            id,
+            ok: true,
+            result: Some(result),
+            error: None,
+        },
+        Ok(Err(error)) => RuntimeEnvelope::Response {
+            id,
+            ok: false,
+            result: None,
+            error: Some(error),
+        },
+        Err(error) => RuntimeEnvelope::Response {
+            id,
+            ok: false,
+            result: None,
+            error: Some(runtime_error("TASK_JOIN_FAILED", error.to_string())),
+        },
     };
     let _ = outgoing.send(response);
 }
@@ -794,16 +649,8 @@ async fn handle_request_envelope(
 async fn serve_connection(stream: UnixStream) -> Result<(), RuntimeError> {
     let (reader, writer) = stream.into_split();
     let (outgoing, receiver) = unbounded_channel::<RuntimeEnvelope>();
-    let host_rpc = HostRpcClient::new(outgoing.clone());
-    let agent_runtime = AgentRuntime::new(
-        outgoing.clone(),
-        host_rpc.clone(),
-        resolve_runtime_storage_root(),
-    );
     let context = ConnectionContext {
         outgoing: outgoing.clone(),
-        host_rpc,
-        agent_runtime,
     };
     register_runtime_hooks(&context);
 
@@ -833,23 +680,12 @@ async fn serve_connection(stream: UnixStream) -> Result<(), RuntimeError> {
                     payload,
                 ));
             }
-            RuntimeEnvelope::Response {
-                id,
-                ok,
-                result,
-                error,
-            } => {
-                let _ = context
-                    .host_rpc
-                    .resolve_response(id, ok, result, error)
-                    .await;
-            }
+            RuntimeEnvelope::Response { .. } => {}
             RuntimeEnvelope::Event { .. } => {}
         }
     }
 
     writer_task.abort();
-    context.agent_runtime.shutdown().await;
     shutdown_runtime_modules();
     Ok(())
 }

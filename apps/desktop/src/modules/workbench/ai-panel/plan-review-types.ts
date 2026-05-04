@@ -1,7 +1,7 @@
 import type {
   PlanApprovalRequest,
   PlanInteractionResponse,
-} from "../../../shared/desktop-bridge";
+} from "./agent-ui-types";
 import type { WorkbenchLocale } from "../i18n";
 
 export type AiPlanReviewAnnotation = {

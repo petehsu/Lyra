@@ -3,17 +3,13 @@ import { describe, expect, test } from "vitest";
 import type { AiProviderProfile, AiProviderModelEntry } from "../../../../shared/ai";
 import {
   MODEL_OPTION_DELIMITER,
-  canOpenReviewChanges,
   createComposerReserveStyle,
   createRuntimeModelOptions,
   createRuntimeTurnOptions,
-  gitMetadataProbePaths,
   isAiRuntimeBusy,
-  permissionRuntimeOptions,
   resolveBoundProjectRoot,
   resolveSelectedRuntimeModelOption,
   resolveSyncedSelectedModelOptionValue,
-  shouldShowEmptySessionScene,
   uniqueModelIds
 } from "../surface-model";
 
@@ -226,23 +222,7 @@ describe("ai panel surface model", () => {
     })).toBe(`profile-mimo${MODEL_OPTION_DELIMITER}mimo-v2.5-pro`);
   });
 
-  test("maps permission modes into runtime turn options", () => {
-    expect(permissionRuntimeOptions("default")).toEqual({
-      approvalPolicy: "on-request",
-      approvalsReviewer: "user",
-      sandboxMode: "workspace-write"
-    });
-    expect(permissionRuntimeOptions("auto_review")).toEqual({
-      approvalPolicy: "on-request",
-      approvalsReviewer: "auto_review",
-      sandboxMode: "workspace-write"
-    });
-    expect(permissionRuntimeOptions("full_access")).toEqual({
-      approvalPolicy: "never",
-      approvalsReviewer: "user",
-      sandboxMode: "danger-full-access"
-    });
-
+  test("maps composer selections into runtime turn options", () => {
     expect(createRuntimeTurnOptions({
       selectedModelOption: {
         value: "profile/gpt-5",
@@ -252,15 +232,11 @@ describe("ai panel surface model", () => {
       },
       defaultProviderId: "lp-default",
       boundProjectRoot: "/repo",
-      permissionMode: "auto_review",
       collaborationMode: "plan"
     })).toEqual({
       model: "gpt-5",
       modelProvider: "lp-openai",
       cwd: "/repo",
-      approvalPolicy: "on-request",
-      approvalsReviewer: "auto_review",
-      sandboxMode: "workspace-write",
       collaborationMode: "plan"
     });
 
@@ -268,7 +244,6 @@ describe("ai panel surface model", () => {
       selectedModelOption: null,
       defaultProviderId: "lp-default",
       boundProjectRoot: "/repo",
-      permissionMode: "default",
       collaborationMode: "plan"
     });
     expect(planOptionsWithoutModel).toMatchObject({
@@ -308,74 +283,7 @@ describe("ai panel surface model", () => {
     })).toBe("/pending");
   });
 
-  test("builds git metadata probe paths from nested project roots", () => {
-    expect(gitMetadataProbePaths("/Users/dev/project/src/")).toEqual([
-      "/Users/dev/project/src/.git",
-      "/Users/dev/project/.git",
-      "/Users/dev/.git",
-      "/Users/.git",
-      "/.git"
-    ]);
-    expect(gitMetadataProbePaths("")).toEqual([]);
-  });
-
-  test("only opens review changes when the active thread has a usable git project", () => {
-    expect(canOpenReviewChanges({
-      activeThreadId: "thread-1",
-      boundProjectRoot: "/repo",
-      gitMetadataAvailable: true,
-      isAgentAvailable: true,
-      isBusy: false,
-      isReviewStarting: false
-    })).toBe(true);
-
-    expect(canOpenReviewChanges({
-      activeThreadId: null,
-      boundProjectRoot: "/repo",
-      gitMetadataAvailable: true,
-      isAgentAvailable: true,
-      isBusy: false,
-      isReviewStarting: false
-    })).toBe(false);
-    expect(canOpenReviewChanges({
-      activeThreadId: "thread-1",
-      boundProjectRoot: null,
-      gitMetadataAvailable: true,
-      isAgentAvailable: true,
-      isBusy: false,
-      isReviewStarting: false
-    })).toBe(false);
-    expect(canOpenReviewChanges({
-      activeThreadId: "thread-1",
-      boundProjectRoot: "/repo",
-      gitMetadataAvailable: false,
-      isAgentAvailable: true,
-      isBusy: false,
-      isReviewStarting: false
-    })).toBe(false);
-    expect(canOpenReviewChanges({
-      activeThreadId: "thread-1",
-      boundProjectRoot: "/repo",
-      gitMetadataAvailable: true,
-      isAgentAvailable: true,
-      isBusy: true,
-      isReviewStarting: false
-    })).toBe(false);
-  });
-
-  test("computes stable surface booleans and composer reserve style", () => {
-    expect(shouldShowEmptySessionScene({
-      messageCount: 0,
-      optimisticMessageCount: 0,
-      streamingAssistantText: "",
-      isStreamActive: false
-    })).toBe(true);
-    expect(shouldShowEmptySessionScene({
-      messageCount: 0,
-      optimisticMessageCount: 1,
-      streamingAssistantText: "",
-      isStreamActive: false
-    })).toBe(false);
+  test("computes runtime busy state and composer reserve style", () => {
     expect(isAiRuntimeBusy({ isSending: false, isStreamActive: true })).toBe(true);
     expect(isAiRuntimeBusy({ isSending: false, isStreamActive: false })).toBe(false);
     expect(createComposerReserveStyle(12)).toEqual({

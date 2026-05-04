@@ -16,7 +16,6 @@ export type {
   ThreadAiPanelPlan,
   ThreadAiPanelTimelineEntry,
   ThreadAiPanelTimelineEntryKind,
-  ThreadAiPanelToolCall,
   ThreadAiPanelTurn,
   ThreadAiPanelTurnMeta,
   ThreadAiPanelViewModel,
@@ -28,7 +27,6 @@ export {
 export {
   buildThreadTitle,
   readLyraThread,
-  threadItemToToolCall,
 } from "./lyra-thread-legacy-turns-adapter";
 
 export const lyraThreadToAgentDetail = (thread: LyraThread): AiPanelAgentSessionDetail => {

@@ -40,7 +40,6 @@ Requirements:
 ## TypeScript-Owned Main Modules
 These modules are shell-level logic and may stay TypeScript-owned:
 
-- `browser-use`
 - `capabilities`
 - `search`
 - `linux-compat`
@@ -58,7 +57,6 @@ If a TypeScript-owned module becomes a repeated performance bottleneck, first me
 These modules must stay thin adapters:
 
 - `runtime`
-- `runtime-host-rpc`
 - `code-intel`
 - `documents`
 

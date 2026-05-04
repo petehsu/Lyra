@@ -22,7 +22,7 @@ const planArtifact = {
 };
 
 describe("lyra thread adapter", () => {
-  test("maps app-server thread items into messages and tool calls", () => {
+  test("maps persisted thread items into messages", () => {
     const thread = readLyraThread({
       id: "thread-1",
       preview: "Build the panel",
@@ -46,46 +46,9 @@ describe("lyra thread adapter", () => {
               content: [{ type: "text", text: "Implement this" }],
             },
             {
-              type: "commandExecution",
-              id: "cmd-1",
-              command: "pnpm test",
-              cwd: "/repo",
-              status: "completed",
-              aggregatedOutput: "ok",
-              exitCode: 0,
-            },
-            {
-              type: "fileChange",
-              id: "file-1",
-              status: "applied",
-              changes: [{ path: "/repo/src/app.ts", operation: "update" }],
-            },
-            {
-              type: "dynamicToolCall",
-              id: "dyn-1",
-              tool: "workbench.document.read",
-              status: "completed",
-              arguments: { path: "/repo/src/app.ts" },
-              success: true,
-            },
-            {
-              type: "mcpToolCall",
-              id: "mcp-1",
-              server: "github",
-              tool: "list_issues",
-              status: "completed",
-              arguments: { repo: "lyra" },
-              result: { count: 1 },
-            },
-            {
               type: "reasoning",
               id: "reason-1",
               summary: ["Checked the failing path"],
-            },
-            {
-              type: "plan",
-              id: "plan-1",
-              text: "1. Fix the runtime chain",
             },
             {
               type: "agentMessage",
@@ -109,12 +72,6 @@ describe("lyra thread adapter", () => {
       ["user", "Implement this"],
       ["assistant", "Checked the failing path"],
       ["assistant", "Implemented."],
-    ]);
-    expect(detail.toolCalls.map((call) => [call.toolName, call.status])).toEqual([
-      ["terminal.exec", "completed"],
-      ["filesystem.write", "completed"],
-      ["workbench.document.read", "completed"],
-      ["mcp.github.list_issues", "completed"],
     ]);
   });
 
@@ -177,74 +134,6 @@ describe("lyra thread adapter", () => {
     ]);
   });
 
-  test("preserves image inputs and collab agent calls", () => {
-    const thread = readLyraThread({
-      id: "thread-images",
-      preview: "Inspect image",
-      modelProvider: "lp-openai",
-      createdAt: 100,
-      updatedAt: 140,
-      turns: [
-        {
-          id: "turn-1",
-          status: "completed",
-          startedAt: 101,
-          completedAt: 139,
-          items: [
-            {
-              type: "userMessage",
-              id: "user-1",
-              content: [
-                { type: "text", text: "Compare " },
-                { type: "localImage", path: "/tmp/screen.png" },
-                { type: "text", text: " with " },
-                { type: "image", url: "data:image/png;base64,abc" },
-              ],
-            },
-            {
-              type: "collabAgentToolCall",
-              id: "collab-1",
-              tool: "spawnAgent",
-              status: "completed",
-              senderThreadId: "thread-images",
-              receiverThreadIds: ["thread-child"],
-              prompt: "Inspect image details",
-              model: "gpt-5.4",
-              reasoningEffort: "medium",
-              agentsStates: {
-                "thread-child": "completed",
-              },
-            },
-          ],
-        },
-      ],
-    });
-
-    expect(thread).not.toBeNull();
-    const detail = lyraThreadToAgentDetail(thread!);
-
-    expect(detail.messages[0]?.contentParts).toEqual([
-      { type: "text", text: "Compare " },
-      { type: "attachment", name: "screen.png", path: "/tmp/screen.png", kind: "local_image" },
-      { type: "text", text: " with " },
-      { type: "attachment", name: "image", path: "data:image/png;base64,abc", kind: "image" },
-    ]);
-    expect(detail.toolCalls[0]).toMatchObject({
-      toolName: "collab.spawnAgent",
-      status: "completed",
-      input: {
-        senderThreadId: "thread-images",
-        receiverThreadIds: ["thread-child"],
-        prompt: "Inspect image details",
-        model: "gpt-5.4",
-        reasoningEffort: "medium",
-      },
-      output: {
-        receiverThreadIds: ["thread-child"],
-      },
-    });
-  });
-
   test("maps rust ai panel view model directly into session detail", () => {
     const thread = readLyraThread({
       id: "thread-projected",
@@ -287,19 +176,6 @@ describe("lyra thread adapter", () => {
           durationMs: 2000,
         },
       ],
-      toolCalls: [
-        {
-          id: "tool-1",
-          sessionId: "thread-projected",
-          turnId: "turn-1",
-          toolName: "terminal.exec",
-          input: { command: "echo hi" },
-          output: { aggregatedOutput: "hi\n" },
-          status: "completed",
-          startedAtMs: 101500,
-          finishedAtMs: 101512,
-        },
-      ],
       plans: [
         {
           turnId: "turn-1",
@@ -326,25 +202,6 @@ describe("lyra thread adapter", () => {
           createdAtMs: 102500,
           updatedAtMs: 102500,
         },
-        {
-          id: "request-1",
-          sessionId: "thread-projected",
-          turnId: "turn-1",
-          kind: "commandExecutionApproval",
-          status: "pending",
-          payload: {
-            requestId: "request-1",
-            agentCoreMethod: "item/commandExecution/requestApproval",
-            raw: {
-              command: "echo hi",
-              toolName: "terminal.exec",
-              input: { command: "echo hi" },
-              metadata: { riskLevel: "medium" },
-            },
-          },
-          createdAtMs: 102600,
-          updatedAtMs: 102600,
-        },
       ],
       timelineEntries: [
         {
@@ -362,14 +219,6 @@ describe("lyra thread adapter", () => {
           kind: "assistantMessage",
           refId: "assistant-1",
           createdAtMs: 102000,
-        },
-        {
-          id: "timeline:turn-1:tool:tool-1",
-          sessionId: "thread-projected",
-          turnId: "turn-1",
-          kind: "toolCall",
-          refId: "tool-1",
-          createdAtMs: 101500,
         },
         {
           id: "timeline:turn-1:plan:plan-1",
@@ -408,29 +257,15 @@ describe("lyra thread adapter", () => {
       updatedAt: 103000,
     });
     expect(detail.session.collaborationMode).toBe("plan");
-    expect(detail.toolCalls[0]).toMatchObject({
-      id: "tool-1",
-      toolName: "terminal.exec",
-      status: "completed",
-      startedAt: 101500,
-      finishedAt: 101512,
-    });
     expect(detail.aiPanelTurnMeta?.[0]?.assistantOrder).toBe(1);
     expect(detail.aiPanelTimelineEntries?.map((entry) => [entry.kind, entry.refId])).toEqual([
       ["userMessage", "user-1"],
       ["assistantMessage", "assistant-1"],
-      ["toolCall", "tool-1"],
       ["plan", "plan-1"],
     ]);
     expect(detail.pendingInteractions[0]).toMatchObject({
       id: "plan:turn-1",
       kind: "plan_approval",
-      status: "pending",
-      turnId: "turn-1",
-    });
-    expect(detail.pendingInteractions[1]).toMatchObject({
-      id: "request-1",
-      kind: "command_execution_approval",
       status: "pending",
       turnId: "turn-1",
     });

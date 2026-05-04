@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { AgentSessionDetail } from "../../../../shared/desktop-bridge";
+import type { AgentSessionDetail } from "../../ai-panel/agent-ui-types";
 import {
   buildPreviewDisplayMessages,
   groupThreadsByProject,
@@ -48,7 +48,6 @@ const createPreviewDetail = (): AgentSessionDetail => ({
       createdAt: 2
     }
   ],
-  toolCalls: [],
   runtimeEvents: []
 });
 

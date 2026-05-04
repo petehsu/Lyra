@@ -740,29 +740,6 @@ const createDesktopApi = (): {
       onExit: () => () => undefined,
       onError: () => () => undefined
     },
-    capabilities: {
-      readRegistry: async () => ({
-        updatedAt: new Date().toISOString(),
-        apps: [],
-        capabilities: []
-      }),
-      listCapabilities: async () => [],
-      invokeCapability: async () => ({
-        callId: "call-1",
-        capabilityId: "filesystem.read",
-        ok: true,
-        result: null,
-        completedAt: new Date().toISOString()
-      }),
-      resolveApproval: async () => ({
-        approvalId: "approval-1",
-        callId: "call-1",
-        capabilityId: "filesystem.read",
-        decision: "approved_once" as const,
-        resolvedAt: new Date().toISOString()
-      }),
-      onEvent: () => () => undefined
-    },
     workbenchState: {
       readSync: () => null,
       writeSync: () => undefined,
@@ -788,14 +765,6 @@ const createDesktopApi = (): {
         activated: request.packId === "classic"
       }),
       resolveRuntime: async () => null
-    },
-    browserUse: {
-      readRuntimeStatus: async () => ({
-        state: "unavailable" as const,
-        checkedAt: Date.now(),
-        reason: "missing_bundle" as const,
-      }),
-      onRuntimeStatus: () => () => undefined
     },
     workbenchObservation: {
       registerHandler: () => () => undefined

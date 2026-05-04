@@ -15,8 +15,6 @@ export type AgentComposerModelControlOption<Value extends string> = {
   readonly disabledReason?: string;
 };
 
-export type AgentPermissionMode = "default" | "auto_review" | "full_access";
-
 export type AgentComposerAppendRequest = {
   readonly id: number;
   readonly text: string;
@@ -135,9 +133,6 @@ export type AgentComposerProps = {
   readonly planModeLocked?: boolean;
   readonly planModeLabel?: string;
   readonly onPlanModeToggle?: () => void;
-  readonly permissionMode?: AgentPermissionMode;
-  readonly permissionModeDisabled?: boolean;
-  readonly onPermissionModeSelect?: (mode: AgentPermissionMode) => void;
   readonly onHeightChange?: (height: number) => void;
   readonly onSend: (payload: AgentComposerSubmitPayload) => void | Promise<void>;
   readonly onSendWithFollow?: (() => void) | undefined;

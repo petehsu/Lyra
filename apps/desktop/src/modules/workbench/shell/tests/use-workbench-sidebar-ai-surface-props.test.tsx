@@ -9,7 +9,6 @@ import { useWorkbenchSidebarAiSurfaceProps } from "../use-workbench-sidebar-ai-s
 
 const preferences = {
   locale: "en-US",
-  aiRichRenderingEnabled: true,
   aiStopBehavior: "turn_only"
 } as WorkbenchPreferences;
 
@@ -43,30 +42,25 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
     const desktop = createDesktopApi(true);
     const openAppTab = vi.fn();
     const onRequestProjectBind = vi.fn().mockResolvedValue("/workspace");
-    const onOpenPlanApprovalWorkspace = vi.fn();
-    const openDialog = vi.fn();
     const { result } = renderHook(() =>
       useWorkbenchSidebarAiSurfaceProps({
         desktopApi: desktop.api,
         preferences,
         settingsAiModel,
-        resolvedThemeId: "lyra-light",
         aiPanelSide: "right",
         fileMentionFallbackRoots: [],
         workbenchTabMentions: [],
         onToggleAiPanelSide: vi.fn(),
         openAppTab,
         onRequestProjectBind,
-        onOpenPlanApprovalWorkspace,
-        openDialog,
         t
       })
     );
 
     expect(result.current).toMatchObject({
+      variant: "sidebar",
       locale: "en-US",
       title: "ai.tabTitle",
-      themeSignature: "lyra-light",
       aiPanelSide: "right",
       defaultProfileId: "profile-1"
     });
@@ -77,12 +71,6 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
       result.current.onOpenSkills!();
     });
 
-    await waitFor(() => {
-      expect(openAppTab).toHaveBeenCalledWith(expect.objectContaining({
-        appId: "ai-history",
-        title: "ai.historyTitle"
-      }));
-    });
     expect(openAppTab).toHaveBeenCalledWith(expect.objectContaining({
       appId: "ai-mcp",
       title: "ai.mcpTabTitle"
@@ -91,10 +79,11 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
       appId: "ai-skills",
       title: "ai.skillsTabTitle"
     }));
+    expect(openAppTab).not.toHaveBeenCalledWith(expect.objectContaining({
+      appId: "ai-history"
+    }));
     expect(result.current.onRequestProjectBind).toBe(onRequestProjectBind);
-    expect(result.current.onOpenPlanApprovalWorkspace).toBe(onOpenPlanApprovalWorkspace);
     expect(result.current.onDefaultProfileSelect).toBe(settingsAiModel.setDefaultProfile);
-    expect(result.current.openDialog).toBe(openDialog);
   });
 
   test("does not open history when there are no history sessions", async () => {
@@ -105,15 +94,12 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
         desktopApi: desktop.api,
         preferences,
         settingsAiModel,
-        resolvedThemeId: "lyra-light",
         aiPanelSide: "right",
         fileMentionFallbackRoots: [],
         workbenchTabMentions: [],
         onToggleAiPanelSide: vi.fn(),
         openAppTab,
         onRequestProjectBind: vi.fn().mockResolvedValue("/workspace"),
-        onOpenPlanApprovalWorkspace: vi.fn(),
-        openDialog: vi.fn(),
         t
       })
     );
@@ -123,7 +109,7 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
     });
 
     await waitFor(() => {
-      expect(desktop.request).toHaveBeenCalledTimes(2);
+      expect(desktop.request).not.toHaveBeenCalled();
     });
     expect(openAppTab).not.toHaveBeenCalled();
   });

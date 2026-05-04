@@ -1,5 +1,4 @@
 import type {
-  WorkbenchBrowserAgentTargetInfo,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
   WorkbenchBrowserElementPickerMode,
@@ -70,7 +69,6 @@ export type WorkbenchElementPickerSharedState = {
   readonly enabled: boolean;
   readonly owner?: WorkbenchBrowserElementPickerOwner;
   readonly phase?: WorkbenchBrowserElementPickerPhase;
-  readonly toolCallId?: string;
 };
 
 export type WorkbenchElementPickerDisableOptions = {
@@ -94,23 +92,6 @@ export type WorkbenchManualElementPickerSession = {
       readonly disableRequested: boolean;
       readonly cause?: WorkbenchBrowserElementPickerDisableCause;
   };
-};
-
-export type WorkbenchAgentElementPickerSession = {
-  readonly tabId: string;
-  readonly ensureMounted: () => Promise<{
-    readonly ok: boolean;
-    readonly hadUnavailableFrame: boolean;
-  }>;
-  readonly showTarget: (
-    target: WorkbenchBrowserAgentTargetInfo,
-    appearance?: WorkbenchBrowserElementPickerAppearance
-  ) => Promise<boolean>;
-  readonly clearTarget: (publishState?: boolean) => Promise<void>;
-  readonly disable: (
-    cause: WorkbenchBrowserElementPickerDisableCause,
-    options?: WorkbenchElementPickerDisableOptions
-  ) => Promise<void>;
 };
 
 export type WorkbenchElementPickerControllerDeps = {
@@ -143,13 +124,5 @@ export type WorkbenchElementPickerOverlayRuntime = {
     readonly mainFrameSucceeded: boolean;
     readonly hadUnavailableFrame: boolean;
   }>;
-  readonly setAgentTarget: (
-    target: WorkbenchBrowserAgentTargetInfo,
-    appearance: WorkbenchBrowserElementPickerAppearance
-  ) => Promise<{
-    readonly mainFrameSucceeded: boolean;
-    readonly hadUnavailableFrame: boolean;
-  }>;
-  readonly clearAgentTarget: () => Promise<void>;
   readonly disable: () => Promise<void>;
 };

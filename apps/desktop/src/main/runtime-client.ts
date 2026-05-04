@@ -62,7 +62,7 @@ const sleep = async (ms: number): Promise<void> => {
 const resolveSocketPath = (storageRoot: string): string => {
   if (process.platform === "win32") {
     const key = storageRoot.replace(/[^a-zA-Z0-9]/g, "_");
-    return `\\\\.\\pipe\\lyra-ai-${key}`;
+    return `\\\\.\\pipe\\lyra-runtime-${key}`;
   }
   return path.join(storageRoot, "runtime", "lyrad.sock");
 };

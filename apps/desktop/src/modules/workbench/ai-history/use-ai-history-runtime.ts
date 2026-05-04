@@ -1,25 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { AgentSessionDetail } from "../../../shared/desktop-bridge";
-import {
-  lyraThreadToAgentDetail,
-  readLyraThread
-} from "../ai-panel/lyra-thread-adapter";
+import type { AgentSessionDetail } from "../ai-panel/agent-ui-types";
 import {
   normalizeProjectRoot,
   useProjectLogoMap
 } from "../project-identity";
 import { emitThreadSelected } from "../thread-selection-events";
 import {
-  createAiHistoryRequestPayload,
   groupThreadsByProject,
   isArchivedHistoryScope,
   isProjectHistoryScope,
-  isRecord,
-  readString,
   resolveThreadPreviewText,
-  sortThreadsByRecency,
-  toThreadSummary,
   type HistoryScope,
   type LivePreviewEntry,
   type LyraThreadSummary,
@@ -90,7 +81,6 @@ export const useAiHistoryRuntime = ({
   deleteArchivedConversationCancel,
   threadPreviewEmptyLabel
 }: UseAiHistoryRuntimeOptions): AiHistoryRuntime => {
-  const lyraApi = desktopApi?.lyra;
   const [activeThreads, setActiveThreads] = useState<readonly LyraThreadSummary[]>([]);
   const [archivedThreads, setArchivedThreads] = useState<readonly LyraThreadSummary[]>([]);
   const [scope, setScope] = useState<HistoryScope>("global");
@@ -109,7 +99,6 @@ export const useAiHistoryRuntime = ({
   const [isRenamingThread, setIsRenamingThread] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const previewRequestSeq = useRef(0);
-  const livePreviewByThreadRef = useRef<Map<string, LivePreviewEntry>>(new Map());
   const isArchivedScope = isArchivedHistoryScope(scope);
   const isProjectScope = isProjectHistoryScope(scope);
   const threads = isArchivedScope ? archivedThreads : activeThreads;
@@ -153,51 +142,12 @@ export const useAiHistoryRuntime = ({
   }, [activeThreads, archivedThreads]);
 
   const loadThreads = useCallback(async (): Promise<void> => {
-    if (lyraApi === undefined) {
-      return;
-    }
-    setIsLoading(true);
     setErrorMessage(null);
-    try {
-      const [activeResponse, archivedResponse] = await Promise.all([
-        lyraApi.request<{ data?: readonly unknown[] }>(
-          createAiHistoryRequestPayload("thread/list", {
-            limit: 100,
-            sortKey: "updated_at",
-            sortDirection: "desc",
-            archived: false,
-            modelProviders: []
-          })
-        ),
-        lyraApi.request<{ data?: readonly unknown[] }>(
-          createAiHistoryRequestPayload("thread/list", {
-            limit: 100,
-            sortKey: "updated_at",
-            sortDirection: "desc",
-            archived: true,
-            modelProviders: []
-          })
-        )
-      ]);
-      const activeListed = Array.isArray(activeResponse.data)
-        ? activeResponse.data
-            .map(toThreadSummary)
-            .filter((entry): entry is LyraThreadSummary => entry !== null)
-        : [];
-      const archivedListed = Array.isArray(archivedResponse.data)
-        ? archivedResponse.data
-            .map(toThreadSummary)
-            .filter((entry): entry is LyraThreadSummary => entry !== null)
-        : [];
-      setActiveThreads(sortThreadsByRecency(activeListed));
-      setArchivedThreads(sortThreadsByRecency(archivedListed));
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setHasLoadedThreads(true);
-      setIsLoading(false);
-    }
-  }, [lyraApi]);
+    setIsLoading(false);
+    setHasLoadedThreads(true);
+    setActiveThreads([]);
+    setArchivedThreads([]);
+  }, []);
 
   const clearPreview = useCallback((): void => {
     previewRequestSeq.current += 1;
@@ -205,23 +155,6 @@ export const useAiHistoryRuntime = ({
     setPreviewDetail(null);
     setPreviewError(null);
     setIsPreviewLoading(false);
-  }, []);
-
-  const patchThreadPreview = useCallback((threadId: string, preview: string, updatedAt: number): void => {
-    const patch = (current: readonly LyraThreadSummary[]): readonly LyraThreadSummary[] =>
-      sortThreadsByRecency(
-        current.map((thread) =>
-          thread.id === threadId
-            ? {
-                ...thread,
-                preview,
-                updatedAt
-              }
-            : thread
-        )
-      );
-    setActiveThreads(patch);
-    setArchivedThreads(patch);
   }, []);
 
   const patchThreadName = useCallback((threadId: string, name: string): void => {
@@ -242,38 +175,8 @@ export const useAiHistoryRuntime = ({
     );
   }, []);
 
-  const writeLivePreview = useCallback((entry: LivePreviewEntry): void => {
-    livePreviewByThreadRef.current.set(entry.threadId, entry);
-    setLivePreviewByThread(new Map(livePreviewByThreadRef.current));
-  }, []);
-
-  const clearLivePreview = useCallback((threadId: string): void => {
-    if (!livePreviewByThreadRef.current.delete(threadId)) {
-      return;
-    }
-    setLivePreviewByThread(new Map(livePreviewByThreadRef.current));
-  }, []);
-
-  const appendLivePreview = useCallback((threadId: string, turnId: string, delta: string): void => {
-    const previous = livePreviewByThreadRef.current.get(threadId);
-    const text = `${previous?.turnId === turnId ? previous.text : ""}${delta}`;
-    const updatedAt = Date.now();
-    writeLivePreview({
-      threadId,
-      turnId,
-      text,
-      updatedAt
-    });
-    if (text.trim().length > 0) {
-      patchThreadPreview(threadId, text, updatedAt);
-    }
-  }, [patchThreadPreview, writeLivePreview]);
-
   const previewThread = useCallback(
     async (threadId: string, options: { readonly silent?: boolean } = {}): Promise<void> => {
-      if (lyraApi === undefined) {
-        return;
-      }
       const silent = options.silent === true;
       const requestSeq = previewRequestSeq.current + 1;
       previewRequestSeq.current = requestSeq;
@@ -283,116 +186,50 @@ export const useAiHistoryRuntime = ({
         setPreviewError(null);
         setIsPreviewLoading(true);
       }
-      try {
-        const response = await lyraApi.request<{ thread?: unknown }>(
-          createAiHistoryRequestPayload("thread/read", {
-            threadId,
-            includeTurns: true
-          })
-        );
-        if (previewRequestSeq.current !== requestSeq) {
-          return;
-        }
-        const thread = readLyraThread(response.thread);
-        if (thread === null) {
-          throw new Error("Lyra thread/read did not return a readable thread");
-        }
-        setPreviewDetail(lyraThreadToAgentDetail(thread));
-        setPreviewError(null);
-      } catch (error) {
-        if (previewRequestSeq.current !== requestSeq) {
-          return;
-        }
-        if (!silent) {
-          setPreviewError(error instanceof Error ? error.message : String(error));
-        }
-      } finally {
-        if (!silent && previewRequestSeq.current === requestSeq) {
-          setIsPreviewLoading(false);
-        }
+      if (previewRequestSeq.current !== requestSeq) {
+        return;
+      }
+      setPreviewDetail(null);
+      setPreviewError(null);
+      if (!silent) {
+        setIsPreviewLoading(false);
       }
     },
-    [lyraApi]
+    []
   );
 
   const archiveThread = useCallback(
     async (threadId: string): Promise<void> => {
-      if (lyraApi === undefined) {
-        return;
-      }
       setErrorMessage(null);
-      try {
-        await lyraApi.request(
-          createAiHistoryRequestPayload("thread/archive", {
-            threadId
-          })
-        );
-        if (activeThreadId === threadId) {
-          clearPreview();
-        }
-        setActiveThreads((current) => current.filter((thread) => thread.id !== threadId));
-        void loadThreads();
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : String(error));
+      if (activeThreadId === threadId) {
+        clearPreview();
       }
+      setActiveThreads((current) => current.filter((thread) => thread.id !== threadId));
     },
-    [activeThreadId, clearPreview, loadThreads, lyraApi]
+    [activeThreadId, clearPreview]
   );
 
   const unarchiveThread = useCallback(
     async (threadId: string): Promise<void> => {
-      if (lyraApi === undefined) {
-        return;
-      }
       setErrorMessage(null);
-      try {
-        const response = await lyraApi.request<{ thread?: unknown }>(
-          createAiHistoryRequestPayload("thread/unarchive", {
-            threadId
-          })
-        );
-        const restored = toThreadSummary(response.thread);
-        if (activeThreadId === threadId) {
-          clearPreview();
-        }
-        setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId));
-        if (restored !== null) {
-          setActiveThreads((current) => sortThreadsByRecency([
-            restored,
-            ...current.filter((thread) => thread.id !== threadId)
-          ]));
-        }
-        void loadThreads();
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : String(error));
+      if (activeThreadId === threadId) {
+        clearPreview();
       }
+      setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId));
     },
-    [activeThreadId, clearPreview, loadThreads, lyraApi]
+    [activeThreadId, clearPreview]
   );
 
   const deleteThread = useCallback(
     async (threadId: string): Promise<void> => {
-      if (lyraApi === undefined) {
-        return;
-      }
       setErrorMessage(null);
-      try {
-        await lyraApi.request(
-          createAiHistoryRequestPayload("thread/delete", {
-            threadId
-          })
-        );
-        if (activeThreadId === threadId) {
-          clearPreview();
-        }
-        setActiveThreads((current) => current.filter((thread) => thread.id !== threadId));
-        setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId));
-        void loadThreads();
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : String(error));
+      if (activeThreadId === threadId) {
+        clearPreview();
       }
+      setActiveThreads((current) => current.filter((thread) => thread.id !== threadId));
+      setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId));
     },
-    [activeThreadId, clearPreview, loadThreads, lyraApi]
+    [activeThreadId, clearPreview]
   );
 
   const openThread = useCallback((threadId: string): void => {
@@ -411,7 +248,7 @@ export const useAiHistoryRuntime = ({
   }, []);
 
   const submitRenameThread = useCallback(async (threadId: string): Promise<void> => {
-    if (lyraApi === undefined || isRenamingThread) {
+    if (isRenamingThread) {
       return;
     }
     const name = editingThreadName.trim();
@@ -421,27 +258,13 @@ export const useAiHistoryRuntime = ({
     }
     setIsRenamingThread(true);
     setErrorMessage(null);
-    try {
-      await lyraApi.request(
-        createAiHistoryRequestPayload("thread/name/set", {
-          threadId,
-          name
-        })
-      );
-      patchThreadName(threadId, name);
-      cancelRenameThread();
-      void loadThreads();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsRenamingThread(false);
-    }
+    patchThreadName(threadId, name);
+    cancelRenameThread();
+    setIsRenamingThread(false);
   }, [
     cancelRenameThread,
     editingThreadName,
     isRenamingThread,
-    loadThreads,
-    lyraApi,
     patchThreadName
   ]);
 
@@ -505,15 +328,11 @@ export const useAiHistoryRuntime = ({
   [activeThreads, archivedThreads]);
 
   useEffect(() => {
-    if (lyraApi === undefined) {
-      return;
-    }
     void loadThreads();
-  }, [lyraApi, loadThreads]);
+  }, [loadThreads]);
 
   useEffect(() => {
     if (
-      lyraApi === undefined ||
       hasLoadedThreads === false ||
       isLoading ||
       activeThreadId !== null ||
@@ -528,7 +347,6 @@ export const useAiHistoryRuntime = ({
     hasLoadedThreads,
     isLoading,
     latestThread,
-    lyraApi,
     previewThread
   ]);
 
@@ -539,77 +357,8 @@ export const useAiHistoryRuntime = ({
     setSelectedProjectRoot(null);
   }, [selectedProject, selectedProjectRoot]);
 
-  useEffect(() => {
-    if (lyraApi === undefined) {
-      return;
-    }
-    return lyraApi.onEvent((event) => {
-      if (event.kind !== "notification" || !isRecord(event.notification)) {
-        return;
-      }
-      const method = readString(event.notification.method);
-      const params = isRecord(event.notification.params) ? event.notification.params : {};
-      if (
-        method === "thread/started"
-        || method === "thread/archived"
-        || method === "thread/deleted"
-        || method === "thread/unarchived"
-        || method === "thread/name/updated"
-        || method === "turn/completed"
-      ) {
-        void loadThreads();
-      }
-      if (method === "thread/deleted" || method === "thread/archived") {
-        const threadId = readString(params.threadId);
-        if (threadId !== null) {
-          clearLivePreview(threadId);
-        }
-        return;
-      }
-      if (method === "turn/started") {
-        const threadId = readString(params.threadId);
-        const turn = isRecord(params.turn) ? params.turn : null;
-        const turnId = turn === null ? null : readString(turn.id);
-        if (threadId !== null && turnId !== null) {
-          writeLivePreview({
-            threadId,
-            turnId,
-            text: "",
-            updatedAt: Date.now()
-          });
-        }
-        return;
-      }
-      if (method === "item/agentMessage/delta") {
-        const threadId = readString(params.threadId);
-        const turnId = readString(params.turnId);
-        const delta = typeof params.delta === "string" ? params.delta : "";
-        if (threadId !== null && turnId !== null && delta.length > 0) {
-          appendLivePreview(threadId, turnId, delta);
-        }
-        return;
-      }
-      if (method === "item/completed" || method === "turn/completed") {
-        const threadId = readString(params.threadId);
-        if (threadId !== null && threadId === activeThreadId) {
-          void previewThread(threadId, { silent: true }).finally(() => {
-            clearLivePreview(threadId);
-          });
-        }
-      }
-    });
-  }, [
-    activeThreadId,
-    appendLivePreview,
-    clearLivePreview,
-    loadThreads,
-    lyraApi,
-    previewThread,
-    writeLivePreview
-  ]);
-
   return {
-    lyraAvailable: lyraApi !== undefined,
+    lyraAvailable: false,
     activeThreads,
     archivedThreads,
     threads,

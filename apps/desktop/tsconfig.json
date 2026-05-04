@@ -12,7 +12,6 @@
     "esModuleInterop": true,
     "baseUrl": ".",
     "paths": {
-      "@lyra/capability-protocol": ["../../packages/capability-protocol/src/index.ts"],
       "@lyra/plugin-sdk": ["../../packages/plugin-sdk/src/index.ts"],
       "@renderer/*": ["src/renderer/*"],
       "@workbench/*": ["src/modules/workbench/*"]

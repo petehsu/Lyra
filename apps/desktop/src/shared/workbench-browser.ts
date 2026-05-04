@@ -103,18 +103,9 @@ export type WorkbenchBrowserElementPickerDisableCause =
   | "page_closed"
   | "script_error";
 
-export type WorkbenchBrowserElementPickerOwner =
-  | "manual"
-  | "agent_scan"
-  | "agent_action"
-  | "agent_wait";
+export type WorkbenchBrowserElementPickerOwner = "manual";
 
-export type WorkbenchBrowserElementPickerPhase =
-  | "idle"
-  | "scan"
-  | "resolve"
-  | "act"
-  | "wait";
+export type WorkbenchBrowserElementPickerPhase = "idle";
 
 export type WorkbenchBrowserElementPickerMode = "inspect" | "layout";
 
@@ -124,7 +115,6 @@ export type WorkbenchBrowserElementPickerState = {
   readonly mode?: WorkbenchBrowserElementPickerMode;
   readonly owner?: WorkbenchBrowserElementPickerOwner;
   readonly phase?: WorkbenchBrowserElementPickerPhase;
-  readonly toolCallId?: string;
   readonly cause?: WorkbenchBrowserElementPickerDisableCause;
   readonly errorCode?: "tab_not_found" | "script_injection_failed" | "frame_unavailable";
 };
@@ -181,41 +171,6 @@ export type WorkbenchBrowserHoveredElementInfo = {
   readonly crossOriginBoundary?: boolean;
 };
 
-export type WorkbenchBrowserAgentTargetInfo = {
-  readonly tabId: string;
-  readonly toolCallId: string;
-  readonly owner: "agent_scan" | "agent_action" | "agent_wait";
-  readonly phase: "scan" | "resolve" | "act" | "wait";
-  readonly frameTreeNodeId: number;
-  readonly tagName: string;
-  readonly role?: string;
-  readonly inputType?: string;
-  readonly selectorPreview: string;
-  readonly textSnippet?: string;
-  readonly bounds: {
-    readonly x: number;
-    readonly y: number;
-    readonly width: number;
-    readonly height: number;
-  };
-  readonly widgetId?: string;
-  readonly widgetKind?: string;
-  readonly widgetLabel?: string;
-  readonly widgetBounds?: {
-    readonly x: number;
-    readonly y: number;
-    readonly width: number;
-    readonly height: number;
-  };
-  readonly affordanceLabel?: string;
-  readonly affordanceAction?: string;
-  readonly cursorStyle?: string;
-  readonly tooltipText?: string;
-  readonly stateHint?: string;
-  readonly discoveryMode?: "static" | "hover_revealed" | "action_revealed";
-  readonly pageMode?: string;
-};
-
 export type WorkbenchBrowserEvent =
   | {
       readonly kind: "page-runtime-state";
@@ -237,8 +192,4 @@ export type WorkbenchBrowserEvent =
   | {
       readonly kind: "element-picker-hover";
       readonly hover: WorkbenchBrowserHoveredElementInfo;
-    }
-  | {
-      readonly kind: "element-picker-agent-target";
-      readonly target: WorkbenchBrowserAgentTargetInfo;
     };

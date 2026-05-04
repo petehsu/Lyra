@@ -3,13 +3,11 @@ import type {
   AgentPlanArtifact,
   AgentPendingInteraction,
   AgentSessionDetail,
-  AgentToolCall,
   AgentTurn,
   AgentUsage,
-} from "../../../shared/desktop-bridge";
+} from "./agent-ui-types";
 
 export type JsonRecord = Record<string, unknown>;
-export type AgentToolCallStatus = AgentToolCall["status"];
 export type AgentTurnStatus = AgentTurn["status"];
 
 export type LyraThreadItem = JsonRecord & {
@@ -77,20 +75,6 @@ export type ThreadAiPanelTurn = {
   readonly usage?: AgentUsage;
 };
 
-export type ThreadAiPanelToolCall = {
-  readonly id: string;
-  readonly sessionId: string;
-  readonly turnId: string;
-  readonly toolName: string;
-  readonly input: unknown;
-  readonly output?: unknown;
-  readonly status: AgentToolCallStatus | string;
-  readonly startedAtMs: number;
-  readonly finishedAtMs?: number;
-  readonly errorCode?: string;
-  readonly errorMessage?: string;
-};
-
 export type ThreadAiPanelPlan = {
   readonly turnId: string;
   readonly artifact: AgentPlanArtifact;
@@ -120,7 +104,6 @@ export type ThreadAiPanelPendingInteraction = {
 export type ThreadAiPanelTimelineEntryKind =
   | "userMessage"
   | "assistantMessage"
-  | "toolCall"
   | "plan"
   | "pendingInteraction";
 
@@ -136,7 +119,6 @@ export type ThreadAiPanelTimelineEntry = {
 export type ThreadAiPanelViewModel = {
   readonly messages: readonly ThreadAiPanelMessage[];
   readonly turns: readonly ThreadAiPanelTurn[];
-  readonly toolCalls: readonly ThreadAiPanelToolCall[];
   readonly plans: readonly ThreadAiPanelPlan[];
   readonly pendingInteractions?: readonly ThreadAiPanelPendingInteraction[];
   readonly timelineEntries: readonly ThreadAiPanelTimelineEntry[];
@@ -217,27 +199,6 @@ export const turnStatusToAgent = (status: string): AgentTurnStatus => {
     return "paused";
   }
   return "completed";
-};
-
-export const toolStatusToAgent = (
-  value: unknown,
-  fallback: AgentToolCallStatus
-): AgentToolCallStatus => {
-  const normalized = normalizeStatus(value);
-  if (normalized.includes("fail") || normalized.includes("error")) {
-    return "failed";
-  }
-  if (
-    normalized.includes("complete")
-    || normalized.includes("success")
-    || normalized.includes("applied")
-  ) {
-    return "completed";
-  }
-  if (normalized.includes("progress") || normalized.includes("running") || normalized.includes("pending")) {
-    return "running";
-  }
-  return fallback;
 };
 
 export const readPath = (value: unknown): string | null => {

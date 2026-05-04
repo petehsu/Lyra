@@ -6,124 +6,45 @@ import {
   useState,
   type CSSProperties,
   type Dispatch,
-  type RefObject,
   type SetStateAction
 } from "react";
 
-import type {
-  PlanApprovalRequest,
-  PlanInteractionResponse,
-} from "../../../shared/desktop-bridge";
-import type { createTranslator, I18nKey, WorkbenchLocale } from "../i18n";
+import type { createTranslator, I18nKey } from "../i18n";
 import {
   normalizeProjectRoot,
 } from "../project-identity";
 import { subscribeThreadSelected } from "../thread-selection-events";
 import type { LyraThread } from "./lyra-thread-adapter";
 import type {
+  AgentComposerAiThreadMention,
   AgentComposerModelControlOption,
   AgentComposerReasoningEffort,
   AgentComposerSubmitPayload,
   AgentComposerVerbosity,
-  AgentComposerAiThreadMention,
-  AgentComposerWorkbenchTabMention,
-  AgentPermissionMode
+  AgentComposerWorkbenchTabMention
 } from "./agent-composer";
 import {
-  toPersistedRuntimeFeedItem,
-  type ToolNameLabelMap
-} from "./runtime/feed-utils";
-import {
-  canOpenReviewChanges,
   createComposerReserveStyle,
-  createInteractionTextLabels,
-  createRequestPayload,
   createRuntimeModelOptions,
   createRuntimeTurnOptions,
-  createToolNameLabels,
-  gitMetadataProbePaths,
   isAiRuntimeBusy,
   resolveBoundProjectRoot,
   resolveSelectedRuntimeModelOption,
   resolveSyncedSelectedModelOptionValue,
-  shouldShowEmptySessionScene,
   type RuntimeModelOption
 } from "./surface-model";
-import type {
-  AiPanelThreadMessageMetadata,
-  AiPanelThreadRenderRow
-} from "./thread-render-model";
-import {
-  useAiPanelThreadRendering,
-} from "./use-ai-panel-thread-rendering";
 import type { AiPanelSurfaceProps } from "./types";
-import { useAiPanelThreadViewModel } from "./use-ai-panel-thread-view-model";
-import type { AiPanelThreadVirtualRow } from "./use-ai-panel-thread-virtual-rows-model";
 import {
   useLyraThreadRuntime,
   type LyraThreadRuntimeActions,
   type LyraThreadRuntimeState,
-  type ReviewTarget,
   type RuntimeThreadOptions
 } from "./use-lyra-thread-runtime";
 
 type Translator = ReturnType<typeof createTranslator>;
 
-type OpenRuntimeTargetPath = (
-  path: string,
-  options?: {
-    readonly forceReloadIfOpen?: boolean;
-    readonly allowMissing?: boolean;
-    readonly location?: { readonly line: number };
-  }
-) => Promise<void>;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
-
 const readString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-
-const readNumber = (value: unknown): number | null =>
-  typeof value === "number" && Number.isFinite(value) ? value : null;
-
-const isAbsolutePath = (path: string): boolean =>
-  path.startsWith("/") || path.startsWith("\\\\") || /^[a-z]:[\\/]/iu.test(path);
-
-const joinRootPath = (root: string, path: string): string => {
-  if (isAbsolutePath(path)) {
-    return path;
-  }
-  const separator = root.includes("\\") && !root.includes("/") ? "\\" : "/";
-  return `${root.replace(/[\\/]+$/u, "")}${separator}${path.replace(/^[\\/]+/u, "")}`;
-};
-
-const readFuzzyFileSearchResult = (value: unknown): FuzzyFileSearchResult | null => {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const path = readString(value.path);
-  const name = readString(value.file_name) ?? readString(value.fileName) ?? readString(value.name);
-  const matchType = readString(value.match_type) ?? readString(value.matchType);
-  if (path === null || name === null) {
-    return null;
-  }
-  const root = readString(value.root);
-  const resolvedPath = root === null ? path : joinRootPath(root, path);
-  const kind = matchType === "directory" ? "directory" : "file";
-  const indices = Array.isArray(value.indices)
-    ? value.indices.filter((entry): entry is number => typeof entry === "number")
-    : null;
-  return {
-    id: `${kind}:${resolvedPath}`,
-    name,
-    path: resolvedPath,
-    kind,
-    ...(root === null ? {} : { root }),
-    ...(readNumber(value.score) === null ? {} : { score: readNumber(value.score)! }),
-    indices,
-  };
-};
 
 const runtimeAttachmentFromComposer = (
   attachment: AgentComposerSubmitPayload["attachments"][number]
@@ -158,24 +79,6 @@ type FuzzyFileSearchResult = {
   readonly root?: string;
   readonly score?: number;
   readonly indices?: readonly number[] | null;
-};
-
-export type AgentAdvancedMemoryMode = "enabled" | "disabled";
-
-export type AgentAdvancedElicitationResponse = {
-  readonly count?: number;
-  readonly paused?: boolean;
-};
-
-export type AgentAdvancedRuntimeActions = {
-  readonly listLoadedThreads: () => Promise<unknown>;
-  readonly listThreadTurns: (threadId: string) => Promise<unknown>;
-  readonly listCollaborationModes: () => Promise<unknown>;
-  readonly setThreadMemoryMode: (threadId: string, mode: AgentAdvancedMemoryMode) => Promise<unknown>;
-  readonly runThreadShellCommand: (threadId: string, command: string) => Promise<unknown>;
-  readonly injectThreadItems: (threadId: string, items: readonly unknown[]) => Promise<unknown>;
-  readonly incrementElicitation: (threadId: string) => Promise<AgentAdvancedElicitationResponse>;
-  readonly decrementElicitation: (threadId: string) => Promise<AgentAdvancedElicitationResponse>;
 };
 
 const readThreadRecentMessages = (thread: LyraThread): readonly string[] => {
@@ -272,34 +175,15 @@ const verbosityLabelKey = (value: AgentComposerVerbosity): I18nKey => {
 
 type UseAiPanelSurfaceRuntimeInput = {
   readonly desktopApi: AiPanelSurfaceProps["desktopApi"];
-  readonly locale: WorkbenchLocale;
   readonly t: Translator;
   readonly defaultProfileId?: string | null | undefined;
   readonly defaultProviderId?: string | null | undefined;
   readonly defaultModelNames: readonly string[];
   readonly configuredProfiles: NonNullable<AiPanelSurfaceProps["configuredProfiles"]>;
   readonly stopBehavior: NonNullable<AiPanelSurfaceProps["stopBehavior"]>;
-  readonly runtimeQueuedLabel: string;
-  readonly runtimeStartedLabel: string;
-  readonly runtimeFailedTurnLabel: string;
-  readonly runtimeCompletedTurnLabel: string;
-  readonly runtimePhaseToolStartedLabel: string;
-  readonly runtimePhaseToolFinishedLabel: string;
-  readonly runtimeToolFallbackLabel: string;
-  readonly toolNameSearchLabel: string;
-  readonly toolNameReadRangeLabel: string;
-  readonly toolNameListLabel: string;
-  readonly toolNameGlobLabel: string;
-  readonly toolNameWriteLabel: string;
-  readonly toolNameEditLabel: string;
-  readonly toolNameMultiEditLabel: string;
   readonly fileMentionFallbackRoots?: readonly string[] | undefined;
   readonly workbenchTabMentions?: readonly AgentComposerWorkbenchTabMention[] | undefined;
-  readonly onOpenFilePath?: AiPanelSurfaceProps["onOpenFilePath"] | undefined;
-  readonly onWriteStreamEvent?: AiPanelSurfaceProps["onWriteStreamEvent"] | undefined;
-  readonly onAgentRuntimeNotification?: AiPanelSurfaceProps["onAgentRuntimeNotification"] | undefined;
   readonly onRequestProjectBind?: AiPanelSurfaceProps["onRequestProjectBind"] | undefined;
-  readonly onOpenPlanApprovalWorkspace?: AiPanelSurfaceProps["onOpenPlanApprovalWorkspace"] | undefined;
   readonly onDefaultProfileSelect?: AiPanelSurfaceProps["onDefaultProfileSelect"] | undefined;
 };
 
@@ -308,22 +192,12 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly closeThreadTab: LyraThreadRuntimeActions["closeThreadTab"];
   readonly reorderThreadTab: LyraThreadRuntimeActions["reorderThreadTab"];
   readonly openThreadTab: LyraThreadRuntimeActions["openThreadTab"];
-  readonly setActiveInteractionId: LyraThreadRuntimeActions["setActiveInteractionId"];
-  readonly respondToCommandApproval: LyraThreadRuntimeActions["respondToCommandApproval"];
-  readonly respondToAgentQuestion: LyraThreadRuntimeActions["respondToAgentQuestion"];
-  readonly respondToMcpElicitation: LyraThreadRuntimeActions["respondToMcpElicitation"];
   readonly selectModelOptionValue: (value: string) => void;
   readonly setSelectedReasoningEffort: Dispatch<SetStateAction<RuntimeThreadOptions["effort"] | null>>;
   readonly setSelectedVerbosity: Dispatch<SetStateAction<RuntimeThreadOptions["verbosity"] | null>>;
-  readonly setPermissionMode: Dispatch<SetStateAction<AgentPermissionMode>>;
   readonly setComposerHeight: Dispatch<SetStateAction<number>>;
-  readonly setIsPermissionsPanelOpen: Dispatch<SetStateAction<boolean>>;
-  readonly setIsAdvancedPanelOpen: Dispatch<SetStateAction<boolean>>;
   readonly createThread: () => Promise<void>;
   readonly bindProject: () => Promise<void>;
-  readonly openReviewPanel: () => void;
-  readonly closeReviewPanel: () => void;
-  readonly startReview: (target: ReviewTarget) => Promise<void>;
   readonly togglePlanMode: () => void;
   readonly toggleFollow: () => void;
   readonly enableFollow: () => void;
@@ -333,22 +207,11 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly startFileMentionSearch: (sessionId: string, roots: readonly string[]) => Promise<void>;
   readonly updateFileMentionSearch: (sessionId: string, query: string) => Promise<void>;
   readonly stopFileMentionSearch: (sessionId: string) => Promise<void>;
-  readonly forkTurn: (turnId: string) => Promise<void>;
-  readonly regenerateTurn: (turnId: string) => void;
-  readonly editMessageTurn: (turnId: string, content: string) => void;
-  readonly planApprovalDecision: (
-    response: PlanInteractionResponse,
-    requestOverride?: PlanApprovalRequest
-  ) => Promise<void>;
-  readonly advanced: AgentAdvancedRuntimeActions;
 };
 
 export type AiPanelSurfaceRuntime = {
   readonly state: LyraThreadRuntimeState;
-  readonly viewModel: ReturnType<typeof useAiPanelThreadViewModel>;
   readonly actions: AiPanelSurfaceRuntimeActions;
-  readonly threadViewportRef: RefObject<HTMLDivElement>;
-  readonly interactionPanelRef: RefObject<HTMLDivElement>;
   readonly composerAppendRequest: ComposerAppendRequest | null;
   readonly composerReserveStyle: CSSProperties;
   readonly modelOptions: readonly RuntimeModelOption[];
@@ -361,123 +224,56 @@ export type AiPanelSurfaceRuntime = {
   readonly fileMentionSearchResults: readonly FuzzyFileSearchResult[];
   readonly workbenchTabMentions: readonly AgentComposerWorkbenchTabMention[];
   readonly aiThreadMentions: readonly AgentComposerAiThreadMention[];
-  readonly permissionMode: AgentPermissionMode;
-  readonly toolNameLabels: ToolNameLabelMap;
-  readonly streamingAssistantText: string;
-  readonly messageMetadata: AiPanelThreadMessageMetadata;
-  readonly renderRows: readonly AiPanelThreadRenderRow[];
-  readonly virtualRows: readonly AiPanelThreadVirtualRow[];
-  readonly topSpacerHeight: number;
-  readonly bottomSpacerHeight: number;
-  readonly measureThreadRow: (rowKey: string, node: HTMLDivElement | null) => void;
   readonly boundProjectRootForActiveThread: string | null;
-  readonly boundProjectRootByThreadId: ReadonlyMap<string, string>;
   readonly tabProjectRootById: ReadonlyMap<string, string | null>;
   readonly isBindingProject: boolean;
   readonly isCreatingThread: boolean;
-  readonly isPermissionsPanelOpen: boolean;
-  readonly isAdvancedPanelOpen: boolean;
-  readonly isReviewPanelOpen: boolean;
-  readonly isReviewStarting: boolean;
-  readonly canOpenReviewChanges: boolean;
-  readonly showEmptySessionScene: boolean;
   readonly isBusy: boolean;
   readonly isAgentAvailable: boolean;
-  readonly canOpenFilePath: boolean;
-  readonly openRuntimeTargetPath: OpenRuntimeTargetPath;
-  readonly openPlanApprovalInWorkspace?: (request: PlanApprovalRequest) => void;
 };
 
 export const useAiPanelSurfaceRuntime = ({
   desktopApi,
-  locale,
   t,
   stopBehavior,
   defaultProfileId,
   defaultProviderId,
   defaultModelNames,
   configuredProfiles,
-  runtimeQueuedLabel,
-  runtimeStartedLabel,
-  runtimeFailedTurnLabel,
-  runtimeCompletedTurnLabel,
-  runtimePhaseToolStartedLabel,
-  runtimePhaseToolFinishedLabel,
-  runtimeToolFallbackLabel,
-  toolNameSearchLabel,
-  toolNameReadRangeLabel,
-  toolNameListLabel,
-  toolNameGlobLabel,
-  toolNameWriteLabel,
-  toolNameEditLabel,
-  toolNameMultiEditLabel,
   fileMentionFallbackRoots,
   workbenchTabMentions,
-  onOpenFilePath,
-  onWriteStreamEvent,
-  onAgentRuntimeNotification,
   onRequestProjectBind,
-  onOpenPlanApprovalWorkspace,
   onDefaultProfileSelect
 }: UseAiPanelSurfaceRuntimeInput): AiPanelSurfaceRuntime => {
-  const lyraApi = desktopApi?.lyra;
   const [selectedModelOptionValue, setSelectedModelOptionValue] = useState("");
   const [selectedReasoningEffort, setSelectedReasoningEffort] =
     useState<RuntimeThreadOptions["effort"] | null>(null);
   const [selectedVerbosity, setSelectedVerbosity] =
     useState<RuntimeThreadOptions["verbosity"] | null>(null);
-  const [permissionMode, setPermissionMode] = useState<AgentPermissionMode>("default");
   const [composerHeight, setComposerHeight] = useState(96);
-  const [composerAppendRequest, setComposerAppendRequest] =
-    useState<ComposerAppendRequest | null>(null);
   const [boundProjectRootByThread, setBoundProjectRootByThread] = useState<
     ReadonlyMap<string, string>
   >(() => new Map());
   const [pendingBoundProjectRoot, setPendingBoundProjectRoot] = useState<string | null>(null);
   const [isBindingProject, setIsBindingProject] = useState(false);
   const [isCreatingThread, setIsCreatingThread] = useState(false);
-  const [isPermissionsPanelOpen, setIsPermissionsPanelOpen] = useState(false);
-  const [isAdvancedPanelOpen, setIsAdvancedPanelOpen] = useState(false);
   const [fileMentionSearchResults, setFileMentionSearchResults] =
     useState<readonly FuzzyFileSearchResult[]>([]);
-  const [isReviewPanelOpen, setIsReviewPanelOpen] = useState(false);
-  const [isReviewStarting, setIsReviewStarting] = useState(false);
-  const [gitMetadataAvailableForReview, setGitMetadataAvailableForReview] = useState(false);
-  const composerAppendRequestIdRef = useRef(0);
   const activeFileMentionSearchSessionIdRef = useRef<string | null>(null);
-  const interactionPanelRef = useRef<HTMLDivElement>(null);
-  const lastAutoOpenedPlanReviewIdRef = useRef<string | null>(null);
 
-  const interactionTextLabels = useMemo(() => createInteractionTextLabels(t), [t]);
-
-  const { state, actions } = useLyraThreadRuntime({
-    desktopApi,
-    interactionTextLabels,
-    ...(onWriteStreamEvent === undefined ? {} : { onWriteStreamEvent }),
-    ...(onAgentRuntimeNotification === undefined ? {} : { onAgentRuntimeNotification }),
-    ...(onOpenFilePath === undefined ? {} : { onFollowOpenFilePath: onOpenFilePath })
-  });
+  const { state, actions } = useLyraThreadRuntime({ desktopApi });
   const {
-    forkThreadFromTurn,
     interruptTurn,
     cleanBackgroundTerminals,
-    loadThread,
-    rollbackThread,
-    respondToCommandApproval,
-    respondToAgentQuestion,
-    respondToMcpElicitation,
     selectThread,
     createThread: createRuntimeThread,
     activateThreadTab,
     closeThreadTab,
     reorderThreadTab,
     openThreadTab,
-    resolvePlanApproval,
     sendTurn: sendRuntimeTurn,
-    setActiveInteractionId,
     setFollowEnabled,
     setPlanModeEnabled,
-    startReview: startRuntimeReview,
     steerTurn
   } = actions;
 
@@ -491,6 +287,7 @@ export const useAiPanelSurfaceRuntime = ({
     }),
     [activeThreadId, boundProjectRootByThread, pendingBoundProjectRoot, state.activeThread]
   );
+
   const fileMentionSearchRoots = useMemo(
     () => {
       const roots = boundProjectRootForActiveThread === null
@@ -505,6 +302,7 @@ export const useAiPanelSurfaceRuntime = ({
     },
     [boundProjectRootForActiveThread, fileMentionFallbackRoots, state.activeThread?.cwd]
   );
+
   const threadProjectRootById = useMemo(() => {
     const next = new Map<string, string>();
     for (const thread of state.threads) {
@@ -515,6 +313,7 @@ export const useAiPanelSurfaceRuntime = ({
     }
     return next;
   }, [state.threads]);
+
   const tabProjectRootById = useMemo(() => {
     const next = new Map<string, string | null>();
     for (const tab of state.threadTabs) {
@@ -540,6 +339,7 @@ export const useAiPanelSurfaceRuntime = ({
     state.threadTabs,
     threadProjectRootById
   ]);
+
   const aiThreadMentions = useMemo<readonly AgentComposerAiThreadMention[]>(() => {
     const threadById = new Map(state.threads.map((thread) => [thread.id, thread]));
     return state.threadTabs
@@ -562,66 +362,6 @@ export const useAiPanelSurfaceRuntime = ({
         };
       });
   }, [state.activeTabId, state.threadTabs, state.threads, tabProjectRootById]);
-  useEffect(() => {
-    const filesApi = desktopApi?.files;
-    const probePaths =
-      boundProjectRootForActiveThread === null
-        ? []
-        : gitMetadataProbePaths(boundProjectRootForActiveThread);
-    if (filesApi === undefined || probePaths.length === 0) {
-      setGitMetadataAvailableForReview(false);
-      return;
-    }
-    let cancelled = false;
-    setGitMetadataAvailableForReview(false);
-    void (async () => {
-      for (const path of probePaths) {
-        try {
-          const stat = await filesApi.statFile({ path });
-          if (cancelled) {
-            return;
-          }
-          if (stat.exists) {
-            setGitMetadataAvailableForReview(true);
-            return;
-          }
-        } catch {
-          if (cancelled) {
-            return;
-          }
-        }
-      }
-      if (!cancelled) {
-        setGitMetadataAvailableForReview(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [boundProjectRootForActiveThread, desktopApi?.files]);
-
-  const toolNameLabels = useMemo<ToolNameLabelMap>(
-    () => createToolNameLabels({
-      t,
-      toolNameSearchLabel,
-      toolNameReadRangeLabel,
-      toolNameListLabel,
-      toolNameGlobLabel,
-      toolNameWriteLabel,
-      toolNameEditLabel,
-      toolNameMultiEditLabel
-    }),
-    [
-      t,
-      toolNameEditLabel,
-      toolNameGlobLabel,
-      toolNameListLabel,
-      toolNameMultiEditLabel,
-      toolNameReadRangeLabel,
-      toolNameSearchLabel,
-      toolNameWriteLabel
-    ]
-  );
 
   const modelOptions = useMemo<readonly RuntimeModelOption[]>(
     () => createRuntimeModelOptions({
@@ -651,13 +391,8 @@ export const useAiPanelSurfaceRuntime = ({
   const persistDefaultProfileSelection = useCallback(async (profileId: string): Promise<void> => {
     if (onDefaultProfileSelect !== undefined) {
       await onDefaultProfileSelect(profileId);
-      return;
     }
-    if (lyraApi === undefined) {
-      return;
-    }
-    await lyraApi.request(createRequestPayload("lyra/config/profiles/setDefault", { id: profileId }));
-  }, [lyraApi, onDefaultProfileSelect]);
+  }, [onDefaultProfileSelect]);
 
   const selectModelOptionValue = useCallback((value: string): void => {
     setSelectedModelOptionValue(value);
@@ -709,6 +444,7 @@ export const useAiPanelSurfaceRuntime = ({
     },
     [modelMetadata?.defaultVerbosity, supportedVerbosityLevels]
   );
+
   const reasoningEffortOptions = useMemo<
     readonly AgentComposerModelControlOption<AgentComposerReasoningEffort>[]
   >(
@@ -769,64 +505,6 @@ export const useAiPanelSurfaceRuntime = ({
     supportedVerbosityLevels
   ]);
 
-  const liveRuntimeFeed = useMemo(
-    () =>
-      state.liveToolCalls.map((call) =>
-        toPersistedRuntimeFeedItem(call, toolNameLabels, runtimeToolFallbackLabel)
-      ),
-    [runtimeToolFallbackLabel, state.liveToolCalls, toolNameLabels]
-  );
-
-  const streamingAssistantText = state.streamingAssistantText;
-
-  const viewModel = useAiPanelThreadViewModel({
-    activeDetail: state.activeDetail,
-    optimisticUserMessages: state.optimisticUserMessages,
-    runtimeFeed: liveRuntimeFeed,
-    streamingTurnId: state.streamingTurnId,
-    latestRuntimeEventByTurn: state.latestRuntimeEventByTurn,
-    activeInteractionPanel: state.activeInteractionPanel,
-    isInteractionSubmitting: state.isInteractionSubmitting,
-    isSending: state.isSending,
-    isStreamActive: state.isStreamActive,
-    streamingAssistantText: state.streamingAssistantText,
-    finalizingTurnId: state.finalizingTurnId,
-    planByTurn: state.planByTurn,
-    toolNameLabels,
-    runtimeToolFallbackLabel,
-    labels: {
-      runtimeQueued: runtimeQueuedLabel,
-      runtimeStarted: runtimeStartedLabel,
-      runtimeCompletedTurn: runtimeCompletedTurnLabel,
-      runtimeFailedTurn: runtimeFailedTurnLabel,
-      runtimePhaseToolStarted: runtimePhaseToolStartedLabel,
-      runtimePhaseToolFinished: runtimePhaseToolFinishedLabel,
-      generatingReply: t("ai.generatingReply"),
-      pendingInteractions: t("ai.pendingInteractions")
-    }
-  });
-
-  const {
-    threadViewportRef,
-    messageMetadata,
-    renderRows,
-    virtualRows,
-    topSpacerHeight,
-    bottomSpacerHeight,
-    measureThreadRow,
-  } = useAiPanelThreadRendering({
-    sortedMessages: viewModel.sortedMessages,
-    planByTurn: state.planByTurn,
-    streamingAssistantText,
-    streamingTurnRuntimeFeed: viewModel.streamingTurnRuntimeFeed,
-    streamingStatus: viewModel.streamingStatus,
-    orphanRuntimeFeed: viewModel.orphanRuntimeFeed,
-    runtimeError: state.runtimeError,
-    activeThreadId: state.activeThreadId,
-    optimisticUserMessages: state.optimisticUserMessages,
-    pendingInteractions: state.pendingInteractions,
-  });
-
   useEffect(() => {
     setSelectedModelOptionValue((current) =>
       modelOptions.some((option) => option.value === current)
@@ -835,56 +513,16 @@ export const useAiPanelSurfaceRuntime = ({
     );
   }, [modelOptions]);
 
-  useEffect(() => {
-    return subscribeThreadSelected((threadId) => {
-      selectThread(threadId);
-    });
-  }, [selectThread]);
-
-  useEffect(() => {
-    if (lyraApi === undefined) {
-      return;
-    }
-    return lyraApi.onEvent((event) => {
-      if (event.kind !== "notification" || !isRecord(event.notification)) {
-        return;
-      }
-      const method = readString(event.notification.method);
-      const params = isRecord(event.notification.params) ? event.notification.params : {};
-      if (method === "fuzzyFileSearch/sessionUpdated") {
-        const sessionId = readString(params.sessionId);
-        if (sessionId !== null && sessionId !== activeFileMentionSearchSessionIdRef.current) {
-          return;
-        }
-        const files = Array.isArray(params.files)
-          ? params.files.map(readFuzzyFileSearchResult).filter((entry): entry is FuzzyFileSearchResult => entry !== null)
-          : [];
-        setFileMentionSearchResults(files);
-        return;
-      }
-      if (method === "fuzzyFileSearch/sessionCompleted") {
-        return;
-      }
-    });
-  }, [lyraApi]);
+  useEffect(() => subscribeThreadSelected((threadId) => {
+    selectThread(threadId);
+  }), [selectThread]);
 
   const persistBoundProjectRoot = useCallback(
     async (threadId: string, projectRoot: string): Promise<void> => {
-      const trimmed = projectRoot.trim();
-      if (lyraApi === undefined || trimmed.length === 0) {
-        return;
-      }
-      await lyraApi.request(
-        createRequestPayload("thread/metadata/update", {
-          threadId,
-          boundProjectRoot: trimmed
-        })
-      );
-      void loadThread(threadId).catch((error: unknown) => {
-        console.error("Failed to refresh bound project thread", error);
-      });
+      void threadId;
+      void projectRoot;
     },
-    [loadThread, lyraApi]
+    []
   );
 
   useEffect(() => {
@@ -909,13 +547,6 @@ export const useAiPanelSurfaceRuntime = ({
       console.error("Failed to persist bound project root", error);
     });
   }, [activeThreadId, pendingBoundProjectRoot, persistBoundProjectRoot]);
-
-  const openRuntimeTargetPath = useCallback<OpenRuntimeTargetPath>(
-    async (path, options): Promise<void> => {
-      onOpenFilePath?.(path, options);
-    },
-    [onOpenFilePath]
-  );
 
   const handleBindProject = useCallback(async (): Promise<void> => {
     if (onRequestProjectBind === undefined || isBindingProject) {
@@ -960,54 +591,35 @@ export const useAiPanelSurfaceRuntime = ({
   ): Promise<void> => {
     activeFileMentionSearchSessionIdRef.current = sessionId;
     setFileMentionSearchResults([]);
-    if (lyraApi === undefined || roots.length === 0) {
-      return;
-    }
-    await lyraApi.request(createRequestPayload("fuzzyFileSearch/sessionStart", {
-      sessionId,
-      roots,
-    }));
-  }, [lyraApi]);
+    void roots;
+  }, []);
 
   const updateFileMentionSearch = useCallback(async (
     sessionId: string,
     query: string
   ): Promise<void> => {
-    if (lyraApi === undefined) {
-      return;
-    }
-    await lyraApi.request(createRequestPayload("fuzzyFileSearch/sessionUpdate", {
-      sessionId,
-      query,
-    }));
-  }, [lyraApi]);
+    void sessionId;
+    void query;
+  }, []);
 
   const stopFileMentionSearch = useCallback(async (sessionId: string): Promise<void> => {
     if (activeFileMentionSearchSessionIdRef.current === sessionId) {
       activeFileMentionSearchSessionIdRef.current = null;
       setFileMentionSearchResults([]);
     }
-    if (lyraApi === undefined) {
-      return;
-    }
-    await lyraApi.request(createRequestPayload("fuzzyFileSearch/sessionStop", {
-      sessionId,
-    }));
-  }, [lyraApi]);
+  }, []);
 
   const runtimeTurnOptions = useCallback((collaborationMode?: RuntimeThreadOptions["collaborationMode"]) =>
     createRuntimeTurnOptions({
       selectedModelOption,
       defaultProviderId,
       boundProjectRoot: boundProjectRootForActiveThread,
-      permissionMode,
       collaborationMode,
       effort: selectedReasoningEffort,
       verbosity: selectedVerbosity
     }), [
     boundProjectRootForActiveThread,
     defaultProviderId,
-    permissionMode,
     selectedModelOption,
     selectedReasoningEffort,
     selectedVerbosity
@@ -1018,12 +630,10 @@ export const useAiPanelSurfaceRuntime = ({
       selectedModelOption,
       defaultProviderId,
       boundProjectRoot: null,
-      permissionMode,
       effort: selectedReasoningEffort,
       verbosity: selectedVerbosity
     }), [
     defaultProviderId,
-    permissionMode,
     selectedModelOption,
     selectedReasoningEffort,
     selectedVerbosity
@@ -1082,254 +692,12 @@ export const useAiPanelSurfaceRuntime = ({
     try {
       await createRuntimeThread(newThreadOptions());
     } catch {
-      // The runtime has already surfaced the error state for the active tab.
+      // The runtime hook owns the visible error state.
     } finally {
       setIsCreatingThread(false);
     }
   }, [createRuntimeThread, isCreatingThread, newThreadOptions]);
 
-  const appendToComposer = useCallback((text: string): void => {
-    const trimmed = text.trim();
-    if (trimmed.length === 0) {
-      return;
-    }
-    composerAppendRequestIdRef.current += 1;
-    setComposerAppendRequest({
-      id: composerAppendRequestIdRef.current,
-      text: trimmed
-    });
-  }, []);
-
-  const handlePlanApprovalDecision = useCallback(async (
-    response: PlanInteractionResponse,
-    requestOverride?: PlanApprovalRequest
-  ): Promise<void> => {
-    const feedback = response.feedback?.trim() ?? "";
-    const activeThreadId = state.activeThreadId;
-    const planTurnId = requestOverride?.turnId ?? state.latestPlanTurnId ?? "";
-    const threadId = requestOverride?.sessionId ?? activeThreadId;
-    const planId = requestOverride?.planId ?? response.planId;
-    if (threadId === null || threadId.trim().length === 0 || planTurnId.length === 0 || planId.trim().length === 0) {
-      return;
-    }
-    const resolvePayload = {
-      threadId,
-      planTurnId,
-      planId,
-      decision: response.decision,
-      ...(feedback.length === 0 ? {} : { feedback }),
-      annotations: response.annotations ?? requestOverride?.annotations ?? [],
-      artifactSnapshot: response.artifactSnapshot ?? requestOverride?.artifact,
-    };
-    if (response.decision === "approve_and_implement") {
-      setPlanModeEnabled(false);
-      await resolvePlanApproval({
-        ...resolvePayload,
-        options: runtimeTurnOptions("default"),
-      });
-      return;
-    }
-    if (response.decision === "keep_planning") {
-      setPlanModeEnabled(true);
-      await resolvePlanApproval({
-        ...resolvePayload,
-        options: runtimeTurnOptions("plan"),
-      });
-      return;
-    }
-    setPlanModeEnabled(false);
-    await resolvePlanApproval(resolvePayload);
-  }, [
-    resolvePlanApproval,
-    runtimeTurnOptions,
-    setPlanModeEnabled,
-    state.activeThreadId,
-    state.latestPlanTurnId,
-  ]);
-
-  const openPlanApprovalInWorkspace = useMemo(
-    () =>
-      onOpenPlanApprovalWorkspace === undefined
-        ? undefined
-        : (request: PlanApprovalRequest): void => {
-            onOpenPlanApprovalWorkspace({
-              locale,
-              request,
-              onDecision: handlePlanApprovalDecision,
-            });
-          },
-    [handlePlanApprovalDecision, locale, onOpenPlanApprovalWorkspace]
-  );
-
-  useEffect(() => {
-    if (
-      state.followEnabled !== true
-      || openPlanApprovalInWorkspace === undefined
-      || state.activeThreadId === null
-      || state.latestPlanTurnId === null
-    ) {
-      return;
-    }
-    const latestPlan = state.planByTurn[state.latestPlanTurnId];
-    if (latestPlan === undefined || latestPlan.artifact.status !== "proposed") {
-      return;
-    }
-    const request: PlanApprovalRequest = {
-      id: `plan:${latestPlan.turnId}:${latestPlan.artifact.planId}`,
-      sessionId: state.activeThreadId,
-      turnId: latestPlan.turnId,
-      planId: latestPlan.artifact.planId,
-      version: 2,
-      status: latestPlan.artifact.status,
-      summary: latestPlan.artifact.summary,
-      artifact: latestPlan.artifact,
-    };
-    if (lastAutoOpenedPlanReviewIdRef.current === request.id) {
-      return;
-    }
-    lastAutoOpenedPlanReviewIdRef.current = request.id;
-    openPlanApprovalInWorkspace(request);
-  }, [
-    openPlanApprovalInWorkspace,
-    state.activeThreadId,
-    state.followEnabled,
-    state.latestPlanTurnId,
-    state.planByTurn,
-  ]);
-
-  const handleForkTurn = useCallback(async (turnId: string): Promise<void> => {
-    const activeThread = state.activeThread;
-    if (activeThread === null) {
-      return;
-    }
-    const turnIndex = activeThread.turns.findIndex((turn) => turn.id === turnId);
-    if (turnIndex < 0) {
-      return;
-    }
-    try {
-      const forkedThreadId = await forkThreadFromTurn(
-        turnId,
-        activeThread.turns.length - turnIndex - 1,
-        runtimeTurnOptions()
-      );
-      if (boundProjectRootForActiveThread !== null) {
-        setBoundProjectRootByThread((current) => {
-          const next = new Map(current);
-          next.set(forkedThreadId, boundProjectRootForActiveThread);
-          return next;
-        });
-        await persistBoundProjectRoot(forkedThreadId, boundProjectRootForActiveThread);
-      }
-    } catch {
-      // Runtime hook owns the visible error state.
-    }
-  }, [
-    boundProjectRootForActiveThread,
-    forkThreadFromTurn,
-    persistBoundProjectRoot,
-    runtimeTurnOptions,
-    state.activeThread
-  ]);
-
-  const handleStartReview = useCallback(async (target: ReviewTarget): Promise<void> => {
-    setIsReviewStarting(true);
-    try {
-      await startRuntimeReview(target, { cwd: boundProjectRootForActiveThread });
-      setIsReviewPanelOpen(false);
-    } catch {
-      // Runtime hook owns the visible error state.
-    } finally {
-      setIsReviewStarting(false);
-    }
-  }, [boundProjectRootForActiveThread, startRuntimeReview]);
-
-  const handleEditMessageTurn = useCallback((turnId: string, content: string): void => {
-    void (async () => {
-      try {
-        const restoredInput = await rollbackThread(turnId);
-        appendToComposer(restoredInput ?? content);
-      } catch {
-        // Runtime hook owns the visible error state.
-      }
-    })();
-  }, [appendToComposer, rollbackThread]);
-
-  const requestAdvanced = useCallback(async <T,>(
-    method: string,
-    params: Record<string, unknown> = {}
-  ): Promise<T> => {
-    if (lyraApi === undefined || lyraApi === null) {
-      throw new Error("Lyra runtime unavailable");
-    }
-    return await lyraApi.request<T>(createRequestPayload(method, params));
-  }, [lyraApi]);
-
-  const advancedActions = useMemo<AgentAdvancedRuntimeActions>(() => ({
-    listLoadedThreads: async () =>
-      await requestAdvanced("thread/loaded/list", {
-        limit: 50,
-      }),
-    listThreadTurns: async (threadId) =>
-      await requestAdvanced("thread/turns/list", {
-        threadId,
-        limit: 20,
-        sortDirection: "desc",
-      }),
-    listCollaborationModes: async () =>
-      await requestAdvanced("collaborationMode/list"),
-    setThreadMemoryMode: async (threadId, mode) =>
-      await requestAdvanced("thread/memoryMode/set", {
-        threadId,
-        mode,
-      }),
-    runThreadShellCommand: async (threadId, command) =>
-      await requestAdvanced("thread/shellCommand", {
-        threadId,
-        command,
-      }),
-    injectThreadItems: async (threadId, items) =>
-      await requestAdvanced("thread/inject_items", {
-        threadId,
-        items,
-      }),
-    incrementElicitation: async (threadId) =>
-      await requestAdvanced<AgentAdvancedElicitationResponse>("thread/increment_elicitation", {
-        threadId,
-      }),
-    decrementElicitation: async (threadId) =>
-      await requestAdvanced<AgentAdvancedElicitationResponse>("thread/decrement_elicitation", {
-        threadId,
-      }),
-  }), [requestAdvanced]);
-
-  const handleRegenerateTurn = useCallback((turnId: string): void => {
-    const sourceUserMessage = viewModel.sortedMessages.find(
-      (message) => message.role === "user"
-        && "turnId" in message
-        && message.turnId === turnId
-    );
-    const fallbackInput = sourceUserMessage?.content ?? "";
-    void (async () => {
-      try {
-        const restoredInput = await rollbackThread(turnId);
-        const text = restoredInput ?? fallbackInput;
-        await sendTurn({
-          text,
-          attachments: [],
-          parts: text.trim().length === 0 ? [] : [{ type: "text", text }],
-        });
-      } catch {
-        // Runtime hook owns the visible error state.
-      }
-    })();
-  }, [rollbackThread, sendTurn, viewModel.sortedMessages]);
-
-  const showEmptySessionScene = shouldShowEmptySessionScene({
-    messageCount: state.activeDetail?.messages.length ?? 0,
-    optimisticMessageCount: state.optimisticUserMessages.length,
-    streamingAssistantText: state.streamingAssistantText,
-    isStreamActive: state.isStreamActive
-  });
   const isBusy = isAiRuntimeBusy({
     isSending: state.isSending,
     isStreamActive: state.isStreamActive
@@ -1338,95 +706,21 @@ export const useAiPanelSurfaceRuntime = ({
     () => createComposerReserveStyle(composerHeight) as CSSProperties,
     [composerHeight]
   );
-  const isAgentAvailable = desktopApi?.lyra !== null && desktopApi?.lyra !== undefined;
-  const canOpenReviewPanel = canOpenReviewChanges({
-    activeThreadId: state.activeThreadId,
-    boundProjectRoot: boundProjectRootForActiveThread,
-    gitMetadataAvailable: gitMetadataAvailableForReview,
-    isAgentAvailable,
-    isBusy,
-    isReviewStarting
-  });
-
-  useEffect(() => {
-    if (!isReviewPanelOpen) {
-      return;
-    }
-    if (
-      state.activeThreadId === null
-      || !isAgentAvailable
-      || boundProjectRootForActiveThread === null
-      || !gitMetadataAvailableForReview
-    ) {
-      setIsReviewPanelOpen(false);
-    }
-  }, [
-    boundProjectRootForActiveThread,
-    gitMetadataAvailableForReview,
-    isAgentAvailable,
-    isReviewPanelOpen,
-    state.activeThreadId
-  ]);
-
-  const setPermissionsPanelOpen = useCallback<Dispatch<SetStateAction<boolean>>>((value) => {
-    setIsPermissionsPanelOpen((previous) => {
-      const next = typeof value === "function" ? value(previous) : value;
-      if (next) {
-        setIsAdvancedPanelOpen(false);
-        setIsReviewPanelOpen(false);
-      }
-      return next;
-    });
-  }, []);
-
-  const setAdvancedPanelOpen = useCallback<Dispatch<SetStateAction<boolean>>>((value) => {
-    setIsAdvancedPanelOpen((previous) => {
-      const next = typeof value === "function" ? value(previous) : value;
-      if (next) {
-        setIsPermissionsPanelOpen(false);
-        setIsReviewPanelOpen(false);
-      }
-      return next;
-    });
-  }, []);
-
-  const openReviewPanel = useCallback((): void => {
-    if (!canOpenReviewPanel) {
-      return;
-    }
-    setIsPermissionsPanelOpen(false);
-    setIsAdvancedPanelOpen(false);
-    setIsReviewPanelOpen(true);
-  }, [canOpenReviewPanel]);
-
-  const closeReviewPanel = useCallback((): void => {
-    setIsReviewPanelOpen(false);
-  }, []);
+  const isAgentAvailable = false;
 
   return {
     state,
-    viewModel,
     actions: {
       activateThreadTab,
       closeThreadTab,
       reorderThreadTab,
       openThreadTab,
-      setActiveInteractionId,
-      respondToCommandApproval,
-      respondToAgentQuestion,
-      respondToMcpElicitation,
       selectModelOptionValue,
       setSelectedReasoningEffort,
       setSelectedVerbosity,
-      setPermissionMode,
       setComposerHeight,
-      setIsPermissionsPanelOpen: setPermissionsPanelOpen,
-      setIsAdvancedPanelOpen: setAdvancedPanelOpen,
       createThread,
       bindProject: handleBindProject,
-      openReviewPanel,
-      closeReviewPanel,
-      startReview: handleStartReview,
       togglePlanMode: handlePlanModeToggle,
       toggleFollow: handleFollowToggle,
       enableFollow,
@@ -1436,15 +730,8 @@ export const useAiPanelSurfaceRuntime = ({
       startFileMentionSearch,
       updateFileMentionSearch,
       stopFileMentionSearch,
-      forkTurn: handleForkTurn,
-      regenerateTurn: handleRegenerateTurn,
-      editMessageTurn: handleEditMessageTurn,
-      planApprovalDecision: handlePlanApprovalDecision,
-      advanced: advancedActions
     },
-    threadViewportRef,
-    interactionPanelRef,
-    composerAppendRequest,
+    composerAppendRequest: null,
     composerReserveStyle,
     modelOptions,
     selectedModelOption,
@@ -1456,30 +743,11 @@ export const useAiPanelSurfaceRuntime = ({
     fileMentionSearchResults,
     workbenchTabMentions: workbenchTabMentions ?? [],
     aiThreadMentions,
-    permissionMode,
-    toolNameLabels,
-    streamingAssistantText,
-    messageMetadata,
-    renderRows,
-    virtualRows,
-    topSpacerHeight,
-    bottomSpacerHeight,
-    measureThreadRow,
     boundProjectRootForActiveThread,
-    boundProjectRootByThreadId: boundProjectRootByThread,
     tabProjectRootById,
     isBindingProject,
     isCreatingThread,
-    isPermissionsPanelOpen,
-    isAdvancedPanelOpen,
-    isReviewPanelOpen,
-    isReviewStarting,
-    canOpenReviewChanges: canOpenReviewPanel,
-    showEmptySessionScene,
     isBusy,
     isAgentAvailable,
-    canOpenFilePath: onOpenFilePath !== undefined,
-    openRuntimeTargetPath,
-    ...(openPlanApprovalInWorkspace === undefined ? {} : { openPlanApprovalInWorkspace })
   };
 };

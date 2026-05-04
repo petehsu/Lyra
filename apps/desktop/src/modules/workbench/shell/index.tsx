@@ -33,7 +33,6 @@ import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "../browser-search";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
 import { useWorkbenchAiFileMentionFallbackRoots } from "./use-workbench-ai-file-mention-fallback-roots";
-import { useWorkbenchAiSurfaceBridge } from "./use-workbench-ai-surface-bridge";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
 import { useWorkbenchBrowserRuntime } from "./use-workbench-browser-runtime";
 import {
@@ -280,16 +279,12 @@ export const WorkbenchShell = () => {
     desktopApi,
     preferences: preferencesModel.preferences,
     settingsAiModel,
-    resolvedThemeId,
     aiPanelSide: panelLayoutModel.aiPanelSide,
     fileMentionFallbackRoots: aiFileMentionFallbackRoots,
     workbenchTabMentions,
     onToggleAiPanelSide: panelLayoutModel.toggleAiPanelSide,
     openAppTab: tabsModel.openAppTab,
     onRequestProjectBind: requestProjectBind,
-    onOpenPlanApprovalWorkspace: planReview.openPlanReview,
-    onAgentRuntimeNotification: publishNotification,
-    openDialog: globalDialogModel.openDialog,
     t
   });
   useScrollbarVisibilityGuard(rootRef);
@@ -376,8 +371,7 @@ export const WorkbenchShell = () => {
     onAcceptAllEditorWorkItems,
     onAcceptEditorWorkItem,
     onRejectEditorWorkItem,
-    onUndoEditorWorkItem,
-    recordCompletedEditorWorkItem
+    onUndoEditorWorkItem
   } = useWorkbenchEditorReviewModel({
     desktopApi,
     onOpenFileFromManager
@@ -409,12 +403,7 @@ export const WorkbenchShell = () => {
 
   const aiLaunchProps = useWorkbenchAiLaunchProps(t);
 
-  const sidebarAiSurfacePropsWithFileOpen = useWorkbenchAiSurfaceBridge({
-    sidebarAiSurfaceProps,
-    fileEditorModel,
-    onOpenFileFromManager,
-    recordCompletedEditorWorkItem
-  });
+  const sidebarAiSurfacePropsWithFileOpen = sidebarAiSurfaceProps;
   const emptyAppTabGuards = useWorkbenchEmptyAppTabGuards({
     tabsModel,
     notificationCount: notificationModel.notifications.length
@@ -569,7 +558,7 @@ export const WorkbenchShell = () => {
     ),
     titlebarContext: <WorkbenchTitlebarContextSlot />,
     leftPanel: sidebarAiSurfacePropsWithFileOpen === null ? null : (
-      <AiPanelAdapter variant="sidebar" {...sidebarAiSurfacePropsWithFileOpen} />
+      <AiPanelAdapter {...sidebarAiSurfacePropsWithFileOpen} />
     ),
     workspace: (
       <WorkspaceSurfaceAdapter

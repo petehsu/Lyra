@@ -1,4 +1,3 @@
-import type { LyraRuntimeHealth } from "../../../shared/lyra-runtime";
 import type {
   AiProviderModelEntry,
   AiProviderPreset,
@@ -98,13 +97,19 @@ export type SettingsAiPresetSection = {
   readonly presets: readonly AiProviderPreset[];
 };
 
+export type SettingsAiRuntimeHealth = {
+  readonly backend: string;
+  readonly transport: string;
+  readonly version: string;
+};
+
 export type SettingsAiModel = {
   readonly isLoading: boolean;
   readonly isSaving: boolean;
   readonly isRefreshingModels: boolean;
   readonly statusMessage: string;
   readonly statusTone: "neutral" | "success" | "error";
-  readonly runtimeHealth: LyraRuntimeHealth | null;
+  readonly runtimeHealth: SettingsAiRuntimeHealth | null;
   readonly profiles: readonly AiProviderProfile[];
   readonly presetSections: readonly SettingsAiPresetSection[];
   readonly selectedProfileId: string | null;
