@@ -127,6 +127,12 @@ import {
   type WorkbenchBrowserReadPageStateRequest,
   type WorkbenchBrowserTopologySnapshot,
   type WorkbenchStateKey,
+  type AiDeleteProfileRequest,
+  type AiDiscoverModelsRequest,
+  type AiModelDiscoveryResult,
+  type AiProviderProfile,
+  type AiRuntimeConfigSnapshot,
+  type AiUpsertProfileRequest,
   type LyraDesktopApi,
   type WindowStatePayload
 } from "../shared/desktop-bridge";
@@ -978,6 +984,16 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         terminalErrorListeners.delete(listener);
       };
     }
+  },
+  ai: {
+    readConfig: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiReadConfig) as Promise<AiRuntimeConfigSnapshot>,
+    upsertProfile: (request: AiUpsertProfileRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiUpsertProfile, request) as Promise<AiProviderProfile>,
+    deleteProfile: (request: AiDeleteProfileRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiDeleteProfile, request) as Promise<void>,
+    discoverModels: (request: AiDiscoverModelsRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiDiscoverModels, request) as Promise<AiModelDiscoveryResult>
   },
   workbenchObservation: {
     registerHandler: (handler) => {

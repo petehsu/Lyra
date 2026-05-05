@@ -740,6 +740,7 @@
 .lyra-settings-ai-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: var(--lyra-unit-8);
 }
 
@@ -753,6 +754,7 @@
 .lyra-settings-ai-field {
   min-width: 0;
   display: grid;
+  align-self: start;
   gap: var(--lyra-unit-6);
   color: var(--lyra-text-secondary);
   font-size: var(--lyra-unit-11);
@@ -843,14 +845,6 @@
 
 .lyra-settings-ai-model-input {
   min-height: var(--lyra-unit-78);
-}
-
-.lyra-settings-ai-secret-row {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--lyra-unit-8);
-  align-items: stretch;
 }
 
 .lyra-settings-ai-selection-list {
@@ -1025,6 +1019,19 @@
   position: relative;
 }
 
+.lyra-settings-ai-model-option-static {
+  cursor: default;
+}
+
+.lyra-settings-ai-model-option-static::before,
+.lyra-settings-ai-model-option-static:hover::before {
+  background: transparent;
+}
+
+.lyra-settings-ai-model-option-static:hover {
+  color: var(--lyra-text-secondary);
+}
+
 .lyra-settings-ai-actions {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1110,75 +1117,6 @@
   border-color: color-mix(in srgb, var(--lyra-accent-danger) 42%, transparent);
 }
 
-.lyra-settings-ai-status-list {
-  display: grid;
-  gap: var(--lyra-unit-8);
-}
-
-.lyra-settings-ai-status-row-copy {
-  min-width: 0;
-  display: grid;
-  gap: var(--lyra-unit-4);
-  font-size: var(--lyra-unit-12);
-  line-height: 1.5;
-  color: var(--lyra-text-secondary);
-}
-
-.lyra-settings-ai-status-row {
-  order: 1;
-  min-width: 0;
-  border: 0;
-  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
-  border-radius: 0;
-  padding: 0 var(--lyra-unit-2) var(--lyra-unit-8);
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--lyra-unit-8);
-  align-items: center;
-  font-size: var(--lyra-unit-12);
-  color: var(--lyra-text-secondary);
-}
-
-.lyra-settings-ai-status-row-success {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
-}
-
-.lyra-settings-ai-status-row-error {
-  border-color: color-mix(in srgb, var(--lyra-accent-danger) 32%, var(--lyra-line-default) 68%);
-}
-
-.lyra-settings-ai-status-row strong {
-  color: var(--lyra-text-muted);
-  font-weight: 500;
-}
-
-.lyra-settings-ai-status-tone-neutral {
-  color: var(--lyra-text-secondary);
-}
-
-.lyra-settings-ai-status-tone-success {
-  color: var(--lyra-text-secondary);
-}
-
-.lyra-settings-ai-status-tone-error {
-  color: color-mix(in srgb, var(--lyra-accent-danger) 80%, var(--lyra-text-primary) 20%);
-}
-
-.lyra-settings-ai-status-dot {
-  width: var(--lyra-unit-7);
-  height: var(--lyra-unit-7);
-  border-radius: var(--lyra-unit-999);
-  background: var(--lyra-text-muted);
-}
-
-.lyra-settings-ai-status-dot-success {
-  background: var(--lyra-accent-positive);
-}
-
-.lyra-settings-ai-status-dot-error {
-  background: var(--lyra-accent-danger);
-}
-
 .lyra-settings-ai-empty {
   order: 3;
   display: grid;
@@ -1253,157 +1191,127 @@
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 0;
+  grid-template-columns: minmax(var(--lyra-unit-184), 0.36fr) minmax(0, 1fr);
+  gap: var(--lyra-unit-12);
   border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 60%, transparent);
+  padding-top: var(--lyra-unit-8);
 }
 
-.lyra-settings-ai-profile-card-slot {
+.lyra-settings-ai-provider-list,
+.lyra-settings-ai-provider-models {
   min-width: 0;
-  display: block;
+  display: grid;
+  align-content: start;
+  gap: 0;
+}
+
+.lyra-settings-ai-provider-row,
+.lyra-settings-ai-model-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--lyra-unit-28);
+  align-items: stretch;
   border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 60%, transparent);
 }
 
-.lyra-settings-ai-profile-card {
+.lyra-settings-ai-provider-tab,
+.lyra-settings-ai-model-card {
   min-width: 0;
-  min-height: var(--lyra-unit-70);
+  width: 100%;
   border: 0;
   border-radius: 0;
   padding: var(--lyra-unit-10) var(--lyra-unit-2);
-  display: grid;
-  grid-template-columns: minmax(var(--lyra-unit-180), 0.85fr) minmax(0, 1.15fr) auto;
-  gap: var(--lyra-unit-14);
-  align-items: center;
   background: transparent;
+  color: var(--lyra-text-secondary);
+  text-align: left;
+  font: inherit;
 }
 
-.lyra-settings-ai-profile-card-header,
-.lyra-settings-ai-profile-card-footer {
-  min-width: 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--lyra-unit-10);
-}
-
-.lyra-settings-ai-profile-card-title {
-  min-width: 0;
+.lyra-settings-ai-provider-tab {
+  min-height: var(--lyra-unit-54);
   display: inline-flex;
   align-items: center;
   gap: var(--lyra-unit-10);
-  color: var(--lyra-text-primary);
 }
 
-.lyra-settings-ai-profile-card-title > span {
+.lyra-settings-ai-provider-tab > span,
+.lyra-settings-ai-model-card {
   min-width: 0;
   display: grid;
   gap: var(--lyra-unit-2);
 }
 
-.lyra-settings-ai-profile-card-title strong {
+.lyra-settings-ai-model-card {
+  min-height: var(--lyra-unit-54);
+  align-content: center;
+}
+
+.lyra-settings-ai-provider-tab strong,
+.lyra-settings-ai-model-card strong {
   min-width: 0;
   font-size: var(--lyra-unit-13);
   font-weight: 600;
+  color: var(--lyra-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.lyra-settings-ai-profile-card-title small {
+.lyra-settings-ai-provider-tab small,
+.lyra-settings-ai-model-card small {
   color: var(--lyra-text-muted);
   font-size: var(--lyra-unit-11);
-}
-
-.lyra-settings-ai-profile-card-meta {
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--lyra-unit-8);
-}
-
-.lyra-settings-ai-profile-card-meta div {
-  min-width: 0;
-  display: grid;
-  gap: var(--lyra-unit-2);
-}
-
-.lyra-settings-ai-profile-card-meta dt {
-  color: var(--lyra-text-muted);
-  font-size: var(--lyra-unit-11);
-}
-
-.lyra-settings-ai-profile-card-meta dd {
-  margin: 0;
-  color: var(--lyra-text-secondary);
-  font-size: var(--lyra-unit-12);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.lyra-settings-ai-card-status {
-  width: var(--lyra-unit-8);
-  height: var(--lyra-unit-8);
-  min-width: var(--lyra-unit-8);
-  min-height: var(--lyra-unit-8);
-  border-radius: var(--lyra-unit-999);
-  border: 0;
+.lyra-settings-ai-provider-tab:hover,
+.lyra-settings-ai-model-card:hover,
+.lyra-settings-ai-provider-row:hover .lyra-settings-ai-provider-tab,
+.lyra-settings-ai-model-row:hover .lyra-settings-ai-model-card,
+.lyra-settings-ai-provider-tab-active,
+.lyra-settings-ai-model-card-active {
+  color: var(--lyra-text-primary);
+  background: transparent;
+}
+
+.lyra-settings-ai-provider-tab:focus-visible,
+.lyra-settings-ai-model-card:focus-visible,
+.lyra-settings-ai-row-delete:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+}
+
+.lyra-settings-ai-row-delete {
+  width: var(--lyra-unit-24);
+  height: var(--lyra-unit-24);
   padding: 0;
+  border: 0;
+  border-radius: var(--lyra-unit-4);
+  background: transparent;
+  color: var(--lyra-text-muted);
   display: inline-flex;
   align-items: center;
-  background: var(--lyra-text-muted);
+  justify-content: center;
+  align-self: center;
+  justify-self: end;
+  opacity: 0;
+  transition:
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
 }
 
-.lyra-settings-ai-card-status-ready {
-  background: var(--lyra-accent-positive);
+.lyra-settings-ai-provider-row:hover .lyra-settings-ai-row-delete,
+.lyra-settings-ai-provider-row:focus-within .lyra-settings-ai-row-delete,
+.lyra-settings-ai-model-row:hover .lyra-settings-ai-row-delete,
+.lyra-settings-ai-model-row:focus-within .lyra-settings-ai-row-delete {
+  opacity: 1;
 }
 
-.lyra-settings-ai-card-status-error {
-  background: var(--lyra-accent-danger);
-}
-
-.lyra-settings-ai-profile-card-active {
-  position: relative;
-}
-
-.lyra-settings-ai-profile-card-active::before {
-  content: "";
-  position: absolute;
-  left: var(--lyra-unit-3);
-  top: var(--lyra-unit-10);
-  bottom: var(--lyra-unit-10);
-  width: var(--lyra-unit-2);
-  border-radius: var(--lyra-unit-999);
-  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
-}
-
-.lyra-settings-ai-delete-confirm {
-  order: 4;
-  min-width: 0;
-  border: 0;
-  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-accent-danger) 32%, var(--lyra-line-default) 68%);
-  border-radius: 0;
-  padding: var(--lyra-unit-8) var(--lyra-unit-2);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--lyra-unit-10);
-  align-items: center;
-}
-
-.lyra-settings-ai-delete-confirm-copy {
-  min-width: 0;
-  display: grid;
-  gap: var(--lyra-unit-3);
-}
-
-.lyra-settings-ai-delete-confirm-copy strong {
-  color: var(--lyra-text-primary);
-  font-size: var(--lyra-unit-12);
-}
-
-.lyra-settings-ai-delete-confirm-copy small {
-  color: var(--lyra-text-secondary);
-  font-size: var(--lyra-unit-11);
+.lyra-settings-ai-row-delete:hover {
+  color: var(--lyra-accent-danger);
+  background: transparent;
 }
 
 .lyra-settings-ai-inline-editor {
@@ -1425,6 +1333,10 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--lyra-unit-10);
+}
+
+.lyra-settings-ai-inline-editor-footer {
+  justify-content: flex-end;
 }
 
 .lyra-settings-ai-inline-editor-title-copy {
@@ -1465,13 +1377,6 @@
   font-weight: 600;
 }
 
-@media (min-width: var(--lyra-unit-1320)) {
-  .lyra-settings-ai-status-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--lyra-unit-6) var(--lyra-unit-10);
-  }
-}
-
 @media (min-width: var(--lyra-unit-1540)) {
   .lyra-settings-ai-form {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1494,25 +1399,9 @@
     grid-template-columns: 1fr;
   }
 
-  .lyra-settings-ai-status-row {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .lyra-settings-ai-profile-card {
+  .lyra-settings-ai-profile-grid {
     grid-template-columns: 1fr;
     gap: var(--lyra-unit-8);
-  }
-
-  .lyra-settings-ai-profile-card-meta {
-    grid-template-columns: 1fr;
-  }
-
-  .lyra-settings-ai-profile-card-footer {
-    align-items: center;
-  }
-
-  .lyra-settings-ai-delete-confirm {
-    grid-template-columns: 1fr;
   }
 
   .lyra-settings-ai-inline-editor-header,
@@ -1522,10 +1411,6 @@
   }
 
   .lyra-settings-ai-advanced-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .lyra-settings-ai-secret-row {
     grid-template-columns: 1fr;
   }
 

@@ -46,7 +46,6 @@ export type AiProviderFieldScope = "connection" | "auth" | "advanced";
 export type AiProviderFieldKind = "text" | "password" | "url" | "textarea" | "select" | "file";
 export type AiModelDiscoveryMode = "dynamic" | "static" | "mixed";
 export type AiModelDiscoveryStatus = "idle" | "ready" | "error";
-export type AiProviderCapability = "full" | "static" | "pending";
 
 export type AiProfileId = string;
 export type AiProviderPresetId = string;
@@ -129,7 +128,6 @@ export type AiProviderPreset = {
   readonly iconKey: AiProviderIconKey;
   readonly defaultModel: string;
   readonly discoveryMode: AiModelDiscoveryMode;
-  readonly capability: AiProviderCapability;
   readonly modelDiscoverySupported: boolean;
   readonly customHeadersSupported: boolean;
   readonly customModelsSupported: boolean;
@@ -180,7 +178,6 @@ export type AiUpsertProfileRequest = {
   readonly connectionConfig: Record<string, string>;
   readonly authConfig: Record<string, string>;
   readonly secretValues?: Record<string, string | null>;
-  readonly clearSecretFields?: readonly string[];
   readonly headers?: Record<string, string>;
   readonly model: string;
   readonly customModels?: readonly AiProviderModelEntry[];
@@ -189,23 +186,6 @@ export type AiUpsertProfileRequest = {
 
 export type AiDeleteProfileRequest = {
   readonly id: AiProfileId;
-};
-
-export type AiSetDefaultProfileRequest = {
-  readonly id: AiProfileId;
-};
-
-export type AiValidateProfileRequest = {
-  readonly id?: AiProfileId;
-  readonly name?: string;
-  readonly providerId: AiProviderId;
-  readonly protocolId: AiProtocolId;
-  readonly presetId?: AiProviderPresetId | null;
-  readonly connectionConfig: Record<string, string>;
-  readonly authConfig: Record<string, string>;
-  readonly secretValues?: Record<string, string | null>;
-  readonly headers?: Record<string, string>;
-  readonly model: string;
 };
 
 export type AiDiscoverModelsRequest = {
@@ -230,11 +210,19 @@ export type AiModelDiscoveryResult = {
   readonly code?: string;
 };
 
-export type AiProfileValidationResult = {
-  readonly ok: boolean;
-  readonly message: string;
-  readonly checkedAt: number;
-  readonly code?: string;
+export type AiRuntimeHealth = {
+  readonly backend: string;
+  readonly transport: string;
+  readonly version: string;
+};
+
+export type AiRuntimeConfigSnapshot = {
+  readonly schemaVersion: string;
+  readonly profiles: readonly AiProviderProfile[];
+  readonly defaultProfileId: AiProfileId | null;
+  readonly defaultProviderId: string | null;
+  readonly defaultModelNames: readonly string[];
+  readonly runtimeHealth: AiRuntimeHealth;
 };
 
 // TODO(lyra): AiOpenAiChatGptAuthResult was removed — managed OAuth is not supported.

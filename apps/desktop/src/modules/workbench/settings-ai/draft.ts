@@ -4,8 +4,8 @@ import type {
   AiProviderPreset,
   AiProviderProfile
 } from "../../../shared/ai";
-import { resolvePreset } from "./preset";
-import type { SettingsAiDraft } from "./types";
+import { normalizePresetId, resolvePreset } from "./preset";
+import type { SettingsAiDraft, SettingsAiModelSelectionMode } from "./types";
 
 export const serializeMap = (value: Record<string, string>): string =>
   Object.entries(value)
@@ -17,6 +17,57 @@ const PRIMARY_URL_FIELD_IDS = ["baseUrl", "endpointOverride"] as const;
 const PRIMARY_SECRET_FIELD_IDS = ["apiKey", "refreshToken"] as const;
 const DEFAULT_PROVIDER_ID = "lmstudio";
 const DEFAULT_PROTOCOL_ID = "lmstudio_chat_completions";
+export const MODEL_SELECTION_MODE_AUTH_CONFIG_KEY = "modelSelectionMode";
+
+const draftConnectionConfig = (
+  preset: AiProviderPreset | null,
+  profile: AiProviderProfile | null
+): Readonly<Record<string, string>> => {
+  if (profile === null) {
+    return { ...(preset?.defaultConnectionConfig ?? {}) };
+  }
+  if (preset?.connectionFields.length === 0) {
+    return { ...preset.defaultConnectionConfig };
+  }
+  return { ...profile.connectionConfig };
+};
+
+const draftPresetId = (
+  profile: AiProviderProfile | null,
+  preset: AiProviderPreset | null
+): string | null => {
+  if (profile?.providerId === "mimo") {
+    const route = profile.connectionConfig.mimoRoute ?? "";
+    const baseUrl = profile.connectionConfig.baseUrl ?? "";
+    if (
+      normalizePresetId(profile.presetId) === "mimo_token_plan"
+      || route === "token_plan"
+      || baseUrl.includes("token-plan")
+    ) {
+      return "mimo_token_plan";
+    }
+    return "mimo_api";
+  }
+  return preset?.id ?? normalizePresetId(profile?.presetId ?? null);
+};
+
+const isModelSelectionMode = (value: string | undefined): value is SettingsAiModelSelectionMode =>
+  value === "custom" || value === "all";
+
+const draftModelSelectionMode = (
+  profile: AiProviderProfile | null
+): SettingsAiModelSelectionMode => {
+  if (profile === null) {
+    return "all";
+  }
+  const configuredMode = profile.authConfig[MODEL_SELECTION_MODE_AUTH_CONFIG_KEY];
+  if (isModelSelectionMode(configuredMode)) {
+    return configuredMode;
+  }
+  return profile.customModels.length > 0 || profile.discoveryState.models.length > 0
+    ? "all"
+    : "custom";
+};
 
 export const parseMap = (value: string): Record<string, string> =>
   value
@@ -281,31 +332,36 @@ export const toDraft = (
       name: "",
       providerId: preset?.providerId ?? DEFAULT_PROVIDER_ID,
       protocolId: preset?.protocolId ?? DEFAULT_PROTOCOL_ID,
-      presetId: preset?.id ?? null,
-      connectionConfig: { ...(preset?.defaultConnectionConfig ?? {}) },
+      presetId: draftPresetId(null, preset),
+      connectionConfig: draftConnectionConfig(preset, null),
       authConfig: { ...(preset?.defaultAuthConfig ?? {}) },
       secretValues: {},
-      clearSecretFields: [],
       configuredSecretFields: [],
       headersText: "",
+      modelSelectionMode: "all",
       modelsText: serializeConfiguredModels(preset?.defaultModel ?? "", []),
       isDefault: false
     };
   }
+
+  const configuredModels = [
+    ...profile.customModels,
+    ...profile.discoveryState.models
+  ];
 
   return {
     id: profile.id,
     name: profile.name,
     providerId: profile.providerId,
     protocolId: profile.protocolId,
-    presetId: profile.presetId,
-    connectionConfig: { ...profile.connectionConfig },
+    presetId: draftPresetId(profile, preset),
+    connectionConfig: draftConnectionConfig(preset, profile),
     authConfig: { ...profile.authConfig },
     secretValues: {},
-    clearSecretFields: [],
     configuredSecretFields: [...profile.configuredSecretFields],
-    headersText: serializeMap({ ...profile.headers }),
-    modelsText: serializeConfiguredModels(profile.model, profile.customModels),
+    headersText: "",
+    modelSelectionMode: draftModelSelectionMode(profile),
+    modelsText: serializeConfiguredModels(profile.model, configuredModels),
     isDefault: profile.isDefault
   };
 };

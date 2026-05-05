@@ -23,6 +23,7 @@ import {
   resolveLyraAppIconPath,
   type LyraAppIconVariant
 } from "./app-identity";
+import { createAiIpcBridge } from "./ai";
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createFilesIpcBridge } from "./files";
 import { createDownloadManagerIpcBridge } from "./download-manager";
@@ -94,6 +95,7 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null;
 let disposeTerminalBridge: (() => void) | null = null;
+let disposeAiBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
 let disposeDownloadManagerBridge: (() => void) | null = null;
 let disposeImageViewerBridge: (() => void) | null = null;
@@ -672,6 +674,11 @@ const registerIpcHandlers = (): void => {
   });
   disposeRuntimeClient = runtimeClient.dispose;
 
+  const aiBridge = createAiIpcBridge({
+    runtimeClient
+  });
+  disposeAiBridge = aiBridge.dispose;
+
   const terminalBridge = createTerminalIpcBridge(
     storageRoots.modules.terminal,
     runtimeClient,
@@ -889,6 +896,10 @@ app.on("before-quit", () => {
   if (disposeTerminalBridge !== null) {
     disposeTerminalBridge();
     disposeTerminalBridge = null;
+  }
+  if (disposeAiBridge !== null) {
+    disposeAiBridge();
+    disposeAiBridge = null;
   }
   if (disposeLspBridge !== null) {
     disposeLspBridge();

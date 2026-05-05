@@ -114,6 +114,14 @@ import type {
   WorkbenchObservationQueryResult
 } from "./workbench-observation";
 import type {
+  AiDeleteProfileRequest,
+  AiDiscoverModelsRequest,
+  AiModelDiscoveryResult,
+  AiProviderProfile,
+  AiRuntimeConfigSnapshot,
+  AiUpsertProfileRequest
+} from "./ai";
+import type {
   InstalledUiuxPack,
   UiuxInstallFromGitRequest,
   UiuxInstallFromLocalRequest,
@@ -131,7 +139,6 @@ export type {
   AiDeleteProfileRequest,
   AiModelDiscoveryResult,
   AiProfileId,
-  AiProfileValidationResult,
   AiProviderCatalogItem,
   AiProviderFieldKind,
   AiProviderFieldOption,
@@ -145,9 +152,8 @@ export type {
   AiProtocolId,
   AiProfileAuthConfig,
   AiProfileConnectionConfig,
-  AiSetDefaultProfileRequest,
-  AiUpsertProfileRequest,
-  AiValidateProfileRequest
+  AiRuntimeConfigSnapshot,
+  AiUpsertProfileRequest
 } from "./ai";
 export type {
   ImageViewerCloseSessionRequest,
@@ -445,6 +451,10 @@ export const LYRA_CHANNELS = {
   terminalResizeSession: "lyra:terminal/resize-session",
   terminalCloseSession: "lyra:terminal/close-session",
   terminalEvent: "lyra:terminal/event",
+  aiReadConfig: "lyra:ai/config/read",
+  aiUpsertProfile: "lyra:ai/profile/upsert",
+  aiDeleteProfile: "lyra:ai/profile/delete",
+  aiDiscoverModels: "lyra:ai/models/discover",
   workbenchObservationQuery: "lyra:workbench-observation/query",
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
   uiuxListPacks: "lyra:uiux/list-packs",
@@ -1504,6 +1514,13 @@ export type WorkbenchObservationBridgeApi = {
   ) => () => void;
 };
 
+export type AiApi = {
+  readonly readConfig: () => Promise<AiRuntimeConfigSnapshot>;
+  readonly upsertProfile: (request: AiUpsertProfileRequest) => Promise<AiProviderProfile>;
+  readonly deleteProfile: (request: AiDeleteProfileRequest) => Promise<void>;
+  readonly discoverModels: (request: AiDiscoverModelsRequest) => Promise<AiModelDiscoveryResult>;
+};
+
 export type UiuxPacksApi = {
   readonly listPacks: () => Promise<UiuxListPacksResponse>;
   readonly installFromLocal: (request: UiuxInstallFromLocalRequest) => Promise<InstalledUiuxPack>;
@@ -1533,6 +1550,7 @@ export type LyraDesktopApi = {
   readonly skills: SkillsApi;
   readonly lsp: LspApi;
   readonly terminal: TerminalApi;
+  readonly ai?: AiApi;
   readonly workbenchObservation: WorkbenchObservationBridgeApi;
   readonly uiux: UiuxPacksApi;
   readonly workbenchState: WorkbenchStateApi;

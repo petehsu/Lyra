@@ -4,9 +4,19 @@ import {
   appendAdditionalConfiguredModelLines,
   parseConfiguredModelEntries,
   replacePrimaryConfiguredModelLine,
-  resolveConfiguredModels
+  resolveConfiguredModels,
+  toDraft
 } from "../draft";
-import type { AiProviderModelEntry } from "../../../../shared/ai";
+import type { AiProviderModelEntry, AiProviderProfile } from "../../../../shared/ai";
+
+const createModelEntry = (
+  id: string,
+  source: AiProviderModelEntry["source"] = "custom"
+): AiProviderModelEntry => ({
+  id,
+  name: id,
+  source
+});
 
 describe("settings-ai draft model parsing", () => {
   test("accepts multiple delimiter styles for model ids", () => {
@@ -72,5 +82,34 @@ describe("settings-ai draft model parsing", () => {
       "gpt-5.4\nextra-one",
       ["extra-one", "extra-two", "gpt-5.4", "extra-three"]
     )).toBe("gpt-5.4\nextra-one\nextra-two\nextra-three");
+  });
+
+  test("keeps every saved profile model in the settings draft", () => {
+    const profile: AiProviderProfile = {
+      id: "profile-openai",
+      name: "OpenAI",
+      providerId: "openai",
+      protocolId: "openai_chat_completions",
+      runtimeProviderId: "lp-openai",
+      runtimeSupported: true,
+      secretStatus: "configured",
+      presetId: "openai",
+      connectionConfig: {},
+      authConfig: {},
+      configuredSecretFields: [],
+      headers: {},
+      model: "gpt-5",
+      customModels: [createModelEntry("gpt-5-mini")],
+      discoveryState: {
+        status: "ready",
+        lastCheckedAt: 1,
+        models: [createModelEntry("gpt-5-mini", "dynamic"), createModelEntry("gpt-4.1", "dynamic")]
+      },
+      isDefault: false,
+      createdAt: 1,
+      updatedAt: 1
+    };
+
+    expect(toDraft(profile, []).modelsText).toBe("gpt-5\ngpt-5-mini\ngpt-4.1");
   });
 });

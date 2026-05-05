@@ -10,19 +10,11 @@ export type SettingsAiLabels = {
   readonly providerTitle: string;
   readonly connectionTitle: string;
   readonly additionalFieldsTitle: string;
-  readonly statusTitle: string;
   readonly addProfile: string;
   readonly editProfile: string;
-  readonly addAllModels: string;
   readonly saveProfile: string;
   readonly deleteProfile: string;
   readonly cancel: string;
-  readonly clearApiKey: string;
-  readonly testConnection: string;
-  readonly discoverModels: string;
-  readonly refreshModels: string;
-  readonly authorizeChatGpt: string;
-  readonly authorizeChatGptDeviceCode: string;
   readonly profileNameLabel: string;
   readonly profileNamePlaceholder: string;
   readonly urlLabel: string;
@@ -31,17 +23,12 @@ export type SettingsAiLabels = {
   readonly keyPlaceholder: string;
   readonly modelLabel: string;
   readonly mainModelLabel: string;
-  readonly additionalModelsLabel: string;
+  readonly modelModeAllLabel: string;
+  readonly modelModeCustomLabel: string;
   readonly modelPlaceholder: string;
   readonly modelsHelp: string;
   readonly headersLabel: string;
   readonly headersPlaceholder: string;
-  readonly statusIdle: string;
-  readonly statusSaved: string;
-  readonly statusDeleted: string;
-  readonly statusDefaultUpdated: string;
-  readonly statusChatGptAuthorized: string;
-  readonly statusLastChecked: string;
   readonly emptyTitle: string;
   readonly emptyDescription: string;
   readonly recommendedSection: string;
@@ -52,18 +39,8 @@ export type SettingsAiLabels = {
   readonly noDiscoveredModels: string;
   readonly advancedSettingsLabel: string;
   readonly selectProviderLabel: string;
-  readonly connectionReady: string;
-  readonly connectionError: string;
-  readonly connectionUnchecked: string;
   readonly deleteProfileConfirmTitle: string;
   readonly deleteProfileConfirmDescription: string;
-  readonly capabilityLabel: string;
-  readonly capabilityFull: string;
-  readonly capabilityStatic: string;
-  readonly capabilityPending: string;
-  readonly modelSourceDynamic: string;
-  readonly modelSourcePreset: string;
-  readonly modelSourceCustom: string;
   readonly memoryConfigTitle: string;
   readonly memoryConfigDescription: string;
   readonly memoryConfigPlaceholder: string;
@@ -75,6 +52,8 @@ export type SettingsAiLabels = {
   readonly memoryConfigStatusInvalidJson: string;
 };
 
+export type SettingsAiModelSelectionMode = "custom" | "all";
+
 export type SettingsAiDraft = {
   readonly id: string | null;
   readonly name: string;
@@ -84,9 +63,9 @@ export type SettingsAiDraft = {
   readonly connectionConfig: Readonly<Record<string, string>>;
   readonly authConfig: Readonly<Record<string, string>>;
   readonly secretValues: Readonly<Record<string, string>>;
-  readonly clearSecretFields: readonly string[];
   readonly configuredSecretFields: readonly string[];
   readonly headersText: string;
+  readonly modelSelectionMode: SettingsAiModelSelectionMode;
   readonly modelsText: string;
   readonly isDefault: boolean;
 };
@@ -97,34 +76,22 @@ export type SettingsAiPresetSection = {
   readonly presets: readonly AiProviderPreset[];
 };
 
-export type SettingsAiRuntimeHealth = {
-  readonly backend: string;
-  readonly transport: string;
-  readonly version: string;
-};
-
 export type SettingsAiModel = {
-  readonly isLoading: boolean;
   readonly isSaving: boolean;
-  readonly isRefreshingModels: boolean;
-  readonly statusMessage: string;
-  readonly statusTone: "neutral" | "success" | "error";
-  readonly runtimeHealth: SettingsAiRuntimeHealth | null;
   readonly profiles: readonly AiProviderProfile[];
   readonly presetSections: readonly SettingsAiPresetSection[];
   readonly selectedProfileId: string | null;
-  readonly defaultProfileId: string | null;
   readonly defaultProviderId: string | null;
-  readonly defaultProfileLabel: string | null;
   readonly defaultModelNames: readonly string[];
   readonly selectedPresetId: string | null;
   readonly selectedPreset: AiProviderPreset | null;
   readonly draft: SettingsAiDraft;
+  readonly modelSelectionMode: SettingsAiModelSelectionMode;
   readonly availableModels: readonly AiProviderModelEntry[];
-  readonly selectedModelIds: readonly string[];
   readonly selectProfile: (profileId: string | null) => void;
   readonly applyPreset: (presetId: string) => void;
   readonly updateDraftName: (value: string) => void;
+  readonly updateDraftModelSelectionMode: (value: SettingsAiModelSelectionMode) => void;
   readonly updateDraftHeadersText: (value: string) => void;
   readonly updateDraftModelsText: (value: string) => void;
   readonly updateDraftField: (
@@ -132,12 +99,8 @@ export type SettingsAiModel = {
     fieldId: string,
     value: string
   ) => void;
-  readonly clearSecretField: (fieldId: string) => void;
-  readonly toggleModelSelection: (modelId: string) => void;
-  readonly refreshConfig: () => Promise<void>;
-  readonly refreshModels: () => Promise<void>;
-  readonly validateProfile: (profileId?: string) => Promise<void>;
   readonly saveProfile: () => Promise<void>;
   readonly deleteProfile: (profileId?: string) => Promise<void>;
-  readonly setDefaultProfile: (profileId?: string) => Promise<void>;
+  readonly deleteProviderModels: (providerId: string) => Promise<void>;
+  readonly deleteConfiguredModel: (profileId: string, modelId: string) => Promise<void>;
 };
