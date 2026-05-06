@@ -77,6 +77,8 @@ export type LyraThreadRuntimeActions = {
   readonly applyPatch: (request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>;
   readonly resolveApproval: (request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>;
   readonly resolvePlanReview: (request: AgentResolvePlanReviewRequest) => Promise<AgentResolvePlanReviewResult>;
+  readonly pauseFollow: () => Promise<void>;
+  readonly resumeFollow: () => Promise<void>;
   readonly cleanBackgroundTerminals: () => Promise<void>;
   readonly selectThread: (threadId: string | null) => void;
   readonly activateThreadTab: (tabId: string) => void;
@@ -98,6 +100,7 @@ export type RuntimeThreadOptions = {
   readonly approvalPolicy?: "untrusted" | "on-failure" | "on-request" | "never";
   readonly approvalsReviewer?: "user" | "auto_review";
   readonly permissionMode?: "sandbox" | "full_access";
+  readonly followEnabled?: boolean;
 };
 
 export type RuntimeTurnAttachment = {
@@ -125,11 +128,6 @@ export type RuntimeTurnInput = {
 
 type UseLyraThreadRuntimeOptions = {
   readonly desktopApi: LyraDesktopApi | null;
-  readonly onFollowOpenFilePath?: (filePath: string, options?: {
-    readonly forceReloadIfOpen?: boolean;
-    readonly allowMissing?: boolean;
-    readonly location?: { readonly line: number };
-  }) => void;
 };
 
 type LyraThreadTabState = {
@@ -742,6 +740,36 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     return result;
   }, [desktopApi?.ai, upsertDetail]);
 
+  const refreshActiveDetail = useCallback(async (): Promise<void> => {
+    const api = desktopApi?.ai;
+    const threadId = activeTabRef.current?.threadId ?? null;
+    if (api === undefined || threadId === null) {
+      return;
+    }
+    const detail = await api.readSession({ sessionId: threadId });
+    upsertDetail(detail);
+  }, [desktopApi?.ai, upsertDetail]);
+
+  const pauseFollow = useCallback(async (): Promise<void> => {
+    const api = desktopApi?.ai;
+    const threadId = activeTabRef.current?.threadId ?? null;
+    if (api === undefined || threadId === null) {
+      return;
+    }
+    await api.pauseFollow({ sessionId: threadId });
+    await refreshActiveDetail();
+  }, [desktopApi?.ai, refreshActiveDetail]);
+
+  const resumeFollow = useCallback(async (): Promise<void> => {
+    const api = desktopApi?.ai;
+    const threadId = activeTabRef.current?.threadId ?? null;
+    if (api === undefined || threadId === null) {
+      return;
+    }
+    await api.resumeFollow({ sessionId: threadId });
+    await refreshActiveDetail();
+  }, [desktopApi?.ai, refreshActiveDetail]);
+
   const cleanBackgroundTerminals = useCallback(async (): Promise<void> => {}, []);
 
   const activeThreadId = activeTab?.threadId ?? null;
@@ -795,6 +823,8 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     applyPatch,
     resolveApproval,
     resolvePlanReview,
+    pauseFollow,
+    resumeFollow,
     cleanBackgroundTerminals,
     selectThread,
     activateThreadTab,
@@ -808,6 +838,8 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     applyPatch,
     resolveApproval,
     resolvePlanReview,
+    pauseFollow,
+    resumeFollow,
     cleanBackgroundTerminals,
     closeThreadTab,
     createThread,

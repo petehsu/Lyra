@@ -205,6 +205,8 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly applyPatch: LyraThreadRuntimeActions["applyPatch"];
   readonly resolveApproval: LyraThreadRuntimeActions["resolveApproval"];
   readonly resolvePlanReview: LyraThreadRuntimeActions["resolvePlanReview"];
+  readonly pauseFollow: LyraThreadRuntimeActions["pauseFollow"];
+  readonly resumeFollow: LyraThreadRuntimeActions["resumeFollow"];
   readonly sendTurn: (payload: AgentComposerSubmitPayload) => Promise<void>;
   readonly steerActiveTurn: (payload: AgentComposerSubmitPayload) => Promise<void>;
   readonly startFileMentionSearch: (sessionId: string, roots: readonly string[]) => Promise<void>;
@@ -281,6 +283,8 @@ export const useAiPanelSurfaceRuntime = ({
     applyPatch,
     resolveApproval,
     resolvePlanReview,
+    pauseFollow,
+    resumeFollow,
     setFollowEnabled,
     setPlanModeEnabled,
     steerTurn
@@ -625,13 +629,15 @@ export const useAiPanelSurfaceRuntime = ({
       boundProjectRoot: boundProjectRootForActiveThread,
       collaborationMode,
       effort: selectedReasoningEffort,
-      verbosity: selectedVerbosity
+      verbosity: selectedVerbosity,
+      followEnabled: state.followEnabled
     }), [
     boundProjectRootForActiveThread,
     defaultProviderId,
     selectedModelOption,
     selectedReasoningEffort,
-    selectedVerbosity
+    selectedVerbosity,
+    state.followEnabled
   ]);
 
   const newThreadOptions = useCallback(() =>
@@ -737,6 +743,8 @@ export const useAiPanelSurfaceRuntime = ({
       applyPatch,
       resolveApproval,
       resolvePlanReview,
+      pauseFollow,
+      resumeFollow,
       sendTurn,
       steerActiveTurn,
       startFileMentionSearch,

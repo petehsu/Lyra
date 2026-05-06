@@ -181,6 +181,44 @@ describe("AI IPC bridge", () => {
     });
 
     await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiReadFollow)?.({}, {
+        sessionId: "session-a"
+      })
+    ).resolves.toEqual({
+      method: "agent.follow.read",
+      payload: {
+        sessionId: "session-a",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiPauseFollow)?.({}, {
+        sessionId: "session-a",
+        followSessionId: "follow-session-1"
+      })
+    ).resolves.toEqual({
+      method: "agent.follow.pause",
+      payload: {
+        sessionId: "session-a",
+        followSessionId: "follow-session-1",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiResumeFollow)?.({}, {
+        sessionId: "session-a"
+      })
+    ).resolves.toEqual({
+      method: "agent.follow.resume",
+      payload: {
+        sessionId: "session-a",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
       electronMock.handlers.get(LYRA_CHANNELS.aiResolvePlanReview)?.({}, {
         sessionId: "session-a",
         planId: "plan-1",
@@ -252,6 +290,9 @@ describe("AI IPC bridge", () => {
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiCreateTodo);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiCreatePlan);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiResolvePlanReview);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiReadFollow);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiPauseFollow);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiResumeFollow);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiReadArtifact);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiApplyPatch);
   });

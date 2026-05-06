@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+use super::follow_models::AgentFollowSummary;
 use super::long_work_models::SessionTaskLedgerSummary;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -174,6 +175,8 @@ pub struct AgentSessionDetail {
     pub delivery_proof: Option<AgentDeliveryProofSummary>,
     #[serde(rename = "longWorkSummary", skip_serializing_if = "Option::is_none")]
     pub durable_work_summary: Option<SessionTaskLedgerSummary>,
+    #[serde(rename = "followSummary", skip_serializing_if = "Option::is_none")]
+    pub follow_summary: Option<AgentFollowSummary>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -71,6 +71,14 @@ pub(super) fn append_result_and_emit_event(
         &mut result,
         &blob,
     )?;
+    crate::agent_runtime::project_follow_operation_finished(
+        store,
+        session_id,
+        turn_id.unwrap_or_default(),
+        operation,
+        &result,
+        &blob,
+    )?;
     emit_apply_event(
         store,
         session_id,

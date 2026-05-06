@@ -32,6 +32,14 @@ const LONG_WORK_RUST_PATTERN =
   /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b|\bLongWorkContinuation\b|\bContinuationPacket\b|\bPrematureStop\b|\bStuckReport\b|\bAgentStuck\b|\blong_work_continuation\b|\bpremature_stop\b|\bstuck_report\b/;
 const LONG_WORK_TS_PATTERN =
   /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b|\bLongWorkContinuation\b|\bContinuationPacket\b|\bPrematureStop\b|\bStuckReport\b|\bAgentStuck\b|\blongWorkContinuation\b|\bprematureStop\b|\bstuckReport\b/;
+const FOLLOW_RUST_PATTERN =
+  /\bFollowSession\b|\bFollowTarget\b|\bFollowEvent\b|\bLiveEditStream\b|\bWorkspaceCommit\b|\bfollow_session\b|\bfollow_target\b|\bfollow_event\b|\blive_edit_stream\b|\bworkspace_commit\b/;
+const FOLLOW_TS_PATTERN =
+  /\bAgentFollowSummary\b|\bAgentFollowTarget\b|\bAgentFollowEvent\b|\bfollowSummary\b|\bliveEditStream\b|\bworkspaceCommit\b/;
+const ROLLBACK_RUST_PATTERN =
+  /\bMessageRollbackAnchor\b|\bRollbackPreview\b|\bRollbackExecution\b|\bSideEffectRecord\b|\bWorkspaceSnapshot\b|\bConversationSnapshot\b|\bmessage_rollback_anchor\b|\brollback_preview\b|\brollback_execution\b|\bside_effect_record\b|\bworkspace_snapshot\b|\bworkspace_file_snapshot\b|\bmessage_checkpoint\b/;
+const ROLLBACK_TS_PATTERN =
+  /\bAgentRollbackPreview\b|\bAgentRollbackAnchor\b|\bAgentRollbackExecution\b|\bAgentMessageCheckpointSummary\b|\brollbackPreview\b|\bmessageRollback\b|\bsideEffectRecord\b|\bworkspaceSnapshot\b|\bmessageCheckpoint\b/;
 
 const importRules: readonly ImportRule[] = [
   {
@@ -430,6 +438,210 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     pattern: LONG_WORK_TS_PATTERN,
     message:
       "LongWork runtime tests must target focused helpers, not the broad Lyra thread runtime test."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/session.rs",
+    pattern: FOLLOW_RUST_PATTERN,
+    message:
+      "Follow session projections must live in focused follow storage modules, not in session storage."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/execution.rs",
+    pattern: FOLLOW_RUST_PATTERN,
+    message:
+      "Execution storage must not own Follow state. Link execution evidence to focused Follow records by id."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/verification.rs",
+    pattern: FOLLOW_RUST_PATTERN,
+    message:
+      "Verification storage must not own Follow state. Link report artifacts through focused Follow projection code."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/completion.rs",
+    pattern: FOLLOW_RUST_PATTERN,
+    message:
+      "Completion storage must not own Follow state. Completion audit can reference Follow evidence by id only."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/models.rs",
+    pattern: FOLLOW_RUST_PATTERN,
+    message:
+      "Follow ledger model types must live in focused Follow model modules, not in the shared storage model file."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/schema.rs",
+    pattern: FOLLOW_RUST_PATTERN,
+    message:
+      "Follow schema must be split into a focused schema module instead of growing the shared schema file."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/turn_loop.rs",
+    pattern: FOLLOW_RUST_PATTERN,
+    message:
+      "Follow runtime control must live in focused controller/projection modules, not in the turn loop."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/session_ops.rs",
+    pattern: FOLLOW_RUST_PATTERN,
+    message:
+      "Follow runtime APIs must live in focused modules, not in session_ops."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/tool_runtime/executor.rs",
+    pattern: FOLLOW_RUST_PATTERN,
+    message:
+      "Tool executor must stay tool-oriented; route Follow bookkeeping through focused runtime projection code."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/thread-view.tsx",
+    pattern: FOLLOW_TS_PATTERN,
+    message:
+      "Follow UI must live in focused AI panel components, not in the thread view."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-lyra-thread-runtime.ts",
+    pattern: FOLLOW_TS_PATTERN,
+    message:
+      "Follow renderer state must live in focused runtime helpers, not in the broad Lyra thread runtime hook."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-ai-panel-surface-runtime.ts",
+    pattern: FOLLOW_TS_PATTERN,
+    message:
+      "Follow surface behavior must live in focused helpers/components, not in the broad AI panel surface runtime hook."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/execution-todo-list.tsx",
+    pattern: FOLLOW_TS_PATTERN,
+    message:
+      "Execution todo UI must not absorb Follow rendering. Add a compact Follow process component instead."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/verification-summary-list.tsx",
+    pattern: FOLLOW_TS_PATTERN,
+    message:
+      "Verification UI must not absorb Follow rendering. Keep verification rows and Follow process state separate."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/pending-approval-list.tsx",
+    pattern: FOLLOW_TS_PATTERN,
+    message:
+      "Approval UI must not absorb Follow rendering. Link blocked Follow operations by ids from a focused component."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/patch-preview-card.tsx",
+    pattern: FOLLOW_TS_PATTERN,
+    message:
+      "Patch preview must stay patch-focused; do not add Follow UI or state there."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/patch-review-strip.tsx",
+    pattern: FOLLOW_TS_PATTERN,
+    message:
+      "Patch review strip must stay patch-focused; do not add Follow UI or state there."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/session.rs",
+    pattern: ROLLBACK_RUST_PATTERN,
+    message:
+      "Message rollback and recovery storage must live in focused rollback/checkpoint modules, not in session storage."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/execution.rs",
+    pattern: ROLLBACK_RUST_PATTERN,
+    message:
+      "Execution storage must not own rollback state. Link rollback effects through focused recovery records by id."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/verification.rs",
+    pattern: ROLLBACK_RUST_PATTERN,
+    message:
+      "Verification storage must not own rollback state. Supersede verification records through focused recovery projection code."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/completion.rs",
+    pattern: ROLLBACK_RUST_PATTERN,
+    message:
+      "Completion storage must not own rollback state. Completion audit can be superseded through focused recovery records."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/models.rs",
+    pattern: ROLLBACK_RUST_PATTERN,
+    message:
+      "Rollback model types must live in focused rollback/checkpoint model modules, not in the shared storage model file."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/schema.rs",
+    pattern: ROLLBACK_RUST_PATTERN,
+    message:
+      "Rollback schema must be split into focused schema modules instead of growing the shared schema file."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/turn_loop.rs",
+    pattern: ROLLBACK_RUST_PATTERN,
+    message:
+      "Rollback runtime control must live in focused recovery controller/projection modules, not in the turn loop."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/session_ops.rs",
+    pattern: ROLLBACK_RUST_PATTERN,
+    message:
+      "Rollback runtime APIs must live in focused recovery modules, not in session_ops."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/tool_runtime/executor.rs",
+    pattern: ROLLBACK_RUST_PATTERN,
+    message:
+      "Tool executor must stay tool-oriented; route rollback bookkeeping through focused recovery projection code."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/thread-view.tsx",
+    pattern: ROLLBACK_TS_PATTERN,
+    message:
+      "Rollback UI must live in focused AI panel components, not in the thread view."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-lyra-thread-runtime.ts",
+    pattern: ROLLBACK_TS_PATTERN,
+    message:
+      "Rollback renderer state must live in focused runtime helpers, not in the broad Lyra thread runtime hook."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-ai-panel-surface-runtime.ts",
+    pattern: ROLLBACK_TS_PATTERN,
+    message:
+      "Rollback surface behavior must live in focused helpers/components, not in the broad AI panel surface runtime hook."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/execution-todo-list.tsx",
+    pattern: ROLLBACK_TS_PATTERN,
+    message:
+      "Execution todo UI must not absorb rollback rendering. Add a focused rollback preview component instead."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/verification-summary-list.tsx",
+    pattern: ROLLBACK_TS_PATTERN,
+    message:
+      "Verification UI must not absorb rollback rendering. Keep rollback preview state separate."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/pending-approval-list.tsx",
+    pattern: ROLLBACK_TS_PATTERN,
+    message:
+      "Approval UI must not absorb rollback rendering. Link rollback approvals by ids from focused recovery UI."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/patch-preview-card.tsx",
+    pattern: ROLLBACK_TS_PATTERN,
+    message:
+      "Patch preview must stay patch-focused; do not add message rollback UI or state there."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/patch-review-strip.tsx",
+    pattern: ROLLBACK_TS_PATTERN,
+    message:
+      "Patch review strip must stay patch-focused; do not add message rollback UI or state there."
   }
 ];
 

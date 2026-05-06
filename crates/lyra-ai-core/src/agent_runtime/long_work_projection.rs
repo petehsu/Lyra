@@ -122,7 +122,16 @@ pub(crate) fn resume_work_continuation(
     session_id: &str,
     continuation_id: &str,
 ) -> Result<Option<AgentLongWorkSummary>> {
-    resume_queued_continuation(store, session_id, continuation_id)
+    let summary = resume_queued_continuation(store, session_id, continuation_id)?;
+    if let Some(summary) = summary.as_ref() {
+        super::follow_controller::append_follow_progress_event(
+            store,
+            summary,
+            "operation_progress",
+            "Continuation resumed",
+        )?;
+    }
+    Ok(summary)
 }
 
 #[allow(dead_code)]
@@ -156,6 +165,7 @@ fn emit_created_events(
     turn_id: Option<&str>,
     summary: &AgentLongWorkSummary,
 ) -> Result<()> {
+    ensure_follow_for_long_work(store, summary)?;
     emit_store_event(
         store,
         &summary.session_id,

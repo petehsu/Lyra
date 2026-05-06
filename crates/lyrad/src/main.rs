@@ -8,11 +8,11 @@ use lyra_ai_core::{
     apply_agent_patch_json, cancel_agent_turn_json,
     clear_rust_event_callback as clear_ai_event_callback, create_agent_plan_json,
     create_agent_session_json, create_agent_todo_json, delete_model_profile_json,
-    discover_models_json, list_agent_sessions_json, read_agent_artifact_json,
-    read_agent_session_json, read_model_config_json,
-    register_rust_event_callback as register_ai_event_callback, resolve_agent_approval_json,
-    resolve_agent_plan_review_json, send_agent_turn_json, update_agent_session_json,
-    upsert_model_profile_json,
+    discover_models_json, list_agent_sessions_json, pause_agent_follow_json,
+    read_agent_artifact_json, read_agent_follow_json, read_agent_session_json,
+    read_model_config_json, register_rust_event_callback as register_ai_event_callback,
+    resolve_agent_approval_json, resolve_agent_plan_review_json, resume_agent_follow_json,
+    send_agent_turn_json, update_agent_session_json, upsert_model_profile_json,
 };
 use lyra_lsp_core::{
     change_document as lsp_change_document, clear_rust_event_callback as clear_lsp_event_callback,
@@ -531,6 +531,9 @@ fn handle_ai_request(method: &str, payload: Value) -> Result<Value, RuntimeError
         "agent.sessions.create" => call_json(payload, create_agent_session_json),
         "agent.sessions.read" => call_json(payload, read_agent_session_json),
         "agent.sessions.update" => call_json(payload, update_agent_session_json),
+        "agent.follow.read" => call_json(payload, read_agent_follow_json),
+        "agent.follow.pause" => call_json(payload, pause_agent_follow_json),
+        "agent.follow.resume" => call_json(payload, resume_agent_follow_json),
         "agent.turn.send" => call_json(payload, send_agent_turn_json),
         "agent.turn.cancel" => call_json(payload, cancel_agent_turn_json),
         "agent.todo.create" => call_json(payload, create_agent_todo_json),
@@ -830,6 +833,28 @@ mod tests {
 
         assert_eq!(error.code, "RUNTIME_ERROR");
         assert!(error.message.contains("AI session not found"));
+    }
+
+    #[test]
+    fn ai_follow_routes_are_registered() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        for method in [
+            "agent.follow.read",
+            "agent.follow.pause",
+            "agent.follow.resume",
+        ] {
+            let error = handle_ai_request(
+                method,
+                serde_json::json!({
+                    "storageRoot": temp.path().to_string_lossy(),
+                    "sessionId": "session-missing"
+                }),
+            )
+            .expect_err("missing session should be a runtime error");
+
+            assert_eq!(error.code, "RUNTIME_ERROR");
+            assert!(error.message.contains("AI session not found"));
+        }
     }
 
     #[test]

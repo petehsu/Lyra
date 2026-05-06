@@ -12,12 +12,16 @@ import {
   type AgentCreateSessionRequest,
   type AgentCreateTodoRequest,
   type AgentCreateTodoResult,
+  type AgentFollowSummary,
+  type AgentPauseFollowRequest,
   type AgentReadArtifactRequest,
+  type AgentReadFollowRequest,
   type AgentReadSessionRequest,
   type AgentResolveApprovalRequest,
   type AgentResolveApprovalResult,
   type AgentResolvePlanReviewRequest,
   type AgentResolvePlanReviewResult,
+  type AgentResumeFollowRequest,
   type AgentRuntimeStreamEvent,
   type AgentSendTurnRequest,
   type AgentSendTurnResult,
@@ -105,6 +109,21 @@ export const createAiIpcBridge = ({
       requestRuntime<AgentSessionDetail>("agent.sessions.update", request)
   );
   ipcMain.handle(
+    LYRA_CHANNELS.aiReadFollow,
+    async (_event, request: AgentReadFollowRequest): Promise<AgentFollowSummary | null> =>
+      requestRuntime<AgentFollowSummary | null>("agent.follow.read", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiPauseFollow,
+    async (_event, request: AgentPauseFollowRequest): Promise<AgentFollowSummary | null> =>
+      requestRuntime<AgentFollowSummary | null>("agent.follow.pause", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiResumeFollow,
+    async (_event, request: AgentResumeFollowRequest): Promise<AgentFollowSummary | null> =>
+      requestRuntime<AgentFollowSummary | null>("agent.follow.resume", request)
+  );
+  ipcMain.handle(
     LYRA_CHANNELS.aiSendTurn,
     async (_event, request: AgentSendTurnRequest): Promise<AgentSendTurnResult> =>
       requestRuntime<AgentSendTurnResult>("agent.turn.send", request)
@@ -156,6 +175,9 @@ export const createAiIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.aiCreateSession);
       ipcMain.removeHandler(LYRA_CHANNELS.aiReadSession);
       ipcMain.removeHandler(LYRA_CHANNELS.aiUpdateSession);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiReadFollow);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiPauseFollow);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiResumeFollow);
       ipcMain.removeHandler(LYRA_CHANNELS.aiSendTurn);
       ipcMain.removeHandler(LYRA_CHANNELS.aiCancelTurn);
       ipcMain.removeHandler(LYRA_CHANNELS.aiCreateTodo);

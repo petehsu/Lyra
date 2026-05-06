@@ -45,6 +45,23 @@ export type AiPlanApprovalWorkspaceOpenRequest = {
   ) => Promise<void>;
 };
 
+export type AiPanelFollowOpenFileOptions = {
+  readonly forceReloadIfOpen?: boolean;
+  readonly allowMissing?: boolean;
+};
+
+export type AiPanelFollowOpenFileLocation = {
+  readonly line: number;
+  readonly column?: number;
+  readonly endLine?: number;
+};
+
+export type AiPanelFollowOpenFilePath = (
+  filePath: string,
+  location?: AiPanelFollowOpenFileLocation,
+  options?: AiPanelFollowOpenFileOptions
+) => void;
+
 export type AiPanelSurfaceProps = {
   readonly variant: AiPanelSurfaceVariant;
   readonly desktopApi: LyraDesktopApi | null;
@@ -77,4 +94,5 @@ export type AiPanelSurfaceProps = {
   readonly movePanelToLeftLabel?: string;
   readonly movePanelToRightLabel?: string;
   readonly onRequestProjectBind?: (currentPath?: string) => Promise<string | null>;
+  readonly onFollowOpenFilePath?: AiPanelFollowOpenFilePath;
 };

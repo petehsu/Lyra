@@ -11,10 +11,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-mod models;
-pub use models::*;
 mod long_work_models;
 pub use long_work_models::*;
+mod follow_models;
+pub use follow_models::*;
+mod models;
+pub use models::*;
 mod common;
 pub use common::{
     json_string, new_id, now_iso, now_ms, parse_json_or, policy_snapshot_ref,
@@ -35,6 +37,8 @@ mod completion_helpers;
 use completion_helpers::*;
 mod schema;
 use schema::{configure_conn, migrate_index, migrate_session};
+mod follow_schema;
+use follow_schema::migrate_follow_session;
 mod long_work_schema;
 use long_work_schema::migrate_long_work_session;
 mod approval;
@@ -42,6 +46,8 @@ mod artifact_store;
 mod completion;
 mod connection;
 mod execution;
+mod follow_ledger;
+mod follow_projection;
 mod long_work_continuation;
 mod long_work_continuation_packet;
 mod long_work_continuation_records;

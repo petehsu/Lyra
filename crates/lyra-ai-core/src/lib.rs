@@ -59,6 +59,21 @@ pub fn read_agent_session_json(request_json: String) -> Result<String> {
     to_json(&agent_runtime::read_session(request)?)
 }
 
+pub fn read_agent_follow_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::read_follow(request)?)
+}
+
+pub fn pause_agent_follow_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::pause_follow(request)?)
+}
+
+pub fn resume_agent_follow_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::resume_follow(request)?)
+}
+
 pub fn update_agent_session_json(request_json: String) -> Result<String> {
     let request = parse_json(request_json)?;
     to_json(&agent_runtime::update_session(request)?)

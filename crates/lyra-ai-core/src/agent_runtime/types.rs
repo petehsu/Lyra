@@ -34,6 +34,34 @@ pub struct ReadSessionRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentReadFollowRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPauseFollowRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    #[serde(default)]
+    pub follow_session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentResumeFollowRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    #[serde(default)]
+    pub follow_session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateSessionRequest {
     #[serde(flatten)]
     pub storage: StorageRequest,
@@ -88,6 +116,8 @@ pub struct RuntimeThreadOptions {
     pub approval_policy: Option<String>,
     #[serde(default)]
     pub permission_mode: Option<String>,
+    #[serde(default)]
+    pub follow_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

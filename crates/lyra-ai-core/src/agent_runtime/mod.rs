@@ -50,6 +50,14 @@ use events::{
 mod todo_projection;
 use todo_projection::record_todo_from_tool_result;
 
+mod follow_controller;
+use follow_controller::{ensure_follow_for_long_work, ensure_follow_for_turn};
+pub use follow_controller::{pause_follow, read_follow, resume_follow};
+mod follow_projection;
+pub(crate) use follow_projection::{
+    project_follow_operation_finished, project_follow_operation_started,
+};
+
 mod long_work_controller;
 mod long_work_projection;
 use long_work_projection::{create_mini_run_after_todo, create_plan_run_after_valid_coverage};
@@ -72,6 +80,8 @@ pub use turn_loop::{cancel_turn, send_turn};
 #[cfg(test)]
 use turn_loop::{run_tool_operation, run_turn_worker_inner};
 
+#[cfg(test)]
+mod follow_tests;
 #[cfg(test)]
 mod long_work_tests;
 #[cfg(test)]

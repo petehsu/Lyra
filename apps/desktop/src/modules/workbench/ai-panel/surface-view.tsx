@@ -2,6 +2,7 @@ import { AgentComposer } from "./agent-composer";
 import type { AgentComposerFileAttachment } from "./agent-composer";
 import { resolveAiPanelEmptyGreetingCandidates } from "./empty-greeting";
 import { ExecutionTodoList } from "./execution-todo-list";
+import { FollowProcessList } from "./follow-process-list";
 import { DeliveryStatusRow } from "./delivery-status-row";
 import { LongWorkStatusRow } from "./long-work-status-row";
 import { PendingApprovalList } from "./pending-approval-list";
@@ -58,6 +59,19 @@ export const AiPanelSurfaceView = ({
     onRequestProjectBind
   } = surfaceProps;
   const { state, actions } = runtime;
+  const openFollowWorkspaceUri =
+    surfaceProps.onFollowOpenFilePath === undefined
+      ? undefined
+      : (workspaceUri: string): void => {
+          surfaceProps.onFollowOpenFilePath?.(
+            resolveFollowWorkspaceUri(
+              workspaceUri,
+              runtime.boundProjectRootForActiveThread ?? state.activeThread?.cwd ?? null
+            ),
+            undefined,
+            { forceReloadIfOpen: true }
+          );
+        };
   const emptyGreetingLabels = resolveAiPanelEmptyGreetingCandidates({
     locale,
     appMeta: desktopApi?.appMeta,
@@ -154,6 +168,13 @@ export const AiPanelSurfaceView = ({
 
         <LongWorkStatusRow detail={state.activeDetail} />
 
+        <FollowProcessList
+          detail={state.activeDetail}
+          pauseFollow={desktopApi?.ai === undefined ? undefined : actions.pauseFollow}
+          resumeFollow={desktopApi?.ai === undefined ? undefined : actions.resumeFollow}
+          onOpenWorkspaceUri={openFollowWorkspaceUri}
+        />
+
         <PendingApprovalList
           detail={state.activeDetail}
           resolveApproval={desktopApi?.ai === undefined ? undefined : actions.resolveApproval}
@@ -221,3 +242,27 @@ export const AiPanelSurfaceView = ({
     </AiPanelSurfaceFrame>
   );
 };
+
+const resolveFollowWorkspaceUri = (workspaceUri: string, workspaceRoot: string | null): string => {
+  const trimmed = workspaceUri.trim();
+  if (trimmed.length === 0) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("file://")) {
+    try {
+      return decodeURIComponent(new URL(trimmed).pathname);
+    } catch {
+      return trimmed;
+    }
+  }
+  const root = workspaceRoot?.trim() ?? "";
+  if (root.length === 0 || isAbsolutePath(trimmed)) {
+    return trimmed;
+  }
+  return `${root.replace(/[\\/]+$/, "")}/${trimmed.replace(/^[\\/]+/, "")}`;
+};
+
+const isAbsolutePath = (value: string): boolean =>
+  value.startsWith("/")
+  || /^[A-Za-z]:[\\/]/.test(value)
+  || value.startsWith("\\\\");

@@ -119,6 +119,12 @@ pub(super) fn approve_apply_approval(
         "tool_operation_started",
         json!({ "operation": operation_payload(&operation) }),
     )?;
+    crate::agent_runtime::project_follow_operation_started(
+        store,
+        session_id,
+        turn_id.as_str(),
+        &operation,
+    )?;
     match execute_prepared_apply(
         store,
         session_id,
@@ -204,6 +210,12 @@ pub(super) fn approve_rollback_approval(
         Some(turn_id.as_str()),
         "tool_operation_started",
         json!({ "operation": operation_payload(&operation) }),
+    )?;
+    crate::agent_runtime::project_follow_operation_started(
+        store,
+        session_id,
+        turn_id.as_str(),
+        &operation,
     )?;
     match execute_prepared_rollback(
         store,

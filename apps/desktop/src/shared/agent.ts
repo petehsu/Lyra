@@ -266,6 +266,51 @@ export type AgentLongWorkSummary = {
   readonly updatedAt: number;
 };
 
+export type AgentFollowStatus =
+  | "enabled"
+  | "auto_following"
+  | "paused_by_user"
+  | "pinned_target"
+  | "detached_view"
+  | "closed"
+  | "superseded_by_rollback"
+  | string;
+
+export type AgentFollowTargetSummary = {
+  readonly followTargetId: string;
+  readonly kind: string;
+  readonly title: string;
+  readonly resourceRef?: string;
+  readonly workspaceUri?: string;
+  readonly status: string;
+  readonly toolOperationId?: string;
+  readonly artifactRefs: readonly string[];
+  readonly evidenceRefs: readonly string[];
+  readonly updatedAt: number;
+};
+
+export type AgentFollowEventSummary = {
+  readonly followEventId: string;
+  readonly followTargetId?: string;
+  readonly eventType: string;
+  readonly label: string;
+  readonly status?: string;
+  readonly createdAt: number;
+};
+
+export type AgentFollowSummary = {
+  readonly followSessionId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId?: AgentTurnId;
+  readonly longWorkRunId?: string;
+  readonly status: AgentFollowStatus;
+  readonly activeTargetId?: string;
+  readonly activeTarget?: AgentFollowTargetSummary | null;
+  readonly targets: readonly AgentFollowTargetSummary[];
+  readonly recentEvents: readonly AgentFollowEventSummary[];
+  readonly updatedAt: number;
+};
+
 export type AgentVerificationRunSummary = {
   readonly verificationRunId: string;
   readonly verificationPlanId?: string;
@@ -400,6 +445,7 @@ export type AgentSessionDetail = {
   readonly completionAudit?: AgentCompletionAuditSummary | null;
   readonly deliveryProof?: AgentDeliveryProofSummary | null;
   readonly longWorkSummary?: AgentLongWorkSummary | null;
+  readonly followSummary?: AgentFollowSummary | null;
 };
 
 export type AgentQuestionOption = {
@@ -487,6 +533,7 @@ export type AgentRuntimeThreadOptions = {
   readonly approvalPolicy?: "untrusted" | "on-failure" | "on-request" | "never";
   readonly approvalsReviewer?: "user" | "auto_review";
   readonly permissionMode?: "sandbox" | "full_access";
+  readonly followEnabled?: boolean;
 };
 
 export type AgentCreateSessionRequest = {
@@ -499,6 +546,20 @@ export type AgentCreateSessionRequest = {
 
 export type AgentReadSessionRequest = {
   readonly sessionId: string;
+};
+
+export type AgentReadFollowRequest = {
+  readonly sessionId: string;
+};
+
+export type AgentPauseFollowRequest = {
+  readonly sessionId: string;
+  readonly followSessionId?: string;
+};
+
+export type AgentResumeFollowRequest = {
+  readonly sessionId: string;
+  readonly followSessionId?: string;
 };
 
 export type AgentUpdateSessionRequest = {

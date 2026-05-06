@@ -35,6 +35,12 @@ pub fn apply_agent_patch(request: AgentApplyPatchRequest) -> Result<AgentApplyPa
         "tool_operation_started",
         json!({ "operation": operation_payload(&operation) }),
     )?;
+    crate::agent_runtime::project_follow_operation_started(
+        &store,
+        &session_id,
+        turn_id.as_deref().unwrap_or_default(),
+        &operation,
+    )?;
     match execute_prepared_apply(
         &store,
         &session_id,
@@ -61,6 +67,14 @@ pub fn apply_agent_patch(request: AgentApplyPatchRequest) -> Result<AgentApplyPa
                 &result.content,
             )?;
             result.result_ref = Some(blob.result_ref.clone());
+            crate::agent_runtime::project_follow_operation_finished(
+                &store,
+                &session_id,
+                turn_id.as_deref().unwrap_or_default(),
+                &operation,
+                &result,
+                &blob,
+            )?;
             emit_apply_event(
                 &store,
                 &session_id,
@@ -109,6 +123,14 @@ pub fn apply_agent_patch(request: AgentApplyPatchRequest) -> Result<AgentApplyPa
                 TOOL_FS_APPLY_PATCH,
                 "failed",
                 "",
+            )?;
+            crate::agent_runtime::project_follow_operation_finished(
+                &store,
+                &session_id,
+                turn_id.as_deref().unwrap_or_default(),
+                &operation,
+                &result,
+                &blob,
             )?;
             emit_apply_event(
                 &store,

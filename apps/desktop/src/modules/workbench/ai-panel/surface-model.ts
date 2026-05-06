@@ -132,7 +132,8 @@ export const createRuntimeTurnOptions = ({
   boundProjectRoot,
   collaborationMode,
   effort,
-  verbosity
+  verbosity,
+  followEnabled
 }: {
   readonly selectedModelOption: RuntimeModelOption | null;
   readonly defaultProviderId?: string | null | undefined;
@@ -140,6 +141,7 @@ export const createRuntimeTurnOptions = ({
   readonly collaborationMode?: "default" | "plan" | undefined;
   readonly effort?: RuntimeThreadOptions["effort"] | null | undefined;
   readonly verbosity?: RuntimeThreadOptions["verbosity"] | null | undefined;
+  readonly followEnabled?: boolean | undefined;
 }): RuntimeThreadOptions => {
   const modelProvider = selectedModelOption?.modelProvider ?? defaultProviderId;
   return {
@@ -149,6 +151,7 @@ export const createRuntimeTurnOptions = ({
     cwd: boundProjectRoot,
     ...(effort === null || effort === undefined ? {} : { effort }),
     ...(verbosity === null || verbosity === undefined ? {} : { verbosity }),
+    ...(followEnabled === undefined ? {} : { followEnabled }),
     ...(collaborationMode === undefined
       ? {}
       : { collaborationMode })

@@ -116,11 +116,9 @@ import {
   type UiuxSetTrustStateRequest,
   type InstalledUiuxPack,
   type WorkbenchBrowserEvent,
-  type WorkbenchBrowserCapturePageRequest,
   type WorkbenchBrowserSetElementPickerModeRequest,
   type WorkbenchBrowserLayoutSnapshot,
   type WorkbenchBrowserNavigateRequest,
-  type WorkbenchBrowserOverlaySuppressionRequest,
   type WorkbenchBrowserWebThemeSnapshot,
   type WorkbenchBrowserNavigateResult,
   type WorkbenchObservationQueryRequest,
@@ -128,7 +126,6 @@ import {
   type WorkbenchBrowserPageRuntimeState,
   type WorkbenchBrowserReadPageStateRequest,
   type WorkbenchBrowserTopologySnapshot,
-  type WorkbenchVisualCaptureResult,
   type WorkbenchStateKey,
   type AiDeleteProfileRequest,
   type AiDiscoverModelsRequest,
@@ -146,12 +143,16 @@ import {
   type AgentCreateSessionRequest,
   type AgentCreateTodoRequest,
   type AgentCreateTodoResult,
+  type AgentFollowSummary,
+  type AgentPauseFollowRequest,
   type AgentReadArtifactRequest,
+  type AgentReadFollowRequest,
   type AgentReadSessionRequest,
   type AgentResolveApprovalRequest,
   type AgentResolveApprovalResult,
   type AgentResolvePlanReviewRequest,
   type AgentResolvePlanReviewResult,
+  type AgentResumeFollowRequest,
   type AgentRuntimeStreamEvent,
   type AgentSendTurnRequest,
   type AgentSendTurnResult,
@@ -843,16 +844,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.workbenchBrowserReadPageState,
         request ?? {}
       ) as Promise<WorkbenchBrowserPageRuntimeState | null>,
-    capturePage: (request: WorkbenchBrowserCapturePageRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.workbenchBrowserCapturePage,
-        request
-      ) as Promise<WorkbenchVisualCaptureResult>,
-    setOverlaySuppressed: (request: WorkbenchBrowserOverlaySuppressionRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.workbenchBrowserSetOverlaySuppressed,
-        request
-      ) as Promise<void>,
     setElementPickerMode: (request: WorkbenchBrowserSetElementPickerModeRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.workbenchBrowserSetElementPickerMode,
@@ -1057,6 +1048,12 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.aiReadSession, request) as Promise<AgentSessionDetail>,
     updateSession: (request: AgentUpdateSessionRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiUpdateSession, request) as Promise<AgentSessionDetail>,
+    readFollow: (request: AgentReadFollowRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiReadFollow, request) as Promise<AgentFollowSummary | null>,
+    pauseFollow: (request: AgentPauseFollowRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiPauseFollow, request) as Promise<AgentFollowSummary | null>,
+    resumeFollow: (request: AgentResumeFollowRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiResumeFollow, request) as Promise<AgentFollowSummary | null>,
     sendTurn: (request: AgentSendTurnRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiSendTurn, request) as Promise<AgentSendTurnResult>,
     cancelTurn: (request: AgentCancelTurnRequest) =>

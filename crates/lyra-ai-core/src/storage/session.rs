@@ -306,6 +306,7 @@ impl AiStore {
         let completion_audit = self.read_completion_audit_summary(session_id)?;
         let delivery_proof = self.read_delivery_proof_summary(session_id)?;
         let durable_work_summary = self.read_active_work_summary(session_id)?;
+        let follow_summary = self.read_follow_summary(session_id)?;
         Ok(Some(AgentSessionDetail {
             session,
             pending_interactions,
@@ -320,6 +321,7 @@ impl AiStore {
             completion_audit,
             delivery_proof,
             durable_work_summary,
+            follow_summary,
         }))
     }
 

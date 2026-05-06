@@ -67,6 +67,9 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
             .as_ref()
             .map(|snapshot| snapshot.snapshot_id.as_str()),
     )?;
+    if request.options.follow_enabled.unwrap_or(false) {
+        ensure_follow_for_turn(&store, &session.id, &turn_id, &user_message_id)?;
+    }
     let checkpoint_id =
         store.create_timeline_checkpoint(&session.id, &turn_id, &user_message_id)?;
     if let Some(items) = mini_todo_items_for_request(&text) {
@@ -579,6 +582,7 @@ pub(super) fn run_tool_operation(
             "operation": tool_operation_payload(operation),
         }),
     )?;
+    project_follow_operation_started(store, session_id, turn_id, operation)?;
     let mut result = if operation.op == ToolFsOp::Run
         && inspected_tool_paths.contains(&normalized_tool_path(&operation.path)) == false
     {
@@ -632,6 +636,14 @@ pub(super) fn run_tool_operation(
     )?;
     result.result_ref = Some(result_blob.result_ref.clone());
     enrich_tool_result_metadata(store, session_id, turn_id, &mut result, &result_blob)?;
+    project_follow_operation_finished(
+        store,
+        session_id,
+        turn_id,
+        operation,
+        &result,
+        &result_blob,
+    )?;
     let event_type = if result.status == ToolResultStatus::Completed {
         "tool_operation_completed"
     } else {
@@ -653,6 +665,15 @@ pub(super) fn run_tool_operation(
     project_work_after_completion(store, session_id, Some(turn_id))?;
     let detail = store.read_session_detail(session_id)?;
     emit_completion_projection_events(store, session_id, Some(turn_id), detail.as_ref())?;
+    if let Some(detail) = store.read_session_detail(session_id)? {
+        emit_store_event(
+            store,
+            session_id,
+            Some(turn_id),
+            "session_updated",
+            json!({ "detail": detail }),
+        )?;
+    }
     messages.push(ChatMessage {
         role: "assistant".to_string(),
         content: serde_json::to_string(operation)?,
