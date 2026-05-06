@@ -1,4 +1,4 @@
-import { Check, FileDiff, Loader2, RotateCcw, ShieldCheck, X } from "lucide-react";
+import { Check, FileDiff, Loader2, RotateCcw, ShieldCheck, Terminal, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type {
@@ -20,6 +20,8 @@ type ApprovalRow = {
   readonly toolPath: string;
   readonly title: string;
   readonly files: readonly string[];
+  readonly command: string | null;
+  readonly cwd: string | null;
 };
 
 type RowState = "approving" | "denying" | "denied";
@@ -87,7 +89,7 @@ export const PendingApprovalList = ({
             <span className="lyra-ai-pending-approval-main">
               <span className="lyra-ai-pending-approval-title">{row.title}</span>
               <span className="lyra-ai-pending-approval-detail">
-                {approvalImpact(row.toolPath, row.files)}
+                {approvalImpact(row)}
               </span>
               {error === null ? null : (
                 <span className="lyra-ai-pending-approval-error" role="alert">
@@ -154,6 +156,8 @@ const extractApprovalRow = (interaction: AgentPendingInteraction): ApprovalRow |
     toolPath,
     title,
     files,
+    command: readString(payload.command) ?? readString(impactScope.command),
+    cwd: readString(payload.cwd) ?? readString(impactScope.cwd),
   };
 };
 
@@ -163,6 +167,9 @@ const approvalTitle = (toolPath: string): string => {
   }
   if (toolPath.includes("/rollback_patch")) {
     return "Rollback workspace patch";
+  }
+  if (toolPath.includes("/run_command")) {
+    return "Run shell command";
   }
   return "Tool approval";
 };
@@ -174,14 +181,20 @@ const approvalIcon = (toolPath: string) => {
   if (toolPath.includes("/rollback_patch")) {
     return <RotateCcw size={13} aria-hidden="true" />;
   }
+  if (toolPath.includes("/run_command")) {
+    return <Terminal size={13} aria-hidden="true" />;
+  }
   return <ShieldCheck size={13} aria-hidden="true" />;
 };
 
-const approvalImpact = (toolPath: string, files: readonly string[]): string => {
-  const fileLabel = files.length === 0
+const approvalImpact = (row: ApprovalRow): string => {
+  if (row.command !== null) {
+    return `${row.toolPath} · ${row.command}${row.cwd === null ? "" : ` · ${row.cwd}`}`;
+  }
+  const fileLabel = row.files.length === 0
     ? "workspace"
-    : files.length === 1
-      ? files[0]
-      : `${files[0]} +${String(files.length - 1)} more`;
-  return `${toolPath} · ${fileLabel}`;
+    : row.files.length === 1
+      ? row.files[0]
+      : `${row.files[0]} +${String(row.files.length - 1)} more`;
+  return `${row.toolPath} · ${fileLabel}`;
 };

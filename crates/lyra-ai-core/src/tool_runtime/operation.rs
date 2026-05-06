@@ -25,6 +25,8 @@ pub const TOOL_APPROVAL_UNSUPPORTED: &str = "TOOL_APPROVAL_UNSUPPORTED";
 pub const TOOL_PATCH_ALREADY_APPLIED: &str = "TOOL_PATCH_ALREADY_APPLIED";
 pub const TOOL_PATCH_ALREADY_ROLLED_BACK: &str = "TOOL_PATCH_ALREADY_ROLLED_BACK";
 pub const TOOL_ROLLBACK_UNSAFE: &str = "TOOL_ROLLBACK_UNSAFE";
+pub const TOOL_COMMAND_REJECTED: &str = "TOOL_COMMAND_REJECTED";
+pub const TOOL_COMMAND_TIMEOUT: &str = "TOOL_COMMAND_TIMEOUT";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

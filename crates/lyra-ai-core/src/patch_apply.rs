@@ -5,6 +5,7 @@ use crate::storage::{
 };
 use crate::tool_runtime::catalog::{
     parse_args, ApplyPatchArgs, RollbackPatchArgs, TOOL_FS_APPLY_PATCH, TOOL_FS_ROLLBACK_PATCH,
+    TOOL_SHELL_RUN_COMMAND,
 };
 use crate::tool_runtime::operation::{
     tool_error, tool_error_code, ToolFsOp, ToolOperationEnvelope, ToolResultEnvelope,
@@ -16,6 +17,7 @@ use crate::tool_runtime::patch::{
     plan_patch_apply, write_atomic_text, write_patch_apply_plan, PatchApplyPlan, PatchChangedFile,
 };
 use crate::tool_runtime::security::WorkspaceSecurity;
+use crate::tool_runtime::shell;
 use crate::tool_runtime::{tool_result_chat_message, ToolExecutionContext};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -118,6 +120,7 @@ struct AppliedPatch {
     approval_ticket_id: String,
     artifact_id: String,
     evidence_id: String,
+    verification_plan_id: Option<String>,
     patch_ref: String,
     source_artifact_id: String,
     changed_files: Vec<PatchChangedFile>,
@@ -226,6 +229,7 @@ pub fn apply_agent_patch(request: AgentApplyPatchRequest) -> Result<AgentApplyPa
                     "result": result_payload(&result, &blob.result_ref, blob.content_bytes, &blob.content_preview),
                 }),
             )?;
+            emit_verification_projection_events(&store, &session_id, turn_id.as_deref(), &result)?;
             record_todo_from_patch_result(
                 &store,
                 &session_id,
@@ -315,11 +319,68 @@ fn approve_approval(
     match tool_path.as_str() {
         TOOL_FS_APPLY_PATCH => approve_apply_approval(store, session_id, ticket),
         TOOL_FS_ROLLBACK_PATCH => approve_rollback_approval(store, session_id, ticket),
+        TOOL_SHELL_RUN_COMMAND => approve_run_command_approval(store, session_id, ticket),
         _ => Err(tool_error(
             TOOL_APPROVAL_UNSUPPORTED,
             format!("approval is not supported for {tool_path}"),
         )),
     }
+}
+
+fn approve_run_command_approval(
+    store: &AiStore,
+    session_id: &str,
+    ticket: crate::storage::ApprovalTicketDetailRecord,
+) -> Result<AgentResolveApprovalResult> {
+    let context = workspace_context_for_session(store, session_id)?;
+    let turn_id = ticket.runtime_turn_id.clone();
+    let (operation, result) =
+        shell::approve_run_command_ticket(store, session_id, &context, &ticket)?;
+    let event_type = if result.status == ToolResultStatus::Completed {
+        "tool_operation_completed"
+    } else {
+        "tool_operation_failed"
+    };
+    let result = append_result_and_emit_event(
+        store,
+        session_id,
+        Some(turn_id.as_str()),
+        &operation,
+        TOOL_SHELL_RUN_COMMAND,
+        result,
+        event_type,
+    )?;
+    emit_approval_resolved_event(
+        store,
+        session_id,
+        Some(turn_id.as_str()),
+        "approve",
+        "approved",
+        &operation.path,
+        result
+            .metadata
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    )?;
+    let metadata = result.metadata.as_ref().unwrap_or(&Value::Null);
+    Ok(AgentResolveApprovalResult {
+        session_id: session_id.to_string(),
+        approval_ticket_id: ticket.approval_ticket_id,
+        status: "approved".to_string(),
+        detail: "Command executed".to_string(),
+        tool_path: TOOL_SHELL_RUN_COMMAND.to_string(),
+        artifact_id: metadata
+            .get("artifactId")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        evidence_id: metadata
+            .get("evidenceId")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        patch_ref: None,
+        changed_files: Vec::new(),
+    })
 }
 
 fn approve_apply_approval(
@@ -516,6 +577,7 @@ fn deny_approval(
         "toolPath": tool_path.clone(),
         "artifactId": approval_artifact_id(&ticket),
         "patchRef": approval_patch_ref(&ticket),
+        "commandHash": shell::command_hash_from_ticket(&ticket),
     }))?;
     let mut result = ToolResultEnvelope::failed(
         &operation,
@@ -529,6 +591,7 @@ fn deny_approval(
         "toolPath": tool_path.clone(),
         "artifactId": approval_artifact_id(&ticket),
         "patchRef": approval_patch_ref(&ticket),
+        "commandHash": shell::command_hash_from_ticket(&ticket),
     }));
     let result = append_result_and_emit_event(
         store,
@@ -905,6 +968,12 @@ fn approval_operation_from_ticket(
         json!({
             "appliedArtifactId": args.applied_artifact_id,
         })
+    } else if tool_path == TOOL_SHELL_RUN_COMMAND {
+        ticket
+            .requested_action
+            .get("args")
+            .cloned()
+            .ok_or_else(|| anyhow!("run_command approval is missing args"))?
     } else {
         ticket.requested_action.clone()
     };
@@ -1374,12 +1443,21 @@ fn execute_prepared_apply(
         &format!("Applied {}", prepared.record.title),
         &prepared.record.content_ref,
         metadata,
-        changed_files_json,
+        changed_files_json.clone(),
     )?;
+    let verification_plan_id = store
+        .create_verification_plan_for_changed_files(
+            session_id,
+            turn_id,
+            &refs.artifact_id,
+            changed_files_json,
+        )?
+        .verification_plan_id;
     Ok(AppliedPatch {
         approval_ticket_id: ticket.approval_ticket_id,
         artifact_id: refs.artifact_id,
         evidence_id: refs.evidence_id,
+        verification_plan_id: Some(verification_plan_id),
         patch_ref: prepared.record.content_ref,
         source_artifact_id: prepared.record.artifact_id,
         changed_files: prepared.plan.changed_files,
@@ -1471,6 +1549,7 @@ fn applied_content(status: &str, detail: &str, applied: &AppliedPatch) -> Result
         "approvalTicketId": applied.approval_ticket_id,
         "artifactId": applied.artifact_id,
         "evidenceId": applied.evidence_id,
+        "verificationPlanId": applied.verification_plan_id,
         "patchRef": applied.patch_ref,
         "appliedFromArtifactId": applied.source_artifact_id,
         "changedFiles": applied.changed_files,
@@ -1485,6 +1564,7 @@ fn applied_metadata(applied: &AppliedPatch) -> Value {
         "approvalTicketId": applied.approval_ticket_id,
         "artifactId": applied.artifact_id,
         "evidenceId": applied.evidence_id,
+        "verificationPlanId": applied.verification_plan_id,
         "patchRef": applied.patch_ref,
         "appliedFromArtifactId": applied.source_artifact_id,
         "changedFiles": applied.changed_files,
@@ -1609,6 +1689,13 @@ fn append_result_and_emit_event(
         &result.content,
     )?;
     result.result_ref = Some(blob.result_ref.clone());
+    enrich_patch_runtime_result_metadata(
+        store,
+        session_id,
+        turn_id.unwrap_or_default(),
+        &mut result,
+        &blob,
+    )?;
     emit_apply_event(
         store,
         session_id,
@@ -1619,8 +1706,104 @@ fn append_result_and_emit_event(
             "result": result_payload(&result, &blob.result_ref, blob.content_bytes, &blob.content_preview),
         }),
     )?;
+    emit_verification_projection_events(store, session_id, turn_id, &result)?;
     record_todo_from_patch_result(store, session_id, turn_id, operation, &result)?;
     Ok(result)
+}
+
+fn emit_verification_projection_events(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: Option<&str>,
+    result: &ToolResultEnvelope,
+) -> Result<()> {
+    let Some(metadata) = result.metadata.as_ref() else {
+        return Ok(());
+    };
+    if let Some(verification_plan_id) = metadata.get("verificationPlanId").and_then(Value::as_str) {
+        emit_apply_event(
+            store,
+            session_id,
+            turn_id,
+            "verification_plan_created",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "verificationPlanId": verification_plan_id,
+                "toolPath": result.path,
+                "status": metadata.get("status").cloned().unwrap_or(Value::Null),
+            }),
+        )?;
+    }
+    if let Some(verification_run_id) = metadata.get("verificationRunId").and_then(Value::as_str) {
+        emit_apply_event(
+            store,
+            session_id,
+            turn_id,
+            "verification_run_updated",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "verificationRunId": verification_run_id,
+                "verificationPlanId": metadata.get("verificationPlanId").cloned().unwrap_or(Value::Null),
+                "toolPath": result.path,
+                "status": metadata.get("status").cloned().unwrap_or(Value::Null),
+                "artifactId": metadata.get("artifactId").cloned().unwrap_or(Value::Null),
+                "evidenceId": metadata.get("evidenceId").cloned().unwrap_or(Value::Null),
+            }),
+        )?;
+    }
+    Ok(())
+}
+
+fn enrich_patch_runtime_result_metadata(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    result: &mut ToolResultEnvelope,
+    blob: &crate::storage::ToolResultBlobMeta,
+) -> Result<()> {
+    let Some(metadata) = result.metadata.as_mut().and_then(Value::as_object_mut) else {
+        return Ok(());
+    };
+    if metadata.get("kind").and_then(Value::as_str) != Some("command_log") {
+        return Ok(());
+    }
+    let command = metadata
+        .get("command")
+        .and_then(Value::as_str)
+        .unwrap_or("command");
+    let cwd = metadata.get("cwd").and_then(Value::as_str).unwrap_or(".");
+    let status = metadata
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("failed");
+    let refs = store.append_command_log_artifact_and_evidence(
+        session_id,
+        turn_id,
+        &result.op_id,
+        &blob.result_ref,
+        status,
+        command,
+        cwd,
+        metadata.get("exitCode").and_then(Value::as_i64),
+        metadata
+            .get("outputBytes")
+            .and_then(Value::as_i64)
+            .unwrap_or(blob.content_bytes),
+        Value::Object(metadata.clone()),
+    )?;
+    metadata.insert("artifactId".to_string(), Value::String(refs.artifact_id));
+    metadata.insert("evidenceId".to_string(), Value::String(refs.evidence_id));
+    metadata.insert(
+        "verificationPlanId".to_string(),
+        Value::String(refs.verification_plan_id),
+    );
+    metadata.insert(
+        "verificationRunId".to_string(),
+        Value::String(refs.verification_run_id),
+    );
+    Ok(())
 }
 
 fn record_todo_from_patch_result(
@@ -1631,7 +1814,11 @@ fn record_todo_from_patch_result(
     result: &ToolResultEnvelope,
 ) -> Result<()> {
     let tool_path = operation.path.as_str();
-    if matches!(tool_path, TOOL_FS_APPLY_PATCH | TOOL_FS_ROLLBACK_PATCH) == false {
+    if matches!(
+        tool_path,
+        TOOL_FS_APPLY_PATCH | TOOL_FS_ROLLBACK_PATCH | TOOL_SHELL_RUN_COMMAND
+    ) == false
+    {
         return Ok(());
     }
     let (item_status, step_status, blocker) = match result.status {
@@ -1668,6 +1855,18 @@ fn record_todo_from_patch_result(
                         .unwrap_or(Value::Null),
                     "errorCode": result.error_code,
                     "errorMessage": result.error_message,
+                    "command": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("command"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    "verificationRunId": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("verificationRunId"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
                 }),
             )
         }
@@ -1766,6 +1965,7 @@ fn emit_approval_resolved_event(
             "artifactId": metadata.get("artifactId").cloned().unwrap_or(Value::Null),
             "evidenceId": metadata.get("evidenceId").cloned().unwrap_or(Value::Null),
             "patchRef": metadata.get("patchRef").cloned().unwrap_or(Value::Null),
+            "commandHash": metadata.get("commandHash").cloned().unwrap_or(Value::Null),
             "changedFiles": metadata.get("changedFiles").cloned().unwrap_or_else(|| json!([])),
         }),
     )
@@ -2177,6 +2377,17 @@ mod tests {
                 .expect("approval count"),
             1
         );
+        let detail = store
+            .read_session_detail(&session_id)
+            .expect("detail")
+            .expect("session");
+        let verification = detail
+            .verification_summary
+            .as_ref()
+            .expect("verification plan");
+        assert_eq!(verification.status, "not_run");
+        assert_eq!(verification.not_run_count, 1);
+        assert!(detail.delivery_proof.is_some());
     }
 
     #[test]

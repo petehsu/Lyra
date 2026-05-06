@@ -142,6 +142,8 @@ const PROJECTED_RUNTIME_EVENT_TYPES = new Set([
   "tool_operation_started",
   "tool_operation_completed",
   "tool_operation_failed",
+  "verification_plan_created",
+  "verification_run_updated",
 ]);
 
 const createTabId = (): string =>

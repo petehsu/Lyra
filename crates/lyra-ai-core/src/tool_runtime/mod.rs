@@ -5,6 +5,7 @@ pub mod git;
 pub mod operation;
 pub mod patch;
 pub mod security;
+pub mod shell;
 
 pub use executor::{
     execute_tool, inspect_required_result, normalized_tool_path, tool_event_metadata,

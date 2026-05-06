@@ -9,6 +9,7 @@ import { AiPanelSurfaceFrame } from "./surface-frame";
 import { AiPanelThreadTabs } from "./thread-tabs";
 import { AiPanelThreadView } from "./thread-view";
 import { AiPanelTopbarActions } from "./topbar-actions";
+import { VerificationSummaryList } from "./verification-summary-list";
 import type { AiPanelSide, AiPanelSurfaceProps } from "./types";
 import type { AiPanelSurfaceRuntime } from "./use-ai-panel-surface-runtime";
 import type { WorkbenchLocale } from "../i18n";
@@ -138,6 +139,8 @@ export const AiPanelSurfaceView = ({
         </div>
 
         <ExecutionTodoList detail={state.activeDetail} />
+
+        <VerificationSummaryList detail={state.activeDetail} />
 
         <PendingApprovalList
           detail={state.activeDetail}

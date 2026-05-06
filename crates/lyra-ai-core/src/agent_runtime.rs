@@ -15,8 +15,9 @@ use crate::storage::{
 };
 use crate::tool_runtime::catalog::{
     TOOL_FS_APPLY_PATCH, TOOL_FS_LIST_FILES, TOOL_FS_PROPOSE_PATCH, TOOL_FS_READ_FILE,
-    TOOL_FS_ROLLBACK_PATCH, TOOL_FS_SEARCH_TEXT,
+    TOOL_FS_ROLLBACK_PATCH, TOOL_FS_SEARCH_TEXT, TOOL_SHELL_RUN_COMMAND,
 };
+use crate::tool_runtime::shell;
 use crate::tool_runtime::{
     execute_tool, inspect_required_result, normalized_tool_path, parse_tool_operation,
     tool_event_metadata, tool_result_chat_message, ToolExecutionContext, ToolFsOp,
@@ -869,6 +870,17 @@ fn run_tool_operation(
             operation,
             permission_mode,
         )
+    } else if operation.op == ToolFsOp::Run
+        && normalized_tool_path(&operation.path) == TOOL_SHELL_RUN_COMMAND
+    {
+        shell::run_command_tool_result(
+            store,
+            session_id,
+            turn_id,
+            context,
+            operation,
+            permission_mode,
+        )
     } else {
         execute_tool(context, operation)
     };
@@ -900,6 +912,7 @@ fn run_tool_operation(
             "result": tool_result_payload(&result, &result_blob),
         }),
     )?;
+    emit_verification_projection_events(store, session_id, Some(turn_id), &result)?;
     record_todo_from_tool_result(store, session_id, turn_id, operation, &result)?;
     messages.push(ChatMessage {
         role: "assistant".to_string(),
@@ -909,6 +922,51 @@ fn run_tool_operation(
         role: "user".to_string(),
         content: tool_result_chat_message(&result)?,
     });
+    Ok(())
+}
+
+fn emit_verification_projection_events(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: Option<&str>,
+    result: &ToolResultEnvelope,
+) -> Result<()> {
+    let Some(metadata) = result.metadata.as_ref() else {
+        return Ok(());
+    };
+    if let Some(verification_plan_id) = metadata.get("verificationPlanId").and_then(Value::as_str) {
+        emit_store_event(
+            store,
+            session_id,
+            turn_id,
+            "verification_plan_created",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "verificationPlanId": verification_plan_id,
+                "toolPath": result.path,
+                "status": metadata.get("status").cloned().unwrap_or(Value::Null),
+            }),
+        )?;
+    }
+    if let Some(verification_run_id) = metadata.get("verificationRunId").and_then(Value::as_str) {
+        emit_store_event(
+            store,
+            session_id,
+            turn_id,
+            "verification_run_updated",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "verificationRunId": verification_run_id,
+                "verificationPlanId": metadata.get("verificationPlanId").cloned().unwrap_or(Value::Null),
+                "toolPath": result.path,
+                "status": metadata.get("status").cloned().unwrap_or(Value::Null),
+                "artifactId": metadata.get("artifactId").cloned().unwrap_or(Value::Null),
+                "evidenceId": metadata.get("evidenceId").cloned().unwrap_or(Value::Null),
+            }),
+        )?;
+    }
     Ok(())
 }
 
@@ -1071,6 +1129,28 @@ fn todo_status_from_tool_result(
                         .unwrap_or(Value::Null),
                 }),
             )),
+            _ if tool_path == TOOL_SHELL_RUN_COMMAND => Some((
+                "failed",
+                "failed",
+                json!({
+                    "kind": "verification_failed",
+                    "toolPath": tool_path,
+                    "errorCode": result.error_code,
+                    "errorMessage": result.error_message,
+                    "command": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("command"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    "verificationRunId": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("verificationRunId"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                }),
+            )),
             _ if matches!(tool_path, TOOL_FS_APPLY_PATCH | TOOL_FS_ROLLBACK_PATCH) => Some((
                 "failed",
                 "failed",
@@ -1144,6 +1224,51 @@ fn enrich_tool_result_metadata(
     result: &mut ToolResultEnvelope,
     blob: &ToolResultBlobMeta,
 ) -> Result<()> {
+    if let Some(metadata) = result.metadata.as_mut().and_then(Value::as_object_mut) {
+        if metadata.get("kind").and_then(Value::as_str) == Some("command_log") {
+            let command = metadata
+                .get("command")
+                .and_then(Value::as_str)
+                .unwrap_or("command");
+            let cwd = metadata.get("cwd").and_then(Value::as_str).unwrap_or(".");
+            let status = metadata
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or_else(|| {
+                    if result.status == ToolResultStatus::Completed {
+                        "passed"
+                    } else {
+                        "failed"
+                    }
+                });
+            let refs = store.append_command_log_artifact_and_evidence(
+                session_id,
+                turn_id,
+                &result.op_id,
+                &blob.result_ref,
+                status,
+                command,
+                cwd,
+                metadata.get("exitCode").and_then(Value::as_i64),
+                metadata
+                    .get("outputBytes")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(blob.content_bytes),
+                Value::Object(metadata.clone()),
+            )?;
+            metadata.insert("artifactId".to_string(), Value::String(refs.artifact_id));
+            metadata.insert("evidenceId".to_string(), Value::String(refs.evidence_id));
+            metadata.insert(
+                "verificationPlanId".to_string(),
+                Value::String(refs.verification_plan_id),
+            );
+            metadata.insert(
+                "verificationRunId".to_string(),
+                Value::String(refs.verification_run_id),
+            );
+            return Ok(());
+        }
+    }
     if result.status != ToolResultStatus::Completed {
         return Ok(());
     }
@@ -1312,7 +1437,7 @@ fn mini_todo_items_for_request(text: &str) -> Option<Vec<CreateTodoItemInput>> {
         CreateTodoItemInput {
             title: "Record verification status".to_string(),
             actions: vec!["Capture what was or was not verified for this execution".to_string()],
-            expected_tools: Vec::new(),
+            expected_tools: vec![TOOL_SHELL_RUN_COMMAND.to_string()],
             risk_level: "low".to_string(),
             completion_criteria: vec![
                 "Verification status is reflected in the final response".to_string()
@@ -1383,7 +1508,11 @@ fn is_execution_request(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::patch_apply::{
+        resolve_agent_approval, AgentResolveApprovalRequest, ApprovalDecision,
+    };
     use crate::storage::{AgentSession, AgentTurn};
+    use crate::tool_runtime::operation::TOOL_APPROVAL_DENIED;
     use std::fs;
 
     fn test_config() -> ProviderRuntimeConfig {
@@ -1480,6 +1609,32 @@ mod tests {
             )
             .expect("patch artifact");
         refs.artifact_id
+    }
+
+    fn storage_request(storage_root: &str) -> StorageRequest {
+        StorageRequest {
+            storage_root: Some(storage_root.to_string()),
+        }
+    }
+
+    fn seed_todo_for_tool(store: &AiStore, session_id: &str, turn_id: &str, tool_path: &str) {
+        store
+            .create_execution_todo_list(
+                session_id,
+                Some(turn_id),
+                "mini",
+                "Execution checklist",
+                json!({ "type": "test" }),
+                &[CreateTodoItemInput {
+                    title: "Run verification".to_string(),
+                    actions: Vec::new(),
+                    expected_tools: vec![tool_path.to_string()],
+                    risk_level: "medium".to_string(),
+                    completion_criteria: Vec::new(),
+                    source: json!({}),
+                }],
+            )
+            .expect("todo");
     }
 
     #[test]
@@ -1627,6 +1782,139 @@ mod tests {
             .runtime_events
             .iter()
             .any(|event| event.phase == "todo_item_updated"));
+    }
+
+    #[test]
+    fn sandbox_run_command_requires_approval_and_denied_retry_is_visible() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let storage_root = temp.path().join("ai").to_string_lossy().to_string();
+        let store = AiStore::open(Some(storage_root.as_str())).expect("store");
+        let (session_id, turn_id) = seed_turn(&store, temp.path().to_string_lossy().as_ref());
+        seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_SHELL_RUN_COMMAND);
+        let operation = ToolOperationEnvelope {
+            schema_version: "v1".to_string(),
+            kind: "tool_operation".to_string(),
+            op_id: "op-shell".to_string(),
+            op: ToolFsOp::Run,
+            path: TOOL_SHELL_RUN_COMMAND.to_string(),
+            args: json!({ "mode": "argv", "argv": ["echo", "ok"], "cwd": "." }),
+        };
+        let mut messages = Vec::new();
+        let mut inspected = HashSet::from([TOOL_SHELL_RUN_COMMAND.to_string()]);
+
+        run_tool_operation(
+            &store,
+            &session_id,
+            &turn_id,
+            &ToolExecutionContext {
+                workspace_root: Some(temp.path().to_string_lossy().to_string()),
+            },
+            &operation,
+            PermissionMode::Sandbox,
+            &mut messages,
+            &mut inspected,
+        )
+        .expect("tool operation");
+
+        let detail = store
+            .read_session_detail(&session_id)
+            .expect("detail")
+            .expect("session");
+        assert_eq!(detail.pending_interactions.len(), 1);
+        assert_eq!(
+            detail.pending_interactions[0]["payload"]["toolPath"],
+            TOOL_SHELL_RUN_COMMAND
+        );
+        let approval_ticket_id = detail.pending_interactions[0]["payload"]["approvalTicketId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        resolve_agent_approval(AgentResolveApprovalRequest {
+            storage: storage_request(&storage_root),
+            session_id: session_id.clone(),
+            approval_ticket_id,
+            decision: ApprovalDecision::Deny,
+        })
+        .expect("deny");
+
+        let retry = crate::tool_runtime::shell::run_command_tool_result(
+            &store,
+            &session_id,
+            &turn_id,
+            &ToolExecutionContext {
+                workspace_root: Some(temp.path().to_string_lossy().to_string()),
+            },
+            &operation,
+            PermissionMode::Sandbox,
+        );
+        assert_eq!(retry.error_code.as_deref(), Some(TOOL_APPROVAL_DENIED));
+        let detail = store
+            .read_session_detail(&session_id)
+            .expect("detail")
+            .expect("session");
+        assert!(detail.pending_interactions.is_empty());
+        assert_eq!(
+            detail.active_todo.as_ref().expect("todo").items[0].status,
+            "failed"
+        );
+    }
+
+    #[test]
+    fn full_access_run_command_records_verification_artifact_and_evidence() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store =
+            AiStore::open(Some(temp.path().join("ai").to_string_lossy().as_ref())).expect("store");
+        let (session_id, turn_id) = seed_turn(&store, temp.path().to_string_lossy().as_ref());
+        seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_SHELL_RUN_COMMAND);
+        let operation = ToolOperationEnvelope {
+            schema_version: "v1".to_string(),
+            kind: "tool_operation".to_string(),
+            op_id: "op-shell-pass".to_string(),
+            op: ToolFsOp::Run,
+            path: TOOL_SHELL_RUN_COMMAND.to_string(),
+            args: json!({ "mode": "shell", "command": "printf ok", "cwd": "." }),
+        };
+        let mut messages = Vec::new();
+        let mut inspected = HashSet::from([TOOL_SHELL_RUN_COMMAND.to_string()]);
+
+        run_tool_operation(
+            &store,
+            &session_id,
+            &turn_id,
+            &ToolExecutionContext {
+                workspace_root: Some(temp.path().to_string_lossy().to_string()),
+            },
+            &operation,
+            PermissionMode::FullAccess,
+            &mut messages,
+            &mut inspected,
+        )
+        .expect("tool operation");
+
+        let detail = store
+            .read_session_detail(&session_id)
+            .expect("detail")
+            .expect("session");
+        let verification = detail
+            .verification_summary
+            .as_ref()
+            .expect("verification summary");
+        assert_eq!(verification.passed_run_count, 1);
+        assert_eq!(verification.runs[0].command.as_deref(), Some("printf ok"));
+        assert!(verification.runs[0].artifact_id.is_some());
+        assert_eq!(
+            detail.active_todo.as_ref().expect("todo").items[0].status,
+            "completed"
+        );
+        assert_eq!(
+            detail
+                .delivery_proof
+                .as_ref()
+                .expect("delivery proof")
+                .status,
+            "ready"
+        );
     }
 
     #[test]

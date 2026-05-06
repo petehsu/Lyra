@@ -1870,6 +1870,117 @@
   line-height: var(--lyra-text-line-16);
 }
 
+.lyra-ai-verification-list {
+  position: relative;
+  z-index: 2;
+  width: calc(100% - var(--lyra-unit-24));
+  max-width: 47.5rem;
+  align-self: center;
+  display: grid;
+  gap: var(--lyra-unit-6);
+  margin: 0 auto var(--lyra-unit-8);
+  padding: var(--lyra-unit-8) var(--lyra-unit-10);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-radius: var(--lyra-radius-6);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 86%, var(--lyra-bg-editor) 14%);
+}
+
+.lyra-ai-verification-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-unit-7);
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-16);
+}
+
+.lyra-ai-verification-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--lyra-text-secondary);
+  font-weight: var(--lyra-font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-verification-summary {
+  margin-left: auto;
+  color: var(--lyra-text-tertiary);
+  white-space: nowrap;
+}
+
+.lyra-ai-verification-items {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lyra-ai-verification-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: var(--lyra-unit-18) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--lyra-unit-7);
+  min-height: var(--lyra-unit-24);
+  color: var(--lyra-text-tertiary);
+}
+
+.lyra-ai-verification-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lyra-unit-18);
+  height: var(--lyra-unit-18);
+  color: var(--lyra-text-tertiary);
+}
+
+.lyra-ai-verification-item[data-status="passed"] .lyra-ai-verification-status {
+  color: var(--lyra-success-500, #4f9d69);
+}
+
+.lyra-ai-verification-item[data-status="blocked"] .lyra-ai-verification-status,
+.lyra-ai-verification-item[data-status="not_run"] .lyra-ai-verification-status {
+  color: var(--lyra-warning-500, #b8872b);
+}
+
+.lyra-ai-verification-item[data-status="failed"] .lyra-ai-verification-status {
+  color: var(--lyra-danger-500, #d95c4f);
+}
+
+.lyra-ai-verification-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: baseline;
+  gap: var(--lyra-unit-8);
+}
+
+.lyra-ai-verification-command,
+.lyra-ai-verification-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-verification-command {
+  color: var(--lyra-text-secondary);
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-16);
+}
+
+.lyra-ai-verification-detail {
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-16);
+}
+
 .lyra-ai-pending-approval-list {
   position: relative;
   z-index: 2;

@@ -170,6 +170,10 @@ pub struct AgentSessionDetail {
     pub active_todo: Option<AgentExecutionTodoList>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_summary: Option<AgentExecutionSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification_summary: Option<AgentVerificationSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_proof: Option<AgentDeliveryProofSummary>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -258,6 +262,94 @@ pub struct TodoUpdateRecord {
     pub evidence_refs: Vec<String>,
     pub artifact_refs: Vec<String>,
     pub blocker: Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVerificationSummary {
+    pub verification_plan_id: String,
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_turn_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_run_id: Option<String>,
+    pub status: String,
+    pub required_run_count: i64,
+    pub passed_run_count: i64,
+    pub failed_run_count: i64,
+    pub blocked_run_count: i64,
+    pub not_run_count: i64,
+    pub runs: Vec<AgentVerificationRunSummary>,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentVerificationRunSummary {
+    pub verification_run_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification_plan_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_turn_id: Option<String>,
+    pub kind: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_id: Option<String>,
+    pub evidence_refs: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skip_reason: Option<String>,
+    pub residual_risk: Value,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDeliveryProofSummary {
+    pub delivery_proof_id: String,
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_turn_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_run_id: Option<String>,
+    pub status: String,
+    pub verification_run_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_audit_id: Option<String>,
+    pub artifact_refs: Vec<String>,
+    pub evidence_refs: Vec<String>,
+    pub unresolved_risks: Value,
+    pub summary: String,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerificationPlanRecord {
+    pub verification_plan_id: String,
+    pub session_id: String,
+    pub runtime_turn_id: Option<String>,
+    pub execution_run_id: Option<String>,
+    pub status: String,
+    pub required: Vec<Value>,
+    pub not_run: Vec<Value>,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandArtifactRefs {
+    pub artifact_id: String,
+    pub evidence_id: String,
+    pub verification_plan_id: String,
+    pub verification_run_id: String,
 }
 
 fn default_medium_risk() -> String {
@@ -1279,6 +1371,24 @@ impl AiStore {
         self.find_approval_for_tool_source(session_id, "denied", tool_path, artifact_id, patch_ref)
     }
 
+    pub fn find_pending_approval_for_tool_command(
+        &self,
+        session_id: &str,
+        tool_path: &str,
+        command_hash: &str,
+    ) -> Result<Option<ApprovalTicketRecord>> {
+        self.find_approval_for_tool_command(session_id, "pending_user", tool_path, command_hash)
+    }
+
+    pub fn find_denied_approval_for_tool_command(
+        &self,
+        session_id: &str,
+        tool_path: &str,
+        command_hash: &str,
+    ) -> Result<Option<ApprovalTicketRecord>> {
+        self.find_approval_for_tool_command(session_id, "denied", tool_path, command_hash)
+    }
+
     fn find_approval_for_tool_source(
         &self,
         session_id: &str,
@@ -1316,6 +1426,40 @@ impl AiStore {
                 let patch_matches =
                     patch_ref.is_some_and(|patch_ref| requested_patch_ref == Some(patch_ref));
                 if artifact_matches || patch_matches {
+                    return Ok(Some(ticket));
+                }
+            }
+            Ok(None)
+        })
+    }
+
+    fn find_approval_for_tool_command(
+        &self,
+        session_id: &str,
+        status: &str,
+        tool_path: &str,
+        command_hash: &str,
+    ) -> Result<Option<ApprovalTicketRecord>> {
+        self.with_session_conn(session_id, |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT approval_ticket_id, session_id, runtime_turn_id, status,
+                        approval_mode, title, created_at_ms, updated_at_ms,
+                        requested_action_json
+                 FROM approval_ticket
+                 WHERE session_id = ?1 AND status = ?2
+                 ORDER BY created_at_ms ASC",
+            )?;
+            let rows = stmt.query_map(params![session_id, status], |row| {
+                Ok((read_approval_ticket_row(row)?, row.get::<_, String>(8)?))
+            })?;
+            for row in rows {
+                let (ticket, requested_json) = row?;
+                let requested: Value =
+                    serde_json::from_str(&requested_json).unwrap_or_else(|_| json!({}));
+                if requested.get("toolPath").and_then(Value::as_str) != Some(tool_path) {
+                    continue;
+                }
+                if requested.get("commandHash").and_then(Value::as_str) == Some(command_hash) {
                     return Ok(Some(ticket));
                 }
             }
@@ -1506,6 +1650,10 @@ impl AiStore {
                 | "todo_item"
                 | "execution_run"
                 | "execution_step"
+                | "verification_plan"
+                | "verification_run"
+                | "completion_audit"
+                | "delivery_proof"
         ) == false
         {
             return Err(anyhow!("unsupported table for test count"));
@@ -2019,6 +2167,351 @@ impl AiStore {
         })
     }
 
+    pub fn create_verification_plan_for_changed_files(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        source_artifact_id: &str,
+        changed_files: Value,
+    ) -> Result<VerificationPlanRecord> {
+        let verification_plan_id = new_id("verification_plan");
+        let now = now_ms();
+        let now_iso = now_iso();
+        self.with_session_conn(session_id, |conn| {
+            let execution_run_id = find_execution_run_for_turn(conn, session_id, turn_id)?
+                .map(|(run_id, _)| run_id);
+            let required = infer_verification_requirements(&changed_files);
+            let not_run = if required.is_empty() {
+                vec![json!({
+                    "kind": "not_run_record",
+                    "reason": "no_safe_verification_command",
+                    "changedFiles": changed_files
+                })]
+            } else {
+                Vec::new()
+            };
+            let status = if required.is_empty() {
+                "not_run"
+            } else {
+                "pending"
+            };
+            conn.execute(
+                "INSERT INTO verification_plan (
+                    verification_plan_id, session_id, runtime_turn_id, execution_run_id,
+                    status, title, required_json, optional_json, not_run_json, source_json,
+                    created_at_ms, created_at_iso, updated_at_ms, updated_at_iso
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'Write-after verification', ?6, '[]', ?7, ?8, ?9, ?10, ?9, ?10)",
+                params![
+                    verification_plan_id,
+                    session_id,
+                    turn_id,
+                    execution_run_id,
+                    status,
+                    json_string(&required)?,
+                    json_string(&not_run)?,
+                    json!({
+                        "type": "apply_patch",
+                        "sourceArtifactId": source_artifact_id,
+                        "changedFiles": changed_files
+                    })
+                    .to_string(),
+                    now,
+                    now_iso,
+                ],
+            )?;
+            if required.is_empty() {
+                let verification_run_id = new_id("verification_run");
+                conn.execute(
+                    "INSERT INTO verification_run (
+                        verification_run_id, verification_plan_id, session_id, runtime_turn_id,
+                        execution_run_id, kind, status, command, cwd, tool_operation_id,
+                        report_artifact_id, evidence_refs_json, exit_code, output_bytes,
+                        failure_summary, skip_reason, residual_risk_json, created_at_ms,
+                        created_at_iso, updated_at_ms, updated_at_iso
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, 'not_run_record', 'not_run', NULL, NULL, NULL,
+                        NULL, '[]', NULL, NULL, NULL, 'No safe verification command could be inferred',
+                        ?6, ?7, ?8, ?7, ?8)",
+                    params![
+                        verification_run_id,
+                        verification_plan_id,
+                        session_id,
+                        turn_id,
+                        execution_run_id,
+                        json!({
+                            "reason": "no_safe_verification_command",
+                            "changedFiles": changed_files
+                        })
+                        .to_string(),
+                        now,
+                        now_iso,
+                    ],
+                )?;
+            }
+            upsert_completion_audit_and_delivery_proof(
+                conn,
+                session_id,
+                Some(turn_id),
+                execution_run_id.as_deref(),
+            )?;
+            Ok(VerificationPlanRecord {
+                verification_plan_id,
+                session_id: session_id.to_string(),
+                runtime_turn_id: Some(turn_id.to_string()),
+                execution_run_id,
+                status: status.to_string(),
+                required,
+                not_run,
+                updated_at: now,
+            })
+        })
+    }
+
+    pub fn append_command_log_artifact_and_evidence(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        op_id: &str,
+        result_ref: &str,
+        status: &str,
+        command: &str,
+        cwd: &str,
+        exit_code: Option<i64>,
+        output_bytes: i64,
+        metadata: Value,
+    ) -> Result<CommandArtifactRefs> {
+        let artifact_id = new_id("artifact");
+        let artifact_version_id = new_id("artifact_version");
+        let evidence_id = new_id("evidence");
+        let verification_run_id = new_id("verification_run");
+        let now = now_ms();
+        let now_iso = now_iso();
+        self.with_session_conn(session_id, |conn| {
+            let execution_run_id = find_execution_run_for_turn(conn, session_id, turn_id)?
+                .map(|(run_id, _)| run_id);
+            let verification_plan_id = ensure_verification_plan_for_command(
+                conn,
+                session_id,
+                Some(turn_id),
+                execution_run_id.as_deref(),
+                command,
+                cwd,
+            )?;
+            conn.execute(
+                "INSERT INTO artifact_record (
+                    artifact_id, artifact_version_id, session_id, runtime_turn_id, kind, status,
+                    title, content_ref, projection_ref, metadata_json, source_json, created_at_ms,
+                    created_at_iso, updated_at_ms, updated_at_iso
+                 ) VALUES (?1, ?2, ?3, ?4, 'command_log', ?5, ?6, ?7, NULL, ?8, ?9, ?10, ?11, ?10, ?11)",
+                params![
+                    artifact_id,
+                    artifact_version_id,
+                    session_id,
+                    turn_id,
+                    status,
+                    format!("Command log: {command}"),
+                    result_ref,
+                    metadata.to_string(),
+                    json!({
+                        "sourceType": "tool_operation",
+                        "toolOperationId": op_id
+                    })
+                    .to_string(),
+                    now,
+                    now_iso,
+                ],
+            )?;
+            conn.execute(
+                "INSERT INTO evidence_record (
+                    evidence_id, session_id, runtime_turn_id, kind, status, claim_json,
+                    artifact_ids_json, tool_operation_ids_json, confidence, created_at_ms,
+                    created_at_iso, stale_reason
+                 ) VALUES (?1, ?2, ?3, 'verification_run', 'active', ?4, ?5, ?6, 'high', ?7, ?8, NULL)",
+                params![
+                    evidence_id,
+                    session_id,
+                    turn_id,
+                    json!({
+                        "targetKind": "verification",
+                        "claim": "A workspace command was executed and recorded.",
+                        "command": command,
+                        "cwd": cwd,
+                        "status": status,
+                        "exitCode": exit_code
+                    })
+                    .to_string(),
+                    json!([artifact_id]).to_string(),
+                    json!([op_id]).to_string(),
+                    now,
+                    now_iso,
+                ],
+            )?;
+            conn.execute(
+                "INSERT INTO verification_run (
+                    verification_run_id, verification_plan_id, session_id, runtime_turn_id,
+                    execution_run_id, kind, status, command, cwd, tool_operation_id,
+                    report_artifact_id, evidence_refs_json, exit_code, output_bytes,
+                    failure_summary, skip_reason, residual_risk_json, created_at_ms,
+                    created_at_iso, updated_at_ms, updated_at_iso
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'command', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                    ?14, NULL, ?15, ?16, ?17, ?16, ?17)",
+                params![
+                    verification_run_id,
+                    verification_plan_id,
+                    session_id,
+                    turn_id,
+                    execution_run_id,
+                    normalize_verification_run_status(status),
+                    command,
+                    cwd,
+                    op_id,
+                    artifact_id,
+                    json!([evidence_id]).to_string(),
+                    exit_code,
+                    output_bytes,
+                    if status == "failed" {
+                        Some("Command exited unsuccessfully")
+                    } else {
+                        None
+                    },
+                    if status == "failed" {
+                        json!({ "level": "medium", "reason": "command_failed" })
+                    } else {
+                        json!({})
+                    }
+                    .to_string(),
+                    now,
+                    now_iso,
+                ],
+            )?;
+            let plan_status = compute_verification_plan_status(conn, &verification_plan_id)?;
+            conn.execute(
+                "UPDATE verification_plan
+                 SET status = ?1, updated_at_ms = ?2, updated_at_iso = ?3
+                 WHERE verification_plan_id = ?4",
+                params![plan_status, now, now_iso, verification_plan_id],
+            )?;
+            upsert_completion_audit_and_delivery_proof(
+                conn,
+                session_id,
+                Some(turn_id),
+                execution_run_id.as_deref(),
+            )?;
+            Ok(CommandArtifactRefs {
+                artifact_id,
+                evidence_id,
+                verification_plan_id,
+                verification_run_id,
+            })
+        })
+    }
+
+    pub fn read_verification_summary(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<AgentVerificationSummary>> {
+        self.with_session_conn(session_id, |conn| {
+            let row = conn
+                .query_row(
+                    "SELECT verification_plan_id, session_id, runtime_turn_id, execution_run_id,
+                            status, required_json, updated_at_ms
+                     FROM verification_plan
+                     WHERE session_id = ?1
+                     ORDER BY updated_at_ms DESC, created_at_ms DESC
+                     LIMIT 1",
+                    params![session_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                            row.get::<_, String>(4)?,
+                            row.get::<_, String>(5)?,
+                            row.get::<_, i64>(6)?,
+                        ))
+                    },
+                )
+                .optional()
+                .context("failed to read verification summary")?;
+            let Some((
+                verification_plan_id,
+                session_id,
+                runtime_turn_id,
+                execution_run_id,
+                status,
+                required_json,
+                updated_at,
+            )) = row
+            else {
+                return Ok(None);
+            };
+            let required = parse_json_vec_value(&required_json);
+            let runs = read_verification_runs_for_plan(conn, &verification_plan_id)?;
+            let passed = runs.iter().filter(|run| run.status == "passed").count() as i64;
+            let failed = runs.iter().filter(|run| run.status == "failed").count() as i64;
+            let blocked = runs.iter().filter(|run| run.status == "blocked").count() as i64;
+            let not_run = runs.iter().filter(|run| run.status == "not_run").count() as i64;
+            Ok(Some(AgentVerificationSummary {
+                verification_plan_id,
+                session_id,
+                runtime_turn_id,
+                execution_run_id,
+                status,
+                required_run_count: required.len() as i64,
+                passed_run_count: passed,
+                failed_run_count: failed,
+                blocked_run_count: blocked,
+                not_run_count: not_run,
+                runs,
+                updated_at,
+            }))
+        })
+    }
+
+    pub fn read_delivery_proof_summary(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<AgentDeliveryProofSummary>> {
+        self.with_session_conn(session_id, |conn| {
+            conn.query_row(
+                "SELECT delivery_proof_id, session_id, runtime_turn_id, execution_run_id,
+                        status, artifact_refs_json, evidence_refs_json,
+                        verification_run_ids_json, completion_audit_id,
+                        unresolved_risks_json, user_visible_summary_ref, updated_at_ms
+                 FROM delivery_proof
+                 WHERE session_id = ?1
+                 ORDER BY updated_at_ms DESC, created_at_ms DESC
+                 LIMIT 1",
+                params![session_id],
+                |row| {
+                    let artifact_refs_json: String = row.get(5)?;
+                    let evidence_refs_json: String = row.get(6)?;
+                    let verification_run_ids_json: String = row.get(7)?;
+                    let unresolved_risks_json: String = row.get(9)?;
+                    Ok(AgentDeliveryProofSummary {
+                        delivery_proof_id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        runtime_turn_id: row.get(2)?,
+                        execution_run_id: row.get(3)?,
+                        status: row.get(4)?,
+                        artifact_refs: parse_json_vec_string(&artifact_refs_json),
+                        evidence_refs: parse_json_vec_string(&evidence_refs_json),
+                        verification_run_ids: parse_json_vec_string(&verification_run_ids_json),
+                        completion_audit_id: row.get(8)?,
+                        unresolved_risks: serde_json::from_str(&unresolved_risks_json)
+                            .unwrap_or_else(|_| json!([])),
+                        summary: row.get::<_, Option<String>>(10)?.unwrap_or_else(|| {
+                            "Delivery proof is pending verification.".to_string()
+                        }),
+                        updated_at: row.get(11)?,
+                    })
+                },
+            )
+            .optional()
+            .context("failed to read delivery proof summary")
+        })
+    }
+
     pub fn read_session_detail(&self, session_id: &str) -> Result<Option<AgentSessionDetail>> {
         let Some(session) = self.read_session_index(session_id)? else {
             return Ok(None);
@@ -2029,6 +2522,8 @@ impl AiStore {
         let pending_interactions = self.read_pending_approval_interactions(session_id)?;
         let active_todo = self.read_active_todo_list(session_id)?;
         let execution_summary = self.read_execution_summary(session_id)?;
+        let verification_summary = self.read_verification_summary(session_id)?;
+        let delivery_proof = self.read_delivery_proof_summary(session_id)?;
         Ok(Some(AgentSessionDetail {
             session,
             pending_interactions,
@@ -2037,6 +2532,8 @@ impl AiStore {
             runtime_events,
             active_todo,
             execution_summary,
+            verification_summary,
+            delivery_proof,
         }))
     }
 
@@ -2430,6 +2927,77 @@ fn migrate_session(conn: &Connection) -> Result<()> {
             updated_at_ms INTEGER NOT NULL,
             updated_at_iso TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS verification_plan (
+            verification_plan_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            runtime_turn_id TEXT,
+            execution_run_id TEXT,
+            status TEXT NOT NULL,
+            title TEXT NOT NULL,
+            required_json TEXT NOT NULL,
+            optional_json TEXT NOT NULL,
+            not_run_json TEXT NOT NULL,
+            source_json TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS verification_run (
+            verification_run_id TEXT PRIMARY KEY,
+            verification_plan_id TEXT,
+            session_id TEXT NOT NULL,
+            runtime_turn_id TEXT,
+            execution_run_id TEXT,
+            kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            command TEXT,
+            cwd TEXT,
+            tool_operation_id TEXT,
+            report_artifact_id TEXT,
+            evidence_refs_json TEXT NOT NULL,
+            exit_code INTEGER,
+            output_bytes INTEGER,
+            failure_summary TEXT,
+            skip_reason TEXT,
+            residual_risk_json TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS completion_audit (
+            completion_audit_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            runtime_turn_id TEXT,
+            execution_run_id TEXT,
+            status TEXT NOT NULL,
+            summary_json TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS delivery_proof (
+            delivery_proof_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            runtime_turn_id TEXT,
+            execution_run_id TEXT,
+            status TEXT NOT NULL,
+            objective_ref TEXT,
+            changed_files_refs_json TEXT NOT NULL,
+            artifact_refs_json TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL,
+            verification_run_ids_json TEXT NOT NULL,
+            completion_audit_id TEXT,
+            side_effect_refs_json TEXT NOT NULL,
+            unresolved_risks_json TEXT NOT NULL,
+            user_visible_summary_ref TEXT,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
         ",
     )?;
     ensure_column(
@@ -2780,6 +3348,321 @@ fn read_execution_step_counts(
     Ok((total, completed, failed, blocked))
 }
 
+fn infer_verification_requirements(changed_files: &Value) -> Vec<Value> {
+    let mut commands = Vec::<Value>::new();
+    let mut seen = Vec::<String>::new();
+    let paths = changed_files
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("path").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for path in paths {
+        let command = if path.ends_with(".rs") {
+            let crate_name = path
+                .strip_prefix("crates/")
+                .and_then(|rest| rest.split('/').next())
+                .filter(|value| value.is_empty() == false)
+                .unwrap_or("");
+            if crate_name.is_empty() {
+                "cargo test".to_string()
+            } else {
+                format!("cargo test -p {crate_name}")
+            }
+        } else if path.starts_with("apps/desktop/")
+            && (path.ends_with(".ts")
+                || path.ends_with(".tsx")
+                || path.ends_with(".css")
+                || path.ends_with(".scss"))
+        {
+            "npm --prefix apps/desktop run test -- ai-panel".to_string()
+        } else {
+            continue;
+        };
+        if seen.iter().any(|value| value == &command) {
+            continue;
+        }
+        seen.push(command.clone());
+        commands.push(json!({
+            "kind": "command",
+            "toolPath": "/tools/shell/run_command",
+            "command": command,
+            "cwd": ".",
+            "required": true,
+            "reason": "write_after_patch"
+        }));
+    }
+    commands
+}
+
+fn ensure_verification_plan_for_command(
+    conn: &Connection,
+    session_id: &str,
+    turn_id: Option<&str>,
+    execution_run_id: Option<&str>,
+    command: &str,
+    cwd: &str,
+) -> Result<String> {
+    let existing = conn
+        .query_row(
+            "SELECT verification_plan_id
+             FROM verification_plan
+             WHERE session_id = ?1
+             ORDER BY updated_at_ms DESC, created_at_ms DESC
+             LIMIT 1",
+            params![session_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    if let Some(verification_plan_id) = existing {
+        return Ok(verification_plan_id);
+    }
+    let verification_plan_id = new_id("verification_plan");
+    let now = now_ms();
+    let now_iso = now_iso();
+    conn.execute(
+        "INSERT INTO verification_plan (
+            verification_plan_id, session_id, runtime_turn_id, execution_run_id,
+            status, title, required_json, optional_json, not_run_json, source_json,
+            created_at_ms, created_at_iso, updated_at_ms, updated_at_iso
+         ) VALUES (?1, ?2, ?3, ?4, 'pending', 'Ad-hoc command verification', ?5, '[]', '[]', ?6, ?7, ?8, ?7, ?8)",
+        params![
+            verification_plan_id,
+            session_id,
+            turn_id,
+            execution_run_id,
+            json!([{
+                "kind": "command",
+                "toolPath": "/tools/shell/run_command",
+                "command": command,
+                "cwd": cwd,
+                "required": true,
+                "reason": "ad_hoc_command"
+            }])
+            .to_string(),
+            json!({ "type": "run_command", "command": command, "cwd": cwd }).to_string(),
+            now,
+            now_iso,
+        ],
+    )?;
+    Ok(verification_plan_id)
+}
+
+fn read_verification_runs_for_plan(
+    conn: &Connection,
+    verification_plan_id: &str,
+) -> Result<Vec<AgentVerificationRunSummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT verification_run_id, verification_plan_id, execution_run_id, runtime_turn_id,
+                kind, status, command, cwd, exit_code, report_artifact_id,
+                evidence_refs_json, skip_reason, residual_risk_json, updated_at_ms
+         FROM verification_run
+         WHERE verification_plan_id = ?1
+         ORDER BY created_at_ms ASC",
+    )?;
+    let rows = stmt.query_map(params![verification_plan_id], |row| {
+        let evidence_refs_json: String = row.get(10)?;
+        let residual_risk_json: String = row.get(12)?;
+        Ok(AgentVerificationRunSummary {
+            verification_run_id: row.get(0)?,
+            verification_plan_id: row.get(1)?,
+            execution_run_id: row.get(2)?,
+            runtime_turn_id: row.get(3)?,
+            kind: row.get(4)?,
+            status: row.get(5)?,
+            command: row.get(6)?,
+            cwd: row.get(7)?,
+            exit_code: row.get(8)?,
+            artifact_id: row.get(9)?,
+            evidence_refs: parse_json_vec_string(&evidence_refs_json),
+            skip_reason: row.get(11)?,
+            residual_risk: serde_json::from_str(&residual_risk_json).unwrap_or_else(|_| json!({})),
+            updated_at: row.get(13)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+fn compute_verification_plan_status(
+    conn: &Connection,
+    verification_plan_id: &str,
+) -> Result<String> {
+    let mut stmt =
+        conn.prepare("SELECT status FROM verification_run WHERE verification_plan_id = ?1")?;
+    let rows = stmt.query_map(params![verification_plan_id], |row| row.get::<_, String>(0))?;
+    let mut statuses = Vec::new();
+    for row in rows {
+        statuses.push(row?);
+    }
+    if statuses.iter().any(|status| status == "failed") {
+        return Ok("failed".to_string());
+    }
+    if statuses.iter().any(|status| status == "blocked") {
+        return Ok("blocked".to_string());
+    }
+    if statuses.is_empty() {
+        return Ok("pending".to_string());
+    }
+    if statuses.iter().all(|status| status == "not_run") {
+        return Ok("not_run".to_string());
+    }
+    if statuses
+        .iter()
+        .all(|status| matches!(status.as_str(), "passed" | "not_run"))
+    {
+        return Ok("passed".to_string());
+    }
+    Ok("pending".to_string())
+}
+
+fn normalize_verification_run_status(status: &str) -> &'static str {
+    match status {
+        "passed" | "completed" => "passed",
+        "failed" => "failed",
+        "blocked" => "blocked",
+        "not_run" => "not_run",
+        "running" => "running",
+        _ => "pending",
+    }
+}
+
+fn upsert_completion_audit_and_delivery_proof(
+    conn: &Connection,
+    session_id: &str,
+    turn_id: Option<&str>,
+    execution_run_id: Option<&str>,
+) -> Result<()> {
+    let now = now_ms();
+    let now_iso = now_iso();
+    let verification_runs = read_latest_verification_runs(conn, session_id)?;
+    let failed_runs = verification_runs
+        .iter()
+        .filter(|run| run.status == "failed")
+        .map(|run| run.verification_run_id.clone())
+        .collect::<Vec<_>>();
+    let blocked_runs = verification_runs
+        .iter()
+        .filter(|run| run.status == "blocked")
+        .map(|run| run.verification_run_id.clone())
+        .collect::<Vec<_>>();
+    let not_run = verification_runs
+        .iter()
+        .filter(|run| run.status == "not_run")
+        .map(|run| run.verification_run_id.clone())
+        .collect::<Vec<_>>();
+    let audit_status = if failed_runs.is_empty() == false {
+        "failed"
+    } else if blocked_runs.is_empty() == false {
+        "blocked"
+    } else if not_run.is_empty() == false || verification_runs.is_empty() {
+        "pending"
+    } else {
+        "passed"
+    };
+    let completion_audit_id = new_id("completion_audit");
+    conn.execute(
+        "INSERT INTO completion_audit (
+            completion_audit_id, session_id, runtime_turn_id, execution_run_id, status,
+            summary_json, created_at_ms, created_at_iso, updated_at_ms, updated_at_iso
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?7, ?8)",
+        params![
+            completion_audit_id,
+            session_id,
+            turn_id,
+            execution_run_id,
+            audit_status,
+            json!({
+                "failedVerificationRunIds": failed_runs,
+                "blockedVerificationRunIds": blocked_runs,
+                "notRunVerificationRunIds": not_run,
+            })
+            .to_string(),
+            now,
+            now_iso,
+        ],
+    )?;
+    let verification_run_ids = verification_runs
+        .iter()
+        .map(|run| run.verification_run_id.clone())
+        .collect::<Vec<_>>();
+    let artifact_refs = verification_runs
+        .iter()
+        .filter_map(|run| run.artifact_id.clone())
+        .collect::<Vec<_>>();
+    let evidence_refs = verification_runs
+        .iter()
+        .flat_map(|run| run.evidence_refs.clone())
+        .collect::<Vec<_>>();
+    let unresolved_risks = json!({
+        "failedVerificationRunIds": failed_runs,
+        "blockedVerificationRunIds": blocked_runs,
+        "notRunVerificationRunIds": not_run,
+    });
+    let delivery_status = if audit_status == "passed" {
+        "ready"
+    } else {
+        "pending_verification"
+    };
+    let delivery_proof_id = new_id("delivery_proof");
+    conn.execute(
+        "INSERT INTO delivery_proof (
+            delivery_proof_id, session_id, runtime_turn_id, execution_run_id, status,
+            objective_ref, changed_files_refs_json, artifact_refs_json, evidence_refs_json,
+            verification_run_ids_json, completion_audit_id, side_effect_refs_json,
+            unresolved_risks_json, user_visible_summary_ref, created_at_ms, created_at_iso,
+            updated_at_ms, updated_at_iso
+         ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, '[]', ?6, ?7, ?8, ?9, '[]', ?10, ?11, ?12, ?13, ?12, ?13)",
+        params![
+            delivery_proof_id,
+            session_id,
+            turn_id,
+            execution_run_id,
+            delivery_status,
+            json_string(&artifact_refs)?,
+            json_string(&evidence_refs)?,
+            json_string(&verification_run_ids)?,
+            completion_audit_id,
+            unresolved_risks.to_string(),
+            if delivery_status == "ready" {
+                "Verification passed"
+            } else {
+                "Delivery proof is pending verification."
+            },
+            now,
+            now_iso,
+        ],
+    )?;
+    Ok(())
+}
+
+fn read_latest_verification_runs(
+    conn: &Connection,
+    session_id: &str,
+) -> Result<Vec<AgentVerificationRunSummary>> {
+    let latest_plan = conn
+        .query_row(
+            "SELECT verification_plan_id
+             FROM verification_plan
+             WHERE session_id = ?1
+             ORDER BY updated_at_ms DESC, created_at_ms DESC
+             LIMIT 1",
+            params![session_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let Some(verification_plan_id) = latest_plan else {
+        return Ok(Vec::new());
+    };
+    read_verification_runs_for_plan(conn, &verification_plan_id)
+}
+
 fn merge_string_refs(existing: &[String], next: &[String]) -> Vec<String> {
     let mut refs = existing.to_vec();
     for value in next {
@@ -2806,6 +3689,10 @@ fn merge_todo_blocker_json(existing: &Value, next: &Value) -> Value {
 
 fn parse_json_vec_string(value: &str) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(value).unwrap_or_default()
+}
+
+fn parse_json_vec_value(value: &str) -> Vec<Value> {
+    serde_json::from_str::<Vec<Value>>(value).unwrap_or_default()
 }
 
 fn normalize_todo_kind(kind: &str) -> &'static str {

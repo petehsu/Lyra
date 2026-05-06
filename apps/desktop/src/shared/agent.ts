@@ -179,6 +179,53 @@ export type AgentExecutionSummary = {
   readonly updatedAt: number;
 };
 
+export type AgentVerificationRunSummary = {
+  readonly verificationRunId: string;
+  readonly verificationPlanId?: string;
+  readonly executionRunId?: string;
+  readonly runtimeTurnId?: AgentTurnId;
+  readonly kind: string;
+  readonly status: "pending" | "running" | "passed" | "failed" | "blocked" | "not_run" | string;
+  readonly command?: string;
+  readonly cwd?: string;
+  readonly exitCode?: number;
+  readonly artifactId?: string;
+  readonly evidenceRefs: readonly string[];
+  readonly skipReason?: string;
+  readonly residualRisk: unknown;
+  readonly updatedAt: number;
+};
+
+export type AgentVerificationSummary = {
+  readonly verificationPlanId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId?: AgentTurnId;
+  readonly executionRunId?: string;
+  readonly status: "pending" | "running" | "passed" | "failed" | "blocked" | "not_run" | string;
+  readonly requiredRunCount: number;
+  readonly passedRunCount: number;
+  readonly failedRunCount: number;
+  readonly blockedRunCount: number;
+  readonly notRunCount: number;
+  readonly runs: readonly AgentVerificationRunSummary[];
+  readonly updatedAt: number;
+};
+
+export type AgentDeliveryProofSummary = {
+  readonly deliveryProofId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId?: AgentTurnId;
+  readonly executionRunId?: string;
+  readonly status: "ready" | "pending_verification" | "blocked" | "failed" | string;
+  readonly verificationRunIds: readonly string[];
+  readonly completionAuditId?: string;
+  readonly artifactRefs: readonly string[];
+  readonly evidenceRefs: readonly string[];
+  readonly unresolvedRisks: unknown;
+  readonly summary: string;
+  readonly updatedAt: number;
+};
+
 export type AgentSessionDetail = {
   readonly session: AgentSession;
   readonly pendingInteractions: readonly AgentPendingInteraction[];
@@ -187,6 +234,8 @@ export type AgentSessionDetail = {
   readonly runtimeEvents: readonly AgentRuntimeEvent[];
   readonly activeTodo?: AgentExecutionTodoList | null;
   readonly executionSummary?: AgentExecutionSummary | null;
+  readonly verificationSummary?: AgentVerificationSummary | null;
+  readonly deliveryProof?: AgentDeliveryProofSummary | null;
 };
 
 export type AgentQuestionOption = {
@@ -424,7 +473,9 @@ export type AgentRuntimeEventType =
   | "approval_ticket_resolved"
   | "todo_list_created"
   | "todo_item_updated"
-  | "execution_step_updated";
+  | "execution_step_updated"
+  | "verification_plan_created"
+  | "verification_run_updated";
 
 export type AgentRuntimeStreamEvent = {
   readonly schemaVersion: "v1" | string;

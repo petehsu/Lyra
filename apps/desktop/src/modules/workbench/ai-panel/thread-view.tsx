@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { AlertTriangle, CheckCircle2, FileDiff, FileSearch, FileText, FolderOpen, GitBranch, Info, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileDiff, FileSearch, FileText, FolderOpen, GitBranch, Info, Loader2, Terminal } from "lucide-react";
 
 import { LyraBrandLogo } from "../brand";
 import type { WorkbenchLocale } from "../i18n";
@@ -151,6 +151,9 @@ const toolIcon = (toolPath: string, phase: string) => {
   }
   if (toolPath.startsWith("/tools/git")) {
     return <GitBranch size={13} aria-hidden="true" />;
+  }
+  if (toolPath.startsWith("/tools/shell")) {
+    return <Terminal size={13} aria-hidden="true" />;
   }
   if (toolPath.includes("/propose_patch")) {
     return <FileDiff size={13} aria-hidden="true" />;

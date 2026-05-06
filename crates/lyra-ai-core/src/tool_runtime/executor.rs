@@ -4,6 +4,7 @@ use crate::tool_runtime::catalog::{
     WalkDirectoryArgs, TOOL_CODE_SEARCH_CODE, TOOL_FS_LIST_FILES, TOOL_FS_PROPOSE_PATCH,
     TOOL_FS_READ_FILE, TOOL_FS_READ_RANGE, TOOL_FS_SEARCH_FILES, TOOL_FS_SEARCH_TEXT,
     TOOL_FS_STAT_PATH, TOOL_FS_WALK_DIRECTORY, TOOL_GIT_DIFF, TOOL_GIT_STATUS, TOOL_SEARCH,
+    TOOL_SHELL_RUN_COMMAND,
 };
 use crate::tool_runtime::filesystem;
 use crate::tool_runtime::git;
@@ -69,8 +70,9 @@ pub fn tool_runtime_prompt(workspace_root: Option<&str>) -> String {
 - You may propose a patch preview through /tools/filesystem/propose_patch when requested.
 - You may request applying an existing patch proposal artifact through /tools/filesystem/apply_patch. The runtime accepts only artifactId or patchRef from the current session, never arbitrary patch text. In sandbox permission mode this returns approval required instead of writing files; in full_access permission mode the runtime may auto-approve and apply.
 - You may request rolling back an applied patch through /tools/filesystem/rollback_patch using appliedArtifactId. Rollback uses recorded backups and refuses if workspace files drifted after apply.
+- You may run short verification commands through /tools/shell/run_command. Prefer argv mode. The runtime validates cwd inside the workspace, caps output and time, rejects destructive or long-running commands, and may require user approval in sandbox permission mode.
 - Do not claim files were modified, saved, formatted, built, or tested unless a runtime result explicitly proves it.
-- The runtime rejects arbitrary writes, shell commands, tests, build tools, network tools, external URLs, and paths outside the workspace."#
+- The runtime rejects arbitrary writes, unmanaged long-running processes, destructive shell commands, network tools, external URLs, and paths outside the workspace."#
     )
 }
 
@@ -163,6 +165,10 @@ fn run_tool_path(
             operation,
             catalog::parse_args::<ProposePatchArgs>(&operation.args)?,
         ),
+        TOOL_SHELL_RUN_COMMAND => Err(anyhow!(
+            "{} requires Agent runtime policy context",
+            TOOL_SHELL_RUN_COMMAND
+        )),
         TOOL_CODE_SEARCH_CODE => filesystem::search_code(
             context,
             operation,

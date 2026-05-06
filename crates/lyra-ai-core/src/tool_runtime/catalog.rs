@@ -1,6 +1,6 @@
 use crate::tool_runtime::operation::{ToolFsOp, ToolOperationEnvelope};
 use anyhow::{anyhow, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 pub const TOOLS_ROOT: &str = "/tools";
@@ -16,6 +16,7 @@ pub const TOOL_FS_PROPOSE_PATCH: &str = "/tools/filesystem/propose_patch";
 pub const TOOL_FS_APPLY_PATCH: &str = "/tools/filesystem/apply_patch";
 pub const TOOL_FS_ROLLBACK_PATCH: &str = "/tools/filesystem/rollback_patch";
 pub const TOOL_CODE_SEARCH_CODE: &str = "/tools/code/search_code";
+pub const TOOL_SHELL_RUN_COMMAND: &str = "/tools/shell/run_command";
 pub const TOOL_GIT_STATUS: &str = "/tools/git/status";
 pub const TOOL_GIT_DIFF: &str = "/tools/git/diff";
 
@@ -143,6 +144,27 @@ pub struct RollbackPatchArgs {
     pub applied_artifact_id: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RunCommandArgs {
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub argv: Option<Vec<String>>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub env: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub output_limit_bytes: Option<usize>,
+    #[serde(default)]
+    pub purpose: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SearchCodeArgs {
@@ -184,6 +206,7 @@ pub fn list_catalog_path(path: &str) -> Result<Value> {
                 "read workspace files and directories",
             ),
             entry("/tools/code", "directory", "search and inspect source code"),
+            entry("/tools/shell", "directory", "run short workspace commands"),
             entry("/tools/git", "directory", "inspect local git state"),
         ],
         "/tools/filesystem" => vec![
@@ -227,6 +250,11 @@ pub fn list_catalog_path(path: &str) -> Result<Value> {
             "tool",
             "search source code with file and line snippets",
         )],
+        "/tools/shell" => vec![entry(
+            TOOL_SHELL_RUN_COMMAND,
+            "tool",
+            "run a short command in the bound workspace",
+        )],
         "/tools/git" => vec![
             entry(TOOL_GIT_STATUS, "tool", "read git status"),
             entry(TOOL_GIT_DIFF, "tool", "read git diff or diff stat"),
@@ -245,6 +273,7 @@ pub fn read_doc(path: &str) -> Result<String> {
         TOOLS_ROOT => Ok("Use /tools to discover available low-risk read-only capabilities. Start with list /tools, inspect a specific tool before run, and never assume unavailable tools exist.".to_string()),
         "/tools/filesystem" => Ok("Filesystem tools read files and directories inside the bound workspace only. They cannot write, move, delete, or execute files.".to_string()),
         "/tools/code" => Ok("Code tools search source files and return path, line, column, and snippet evidence. They do not edit or run code.".to_string()),
+        "/tools/shell" => Ok("Shell tools run short commands in the bound workspace. /tools/shell/run_command requires argv or shell mode, workspace cwd validation, output limits, and approval for unsafe commands.".to_string()),
         "/tools/git" => Ok("Git tools are read-only and only inspect status or diff for the bound workspace. They never change branches, commits, or index state.".to_string()),
         TOOL_SEARCH => Ok("Run /tools/search with { query, maxResults? } to recommend matching tool paths. It only discovers tools and never executes business actions.".to_string()),
         _ => inspect_tool(path.as_str())
@@ -324,7 +353,7 @@ pub fn validate_operation(operation: &ToolOperationEnvelope) -> Result<()> {
             let path = normalize_tool_path(&operation.path);
             if matches!(
                 path.as_str(),
-                TOOLS_ROOT | "/tools/filesystem" | "/tools/code" | "/tools/git"
+                TOOLS_ROOT | "/tools/filesystem" | "/tools/code" | "/tools/shell" | "/tools/git"
             ) == false
             {
                 return Err(anyhow!("list path is not a ToolFS directory"));
@@ -487,6 +516,30 @@ pub fn tool_manifests() -> Vec<ToolManifest> {
             }),
             tags: &["patch", "diff", "rollback", "approval", "edit"],
         },
+        ToolManifest {
+            path: TOOL_SHELL_RUN_COMMAND,
+            name: "run_command",
+            description:
+                "Run a short workspace command with argv or shell mode, cwd validation, output caps, and policy approval.",
+            domain: "shell",
+            risk_level: "high",
+            side_effect: "process",
+            args: json!({
+                "mode": "\"argv\" | \"shell\"?",
+                "argv": "string[]?",
+                "command": "string?",
+                "cwd": "string?",
+                "env": "Record<string,string>?",
+                "timeoutMs": "number?",
+                "outputLimitBytes": "number?",
+                "purpose": "string?"
+            }),
+            returns: json!({
+                "type": "object",
+                "description": "Command status, exit code, redacted stdout/stderr, artifact/evidence refs, and verification run refs."
+            }),
+            tags: &["shell", "command", "test", "verify", "lint", "build"],
+        },
         manifest(
             TOOL_CODE_SEARCH_CODE,
             "search_code",
@@ -575,6 +628,30 @@ fn validate_run_args(path: &str, args: &Value) -> Result<()> {
         TOOL_FS_ROLLBACK_PATCH => {
             let args = parse_args::<RollbackPatchArgs>(args)?;
             require_non_empty("appliedArtifactId", &args.applied_artifact_id)
+        }
+        TOOL_SHELL_RUN_COMMAND => {
+            let args = parse_args::<RunCommandArgs>(args)?;
+            let mode = args.mode.as_deref().unwrap_or("argv");
+            match mode {
+                "argv" => {
+                    let argv = args
+                        .argv
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("argv is required"))?;
+                    if argv.is_empty() {
+                        return Err(anyhow!("argv is required"));
+                    }
+                    require_non_empty("argv[0]", &argv[0])
+                }
+                "shell" => {
+                    let command = args
+                        .command
+                        .as_deref()
+                        .ok_or_else(|| anyhow!("command is required"))?;
+                    require_non_empty("command", command)
+                }
+                _ => Err(anyhow!("mode must be argv or shell")),
+            }
         }
         TOOL_CODE_SEARCH_CODE => {
             let args = parse_args::<SearchCodeArgs>(args)?;
