@@ -257,24 +257,50 @@ pub fn resolve_plan_review(
             } else {
                 "todo.plan_coverage_failed"
             };
+            let coverage_payload = json!({
+                "sessionId": session_id,
+                "coverageId": coverage.coverage_id.clone(),
+                "planId": coverage.plan_id.clone(),
+                "approvedVersionId": coverage.approved_version_id.clone(),
+                "todoListId": coverage.todo_list_id.clone(),
+                "executionRunId": coverage.execution_run_id.clone(),
+                "status": coverage.status.clone(),
+                "coveredPlanStepIds": coverage.covered_plan_step_ids.clone(),
+                "missingPlanStepIds": coverage.missing_plan_step_ids.clone(),
+                "extraTodoItemIds": coverage.extra_todo_item_ids.clone(),
+                "riskMismatches": coverage.risk_mismatches.clone(),
+                "verificationGaps": coverage.verification_gaps.clone(),
+                "missingReferenceIds": coverage.missing_reference_ids.clone(),
+                "mismatchedReferenceIds": coverage.mismatched_reference_ids.clone(),
+            });
             emit_store_event(
                 &store,
                 &session_id,
                 summary.runtime_turn_id.as_deref(),
                 event_type,
-                json!({
-                    "sessionId": session_id,
-                    "coverageId": coverage.coverage_id.clone(),
-                    "planId": coverage.plan_id.clone(),
-                    "approvedVersionId": coverage.approved_version_id.clone(),
-                    "todoListId": coverage.todo_list_id.clone(),
-                    "executionRunId": coverage.execution_run_id.clone(),
-                    "status": coverage.status.clone(),
-                    "coveredPlanStepIds": coverage.covered_plan_step_ids.clone(),
-                    "missingPlanStepIds": coverage.missing_plan_step_ids.clone(),
-                    "extraTodoItemIds": coverage.extra_todo_item_ids.clone(),
-                }),
+                coverage_payload.clone(),
             )?;
+            if coverage.status == "valid" {
+                emit_store_event(
+                    &store,
+                    &session_id,
+                    summary.runtime_turn_id.as_deref(),
+                    "todo.reference_coverage_validated",
+                    coverage_payload,
+                )?;
+            } else if coverage.missing_reference_ids.is_empty() == false
+                || coverage.mismatched_reference_ids.is_empty() == false
+                || coverage.status == "reference_missing"
+                || coverage.status == "reference_mismatch"
+            {
+                emit_store_event(
+                    &store,
+                    &session_id,
+                    summary.runtime_turn_id.as_deref(),
+                    "todo.reference_coverage_failed",
+                    coverage_payload,
+                )?;
+            }
         }
     }
     emit_store_event(

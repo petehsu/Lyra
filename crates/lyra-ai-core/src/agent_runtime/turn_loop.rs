@@ -324,6 +324,23 @@ pub(super) fn run_turn_worker_inner(
         .unwrap_or_else(|| detail.session.collaboration_mode.clone());
     let project_policy_snapshot = read_project_policy_snapshot(workspace_root.as_deref());
     let denied_approval_summaries = store.read_recent_denied_approval_summaries(session_id, 5)?;
+    let failed_plan_coverage_summaries = detail
+        .plan_coverage_summary
+        .as_ref()
+        .filter(|coverage| coverage.status != "valid")
+        .map(|coverage| {
+            json!({
+                "planId": coverage.plan_id.clone(),
+                "approvedVersionId": coverage.approved_version_id.clone(),
+                "status": coverage.status.clone(),
+                "missingPlanStepIds": coverage.missing_plan_step_ids.clone(),
+                "verificationGaps": coverage.verification_gaps.clone(),
+                "missingReferenceIds": coverage.missing_reference_ids.clone(),
+                "mismatchedReferenceIds": coverage.mismatched_reference_ids.clone(),
+            })
+        })
+        .into_iter()
+        .collect();
     let mut messages = compose_messages(
         PromptContext {
             collaboration_mode,
@@ -332,6 +349,7 @@ pub(super) fn run_turn_worker_inner(
             read_only_tools_available: workspace_root.is_some(),
             permission_mode: permission_mode.as_str().to_string(),
             denied_approval_summaries,
+            failed_plan_coverage_summaries,
         },
         history,
     );

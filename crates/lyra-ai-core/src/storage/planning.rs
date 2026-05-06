@@ -308,8 +308,34 @@ struct PlanStepSeed {
     actions: Vec<String>,
     expected_tools: Vec<String>,
     risk_level: String,
+    risk_mismatch: bool,
     completion_criteria: Vec<String>,
     source_reference_ids: Vec<String>,
+    source_reference_required: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ReferenceSeed {
+    ids: Vec<String>,
+    required: bool,
+}
+
+#[derive(Clone, Debug)]
+struct PlanCoverageSeed {
+    status: &'static str,
+    covered_plan_step_ids: Vec<String>,
+    missing_plan_step_ids: Vec<String>,
+    risk_mismatches: Vec<Value>,
+    verification_gaps: Vec<String>,
+    missing_reference_ids: Vec<String>,
+    mismatched_reference_ids: Vec<String>,
+    plan_reference_ids: Vec<String>,
+}
+
+impl PlanCoverageSeed {
+    fn is_valid(&self) -> bool {
+        self.status == "valid"
+    }
 }
 
 fn create_plan_bound_todo_and_coverage(
@@ -325,7 +351,8 @@ fn create_plan_bound_todo_and_coverage(
 ) -> Result<()> {
     let coverage_id = new_id("plan_coverage");
     let (steps, missing_plan_step_ids) = extract_plan_steps(version);
-    if steps.is_empty() || missing_plan_step_ids.is_empty() == false {
+    let coverage = validate_plan_coverage(version, &steps, missing_plan_step_ids);
+    if coverage.is_valid() == false {
         insert_plan_coverage_report(
             conn,
             &coverage_id,
@@ -335,14 +362,14 @@ fn create_plan_bound_todo_and_coverage(
             version_id,
             None,
             None,
-            "missing_plan_step",
-            &steps.iter().map(|step| step.id.clone()).collect::<Vec<_>>(),
-            &missing_plan_step_ids,
+            coverage.status,
+            &coverage.covered_plan_step_ids,
+            &coverage.missing_plan_step_ids,
             &[],
-            &[],
-            &[],
-            &[],
-            &[],
+            &coverage.risk_mismatches,
+            &coverage.verification_gaps,
+            &coverage.missing_reference_ids,
+            &coverage.mismatched_reference_ids,
             created_at,
             created_iso,
         )?;
@@ -371,6 +398,7 @@ fn create_plan_bound_todo_and_coverage(
                 "planId": plan_id,
                 "approvedVersionId": version_id,
                 "coverageId": coverage_id,
+                "sourceReferenceIds": coverage.plan_reference_ids,
             })
             .to_string(),
             format!("Plan: {}", plan_title.trim()),
@@ -432,7 +460,7 @@ fn create_plan_bound_todo_and_coverage(
         Some(&todo_list_id),
         Some(&execution_run_id),
         "valid",
-        &steps.iter().map(|step| step.id.clone()).collect::<Vec<_>>(),
+        &coverage.covered_plan_step_ids,
         &[],
         &[],
         &[],
@@ -496,6 +524,61 @@ fn insert_plan_coverage_report(
     Ok(())
 }
 
+fn validate_plan_coverage(
+    version: &Value,
+    steps: &[PlanStepSeed],
+    missing_plan_step_ids: Vec<String>,
+) -> PlanCoverageSeed {
+    let plan_refs = read_reference_seed(version);
+    let covered_plan_step_ids = steps.iter().map(|step| step.id.clone()).collect::<Vec<_>>();
+    let mut risk_mismatches = Vec::new();
+    let mut verification_gaps = Vec::new();
+    let mut missing_reference_ids = Vec::new();
+    let mismatched_reference_ids = Vec::new();
+    if plan_refs.required && plan_refs.ids.is_empty() {
+        missing_reference_ids.push("__plan_source_reference__".to_string());
+    }
+    for step in steps {
+        if step.completion_criteria.is_empty() {
+            verification_gaps.push(step.id.clone());
+        }
+        if step.risk_mismatch {
+            risk_mismatches.push(json!({
+                "planStepId": step.id,
+                "todoItemId": null,
+                "planRisk": step.risk_level,
+                "todoRisk": normalize_risk_level(&step.risk_level),
+            }));
+        }
+        if step.source_reference_required && step.source_reference_ids.is_empty() {
+            missing_reference_ids.push(step.id.clone());
+        }
+    }
+    let status = if missing_plan_step_ids.is_empty() == false || steps.is_empty() {
+        "missing_plan_step"
+    } else if missing_reference_ids.is_empty() == false {
+        "reference_missing"
+    } else if mismatched_reference_ids.is_empty() == false {
+        "reference_mismatch"
+    } else if verification_gaps.is_empty() == false {
+        "verification_missing"
+    } else if risk_mismatches.is_empty() == false {
+        "risk_mismatch"
+    } else {
+        "valid"
+    };
+    PlanCoverageSeed {
+        status,
+        covered_plan_step_ids,
+        missing_plan_step_ids,
+        risk_mismatches,
+        verification_gaps,
+        missing_reference_ids,
+        mismatched_reference_ids,
+        plan_reference_ids: plan_refs.ids,
+    }
+}
+
 fn extract_plan_steps(version: &Value) -> (Vec<PlanStepSeed>, Vec<String>) {
     let Some(raw_steps) = version.get("steps").and_then(Value::as_array) else {
         return (Vec::new(), vec!["__no_plan_steps__".to_string()]);
@@ -515,41 +598,96 @@ fn extract_plan_steps(version: &Value) -> (Vec<PlanStepSeed>, Vec<String>) {
             missing.push(step_id);
             continue;
         };
+        let (risk_level, risk_mismatch) = read_risk_level(raw_step);
+        let reference_seed = read_reference_seed(raw_step);
         steps.push(PlanStepSeed {
             id: step_id,
             title,
             detail: read_first_string(raw_step, &["detail", "body", "description"]),
-            actions: read_first_string_array(raw_step, &["actions"]),
-            expected_tools: read_first_string_array(raw_step, &["expectedTools", "expected_tools"]),
-            risk_level: read_first_string(raw_step, &["riskLevel", "risk_level"])
-                .or_else(|| {
-                    raw_step
-                        .get("risk")
-                        .and_then(|risk| {
-                            if risk.is_object() {
-                                risk.get("level").and_then(Value::as_str)
-                            } else {
-                                risk.as_str()
-                            }
-                        })
-                        .and_then(trim_to_string)
-                })
-                .unwrap_or_else(|| "medium".to_string()),
-            completion_criteria: read_first_string_array(
-                raw_step,
-                &[
-                    "completionCriteria",
-                    "completion_criteria",
-                    "acceptanceCriteria",
-                ],
-            ),
-            source_reference_ids: read_first_string_array(
-                raw_step,
-                &["sourceReferenceIds", "source_reference_ids", "referenceIds"],
-            ),
+            actions: read_first_string_list(raw_step, &["actions"]),
+            expected_tools: read_first_string_list(raw_step, &["expectedTools", "expected_tools"]),
+            risk_level,
+            risk_mismatch,
+            completion_criteria: read_completion_criteria(raw_step),
+            source_reference_ids: reference_seed.ids,
+            source_reference_required: reference_seed.required,
         });
     }
     (steps, missing)
+}
+
+fn read_completion_criteria(value: &Value) -> Vec<String> {
+    let mut result = Vec::new();
+    let sources = [
+        "completionCriteria",
+        "completion_criteria",
+        "acceptanceCriteria",
+        "acceptance_criteria",
+        "verification",
+        "verificationSteps",
+        "verification_steps",
+    ];
+    for key in sources {
+        if let Some(raw) = value.get(key) {
+            for item in string_list_from_value(raw) {
+                if result.iter().any(|existing| existing == &item) == false {
+                    result.push(item);
+                }
+            }
+        }
+    }
+    result
+}
+
+fn read_risk_level(value: &Value) -> (String, bool) {
+    let raw = read_first_string(value, &["riskLevel", "risk_level"]).or_else(|| {
+        value
+            .get("risk")
+            .and_then(|risk| {
+                if risk.is_object() {
+                    risk.get("level").and_then(Value::as_str)
+                } else {
+                    risk.as_str()
+                }
+            })
+            .and_then(trim_to_string)
+    });
+    let Some(raw) = raw else {
+        return ("medium".to_string(), false);
+    };
+    let normalized = normalize_risk_level(&raw).to_string();
+    (raw.clone(), normalized != raw.trim())
+}
+
+fn read_reference_seed(value: &Value) -> ReferenceSeed {
+    let mut seed = ReferenceSeed::default();
+    for key in ["sourceReferenceIds", "source_reference_ids", "referenceIds"] {
+        if let Some(raw) = value.get(key) {
+            seed.required = true;
+            for item in string_list_from_value(raw) {
+                if seed.ids.iter().any(|existing| existing == &item) == false {
+                    seed.ids.push(item);
+                }
+            }
+        }
+    }
+    seed
+}
+
+fn string_list_from_value(value: &Value) -> Vec<String> {
+    if let Some(value) = value.as_str().and_then(trim_to_string) {
+        return vec![value];
+    }
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(trim_to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn read_first_string(value: &Value, keys: &[&str]) -> Option<String> {
@@ -561,16 +699,9 @@ fn read_first_string(value: &Value, keys: &[&str]) -> Option<String> {
     })
 }
 
-fn read_first_string_array(value: &Value, keys: &[&str]) -> Vec<String> {
+fn read_first_string_list(value: &Value, keys: &[&str]) -> Vec<String> {
     keys.iter()
-        .find_map(|key| value.get(*key).and_then(Value::as_array))
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .filter_map(trim_to_string)
-                .collect()
-        })
+        .find_map(|key| value.get(*key).map(string_list_from_value))
         .unwrap_or_default()
 }
 

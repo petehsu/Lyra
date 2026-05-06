@@ -588,6 +588,8 @@ export type AgentRuntimeEventType =
   | "plan_review_updated"
   | "todo.plan_coverage_validated"
   | "todo.plan_coverage_failed"
+  | "todo.reference_coverage_validated"
+  | "todo.reference_coverage_failed"
   | "verification_plan_created"
   | "verification_run_updated"
   | "completion_audit_updated"

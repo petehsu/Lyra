@@ -180,6 +180,7 @@ fn resolve_plan_review_updates_status_and_annotations() {
         objective_summary: "Objective".to_string(),
         source: None,
         version: json!({
+            "sourceReferenceIds": ["plan-ref-1"],
             "steps": [{
                 "id": "plan-step-1",
                 "title": "Do work",
@@ -237,14 +238,20 @@ fn resolve_plan_review_updates_status_and_annotations() {
     assert!(coverage.execution_run_id.is_some());
     let todo = approved.detail.active_todo.as_ref().expect("plan todo");
     assert_eq!(todo.kind, "plan_bound");
+    assert_eq!(todo.source["sourceReferenceIds"][0], "plan-ref-1");
     assert_eq!(todo.items.len(), 1);
     assert_eq!(todo.items[0].source["planStepId"], "plan-step-1");
+    assert_eq!(todo.items[0].source["sourceReferenceIds"][0], "ref-1");
     assert_eq!(
         todo.items[0].expected_tools,
         vec!["/tools/filesystem/apply_patch"]
     );
     assert!(approved.detail.runtime_events.iter().any(|event| {
         event.phase == "todo.plan_coverage_validated"
+            && event.payload["coverageId"] == coverage.coverage_id
+    }));
+    assert!(approved.detail.runtime_events.iter().any(|event| {
+        event.phase == "todo.reference_coverage_validated"
             && event.payload["coverageId"] == coverage.coverage_id
     }));
 }
@@ -290,6 +297,151 @@ fn approving_plan_with_invalid_steps_records_failed_coverage_without_todo() {
     assert!(coverage.todo_list_id.is_none());
     assert!(approved.detail.runtime_events.iter().any(|event| {
         event.phase == "todo.plan_coverage_failed"
+            && event.payload["coverageId"] == coverage.coverage_id
+    }));
+}
+
+#[test]
+fn approving_plan_missing_verification_records_failed_coverage_without_todo() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let storage_root = temp.path().to_string_lossy().to_string();
+    let store = AiStore::open(Some(&storage_root)).expect("store");
+    let workspace = temp.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let (session_id, _turn_id) = seed_turn(&store, workspace.to_string_lossy().as_ref());
+    let created = create_plan(AgentCreatePlanRequest {
+        storage: storage_request(&storage_root),
+        session_id: session_id.clone(),
+        title: "Missing verification".to_string(),
+        objective_summary: "No validation attached to step".to_string(),
+        source: None,
+        version: json!({
+            "steps": [{
+                "id": "step-no-verification",
+                "title": "Modify code",
+                "riskLevel": "medium"
+            }]
+        }),
+    })
+    .expect("create plan");
+
+    let approved = resolve_plan_review(AgentResolvePlanReviewRequest {
+        storage: storage_request(&storage_root),
+        session_id,
+        plan_id: created.plan_id,
+        version_id: created.version_id,
+        decision: "approve".to_string(),
+        annotation_text: None,
+    })
+    .expect("approve plan");
+
+    assert!(approved.detail.active_todo.is_none());
+    let coverage = approved
+        .detail
+        .plan_coverage_summary
+        .as_ref()
+        .expect("coverage");
+    assert_eq!(coverage.status, "verification_missing");
+    assert_eq!(coverage.verification_gaps, vec!["step-no-verification"]);
+    assert!(coverage.todo_list_id.is_none());
+}
+
+#[test]
+fn approving_plan_with_invalid_risk_records_failed_coverage_without_todo() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let storage_root = temp.path().to_string_lossy().to_string();
+    let store = AiStore::open(Some(&storage_root)).expect("store");
+    let workspace = temp.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let (session_id, _turn_id) = seed_turn(&store, workspace.to_string_lossy().as_ref());
+    let created = create_plan(AgentCreatePlanRequest {
+        storage: storage_request(&storage_root),
+        session_id: session_id.clone(),
+        title: "Invalid risk".to_string(),
+        objective_summary: "Risk must stay in supported levels".to_string(),
+        source: None,
+        version: json!({
+            "steps": [{
+                "id": "step-risk",
+                "title": "Modify code",
+                "riskLevel": "medium-high",
+                "verification": ["Run tests"]
+            }]
+        }),
+    })
+    .expect("create plan");
+
+    let approved = resolve_plan_review(AgentResolvePlanReviewRequest {
+        storage: storage_request(&storage_root),
+        session_id,
+        plan_id: created.plan_id,
+        version_id: created.version_id,
+        decision: "approve".to_string(),
+        annotation_text: None,
+    })
+    .expect("approve plan");
+
+    assert!(approved.detail.active_todo.is_none());
+    let coverage = approved
+        .detail
+        .plan_coverage_summary
+        .as_ref()
+        .expect("coverage");
+    assert_eq!(coverage.status, "risk_mismatch");
+    assert_eq!(coverage.risk_mismatches.len(), 1);
+    assert_eq!(coverage.risk_mismatches[0]["planStepId"], "step-risk");
+}
+
+#[test]
+fn approving_plan_with_malformed_references_records_reference_failure() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let storage_root = temp.path().to_string_lossy().to_string();
+    let store = AiStore::open(Some(&storage_root)).expect("store");
+    let workspace = temp.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let (session_id, _turn_id) = seed_turn(&store, workspace.to_string_lossy().as_ref());
+    let created = create_plan(AgentCreatePlanRequest {
+        storage: storage_request(&storage_root),
+        session_id: session_id.clone(),
+        title: "Missing refs".to_string(),
+        objective_summary: "References are declared but empty".to_string(),
+        source: None,
+        version: json!({
+            "sourceReferenceIds": [],
+            "steps": [{
+                "id": "step-ref",
+                "title": "Modify code",
+                "riskLevel": "medium",
+                "verification": ["Run tests"],
+                "sourceReferenceIds": []
+            }]
+        }),
+    })
+    .expect("create plan");
+
+    let approved = resolve_plan_review(AgentResolvePlanReviewRequest {
+        storage: storage_request(&storage_root),
+        session_id,
+        plan_id: created.plan_id,
+        version_id: created.version_id,
+        decision: "approve".to_string(),
+        annotation_text: None,
+    })
+    .expect("approve plan");
+
+    assert!(approved.detail.active_todo.is_none());
+    let coverage = approved
+        .detail
+        .plan_coverage_summary
+        .as_ref()
+        .expect("coverage");
+    assert_eq!(coverage.status, "reference_missing");
+    assert_eq!(
+        coverage.missing_reference_ids,
+        vec!["__plan_source_reference__", "step-ref"]
+    );
+    assert!(approved.detail.runtime_events.iter().any(|event| {
+        event.phase == "todo.reference_coverage_failed"
             && event.payload["coverageId"] == coverage.coverage_id
     }));
 }

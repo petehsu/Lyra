@@ -46,6 +46,7 @@ pub struct PromptContext {
     pub read_only_tools_available: bool,
     pub permission_mode: String,
     pub denied_approval_summaries: Vec<Value>,
+    pub failed_plan_coverage_summaries: Vec<Value>,
 }
 
 pub fn compose_messages(context: PromptContext, history: Vec<ChatMessage>) -> Vec<ChatMessage> {
@@ -157,7 +158,41 @@ Use these runtime facts for time, platform, workspace, and mode-sensitive reason
             "\nTreat these as explicit user refusals. Do not claim the denied tool request was executed, and do not retry the same source unless the user provides a new patch or instruction.",
         );
     }
+    if context.failed_plan_coverage_summaries.is_empty() == false {
+        prompt.push_str("\n\nRecent failed plan coverage checks:");
+        for summary in &context.failed_plan_coverage_summaries {
+            let plan_id = summary
+                .get("planId")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let version_id = summary
+                .get("approvedVersionId")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let status = summary
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            prompt.push_str(&format!(
+                "\n- planId={plan_id}; approvedVersionId={version_id}; status={status}; missingPlanStepIds={}; verificationGaps={}; missingReferenceIds={}; mismatchedReferenceIds={}.",
+                compact_json_field(summary, "missingPlanStepIds"),
+                compact_json_field(summary, "verificationGaps"),
+                compact_json_field(summary, "missingReferenceIds"),
+                compact_json_field(summary, "mismatchedReferenceIds"),
+            ));
+        }
+        prompt.push_str(
+            "\nTreat failed coverage as a runtime execution block. Do not claim plan execution started, Todo completed, or LongWorkRun began until coverage is valid.",
+        );
+    }
     prompt
+}
+
+fn compact_json_field(value: &Value, key: &str) -> String {
+    value
+        .get(key)
+        .map(Value::to_string)
+        .unwrap_or_else(|| "[]".to_string())
 }
 
 #[cfg(test)]
@@ -176,6 +211,7 @@ mod tests {
             read_only_tools_available: true,
             permission_mode: "sandbox".to_string(),
             denied_approval_summaries: Vec::new(),
+            failed_plan_coverage_summaries: Vec::new(),
         }
     }
 
@@ -263,6 +299,27 @@ mod tests {
         assert!(system.contains("toolPath=/tools/filesystem/apply_patch"));
         assert!(system.contains("status=denied"));
         assert!(system.contains("Do not claim the denied tool request was executed"));
+    }
+
+    #[test]
+    fn dynamic_runtime_fields_include_failed_plan_coverage() {
+        let mut context = context("default");
+        context.failed_plan_coverage_summaries = vec![serde_json::json!({
+            "planId": "plan-1",
+            "approvedVersionId": "version-1",
+            "status": "verification_missing",
+            "missingPlanStepIds": [],
+            "verificationGaps": ["step-1"],
+            "missingReferenceIds": [],
+            "mismatchedReferenceIds": []
+        })];
+        let messages = compose_messages(context, Vec::new());
+        let system = &messages[0].content;
+
+        assert!(system.contains("Recent failed plan coverage checks"));
+        assert!(system.contains("status=verification_missing"));
+        assert!(system.contains("verificationGaps=[\"step-1\"]"));
+        assert!(system.contains("Do not claim plan execution started"));
     }
 
     #[test]

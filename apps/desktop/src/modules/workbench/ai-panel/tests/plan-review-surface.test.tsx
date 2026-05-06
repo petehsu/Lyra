@@ -92,6 +92,44 @@ describe("AiPlanReviewSurface", () => {
     expect(screen.getByText("Coverage valid")).toBeDefined();
     expect(screen.getByText("2 steps mapped to Todo")).toBeDefined();
   });
+
+  test("renders blocked plan coverage reason", () => {
+    render(
+      <AiPlanReviewSurface
+        detail={{
+          ...createDetail(),
+          planningSummary: {
+            ...createDetail().planningSummary!,
+            status: "approved",
+            panelStatus: "approved",
+          },
+          planCoverageSummary: {
+            coverageId: "coverage-2",
+            sessionId: "session-1",
+            runtimeTurnId: "turn-1",
+            planId: "plan-1",
+            approvedVersionId: "plan-version-1",
+            status: "reference_missing",
+            coveredPlanStepIds: ["step-1"],
+            missingPlanStepIds: [],
+            extraTodoItemIds: [],
+            riskMismatches: [],
+            verificationGaps: [],
+            missingReferenceIds: ["step-1"],
+            mismatchedReferenceIds: [],
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        }}
+      />
+    );
+
+    expect(
+      screen.getByText("v1 · Approved · Coverage blocked · missing references")
+    ).toBeDefined();
+    expect(screen.getByText("Coverage blocked")).toBeDefined();
+    expect(screen.getByText("Missing refs step-1")).toBeDefined();
+  });
 });
 
 const createDetail = (): AgentSessionDetail => ({

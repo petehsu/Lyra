@@ -199,7 +199,7 @@ const statusLabel = (
 };
 
 const coverageShortLabel = (coverage: AgentPlanCoverageSummary): string =>
-  coverage.status === "valid" ? "Coverage valid" : "Coverage blocked";
+  coverage.status === "valid" ? "Coverage valid" : `Coverage blocked · ${coverageReason(coverage)}`;
 
 const coverageTitle = (coverage: AgentPlanCoverageSummary): string =>
   coverage.status === "valid" ? "Coverage valid" : "Coverage blocked";
@@ -213,6 +213,40 @@ const coverageDetail = (coverage: AgentPlanCoverageSummary): string => {
   }
   if (coverage.extraTodoItemIds.length > 0) {
     return `Extra scope ${coverage.extraTodoItemIds.slice(0, 3).join(", ")}`;
+  }
+  if (coverage.missingReferenceIds.length > 0) {
+    return `Missing refs ${coverage.missingReferenceIds.slice(0, 3).join(", ")}`;
+  }
+  if (coverage.mismatchedReferenceIds.length > 0) {
+    return `Mismatched refs ${coverage.mismatchedReferenceIds.slice(0, 3).join(", ")}`;
+  }
+  if (coverage.verificationGaps.length > 0) {
+    return `Missing verification ${coverage.verificationGaps.slice(0, 3).join(", ")}`;
+  }
+  if (coverage.riskMismatches.length > 0) {
+    return `${String(coverage.riskMismatches.length)} risk mismatch${coverage.riskMismatches.length === 1 ? "" : "es"}`;
+  }
+  return coverage.status.replaceAll("_", " ");
+};
+
+const coverageReason = (coverage: AgentPlanCoverageSummary): string => {
+  if (coverage.status === "reference_missing" || coverage.missingReferenceIds.length > 0) {
+    return "missing references";
+  }
+  if (coverage.status === "reference_mismatch" || coverage.mismatchedReferenceIds.length > 0) {
+    return "reference mismatch";
+  }
+  if (coverage.status === "verification_missing" || coverage.verificationGaps.length > 0) {
+    return "verification missing";
+  }
+  if (coverage.status === "risk_mismatch" || coverage.riskMismatches.length > 0) {
+    return "risk mismatch";
+  }
+  if (coverage.status === "missing_plan_step" || coverage.missingPlanStepIds.length > 0) {
+    return "missing steps";
+  }
+  if (coverage.status === "extra_scope" || coverage.extraTodoItemIds.length > 0) {
+    return "extra scope";
   }
   return coverage.status.replaceAll("_", " ");
 };
