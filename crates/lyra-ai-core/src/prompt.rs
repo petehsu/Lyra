@@ -47,6 +47,7 @@ pub struct PromptContext {
     pub permission_mode: String,
     pub denied_approval_summaries: Vec<Value>,
     pub failed_plan_coverage_summaries: Vec<Value>,
+    pub work_run_summaries: Vec<Value>,
 }
 
 pub fn compose_messages(context: PromptContext, history: Vec<ChatMessage>) -> Vec<ChatMessage> {
@@ -185,6 +186,42 @@ Use these runtime facts for time, platform, workspace, and mode-sensitive reason
             "\nTreat failed coverage as a runtime execution block. Do not claim plan execution started, Todo completed, or LongWorkRun began until coverage is valid.",
         );
     }
+    if context.work_run_summaries.is_empty() == false {
+        prompt.push_str("\n\nCurrent LongWorkRun state:");
+        for summary in &context.work_run_summaries {
+            let run_id = summary
+                .get("longWorkRunId")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let status = summary
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let objective = summary
+                .get("objectiveSummary")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown objective");
+            let todo_list_id = summary
+                .get("todoListId")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let execution_run_id = summary
+                .get("executionRunId")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let blocker = summary
+                .get("blockerSummary")
+                .and_then(Value::as_str)
+                .unwrap_or("none");
+            prompt.push_str(&format!(
+                "\n- runId={run_id}; status={status}; objective={objective}; todoListId={todo_list_id}; executionRunId={execution_run_id}; todoProgress={}; blocker={blocker}.",
+                compact_json_field(summary, "todoProgress"),
+            ));
+        }
+        prompt.push_str(
+            "\nLongWorkRun status is Runtime-owned. Completion still requires Todo, Approval, Verification, and CompletionAudit evidence; do not claim completion while the run is active or blocked.",
+        );
+    }
     prompt
 }
 
@@ -212,6 +249,7 @@ mod tests {
             permission_mode: "sandbox".to_string(),
             denied_approval_summaries: Vec::new(),
             failed_plan_coverage_summaries: Vec::new(),
+            work_run_summaries: Vec::new(),
         }
     }
 
@@ -320,6 +358,27 @@ mod tests {
         assert!(system.contains("status=verification_missing"));
         assert!(system.contains("verificationGaps=[\"step-1\"]"));
         assert!(system.contains("Do not claim plan execution started"));
+    }
+
+    #[test]
+    fn dynamic_runtime_fields_include_long_work_state() {
+        let mut context = context("default");
+        context.work_run_summaries = vec![serde_json::json!({
+            "longWorkRunId": "long_work_run_1",
+            "status": "blocked",
+            "objectiveSummary": "Implement the ledger",
+            "todoListId": "todo_1",
+            "executionRunId": "execution_1",
+            "todoProgress": { "total": 2, "completed": 1, "blocked": 1, "failed": 0 },
+            "blockerSummary": "Waiting for approval decision"
+        })];
+        let messages = compose_messages(context, Vec::new());
+        let system = &messages[0].content;
+
+        assert!(system.contains("Current LongWorkRun state"));
+        assert!(system.contains("status=blocked"));
+        assert!(system.contains("todoProgress={\"blocked\":1"));
+        assert!(system.contains("Runtime-owned"));
     }
 
     #[test]

@@ -50,6 +50,12 @@ use events::{
 mod todo_projection;
 use todo_projection::record_todo_from_tool_result;
 
+mod long_work_projection;
+use long_work_projection::{create_mini_run_after_todo, create_plan_run_after_valid_coverage};
+pub(crate) use long_work_projection::{
+    project_work_after_completion, project_work_after_tool_result,
+};
+
 mod session_ops;
 use session_ops::ensure_session;
 pub use session_ops::{
@@ -62,5 +68,7 @@ pub use turn_loop::{cancel_turn, send_turn};
 #[cfg(test)]
 use turn_loop::{run_tool_operation, run_turn_worker_inner};
 
+#[cfg(test)]
+mod long_work_tests;
 #[cfg(test)]
 mod tests;

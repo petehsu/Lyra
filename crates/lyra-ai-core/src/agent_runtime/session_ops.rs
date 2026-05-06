@@ -228,11 +228,11 @@ pub fn resolve_plan_review(
             "panelStatus": summary.panel_status
         }),
     )?;
-    let detail = store
+    let mut detail = store
         .read_session_detail(&session_id)?
         .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
     if request.decision.trim() == "approve" {
-        if let Some(coverage) = detail.plan_coverage_summary.as_ref() {
+        if let Some(coverage) = detail.plan_coverage_summary.clone() {
             if coverage.plan_id == summary.plan_id
                 && coverage.status == "valid"
                 && coverage.todo_list_id.is_some()
@@ -251,6 +251,16 @@ pub fn resolve_plan_review(
                         "approvedVersionId": coverage.approved_version_id.clone(),
                     }),
                 )?;
+                create_plan_run_after_valid_coverage(
+                    &store,
+                    &session_id,
+                    summary.runtime_turn_id.as_deref(),
+                    &detail,
+                    &coverage,
+                )?;
+                detail = store
+                    .read_session_detail(&session_id)?
+                    .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
             }
             let event_type = if coverage.status == "valid" {
                 "todo.plan_coverage_validated"

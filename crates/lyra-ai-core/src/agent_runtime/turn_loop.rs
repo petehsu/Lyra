@@ -97,6 +97,15 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
                 "title": "Execution checklist"
             }),
         )?;
+        create_mini_run_after_todo(
+            &store,
+            &session.id,
+            &turn_id,
+            &user_message_id,
+            &text,
+            &checkpoint_id,
+            &refs,
+        )?;
     }
     let runtime_options_payload = json!({
         "model": request.options.model.as_deref(),
@@ -341,6 +350,12 @@ pub(super) fn run_turn_worker_inner(
         })
         .into_iter()
         .collect();
+    let work_run_summaries = detail
+        .durable_work_summary
+        .as_ref()
+        .map(|summary| serde_json::to_value(summary).unwrap_or_else(|_| json!({})))
+        .into_iter()
+        .collect();
     let mut messages = compose_messages(
         PromptContext {
             collaboration_mode,
@@ -350,6 +365,7 @@ pub(super) fn run_turn_worker_inner(
             permission_mode: permission_mode.as_str().to_string(),
             denied_approval_summaries,
             failed_plan_coverage_summaries,
+            work_run_summaries,
         },
         history,
     );
@@ -405,6 +421,7 @@ pub(super) fn run_turn_worker_inner(
     if let Some(audit) =
         store.evaluate_completion_audit_and_delivery_proof(session_id, Some(turn_id))?
     {
+        project_work_after_completion(store, session_id, Some(turn_id))?;
         let detail = store.read_session_detail(session_id)?;
         emit_completion_projection_events(store, session_id, Some(turn_id), detail.as_ref())?;
         if let Some(projected) = detail
@@ -588,6 +605,7 @@ pub(super) fn run_tool_operation(
     emit_verification_projection_events(store, session_id, Some(turn_id), &result)?;
     record_todo_from_tool_result(store, session_id, turn_id, operation, &result)?;
     store.evaluate_completion_audit_and_delivery_proof(session_id, Some(turn_id))?;
+    project_work_after_completion(store, session_id, Some(turn_id))?;
     let detail = store.read_session_detail(session_id)?;
     emit_completion_projection_events(store, session_id, Some(turn_id), detail.as_ref())?;
     messages.push(ChatMessage {

@@ -179,6 +179,52 @@ export type AgentExecutionSummary = {
   readonly updatedAt: number;
 };
 
+export type AgentLongWorkStatus =
+  | "created"
+  | "running"
+  | "blocked"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | string;
+
+export type AgentLongWorkTodoProgress = {
+  readonly total: number;
+  readonly completed: number;
+  readonly blocked: number;
+  readonly failed: number;
+};
+
+export type AgentWorkSliceSummary = {
+  readonly workSliceId: string;
+  readonly status: AgentLongWorkStatus;
+  readonly todoListId: string;
+  readonly executionRunId: string;
+  readonly checkpointIds: readonly string[];
+  readonly blockerIds: readonly string[];
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly closedAt?: number;
+};
+
+export type AgentLongWorkSummary = {
+  readonly longWorkRunId: string;
+  readonly goalId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId?: AgentTurnId;
+  readonly userMessageId?: AgentMessageId;
+  readonly planId?: string;
+  readonly todoListId: string;
+  readonly executionRunId: string;
+  readonly status: AgentLongWorkStatus;
+  readonly objectiveSummary: string;
+  readonly todoProgress: AgentLongWorkTodoProgress;
+  readonly blockerSummary?: string;
+  readonly currentSlice?: AgentWorkSliceSummary;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
 export type AgentVerificationRunSummary = {
   readonly verificationRunId: string;
   readonly verificationPlanId?: string;
@@ -312,6 +358,7 @@ export type AgentSessionDetail = {
   readonly verificationSummary?: AgentVerificationSummary | null;
   readonly completionAudit?: AgentCompletionAuditSummary | null;
   readonly deliveryProof?: AgentDeliveryProofSummary | null;
+  readonly longWorkSummary?: AgentLongWorkSummary | null;
 };
 
 export type AgentQuestionOption = {
@@ -590,6 +637,10 @@ export type AgentRuntimeEventType =
   | "todo.plan_coverage_failed"
   | "todo.reference_coverage_validated"
   | "todo.reference_coverage_failed"
+  | "long_work.created"
+  | "long_work.slice_started"
+  | "long_work.blocked"
+  | "long_work.completed"
   | "verification_plan_created"
   | "verification_run_updated"
   | "completion_audit_updated"

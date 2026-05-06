@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+use super::long_work_models::SessionTaskLedgerSummary;
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageRequest {
@@ -170,6 +172,8 @@ pub struct AgentSessionDetail {
     pub completion_audit: Option<AgentCompletionAuditSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery_proof: Option<AgentDeliveryProofSummary>,
+    #[serde(rename = "longWorkSummary", skip_serializing_if = "Option::is_none")]
+    pub durable_work_summary: Option<SessionTaskLedgerSummary>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

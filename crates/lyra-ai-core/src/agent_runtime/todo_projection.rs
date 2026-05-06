@@ -36,7 +36,8 @@ pub(super) fn record_todo_from_tool_result(
     else {
         return Ok(());
     };
-    emit_todo_update_events(store, session_id, Some(turn_id), &record)
+    emit_todo_update_events(store, session_id, Some(turn_id), &record)?;
+    project_work_after_tool_result(store, session_id, Some(turn_id))
 }
 
 fn todo_status_from_tool_result(

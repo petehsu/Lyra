@@ -46,6 +46,7 @@ impl AiStore {
             .with_context(|| format!("failed to open AI session database {}", path.display()))?;
         configure_conn(&conn)?;
         migrate_session(&conn)?;
+        migrate_long_work_session(&conn)?;
         f(&conn)
     }
 
@@ -71,6 +72,9 @@ impl AiStore {
                 | "verification_run"
                 | "completion_audit"
                 | "delivery_proof"
+                | "native_long_work_goal"
+                | "long_work_run"
+                | "work_slice"
         ) == false
         {
             return Err(anyhow!("unsupported table for test count"));

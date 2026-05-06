@@ -13,6 +13,8 @@ use uuid::Uuid;
 
 mod models;
 pub use models::*;
+mod long_work_models;
+pub use long_work_models::*;
 mod common;
 pub use common::{
     json_string, new_id, now_iso, now_ms, parse_json_or, policy_snapshot_ref,
@@ -33,11 +35,14 @@ mod completion_helpers;
 use completion_helpers::*;
 mod schema;
 use schema::{configure_conn, migrate_index, migrate_session};
+mod long_work_schema;
+use long_work_schema::migrate_long_work_session;
 mod approval;
 mod artifact_store;
 mod completion;
 mod connection;
 mod execution;
+mod long_work;
 mod patch_backup;
 mod planning;
 mod profile;

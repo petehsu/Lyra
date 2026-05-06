@@ -83,7 +83,9 @@ pub(super) fn append_result_and_emit_event(
     )?;
     emit_verification_projection_events(store, session_id, turn_id, &result)?;
     record_todo_from_patch_result(store, session_id, turn_id, operation, &result)?;
+    crate::agent_runtime::project_work_after_tool_result(store, session_id, turn_id)?;
     store.evaluate_completion_audit_and_delivery_proof(session_id, turn_id)?;
+    crate::agent_runtime::project_work_after_completion(store, session_id, turn_id)?;
     let detail = store.read_session_detail(session_id)?;
     emit_completion_projection_events(store, session_id, turn_id, detail.as_ref())?;
     Ok(result)
