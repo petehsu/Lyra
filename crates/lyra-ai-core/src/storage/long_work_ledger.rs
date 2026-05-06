@@ -1,4 +1,4 @@
-use super::long_work_continuation::{
+use super::long_work_continuation_records::{
     read_latest_continuation_summary, read_latest_premature_stop_summary, read_latest_stuck_summary,
 };
 use super::long_work_status::{
