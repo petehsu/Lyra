@@ -237,6 +237,27 @@ pub(super) fn migrate_session(conn: &Connection) -> Result<()> {
             updated_at_ms INTEGER NOT NULL,
             updated_at_iso TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS plan_coverage_report (
+            coverage_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            runtime_turn_id TEXT,
+            plan_id TEXT NOT NULL,
+            approved_version_id TEXT NOT NULL,
+            todo_list_id TEXT,
+            execution_run_id TEXT,
+            status TEXT NOT NULL,
+            covered_plan_step_ids_json TEXT NOT NULL,
+            missing_plan_step_ids_json TEXT NOT NULL,
+            extra_todo_item_ids_json TEXT NOT NULL,
+            risk_mismatches_json TEXT NOT NULL,
+            verification_gaps_json TEXT NOT NULL,
+            missing_reference_ids_json TEXT NOT NULL,
+            mismatched_reference_ids_json TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS execution_todo_list (
             todo_list_id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,

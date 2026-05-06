@@ -271,6 +271,34 @@ export type AgentPlanningSummary = {
   readonly updatedAt: number;
 };
 
+export type AgentPlanCoverageSummary = {
+  readonly coverageId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId?: AgentTurnId;
+  readonly planId: string;
+  readonly approvedVersionId: string;
+  readonly todoListId?: string;
+  readonly executionRunId?: string;
+  readonly status:
+    | "valid"
+    | "missing_plan_step"
+    | "extra_scope"
+    | "risk_mismatch"
+    | "verification_missing"
+    | "reference_missing"
+    | "reference_mismatch"
+    | string;
+  readonly coveredPlanStepIds: readonly string[];
+  readonly missingPlanStepIds: readonly string[];
+  readonly extraTodoItemIds: readonly string[];
+  readonly riskMismatches: readonly unknown[];
+  readonly verificationGaps: readonly string[];
+  readonly missingReferenceIds: readonly string[];
+  readonly mismatchedReferenceIds: readonly string[];
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
 export type AgentSessionDetail = {
   readonly session: AgentSession;
   readonly pendingInteractions: readonly AgentPendingInteraction[];
@@ -278,6 +306,7 @@ export type AgentSessionDetail = {
   readonly messages: readonly AgentMessage[];
   readonly runtimeEvents: readonly AgentRuntimeEvent[];
   readonly planningSummary?: AgentPlanningSummary | null;
+  readonly planCoverageSummary?: AgentPlanCoverageSummary | null;
   readonly activeTodo?: AgentExecutionTodoList | null;
   readonly executionSummary?: AgentExecutionSummary | null;
   readonly verificationSummary?: AgentVerificationSummary | null;
@@ -557,6 +586,8 @@ export type AgentRuntimeEventType =
   | "execution_step_updated"
   | "plan_review_created"
   | "plan_review_updated"
+  | "todo.plan_coverage_validated"
+  | "todo.plan_coverage_failed"
   | "verification_plan_created"
   | "verification_run_updated"
   | "completion_audit_updated"

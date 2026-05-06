@@ -26,10 +26,7 @@ export const ExecutionTodoList = ({ detail }: ExecutionTodoListProps) => {
         <ListChecks size={13} aria-hidden="true" />
         <span className="lyra-ai-execution-todo-title">{todo.title}</span>
         <span className="lyra-ai-execution-todo-summary">
-          {todo.kind}
-          {detail?.executionSummary === undefined || detail.executionSummary === null
-            ? ""
-            : ` · ${String(detail.executionSummary.completedStepCount)}/${String(todo.items.length)}`}
+          {todoSummary(detail)}
         </span>
       </div>
       <ol className="lyra-ai-execution-todo-items">
@@ -47,6 +44,25 @@ export const ExecutionTodoList = ({ detail }: ExecutionTodoListProps) => {
       </ol>
     </section>
   );
+};
+
+const todoSummary = (detail: AgentSessionDetail | null): string => {
+  const todo = detail?.activeTodo ?? null;
+  if (todo === null) {
+    return "";
+  }
+  const coverage = detail?.planCoverageSummary ?? null;
+  const coverageLabel = todo.kind === "plan_bound"
+    && coverage !== null
+    && coverage.todoListId === todo.todoListId
+    ? coverage.status === "valid"
+      ? "coverage valid"
+      : "coverage blocked"
+    : null;
+  const progress = detail?.executionSummary === undefined || detail.executionSummary === null
+    ? null
+    : `${String(detail.executionSummary.completedStepCount)}/${String(todo.items.length)}`;
+  return [todo.kind, coverageLabel, progress].filter((part): part is string => part !== null).join(" · ");
 };
 
 const statusIcon = (status: string) => {

@@ -231,6 +231,52 @@ pub fn resolve_plan_review(
     let detail = store
         .read_session_detail(&session_id)?
         .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
+    if request.decision.trim() == "approve" {
+        if let Some(coverage) = detail.plan_coverage_summary.as_ref() {
+            if coverage.plan_id == summary.plan_id
+                && coverage.status == "valid"
+                && coverage.todo_list_id.is_some()
+            {
+                emit_store_event(
+                    &store,
+                    &session_id,
+                    summary.runtime_turn_id.as_deref(),
+                    "todo_list_created",
+                    json!({
+                        "sessionId": session_id,
+                        "todoListId": coverage.todo_list_id.clone(),
+                        "executionRunId": coverage.execution_run_id.clone(),
+                        "kind": "plan_bound",
+                        "planId": coverage.plan_id.clone(),
+                        "approvedVersionId": coverage.approved_version_id.clone(),
+                    }),
+                )?;
+            }
+            let event_type = if coverage.status == "valid" {
+                "todo.plan_coverage_validated"
+            } else {
+                "todo.plan_coverage_failed"
+            };
+            emit_store_event(
+                &store,
+                &session_id,
+                summary.runtime_turn_id.as_deref(),
+                event_type,
+                json!({
+                    "sessionId": session_id,
+                    "coverageId": coverage.coverage_id.clone(),
+                    "planId": coverage.plan_id.clone(),
+                    "approvedVersionId": coverage.approved_version_id.clone(),
+                    "todoListId": coverage.todo_list_id.clone(),
+                    "executionRunId": coverage.execution_run_id.clone(),
+                    "status": coverage.status.clone(),
+                    "coveredPlanStepIds": coverage.covered_plan_step_ids.clone(),
+                    "missingPlanStepIds": coverage.missing_plan_step_ids.clone(),
+                    "extraTodoItemIds": coverage.extra_todo_item_ids.clone(),
+                }),
+            )?;
+        }
+    }
     emit_store_event(
         &store,
         &session_id,

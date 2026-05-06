@@ -2,6 +2,7 @@ import { Check, ClipboardList, Loader2, MessageSquare, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type {
+  AgentPlanCoverageSummary,
   AgentPlanningSummary,
   AgentResolvePlanReviewRequest,
   AgentResolvePlanReviewResult,
@@ -35,6 +36,7 @@ export const AiPlanReviewSurface = ({
   void model;
 
   const summary = detail?.planningSummary ?? null;
+  const coverage = matchingCoverage(detail, summary);
   const [actionState, setActionState] = useState<ActionState>(null);
   const [annotationText, setAnnotationText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +82,7 @@ export const AiPlanReviewSurface = ({
         <ClipboardList size={13} aria-hidden="true" />
         <span className="lyra-ai-plan-review-compact-title">{summary.title}</span>
         <span className="lyra-ai-plan-review-compact-state">
-          v{String(summary.versionNumber)} · {statusLabel(summary)}
+          v{String(summary.versionNumber)} · {statusLabel(summary, coverage)}
         </span>
       </div>
       <p className="lyra-ai-plan-review-compact-objective">
@@ -105,6 +107,15 @@ export const AiPlanReviewSurface = ({
             {String(summary.annotations.length)} note{summary.annotations.length === 1 ? "" : "s"}
           </span>
           <small>{summary.annotations.at(-1)?.note}</small>
+        </div>
+      )}
+      {coverage === null ? null : (
+        <div
+          className="lyra-ai-plan-review-compact-coverage"
+          data-status={coverage.status}
+        >
+          <span>{coverageTitle(coverage)}</span>
+          <small>{coverageDetail(coverage)}</small>
         </div>
       )}
       {error === null ? null : (
@@ -158,9 +169,25 @@ export const AiPlanReviewSurface = ({
   );
 };
 
-const statusLabel = (summary: AgentPlanningSummary): string => {
+const matchingCoverage = (
+  detail: AgentSessionDetail | null,
+  summary: AgentPlanningSummary | null
+): AgentPlanCoverageSummary | null => {
+  const coverage = detail?.planCoverageSummary ?? null;
+  if (summary === null || coverage === null) {
+    return null;
+  }
+  return coverage.planId === summary.planId && coverage.approvedVersionId === summary.activeVersionId
+    ? coverage
+    : null;
+};
+
+const statusLabel = (
+  summary: AgentPlanningSummary,
+  coverage: AgentPlanCoverageSummary | null
+): string => {
   if (summary.panelStatus === "approved" || summary.status === "approved") {
-    return "Approved";
+    return coverage === null ? "Approved" : `Approved · ${coverageShortLabel(coverage)}`;
   }
   if (summary.panelStatus === "rejected" || summary.status === "rejected") {
     return "Rejected";
@@ -169,6 +196,25 @@ const statusLabel = (summary: AgentPlanningSummary): string => {
     return "Superseded";
   }
   return "Pending review";
+};
+
+const coverageShortLabel = (coverage: AgentPlanCoverageSummary): string =>
+  coverage.status === "valid" ? "Coverage valid" : "Coverage blocked";
+
+const coverageTitle = (coverage: AgentPlanCoverageSummary): string =>
+  coverage.status === "valid" ? "Coverage valid" : "Coverage blocked";
+
+const coverageDetail = (coverage: AgentPlanCoverageSummary): string => {
+  if (coverage.status === "valid") {
+    return `${String(coverage.coveredPlanStepIds.length)} step${coverage.coveredPlanStepIds.length === 1 ? "" : "s"} mapped to Todo`;
+  }
+  if (coverage.missingPlanStepIds.length > 0) {
+    return `Missing ${coverage.missingPlanStepIds.slice(0, 3).join(", ")}`;
+  }
+  if (coverage.extraTodoItemIds.length > 0) {
+    return `Extra scope ${coverage.extraTodoItemIds.slice(0, 3).join(", ")}`;
+  }
+  return coverage.status.replaceAll("_", " ");
 };
 
 const planSteps = (summary: AgentPlanningSummary | null): readonly PlanStep[] => {

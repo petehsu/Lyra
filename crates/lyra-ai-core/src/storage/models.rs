@@ -159,6 +159,8 @@ pub struct AgentSessionDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub planning_summary: Option<AgentPlanningSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_coverage_summary: Option<AgentPlanCoverageSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub active_todo: Option<AgentExecutionTodoList>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_summary: Option<AgentExecutionSummary>,
@@ -210,6 +212,31 @@ pub struct CreatedPlanRefs {
     pub plan_id: String,
     pub version_id: String,
     pub panel_id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPlanCoverageSummary {
+    pub coverage_id: String,
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_turn_id: Option<String>,
+    pub plan_id: String,
+    pub approved_version_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub todo_list_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_run_id: Option<String>,
+    pub status: String,
+    pub covered_plan_step_ids: Vec<String>,
+    pub missing_plan_step_ids: Vec<String>,
+    pub extra_todo_item_ids: Vec<String>,
+    pub risk_mismatches: Vec<Value>,
+    pub verification_gaps: Vec<String>,
+    pub missing_reference_ids: Vec<String>,
+    pub mismatched_reference_ids: Vec<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

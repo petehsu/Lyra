@@ -299,6 +299,7 @@ impl AiStore {
         let runtime_events = self.read_runtime_events(session_id)?;
         let pending_interactions = self.read_pending_approval_interactions(session_id)?;
         let planning_summary = self.read_planning_summary(session_id)?;
+        let plan_coverage_summary = self.read_plan_coverage_summary(session_id)?;
         let active_todo = self.read_active_todo_list(session_id)?;
         let execution_summary = self.read_execution_summary(session_id)?;
         let verification_summary = self.read_verification_summary(session_id)?;
@@ -311,6 +312,7 @@ impl AiStore {
             messages,
             runtime_events,
             planning_summary,
+            plan_coverage_summary,
             active_todo,
             execution_summary,
             verification_summary,

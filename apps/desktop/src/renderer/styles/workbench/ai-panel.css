@@ -1970,6 +1970,38 @@
   gap: var(--lyra-unit-6);
 }
 
+.lyra-ai-plan-review-compact-coverage {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--lyra-unit-8);
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-16);
+}
+
+.lyra-ai-plan-review-compact-coverage span {
+  color: var(--lyra-success-500, #4f9d69);
+  font-weight: var(--lyra-font-weight-semibold);
+}
+
+.lyra-ai-plan-review-compact-coverage[data-status="missing_plan_step"] span,
+.lyra-ai-plan-review-compact-coverage[data-status="extra_scope"] span,
+.lyra-ai-plan-review-compact-coverage[data-status="risk_mismatch"] span,
+.lyra-ai-plan-review-compact-coverage[data-status="verification_missing"] span,
+.lyra-ai-plan-review-compact-coverage[data-status="reference_missing"] span,
+.lyra-ai-plan-review-compact-coverage[data-status="reference_mismatch"] span {
+  color: var(--lyra-warning-500, #b8872b);
+}
+
+.lyra-ai-plan-review-compact-coverage small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .lyra-ai-plan-review-compact-error {
   color: var(--lyra-danger-500, #d95c4f);
   font-size: var(--lyra-text-size-11);

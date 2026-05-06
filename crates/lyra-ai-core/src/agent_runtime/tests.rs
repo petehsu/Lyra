@@ -179,7 +179,16 @@ fn resolve_plan_review_updates_status_and_annotations() {
         title: "Plan".to_string(),
         objective_summary: "Objective".to_string(),
         source: None,
-        version: json!({ "steps": [{ "title": "Do work" }] }),
+        version: json!({
+            "steps": [{
+                "id": "plan-step-1",
+                "title": "Do work",
+                "expectedTools": ["/tools/filesystem/apply_patch"],
+                "completionCriteria": ["Patch applied"],
+                "riskLevel": "medium",
+                "sourceReferenceIds": ["ref-1"]
+            }]
+        }),
     })
     .expect("create plan");
 
@@ -215,6 +224,74 @@ fn resolve_plan_review_updates_status_and_annotations() {
     assert_eq!(approved.status, "approved");
     assert_eq!(summary.status, "approved");
     assert_eq!(summary.panel_status, "approved");
+    let coverage = approved
+        .detail
+        .plan_coverage_summary
+        .as_ref()
+        .expect("coverage");
+    assert_eq!(coverage.status, "valid");
+    assert_eq!(coverage.plan_id, created.plan_id);
+    assert_eq!(coverage.approved_version_id, created.version_id);
+    assert_eq!(coverage.covered_plan_step_ids, vec!["plan-step-1"]);
+    assert!(coverage.todo_list_id.is_some());
+    assert!(coverage.execution_run_id.is_some());
+    let todo = approved.detail.active_todo.as_ref().expect("plan todo");
+    assert_eq!(todo.kind, "plan_bound");
+    assert_eq!(todo.items.len(), 1);
+    assert_eq!(todo.items[0].source["planStepId"], "plan-step-1");
+    assert_eq!(
+        todo.items[0].expected_tools,
+        vec!["/tools/filesystem/apply_patch"]
+    );
+    assert!(approved.detail.runtime_events.iter().any(|event| {
+        event.phase == "todo.plan_coverage_validated"
+            && event.payload["coverageId"] == coverage.coverage_id
+    }));
+}
+
+#[test]
+fn approving_plan_with_invalid_steps_records_failed_coverage_without_todo() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let storage_root = temp.path().to_string_lossy().to_string();
+    let store = AiStore::open(Some(&storage_root)).expect("store");
+    let workspace = temp.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let (session_id, _turn_id) = seed_turn(&store, workspace.to_string_lossy().as_ref());
+    let created = create_plan(AgentCreatePlanRequest {
+        storage: storage_request(&storage_root),
+        session_id: session_id.clone(),
+        title: "Broken plan".to_string(),
+        objective_summary: "Missing executable steps".to_string(),
+        source: None,
+        version: json!({ "steps": [{ "id": "step-without-title" }] }),
+    })
+    .expect("create plan");
+
+    let approved = resolve_plan_review(AgentResolvePlanReviewRequest {
+        storage: storage_request(&storage_root),
+        session_id,
+        plan_id: created.plan_id.clone(),
+        version_id: created.version_id.clone(),
+        decision: "approve".to_string(),
+        annotation_text: None,
+    })
+    .expect("approve invalid plan");
+
+    assert_eq!(approved.status, "approved");
+    assert!(approved.detail.active_todo.is_none());
+    assert!(approved.detail.execution_summary.is_none());
+    let coverage = approved
+        .detail
+        .plan_coverage_summary
+        .as_ref()
+        .expect("coverage");
+    assert_eq!(coverage.status, "missing_plan_step");
+    assert_eq!(coverage.missing_plan_step_ids, vec!["step-without-title"]);
+    assert!(coverage.todo_list_id.is_none());
+    assert!(approved.detail.runtime_events.iter().any(|event| {
+        event.phase == "todo.plan_coverage_failed"
+            && event.payload["coverageId"] == coverage.coverage_id
+    }));
 }
 
 #[test]

@@ -24,6 +24,7 @@ export type {
   AgentPendingInteractionPayload,
   AgentPendingInteractionStatus,
   AgentPlanningSummary,
+  AgentPlanCoverageSummary,
   AgentPlanReviewAnnotationSummary,
   AgentPlanArtifact,
   AgentPatchChangedFile,

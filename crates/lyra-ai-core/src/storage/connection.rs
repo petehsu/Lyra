@@ -62,6 +62,7 @@ impl AiStore {
                 | "plan_version"
                 | "plan_review_panel"
                 | "plan_review_annotation"
+                | "plan_coverage_report"
                 | "execution_todo_list"
                 | "todo_item"
                 | "execution_run"
