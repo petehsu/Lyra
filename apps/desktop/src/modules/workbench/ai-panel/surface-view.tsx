@@ -2,6 +2,7 @@ import { AgentComposer } from "./agent-composer";
 import type { AgentComposerFileAttachment } from "./agent-composer";
 import { resolveAiPanelEmptyGreetingCandidates } from "./empty-greeting";
 import { ExecutionTodoList } from "./execution-todo-list";
+import { DeliveryStatusRow } from "./delivery-status-row";
 import { PendingApprovalList } from "./pending-approval-list";
 import { PatchReviewStrip } from "./patch-review-strip";
 import type { AiPanelSurfaceTextLabels } from "./surface-model";
@@ -141,6 +142,8 @@ export const AiPanelSurfaceView = ({
         <ExecutionTodoList detail={state.activeDetail} />
 
         <VerificationSummaryList detail={state.activeDetail} />
+
+        <DeliveryStatusRow detail={state.activeDetail} />
 
         <PendingApprovalList
           detail={state.activeDetail}

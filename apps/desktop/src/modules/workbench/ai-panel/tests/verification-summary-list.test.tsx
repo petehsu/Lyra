@@ -13,7 +13,7 @@ describe("VerificationSummaryList", () => {
     expect(screen.getByText("Passed · . · exit 0 · 1 evidence ref")).toBeDefined();
     expect(screen.getByText("npm --prefix apps/desktop run test -- ai-panel")).toBeDefined();
     expect(screen.getByText("Failed · apps/desktop · exit 1")).toBeDefined();
-    expect(screen.getByText("failed · proof pending")).toBeDefined();
+    expect(screen.getByText("failed · proof failed")).toBeDefined();
   });
 });
 
@@ -69,15 +69,30 @@ const createDetail = (): AgentSessionDetail => ({
       },
     ],
   },
+  completionAudit: {
+    completionAuditId: "completion_audit_1",
+    sessionId: "session-1",
+    status: "failed",
+    missingTodoItemIds: [],
+    missingEvidenceRefs: [],
+    failedVerificationRunIds: ["verification_run_2"],
+    blockedVerificationRunIds: [],
+    notRunVerificationRunIds: [],
+    pendingApprovalTicketIds: [],
+    residualRisks: [],
+    summary: "Completion audit failed.",
+    updatedAt: 4,
+  },
   deliveryProof: {
     deliveryProofId: "delivery_proof_1",
     sessionId: "session-1",
-    status: "pending_verification",
+    status: "failed",
     verificationRunIds: ["verification_run_1", "verification_run_2"],
+    completionAuditId: "completion_audit_1",
     artifactRefs: ["artifact_1"],
     evidenceRefs: ["evidence_1"],
     unresolvedRisks: {},
-    summary: "Delivery proof is pending verification.",
+    summary: "Delivery proof failed. Completion audit failed.",
     updatedAt: 4,
   },
 });

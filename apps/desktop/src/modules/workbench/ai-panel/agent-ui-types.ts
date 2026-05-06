@@ -9,6 +9,7 @@ export type {
   AgentCreateTodoRequest,
   AgentCreateTodoResult,
   AgentCreateSessionRequest,
+  AgentCompletionAuditSummary,
   AgentExecutionSummary,
   AgentExecutionTodoList,
   AgentDeliveryProofSummary,

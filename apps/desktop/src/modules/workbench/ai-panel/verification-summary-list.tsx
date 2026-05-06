@@ -106,4 +106,12 @@ const runDetail = (run: AgentVerificationRunSummary): string => {
 };
 
 const deliveryProofLabel = (proof: AgentDeliveryProofSummary): string =>
-  proof.status === "ready" ? "proof ready" : "proof pending";
+  proof.status === "ready"
+    ? "proof ready"
+    : proof.status === "partial"
+      ? "proof partial"
+      : proof.status === "failed"
+        ? "proof failed"
+        : proof.status === "blocked"
+          ? "proof blocked"
+          : "proof pending";

@@ -741,6 +741,18 @@ fn run_turn_worker_inner(
             "I could not produce a final response from the model for this turn.".to_string();
     }
     emit_runtime_state(store, session_id, turn_id, "completion_evaluating")?;
+    if let Some(audit) =
+        store.evaluate_completion_audit_and_delivery_proof(session_id, Some(turn_id))?
+    {
+        let detail = store.read_session_detail(session_id)?;
+        emit_completion_projection_events(store, session_id, Some(turn_id), detail.as_ref())?;
+        if let Some(projected) = detail
+            .as_ref()
+            .and_then(|detail| delivery_gate_response(&audit, detail.delivery_proof.as_ref()))
+        {
+            assistant_text = projected;
+        }
+    }
     let text_event = store.append_event(
         session_id,
         Some(turn_id),
@@ -914,6 +926,9 @@ fn run_tool_operation(
     )?;
     emit_verification_projection_events(store, session_id, Some(turn_id), &result)?;
     record_todo_from_tool_result(store, session_id, turn_id, operation, &result)?;
+    store.evaluate_completion_audit_and_delivery_proof(session_id, Some(turn_id))?;
+    let detail = store.read_session_detail(session_id)?;
+    emit_completion_projection_events(store, session_id, Some(turn_id), detail.as_ref())?;
     messages.push(ChatMessage {
         role: "assistant".to_string(),
         content: serde_json::to_string(operation)?,
@@ -968,6 +983,80 @@ fn emit_verification_projection_events(
         )?;
     }
     Ok(())
+}
+
+fn emit_completion_projection_events(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: Option<&str>,
+    detail: Option<&AgentSessionDetail>,
+) -> Result<()> {
+    let Some(detail) = detail else {
+        return Ok(());
+    };
+    if let Some(audit) = detail.completion_audit.as_ref() {
+        emit_store_event(
+            store,
+            session_id,
+            turn_id,
+            "completion_audit_updated",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "completionAuditId": audit.completion_audit_id.clone(),
+                "status": audit.status.clone(),
+                "summary": audit.summary.clone(),
+                "missingTodoItemIds": audit.missing_todo_item_ids.clone(),
+                "failedVerificationRunIds": audit.failed_verification_run_ids.clone(),
+                "blockedVerificationRunIds": audit.blocked_verification_run_ids.clone(),
+                "notRunVerificationRunIds": audit.not_run_verification_run_ids.clone(),
+                "pendingApprovalTicketIds": audit.pending_approval_ticket_ids.clone(),
+            }),
+        )?;
+    }
+    if let Some(proof) = detail.delivery_proof.as_ref() {
+        emit_store_event(
+            store,
+            session_id,
+            turn_id,
+            "delivery_proof_updated",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "deliveryProofId": proof.delivery_proof_id.clone(),
+                "completionAuditId": proof.completion_audit_id.clone(),
+                "status": proof.status.clone(),
+                "summary": proof.summary.clone(),
+                "verificationRunIds": proof.verification_run_ids.clone(),
+            }),
+        )?;
+    }
+    Ok(())
+}
+
+fn delivery_gate_response(
+    audit: &crate::storage::AgentCompletionAuditSummary,
+    proof: Option<&crate::storage::AgentDeliveryProofSummary>,
+) -> Option<String> {
+    let proof_status = proof.map(|proof| proof.status.as_str()).unwrap_or("");
+    match audit.status.as_str() {
+        "failed" => Some(format!(
+            "Delivery failed: {} Failed verification runs: {}. This cannot be reported as complete until the failure is repaired or explicitly accepted.",
+            audit.summary,
+            audit.failed_verification_run_ids.join(", ")
+        )),
+        "blocked" => Some(format!(
+            "Delivery blocked: {} Pending approvals: {}. Missing or blocked work must be resolved before final delivery.",
+            audit.summary,
+            audit.pending_approval_ticket_ids.join(", ")
+        )),
+        "partial_allowed" if proof_status == "partial" => Some(format!(
+            "Partial delivery: {} Not-run verification records: {}. Residual risk is recorded in the delivery proof.",
+            audit.summary,
+            audit.not_run_verification_run_ids.join(", ")
+        )),
+        _ => None,
+    }
 }
 
 fn emit_runtime_state(store: &AiStore, session_id: &str, turn_id: &str, state: &str) -> Result<()> {
@@ -1914,6 +2003,75 @@ mod tests {
                 .expect("delivery proof")
                 .status,
             "ready"
+        );
+        assert_eq!(
+            detail
+                .completion_audit
+                .as_ref()
+                .expect("completion audit")
+                .status,
+            "passed"
+        );
+    }
+
+    #[test]
+    fn failed_verification_blocks_model_success_final_text() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store =
+            AiStore::open(Some(temp.path().join("ai").to_string_lossy().as_ref())).expect("store");
+        let (session_id, turn_id) = seed_turn(&store, temp.path().to_string_lossy().as_ref());
+        seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_SHELL_RUN_COMMAND);
+        let mut responses = vec![
+            r#"{"schemaVersion":"v1","kind":"tool_operation","opId":"op-shell-fail","op":"run","path":"/tools/shell/run_command","args":{"mode":"argv","argv":["sh","-c","exit 7"],"cwd":"."}}"#.to_string(),
+            "Done. Everything passed.".to_string(),
+        ]
+        .into_iter();
+
+        run_turn_worker_inner(
+            &store,
+            test_config(),
+            &session_id,
+            &turn_id,
+            None,
+            PermissionMode::FullAccess,
+            Arc::new(AtomicBool::new(false)),
+            |_config, _messages, _cancel| {
+                Ok(ModelResponse {
+                    text: responses.next().expect("response"),
+                    usage: None,
+                })
+            },
+        )
+        .expect("worker");
+
+        let detail = store
+            .read_session_detail(&session_id)
+            .expect("detail")
+            .expect("session");
+        let assistant_messages = detail
+            .messages
+            .iter()
+            .filter(|message| message.role == "assistant")
+            .map(|message| message.content.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(assistant_messages.len(), 1);
+        assert!(assistant_messages[0].contains("Delivery failed"));
+        assert!(assistant_messages[0].contains("cannot be reported as complete"));
+        assert_eq!(
+            detail
+                .completion_audit
+                .as_ref()
+                .expect("completion audit")
+                .status,
+            "failed"
+        );
+        assert_eq!(
+            detail
+                .delivery_proof
+                .as_ref()
+                .expect("delivery proof")
+                .status,
+            "failed"
         );
     }
 

@@ -216,12 +216,29 @@ export type AgentDeliveryProofSummary = {
   readonly sessionId: AgentSessionId;
   readonly runtimeTurnId?: AgentTurnId;
   readonly executionRunId?: string;
-  readonly status: "ready" | "pending_verification" | "blocked" | "failed" | string;
+  readonly status: "ready" | "partial" | "pending_verification" | "blocked" | "failed" | string;
   readonly verificationRunIds: readonly string[];
   readonly completionAuditId?: string;
   readonly artifactRefs: readonly string[];
   readonly evidenceRefs: readonly string[];
   readonly unresolvedRisks: unknown;
+  readonly summary: string;
+  readonly updatedAt: number;
+};
+
+export type AgentCompletionAuditSummary = {
+  readonly completionAuditId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId?: AgentTurnId;
+  readonly executionRunId?: string;
+  readonly status: "passed" | "partial_allowed" | "blocked" | "failed" | string;
+  readonly missingTodoItemIds: readonly string[];
+  readonly missingEvidenceRefs: readonly string[];
+  readonly failedVerificationRunIds: readonly string[];
+  readonly blockedVerificationRunIds: readonly string[];
+  readonly notRunVerificationRunIds: readonly string[];
+  readonly pendingApprovalTicketIds: readonly string[];
+  readonly residualRisks: unknown;
   readonly summary: string;
   readonly updatedAt: number;
 };
@@ -235,6 +252,7 @@ export type AgentSessionDetail = {
   readonly activeTodo?: AgentExecutionTodoList | null;
   readonly executionSummary?: AgentExecutionSummary | null;
   readonly verificationSummary?: AgentVerificationSummary | null;
+  readonly completionAudit?: AgentCompletionAuditSummary | null;
   readonly deliveryProof?: AgentDeliveryProofSummary | null;
 };
 
@@ -475,7 +493,9 @@ export type AgentRuntimeEventType =
   | "todo_item_updated"
   | "execution_step_updated"
   | "verification_plan_created"
-  | "verification_run_updated";
+  | "verification_run_updated"
+  | "completion_audit_updated"
+  | "delivery_proof_updated";
 
 export type AgentRuntimeStreamEvent = {
   readonly schemaVersion: "v1" | string;

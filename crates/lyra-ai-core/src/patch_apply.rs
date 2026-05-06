@@ -237,6 +237,14 @@ pub fn apply_agent_patch(request: AgentApplyPatchRequest) -> Result<AgentApplyPa
                 &operation,
                 &result,
             )?;
+            store.evaluate_completion_audit_and_delivery_proof(&session_id, turn_id.as_deref())?;
+            let detail = store.read_session_detail(&session_id)?;
+            emit_completion_projection_events(
+                &store,
+                &session_id,
+                turn_id.as_deref(),
+                detail.as_ref(),
+            )?;
             Ok(AgentApplyPatchResult {
                 session_id,
                 turn_id,
@@ -276,6 +284,14 @@ pub fn apply_agent_patch(request: AgentApplyPatchRequest) -> Result<AgentApplyPa
                 turn_id.as_deref(),
                 &operation,
                 &result,
+            )?;
+            store.evaluate_completion_audit_and_delivery_proof(&session_id, turn_id.as_deref())?;
+            let detail = store.read_session_detail(&session_id)?;
+            emit_completion_projection_events(
+                &store,
+                &session_id,
+                turn_id.as_deref(),
+                detail.as_ref(),
             )?;
             Err(error)
         }
@@ -1708,6 +1724,9 @@ fn append_result_and_emit_event(
     )?;
     emit_verification_projection_events(store, session_id, turn_id, &result)?;
     record_todo_from_patch_result(store, session_id, turn_id, operation, &result)?;
+    store.evaluate_completion_audit_and_delivery_proof(session_id, turn_id)?;
+    let detail = store.read_session_detail(session_id)?;
+    emit_completion_projection_events(store, session_id, turn_id, detail.as_ref())?;
     Ok(result)
 }
 
@@ -1750,6 +1769,55 @@ fn emit_verification_projection_events(
                 "status": metadata.get("status").cloned().unwrap_or(Value::Null),
                 "artifactId": metadata.get("artifactId").cloned().unwrap_or(Value::Null),
                 "evidenceId": metadata.get("evidenceId").cloned().unwrap_or(Value::Null),
+            }),
+        )?;
+    }
+    Ok(())
+}
+
+fn emit_completion_projection_events(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: Option<&str>,
+    detail: Option<&crate::storage::AgentSessionDetail>,
+) -> Result<()> {
+    let Some(detail) = detail else {
+        return Ok(());
+    };
+    if let Some(audit) = detail.completion_audit.as_ref() {
+        emit_apply_event(
+            store,
+            session_id,
+            turn_id,
+            "completion_audit_updated",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "completionAuditId": audit.completion_audit_id.clone(),
+                "status": audit.status.clone(),
+                "summary": audit.summary.clone(),
+                "missingTodoItemIds": audit.missing_todo_item_ids.clone(),
+                "failedVerificationRunIds": audit.failed_verification_run_ids.clone(),
+                "blockedVerificationRunIds": audit.blocked_verification_run_ids.clone(),
+                "notRunVerificationRunIds": audit.not_run_verification_run_ids.clone(),
+                "pendingApprovalTicketIds": audit.pending_approval_ticket_ids.clone(),
+            }),
+        )?;
+    }
+    if let Some(proof) = detail.delivery_proof.as_ref() {
+        emit_apply_event(
+            store,
+            session_id,
+            turn_id,
+            "delivery_proof_updated",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "deliveryProofId": proof.delivery_proof_id.clone(),
+                "completionAuditId": proof.completion_audit_id.clone(),
+                "status": proof.status.clone(),
+                "summary": proof.summary.clone(),
+                "verificationRunIds": proof.verification_run_ids.clone(),
             }),
         )?;
     }
@@ -2387,7 +2455,22 @@ mod tests {
             .expect("verification plan");
         assert_eq!(verification.status, "not_run");
         assert_eq!(verification.not_run_count, 1);
-        assert!(detail.delivery_proof.is_some());
+        assert_eq!(
+            detail
+                .completion_audit
+                .as_ref()
+                .expect("completion audit")
+                .status,
+            "partial_allowed"
+        );
+        assert_eq!(
+            detail
+                .delivery_proof
+                .as_ref()
+                .expect("delivery proof")
+                .status,
+            "partial"
+        );
     }
 
     #[test]
