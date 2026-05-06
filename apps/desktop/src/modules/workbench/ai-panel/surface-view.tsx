@@ -1,6 +1,7 @@
 import { AgentComposer } from "./agent-composer";
 import type { AgentComposerFileAttachment } from "./agent-composer";
 import { resolveAiPanelEmptyGreetingCandidates } from "./empty-greeting";
+import { ExecutionTodoList } from "./execution-todo-list";
 import { PendingApprovalList } from "./pending-approval-list";
 import { PatchReviewStrip } from "./patch-review-strip";
 import type { AiPanelSurfaceTextLabels } from "./surface-model";
@@ -135,6 +136,8 @@ export const AiPanelSurfaceView = ({
             resolveApproval={desktopApi?.ai === undefined ? undefined : actions.resolveApproval}
           />
         </div>
+
+        <ExecutionTodoList detail={state.activeDetail} />
 
         <PendingApprovalList
           detail={state.activeDetail}

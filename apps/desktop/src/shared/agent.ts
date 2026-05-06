@@ -126,12 +126,67 @@ export type AgentRuntimeEvent = {
   readonly timestamp: number;
 };
 
+export type AgentTodoStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "skipped"
+  | "active"
+  | "running"
+  | string;
+
+export type AgentTodoItem = {
+  readonly todoItemId: string;
+  readonly todoListId: string;
+  readonly status: AgentTodoStatus;
+  readonly title: string;
+  readonly actions: readonly string[];
+  readonly expectedTools: readonly string[];
+  readonly riskLevel: string;
+  readonly completionCriteria: readonly string[];
+  readonly evidenceRefs: readonly string[];
+  readonly blockers: unknown;
+  readonly source: unknown;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
+export type AgentExecutionTodoList = {
+  readonly todoListId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId?: AgentTurnId;
+  readonly kind: "mini" | "plan_bound" | "recovery" | string;
+  readonly status: AgentTodoStatus;
+  readonly title: string;
+  readonly source: unknown;
+  readonly items: readonly AgentTodoItem[];
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
+export type AgentExecutionSummary = {
+  readonly executionRunId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId?: AgentTurnId;
+  readonly todoListId: string;
+  readonly status: AgentTodoStatus;
+  readonly stepCount: number;
+  readonly completedStepCount: number;
+  readonly failedStepCount: number;
+  readonly blockedStepCount: number;
+  readonly updatedAt: number;
+};
+
 export type AgentSessionDetail = {
   readonly session: AgentSession;
   readonly pendingInteractions: readonly AgentPendingInteraction[];
   readonly turns: readonly AgentTurn[];
   readonly messages: readonly AgentMessage[];
   readonly runtimeEvents: readonly AgentRuntimeEvent[];
+  readonly activeTodo?: AgentExecutionTodoList | null;
+  readonly executionSummary?: AgentExecutionSummary | null;
 };
 
 export type AgentQuestionOption = {
@@ -263,6 +318,30 @@ export type AgentCancelTurnResult = {
   readonly cancelled: boolean;
 };
 
+export type AgentCreateTodoItemInput = {
+  readonly title: string;
+  readonly actions?: readonly string[];
+  readonly expectedTools?: readonly string[];
+  readonly riskLevel?: string;
+  readonly completionCriteria?: readonly string[];
+  readonly source?: unknown;
+};
+
+export type AgentCreateTodoRequest = {
+  readonly sessionId: string;
+  readonly kind: "mini" | "plan_bound" | "recovery" | string;
+  readonly title: string;
+  readonly source?: unknown;
+  readonly items: readonly AgentCreateTodoItemInput[];
+};
+
+export type AgentCreateTodoResult = {
+  readonly sessionId: string;
+  readonly todoListId: string;
+  readonly executionRunId: string;
+  readonly detail: AgentSessionDetail;
+};
+
 export type AgentReadArtifactRequest = {
   readonly sessionId: string;
   readonly artifactId?: string;
@@ -342,7 +421,10 @@ export type AgentRuntimeEventType =
   | "tool_operation_started"
   | "tool_operation_completed"
   | "tool_operation_failed"
-  | "approval_ticket_resolved";
+  | "approval_ticket_resolved"
+  | "todo_list_created"
+  | "todo_item_updated"
+  | "execution_step_updated";
 
 export type AgentRuntimeStreamEvent = {
   readonly schemaVersion: "v1" | string;

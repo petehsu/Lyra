@@ -1,7 +1,7 @@
 use crate::events::emit_event;
 use crate::storage::{
     json_string, new_id, sha256_hex, trim_to_string, AiStore, DiffArtifactBlobRecord,
-    PatchFileBackupRecord, PatchFileBackupRef, StorageRequest,
+    PatchFileBackupRecord, PatchFileBackupRef, StorageRequest, TodoUpdateRecord,
 };
 use crate::tool_runtime::catalog::{
     parse_args, ApplyPatchArgs, RollbackPatchArgs, TOOL_FS_APPLY_PATCH, TOOL_FS_ROLLBACK_PATCH,
@@ -226,6 +226,13 @@ pub fn apply_agent_patch(request: AgentApplyPatchRequest) -> Result<AgentApplyPa
                     "result": result_payload(&result, &blob.result_ref, blob.content_bytes, &blob.content_preview),
                 }),
             )?;
+            record_todo_from_patch_result(
+                &store,
+                &session_id,
+                turn_id.as_deref(),
+                &operation,
+                &result,
+            )?;
             Ok(AgentApplyPatchResult {
                 session_id,
                 turn_id,
@@ -258,6 +265,13 @@ pub fn apply_agent_patch(request: AgentApplyPatchRequest) -> Result<AgentApplyPa
                     "operation": operation_payload(&operation),
                     "result": result_payload(&result, &blob.result_ref, blob.content_bytes, &blob.content_preview),
                 }),
+            )?;
+            record_todo_from_patch_result(
+                &store,
+                &session_id,
+                turn_id.as_deref(),
+                &operation,
+                &result,
             )?;
             Err(error)
         }
@@ -1605,7 +1619,129 @@ fn append_result_and_emit_event(
             "result": result_payload(&result, &blob.result_ref, blob.content_bytes, &blob.content_preview),
         }),
     )?;
+    record_todo_from_patch_result(store, session_id, turn_id, operation, &result)?;
     Ok(result)
+}
+
+fn record_todo_from_patch_result(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: Option<&str>,
+    operation: &ToolOperationEnvelope,
+    result: &ToolResultEnvelope,
+) -> Result<()> {
+    let tool_path = operation.path.as_str();
+    if matches!(tool_path, TOOL_FS_APPLY_PATCH | TOOL_FS_ROLLBACK_PATCH) == false {
+        return Ok(());
+    }
+    let (item_status, step_status, blocker) = match result.status {
+        ToolResultStatus::Completed => ("completed", "completed", Value::Null),
+        ToolResultStatus::Failed => {
+            let kind = if result.error_code.as_deref() == Some(TOOL_APPROVAL_DENIED) {
+                "approval_denied"
+            } else {
+                "tool_failed"
+            };
+            (
+                "failed",
+                "failed",
+                json!({
+                    "kind": kind,
+                    "toolPath": tool_path,
+                    "approvalTicketId": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("approvalTicketId"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    "artifactId": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("artifactId"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    "patchRef": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("patchRef"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    "errorCode": result.error_code,
+                    "errorMessage": result.error_message,
+                }),
+            )
+        }
+    };
+    let metadata = result.metadata.as_ref().unwrap_or(&Value::Null);
+    let evidence_refs = collect_string_metadata_refs(metadata, &["evidenceId"]);
+    let artifact_refs =
+        collect_string_metadata_refs(metadata, &["artifactId", "rolledBackArtifactId"]);
+    let Some(record) = store.record_tool_execution_step(
+        session_id,
+        turn_id.unwrap_or_default(),
+        tool_path,
+        &operation.op_id,
+        item_status,
+        step_status,
+        evidence_refs,
+        artifact_refs,
+        blocker,
+    )?
+    else {
+        return Ok(());
+    };
+    emit_todo_update_events(store, session_id, turn_id, &record)
+}
+
+fn collect_string_metadata_refs(metadata: &Value, keys: &[&str]) -> Vec<String> {
+    keys.iter()
+        .filter_map(|key| metadata.get(*key).and_then(Value::as_str))
+        .filter(|value| value.trim().is_empty() == false)
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn emit_todo_update_events(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: Option<&str>,
+    record: &TodoUpdateRecord,
+) -> Result<()> {
+    emit_apply_event(
+        store,
+        session_id,
+        turn_id,
+        "todo_item_updated",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "todoListId": record.todo_list_id,
+            "todoItemId": record.todo_item_id,
+            "status": record.status,
+            "title": record.title,
+            "evidenceRefs": record.evidence_refs,
+            "artifactRefs": record.artifact_refs,
+            "blocker": record.blocker
+        }),
+    )?;
+    emit_apply_event(
+        store,
+        session_id,
+        turn_id,
+        "execution_step_updated",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "todoListId": record.todo_list_id,
+            "todoItemId": record.todo_item_id,
+            "executionRunId": record.execution_run_id,
+            "executionStepId": record.execution_step_id,
+            "status": record.step_status,
+            "evidenceRefs": record.evidence_refs,
+            "artifactRefs": record.artifact_refs,
+            "blocker": record.blocker
+        }),
+    )
 }
 
 fn emit_approval_resolved_event(
@@ -1655,7 +1791,7 @@ fn _tool_result_message_for_debug(result: &ToolResultEnvelope) -> Result<String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{now_ms, AgentSession};
+    use crate::storage::{now_ms, AgentSession, CreateTodoItemInput};
     use crate::tool_runtime::operation::{
         tool_error_code, ToolResultStatus, TOOL_PATH_OUTSIDE_WORKSPACE, TOOL_UNSUPPORTED_ENCODING,
     };
@@ -1735,6 +1871,26 @@ mod tests {
         }
     }
 
+    fn seed_todo_for_tool(store: &AiStore, session_id: &str, turn_id: &str, tool_path: &str) {
+        store
+            .create_execution_todo_list(
+                session_id,
+                Some(turn_id),
+                "mini",
+                "Execution checklist",
+                json!({ "type": "test" }),
+                &[CreateTodoItemInput {
+                    title: format!("Run {tool_path}"),
+                    actions: Vec::new(),
+                    expected_tools: vec![tool_path.to_string()],
+                    risk_level: "medium".to_string(),
+                    completion_criteria: Vec::new(),
+                    source: json!({}),
+                }],
+            )
+            .expect("todo");
+    }
+
     fn tool_context(temp: &tempfile::TempDir) -> ToolExecutionContext {
         ToolExecutionContext {
             workspace_root: Some(temp.path().to_string_lossy().to_string()),
@@ -1760,6 +1916,7 @@ mod tests {
         let store = AiStore::open(Some(storage_root.as_str())).expect("store");
         let session_id = seed_session(&store, temp.path().to_string_lossy().as_ref());
         let artifact_id = seed_diff_artifact(&store, &session_id);
+        seed_todo_for_tool(&store, &session_id, "turn-ui", TOOL_FS_APPLY_PATCH);
 
         let result = apply_agent_patch(AgentApplyPatchRequest {
             storage: StorageRequest {
@@ -1806,10 +1963,26 @@ mod tests {
             .read_session_detail(&session_id)
             .expect("detail")
             .expect("session");
+        assert_eq!(
+            detail.active_todo.as_ref().expect("todo").items[0].status,
+            "completed"
+        );
+        assert_eq!(
+            detail
+                .execution_summary
+                .as_ref()
+                .expect("summary")
+                .completed_step_count,
+            1
+        );
         assert!(detail.runtime_events.iter().any(|event| {
             event.phase == "tool_operation_completed"
                 && event.payload["operation"]["path"] == TOOL_FS_APPLY_PATCH
         }));
+        assert!(detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "todo_item_updated"));
     }
 
     #[test]
@@ -1954,6 +2127,7 @@ mod tests {
         let store = AiStore::open(Some(storage_root.as_str())).expect("store");
         let session_id = seed_session(&store, temp.path().to_string_lossy().as_ref());
         let artifact_id = seed_diff_artifact(&store, &session_id);
+        seed_todo_for_tool(&store, &session_id, "turn-model", TOOL_FS_APPLY_PATCH);
         let operation = apply_operation(
             "op-apply",
             &ApplyPatchArgs {
@@ -2013,6 +2187,7 @@ mod tests {
         let store = AiStore::open(Some(storage_root.as_str())).expect("store");
         let session_id = seed_session(&store, temp.path().to_string_lossy().as_ref());
         let artifact_id = seed_diff_artifact(&store, &session_id);
+        seed_todo_for_tool(&store, &session_id, "turn-model", TOOL_FS_APPLY_PATCH);
         let operation = apply_operation(
             "op-apply",
             &ApplyPatchArgs {
@@ -2057,6 +2232,18 @@ mod tests {
             .expect("detail")
             .expect("detail");
         assert_eq!(detail.pending_interactions.len(), 0);
+        assert_eq!(
+            detail.active_todo.as_ref().expect("todo").items[0].status,
+            "failed"
+        );
+        assert_eq!(
+            detail
+                .execution_summary
+                .as_ref()
+                .expect("summary")
+                .failed_step_count,
+            1
+        );
         assert!(detail.runtime_events.iter().any(|event| {
             event.phase == "tool_operation_failed"
                 && event.payload["result"]["errorCode"] == TOOL_APPROVAL_DENIED
@@ -2265,6 +2452,7 @@ mod tests {
             permission_mode: None,
         })
         .expect("apply");
+        seed_todo_for_tool(&store, &session_id, "turn-model", TOOL_FS_ROLLBACK_PATCH);
         let operation = rollback_operation(&applied.artifact_id);
         let pending = rollback_patch_tool_result(
             &store,
@@ -2300,6 +2488,14 @@ mod tests {
                 .expect("artifact")
                 .status,
             "rolled_back"
+        );
+        let detail = store
+            .read_session_detail(&session_id)
+            .expect("detail")
+            .expect("detail");
+        assert_eq!(
+            detail.active_todo.as_ref().expect("todo").items[0].status,
+            "completed"
         );
     }
 

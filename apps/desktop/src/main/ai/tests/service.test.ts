@@ -145,6 +145,24 @@ describe("AI IPC bridge", () => {
     });
 
     await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiCreateTodo)?.({}, {
+        sessionId: "session-a",
+        kind: "plan_bound",
+        title: "Plan",
+        items: [{ title: "Apply patch", expectedTools: ["/tools/filesystem/apply_patch"] }]
+      })
+    ).resolves.toEqual({
+      method: "agent.todo.create",
+      payload: {
+        sessionId: "session-a",
+        kind: "plan_bound",
+        title: "Plan",
+        items: [{ title: "Apply patch", expectedTools: ["/tools/filesystem/apply_patch"] }],
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
       electronMock.handlers.get(LYRA_CHANNELS.aiApplyPatch)?.({}, {
         sessionId: "session-a",
         artifactId: "artifact_patch_1"
@@ -195,6 +213,7 @@ describe("AI IPC bridge", () => {
     expect(unsubscribe).toHaveBeenCalled();
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiSendTurn);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiCancelTurn);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiCreateTodo);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiReadArtifact);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiApplyPatch);
   });

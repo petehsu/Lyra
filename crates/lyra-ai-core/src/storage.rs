@@ -166,6 +166,102 @@ pub struct AgentSessionDetail {
     pub turns: Vec<AgentTurn>,
     pub messages: Vec<AgentMessage>,
     pub runtime_events: Vec<AgentRuntimeEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_todo: Option<AgentExecutionTodoList>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_summary: Option<AgentExecutionSummary>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExecutionTodoList {
+    pub todo_list_id: String,
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_turn_id: Option<String>,
+    pub kind: String,
+    pub status: String,
+    pub title: String,
+    pub source: Value,
+    pub items: Vec<AgentTodoItem>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTodoItem {
+    pub todo_item_id: String,
+    pub todo_list_id: String,
+    pub status: String,
+    pub title: String,
+    pub actions: Vec<String>,
+    pub expected_tools: Vec<String>,
+    pub risk_level: String,
+    pub completion_criteria: Vec<String>,
+    pub evidence_refs: Vec<String>,
+    pub blockers: Value,
+    pub source: Value,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExecutionSummary {
+    pub execution_run_id: String,
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_turn_id: Option<String>,
+    pub todo_list_id: String,
+    pub status: String,
+    pub step_count: i64,
+    pub completed_step_count: i64,
+    pub failed_step_count: i64,
+    pub blocked_step_count: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTodoItemInput {
+    pub title: String,
+    #[serde(default)]
+    pub actions: Vec<String>,
+    #[serde(default)]
+    pub expected_tools: Vec<String>,
+    #[serde(default = "default_medium_risk")]
+    pub risk_level: String,
+    #[serde(default)]
+    pub completion_criteria: Vec<String>,
+    #[serde(default)]
+    pub source: Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedTodoRefs {
+    pub todo_list_id: String,
+    pub execution_run_id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TodoUpdateRecord {
+    pub todo_list_id: String,
+    pub todo_item_id: Option<String>,
+    pub execution_run_id: String,
+    pub execution_step_id: String,
+    pub status: String,
+    pub step_status: String,
+    pub title: Option<String>,
+    pub evidence_refs: Vec<String>,
+    pub artifact_refs: Vec<String>,
+    pub blocker: Value,
+}
+
+fn default_medium_risk() -> String {
+    "medium".to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1406,6 +1502,10 @@ impl AiStore {
                 | "timeline_checkpoint"
                 | "approval_ticket"
                 | "file_backup_record"
+                | "execution_todo_list"
+                | "todo_item"
+                | "execution_run"
+                | "execution_step"
         ) == false
         {
             return Err(anyhow!("unsupported table for test count"));
@@ -1614,6 +1714,311 @@ impl AiStore {
             .with_context(|| format!("failed to read patch backup {}", path.display()))
     }
 
+    pub fn create_execution_todo_list(
+        &self,
+        session_id: &str,
+        turn_id: Option<&str>,
+        kind: &str,
+        title: &str,
+        source: Value,
+        items: &[CreateTodoItemInput],
+    ) -> Result<CreatedTodoRefs> {
+        if items.is_empty() {
+            return Err(anyhow!("todo items are required"));
+        }
+        let todo_list_id = new_id("todo_list");
+        let execution_run_id = new_id("execution_run");
+        let now = now_ms();
+        let now_iso = now_iso();
+        self.with_session_conn(session_id, |conn| {
+            conn.execute(
+                "UPDATE execution_todo_list
+                 SET status = 'superseded', updated_at_ms = ?1, updated_at_iso = ?2
+                 WHERE session_id = ?3 AND status != 'superseded'",
+                params![now, now_iso, session_id],
+            )?;
+            conn.execute(
+                "INSERT INTO execution_todo_list (
+                    todo_list_id, session_id, runtime_turn_id, kind, status, source_json,
+                    title, created_at_ms, created_at_iso, updated_at_ms, updated_at_iso
+                 ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?6, ?7, ?8, ?7, ?8)",
+                params![
+                    todo_list_id,
+                    session_id,
+                    turn_id,
+                    normalize_todo_kind(kind),
+                    source.to_string(),
+                    title.trim(),
+                    now,
+                    now_iso,
+                ],
+            )?;
+            for item in items {
+                let todo_item_id = new_id("todo_item");
+                conn.execute(
+                    "INSERT INTO todo_item (
+                        todo_item_id, todo_list_id, status, title, actions_json,
+                        expected_tools_json, risk_level, completion_criteria_json,
+                        evidence_refs_json, blockers_json, source_json, created_at_ms,
+                        created_at_iso, updated_at_ms, updated_at_iso
+                     ) VALUES (?1, ?2, 'pending', ?3, ?4, ?5, ?6, ?7, '[]', '[]', ?8, ?9, ?10, ?9, ?10)",
+                    params![
+                        todo_item_id,
+                        todo_list_id,
+                        item.title.trim(),
+                        json_string(&item.actions)?,
+                        json_string(&item.expected_tools)?,
+                        normalize_risk_level(&item.risk_level),
+                        json_string(&item.completion_criteria)?,
+                        item.source.to_string(),
+                        now,
+                        now_iso,
+                    ],
+                )?;
+            }
+            conn.execute(
+                "INSERT INTO execution_run (
+                    execution_run_id, session_id, runtime_turn_id, todo_list_id, status,
+                    step_ids_json, created_at_ms, created_at_iso, updated_at_ms, updated_at_iso
+                 ) VALUES (?1, ?2, ?3, ?4, 'running', '[]', ?5, ?6, ?5, ?6)",
+                params![
+                    execution_run_id,
+                    session_id,
+                    turn_id,
+                    todo_list_id,
+                    now,
+                    now_iso,
+                ],
+            )?;
+            Ok(())
+        })?;
+        Ok(CreatedTodoRefs {
+            todo_list_id,
+            execution_run_id,
+        })
+    }
+
+    pub fn read_active_todo_list(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<AgentExecutionTodoList>> {
+        self.with_session_conn(session_id, |conn| {
+            let row = conn
+                .query_row(
+                    "SELECT todo_list_id, session_id, runtime_turn_id, kind, status,
+                            title, source_json, created_at_ms, updated_at_ms
+                     FROM execution_todo_list
+                     WHERE session_id = ?1 AND status != 'superseded'
+                     ORDER BY updated_at_ms DESC, created_at_ms DESC
+                     LIMIT 1",
+                    params![session_id],
+                    read_todo_list_row,
+                )
+                .optional()?;
+            let Some(mut todo) = row else {
+                return Ok(None);
+            };
+            todo.items = read_todo_items_for_list(conn, &todo.todo_list_id)?;
+            Ok(Some(todo))
+        })
+    }
+
+    pub fn read_execution_summary(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<AgentExecutionSummary>> {
+        self.with_session_conn(session_id, |conn| {
+            let row = conn
+                .query_row(
+                    "SELECT execution_run_id, session_id, runtime_turn_id, todo_list_id,
+                        status, updated_at_ms
+                 FROM execution_run
+                 WHERE session_id = ?1
+                 ORDER BY updated_at_ms DESC, created_at_ms DESC
+                 LIMIT 1",
+                    params![session_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, String>(3)?,
+                            row.get::<_, String>(4)?,
+                            row.get::<_, i64>(5)?,
+                        ))
+                    },
+                )
+                .optional()
+                .context("failed to read execution summary")?;
+            let Some((
+                execution_run_id,
+                session_id,
+                runtime_turn_id,
+                todo_list_id,
+                status,
+                updated_at,
+            )) = row
+            else {
+                return Ok(None);
+            };
+            let counts = read_execution_step_counts(conn, &execution_run_id)?;
+            Ok(Some(AgentExecutionSummary {
+                execution_run_id,
+                session_id,
+                runtime_turn_id,
+                todo_list_id,
+                status,
+                step_count: counts.0,
+                completed_step_count: counts.1,
+                failed_step_count: counts.2,
+                blocked_step_count: counts.3,
+                updated_at,
+            }))
+        })
+    }
+
+    pub fn record_tool_execution_step(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        tool_path: &str,
+        op_id: &str,
+        item_status: &str,
+        step_status: &str,
+        evidence_refs: Vec<String>,
+        artifact_refs: Vec<String>,
+        blocker: Value,
+    ) -> Result<Option<TodoUpdateRecord>> {
+        let updated_at = now_ms();
+        let updated_iso = now_iso();
+        self.with_session_conn(session_id, |conn| {
+            let Some((execution_run_id, todo_list_id)) =
+                find_execution_run_for_turn(conn, session_id, turn_id)?
+            else {
+                return Ok(None);
+            };
+            let Some(mut item) = find_todo_item_for_tool(conn, &todo_list_id, tool_path)? else {
+                return Ok(None);
+            };
+            let merged_evidence_refs = merge_string_refs(&item.evidence_refs, &evidence_refs);
+            let merged_blockers = merge_todo_blocker_json(&item.blockers, &blocker);
+            conn.execute(
+                "UPDATE todo_item
+                 SET status = ?1, evidence_refs_json = ?2, blockers_json = ?3,
+                     updated_at_ms = ?4, updated_at_iso = ?5
+                 WHERE todo_item_id = ?6",
+                params![
+                    normalize_todo_status(item_status),
+                    json_string(&merged_evidence_refs)?,
+                    merged_blockers.to_string(),
+                    updated_at,
+                    updated_iso,
+                    item.todo_item_id,
+                ],
+            )?;
+            item.status = normalize_todo_status(item_status).to_string();
+            item.evidence_refs = merged_evidence_refs;
+            item.blockers = merged_blockers.clone();
+
+            let existing_step =
+                find_execution_step_for_item(conn, &execution_run_id, &item.todo_item_id)?;
+            let execution_step_id = existing_step.unwrap_or_else(|| new_id("execution_step"));
+            let mut tool_operation_ids = if step_exists(conn, &execution_step_id)? {
+                read_step_string_refs(conn, &execution_step_id, "tool_operation_ids_json")?
+            } else {
+                Vec::new()
+            };
+            if tool_operation_ids.iter().any(|id| id == op_id) == false {
+                tool_operation_ids.push(op_id.to_string());
+            }
+            let step_evidence_refs = merge_string_refs(
+                &read_step_string_refs_or_empty(conn, &execution_step_id, "evidence_refs_json")?,
+                &evidence_refs,
+            );
+            let step_artifact_refs = merge_string_refs(
+                &read_step_string_refs_or_empty(conn, &execution_step_id, "artifact_refs_json")?,
+                &artifact_refs,
+            );
+            if step_exists(conn, &execution_step_id)? {
+                conn.execute(
+                    "UPDATE execution_step
+                     SET status = ?1, tool_operation_ids_json = ?2, evidence_refs_json = ?3,
+                         artifact_refs_json = ?4, blocker_json = ?5,
+                         updated_at_ms = ?6, updated_at_iso = ?7
+                     WHERE execution_step_id = ?8",
+                    params![
+                        normalize_todo_status(step_status),
+                        json_string(&tool_operation_ids)?,
+                        json_string(&step_evidence_refs)?,
+                        json_string(&step_artifact_refs)?,
+                        if blocker.is_null() {
+                            None::<String>
+                        } else {
+                            Some(blocker.to_string())
+                        },
+                        updated_at,
+                        updated_iso,
+                        execution_step_id,
+                    ],
+                )?;
+            } else {
+                conn.execute(
+                    "INSERT INTO execution_step (
+                        execution_step_id, execution_run_id, todo_item_id, kind, status,
+                        tool_operation_ids_json, evidence_refs_json, artifact_refs_json,
+                        skip_reason, blocker_json, created_at_ms, created_at_iso,
+                        updated_at_ms, updated_at_iso
+                     ) VALUES (?1, ?2, ?3, 'tool', ?4, ?5, ?6, ?7, NULL, ?8, ?9, ?10, ?9, ?10)",
+                    params![
+                        execution_step_id,
+                        execution_run_id,
+                        item.todo_item_id,
+                        normalize_todo_status(step_status),
+                        json_string(&tool_operation_ids)?,
+                        json_string(&step_evidence_refs)?,
+                        json_string(&step_artifact_refs)?,
+                        if blocker.is_null() {
+                            None::<String>
+                        } else {
+                            Some(blocker.to_string())
+                        },
+                        updated_at,
+                        updated_iso,
+                    ],
+                )?;
+                append_execution_run_step(conn, &execution_run_id, &execution_step_id)?;
+            }
+
+            let list_status = compute_todo_list_status(conn, &todo_list_id)?;
+            let run_status = compute_execution_run_status(conn, &execution_run_id)?;
+            conn.execute(
+                "UPDATE execution_todo_list
+                 SET status = ?1, updated_at_ms = ?2, updated_at_iso = ?3
+                 WHERE todo_list_id = ?4",
+                params![list_status, updated_at, updated_iso, todo_list_id],
+            )?;
+            conn.execute(
+                "UPDATE execution_run
+                 SET status = ?1, updated_at_ms = ?2, updated_at_iso = ?3
+                 WHERE execution_run_id = ?4",
+                params![run_status, updated_at, updated_iso, execution_run_id],
+            )?;
+
+            Ok(Some(TodoUpdateRecord {
+                todo_list_id,
+                todo_item_id: Some(item.todo_item_id),
+                execution_run_id,
+                execution_step_id,
+                status: normalize_todo_status(item_status).to_string(),
+                step_status: normalize_todo_status(step_status).to_string(),
+                title: Some(item.title),
+                evidence_refs: step_evidence_refs,
+                artifact_refs: step_artifact_refs,
+                blocker,
+            }))
+        })
+    }
+
     pub fn read_session_detail(&self, session_id: &str) -> Result<Option<AgentSessionDetail>> {
         let Some(session) = self.read_session_index(session_id)? else {
             return Ok(None);
@@ -1622,12 +2027,16 @@ impl AiStore {
         let messages = self.read_messages(session_id)?;
         let runtime_events = self.read_runtime_events(session_id)?;
         let pending_interactions = self.read_pending_approval_interactions(session_id)?;
+        let active_todo = self.read_active_todo_list(session_id)?;
+        let execution_summary = self.read_execution_summary(session_id)?;
         Ok(Some(AgentSessionDetail {
             session,
             pending_interactions,
             turns,
             messages,
             runtime_events,
+            active_todo,
+            execution_summary,
         }))
     }
 
@@ -1963,6 +2372,64 @@ fn migrate_session(conn: &Connection) -> Result<()> {
             created_at_ms INTEGER NOT NULL,
             created_at_iso TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS execution_todo_list (
+            todo_list_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            runtime_turn_id TEXT,
+            kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            source_json TEXT NOT NULL,
+            title TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS todo_item (
+            todo_item_id TEXT PRIMARY KEY,
+            todo_list_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            title TEXT NOT NULL,
+            actions_json TEXT NOT NULL,
+            expected_tools_json TEXT NOT NULL,
+            risk_level TEXT NOT NULL,
+            completion_criteria_json TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL,
+            blockers_json TEXT NOT NULL,
+            source_json TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS execution_run (
+            execution_run_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            runtime_turn_id TEXT,
+            todo_list_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            step_ids_json TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS execution_step (
+            execution_step_id TEXT PRIMARY KEY,
+            execution_run_id TEXT NOT NULL,
+            todo_item_id TEXT,
+            kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            tool_operation_ids_json TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL,
+            artifact_refs_json TEXT NOT NULL,
+            skip_reason TEXT,
+            blocker_json TEXT,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
         ",
     )?;
     ensure_column(
@@ -2051,6 +2518,334 @@ fn read_patch_file_backup_row(row: &Row<'_>) -> rusqlite::Result<PatchFileBackup
         post_apply_sha256: row.get(11)?,
         post_apply_bytes: row.get(12)?,
     })
+}
+
+fn read_todo_list_row(row: &Row<'_>) -> rusqlite::Result<AgentExecutionTodoList> {
+    let source_json: String = row.get(6)?;
+    Ok(AgentExecutionTodoList {
+        todo_list_id: row.get(0)?,
+        session_id: row.get(1)?,
+        runtime_turn_id: row.get(2)?,
+        kind: row.get(3)?,
+        status: row.get(4)?,
+        title: row.get(5)?,
+        source: serde_json::from_str(&source_json).unwrap_or_else(|_| json!({})),
+        items: Vec::new(),
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+    })
+}
+
+fn read_todo_item_row(row: &Row<'_>) -> rusqlite::Result<AgentTodoItem> {
+    let actions_json: String = row.get(4)?;
+    let expected_tools_json: String = row.get(5)?;
+    let completion_criteria_json: String = row.get(7)?;
+    let evidence_refs_json: String = row.get(8)?;
+    let blockers_json: String = row.get(9)?;
+    let source_json: String = row.get(10)?;
+    Ok(AgentTodoItem {
+        todo_item_id: row.get(0)?,
+        todo_list_id: row.get(1)?,
+        status: row.get(2)?,
+        title: row.get(3)?,
+        actions: parse_json_vec_string(&actions_json),
+        expected_tools: parse_json_vec_string(&expected_tools_json),
+        risk_level: row.get(6)?,
+        completion_criteria: parse_json_vec_string(&completion_criteria_json),
+        evidence_refs: parse_json_vec_string(&evidence_refs_json),
+        blockers: serde_json::from_str(&blockers_json).unwrap_or_else(|_| json!([])),
+        source: serde_json::from_str(&source_json).unwrap_or_else(|_| json!({})),
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
+    })
+}
+
+fn read_todo_items_for_list(conn: &Connection, todo_list_id: &str) -> Result<Vec<AgentTodoItem>> {
+    let mut stmt = conn.prepare(
+        "SELECT todo_item_id, todo_list_id, status, title, actions_json,
+                expected_tools_json, risk_level, completion_criteria_json,
+                evidence_refs_json, blockers_json, source_json, created_at_ms, updated_at_ms
+         FROM todo_item
+         WHERE todo_list_id = ?1
+         ORDER BY created_at_ms ASC",
+    )?;
+    let rows = stmt.query_map(params![todo_list_id], read_todo_item_row)?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+fn find_execution_run_for_turn(
+    conn: &Connection,
+    session_id: &str,
+    turn_id: &str,
+) -> Result<Option<(String, String)>> {
+    let exact = conn
+        .query_row(
+            "SELECT r.execution_run_id, r.todo_list_id
+         FROM execution_run r
+         JOIN execution_todo_list t ON t.todo_list_id = r.todo_list_id
+         WHERE r.session_id = ?1
+           AND t.status != 'superseded'
+           AND (r.runtime_turn_id = ?2 OR ?2 = '')
+         ORDER BY r.updated_at_ms DESC, r.created_at_ms DESC
+         LIMIT 1",
+            params![session_id, turn_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .context("failed to find execution run for turn")?;
+    if exact.is_some() {
+        return Ok(exact);
+    }
+    conn.query_row(
+        "SELECT r.execution_run_id, r.todo_list_id
+         FROM execution_run r
+         JOIN execution_todo_list t ON t.todo_list_id = r.todo_list_id
+         WHERE r.session_id = ?1 AND t.status != 'superseded'
+         ORDER BY r.updated_at_ms DESC, r.created_at_ms DESC
+         LIMIT 1",
+        params![session_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .context("failed to find latest execution run")
+}
+
+fn find_todo_item_for_tool(
+    conn: &Connection,
+    todo_list_id: &str,
+    tool_path: &str,
+) -> Result<Option<AgentTodoItem>> {
+    let items = read_todo_items_for_list(conn, todo_list_id)?;
+    let normalized_tool = tool_path.trim();
+    Ok(items
+        .into_iter()
+        .filter(|item| {
+            item.expected_tools
+                .iter()
+                .any(|tool| tool.trim() == normalized_tool)
+        })
+        .min_by_key(|item| todo_status_priority(&item.status)))
+}
+
+fn find_execution_step_for_item(
+    conn: &Connection,
+    execution_run_id: &str,
+    todo_item_id: &str,
+) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT execution_step_id
+         FROM execution_step
+         WHERE execution_run_id = ?1 AND todo_item_id = ?2
+         ORDER BY updated_at_ms DESC, created_at_ms DESC
+         LIMIT 1",
+        params![execution_run_id, todo_item_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .context("failed to find execution step")
+}
+
+fn step_exists(conn: &Connection, execution_step_id: &str) -> Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM execution_step WHERE execution_step_id = ?1",
+        params![execution_step_id],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+fn read_step_string_refs(
+    conn: &Connection,
+    execution_step_id: &str,
+    column: &str,
+) -> Result<Vec<String>> {
+    let json_value: String = conn.query_row(
+        &format!("SELECT {column} FROM execution_step WHERE execution_step_id = ?1"),
+        params![execution_step_id],
+        |row| row.get(0),
+    )?;
+    Ok(parse_json_vec_string(&json_value))
+}
+
+fn read_step_string_refs_or_empty(
+    conn: &Connection,
+    execution_step_id: &str,
+    column: &str,
+) -> Result<Vec<String>> {
+    if step_exists(conn, execution_step_id)? {
+        read_step_string_refs(conn, execution_step_id, column)
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+fn append_execution_run_step(
+    conn: &Connection,
+    execution_run_id: &str,
+    execution_step_id: &str,
+) -> Result<()> {
+    let step_ids_json: String = conn.query_row(
+        "SELECT step_ids_json FROM execution_run WHERE execution_run_id = ?1",
+        params![execution_run_id],
+        |row| row.get(0),
+    )?;
+    let mut step_ids = parse_json_vec_string(&step_ids_json);
+    if step_ids.iter().any(|id| id == execution_step_id) == false {
+        step_ids.push(execution_step_id.to_string());
+    }
+    conn.execute(
+        "UPDATE execution_run SET step_ids_json = ?1 WHERE execution_run_id = ?2",
+        params![json_string(&step_ids)?, execution_run_id],
+    )?;
+    Ok(())
+}
+
+fn compute_todo_list_status(conn: &Connection, todo_list_id: &str) -> Result<String> {
+    let mut stmt = conn.prepare("SELECT status FROM todo_item WHERE todo_list_id = ?1")?;
+    let rows = stmt.query_map(params![todo_list_id], |row| row.get::<_, String>(0))?;
+    let mut statuses = Vec::new();
+    for row in rows {
+        statuses.push(row?);
+    }
+    if statuses.iter().any(|status| status == "failed") {
+        return Ok("failed".to_string());
+    }
+    if statuses.iter().any(|status| status == "blocked") {
+        return Ok("blocked".to_string());
+    }
+    if statuses.is_empty() == false
+        && statuses
+            .iter()
+            .all(|status| matches!(status.as_str(), "completed" | "skipped"))
+    {
+        return Ok("completed".to_string());
+    }
+    Ok("active".to_string())
+}
+
+fn compute_execution_run_status(conn: &Connection, execution_run_id: &str) -> Result<String> {
+    let mut stmt = conn.prepare("SELECT status FROM execution_step WHERE execution_run_id = ?1")?;
+    let rows = stmt.query_map(params![execution_run_id], |row| row.get::<_, String>(0))?;
+    let mut statuses = Vec::new();
+    for row in rows {
+        statuses.push(row?);
+    }
+    if statuses.iter().any(|status| status == "failed") {
+        return Ok("failed".to_string());
+    }
+    if statuses.iter().any(|status| status == "blocked") {
+        return Ok("blocked".to_string());
+    }
+    if statuses.is_empty() == false
+        && statuses
+            .iter()
+            .all(|status| matches!(status.as_str(), "completed" | "skipped"))
+    {
+        return Ok("completed".to_string());
+    }
+    Ok("running".to_string())
+}
+
+fn read_execution_step_counts(
+    conn: &Connection,
+    execution_run_id: &str,
+) -> Result<(i64, i64, i64, i64)> {
+    let mut stmt = conn.prepare(
+        "SELECT status, COUNT(*)
+         FROM execution_step
+         WHERE execution_run_id = ?1
+         GROUP BY status",
+    )?;
+    let rows = stmt.query_map(params![execution_run_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    let mut total = 0_i64;
+    let mut completed = 0_i64;
+    let mut failed = 0_i64;
+    let mut blocked = 0_i64;
+    for row in rows {
+        let (status, count) = row?;
+        total += count;
+        match status.as_str() {
+            "completed" => completed += count,
+            "failed" => failed += count,
+            "blocked" => blocked += count,
+            _ => {}
+        }
+    }
+    Ok((total, completed, failed, blocked))
+}
+
+fn merge_string_refs(existing: &[String], next: &[String]) -> Vec<String> {
+    let mut refs = existing.to_vec();
+    for value in next {
+        if value.trim().is_empty() == false && refs.iter().any(|item| item == value) == false {
+            refs.push(value.clone());
+        }
+    }
+    refs
+}
+
+fn merge_todo_blocker_json(existing: &Value, next: &Value) -> Value {
+    let mut blockers = existing.as_array().cloned().unwrap_or_else(|| {
+        if existing.is_null() || existing == &json!({}) {
+            Vec::new()
+        } else {
+            vec![existing.clone()]
+        }
+    });
+    if next.is_null() == false && blockers.iter().any(|value| value == next) == false {
+        blockers.push(next.clone());
+    }
+    json!(blockers)
+}
+
+fn parse_json_vec_string(value: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(value).unwrap_or_default()
+}
+
+fn normalize_todo_kind(kind: &str) -> &'static str {
+    match kind.trim() {
+        "plan_bound" => "plan_bound",
+        "recovery" => "recovery",
+        _ => "mini",
+    }
+}
+
+fn normalize_risk_level(risk_level: &str) -> &'static str {
+    match risk_level.trim() {
+        "low" => "low",
+        "high" => "high",
+        "critical" => "critical",
+        _ => "medium",
+    }
+}
+
+fn normalize_todo_status(status: &str) -> &'static str {
+    match status.trim() {
+        "in_progress" => "in_progress",
+        "completed" => "completed",
+        "blocked" => "blocked",
+        "failed" => "failed",
+        "skipped" => "skipped",
+        _ => "pending",
+    }
+}
+
+fn todo_status_priority(status: &str) -> u8 {
+    match status {
+        "blocked" => 0,
+        "in_progress" => 1,
+        "pending" => 2,
+        "failed" => 3,
+        "completed" => 4,
+        "skipped" => 5,
+        _ => 6,
+    }
 }
 
 fn read_evidence_id_for_artifact(

@@ -10,9 +10,13 @@ use crate::project_manifest::read_project_policy_snapshot;
 use crate::prompt::{compose_messages, PromptContext};
 use crate::storage::{
     new_id, now_ms, project_name_from_root, trim_to_string, AgentMessage, AgentMessageContentPart,
-    AgentSession, AgentSessionDetail, AgentTurn, AiStore, StorageRequest, ToolResultBlobMeta,
+    AgentSession, AgentSessionDetail, AgentTurn, AiStore, CreateTodoItemInput, StorageRequest,
+    TodoUpdateRecord, ToolResultBlobMeta,
 };
-use crate::tool_runtime::catalog::{TOOL_FS_APPLY_PATCH, TOOL_FS_ROLLBACK_PATCH};
+use crate::tool_runtime::catalog::{
+    TOOL_FS_APPLY_PATCH, TOOL_FS_LIST_FILES, TOOL_FS_PROPOSE_PATCH, TOOL_FS_READ_FILE,
+    TOOL_FS_ROLLBACK_PATCH, TOOL_FS_SEARCH_TEXT,
+};
 use crate::tool_runtime::{
     execute_tool, inspect_required_result, normalized_tool_path, parse_tool_operation,
     tool_event_metadata, tool_result_chat_message, ToolExecutionContext, ToolFsOp,
@@ -166,6 +170,28 @@ pub struct CancelTurnResult {
     pub cancelled: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCreateTodoRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    pub kind: String,
+    pub title: String,
+    #[serde(default)]
+    pub source: Option<Value>,
+    pub items: Vec<CreateTodoItemInput>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCreateTodoResult {
+    pub session_id: String,
+    pub todo_list_id: String,
+    pub execution_run_id: String,
+    pub detail: AgentSessionDetail,
+}
+
 pub fn list_sessions(request: ListSessionsRequest) -> Result<Vec<AgentSession>> {
     AiStore::open(request.storage.storage_root.as_deref())?.list_sessions()
 }
@@ -249,6 +275,64 @@ pub fn update_session(request: UpdateSessionRequest) -> Result<AgentSessionDetai
         .ok_or_else(|| anyhow!("AI session not found: {}", session.id))
 }
 
+pub fn create_todo(request: AgentCreateTodoRequest) -> Result<AgentCreateTodoResult> {
+    let store = AiStore::open(request.storage.storage_root.as_deref())?;
+    let session_id = request.session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err(anyhow!("sessionId is required"));
+    }
+    store
+        .read_session_index(&session_id)?
+        .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
+    let title = request.title.trim();
+    if title.is_empty() {
+        return Err(anyhow!("todo title is required"));
+    }
+    let source = request
+        .source
+        .unwrap_or_else(|| json!({ "type": "manual" }));
+    let refs = store.create_execution_todo_list(
+        &session_id,
+        None,
+        &request.kind,
+        title,
+        source,
+        &request.items,
+    )?;
+    emit_store_event(
+        &store,
+        &session_id,
+        None,
+        "todo_list_created",
+        json!({
+            "sessionId": session_id,
+            "todoListId": refs.todo_list_id,
+            "executionRunId": refs.execution_run_id,
+            "kind": request.kind,
+            "title": title
+        }),
+    )?;
+    let detail = store
+        .read_session_detail(&session_id)?
+        .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
+    emit_store_event(
+        &store,
+        &session_id,
+        None,
+        "session_updated",
+        json!({ "detail": detail }),
+    )?;
+    let detail = store
+        .read_session_detail(&session_id)?
+        .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
+    Ok(AgentCreateTodoResult {
+        session_id,
+        todo_list_id: refs.todo_list_id,
+        execution_run_id: refs.execution_run_id,
+        detail,
+    })
+}
+
 pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
     let storage_root = request.storage.storage_root.clone();
     let store = AiStore::open(storage_root.as_deref())?;
@@ -311,6 +395,35 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
     )?;
     let checkpoint_id =
         store.create_timeline_checkpoint(&session.id, &turn_id, &user_message_id)?;
+    if let Some(items) = mini_todo_items_for_request(&text) {
+        let refs = store.create_execution_todo_list(
+            &session.id,
+            Some(&turn_id),
+            "mini",
+            "Execution checklist",
+            json!({
+                "type": "mini_auto",
+                "userMessageId": user_message_id,
+                "runtimeTurnId": turn_id,
+                "heuristic": "execution_request_v1"
+            }),
+            &items,
+        )?;
+        emit_store_event(
+            &store,
+            &session.id,
+            Some(&turn_id),
+            "todo_list_created",
+            json!({
+                "sessionId": session.id,
+                "turnId": turn_id,
+                "todoListId": refs.todo_list_id,
+                "executionRunId": refs.execution_run_id,
+                "kind": "mini",
+                "title": "Execution checklist"
+            }),
+        )?;
+    }
     let runtime_options_payload = json!({
         "model": request.options.model.as_deref(),
         "modelProvider": request.options.model_provider.as_deref(),
@@ -787,6 +900,7 @@ fn run_tool_operation(
             "result": tool_result_payload(&result, &result_blob),
         }),
     )?;
+    record_todo_from_tool_result(store, session_id, turn_id, operation, &result)?;
     messages.push(ChatMessage {
         role: "assistant".to_string(),
         content: serde_json::to_string(operation)?,
@@ -857,6 +971,170 @@ fn tool_result_payload(result: &ToolResultEnvelope, blob: &ToolResultBlobMeta) -
         }
     }
     payload
+}
+
+fn record_todo_from_tool_result(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    operation: &ToolOperationEnvelope,
+    result: &ToolResultEnvelope,
+) -> Result<()> {
+    let tool_path = normalized_tool_path(&operation.path);
+    let Some((item_status, step_status, blocker)) =
+        todo_status_from_tool_result(&tool_path, result)
+    else {
+        return Ok(());
+    };
+    let metadata = result.metadata.as_ref().unwrap_or(&Value::Null);
+    let mut evidence_refs = collect_string_metadata_refs(metadata, &["evidenceId"]);
+    let artifact_refs =
+        collect_string_metadata_refs(metadata, &["artifactId", "rolledBackArtifactId"]);
+    if let Some(evidence_id) = metadata.get("evidenceId").and_then(Value::as_str) {
+        if evidence_refs.iter().any(|value| value == evidence_id) == false {
+            evidence_refs.push(evidence_id.to_string());
+        }
+    }
+    let Some(record) = store.record_tool_execution_step(
+        session_id,
+        turn_id,
+        &tool_path,
+        &operation.op_id,
+        item_status,
+        step_status,
+        evidence_refs,
+        artifact_refs,
+        blocker,
+    )?
+    else {
+        return Ok(());
+    };
+    emit_todo_update_events(store, session_id, Some(turn_id), &record)
+}
+
+fn todo_status_from_tool_result(
+    tool_path: &str,
+    result: &ToolResultEnvelope,
+) -> Option<(&'static str, &'static str, Value)> {
+    match result.status {
+        ToolResultStatus::Completed => Some(("completed", "completed", Value::Null)),
+        ToolResultStatus::Failed => match result.error_code.as_deref() {
+            Some("TOOL_APPROVAL_REQUIRED") => Some((
+                "blocked",
+                "blocked",
+                json!({
+                    "kind": "approval_required",
+                    "toolPath": tool_path,
+                    "approvalTicketId": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("approvalTicketId"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    "artifactId": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("artifactId"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    "patchRef": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("patchRef"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                }),
+            )),
+            Some("TOOL_APPROVAL_DENIED") => Some((
+                "failed",
+                "failed",
+                json!({
+                    "kind": "approval_denied",
+                    "toolPath": tool_path,
+                    "approvalTicketId": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("approvalTicketId"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    "artifactId": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("artifactId"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    "patchRef": result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.get("patchRef"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                }),
+            )),
+            _ if matches!(tool_path, TOOL_FS_APPLY_PATCH | TOOL_FS_ROLLBACK_PATCH) => Some((
+                "failed",
+                "failed",
+                json!({
+                    "kind": "tool_failed",
+                    "toolPath": tool_path,
+                    "errorCode": result.error_code,
+                    "errorMessage": result.error_message,
+                }),
+            )),
+            _ => None,
+        },
+    }
+}
+
+fn collect_string_metadata_refs(metadata: &Value, keys: &[&str]) -> Vec<String> {
+    keys.iter()
+        .filter_map(|key| metadata.get(*key).and_then(Value::as_str))
+        .filter(|value| value.trim().is_empty() == false)
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn emit_todo_update_events(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: Option<&str>,
+    record: &TodoUpdateRecord,
+) -> Result<()> {
+    emit_store_event(
+        store,
+        session_id,
+        turn_id,
+        "todo_item_updated",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "todoListId": record.todo_list_id,
+            "todoItemId": record.todo_item_id,
+            "status": record.status,
+            "title": record.title,
+            "evidenceRefs": record.evidence_refs,
+            "artifactRefs": record.artifact_refs,
+            "blocker": record.blocker
+        }),
+    )?;
+    emit_store_event(
+        store,
+        session_id,
+        turn_id,
+        "execution_step_updated",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "todoListId": record.todo_list_id,
+            "todoItemId": record.todo_item_id,
+            "executionRunId": record.execution_run_id,
+            "executionStepId": record.execution_step_id,
+            "status": record.step_status,
+            "evidenceRefs": record.evidence_refs,
+            "artifactRefs": record.artifact_refs,
+            "blocker": record.blocker
+        }),
+    )
 }
 
 fn enrich_tool_result_metadata(
@@ -991,6 +1269,117 @@ fn title_after_message(current: &str, text: &str) -> String {
     }
 }
 
+fn mini_todo_items_for_request(text: &str) -> Option<Vec<CreateTodoItemInput>> {
+    if is_execution_request(text) == false {
+        return None;
+    }
+    Some(vec![
+        CreateTodoItemInput {
+            title: "Inspect relevant context".to_string(),
+            actions: vec!["Read or search the workspace context needed for the change".to_string()],
+            expected_tools: vec![
+                TOOL_FS_LIST_FILES.to_string(),
+                TOOL_FS_READ_FILE.to_string(),
+                TOOL_FS_SEARCH_TEXT.to_string(),
+            ],
+            risk_level: "low".to_string(),
+            completion_criteria: vec!["Relevant workspace evidence has been collected".to_string()],
+            source: json!({ "type": "mini_auto", "slot": "inspect_context" }),
+        },
+        CreateTodoItemInput {
+            title: "Prepare workspace changes".to_string(),
+            actions: vec![
+                "Produce a patch proposal for the requested workspace change".to_string(),
+            ],
+            expected_tools: vec![TOOL_FS_PROPOSE_PATCH.to_string()],
+            risk_level: "medium".to_string(),
+            completion_criteria: vec!["A patch proposal artifact is available".to_string()],
+            source: json!({ "type": "mini_auto", "slot": "prepare_patch" }),
+        },
+        CreateTodoItemInput {
+            title: "Apply approved workspace changes".to_string(),
+            actions: vec!["Apply or roll back the approved patch through ToolFS".to_string()],
+            expected_tools: vec![
+                TOOL_FS_APPLY_PATCH.to_string(),
+                TOOL_FS_ROLLBACK_PATCH.to_string(),
+            ],
+            risk_level: "medium".to_string(),
+            completion_criteria: vec![
+                "Workspace write action is completed or explicitly blocked".to_string()
+            ],
+            source: json!({ "type": "mini_auto", "slot": "workspace_write" }),
+        },
+        CreateTodoItemInput {
+            title: "Record verification status".to_string(),
+            actions: vec!["Capture what was or was not verified for this execution".to_string()],
+            expected_tools: Vec::new(),
+            risk_level: "low".to_string(),
+            completion_criteria: vec![
+                "Verification status is reflected in the final response".to_string()
+            ],
+            source: json!({ "type": "mini_auto", "slot": "verification_note" }),
+        },
+    ])
+}
+
+fn is_execution_request(text: &str) -> bool {
+    let normalized = text.trim().to_lowercase();
+    if normalized.is_empty() {
+        return false;
+    }
+    let question_markers = [
+        "what is",
+        "why",
+        "how do",
+        "explain",
+        "tell me",
+        "介绍",
+        "解释",
+        "为什么",
+        "是什么",
+        "怎么",
+    ];
+    if normalized.chars().count() < 24
+        && question_markers
+            .iter()
+            .any(|marker| normalized.contains(marker))
+    {
+        return false;
+    }
+    let greeting_markers = ["hi", "hello", "hey", "你好", "早上好", "晚上好"];
+    if greeting_markers
+        .iter()
+        .any(|marker| normalized == *marker || normalized.starts_with(&format!("{marker} ")))
+    {
+        return false;
+    }
+    let execution_markers = [
+        "implement",
+        "fix",
+        "refactor",
+        "add ",
+        "update",
+        "build",
+        "apply patch",
+        "rollback",
+        "make change",
+        "做完",
+        "实现",
+        "修复",
+        "重构",
+        "添加",
+        "新增",
+        "更新",
+        "先做",
+        "执行",
+        "改",
+        "补",
+    ];
+    execution_markers
+        .iter()
+        .any(|marker| normalized.contains(marker))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1091,6 +1480,153 @@ mod tests {
             )
             .expect("patch artifact");
         refs.artifact_id
+    }
+
+    #[test]
+    fn mini_todo_heuristic_detects_execution_requests_only() {
+        let execution_items = mini_todo_items_for_request("请先做 M5A，修复并实现 todo 账本")
+            .expect("execution todo");
+        assert_eq!(execution_items.len(), 4);
+        assert!(execution_items.iter().any(|item| item
+            .expected_tools
+            .iter()
+            .any(|tool| tool == TOOL_FS_APPLY_PATCH)));
+        assert!(mini_todo_items_for_request("你好").is_none());
+        assert!(mini_todo_items_for_request("what is the current architecture?").is_none());
+    }
+
+    #[test]
+    fn create_todo_api_creates_plan_bound_list_and_execution_run() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let storage_root = temp.path().join("ai").to_string_lossy().to_string();
+        let store = AiStore::open(Some(storage_root.as_str())).expect("store");
+        let (session_id, _turn_id) = seed_turn(&store, temp.path().to_string_lossy().as_ref());
+
+        let result = create_todo(AgentCreateTodoRequest {
+            storage: StorageRequest {
+                storage_root: Some(storage_root),
+            },
+            session_id: session_id.clone(),
+            kind: "plan_bound".to_string(),
+            title: "Plan execution".to_string(),
+            source: Some(json!({ "type": "test_plan" })),
+            items: vec![CreateTodoItemInput {
+                title: "Apply patch".to_string(),
+                actions: vec!["Apply approved patch".to_string()],
+                expected_tools: vec![TOOL_FS_APPLY_PATCH.to_string()],
+                risk_level: "medium".to_string(),
+                completion_criteria: vec!["Patch applied".to_string()],
+                source: json!({}),
+            }],
+        })
+        .expect("create todo");
+
+        assert_eq!(result.session_id, session_id);
+        assert_eq!(
+            result.detail.active_todo.as_ref().expect("todo").kind,
+            "plan_bound"
+        );
+        assert_eq!(
+            result
+                .detail
+                .execution_summary
+                .as_ref()
+                .expect("summary")
+                .execution_run_id,
+            result.execution_run_id
+        );
+        assert!(result
+            .detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "todo_list_created"));
+    }
+
+    #[test]
+    fn sandbox_apply_tool_result_blocks_matching_todo_item() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::write(temp.path().join("README.md"), "old\n").expect("readme");
+        let store =
+            AiStore::open(Some(temp.path().join("ai").to_string_lossy().as_ref())).expect("store");
+        let (session_id, turn_id) = seed_turn(&store, temp.path().to_string_lossy().as_ref());
+        let artifact_id = seed_patch_artifact(
+            &store,
+            &session_id,
+            &turn_id,
+            "--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-old\n+new\n",
+            json!([{
+                "path": "README.md",
+                "changeType": "modified",
+                "additions": 1,
+                "deletions": 1
+            }]),
+        );
+        store
+            .create_execution_todo_list(
+                &session_id,
+                Some(&turn_id),
+                "mini",
+                "Execution checklist",
+                json!({ "type": "test" }),
+                &[CreateTodoItemInput {
+                    title: "Apply approved workspace changes".to_string(),
+                    actions: Vec::new(),
+                    expected_tools: vec![TOOL_FS_APPLY_PATCH.to_string()],
+                    risk_level: "medium".to_string(),
+                    completion_criteria: Vec::new(),
+                    source: json!({}),
+                }],
+            )
+            .expect("todo");
+        let operation = ToolOperationEnvelope {
+            schema_version: "v1".to_string(),
+            kind: "tool_operation".to_string(),
+            op_id: "op-apply".to_string(),
+            op: ToolFsOp::Run,
+            path: TOOL_FS_APPLY_PATCH.to_string(),
+            args: json!({ "artifactId": artifact_id }),
+        };
+        let mut messages = Vec::new();
+        let mut inspected = HashSet::from([TOOL_FS_APPLY_PATCH.to_string()]);
+
+        run_tool_operation(
+            &store,
+            &session_id,
+            &turn_id,
+            &ToolExecutionContext {
+                workspace_root: Some(temp.path().to_string_lossy().to_string()),
+            },
+            &operation,
+            PermissionMode::Sandbox,
+            &mut messages,
+            &mut inspected,
+        )
+        .expect("tool operation");
+
+        let detail = store
+            .read_session_detail(&session_id)
+            .expect("detail")
+            .expect("session");
+        let item = &detail.active_todo.as_ref().expect("todo").items[0];
+        assert_eq!(item.status, "blocked");
+        assert!(item
+            .blockers
+            .as_array()
+            .expect("blockers")
+            .iter()
+            .any(|blocker| blocker["kind"] == "approval_required"));
+        assert_eq!(
+            detail
+                .execution_summary
+                .as_ref()
+                .expect("summary")
+                .blocked_step_count,
+            1
+        );
+        assert!(detail
+            .runtime_events
+            .iter()
+            .any(|event| event.phase == "todo_item_updated"));
     }
 
     #[test]

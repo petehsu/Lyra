@@ -127,6 +127,8 @@ import type {
   AgentApplyPatchRequest,
   AgentApplyPatchResult,
   AgentArtifactContent,
+  AgentCreateTodoRequest,
+  AgentCreateTodoResult,
   AgentCreateSessionRequest,
   AgentReadArtifactRequest,
   AgentReadSessionRequest,
@@ -158,6 +160,8 @@ export type {
   AgentApplyPatchRequest,
   AgentApplyPatchResult,
   AgentArtifactContent,
+  AgentCreateTodoRequest,
+  AgentCreateTodoResult,
   AgentCreateSessionRequest,
   AgentReadArtifactRequest,
   AgentReadSessionRequest,
@@ -497,6 +501,7 @@ export const LYRA_CHANNELS = {
   aiUpdateSession: "lyra:ai/sessions/update",
   aiSendTurn: "lyra:ai/turn/send",
   aiCancelTurn: "lyra:ai/turn/cancel",
+  aiCreateTodo: "lyra:ai/todo/create",
   aiReadArtifact: "lyra:ai/artifact/read",
   aiApplyPatch: "lyra:ai/patch/apply",
   aiResolveApproval: "lyra:ai/approval/resolve",
@@ -1571,6 +1576,7 @@ export type AiApi = {
   readonly updateSession: (request: AgentUpdateSessionRequest) => Promise<AgentSessionDetail>;
   readonly sendTurn: (request: AgentSendTurnRequest) => Promise<AgentSendTurnResult>;
   readonly cancelTurn: (request: AgentCancelTurnRequest) => Promise<AgentCancelTurnResult>;
+  readonly createTodo: (request: AgentCreateTodoRequest) => Promise<AgentCreateTodoResult>;
   readonly readArtifact: (request: AgentReadArtifactRequest) => Promise<AgentArtifactContent>;
   readonly applyPatch: (request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>;
   readonly resolveApproval: (request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>;

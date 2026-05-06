@@ -4,6 +4,8 @@ export type {
   AgentArtifactContent,
   AgentCancelTurnRequest,
   AgentCancelTurnResult,
+  AgentCreateTodoRequest,
+  AgentCreateTodoResult,
   AgentCreateSessionRequest,
   AgentReadArtifactRequest,
   AgentReadSessionRequest,

@@ -1761,6 +1761,115 @@
   font-size: var(--lyra-text-size-11);
 }
 
+.lyra-ai-execution-todo-list {
+  position: relative;
+  z-index: 2;
+  width: calc(100% - var(--lyra-unit-24));
+  max-width: 47.5rem;
+  align-self: center;
+  display: grid;
+  gap: var(--lyra-unit-6);
+  margin: 0 auto var(--lyra-unit-8);
+  padding: var(--lyra-unit-8) var(--lyra-unit-10);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-radius: var(--lyra-radius-6);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 84%, var(--lyra-bg-editor) 16%);
+}
+
+.lyra-ai-execution-todo-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-unit-7);
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-16);
+}
+
+.lyra-ai-execution-todo-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--lyra-text-secondary);
+  font-weight: var(--lyra-font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-execution-todo-summary {
+  margin-left: auto;
+  color: var(--lyra-text-tertiary);
+  white-space: nowrap;
+}
+
+.lyra-ai-execution-todo-items {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lyra-ai-execution-todo-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: var(--lyra-unit-18) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--lyra-unit-7);
+  min-height: var(--lyra-unit-24);
+  color: var(--lyra-text-tertiary);
+}
+
+.lyra-ai-execution-todo-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lyra-unit-18);
+  height: var(--lyra-unit-18);
+  color: var(--lyra-text-tertiary);
+}
+
+.lyra-ai-execution-todo-item[data-status="completed"] .lyra-ai-execution-todo-status {
+  color: var(--lyra-success-500, #4f9d69);
+}
+
+.lyra-ai-execution-todo-item[data-status="blocked"] .lyra-ai-execution-todo-status {
+  color: var(--lyra-warning-500, #b8872b);
+}
+
+.lyra-ai-execution-todo-item[data-status="failed"] .lyra-ai-execution-todo-status {
+  color: var(--lyra-danger-500, #d95c4f);
+}
+
+.lyra-ai-execution-todo-item-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: baseline;
+  gap: var(--lyra-unit-8);
+}
+
+.lyra-ai-execution-todo-item-title,
+.lyra-ai-execution-todo-item-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-execution-todo-item-title {
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-12);
+  line-height: var(--lyra-text-line-16);
+}
+
+.lyra-ai-execution-todo-item-detail {
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-16);
+}
+
 .lyra-ai-pending-approval-list {
   position: relative;
   z-index: 2;

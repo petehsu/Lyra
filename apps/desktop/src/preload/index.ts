@@ -139,6 +139,8 @@ import {
   type AgentApplyPatchResult,
   type AgentArtifactContent,
   type AgentCreateSessionRequest,
+  type AgentCreateTodoRequest,
+  type AgentCreateTodoResult,
   type AgentReadArtifactRequest,
   type AgentReadSessionRequest,
   type AgentResolveApprovalRequest,
@@ -1042,6 +1044,8 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.aiSendTurn, request) as Promise<AgentSendTurnResult>,
     cancelTurn: (request: AgentCancelTurnRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiCancelTurn, request) as Promise<AgentCancelTurnResult>,
+    createTodo: (request: AgentCreateTodoRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiCreateTodo, request) as Promise<AgentCreateTodoResult>,
     readArtifact: (request: AgentReadArtifactRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiReadArtifact, request) as Promise<AgentArtifactContent>,
     applyPatch: (request: AgentApplyPatchRequest) =>

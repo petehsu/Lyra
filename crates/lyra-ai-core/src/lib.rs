@@ -74,6 +74,11 @@ pub fn cancel_agent_turn_json(request_json: String) -> Result<String> {
     to_json(&agent_runtime::cancel_turn(request)?)
 }
 
+pub fn create_agent_todo_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::create_todo(request)?)
+}
+
 pub fn read_agent_artifact_json(request_json: String) -> Result<String> {
     let request = parse_json(request_json)?;
     to_json(&artifact::read_artifact(request)?)

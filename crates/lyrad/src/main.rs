@@ -7,10 +7,11 @@ use std::sync::Arc;
 use lyra_ai_core::{
     apply_agent_patch_json, cancel_agent_turn_json,
     clear_rust_event_callback as clear_ai_event_callback, create_agent_session_json,
-    delete_model_profile_json, discover_models_json, list_agent_sessions_json,
-    read_agent_artifact_json, read_agent_session_json, read_model_config_json,
-    register_rust_event_callback as register_ai_event_callback, resolve_agent_approval_json,
-    send_agent_turn_json, update_agent_session_json, upsert_model_profile_json,
+    create_agent_todo_json, delete_model_profile_json, discover_models_json,
+    list_agent_sessions_json, read_agent_artifact_json, read_agent_session_json,
+    read_model_config_json, register_rust_event_callback as register_ai_event_callback,
+    resolve_agent_approval_json, send_agent_turn_json, update_agent_session_json,
+    upsert_model_profile_json,
 };
 use lyra_lsp_core::{
     change_document as lsp_change_document, clear_rust_event_callback as clear_lsp_event_callback,
@@ -531,6 +532,7 @@ fn handle_ai_request(method: &str, payload: Value) -> Result<Value, RuntimeError
         "agent.sessions.update" => call_json(payload, update_agent_session_json),
         "agent.turn.send" => call_json(payload, send_agent_turn_json),
         "agent.turn.cancel" => call_json(payload, cancel_agent_turn_json),
+        "agent.todo.create" => call_json(payload, create_agent_todo_json),
         "agent.artifact.read" => call_json(payload, read_agent_artifact_json),
         "agent.patch.apply" => call_json(payload, apply_agent_patch_json),
         "agent.approval.resolve" => call_json(payload, resolve_agent_approval_json),
@@ -843,6 +845,25 @@ mod tests {
 
         assert_eq!(error.code, "RUNTIME_ERROR");
         assert!(error.message.contains("approval ticket not found"));
+    }
+
+    #[test]
+    fn ai_todo_create_route_is_registered() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let error = handle_ai_request(
+            "agent.todo.create",
+            serde_json::json!({
+                "storageRoot": temp.path().to_string_lossy(),
+                "sessionId": "session-missing",
+                "kind": "plan_bound",
+                "title": "Plan",
+                "items": [{ "title": "Apply patch" }]
+            }),
+        )
+        .expect_err("missing session should be a runtime error");
+
+        assert_eq!(error.code, "RUNTIME_ERROR");
+        assert!(error.message.contains("AI session not found"));
     }
 }
 

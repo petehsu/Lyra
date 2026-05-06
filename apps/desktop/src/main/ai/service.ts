@@ -8,6 +8,8 @@ import {
   type AgentApplyPatchResult,
   type AgentArtifactContent,
   type AgentCreateSessionRequest,
+  type AgentCreateTodoRequest,
+  type AgentCreateTodoResult,
   type AgentReadArtifactRequest,
   type AgentReadSessionRequest,
   type AgentResolveApprovalRequest,
@@ -109,6 +111,11 @@ export const createAiIpcBridge = ({
       requestRuntime<AgentCancelTurnResult>("agent.turn.cancel", request)
   );
   ipcMain.handle(
+    LYRA_CHANNELS.aiCreateTodo,
+    async (_event, request: AgentCreateTodoRequest): Promise<AgentCreateTodoResult> =>
+      requestRuntime<AgentCreateTodoResult>("agent.todo.create", request)
+  );
+  ipcMain.handle(
     LYRA_CHANNELS.aiReadArtifact,
     async (_event, request: AgentReadArtifactRequest): Promise<AgentArtifactContent> =>
       requestRuntime<AgentArtifactContent>("agent.artifact.read", request)
@@ -137,6 +144,7 @@ export const createAiIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.aiUpdateSession);
       ipcMain.removeHandler(LYRA_CHANNELS.aiSendTurn);
       ipcMain.removeHandler(LYRA_CHANNELS.aiCancelTurn);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiCreateTodo);
       ipcMain.removeHandler(LYRA_CHANNELS.aiReadArtifact);
       ipcMain.removeHandler(LYRA_CHANNELS.aiApplyPatch);
       ipcMain.removeHandler(LYRA_CHANNELS.aiResolveApproval);
