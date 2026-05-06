@@ -7,6 +7,8 @@ import {
   type AgentApplyPatchRequest,
   type AgentApplyPatchResult,
   type AgentArtifactContent,
+  type AgentCreatePlanRequest,
+  type AgentCreatePlanResult,
   type AgentCreateSessionRequest,
   type AgentCreateTodoRequest,
   type AgentCreateTodoResult,
@@ -14,6 +16,8 @@ import {
   type AgentReadSessionRequest,
   type AgentResolveApprovalRequest,
   type AgentResolveApprovalResult,
+  type AgentResolvePlanReviewRequest,
+  type AgentResolvePlanReviewResult,
   type AgentRuntimeStreamEvent,
   type AgentSendTurnRequest,
   type AgentSendTurnResult,
@@ -116,6 +120,16 @@ export const createAiIpcBridge = ({
       requestRuntime<AgentCreateTodoResult>("agent.todo.create", request)
   );
   ipcMain.handle(
+    LYRA_CHANNELS.aiCreatePlan,
+    async (_event, request: AgentCreatePlanRequest): Promise<AgentCreatePlanResult> =>
+      requestRuntime<AgentCreatePlanResult>("agent.plan.create", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiResolvePlanReview,
+    async (_event, request: AgentResolvePlanReviewRequest): Promise<AgentResolvePlanReviewResult> =>
+      requestRuntime<AgentResolvePlanReviewResult>("agent.plan.review.resolve", request)
+  );
+  ipcMain.handle(
     LYRA_CHANNELS.aiReadArtifact,
     async (_event, request: AgentReadArtifactRequest): Promise<AgentArtifactContent> =>
       requestRuntime<AgentArtifactContent>("agent.artifact.read", request)
@@ -145,6 +159,8 @@ export const createAiIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.aiSendTurn);
       ipcMain.removeHandler(LYRA_CHANNELS.aiCancelTurn);
       ipcMain.removeHandler(LYRA_CHANNELS.aiCreateTodo);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiCreatePlan);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiResolvePlanReview);
       ipcMain.removeHandler(LYRA_CHANNELS.aiReadArtifact);
       ipcMain.removeHandler(LYRA_CHANNELS.aiApplyPatch);
       ipcMain.removeHandler(LYRA_CHANNELS.aiResolveApproval);

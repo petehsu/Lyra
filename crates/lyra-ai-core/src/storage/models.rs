@@ -157,6 +157,8 @@ pub struct AgentSessionDetail {
     pub messages: Vec<AgentMessage>,
     pub runtime_events: Vec<AgentRuntimeEvent>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub planning_summary: Option<AgentPlanningSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub active_todo: Option<AgentExecutionTodoList>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_summary: Option<AgentExecutionSummary>,
@@ -166,6 +168,48 @@ pub struct AgentSessionDetail {
     pub completion_audit: Option<AgentCompletionAuditSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery_proof: Option<AgentDeliveryProofSummary>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPlanningSummary {
+    pub plan_id: String,
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_turn_id: Option<String>,
+    pub status: String,
+    pub title: String,
+    pub objective_summary: String,
+    pub source: Value,
+    pub active_version_id: String,
+    pub panel_id: String,
+    pub panel_status: String,
+    pub version_number: i64,
+    pub version: Value,
+    pub annotations: Vec<AgentPlanReviewAnnotation>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPlanReviewAnnotation {
+    pub annotation_id: String,
+    pub panel_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_id: Option<String>,
+    pub anchor: String,
+    pub note: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedPlanRefs {
+    pub plan_id: String,
+    pub version_id: String,
+    pub panel_id: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

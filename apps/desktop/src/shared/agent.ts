@@ -243,12 +243,41 @@ export type AgentCompletionAuditSummary = {
   readonly updatedAt: number;
 };
 
+export type AgentPlanReviewAnnotationSummary = {
+  readonly annotationId: string;
+  readonly panelId: string;
+  readonly blockId?: string;
+  readonly anchor: string;
+  readonly note: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
+export type AgentPlanningSummary = {
+  readonly planId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId?: AgentTurnId;
+  readonly status: "pending_review" | "approved" | "rejected" | "superseded" | string;
+  readonly title: string;
+  readonly objectiveSummary: string;
+  readonly source: unknown;
+  readonly activeVersionId: string;
+  readonly panelId: string;
+  readonly panelStatus: "pending_review" | "approved" | "rejected" | "superseded" | string;
+  readonly versionNumber: number;
+  readonly version: unknown;
+  readonly annotations: readonly AgentPlanReviewAnnotationSummary[];
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
 export type AgentSessionDetail = {
   readonly session: AgentSession;
   readonly pendingInteractions: readonly AgentPendingInteraction[];
   readonly turns: readonly AgentTurn[];
   readonly messages: readonly AgentMessage[];
   readonly runtimeEvents: readonly AgentRuntimeEvent[];
+  readonly planningSummary?: AgentPlanningSummary | null;
   readonly activeTodo?: AgentExecutionTodoList | null;
   readonly executionSummary?: AgentExecutionSummary | null;
   readonly verificationSummary?: AgentVerificationSummary | null;
@@ -409,6 +438,40 @@ export type AgentCreateTodoResult = {
   readonly detail: AgentSessionDetail;
 };
 
+export type AgentCreatePlanRequest = {
+  readonly sessionId: string;
+  readonly title: string;
+  readonly objectiveSummary: string;
+  readonly source?: unknown;
+  readonly version: unknown;
+};
+
+export type AgentCreatePlanResult = {
+  readonly sessionId: string;
+  readonly planId: string;
+  readonly versionId: string;
+  readonly panelId: string;
+  readonly detail: AgentSessionDetail;
+};
+
+export type AgentResolvePlanReviewDecision = "approve" | "reject" | "annotate";
+
+export type AgentResolvePlanReviewRequest = {
+  readonly sessionId: string;
+  readonly planId: string;
+  readonly versionId: string;
+  readonly decision: AgentResolvePlanReviewDecision;
+  readonly annotationText?: string;
+};
+
+export type AgentResolvePlanReviewResult = {
+  readonly sessionId: string;
+  readonly planId: string;
+  readonly versionId: string;
+  readonly status: string;
+  readonly detail: AgentSessionDetail;
+};
+
 export type AgentReadArtifactRequest = {
   readonly sessionId: string;
   readonly artifactId?: string;
@@ -492,6 +555,8 @@ export type AgentRuntimeEventType =
   | "todo_list_created"
   | "todo_item_updated"
   | "execution_step_updated"
+  | "plan_review_created"
+  | "plan_review_updated"
   | "verification_plan_created"
   | "verification_run_updated"
   | "completion_audit_updated"

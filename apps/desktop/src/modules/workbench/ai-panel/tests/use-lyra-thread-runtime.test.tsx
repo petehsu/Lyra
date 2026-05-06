@@ -339,6 +339,75 @@ describe("useLyraThreadRuntime shell", () => {
     expect(desktopApi.ai.readSession).toHaveBeenCalledWith({ sessionId: "session-1" });
     expect(result.current.state.activeDetail?.pendingInteractions).toHaveLength(0);
   });
+
+  test("resolvePlanReview refreshes session detail from the runtime", async () => {
+    const detail = createDetail();
+    const refreshedDetail = {
+      ...detail,
+      planningSummary: {
+        planId: "plan-1",
+        sessionId: "session-1",
+        status: "approved",
+        title: "Plan",
+        objectiveSummary: "Do the work",
+        source: {},
+        activeVersionId: "plan-version-1",
+        panelId: "plan-panel-1",
+        panelStatus: "approved",
+        versionNumber: 1,
+        version: { steps: [] },
+        annotations: [],
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    } satisfies AgentSessionDetail;
+    const desktopApi = {
+      ai: {
+        listSessions: vi.fn().mockResolvedValue([]),
+        createSession: vi.fn().mockResolvedValue(detail),
+        readSession: vi.fn().mockResolvedValue(refreshedDetail),
+        updateSession: vi.fn(),
+        sendTurn: vi.fn(),
+        cancelTurn: vi.fn(),
+        resolvePlanReview: vi.fn().mockResolvedValue({
+          sessionId: "session-1",
+          planId: "plan-1",
+          versionId: "plan-version-1",
+          status: "approved",
+          detail: refreshedDetail,
+        }),
+        readConfig: vi.fn(),
+        upsertProfile: vi.fn(),
+        deleteProfile: vi.fn(),
+        discoverModels: vi.fn(),
+        onAgentEvent: () => () => {},
+      },
+    } as unknown as LyraDesktopApi;
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi,
+      })
+    );
+
+    await act(async () => {
+      await result.current.actions.createThread({ cwd: "/repo" });
+      await result.current.actions.resolvePlanReview({
+        sessionId: "session-1",
+        planId: "plan-1",
+        versionId: "plan-version-1",
+        decision: "approve",
+      });
+    });
+
+    expect(desktopApi.ai.resolvePlanReview).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      planId: "plan-1",
+      versionId: "plan-version-1",
+      decision: "approve",
+    });
+    expect(desktopApi.ai.readSession).toHaveBeenCalledWith({ sessionId: "session-1" });
+    expect(result.current.state.activeDetail?.planningSummary?.status).toBe("approved");
+  });
 });
 
 const createDetail = (): AgentSessionDetail => ({

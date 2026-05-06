@@ -204,6 +204,7 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly interruptTurn: () => void;
   readonly applyPatch: LyraThreadRuntimeActions["applyPatch"];
   readonly resolveApproval: LyraThreadRuntimeActions["resolveApproval"];
+  readonly resolvePlanReview: LyraThreadRuntimeActions["resolvePlanReview"];
   readonly sendTurn: (payload: AgentComposerSubmitPayload) => Promise<void>;
   readonly steerActiveTurn: (payload: AgentComposerSubmitPayload) => Promise<void>;
   readonly startFileMentionSearch: (sessionId: string, roots: readonly string[]) => Promise<void>;
@@ -279,6 +280,7 @@ export const useAiPanelSurfaceRuntime = ({
     sendTurn: sendRuntimeTurn,
     applyPatch,
     resolveApproval,
+    resolvePlanReview,
     setFollowEnabled,
     setPlanModeEnabled,
     steerTurn
@@ -734,6 +736,7 @@ export const useAiPanelSurfaceRuntime = ({
       interruptTurn: handleInterruptTurn,
       applyPatch,
       resolveApproval,
+      resolvePlanReview,
       sendTurn,
       steerActiveTurn,
       startFileMentionSearch,

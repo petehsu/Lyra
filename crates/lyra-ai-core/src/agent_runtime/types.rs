@@ -154,3 +154,49 @@ pub struct AgentCreateTodoResult {
     pub execution_run_id: String,
     pub detail: AgentSessionDetail,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCreatePlanRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    pub title: String,
+    pub objective_summary: String,
+    #[serde(default)]
+    pub source: Option<Value>,
+    pub version: Value,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCreatePlanResult {
+    pub session_id: String,
+    pub plan_id: String,
+    pub version_id: String,
+    pub panel_id: String,
+    pub detail: AgentSessionDetail,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentResolvePlanReviewRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    pub plan_id: String,
+    pub version_id: String,
+    pub decision: String,
+    #[serde(default)]
+    pub annotation_text: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentResolvePlanReviewResult {
+    pub session_id: String,
+    pub plan_id: String,
+    pub version_id: String,
+    pub status: String,
+    pub detail: AgentSessionDetail,
+}

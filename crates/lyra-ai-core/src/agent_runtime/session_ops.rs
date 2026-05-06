@@ -141,6 +141,120 @@ pub fn create_todo(request: AgentCreateTodoRequest) -> Result<AgentCreateTodoRes
     })
 }
 
+pub fn create_plan(request: AgentCreatePlanRequest) -> Result<AgentCreatePlanResult> {
+    let store = AiStore::open(request.storage.storage_root.as_deref())?;
+    let session_id = request.session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err(anyhow!("sessionId is required"));
+    }
+    store
+        .read_session_index(&session_id)?
+        .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
+    let source = request
+        .source
+        .unwrap_or_else(|| json!({ "type": "manual" }));
+    let refs = store.create_planning_session(
+        &session_id,
+        None,
+        &request.title,
+        &request.objective_summary,
+        source,
+        request.version,
+    )?;
+    emit_store_event(
+        &store,
+        &session_id,
+        None,
+        "plan_review_created",
+        json!({
+            "sessionId": session_id,
+            "planId": refs.plan_id,
+            "versionId": refs.version_id,
+            "panelId": refs.panel_id,
+            "status": "pending_review"
+        }),
+    )?;
+    let detail = store
+        .read_session_detail(&session_id)?
+        .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
+    emit_store_event(
+        &store,
+        &session_id,
+        None,
+        "session_updated",
+        json!({ "detail": detail }),
+    )?;
+    let detail = store
+        .read_session_detail(&session_id)?
+        .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
+    Ok(AgentCreatePlanResult {
+        session_id,
+        plan_id: refs.plan_id,
+        version_id: refs.version_id,
+        panel_id: refs.panel_id,
+        detail,
+    })
+}
+
+pub fn resolve_plan_review(
+    request: AgentResolvePlanReviewRequest,
+) -> Result<AgentResolvePlanReviewResult> {
+    let store = AiStore::open(request.storage.storage_root.as_deref())?;
+    let session_id = request.session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err(anyhow!("sessionId is required"));
+    }
+    store
+        .read_session_index(&session_id)?
+        .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
+    let summary = store.resolve_plan_review(
+        &session_id,
+        request.plan_id.trim(),
+        request.version_id.trim(),
+        request.decision.trim(),
+        request.annotation_text.as_deref(),
+    )?;
+    emit_store_event(
+        &store,
+        &session_id,
+        summary.runtime_turn_id.as_deref(),
+        "plan_review_updated",
+        json!({
+            "sessionId": session_id,
+            "planId": summary.plan_id,
+            "versionId": summary.active_version_id,
+            "panelId": summary.panel_id,
+            "status": summary.status,
+            "panelStatus": summary.panel_status
+        }),
+    )?;
+    let detail = store
+        .read_session_detail(&session_id)?
+        .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
+    emit_store_event(
+        &store,
+        &session_id,
+        summary.runtime_turn_id.as_deref(),
+        "session_updated",
+        json!({ "detail": detail }),
+    )?;
+    let detail = store
+        .read_session_detail(&session_id)?
+        .ok_or_else(|| anyhow!("AI session not found: {session_id}"))?;
+    let status = detail
+        .planning_summary
+        .as_ref()
+        .map(|summary| summary.status.clone())
+        .unwrap_or(summary.status);
+    Ok(AgentResolvePlanReviewResult {
+        session_id,
+        plan_id: request.plan_id,
+        version_id: request.version_id,
+        status,
+        detail,
+    })
+}
+
 pub(super) fn ensure_session(
     store: &AiStore,
     session_id: Option<&str>,

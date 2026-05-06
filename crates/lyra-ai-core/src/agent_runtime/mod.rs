@@ -52,7 +52,10 @@ use todo_projection::record_todo_from_tool_result;
 
 mod session_ops;
 use session_ops::ensure_session;
-pub use session_ops::{create_session, create_todo, list_sessions, read_session, update_session};
+pub use session_ops::{
+    create_plan, create_session, create_todo, list_sessions, read_session, resolve_plan_review,
+    update_session,
+};
 
 mod turn_loop;
 pub use turn_loop::{cancel_turn, send_turn};

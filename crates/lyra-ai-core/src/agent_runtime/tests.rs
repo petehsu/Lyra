@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::patch_apply::{resolve_agent_approval, AgentResolveApprovalRequest, ApprovalDecision};
 use crate::storage::{AgentSession, AgentTurn};
@@ -125,6 +124,136 @@ fn seed_todo_for_tool(store: &AiStore, session_id: &str, turn_id: &str, tool_pat
             }],
         )
         .expect("todo");
+}
+
+#[test]
+fn create_plan_records_planning_summary() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let storage_root = temp.path().to_string_lossy().to_string();
+    let store = AiStore::open(Some(&storage_root)).expect("store");
+    let workspace = temp.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let (session_id, _turn_id) = seed_turn(&store, workspace.to_string_lossy().as_ref());
+
+    let result = create_plan(AgentCreatePlanRequest {
+        storage: storage_request(&storage_root),
+        session_id: session_id.clone(),
+        title: "Refactor runtime".to_string(),
+        objective_summary: "Split planning state into Rust-owned storage".to_string(),
+        source: Some(json!({ "type": "test" })),
+        version: json!({
+            "summary": "Add planning tables and review API",
+            "steps": [
+                { "id": "step-1", "title": "Add storage" },
+                { "id": "step-2", "title": "Render review" }
+            ]
+        }),
+    })
+    .expect("create plan");
+
+    let summary = result
+        .detail
+        .planning_summary
+        .as_ref()
+        .expect("planning summary");
+    assert_eq!(summary.plan_id, result.plan_id);
+    assert_eq!(summary.active_version_id, result.version_id);
+    assert_eq!(summary.panel_id, result.panel_id);
+    assert_eq!(summary.status, "pending_review");
+    assert_eq!(summary.panel_status, "pending_review");
+    assert_eq!(summary.version_number, 1);
+    assert_eq!(summary.version["steps"][0]["title"], "Add storage");
+}
+
+#[test]
+fn resolve_plan_review_updates_status_and_annotations() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let storage_root = temp.path().to_string_lossy().to_string();
+    let store = AiStore::open(Some(&storage_root)).expect("store");
+    let workspace = temp.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let (session_id, _turn_id) = seed_turn(&store, workspace.to_string_lossy().as_ref());
+    let created = create_plan(AgentCreatePlanRequest {
+        storage: storage_request(&storage_root),
+        session_id: session_id.clone(),
+        title: "Plan".to_string(),
+        objective_summary: "Objective".to_string(),
+        source: None,
+        version: json!({ "steps": [{ "title": "Do work" }] }),
+    })
+    .expect("create plan");
+
+    let annotated = resolve_plan_review(AgentResolvePlanReviewRequest {
+        storage: storage_request(&storage_root),
+        session_id: session_id.clone(),
+        plan_id: created.plan_id.clone(),
+        version_id: created.version_id.clone(),
+        decision: "annotate".to_string(),
+        annotation_text: Some("Tighten scope first".to_string()),
+    })
+    .expect("annotate plan");
+    let annotations = annotated
+        .detail
+        .planning_summary
+        .as_ref()
+        .expect("planning summary")
+        .annotations
+        .clone();
+    assert_eq!(annotations.len(), 1);
+    assert_eq!(annotations[0].note, "Tighten scope first");
+
+    let approved = resolve_plan_review(AgentResolvePlanReviewRequest {
+        storage: storage_request(&storage_root),
+        session_id,
+        plan_id: created.plan_id.clone(),
+        version_id: created.version_id.clone(),
+        decision: "approve".to_string(),
+        annotation_text: None,
+    })
+    .expect("approve plan");
+    let summary = approved.detail.planning_summary.expect("planning summary");
+    assert_eq!(approved.status, "approved");
+    assert_eq!(summary.status, "approved");
+    assert_eq!(summary.panel_status, "approved");
+}
+
+#[test]
+fn resolving_superseded_plan_is_rejected() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let storage_root = temp.path().to_string_lossy().to_string();
+    let store = AiStore::open(Some(&storage_root)).expect("store");
+    let workspace = temp.path().join("workspace");
+    fs::create_dir_all(&workspace).expect("workspace");
+    let (session_id, _turn_id) = seed_turn(&store, workspace.to_string_lossy().as_ref());
+    let first = create_plan(AgentCreatePlanRequest {
+        storage: storage_request(&storage_root),
+        session_id: session_id.clone(),
+        title: "First".to_string(),
+        objective_summary: "First objective".to_string(),
+        source: None,
+        version: json!({ "steps": [] }),
+    })
+    .expect("first plan");
+    create_plan(AgentCreatePlanRequest {
+        storage: storage_request(&storage_root),
+        session_id: session_id.clone(),
+        title: "Second".to_string(),
+        objective_summary: "Second objective".to_string(),
+        source: None,
+        version: json!({ "steps": [] }),
+    })
+    .expect("second plan");
+
+    let error = resolve_plan_review(AgentResolvePlanReviewRequest {
+        storage: storage_request(&storage_root),
+        session_id,
+        plan_id: first.plan_id,
+        version_id: first.version_id,
+        decision: "approve".to_string(),
+        annotation_text: None,
+    })
+    .expect_err("superseded plan should be rejected");
+    assert!(error.to_string().contains("plan is superseded"));
 }
 
 #[test]

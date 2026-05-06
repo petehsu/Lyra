@@ -184,6 +184,59 @@ pub(super) fn migrate_session(conn: &Connection) -> Result<()> {
             created_at_ms INTEGER NOT NULL,
             created_at_iso TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS planning_session (
+            planning_session_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            runtime_turn_id TEXT,
+            status TEXT NOT NULL,
+            title TEXT NOT NULL,
+            objective_summary TEXT NOT NULL,
+            source_json TEXT NOT NULL,
+            active_version_id TEXT,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS plan_version (
+            plan_version_id TEXT PRIMARY KEY,
+            planning_session_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            runtime_turn_id TEXT,
+            version_number INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            version_json TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS plan_review_panel (
+            panel_id TEXT PRIMARY KEY,
+            planning_session_id TEXT NOT NULL,
+            plan_version_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            runtime_turn_id TEXT,
+            status TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS plan_review_annotation (
+            annotation_id TEXT PRIMARY KEY,
+            panel_id TEXT NOT NULL,
+            planning_session_id TEXT NOT NULL,
+            plan_version_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            block_id TEXT,
+            anchor TEXT NOT NULL,
+            note TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS execution_todo_list (
             todo_list_id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,

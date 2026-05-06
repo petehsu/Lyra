@@ -100,10 +100,12 @@ import type {
   WorkbenchBrowserElementPickerState,
   WorkbenchBrowserEvent,
   WorkbenchBrowserHoveredElementInfo,
+  WorkbenchBrowserCapturePageRequest,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
   WorkbenchBrowserNavigateResult,
   WorkbenchBrowserPageRuntimeState,
+  WorkbenchBrowserOverlaySuppressionRequest,
   WorkbenchBrowserReadPageStateRequest,
   WorkbenchBrowserSetElementPickerModeRequest,
   WorkbenchBrowserTopologySnapshot,
@@ -111,7 +113,8 @@ import type {
 } from "./workbench-browser";
 import type {
   WorkbenchObservationQueryRequest,
-  WorkbenchObservationQueryResult
+  WorkbenchObservationQueryResult,
+  WorkbenchVisualCaptureResult
 } from "./workbench-observation";
 import type {
   AiDeleteProfileRequest,
@@ -127,13 +130,20 @@ import type {
   AgentApplyPatchRequest,
   AgentApplyPatchResult,
   AgentArtifactContent,
+  AgentCreatePlanRequest,
+  AgentCreatePlanResult,
   AgentCreateTodoRequest,
   AgentCreateTodoResult,
   AgentCreateSessionRequest,
   AgentReadArtifactRequest,
   AgentReadSessionRequest,
+  AgentPlanningSummary,
+  AgentPlanReviewAnnotationSummary,
   AgentResolveApprovalRequest,
   AgentResolveApprovalResult,
+  AgentResolvePlanReviewDecision,
+  AgentResolvePlanReviewRequest,
+  AgentResolvePlanReviewResult,
   AgentRuntimeStreamEvent,
   AgentSendTurnRequest,
   AgentSendTurnResult,
@@ -160,6 +170,8 @@ export type {
   AgentApplyPatchRequest,
   AgentApplyPatchResult,
   AgentArtifactContent,
+  AgentCreatePlanRequest,
+  AgentCreatePlanResult,
   AgentCreateTodoRequest,
   AgentCreateTodoResult,
   AgentCreateSessionRequest,
@@ -167,6 +179,8 @@ export type {
   AgentReadSessionRequest,
   AgentResolveApprovalRequest,
   AgentResolveApprovalResult,
+  AgentResolvePlanReviewRequest,
+  AgentResolvePlanReviewResult,
   AgentRuntimeStreamEvent,
   AgentSendTurnRequest,
   AgentSendTurnResult,
@@ -306,10 +320,12 @@ export type {
   WorkbenchBrowserElementPickerPhase,
   WorkbenchBrowserElementPickerState,
   WorkbenchBrowserEvent,
+  WorkbenchBrowserCapturePageRequest,
   WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
   WorkbenchBrowserNavigateResult,
+  WorkbenchBrowserOverlaySuppressionRequest,
   WorkbenchBrowserPageLayout,
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserPageSpec,
@@ -444,6 +460,8 @@ export const LYRA_CHANNELS = {
   workbenchBrowserReload: "lyra:workbench-browser/reload",
   workbenchBrowserStop: "lyra:workbench-browser/stop",
   workbenchBrowserReadPageState: "lyra:workbench-browser/read-page-state",
+  workbenchBrowserCapturePage: "lyra:workbench-browser/capture-page",
+  workbenchBrowserSetOverlaySuppressed: "lyra:workbench-browser/set-overlay-suppressed",
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
   workbenchBrowserApplyWebTheme: "lyra:workbench-browser/apply-web-theme",
   workbenchBrowserEvent: "lyra:workbench-browser/event",
@@ -502,6 +520,8 @@ export const LYRA_CHANNELS = {
   aiSendTurn: "lyra:ai/turn/send",
   aiCancelTurn: "lyra:ai/turn/cancel",
   aiCreateTodo: "lyra:ai/todo/create",
+  aiCreatePlan: "lyra:ai/plan/create",
+  aiResolvePlanReview: "lyra:ai/plan/review/resolve",
   aiReadArtifact: "lyra:ai/artifact/read",
   aiApplyPatch: "lyra:ai/patch/apply",
   aiResolveApproval: "lyra:ai/approval/resolve",
@@ -1500,6 +1520,12 @@ export type WorkbenchBrowserApi = {
   readonly readPageState: (
     request?: WorkbenchBrowserReadPageStateRequest
   ) => Promise<WorkbenchBrowserPageRuntimeState | null>;
+  readonly capturePage: (
+    request: WorkbenchBrowserCapturePageRequest
+  ) => Promise<WorkbenchVisualCaptureResult>;
+  readonly setOverlaySuppressed: (
+    request: WorkbenchBrowserOverlaySuppressionRequest
+  ) => Promise<void>;
   readonly setElementPickerMode: (
     request: WorkbenchBrowserSetElementPickerModeRequest
   ) => Promise<void>;
@@ -1577,6 +1603,8 @@ export type AiApi = {
   readonly sendTurn: (request: AgentSendTurnRequest) => Promise<AgentSendTurnResult>;
   readonly cancelTurn: (request: AgentCancelTurnRequest) => Promise<AgentCancelTurnResult>;
   readonly createTodo: (request: AgentCreateTodoRequest) => Promise<AgentCreateTodoResult>;
+  readonly createPlan: (request: AgentCreatePlanRequest) => Promise<AgentCreatePlanResult>;
+  readonly resolvePlanReview: (request: AgentResolvePlanReviewRequest) => Promise<AgentResolvePlanReviewResult>;
   readonly readArtifact: (request: AgentReadArtifactRequest) => Promise<AgentArtifactContent>;
   readonly applyPatch: (request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>;
   readonly resolveApproval: (request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>;

@@ -79,6 +79,16 @@ pub fn create_agent_todo_json(request_json: String) -> Result<String> {
     to_json(&agent_runtime::create_todo(request)?)
 }
 
+pub fn create_agent_plan_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::create_plan(request)?)
+}
+
+pub fn resolve_agent_plan_review_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::resolve_plan_review(request)?)
+}
+
 pub fn read_agent_artifact_json(request_json: String) -> Result<String> {
     let request = parse_json(request_json)?;
     to_json(&artifact::read_artifact(request)?)

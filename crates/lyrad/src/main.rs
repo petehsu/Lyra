@@ -6,11 +6,12 @@ use std::sync::Arc;
 
 use lyra_ai_core::{
     apply_agent_patch_json, cancel_agent_turn_json,
-    clear_rust_event_callback as clear_ai_event_callback, create_agent_session_json,
-    create_agent_todo_json, delete_model_profile_json, discover_models_json,
-    list_agent_sessions_json, read_agent_artifact_json, read_agent_session_json,
-    read_model_config_json, register_rust_event_callback as register_ai_event_callback,
-    resolve_agent_approval_json, send_agent_turn_json, update_agent_session_json,
+    clear_rust_event_callback as clear_ai_event_callback, create_agent_plan_json,
+    create_agent_session_json, create_agent_todo_json, delete_model_profile_json,
+    discover_models_json, list_agent_sessions_json, read_agent_artifact_json,
+    read_agent_session_json, read_model_config_json,
+    register_rust_event_callback as register_ai_event_callback, resolve_agent_approval_json,
+    resolve_agent_plan_review_json, send_agent_turn_json, update_agent_session_json,
     upsert_model_profile_json,
 };
 use lyra_lsp_core::{
@@ -533,6 +534,8 @@ fn handle_ai_request(method: &str, payload: Value) -> Result<Value, RuntimeError
         "agent.turn.send" => call_json(payload, send_agent_turn_json),
         "agent.turn.cancel" => call_json(payload, cancel_agent_turn_json),
         "agent.todo.create" => call_json(payload, create_agent_todo_json),
+        "agent.plan.create" => call_json(payload, create_agent_plan_json),
+        "agent.plan.review.resolve" => call_json(payload, resolve_agent_plan_review_json),
         "agent.artifact.read" => call_json(payload, read_agent_artifact_json),
         "agent.patch.apply" => call_json(payload, apply_agent_patch_json),
         "agent.approval.resolve" => call_json(payload, resolve_agent_approval_json),
@@ -864,6 +867,40 @@ mod tests {
 
         assert_eq!(error.code, "RUNTIME_ERROR");
         assert!(error.message.contains("AI session not found"));
+    }
+
+    #[test]
+    fn ai_plan_routes_are_registered() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let create_error = handle_ai_request(
+            "agent.plan.create",
+            serde_json::json!({
+                "storageRoot": temp.path().to_string_lossy(),
+                "sessionId": "session-missing",
+                "title": "Plan",
+                "objectiveSummary": "Ship the plan",
+                "version": { "steps": [] }
+            }),
+        )
+        .expect_err("missing session should be a runtime error");
+
+        assert_eq!(create_error.code, "RUNTIME_ERROR");
+        assert!(create_error.message.contains("AI session not found"));
+
+        let resolve_error = handle_ai_request(
+            "agent.plan.review.resolve",
+            serde_json::json!({
+                "storageRoot": temp.path().to_string_lossy(),
+                "sessionId": "session-missing",
+                "planId": "plan-missing",
+                "versionId": "plan-version-missing",
+                "decision": "approve"
+            }),
+        )
+        .expect_err("missing session should be a runtime error");
+
+        assert_eq!(resolve_error.code, "RUNTIME_ERROR");
+        assert!(resolve_error.message.contains("AI session not found"));
     }
 }
 

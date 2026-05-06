@@ -39,6 +39,7 @@ mod completion;
 mod connection;
 mod execution;
 mod patch_backup;
+mod planning;
 mod profile;
 mod session;
 mod verification;

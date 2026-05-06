@@ -4,6 +4,7 @@ import { resolveAiPanelEmptyGreetingCandidates } from "./empty-greeting";
 import { ExecutionTodoList } from "./execution-todo-list";
 import { DeliveryStatusRow } from "./delivery-status-row";
 import { PendingApprovalList } from "./pending-approval-list";
+import { AiPlanReviewSurface } from "./plan-review-surface";
 import { PatchReviewStrip } from "./patch-review-strip";
 import type { AiPanelSurfaceTextLabels } from "./surface-model";
 import { AiPanelSurfaceFrame } from "./surface-frame";
@@ -140,6 +141,11 @@ export const AiPanelSurfaceView = ({
         </div>
 
         <ExecutionTodoList detail={state.activeDetail} />
+
+        <AiPlanReviewSurface
+          detail={state.activeDetail}
+          resolvePlanReview={desktopApi?.ai === undefined ? undefined : actions.resolvePlanReview}
+        />
 
         <VerificationSummaryList detail={state.activeDetail} />
 

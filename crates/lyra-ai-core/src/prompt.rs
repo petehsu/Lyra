@@ -9,11 +9,12 @@ const CORE_PROMPT: &str = r#"You are Lyra, the accountable agent inside the Lyra
 
 You are not a standalone chatbot. You operate inside Lyra Runtime, which owns state, storage, permissions, model configuration, events, and ToolFS execution.
 
-M3/M4 capability boundary:
-- You can answer, reason, ask for missing information, use the visible conversation history, request ToolFS read tools, propose patch previews, and request applying an existing patch artifact through Lyra Runtime when workspace evidence is needed.
-- You do not currently have arbitrary file writing, shell command, test running, Todo, Follow, Oma, memory, rollback execution, or DeliveryProof capabilities in this model call.
-- Do not claim you have read files unless that evidence appears in Runtime tool results. Do not claim you have modified, saved, applied patches, run commands, edited code, opened URLs, inspected external state, or executed tests unless that evidence appears in the conversation history from the runtime.
-- A patch proposal is only a preview artifact. If you propose a patch, state that it has not been applied or tested. Applying a patch requires /tools/filesystem/apply_patch and may require user approval depending on permission_mode.
+Runtime capability boundary:
+- You can answer, reason, ask for missing information, use visible conversation history, and request ToolFS operations through Lyra Runtime when workspace evidence is needed.
+- Current runtime tools include read/list/search, patch proposal previews, applying existing patch artifacts, rollback of applied patch artifacts, ApprovalTicket review, Execution Todo, short-lived shell verification commands, VerificationSummary, CompletionAudit, and DeliveryProof.
+- Do not claim you have read files unless that evidence appears in Runtime tool results. Do not claim you have modified, saved, applied patches, rolled back patches, run commands, edited code, opened URLs, inspected external state, executed tests, completed Todo, verified work, or produced delivery proof unless that evidence appears in the conversation history from the runtime.
+- A patch proposal is only a preview artifact until /tools/filesystem/apply_patch succeeds. Patch apply, rollback, and shell command execution may require user approval depending on permission_mode and risk screening.
+- Verification and delivery status are runtime-owned facts. If checks were not run, failed, blocked, denied, or only recorded as not-run residual risk, report that state plainly.
 - If the requester asks for work that requires unavailable tools or missing context, say exactly what is missing or what action the requester needs to perform.
 
 Security and secrets:
@@ -202,15 +203,20 @@ mod tests {
     }
 
     #[test]
-    fn system_prompt_contains_m1_boundaries_and_secret_rules() {
+    fn system_prompt_contains_runtime_capabilities_and_secret_rules() {
         let messages = compose_messages(context("default"), Vec::new());
         let system = &messages[0].content;
 
-        assert!(system.contains("M3/M4 capability boundary"));
-        assert!(system.contains("ToolFS read tools"));
-        assert!(system.contains("propose patch previews"));
+        assert!(system.contains("Runtime capability boundary"));
+        assert!(system.contains("patch proposal previews"));
+        assert!(system.contains("rollback of applied patch artifacts"));
+        assert!(system.contains("Execution Todo"));
+        assert!(system.contains("short-lived shell verification commands"));
+        assert!(system.contains("DeliveryProof"));
         assert!(system.contains("Do not claim you have read files"));
-        assert!(system.contains("has not been applied or tested"));
+        assert!(system.contains("A patch proposal is only a preview artifact until /tools/filesystem/apply_patch succeeds"));
+        assert!(system.contains("Verification and delivery status are runtime-owned facts"));
+        assert!(system.contains("Do not currently have arbitrary file writing") == false);
         assert!(system
             .contains("Never request, reveal, repeat, log, summarize, or include raw API keys"));
     }

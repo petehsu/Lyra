@@ -8,6 +8,8 @@ import type {
   AgentApplyPatchRequest,
   AgentApplyPatchResult,
   AgentMessage,
+  AgentResolvePlanReviewRequest,
+  AgentResolvePlanReviewResult,
   AgentResolveApprovalRequest,
   AgentResolveApprovalResult,
   AgentRuntimeEvent,
@@ -74,6 +76,7 @@ export type LyraThreadRuntimeActions = {
   readonly interruptTurn: () => Promise<void>;
   readonly applyPatch: (request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>;
   readonly resolveApproval: (request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>;
+  readonly resolvePlanReview: (request: AgentResolvePlanReviewRequest) => Promise<AgentResolvePlanReviewResult>;
   readonly cleanBackgroundTerminals: () => Promise<void>;
   readonly selectThread: (threadId: string | null) => void;
   readonly activateThreadTab: (tabId: string) => void;
@@ -726,6 +729,19 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     return result;
   }, [desktopApi?.ai, upsertDetail]);
 
+  const resolvePlanReview = useCallback(async (
+    request: AgentResolvePlanReviewRequest
+  ): Promise<AgentResolvePlanReviewResult> => {
+    const api = desktopApi?.ai;
+    if (api === undefined) {
+      throw new Error("AI runtime is not connected");
+    }
+    const result = await api.resolvePlanReview(request);
+    const detail = await api.readSession({ sessionId: request.sessionId });
+    upsertDetail(detail);
+    return result;
+  }, [desktopApi?.ai, upsertDetail]);
+
   const cleanBackgroundTerminals = useCallback(async (): Promise<void> => {}, []);
 
   const activeThreadId = activeTab?.threadId ?? null;
@@ -778,6 +794,7 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     interruptTurn,
     applyPatch,
     resolveApproval,
+    resolvePlanReview,
     cleanBackgroundTerminals,
     selectThread,
     activateThreadTab,
@@ -790,6 +807,7 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     activateThreadTab,
     applyPatch,
     resolveApproval,
+    resolvePlanReview,
     cleanBackgroundTerminals,
     closeThreadTab,
     createThread,
