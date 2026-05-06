@@ -207,7 +207,7 @@ describe("ai panel surface model", () => {
           id: "profile-mimo",
           name: "MiMO",
           runtimeProviderId: "lp-mimo",
-          model: "mimo-v2.5-pro",
+          model: "user-discovered-model",
         }),
       ],
       defaultProfileId: "profile-mimo",
@@ -219,7 +219,7 @@ describe("ai panel surface model", () => {
       modelOptions: options,
       selectedModelOptionValue: `profile-openai${MODEL_OPTION_DELIMITER}gpt-5`,
       defaultProfileId: "profile-mimo"
-    })).toBe(`profile-mimo${MODEL_OPTION_DELIMITER}mimo-v2.5-pro`);
+    })).toBe(`profile-mimo${MODEL_OPTION_DELIMITER}user-discovered-model`);
   });
 
   test("maps composer selections into runtime turn options", () => {

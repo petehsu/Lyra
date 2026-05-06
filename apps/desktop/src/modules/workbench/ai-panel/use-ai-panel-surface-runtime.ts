@@ -202,11 +202,14 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly toggleFollow: () => void;
   readonly enableFollow: () => void;
   readonly interruptTurn: () => void;
+  readonly applyPatch: LyraThreadRuntimeActions["applyPatch"];
+  readonly resolveApproval: LyraThreadRuntimeActions["resolveApproval"];
   readonly sendTurn: (payload: AgentComposerSubmitPayload) => Promise<void>;
   readonly steerActiveTurn: (payload: AgentComposerSubmitPayload) => Promise<void>;
   readonly startFileMentionSearch: (sessionId: string, roots: readonly string[]) => Promise<void>;
   readonly updateFileMentionSearch: (sessionId: string, query: string) => Promise<void>;
   readonly stopFileMentionSearch: (sessionId: string) => Promise<void>;
+  readonly setExpandedPatchKey: Dispatch<SetStateAction<string | null>>;
 };
 
 export type AiPanelSurfaceRuntime = {
@@ -214,6 +217,7 @@ export type AiPanelSurfaceRuntime = {
   readonly actions: AiPanelSurfaceRuntimeActions;
   readonly composerAppendRequest: ComposerAppendRequest | null;
   readonly composerReserveStyle: CSSProperties;
+  readonly expandedPatchKey: string | null;
   readonly modelOptions: readonly RuntimeModelOption[];
   readonly selectedModelOption: RuntimeModelOption | null;
   readonly reasoningEffortOptions: readonly AgentComposerModelControlOption<AgentComposerReasoningEffort>[];
@@ -251,6 +255,7 @@ export const useAiPanelSurfaceRuntime = ({
   const [selectedVerbosity, setSelectedVerbosity] =
     useState<RuntimeThreadOptions["verbosity"] | null>(null);
   const [composerHeight, setComposerHeight] = useState(96);
+  const [expandedPatchKey, setExpandedPatchKey] = useState<string | null>(null);
   const [boundProjectRootByThread, setBoundProjectRootByThread] = useState<
     ReadonlyMap<string, string>
   >(() => new Map());
@@ -272,6 +277,8 @@ export const useAiPanelSurfaceRuntime = ({
     reorderThreadTab,
     openThreadTab,
     sendTurn: sendRuntimeTurn,
+    applyPatch,
+    resolveApproval,
     setFollowEnabled,
     setPlanModeEnabled,
     steerTurn
@@ -706,7 +713,7 @@ export const useAiPanelSurfaceRuntime = ({
     () => createComposerReserveStyle(composerHeight) as CSSProperties,
     [composerHeight]
   );
-  const isAgentAvailable = false;
+  const isAgentAvailable = desktopApi?.ai !== undefined && modelOptions.length > 0;
 
   return {
     state,
@@ -725,14 +732,18 @@ export const useAiPanelSurfaceRuntime = ({
       toggleFollow: handleFollowToggle,
       enableFollow,
       interruptTurn: handleInterruptTurn,
+      applyPatch,
+      resolveApproval,
       sendTurn,
       steerActiveTurn,
       startFileMentionSearch,
       updateFileMentionSearch,
       stopFileMentionSearch,
+      setExpandedPatchKey,
     },
     composerAppendRequest: null,
     composerReserveStyle,
+    expandedPatchKey,
     modelOptions,
     selectedModelOption,
     reasoningEffortOptions,

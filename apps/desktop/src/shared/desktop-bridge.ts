@@ -122,6 +122,24 @@ import type {
   AiUpsertProfileRequest
 } from "./ai";
 import type {
+  AgentCancelTurnRequest,
+  AgentCancelTurnResult,
+  AgentApplyPatchRequest,
+  AgentApplyPatchResult,
+  AgentArtifactContent,
+  AgentCreateSessionRequest,
+  AgentReadArtifactRequest,
+  AgentReadSessionRequest,
+  AgentResolveApprovalRequest,
+  AgentResolveApprovalResult,
+  AgentRuntimeStreamEvent,
+  AgentSendTurnRequest,
+  AgentSendTurnResult,
+  AgentSession,
+  AgentSessionDetail,
+  AgentUpdateSessionRequest
+} from "./agent";
+import type {
   InstalledUiuxPack,
   UiuxInstallFromGitRequest,
   UiuxInstallFromLocalRequest,
@@ -134,6 +152,24 @@ import type {
   UiuxSetTrustStateRequest
 } from "./uiux-packs";
 
+export type {
+  AgentCancelTurnRequest,
+  AgentCancelTurnResult,
+  AgentApplyPatchRequest,
+  AgentApplyPatchResult,
+  AgentArtifactContent,
+  AgentCreateSessionRequest,
+  AgentReadArtifactRequest,
+  AgentReadSessionRequest,
+  AgentResolveApprovalRequest,
+  AgentResolveApprovalResult,
+  AgentRuntimeStreamEvent,
+  AgentSendTurnRequest,
+  AgentSendTurnResult,
+  AgentSession,
+  AgentSessionDetail,
+  AgentUpdateSessionRequest
+} from "./agent";
 export type {
   AiDiscoverModelsRequest,
   AiDeleteProfileRequest,
@@ -455,6 +491,16 @@ export const LYRA_CHANNELS = {
   aiUpsertProfile: "lyra:ai/profile/upsert",
   aiDeleteProfile: "lyra:ai/profile/delete",
   aiDiscoverModels: "lyra:ai/models/discover",
+  aiListSessions: "lyra:ai/sessions/list",
+  aiCreateSession: "lyra:ai/sessions/create",
+  aiReadSession: "lyra:ai/sessions/read",
+  aiUpdateSession: "lyra:ai/sessions/update",
+  aiSendTurn: "lyra:ai/turn/send",
+  aiCancelTurn: "lyra:ai/turn/cancel",
+  aiReadArtifact: "lyra:ai/artifact/read",
+  aiApplyPatch: "lyra:ai/patch/apply",
+  aiResolveApproval: "lyra:ai/approval/resolve",
+  aiEvent: "lyra:ai/event",
   workbenchObservationQuery: "lyra:workbench-observation/query",
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
   uiuxListPacks: "lyra:uiux/list-packs",
@@ -1519,6 +1565,16 @@ export type AiApi = {
   readonly upsertProfile: (request: AiUpsertProfileRequest) => Promise<AiProviderProfile>;
   readonly deleteProfile: (request: AiDeleteProfileRequest) => Promise<void>;
   readonly discoverModels: (request: AiDiscoverModelsRequest) => Promise<AiModelDiscoveryResult>;
+  readonly listSessions: () => Promise<readonly AgentSession[]>;
+  readonly createSession: (request: AgentCreateSessionRequest) => Promise<AgentSessionDetail>;
+  readonly readSession: (request: AgentReadSessionRequest) => Promise<AgentSessionDetail>;
+  readonly updateSession: (request: AgentUpdateSessionRequest) => Promise<AgentSessionDetail>;
+  readonly sendTurn: (request: AgentSendTurnRequest) => Promise<AgentSendTurnResult>;
+  readonly cancelTurn: (request: AgentCancelTurnRequest) => Promise<AgentCancelTurnResult>;
+  readonly readArtifact: (request: AgentReadArtifactRequest) => Promise<AgentArtifactContent>;
+  readonly applyPatch: (request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>;
+  readonly resolveApproval: (request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>;
+  readonly onAgentEvent: (listener: (event: AgentRuntimeStreamEvent) => void) => () => void;
 };
 
 export type UiuxPacksApi = {

@@ -140,16 +140,20 @@ export const createRuntimeTurnOptions = ({
   readonly collaborationMode?: "default" | "plan" | undefined;
   readonly effort?: RuntimeThreadOptions["effort"] | null | undefined;
   readonly verbosity?: RuntimeThreadOptions["verbosity"] | null | undefined;
-}): RuntimeThreadOptions => ({
-  model: selectedModelOption?.model,
-  modelProvider: selectedModelOption?.modelProvider ?? defaultProviderId,
-  cwd: boundProjectRoot,
-  ...(effort === null || effort === undefined ? {} : { effort }),
-  ...(verbosity === null || verbosity === undefined ? {} : { verbosity }),
-  ...(collaborationMode === undefined
-    ? {}
-    : { collaborationMode })
-});
+}): RuntimeThreadOptions => {
+  const modelProvider = selectedModelOption?.modelProvider ?? defaultProviderId;
+  return {
+    ...(selectedModelOption?.profileId === undefined ? {} : { profileId: selectedModelOption.profileId }),
+    ...(selectedModelOption?.model === undefined ? {} : { model: selectedModelOption.model }),
+    ...(modelProvider === undefined ? {} : { modelProvider }),
+    cwd: boundProjectRoot,
+    ...(effort === null || effort === undefined ? {} : { effort }),
+    ...(verbosity === null || verbosity === undefined ? {} : { verbosity }),
+    ...(collaborationMode === undefined
+      ? {}
+      : { collaborationMode })
+  };
+};
 
 export const resolveBoundProjectRoot = ({
   activeThreadId,

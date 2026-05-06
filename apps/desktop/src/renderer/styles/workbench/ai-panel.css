@@ -1583,6 +1583,559 @@
   animation-fill-mode: backwards;
 }
 
+.lyra-ai-agent-thread-view {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lyra-unit-12);
+  padding:
+    var(--lyra-unit-16)
+    var(--lyra-unit-14)
+    calc(var(--lyra-ai-thread-bottom-reserve, var(--lyra-ai-composer-reserve, var(--lyra-unit-96))) + var(--lyra-unit-20));
+  overflow: auto;
+}
+
+.lyra-ai-agent-message {
+  width: min(var(--lyra-unit-860), 100%);
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-5);
+}
+
+.lyra-ai-agent-message-user {
+  width: fit-content;
+  max-width: min(var(--lyra-unit-720), 88%);
+  align-self: flex-end;
+}
+
+.lyra-ai-agent-message-assistant {
+  align-self: flex-start;
+}
+
+.lyra-ai-agent-message-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-8);
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-10);
+  line-height: var(--lyra-text-line-14);
+}
+
+.lyra-ai-agent-message-user .lyra-ai-agent-message-meta {
+  justify-content: flex-end;
+}
+
+.lyra-ai-agent-message-meta span {
+  color: var(--lyra-text-secondary);
+  font-weight: var(--lyra-font-weight-medium);
+}
+
+.lyra-ai-agent-message-user .lyra-ai-agent-message-content {
+  border-radius: var(--lyra-radius-8);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-text-accent) 26%, var(--lyra-line-default));
+  background: color-mix(in srgb, var(--lyra-text-accent) 10%, var(--lyra-bg-surface));
+  box-shadow: inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 36%, transparent);
+}
+
+.lyra-ai-agent-message-assistant .lyra-ai-agent-message-content {
+  padding-left: 0;
+}
+
+.lyra-ai-agent-message-live .lyra-ai-agent-message-meta::after {
+  content: "";
+  width: var(--lyra-unit-5);
+  height: var(--lyra-unit-5);
+  border-radius: var(--lyra-unit-999);
+  background: var(--lyra-text-accent);
+  animation: lyra-ai-topbar-action-pulse 0.95s ease-in-out infinite;
+}
+
+.lyra-ai-agent-message-pending,
+.lyra-ai-agent-thread-status,
+.lyra-ai-agent-thread-error {
+  width: fit-content;
+  max-width: 100%;
+  border-radius: var(--lyra-radius-8);
+  padding: var(--lyra-unit-7) var(--lyra-unit-9);
+  font-size: var(--lyra-text-size-12);
+}
+
+.lyra-ai-agent-message-pending,
+.lyra-ai-agent-thread-status {
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 62%, transparent);
+}
+
+.lyra-ai-agent-thread-error {
+  color: var(--lyra-danger-500, #d95c4f);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-danger-500, #d95c4f) 42%, transparent);
+  background: color-mix(in srgb, var(--lyra-danger-500, #d95c4f) 9%, var(--lyra-bg-surface));
+}
+
+.lyra-ai-agent-tool-event {
+  width: fit-content;
+  max-width: min(38.75rem, 92%);
+  min-height: var(--lyra-unit-26);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-6);
+  padding: var(--lyra-unit-4) var(--lyra-unit-8);
+  border-radius: var(--lyra-radius-6);
+  color: var(--lyra-text-secondary);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 64%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 72%, var(--lyra-bg-editor) 28%);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-14);
+}
+
+.lyra-ai-agent-tool-event-icon {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  color: var(--lyra-text-tertiary);
+}
+
+.lyra-ai-agent-tool-event-running .lyra-ai-agent-tool-event-icon {
+  animation: lyra-ai-topbar-action-pulse 0.95s ease-in-out infinite;
+}
+
+.lyra-ai-agent-tool-event-done .lyra-ai-agent-tool-event-icon {
+  color: var(--lyra-success-500, #57a773);
+}
+
+.lyra-ai-agent-tool-event-error {
+  color: var(--lyra-danger-500, #d95c4f);
+  border-color: color-mix(in srgb, var(--lyra-danger-500, #d95c4f) 38%, transparent);
+  background: color-mix(in srgb, var(--lyra-danger-500, #d95c4f) 8%, var(--lyra-bg-surface));
+}
+
+.lyra-ai-agent-tool-event-summary,
+.lyra-ai-agent-tool-event-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-agent-tool-event-summary {
+  color: inherit;
+  font-weight: var(--lyra-font-weight-medium);
+}
+
+.lyra-ai-agent-tool-event-detail {
+  max-width: var(--lyra-unit-320);
+  color: var(--lyra-text-tertiary);
+}
+
+.lyra-ai-patch-review-strip {
+  position: relative;
+  z-index: 2;
+  width: calc(100% - var(--lyra-unit-24));
+  max-width: 47.5rem;
+  min-height: var(--lyra-unit-30);
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-unit-7);
+  margin: 0 auto var(--lyra-unit-8);
+  padding: var(--lyra-unit-5) var(--lyra-unit-10);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  border-radius: var(--lyra-radius-6);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 86%, var(--lyra-bg-editor) 14%);
+  font-size: var(--lyra-text-size-12);
+  line-height: var(--lyra-text-line-16);
+  cursor: pointer;
+}
+
+.lyra-ai-patch-review-strip:hover {
+  color: var(--lyra-text-primary);
+  border-color: color-mix(in srgb, var(--lyra-accent-500, #4d8f7a) 44%, var(--lyra-line-default));
+}
+
+.lyra-ai-patch-review-strip small {
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+}
+
+.lyra-ai-pending-approval-list {
+  position: relative;
+  z-index: 2;
+  width: calc(100% - var(--lyra-unit-24));
+  max-width: 47.5rem;
+  align-self: center;
+  display: grid;
+  gap: var(--lyra-unit-6);
+  margin: 0 auto var(--lyra-unit-8);
+}
+
+.lyra-ai-pending-approval-row {
+  min-height: var(--lyra-unit-36);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-6) var(--lyra-unit-8);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border-radius: var(--lyra-radius-6);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 88%, var(--lyra-bg-editor) 12%);
+}
+
+.lyra-ai-pending-approval-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--lyra-accent-500, #4d8f7a);
+}
+
+.lyra-ai-pending-approval-main {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-1);
+}
+
+.lyra-ai-pending-approval-title,
+.lyra-ai-pending-approval-detail,
+.lyra-ai-pending-approval-error {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-pending-approval-title {
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-text-size-12);
+  font-weight: var(--lyra-font-weight-medium);
+  line-height: var(--lyra-text-line-16);
+}
+
+.lyra-ai-pending-approval-detail {
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-14);
+}
+
+.lyra-ai-pending-approval-error {
+  color: var(--lyra-danger-500, #d95c4f);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-14);
+}
+
+.lyra-ai-pending-approval-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--lyra-unit-5);
+}
+
+.lyra-ai-pending-approval-button {
+  min-width: var(--lyra-unit-72);
+  height: var(--lyra-control-h-compact);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-unit-4);
+  padding: 0 var(--lyra-unit-8);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-accent-500, #4d8f7a) 48%, var(--lyra-line-default));
+  border-radius: var(--lyra-radius-4);
+  color: var(--lyra-text-primary);
+  background: color-mix(in srgb, var(--lyra-accent-500, #4d8f7a) 14%, var(--lyra-bg-surface));
+  font: inherit;
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-14);
+  cursor: pointer;
+}
+
+.lyra-ai-pending-approval-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lyra-accent-500, #4d8f7a) 20%, var(--lyra-bg-surface));
+}
+
+.lyra-ai-pending-approval-button-deny {
+  border-color: color-mix(in srgb, var(--lyra-danger-500, #d95c4f) 42%, var(--lyra-line-default));
+  background: color-mix(in srgb, var(--lyra-danger-500, #d95c4f) 8%, var(--lyra-bg-surface));
+}
+
+.lyra-ai-pending-approval-button-deny:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lyra-danger-500, #d95c4f) 13%, var(--lyra-bg-surface));
+}
+
+.lyra-ai-pending-approval-button:disabled {
+  cursor: default;
+  opacity: 0.64;
+}
+
+.lyra-ai-pending-approval-state {
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-14);
+}
+
+@media (max-width: var(--lyra-unit-560)) {
+  .lyra-ai-pending-approval-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .lyra-ai-pending-approval-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+.lyra-ai-patch-preview-card {
+  width: min(47.5rem, 96%);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-radius: var(--lyra-radius-6);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 82%, var(--lyra-bg-editor) 18%);
+  overflow: hidden;
+}
+
+.lyra-ai-patch-preview-toggle {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, max-content) auto;
+  align-items: center;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-8) var(--lyra-unit-10);
+  border: 0;
+  color: var(--lyra-text-secondary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lyra-ai-patch-preview-toggle:hover {
+  background: color-mix(in srgb, var(--lyra-bg-elevated, var(--lyra-bg-surface)) 64%, transparent);
+}
+
+.lyra-ai-patch-preview-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--lyra-success-500, #57a773);
+}
+
+.lyra-ai-patch-preview-main {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-2);
+}
+
+.lyra-ai-patch-preview-title,
+.lyra-ai-patch-preview-detail,
+.lyra-ai-patch-preview-paths,
+.lyra-ai-patch-preview-refs {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-patch-preview-title {
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-text-size-12);
+  font-weight: var(--lyra-font-weight-medium);
+}
+
+.lyra-ai-patch-preview-detail,
+.lyra-ai-patch-preview-paths,
+.lyra-ai-patch-preview-refs {
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-14);
+}
+
+.lyra-ai-patch-preview-refs {
+  max-width: var(--lyra-unit-220);
+}
+
+.lyra-ai-patch-preview-toggle svg:last-child {
+  transition: transform 150ms ease;
+}
+
+.lyra-ai-patch-preview-chevron-open {
+  transform: rotate(180deg);
+}
+
+.lyra-ai-patch-preview-body {
+  border-top: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-editor) 82%, var(--lyra-bg-surface) 18%);
+}
+
+.lyra-ai-patch-preview-actions {
+  min-height: var(--lyra-unit-34);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-6) var(--lyra-unit-10);
+  border-bottom: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 58%, transparent);
+}
+
+.lyra-ai-patch-preview-actions-status {
+  min-width: 0;
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-14);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-ai-patch-preview-apply {
+  min-width: var(--lyra-unit-74);
+  height: var(--lyra-control-h-compact);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-unit-5);
+  padding: 0 var(--lyra-unit-9);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-accent-500, #4d8f7a) 48%, var(--lyra-line-default));
+  border-radius: var(--lyra-radius-4);
+  color: var(--lyra-text-primary);
+  background: color-mix(in srgb, var(--lyra-accent-500, #4d8f7a) 16%, var(--lyra-bg-surface));
+  font: inherit;
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-14);
+  cursor: pointer;
+}
+
+.lyra-ai-patch-preview-apply:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lyra-accent-500, #4d8f7a) 22%, var(--lyra-bg-surface));
+}
+
+.lyra-ai-patch-preview-apply:disabled {
+  cursor: default;
+  opacity: 0.66;
+}
+
+.lyra-ai-patch-preview-apply svg {
+  flex: 0 0 auto;
+}
+
+.lyra-ai-patch-preview-status,
+.lyra-ai-patch-preview-error {
+  padding: var(--lyra-unit-10);
+  font-size: var(--lyra-text-size-12);
+  line-height: var(--lyra-text-line-16);
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-patch-preview-error {
+  color: var(--lyra-danger-500, #d95c4f);
+}
+
+.lyra-ai-patch-diff-preview {
+  display: grid;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-10);
+}
+
+.lyra-ai-patch-diff-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lyra-unit-6);
+}
+
+.lyra-ai-patch-diff-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-6);
+  max-width: 100%;
+  padding: var(--lyra-unit-3) var(--lyra-unit-7);
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  border-radius: var(--lyra-radius-4);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 72%, transparent);
+  font-size: var(--lyra-text-size-11);
+}
+
+.lyra-ai-patch-diff-file-chip span,
+.lyra-ai-patch-diff-file-chip small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-ai-patch-diff-file-chip small {
+  color: var(--lyra-text-tertiary);
+}
+
+.lyra-ai-patch-diff-code {
+  max-height: var(--lyra-unit-420);
+  overflow: auto;
+  border: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  border-radius: var(--lyra-radius-4);
+  background: color-mix(in srgb, var(--lyra-bg-editor) 92%, #000 8%);
+}
+
+.lyra-ai-patch-diff-line {
+  display: grid;
+  grid-template-columns: var(--lyra-unit-38) var(--lyra-unit-38) var(--lyra-unit-22) minmax(0, 1fr);
+  min-width: var(--lyra-unit-560);
+  font-family: var(--lyra-font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-18);
+}
+
+.lyra-ai-patch-diff-line-number,
+.lyra-ai-patch-diff-marker,
+.lyra-ai-patch-diff-text {
+  min-width: 0;
+  white-space: pre;
+}
+
+.lyra-ai-patch-diff-line-number,
+.lyra-ai-patch-diff-marker {
+  user-select: none;
+  color: var(--lyra-text-tertiary);
+  text-align: right;
+  padding: 0 var(--lyra-unit-6);
+  border-right: var(--lyra-stroke-hairline) solid color-mix(in srgb, var(--lyra-line-default) 45%, transparent);
+}
+
+.lyra-ai-patch-diff-marker {
+  text-align: center;
+}
+
+.lyra-ai-patch-diff-text {
+  overflow: visible;
+  padding: 0 var(--lyra-unit-8);
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-ai-patch-diff-line-file,
+.lyra-ai-patch-diff-line-hunk {
+  background: color-mix(in srgb, var(--lyra-bg-surface) 82%, transparent);
+}
+
+.lyra-ai-patch-diff-line-file .lyra-ai-patch-diff-text,
+.lyra-ai-patch-diff-line-hunk .lyra-ai-patch-diff-text {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-ai-patch-diff-line-add {
+  background: color-mix(in srgb, var(--lyra-success-500, #57a773) 13%, transparent);
+}
+
+.lyra-ai-patch-diff-line-add .lyra-ai-patch-diff-marker,
+.lyra-ai-patch-diff-line-add .lyra-ai-patch-diff-text {
+  color: color-mix(in srgb, var(--lyra-success-500, #57a773) 78%, var(--lyra-text-primary));
+}
+
+.lyra-ai-patch-diff-line-delete {
+  background: color-mix(in srgb, var(--lyra-danger-500, #d95c4f) 12%, transparent);
+}
+
+.lyra-ai-patch-diff-line-delete .lyra-ai-patch-diff-marker,
+.lyra-ai-patch-diff-line-delete .lyra-ai-patch-diff-text {
+  color: color-mix(in srgb, var(--lyra-danger-500, #d95c4f) 82%, var(--lyra-text-primary));
+}
+
 .lyra-ai-agent-message-content {
   font-size: var(--lyra-text-size-12);
   line-height: 1.62;

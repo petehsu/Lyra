@@ -63,6 +63,9 @@ const readPendingInteractionKind = (
   if (normalized === "mcpelicitation") {
     return "mcp_elicitation";
   }
+  if (normalized === "toolapproval") {
+    return "tool_approval";
+  }
   return null;
 };
 

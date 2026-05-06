@@ -18,6 +18,7 @@ members = [
   "crates/lyra-download-napi",
   "crates/lyra-mcp-core",
   "crates/lyra-local-search",
+  "crates/lyra-ai-core",
 ]
 resolver = "2"
 

@@ -1545,6 +1545,7 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
+ "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -1622,6 +1623,22 @@ name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
+
+[[package]]
+name = "lyra-ai-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "uuid",
+]
 
 [[package]]
 name = "lyra-code-intel-core"
@@ -1852,6 +1869,7 @@ dependencies = [
  "icu_properties_data",
  "icu_provider",
  "ixdtf",
+ "lyra-ai-core",
  "lyra-code-intel-core",
  "lyra-local-search",
  "lyra-lsp-core",
@@ -1865,6 +1883,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "timezone_provider",
  "tinystr",
  "tokio",

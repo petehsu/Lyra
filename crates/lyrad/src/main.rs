@@ -4,6 +4,14 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use lyra_ai_core::{
+    apply_agent_patch_json, cancel_agent_turn_json,
+    clear_rust_event_callback as clear_ai_event_callback, create_agent_session_json,
+    delete_model_profile_json, discover_models_json, list_agent_sessions_json,
+    read_agent_artifact_json, read_agent_session_json, read_model_config_json,
+    register_rust_event_callback as register_ai_event_callback, resolve_agent_approval_json,
+    send_agent_turn_json, update_agent_session_json, upsert_model_profile_json,
+};
 use lyra_lsp_core::{
     change_document as lsp_change_document, clear_rust_event_callback as clear_lsp_event_callback,
     close_document as lsp_close_document, completion as lsp_completion,
@@ -14,11 +22,11 @@ use lyra_lsp_core::{
     LspDiagnosticsRequest, LspDocumentRequest, LspPositionRequest,
 };
 use lyra_mcp_core::{
-    clear_rust_event_callback as clear_mcp_event_callback,
-    create_mcp_server_from_template_json, delete_mcp_secret_refs_json,
-    materialize_mcp_runtime_environment_json, merge_mcp_effective_config_json,
-    normalize_mcp_environment_input_json, read_mcp_runtime_introspection_json,
-    read_mcp_runtime_statuses_json, read_mcp_scope_document_json, read_mcp_secret_store_json,
+    clear_rust_event_callback as clear_mcp_event_callback, create_mcp_server_from_template_json,
+    delete_mcp_secret_refs_json, materialize_mcp_runtime_environment_json,
+    merge_mcp_effective_config_json, normalize_mcp_environment_input_json,
+    read_mcp_runtime_introspection_json, read_mcp_runtime_statuses_json,
+    read_mcp_scope_document_json, read_mcp_secret_store_json,
     register_rust_event_callback as register_mcp_event_callback, restart_mcp_runtime_json,
     sanitize_mcp_environment_json, shutdown_mcp_runtime, start_mcp_runtime_json,
     stop_mcp_runtime_json, validate_mcp_server_json, write_mcp_managed_manifest_json,
@@ -58,6 +66,7 @@ const RUNTIME_NAME: &str = "lyrad";
 const TERMINAL_RUNTIME_EVENT_NAME: &str = "terminal.runtime";
 const MCP_RUNTIME_EVENT_NAME: &str = "mcp.runtime";
 const LSP_RUNTIME_EVENT_NAME: &str = "lsp.runtime";
+const AI_RUNTIME_EVENT_NAME: &str = "agent.runtime";
 const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone)]
@@ -510,6 +519,28 @@ fn handle_code_request(method: &str, payload: Value) -> Result<Value, RuntimeErr
     }
 }
 
+fn handle_ai_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
+    match method {
+        "model.config.read" => call_json(payload, read_model_config_json),
+        "model.profile.upsert" => call_json(payload, upsert_model_profile_json),
+        "model.profile.delete" => call_void(payload, delete_model_profile_json),
+        "model.models.discover" => call_json(payload, discover_models_json),
+        "agent.sessions.list" => call_json(payload, list_agent_sessions_json),
+        "agent.sessions.create" => call_json(payload, create_agent_session_json),
+        "agent.sessions.read" => call_json(payload, read_agent_session_json),
+        "agent.sessions.update" => call_json(payload, update_agent_session_json),
+        "agent.turn.send" => call_json(payload, send_agent_turn_json),
+        "agent.turn.cancel" => call_json(payload, cancel_agent_turn_json),
+        "agent.artifact.read" => call_json(payload, read_agent_artifact_json),
+        "agent.patch.apply" => call_json(payload, apply_agent_patch_json),
+        "agent.approval.resolve" => call_json(payload, resolve_agent_approval_json),
+        _ => Err(runtime_error(
+            "METHOD_NOT_FOUND",
+            format!("unknown ai runtime method: {method}"),
+        )),
+    }
+}
+
 fn handle_runtime_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
     match method {
         "runtime.handshake" => {
@@ -535,6 +566,9 @@ fn handle_runtime_request(method: &str, payload: Value) -> Result<Value, Runtime
         method if method.starts_with("terminal.") => handle_terminal_request(method, payload),
         method if method.starts_with("mcp.") => handle_mcp_request(method, payload),
         method if method.starts_with("lsp.") => handle_lsp_request(method, payload),
+        method if method.starts_with("model.") || method.starts_with("agent.") => {
+            handle_ai_request(method, payload)
+        }
         other => Err(runtime_error(
             "METHOD_NOT_FOUND",
             format!("unknown runtime method: {other}"),
@@ -575,6 +609,11 @@ fn register_runtime_hooks(connection: &ConnectionContext) {
     register_lsp_event_callback(Arc::new(move |event_json| {
         forward_json_event(&lsp_outgoing, LSP_RUNTIME_EVENT_NAME, &event_json);
     }));
+
+    let ai_outgoing = connection.outgoing.clone();
+    register_ai_event_callback(Arc::new(move |event_json| {
+        forward_json_event(&ai_outgoing, AI_RUNTIME_EVENT_NAME, &event_json);
+    }));
 }
 
 fn shutdown_runtime_modules() {
@@ -584,6 +623,7 @@ fn shutdown_runtime_modules() {
     clear_terminal_event_callback();
     clear_mcp_event_callback();
     clear_lsp_event_callback();
+    clear_ai_event_callback();
 }
 
 fn resolve_socket_path() -> PathBuf {
@@ -623,26 +663,27 @@ async fn handle_request_envelope(
     payload: Value,
 ) {
     let outgoing = connection.outgoing.clone();
-    let response = match tokio::task::spawn_blocking(move || handle_runtime_request(&method, payload)).await {
-        Ok(Ok(result)) => RuntimeEnvelope::Response {
-            id,
-            ok: true,
-            result: Some(result),
-            error: None,
-        },
-        Ok(Err(error)) => RuntimeEnvelope::Response {
-            id,
-            ok: false,
-            result: None,
-            error: Some(error),
-        },
-        Err(error) => RuntimeEnvelope::Response {
-            id,
-            ok: false,
-            result: None,
-            error: Some(runtime_error("TASK_JOIN_FAILED", error.to_string())),
-        },
-    };
+    let response =
+        match tokio::task::spawn_blocking(move || handle_runtime_request(&method, payload)).await {
+            Ok(Ok(result)) => RuntimeEnvelope::Response {
+                id,
+                ok: true,
+                result: Some(result),
+                error: None,
+            },
+            Ok(Err(error)) => RuntimeEnvelope::Response {
+                id,
+                ok: false,
+                result: None,
+                error: Some(error),
+            },
+            Err(error) => RuntimeEnvelope::Response {
+                id,
+                ok: false,
+                result: None,
+                error: Some(runtime_error("TASK_JOIN_FAILED", error.to_string())),
+            },
+        };
     let _ = outgoing.send(response);
 }
 
@@ -745,6 +786,63 @@ async fn run_unix_runtime() {
             eprintln!("failed to accept runtime connection: {error}");
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ai_artifact_read_route_is_registered() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let error = handle_ai_request(
+            "agent.artifact.read",
+            serde_json::json!({
+                "storageRoot": temp.path().to_string_lossy(),
+                "sessionId": "session-missing",
+                "artifactId": "artifact-missing"
+            }),
+        )
+        .expect_err("missing artifact should be a runtime error");
+
+        assert_eq!(error.code, "RUNTIME_ERROR");
+        assert!(error.message.contains("AI diff artifact not found"));
+    }
+
+    #[test]
+    fn ai_patch_apply_route_is_registered() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let error = handle_ai_request(
+            "agent.patch.apply",
+            serde_json::json!({
+                "storageRoot": temp.path().to_string_lossy(),
+                "sessionId": "session-missing",
+                "artifactId": "artifact-missing"
+            }),
+        )
+        .expect_err("missing session should be a runtime error");
+
+        assert_eq!(error.code, "RUNTIME_ERROR");
+        assert!(error.message.contains("AI session not found"));
+    }
+
+    #[test]
+    fn ai_approval_resolve_route_is_registered() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let error = handle_ai_request(
+            "agent.approval.resolve",
+            serde_json::json!({
+                "storageRoot": temp.path().to_string_lossy(),
+                "sessionId": "session-missing",
+                "approvalTicketId": "approval-missing",
+                "decision": "deny"
+            }),
+        )
+        .expect_err("missing ticket should be a runtime error");
+
+        assert_eq!(error.code, "RUNTIME_ERROR");
+        assert!(error.message.contains("approval ticket not found"));
     }
 }
 

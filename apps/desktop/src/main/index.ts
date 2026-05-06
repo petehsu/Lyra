@@ -675,7 +675,9 @@ const registerIpcHandlers = (): void => {
   disposeRuntimeClient = runtimeClient.dispose;
 
   const aiBridge = createAiIpcBridge({
-    runtimeClient
+    runtimeClient,
+    storageRoot: storageRoots.modules.ai,
+    getWindow: () => mainWindow
   });
   disposeAiBridge = aiBridge.dispose;
 

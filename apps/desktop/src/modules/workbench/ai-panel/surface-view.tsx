@@ -1,6 +1,8 @@
 import { AgentComposer } from "./agent-composer";
 import type { AgentComposerFileAttachment } from "./agent-composer";
 import { resolveAiPanelEmptyGreetingCandidates } from "./empty-greeting";
+import { PendingApprovalList } from "./pending-approval-list";
+import { PatchReviewStrip } from "./patch-review-strip";
 import type { AiPanelSurfaceTextLabels } from "./surface-model";
 import { AiPanelSurfaceFrame } from "./surface-frame";
 import { AiPanelThreadTabs } from "./thread-tabs";
@@ -120,8 +122,30 @@ export const AiPanelSurfaceView = ({
             blinkLogoUrl={LOGO_BLINK_URL}
             emptyThreadLabel={emptyThreadLabel}
             emptyGreetingLabels={emptyGreetingLabels}
+            locale={locale}
+            detail={state.activeDetail}
+            streamingTurnId={state.streamingTurnId}
+            streamingAssistantText={state.streamingAssistantText}
+            isLoading={state.isLoadingThreads || state.isLoadingThread}
+            runtimeError={state.runtimeError}
+            expandedPatchKey={runtime.expandedPatchKey}
+            onPatchExpandedChange={actions.setExpandedPatchKey}
+            readArtifact={desktopApi?.ai?.readArtifact}
+            applyPatch={desktopApi?.ai === undefined ? undefined : actions.applyPatch}
+            resolveApproval={desktopApi?.ai === undefined ? undefined : actions.resolveApproval}
           />
         </div>
+
+        <PendingApprovalList
+          detail={state.activeDetail}
+          resolveApproval={desktopApi?.ai === undefined ? undefined : actions.resolveApproval}
+        />
+
+        <PatchReviewStrip
+          detail={state.activeDetail}
+          expandedPatchKey={runtime.expandedPatchKey}
+          onSelectPatch={actions.setExpandedPatchKey}
+        />
 
         <AgentComposer
           locale={locale}
