@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, FileDiff, FileSearch, FileText, FolderOpen, GitBranch, Info, Loader2, Terminal } from "lucide-react";
 
 import { LyraBrandLogo } from "../brand";
@@ -47,6 +47,7 @@ type AiPanelThreadViewProps = {
   readonly readArtifact?: ReadPatchArtifact | undefined;
   readonly applyPatch?: ((request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>) | undefined;
   readonly resolveApproval?: ((request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>) | undefined;
+  readonly renderMessageActions?: ((message: AgentMessage) => ReactNode) | undefined;
 };
 
 const messageText = (message: AgentMessage): string =>
@@ -108,10 +109,12 @@ const AiPanelMessageBubble = ({
   message,
   locale,
   live = false,
+  actions,
 }: {
   readonly message: AgentMessage;
   readonly locale: WorkbenchLocale;
   readonly live?: boolean;
+  readonly actions?: ReactNode;
 }) => {
   const role = message.role === "assistant" ? "assistant" : "user";
   const content = messageText(message);
@@ -124,6 +127,9 @@ const AiPanelMessageBubble = ({
         <time dateTime={new Date(message.createdAt).toISOString()}>
           {formatMessageTime(message.createdAt, locale)}
         </time>
+        {actions === undefined || actions === null ? null : (
+          <span className="lyra-ai-agent-message-actions">{actions}</span>
+        )}
       </header>
       {role === "assistant" ? (
         content.length === 0 ? (
@@ -299,6 +305,7 @@ export const AiPanelThreadView = memo(({
   readArtifact,
   applyPatch,
   resolveApproval,
+  renderMessageActions,
 }: AiPanelThreadViewProps) => {
   const messages = detail?.messages ?? [];
   const timelineItems = buildTimelineItems(detail);
@@ -318,6 +325,7 @@ export const AiPanelThreadView = memo(({
               key={item.id}
               message={item.message}
               locale={locale}
+              actions={renderMessageActions?.(item.message)}
             />
           ) : (
             <AiPanelToolEventRow

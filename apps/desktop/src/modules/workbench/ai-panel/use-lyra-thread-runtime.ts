@@ -79,6 +79,7 @@ export type LyraThreadRuntimeActions = {
   readonly resolvePlanReview: (request: AgentResolvePlanReviewRequest) => Promise<AgentResolvePlanReviewResult>;
   readonly pauseFollow: () => Promise<void>;
   readonly resumeFollow: () => Promise<void>;
+  readonly refreshActiveThread: () => Promise<void>;
   readonly cleanBackgroundTerminals: () => Promise<void>;
   readonly selectThread: (threadId: string | null) => void;
   readonly activateThreadTab: (tabId: string) => void;
@@ -825,6 +826,7 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     resolvePlanReview,
     pauseFollow,
     resumeFollow,
+    refreshActiveThread: refreshActiveDetail,
     cleanBackgroundTerminals,
     selectThread,
     activateThreadTab,
@@ -840,6 +842,7 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     resolvePlanReview,
     pauseFollow,
     resumeFollow,
+    refreshActiveDetail,
     cleanBackgroundTerminals,
     closeThreadTab,
     createThread,

@@ -8,6 +8,8 @@ import { LongWorkStatusRow } from "./long-work-status-row";
 import { PendingApprovalList } from "./pending-approval-list";
 import { AiPlanReviewSurface } from "./plan-review-surface";
 import { PatchReviewStrip } from "./patch-review-strip";
+import { RollbackMessageAction } from "./rollback-message-action";
+import { RollbackPreviewRow } from "./rollback-preview-row";
 import type { AiPanelSurfaceTextLabels } from "./surface-model";
 import { AiPanelSurfaceFrame } from "./surface-frame";
 import { AiPanelThreadTabs } from "./thread-tabs";
@@ -59,6 +61,7 @@ export const AiPanelSurfaceView = ({
     onRequestProjectBind
   } = surfaceProps;
   const { state, actions } = runtime;
+  const previewMessageRollback = desktopApi?.ai?.previewMessageRollback;
   const openFollowWorkspaceUri =
     surfaceProps.onFollowOpenFilePath === undefined
       ? undefined
@@ -152,6 +155,14 @@ export const AiPanelSurfaceView = ({
             readArtifact={desktopApi?.ai?.readArtifact}
             applyPatch={desktopApi?.ai === undefined ? undefined : actions.applyPatch}
             resolveApproval={desktopApi?.ai === undefined ? undefined : actions.resolveApproval}
+            renderMessageActions={(message) => (
+              <RollbackMessageAction
+                message={message}
+                recoverySummary={state.activeDetail?.recoverySummary}
+                previewMessageRollback={previewMessageRollback}
+                onPreviewComplete={actions.refreshActiveThread}
+              />
+            )}
           />
         </div>
 
@@ -174,6 +185,8 @@ export const AiPanelSurfaceView = ({
           resumeFollow={desktopApi?.ai === undefined ? undefined : actions.resumeFollow}
           onOpenWorkspaceUri={openFollowWorkspaceUri}
         />
+
+        <RollbackPreviewRow detail={state.activeDetail} />
 
         <PendingApprovalList
           detail={state.activeDetail}

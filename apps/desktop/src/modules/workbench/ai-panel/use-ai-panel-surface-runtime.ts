@@ -207,6 +207,7 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly resolvePlanReview: LyraThreadRuntimeActions["resolvePlanReview"];
   readonly pauseFollow: LyraThreadRuntimeActions["pauseFollow"];
   readonly resumeFollow: LyraThreadRuntimeActions["resumeFollow"];
+  readonly refreshActiveThread: LyraThreadRuntimeActions["refreshActiveThread"];
   readonly sendTurn: (payload: AgentComposerSubmitPayload) => Promise<void>;
   readonly steerActiveTurn: (payload: AgentComposerSubmitPayload) => Promise<void>;
   readonly startFileMentionSearch: (sessionId: string, roots: readonly string[]) => Promise<void>;
@@ -285,6 +286,7 @@ export const useAiPanelSurfaceRuntime = ({
     resolvePlanReview,
     pauseFollow,
     resumeFollow,
+    refreshActiveThread,
     setFollowEnabled,
     setPlanModeEnabled,
     steerTurn
@@ -745,6 +747,7 @@ export const useAiPanelSurfaceRuntime = ({
       resolvePlanReview,
       pauseFollow,
       resumeFollow,
+      refreshActiveThread,
       sendTurn,
       steerActiveTurn,
       startFileMentionSearch,

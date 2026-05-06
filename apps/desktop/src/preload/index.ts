@@ -145,6 +145,8 @@ import {
   type AgentCreateTodoResult,
   type AgentFollowSummary,
   type AgentPauseFollowRequest,
+  type AgentPreviewMessageRollbackRequest,
+  type AgentPreviewMessageRollbackResult,
   type AgentReadArtifactRequest,
   type AgentReadFollowRequest,
   type AgentReadSessionRequest,
@@ -1054,6 +1056,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.aiPauseFollow, request) as Promise<AgentFollowSummary | null>,
     resumeFollow: (request: AgentResumeFollowRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiResumeFollow, request) as Promise<AgentFollowSummary | null>,
+    previewMessageRollback: (request: AgentPreviewMessageRollbackRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiPreviewMessageRollback,
+        request
+      ) as Promise<AgentPreviewMessageRollbackResult>,
     sendTurn: (request: AgentSendTurnRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiSendTurn, request) as Promise<AgentSendTurnResult>,
     cancelTurn: (request: AgentCancelTurnRequest) =>

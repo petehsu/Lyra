@@ -311,6 +311,85 @@ export type AgentFollowSummary = {
   readonly updatedAt: number;
 };
 
+export type AgentMessageCheckpointSummary = {
+  readonly anchorId: string;
+  readonly sessionId: AgentSessionId;
+  readonly userMessageId: AgentMessageId;
+  readonly runtimeTurnId: AgentTurnId;
+  readonly checkpointId: string;
+  readonly conversationSnapshotId: string;
+  readonly workspaceSnapshotId: string;
+  readonly status: "active" | "superseded_by_rollback" | "expired" | string;
+  readonly createdAt: number;
+};
+
+export type AgentRollbackImpactLevel =
+  | "safe"
+  | "conflict"
+  | "external_side_effect"
+  | "destructive"
+  | string;
+
+export type AgentRollbackPreviewSummary = {
+  readonly rollbackId: string;
+  readonly sessionId: AgentSessionId;
+  readonly targetUserMessageId: AgentMessageId;
+  readonly status: "previewed" | "stale" | "superseded" | "failed" | string;
+  readonly impactLevel: AgentRollbackImpactLevel;
+  readonly requiresConfirmation: boolean;
+  readonly artifactId?: string;
+  readonly evidenceId?: string;
+  readonly summary: string;
+  readonly messageCount: number;
+  readonly workspaceChangeCount: number;
+  readonly externalSideEffectCount: number;
+  readonly updatedAt: number;
+};
+
+export type AgentRecoverySummary = {
+  readonly latestAnchor?: AgentMessageCheckpointSummary;
+  readonly rollbackPreviews: readonly AgentRollbackPreviewSummary[];
+  readonly rollbackReadyMessageIds: readonly AgentMessageId[];
+  readonly activeRollbackPreview?: AgentRollbackPreviewSummary | null;
+};
+
+export type AgentRollbackConversationChange = {
+  readonly messageId: AgentMessageId;
+  readonly role: AgentMessageRole | string;
+  readonly createdAt: number;
+};
+
+export type AgentRollbackWorkspaceChange = {
+  readonly path: string;
+  readonly status: "safe" | "conflict" | string;
+  readonly sideEffectId: string;
+  readonly rollbackStatus: string;
+  readonly expectedHash?: string;
+  readonly currentHash?: string;
+};
+
+export type AgentRollbackExternalSideEffect = {
+  readonly sideEffectId: string;
+  readonly kind: string;
+  readonly targetRef: string;
+  readonly rollbackStatus: string;
+};
+
+export type AgentPreviewMessageRollbackResult = {
+  readonly sessionId: AgentSessionId;
+  readonly rollbackId: string;
+  readonly targetUserMessageId: AgentMessageId;
+  readonly status: "previewed" | "failed" | string;
+  readonly impactLevel: AgentRollbackImpactLevel;
+  readonly requiresConfirmation: boolean;
+  readonly artifactId?: string;
+  readonly evidenceId?: string;
+  readonly summary: string;
+  readonly workspaceChanges: readonly AgentRollbackWorkspaceChange[];
+  readonly conversationChanges: readonly AgentRollbackConversationChange[];
+  readonly externalSideEffects: readonly AgentRollbackExternalSideEffect[];
+};
+
 export type AgentVerificationRunSummary = {
   readonly verificationRunId: string;
   readonly verificationPlanId?: string;
@@ -446,6 +525,7 @@ export type AgentSessionDetail = {
   readonly deliveryProof?: AgentDeliveryProofSummary | null;
   readonly longWorkSummary?: AgentLongWorkSummary | null;
   readonly followSummary?: AgentFollowSummary | null;
+  readonly recoverySummary?: AgentRecoverySummary | null;
 };
 
 export type AgentQuestionOption = {
@@ -560,6 +640,11 @@ export type AgentPauseFollowRequest = {
 export type AgentResumeFollowRequest = {
   readonly sessionId: string;
   readonly followSessionId?: string;
+};
+
+export type AgentPreviewMessageRollbackRequest = {
+  readonly sessionId: string;
+  readonly targetUserMessageId: string;
 };
 
 export type AgentUpdateSessionRequest = {
@@ -750,6 +835,9 @@ export type AgentRuntimeEventType =
   | "long_work.stuck"
   | "long_work.blocked"
   | "long_work.completed"
+  | "rollback.anchor_created"
+  | "rollback.preview_created"
+  | "rollback.conflict_detected"
   | "verification_plan_created"
   | "verification_run_updated"
   | "completion_audit_updated"
