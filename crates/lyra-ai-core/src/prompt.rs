@@ -213,13 +213,91 @@ Use these runtime facts for time, platform, workspace, and mode-sensitive reason
                 .get("blockerSummary")
                 .and_then(Value::as_str)
                 .unwrap_or("none");
+            let slice = summary.get("currentSlice").unwrap_or(&Value::Null);
             prompt.push_str(&format!(
-                "\n- runId={run_id}; status={status}; objective={objective}; todoListId={todo_list_id}; executionRunId={execution_run_id}; todoProgress={}; blocker={blocker}.",
+                "\n- runId={run_id}; status={status}; objective={objective}; todoListId={todo_list_id}; executionRunId={execution_run_id}; todoProgress={}; blocker={blocker}; currentSliceSequence={}; stopCause={}.",
                 compact_json_field(summary, "todoProgress"),
+                slice
+                    .get("sequence")
+                    .and_then(Value::as_i64)
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                slice
+                    .get("stopCause")
+                    .and_then(Value::as_str)
+                    .unwrap_or("none"),
             ));
+            if let Some(continuation) = summary
+                .get("continuation")
+                .filter(|value| value.is_object())
+            {
+                prompt.push_str(&format!(
+                    "\n  continuation: id={}; status={}; recommendedAction={}; nextSliceSequence={}; reason={}.",
+                    continuation
+                        .get("continuationId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    continuation
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    continuation
+                        .get("recommendedAction")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    continuation
+                        .get("nextSliceSequence")
+                        .and_then(Value::as_i64)
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    continuation
+                        .get("reasonSummary")
+                        .and_then(Value::as_str)
+                        .unwrap_or("none"),
+                ));
+            }
+            if let Some(report) = summary
+                .get("prematureStop")
+                .filter(|value| value.is_object())
+            {
+                prompt.push_str(&format!(
+                    "\n  prematureStop: reportId={}; recommendedAction={}; signals={}; missingEvidence={}.",
+                    report
+                        .get("reportId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    report
+                        .get("recommendedAction")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    compact_json_field(report, "signals"),
+                    compact_json_field(report, "missingEvidence"),
+                ));
+            }
+            if let Some(stuck) = summary.get("stuck").filter(|value| value.is_object()) {
+                prompt.push_str(&format!(
+                    "\n  stuck: reportId={}; suspectedCause={}; recommendedAction={}; reason={}.",
+                    stuck
+                        .get("stuckReportId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    stuck
+                        .get("suspectedCause")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    stuck
+                        .get("recommendedAction")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    stuck
+                        .get("reasonSummary")
+                        .and_then(Value::as_str)
+                        .unwrap_or("none"),
+                ));
+            }
         }
         prompt.push_str(
-            "\nLongWorkRun status is Runtime-owned. Completion still requires Todo, Approval, Verification, and CompletionAudit evidence; do not claim completion while the run is active or blocked.",
+            "\nLongWorkRun status is Runtime-owned. Completion still requires Todo, Approval, Verification, and CompletionAudit evidence; do not claim completion while the run is active, queued, auto-resuming, blocked, or stuck. Do not ask the user whether to continue unless a real blocker exists.",
         );
     }
     prompt
@@ -370,15 +448,37 @@ mod tests {
             "todoListId": "todo_1",
             "executionRunId": "execution_1",
             "todoProgress": { "total": 2, "completed": 1, "blocked": 1, "failed": 0 },
-            "blockerSummary": "Waiting for approval decision"
+            "blockerSummary": "Waiting for approval decision",
+            "currentSlice": {
+                "sequence": 2,
+                "stopCause": "completion_candidate"
+            },
+            "continuation": {
+                "continuationId": "continuation_1",
+                "status": "queued",
+                "recommendedAction": "auto_continue",
+                "nextSliceSequence": 3,
+                "reasonSummary": "Todo items remain open"
+            },
+            "prematureStop": {
+                "reportId": "premature_stop_1",
+                "recommendedAction": "auto_continue",
+                "signals": ["open_todo_items"],
+                "missingEvidence": []
+            }
         })];
         let messages = compose_messages(context, Vec::new());
         let system = &messages[0].content;
 
         assert!(system.contains("Current LongWorkRun state"));
         assert!(system.contains("status=blocked"));
+        assert!(system.contains("currentSliceSequence=2"));
+        assert!(system.contains("stopCause=completion_candidate"));
+        assert!(system.contains("continuation: id=continuation_1"));
+        assert!(system.contains("prematureStop: reportId=premature_stop_1"));
         assert!(system.contains("todoProgress={\"blocked\":1"));
         assert!(system.contains("Runtime-owned"));
+        assert!(system.contains("Do not ask the user whether to continue"));
     }
 
     #[test]

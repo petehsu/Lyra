@@ -4,6 +4,11 @@ use crate::storage::{
     LongWorkStatusUpdate,
 };
 
+use super::long_work_controller::{
+    project_model_candidate_after_completion, recover_resumable_continuation,
+    resume_queued_continuation, ModelCandidateWorkProjection,
+};
+
 pub(super) fn create_plan_run_after_valid_coverage(
     store: &AiStore,
     session_id: &str,
@@ -100,6 +105,32 @@ pub(crate) fn project_work_after_completion(
     let before = store.read_active_work_summary(session_id)?;
     let after = store.refresh_active_work_status(session_id, turn_id)?;
     emit_transition_event(store, turn_id, before.as_ref(), after.as_ref())
+}
+
+pub(crate) fn project_work_after_model_candidate(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: Option<&str>,
+    candidate_text: &str,
+) -> Result<ModelCandidateWorkProjection> {
+    project_model_candidate_after_completion(store, session_id, turn_id, candidate_text)
+}
+
+#[allow(dead_code)]
+pub(crate) fn resume_work_continuation(
+    store: &AiStore,
+    session_id: &str,
+    continuation_id: &str,
+) -> Result<Option<AgentLongWorkSummary>> {
+    resume_queued_continuation(store, session_id, continuation_id)
+}
+
+#[allow(dead_code)]
+pub(crate) fn recover_work_continuation(
+    store: &AiStore,
+    session_id: &str,
+) -> Result<Option<AgentLongWorkSummary>> {
+    recover_resumable_continuation(store, session_id)
 }
 
 #[allow(dead_code)]

@@ -431,6 +431,15 @@ pub(super) fn run_turn_worker_inner(
             assistant_text = projected;
         }
     }
+    let work_projection =
+        project_work_after_model_candidate(store, session_id, Some(turn_id), &assistant_text)?;
+    if let Some(replacement_text) = work_projection.replacement_text {
+        assistant_text = replacement_text;
+    }
+    if work_projection.suppress_user_output {
+        complete_turn_without_visible_message(store, session_id, turn_id, final_usage.clone())?;
+        return Ok(());
+    }
     let text_event = store.append_event(
         session_id,
         Some(turn_id),
@@ -480,6 +489,42 @@ pub(super) fn run_turn_worker_inner(
     if let Some(detail) = store.read_session_detail(session_id)? {
         emit_store_event(
             &store,
+            session_id,
+            None,
+            "session_updated",
+            json!({ "detail": detail }),
+        )?;
+    }
+    Ok(())
+}
+
+fn complete_turn_without_visible_message(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    usage: Option<Usage>,
+) -> Result<()> {
+    store.update_turn_status(session_id, turn_id, "completed", "completed", None, None)?;
+    let detail = store.read_session_detail(session_id)?;
+    emit_store_event(
+        store,
+        session_id,
+        Some(turn_id),
+        "runtime_turn_completed",
+        json!({
+            "turnId": turn_id,
+            "usage": usage,
+            "outputSuppressed": true,
+            "detail": detail
+        }),
+    )?;
+    if let Some(mut session) = store.read_session_index(session_id)? {
+        session.updated_at = now_ms();
+        store.upsert_session_index(&session)?;
+    }
+    if let Some(detail) = store.read_session_detail(session_id)? {
+        emit_store_event(
+            store,
             session_id,
             None,
             "session_updated",

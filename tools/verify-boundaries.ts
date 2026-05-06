@@ -28,6 +28,10 @@ const ROOT = process.cwd();
 const SOURCE_EXT = new Set([".ts", ".tsx", ".mts", ".cts", ".py", ".rs"]);
 const IGNORE_DIRS = new Set(["node_modules", ".git", "dist", "coverage", "target", ".venv"]);
 const SCAN_ROOTS = ["apps", "services", "packages", "crates", "tools"];
+const LONG_WORK_RUST_PATTERN =
+  /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b|\bLongWorkContinuation\b|\bContinuationPacket\b|\bPrematureStop\b|\bStuckReport\b|\bAgentStuck\b|\blong_work_continuation\b|\bpremature_stop\b|\bstuck_report\b/;
+const LONG_WORK_TS_PATTERN =
+  /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b|\bLongWorkContinuation\b|\bContinuationPacket\b|\bPrematureStop\b|\bStuckReport\b|\bAgentStuck\b|\blongWorkContinuation\b|\bprematureStop\b|\bstuckReport\b/;
 
 const importRules: readonly ImportRule[] = [
   {
@@ -273,157 +277,157 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/storage/planning.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "LongWork storage must live in focused long-work storage modules, not in planning storage."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/storage/session.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "LongWork session projections must live in focused long-work storage modules, not in session storage."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/storage/execution.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "LongWork state must not be folded into execution storage. Keep the long-work ledger in its own storage module and link by ids."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/storage/execution_helpers.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "LongWork projection helpers must live with focused long-work storage, not execution helper code."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/storage/verification.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "Verification storage must not own LongWork state. Link verification evidence to long-work records from a focused module."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/storage/completion.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "Completion storage must not own LongWork state. Completion audit can gate long work through ids and focused projection code."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/storage/completion_helpers.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "Completion helper code must not become LongWork projection logic. Use a focused long-work projection module."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/storage/models.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "LongWork model types must live in focused long-work model modules, not in the shared storage model file."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/storage/schema.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "LongWork schema must be split into a focused schema module instead of growing the shared schema file."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/agent_runtime/turn_loop.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "LongWork runtime control must live in focused controller/projection modules, not in the turn loop."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/agent_runtime/session_ops.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "LongWork runtime APIs must live in focused modules, not in session_ops."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/agent_runtime/tests.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "LongWork tests must live in focused test modules, not in the legacy broad agent_runtime test file."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/agent_runtime/todo_projection.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "Todo projection must not own LongWork state transitions. Add a focused long-work projection module instead."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/tool_runtime/executor.rs",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "Tool executor must stay tool-oriented; route LongWork bookkeeping through focused runtime projection code."
   },
   {
     scopePrefix: "crates/lyra-ai-core/src/patch_apply/",
-    pattern: /\bLongWork\b|\blong_work\b|\bwork_slice\b|\bnative_long_work_goal\b/,
+    pattern: LONG_WORK_RUST_PATTERN,
     message:
       "Patch apply/rollback must not own LongWork bookkeeping. Keep patch side effects and long-work projection separate."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/thread-view.tsx",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "LongWork UI must live in focused AI panel components, not in the thread view."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-lyra-thread-runtime.ts",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "LongWork renderer state must live in focused runtime helpers, not in the broad Lyra thread runtime hook."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-agent-composer-runtime.ts",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "LongWork renderer state must live in focused runtime helpers, not in the broad composer runtime hook."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-ai-panel-surface-runtime.ts",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "LongWork surface behavior must live in focused helpers/components, not in the broad AI panel surface runtime hook."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/execution-todo-list.tsx",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "Execution todo UI must not absorb LongWork rendering. Add a compact LongWork status component instead."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/verification-summary-list.tsx",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "Verification UI must not absorb LongWork rendering. Keep verification rows and long-work status separate."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/pending-approval-list.tsx",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "Approval UI must not absorb LongWork rendering. Link blocked long work by ids from a focused component."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/patch-preview-card.tsx",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "Patch preview must stay patch-focused; do not add LongWork UI or state there."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/patch-review-strip.tsx",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "Patch review strip must stay patch-focused; do not add LongWork UI or state there."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/tests/thread-view.test.tsx",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "LongWork UI tests must live beside the focused LongWork component, not in broad thread-view tests."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/tests/use-lyra-thread-runtime.test.tsx",
-    pattern: /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b/,
+    pattern: LONG_WORK_TS_PATTERN,
     message:
       "LongWork runtime tests must target focused helpers, not the broad Lyra thread runtime test."
   }

@@ -10,6 +10,20 @@ fn storage_request(storage_root: &str) -> StorageRequest {
     }
 }
 
+fn test_config() -> ProviderRuntimeConfig {
+    ProviderRuntimeConfig {
+        provider_id: "openai".to_string(),
+        protocol_id: "openai_chat_completions".to_string(),
+        base_url: "https://example.invalid/v1".to_string(),
+        api_key: None,
+        auth_scheme: None,
+        headers: HashMap::new(),
+        connection_config: HashMap::new(),
+        model_runtime_metadata: None,
+        model: "test-model".to_string(),
+    }
+}
+
 fn seed_turn(store: &AiStore, workspace_root: &str) -> (String, String, String) {
     let now = now_ms();
     let session = AgentSession {
@@ -356,11 +370,19 @@ fn long_work_unfinished_todo_cannot_complete() {
         .evaluate_completion_audit_and_delivery_proof(&session_id, Some(&turn_id))
         .expect("audit");
     project_work_after_completion(&store, &session_id, Some(&turn_id)).expect("projection");
+    let projection = project_work_after_model_candidate(
+        &store,
+        &session_id,
+        Some(&turn_id),
+        "Done. Everything is complete.",
+    )
+    .expect("candidate projection");
 
     let detail = store
         .read_session_detail(&session_id)
         .expect("detail")
         .expect("session");
+    assert!(projection.suppress_user_output);
     assert_eq!(
         detail.completion_audit.as_ref().expect("audit").status,
         "blocked"
@@ -371,8 +393,34 @@ fn long_work_unfinished_todo_cannot_complete() {
             .as_ref()
             .expect("work summary")
             .status,
-        "blocked"
+        "running"
     );
+    let summary = detail.durable_work_summary.as_ref().expect("work summary");
+    assert_eq!(
+        summary.continuation.as_ref().expect("continuation").status,
+        "queued"
+    );
+    assert_eq!(
+        summary
+            .premature_stop
+            .as_ref()
+            .expect("premature stop")
+            .recommended_action,
+        "auto_continue"
+    );
+    assert_eq!(
+        summary
+            .current_slice
+            .as_ref()
+            .expect("slice")
+            .stop_cause
+            .as_deref(),
+        Some("completion_candidate")
+    );
+    assert!(detail.runtime_events.iter().any(|event| {
+        event.phase == "long_work.output_suppressed"
+            && event.payload["longWorkRunId"] == summary.long_work_run_id
+    }));
 }
 
 #[test]
@@ -415,6 +463,7 @@ fn long_work_completed_todo_and_audit_mark_run_completed() {
         .expect("session");
     let summary = detail.durable_work_summary.as_ref().expect("work summary");
     assert_eq!(summary.status, "completed");
+    assert!(summary.continuation.is_none());
     assert!(detail.runtime_events.iter().any(|event| {
         event.phase == "long_work.completed"
             && event.payload["sessionId"] == session_id
@@ -424,4 +473,358 @@ fn long_work_completed_todo_and_audit_mark_run_completed() {
             && event.payload["executionRunId"] == summary.execution_run_id
             && event.payload["status"] == "completed"
     }));
+}
+
+#[test]
+fn long_work_missing_verification_after_code_change_queues_continuation() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let store =
+        AiStore::open(Some(temp.path().join("ai").to_string_lossy().as_ref())).expect("store");
+    let (session_id, turn_id, user_message_id) =
+        seed_turn(&store, temp.path().to_string_lossy().as_ref());
+    let refs = seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_FS_APPLY_PATCH);
+    seed_run_for_refs(&store, &session_id, &turn_id, &user_message_id, &refs);
+    store
+        .record_tool_execution_step(
+            &session_id,
+            &turn_id,
+            TOOL_FS_APPLY_PATCH,
+            "op-patch",
+            "completed",
+            "completed",
+            vec!["evidence_patch".to_string()],
+            vec!["artifact_patch".to_string()],
+            Value::Null,
+        )
+        .expect("record step");
+    store
+        .create_verification_plan_for_changed_files(
+            &session_id,
+            &turn_id,
+            "artifact_patch",
+            json!([{ "path": "notes.unverified", "changeType": "modified" }]),
+        )
+        .expect("verification plan");
+    store
+        .evaluate_completion_audit_and_delivery_proof(&session_id, Some(&turn_id))
+        .expect("audit");
+
+    let projection = project_work_after_model_candidate(
+        &store,
+        &session_id,
+        Some(&turn_id),
+        "Implemented and finished.",
+    )
+    .expect("candidate");
+    let detail = store
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session");
+    let summary = detail.durable_work_summary.as_ref().expect("work summary");
+
+    assert!(projection.suppress_user_output);
+    assert_eq!(summary.status, "running");
+    assert_eq!(
+        summary.continuation.as_ref().expect("continuation").status,
+        "queued"
+    );
+    assert!(summary
+        .premature_stop
+        .as_ref()
+        .expect("premature stop")
+        .missing_evidence
+        .iter()
+        .any(|item| item.starts_with("verification_run")));
+}
+
+#[test]
+fn long_work_turn_loop_suppresses_premature_assistant_message() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let store =
+        AiStore::open(Some(temp.path().join("ai").to_string_lossy().as_ref())).expect("store");
+    let (session_id, turn_id, user_message_id) =
+        seed_turn(&store, temp.path().to_string_lossy().as_ref());
+    let refs = seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_SHELL_RUN_COMMAND);
+    seed_run_for_refs(&store, &session_id, &turn_id, &user_message_id, &refs);
+
+    run_turn_worker_inner(
+        &store,
+        test_config(),
+        &session_id,
+        &turn_id,
+        None,
+        PermissionMode::FullAccess,
+        Arc::new(AtomicBool::new(false)),
+        |_config, _messages, _cancel| {
+            Ok(ModelResponse {
+                text: "Done. Everything is complete.".to_string(),
+                usage: None,
+            })
+        },
+    )
+    .expect("worker");
+
+    let detail = store
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session");
+    assert!(detail
+        .messages
+        .iter()
+        .all(|message| message.role != "assistant"));
+    assert_eq!(
+        detail
+            .durable_work_summary
+            .as_ref()
+            .expect("work summary")
+            .continuation
+            .as_ref()
+            .expect("continuation")
+            .status,
+        "queued"
+    );
+    assert!(detail.runtime_events.iter().any(|event| {
+        event.phase == "runtime_turn_completed"
+            && event.payload["outputSuppressed"].as_bool() == Some(true)
+    }));
+}
+
+#[test]
+fn long_work_pending_approval_blocks_without_auto_resume() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let storage_root = temp.path().join("ai").to_string_lossy().to_string();
+    let store = AiStore::open(Some(&storage_root)).expect("store");
+    let (session_id, turn_id, user_message_id) =
+        seed_turn(&store, temp.path().to_string_lossy().as_ref());
+    let refs = seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_SHELL_RUN_COMMAND);
+    seed_run_for_refs(&store, &session_id, &turn_id, &user_message_id, &refs);
+    let operation = ToolOperationEnvelope {
+        schema_version: "v1".to_string(),
+        kind: "tool_operation".to_string(),
+        op_id: "op-shell-pending".to_string(),
+        op: ToolFsOp::Run,
+        path: TOOL_SHELL_RUN_COMMAND.to_string(),
+        args: json!({ "mode": "argv", "argv": ["echo", "ok"], "cwd": "." }),
+    };
+    let mut messages = Vec::new();
+    let mut inspected = HashSet::from([TOOL_SHELL_RUN_COMMAND.to_string()]);
+
+    run_tool_operation(
+        &store,
+        &session_id,
+        &turn_id,
+        &ToolExecutionContext {
+            workspace_root: Some(temp.path().to_string_lossy().to_string()),
+        },
+        &operation,
+        PermissionMode::Sandbox,
+        &mut messages,
+        &mut inspected,
+    )
+    .expect("approval pending");
+    let projection =
+        project_work_after_model_candidate(&store, &session_id, Some(&turn_id), "I am done.")
+            .expect("candidate");
+    let detail = store
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session");
+    let summary = detail.durable_work_summary.as_ref().expect("work summary");
+
+    assert!(projection.suppress_user_output == false);
+    assert_eq!(summary.status, "blocked");
+    assert!(summary.continuation.is_none());
+    assert_eq!(
+        summary.blocker_summary.as_deref(),
+        Some("Waiting for approval decision")
+    );
+}
+
+#[test]
+fn long_work_no_progress_repeated_slices_enters_stuck() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let store =
+        AiStore::open(Some(temp.path().join("ai").to_string_lossy().as_ref())).expect("store");
+    let (session_id, turn_id, user_message_id) =
+        seed_turn(&store, temp.path().to_string_lossy().as_ref());
+    let refs = seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_SHELL_RUN_COMMAND);
+    seed_run_for_refs(&store, &session_id, &turn_id, &user_message_id, &refs);
+    store
+        .evaluate_completion_audit_and_delivery_proof(&session_id, Some(&turn_id))
+        .expect("audit");
+    let first = project_work_after_model_candidate(&store, &session_id, Some(&turn_id), "Done.")
+        .expect("first candidate");
+    assert!(first.suppress_user_output);
+    let continuation_id = store
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session")
+        .durable_work_summary
+        .as_ref()
+        .expect("work summary")
+        .continuation
+        .as_ref()
+        .expect("continuation")
+        .continuation_id
+        .clone();
+    resume_work_continuation(&store, &session_id, &continuation_id).expect("resume");
+    assert!(store
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session")
+        .runtime_events
+        .iter()
+        .any(|event| event.phase == "long_work.auto_resuming"));
+
+    let second =
+        project_work_after_model_candidate(&store, &session_id, Some(&turn_id), "Done again.")
+            .expect("second candidate");
+    let detail = store
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session");
+    let summary = detail.durable_work_summary.as_ref().expect("work summary");
+
+    assert!(second.suppress_user_output);
+    assert_eq!(summary.status, "stuck");
+    assert_eq!(
+        summary.stuck.as_ref().expect("stuck").suspected_cause,
+        "model_looping"
+    );
+}
+
+#[test]
+fn long_work_repeated_same_tool_failure_enters_stuck() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let store =
+        AiStore::open(Some(temp.path().join("ai").to_string_lossy().as_ref())).expect("store");
+    let (session_id, turn_id, user_message_id) =
+        seed_turn(&store, temp.path().to_string_lossy().as_ref());
+    let refs = seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_SHELL_RUN_COMMAND);
+    seed_run_for_refs(&store, &session_id, &turn_id, &user_message_id, &refs);
+    store
+        .append_tool_result_blob(
+            &session_id,
+            &turn_id,
+            "op-fail-1",
+            TOOL_SHELL_RUN_COMMAND,
+            "failed",
+            "{}",
+        )
+        .expect("blob 1");
+    store
+        .append_tool_result_blob(
+            &session_id,
+            &turn_id,
+            "op-fail-2",
+            TOOL_SHELL_RUN_COMMAND,
+            "failed",
+            "{}",
+        )
+        .expect("blob 2");
+    store
+        .evaluate_completion_audit_and_delivery_proof(&session_id, Some(&turn_id))
+        .expect("audit");
+
+    let projection =
+        project_work_after_model_candidate(&store, &session_id, Some(&turn_id), "Done.")
+            .expect("candidate");
+    let detail = store
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session");
+    let summary = detail.durable_work_summary.as_ref().expect("work summary");
+
+    assert!(projection.suppress_user_output);
+    assert_eq!(summary.status, "stuck");
+    assert_eq!(
+        summary.stuck.as_ref().expect("stuck").suspected_cause,
+        "same_tool_failure"
+    );
+}
+
+#[test]
+fn long_work_queued_continuation_survives_session_detail_reload() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let storage_root = temp.path().join("ai").to_string_lossy().to_string();
+    let store = AiStore::open(Some(&storage_root)).expect("store");
+    let (session_id, turn_id, user_message_id) =
+        seed_turn(&store, temp.path().to_string_lossy().as_ref());
+    let refs = seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_SHELL_RUN_COMMAND);
+    seed_run_for_refs(&store, &session_id, &turn_id, &user_message_id, &refs);
+    store
+        .evaluate_completion_audit_and_delivery_proof(&session_id, Some(&turn_id))
+        .expect("audit");
+    project_work_after_model_candidate(&store, &session_id, Some(&turn_id), "Done.")
+        .expect("candidate");
+
+    let reloaded = AiStore::open(Some(&storage_root)).expect("reopened");
+    let detail = reloaded
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session");
+    let continuation = detail
+        .durable_work_summary
+        .as_ref()
+        .expect("work summary")
+        .continuation
+        .as_ref()
+        .expect("continuation");
+
+    assert_eq!(continuation.status, "queued");
+    assert_eq!(continuation.next_slice_sequence, 2);
+}
+
+#[test]
+fn long_work_recovery_does_not_replay_started_write_side_effect() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let store =
+        AiStore::open(Some(temp.path().join("ai").to_string_lossy().as_ref())).expect("store");
+    let (session_id, turn_id, user_message_id) =
+        seed_turn(&store, temp.path().to_string_lossy().as_ref());
+    let refs = seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_FS_APPLY_PATCH);
+    seed_run_for_refs(&store, &session_id, &turn_id, &user_message_id, &refs);
+    store
+        .evaluate_completion_audit_and_delivery_proof(&session_id, Some(&turn_id))
+        .expect("audit");
+    let projection =
+        project_work_after_model_candidate(&store, &session_id, Some(&turn_id), "Done.")
+            .expect("candidate");
+    assert!(projection.suppress_user_output);
+    let continuation_id = store
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session")
+        .durable_work_summary
+        .as_ref()
+        .expect("work summary")
+        .continuation
+        .as_ref()
+        .expect("continuation")
+        .continuation_id
+        .clone();
+    store
+        .mark_long_work_continuation_started_side_effect_for_test(&session_id, &continuation_id)
+        .expect("mark side effect");
+
+    let detail = recover_work_continuation(&store, &session_id)
+        .expect("recover")
+        .expect("summary");
+
+    assert_eq!(detail.status, "blocked");
+    assert_eq!(
+        detail.continuation.as_ref().expect("continuation").status,
+        "blocked"
+    );
+    let events = store
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session")
+        .runtime_events;
+    assert!(events
+        .iter()
+        .any(|event| event.phase == "long_work.recovery_detected"));
+    assert!(events
+        .iter()
+        .any(|event| event.phase == "long_work.blocked"));
 }

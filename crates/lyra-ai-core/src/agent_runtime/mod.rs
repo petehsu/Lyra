@@ -50,11 +50,15 @@ use events::{
 mod todo_projection;
 use todo_projection::record_todo_from_tool_result;
 
+mod long_work_controller;
 mod long_work_projection;
 use long_work_projection::{create_mini_run_after_todo, create_plan_run_after_valid_coverage};
 pub(crate) use long_work_projection::{
-    project_work_after_completion, project_work_after_tool_result,
+    project_work_after_completion, project_work_after_model_candidate,
+    project_work_after_tool_result,
 };
+#[allow(unused_imports)]
+pub(crate) use long_work_projection::{recover_work_continuation, resume_work_continuation};
 
 mod session_ops;
 use session_ops::ensure_session;

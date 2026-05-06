@@ -182,7 +182,9 @@ export type AgentExecutionSummary = {
 export type AgentLongWorkStatus =
   | "created"
   | "running"
+  | "auto_resuming"
   | "blocked"
+  | "stuck"
   | "completed"
   | "failed"
   | "cancelled"
@@ -198,13 +200,49 @@ export type AgentLongWorkTodoProgress = {
 export type AgentWorkSliceSummary = {
   readonly workSliceId: string;
   readonly status: AgentLongWorkStatus;
+  readonly sequence?: number;
   readonly todoListId: string;
   readonly executionRunId: string;
+  readonly stopCause?: string;
   readonly checkpointIds: readonly string[];
   readonly blockerIds: readonly string[];
+  readonly progressDelta?: unknown;
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly closedAt?: number;
+};
+
+export type AgentLongWorkContinuationSummary = {
+  readonly continuationId: string;
+  readonly status: "queued" | "resuming" | "consumed" | "blocked" | "cancelled" | string;
+  readonly recommendedAction: string;
+  readonly previousSliceId: string;
+  readonly nextSliceSequence: number;
+  readonly reasonSummary?: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
+export type AgentPrematureStopSummary = {
+  readonly reportId: string;
+  readonly isPrematureStop: boolean;
+  readonly signals: readonly string[];
+  readonly openTodoItemIds: readonly string[];
+  readonly missingEvidence: readonly string[];
+  readonly recommendedAction: string;
+  readonly suppressedMessageId?: string;
+  readonly createdAt: number;
+};
+
+export type AgentStuckSummary = {
+  readonly stuckReportId: string;
+  readonly repeatedFailureCount: number;
+  readonly noProgressSliceCount: number;
+  readonly suspectedCause: string;
+  readonly recommendedAction: string;
+  readonly evidenceRefs: readonly string[];
+  readonly reasonSummary?: string;
+  readonly createdAt: number;
 };
 
 export type AgentLongWorkSummary = {
@@ -221,6 +259,9 @@ export type AgentLongWorkSummary = {
   readonly todoProgress: AgentLongWorkTodoProgress;
   readonly blockerSummary?: string;
   readonly currentSlice?: AgentWorkSliceSummary;
+  readonly continuation?: AgentLongWorkContinuationSummary | null;
+  readonly prematureStop?: AgentPrematureStopSummary | null;
+  readonly stuck?: AgentStuckSummary | null;
   readonly createdAt: number;
   readonly updatedAt: number;
 };
@@ -639,6 +680,13 @@ export type AgentRuntimeEventType =
   | "todo.reference_coverage_failed"
   | "long_work.created"
   | "long_work.slice_started"
+  | "long_work.slice_stopped"
+  | "long_work.premature_stop_detected"
+  | "long_work.output_suppressed"
+  | "long_work.continuation_queued"
+  | "long_work.auto_resuming"
+  | "long_work.recovery_detected"
+  | "long_work.stuck"
   | "long_work.blocked"
   | "long_work.completed"
   | "verification_plan_created"

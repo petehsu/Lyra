@@ -1,6 +1,10 @@
+use super::long_work_continuation::{
+    read_latest_continuation_summary, read_latest_premature_stop_summary, read_latest_stuck_summary,
+};
+use super::long_work_status::{
+    blocker_summary, decide_status_from_conn, progress_from_items, update_work_status_in_conn,
+};
 use super::*;
-
-const ACTIVE_WORK_STATUSES: &[&str] = &["created", "running", "blocked"];
 
 impl AiStore {
     pub fn create_long_work_run(
@@ -161,20 +165,20 @@ fn cancel_active_work(conn: &Connection, session_id: &str, now: i64, now_iso: &s
     conn.execute(
         "UPDATE long_work_run
          SET status = 'cancelled', updated_at_ms = ?1, updated_at_iso = ?2
-         WHERE session_id = ?3 AND status IN ('created', 'running', 'blocked')",
+         WHERE session_id = ?3 AND status IN ('created', 'running', 'blocked', 'auto_resuming')",
         params![now, now_iso, session_id],
     )?;
     conn.execute(
         "UPDATE native_long_work_goal
          SET status = 'cancelled', updated_at_ms = ?1, updated_at_iso = ?2
-         WHERE session_id = ?3 AND status IN ('created', 'running', 'blocked')",
+         WHERE session_id = ?3 AND status IN ('created', 'running', 'blocked', 'auto_resuming')",
         params![now, now_iso, session_id],
     )?;
     conn.execute(
         "UPDATE work_slice
          SET status = 'cancelled', updated_at_ms = ?1, updated_at_iso = ?2,
              closed_at_ms = COALESCE(closed_at_ms, ?1), closed_at_iso = COALESCE(closed_at_iso, ?2)
-         WHERE session_id = ?3 AND status IN ('created', 'running', 'blocked')",
+         WHERE session_id = ?3 AND status IN ('created', 'running', 'blocked', 'auto_resuming')",
         params![now, now_iso, session_id],
     )?;
     Ok(())
@@ -187,7 +191,7 @@ fn read_latest_active_work_run_id_from_conn(
     conn.query_row(
         "SELECT long_work_run_id
          FROM long_work_run
-         WHERE session_id = ?1 AND status IN ('created', 'running', 'blocked')
+         WHERE session_id = ?1 AND status IN ('created', 'running', 'blocked', 'auto_resuming')
          ORDER BY updated_at_ms DESC, created_at_ms DESC
          LIMIT 1",
         params![session_id],
@@ -197,7 +201,7 @@ fn read_latest_active_work_run_id_from_conn(
     .context("failed to read active work run id")
 }
 
-fn read_latest_work_summary_from_conn(
+pub(super) fn read_latest_work_summary_from_conn(
     conn: &Connection,
     session_id: &str,
 ) -> Result<Option<SessionTaskLedgerSummary>> {
@@ -257,6 +261,9 @@ fn read_latest_work_summary_from_conn(
         Some(slice_id) => read_work_slice_summary(conn, slice_id)?,
         None => None,
     };
+    let continuation = read_latest_continuation_summary(conn, &run_id)?;
+    let premature_stop = read_latest_premature_stop_summary(conn, &run_id)?;
+    let stuck = read_latest_stuck_summary(conn, &run_id)?;
     Ok(Some(AgentLongWorkSummary {
         long_work_run_id: run_id,
         goal_id,
@@ -271,6 +278,9 @@ fn read_latest_work_summary_from_conn(
         todo_progress: progress_from_items(&items),
         blocker_summary: blocker_summary(&status, &items, &blocker_ids),
         current_slice,
+        continuation,
+        premature_stop,
+        stuck,
         created_at,
         updated_at,
     }))
@@ -281,296 +291,33 @@ fn read_work_slice_summary(
     slice_id: &str,
 ) -> Result<Option<AgentWorkSliceSummary>> {
     conn.query_row(
-        "SELECT work_slice_id, status, todo_list_id, execution_run_id, checkpoint_ids_json,
-                blocker_ids_json, created_at_ms, updated_at_ms, closed_at_ms
+        "SELECT work_slice_id, status, sequence, todo_list_id, execution_run_id, stop_cause,
+                checkpoint_ids_json, blocker_ids_json, progress_delta_json, created_at_ms,
+                updated_at_ms, closed_at_ms
          FROM work_slice
          WHERE work_slice_id = ?1",
         params![slice_id],
         |row| {
-            let checkpoint_ids_json: String = row.get(4)?;
-            let blocker_ids_json: String = row.get(5)?;
+            let checkpoint_ids_json: String = row.get(6)?;
+            let blocker_ids_json: String = row.get(7)?;
+            let progress_delta_json: String = row.get(8)?;
+            let progress_delta = serde_json::from_str(&progress_delta_json).ok();
             Ok(AgentWorkSliceSummary {
                 work_slice_id: row.get(0)?,
                 status: row.get(1)?,
-                todo_list_id: row.get(2)?,
-                execution_run_id: row.get(3)?,
+                sequence: row.get(2)?,
+                todo_list_id: row.get(3)?,
+                execution_run_id: row.get(4)?,
+                stop_cause: row.get(5)?,
                 checkpoint_ids: parse_json_vec_string(&checkpoint_ids_json),
                 blocker_ids: parse_json_vec_string(&blocker_ids_json),
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-                closed_at: row.get(8)?,
+                progress_delta,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                closed_at: row.get(11)?,
             })
         },
     )
     .optional()
     .context("failed to read work slice summary")
-}
-
-fn decide_status_from_conn(
-    conn: &Connection,
-    session_id: &str,
-    run_id: &str,
-    turn_id: Option<&str>,
-) -> Result<Option<LongWorkStatusUpdate>> {
-    let row = conn
-        .query_row(
-            "SELECT todo_list_id, execution_run_id, status, checkpoint_ids_json, blocker_ids_json
-             FROM long_work_run
-             WHERE session_id = ?1 AND long_work_run_id = ?2",
-            params![session_id, run_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                ))
-            },
-        )
-        .optional()?;
-    let Some((todo_list_id, execution_run_id, current_status, checkpoint_json, blocker_json)) = row
-    else {
-        return Ok(None);
-    };
-    if ACTIVE_WORK_STATUSES
-        .iter()
-        .any(|status| *status == current_status)
-        == false
-    {
-        return Ok(None);
-    }
-    let items = read_todo_items_for_list(conn, &todo_list_id)?;
-    let audit = read_completion_audit_for_execution(conn, session_id, &execution_run_id, turn_id)?;
-    let mut blocker_ids = blocker_ids_from_items(&items);
-    if let Some(audit) = audit.as_ref() {
-        blocker_ids = merge_string_refs(&blocker_ids, &audit.blocker_ids);
-    }
-    let status = if items.is_empty() {
-        "blocked"
-    } else if audit
-        .as_ref()
-        .map(|audit| audit.status.as_str() == "passed")
-        .unwrap_or(false)
-        && todo_items_are_done(&items)
-    {
-        "completed"
-    } else if approval_related_blocker(&items)
-        || audit
-            .as_ref()
-            .map(|audit| audit.status.as_str() == "blocked")
-            .unwrap_or(false)
-    {
-        "blocked"
-    } else if items.iter().any(|item| item.status == "failed")
-        || audit
-            .as_ref()
-            .map(|audit| audit.status.as_str() == "failed")
-            .unwrap_or(false)
-    {
-        "failed"
-    } else if items.iter().any(|item| item.status == "blocked") {
-        "blocked"
-    } else {
-        "running"
-    };
-    let checkpoint_ids = parse_json_vec_string(&checkpoint_json);
-    let previous_blocker_ids = parse_json_vec_string(&blocker_json);
-    if status == current_status && previous_blocker_ids == blocker_ids {
-        return Ok(None);
-    }
-    Ok(Some(LongWorkStatusUpdate {
-        status: status.to_string(),
-        checkpoint_ids,
-        blocker_ids,
-    }))
-}
-
-fn update_work_status_in_conn(
-    conn: &Connection,
-    run_id: &str,
-    update: &LongWorkStatusUpdate,
-    now: i64,
-    now_iso: &str,
-) -> Result<()> {
-    let closed = matches!(
-        update.status.as_str(),
-        "blocked" | "completed" | "failed" | "cancelled"
-    );
-    conn.execute(
-        "UPDATE long_work_run
-         SET status = ?1, checkpoint_ids_json = ?2, blocker_ids_json = ?3,
-             updated_at_ms = ?4, updated_at_iso = ?5
-         WHERE long_work_run_id = ?6",
-        params![
-            update.status,
-            json_string(&update.checkpoint_ids)?,
-            json_string(&update.blocker_ids)?,
-            now,
-            now_iso,
-            run_id,
-        ],
-    )?;
-    conn.execute(
-        "UPDATE native_long_work_goal
-         SET status = ?1, updated_at_ms = ?2, updated_at_iso = ?3
-         WHERE goal_id = (SELECT goal_id FROM long_work_run WHERE long_work_run_id = ?4)",
-        params![update.status, now, now_iso, run_id],
-    )?;
-    conn.execute(
-        "UPDATE work_slice
-         SET status = ?1, checkpoint_ids_json = ?2, blocker_ids_json = ?3,
-             updated_at_ms = ?4, updated_at_iso = ?5,
-             closed_at_ms = CASE WHEN ?6 THEN COALESCE(closed_at_ms, ?4) ELSE closed_at_ms END,
-             closed_at_iso = CASE WHEN ?6 THEN COALESCE(closed_at_iso, ?5) ELSE closed_at_iso END
-         WHERE work_slice_id = (SELECT current_slice_id FROM long_work_run WHERE long_work_run_id = ?7)",
-        params![
-            update.status,
-            json_string(&update.checkpoint_ids)?,
-            json_string(&update.blocker_ids)?,
-            now,
-            now_iso,
-            closed,
-            run_id,
-        ],
-    )?;
-    Ok(())
-}
-
-struct AuditStatus {
-    status: String,
-    blocker_ids: Vec<String>,
-}
-
-fn read_completion_audit_for_execution(
-    conn: &Connection,
-    session_id: &str,
-    execution_run_id: &str,
-    turn_id: Option<&str>,
-) -> Result<Option<AuditStatus>> {
-    let row = conn
-        .query_row(
-            "SELECT completion_audit_id, status, summary_json
-             FROM completion_audit
-             WHERE session_id = ?1
-                AND execution_run_id = ?2
-                AND (?3 IS NULL OR runtime_turn_id = ?3)
-             ORDER BY updated_at_ms DESC, created_at_ms DESC
-             LIMIT 1",
-            params![session_id, execution_run_id, turn_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            },
-        )
-        .optional()?;
-    let Some((audit_id, status, summary_json)) = row else {
-        return Ok(None);
-    };
-    let summary: Value = serde_json::from_str(&summary_json).unwrap_or_else(|_| json!({}));
-    let mut blocker_ids = Vec::new();
-    for key in [
-        "missingTodoItemIds",
-        "failedTodoItemIds",
-        "blockedTodoItemIds",
-        "failedVerificationRunIds",
-        "blockedVerificationRunIds",
-        "notRunVerificationRunIds",
-        "pendingApprovalTicketIds",
-    ] {
-        blocker_ids = merge_string_refs(&blocker_ids, &value_string_array(&summary, key));
-    }
-    if blocker_ids.is_empty() == false {
-        blocker_ids.insert(0, audit_id);
-    }
-    Ok(Some(AuditStatus {
-        status,
-        blocker_ids,
-    }))
-}
-
-fn progress_from_items(items: &[AgentTodoItem]) -> AgentLongWorkTodoProgress {
-    AgentLongWorkTodoProgress {
-        total: items.len() as i64,
-        completed: items
-            .iter()
-            .filter(|item| matches!(item.status.as_str(), "completed" | "skipped"))
-            .count() as i64,
-        blocked: items.iter().filter(|item| item.status == "blocked").count() as i64,
-        failed: items.iter().filter(|item| item.status == "failed").count() as i64,
-    }
-}
-
-fn todo_items_are_done(items: &[AgentTodoItem]) -> bool {
-    items
-        .iter()
-        .all(|item| matches!(item.status.as_str(), "completed" | "skipped"))
-}
-
-fn blocker_ids_from_items(items: &[AgentTodoItem]) -> Vec<String> {
-    items
-        .iter()
-        .filter(|item| matches!(item.status.as_str(), "blocked" | "failed"))
-        .map(|item| item.todo_item_id.clone())
-        .collect()
-}
-
-fn approval_related_blocker(items: &[AgentTodoItem]) -> bool {
-    items.iter().any(|item| {
-        blocker_entries(&item.blockers)
-            .iter()
-            .any(is_approval_blocker)
-    })
-}
-
-fn is_approval_blocker(blocker: &Value) -> bool {
-    matches!(
-        blocker.get("kind").and_then(Value::as_str),
-        Some("approval_required" | "approval_denied")
-    )
-}
-
-fn blocker_entries(value: &Value) -> Vec<Value> {
-    if let Some(items) = value.as_array() {
-        return items.clone();
-    }
-    if value.is_object() {
-        return vec![value.clone()];
-    }
-    Vec::new()
-}
-
-fn blocker_summary(
-    status: &str,
-    items: &[AgentTodoItem],
-    blocker_ids: &[String],
-) -> Option<String> {
-    if status == "blocked" {
-        if approval_related_blocker(items) {
-            return Some("Waiting for approval decision".to_string());
-        }
-        if blocker_ids.is_empty() == false {
-            return Some(format!(
-                "{} blocker{}",
-                blocker_ids.len(),
-                plural(blocker_ids.len())
-            ));
-        }
-        return Some("Blocked by incomplete execution state".to_string());
-    }
-    if status == "failed" {
-        return Some("Failed tool or verification result".to_string());
-    }
-    None
-}
-
-fn plural(count: usize) -> &'static str {
-    if count == 1 {
-        ""
-    } else {
-        "s"
-    }
 }
