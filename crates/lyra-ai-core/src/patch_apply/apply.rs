@@ -75,6 +75,13 @@ pub fn apply_agent_patch(request: AgentApplyPatchRequest) -> Result<AgentApplyPa
                 &result,
                 &blob,
             )?;
+            crate::agent_runtime::project_recovery_side_effect(
+                &store,
+                &session_id,
+                turn_id.as_deref().unwrap_or_default(),
+                &operation,
+                &result,
+            )?;
             emit_apply_event(
                 &store,
                 &session_id,
@@ -395,6 +402,19 @@ pub(super) fn execute_prepared_apply(
     if ticket_status == "pending_user" {
         return Err(anyhow!("pending approvals cannot execute apply_patch"));
     }
+    let touched_paths = prepared
+        .plan
+        .changed_files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect::<Vec<_>>();
+    crate::agent_runtime::ensure_recovery_anchor_for_write(store, session_id, turn_id)?;
+    store.capture_workspace_snapshot_files_for_turn(
+        session_id,
+        turn_id,
+        &touched_paths,
+        "write_preflight",
+    )?;
     ensure_patch_source_not_applied(store, session_id, &prepared)?;
     let ticket = if let Some(ticket_id) = preferred_ticket_id {
         store.update_approval_ticket_status(session_id, &ticket_id, ticket_status, approval_mode)?

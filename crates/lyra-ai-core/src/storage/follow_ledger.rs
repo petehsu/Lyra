@@ -215,6 +215,26 @@ impl AiStore {
             update_follow_status_in_conn(conn, session_id, &row.id, status, event_type)
         })
     }
+
+    pub fn read_follow_target_id_for_operation(
+        &self,
+        session_id: &str,
+        tool_operation_id: &str,
+    ) -> Result<Option<String>> {
+        self.with_session_conn(session_id, |conn| {
+            conn.query_row(
+                "SELECT follow_target_id
+                 FROM follow_target
+                 WHERE session_id = ?1 AND tool_operation_id = ?2
+                 ORDER BY updated_at_ms DESC
+                 LIMIT 1",
+                params![session_id, tool_operation_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .context("failed to read follow target for operation")
+        })
+    }
 }
 
 struct FollowSessionLookupRow {

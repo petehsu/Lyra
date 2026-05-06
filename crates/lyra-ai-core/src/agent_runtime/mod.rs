@@ -58,6 +58,13 @@ pub(crate) use follow_projection::{
     project_follow_operation_finished, project_follow_operation_started,
 };
 
+mod recovery_controller;
+pub(crate) use recovery_controller::ensure_recovery_anchor_for_write;
+use recovery_controller::ensure_recovery_checkpoint_for_turn;
+pub use recovery_controller::{preview_message_rollback, read_rollback_preview};
+mod recovery_projection;
+pub(crate) use recovery_projection::project_recovery_side_effect;
+
 mod long_work_controller;
 mod long_work_projection;
 use long_work_projection::{create_mini_run_after_todo, create_plan_run_after_valid_coverage};
@@ -84,5 +91,7 @@ use turn_loop::{run_tool_operation, run_turn_worker_inner};
 mod follow_tests;
 #[cfg(test)]
 mod long_work_tests;
+#[cfg(test)]
+mod recovery_tests;
 #[cfg(test)]
 mod tests;

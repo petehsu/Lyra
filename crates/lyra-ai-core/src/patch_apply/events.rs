@@ -79,6 +79,13 @@ pub(super) fn append_result_and_emit_event(
         &result,
         &blob,
     )?;
+    crate::agent_runtime::project_recovery_side_effect(
+        store,
+        session_id,
+        turn_id.unwrap_or_default(),
+        operation,
+        &result,
+    )?;
     emit_apply_event(
         store,
         session_id,

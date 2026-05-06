@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use super::follow_models::AgentFollowSummary;
 use super::long_work_models::SessionTaskLedgerSummary;
+use super::recovery_models::AgentRecoverySummary;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -177,6 +178,8 @@ pub struct AgentSessionDetail {
     pub durable_work_summary: Option<SessionTaskLedgerSummary>,
     #[serde(rename = "followSummary", skip_serializing_if = "Option::is_none")]
     pub follow_summary: Option<AgentFollowSummary>,
+    #[serde(rename = "recoverySummary", skip_serializing_if = "Option::is_none")]
+    pub recovery_summary: Option<AgentRecoverySummary>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

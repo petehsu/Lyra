@@ -58,9 +58,17 @@ fn seed_turn(store: &AiStore, workspace_root: &str) -> (String, String) {
     store
         .insert_turn(&turn, &user_message.id, None)
         .expect("turn");
-    store
+    let checkpoint_id = store
         .create_timeline_checkpoint(&session.id, &turn.id, &user_message.id)
         .expect("checkpoint");
+    ensure_recovery_checkpoint_for_turn(
+        store,
+        &session,
+        &turn.id,
+        &user_message.id,
+        &checkpoint_id,
+    )
+    .expect("recovery checkpoint");
     (session.id, turn.id)
 }
 

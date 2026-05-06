@@ -1,5 +1,7 @@
 use super::*;
-use crate::storage::{now_ms, AgentSession, CreateTodoItemInput};
+use crate::storage::{
+    now_ms, AgentMessage, AgentSession, AgentTurn, CreateRecoveryAnchorInput, CreateTodoItemInput,
+};
 use crate::tool_runtime::operation::{
     tool_error_code, ToolResultStatus, TOOL_PATH_OUTSIDE_WORKSPACE, TOOL_UNSUPPORTED_ENCODING,
 };
@@ -23,7 +25,97 @@ fn seed_session(store: &AiStore, workspace_root: &str) -> String {
     store
         .with_session_conn(&session_id, |_| Ok(()))
         .expect("session db");
+    let user_message = AgentMessage {
+        id: "msg-ui".to_string(),
+        session_id: session_id.clone(),
+        turn_id: Some("turn-ui".to_string()),
+        role: "user".to_string(),
+        content: "apply patch".to_string(),
+        content_parts: None,
+        display_content: Some("apply patch".to_string()),
+        created_at: now,
+    };
+    store.append_message(&user_message).expect("message");
+    store
+        .insert_turn(
+            &AgentTurn {
+                id: "turn-ui".to_string(),
+                session_id: session_id.clone(),
+                profile_id: "profile-test".to_string(),
+                status: "running".to_string(),
+                collaboration_mode: Some("default".to_string()),
+                permission_mode: "full_access".to_string(),
+                error_code: None,
+                error_message: None,
+                usage: None,
+                created_at: now,
+                updated_at: now,
+            },
+            &user_message.id,
+            None,
+        )
+        .expect("turn");
+    let checkpoint_id = store
+        .create_timeline_checkpoint(&session_id, "turn-ui", &user_message.id)
+        .expect("checkpoint");
+    store
+        .create_recovery_anchor(CreateRecoveryAnchorInput {
+            session_id: session_id.clone(),
+            runtime_turn_id: "turn-ui".to_string(),
+            user_message_id: user_message.id,
+            checkpoint_id,
+            workspace_root: Some(workspace_root.to_string()),
+        })
+        .expect("recovery anchor");
+    seed_recovery_turn(store, &session_id, workspace_root, "turn-rollback");
+    seed_recovery_turn(store, &session_id, workspace_root, "turn-model");
     session_id
+}
+
+fn seed_recovery_turn(store: &AiStore, session_id: &str, workspace_root: &str, turn_id: &str) {
+    let now = now_ms();
+    let user_message = AgentMessage {
+        id: format!("msg-{turn_id}"),
+        session_id: session_id.to_string(),
+        turn_id: Some(turn_id.to_string()),
+        role: "user".to_string(),
+        content: format!("write through {turn_id}"),
+        content_parts: None,
+        display_content: Some(format!("write through {turn_id}")),
+        created_at: now,
+    };
+    store.append_message(&user_message).expect("message");
+    store
+        .insert_turn(
+            &AgentTurn {
+                id: turn_id.to_string(),
+                session_id: session_id.to_string(),
+                profile_id: "profile-test".to_string(),
+                status: "running".to_string(),
+                collaboration_mode: Some("default".to_string()),
+                permission_mode: "full_access".to_string(),
+                error_code: None,
+                error_message: None,
+                usage: None,
+                created_at: now,
+                updated_at: now,
+            },
+            &user_message.id,
+            None,
+        )
+        .expect("turn");
+    let checkpoint_id = store
+        .create_timeline_checkpoint(session_id, turn_id, &user_message.id)
+        .expect("checkpoint");
+    store
+        .create_recovery_anchor(CreateRecoveryAnchorInput {
+            session_id: session_id.to_string(),
+            runtime_turn_id: turn_id.to_string(),
+            user_message_id: user_message.id,
+            checkpoint_id,
+            workspace_root: Some(workspace_root.to_string()),
+        })
+        .expect("recovery anchor");
 }
 
 fn seed_diff_artifact_with_patch(

@@ -74,6 +74,16 @@ pub fn resume_agent_follow_json(request_json: String) -> Result<String> {
     to_json(&agent_runtime::resume_follow(request)?)
 }
 
+pub fn preview_agent_message_rollback_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::preview_message_rollback(request)?)
+}
+
+pub fn read_agent_rollback_preview_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::read_rollback_preview(request)?)
+}
+
 pub fn update_agent_session_json(request_json: String) -> Result<String> {
     let request = parse_json(request_json)?;
     to_json(&agent_runtime::update_session(request)?)

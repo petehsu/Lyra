@@ -48,6 +48,7 @@ impl AiStore {
         migrate_session(&conn)?;
         migrate_long_work_session(&conn)?;
         migrate_follow_session(&conn)?;
+        migrate_recovery_session(&conn)?;
         f(&conn)
     }
 
@@ -81,6 +82,12 @@ impl AiStore {
                 | "follow_event"
                 | "live_edit_stream"
                 | "workspace_commit"
+                | "conversation_snapshot"
+                | "workspace_snapshot"
+                | "workspace_file_snapshot"
+                | "message_rollback_anchor"
+                | "side_effect_record"
+                | "rollback_preview"
         ) == false
         {
             return Err(anyhow!("unsupported table for test count"));

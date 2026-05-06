@@ -67,11 +67,18 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
             .as_ref()
             .map(|snapshot| snapshot.snapshot_id.as_str()),
     )?;
+    let checkpoint_id =
+        store.create_timeline_checkpoint(&session.id, &turn_id, &user_message_id)?;
+    let rollback_anchor = ensure_recovery_checkpoint_for_turn(
+        &store,
+        &session,
+        &turn_id,
+        &user_message_id,
+        &checkpoint_id,
+    )?;
     if request.options.follow_enabled.unwrap_or(false) {
         ensure_follow_for_turn(&store, &session.id, &turn_id, &user_message_id)?;
     }
-    let checkpoint_id =
-        store.create_timeline_checkpoint(&session.id, &turn_id, &user_message_id)?;
     if let Some(items) = mini_todo_items_for_request(&text) {
         let refs = store.create_execution_todo_list(
             &session.id,
@@ -133,6 +140,7 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
             "userMessage": user_message,
             "policySnapshot": policy_snapshot,
             "checkpointId": checkpoint_id,
+            "rollbackAnchorId": rollback_anchor.anchor_id,
             "runtimeOptions": runtime_options_payload
         }),
     )?;
@@ -359,6 +367,12 @@ pub(super) fn run_turn_worker_inner(
         .map(|summary| serde_json::to_value(summary).unwrap_or_else(|_| json!({})))
         .into_iter()
         .collect();
+    let recovery_summaries = detail
+        .recovery_summary
+        .as_ref()
+        .map(|summary| serde_json::to_value(summary).unwrap_or_else(|_| json!({})))
+        .into_iter()
+        .collect();
     let mut messages = compose_messages(
         PromptContext {
             collaboration_mode,
@@ -369,6 +383,7 @@ pub(super) fn run_turn_worker_inner(
             denied_approval_summaries,
             failed_plan_coverage_summaries,
             work_run_summaries,
+            recovery_summaries,
         },
         history,
     );
@@ -583,6 +598,13 @@ pub(super) fn run_tool_operation(
         }),
     )?;
     project_follow_operation_started(store, session_id, turn_id, operation)?;
+    let normalized_operation_path = normalized_tool_path(&operation.path);
+    if operation.op == ToolFsOp::Run
+        && (normalized_operation_path == TOOL_FS_APPLY_PATCH
+            || normalized_operation_path == TOOL_FS_ROLLBACK_PATCH)
+    {
+        ensure_recovery_anchor_for_write(store, session_id, turn_id)?;
+    }
     let mut result = if operation.op == ToolFsOp::Run
         && inspected_tool_paths.contains(&normalized_tool_path(&operation.path)) == false
     {
@@ -644,6 +666,7 @@ pub(super) fn run_tool_operation(
         &result,
         &result_blob,
     )?;
+    project_recovery_side_effect(store, session_id, turn_id, operation, &result)?;
     let event_type = if result.status == ToolResultStatus::Completed {
         "tool_operation_completed"
     } else {

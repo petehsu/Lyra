@@ -48,6 +48,7 @@ pub struct PromptContext {
     pub denied_approval_summaries: Vec<Value>,
     pub failed_plan_coverage_summaries: Vec<Value>,
     pub work_run_summaries: Vec<Value>,
+    pub recovery_summaries: Vec<Value>,
 }
 
 pub fn compose_messages(context: PromptContext, history: Vec<ChatMessage>) -> Vec<ChatMessage> {
@@ -300,6 +301,63 @@ Use these runtime facts for time, platform, workspace, and mode-sensitive reason
             "\nLongWorkRun status is Runtime-owned. Completion still requires Todo, Approval, Verification, and CompletionAudit evidence; do not claim completion while the run is active, queued, auto-resuming, blocked, or stuck. Do not ask the user whether to continue unless a real blocker exists.",
         );
     }
+    if context.recovery_summaries.is_empty() == false {
+        prompt.push_str("\n\nCurrent message checkpoint and rollback preview state:");
+        for summary in &context.recovery_summaries {
+            if let Some(anchor) = summary
+                .get("latestAnchor")
+                .filter(|value| value.is_object())
+            {
+                prompt.push_str(&format!(
+                    "\n- latestAnchor: userMessageId={}; checkpointId={}; status={}.",
+                    anchor
+                        .get("userMessageId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    anchor
+                        .get("checkpointId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    anchor
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                ));
+            }
+            if let Some(preview) = summary
+                .get("activeRollbackPreview")
+                .filter(|value| value.is_object())
+            {
+                prompt.push_str(&format!(
+                    "\n  activePreview: rollbackId={}; targetUserMessageId={}; impactLevel={}; status={}; requiresConfirmation={}.",
+                    preview
+                        .get("rollbackId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    preview
+                        .get("targetUserMessageId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    preview
+                        .get("impactLevel")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    preview
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    preview
+                        .get("requiresConfirmation")
+                        .and_then(Value::as_bool)
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "unknown".to_string()),
+                ));
+            }
+        }
+        prompt.push_str(
+            "\nRollback preview is not rollback execution. Do not claim rollback completed from a preview. If the user asks to rollback and only a preview exists, say the preview is ready and an execution/confirmation step is still required. After a future executed rollback, old turns, continuations, tool streams, and follow streams must not continue from the superseded branch.",
+        );
+    }
     prompt
 }
 
@@ -328,6 +386,7 @@ mod tests {
             denied_approval_summaries: Vec::new(),
             failed_plan_coverage_summaries: Vec::new(),
             work_run_summaries: Vec::new(),
+            recovery_summaries: Vec::new(),
         }
     }
 

@@ -263,6 +263,18 @@ pub(super) fn execute_prepared_rollback(
     if ticket_status == "pending_user" {
         return Err(anyhow!("rollback_patch execution requires full_access"));
     }
+    let touched_paths = prepared
+        .changed_files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect::<Vec<_>>();
+    crate::agent_runtime::ensure_recovery_anchor_for_write(store, session_id, turn_id)?;
+    store.capture_workspace_snapshot_files_for_turn(
+        session_id,
+        turn_id,
+        &touched_paths,
+        "write_preflight",
+    )?;
     let actions = preflight_rollback(store, session_id, context, &prepared)?;
     let ticket = if let Some(ticket_id) = preferred_ticket_id {
         store.update_approval_ticket_status(session_id, &ticket_id, ticket_status, approval_mode)?
