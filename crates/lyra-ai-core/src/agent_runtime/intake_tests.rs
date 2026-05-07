@@ -126,6 +126,15 @@ fn explicit_ui_action_beats_semantic_inference_and_stale_target_blocks() {
         result.detail.intent_summary.expect("intent").kind,
         "plan_approval"
     );
+    let envelopes = store
+        .read_user_intent_envelopes_for_test(&result.session_id)
+        .expect("intents");
+    assert!(envelopes
+        .last()
+        .expect("intent")
+        .classification_evidence_refs
+        .iter()
+        .any(|evidence| evidence == "active_plan_panel_present"));
 
     let mut stale_input = turn_input("approve it");
     stale_input.ui_action = Some(RuntimeTurnUiAction {

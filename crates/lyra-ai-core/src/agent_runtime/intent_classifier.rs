@@ -143,6 +143,14 @@ pub(crate) fn classify_user_intent(
     let mut kind = "chat".to_string();
     let mut confidence = 0.72_f64;
     let mut high_risk = contains_high_risk_action(&lowered);
+    let active_context = read_active_runtime_context(store, &session.id)?;
+    if active_context.pending_approval_count > 0 {
+        evidence_refs.push("pending_approvals_present".to_string());
+    }
+    if let Some(panel_id) = active_context.active_plan_panel_id.as_deref() {
+        evidence_refs.push("active_plan_panel_present".to_string());
+        evidence_refs.push(format!("active_plan_panel:{panel_id}"));
+    }
 
     if let Some(ui_action) = input.ui_action.as_ref() {
         evidence_refs.push("ui_action_present".to_string());
@@ -277,6 +285,28 @@ fn ui_action_intent_kind(kind: &str) -> String {
         _ => "unknown",
     }
     .to_string()
+}
+
+struct ActiveRuntimeContext {
+    pending_approval_count: usize,
+    active_plan_panel_id: Option<String>,
+}
+
+fn read_active_runtime_context(store: &AiStore, session_id: &str) -> Result<ActiveRuntimeContext> {
+    let pending_approval_count = store.read_pending_approval_interactions(session_id)?.len();
+    let active_plan_panel_id = store
+        .read_planning_summary(session_id)?
+        .and_then(|summary| {
+            if summary.panel_status == "pending_review" {
+                Some(summary.panel_id)
+            } else {
+                None
+            }
+        });
+    Ok(ActiveRuntimeContext {
+        pending_approval_count,
+        active_plan_panel_id,
+    })
 }
 
 fn ui_action_freshness(
