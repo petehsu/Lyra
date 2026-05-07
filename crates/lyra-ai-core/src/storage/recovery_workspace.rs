@@ -74,14 +74,7 @@ pub(super) fn restore_workspace_snapshot_changes(
                 target_path,
                 content,
             } => {
-                if let Some(parent) = target_path.parent() {
-                    fs::create_dir_all(parent).with_context(|| {
-                        format!("failed to create restore dir {}", parent.display())
-                    })?;
-                }
-                fs::write(&target_path, &content).with_context(|| {
-                    format!("failed to restore workspace file {}", target_path.display())
-                })?;
+                atomic_restore_file(&target_path, &content)?;
                 restored_paths.push(path);
             }
             WorkspaceRestoreAction::Remove { path, target_path } => {
@@ -101,6 +94,41 @@ pub(super) fn restore_workspace_snapshot_changes(
         restored_workspace_snapshot_id: Some(workspace_snapshot_id.to_string()),
         restored_paths,
     })
+}
+
+fn atomic_restore_file(target_path: &Path, content: &[u8]) -> Result<()> {
+    let parent = target_path.parent().ok_or_else(|| {
+        anyhow!(
+            "TOOL_ROLLBACK_CONFLICT: restore target has no parent: {}",
+            target_path.display()
+        )
+    })?;
+    fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create restore dir {}", parent.display()))?;
+    let file_name = target_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| {
+            anyhow!(
+                "TOOL_ROLLBACK_CONFLICT: restore target has invalid file name: {}",
+                target_path.display()
+            )
+        })?;
+    let temp_path = parent.join(format!(".{file_name}.lyra-rollback-{}.tmp", Uuid::new_v4()));
+    fs::write(&temp_path, content).with_context(|| {
+        format!(
+            "failed to write rollback restore temp file {}",
+            temp_path.display()
+        )
+    })?;
+    fs::rename(&temp_path, target_path).with_context(|| {
+        let _ = fs::remove_file(&temp_path);
+        format!(
+            "failed to atomically restore workspace file {}",
+            target_path.display()
+        )
+    })?;
+    Ok(())
 }
 
 fn read_workspace_snapshot_file(

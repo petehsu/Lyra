@@ -4,6 +4,7 @@ use anyhow::Context;
 use rusqlite::params;
 use std::collections::HashSet;
 use std::fs;
+use std::path::Path;
 
 fn storage_request(storage_root: &str) -> StorageRequest {
     StorageRequest {
@@ -1017,6 +1018,7 @@ fn rollback_execute_safe_preview_restores_workspace_and_reopens_message() {
         fs::read_to_string(temp.path().join("README.md")).expect("readme"),
         "old\n"
     );
+    assert_rollback_temp_files_absent(temp.path());
     assert!(temp.path().join("NEW.md").exists() == false);
     assert!(result.artifact_id.is_some());
     assert!(result.evidence_id.is_some());
@@ -1051,6 +1053,23 @@ fn rollback_execute_safe_preview_restores_workspace_and_reopens_message() {
             .and_then(|summary| summary.reopened_message_id.as_deref()),
         Some(user_message_id.as_str())
     );
+}
+
+fn assert_rollback_temp_files_absent(root: &Path) {
+    let entries = fs::read_dir(root)
+        .expect("read workspace root")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("workspace entries");
+    let leaked_temp = entries.iter().find_map(|entry| {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.contains(".lyra-rollback-") && name.ends_with(".tmp") {
+            Some(name.to_string())
+        } else {
+            None
+        }
+    });
+    assert_eq!(leaked_temp, None);
 }
 
 #[test]
