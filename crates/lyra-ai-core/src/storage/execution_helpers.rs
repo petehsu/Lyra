@@ -12,6 +12,7 @@ pub(super) fn find_execution_run_for_turn(
          JOIN execution_todo_list t ON t.todo_list_id = r.todo_list_id
          WHERE r.session_id = ?1
            AND t.status != 'superseded'
+           AND t.status != 'superseded_by_rollback'
            AND (r.runtime_turn_id = ?2 OR ?2 = '')
          ORDER BY r.updated_at_ms DESC, r.created_at_ms DESC
          LIMIT 1",
@@ -27,7 +28,8 @@ pub(super) fn find_execution_run_for_turn(
         "SELECT r.execution_run_id, r.todo_list_id
          FROM execution_run r
          JOIN execution_todo_list t ON t.todo_list_id = r.todo_list_id
-         WHERE r.session_id = ?1 AND t.status != 'superseded'
+         WHERE r.session_id = ?1
+           AND t.status NOT IN ('superseded', 'superseded_by_rollback')
          ORDER BY r.updated_at_ms DESC, r.created_at_ms DESC
          LIMIT 1",
         params![session_id],

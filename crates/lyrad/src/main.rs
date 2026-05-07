@@ -5,15 +5,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use lyra_ai_core::{
-    apply_agent_patch_json, cancel_agent_turn_json,
-    clear_rust_event_callback as clear_ai_event_callback, create_agent_plan_json,
-    create_agent_session_json, create_agent_todo_json, delete_model_profile_json,
-    discover_models_json, list_agent_sessions_json, pause_agent_follow_json,
+    append_agent_follow_live_edit_json, apply_agent_patch_json, cancel_agent_turn_json,
+    clear_rust_event_callback as clear_ai_event_callback, commit_agent_follow_live_edit_json,
+    create_agent_plan_json, create_agent_session_json, create_agent_todo_json,
+    delete_model_profile_json, discard_agent_follow_live_edit_json, discover_models_json,
+    execute_agent_message_rollback_json, list_agent_sessions_json, pause_agent_follow_json,
     preview_agent_message_rollback_json, read_agent_artifact_json, read_agent_follow_json,
     read_agent_rollback_preview_json, read_agent_session_json, read_model_config_json,
     register_rust_event_callback as register_ai_event_callback, resolve_agent_approval_json,
     resolve_agent_plan_review_json, resume_agent_follow_json, send_agent_turn_json,
-    update_agent_session_json, upsert_model_profile_json,
+    start_agent_follow_live_edit_json, update_agent_session_json, upsert_model_profile_json,
 };
 use lyra_lsp_core::{
     change_document as lsp_change_document, clear_rust_event_callback as clear_lsp_event_callback,
@@ -535,8 +536,13 @@ fn handle_ai_request(method: &str, payload: Value) -> Result<Value, RuntimeError
         "agent.follow.read" => call_json(payload, read_agent_follow_json),
         "agent.follow.pause" => call_json(payload, pause_agent_follow_json),
         "agent.follow.resume" => call_json(payload, resume_agent_follow_json),
+        "agent.follow.live_edit.start" => call_json(payload, start_agent_follow_live_edit_json),
+        "agent.follow.live_edit.append" => call_json(payload, append_agent_follow_live_edit_json),
+        "agent.follow.live_edit.commit" => call_json(payload, commit_agent_follow_live_edit_json),
+        "agent.follow.live_edit.discard" => call_json(payload, discard_agent_follow_live_edit_json),
         "agent.rollback.read" => call_json(payload, read_agent_rollback_preview_json),
         "agent.rollback.preview" => call_json(payload, preview_agent_message_rollback_json),
+        "agent.rollback.execute" => call_json(payload, execute_agent_message_rollback_json),
         "agent.turn.send" => call_json(payload, send_agent_turn_json),
         "agent.turn.cancel" => call_json(payload, cancel_agent_turn_json),
         "agent.todo.create" => call_json(payload, create_agent_todo_json),
@@ -845,15 +851,53 @@ mod tests {
             "agent.follow.read",
             "agent.follow.pause",
             "agent.follow.resume",
+            "agent.follow.live_edit.start",
         ] {
             let error = handle_ai_request(
                 method,
                 serde_json::json!({
                     "storageRoot": temp.path().to_string_lossy(),
-                    "sessionId": "session-missing"
+                    "sessionId": "session-missing",
+                    "path": "README.md"
                 }),
             )
             .expect_err("missing session should be a runtime error");
+
+            assert_eq!(error.code, "RUNTIME_ERROR");
+            assert!(error.message.contains("AI session not found"));
+        }
+        for (method, payload) in [
+            (
+                "agent.follow.live_edit.append",
+                serde_json::json!({
+                    "storageRoot": temp.path().to_string_lossy(),
+                    "sessionId": "session-missing",
+                    "liveEditId": "live-edit-missing",
+                    "kind": "insert",
+                    "range": {},
+                    "payload": {}
+                }),
+            ),
+            (
+                "agent.follow.live_edit.commit",
+                serde_json::json!({
+                    "storageRoot": temp.path().to_string_lossy(),
+                    "sessionId": "session-missing",
+                    "liveEditId": "live-edit-missing",
+                    "toolOperationId": "op-missing"
+                }),
+            ),
+            (
+                "agent.follow.live_edit.discard",
+                serde_json::json!({
+                    "storageRoot": temp.path().to_string_lossy(),
+                    "sessionId": "session-missing",
+                    "liveEditId": "live-edit-missing"
+                }),
+            ),
+        ] {
+            let error = handle_ai_request(method, payload)
+                .expect_err("missing session should be a runtime error");
 
             assert_eq!(error.code, "RUNTIME_ERROR");
             assert!(error.message.contains("AI session not found"));
@@ -878,6 +922,15 @@ mod tests {
                     "storageRoot": temp.path().to_string_lossy(),
                     "sessionId": "session-missing",
                     "rollbackId": "rollback-missing"
+                }),
+            ),
+            (
+                "agent.rollback.execute",
+                serde_json::json!({
+                    "storageRoot": temp.path().to_string_lossy(),
+                    "sessionId": "session-missing",
+                    "rollbackId": "rollback-missing",
+                    "confirmationToken": "restore"
                 }),
             ),
         ] {

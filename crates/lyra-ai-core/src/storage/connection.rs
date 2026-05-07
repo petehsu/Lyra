@@ -81,6 +81,7 @@ impl AiStore {
                 | "follow_target"
                 | "follow_event"
                 | "live_edit_stream"
+                | "live_edit_delta"
                 | "workspace_commit"
                 | "conversation_snapshot"
                 | "workspace_snapshot"
@@ -88,6 +89,8 @@ impl AiStore {
                 | "message_rollback_anchor"
                 | "side_effect_record"
                 | "rollback_preview"
+                | "rollback_execution"
+                | "message_reopen"
         ) == false
         {
             return Err(anyhow!("unsupported table for test count"));

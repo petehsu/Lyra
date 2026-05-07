@@ -80,6 +80,77 @@ pub struct AgentPreviewMessageRollbackRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentExecuteMessageRollbackRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    pub rollback_id: String,
+    #[serde(default)]
+    pub confirmation_token: Option<String>,
+    #[serde(default)]
+    pub strategy: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentStartFollowLiveEditRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    #[serde(default)]
+    pub follow_session_id: Option<String>,
+    #[serde(default)]
+    pub follow_target_id: Option<String>,
+    pub path: String,
+    #[serde(default)]
+    pub base_revision_id: Option<String>,
+    #[serde(default)]
+    pub draft_buffer_ref: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAppendFollowLiveEditRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    pub live_edit_id: String,
+    pub kind: String,
+    #[serde(default)]
+    pub range: Value,
+    #[serde(default)]
+    pub text_delta: Option<String>,
+    #[serde(default)]
+    pub text_delta_ref: Option<String>,
+    #[serde(default)]
+    pub payload: Value,
+    #[serde(default)]
+    pub ready_to_commit: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCommitFollowLiveEditRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    pub live_edit_id: String,
+    pub tool_operation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDiscardFollowLiveEditRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    pub live_edit_id: String,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateSessionRequest {
     #[serde(flatten)]
     pub storage: StorageRequest,

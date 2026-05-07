@@ -98,7 +98,8 @@ impl AiStore {
                      FROM planning_session ps
                      JOIN plan_version pv ON pv.plan_version_id = ps.active_version_id
                      JOIN plan_review_panel pr ON pr.plan_version_id = pv.plan_version_id
-                     WHERE ps.session_id = ?1 AND ps.status != 'superseded'
+                     WHERE ps.session_id = ?1
+                       AND ps.status NOT IN ('superseded', 'superseded_by_rollback')
                      ORDER BY ps.updated_at_ms DESC, ps.created_at_ms DESC
                      LIMIT 1",
                     params![session_id],
@@ -149,6 +150,7 @@ impl AiStore {
                         mismatched_reference_ids_json, created_at_ms, updated_at_ms
                  FROM plan_coverage_report
                  WHERE session_id = ?1
+                   AND status != 'superseded_by_rollback'
                  ORDER BY updated_at_ms DESC, created_at_ms DESC
                  LIMIT 1",
                 params![session_id],

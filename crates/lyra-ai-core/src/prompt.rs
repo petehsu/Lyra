@@ -353,9 +353,33 @@ Use these runtime facts for time, platform, workspace, and mode-sensitive reason
                         .unwrap_or_else(|| "unknown".to_string()),
                 ));
             }
+            if let Some(execution) = summary
+                .get("latestExecution")
+                .filter(|value| value.is_object())
+            {
+                prompt.push_str(&format!(
+                    "\n  latestExecution: rollbackId={}; status={}; targetMessageReopened={}; detail={}.",
+                    execution
+                        .get("rollbackId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    execution
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    execution
+                        .get("reopenedUserMessageId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("none"),
+                    execution
+                        .get("detail")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                ));
+            }
         }
         prompt.push_str(
-            "\nRollback preview is not rollback execution. Do not claim rollback completed from a preview. If the user asks to rollback and only a preview exists, say the preview is ready and an execution/confirmation step is still required. After a future executed rollback, old turns, continuations, tool streams, and follow streams must not continue from the superseded branch.",
+            "\nRollback preview is not rollback execution. Do not claim rollback completed from a preview. If the user asks to rollback and only a preview exists, say the preview is ready and an execution/confirmation step is still required. After an executed rollback, old turns, continuations, tool streams, and follow streams from the superseded branch must not continue; continue from the reopened target message or ask for the next instruction.",
         );
     }
     prompt
@@ -538,6 +562,38 @@ mod tests {
         assert!(system.contains("todoProgress={\"blocked\":1"));
         assert!(system.contains("Runtime-owned"));
         assert!(system.contains("Do not ask the user whether to continue"));
+    }
+
+    #[test]
+    fn dynamic_runtime_fields_include_rollback_execution_state() {
+        let mut context = context("default");
+        context.recovery_summaries = vec![serde_json::json!({
+            "latestAnchor": {
+                "userMessageId": "msg-user",
+                "checkpointId": "checkpoint-1",
+                "status": "active"
+            },
+            "activeRollbackPreview": {
+                "rollbackId": "rollback-1",
+                "targetUserMessageId": "msg-user",
+                "impactLevel": "safe",
+                "status": "previewed",
+                "requiresConfirmation": true
+            },
+            "latestExecution": {
+                "rollbackId": "rollback-1",
+                "status": "completed",
+                "reopenedUserMessageId": "msg-user",
+                "detail": "Restored 1 workspace file."
+            }
+        })];
+        let messages = compose_messages(context, Vec::new());
+        let system = &messages[0].content;
+
+        assert!(system.contains("latestExecution: rollbackId=rollback-1"));
+        assert!(system.contains("targetMessageReopened=msg-user"));
+        assert!(system.contains("old turns, continuations, tool streams, and follow streams"));
+        assert!(system.contains("continue from the reopened target message"));
     }
 
     #[test]

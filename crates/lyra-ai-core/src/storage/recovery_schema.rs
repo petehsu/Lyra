@@ -103,7 +103,63 @@ pub(super) fn migrate_recovery_session(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS rollback_preview_session_idx
             ON rollback_preview(session_id, target_user_message_id, updated_at_ms);
+        CREATE TABLE IF NOT EXISTS rollback_execution (
+            rollback_execution_id TEXT PRIMARY KEY,
+            rollback_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            target_user_message_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            impact_level TEXT NOT NULL,
+            restored_workspace_snapshot_id TEXT,
+            restored_conversation_snapshot_id TEXT,
+            superseded_message_ids_json TEXT NOT NULL,
+            unresolved_side_effect_ids_json TEXT NOT NULL,
+            reopened_user_message_id TEXT,
+            artifact_id TEXT,
+            evidence_id TEXT,
+            detail TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            updated_at_iso TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS rollback_execution_rollback_idx
+            ON rollback_execution(session_id, rollback_id);
+        CREATE TABLE IF NOT EXISTS message_reopen (
+            message_reopen_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            user_message_id TEXT NOT NULL,
+            rollback_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS message_reopen_session_idx
+            ON message_reopen(session_id, created_at_ms);
         ",
+    )?;
+    ensure_column(
+        conn,
+        "session_dialog",
+        "status",
+        "TEXT NOT NULL DEFAULT 'active'",
+    )?;
+    ensure_column(conn, "session_dialog", "superseded_by_rollback_id", "TEXT")?;
+    ensure_column(conn, "session_dialog", "reopened_by_rollback_id", "TEXT")?;
+    Ok(())
+}
+
+fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for row in rows {
+        if row? == column {
+            return Ok(());
+        }
+    }
+    conn.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+        [],
     )?;
     Ok(())
 }

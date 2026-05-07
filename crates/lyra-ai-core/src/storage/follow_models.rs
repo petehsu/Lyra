@@ -17,6 +17,8 @@ pub struct AgentFollowSummary {
     pub active_target: Option<AgentFollowTargetSummary>,
     pub targets: Vec<AgentFollowTargetSummary>,
     pub recent_events: Vec<AgentFollowEventSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_live_draft: Option<AgentLiveDraftSummary>,
     pub updated_at: i64,
 }
 
@@ -49,6 +51,24 @@ pub struct AgentFollowEventSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     pub created_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentLiveDraftSummary {
+    pub live_edit_id: String,
+    pub follow_session_id: String,
+    pub follow_target_id: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_revision_id: Option<String>,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft_buffer_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_operation_id: Option<String>,
+    pub delta_count: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -104,4 +124,40 @@ pub struct WorkspaceCommitInput {
     pub method: String,
     pub diff_ref: Option<String>,
     pub status: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct StartLiveEditInput {
+    pub session_id: String,
+    pub follow_session_id: Option<String>,
+    pub follow_target_id: Option<String>,
+    pub path: String,
+    pub base_revision_id: Option<String>,
+    pub draft_buffer_ref: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AppendLiveEditDeltaInput {
+    pub session_id: String,
+    pub live_edit_id: String,
+    pub kind: String,
+    pub range: Value,
+    pub text_delta: Option<String>,
+    pub text_delta_ref: Option<String>,
+    pub payload: Value,
+    pub ready_to_commit: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct CommitLiveEditInput {
+    pub session_id: String,
+    pub live_edit_id: String,
+    pub tool_operation_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct DiscardLiveEditInput {
+    pub session_id: String,
+    pub live_edit_id: String,
+    pub reason: Option<String>,
 }

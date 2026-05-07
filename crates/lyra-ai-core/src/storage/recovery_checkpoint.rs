@@ -1,3 +1,4 @@
+use super::recovery_execution::read_latest_execution_summary;
 use super::*;
 
 struct AnchorRow {
@@ -222,7 +223,11 @@ pub(super) fn read_recovery_summary_from_conn(
         .iter()
         .find(|preview| preview.status == "previewed")
         .cloned();
-    if latest_anchor.is_none() && rollback_previews.is_empty() {
+    let latest_execution = read_latest_execution_summary(conn)?;
+    let reopened_message_id = latest_execution
+        .as_ref()
+        .and_then(|execution| execution.reopened_user_message_id.clone());
+    if latest_anchor.is_none() && rollback_previews.is_empty() && latest_execution.is_none() {
         return Ok(None);
     }
     Ok(Some(AgentRecoverySummary {
@@ -230,6 +235,8 @@ pub(super) fn read_recovery_summary_from_conn(
         rollback_previews,
         rollback_ready_message_ids,
         active_rollback_preview,
+        latest_execution,
+        reopened_message_id,
     }))
 }
 

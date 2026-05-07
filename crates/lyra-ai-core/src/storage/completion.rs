@@ -13,6 +13,7 @@ impl AiStore {
                         unresolved_risks_json, user_visible_summary_ref, updated_at_ms
                  FROM delivery_proof
                  WHERE session_id = ?1
+                   AND status != 'superseded_by_rollback'
                  ORDER BY updated_at_ms DESC, created_at_ms DESC
                  LIMIT 1",
                 params![session_id],
@@ -55,6 +56,7 @@ impl AiStore {
                         status, summary_json, updated_at_ms
                  FROM completion_audit
                  WHERE session_id = ?1
+                   AND status != 'superseded_by_rollback'
                  ORDER BY updated_at_ms DESC, created_at_ms DESC
                  LIMIT 1",
                 params![session_id],

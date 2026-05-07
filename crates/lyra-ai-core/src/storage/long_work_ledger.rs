@@ -212,6 +212,7 @@ pub(super) fn read_latest_work_summary_from_conn(
                     blocker_ids_json, current_slice_id, created_at_ms, updated_at_ms
              FROM long_work_run
              WHERE session_id = ?1
+               AND status != 'superseded_by_rollback'
              ORDER BY updated_at_ms DESC, created_at_ms DESC
              LIMIT 1",
             params![session_id],

@@ -53,6 +53,11 @@ use todo_projection::record_todo_from_tool_result;
 mod follow_controller;
 use follow_controller::{ensure_follow_for_long_work, ensure_follow_for_turn};
 pub use follow_controller::{pause_follow, read_follow, resume_follow};
+mod follow_live_edit;
+pub use follow_live_edit::{
+    append_follow_live_edit, commit_follow_live_edit, discard_follow_live_edit,
+    start_follow_live_edit,
+};
 mod follow_projection;
 pub(crate) use follow_projection::{
     project_follow_operation_finished, project_follow_operation_started,
@@ -62,6 +67,8 @@ mod recovery_controller;
 pub(crate) use recovery_controller::ensure_recovery_anchor_for_write;
 use recovery_controller::ensure_recovery_checkpoint_for_turn;
 pub use recovery_controller::{preview_message_rollback, read_rollback_preview};
+mod recovery_execution;
+pub use recovery_execution::execute_message_rollback;
 mod recovery_projection;
 pub(crate) use recovery_projection::project_recovery_side_effect;
 
@@ -87,6 +94,8 @@ pub use turn_loop::{cancel_turn, send_turn};
 #[cfg(test)]
 use turn_loop::{run_tool_operation, run_turn_worker_inner};
 
+#[cfg(test)]
+mod follow_live_edit_tests;
 #[cfg(test)]
 mod follow_tests;
 #[cfg(test)]

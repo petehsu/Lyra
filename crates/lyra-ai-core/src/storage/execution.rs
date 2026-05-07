@@ -95,7 +95,7 @@ impl AiStore {
                     "SELECT todo_list_id, session_id, runtime_turn_id, kind, status,
                             title, source_json, created_at_ms, updated_at_ms
                      FROM execution_todo_list
-                     WHERE session_id = ?1 AND status != 'superseded'
+                     WHERE session_id = ?1 AND status NOT IN ('superseded', 'superseded_by_rollback')
                      ORDER BY updated_at_ms DESC, created_at_ms DESC
                      LIMIT 1",
                     params![session_id],
@@ -121,6 +121,7 @@ impl AiStore {
                         status, updated_at_ms
                  FROM execution_run
                  WHERE session_id = ?1
+                   AND status != 'superseded_by_rollback'
                  ORDER BY updated_at_ms DESC, created_at_ms DESC
                  LIMIT 1",
                     params![session_id],

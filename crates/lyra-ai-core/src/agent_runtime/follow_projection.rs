@@ -99,6 +99,7 @@ pub(crate) fn project_follow_operation_finished(
         }),
     })?;
     if operation.path == TOOL_FS_APPLY_PATCH && result.status == ToolResultStatus::Completed {
+        let paths = changed_file_paths(metadata);
         append_workspace_commits_for_patch(
             store,
             session_id,
@@ -110,6 +111,9 @@ pub(crate) fn project_follow_operation_finished(
             "apply_patch",
             "committed",
         )?;
+        store.commit_matching_live_edit_for_operation(session_id, &operation.op_id, &paths)?;
+    } else if operation.path == TOOL_FS_APPLY_PATCH {
+        store.mark_matching_live_edit_failed(session_id, &changed_file_paths(metadata))?;
     }
     if operation.path == TOOL_FS_ROLLBACK_PATCH && result.status == ToolResultStatus::Completed {
         store.mark_workspace_commits_rolled_back(

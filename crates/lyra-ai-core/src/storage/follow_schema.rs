@@ -47,6 +47,7 @@ pub(super) fn migrate_follow_session(conn: &Connection) -> Result<()> {
             tool_operation_id TEXT,
             work_slice_id TEXT,
             event_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
             payload_ref TEXT,
             payload_json TEXT NOT NULL,
             sequence INTEGER NOT NULL,
@@ -66,6 +67,17 @@ pub(super) fn migrate_follow_session(conn: &Connection) -> Result<()> {
             created_at_iso TEXT NOT NULL,
             updated_at_ms INTEGER NOT NULL,
             updated_at_iso TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS live_edit_delta (
+            delta_id TEXT PRIMARY KEY,
+            live_edit_id TEXT NOT NULL,
+            sequence INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            range_json TEXT NOT NULL,
+            text_delta_ref TEXT,
+            payload_json TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            created_at_iso TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS workspace_commit (
             workspace_commit_id TEXT PRIMARY KEY,
@@ -92,9 +104,31 @@ pub(super) fn migrate_follow_session(conn: &Connection) -> Result<()> {
             ON follow_target(follow_session_id, tool_operation_id);
         CREATE INDEX IF NOT EXISTS follow_event_sequence_idx
             ON follow_event(follow_session_id, sequence);
+        CREATE INDEX IF NOT EXISTS live_edit_stream_session_idx
+            ON live_edit_stream(follow_session_id, status, updated_at_ms);
+        CREATE INDEX IF NOT EXISTS live_edit_delta_sequence_idx
+            ON live_edit_delta(live_edit_id, sequence);
         CREATE INDEX IF NOT EXISTS workspace_commit_session_idx
             ON workspace_commit(follow_session_id, tool_operation_id, status);
         ",
     )?;
+    ensure_column(
+        conn,
+        "follow_event",
+        "status",
+        "status TEXT NOT NULL DEFAULT 'active'",
+    )?;
+    Ok(())
+}
+
+fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for existing in columns {
+        if existing? == column {
+            return Ok(());
+        }
+    }
+    conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {definition}"), [])?;
     Ok(())
 }

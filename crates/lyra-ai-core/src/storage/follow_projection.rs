@@ -1,3 +1,4 @@
+use super::follow_live_edit::read_active_live_draft_summary_from_conn;
 use super::*;
 
 struct FollowSessionRow {
@@ -51,6 +52,7 @@ fn read_latest_follow_session_row(
                 status, active_target_id, updated_at_ms
          FROM follow_session
          WHERE session_id = ?1
+           AND status != 'superseded_by_rollback'
          ORDER BY updated_at_ms DESC, created_at_ms DESC
          LIMIT 1",
         params![session_id],
@@ -84,6 +86,7 @@ fn read_follow_summary_for_row(
             .cloned()
     });
     let recent_events = read_follow_events(conn, &row.id)?;
+    let active_live_draft = read_active_live_draft_summary_from_conn(conn, &row.id)?;
     Ok(Some(AgentFollowSummary {
         follow_session_id: row.id,
         session_id: row.session_id,
@@ -94,6 +97,7 @@ fn read_follow_summary_for_row(
         active_target,
         targets,
         recent_events,
+        active_live_draft,
         updated_at: row.updated_at,
     }))
 }

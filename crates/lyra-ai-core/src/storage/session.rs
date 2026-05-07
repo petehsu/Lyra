@@ -362,7 +362,9 @@ impl AiStore {
         self.with_session_conn(session_id, |conn| {
             let mut stmt = conn.prepare(
                 "SELECT msg_id, role, content_raw, content_parts_json, created_at_ms, turn_id
-                 FROM session_dialog ORDER BY created_at_ms ASC, turn_index ASC",
+                 FROM session_dialog
+                 WHERE COALESCE(status, 'active') != 'superseded_by_rollback'
+                 ORDER BY created_at_ms ASC, turn_index ASC",
             )?;
             let rows = stmt.query_map([], |row| {
                 let content_parts_json: Option<String> = row.get(3)?;

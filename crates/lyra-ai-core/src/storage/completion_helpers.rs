@@ -283,7 +283,7 @@ fn read_latest_todo_audit(
         .query_row(
             "SELECT todo_list_id
              FROM execution_todo_list
-             WHERE session_id = ?1 AND status != 'superseded'
+             WHERE session_id = ?1 AND status NOT IN ('superseded', 'superseded_by_rollback')
              ORDER BY updated_at_ms DESC, created_at_ms DESC
              LIMIT 1",
             params![session_id],
@@ -346,7 +346,7 @@ fn read_execution_audit(
         conn.query_row(
             "SELECT execution_run_id, status
              FROM execution_run
-             WHERE session_id = ?1
+             WHERE session_id = ?1 AND status != 'superseded_by_rollback'
              ORDER BY updated_at_ms DESC, created_at_ms DESC
              LIMIT 1",
             params![session_id],
@@ -400,7 +400,7 @@ fn read_latest_verification_plan_audit(
         .query_row(
             "SELECT verification_plan_id, required_json, not_run_json
              FROM verification_plan
-             WHERE session_id = ?1
+             WHERE session_id = ?1 AND status != 'superseded_by_rollback'
              ORDER BY updated_at_ms DESC, created_at_ms DESC
              LIMIT 1",
             params![session_id],
@@ -429,7 +429,7 @@ pub(super) fn read_pending_approval_ticket_ids(
 ) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT approval_ticket_id
-         FROM approval_ticket
+             FROM approval_ticket
          WHERE session_id = ?1 AND status = 'pending_user'
          ORDER BY updated_at_ms DESC, created_at_ms DESC",
     )?;
@@ -448,7 +448,7 @@ pub(super) fn read_latest_execution_run_id(
     conn.query_row(
         "SELECT execution_run_id
          FROM execution_run
-         WHERE session_id = ?1
+         WHERE session_id = ?1 AND status != 'superseded_by_rollback'
          ORDER BY updated_at_ms DESC, created_at_ms DESC
          LIMIT 1",
         params![session_id],
@@ -466,7 +466,7 @@ pub(super) fn read_completion_audit_summary_from_conn(
         "SELECT completion_audit_id, session_id, runtime_turn_id, execution_run_id,
                 status, summary_json, updated_at_ms
          FROM completion_audit
-         WHERE session_id = ?1
+         WHERE session_id = ?1 AND status != 'superseded_by_rollback'
          ORDER BY updated_at_ms DESC, created_at_ms DESC
          LIMIT 1",
         params![session_id],

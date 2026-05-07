@@ -250,6 +250,7 @@ impl AiStore {
                             status, required_json, updated_at_ms
                      FROM verification_plan
                      WHERE session_id = ?1
+                       AND status != 'superseded_by_rollback'
                      ORDER BY updated_at_ms DESC, created_at_ms DESC
                      LIMIT 1",
                     params![session_id],

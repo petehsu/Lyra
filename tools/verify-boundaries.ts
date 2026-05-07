@@ -33,13 +33,13 @@ const LONG_WORK_RUST_PATTERN =
 const LONG_WORK_TS_PATTERN =
   /\bLongWork\b|\blongWork\b|\blong_work\b|\bworkSlice\b|\bLongWorkContinuation\b|\bContinuationPacket\b|\bPrematureStop\b|\bStuckReport\b|\bAgentStuck\b|\blongWorkContinuation\b|\bprematureStop\b|\bstuckReport\b/;
 const FOLLOW_RUST_PATTERN =
-  /\bFollowSession\b|\bFollowTarget\b|\bFollowEvent\b|\bLiveEditStream\b|\bWorkspaceCommit\b|\bfollow_session\b|\bfollow_target\b|\bfollow_event\b|\blive_edit_stream\b|\bworkspace_commit\b/;
+  /\bFollowSession\b|\bFollowTarget\b|\bFollowEvent\b|\bLiveEditStream\b|\bWorkspaceCommit\b|\bLiveDraft\b|\bfollow_session\b|\bfollow_target\b|\bfollow_event\b|\blive_edit_stream\b|\bworkspace_commit\b|\blive_draft\b|\bdraft_buffer\b/;
 const FOLLOW_TS_PATTERN =
-  /\bAgentFollowSummary\b|\bAgentFollowTarget\b|\bAgentFollowEvent\b|\bfollowSummary\b|\bliveEditStream\b|\bworkspaceCommit\b/;
+  /\bAgentFollowSummary\b|\bAgentFollowTarget\b|\bAgentFollowEvent\b|\bAgentLiveEdit\b|\bAgentLiveDraft\b|\bfollowSummary\b|\bliveEditStream\b|\bworkspaceCommit\b|\bliveDraft\b|\bdraftBuffer\b/;
 const ROLLBACK_RUST_PATTERN =
-  /\bMessageRollbackAnchor\b|\bRollbackPreview\b|\bRollbackExecution\b|\bSideEffectRecord\b|\bWorkspaceSnapshot\b|\bConversationSnapshot\b|\bmessage_rollback_anchor\b|\brollback_preview\b|\brollback_execution\b|\bside_effect_record\b|\bworkspace_snapshot\b|\bworkspace_file_snapshot\b|\bmessage_checkpoint\b/;
+  /\bMessageRollbackAnchor\b|\bRollbackPreview\b|\bRollbackExecution\b|\bRollbackConflict\b|\bRecoveryExecution\b|\bMessageReopen\b|\bSideEffectRecord\b|\bWorkspaceSnapshot\b|\bConversationSnapshot\b|\bmessage_rollback_anchor\b|\brollback_preview\b|\brollback_execution\b|\brollback_conflict\b|\brecovery_execution\b|\bmessage_reopen\b|\breopen_message_for_rerun\b|\bside_effect_record\b|\bworkspace_snapshot\b|\bworkspace_file_snapshot\b|\bmessage_checkpoint\b/;
 const ROLLBACK_TS_PATTERN =
-  /\bAgentRollbackPreview\b|\bAgentRollbackAnchor\b|\bAgentRollbackExecution\b|\bAgentMessageCheckpointSummary\b|\brollbackPreview\b|\bmessageRollback\b|\bsideEffectRecord\b|\bworkspaceSnapshot\b|\bmessageCheckpoint\b/;
+  /\bAgentRollbackPreview\b|\bAgentRollbackAnchor\b|\bAgentRollbackExecution\b|\bAgentRollbackConflict\b|\bAgentRecoveryExecution\b|\bAgentMessageCheckpointSummary\b|\brollbackPreview\b|\brollbackExecution\b|\brollbackConflict\b|\bmessageRollback\b|\bsideEffectRecord\b|\bworkspaceSnapshot\b|\bmessageCheckpoint\b/;
 
 const importRules: readonly ImportRule[] = [
   {

@@ -84,6 +84,31 @@ pub fn read_agent_rollback_preview_json(request_json: String) -> Result<String> 
     to_json(&agent_runtime::read_rollback_preview(request)?)
 }
 
+pub fn execute_agent_message_rollback_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::execute_message_rollback(request)?)
+}
+
+pub fn start_agent_follow_live_edit_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::start_follow_live_edit(request)?)
+}
+
+pub fn append_agent_follow_live_edit_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::append_follow_live_edit(request)?)
+}
+
+pub fn commit_agent_follow_live_edit_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::commit_follow_live_edit(request)?)
+}
+
+pub fn discard_agent_follow_live_edit_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::discard_follow_live_edit(request)?)
+}
+
 pub fn update_agent_session_json(request_json: String) -> Result<String> {
     let request = parse_json(request_json)?;
     to_json(&agent_runtime::update_session(request)?)

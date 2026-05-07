@@ -43,6 +43,10 @@ pub struct AgentRecoverySummary {
     pub rollback_ready_message_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_rollback_preview: Option<AgentRollbackPreviewSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_execution: Option<AgentRollbackExecutionSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reopened_message_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -94,6 +98,42 @@ pub struct AgentPreviewMessageRollbackResult {
     pub external_side_effects: Vec<AgentRollbackExternalSideEffect>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExecuteMessageRollbackResult {
+    pub session_id: String,
+    pub rollback_id: String,
+    pub status: String,
+    pub impact_level: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restored_workspace_snapshot_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restored_conversation_snapshot_id: Option<String>,
+    pub superseded_message_ids: Vec<String>,
+    pub unresolved_side_effect_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reopened_user_message_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence_id: Option<String>,
+    pub detail: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRollbackExecutionSummary {
+    pub rollback_id: String,
+    pub status: String,
+    pub impact_level: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reopened_user_message_id: Option<String>,
+    pub superseded_message_count: usize,
+    pub unresolved_side_effect_count: usize,
+    pub detail: String,
+    pub updated_at: i64,
+}
+
 #[derive(Clone, Debug)]
 pub struct CreateRecoveryAnchorInput {
     pub session_id: String,
@@ -115,4 +155,16 @@ pub struct SideEffectRecordInput {
     pub evidence_ref: Option<String>,
     pub follow_target_id: Option<String>,
     pub artifact_refs: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RestoreWorkspaceChange {
+    pub path: String,
+    pub expected_hash: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RestoreWorkspaceResult {
+    pub restored_workspace_snapshot_id: Option<String>,
+    pub restored_paths: Vec<String>,
 }
