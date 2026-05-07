@@ -217,6 +217,8 @@ pub struct RuntimeTurnInput {
     pub attachments: Vec<RuntimeTurnAttachment>,
     #[serde(default)]
     pub parts: Vec<RuntimeTurnInputPart>,
+    #[serde(default)]
+    pub ui_action: Option<RuntimeTurnUiAction>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -227,6 +229,15 @@ pub struct RuntimeTurnAttachment {
     pub kind: String,
     #[serde(default)]
     pub context_text: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeTurnUiAction {
+    pub action_id: String,
+    pub kind: String,
+    pub target_kind: String,
+    pub target_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

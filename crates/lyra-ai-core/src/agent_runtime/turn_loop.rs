@@ -79,6 +79,68 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
     if request.options.follow_enabled.unwrap_or(false) {
         ensure_follow_for_turn(&store, &session.id, &turn_id, &user_message_id)?;
     }
+    let runtime_options_payload = json!({
+        "model": request.options.model.as_deref(),
+        "modelProvider": request.options.model_provider.as_deref(),
+        "effort": request.options.effort.as_deref(),
+        "verbosity": request.options.verbosity.as_deref(),
+        "approvalPolicy": request.options.approval_policy.as_deref(),
+        "permissionMode": permission_mode.as_str()
+    });
+    let intake = prepare_runtime_intake(
+        &store,
+        &session,
+        &turn_id,
+        &user_message_id,
+        &request.input,
+        &request.options,
+    )?;
+    if intake.hard_blocked {
+        store.update_turn_status(
+            &session.id,
+            &turn_id,
+            "paused",
+            "clarification_required",
+            None,
+            None,
+        )?;
+        let mut updated_session = session.clone();
+        updated_session.title = title_after_message(&updated_session.title, &text);
+        updated_session.profile_id = Some(profile_id.clone());
+        updated_session.updated_at = now;
+        store.upsert_session_index(&updated_session)?;
+        emit_store_event(
+            &store,
+            &updated_session.id,
+            Some(&turn_id),
+            "runtime_turn_created",
+            json!({
+                "turn": turn,
+                "userMessage": user_message,
+                "policySnapshot": policy_snapshot,
+                "checkpointId": checkpoint_id,
+                "rollbackAnchorId": rollback_anchor.anchor_id,
+                "runtimeOptions": runtime_options_payload.clone()
+            }),
+        )?;
+        if let Some(detail) = store.read_session_detail(&session.id)? {
+            emit_store_event(
+                &store,
+                &session.id,
+                Some(&turn_id),
+                "session_updated",
+                json!({ "detail": detail }),
+            )?;
+        }
+        let detail = store
+            .read_session_detail(&updated_session.id)?
+            .ok_or_else(|| anyhow!("AI session not found: {}", updated_session.id))?;
+        return Ok(SendTurnResult {
+            session_id: updated_session.id,
+            turn_id,
+            detail,
+        });
+    }
     if let Some(items) = mini_todo_items_for_request(&text) {
         let refs = store.create_execution_todo_list(
             &session.id,
@@ -117,14 +179,6 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
             &refs,
         )?;
     }
-    let runtime_options_payload = json!({
-        "model": request.options.model.as_deref(),
-        "modelProvider": request.options.model_provider.as_deref(),
-        "effort": request.options.effort.as_deref(),
-        "verbosity": request.options.verbosity.as_deref(),
-        "approvalPolicy": request.options.approval_policy.as_deref(),
-        "permissionMode": permission_mode.as_str()
-    });
     let mut updated_session = session.clone();
     updated_session.title = title_after_message(&updated_session.title, &text);
     updated_session.profile_id = Some(profile_id.clone());
@@ -373,6 +427,14 @@ pub(super) fn run_turn_worker_inner(
         .map(|summary| serde_json::to_value(summary).unwrap_or_else(|_| json!({})))
         .into_iter()
         .collect();
+    let intake_summaries = project_intake_prompt_value(&detail).into_iter().collect();
+    let input_reference_summaries = detail
+        .reference_summary
+        .as_ref()
+        .map(|summary| serde_json::to_value(summary).unwrap_or_else(|_| json!({})))
+        .into_iter()
+        .collect();
+    let clarification_state = Some(project_clarification_prompt_value(&detail));
     let mut messages = compose_messages(
         PromptContext {
             collaboration_mode,
@@ -384,6 +446,9 @@ pub(super) fn run_turn_worker_inner(
             failed_plan_coverage_summaries,
             work_run_summaries,
             recovery_summaries,
+            intake_summaries,
+            input_reference_summaries,
+            clarification_state,
         },
         history,
     );

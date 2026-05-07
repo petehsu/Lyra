@@ -297,7 +297,8 @@ impl AiStore {
         let turns = self.read_turns(session_id)?;
         let messages = self.read_messages(session_id)?;
         let runtime_events = self.read_runtime_events(session_id)?;
-        let pending_interactions = self.read_pending_approval_interactions(session_id)?;
+        let mut pending_interactions = self.read_pending_clarification_interactions(session_id)?;
+        pending_interactions.extend(self.read_pending_approval_interactions(session_id)?);
         let planning_summary = self.read_planning_summary(session_id)?;
         let plan_coverage_summary = self.read_plan_coverage_summary(session_id)?;
         let active_todo = self.read_active_todo_list(session_id)?;
@@ -308,6 +309,10 @@ impl AiStore {
         let durable_work_summary = self.read_active_work_summary(session_id)?;
         let follow_summary = self.read_follow_summary(session_id)?;
         let recovery_summary = self.read_recovery_summary(session_id)?;
+        let intent_summary = self.read_latest_intent_summary(session_id)?;
+        let reference_summary = self.read_reference_summary(session_id)?;
+        let assumption_summary = self.read_assumption_summary(session_id)?;
+        let clarification_summary = self.read_clarification_summary(session_id)?;
         Ok(Some(AgentSessionDetail {
             session,
             pending_interactions,
@@ -324,6 +329,10 @@ impl AiStore {
             durable_work_summary,
             follow_summary,
             recovery_summary,
+            intent_summary,
+            reference_summary,
+            assumption_summary,
+            clarification_summary,
         }))
     }
 

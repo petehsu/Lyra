@@ -56,6 +56,14 @@ pub(super) fn supersede_records_after_checkpoint(
     supersede_long_work_after_checkpoint(conn, session_id, checkpoint_created_at, now, &now_iso)?;
     supersede_follow_after_checkpoint(conn, session_id, checkpoint_created_at, now, &now_iso)?;
     discard_live_drafts_after_checkpoint(conn, session_id, checkpoint_created_at, now, &now_iso)?;
+    supersede_intake_after_checkpoint(
+        conn,
+        session_id,
+        rollback_id,
+        checkpoint_created_at,
+        now,
+        &now_iso,
+    )?;
     let unresolved_side_effect_ids =
         mark_side_effects_after_checkpoint(conn, session_id, checkpoint_created_at, now)?;
     reopen_message_for_rerun(
@@ -70,6 +78,54 @@ pub(super) fn supersede_records_after_checkpoint(
         superseded_message_ids,
         unresolved_side_effect_ids,
     })
+}
+
+fn supersede_intake_after_checkpoint(
+    conn: &Connection,
+    session_id: &str,
+    rollback_id: &str,
+    checkpoint_created_at: i64,
+    now: i64,
+    now_iso: &str,
+) -> Result<()> {
+    for table in [
+        "user_intent_envelope",
+        "intent_target_binding",
+        "runtime_decision_record",
+        "inline_reference",
+        "reference_resolution",
+    ] {
+        conn.execute(
+            &format!(
+                "UPDATE {table}
+                 SET status = 'superseded_by_rollback'
+                 WHERE session_id = ?1 AND created_at_ms >= ?2
+                   AND status != 'superseded_by_rollback'"
+            ),
+            params![session_id, checkpoint_created_at],
+        )?;
+    }
+    conn.execute(
+        "UPDATE question_ticket
+         SET status = 'superseded_by_rollback',
+             updated_at_ms = ?1,
+             updated_at_iso = ?2,
+             superseded_by_rollback_id = ?3
+         WHERE session_id = ?4 AND created_at_ms >= ?5
+           AND status != 'superseded_by_rollback'",
+        params![now, now_iso, rollback_id, session_id, checkpoint_created_at],
+    )?;
+    conn.execute(
+        "UPDATE assumption_record
+         SET status = 'superseded_by_rollback',
+             updated_at_ms = ?1,
+             updated_at_iso = ?2,
+             superseded_by_rollback_id = ?3
+         WHERE session_id = ?4 AND created_at_ms >= ?5
+           AND status != 'superseded_by_rollback'",
+        params![now, now_iso, rollback_id, session_id, checkpoint_created_at],
+    )?;
+    Ok(())
 }
 
 pub(super) fn supersede_messages_after_checkpoint(

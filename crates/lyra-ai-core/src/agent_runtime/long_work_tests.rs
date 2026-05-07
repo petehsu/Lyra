@@ -242,6 +242,7 @@ fn long_work_mini_todo_creates_run_for_execution_request() {
             text: "实现一个小的 runtime ledger 改动".to_string(),
             attachments: Vec::new(),
             parts: Vec::new(),
+            ui_action: None,
         },
         options: RuntimeThreadOptions {
             profile_id: Some("profile-test".to_string()),
@@ -276,6 +277,7 @@ fn long_work_pure_question_does_not_create_run() {
             text: "what is the current architecture?".to_string(),
             attachments: Vec::new(),
             parts: Vec::new(),
+            ui_action: None,
         },
         options: RuntimeThreadOptions {
             profile_id: Some("profile-test".to_string()),

@@ -13,8 +13,9 @@ use lyra_ai_core::{
     preview_agent_message_rollback_json, read_agent_artifact_json, read_agent_follow_json,
     read_agent_rollback_preview_json, read_agent_session_json, read_model_config_json,
     register_rust_event_callback as register_ai_event_callback, resolve_agent_approval_json,
-    resolve_agent_plan_review_json, resume_agent_follow_json, send_agent_turn_json,
-    start_agent_follow_live_edit_json, update_agent_session_json, upsert_model_profile_json,
+    resolve_agent_clarification_json, resolve_agent_plan_review_json, resume_agent_follow_json,
+    send_agent_turn_json, start_agent_follow_live_edit_json, update_agent_session_json,
+    upsert_model_profile_json,
 };
 use lyra_lsp_core::{
     change_document as lsp_change_document, clear_rust_event_callback as clear_lsp_event_callback,
@@ -548,6 +549,7 @@ fn handle_ai_request(method: &str, payload: Value) -> Result<Value, RuntimeError
         "agent.todo.create" => call_json(payload, create_agent_todo_json),
         "agent.plan.create" => call_json(payload, create_agent_plan_json),
         "agent.plan.review.resolve" => call_json(payload, resolve_agent_plan_review_json),
+        "agent.clarification.resolve" => call_json(payload, resolve_agent_clarification_json),
         "agent.artifact.read" => call_json(payload, read_agent_artifact_json),
         "agent.patch.apply" => call_json(payload, apply_agent_patch_json),
         "agent.approval.resolve" => call_json(payload, resolve_agent_approval_json),
@@ -1011,6 +1013,24 @@ mod tests {
 
         assert_eq!(resolve_error.code, "RUNTIME_ERROR");
         assert!(resolve_error.message.contains("AI session not found"));
+    }
+
+    #[test]
+    fn ai_clarification_resolve_route_is_registered() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let error = handle_ai_request(
+            "agent.clarification.resolve",
+            serde_json::json!({
+                "storageRoot": temp.path().to_string_lossy(),
+                "sessionId": "session-missing",
+                "questionTicketId": "question-missing",
+                "selectedOptionId": "A"
+            }),
+        )
+        .expect_err("missing session should be a runtime error");
+
+        assert_eq!(error.code, "RUNTIME_ERROR");
+        assert!(error.message.contains("AI session not found"));
     }
 }
 

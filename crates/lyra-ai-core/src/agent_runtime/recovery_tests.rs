@@ -602,6 +602,7 @@ fn send_turn_creates_message_checkpoint_summary() {
             text: "plain chat".to_string(),
             attachments: Vec::new(),
             parts: Vec::new(),
+            ui_action: None,
         },
         options: RuntimeThreadOptions {
             profile_id: Some("profile-test".to_string()),

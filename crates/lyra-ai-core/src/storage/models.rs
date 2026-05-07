@@ -2,9 +2,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+use super::clarification_models::{AgentAssumptionSummary, AgentClarification};
 use super::follow_models::AgentFollowSummary;
+use super::intent_models::AgentIntentSummary;
 use super::long_work_models::SessionTaskLedgerSummary;
 use super::recovery_models::AgentRecoverySummary;
+use super::reference_models::AgentReferenceSummary;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -180,6 +183,17 @@ pub struct AgentSessionDetail {
     pub follow_summary: Option<AgentFollowSummary>,
     #[serde(rename = "recoverySummary", skip_serializing_if = "Option::is_none")]
     pub recovery_summary: Option<AgentRecoverySummary>,
+    #[serde(rename = "intentSummary", skip_serializing_if = "Option::is_none")]
+    pub intent_summary: Option<AgentIntentSummary>,
+    #[serde(rename = "referenceSummary", skip_serializing_if = "Option::is_none")]
+    pub reference_summary: Option<AgentReferenceSummary>,
+    #[serde(rename = "assumptionSummary", skip_serializing_if = "Option::is_none")]
+    pub assumption_summary: Option<AgentAssumptionSummary>,
+    #[serde(
+        rename = "clarificationSummary",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub clarification_summary: Option<AgentClarification>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

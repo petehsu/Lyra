@@ -50,6 +50,16 @@ use events::{
 mod todo_projection;
 use todo_projection::record_todo_from_tool_result;
 
+mod intent_classifier;
+use intent_classifier::prepare_runtime_intake;
+mod intent_projection;
+use intent_projection::project_intake_prompt_value;
+mod clarification_gate;
+mod reference_resolution;
+pub use clarification_gate::resolve_clarification;
+mod clarification_projection;
+use clarification_projection::project_clarification_prompt_value;
+
 mod follow_controller;
 use follow_controller::{ensure_follow_for_long_work, ensure_follow_for_turn};
 pub use follow_controller::{pause_follow, read_follow, resume_follow};
@@ -98,6 +108,8 @@ use turn_loop::{run_tool_operation, run_turn_worker_inner};
 mod follow_live_edit_tests;
 #[cfg(test)]
 mod follow_tests;
+#[cfg(test)]
+mod intake_tests;
 #[cfg(test)]
 mod long_work_tests;
 #[cfg(test)]

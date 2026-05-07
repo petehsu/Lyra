@@ -187,6 +187,7 @@ fn follow_enabled_send_creates_summary_but_pure_chat_without_follow_does_not() {
             text: "what is this project?".to_string(),
             attachments: Vec::new(),
             parts: Vec::new(),
+            ui_action: None,
         },
         options: RuntimeThreadOptions {
             profile_id: Some("profile-test".to_string()),
@@ -213,6 +214,7 @@ fn follow_enabled_send_creates_summary_but_pure_chat_without_follow_does_not() {
             text: "what is this project?".to_string(),
             attachments: Vec::new(),
             parts: Vec::new(),
+            ui_action: None,
         },
         options: RuntimeThreadOptions {
             profile_id: Some("profile-test".to_string()),
@@ -235,6 +237,7 @@ fn long_work_send_creates_follow_summary() {
             text: "实现一个小的 runtime ledger 改动".to_string(),
             attachments: Vec::new(),
             parts: Vec::new(),
+            ui_action: None,
         },
         options: RuntimeThreadOptions {
             profile_id: Some("profile-test".to_string()),

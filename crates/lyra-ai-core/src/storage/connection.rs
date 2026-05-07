@@ -46,6 +46,9 @@ impl AiStore {
             .with_context(|| format!("failed to open AI session database {}", path.display()))?;
         configure_conn(&conn)?;
         migrate_session(&conn)?;
+        migrate_intent_session(&conn)?;
+        migrate_reference_session(&conn)?;
+        migrate_clarification_session(&conn)?;
         migrate_long_work_session(&conn)?;
         migrate_follow_session(&conn)?;
         migrate_recovery_session(&conn)?;
@@ -91,6 +94,13 @@ impl AiStore {
                 | "rollback_preview"
                 | "rollback_execution"
                 | "message_reopen"
+                | "user_intent_envelope"
+                | "intent_target_binding"
+                | "runtime_decision_record"
+                | "inline_reference"
+                | "reference_resolution"
+                | "question_ticket"
+                | "assumption_record"
         ) == false
         {
             return Err(anyhow!("unsupported table for test count"));
