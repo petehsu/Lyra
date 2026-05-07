@@ -281,6 +281,22 @@ describe("AI IPC bridge", () => {
     });
 
     await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiResolveClarification)?.({}, {
+        sessionId: "session-a",
+        questionTicketId: "question-1",
+        selectedOptionId: "B"
+      })
+    ).resolves.toEqual({
+      method: "agent.clarification.resolve",
+      payload: {
+        sessionId: "session-a",
+        questionTicketId: "question-1",
+        selectedOptionId: "B",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
       electronMock.handlers.get(LYRA_CHANNELS.aiResolveApproval)?.({}, {
         sessionId: "session-a",
         approvalTicketId: "approval-1",
@@ -320,6 +336,7 @@ describe("AI IPC bridge", () => {
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiCreateTodo);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiCreatePlan);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiResolvePlanReview);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiResolveClarification);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiReadFollow);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiPauseFollow);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiResumeFollow);

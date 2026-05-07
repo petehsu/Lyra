@@ -23,6 +23,8 @@ import {
   type AgentReadSessionRequest,
   type AgentResolveApprovalRequest,
   type AgentResolveApprovalResult,
+  type AgentResolveClarificationRequest,
+  type AgentResolveClarificationResult,
   type AgentResolvePlanReviewRequest,
   type AgentResolvePlanReviewResult,
   type AgentResumeFollowRequest,
@@ -163,6 +165,11 @@ export const createAiIpcBridge = ({
       requestRuntime<AgentResolvePlanReviewResult>("agent.plan.review.resolve", request)
   );
   ipcMain.handle(
+    LYRA_CHANNELS.aiResolveClarification,
+    async (_event, request: AgentResolveClarificationRequest): Promise<AgentResolveClarificationResult> =>
+      requestRuntime<AgentResolveClarificationResult>("agent.clarification.resolve", request)
+  );
+  ipcMain.handle(
     LYRA_CHANNELS.aiReadArtifact,
     async (_event, request: AgentReadArtifactRequest): Promise<AgentArtifactContent> =>
       requestRuntime<AgentArtifactContent>("agent.artifact.read", request)
@@ -199,6 +206,7 @@ export const createAiIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.aiCreateTodo);
       ipcMain.removeHandler(LYRA_CHANNELS.aiCreatePlan);
       ipcMain.removeHandler(LYRA_CHANNELS.aiResolvePlanReview);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiResolveClarification);
       ipcMain.removeHandler(LYRA_CHANNELS.aiReadArtifact);
       ipcMain.removeHandler(LYRA_CHANNELS.aiApplyPatch);
       ipcMain.removeHandler(LYRA_CHANNELS.aiResolveApproval);

@@ -55,7 +55,8 @@ export type AgentPendingInteractionKind =
   | "plan_approval"
   | "agent_question"
   | "mcp_elicitation"
-  | "tool_approval";
+  | "tool_approval"
+  | "clarification";
 export type AgentPendingInteractionStatus = "pending" | "resolved" | "cancelled" | "expired";
 
 export type AgentPendingInteractionPayload = {
@@ -103,7 +104,16 @@ export type AgentMessageContentPart =
     readonly type: "attachment";
     readonly name: string;
     readonly path: string;
-    readonly kind?: "file" | "directory" | "local_image" | "image" | "workbench_tab" | "ai_thread";
+    readonly kind?:
+      | "file"
+      | "directory"
+      | "local_image"
+      | "image"
+      | "workbench_tab"
+      | "ai_thread"
+      | "message"
+      | "artifact"
+      | "tool_result";
     readonly text?: string;
   };
 
@@ -388,6 +398,164 @@ export type AgentRecoverySummary = {
   readonly reopenedMessageId?: AgentMessageId | null;
 };
 
+export type IntentAmbiguityFlag = {
+  readonly code: string;
+  readonly severity: string;
+  readonly detail: string;
+};
+
+export type IntentTargetBinding = {
+  readonly bindingId: string;
+  readonly intentId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId: AgentTurnId;
+  readonly targetKind: string;
+  readonly targetId: string;
+  readonly freshnessStatus: string;
+  readonly confidence: number;
+  readonly status: string;
+  readonly evidenceRefs: readonly string[];
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
+export type AgentIntentEnvelope = {
+  readonly intentId: string;
+  readonly sessionId: AgentSessionId;
+  readonly userMessageId: AgentMessageId;
+  readonly runtimeTurnId: AgentTurnId;
+  readonly kind: string;
+  readonly confidence: number;
+  readonly modeCandidate?: string | null;
+  readonly ambiguityFlags: readonly IntentAmbiguityFlag[];
+};
+
+export type AgentIntentSummary = {
+  readonly intentId: string;
+  readonly kind: string;
+  readonly confidence: number;
+  readonly modeCandidate?: string | null;
+  readonly targetBindings: readonly IntentTargetBinding[];
+  readonly ambiguityFlags: readonly IntentAmbiguityFlag[];
+  readonly recentDecisions: readonly unknown[];
+  readonly updatedAt: number;
+};
+
+export type ReferenceAnchor = {
+  readonly insertionIndex: number;
+  readonly charStart: number;
+  readonly charEnd: number;
+  readonly sourcePartIndex: number;
+};
+
+export type InlineReference = {
+  readonly inlineReferenceId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId: AgentTurnId;
+  readonly userMessageId: AgentMessageId;
+  readonly kind: "file" | "file_range" | "message" | "artifact" | "tool_result" | string;
+  readonly targetRef: string;
+  readonly label?: string | null;
+  readonly anchor: ReferenceAnchor;
+  readonly status: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
+export type ReferenceResolution = {
+  readonly resolutionId: string;
+  readonly inlineReferenceId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId: AgentTurnId;
+  readonly kind: string;
+  readonly targetRef: string;
+  readonly status: "resolved" | "unresolved" | "permission_blocked" | string;
+  readonly resolvedRef?: string | null;
+  readonly contentHash?: string | null;
+  readonly contentBytes?: number | null;
+  readonly reason?: string | null;
+  readonly metadata: unknown;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
+export type AgentReferenceSummary = {
+  readonly total: number;
+  readonly resolved: number;
+  readonly unresolved: number;
+  readonly references: readonly InlineReference[];
+  readonly resolutions: readonly ReferenceResolution[];
+  readonly updatedAt: number;
+};
+
+export type QuestionTicketOption = {
+  readonly id: "A" | "B" | "C" | "D";
+  readonly label: string;
+  readonly description: string;
+};
+
+export type QuestionTicket = {
+  readonly questionTicketId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId: AgentTurnId;
+  readonly userMessageId: AgentMessageId;
+  readonly status: "open" | "answered" | "cancelled" | "expired" | "superseded_by_rollback" | string;
+  readonly blockingLevel: "hard_block" | "soft_block" | "non_blocking" | string;
+  readonly title: string;
+  readonly question: string;
+  readonly why: string;
+  readonly targetSummary?: string | null;
+  readonly options: readonly QuestionTicketOption[];
+  readonly allowCustomAnswer: boolean;
+  readonly selectedOptionId?: "A" | "B" | "C" | "D" | null;
+  readonly answerText?: string | null;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly answeredAt?: number | null;
+};
+
+export type AgentQuestionTicket = Pick<
+  QuestionTicket,
+  | "questionTicketId"
+  | "sessionId"
+  | "runtimeTurnId"
+  | "status"
+  | "blockingLevel"
+  | "title"
+  | "question"
+  | "why"
+  | "targetSummary"
+  | "options"
+  | "allowCustomAnswer"
+  | "createdAt"
+  | "updatedAt"
+>;
+
+export type AgentClarification = {
+  readonly pending: readonly AgentQuestionTicket[];
+  readonly recentAnswered: readonly QuestionTicket[];
+};
+
+export type AssumptionRecord = {
+  readonly assumptionId: string;
+  readonly sessionId: AgentSessionId;
+  readonly runtimeTurnId: AgentTurnId;
+  readonly userMessageId: AgentMessageId;
+  readonly status: string;
+  readonly statement: string;
+  readonly basis: "project_convention" | "user_memory" | "tool_result" | "safe_default" | string;
+  readonly riskLevel: string;
+  readonly reversible: boolean;
+  readonly sourceRefs: readonly string[];
+  readonly createdAt: number;
+  readonly updatedAt: number;
+};
+
+export type AgentAssumptionSummary = {
+  readonly active: readonly AssumptionRecord[];
+  readonly updatedAt: number;
+};
+
 export type AgentRollbackConversationChange = {
   readonly messageId: AgentMessageId;
   readonly role: AgentMessageRole | string;
@@ -583,6 +751,10 @@ export type AgentSessionDetail = {
   readonly longWorkSummary?: AgentLongWorkSummary | null;
   readonly followSummary?: AgentFollowSummary | null;
   readonly recoverySummary?: AgentRecoverySummary | null;
+  readonly intentSummary?: AgentIntentSummary | null;
+  readonly referenceSummary?: AgentReferenceSummary | null;
+  readonly assumptionSummary?: AgentAssumptionSummary | null;
+  readonly clarificationSummary?: AgentClarification | null;
 };
 
 export type AgentQuestionOption = {
@@ -639,8 +811,24 @@ export type PlanInteractionResponse = {
 export type AgentRuntimeTurnAttachment = {
   readonly name: string;
   readonly path: string;
-  readonly kind: "file" | "directory" | "local_image" | "image" | "workbench_tab" | "ai_thread";
+  readonly kind:
+    | "file"
+    | "directory"
+    | "local_image"
+    | "image"
+    | "workbench_tab"
+    | "ai_thread"
+    | "message"
+    | "artifact"
+    | "tool_result";
   readonly contextText?: string;
+};
+
+export type AgentRuntimeTurnUiAction = {
+  readonly actionId: string;
+  readonly kind: string;
+  readonly targetKind: string;
+  readonly targetId: string;
 };
 
 export type AgentRuntimeTurnInputPart =
@@ -657,6 +845,7 @@ export type AgentRuntimeTurnInput = {
   readonly text: string;
   readonly attachments: readonly AgentRuntimeTurnAttachment[];
   readonly parts?: readonly AgentRuntimeTurnInputPart[];
+  readonly uiAction?: AgentRuntimeTurnUiAction;
 };
 
 export type AgentRuntimeThreadOptions = {
@@ -792,6 +981,21 @@ export type AgentResolvePlanReviewResult = {
   readonly detail: AgentSessionDetail;
 };
 
+export type AgentResolveClarificationRequest = {
+  readonly sessionId: string;
+  readonly questionTicketId: string;
+  readonly selectedOptionId?: "A" | "B" | "C" | "D";
+  readonly customAnswer?: string;
+  readonly answerText?: string;
+};
+
+export type AgentResolveClarificationResult = {
+  readonly sessionId: string;
+  readonly questionTicketId: string;
+  readonly status: "answered" | "cancelled";
+  readonly detail: AgentSessionDetail;
+};
+
 export type AgentReadArtifactRequest = {
   readonly sessionId: string;
   readonly artifactId?: string;
@@ -898,7 +1102,12 @@ export type AgentRuntimeEventType =
   | "verification_plan_created"
   | "verification_run_updated"
   | "completion_audit_updated"
-  | "delivery_proof_updated";
+  | "delivery_proof_updated"
+  | "clarification_ticket_created"
+  | "clarification_ticket_resolved"
+  | "runtime_decision_recorded"
+  | "reference_resolution_completed"
+  | "reference_resolution_failed";
 
 export type AgentRuntimeStreamEvent = {
   readonly schemaVersion: "v1" | string;

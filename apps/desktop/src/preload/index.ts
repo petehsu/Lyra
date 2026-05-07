@@ -154,6 +154,8 @@ import {
   type AgentReadSessionRequest,
   type AgentResolveApprovalRequest,
   type AgentResolveApprovalResult,
+  type AgentResolveClarificationRequest,
+  type AgentResolveClarificationResult,
   type AgentResolvePlanReviewRequest,
   type AgentResolvePlanReviewResult,
   type AgentResumeFollowRequest,
@@ -1078,6 +1080,8 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.aiCreatePlan, request) as Promise<AgentCreatePlanResult>,
     resolvePlanReview: (request: AgentResolvePlanReviewRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiResolvePlanReview, request) as Promise<AgentResolvePlanReviewResult>,
+    resolveClarification: (request: AgentResolveClarificationRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiResolveClarification, request) as Promise<AgentResolveClarificationResult>,
     readArtifact: (request: AgentReadArtifactRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiReadArtifact, request) as Promise<AgentArtifactContent>,
     applyPatch: (request: AgentApplyPatchRequest) =>

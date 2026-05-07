@@ -23,6 +23,7 @@ import type {
   AgentComposerVerbosity,
   AgentComposerWorkbenchTabMention
 } from "./agent-composer";
+import { runtimeInputFromComposerReferenceParts } from "./agent-composer-reference-parts";
 import {
   createComposerReserveStyle,
   createRuntimeModelOptions,
@@ -45,26 +46,6 @@ type Translator = ReturnType<typeof createTranslator>;
 
 const readString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-
-const runtimeAttachmentFromComposer = (
-  attachment: AgentComposerSubmitPayload["attachments"][number]
-) => ({
-  name: attachment.name,
-  path: attachment.path,
-  kind: attachment.kind,
-  ...(attachment.contextText === undefined ? {} : { contextText: attachment.contextText }),
-});
-
-const runtimeInputFromComposerPayload = (payload: AgentComposerSubmitPayload) => ({
-  text: payload.text.trim(),
-  attachments: payload.attachments.map(runtimeAttachmentFromComposer),
-  parts: payload.parts.map((part) => part.type === "text"
-    ? { type: "text" as const, text: part.text }
-    : {
-        type: "attachment" as const,
-        attachment: runtimeAttachmentFromComposer(part.attachment),
-      }),
-});
 
 type ComposerAppendRequest = {
   readonly id: number;
@@ -662,7 +643,7 @@ export const useAiPanelSurfaceRuntime = ({
       return;
     }
     await sendRuntimeTurn(
-      runtimeInputFromComposerPayload(payload),
+      runtimeInputFromComposerReferenceParts(payload),
       runtimeTurnOptions(state.planModeEnabled ? "plan" : "default")
     );
   }, [
@@ -676,7 +657,7 @@ export const useAiPanelSurfaceRuntime = ({
     if (text.length === 0 && payload.attachments.length === 0) {
       return;
     }
-    await steerTurn(runtimeInputFromComposerPayload(payload));
+    await steerTurn(runtimeInputFromComposerReferenceParts(payload));
   }, [steerTurn]);
 
   const handlePlanModeToggle = useCallback((): void => {

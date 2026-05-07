@@ -145,6 +145,8 @@ import type {
   AgentPlanReviewAnnotationSummary,
   AgentResolveApprovalRequest,
   AgentResolveApprovalResult,
+  AgentResolveClarificationRequest,
+  AgentResolveClarificationResult,
   AgentResolvePlanReviewDecision,
   AgentResolvePlanReviewRequest,
   AgentResolvePlanReviewResult,
@@ -191,6 +193,8 @@ export type {
   AgentReadSessionRequest,
   AgentResolveApprovalRequest,
   AgentResolveApprovalResult,
+  AgentResolveClarificationRequest,
+  AgentResolveClarificationResult,
   AgentResolvePlanReviewRequest,
   AgentResolvePlanReviewResult,
   AgentResumeFollowRequest,
@@ -536,6 +540,7 @@ export const LYRA_CHANNELS = {
   aiCreateTodo: "lyra:ai/todo/create",
   aiCreatePlan: "lyra:ai/plan/create",
   aiResolvePlanReview: "lyra:ai/plan/review/resolve",
+  aiResolveClarification: "lyra:ai/clarification/resolve",
   aiReadArtifact: "lyra:ai/artifact/read",
   aiApplyPatch: "lyra:ai/patch/apply",
   aiResolveApproval: "lyra:ai/approval/resolve",
@@ -1622,6 +1627,9 @@ export type AiApi = {
   readonly createTodo: (request: AgentCreateTodoRequest) => Promise<AgentCreateTodoResult>;
   readonly createPlan: (request: AgentCreatePlanRequest) => Promise<AgentCreatePlanResult>;
   readonly resolvePlanReview: (request: AgentResolvePlanReviewRequest) => Promise<AgentResolvePlanReviewResult>;
+  readonly resolveClarification: (
+    request: AgentResolveClarificationRequest
+  ) => Promise<AgentResolveClarificationResult>;
   readonly readArtifact: (request: AgentReadArtifactRequest) => Promise<AgentArtifactContent>;
   readonly applyPatch: (request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>;
   readonly resolveApproval: (request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>;

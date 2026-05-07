@@ -1,5 +1,6 @@
 import { AgentComposer } from "./agent-composer";
 import type { AgentComposerFileAttachment } from "./agent-composer";
+import { ClarificationList } from "./clarification-list";
 import { resolveAiPanelEmptyGreetingCandidates } from "./empty-greeting";
 import { ExecutionTodoList } from "./execution-todo-list";
 import { FollowProcessList } from "./follow-process-list";
@@ -168,12 +169,23 @@ export const AiPanelSurfaceView = ({
           />
         </div>
 
-        <ExecutionTodoList detail={state.activeDetail} />
+        <ClarificationList
+          detail={state.activeDetail}
+          resolveClarification={desktopApi?.ai?.resolveClarification}
+          onResolved={actions.refreshActiveThread}
+        />
+
+        <PendingApprovalList
+          detail={state.activeDetail}
+          resolveApproval={desktopApi?.ai === undefined ? undefined : actions.resolveApproval}
+        />
 
         <AiPlanReviewSurface
           detail={state.activeDetail}
           resolvePlanReview={desktopApi?.ai === undefined ? undefined : actions.resolvePlanReview}
         />
+
+        <ExecutionTodoList detail={state.activeDetail} />
 
         <VerificationSummaryList detail={state.activeDetail} />
 
@@ -194,11 +206,6 @@ export const AiPanelSurfaceView = ({
           detail={state.activeDetail}
           executeMessageRollback={executeMessageRollback}
           onExecuteComplete={actions.refreshActiveThread}
-        />
-
-        <PendingApprovalList
-          detail={state.activeDetail}
-          resolveApproval={desktopApi?.ai === undefined ? undefined : actions.resolveApproval}
         />
 
         <PatchReviewStrip

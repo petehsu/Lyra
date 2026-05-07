@@ -56,6 +56,8 @@ export type {
   AgentResolveApprovalDecision,
   AgentResolveApprovalRequest,
   AgentResolveApprovalResult,
+  AgentResolveClarificationRequest,
+  AgentResolveClarificationResult,
   AgentResolvePlanReviewDecision,
   AgentResolvePlanReviewRequest,
   AgentResolvePlanReviewResult,
