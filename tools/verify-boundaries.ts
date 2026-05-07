@@ -40,6 +40,10 @@ const ROLLBACK_RUST_PATTERN =
   /\bMessageRollbackAnchor\b|\bRollbackPreview\b|\bRollbackExecution\b|\bRollbackConflict\b|\bRecoveryExecution\b|\bMessageReopen\b|\bSideEffectRecord\b|\bWorkspaceSnapshot\b|\bConversationSnapshot\b|\bmessage_rollback_anchor\b|\brollback_preview\b|\brollback_execution\b|\brollback_conflict\b|\brecovery_execution\b|\bmessage_reopen\b|\breopen_message_for_rerun\b|\bside_effect_record\b|\bworkspace_snapshot\b|\bworkspace_file_snapshot\b|\bmessage_checkpoint\b/;
 const ROLLBACK_TS_PATTERN =
   /\bAgentRollbackPreview\b|\bAgentRollbackAnchor\b|\bAgentRollbackExecution\b|\bAgentRollbackConflict\b|\bAgentRecoveryExecution\b|\bAgentMessageCheckpointSummary\b|\brollbackPreview\b|\brollbackExecution\b|\brollbackConflict\b|\bmessageRollback\b|\bsideEffectRecord\b|\bworkspaceSnapshot\b|\bmessageCheckpoint\b/;
+const INTAKE_RUST_PATTERN =
+  /\bUserIntentEnvelope\b|\bIntentTargetBinding\b|\bIntentAmbiguityFlag\b|\bRuntimeDecisionRecord\b|\bQuestionTicket\b|\bAssumptionRecord\b|\bInlineReference\b|\bReferenceAnchor\b|\bReferenceResolution\b|\buser_intent_envelope\b|\bintent_target_binding\b|\bruntime_decision_record\b|\bquestion_ticket\b|\bassumption_record\b|\binline_reference\b|\breference_anchor\b|\breference_resolution\b/;
+const INTAKE_TS_PATTERN =
+  /\bAgentIntentEnvelope\b|\bAgentIntentSummary\b|\bAgentReferenceSummary\b|\bAgentAssumptionSummary\b|\bAgentQuestionTicket\b|\bAgentClarification\b|\bInlineReference\b|\bReferenceAnchor\b|\bQuestionTicket\b|\bAssumptionRecord\b|\bresolveClarification\b|\bquestionTicketId\b|\bintentSummary\b|\breferenceSummary\b|\bassumptionSummary\b/;
 
 const importRules: readonly ImportRule[] = [
   {
@@ -642,6 +646,102 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     pattern: ROLLBACK_TS_PATTERN,
     message:
       "Patch review strip must stay patch-focused; do not add message rollback UI or state there."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/session.rs",
+    pattern: INTAKE_RUST_PATTERN,
+    message:
+      "Intent, reference, clarification, and assumption records must live in focused intake storage modules, not in session storage."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/models.rs",
+    pattern: INTAKE_RUST_PATTERN,
+    message:
+      "Intake model types must live in focused intent/reference/clarification model modules, not in the shared storage model file."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/schema.rs",
+    pattern: INTAKE_RUST_PATTERN,
+    message:
+      "Intake schema must be split into focused schema modules instead of growing the shared schema file."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/execution.rs",
+    pattern: INTAKE_RUST_PATTERN,
+    message:
+      "Execution storage must not own intake records. Link Todo and execution state to focused intent/reference records by id."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/planning.rs",
+    pattern: INTAKE_RUST_PATTERN,
+    message:
+      "Planning storage must not own intake records. Plan coverage may reference focused intent/reference records by id."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/completion.rs",
+    pattern: INTAKE_RUST_PATTERN,
+    message:
+      "Completion storage must not own intake records. Completion audit should link to focused intake summaries by id."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/turn_loop.rs",
+    pattern: INTAKE_RUST_PATTERN,
+    message:
+      "Runtime intake classification, reference resolution, clarification gates, and assumption logic must live in focused runtime modules, not in the turn loop."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/session_ops.rs",
+    pattern: INTAKE_RUST_PATTERN,
+    message:
+      "Runtime intake APIs must live in focused modules, not in session_ops."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/tests.rs",
+    pattern: INTAKE_RUST_PATTERN,
+    message:
+      "Intake tests must live beside focused intent/reference/clarification modules, not in the legacy broad agent_runtime test file."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/tool_runtime/executor.rs",
+    pattern: INTAKE_RUST_PATTERN,
+    message:
+      "Tool executor must stay tool-oriented; route clarification and intake bookkeeping through focused runtime projection code."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/thread-view.tsx",
+    pattern: INTAKE_TS_PATTERN,
+    message:
+      "Intake and clarification UI must live in focused AI panel components, not in the thread view."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-lyra-thread-runtime.ts",
+    pattern: INTAKE_TS_PATTERN,
+    message:
+      "Intake and clarification renderer state must live in focused helpers/components, not in the broad Lyra thread runtime hook."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-agent-composer-runtime.ts",
+    pattern: INTAKE_TS_PATTERN,
+    message:
+      "Composer runtime may collect raw input, but structured intake/reference protocol logic must live in focused helpers."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-ai-panel-surface-runtime.ts",
+    pattern: INTAKE_TS_PATTERN,
+    message:
+      "Clarification and intake actions must live in focused helpers, not in the broad AI panel surface runtime hook."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/pending-approval-list.tsx",
+    pattern: INTAKE_TS_PATTERN,
+    message:
+      "Approval UI must not absorb clarification rendering. Add a compact ClarificationList component instead."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/execution-todo-list.tsx",
+    pattern: INTAKE_TS_PATTERN,
+    message:
+      "Execution todo UI must not absorb intake or clarification rendering. Keep those rows focused and separate."
   }
 ];
 
