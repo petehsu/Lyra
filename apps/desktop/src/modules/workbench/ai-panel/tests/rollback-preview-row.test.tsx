@@ -54,13 +54,46 @@ describe("rollback preview UI", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  test("compact preview row renders conflict and preview-only state", () => {
+  test("compact preview row safe state calls restore and refreshes", async () => {
+    const executeMessageRollback = vi.fn().mockResolvedValue({
+      sessionId: "session-1",
+      rollbackId: "rollback-1",
+      status: "completed",
+      impactLevel: "safe",
+      supersededMessageIds: ["msg-assistant"],
+      unresolvedSideEffectIds: [],
+      reopenedUserMessageId: "msg-user",
+      detail: "Restored 1 workspace file.",
+    });
+    const onExecuteComplete = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RollbackPreviewRow
+        detail={detailWithPreview("safe")}
+        executeMessageRollback={executeMessageRollback}
+        onExecuteComplete={onExecuteComplete}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore rollback preview" }));
+
+    await waitFor(() => expect(executeMessageRollback).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      rollbackId: "rollback-1",
+      confirmationToken: "restore:rollback-1",
+      strategy: "safe_only",
+    }));
+    await waitFor(() => expect(onExecuteComplete).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Restored")).toBeDefined();
+  });
+
+  test("compact preview row renders conflict and blocked state", () => {
     render(<RollbackPreviewRow detail={detailWithPreview("conflict")} />);
 
     expect(screen.getByLabelText("Rollback preview")).toBeDefined();
     expect(screen.getByText("Conflict")).toBeDefined();
     expect(screen.getByText("2 msg / 1 file")).toBeDefined();
-    expect(screen.getByText("Preview only")).toBeDisabled();
+    expect(screen.getByText("Blocked")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Restore rollback preview" })).toBeNull();
   });
 
   test("compact preview row renders external side effect state", () => {
@@ -68,6 +101,16 @@ describe("rollback preview UI", () => {
 
     expect(screen.getByText("External effect")).toBeDefined();
     expect(screen.getByText("2 msg / 1 file / 1 external")).toBeDefined();
+    expect(screen.getByText("Blocked")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Restore rollback preview" })).toBeNull();
+  });
+
+  test("restored rollback state survives detail reload", () => {
+    render(<RollbackPreviewRow detail={detailWithExecutedPreview()} />);
+
+    expect(screen.getByText("Restored")).toBeDefined();
+    expect(screen.getByText("Restored 1 workspace file.")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Restore rollback preview" })).toBeNull();
   });
 });
 
@@ -98,7 +141,9 @@ const recoverySummary: AgentRecoverySummary = {
   activeRollbackPreview: null,
 };
 
-const detailWithPreview = (impactLevel: "conflict" | "external_side_effect"): AgentSessionDetail => ({
+const detailWithPreview = (
+  impactLevel: "safe" | "conflict" | "external_side_effect"
+): AgentSessionDetail => ({
   session: {
     id: "session-1",
     title: "Thread",
@@ -145,5 +190,36 @@ const detailWithPreview = (impactLevel: "conflict" | "external_side_effect"): Ag
       externalSideEffectCount: impactLevel === "external_side_effect" ? 1 : 0,
       updatedAt: 2,
     },
+  },
+});
+
+const detailWithExecutedPreview = (): AgentSessionDetail => ({
+  ...detailWithPreview("safe"),
+  recoverySummary: {
+    ...recoverySummary,
+    rollbackPreviews: [{
+      rollbackId: "rollback-1",
+      sessionId: "session-1",
+      targetUserMessageId: "msg-user",
+      status: "executed",
+      impactLevel: "safe",
+      requiresConfirmation: true,
+      summary: "Preview",
+      messageCount: 2,
+      workspaceChangeCount: 1,
+      externalSideEffectCount: 0,
+      updatedAt: 3,
+    }],
+    latestExecution: {
+      rollbackId: "rollback-1",
+      status: "completed",
+      impactLevel: "safe",
+      reopenedUserMessageId: "msg-user",
+      supersededMessageCount: 1,
+      unresolvedSideEffectCount: 0,
+      detail: "Restored 1 workspace file.",
+      updatedAt: 3,
+    },
+    reopenedMessageId: "msg-user",
   },
 });

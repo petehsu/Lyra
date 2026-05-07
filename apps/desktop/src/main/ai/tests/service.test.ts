@@ -233,6 +233,22 @@ describe("AI IPC bridge", () => {
     });
 
     await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiExecuteMessageRollback)?.({}, {
+        sessionId: "session-a",
+        rollbackId: "rollback-1",
+        confirmationToken: "restore"
+      })
+    ).resolves.toEqual({
+      method: "agent.rollback.execute",
+      payload: {
+        sessionId: "session-a",
+        rollbackId: "rollback-1",
+        confirmationToken: "restore",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
       electronMock.handlers.get(LYRA_CHANNELS.aiResolvePlanReview)?.({}, {
         sessionId: "session-a",
         planId: "plan-1",
@@ -308,6 +324,7 @@ describe("AI IPC bridge", () => {
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiPauseFollow);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiResumeFollow);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiPreviewMessageRollback);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiExecuteMessageRollback);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiReadArtifact);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiApplyPatch);
   });
