@@ -4,9 +4,10 @@ mod config;
 mod events;
 mod model_gateway;
 mod patch_apply;
-mod project_manifest;
+mod project_policy;
 mod prompt;
 mod secrets;
+mod security_gate;
 mod storage;
 mod tool_runtime;
 

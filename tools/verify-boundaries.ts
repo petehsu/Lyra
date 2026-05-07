@@ -17,6 +17,7 @@ type ForbiddenPatternRule = {
   readonly pattern: RegExp;
   readonly message: string;
   readonly excludePathPattern?: RegExp;
+  readonly allowLinePattern?: RegExp;
 };
 
 type ForbiddenDependencyRule = {
@@ -44,6 +45,10 @@ const INTAKE_RUST_PATTERN =
   /\bUserIntentEnvelope\b|\bIntentTargetBinding\b|\bIntentAmbiguityFlag\b|\bRuntimeDecisionRecord\b|\bQuestionTicket\b|\bAssumptionRecord\b|\bInlineReference\b|\bReferenceAnchor\b|\bReferenceResolution\b|\buser_intent_envelope\b|\bintent_target_binding\b|\bruntime_decision_record\b|\bquestion_ticket\b|\bassumption_record\b|\binline_reference\b|\breference_anchor\b|\breference_resolution\b/;
 const INTAKE_TS_PATTERN =
   /\bAgentIntentEnvelope\b|\bAgentIntentSummary\b|\bAgentReferenceSummary\b|\bAgentAssumptionSummary\b|\bAgentQuestionTicket\b|\bAgentClarification\b|\bInlineReference\b|\bReferenceAnchor\b|\bQuestionTicket\b|\bAssumptionRecord\b|\bresolveClarification\b|\bquestionTicketId\b|\bintentSummary\b|\breferenceSummary\b|\bassumptionSummary\b/;
+const POLICY_SECURITY_RUST_PATTERN =
+  /\bProjectManifest\b|\bEffectivePolicy\b|\bPolicySourceRecord\b|\bSecurityGate\b|\bSecurityDecisionRecord\b|\bSecretHandle\b|\bSecretDetectionReport\b|\bRedactionPolicy\b|\bSensitiveResource\b|\bSensitiveFilePolicy\b|\beffective_policy\b|\bpolicy_source_record\b|\bsecurity_gate\b|\bsecurity_decision_record\b|\bsecret_handle\b|\bsecret_detection_report\b|\bredaction_policy\b|\bsensitive_resource\b|\bsensitive_file_policy\b/;
+const POLICY_SECURITY_TS_PATTERN =
+  /\bAgentPolicySummary\b|\bAgentSecuritySummary\b|\bAgentSecurityDecisionSummary\b|\bProjectManifest\b|\bEffectivePolicy\b|\bSecurityDecisionRecord\b|\bSecretHandle\b|\bSecretDetectionReport\b|\bSecurityStatusRow\b|\bpolicySummary\b|\bsecuritySummary\b|\bsecurityDecision\b|\bsecretHandle\b|\bsecretDetectionReport\b/;
 
 const importRules: readonly ImportRule[] = [
   {
@@ -742,6 +747,127 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     pattern: INTAKE_TS_PATTERN,
     message:
       "Execution todo UI must not absorb intake or clarification rendering. Keep those rows focused and separate."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/project_manifest.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    message:
+      "Project policy and security implementation must live in focused project_policy/security_gate modules. Keep project_manifest.rs as a thin compatibility facade."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/session.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    message:
+      "Policy and security session projections must live in focused policy/security storage modules, not in session storage."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/models.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    message:
+      "Policy and security model types must live in focused policy/security model modules, not in the shared storage model file."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/schema.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    message:
+      "Policy and security schema must be split into focused schema modules instead of growing the shared schema file."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/execution.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    message:
+      "Execution storage must not own policy or security state. Link decisions and snapshots by id from focused ledgers."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/verification.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    message:
+      "Verification storage must not own policy or security state. Attach verification to focused policy/security decision ids."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/storage/completion.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    message:
+      "Completion storage must not own policy or security state. Completion audit should reference focused decision records."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/turn_loop.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    allowLinePattern: /loaded_policy\.effective_policy|read_effective_policy_for_turn/,
+    message:
+      "Runtime turn loop must only orchestrate policy/security loading and decisions. Keep manifest merge, security gate, and redaction logic in focused modules."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/session_ops.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    message:
+      "Runtime session APIs must not absorb policy/security ledgers. Use focused projection modules."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/tests.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    message:
+      "Policy and security tests must live beside focused modules, not in the legacy broad agent_runtime test file."
+  },
+  {
+    scopePrefix: "crates/lyra-ai-core/src/tool_runtime/executor.rs",
+    pattern: POLICY_SECURITY_RUST_PATTERN,
+    message:
+      "Tool executor must stay tool-oriented; route policy and security decisions through focused gate adapters."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/thread-view.tsx",
+    pattern: POLICY_SECURITY_TS_PATTERN,
+    message:
+      "Policy and security UI must live in focused AI panel components, not in the thread view."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-lyra-thread-runtime.ts",
+    pattern: POLICY_SECURITY_TS_PATTERN,
+    message:
+      "Policy and security renderer state must live in focused helpers/components, not in the broad Lyra thread runtime hook."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-agent-composer-runtime.ts",
+    pattern: POLICY_SECURITY_TS_PATTERN,
+    message:
+      "Composer runtime may collect user input, but policy/security protocol state belongs in focused helpers."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/use-ai-panel-surface-runtime.ts",
+    pattern: POLICY_SECURITY_TS_PATTERN,
+    message:
+      "AI panel surface runtime must not absorb policy/security state machines. Add focused helpers and compact rows."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/pending-approval-list.tsx",
+    pattern: POLICY_SECURITY_TS_PATTERN,
+    message:
+      "Approval UI must not absorb policy/security rendering. Link approval tickets to focused security summaries by id."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/execution-todo-list.tsx",
+    pattern: POLICY_SECURITY_TS_PATTERN,
+    message:
+      "Execution todo UI must not absorb policy/security rendering. Keep policy/security rows focused and separate."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/verification-summary-list.tsx",
+    pattern: POLICY_SECURITY_TS_PATTERN,
+    message:
+      "Verification UI must not absorb policy/security rendering. Reference security decisions by id only."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/patch-preview-card.tsx",
+    pattern: POLICY_SECURITY_TS_PATTERN,
+    message:
+      "Patch preview must stay patch-focused; do not add policy/security UI or state there."
+  },
+  {
+    scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/patch-review-strip.tsx",
+    pattern: POLICY_SECURITY_TS_PATTERN,
+    message:
+      "Patch review strip must stay patch-focused; do not add policy/security UI or state there."
   }
 ];
 
@@ -807,6 +933,9 @@ function checkForbiddenPatterns(file: string, content: string): void {
         continue;
       }
       if (rule.pattern.test(line) === false) {
+        continue;
+      }
+      if (rule.allowLinePattern !== undefined && rule.allowLinePattern.test(line)) {
         continue;
       }
       violations.push(`${fileRel}:${i + 1} ${rule.message}`);

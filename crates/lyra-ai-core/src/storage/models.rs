@@ -6,8 +6,10 @@ use super::clarification_models::{AgentAssumptionSummary, AgentClarification};
 use super::follow_models::AgentFollowSummary;
 use super::intent_models::AgentIntentSummary;
 use super::long_work_models::SessionTaskLedgerSummary;
+use super::policy_models::AgentPolicySummary;
 use super::recovery_models::AgentRecoverySummary;
 use super::reference_models::AgentReferenceSummary;
+use super::security_models::AgentSecuritySummary;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -194,6 +196,10 @@ pub struct AgentSessionDetail {
         skip_serializing_if = "Option::is_none"
     )]
     pub clarification_summary: Option<AgentClarification>,
+    #[serde(rename = "policySummary", skip_serializing_if = "Option::is_none")]
+    pub policy_summary: Option<AgentPolicySummary>,
+    #[serde(rename = "securitySummary", skip_serializing_if = "Option::is_none")]
+    pub security_summary: Option<AgentSecuritySummary>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

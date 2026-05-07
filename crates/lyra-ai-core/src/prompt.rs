@@ -1,5 +1,4 @@
 use crate::model_gateway::ChatMessage;
-use crate::project_manifest::ProjectPolicySnapshot;
 use crate::tool_runtime::tool_runtime_prompt;
 use chrono::{Local, SecondsFormat};
 use serde_json::Value;
@@ -42,7 +41,8 @@ Only produce analysis, questions, or a concrete plan. Do not claim to execute im
 pub struct PromptContext {
     pub collaboration_mode: String,
     pub workspace_root: Option<String>,
-    pub project_policy_snapshot: Option<ProjectPolicySnapshot>,
+    pub policy_summary: Option<Value>,
+    pub security_summary: Option<Value>,
     pub read_only_tools_available: bool,
     pub permission_mode: String,
     pub denied_approval_summaries: Vec<Value>,
@@ -88,7 +88,7 @@ fn system_prompt(context: &PromptContext) -> String {
 
 fn dynamic_runtime_prompt(context: &PromptContext) -> String {
     let now = Local::now();
-    let policy = context.project_policy_snapshot.as_ref();
+    let policy = context.policy_summary.as_ref();
     let mut prompt = format!(
         r#"Dynamic Runtime Environment:
 - current_time_iso: {current_time_iso}
@@ -127,15 +127,54 @@ Use these runtime facts for time, platform, workspace, and mode-sensitive reason
             context.permission_mode.as_str()
         },
         policy_id = policy
-            .map(|snapshot| snapshot.snapshot_id.as_str())
+            .and_then(|summary| summary.get("snapshotId"))
+            .and_then(Value::as_str)
             .unwrap_or("unknown"),
         policy_source = policy
-            .map(|snapshot| snapshot.source.as_str())
+            .and_then(|summary| summary.get("source"))
+            .and_then(Value::as_str)
             .unwrap_or("unknown"),
         manifest_path = policy
-            .and_then(|snapshot| snapshot.manifest_path.as_deref())
+            .and_then(|summary| summary.get("manifestPath"))
+            .and_then(Value::as_str)
             .unwrap_or("unknown"),
     );
+    if let Some(summary) = context.policy_summary.as_ref() {
+        prompt.push_str(&format!(
+            "\n- policy_status: {}; permission_default: {}; allowed_modes: {}; command_policy: {}; network_policy: {}",
+            summary.get("status").and_then(Value::as_str).unwrap_or("unknown"),
+            summary
+                .get("permissionDefault")
+                .and_then(Value::as_str)
+                .unwrap_or("sandbox"),
+            compact_json_field(summary, "allowedModes"),
+            summary
+                .get("toolPolicySummary")
+                .and_then(|tool| tool.get("commandPolicy"))
+                .and_then(Value::as_str)
+                .unwrap_or("safe_default"),
+            summary
+                .get("toolPolicySummary")
+                .and_then(|tool| tool.get("networkPolicy"))
+                .and_then(Value::as_str)
+                .unwrap_or("disabled"),
+        ));
+    }
+    if let Some(summary) = context.security_summary.as_ref() {
+        prompt.push_str(&format!(
+            "\n- security_status: {}; redaction_profile: {}; recent_decisions: {}; secret_findings: {}",
+            summary.get("status").and_then(Value::as_str).unwrap_or("unknown"),
+            summary
+                .get("redactionProfile")
+                .and_then(Value::as_str)
+                .unwrap_or("strict"),
+            compact_json_field(summary, "recentDecisions"),
+            compact_json_field(summary, "secretFindings"),
+        ));
+        prompt.push_str(
+            "\nSecurity summaries are runtime facts. Never include raw secret findings in model output.",
+        );
+    }
     if context.denied_approval_summaries.is_empty() == false {
         prompt.push_str("\n\nRecent user-denied tool approvals:");
         for summary in &context.denied_approval_summaries {
@@ -457,11 +496,18 @@ mod tests {
         PromptContext {
             collaboration_mode: mode.to_string(),
             workspace_root: Some("/workspace/project".to_string()),
-            project_policy_snapshot: Some(ProjectPolicySnapshot {
-                snapshot_id: "policy-test".to_string(),
-                source: "product_default".to_string(),
-                manifest_path: None,
-            }),
+            policy_summary: Some(serde_json::json!({
+                "snapshotId": "policy-test",
+                "source": "product_default",
+                "status": "safe_default",
+                "permissionDefault": "sandbox",
+                "allowedModes": ["sandbox"],
+                "toolPolicySummary": {
+                    "commandPolicy": "safe_default",
+                    "networkPolicy": "disabled"
+                }
+            })),
+            security_summary: None,
             read_only_tools_available: true,
             permission_mode: "sandbox".to_string(),
             denied_approval_summaries: Vec::new(),

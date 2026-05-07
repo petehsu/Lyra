@@ -2,6 +2,7 @@ use super::clarification_gate::evaluate_clarification_gate;
 use super::events::emit_store_event;
 use super::reference_resolution::resolve_turn_references;
 use super::*;
+use crate::project_policy::EffectivePolicy;
 use crate::storage::{
     CreateIntentEnvelopeInput, CreateIntentTargetBindingInput, CreateRuntimeDecisionRecordInput,
     InlineReference, IntentAmbiguityFlag,
@@ -26,9 +27,18 @@ pub(crate) fn prepare_runtime_intake(
     user_message_id: &str,
     input: &RuntimeTurnInput,
     options: &RuntimeThreadOptions,
+    policy_snapshot_id: Option<&str>,
+    effective_policy: Option<&EffectivePolicy>,
 ) -> Result<RuntimeIntakeOutcome> {
-    let reference_outcome =
-        resolve_turn_references(store, session, turn_id, user_message_id, input)?;
+    let reference_outcome = resolve_turn_references(
+        store,
+        session,
+        turn_id,
+        user_message_id,
+        input,
+        policy_snapshot_id,
+        effective_policy,
+    )?;
     for resolution in &reference_outcome.resolutions {
         emit_store_event(
             store,

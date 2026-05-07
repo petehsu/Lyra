@@ -49,6 +49,8 @@ impl AiStore {
         migrate_intent_session(&conn)?;
         migrate_reference_session(&conn)?;
         migrate_clarification_session(&conn)?;
+        migrate_policy_session(&conn)?;
+        migrate_security_session(&conn)?;
         migrate_long_work_session(&conn)?;
         migrate_follow_session(&conn)?;
         migrate_recovery_session(&conn)?;
@@ -101,6 +103,11 @@ impl AiStore {
                 | "reference_resolution"
                 | "question_ticket"
                 | "assumption_record"
+                | "effective_policy_snapshot"
+                | "policy_source_record"
+                | "security_decision_record"
+                | "secret_detection_report"
+                | "redacted_projection_record"
         ) == false
         {
             return Err(anyhow!("unsupported table for test count"));

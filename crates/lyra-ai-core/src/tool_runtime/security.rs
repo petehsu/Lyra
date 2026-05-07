@@ -157,78 +157,7 @@ impl WorkspaceSecurity {
 }
 
 pub fn redact_secrets(input: &str) -> String {
-    input
-        .lines()
-        .map(redact_line)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn redact_line(line: &str) -> String {
-    let lower = line.to_ascii_lowercase();
-    if lower.contains("authorization: bearer") {
-        return redact_after_separator(line, ':');
-    }
-    if contains_secret_label(&lower) {
-        if line.contains('=') {
-            return redact_after_separator(line, '=');
-        }
-        if line.contains(':') {
-            return redact_after_separator(line, ':');
-        }
-    }
-    let mut value = line.to_string();
-    for prefix in ["sk-", "tp-", "ghp_", "gho_", "xoxb-", "AKIA"] {
-        value = redact_prefixed_token(&value, prefix);
-    }
-    value
-}
-
-fn contains_secret_label(lower: &str) -> bool {
-    lower.contains("api_key")
-        || lower.contains("apikey")
-        || lower.contains("api-key")
-        || lower.contains("token")
-        || lower.contains("secret")
-        || lower.contains("password")
-        || lower.contains("cookie")
-        || lower.contains("private_key")
-}
-
-fn redact_after_separator(line: &str, separator: char) -> String {
-    let Some(index) = line.find(separator) else {
-        return "[REDACTED]".to_string();
-    };
-    format!("{}{} [REDACTED]", line[..index].trim_end(), separator)
-}
-
-fn redact_prefixed_token(value: &str, prefix: &str) -> String {
-    let mut output = String::with_capacity(value.len());
-    let mut index = 0;
-    while index < value.len() {
-        let rest = &value[index..];
-        if rest.starts_with(prefix) {
-            output.push_str("[REDACTED]");
-            index += prefix.len();
-            while index < value.len() {
-                let Some(ch) = value[index..].chars().next() else {
-                    break;
-                };
-                if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
-                    index += ch.len_utf8();
-                } else {
-                    break;
-                }
-            }
-            continue;
-        }
-        let Some(ch) = rest.chars().next() else {
-            break;
-        };
-        output.push(ch);
-        index += ch.len_utf8();
-    }
-    output
+    crate::security_gate::redaction::redact_secrets(input)
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 use super::*;
+use crate::project_policy::EffectivePolicy;
 use crate::storage::{
     sha256_hex, CreateInlineReferenceInput, CreateReferenceResolutionInput, InlineReference,
     ReferenceAnchor, ReferenceResolution,
@@ -19,13 +20,101 @@ pub(crate) fn resolve_turn_references(
     turn_id: &str,
     user_message_id: &str,
     input: &RuntimeTurnInput,
+    policy_snapshot_id: Option<&str>,
+    effective_policy: Option<&EffectivePolicy>,
 ) -> Result<ReferenceResolutionOutcome> {
     let workspace_root = session.project_root.as_deref();
     let mut references = Vec::new();
     let mut resolutions = Vec::new();
     for seed in inline_reference_seeds(&session.id, turn_id, user_message_id, input) {
         let reference = store.create_inline_reference(seed)?;
-        let resolution = resolve_reference(store, workspace_root, &reference)?;
+        let mut draft = resolve_reference_draft(store, workspace_root, &reference)?;
+        if matches!(reference.kind.as_str(), "file" | "file_range") {
+            if let Some(policy) = effective_policy {
+                let resource_ref = draft
+                    .resolved_ref
+                    .as_deref()
+                    .unwrap_or(reference.target_ref.as_str())
+                    .to_string();
+                if let Some(outcome) = crate::security_gate::record_path_decision(
+                    store,
+                    &session.id,
+                    turn_id,
+                    policy_snapshot_id,
+                    policy,
+                    &resource_ref,
+                )? {
+                    let security_payload = crate::security_gate::security_event_payload(&outcome);
+                    annotate_reference_security(&mut draft, security_payload.clone());
+                    super::events::emit_store_event(
+                        store,
+                        &session.id,
+                        Some(turn_id),
+                        "security_decision_recorded",
+                        json!({
+                            "sessionId": session.id,
+                            "turnId": turn_id,
+                            "snapshotId": policy_snapshot_id,
+                            "resourceKind": "file",
+                            "resourceRef": reference.target_ref,
+                            "security": security_payload,
+                        }),
+                    )?;
+                    if outcome.redaction_applied {
+                        super::events::emit_store_event(
+                            store,
+                            &session.id,
+                            Some(turn_id),
+                            "security_redaction_applied",
+                            json!({
+                                "sessionId": session.id,
+                                "turnId": turn_id,
+                                "snapshotId": policy_snapshot_id,
+                                "resourceKind": "file",
+                                "resourceRef": reference.target_ref,
+                                "security": crate::security_gate::security_event_payload(&outcome),
+                            }),
+                        )?;
+                    }
+                    if outcome.decision == "deny" {
+                        draft = ReferenceResolveDraft::blocked(
+                            "security_resource_denied",
+                            json!({
+                                "blockedResolvedRef": resource_ref,
+                                "security": crate::security_gate::security_event_payload(&outcome),
+                            }),
+                        );
+                        super::events::emit_store_event(
+                            store,
+                            &session.id,
+                            Some(turn_id),
+                            "security_resource_blocked",
+                            json!({
+                                "sessionId": session.id,
+                                "turnId": turn_id,
+                                "snapshotId": policy_snapshot_id,
+                                "resourceKind": "file",
+                                "resourceRef": reference.target_ref,
+                                "security": crate::security_gate::security_event_payload(&outcome),
+                            }),
+                        )?;
+                    }
+                }
+            }
+        }
+        let resolution = store.create_reference_resolution(CreateReferenceResolutionInput {
+            inline_reference_id: reference.inline_reference_id.clone(),
+            session_id: reference.session_id.clone(),
+            runtime_turn_id: reference.runtime_turn_id.clone(),
+            kind: reference.kind.clone(),
+            target_ref: reference.target_ref.clone(),
+            status: draft.status,
+            resolved_ref: draft.resolved_ref,
+            content_hash: draft.content_hash,
+            content_bytes: draft.content_bytes,
+            reason: draft.reason,
+            metadata: draft.metadata,
+        })?;
         references.push(reference);
         resolutions.push(resolution);
     }
@@ -107,12 +196,12 @@ fn reference_kind(kind: &str, target_ref: &str) -> String {
     "file".to_string()
 }
 
-fn resolve_reference(
+fn resolve_reference_draft(
     store: &AiStore,
     workspace_root: Option<&str>,
     reference: &InlineReference,
-) -> Result<ReferenceResolution> {
-    let result = match reference.kind.as_str() {
+) -> Result<ReferenceResolveDraft> {
+    Ok(match reference.kind.as_str() {
         "file" | "file_range" => resolve_file_reference(workspace_root, &reference.target_ref),
         "message" => resolve_message_reference(store, &reference.session_id, &reference.target_ref),
         "artifact" => {
@@ -126,20 +215,15 @@ fn resolve_reference(
             "unsupported_reference_kind",
             json!({ "kind": other }),
         ),
-    };
-    store.create_reference_resolution(CreateReferenceResolutionInput {
-        inline_reference_id: reference.inline_reference_id.clone(),
-        session_id: reference.session_id.clone(),
-        runtime_turn_id: reference.runtime_turn_id.clone(),
-        kind: reference.kind.clone(),
-        target_ref: reference.target_ref.clone(),
-        status: result.status,
-        resolved_ref: result.resolved_ref,
-        content_hash: result.content_hash,
-        content_bytes: result.content_bytes,
-        reason: result.reason,
-        metadata: result.metadata,
     })
+}
+
+fn annotate_reference_security(draft: &mut ReferenceResolveDraft, security: Value) {
+    if let Some(object) = draft.metadata.as_object_mut() {
+        object.insert("security".to_string(), security);
+    } else {
+        draft.metadata = json!({ "security": security });
+    }
 }
 
 struct ReferenceResolveDraft {

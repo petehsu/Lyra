@@ -83,6 +83,7 @@ pub(super) fn migrate_session(conn: &Connection) -> Result<()> {
             collaboration_mode TEXT,
             permission_mode TEXT NOT NULL DEFAULT 'sandbox',
             project_policy_snapshot_id TEXT,
+            security_policy_snapshot_id TEXT,
             created_at_ms INTEGER NOT NULL,
             created_at_iso TEXT NOT NULL,
             updated_at_ms INTEGER NOT NULL,
@@ -395,6 +396,7 @@ pub(super) fn migrate_session(conn: &Connection) -> Result<()> {
         "permission_mode",
         "TEXT NOT NULL DEFAULT 'sandbox'",
     )?;
+    ensure_column(conn, "runtime_turn", "security_policy_snapshot_id", "TEXT")?;
     ensure_column(conn, "file_backup_record", "post_apply_sha256", "TEXT")?;
     ensure_column(conn, "file_backup_record", "post_apply_bytes", "INTEGER")?;
     Ok(())

@@ -6,8 +6,11 @@ use crate::model_gateway::{
 use crate::patch_apply::{
     apply_patch_tool_result, normalize_permission_mode, rollback_patch_tool_result, PermissionMode,
 };
-use crate::project_manifest::read_project_policy_snapshot;
 use crate::prompt::{compose_messages, PromptContext};
+use crate::security_gate::{
+    record_tool_decision, redact_model_messages_for_turn, redact_tool_result_if_needed,
+    security_event_payload, SECURITY_RESOURCE_DENIED,
+};
 use crate::storage::{
     new_id, now_ms, project_name_from_root, trim_to_string, AgentMessage, AgentMessageContentPart,
     AgentSession, AgentSessionDetail, AgentTurn, AiStore, CreateTodoItemInput, StorageRequest,
@@ -80,6 +83,7 @@ pub use recovery_controller::{preview_message_rollback, read_rollback_preview};
 mod recovery_execution;
 pub use recovery_execution::execute_message_rollback;
 mod recovery_projection;
+use crate::security_gate::projection::project_security_prompt_value;
 pub(crate) use recovery_projection::project_recovery_side_effect;
 
 mod long_work_controller;
@@ -101,6 +105,8 @@ pub use session_ops::{
 
 mod turn_loop;
 pub use turn_loop::{cancel_turn, send_turn};
+#[cfg(test)]
+mod policy_security_tests;
 #[cfg(test)]
 use turn_loop::{run_tool_operation, run_turn_worker_inner};
 

@@ -556,6 +556,46 @@ export type AgentAssumptionSummary = {
   readonly updatedAt: number;
 };
 
+export type AgentPolicySummary = {
+  readonly snapshotId: string;
+  readonly source: "product_default" | "project_manifest" | "fallback_safe_default" | string;
+  readonly status: "active" | "safe_default" | "fallback_safe_default" | "stale" | "superseded" | string;
+  readonly permissionDefault: "sandbox" | "full_access" | "capsule" | string;
+  readonly allowedModes: readonly ("sandbox" | "full_access" | "capsule" | string)[];
+  readonly toolPolicySummary: {
+    readonly enabledCount: number;
+    readonly disabledCount: number;
+    readonly commandPolicy: "safe_default" | "project_configured" | "restricted" | string;
+    readonly networkPolicy: "disabled" | "localhost_only" | "allowed_domains" | "full" | string;
+  };
+  readonly manifestPath?: string | null;
+  readonly warnings: readonly string[];
+};
+
+export type AgentSecurityDecisionSummary = {
+  readonly decisionId: string;
+  readonly resourceKind: string;
+  readonly resourceRef: string;
+  readonly decision: "allow" | "allow_redacted" | "approval_required" | "deny" | string;
+  readonly reasonCodes: readonly string[];
+  readonly riskLevel: string;
+  readonly redactionApplied: boolean;
+  readonly approvalTicketId?: string | null;
+  readonly createdAt: number;
+};
+
+export type AgentSecuritySummary = {
+  readonly snapshotId?: string | null;
+  readonly status: "clear" | "redacted" | "approval_required" | "blocked" | "stale" | string;
+  readonly redactionProfile: "strict" | "balanced" | "developer" | string;
+  readonly recentDecisions: readonly AgentSecurityDecisionSummary[];
+  readonly secretFindings: {
+    readonly total: number;
+    readonly highConfidence: number;
+    readonly lastReportId?: string | null;
+  };
+};
+
 export type AgentRollbackConversationChange = {
   readonly messageId: AgentMessageId;
   readonly role: AgentMessageRole | string;
@@ -755,6 +795,8 @@ export type AgentSessionDetail = {
   readonly referenceSummary?: AgentReferenceSummary | null;
   readonly assumptionSummary?: AgentAssumptionSummary | null;
   readonly clarificationSummary?: AgentClarification | null;
+  readonly policySummary?: AgentPolicySummary | null;
+  readonly securitySummary?: AgentSecuritySummary | null;
 };
 
 export type AgentQuestionOption = {
@@ -1107,7 +1149,13 @@ export type AgentRuntimeEventType =
   | "clarification_ticket_resolved"
   | "runtime_decision_recorded"
   | "reference_resolution_completed"
-  | "reference_resolution_failed";
+  | "reference_resolution_failed"
+  | "project_policy_snapshot_created"
+  | "project_policy_snapshot_failed_safe_default"
+  | "security_decision_recorded"
+  | "security_redaction_applied"
+  | "security_resource_blocked"
+  | "security_summary_updated";
 
 export type AgentRuntimeStreamEvent = {
   readonly schemaVersion: "v1" | string;

@@ -44,7 +44,6 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
         created_at: now,
     };
     store.append_message(&user_message)?;
-    let policy_snapshot = read_project_policy_snapshot(session.project_root.as_deref());
     let turn = AgentTurn {
         id: turn_id.clone(),
         session_id: session.id.clone(),
@@ -60,12 +59,34 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
         created_at: now,
         updated_at: now,
     };
+    let loaded_policy = crate::project_policy::load_for_turn(
+        &store,
+        &session.id,
+        &turn_id,
+        session.project_root.as_deref(),
+    )?;
     store.insert_turn(
         &turn,
         &user_message_id,
-        policy_snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.snapshot_id.as_str()),
+        Some(loaded_policy.snapshot_id.as_str()),
+    )?;
+    emit_store_event(
+        &store,
+        &session.id,
+        Some(&turn_id),
+        if loaded_policy.status == "fallback_safe_default" {
+            "project_policy_snapshot_failed_safe_default"
+        } else {
+            "project_policy_snapshot_created"
+        },
+        json!({
+            "sessionId": session.id,
+            "turnId": turn_id,
+            "snapshotId": loaded_policy.snapshot_id,
+            "source": loaded_policy.source,
+            "status": loaded_policy.status,
+            "warnings": loaded_policy.effective_policy.warnings,
+        }),
     )?;
     let checkpoint_id =
         store.create_timeline_checkpoint(&session.id, &turn_id, &user_message_id)?;
@@ -94,6 +115,8 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
         &user_message_id,
         &request.input,
         &request.options,
+        Some(loaded_policy.snapshot_id.as_str()),
+        Some(&loaded_policy.effective_policy),
     )?;
     if intake.hard_blocked {
         store.update_turn_status(
@@ -117,13 +140,18 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
             json!({
                 "turn": turn,
                 "userMessage": user_message,
-                "policySnapshot": policy_snapshot,
+                "policySnapshot": {
+                    "snapshotId": loaded_policy.snapshot_id,
+                    "source": loaded_policy.source,
+                    "status": loaded_policy.status,
+                },
                 "checkpointId": checkpoint_id,
                 "rollbackAnchorId": rollback_anchor.anchor_id,
                 "runtimeOptions": runtime_options_payload.clone()
             }),
         )?;
         if let Some(detail) = store.read_session_detail(&session.id)? {
+            emit_security_summary_updated(&store, &session.id, &turn_id, Some(&detail))?;
             emit_store_event(
                 &store,
                 &session.id,
@@ -192,13 +220,18 @@ pub fn send_turn(request: SendTurnRequest) -> Result<SendTurnResult> {
         json!({
             "turn": turn,
             "userMessage": user_message,
-            "policySnapshot": policy_snapshot,
+            "policySnapshot": {
+                "snapshotId": loaded_policy.snapshot_id,
+                "source": loaded_policy.source,
+                "status": loaded_policy.status,
+            },
             "checkpointId": checkpoint_id,
             "rollbackAnchorId": rollback_anchor.anchor_id,
             "runtimeOptions": runtime_options_payload
         }),
     )?;
     if let Some(detail) = store.read_session_detail(&updated_session.id)? {
+        emit_security_summary_updated(&store, &updated_session.id, &turn_id, Some(&detail))?;
         emit_store_event(
             &store,
             &updated_session.id,
@@ -396,7 +429,6 @@ pub(super) fn run_turn_worker_inner(
         .and_then(|turn| turn.collaboration_mode.as_deref())
         .map(|mode| normalize_collaboration_mode(Some(mode)))
         .unwrap_or_else(|| detail.session.collaboration_mode.clone());
-    let project_policy_snapshot = read_project_policy_snapshot(workspace_root.as_deref());
     let denied_approval_summaries = store.read_recent_denied_approval_summaries(session_id, 5)?;
     let failed_plan_coverage_summaries = detail
         .plan_coverage_summary
@@ -435,11 +467,18 @@ pub(super) fn run_turn_worker_inner(
         .into_iter()
         .collect();
     let clarification_state = Some(project_clarification_prompt_value(&detail));
+    let policy_summary = detail
+        .policy_summary
+        .as_ref()
+        .map(|summary| serde_json::to_value(summary).unwrap_or_else(|_| json!({})));
+    let security_prompt_state = project_security_prompt_value(&detail);
+    let security_summary = security_prompt_state.get("security").cloned();
     let mut messages = compose_messages(
         PromptContext {
             collaboration_mode,
             workspace_root: workspace_root.clone(),
-            project_policy_snapshot,
+            policy_summary,
+            security_summary,
             read_only_tools_available: workspace_root.is_some(),
             permission_mode: permission_mode.as_str().to_string(),
             denied_approval_summaries,
@@ -464,6 +503,7 @@ pub(super) fn run_turn_worker_inner(
             return Err(anyhow!("turn cancelled"));
         }
         emit_runtime_state(store, session_id, turn_id, "model_invoking")?;
+        redact_model_input_for_turn(store, session_id, turn_id, &mut messages)?;
         let response = invoke_model(config.clone(), messages.clone(), &cancel)?;
         let model_text = response.text.trim().to_string();
         final_usage = response.usage;
@@ -633,6 +673,78 @@ fn invoke_model_buffered(
     Ok(response)
 }
 
+fn redact_model_input_for_turn(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    messages: &mut [ChatMessage],
+) -> Result<()> {
+    let Some((snapshot_id, policy)) = store.read_effective_policy_for_turn(session_id, turn_id)?
+    else {
+        return Ok(());
+    };
+    let outcomes = redact_model_messages_for_turn(
+        store,
+        session_id,
+        turn_id,
+        Some(&snapshot_id),
+        messages,
+        policy.security.redaction_profile.as_str(),
+    )?;
+    for outcome in outcomes {
+        emit_tool_event(
+            store,
+            session_id,
+            turn_id,
+            "security_redaction_applied",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "snapshotId": snapshot_id,
+                "resourceKind": "model_input",
+                "security": security_event_payload(&outcome),
+            }),
+        )?;
+    }
+    Ok(())
+}
+
+fn emit_security_summary_updated(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    detail: Option<&AgentSessionDetail>,
+) -> Result<()> {
+    let Some(summary) = detail.and_then(|detail| detail.security_summary.as_ref()) else {
+        return Ok(());
+    };
+    let decision_ids = summary
+        .recent_decisions
+        .iter()
+        .map(|decision| decision.decision_id.clone())
+        .collect::<Vec<_>>();
+    let reason_codes = summary
+        .recent_decisions
+        .iter()
+        .flat_map(|decision| decision.reason_codes.clone())
+        .collect::<Vec<_>>();
+    emit_store_event(
+        store,
+        session_id,
+        Some(turn_id),
+        "security_summary_updated",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "snapshotId": summary.snapshot_id.clone(),
+            "status": summary.status.clone(),
+            "decisionIds": decision_ids,
+            "reasonCodes": reason_codes,
+            "secretFindings": summary.secret_findings.clone(),
+        }),
+    )
+}
+
 pub(super) fn run_tool_operation(
     store: &AiStore,
     session_id: &str,
@@ -664,13 +776,70 @@ pub(super) fn run_tool_operation(
     )?;
     project_follow_operation_started(store, session_id, turn_id, operation)?;
     let normalized_operation_path = normalized_tool_path(&operation.path);
+    let policy_for_turn = store.read_effective_policy_for_turn(session_id, turn_id)?;
+    let mut blocked_result = None;
+    if let Some((snapshot_id, policy)) = policy_for_turn.as_ref() {
+        let decision = record_tool_decision(
+            store,
+            session_id,
+            turn_id,
+            Some(snapshot_id),
+            policy,
+            operation,
+        )?;
+        emit_tool_event(
+            store,
+            session_id,
+            turn_id,
+            "security_decision_recorded",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "operationId": operation.op_id,
+                "snapshotId": snapshot_id,
+                "resourceKind": "tool",
+                "resourceRef": operation.path,
+                "security": security_event_payload(&decision),
+            }),
+        )?;
+        if decision.decision == "deny" {
+            emit_tool_event(
+                store,
+                session_id,
+                turn_id,
+                "security_resource_blocked",
+                json!({
+                    "sessionId": session_id,
+                    "turnId": turn_id,
+                    "operationId": operation.op_id,
+                    "snapshotId": snapshot_id,
+                    "resourceKind": "tool",
+                    "resourceRef": operation.path,
+                    "security": security_event_payload(&decision),
+                }),
+            )?;
+            let mut result = ToolResultEnvelope::failed(
+                operation,
+                SECURITY_RESOURCE_DENIED,
+                "Tool operation was denied by project policy",
+            );
+            result.metadata = Some(json!({
+                "kind": "security_resource_blocked",
+                "securityDecisionId": decision.decision_id,
+                "reasonCodes": decision.reason_codes,
+            }));
+            blocked_result = Some(result);
+        }
+    }
     if operation.op == ToolFsOp::Run
         && (normalized_operation_path == TOOL_FS_APPLY_PATCH
             || normalized_operation_path == TOOL_FS_ROLLBACK_PATCH)
     {
         ensure_recovery_anchor_for_write(store, session_id, turn_id)?;
     }
-    let mut result = if operation.op == ToolFsOp::Run
+    let mut result = if let Some(result) = blocked_result {
+        result
+    } else if operation.op == ToolFsOp::Run
         && inspected_tool_paths.contains(&normalized_tool_path(&operation.path)) == false
     {
         inspect_required_result(operation)
@@ -713,6 +882,31 @@ pub(super) fn run_tool_operation(
     if operation.op == ToolFsOp::Inspect && result.status == ToolResultStatus::Completed {
         inspected_tool_paths.insert(normalized_tool_path(&operation.path));
     }
+    if let Some((snapshot_id, policy)) = policy_for_turn.as_ref() {
+        if let Some(outcome) = redact_tool_result_if_needed(
+            store,
+            session_id,
+            turn_id,
+            Some(snapshot_id),
+            &mut result,
+            policy.security.redaction_profile.as_str(),
+        )? {
+            emit_tool_event(
+                store,
+                session_id,
+                turn_id,
+                "security_redaction_applied",
+                json!({
+                    "sessionId": session_id,
+                    "turnId": turn_id,
+                    "snapshotId": snapshot_id,
+                    "resourceKind": "tool_result",
+                    "operationId": operation.op_id,
+                    "security": security_event_payload(&outcome),
+                }),
+            )?;
+        }
+    }
     let result_blob = store.append_tool_result_blob(
         session_id,
         turn_id,
@@ -752,8 +946,9 @@ pub(super) fn run_tool_operation(
     store.evaluate_completion_audit_and_delivery_proof(session_id, Some(turn_id))?;
     project_work_after_completion(store, session_id, Some(turn_id))?;
     let detail = store.read_session_detail(session_id)?;
+    emit_security_summary_updated(store, session_id, turn_id, detail.as_ref())?;
     emit_completion_projection_events(store, session_id, Some(turn_id), detail.as_ref())?;
-    if let Some(detail) = store.read_session_detail(session_id)? {
+    if let Some(detail) = detail {
         emit_store_event(
             store,
             session_id,
@@ -762,14 +957,18 @@ pub(super) fn run_tool_operation(
             json!({ "detail": detail }),
         )?;
     }
-    messages.push(ChatMessage {
-        role: "assistant".to_string(),
-        content: serde_json::to_string(operation)?,
-    });
-    messages.push(ChatMessage {
-        role: "user".to_string(),
-        content: tool_result_chat_message(&result)?,
-    });
+    let mut model_messages = vec![
+        ChatMessage {
+            role: "assistant".to_string(),
+            content: serde_json::to_string(operation)?,
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: tool_result_chat_message(&result)?,
+        },
+    ];
+    redact_model_input_for_turn(store, session_id, turn_id, &mut model_messages)?;
+    messages.extend(model_messages);
     Ok(())
 }
 

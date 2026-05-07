@@ -105,6 +105,23 @@ fn supersede_intake_after_checkpoint(
             params![session_id, checkpoint_created_at],
         )?;
     }
+    for table in [
+        "effective_policy_snapshot",
+        "security_decision_record",
+        "secret_detection_report",
+        "redacted_projection_record",
+    ] {
+        conn.execute(
+            &format!(
+                "UPDATE {table}
+                 SET status = 'superseded_by_rollback',
+                     superseded_by_rollback_id = ?3
+                 WHERE session_id = ?1 AND created_at_ms >= ?2
+                   AND status != 'superseded_by_rollback'"
+            ),
+            params![session_id, checkpoint_created_at, rollback_id],
+        )?;
+    }
     conn.execute(
         "UPDATE question_ticket
          SET status = 'superseded_by_rollback',

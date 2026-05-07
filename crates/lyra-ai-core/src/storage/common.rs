@@ -149,21 +149,3 @@ pub fn project_name_from_root(project_root: Option<&str>) -> Option<String> {
         .and_then(|value| value.to_str())
         .map(ToString::to_string)
 }
-
-pub fn policy_snapshot_ref(project_root: Option<&str>) -> Option<String> {
-    let root = project_root.and_then(trim_to_string)?;
-    let mut hasher = Sha256::new();
-    hasher.update(root.as_bytes());
-    Some(format!(
-        "policy_{}",
-        hex_prefix(hasher.finalize().as_slice(), 8)
-    ))
-}
-
-pub(super) fn hex_prefix(bytes: &[u8], count: usize) -> String {
-    let mut out = String::new();
-    for byte in bytes.iter().take(count) {
-        out.push_str(&format!("{byte:02x}"));
-    }
-    out
-}

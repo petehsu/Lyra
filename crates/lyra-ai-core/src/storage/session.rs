@@ -157,9 +157,10 @@ impl AiStore {
             conn.execute(
                 "INSERT INTO runtime_turn (
                     runtime_turn_id, session_id, user_message_id, profile_id, status, current_state,
-                    collaboration_mode, project_policy_snapshot_id, created_at_ms, created_at_iso,
-                    updated_at_ms, error_code, error_message, usage_json, permission_mode
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'user_message_received', ?6, ?7, ?8, ?9, ?10, NULL, NULL, NULL, ?11)",
+                    collaboration_mode, project_policy_snapshot_id, security_policy_snapshot_id,
+                    created_at_ms, created_at_iso, updated_at_ms, error_code, error_message,
+                    usage_json, permission_mode
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'user_message_received', ?6, ?7, ?7, ?8, ?9, ?10, NULL, NULL, NULL, ?11)",
                 params![
                     turn.id,
                     turn.session_id,
@@ -313,6 +314,8 @@ impl AiStore {
         let reference_summary = self.read_reference_summary(session_id)?;
         let assumption_summary = self.read_assumption_summary(session_id)?;
         let clarification_summary = self.read_clarification_summary(session_id)?;
+        let policy_summary = self.read_policy_summary(session_id)?;
+        let security_summary = self.read_security_summary(session_id)?;
         Ok(Some(AgentSessionDetail {
             session,
             pending_interactions,
@@ -333,6 +336,8 @@ impl AiStore {
             reference_summary,
             assumption_summary,
             clarification_summary,
+            policy_summary,
+            security_summary,
         }))
     }
 

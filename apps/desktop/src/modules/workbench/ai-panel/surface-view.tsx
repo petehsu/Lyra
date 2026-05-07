@@ -12,6 +12,7 @@ import { AiPlanReviewSurface } from "./plan-review-surface";
 import { PatchReviewStrip } from "./patch-review-strip";
 import { RollbackMessageAction } from "./rollback-message-action";
 import { RollbackPreviewRow } from "./rollback-preview-row";
+import { SecurityStatusRow } from "./security-status-row";
 import type { AiPanelSurfaceTextLabels } from "./surface-model";
 import { AiPanelSurfaceFrame } from "./surface-frame";
 import { AiPanelThreadTabs } from "./thread-tabs";
@@ -184,6 +185,8 @@ export const AiPanelSurfaceView = ({
           detail={state.activeDetail}
           resolvePlanReview={desktopApi?.ai === undefined ? undefined : actions.resolvePlanReview}
         />
+
+        <SecurityStatusRow detail={state.activeDetail} />
 
         <ExecutionTodoList detail={state.activeDetail} />
 

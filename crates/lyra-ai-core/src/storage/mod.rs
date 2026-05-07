@@ -23,12 +23,16 @@ mod reference_models;
 pub use reference_models::*;
 mod clarification_models;
 pub use clarification_models::*;
+mod policy_models;
+pub use policy_models::*;
+mod security_models;
+pub use security_models::*;
 mod models;
 pub use models::*;
 mod common;
 pub use common::{
-    json_string, new_id, now_iso, now_ms, parse_json_or, policy_snapshot_ref,
-    project_name_from_root, resolve_storage_root, sha256_hex, trim_to_string,
+    json_string, new_id, now_iso, now_ms, parse_json_or, project_name_from_root,
+    resolve_storage_root, sha256_hex, trim_to_string,
 };
 use common::{
     merge_string_refs, merge_todo_blocker_json, normalize_risk_level, normalize_todo_kind,
@@ -51,6 +55,10 @@ mod reference_schema;
 use reference_schema::migrate_reference_session;
 mod clarification_schema;
 use clarification_schema::migrate_clarification_session;
+mod policy_schema;
+use policy_schema::migrate_policy_session;
+mod security_schema;
+use security_schema::migrate_security_session;
 mod follow_schema;
 use follow_schema::migrate_follow_session;
 mod recovery_schema;
@@ -76,6 +84,7 @@ mod long_work_ledger;
 mod long_work_status;
 mod patch_backup;
 mod planning;
+mod policy_ledger;
 mod profile;
 mod recovery_checkpoint;
 mod recovery_execution;
@@ -84,6 +93,7 @@ mod recovery_projection;
 mod recovery_supersede;
 mod recovery_workspace;
 mod reference_ledger;
+mod security_ledger;
 mod session;
 mod verification;
 #[derive(Clone)]
