@@ -246,6 +246,18 @@ fn file_references_resolve_inside_workspace_and_reject_outside_or_symlink_escape
                     context_text: None,
                 },
             },
+            RuntimeTurnInputPart::Attachment {
+                attachment: RuntimeTurnAttachment {
+                    name: "missing-outside.txt".to_string(),
+                    path: temp
+                        .path()
+                        .join("missing-outside.txt")
+                        .to_string_lossy()
+                        .to_string(),
+                    kind: "file".to_string(),
+                    context_text: None,
+                },
+            },
         ],
         ui_action: None,
     };
@@ -272,7 +284,7 @@ fn file_references_resolve_inside_workspace_and_reject_outside_or_symlink_escape
             .iter()
             .filter(|entry| entry.status == "permission_blocked")
             .count()
-            >= 1
+            >= 2
     );
 }
 

@@ -199,6 +199,12 @@ fn resolve_file_reference(workspace_root: Option<&str>, target_ref: &str) -> Ref
     let Ok(canonical_root) = root_path.canonicalize() else {
         return ReferenceResolveDraft::unresolved(None, "workspace_root_unavailable", json!({}));
     };
+    if target_ref_escapes_workspace(&canonical_root, target_ref) {
+        return ReferenceResolveDraft::blocked(
+            "outside_workspace_or_symlink_escape",
+            json!({ "workspaceRoot": canonical_root.display().to_string() }),
+        );
+    }
     let candidate = file_target_path(&canonical_root, target_ref);
     let Ok(canonical_target) = candidate.canonicalize() else {
         return ReferenceResolveDraft::unresolved(
@@ -246,6 +252,25 @@ fn resolve_file_reference(workspace_root: Option<&str>, target_ref: &str) -> Ref
     )
 }
 
+fn target_ref_escapes_workspace(root: &Path, target_ref: &str) -> bool {
+    let stripped = target_ref.strip_prefix("file://").unwrap_or(target_ref);
+    let path = PathBuf::from(stripped);
+    if path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::ParentDir | std::path::Component::Prefix(_)
+        )
+    }) {
+        return true;
+    }
+    if path.is_absolute() == false {
+        return false;
+    }
+    canonical_existing_ancestor(&path)
+        .map(|ancestor| ancestor.starts_with(root) == false)
+        .unwrap_or(true)
+}
+
 fn file_target_path(root: &Path, target_ref: &str) -> PathBuf {
     let stripped = target_ref.strip_prefix("file://").unwrap_or(target_ref);
     let path = PathBuf::from(stripped);
@@ -254,6 +279,17 @@ fn file_target_path(root: &Path, target_ref: &str) -> PathBuf {
     } else {
         root.join(path)
     }
+}
+
+fn canonical_existing_ancestor(path: &Path) -> Option<PathBuf> {
+    let mut current = Some(path);
+    while let Some(candidate) = current {
+        if let Ok(canonical) = candidate.canonicalize() {
+            return Some(canonical);
+        }
+        current = candidate.parent();
+    }
+    None
 }
 
 fn resolve_message_reference(
