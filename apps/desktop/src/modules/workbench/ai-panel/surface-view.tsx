@@ -4,6 +4,7 @@ import { resolveAiPanelEmptyGreetingCandidates } from "./empty-greeting";
 import { ExecutionTodoList } from "./execution-todo-list";
 import { FollowProcessList } from "./follow-process-list";
 import { DeliveryStatusRow } from "./delivery-status-row";
+import { LiveDraftStatusRow } from "./live-draft-status-row";
 import { LongWorkStatusRow } from "./long-work-status-row";
 import { PendingApprovalList } from "./pending-approval-list";
 import { AiPlanReviewSurface } from "./plan-review-surface";
@@ -62,6 +63,7 @@ export const AiPanelSurfaceView = ({
   } = surfaceProps;
   const { state, actions } = runtime;
   const previewMessageRollback = desktopApi?.ai?.previewMessageRollback;
+  const executeMessageRollback = desktopApi?.ai?.executeMessageRollback;
   const openFollowWorkspaceUri =
     surfaceProps.onFollowOpenFilePath === undefined
       ? undefined
@@ -186,7 +188,13 @@ export const AiPanelSurfaceView = ({
           onOpenWorkspaceUri={openFollowWorkspaceUri}
         />
 
-        <RollbackPreviewRow detail={state.activeDetail} />
+        <LiveDraftStatusRow detail={state.activeDetail} />
+
+        <RollbackPreviewRow
+          detail={state.activeDetail}
+          executeMessageRollback={executeMessageRollback}
+          onExecuteComplete={actions.refreshActiveThread}
+        />
 
         <PendingApprovalList
           detail={state.activeDetail}

@@ -298,6 +298,27 @@ export type AgentFollowEventSummary = {
   readonly createdAt: number;
 };
 
+export type AgentLiveDraftSummary = {
+  readonly liveEditId: string;
+  readonly followSessionId: string;
+  readonly followTargetId: string;
+  readonly path: string;
+  readonly baseRevisionId?: string;
+  readonly status:
+    | "drafting"
+    | "ready_to_commit"
+    | "committing"
+    | "committed"
+    | "discarded"
+    | "conflict"
+    | "failed"
+    | string;
+  readonly draftBufferRef?: string;
+  readonly commitOperationId?: string;
+  readonly deltaCount: number;
+  readonly updatedAt: number;
+};
+
 export type AgentFollowSummary = {
   readonly followSessionId: string;
   readonly sessionId: AgentSessionId;
@@ -308,6 +329,7 @@ export type AgentFollowSummary = {
   readonly activeTarget?: AgentFollowTargetSummary | null;
   readonly targets: readonly AgentFollowTargetSummary[];
   readonly recentEvents: readonly AgentFollowEventSummary[];
+  readonly activeLiveDraft?: AgentLiveDraftSummary | null;
   readonly updatedAt: number;
 };
 
@@ -334,7 +356,7 @@ export type AgentRollbackPreviewSummary = {
   readonly rollbackId: string;
   readonly sessionId: AgentSessionId;
   readonly targetUserMessageId: AgentMessageId;
-  readonly status: "previewed" | "stale" | "superseded" | "failed" | string;
+  readonly status: "previewed" | "blocked" | "executed" | "stale" | "superseded" | "failed" | string;
   readonly impactLevel: AgentRollbackImpactLevel;
   readonly requiresConfirmation: boolean;
   readonly artifactId?: string;
@@ -346,11 +368,24 @@ export type AgentRollbackPreviewSummary = {
   readonly updatedAt: number;
 };
 
+export type AgentRollbackExecutionSummary = {
+  readonly rollbackId: string;
+  readonly status: "completed" | "blocked" | "failed" | string;
+  readonly impactLevel: AgentRollbackImpactLevel;
+  readonly reopenedUserMessageId?: AgentMessageId;
+  readonly supersededMessageCount: number;
+  readonly unresolvedSideEffectCount: number;
+  readonly detail: string;
+  readonly updatedAt: number;
+};
+
 export type AgentRecoverySummary = {
   readonly latestAnchor?: AgentMessageCheckpointSummary;
   readonly rollbackPreviews: readonly AgentRollbackPreviewSummary[];
   readonly rollbackReadyMessageIds: readonly AgentMessageId[];
   readonly activeRollbackPreview?: AgentRollbackPreviewSummary | null;
+  readonly latestExecution?: AgentRollbackExecutionSummary | null;
+  readonly reopenedMessageId?: AgentMessageId | null;
 };
 
 export type AgentRollbackConversationChange = {
@@ -388,6 +423,28 @@ export type AgentPreviewMessageRollbackResult = {
   readonly workspaceChanges: readonly AgentRollbackWorkspaceChange[];
   readonly conversationChanges: readonly AgentRollbackConversationChange[];
   readonly externalSideEffects: readonly AgentRollbackExternalSideEffect[];
+};
+
+export type AgentExecuteMessageRollbackRequest = {
+  readonly sessionId: string;
+  readonly rollbackId: string;
+  readonly confirmationToken?: string;
+  readonly strategy?: "safe_only" | "keep_user_changes";
+};
+
+export type AgentExecuteMessageRollbackResult = {
+  readonly sessionId: AgentSessionId;
+  readonly rollbackId: string;
+  readonly status: "completed" | "blocked" | "failed" | string;
+  readonly impactLevel: AgentRollbackImpactLevel;
+  readonly restoredWorkspaceSnapshotId?: string;
+  readonly restoredConversationSnapshotId?: string;
+  readonly supersededMessageIds: readonly AgentMessageId[];
+  readonly unresolvedSideEffectIds: readonly string[];
+  readonly reopenedUserMessageId?: AgentMessageId;
+  readonly artifactId?: string;
+  readonly evidenceId?: string;
+  readonly detail: string;
 };
 
 export type AgentVerificationRunSummary = {

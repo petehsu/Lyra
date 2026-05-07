@@ -124,6 +124,8 @@ import type {
 import type {
   AgentCancelTurnRequest,
   AgentCancelTurnResult,
+  AgentExecuteMessageRollbackRequest,
+  AgentExecuteMessageRollbackResult,
   AgentApplyPatchRequest,
   AgentApplyPatchResult,
   AgentArtifactContent,
@@ -170,6 +172,8 @@ import type {
 export type {
   AgentCancelTurnRequest,
   AgentCancelTurnResult,
+  AgentExecuteMessageRollbackRequest,
+  AgentExecuteMessageRollbackResult,
   AgentApplyPatchRequest,
   AgentApplyPatchResult,
   AgentArtifactContent,
@@ -526,6 +530,7 @@ export const LYRA_CHANNELS = {
   aiPauseFollow: "lyra:ai/follow/pause",
   aiResumeFollow: "lyra:ai/follow/resume",
   aiPreviewMessageRollback: "lyra:ai/rollback/preview",
+  aiExecuteMessageRollback: "lyra:ai/rollback/execute",
   aiSendTurn: "lyra:ai/turn/send",
   aiCancelTurn: "lyra:ai/turn/cancel",
   aiCreateTodo: "lyra:ai/todo/create",
@@ -1609,6 +1614,9 @@ export type AiApi = {
   readonly previewMessageRollback: (
     request: AgentPreviewMessageRollbackRequest
   ) => Promise<AgentPreviewMessageRollbackResult>;
+  readonly executeMessageRollback: (
+    request: AgentExecuteMessageRollbackRequest
+  ) => Promise<AgentExecuteMessageRollbackResult>;
   readonly sendTurn: (request: AgentSendTurnRequest) => Promise<AgentSendTurnResult>;
   readonly cancelTurn: (request: AgentCancelTurnRequest) => Promise<AgentCancelTurnResult>;
   readonly createTodo: (request: AgentCreateTodoRequest) => Promise<AgentCreateTodoResult>;

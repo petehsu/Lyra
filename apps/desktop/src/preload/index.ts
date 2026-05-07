@@ -135,6 +135,8 @@ import {
   type AiUpsertProfileRequest,
   type AgentCancelTurnRequest,
   type AgentCancelTurnResult,
+  type AgentExecuteMessageRollbackRequest,
+  type AgentExecuteMessageRollbackResult,
   type AgentApplyPatchRequest,
   type AgentApplyPatchResult,
   type AgentArtifactContent,
@@ -1061,6 +1063,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.aiPreviewMessageRollback,
         request
       ) as Promise<AgentPreviewMessageRollbackResult>,
+    executeMessageRollback: (request: AgentExecuteMessageRollbackRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiExecuteMessageRollback,
+        request
+      ) as Promise<AgentExecuteMessageRollbackResult>,
     sendTurn: (request: AgentSendTurnRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiSendTurn, request) as Promise<AgentSendTurnResult>,
     cancelTurn: (request: AgentCancelTurnRequest) =>

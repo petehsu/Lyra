@@ -4,6 +4,8 @@ import {
   LYRA_CHANNELS,
   type AgentCancelTurnRequest,
   type AgentCancelTurnResult,
+  type AgentExecuteMessageRollbackRequest,
+  type AgentExecuteMessageRollbackResult,
   type AgentApplyPatchRequest,
   type AgentApplyPatchResult,
   type AgentArtifactContent,
@@ -131,6 +133,11 @@ export const createAiIpcBridge = ({
       requestRuntime<AgentPreviewMessageRollbackResult>("agent.rollback.preview", request)
   );
   ipcMain.handle(
+    LYRA_CHANNELS.aiExecuteMessageRollback,
+    async (_event, request: AgentExecuteMessageRollbackRequest): Promise<AgentExecuteMessageRollbackResult> =>
+      requestRuntime<AgentExecuteMessageRollbackResult>("agent.rollback.execute", request)
+  );
+  ipcMain.handle(
     LYRA_CHANNELS.aiSendTurn,
     async (_event, request: AgentSendTurnRequest): Promise<AgentSendTurnResult> =>
       requestRuntime<AgentSendTurnResult>("agent.turn.send", request)
@@ -186,6 +193,7 @@ export const createAiIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.aiPauseFollow);
       ipcMain.removeHandler(LYRA_CHANNELS.aiResumeFollow);
       ipcMain.removeHandler(LYRA_CHANNELS.aiPreviewMessageRollback);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiExecuteMessageRollback);
       ipcMain.removeHandler(LYRA_CHANNELS.aiSendTurn);
       ipcMain.removeHandler(LYRA_CHANNELS.aiCancelTurn);
       ipcMain.removeHandler(LYRA_CHANNELS.aiCreateTodo);

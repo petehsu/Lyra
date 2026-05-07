@@ -1,6 +1,7 @@
 import type {
   AgentMessage,
   AgentRecoverySummary,
+  AgentRollbackExecutionSummary,
   AgentRollbackImpactLevel,
   AgentRollbackPreviewSummary,
 } from "./agent-ui-types";
@@ -47,6 +48,18 @@ export const rollbackTone = (impactLevel: AgentRollbackImpactLevel): RollbackTon
       return "safe";
   }
 };
+
+export const matchingRollbackExecution = (
+  recoverySummary: AgentRecoverySummary | null | undefined,
+  preview: AgentRollbackPreviewSummary
+): AgentRollbackExecutionSummary | null => {
+  const execution = recoverySummary?.latestExecution ?? null;
+  return execution?.rollbackId === preview.rollbackId ? execution : null;
+};
+
+export const canExecuteRollbackPreview = (
+  preview: AgentRollbackPreviewSummary
+): boolean => preview.status === "previewed" && rollbackTone(preview.impactLevel) === "safe";
 
 export const rollbackPreviewCounts = (preview: AgentRollbackPreviewSummary): string => {
   const parts = [
