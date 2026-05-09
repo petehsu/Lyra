@@ -116,14 +116,28 @@ const modelTextSegmentStartAt = (
 
 type TurnResponseItem =
   | { readonly kind: "assistantMessage"; readonly sortRank: number; readonly message: AgentMessage }
+  | { readonly kind: "toolCall"; readonly sortRank: number; readonly call: DeduplicatedToolCall }
   | { readonly kind: "runtimeAction"; readonly sortRank: number; readonly action: TimelineRuntimeActionItem }
   | { readonly kind: "liveAssistant"; readonly sortRank: number; readonly text: string };
 
 type TurnGroup = {
   readonly turnId: string;
   readonly userMessages: readonly AgentMessage[];
-  readonly toolCalls: readonly DeduplicatedToolCall[];
   readonly responseItems: readonly TurnResponseItem[];
+};
+
+const turnResponseKindRank = (item: TurnResponseItem): number => {
+  switch (item.kind) {
+    case "assistantMessage":
+    case "liveAssistant":
+      return 10;
+    case "toolCall":
+      return 20;
+    case "runtimeAction":
+      return 30;
+    default:
+      return 40;
+  }
 };
 
 const toolEventToCall = (event: AgentRuntimeEvent): {
@@ -195,6 +209,7 @@ const deduplicateToolEvents = (events: readonly AgentRuntimeEvent[]): Deduplicat
       if (betterStatus) {
         byOpId.set(call.opId, {
           ...call,
+          timestamp: Math.min(existing.timestamp, call.timestamp),
           patchProposal: patchProposal ?? existing.patchProposal,
         });
       }
@@ -268,6 +283,9 @@ const buildTurnGroups = (
       const sortRank = modelTextSegmentStartAt(events, msg.turnId, msg.createdAt);
       responseItems.push({ kind: "assistantMessage", sortRank, message: msg });
     }
+    for (const call of toolCalls) {
+      responseItems.push({ kind: "toolCall", sortRank: call.timestamp, call });
+    }
     for (const action of turnActions) {
       responseItems.push({ kind: "runtimeAction", sortRank: action.createdAt, action });
     }
@@ -279,12 +297,13 @@ const buildTurnGroups = (
         text: liveAssistant!.text,
       });
     }
-    responseItems.sort((a, b) => a.sortRank - b.sortRank);
+    responseItems.sort((a, b) =>
+      a.sortRank - b.sortRank || turnResponseKindRank(a) - turnResponseKindRank(b)
+    );
 
     groups.push({
       turnId,
       userMessages: userMsgs,
-      toolCalls,
       responseItems,
     });
   }
@@ -296,7 +315,6 @@ const buildTurnGroups = (
     groups.push({
       turnId: "__orphan__",
       userMessages: [],
-      toolCalls: [],
       responseItems: orphanActions.map((action) => ({
         kind: "runtimeAction" as const,
         sortRank: action.createdAt,
@@ -480,20 +498,19 @@ const TurnGroupView = ({
   readonly resolveApproval?: ((request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>) | undefined;
   readonly renderRuntimeAction: (action: TimelineRuntimeActionItem) => ReactNode;
   readonly renderMessageActions?: ((message: AgentMessage) => ReactNode) | undefined;
-}) => (
-  <div className="lyra-ai-turn-group" data-turn-id={group.turnId}>
-    {group.userMessages.map((message) => (
-      <AiPanelMessageBubble
-        key={message.id}
-        message={message}
-        locale={locale}
-        actions={renderMessageActions?.(message)}
-      />
-    ))}
+}) => {
+  const responseNodes: ReactNode[] = [];
+  let pendingToolCalls: DeduplicatedToolCall[] = [];
 
-    {group.toolCalls.length > 0 ? (
+  const flushToolCalls = () => {
+    if (pendingToolCalls.length === 0) {
+      return;
+    }
+    const firstCall = pendingToolCalls[0];
+    responseNodes.push(
       <ToolCallGroup
-        calls={group.toolCalls}
+        key={`tools:${group.turnId}:${firstCall?.opId ?? responseNodes.length}`}
+        calls={pendingToolCalls}
         detail={detail}
         expandedPatchKey={expandedPatchKey}
         onPatchExpandedChange={onPatchExpandedChange}
@@ -501,35 +518,58 @@ const TurnGroupView = ({
         applyPatch={applyPatch}
         resolveApproval={resolveApproval}
       />
-    ) : null}
+    );
+    pendingToolCalls = [];
+  };
 
-    {group.responseItems.map((item) => {
-      if (item.kind === "assistantMessage") {
-        return (
-          <AiPanelMessageBubble
-            key={item.message.id}
-            message={item.message}
-            locale={locale}
-            live={item.message.turnId === streamingTurnId}
-            actions={renderMessageActions?.(item.message)}
-          />
-        );
-      }
-      if (item.kind === "runtimeAction") {
-        return renderRuntimeAction(item.action);
-      }
-      return (
-        <AiPanelLiveAssistantBubble
-          key={`live-${group.turnId}`}
-          text={item.text}
-          turnId={group.turnId}
-          sessionId={detail?.session.id ?? ""}
+  for (const item of group.responseItems) {
+    if (item.kind === "toolCall") {
+      pendingToolCalls.push(item.call);
+      continue;
+    }
+    flushToolCalls();
+    if (item.kind === "assistantMessage") {
+      responseNodes.push(
+        <AiPanelMessageBubble
+          key={item.message.id}
+          message={item.message}
           locale={locale}
+          live={item.message.turnId === streamingTurnId}
+          actions={renderMessageActions?.(item.message)}
         />
       );
-    })}
-  </div>
-);
+      continue;
+    }
+    if (item.kind === "runtimeAction") {
+      responseNodes.push(renderRuntimeAction(item.action));
+      continue;
+    }
+    responseNodes.push(
+      <AiPanelLiveAssistantBubble
+        key={`live-${group.turnId}`}
+        text={item.text}
+        turnId={group.turnId}
+        sessionId={detail?.session.id ?? ""}
+        locale={locale}
+      />
+    );
+  }
+  flushToolCalls();
+
+  return (
+    <div className="lyra-ai-turn-group" data-turn-id={group.turnId}>
+      {group.userMessages.map((message) => (
+        <AiPanelMessageBubble
+          key={message.id}
+          message={message}
+          locale={locale}
+          actions={renderMessageActions?.(message)}
+        />
+      ))}
+      {responseNodes}
+    </div>
+  );
+};
 
 /* ── Main thread view ────────────────────────────────────── */
 

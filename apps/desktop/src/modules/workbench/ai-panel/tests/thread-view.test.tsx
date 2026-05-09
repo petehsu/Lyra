@@ -98,6 +98,54 @@ describe("AiPanelThreadView", () => {
     ).toBeTruthy();
   });
 
+  test("orders saved assistant text before later tool calls in the same turn", () => {
+    render(
+      <AiPanelThreadView
+        logoUrl="/logo.png"
+        emptyThreadLabel="Hello"
+        detail={createToolAfterAssistantDetail({ includeAssistantMessage: true })}
+        streamingTurnId={null}
+        streamingAssistantText=""
+        isLoading={false}
+        runtimeError={null}
+      />
+    );
+
+    const userMessage = screen.getByText("Build a website");
+    const assistantMessage = screen.getByText("I will inspect the workspace first.");
+    const toolCall = screen.getByText("Read /tools/filesystem/read_file");
+    expect(
+      userMessage.compareDocumentPosition(assistantMessage) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      assistantMessage.compareDocumentPosition(toolCall) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  test("orders live assistant text before later tool calls in the same turn", () => {
+    render(
+      <AiPanelThreadView
+        logoUrl="/logo.png"
+        emptyThreadLabel="Hello"
+        detail={createToolAfterAssistantDetail({ includeAssistantMessage: false })}
+        streamingTurnId="turn-tool"
+        streamingAssistantText="I will inspect the workspace first."
+        isLoading={false}
+        runtimeError={null}
+      />
+    );
+
+    const userMessage = screen.getByText("Build a website");
+    const assistantMessage = screen.getByText("I will inspect the workspace first.");
+    const toolCall = screen.getByText("Read /tools/filesystem/read_file");
+    expect(
+      userMessage.compareDocumentPosition(assistantMessage) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      assistantMessage.compareDocumentPosition(toolCall) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
   test("keeps user messages unlabeled and places actions in the message footer", () => {
     render(
       <AiPanelThreadView
@@ -548,6 +596,112 @@ const createClarificationTimelineDetail = ({
         phase: "model_stream_delta",
         payload: { text: "I need one detail first." },
         timestamp: 2,
+      },
+    ],
+  };
+};
+
+const createToolAfterAssistantDetail = ({
+  includeAssistantMessage,
+}: {
+  readonly includeAssistantMessage: boolean;
+}): AgentSessionDetail => {
+  const detail = createDetail();
+  return {
+    ...detail,
+    session: {
+      ...detail.session,
+      updatedAt: 5,
+    },
+    pendingInteractions: [],
+    turns: [
+      {
+        id: "turn-tool",
+        sessionId: "session-1",
+        profileId: "profile-1",
+        status: "completed",
+        collaborationMode: "default",
+        createdAt: 1,
+        updatedAt: 5,
+      },
+    ],
+    messages: [
+      {
+        id: "msg-user-tool",
+        sessionId: "session-1",
+        turnId: "turn-tool",
+        role: "user",
+        content: "Build a website",
+        displayContent: "Build a website",
+        createdAt: 1,
+      },
+      ...(includeAssistantMessage
+        ? [
+            {
+              id: "msg-assistant-tool",
+              sessionId: "session-1",
+              turnId: "turn-tool",
+              role: "assistant" as const,
+              content: "I will inspect the workspace first.",
+              displayContent: "I will inspect the workspace first.",
+              createdAt: 5,
+            },
+          ]
+        : []),
+    ],
+    runtimeEvents: [
+      {
+        sessionId: "session-1",
+        turnId: "turn-tool",
+        phase: "model_stream_delta",
+        payload: { text: "I will inspect the workspace first." },
+        timestamp: 2,
+      },
+      {
+        sessionId: "session-1",
+        turnId: "turn-tool",
+        phase: "tool_operation_started",
+        payload: {
+          operation: {
+            schemaVersion: "v1",
+            opId: "op-read-after-text",
+            op: "run",
+            path: "/tools/filesystem/read_file",
+            toolPath: "/tools/filesystem/read_file",
+            riskLevel: "low",
+            summary: "Run /tools/filesystem/read_file",
+          },
+        },
+        timestamp: 3,
+      },
+      {
+        sessionId: "session-1",
+        turnId: "turn-tool",
+        phase: "tool_operation_completed",
+        payload: {
+          operation: {
+            schemaVersion: "v1",
+            opId: "op-read-after-text",
+            op: "run",
+            path: "/tools/filesystem/read_file",
+            toolPath: "/tools/filesystem/read_file",
+            riskLevel: "low",
+            summary: "Run /tools/filesystem/read_file",
+          },
+          result: {
+            schemaVersion: "v1",
+            opId: "op-read-after-text",
+            op: "run",
+            path: "/tools/filesystem/read_file",
+            resultRef: "tool_result_after_text",
+            status: "completed",
+            summary: "Read /tools/filesystem/read_file",
+            contentPreview: "{}",
+            contentBytes: 128,
+            truncated: true,
+          },
+        },
+        timestamp: 4,
       },
     ],
   };
