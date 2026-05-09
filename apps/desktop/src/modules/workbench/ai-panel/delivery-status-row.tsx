@@ -11,15 +11,19 @@ import type { AgentSessionDetail } from "./agent-ui-types";
 
 type DeliveryStatusRowProps = {
   readonly detail: AgentSessionDetail | null;
+  readonly onlyNeedsAttention?: boolean | undefined;
 };
 
-export const DeliveryStatusRow = ({ detail }: DeliveryStatusRowProps) => {
+export const DeliveryStatusRow = ({ detail, onlyNeedsAttention = false }: DeliveryStatusRowProps) => {
   const proof = detail?.deliveryProof ?? null;
   const audit = detail?.completionAudit ?? null;
   if (proof === null && audit === null) {
     return null;
   }
   const status = proof?.status ?? audit?.status ?? "pending";
+  if (onlyNeedsAttention && !deliveryNeedsAttention(status)) {
+    return null;
+  }
   const summary = proof?.summary ?? audit?.summary ?? "Delivery proof is pending.";
   const stats = deliveryStats(detail);
   return (
@@ -54,6 +58,12 @@ const statusIcon = (status: string) => {
   }
   return <Circle size={14} aria-hidden="true" />;
 };
+
+const deliveryNeedsAttention = (status: string): boolean =>
+  status === "blocked"
+  || status === "failed"
+  || status === "partial"
+  || status === "partial_allowed";
 
 const statusLabel = (status: string): string => {
   if (status === "ready" || status === "passed") {

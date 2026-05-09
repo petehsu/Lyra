@@ -73,7 +73,7 @@ fn redact_labeled_lines(input: &str, findings: &mut Vec<SecretFinding>) -> Strin
                 "Authorization: Bearer ***",
             ));
             redact_after_separator(line, ':')
-        } else if contains_secret_label(&lower) {
+        } else if secret_assignment_label(&lower).is_some() {
             findings.push(finding(
                 "secret_like_label",
                 "high",
@@ -151,15 +151,47 @@ fn split_line_ending(segment: &str) -> (&str, &str) {
     }
 }
 
-fn contains_secret_label(lower: &str) -> bool {
-    lower.contains("api_key")
-        || lower.contains("apikey")
-        || lower.contains("api-key")
-        || lower.contains("token")
-        || lower.contains("secret")
-        || lower.contains("password")
-        || lower.contains("cookie")
-        || lower.contains("private_key")
+fn secret_assignment_label(lower: &str) -> Option<&str> {
+    let separator = lower.find('=').into_iter().chain(lower.find(':')).min()?;
+    let label = lower[..separator].trim().trim_matches(|ch: char| {
+        ch == '"'
+            || ch == '\''
+            || ch == '`'
+            || ch == '{'
+            || ch == '['
+            || ch == '-'
+            || ch.is_whitespace()
+    });
+    if label.is_empty() {
+        return None;
+    }
+    let normalized = label
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect::<String>();
+    let parts = normalized
+        .split('_')
+        .filter(|part| part.is_empty() == false)
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return None;
+    }
+    if normalized.contains("api_key")
+        || normalized.contains("private_key")
+        || normalized.contains("access_token")
+        || normalized.contains("refresh_token")
+        || normalized.contains("auth_token")
+        || parts.iter().any(|part| {
+            matches!(
+                *part,
+                "apikey" | "token" | "secret" | "password" | "passwd" | "cookie" | "authorization"
+            )
+        })
+    {
+        Some(label)
+    } else {
+        None
+    }
 }
 
 fn redact_after_separator(line: &str, separator: char) -> String {
@@ -261,5 +293,26 @@ mod tests {
         let report = detect_and_redact("one\ntwo\nthree\n");
 
         assert_eq!(report.redacted, "one\ntwo\nthree\n");
+    }
+
+    #[test]
+    fn runtime_resume_token_is_not_treated_as_secret_assignment() {
+        let report = detect_and_redact(
+            r#"- openClarificationTickets=[]; recentAnsweredClarifications=[{"resumeToken":"runtime_turn:turn_1","answerText":"Use README.md"}]; safeAssumptions=[]."#,
+        );
+
+        assert!(report.findings.is_empty());
+        assert!(report.redacted.contains("resumeToken"));
+        assert!(report.redacted.contains("answerText"));
+    }
+
+    #[test]
+    fn label_assignment_detection_uses_left_hand_field() {
+        let report = detect_and_redact(
+            "api_key: secret-value\nnote: this line mentions token and password but is not a secret field",
+        );
+
+        assert!(report.redacted.contains("api_key: [REDACTED]"));
+        assert!(report.redacted.contains("mentions token and password"));
     }
 }

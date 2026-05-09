@@ -69,7 +69,7 @@ const detailWithDraft = (status: AgentLiveDraftSummary["status"] | null): AgentS
           followTargetId: "target-1",
           path: "README.md",
           status,
-          commitOperationId: status === "committed" ? "op-apply" : undefined,
+          ...(status === "committed" ? { commitOperationId: "op-apply" } : {}),
           deltaCount: 2,
           updatedAt: 2,
         },

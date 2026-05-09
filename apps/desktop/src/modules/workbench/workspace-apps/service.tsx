@@ -40,6 +40,7 @@ const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactN
   "ai-mcp": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
   "ai-skills": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
   "ai-plugins": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
+  "agent-vm": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
   "notification-center": (iconKey) =>
     renderNotificationCenterAppIcon(iconKey as "notification-center-default")
 };
@@ -82,6 +83,9 @@ export const isAiSkillsAppId = (value: WorkbenchAppId): value is "ai-skills" =>
 
 export const isAiPluginsAppId = (value: WorkbenchAppId): value is "ai-plugins" =>
   value === "ai-plugins";
+
+export const isAgentVmAppId = (value: WorkbenchAppId): value is "agent-vm" =>
+  value === "agent-vm";
 
 export const isNotificationCenterAppId = (value: WorkbenchAppId): value is "notification-center" =>
   value === "notification-center";

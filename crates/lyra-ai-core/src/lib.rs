@@ -1,4 +1,5 @@
 mod agent_runtime;
+mod agent_vm_password;
 mod artifact;
 mod config;
 mod events;
@@ -6,10 +7,12 @@ mod model_gateway;
 mod patch_apply;
 mod project_policy;
 mod prompt;
+mod secret_broker;
 mod secrets;
 mod security_gate;
 mod storage;
 mod tool_runtime;
+mod tools;
 
 use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
@@ -90,6 +93,11 @@ pub fn execute_agent_message_rollback_json(request_json: String) -> Result<Strin
     to_json(&agent_runtime::execute_message_rollback(request)?)
 }
 
+pub fn rollback_agent_to_turn_json(request_json: String) -> Result<String> {
+    let request = parse_json(request_json)?;
+    to_json(&agent_runtime::rollback_to_turn(request)?)
+}
+
 pub fn start_agent_follow_live_edit_json(request_json: String) -> Result<String> {
     let request = parse_json(request_json)?;
     to_json(&agent_runtime::start_follow_live_edit(request)?)
@@ -142,7 +150,7 @@ pub fn resolve_agent_plan_review_json(request_json: String) -> Result<String> {
 
 pub fn resolve_agent_clarification_json(request_json: String) -> Result<String> {
     let request = parse_json(request_json)?;
-    to_json(&agent_runtime::resolve_clarification(request)?)
+    to_json(&agent_runtime::submit_clarification_response(request)?)
 }
 
 pub fn read_agent_artifact_json(request_json: String) -> Result<String> {
@@ -158,6 +166,78 @@ pub fn apply_agent_patch_json(request_json: String) -> Result<String> {
 pub fn resolve_agent_approval_json(request_json: String) -> Result<String> {
     let request = parse_json(request_json)?;
     to_json(&patch_apply::resolve_agent_approval(request)?)
+}
+
+pub fn list_agent_vms_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::list_agent_vms_json(request_json)
+}
+
+pub fn list_agent_vm_images_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::list_images_json(request_json)
+}
+
+pub fn download_agent_vm_image_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::download_image_json(request_json)
+}
+
+pub fn import_agent_vm_image_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::import_image_json(request_json)
+}
+
+pub fn create_agent_vm_json(request_json: String) -> Result<String> {
+    agent_vm_password::create_agent_vm_json(request_json)
+}
+
+pub fn list_agent_vm_bindings_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::list_session_bindings_json(request_json)
+}
+
+pub fn read_agent_vm_binding_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::read_session_binding_json(request_json)
+}
+
+pub fn attach_agent_vm_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::attach_session_vm_json(request_json)
+}
+
+pub fn takeover_agent_vm_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::takeover_session_vm_json(request_json)
+}
+
+pub fn fork_agent_vm_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::fork_session_vm_json(request_json)
+}
+
+pub fn create_agent_vm_inheritance_profile_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::create_inheritance_profile_json(request_json)
+}
+
+pub fn apply_agent_vm_inheritance_profile_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::apply_inheritance_profile_json(request_json)
+}
+
+pub fn revoke_agent_vm_binding_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::revoke_session_binding_json(request_json)
+}
+
+pub fn start_agent_vm_json(request_json: String) -> Result<String> {
+    agent_vm_password::start_agent_vm_json(request_json)
+}
+
+pub fn stop_agent_vm_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::stop_capsule_json(request_json)
+}
+
+pub fn read_agent_vm_status_json(request_json: String) -> Result<String> {
+    lyra_capsule_core::capsule_status_json(request_json)
+}
+
+pub fn read_agent_vm_password_metadata_json(request_json: String) -> Result<String> {
+    agent_vm_password::read_password_metadata_json(request_json)
+}
+
+pub fn reveal_agent_vm_password_json(request_json: String) -> Result<String> {
+    agent_vm_password::reveal_password_json(request_json)
 }
 
 #[cfg(test)]
@@ -320,6 +400,35 @@ mod tests {
     }
 
     #[test]
+    fn embedded_local_profile_does_not_inject_base_url() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let storage_root = temp.path().to_string_lossy().to_string();
+        let request = serde_json::json!({
+            "storageRoot": storage_root,
+            "name": "llama.cpp Embedded",
+            "providerId": "llama_cpp",
+            "protocolId": "llama_cpp_ffi",
+            "presetId": "llama_cpp_ffi",
+            "connectionConfig": { "modelPath": "/models/local.gguf" },
+            "authConfig": { "modelSelectionMode": "custom" },
+            "secretValues": {},
+            "headers": {},
+            "model": "local.gguf",
+            "customModels": [],
+            "discoveryState": { "status": "idle", "lastCheckedAt": null, "models": [] }
+        });
+
+        let saved = upsert_model_profile_json(request.to_string()).expect("upsert profile");
+        let profile: serde_json::Value = serde_json::from_str(&saved).expect("profile json");
+
+        assert_eq!(
+            profile["connectionConfig"]["modelPath"],
+            "/models/local.gguf"
+        );
+        assert!(profile["connectionConfig"].get("baseUrl").is_none());
+    }
+
+    #[test]
     fn discovery_reports_orphaned_secret_ref_as_settings_fix() {
         let temp = tempfile::tempdir().expect("tempdir");
         let storage_root = temp.path().to_string_lossy().to_string();
@@ -388,6 +497,10 @@ mod tests {
             id: "session-test".to_string(),
             title: "Test".to_string(),
             profile_id: Some("profile-test".to_string()),
+            model_id: None,
+            system_prompt: None,
+            permission_mode: None,
+            execution_target: None,
             project_root: None,
             project_name: None,
             collaboration_mode: "default".to_string(),
@@ -402,6 +515,7 @@ mod tests {
             status: "running".to_string(),
             collaboration_mode: Some("default".to_string()),
             permission_mode: "sandbox".to_string(),
+            execution_target: "host".to_string(),
             error_code: None,
             error_message: None,
             usage: None,

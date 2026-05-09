@@ -15,7 +15,8 @@ pub struct SecretDetectionReport {
     pub redacted: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SecurityGateOutcome {
     pub decision_id: Option<String>,
     pub decision: String,

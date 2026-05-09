@@ -1,650 +1,192 @@
+mod handlers;
 mod modules;
+mod router;
 
+#[cfg(unix)]
+use std::collections::HashMap;
+#[cfg(unix)]
 use std::env;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+#[cfg(unix)]
+use std::path::PathBuf;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(unix)]
+use std::sync::{Arc, Mutex};
 
+#[cfg(unix)]
 use lyra_ai_core::{
-    append_agent_follow_live_edit_json, apply_agent_patch_json, cancel_agent_turn_json,
-    clear_rust_event_callback as clear_ai_event_callback, commit_agent_follow_live_edit_json,
-    create_agent_plan_json, create_agent_session_json, create_agent_todo_json,
-    delete_model_profile_json, discard_agent_follow_live_edit_json, discover_models_json,
-    execute_agent_message_rollback_json, list_agent_sessions_json, pause_agent_follow_json,
-    preview_agent_message_rollback_json, read_agent_artifact_json, read_agent_follow_json,
-    read_agent_rollback_preview_json, read_agent_session_json, read_model_config_json,
-    register_rust_event_callback as register_ai_event_callback, resolve_agent_approval_json,
-    resolve_agent_clarification_json, resolve_agent_plan_review_json, resume_agent_follow_json,
-    send_agent_turn_json, start_agent_follow_live_edit_json, update_agent_session_json,
-    upsert_model_profile_json,
+    clear_rust_event_callback as clear_ai_event_callback,
+    register_rust_event_callback as register_ai_event_callback,
 };
+#[cfg(unix)]
 use lyra_lsp_core::{
-    change_document as lsp_change_document, clear_rust_event_callback as clear_lsp_event_callback,
-    close_document as lsp_close_document, completion as lsp_completion,
-    find_references as lsp_find_references, get_diagnostics as lsp_get_diagnostics,
-    goto_definition as lsp_goto_definition, hover as lsp_hover, open_document as lsp_open_document,
-    register_rust_event_callback as register_lsp_event_callback,
-    save_document as lsp_save_document, shutdown as shutdown_lsp, LspCompletionRequest,
-    LspDiagnosticsRequest, LspDocumentRequest, LspPositionRequest,
+    clear_rust_event_callback as clear_lsp_event_callback,
+    register_rust_event_callback as register_lsp_event_callback, shutdown as shutdown_lsp,
 };
+#[cfg(unix)]
 use lyra_mcp_core::{
-    clear_rust_event_callback as clear_mcp_event_callback, create_mcp_server_from_template_json,
-    delete_mcp_secret_refs_json, materialize_mcp_runtime_environment_json,
-    merge_mcp_effective_config_json, normalize_mcp_environment_input_json,
-    read_mcp_runtime_introspection_json, read_mcp_runtime_statuses_json,
-    read_mcp_scope_document_json, read_mcp_secret_store_json,
-    register_rust_event_callback as register_mcp_event_callback, restart_mcp_runtime_json,
-    sanitize_mcp_environment_json, shutdown_mcp_runtime, start_mcp_runtime_json,
-    stop_mcp_runtime_json, validate_mcp_server_json, write_mcp_managed_manifest_json,
-    write_mcp_scope_document_json, write_mcp_secret_store_json,
+    clear_rust_event_callback as clear_mcp_event_callback,
+    register_rust_event_callback as register_mcp_event_callback, shutdown_mcp_runtime,
 };
-use lyra_runtime_protocol::{
-    HandshakeRequest, HandshakeResponse, RuntimeEnvelope, RuntimeError, PROTOCOL_VERSION,
-};
+#[cfg(unix)]
+use lyra_runtime_protocol::{RuntimeEnvelope, RuntimeError};
+#[cfg(unix)]
 use lyra_terminal_core::{
     clear_rust_event_callback as clear_terminal_event_callback,
-    close_session as close_terminal_session, create_session as create_terminal_session,
-    read_session as read_terminal_session,
     register_rust_event_callback as register_terminal_event_callback,
-    resize_session as resize_terminal_session, restore_sessions as restore_terminal_sessions,
-    shutdown as shutdown_terminal, write_session as write_terminal_session, TerminalCloseRequest,
-    TerminalCreateRequest, TerminalReadRequest, TerminalResizeRequest, TerminalRestoreRequest,
-    TerminalWriteRequest,
+    shutdown as shutdown_terminal,
 };
-use modules::code_intel::{
-    expand_code_graph_json, read_code_index_status_json, rebuild_code_index_json,
-    search_code_symbol_json, search_code_text_json,
-};
-use modules::fs::{
-    read_search_index_status_json, rebuild_search_index_json, search_local_json,
-    search_local_stream_cancel_json, search_local_stream_read_json, search_local_stream_start_json,
-};
-use modules::web::{
-    search_site_stream_cancel_json, search_site_stream_read_json, search_site_stream_start_json,
-};
-use serde::{Deserialize, Serialize};
+#[cfg(unix)]
 use serde_json::{json, Value};
+#[cfg(unix)]
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
+#[cfg(unix)]
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
-const RUNTIME_NAME: &str = "lyrad";
-const TERMINAL_RUNTIME_EVENT_NAME: &str = "terminal.runtime";
-const MCP_RUNTIME_EVENT_NAME: &str = "mcp.runtime";
-const LSP_RUNTIME_EVENT_NAME: &str = "lsp.runtime";
-const AI_RUNTIME_EVENT_NAME: &str = "agent.runtime";
+pub(crate) const RUNTIME_NAME: &str = "lyrad";
+#[cfg(unix)]
 const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
+#[cfg(unix)]
+const TERMINAL_RUNTIME_EVENT_NAME: &str = "terminal.runtime";
+#[cfg(unix)]
+const MCP_RUNTIME_EVENT_NAME: &str = "mcp.runtime";
+#[cfg(unix)]
+const LSP_RUNTIME_EVENT_NAME: &str = "lsp.runtime";
+#[cfg(unix)]
+const AI_RUNTIME_EVENT_NAME: &str = "agent.runtime";
 
+fn main() {
+    run();
+}
+
+#[cfg(unix)]
+fn run() {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(TOKIO_WORKER_STACK_SIZE_BYTES)
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("failed to initialize {RUNTIME_NAME} runtime: {error}");
+            std::process::exit(1);
+        }
+    };
+
+    runtime.block_on(run_unix_runtime());
+}
+
+#[cfg(not(unix))]
+fn run() {
+    eprintln!("lyrad local socket runtime is currently implemented for unix targets only");
+    std::process::exit(1);
+}
+
+#[cfg(unix)]
 #[derive(Clone)]
 struct ConnectionContext {
     outgoing: UnboundedSender<RuntimeEnvelope>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeTerminalCreateRequest {
-    session_id: Option<String>,
-    title: Option<String>,
-    cwd: Option<String>,
-    shell: Option<String>,
-    cols: u16,
-    rows: u16,
-    source: Option<String>,
-    mode: Option<String>,
-    command: Option<String>,
-    persist: Option<bool>,
+#[cfg(unix)]
+#[derive(Clone, Default)]
+struct DaemonSessionManager {
+    inner: Arc<DaemonSessionManagerInner>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeTerminalRestoreRequest {
-    sessions: Vec<RuntimeTerminalCreateRequest>,
+#[cfg(unix)]
+#[derive(Default)]
+struct DaemonSessionManagerInner {
+    next_id: AtomicU64,
+    connections: Mutex<HashMap<u64, UnboundedSender<RuntimeEnvelope>>>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeTerminalWriteRequest {
-    session_id: String,
-    data: Option<String>,
-    text: Option<String>,
-    keys: Option<Vec<String>>,
-    append_newline: Option<bool>,
-    source: Option<String>,
-}
+#[cfg(unix)]
+impl DaemonSessionManager {
+    fn register(&self, outgoing: UnboundedSender<RuntimeEnvelope>) -> u64 {
+        let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+        if let Ok(mut connections) = self.inner.connections.lock() {
+            connections.insert(id, outgoing);
+        }
+        id
+    }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeTerminalReadRequest {
-    session_id: String,
-    cursor: Option<String>,
-    max_bytes: Option<u32>,
-    wait_ms: Option<u32>,
-}
+    fn unregister(&self, id: u64) {
+        if let Ok(mut connections) = self.inner.connections.lock() {
+            connections.remove(&id);
+        }
+    }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeTerminalResizeRequest {
-    session_id: String,
-    cols: u16,
-    rows: u16,
-}
+    fn broadcast(&self, envelope: RuntimeEnvelope) {
+        let Ok(connections) = self.inner.connections.lock() else {
+            return;
+        };
+        for outgoing in connections.values() {
+            let _ = outgoing.send(envelope.clone());
+        }
+    }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeTerminalCloseRequest {
-    session_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeLspDocumentRequest {
-    session_id: String,
-    file_path: String,
-    language_id: String,
-    content: String,
-    version: i32,
-    project_root: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeLspCompletionRequest {
-    session_id: String,
-    file_path: String,
-    language_id: String,
-    line: u32,
-    column: u32,
-    version: i32,
-    project_root: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeLspPositionRequest {
-    file_path: String,
-    language_id: String,
-    line: u32,
-    column: u32,
-    project_root: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeLspDiagnosticsRequest {
-    file_path: String,
-    language_id: String,
-    content: String,
-    version: i32,
-    project_root: Option<String>,
-}
-
-fn runtime_error(code: &str, message: impl Into<String>) -> RuntimeError {
-    RuntimeError::new(code, message.into())
-}
-
-fn map_runtime_error(error: impl std::fmt::Display) -> RuntimeError {
-    runtime_error("RUNTIME_ERROR", error.to_string())
-}
-
-fn json_request(payload: Value) -> Result<String, RuntimeError> {
-    serde_json::to_string(&payload)
-        .map_err(|error| runtime_error("SERDE_ENCODE_FAILED", error.to_string()))
-}
-
-fn parse_json_result(payload: String) -> Result<Value, RuntimeError> {
-    serde_json::from_str(&payload)
-        .map_err(|error| runtime_error("SERDE_DECODE_FAILED", error.to_string()))
-}
-
-fn call_json<E>(
-    payload: Value,
-    handler: impl FnOnce(String) -> Result<String, E>,
-) -> Result<Value, RuntimeError>
-where
-    E: std::fmt::Display,
-{
-    let request_json = json_request(payload)?;
-    let response_json = handler(request_json).map_err(map_runtime_error)?;
-    parse_json_result(response_json)
-}
-
-fn call_json_noarg<E>(handler: impl FnOnce() -> Result<String, E>) -> Result<Value, RuntimeError>
-where
-    E: std::fmt::Display,
-{
-    let response_json = handler().map_err(map_runtime_error)?;
-    parse_json_result(response_json)
-}
-
-fn call_void<E>(
-    payload: Value,
-    handler: impl FnOnce(String) -> Result<(), E>,
-) -> Result<Value, RuntimeError>
-where
-    E: std::fmt::Display,
-{
-    let request_json = json_request(payload)?;
-    handler(request_json).map_err(map_runtime_error)?;
-    Ok(Value::Null)
-}
-
-fn to_value<T: Serialize>(value: &T) -> Result<Value, RuntimeError> {
-    serde_json::to_value(value)
-        .map_err(|error| runtime_error("SERDE_ENCODE_FAILED", error.to_string()))
-}
-
-fn map_terminal_create_request(request: RuntimeTerminalCreateRequest) -> TerminalCreateRequest {
-    TerminalCreateRequest {
-        session_id: request.session_id,
-        title: request.title,
-        cwd: request.cwd,
-        shell: request.shell,
-        cols: request.cols,
-        rows: request.rows,
-        source: request.source,
-        mode: request.mode,
-        command: request.command,
-        persist: request.persist,
+    #[cfg(test)]
+    fn connection_count(&self) -> usize {
+        self.inner
+            .connections
+            .lock()
+            .map(|connections| connections.len())
+            .unwrap_or(0)
     }
 }
 
-fn normalize_terminal_restore_request(
-    request: RuntimeTerminalRestoreRequest,
-) -> TerminalRestoreRequest {
-    TerminalRestoreRequest {
-        sessions: request
-            .sessions
-            .into_iter()
-            .map(map_terminal_create_request)
-            .collect(),
+#[cfg(unix)]
+async fn run_unix_runtime() {
+    let socket_path = resolve_socket_path();
+    if let Some(parent) = socket_path.parent() {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            eprintln!(
+                "failed to create socket directory {}: {error}",
+                parent.display()
+            );
+            std::process::exit(1);
+        }
     }
-}
-
-fn handle_terminal_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
-    match method {
-        "terminal.sessions.create" => {
-            let request: RuntimeTerminalCreateRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            let snapshot = create_terminal_session(map_terminal_create_request(request))
-                .map_err(map_runtime_error)?;
-            to_value(&snapshot)
-        }
-        "terminal.sessions.restore" => {
-            let request: RuntimeTerminalRestoreRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            let snapshots = restore_terminal_sessions(normalize_terminal_restore_request(request))
-                .map_err(map_runtime_error)?;
-            to_value(&snapshots)
-        }
-        "terminal.sessions.write" => {
-            let request: RuntimeTerminalWriteRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            write_terminal_session(TerminalWriteRequest {
-                session_id: request.session_id,
-                data: request.data,
-                text: request.text,
-                keys: request.keys,
-                append_newline: request.append_newline,
-                source: request.source,
-            })
-            .map_err(map_runtime_error)?;
-            Ok(Value::Null)
-        }
-        "terminal.sessions.read" => {
-            let request: RuntimeTerminalReadRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            let response = read_terminal_session(TerminalReadRequest {
-                session_id: request.session_id,
-                cursor: request.cursor,
-                max_bytes: request.max_bytes,
-                wait_ms: request.wait_ms,
-            })
-            .map_err(map_runtime_error)?;
-            to_value(&response)
-        }
-        "terminal.sessions.resize" => {
-            let request: RuntimeTerminalResizeRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            resize_terminal_session(TerminalResizeRequest {
-                session_id: request.session_id,
-                cols: request.cols,
-                rows: request.rows,
-            })
-            .map_err(map_runtime_error)?;
-            Ok(Value::Null)
-        }
-        "terminal.sessions.close" => {
-            let request: RuntimeTerminalCloseRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            close_terminal_session(TerminalCloseRequest {
-                session_id: request.session_id,
-            })
-            .map_err(map_runtime_error)?;
-            Ok(Value::Null)
-        }
-        _ => Err(runtime_error(
-            "METHOD_NOT_FOUND",
-            format!("unknown terminal runtime method: {method}"),
-        )),
+    if socket_path.exists() {
+        let _ = std::fs::remove_file(&socket_path);
     }
-}
 
-fn handle_lsp_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
-    match method {
-        "lsp.documents.open" => {
-            let request: RuntimeLspDocumentRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            lsp_open_document(LspDocumentRequest {
-                session_id: request.session_id,
-                file_path: request.file_path,
-                language_id: request.language_id,
-                content: request.content,
-                version: request.version,
-                project_root: request.project_root,
-            })
-            .map_err(map_runtime_error)?;
-            Ok(Value::Null)
+    let listener = match UnixListener::bind(&socket_path) {
+        Ok(listener) => listener,
+        Err(error) => {
+            eprintln!(
+                "failed to bind runtime socket {}: {error}",
+                socket_path.display()
+            );
+            std::process::exit(1);
         }
-        "lsp.documents.change" => {
-            let request: RuntimeLspDocumentRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            lsp_change_document(LspDocumentRequest {
-                session_id: request.session_id,
-                file_path: request.file_path,
-                language_id: request.language_id,
-                content: request.content,
-                version: request.version,
-                project_root: request.project_root,
-            })
-            .map_err(map_runtime_error)?;
-            Ok(Value::Null)
-        }
-        "lsp.documents.save" => {
-            let request: RuntimeLspDocumentRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            lsp_save_document(LspDocumentRequest {
-                session_id: request.session_id,
-                file_path: request.file_path,
-                language_id: request.language_id,
-                content: request.content,
-                version: request.version,
-                project_root: request.project_root,
-            })
-            .map_err(map_runtime_error)?;
-            Ok(Value::Null)
-        }
-        "lsp.documents.close" => {
-            let request: RuntimeLspDocumentRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            lsp_close_document(LspDocumentRequest {
-                session_id: request.session_id,
-                file_path: request.file_path,
-                language_id: request.language_id,
-                content: request.content,
-                version: request.version,
-                project_root: request.project_root,
-            })
-            .map_err(map_runtime_error)?;
-            Ok(Value::Null)
-        }
-        "lsp.completion" => {
-            let request: RuntimeLspCompletionRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            let result = lsp_completion(LspCompletionRequest {
-                session_id: request.session_id,
-                file_path: request.file_path,
-                language_id: request.language_id,
-                line: request.line,
-                column: request.column,
-                version: request.version,
-                project_root: request.project_root,
-            })
-            .map_err(map_runtime_error)?;
-            to_value(&result)
-        }
-        "lsp.goto_definition" => {
-            let request: RuntimeLspPositionRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            let result = lsp_goto_definition(LspPositionRequest {
-                file_path: request.file_path,
-                language_id: request.language_id,
-                line: request.line,
-                column: request.column,
-                project_root: request.project_root,
-            })
-            .map_err(map_runtime_error)?;
-            to_value(&result)
-        }
-        "lsp.find_references" => {
-            let request: RuntimeLspPositionRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            let result = lsp_find_references(LspPositionRequest {
-                file_path: request.file_path,
-                language_id: request.language_id,
-                line: request.line,
-                column: request.column,
-                project_root: request.project_root,
-            })
-            .map_err(map_runtime_error)?;
-            to_value(&result)
-        }
-        "lsp.hover" => {
-            let request: RuntimeLspPositionRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            let result = lsp_hover(LspPositionRequest {
-                file_path: request.file_path,
-                language_id: request.language_id,
-                line: request.line,
-                column: request.column,
-                project_root: request.project_root,
-            })
-            .map_err(map_runtime_error)?;
-            to_value(&result)
-        }
-        "lsp.get_diagnostics" => {
-            let request: RuntimeLspDiagnosticsRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            let result = lsp_get_diagnostics(LspDiagnosticsRequest {
-                file_path: request.file_path,
-                language_id: request.language_id,
-                content: request.content,
-                version: request.version,
-                project_root: request.project_root,
-            })
-            .map_err(map_runtime_error)?;
-            to_value(&result)
-        }
-        _ => Err(runtime_error(
-            "METHOD_NOT_FOUND",
-            format!("unknown lsp runtime method: {method}"),
-        )),
-    }
-}
-
-fn handle_mcp_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
-    match method {
-        "mcp.read_scope_document" => call_json(payload, read_mcp_scope_document_json),
-        "mcp.write_scope_document" => call_void(payload, write_mcp_scope_document_json),
-        "mcp.read_secret_store" => call_json(payload, read_mcp_secret_store_json),
-        "mcp.write_secret_store" => call_void(payload, write_mcp_secret_store_json),
-        "mcp.sanitize_environment" => call_json(payload, sanitize_mcp_environment_json),
-        "mcp.normalize_environment_input" => {
-            call_json(payload, normalize_mcp_environment_input_json)
-        }
-        "mcp.delete_secret_refs" => call_json(payload, delete_mcp_secret_refs_json),
-        "mcp.merge_effective_config" => call_json(payload, merge_mcp_effective_config_json),
-        "mcp.validate_server" => call_json(payload, validate_mcp_server_json),
-        "mcp.write_managed_manifest" => call_void(payload, write_mcp_managed_manifest_json),
-        "mcp.materialize_runtime_environment" => {
-            call_json(payload, materialize_mcp_runtime_environment_json)
-        }
-        "mcp.create_server_from_template" => {
-            call_json(payload, create_mcp_server_from_template_json)
-        }
-        "mcp.read_runtime_statuses" => call_json_noarg(read_mcp_runtime_statuses_json),
-        "mcp.read_runtime_introspection" => call_json(payload, read_mcp_runtime_introspection_json),
-        "mcp.start_runtime" => call_json(payload, start_mcp_runtime_json),
-        "mcp.stop_runtime" => call_json(payload, stop_mcp_runtime_json),
-        "mcp.restart_runtime" => call_json(payload, restart_mcp_runtime_json),
-        _ => Err(runtime_error(
-            "METHOD_NOT_FOUND",
-            format!("unknown mcp runtime method: {method}"),
-        )),
-    }
-}
-
-fn handle_search_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
-    match method {
-        "search.local" => call_json(payload, search_local_json),
-        "search.local.stream.start" => call_json(payload, search_local_stream_start_json),
-        "search.local.stream.read" => call_json(payload, search_local_stream_read_json),
-        "search.local.stream.cancel" => call_json(payload, search_local_stream_cancel_json),
-        "search.index.status" => call_json(payload, read_search_index_status_json),
-        "search.index.rebuild" => call_json(payload, rebuild_search_index_json),
-        "search.site.stream.start" => call_json(payload, search_site_stream_start_json),
-        "search.site.stream.read" => call_json(payload, search_site_stream_read_json),
-        "search.site.stream.cancel" => call_json(payload, search_site_stream_cancel_json),
-        _ => Err(runtime_error(
-            "METHOD_NOT_FOUND",
-            format!("unknown search runtime method: {method}"),
-        )),
-    }
-}
-
-fn handle_code_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
-    match method {
-        "code.index.status" => call_json(payload, read_code_index_status_json),
-        "code.index.rebuild" => call_json(payload, rebuild_code_index_json),
-        "code.search.text" => call_json(payload, search_code_text_json),
-        "code.search.symbol" => call_json(payload, search_code_symbol_json),
-        "code.graph.expand" => call_json(payload, expand_code_graph_json),
-        _ => Err(runtime_error(
-            "METHOD_NOT_FOUND",
-            format!("unknown code runtime method: {method}"),
-        )),
-    }
-}
-
-fn handle_ai_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
-    match method {
-        "model.config.read" => call_json(payload, read_model_config_json),
-        "model.profile.upsert" => call_json(payload, upsert_model_profile_json),
-        "model.profile.delete" => call_void(payload, delete_model_profile_json),
-        "model.models.discover" => call_json(payload, discover_models_json),
-        "agent.sessions.list" => call_json(payload, list_agent_sessions_json),
-        "agent.sessions.create" => call_json(payload, create_agent_session_json),
-        "agent.sessions.read" => call_json(payload, read_agent_session_json),
-        "agent.sessions.update" => call_json(payload, update_agent_session_json),
-        "agent.follow.read" => call_json(payload, read_agent_follow_json),
-        "agent.follow.pause" => call_json(payload, pause_agent_follow_json),
-        "agent.follow.resume" => call_json(payload, resume_agent_follow_json),
-        "agent.follow.live_edit.start" => call_json(payload, start_agent_follow_live_edit_json),
-        "agent.follow.live_edit.append" => call_json(payload, append_agent_follow_live_edit_json),
-        "agent.follow.live_edit.commit" => call_json(payload, commit_agent_follow_live_edit_json),
-        "agent.follow.live_edit.discard" => call_json(payload, discard_agent_follow_live_edit_json),
-        "agent.rollback.read" => call_json(payload, read_agent_rollback_preview_json),
-        "agent.rollback.preview" => call_json(payload, preview_agent_message_rollback_json),
-        "agent.rollback.execute" => call_json(payload, execute_agent_message_rollback_json),
-        "agent.turn.send" => call_json(payload, send_agent_turn_json),
-        "agent.turn.cancel" => call_json(payload, cancel_agent_turn_json),
-        "agent.todo.create" => call_json(payload, create_agent_todo_json),
-        "agent.plan.create" => call_json(payload, create_agent_plan_json),
-        "agent.plan.review.resolve" => call_json(payload, resolve_agent_plan_review_json),
-        "agent.clarification.resolve" => call_json(payload, resolve_agent_clarification_json),
-        "agent.artifact.read" => call_json(payload, read_agent_artifact_json),
-        "agent.patch.apply" => call_json(payload, apply_agent_patch_json),
-        "agent.approval.resolve" => call_json(payload, resolve_agent_approval_json),
-        _ => Err(runtime_error(
-            "METHOD_NOT_FOUND",
-            format!("unknown ai runtime method: {method}"),
-        )),
-    }
-}
-
-fn handle_runtime_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
-    match method {
-        "runtime.handshake" => {
-            let request: HandshakeRequest = serde_json::from_value(payload)
-                .map_err(|error| runtime_error("BAD_REQUEST", error.to_string()))?;
-            if request.protocol_version != PROTOCOL_VERSION {
-                return Err(runtime_error(
-                    "PROTOCOL_VERSION_MISMATCH",
-                    format!(
-                        "expected protocol version {}, got {}",
-                        PROTOCOL_VERSION, request.protocol_version
-                    ),
-                ));
-            }
-            serde_json::to_value(HandshakeResponse {
-                protocol_version: PROTOCOL_VERSION,
-                server_name: RUNTIME_NAME.to_string(),
-            })
-            .map_err(|error| runtime_error("SERDE_ENCODE_FAILED", error.to_string()))
-        }
-        method if method.starts_with("code.") => handle_code_request(method, payload),
-        method if method.starts_with("search.") => handle_search_request(method, payload),
-        method if method.starts_with("terminal.") => handle_terminal_request(method, payload),
-        method if method.starts_with("mcp.") => handle_mcp_request(method, payload),
-        method if method.starts_with("lsp.") => handle_lsp_request(method, payload),
-        method if method.starts_with("model.") || method.starts_with("agent.") => {
-            handle_ai_request(method, payload)
-        }
-        other => Err(runtime_error(
-            "METHOD_NOT_FOUND",
-            format!("unknown runtime method: {other}"),
-        )),
-    }
-}
-
-fn forward_json_event(
-    outgoing: &UnboundedSender<RuntimeEnvelope>,
-    event_name: &str,
-    payload_json: &str,
-) {
-    let payload = match serde_json::from_str::<Value>(payload_json) {
-        Ok(payload) => payload,
-        Err(error) => json!({
-            "kind": "error",
-            "message": format!("failed to decode {event_name} payload: {error}")
-        }),
     };
-    let _ = outgoing.send(RuntimeEnvelope::Event {
-        event: event_name.to_string(),
-        payload,
-    });
+
+    let sessions = DaemonSessionManager::default();
+    register_runtime_hooks(&sessions);
+    loop {
+        match listener.accept().await {
+            Ok((stream, _addr)) => {
+                let sessions = sessions.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = serve_connection(stream, sessions).await {
+                        eprintln!("runtime connection error: {}", error.message);
+                    }
+                });
+            }
+            Err(error) => {
+                eprintln!("failed to accept runtime connection: {error}");
+                shutdown_runtime_modules();
+                std::process::exit(1);
+            }
+        }
+    }
 }
 
-fn register_runtime_hooks(connection: &ConnectionContext) {
-    let terminal_outgoing = connection.outgoing.clone();
-    register_terminal_event_callback(Arc::new(move |event_json| {
-        forward_json_event(&terminal_outgoing, TERMINAL_RUNTIME_EVENT_NAME, &event_json);
-    }));
-
-    let mcp_outgoing = connection.outgoing.clone();
-    register_mcp_event_callback(Arc::new(move |event_json| {
-        forward_json_event(&mcp_outgoing, MCP_RUNTIME_EVENT_NAME, &event_json);
-    }));
-
-    let lsp_outgoing = connection.outgoing.clone();
-    register_lsp_event_callback(Arc::new(move |event_json| {
-        forward_json_event(&lsp_outgoing, LSP_RUNTIME_EVENT_NAME, &event_json);
-    }));
-
-    let ai_outgoing = connection.outgoing.clone();
-    register_ai_event_callback(Arc::new(move |event_json| {
-        forward_json_event(&ai_outgoing, AI_RUNTIME_EVENT_NAME, &event_json);
-    }));
-}
-
-fn shutdown_runtime_modules() {
-    let _ = shutdown_terminal();
-    let _ = shutdown_mcp_runtime();
-    let _ = shutdown_lsp();
-    clear_terminal_event_callback();
-    clear_mcp_event_callback();
-    clear_lsp_event_callback();
-    clear_ai_event_callback();
-}
-
+#[cfg(unix)]
 fn resolve_socket_path() -> PathBuf {
     let mut args = env::args().skip(1);
     while let Some(argument) = args.next() {
@@ -657,6 +199,56 @@ fn resolve_socket_path() -> PathBuf {
     panic!("missing required --socket argument");
 }
 
+#[cfg(unix)]
+fn forward_json_event(sessions: &DaemonSessionManager, event_name: &str, payload_json: &str) {
+    let payload = match serde_json::from_str::<Value>(payload_json) {
+        Ok(payload) => payload,
+        Err(error) => json!({
+            "kind": "error",
+            "message": format!("failed to decode {event_name} payload: {error}")
+        }),
+    };
+    sessions.broadcast(RuntimeEnvelope::Event {
+        event: event_name.to_string(),
+        payload,
+    });
+}
+
+#[cfg(unix)]
+fn register_runtime_hooks(sessions: &DaemonSessionManager) {
+    let terminal_sessions = sessions.clone();
+    register_terminal_event_callback(Arc::new(move |event_json| {
+        forward_json_event(&terminal_sessions, TERMINAL_RUNTIME_EVENT_NAME, &event_json);
+    }));
+
+    let mcp_sessions = sessions.clone();
+    register_mcp_event_callback(Arc::new(move |event_json| {
+        forward_json_event(&mcp_sessions, MCP_RUNTIME_EVENT_NAME, &event_json);
+    }));
+
+    let lsp_sessions = sessions.clone();
+    register_lsp_event_callback(Arc::new(move |event_json| {
+        forward_json_event(&lsp_sessions, LSP_RUNTIME_EVENT_NAME, &event_json);
+    }));
+
+    let ai_sessions = sessions.clone();
+    register_ai_event_callback(Arc::new(move |event_json| {
+        forward_json_event(&ai_sessions, AI_RUNTIME_EVENT_NAME, &event_json);
+    }));
+}
+
+#[cfg(unix)]
+fn shutdown_runtime_modules() {
+    let _ = shutdown_terminal();
+    let _ = shutdown_mcp_runtime();
+    let _ = shutdown_lsp();
+    clear_terminal_event_callback();
+    clear_mcp_event_callback();
+    clear_lsp_event_callback();
+    clear_ai_event_callback();
+}
+
+#[cfg(unix)]
 async fn write_loop(
     mut writer: tokio::net::unix::OwnedWriteHalf,
     mut receiver: tokio::sync::mpsc::UnboundedReceiver<RuntimeEnvelope>,
@@ -675,6 +267,7 @@ async fn write_loop(
     }
 }
 
+#[cfg(unix)]
 async fn handle_request_envelope(
     connection: ConnectionContext,
     id: String,
@@ -683,7 +276,9 @@ async fn handle_request_envelope(
 ) {
     let outgoing = connection.outgoing.clone();
     let response =
-        match tokio::task::spawn_blocking(move || handle_runtime_request(&method, payload)).await {
+        match tokio::task::spawn_blocking(move || router::handle_runtime_request(&method, payload))
+            .await
+        {
             Ok(Ok(result)) => RuntimeEnvelope::Response {
                 id,
                 ok: true,
@@ -700,117 +295,86 @@ async fn handle_request_envelope(
                 id,
                 ok: false,
                 result: None,
-                error: Some(runtime_error("TASK_JOIN_FAILED", error.to_string())),
+                error: Some(router::runtime_error("TASK_JOIN_FAILED", error.to_string())),
             },
         };
     let _ = outgoing.send(response);
 }
 
-async fn serve_connection(stream: UnixStream) -> Result<(), RuntimeError> {
+#[cfg(unix)]
+async fn serve_connection(
+    stream: UnixStream,
+    sessions: DaemonSessionManager,
+) -> Result<(), RuntimeError> {
     let (reader, writer) = stream.into_split();
     let (outgoing, receiver) = unbounded_channel::<RuntimeEnvelope>();
+    let connection_id = sessions.register(outgoing.clone());
     let context = ConnectionContext {
         outgoing: outgoing.clone(),
     };
-    register_runtime_hooks(&context);
 
     let writer_task = tokio::spawn(write_loop(writer, receiver));
     let mut lines = BufReader::new(reader).lines();
 
-    while let Some(line) = lines
-        .next_line()
-        .await
-        .map_err(|error| runtime_error("SOCKET_READ_FAILED", error.to_string()))?
-    {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let envelope: RuntimeEnvelope = serde_json::from_str(&line)
-            .map_err(|error| runtime_error("PROTOCOL_DECODE_FAILED", error.to_string()))?;
-        match envelope {
-            RuntimeEnvelope::Request {
-                id,
-                method,
-                payload,
-            } => {
-                tokio::spawn(handle_request_envelope(
-                    context.clone(),
+    let result = async {
+        while let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|error| router::runtime_error("SOCKET_READ_FAILED", error.to_string()))?
+        {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let envelope: RuntimeEnvelope = serde_json::from_str(&line).map_err(|error| {
+                router::runtime_error("PROTOCOL_DECODE_FAILED", error.to_string())
+            })?;
+            match envelope {
+                RuntimeEnvelope::Request {
                     id,
                     method,
                     payload,
-                ));
+                } => {
+                    tokio::spawn(handle_request_envelope(
+                        context.clone(),
+                        id,
+                        method,
+                        payload,
+                    ));
+                }
+                RuntimeEnvelope::Response { .. } | RuntimeEnvelope::Event { .. } => {}
             }
-            RuntimeEnvelope::Response { .. } => {}
-            RuntimeEnvelope::Event { .. } => {}
         }
+        Ok(())
     }
+    .await;
 
     writer_task.abort();
-    shutdown_runtime_modules();
-    Ok(())
-}
-
-#[cfg(unix)]
-fn main() {
-    let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_stack_size(TOKIO_WORKER_STACK_SIZE_BYTES)
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!("failed to initialize {RUNTIME_NAME} runtime: {error}");
-            std::process::exit(1);
-        }
-    };
-
-    runtime.block_on(run_unix_runtime());
-}
-
-#[cfg(unix)]
-async fn run_unix_runtime() {
-    let socket_path = resolve_socket_path();
-    if let Some(parent) = socket_path.parent() {
-        if let Err(error) = std::fs::create_dir_all(parent) {
-            eprintln!(
-                "failed to create socket directory {}: {error}",
-                parent.display()
-            );
-            std::process::exit(1);
-        }
-    }
-    if Path::new(&socket_path).exists() {
-        let _ = std::fs::remove_file(&socket_path);
-    }
-
-    let listener = match UnixListener::bind(&socket_path) {
-        Ok(listener) => listener,
-        Err(error) => {
-            eprintln!(
-                "failed to bind runtime socket {}: {error}",
-                socket_path.display()
-            );
-            std::process::exit(1);
-        }
-    };
-
-    match listener.accept().await {
-        Ok((stream, _addr)) => {
-            if let Err(error) = serve_connection(stream).await {
-                eprintln!("runtime server error: {}", error.message);
-                std::process::exit(1);
-            }
-        }
-        Err(error) => {
-            eprintln!("failed to accept runtime connection: {error}");
-            std::process::exit(1);
-        }
-    }
+    sessions.unregister(connection_id);
+    result
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::router::{handle_ai_request, handle_runtime_request};
+    use crate::DaemonSessionManager;
+    use lyra_runtime_protocol::RuntimeEnvelope;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    #[test]
+    fn registers_unregisters_and_broadcasts_connections() {
+        let manager = DaemonSessionManager::default();
+        let (sender, mut receiver) = unbounded_channel();
+        let id = manager.register(sender);
+
+        assert_eq!(manager.connection_count(), 1);
+        manager.broadcast(RuntimeEnvelope::Event {
+            event: "runtime.test".to_string(),
+            payload: serde_json::json!({ "ok": true }),
+        });
+        assert!(receiver.try_recv().is_ok());
+        manager.unregister(id);
+        assert_eq!(manager.connection_count(), 0);
+    }
 
     #[test]
     fn ai_artifact_read_route_is_registered() {
@@ -827,6 +391,14 @@ mod tests {
 
         assert_eq!(error.code, "RUNTIME_ERROR");
         assert!(error.message.contains("AI diff artifact not found"));
+    }
+
+    #[test]
+    fn runtime_reload_route_is_registered() {
+        let result =
+            handle_runtime_request("runtime.reload", serde_json::json!({})).expect("reload route");
+
+        assert_eq!(result["status"], "reloaded");
     }
 
     #[test]
@@ -935,6 +507,15 @@ mod tests {
                     "confirmationToken": "restore"
                 }),
             ),
+            (
+                "agent.rollback.to_turn",
+                serde_json::json!({
+                    "storageRoot": temp.path().to_string_lossy(),
+                    "sessionId": "session-missing",
+                    "targetTurnId": "turn-missing",
+                    "confirmationToken": "restore"
+                }),
+            ),
         ] {
             let error = handle_ai_request(method, payload)
                 .expect_err("missing session should be a runtime error");
@@ -960,6 +541,28 @@ mod tests {
 
         assert_eq!(error.code, "RUNTIME_ERROR");
         assert!(error.message.contains("approval ticket not found"));
+    }
+
+    #[test]
+    fn ai_approval_resume_alias_routes_are_registered() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        for method in [
+            "agent.approval.approve_and_resume_tool",
+            "agent.approval.deny_and_resume_tool",
+        ] {
+            let error = handle_ai_request(
+                method,
+                serde_json::json!({
+                    "storageRoot": temp.path().to_string_lossy(),
+                    "sessionId": "session-missing",
+                    "approvalTicketId": "approval-missing"
+                }),
+            )
+            .expect_err("missing ticket should be a runtime error");
+
+            assert_eq!(error.code, "RUNTIME_ERROR");
+            assert!(error.message.contains("approval ticket not found"));
+        }
     }
 
     #[test]
@@ -1032,10 +635,4 @@ mod tests {
         assert_eq!(error.code, "RUNTIME_ERROR");
         assert!(error.message.contains("AI session not found"));
     }
-}
-
-#[cfg(not(unix))]
-fn main() {
-    eprintln!("lyrad local socket runtime is currently implemented for unix targets only");
-    std::process::exit(1);
 }

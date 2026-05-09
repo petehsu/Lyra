@@ -16,11 +16,18 @@ import type {
 
 type VerificationSummaryListProps = {
   readonly detail: AgentSessionDetail | null;
+  readonly onlyNeedsAttention?: boolean | undefined;
 };
 
-export const VerificationSummaryList = ({ detail }: VerificationSummaryListProps) => {
+export const VerificationSummaryList = ({ detail, onlyNeedsAttention = false }: VerificationSummaryListProps) => {
   const summary = detail?.verificationSummary ?? null;
   if (summary === null || summary.runs.length === 0) {
+    return null;
+  }
+  const runs = onlyNeedsAttention
+    ? summary.runs.filter((run) => verificationNeedsAttention(run.status))
+    : summary.runs;
+  if (runs.length === 0) {
     return null;
   }
   const proof = detail?.deliveryProof ?? null;
@@ -35,7 +42,7 @@ export const VerificationSummaryList = ({ detail }: VerificationSummaryListProps
         </span>
       </div>
       <ol className="lyra-ai-verification-items">
-        {summary.runs.map((run) => (
+        {runs.map((run) => (
           <li key={run.verificationRunId} className="lyra-ai-verification-item" data-status={run.status}>
             <span className="lyra-ai-verification-status" aria-label={statusLabel(run.status)}>
               {statusIcon(run.status)}
@@ -73,6 +80,9 @@ const statusIcon = (status: string) => {
   }
   return <Circle size={13} aria-hidden="true" />;
 };
+
+const verificationNeedsAttention = (status: string): boolean =>
+  status === "failed" || status === "blocked" || status === "not_run";
 
 const statusLabel = (status: string): string => {
   if (status === "passed") {

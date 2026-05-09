@@ -62,10 +62,16 @@ export default defineConfig({
       port: resolveRendererPort(),
       strictPort: false
     },
+    optimizeDeps: {
+      esbuildOptions: {
+        target: "esnext"
+      }
+    },
     resolve: {
       alias: sharedAliases
     },
     build: {
+      target: "esnext",
       outDir: resolve(projectRoot, "out/renderer"),
       emptyOutDir: true
     }

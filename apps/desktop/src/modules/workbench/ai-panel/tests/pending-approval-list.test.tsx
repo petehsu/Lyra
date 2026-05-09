@@ -26,14 +26,18 @@ describe("PendingApprovalList", () => {
     expect(screen.getByText("Apply workspace patch")).toBeDefined();
     expect(screen.getByText("Rollback workspace patch")).toBeDefined();
     expect(screen.getByText("/tools/filesystem/apply_patch · README.md")).toBeDefined();
+    expect(screen.getByText("/tools/agent/write_file · src/new.ts")).toBeDefined();
 
     const rows = screen.getAllByRole("button", { name: "Approve" });
-    await user.click(rows[0]);
+    const firstApprove = rows[0];
+    expect(firstApprove).toBeDefined();
+    await user.click(firstApprove as HTMLElement);
     expect(resolveApproval).toHaveBeenCalledWith({
       sessionId: "session-1",
       approvalTicketId: "approval-1",
       decision: "approve",
     });
+    expect(await screen.findByText("Approved")).toBeDefined();
 
     const rollbackRow = screen.getByText("Rollback workspace patch").closest(".lyra-ai-pending-approval-row");
     expect(rollbackRow).not.toBeNull();
@@ -43,6 +47,7 @@ describe("PendingApprovalList", () => {
       approvalTicketId: "approval-2",
       decision: "deny",
     });
+    expect(await within(rollbackRow as HTMLElement).findByText("Denied")).toBeDefined();
   });
 });
 
@@ -87,6 +92,25 @@ const createDetail = (): AgentSessionDetail => ({
       },
       createdAt: 2,
       updatedAt: 2,
+    },
+    {
+      id: "approval-3",
+      sessionId: "session-1",
+      turnId: "turn-1",
+      kind: "tool_approval",
+      status: "pending",
+      payload: {
+        approvalTicketId: "approval-3",
+        toolPath: "/tools/agent/write_file",
+        title: "Write workspace file",
+        requestedAction: {
+          arguments: {
+            path: "src/new.ts",
+          },
+        },
+      },
+      createdAt: 3,
+      updatedAt: 3,
     },
   ],
   turns: [],

@@ -5,6 +5,7 @@ export {
   isAiPlanReviewAppId,
   isAiPluginsAppId,
   isAiSkillsAppId,
+  isAgentVmAppId,
   isFileEditorAppId,
   isFileManagerAppId,
   isImageViewerAppId,

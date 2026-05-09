@@ -144,6 +144,324 @@ impl AiStore {
         Ok(record)
     }
 
+    pub fn create_secret_record(&self, input: CreateSecretRecordInput) -> Result<SecretRecord> {
+        let now = now_ms();
+        let now_iso = now_iso();
+        let record = SecretRecord {
+            secret_id: new_id("secret"),
+            session_id: input.session_id,
+            turn_id: input.turn_id,
+            kind: input.kind,
+            provider: input.provider,
+            label: input.label,
+            storage_ref: input.storage_ref,
+            scope: input.scope,
+            status: "active".to_string(),
+            expires_at: input.expires_at,
+            created_at: now,
+            updated_at: now,
+        };
+        self.with_session_conn(&record.session_id, |conn| {
+            conn.execute(
+                "INSERT INTO secret_record (
+                    secret_id, session_id, turn_id, kind, provider, label, storage_ref,
+                    scope_json, status, expires_at_iso, created_at_ms, created_at_iso,
+                    updated_at_ms, updated_at_iso, superseded_by_rollback_id
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'active', ?9, ?10, ?11, ?10, ?11, NULL)",
+                params![
+                    record.secret_id,
+                    record.session_id,
+                    record.turn_id,
+                    record.kind,
+                    record.provider,
+                    record.label,
+                    record.storage_ref,
+                    record.scope.to_string(),
+                    record.expires_at,
+                    now,
+                    now_iso,
+                ],
+            )?;
+            Ok(())
+        })?;
+        Ok(record)
+    }
+
+    pub fn read_secret_record(
+        &self,
+        session_id: &str,
+        secret_id: &str,
+    ) -> Result<Option<SecretRecord>> {
+        self.with_session_conn(session_id, |conn| {
+            conn.query_row(
+                "SELECT secret_id, session_id, turn_id, kind, provider, label, storage_ref,
+                        scope_json, status, expires_at_iso, created_at_ms, updated_at_ms
+                 FROM secret_record
+                 WHERE session_id = ?1 AND secret_id = ?2",
+                params![session_id, secret_id],
+                |row| {
+                    let scope_json: String = row.get(7)?;
+                    Ok(SecretRecord {
+                        secret_id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        turn_id: row.get(2)?,
+                        kind: row.get(3)?,
+                        provider: row.get(4)?,
+                        label: row.get(5)?,
+                        storage_ref: row.get(6)?,
+                        scope: serde_json::from_str(&scope_json).unwrap_or_else(|_| json!({})),
+                        status: row.get(8)?,
+                        expires_at: row.get(9)?,
+                        created_at: row.get(10)?,
+                        updated_at: row.get(11)?,
+                    })
+                },
+            )
+            .optional()
+            .context("failed to read secret record")
+        })
+    }
+
+    pub fn create_secret_handle(
+        &self,
+        input: CreateSecretHandleInput,
+    ) -> Result<SecretHandleRecord> {
+        let now = now_ms();
+        let now_iso = now_iso();
+        let expires_iso = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(input.expires_at)
+            .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+            .unwrap_or_else(|| now_iso.clone());
+        let record = SecretHandleRecord {
+            handle_id: new_id("secret_handle"),
+            session_id: input.session_id,
+            turn_id: input.turn_id,
+            secret_id: input.secret_id,
+            lease_id: new_id("secret_lease"),
+            granted_to_tool_path: input.granted_to_tool_path,
+            granted_for_operation_id: input.granted_for_operation_id,
+            allowed_target: input.allowed_target,
+            reveal_mode: input.reveal_mode,
+            status: "active".to_string(),
+            expires_at: input.expires_at,
+            created_at: now,
+        };
+        self.with_session_conn(&record.session_id, |conn| {
+            conn.execute(
+                "INSERT INTO secret_handle (
+                    handle_id, session_id, turn_id, secret_id, lease_id, granted_to_tool_path,
+                    granted_for_operation_id, allowed_target, reveal_mode, status, expires_at_ms,
+                    expires_at_iso, created_at_ms, created_at_iso, revoked_at_ms, revoked_at_iso,
+                    superseded_by_rollback_id
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'active', ?10, ?11, ?12, ?13, NULL, NULL, NULL)",
+                params![
+                    record.handle_id,
+                    record.session_id,
+                    record.turn_id,
+                    record.secret_id,
+                    record.lease_id,
+                    record.granted_to_tool_path,
+                    record.granted_for_operation_id,
+                    record.allowed_target,
+                    record.reveal_mode,
+                    record.expires_at,
+                    expires_iso,
+                    now,
+                    now_iso,
+                ],
+            )?;
+            Ok(())
+        })?;
+        Ok(record)
+    }
+
+    pub fn read_secret_handle(
+        &self,
+        session_id: &str,
+        handle_id: &str,
+    ) -> Result<Option<SecretHandleRecord>> {
+        self.with_session_conn(session_id, |conn| {
+            conn.query_row(
+                "SELECT handle_id, session_id, turn_id, secret_id, lease_id, granted_to_tool_path,
+                        granted_for_operation_id, allowed_target, reveal_mode, status,
+                        expires_at_ms, created_at_ms
+                 FROM secret_handle
+                 WHERE session_id = ?1 AND handle_id = ?2",
+                params![session_id, handle_id],
+                |row| {
+                    Ok(SecretHandleRecord {
+                        handle_id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        turn_id: row.get(2)?,
+                        secret_id: row.get(3)?,
+                        lease_id: row.get(4)?,
+                        granted_to_tool_path: row.get(5)?,
+                        granted_for_operation_id: row.get(6)?,
+                        allowed_target: row.get(7)?,
+                        reveal_mode: row.get(8)?,
+                        status: row.get(9)?,
+                        expires_at: row.get(10)?,
+                        created_at: row.get(11)?,
+                    })
+                },
+            )
+            .optional()
+            .context("failed to read secret handle")
+        })
+    }
+
+    pub fn revoke_secret_handle(&self, session_id: &str, handle_id: &str) -> Result<()> {
+        let now = now_ms();
+        let now_iso = now_iso();
+        self.with_session_conn(session_id, |conn| {
+            conn.execute(
+                "UPDATE secret_handle
+                 SET status = 'revoked', revoked_at_ms = ?1, revoked_at_iso = ?2
+                 WHERE session_id = ?3 AND handle_id = ?4",
+                params![now, now_iso, session_id, handle_id],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn record_secret_access(
+        &self,
+        input: CreateSecretAccessAuditInput,
+    ) -> Result<SecretAccessAuditRecord> {
+        let now = now_ms();
+        let now_iso = now_iso();
+        let record = SecretAccessAuditRecord {
+            audit_id: new_id("secret_audit"),
+            session_id: input.session_id,
+            turn_id: input.turn_id,
+            secret_id: input.secret_id,
+            handle_id: input.handle_id,
+            operation_id: input.operation_id,
+            access_kind: input.access_kind,
+            target_ref: input.target_ref,
+            decision: input.decision,
+            reason_codes: input.reason_codes,
+            created_at: now,
+        };
+        self.with_session_conn(&record.session_id, |conn| {
+            conn.execute(
+                "INSERT INTO secret_access_audit (
+                    audit_id, session_id, turn_id, secret_id, handle_id, operation_id,
+                    access_kind, target_ref, decision, reason_codes_json, created_at_ms,
+                    created_at_iso
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                params![
+                    record.audit_id,
+                    record.session_id,
+                    record.turn_id,
+                    record.secret_id,
+                    record.handle_id,
+                    record.operation_id,
+                    record.access_kind,
+                    record.target_ref,
+                    record.decision,
+                    json_string(&record.reason_codes)?,
+                    now,
+                    now_iso,
+                ],
+            )?;
+            Ok(())
+        })?;
+        Ok(record)
+    }
+
+    pub fn create_exfiltration_decision(
+        &self,
+        input: CreateExfiltrationDecisionInput,
+    ) -> Result<ExfiltrationDecisionRecord> {
+        let now = now_ms();
+        let now_iso = now_iso();
+        let record = ExfiltrationDecisionRecord {
+            exfiltration_decision_id: new_id("exfiltration"),
+            session_id: input.session_id,
+            turn_id: input.turn_id,
+            operation_id: input.operation_id,
+            target_kind: input.target_kind,
+            target_ref: input.target_ref,
+            contains_sensitive_data: input.contains_sensitive_data,
+            allowed: input.allowed,
+            required_action: input.required_action,
+            reason_codes: input.reason_codes,
+            evidence_refs: input.evidence_refs,
+            created_at: now,
+        };
+        self.with_session_conn(&record.session_id, |conn| {
+            conn.execute(
+                "INSERT INTO exfiltration_decision (
+                    exfiltration_decision_id, session_id, turn_id, operation_id,
+                    target_kind, target_ref, contains_sensitive_data, allowed,
+                    required_action, reason_codes_json, evidence_refs_json,
+                    created_at_ms, created_at_iso
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                params![
+                    record.exfiltration_decision_id,
+                    record.session_id,
+                    record.turn_id,
+                    record.operation_id,
+                    record.target_kind,
+                    record.target_ref,
+                    if record.contains_sensitive_data { 1 } else { 0 },
+                    if record.allowed { 1 } else { 0 },
+                    record.required_action,
+                    json_string(&record.reason_codes)?,
+                    json_string(&record.evidence_refs)?,
+                    now,
+                    now_iso,
+                ],
+            )?;
+            Ok(())
+        })?;
+        Ok(record)
+    }
+
+    pub fn create_capsule_bridge_audit(
+        &self,
+        input: CreateCapsuleBridgeAuditInput,
+    ) -> Result<CapsuleBridgeAuditRecord> {
+        let now = now_ms();
+        let now_iso = now_iso();
+        let record = CapsuleBridgeAuditRecord {
+            bridge_audit_id: new_id("capsule_bridge"),
+            session_id: input.session_id,
+            turn_id: input.turn_id,
+            capsule_id: input.capsule_id,
+            operation_id: input.operation_id,
+            decision: input.decision,
+            bridge_policy: input.bridge_policy,
+            reason_codes: input.reason_codes,
+            approval_ticket_id: input.approval_ticket_id,
+            created_at: now,
+        };
+        self.with_session_conn(&record.session_id, |conn| {
+            conn.execute(
+                "INSERT INTO capsule_bridge_audit (
+                    bridge_audit_id, session_id, turn_id, capsule_id, operation_id,
+                    decision, bridge_policy_json, reason_codes_json, approval_ticket_id,
+                    created_at_ms, created_at_iso
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    record.bridge_audit_id,
+                    record.session_id,
+                    record.turn_id,
+                    record.capsule_id,
+                    record.operation_id,
+                    record.decision,
+                    record.bridge_policy.to_string(),
+                    json_string(&record.reason_codes)?,
+                    record.approval_ticket_id,
+                    now,
+                    now_iso,
+                ],
+            )?;
+            Ok(())
+        })?;
+        Ok(record)
+    }
+
     pub fn read_security_summary(&self, session_id: &str) -> Result<Option<AgentSecuritySummary>> {
         self.with_session_conn(session_id, |conn| {
             let snapshot = conn
@@ -175,6 +493,9 @@ impl AiStore {
             };
             let recent = read_recent_security_decisions_from_conn(conn, session_id, 8)?;
             let findings = read_secret_finding_summary_from_conn(conn, session_id)?;
+            let active_secret_handles = read_active_secret_handle_count(conn, session_id)?;
+            let last_exfiltration_action = read_last_exfiltration_action(conn, session_id)?;
+            let last_capsule_bridge_decision = read_last_capsule_bridge_decision(conn, session_id)?;
             let stale_state = snapshot_id.is_none() && has_stale_security_state(conn, session_id)?;
             let status = if recent.iter().any(|decision| decision.decision == "deny") {
                 "blocked"
@@ -205,6 +526,9 @@ impl AiStore {
                 redaction_profile,
                 recent_decisions: recent,
                 secret_findings: findings,
+                active_secret_handles,
+                last_exfiltration_action,
+                last_capsule_bridge_decision,
             }))
         })
     }
@@ -223,6 +547,9 @@ fn has_stale_security_state(conn: &Connection, session_id: &str) -> Result<bool>
              WHERE session_id = ?1 AND status != 'active'
             UNION ALL
             SELECT 1 FROM redacted_projection_record
+             WHERE session_id = ?1 AND status != 'active'
+            UNION ALL
+            SELECT 1 FROM secret_handle
              WHERE session_id = ?1 AND status != 'active'
         )",
         params![session_id],
@@ -303,4 +630,44 @@ fn read_secret_finding_summary_from_conn(
         high_confidence,
         last_report_id,
     })
+}
+
+fn read_active_secret_handle_count(conn: &Connection, session_id: &str) -> Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*)
+         FROM secret_handle
+         WHERE session_id = ?1 AND status = 'active' AND expires_at_ms > ?2",
+        params![session_id, now_ms()],
+        |row| row.get(0),
+    )
+    .context("failed to count active secret handles")
+}
+
+fn read_last_exfiltration_action(conn: &Connection, session_id: &str) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT required_action
+         FROM exfiltration_decision
+         WHERE session_id = ?1
+         ORDER BY created_at_ms DESC LIMIT 1",
+        params![session_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .context("failed to read latest exfiltration action")
+}
+
+fn read_last_capsule_bridge_decision(
+    conn: &Connection,
+    session_id: &str,
+) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT decision
+         FROM capsule_bridge_audit
+         WHERE session_id = ?1
+         ORDER BY created_at_ms DESC LIMIT 1",
+        params![session_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .context("failed to read latest capsule bridge decision")
 }

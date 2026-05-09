@@ -3,6 +3,277 @@ export type AgentTurnId = string;
 export type AgentMessageId = string;
 export type AgentCollaborationMode = "default" | "plan";
 export type AgentPlanStatus = "draft" | "proposed" | "approved" | "rejected";
+export type AgentPermissionMode = "sandbox" | "full_access";
+export type AgentExecutionTarget = "host" | "agent_vm";
+
+export type AgentVmBinding = {
+  readonly schemaVersion: "v1" | string;
+  readonly vmId: string;
+  readonly ownerSessionId: string;
+  readonly attachedSessionIds: readonly string[];
+  readonly executionTarget: "agent_vm" | string;
+  readonly state: string;
+  readonly source: unknown;
+  readonly bridgePolicyRef: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+export type AgentVmSummary = {
+  readonly vmId: string;
+  readonly state: string;
+  readonly imageId?: string | null;
+  readonly projectId?: string | null;
+  readonly workspaceRoot?: string | null;
+  readonly backend?: string | null;
+  readonly arch?: string | null;
+  readonly sshPort?: number | null;
+  readonly vncPort?: number | null;
+  readonly createdAt?: string | null;
+  readonly updatedAt?: string | null;
+  readonly binding?: AgentVmBinding | null;
+};
+
+export type AgentVmListRequest = {
+  readonly sessionId?: string | null;
+};
+
+export type AgentVmListResult = {
+  readonly schemaVersion: "v1" | string;
+  readonly status: string;
+  readonly vms: readonly AgentVmSummary[];
+};
+
+export type AgentVmImageDescriptor = {
+  readonly id: string;
+  readonly name: string;
+  readonly family: string;
+  readonly arch: readonly string[];
+  readonly format: readonly string[];
+  readonly recommended?: boolean;
+  readonly source?: string;
+  readonly urls?: readonly AgentVmImageUrlDescriptor[];
+  readonly checksum?: string | null;
+  readonly signature?: string | null;
+  readonly overlayId?: string | null;
+};
+
+export type AgentVmImageUrlDescriptor = {
+  readonly url: string;
+  readonly region?: string | null;
+  readonly arch?: string | null;
+  readonly checksumUrl?: string | null;
+  readonly checksumFileName?: string | null;
+  readonly sizeBytes?: number | null;
+};
+
+export type AgentVmImageRecord = {
+  readonly schemaVersion: "v1" | string;
+  readonly imageId: string;
+  readonly imageName: string;
+  readonly arch: string;
+  readonly format: string;
+  readonly source: string;
+  readonly filePath: string;
+  readonly checksum?: string | null;
+  readonly verified: boolean;
+  readonly signatureVerified: boolean;
+  readonly importedAt: string;
+  readonly verifiedAt?: string | null;
+};
+
+export type AgentVmImageEntry = {
+  readonly image: AgentVmImageDescriptor;
+  readonly installed: boolean;
+  readonly record?: AgentVmImageRecord | null;
+};
+
+export type AgentVmImageListRequest = {
+  readonly manifestRef?: string | null;
+};
+
+export type AgentVmImageListResult = {
+  readonly schemaVersion: "v1" | string;
+  readonly arch: string;
+  readonly images: readonly AgentVmImageEntry[];
+};
+
+export type AgentVmImageImportRequest = {
+  readonly imageId: string;
+  readonly filePath: string;
+  readonly name?: string | null;
+  readonly arch?: string | null;
+  readonly format?: string | null;
+  readonly checksum?: string | null;
+  readonly manifestRef?: string | null;
+};
+
+export type AgentVmImageImportResult = {
+  readonly schemaVersion: "v1" | string;
+  readonly status: string;
+  readonly record: AgentVmImageRecord;
+};
+
+export type AgentVmImageDownloadRequest = {
+  readonly imageId: string;
+  readonly url?: string | null;
+  readonly arch?: string | null;
+  readonly manifestRef?: string | null;
+};
+
+export type AgentVmImageDownloadResult = AgentVmImageImportResult;
+
+export type AgentVmCreateRequest = {
+  readonly sessionId: string;
+  readonly vmId?: string | null;
+  readonly imageId?: string | null;
+  readonly projectId?: string | null;
+  readonly workspaceRoot?: string | null;
+  readonly guestWorkspacePath?: string | null;
+  readonly memoryMib?: number | null;
+  readonly cpuCount?: number | null;
+  readonly bridgePolicy?: unknown;
+  readonly attachMode?: "shared" | "exclusive";
+};
+
+export type AgentVmCreateResult = {
+  readonly schemaVersion: "v1" | string;
+  readonly status: string;
+  readonly vm: AgentVmSummary;
+  readonly binding: AgentVmBinding | null;
+};
+
+export type AgentVmBindingListRequest = {
+  readonly sessionId?: string | null;
+};
+
+export type AgentVmBindingListResult = {
+  readonly schemaVersion: "v1" | string;
+  readonly status: string;
+  readonly bindings: readonly AgentVmBinding[];
+};
+
+export type AgentVmReadBindingRequest = {
+  readonly sessionId?: string | null;
+  readonly vmId?: string | null;
+};
+
+export type AgentVmBindingResult = {
+  readonly schemaVersion: "v1" | string;
+  readonly status: string;
+  readonly binding: AgentVmBinding;
+};
+
+export type AgentVmAttachRequest = {
+  readonly sessionId: string;
+  readonly vmId: string;
+  readonly attachMode?: "shared" | "exclusive";
+};
+
+export type AgentVmTakeoverRequest = {
+  readonly sessionId: string;
+  readonly vmId: string;
+  readonly reason?: string;
+};
+
+export type AgentVmForkRequest = {
+  readonly sessionId: string;
+  readonly sourceVmId: string;
+  readonly snapshotId?: string;
+  readonly newVmId?: string;
+};
+
+export type AgentVmInheritanceProfile = {
+  readonly schemaVersion: "v1" | string;
+  readonly profileId: string;
+  readonly ownerSessionId: string;
+  readonly sourceVmId: string;
+  readonly include: readonly string[];
+  readonly description?: string | null;
+  readonly expiresAt?: string | null;
+  readonly createdAt: string;
+};
+
+export type AgentVmCreateInheritanceProfileRequest = {
+  readonly sessionId: string;
+  readonly sourceVmId: string;
+  readonly profileId?: string;
+  readonly include?: readonly string[];
+  readonly expiresAt?: string;
+  readonly description?: string;
+};
+
+export type AgentVmInheritanceProfileResult = {
+  readonly schemaVersion: "v1" | string;
+  readonly status: string;
+  readonly profile: AgentVmInheritanceProfile;
+};
+
+export type AgentVmApplyInheritanceProfileRequest = {
+  readonly sessionId: string;
+  readonly profileId: string;
+  readonly newVmId?: string;
+};
+
+export type AgentVmApplyInheritanceProfileResult = {
+  readonly schemaVersion: "v1" | string;
+  readonly status: string;
+  readonly profile: AgentVmInheritanceProfile;
+  readonly binding: AgentVmBinding | null;
+};
+
+export type AgentVmRevokeBindingRequest = {
+  readonly sessionId: string;
+  readonly vmId: string;
+};
+
+export type AgentVmStatusRequest = {
+  readonly vmId: string;
+};
+
+export type AgentVmConsoleConnectRequest = {
+  readonly vmId: string;
+};
+
+export type AgentVmConsoleConnectResult = {
+  readonly vmId: string;
+  readonly vncPort: number;
+  readonly url: string;
+};
+
+export type AgentVmPasswordMetadataRequest = {
+  readonly vmId: string;
+};
+
+export type AgentVmPasswordMetadata = {
+  readonly secretId: string;
+  readonly sessionId: string;
+  readonly targetRef: string;
+  readonly createdAt: number;
+};
+
+export type AgentVmPasswordMetadataResult = {
+  readonly schemaVersion: "v1" | string;
+  readonly status: "available" | "missing" | string;
+  readonly vmId: string;
+  readonly password?: AgentVmPasswordMetadata | null;
+};
+
+export type AgentVmPasswordRevealRequest = {
+  readonly vmId: string;
+};
+
+export type AgentVmPasswordRevealResult = {
+  readonly schemaVersion: "v1" | string;
+  readonly status: "revealed" | string;
+  readonly vmId: string;
+  readonly username: string;
+  readonly password: string;
+  readonly targetRef: string;
+  readonly secretId: string;
+};
+
+export type AgentVmLifecycleResult = Record<string, unknown>;
 
 export type AgentPlanBlock = {
   readonly id: string;
@@ -44,6 +315,10 @@ export type AgentSession = {
   readonly id: AgentSessionId;
   readonly title: string;
   readonly profileId?: string;
+  readonly modelId?: string;
+  readonly systemPrompt?: string;
+  readonly permissionMode?: AgentPermissionMode | string;
+  readonly executionTarget?: AgentExecutionTarget | string;
   readonly projectRoot?: string;
   readonly projectName?: string;
   readonly collaborationMode: AgentCollaborationMode;
@@ -85,7 +360,8 @@ export type AgentTurn = {
   readonly profileId: string;
   readonly status: AgentTurnStatus;
   readonly collaborationMode?: AgentCollaborationMode;
-  readonly permissionMode?: "sandbox" | "full_access" | string;
+  readonly permissionMode?: AgentPermissionMode | string;
+  readonly executionTarget?: AgentExecutionTarget | string;
   readonly errorCode?: string;
   readonly errorMessage?: string;
   readonly usage?: AgentUsage;
@@ -492,6 +768,7 @@ export type QuestionTicketOption = {
   readonly id: "A" | "B" | "C" | "D";
   readonly label: string;
   readonly description: string;
+  readonly recommended?: boolean | null;
 };
 
 export type QuestionTicket = {
@@ -560,8 +837,8 @@ export type AgentPolicySummary = {
   readonly snapshotId: string;
   readonly source: "product_default" | "project_manifest" | "fallback_safe_default" | string;
   readonly status: "active" | "safe_default" | "fallback_safe_default" | "stale" | "superseded" | string;
-  readonly permissionDefault: "sandbox" | "full_access" | "capsule" | string;
-  readonly allowedModes: readonly ("sandbox" | "full_access" | "capsule" | string)[];
+  readonly permissionDefault: AgentPermissionMode | string;
+  readonly allowedModes: readonly (AgentPermissionMode | string)[];
   readonly toolPolicySummary: {
     readonly enabledCount: number;
     readonly disabledCount: number;
@@ -594,6 +871,9 @@ export type AgentSecuritySummary = {
     readonly highConfidence: number;
     readonly lastReportId?: string | null;
   };
+  readonly activeSecretHandles: number;
+  readonly lastExfiltrationAction?: string | null;
+  readonly lastCapsuleBridgeDecision?: string | null;
 };
 
 export type AgentRollbackConversationChange = {
@@ -900,13 +1180,18 @@ export type AgentRuntimeThreadOptions = {
   readonly verbosity?: "low" | "medium" | "high";
   readonly approvalPolicy?: "untrusted" | "on-failure" | "on-request" | "never";
   readonly approvalsReviewer?: "user" | "auto_review";
-  readonly permissionMode?: "sandbox" | "full_access";
+  readonly permissionMode?: AgentPermissionMode;
+  readonly executionTarget?: AgentExecutionTarget;
   readonly followEnabled?: boolean;
 };
 
 export type AgentCreateSessionRequest = {
   readonly title?: string;
   readonly profileId?: string;
+  readonly modelId?: string | null;
+  readonly systemPrompt?: string | null;
+  readonly permissionMode?: AgentPermissionMode | string | null;
+  readonly executionTarget?: AgentExecutionTarget | string | null;
   readonly projectRoot?: string | null;
   readonly cwd?: string | null;
   readonly collaborationMode?: AgentCollaborationMode;
@@ -938,6 +1223,11 @@ export type AgentPreviewMessageRollbackRequest = {
 export type AgentUpdateSessionRequest = {
   readonly sessionId: string;
   readonly title?: string;
+  readonly profileId?: string | null;
+  readonly modelId?: string | null;
+  readonly systemPrompt?: string | null;
+  readonly permissionMode?: AgentPermissionMode | string | null;
+  readonly executionTarget?: AgentExecutionTarget | string | null;
   readonly projectRoot?: string | null;
   readonly collaborationMode?: AgentCollaborationMode;
 };
@@ -1048,7 +1338,7 @@ export type AgentApplyPatchRequest = {
   readonly sessionId: string;
   readonly artifactId?: string;
   readonly patchRef?: string;
-  readonly permissionMode?: "sandbox" | "full_access";
+  readonly permissionMode?: AgentPermissionMode;
 };
 
 export type AgentResolveApprovalDecision = "approve" | "deny";
@@ -1108,6 +1398,7 @@ export type AgentRuntimeEventType =
   | "session_updated"
   | "runtime_turn_created"
   | "model_text_delta"
+  | "model_stream_reset"
   | "model_message_end"
   | "runtime_turn_completed"
   | "runtime_turn_cancelled"

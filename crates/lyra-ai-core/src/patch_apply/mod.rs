@@ -28,8 +28,9 @@ use std::path::PathBuf;
 mod types;
 use types::*;
 pub use types::{
-    normalize_permission_mode, AgentApplyPatchRequest, AgentApplyPatchResult,
-    AgentResolveApprovalRequest, AgentResolveApprovalResult, ApprovalDecision, PermissionMode,
+    normalize_execution_target, normalize_permission_mode, AgentApplyPatchRequest,
+    AgentApplyPatchResult, AgentResolveApprovalRequest, AgentResolveApprovalResult,
+    ApprovalDecision, ExecutionTarget, PermissionMode,
 };
 
 mod events;

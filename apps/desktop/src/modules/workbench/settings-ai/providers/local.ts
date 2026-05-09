@@ -1,11 +1,18 @@
 import type { AiProviderPreset } from "../../../../shared/ai";
-import { apiKeyField, connectionField } from "./shared";
+import { apiKeyField, connectionField, localPathField } from "./shared";
 
 export const localPresets: readonly AiProviderPreset[] = [
   {
     id: "ollama",
     providerId: "ollama",
     protocolId: "ollama_chat",
+    runtimeMetadata: {
+      adapterId: "ollama_chat",
+      compatibilitySource: "native",
+      localRuntimeKind: "http",
+      localBackend: "ollama",
+      nativeToolCalling: true
+    },
     label: "Ollama",
     description: "Local Ollama runtime.",
     section: "local",
@@ -27,6 +34,13 @@ export const localPresets: readonly AiProviderPreset[] = [
     id: "lmstudio",
     providerId: "lmstudio",
     protocolId: "lmstudio_chat_completions",
+    runtimeMetadata: {
+      adapterId: "openai_chat_completions",
+      compatibilitySource: "openai-compatible",
+      localRuntimeKind: "http",
+      localBackend: "lmstudio",
+      nativeToolCalling: true
+    },
     label: "LM Studio",
     description: "Local OpenAI-compatible LM Studio server.",
     section: "local",
@@ -41,6 +55,118 @@ export const localPresets: readonly AiProviderPreset[] = [
     connectionFields: [connectionField("baseUrl", "Base URL", "http://127.0.0.1:1234/v1")],
     authFields: [apiKeyField(false)],
     defaultConnectionConfig: { baseUrl: "http://127.0.0.1:1234/v1" },
+    defaultAuthConfig: {},
+    recommendedModels: []
+  },
+  {
+    id: "llama_cpp_server",
+    providerId: "llama_cpp",
+    protocolId: "llama_cpp_server",
+    runtimeMetadata: {
+      adapterId: "openai_chat_completions",
+      compatibilitySource: "openai-compatible",
+      localRuntimeKind: "http",
+      localBackend: "llama_cpp_server",
+      nativeToolCalling: true
+    },
+    label: "llama.cpp Server",
+    description: "Local llama.cpp OpenAI-compatible server.",
+    section: "local",
+    iconKey: "llama_cpp",
+    defaultModel: "",
+    discoveryMode: "dynamic",
+    modelDiscoverySupported: true,
+    customHeadersSupported: false,
+    customModelsSupported: false,
+    runtimeSupported: true,
+    simpleFields: ["baseUrl", "apiKey"],
+    connectionFields: [connectionField("baseUrl", "Base URL", "http://127.0.0.1:8080/v1")],
+    authFields: [apiKeyField(false)],
+    defaultConnectionConfig: { baseUrl: "http://127.0.0.1:8080/v1" },
+    defaultAuthConfig: {},
+    recommendedModels: []
+  },
+  {
+    id: "vllm",
+    providerId: "vllm",
+    protocolId: "vllm_chat_completions",
+    runtimeMetadata: {
+      adapterId: "openai_chat_completions",
+      compatibilitySource: "openai-compatible",
+      localRuntimeKind: "http",
+      localBackend: "vllm",
+      nativeToolCalling: true
+    },
+    label: "vLLM",
+    description: "Local vLLM OpenAI-compatible server.",
+    section: "local",
+    iconKey: "vllm",
+    defaultModel: "",
+    discoveryMode: "dynamic",
+    modelDiscoverySupported: true,
+    customHeadersSupported: false,
+    customModelsSupported: false,
+    runtimeSupported: true,
+    simpleFields: ["baseUrl", "apiKey"],
+    connectionFields: [connectionField("baseUrl", "Base URL", "http://127.0.0.1:8000/v1")],
+    authFields: [apiKeyField(false)],
+    defaultConnectionConfig: { baseUrl: "http://127.0.0.1:8000/v1" },
+    defaultAuthConfig: {},
+    recommendedModels: []
+  },
+  {
+    id: "llama_cpp_ffi",
+    providerId: "llama_cpp",
+    protocolId: "llama_cpp_ffi",
+    runtimeMetadata: {
+      adapterId: "local_inference",
+      compatibilitySource: "native",
+      localRuntimeKind: "ffi",
+      localBackend: "llama_cpp_ffi",
+      nativeToolCalling: false
+    },
+    label: "llama.cpp Embedded",
+    description: "Embedded local llama.cpp inference through Lyra native core.",
+    section: "local",
+    iconKey: "llama_cpp",
+    defaultModel: "",
+    discoveryMode: "dynamic",
+    modelDiscoverySupported: true,
+    customHeadersSupported: false,
+    customModelsSupported: false,
+    runtimeSupported: true,
+    simpleFields: ["modelPath"],
+    connectionFields: [localPathField("modelPath", "Model path", "/path/to/model.gguf")],
+    authFields: [],
+    defaultConnectionConfig: { modelPath: "" },
+    defaultAuthConfig: {},
+    recommendedModels: []
+  },
+  {
+    id: "mlx_ffi",
+    providerId: "mlx",
+    protocolId: "mlx_ffi",
+    runtimeMetadata: {
+      adapterId: "local_inference",
+      compatibilitySource: "native",
+      localRuntimeKind: "ffi",
+      localBackend: "mlx_ffi",
+      nativeToolCalling: false
+    },
+    label: "MLX Embedded",
+    description: "Embedded local MLX inference through Lyra native core.",
+    section: "local",
+    iconKey: "mlx",
+    defaultModel: "",
+    discoveryMode: "dynamic",
+    modelDiscoverySupported: true,
+    customHeadersSupported: false,
+    customModelsSupported: false,
+    runtimeSupported: true,
+    simpleFields: ["modelPath"],
+    connectionFields: [localPathField("modelPath", "Model path", "/path/to/mlx-model")],
+    authFields: [],
+    defaultConnectionConfig: { modelPath: "" },
     defaultAuthConfig: {},
     recommendedModels: []
   }

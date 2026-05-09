@@ -1,15 +1,45 @@
 use super::*;
 
+const MAX_RUNTIME_EVENT_PAYLOAD_BYTES: usize = 256 * 1024;
+
+fn compact_runtime_event_payload(payload: Value) -> Value {
+    let payload_json = payload.to_string();
+    if payload_json.len() <= MAX_RUNTIME_EVENT_PAYLOAD_BYTES {
+        return payload;
+    }
+    json!({
+        "payloadCompacted": true,
+        "reason": "runtime_event_payload_too_large",
+        "originalBytes": payload_json.len(),
+    })
+}
+
+fn read_runtime_event_payload(payload_json: Option<String>, original_bytes: i64) -> Value {
+    let Some(payload_json) = payload_json else {
+        return json!({
+            "payloadCompacted": true,
+            "reason": "runtime_event_payload_too_large",
+            "originalBytes": original_bytes,
+        });
+    };
+    serde_json::from_str(&payload_json).unwrap_or(Value::Null)
+}
+
 impl AiStore {
     pub fn upsert_session_index(&self, session: &AgentSession) -> Result<()> {
         self.with_index_conn(|conn| {
             conn.execute(
                 "INSERT INTO agent_session_index (
-                    id, title, profile_id, project_root, project_name, collaboration_mode, created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                    id, title, profile_id, model_id, system_prompt, permission_mode,
+                    execution_target, project_root, project_name, collaboration_mode, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                  ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     profile_id = excluded.profile_id,
+                    model_id = excluded.model_id,
+                    system_prompt = excluded.system_prompt,
+                    permission_mode = excluded.permission_mode,
+                    execution_target = excluded.execution_target,
                     project_root = excluded.project_root,
                     project_name = excluded.project_name,
                     collaboration_mode = excluded.collaboration_mode,
@@ -18,6 +48,10 @@ impl AiStore {
                     session.id,
                     session.title,
                     session.profile_id,
+                    session.model_id,
+                    session.system_prompt,
+                    session.permission_mode,
+                    session.execution_target,
                     session.project_root,
                     session.project_name,
                     session.collaboration_mode,
@@ -32,7 +66,8 @@ impl AiStore {
     pub fn list_sessions(&self) -> Result<Vec<AgentSession>> {
         self.with_index_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, title, profile_id, project_root, project_name, collaboration_mode, created_at, updated_at
+                "SELECT id, title, profile_id, model_id, system_prompt, permission_mode,
+                    execution_target, project_root, project_name, collaboration_mode, created_at, updated_at
                  FROM agent_session_index ORDER BY updated_at DESC",
             )?;
             let rows = stmt.query_map([], read_session_index_row)?;
@@ -47,7 +82,8 @@ impl AiStore {
     pub fn read_session_index(&self, session_id: &str) -> Result<Option<AgentSession>> {
         self.with_index_conn(|conn| {
             conn.query_row(
-                "SELECT id, title, profile_id, project_root, project_name, collaboration_mode, created_at, updated_at
+                "SELECT id, title, profile_id, model_id, system_prompt, permission_mode,
+                    execution_target, project_root, project_name, collaboration_mode, created_at, updated_at
                  FROM agent_session_index WHERE id = ?1",
                 params![session_id],
                 read_session_index_row,
@@ -159,8 +195,8 @@ impl AiStore {
                     runtime_turn_id, session_id, user_message_id, profile_id, status, current_state,
                     collaboration_mode, project_policy_snapshot_id, security_policy_snapshot_id,
                     created_at_ms, created_at_iso, updated_at_ms, error_code, error_message,
-                    usage_json, permission_mode
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'user_message_received', ?6, ?7, ?7, ?8, ?9, ?10, NULL, NULL, NULL, ?11)",
+                    usage_json, permission_mode, execution_target
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'user_message_received', ?6, ?7, ?7, ?8, ?9, ?10, NULL, NULL, NULL, ?11, ?12)",
                 params![
                     turn.id,
                     turn.session_id,
@@ -173,6 +209,7 @@ impl AiStore {
                     created_iso,
                     turn.updated_at,
                     turn.permission_mode,
+                    turn.execution_target,
                 ],
             )?;
             Ok(())
@@ -217,6 +254,8 @@ impl AiStore {
             Ok(max_sequence.unwrap_or(0) + 1)
         })?;
         let created_at = now_iso();
+        let payload = compact_runtime_event_payload(payload);
+        let payload_json = payload.to_string();
         let event = RuntimeStreamEvent::new(
             sequence,
             session_id.to_string(),
@@ -237,7 +276,7 @@ impl AiStore {
                     event.session_id,
                     event.runtime_turn_id,
                     event.event_type,
-                    event.payload.to_string(),
+                    payload_json,
                     created_ms,
                     created_at,
                 ],
@@ -345,11 +384,11 @@ impl AiStore {
         self.with_session_conn(session_id, |conn| {
             let mut stmt = conn.prepare(
                 "SELECT runtime_turn_id, session_id, profile_id, status, collaboration_mode,
-                        permission_mode, error_code, error_message, usage_json, created_at_ms, updated_at_ms
+                        permission_mode, execution_target, error_code, error_message, usage_json, created_at_ms, updated_at_ms
                  FROM runtime_turn ORDER BY created_at_ms ASC",
             )?;
             let rows = stmt.query_map([], |row| {
-                let usage_json: Option<String> = row.get(8)?;
+                let usage_json: Option<String> = row.get(9)?;
                 Ok(AgentTurn {
                     id: row.get(0)?,
                     session_id: row.get(1)?,
@@ -357,11 +396,12 @@ impl AiStore {
                     status: row.get(3)?,
                     collaboration_mode: row.get(4)?,
                     permission_mode: row.get(5)?,
-                    error_code: row.get(6)?,
-                    error_message: row.get(7)?,
+                    execution_target: row.get(6)?,
+                    error_code: row.get(7)?,
+                    error_message: row.get(8)?,
                     usage: usage_json.and_then(|value| serde_json::from_str(&value).ok()),
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
                 })
             })?;
             let mut result = Vec::new();
@@ -471,16 +511,23 @@ impl AiStore {
     pub fn read_runtime_events(&self, session_id: &str) -> Result<Vec<AgentRuntimeEvent>> {
         self.with_session_conn(session_id, |conn| {
             let mut stmt = conn.prepare(
-                "SELECT session_id, runtime_turn_id, event_type, payload_json, created_at_ms
+                "SELECT session_id, runtime_turn_id, event_type,
+                        CASE
+                            WHEN length(payload_json) > ?1 THEN NULL
+                            ELSE payload_json
+                        END AS payload_json,
+                        created_at_ms,
+                        length(payload_json) AS original_bytes
                  FROM runtime_event ORDER BY sequence ASC",
             )?;
-            let rows = stmt.query_map([], |row| {
-                let payload_json: String = row.get(3)?;
+            let rows = stmt.query_map(params![MAX_RUNTIME_EVENT_PAYLOAD_BYTES as i64], |row| {
+                let payload_json: Option<String> = row.get(3)?;
+                let original_bytes: i64 = row.get(5)?;
                 Ok(AgentRuntimeEvent {
                     session_id: row.get(0)?,
                     turn_id: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
                     phase: row.get(2)?,
-                    payload: serde_json::from_str(&payload_json).unwrap_or(Value::Null),
+                    payload: read_runtime_event_payload(payload_json, original_bytes),
                     timestamp: row.get(4)?,
                 })
             })?;

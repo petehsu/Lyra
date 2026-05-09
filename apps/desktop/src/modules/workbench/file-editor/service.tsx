@@ -123,6 +123,15 @@ const normalizeRevealLocation = (
 });
 
 const readUnsupportedMessage = (reason: string | undefined): string => {
+  if (reason === "virtual-tool-path") {
+    return "这是 Lyra 运行时工具路径，不是本地文件。";
+  }
+  if (reason === "not-found") {
+    return "文件不存在或尚未创建。";
+  }
+  if (reason === "not-file") {
+    return "当前路径不是可编辑文件。";
+  }
   if (reason === "file-too-large") {
     return "文件过大，已降级为只读或不可编辑。";
   }

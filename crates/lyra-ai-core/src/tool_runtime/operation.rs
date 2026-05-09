@@ -222,10 +222,7 @@ fn validate_operation(operation: &ToolOperationEnvelope) -> Result<()> {
     if operation.path.starts_with("/tools") == false {
         return Err(anyhow!("path must be under /tools"));
     }
-    if operation.args.is_null() {
-        return Ok(());
-    }
-    if operation.args.is_object() == false {
+    if operation.args.is_null() == false && operation.args.is_object() == false {
         return Err(anyhow!("args must be an object"));
     }
     catalog::validate_operation(operation)?;

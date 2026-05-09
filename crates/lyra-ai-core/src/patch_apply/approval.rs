@@ -1,4 +1,9 @@
 use super::*;
+use crate::tools::{
+    resolve_mcp_tool_ref, run_mcp_tool, run_registered_tool, workspace_write_paths_for_tool,
+    ToolContext, ToolPermissionDecision, ToolPermissionPolicy, ToolPermissionRuleSet,
+    ALL_TOOL_NAMES,
+};
 
 pub fn resolve_agent_approval(
     request: AgentResolveApprovalRequest,
@@ -38,11 +43,170 @@ pub(super) fn approve_approval(
         TOOL_FS_APPLY_PATCH => approve_apply_approval(store, session_id, ticket),
         TOOL_FS_ROLLBACK_PATCH => approve_rollback_approval(store, session_id, ticket),
         TOOL_SHELL_RUN_COMMAND => approve_run_command_approval(store, session_id, ticket),
+        path if path.starts_with("/tools/agent/") => {
+            approve_agent_tool_approval(store, session_id, ticket, path)
+        }
         _ => Err(tool_error(
             TOOL_APPROVAL_UNSUPPORTED,
             format!("approval is not supported for {tool_path}"),
         )),
     }
+}
+
+fn approve_agent_tool_approval(
+    store: &AiStore,
+    session_id: &str,
+    ticket: crate::storage::ApprovalTicketDetailRecord,
+    tool_path: &str,
+) -> Result<AgentResolveApprovalResult> {
+    let tool_name = agent_tool_name_from_ticket(&ticket, tool_path)?;
+    let arguments = ticket
+        .requested_action
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let operation = ToolOperationEnvelope {
+        schema_version: TOOL_SCHEMA_VERSION.to_string(),
+        kind: "tool_operation".to_string(),
+        op_id: approval_operation_id(&ticket),
+        op: ToolFsOp::Run,
+        path: tool_path.to_string(),
+        args: arguments.clone(),
+    };
+    let turn_id = ticket.runtime_turn_id.clone();
+    if matches!(
+        tool_name.as_str(),
+        "write_file" | "delete_path" | "move_path" | "create_directory"
+    ) {
+        crate::agent_runtime::ensure_recovery_anchor_for_write(store, session_id, &turn_id)?;
+    }
+    emit_apply_event(
+        store,
+        session_id,
+        Some(turn_id.as_str()),
+        "tool_operation_started",
+        json!({ "operation": operation_payload(&operation) }),
+    )?;
+    crate::agent_runtime::project_follow_operation_started(
+        store,
+        session_id,
+        turn_id.as_str(),
+        &operation,
+    )?;
+    store.update_approval_ticket_status(
+        session_id,
+        &ticket.approval_ticket_id,
+        "approved",
+        "user_approved",
+    )?;
+    let context = workspace_context_for_session(store, session_id)?;
+    record_agent_tool_recovery_backups(
+        store,
+        session_id,
+        &turn_id,
+        context.workspace_root.as_deref(),
+        &tool_name,
+        &arguments,
+    )?;
+    let tool_context = ToolContext::new(context.workspace_root.clone())
+        .with_op_id_prefix(operation.op_id.clone())
+        .with_permission_policy(approved_agent_tool_policy());
+    let execution =
+        if resolve_mcp_tool_ref(&store.root, context.workspace_root.as_deref(), &tool_name)
+            .is_some()
+        {
+            run_mcp_tool(
+                &store.root,
+                context.workspace_root.as_deref(),
+                &tool_name,
+                arguments.clone(),
+            )
+        } else {
+            run_registered_tool(&tool_name, arguments.clone(), &tool_context)
+        };
+    let mut result = match execution {
+        Ok(output) => {
+            record_agent_tool_recovery_post_state(
+                store,
+                session_id,
+                &turn_id,
+                context.workspace_root.as_deref(),
+                &tool_name,
+                &arguments,
+            )?;
+            let changed_files = agent_tool_changed_files(&tool_name, &output);
+            let content = serde_json::to_string_pretty(&output)?;
+            let mut result = ToolResultEnvelope::completed(
+                &operation,
+                format!("Ran AgentTool {tool_name}"),
+                content,
+                false,
+            );
+            result.metadata = Some(json!({
+                "kind": "agent_tool_approval_resolved",
+                "approvalTicketId": ticket.approval_ticket_id.clone(),
+                "toolPath": tool_path,
+                "toolName": tool_name.clone(),
+                "changedFiles": changed_files,
+                "workspaceUri": agent_tool_workspace_uri(&output),
+            }));
+            result
+        }
+        Err(error) => ToolResultEnvelope::failed(
+            &operation,
+            tool_error_code(
+                &error,
+                crate::tool_runtime::operation::TOOL_EXECUTION_FAILED,
+            ),
+            error.to_string(),
+        ),
+    };
+    if result.metadata.is_none() {
+        result.metadata = Some(json!({
+            "kind": "agent_tool_approval_resolved",
+            "approvalTicketId": ticket.approval_ticket_id.clone(),
+            "toolPath": tool_path,
+            "toolName": tool_name.clone(),
+        }));
+    }
+    let event_type = if result.status == ToolResultStatus::Completed {
+        "tool_operation_completed"
+    } else {
+        "tool_operation_failed"
+    };
+    let result = append_result_and_emit_event(
+        store,
+        session_id,
+        Some(turn_id.as_str()),
+        &operation,
+        tool_path,
+        result,
+        event_type,
+    )?;
+    emit_approval_resolved_event(
+        store,
+        session_id,
+        Some(turn_id.as_str()),
+        "approve",
+        "approved",
+        tool_path,
+        result
+            .metadata
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    )?;
+    Ok(AgentResolveApprovalResult {
+        session_id: session_id.to_string(),
+        approval_ticket_id: ticket.approval_ticket_id,
+        status: "approved".to_string(),
+        detail: format!("AgentTool {tool_name} resolved"),
+        tool_path: tool_path.to_string(),
+        artifact_id: None,
+        evidence_id: None,
+        patch_ref: None,
+        changed_files: Vec::new(),
+    })
 }
 
 pub(super) fn approve_run_command_approval(
@@ -489,4 +653,105 @@ pub(super) fn approval_operation_from_ticket(
         path: tool_path.to_string(),
         args,
     })
+}
+
+fn agent_tool_name_from_ticket(
+    ticket: &crate::storage::ApprovalTicketDetailRecord,
+    tool_path: &str,
+) -> Result<String> {
+    let name = ticket
+        .requested_action
+        .get("toolName")
+        .and_then(Value::as_str)
+        .and_then(trim_to_string)
+        .or_else(|| {
+            tool_path
+                .strip_prefix("/tools/agent/")
+                .and_then(trim_to_string)
+        })
+        .ok_or_else(|| anyhow!("agent tool approval is missing toolName"))?;
+    if ALL_TOOL_NAMES.iter().any(|registered| *registered == name) {
+        Ok(name)
+    } else {
+        Err(anyhow!("AgentTool not found: {name}"))
+    }
+}
+
+fn agent_tool_changed_files(tool_name: &str, output: &Value) -> Vec<Value> {
+    match tool_name {
+        "write_file" => value_path(output, "path")
+            .map(|path| vec![json!({ "path": path, "changeType": "modified" })])
+            .unwrap_or_default(),
+        "delete_path" => value_path(output, "path")
+            .map(|path| vec![json!({ "path": path, "changeType": "deleted" })])
+            .unwrap_or_default(),
+        "move_path" => {
+            let mut files = Vec::new();
+            if let Some(path) = value_path(output, "fromPath") {
+                files.push(json!({ "path": path, "changeType": "deleted" }));
+            }
+            if let Some(path) = value_path(output, "toPath") {
+                files.push(json!({ "path": path, "changeType": "created" }));
+            }
+            files
+        }
+        "create_directory" => value_path(output, "path")
+            .map(|path| vec![json!({ "path": path, "changeType": "created" })])
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn agent_tool_workspace_uri(output: &Value) -> Option<String> {
+    value_path(output, "path").or_else(|| value_path(output, "toPath"))
+}
+
+fn value_path(output: &Value, key: &str) -> Option<String> {
+    output
+        .get(key)
+        .and_then(Value::as_str)
+        .and_then(trim_to_string)
+}
+
+fn record_agent_tool_recovery_backups(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    workspace_root: Option<&str>,
+    tool_name: &str,
+    arguments: &Value,
+) -> Result<()> {
+    let Some(workspace_root) = workspace_root.and_then(trim_to_string) else {
+        return Ok(());
+    };
+    for path in workspace_write_paths_for_tool(tool_name, arguments) {
+        store.append_recovery_backup(session_id, turn_id, &workspace_root, &path)?;
+    }
+    Ok(())
+}
+
+fn record_agent_tool_recovery_post_state(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    workspace_root: Option<&str>,
+    tool_name: &str,
+    arguments: &Value,
+) -> Result<()> {
+    let Some(workspace_root) = workspace_root.and_then(trim_to_string) else {
+        return Ok(());
+    };
+    for path in workspace_write_paths_for_tool(tool_name, arguments) {
+        store.record_recovery_backup_post_state(session_id, turn_id, &workspace_root, &path)?;
+    }
+    Ok(())
+}
+
+fn approved_agent_tool_policy() -> ToolPermissionPolicy {
+    ToolPermissionPolicy {
+        always_allow: ToolPermissionRuleSet::from_tools(ALL_TOOL_NAMES.iter().copied()),
+        always_deny: ToolPermissionRuleSet::default(),
+        always_confirm: ToolPermissionRuleSet::default(),
+        default: ToolPermissionDecision::Allow,
+    }
 }

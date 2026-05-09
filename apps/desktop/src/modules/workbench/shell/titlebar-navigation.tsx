@@ -1,10 +1,15 @@
-import { ArrowRight, Search, X } from "lucide-react";
+import { ArrowRight, RefreshCw, Search, X } from "lucide-react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
+
+export type TitlebarNavigationPrimaryActionKind = "submit" | "reload";
 
 type TitlebarNavigationProps = {
   readonly value: string;
   readonly placeholder: string;
   readonly ariaLabel: string;
+  readonly submitLabel: string;
+  readonly reloadLabel: string;
+  readonly primaryActionKind: TitlebarNavigationPrimaryActionKind;
   readonly isContextualAddress: boolean;
   readonly onChange: (value: string) => void;
   readonly onSubmit: () => void | Promise<void>;
@@ -17,6 +22,9 @@ export const TitlebarNavigation = ({
   value,
   placeholder,
   ariaLabel,
+  submitLabel,
+  reloadLabel,
+  primaryActionKind,
   isContextualAddress,
   onChange,
   onSubmit,
@@ -26,6 +34,8 @@ export const TitlebarNavigation = ({
 }: TitlebarNavigationProps) => {
   const hasValue = value.length > 0;
   const hasTrailingControl = trailingControl !== undefined && trailingControl !== null;
+  const primaryActionLabel =
+    primaryActionKind === "reload" ? reloadLabel : submitLabel;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -81,10 +91,14 @@ export const TitlebarNavigation = ({
           <button
             type="submit"
             className="lyra-titlebar-navigation-action"
-            aria-label={ariaLabel}
-            title={ariaLabel}
+            aria-label={primaryActionLabel}
+            title={primaryActionLabel}
           >
-            <ArrowRight size={14} />
+            {primaryActionKind === "reload" ? (
+              <RefreshCw size={14} />
+            ) : (
+              <ArrowRight size={14} />
+            )}
           </button>
         </span>
       </div>

@@ -20,6 +20,7 @@ export const BrowserTabStrip = ({
   canGoForward,
   openNewTabLabel,
   closeTabLabel,
+  navigationControl,
   splitTriggerMode,
   interactionPolicy = CLASSIC_WORKBENCH_INTERACTION_POLICIES.workspaceTabs,
   isTabInSplit,
@@ -88,6 +89,7 @@ export const BrowserTabStrip = ({
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       openNewTabLabel={openNewTabLabel}
+      navigationControl={navigationControl}
       onGoBack={onGoBack}
       onGoForward={onGoForward}
       onToggleStackedMode={onToggleStackedMode}

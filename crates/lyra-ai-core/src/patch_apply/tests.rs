@@ -7,6 +7,22 @@ use crate::tool_runtime::operation::{
 };
 use std::fs;
 
+#[test]
+fn normalize_permission_mode_rejects_capsule_as_permission_mode() {
+    assert_eq!(
+        normalize_permission_mode(Some("capsule"), None),
+        PermissionMode::Sandbox
+    );
+    assert_eq!(
+        normalize_permission_mode(Some("sandbox"), Some("never")),
+        PermissionMode::FullAccess
+    );
+    assert_eq!(
+        normalize_execution_target(Some("agent_vm")),
+        ExecutionTarget::AgentVm
+    );
+}
+
 fn seed_session(store: &AiStore, workspace_root: &str) -> String {
     let session_id = new_id("session");
     let now = now_ms();
@@ -15,6 +31,10 @@ fn seed_session(store: &AiStore, workspace_root: &str) -> String {
             id: session_id.clone(),
             title: "Apply patch".to_string(),
             profile_id: None,
+            model_id: None,
+            system_prompt: None,
+            permission_mode: None,
+            execution_target: None,
             project_root: Some(workspace_root.to_string()),
             project_name: Some("workspace".to_string()),
             collaboration_mode: "default".to_string(),
@@ -45,6 +65,7 @@ fn seed_session(store: &AiStore, workspace_root: &str) -> String {
                 status: "running".to_string(),
                 collaboration_mode: Some("default".to_string()),
                 permission_mode: "full_access".to_string(),
+                execution_target: "host".to_string(),
                 error_code: None,
                 error_message: None,
                 usage: None,
@@ -94,6 +115,7 @@ fn seed_recovery_turn(store: &AiStore, session_id: &str, workspace_root: &str, t
                 status: "running".to_string(),
                 collaboration_mode: Some("default".to_string()),
                 permission_mode: "full_access".to_string(),
+                execution_target: "host".to_string(),
                 error_code: None,
                 error_message: None,
                 usage: None,

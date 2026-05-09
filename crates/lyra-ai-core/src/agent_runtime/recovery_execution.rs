@@ -88,6 +88,23 @@ pub fn execute_message_rollback(
                 "detail": detail,
             }),
         )?;
+        emit_store_event(
+            &store,
+            &request.session_id,
+            None,
+            "session_rolled_back",
+            json!({
+                "sessionId": request.session_id,
+                "rollbackId": result.rollback_id,
+                "targetUserMessageId": result.reopened_user_message_id,
+                "restoredWorkspaceSnapshotId": result.restored_workspace_snapshot_id,
+                "restoredConversationSnapshotId": result.restored_conversation_snapshot_id,
+                "supersededMessageIds": result.superseded_message_ids,
+                "artifactId": result.artifact_id,
+                "evidenceId": result.evidence_id,
+                "detail": detail,
+            }),
+        )?;
     } else {
         emit_store_event(
             &store,

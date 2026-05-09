@@ -165,6 +165,9 @@ export const useWorkspaceSurfaceRouterProps = ({
       model: pluginsCenterModel,
       labels: labels.pluginsCenter
     },
+    agentVm: {
+      labels: labels.agentVm
+    },
     aiHistory: {
       locale: preferences.locale,
       ...labels.aiHistory,

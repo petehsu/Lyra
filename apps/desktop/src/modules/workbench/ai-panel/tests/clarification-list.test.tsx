@@ -4,13 +4,14 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { AgentSessionDetail } from "../agent-ui-types";
 import { ClarificationList } from "../clarification-list";
+import { hasPendingClarification } from "../clarification-model";
 
 describe("ClarificationList", () => {
-  test("renders pending questions and resolves A/B/C/D answers", async () => {
+  test("shows one question at a time and submits answers at the end", async () => {
     const user = userEvent.setup();
     const resolveClarification = vi.fn(async () => ({
       sessionId: "session-1",
-      questionTicketId: "question-1",
+      questionTicketId: "question-2",
       status: "answered" as const,
       detail: createDetail([]),
     }));
@@ -23,22 +24,35 @@ describe("ClarificationList", () => {
       />
     );
 
-    expect(screen.getByText("Clarify target")).toBeDefined();
-    expect(screen.getByText("Pick destination")).toBeDefined();
+    expect(screen.getAllByText("Clarify target").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Pick destination")).toBeNull();
 
-    const firstRow = screen.getByText("Clarify target").closest(".lyra-ai-clarification-row");
+    const firstRow = screen.getAllByText("Clarify target")[0]?.closest(".lyra-ai-clarification-panel");
     expect(firstRow).not.toBeNull();
-    await user.click(within(firstRow as HTMLElement).getByRole("button", { name: "B" }));
+    await user.click(within(firstRow as HTMLElement).getByRole("button", { name: "Select B: Reference" }));
+    expect(resolveClarification).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getAllByText("Pick destination").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Select A: Latest" }));
+    await user.click(screen.getByRole("button", { name: "Submit" }));
 
     expect(resolveClarification).toHaveBeenCalledWith({
       sessionId: "session-1",
       questionTicketId: "question-1",
       selectedOptionId: "B",
+      answerText: "Reference",
     });
-    expect(onResolved).toHaveBeenCalled();
+    expect(resolveClarification).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      questionTicketId: "question-2",
+      selectedOptionId: "A",
+      answerText: "Latest",
+    });
+    expect(onResolved).toHaveBeenCalledTimes(1);
   });
 
-  test("submits custom answer inline", async () => {
+  test("submits custom answer from the final submit action", async () => {
     const user = userEvent.setup();
     const resolveClarification = vi.fn(async () => ({
       sessionId: "session-1",
@@ -53,9 +67,9 @@ describe("ClarificationList", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "Custom" }));
     await user.type(screen.getByPlaceholderText("Custom answer"), "Use README.md");
-    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(resolveClarification).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Submit" }));
 
     expect(resolveClarification).toHaveBeenCalledWith({
       sessionId: "session-1",
@@ -63,6 +77,11 @@ describe("ClarificationList", () => {
       customAnswer: "Use README.md",
       answerText: "Use README.md",
     });
+  });
+
+  test("detects pending clarification for composer blocking", () => {
+    expect(hasPendingClarification(createDetail(["question-1"]))).toBe(true);
+    expect(hasPendingClarification(createDetail([]))).toBe(false);
   });
 });
 

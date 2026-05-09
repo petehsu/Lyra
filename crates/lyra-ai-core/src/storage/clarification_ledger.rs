@@ -219,28 +219,100 @@ impl AiStore {
     pub fn read_pending_clarification_interactions(&self, session_id: &str) -> Result<Vec<Value>> {
         self.with_session_conn(session_id, |conn| {
             let tickets = read_question_tickets_by_status_from_conn(conn, session_id, "open", 12)?;
-            Ok(tickets
+            let mut groups: Vec<(String, Value, Vec<QuestionTicket>)> = Vec::new();
+            for ticket in tickets {
+                let panel = ticket
+                    .target_bindings
+                    .get("panel")
+                    .cloned()
+                    .unwrap_or_else(|| default_panel_payload_for_ticket(&ticket));
+                let panel_id = ticket
+                    .target_bindings
+                    .get("panelId")
+                    .or_else(|| panel.get("panelId"))
+                    .and_then(Value::as_str)
+                    .and_then(trim_to_string)
+                    .unwrap_or_else(|| ticket.question_ticket_id.clone());
+                if let Some((_, _, group_tickets)) =
+                    groups.iter_mut().find(|(id, _, _)| id == &panel_id)
+                {
+                    group_tickets.push(ticket);
+                } else {
+                    groups.push((panel_id, panel, vec![ticket]));
+                }
+            }
+            Ok(groups
                 .into_iter()
-                .map(|ticket| {
-                    json!({
-                        "id": ticket.question_ticket_id,
-                        "sessionId": ticket.session_id,
-                        "turnId": ticket.runtime_turn_id,
+                .filter_map(|(panel_id, panel, tickets)| {
+                    let first = tickets.first()?;
+                    let questions = tickets
+                        .iter()
+                        .map(question_payload)
+                        .collect::<Vec<_>>();
+                    let title = panel
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .and_then(trim_to_string)
+                        .unwrap_or_else(|| first.title.clone());
+                    let description = panel
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .and_then(trim_to_string)
+                        .unwrap_or_else(|| first.why.clone());
+                    let presentation = panel
+                        .get("presentation")
+                        .and_then(Value::as_str)
+                        .and_then(trim_to_string)
+                        .unwrap_or_else(|| "inline_card".to_string());
+                    let blocks_execution = panel
+                        .get("blocksExecution")
+                        .and_then(Value::as_bool)
+                        .unwrap_or_else(|| first.blocking_level == "hard_block");
+                    let blocked_operation_ids = panel
+                        .get("blockedOperationIds")
+                        .and_then(Value::as_array)
+                        .map(|values| {
+                            values
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .filter_map(trim_to_string)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    let updated_at = tickets
+                        .iter()
+                        .map(|ticket| ticket.updated_at)
+                        .max()
+                        .unwrap_or(first.updated_at);
+                    Some(json!({
+                        "id": panel_id,
+                        "sessionId": first.session_id,
+                        "turnId": first.runtime_turn_id,
                         "kind": "clarification",
                         "status": "pending",
                         "payload": {
-                            "questionTicketId": ticket.question_ticket_id,
-                            "blockingLevel": ticket.blocking_level,
-                            "title": ticket.title,
-                            "question": ticket.question,
-                            "why": ticket.why,
-                            "targetSummary": ticket.target_summary,
-                            "options": ticket.options,
-                            "allowCustomAnswer": ticket.allow_custom_answer,
+                            "schemaVersion": "v1",
+                            "panelId": panel_id,
+                            "source": panel.get("source").and_then(Value::as_str).unwrap_or("agent_runtime"),
+                            "presentation": presentation,
+                            "blocksExecution": blocks_execution,
+                            "blockedOperationIds": blocked_operation_ids,
+                            "resumeToken": panel.get("resumeToken").cloned().unwrap_or(Value::Null),
+                            "title": title,
+                            "description": description,
+                            "questionTicketIds": tickets.iter().map(|ticket| ticket.question_ticket_id.clone()).collect::<Vec<_>>(),
+                            "questions": questions,
+                            "questionTicketId": first.question_ticket_id,
+                            "blockingLevel": first.blocking_level,
+                            "question": first.question,
+                            "why": first.why,
+                            "targetSummary": first.target_summary,
+                            "options": first.options,
+                            "allowCustomAnswer": first.allow_custom_answer,
                         },
-                        "createdAt": ticket.created_at,
-                        "updatedAt": ticket.updated_at,
-                    })
+                        "createdAt": first.created_at,
+                        "updatedAt": updated_at,
+                    }))
                 })
                 .collect())
         })
@@ -340,6 +412,35 @@ fn read_question_tickets_by_status_from_conn(
     }
     result.reverse();
     Ok(result)
+}
+
+fn default_panel_payload_for_ticket(ticket: &QuestionTicket) -> Value {
+    json!({
+        "schemaVersion": "v1",
+        "source": "agent_runtime",
+        "presentation": if ticket.blocking_level == "hard_block" { "modal" } else { "inline_card" },
+        "blocksExecution": ticket.blocking_level == "hard_block",
+        "blockedOperationIds": ticket.related_ids.clone(),
+        "resumeToken": format!("runtime_turn:{}", ticket.runtime_turn_id),
+        "title": ticket.title.clone(),
+        "description": ticket.why.clone(),
+    })
+}
+
+fn question_payload(ticket: &QuestionTicket) -> Value {
+    json!({
+        "questionTicketId": ticket.question_ticket_id.clone(),
+        "blockingLevel": ticket.blocking_level.clone(),
+        "title": ticket.title.clone(),
+        "question": ticket.question.clone(),
+        "why": ticket.why.clone(),
+        "whyItMatters": ticket.why.clone(),
+        "targetSummary": ticket.target_summary.clone(),
+        "options": ticket.options.clone(),
+        "allowCustomAnswer": ticket.allow_custom_answer,
+        "questionType": ticket.target_bindings.get("questionType").cloned().unwrap_or(Value::Null),
+        "reasonCode": ticket.target_bindings.get("reasonCode").cloned().unwrap_or(Value::Null),
+    })
 }
 
 fn read_question_ticket_row(row: &Row<'_>) -> rusqlite::Result<QuestionTicket> {

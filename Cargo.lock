@@ -1631,8 +1631,25 @@ dependencies = [
  "anyhow",
  "chrono",
  "dirs",
+ "lyra-capsule-core",
+ "lyra-local-inference-core",
+ "lyra-mcp-core",
  "reqwest",
  "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
+name = "lyra-capsule-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2",
@@ -1743,6 +1760,15 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "once_cell",
+]
+
+[[package]]
+name = "lyra-local-inference-core"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "tempfile",
 ]
 
 [[package]]

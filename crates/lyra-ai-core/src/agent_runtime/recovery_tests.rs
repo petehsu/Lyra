@@ -18,6 +18,10 @@ fn seed_turn(store: &AiStore, workspace_root: &str) -> (AgentSession, String, St
         id: new_id("session"),
         title: "Recovery test".to_string(),
         profile_id: Some("profile-test".to_string()),
+        model_id: None,
+        system_prompt: None,
+        permission_mode: None,
+        execution_target: None,
         project_root: Some(workspace_root.to_string()),
         project_name: Some("workspace".to_string()),
         collaboration_mode: "default".to_string(),
@@ -32,6 +36,7 @@ fn seed_turn(store: &AiStore, workspace_root: &str) -> (AgentSession, String, St
         status: "running".to_string(),
         collaboration_mode: Some("default".to_string()),
         permission_mode: "full_access".to_string(),
+        execution_target: "host".to_string(),
         error_code: None,
         error_message: None,
         usage: None,
@@ -72,6 +77,10 @@ fn seed_turn_without_anchor(store: &AiStore, workspace_root: &str) -> (String, S
         id: new_id("session"),
         title: "Missing anchor".to_string(),
         profile_id: Some("profile-test".to_string()),
+        model_id: None,
+        system_prompt: None,
+        permission_mode: None,
+        execution_target: None,
         project_root: Some(workspace_root.to_string()),
         project_name: Some("workspace".to_string()),
         collaboration_mode: "default".to_string(),
@@ -86,6 +95,7 @@ fn seed_turn_without_anchor(store: &AiStore, workspace_root: &str) -> (String, S
         status: "running".to_string(),
         collaboration_mode: Some("default".to_string()),
         permission_mode: "full_access".to_string(),
+        execution_target: "host".to_string(),
         error_code: None,
         error_message: None,
         usage: None,
@@ -1054,6 +1064,49 @@ fn rollback_execute_safe_preview_restores_workspace_and_reopens_message() {
             .and_then(|summary| summary.reopened_message_id.as_deref()),
         Some(user_message_id.as_str())
     );
+    assert!(detail.runtime_events.iter().any(|event| {
+        event.phase == "session_rolled_back"
+            && event.payload["rollbackId"].as_str() == Some(result.rollback_id.as_str())
+    }));
+}
+
+#[test]
+fn rollback_to_turn_executes_safe_checkpoint_by_turn_id() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::write(temp.path().join("README.md"), "old\n").expect("readme");
+    let storage_root = temp.path().join("ai").to_string_lossy().to_string();
+    let store = AiStore::open(Some(storage_root.as_str())).expect("store");
+    let (session, turn_id, _user_message_id) =
+        seed_turn(&store, temp.path().to_string_lossy().as_ref());
+    run_apply_patch(
+        &store,
+        &session.id,
+        &turn_id,
+        temp.path().to_string_lossy().as_ref(),
+    );
+
+    let result = rollback_to_turn(AgentRollbackToTurnRequest {
+        storage: storage_request(&storage_root),
+        session_id: session.id.clone(),
+        target_turn_id: turn_id,
+        confirmation_token: Some("restore".to_string()),
+        strategy: None,
+    })
+    .expect("rollback to turn");
+    let detail = store
+        .read_session_detail(&session.id)
+        .expect("detail")
+        .expect("session");
+
+    assert_eq!(result.status, "completed");
+    assert_eq!(
+        fs::read_to_string(temp.path().join("README.md")).expect("readme"),
+        "old\n"
+    );
+    assert!(detail.runtime_events.iter().any(|event| {
+        event.phase == "session_rolled_back"
+            && event.payload["rollbackId"].as_str() == Some(result.rollback_id.as_str())
+    }));
 }
 
 fn assert_rollback_temp_files_absent(root: &Path) {

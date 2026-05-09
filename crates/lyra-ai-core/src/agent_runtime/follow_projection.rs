@@ -1,5 +1,8 @@
 use super::*;
-use crate::storage::{FollowEventInput, FollowTargetInput, WorkspaceCommitInput};
+use crate::storage::{
+    AgentFollowSummary, AgentFollowTargetSummary, FollowEventInput, FollowTargetInput,
+    WorkspaceCommitInput,
+};
 use crate::tool_runtime::operation::TOOL_APPROVAL_REQUIRED;
 
 pub(crate) fn project_follow_operation_started(
@@ -24,12 +27,14 @@ pub(crate) fn project_follow_operation_started(
         artifact_refs: Vec::new(),
         evidence_refs: Vec::new(),
     })?;
-    let target_id = summary.and_then(|summary| summary.active_target_id);
-    store.append_follow_event(FollowEventInput {
+    let target_id = summary
+        .as_ref()
+        .and_then(|summary| summary.active_target_id.clone());
+    let summary = store.append_follow_event(FollowEventInput {
         session_id: session_id.to_string(),
         runtime_turn_id: Some(turn_id.to_string()),
         long_work_run_id: context.long_work_run_id,
-        follow_target_id: target_id,
+        follow_target_id: target_id.clone(),
         tool_operation_id: Some(operation.op_id.clone()),
         work_slice_id: context.work_slice_id,
         event_type: "operation_started".to_string(),
@@ -41,6 +46,14 @@ pub(crate) fn project_follow_operation_started(
             "opId": operation.op_id,
         }),
     })?;
+    emit_follow_projection_updated(
+        store,
+        session_id,
+        turn_id,
+        operation,
+        summary.as_ref(),
+        "running",
+    )?;
     Ok(())
 }
 
@@ -78,8 +91,10 @@ pub(crate) fn project_follow_operation_finished(
         artifact_refs: refs.artifact_refs.clone(),
         evidence_refs: refs.evidence_refs.clone(),
     })?;
-    let target_id = summary.and_then(|summary| summary.active_target_id);
-    store.append_follow_event(FollowEventInput {
+    let target_id = summary
+        .as_ref()
+        .and_then(|summary| summary.active_target_id.clone());
+    let summary = store.append_follow_event(FollowEventInput {
         session_id: session_id.to_string(),
         runtime_turn_id: Some(turn_id.to_string()),
         long_work_run_id: context.long_work_run_id.clone(),
@@ -98,6 +113,14 @@ pub(crate) fn project_follow_operation_finished(
             "errorMessage": result.error_message,
         }),
     })?;
+    emit_follow_projection_updated(
+        store,
+        session_id,
+        turn_id,
+        operation,
+        summary.as_ref(),
+        status,
+    )?;
     if operation.path == TOOL_FS_APPLY_PATCH && result.status == ToolResultStatus::Completed {
         let paths = changed_file_paths(metadata);
         append_workspace_commits_for_patch(
@@ -139,7 +162,109 @@ pub(crate) fn project_follow_operation_finished(
             "committed",
         )?;
     }
+    if operation.path.starts_with("/tools/agent/") && result.status == ToolResultStatus::Completed {
+        append_agent_tool_live_edit_events(
+            store,
+            session_id,
+            turn_id,
+            &operation.op_id,
+            target_id.as_deref(),
+            metadata,
+        )?;
+    }
     Ok(())
+}
+
+fn emit_follow_projection_updated(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    operation: &ToolOperationEnvelope,
+    summary: Option<&AgentFollowSummary>,
+    status: &str,
+) -> Result<()> {
+    let operations = summary
+        .map(|summary| {
+            summary
+                .targets
+                .iter()
+                .map(|target| projection_operation_payload(target, &operation.path))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| vec![fallback_operation_payload(operation, status)]);
+    let follow_session_id = summary.map(|summary| summary.follow_session_id.as_str());
+    let active_target_id = summary.and_then(|summary| summary.active_target_id.as_deref());
+    let targets = summary
+        .map(|summary| json!(&summary.targets))
+        .unwrap_or_else(|| json!([]));
+    let recent_events = summary
+        .map(|summary| json!(&summary.recent_events))
+        .unwrap_or_else(|| json!([]));
+    emit_store_event(
+        store,
+        session_id,
+        Some(turn_id),
+        "follow_projection_updated",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "followSessionId": follow_session_id,
+            "status": status,
+            "activeTargetId": active_target_id,
+            "operations": operations,
+            "targets": targets,
+            "recentEvents": recent_events,
+        }),
+    )
+}
+
+fn projection_operation_payload(
+    target: &AgentFollowTargetSummary,
+    fallback_tool_path: &str,
+) -> Value {
+    let finished_at = if matches!(target.status.as_str(), "completed" | "failed") {
+        json!(target.updated_at)
+    } else {
+        Value::Null
+    };
+    let file_path = if is_openable_target_kind(&target.kind) {
+        target
+            .workspace_uri
+            .as_deref()
+            .or_else(|| openable_resource_ref(target.resource_ref.as_deref()))
+    } else {
+        None
+    };
+    json!({
+        "targetId": target.follow_target_id.as_str(),
+        "toolName": target
+            .tool_operation_id
+            .as_deref()
+            .unwrap_or(fallback_tool_path),
+        "toolPath": fallback_tool_path,
+        "status": target.status.as_str(),
+        "filePath": file_path,
+        "startedAt": target.updated_at,
+        "finishedAt": finished_at,
+    })
+}
+
+fn fallback_operation_payload(operation: &ToolOperationEnvelope, status: &str) -> Value {
+    let finished_at = if matches!(status, "completed" | "failed") {
+        json!(now_ms())
+    } else {
+        Value::Null
+    };
+    json!({
+        "targetId": Value::Null,
+        "toolName": operation.op_id.as_str(),
+        "toolPath": operation.path.as_str(),
+        "status": status,
+        "filePath": openable_operation_arg(operation, "path")
+            .or_else(|| openable_operation_arg(operation, "toPath")),
+        "startedAt": now_ms(),
+        "finishedAt": finished_at,
+    })
 }
 
 struct ProjectionContext {
@@ -180,6 +305,49 @@ fn target_from_operation(
     result: Option<&ToolResultEnvelope>,
     metadata: Option<&Value>,
 ) -> ProjectedTarget {
+    if matches!(
+        operation.path.as_str(),
+        TOOL_FS_READ_FILE | TOOL_FS_READ_RANGE
+    ) {
+        let workspace_uri =
+            openable_operation_arg(operation, "path").or_else(|| content_path_from_result(result));
+        let title = workspace_uri
+            .clone()
+            .unwrap_or_else(|| "Reading file".to_string());
+        return ProjectedTarget {
+            kind: if workspace_uri.is_some() {
+                "file".to_string()
+            } else {
+                "operation".to_string()
+            },
+            title,
+            resource_ref: workspace_uri.clone(),
+            workspace_uri,
+            started_label: "Reading".to_string(),
+            finished_label: "File read".to_string(),
+            failed_label: "Read failed".to_string(),
+        };
+    }
+    if operation.path == TOOL_FS_STAT_PATH {
+        let workspace_uri =
+            openable_operation_arg(operation, "path").or_else(|| content_path_from_result(result));
+        let title = workspace_uri
+            .clone()
+            .unwrap_or_else(|| "Reading metadata".to_string());
+        return ProjectedTarget {
+            kind: if workspace_uri.is_some() {
+                "file".to_string()
+            } else {
+                "operation".to_string()
+            },
+            title,
+            resource_ref: workspace_uri.clone(),
+            workspace_uri,
+            started_label: "Reading metadata".to_string(),
+            finished_label: "Metadata read".to_string(),
+            failed_label: "Metadata read failed".to_string(),
+        };
+    }
     if operation.path == TOOL_FS_APPLY_PATCH {
         let title = changed_files_title(metadata, "Applying patch");
         return ProjectedTarget {
@@ -187,7 +355,7 @@ fn target_from_operation(
             title,
             resource_ref: string_field(metadata, "patchRef")
                 .or_else(|| arg_string(operation, "patchRef")),
-            workspace_uri: first_changed_file(metadata),
+            workspace_uri: first_openable_changed_file(metadata),
             started_label: "Editing".to_string(),
             finished_label: "Patch applied".to_string(),
             failed_label: "Patch failed".to_string(),
@@ -200,7 +368,7 @@ fn target_from_operation(
             title,
             resource_ref: string_field(metadata, "patchRef")
                 .or_else(|| arg_string(operation, "appliedArtifactId")),
-            workspace_uri: first_changed_file(metadata),
+            workspace_uri: first_openable_changed_file(metadata),
             started_label: "Rolling back".to_string(),
             finished_label: "Patch rolled back".to_string(),
             failed_label: "Rollback failed".to_string(),
@@ -235,6 +403,28 @@ fn target_from_operation(
             failed_label: failed_label.to_string(),
         };
     }
+    if operation.path.starts_with("/tools/agent/") {
+        let workspace_uri = string_field(metadata, "workspaceUri")
+            .filter(|value| is_openable_workspace_ref(value))
+            .or_else(|| first_openable_changed_file(metadata))
+            .or_else(|| openable_operation_arg(operation, "path"))
+            .or_else(|| openable_operation_arg(operation, "toPath"));
+        let title = workspace_uri.clone().unwrap_or_else(|| {
+            operation
+                .path
+                .trim_start_matches("/tools/agent/")
+                .to_string()
+        });
+        return ProjectedTarget {
+            kind: "file".to_string(),
+            title,
+            resource_ref: workspace_uri.clone(),
+            workspace_uri,
+            started_label: "Editing".to_string(),
+            finished_label: "Edit finalized".to_string(),
+            failed_label: "Edit failed".to_string(),
+        };
+    }
     ProjectedTarget {
         kind: "operation".to_string(),
         title: format!("Run {}", operation.path),
@@ -244,6 +434,113 @@ fn target_from_operation(
         finished_label: "Operation finished".to_string(),
         failed_label: "Operation failed".to_string(),
     }
+}
+
+fn is_openable_target_kind(kind: &str) -> bool {
+    matches!(kind, "file" | "diff" | "editor" | "document")
+}
+
+fn openable_resource_ref(value: Option<&str>) -> Option<&str> {
+    let value = value?;
+    if is_virtual_follow_ref(value) || is_tool_path_ref(value) {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn openable_operation_arg(operation: &ToolOperationEnvelope, key: &str) -> Option<String> {
+    arg_string(operation, key).filter(|value| is_openable_workspace_ref(value))
+}
+
+fn content_path_from_result(result: Option<&ToolResultEnvelope>) -> Option<String> {
+    let result = result?;
+    let value: Value = serde_json::from_str(&result.content).ok()?;
+    value
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|path| is_openable_workspace_ref(path))
+        .map(ToString::to_string)
+}
+
+fn first_openable_changed_file(metadata: Option<&Value>) -> Option<String> {
+    first_changed_file(metadata).filter(|value| is_openable_workspace_ref(value))
+}
+
+fn is_openable_workspace_ref(value: &str) -> bool {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || is_virtual_follow_ref(trimmed) || is_tool_path_ref(trimmed) {
+        return false;
+    }
+    if trimmed
+        .split(['/', '\\'])
+        .any(|segment| segment == ".." || segment.contains('\0'))
+    {
+        return false;
+    }
+    true
+}
+
+fn is_tool_path_ref(value: &str) -> bool {
+    value == "/tools" || value.starts_with("/tools/")
+}
+
+fn is_virtual_follow_ref(value: &str) -> bool {
+    let first_segment = value.split(['/', '\\']).next().unwrap_or_default();
+    first_segment.starts_with("tool_result_")
+        || first_segment.starts_with("artifact_")
+        || first_segment.starts_with("evidence_")
+}
+
+fn append_agent_tool_live_edit_events(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    op_id: &str,
+    follow_target_id: Option<&str>,
+    metadata: Option<&Value>,
+) -> Result<()> {
+    let paths = changed_file_paths(metadata);
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let payload = json!({
+        "operationId": op_id,
+        "filePath": paths[0],
+        "diffHunks": metadata
+            .and_then(|value| value.get("changedFiles"))
+            .cloned()
+            .unwrap_or_else(|| json!([])),
+    });
+    emit_store_event(
+        store,
+        session_id,
+        Some(turn_id),
+        "follow_live_edit_delta",
+        payload.clone(),
+    )?;
+    store.append_follow_event(FollowEventInput {
+        session_id: session_id.to_string(),
+        runtime_turn_id: Some(turn_id.to_string()),
+        long_work_run_id: None,
+        follow_target_id: follow_target_id.map(ToString::to_string),
+        tool_operation_id: Some(op_id.to_string()),
+        work_slice_id: None,
+        event_type: "live_edit_delta".to_string(),
+        payload_ref: None,
+        payload: payload.clone(),
+    })?;
+    emit_store_event(
+        store,
+        session_id,
+        Some(turn_id),
+        "follow_live_edit_finalized",
+        json!({
+            "operationId": op_id,
+            "filePath": paths[0],
+            "changedFileCount": paths.len(),
+        }),
+    )
 }
 
 fn refs_from_metadata(metadata: Option<&Value>) -> ProjectedRefs {

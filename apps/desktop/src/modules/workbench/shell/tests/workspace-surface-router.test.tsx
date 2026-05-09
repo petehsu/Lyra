@@ -36,6 +36,7 @@ const createSurfaceAdapters = (): WorkbenchSurfaceAdapters => ({
   mcpCenter: () => <div aria-label="fake-mcp-center" />,
   skillsCenter: () => <div aria-label="fake-skills-center" />,
   pluginsCenter: () => <div aria-label="fake-plugins-center" />,
+  agentVm: () => <div aria-label="fake-agent-vm" />,
   aiHistory: () => <div aria-label="fake-ai-history" />,
   planReview: () => <div aria-label="fake-plan-review" />
 });
@@ -117,6 +118,8 @@ const createProps = (
   i18n: {},
   mcpCenter: { model: {}, labels: {} },
   skillsCenter: { model: {}, labels: {} },
+  pluginsCenter: { model: {}, labels: {} },
+  agentVm: { labels: {} },
   aiHistory: {
     locale: "en-US",
     title: "History",

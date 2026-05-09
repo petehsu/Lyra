@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { WorkbenchSplitTriggerMode } from "../preferences";
 import type { WorkspaceTabsInteractionPolicy } from "../interaction-policy";
 import type { WorkspaceTab } from "../workspace-tabs/types";
@@ -19,6 +21,7 @@ export type BrowserTabStripProps = {
   readonly canGoForward: boolean;
   readonly openNewTabLabel: string;
   readonly closeTabLabel: string;
+  readonly navigationControl?: ReactNode;
   readonly splitTriggerMode: WorkbenchSplitTriggerMode;
   readonly interactionPolicy?: WorkspaceTabsInteractionPolicy;
   readonly isTabInSplit?: (tabId: string) => boolean;

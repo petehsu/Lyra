@@ -25,6 +25,149 @@ describe("AiPanelThreadView", () => {
     expect(screen.getByText("Done.")).toBeDefined();
   });
 
+  test("places pending runtime actions inside the chronological thread timeline", () => {
+    render(
+      <AiPanelThreadView
+        logoUrl="/logo.png"
+        emptyThreadLabel="Hello"
+        detail={createShellApprovalDetail()}
+        streamingTurnId={null}
+        streamingAssistantText=""
+        isLoading={false}
+        runtimeError={null}
+      />
+    );
+
+    const userMessage = screen.getByText("Inspect README");
+    const approval = screen.getByText("Run shell command");
+    const assistantMessage = screen.getByText("Done.");
+    expect(approval.closest(".lyra-ai-agent-timeline-event")).not.toBeNull();
+    expect(
+      userMessage.compareDocumentPosition(approval) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      approval.compareDocumentPosition(assistantMessage) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  test("orders saved assistant text before a later clarification panel", () => {
+    render(
+      <AiPanelThreadView
+        logoUrl="/logo.png"
+        emptyThreadLabel="Hello"
+        detail={createClarificationTimelineDetail({ includeAssistantMessage: true })}
+        streamingTurnId={null}
+        streamingAssistantText=""
+        isLoading={false}
+        runtimeError={null}
+      />
+    );
+
+    const userMessage = screen.getByText("Build a website");
+    const assistantMessage = screen.getByText("I need one detail first.");
+    const clarification = screen.getByText("Choose site direction");
+    expect(
+      userMessage.compareDocumentPosition(assistantMessage) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      assistantMessage.compareDocumentPosition(clarification) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  test("orders live assistant text before a later clarification panel", () => {
+    render(
+      <AiPanelThreadView
+        logoUrl="/logo.png"
+        emptyThreadLabel="Hello"
+        detail={createClarificationTimelineDetail({ includeAssistantMessage: false })}
+        streamingTurnId="turn-clarify"
+        streamingAssistantText="I need one detail first."
+        isLoading={false}
+        runtimeError={null}
+      />
+    );
+
+    const userMessage = screen.getByText("Build a website");
+    const assistantMessage = screen.getByText("I need one detail first.");
+    const clarification = screen.getByText("Choose site direction");
+    expect(
+      userMessage.compareDocumentPosition(assistantMessage) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      assistantMessage.compareDocumentPosition(clarification) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  test("keeps user messages unlabeled and places actions in the message footer", () => {
+    render(
+      <AiPanelThreadView
+        logoUrl="/logo.png"
+        emptyThreadLabel="Hello"
+        detail={createDetail()}
+        streamingTurnId={null}
+        streamingAssistantText=""
+        isLoading={false}
+        runtimeError={null}
+        renderMessageActions={(message) =>
+          message.role === "user" ? <button type="button">Rollback preview</button> : null
+        }
+      />
+    );
+
+    expect(screen.queryByText("You")).toBeNull();
+    expect(screen.getByText("Lyra")).toBeDefined();
+    const userMessage = screen.getByText("Inspect README").closest(".lyra-ai-agent-message-user");
+    expect(userMessage?.querySelector(".lyra-ai-agent-message-footer")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Rollback preview" })).toBeDefined();
+  });
+
+  test("shows the assistant generating indicator while a response is active", () => {
+    render(
+      <AiPanelThreadView
+        logoUrl="/logo.png"
+        emptyThreadLabel="Hello"
+        detail={createDetail()}
+        streamingTurnId="turn-live"
+        streamingAssistantText=""
+        isLoading={false}
+        runtimeError={null}
+      />
+    );
+
+    expect(screen.getByLabelText("Lyra is responding")).toBeDefined();
+  });
+
+  test("renders optimistic user messages before session detail returns", () => {
+    render(
+      <AiPanelThreadView
+        logoUrl="/logo.png"
+        emptyThreadLabel="Hello"
+        detail={null}
+        optimisticUserMessages={[
+          {
+            id: "optimistic-1",
+            clientRequestId: "optimistic-1",
+            tabId: "draft-1",
+            targetSessionId: null,
+            sessionId: "draft-1",
+            role: "user",
+            content: "Build the project",
+            displayContent: "Build the project",
+            createdAt: 1,
+            optimistic: true,
+          },
+        ]}
+        streamingTurnId={null}
+        streamingAssistantText=""
+        isLoading={false}
+        runtimeError={null}
+      />
+    );
+
+    expect(screen.getByText("Build the project")).toBeDefined();
+    expect(screen.queryByText("Hello")).toBeNull();
+  });
+
   test("renders patch proposal refs and changed file summary", () => {
     render(
       <AiPanelThreadView
@@ -295,6 +438,120 @@ const createDetail = (): AgentSessionDetail => ({
     },
   ],
 });
+
+const createShellApprovalDetail = (): AgentSessionDetail => ({
+  ...createDetail(),
+  pendingInteractions: [
+    {
+      id: "approval-shell-1",
+      sessionId: "session-1",
+      turnId: "turn-1",
+      kind: "tool_approval",
+      status: "pending",
+      payload: {
+        approvalTicketId: "approval-shell-1",
+        toolPath: "/tools/shell/run_command",
+        command: "npm test",
+        cwd: "/repo",
+      },
+      createdAt: 2,
+      updatedAt: 2,
+    },
+  ],
+  runtimeEvents: [],
+});
+
+const createClarificationTimelineDetail = ({
+  includeAssistantMessage,
+}: {
+  readonly includeAssistantMessage: boolean;
+}): AgentSessionDetail => {
+  const detail = createDetail();
+  return {
+    ...detail,
+    session: {
+      ...detail.session,
+      updatedAt: 5,
+    },
+    pendingInteractions: [
+      {
+        id: "clarification-1",
+        sessionId: "session-1",
+        turnId: "turn-clarify",
+        kind: "clarification",
+        status: "pending",
+        payload: {
+          panelId: "panel-clarify-1",
+          title: "Choose site direction",
+          description: "Needed before generating the files.",
+          presentation: "inline_card",
+          blocksExecution: true,
+          questions: [
+            {
+              questionTicketId: "question-1",
+              title: "Choose site direction",
+              question: "Which kind of homepage should Lyra build?",
+              why: "This changes the content and structure.",
+              options: [
+                { id: "A", label: "Product", description: "Product marketing page", recommended: true },
+                { id: "B", label: "Portfolio", description: "Personal portfolio" },
+                { id: "C", label: "Docs", description: "Documentation entry" },
+                { id: "D", label: "Other", description: "Use a custom answer" },
+              ],
+              allowCustomAnswer: true,
+            },
+          ],
+        },
+        createdAt: 3,
+        updatedAt: 3,
+      },
+    ],
+    turns: [
+      {
+        id: "turn-clarify",
+        sessionId: "session-1",
+        profileId: "profile-1",
+        status: "paused",
+        collaborationMode: "default",
+        createdAt: 1,
+        updatedAt: 4,
+      },
+    ],
+    messages: [
+      {
+        id: "msg-user-clarify",
+        sessionId: "session-1",
+        turnId: "turn-clarify",
+        role: "user",
+        content: "Build a website",
+        displayContent: "Build a website",
+        createdAt: 1,
+      },
+      ...(includeAssistantMessage
+        ? [
+            {
+              id: "msg-assistant-clarify",
+              sessionId: "session-1",
+              turnId: "turn-clarify",
+              role: "assistant" as const,
+              content: "I need one detail first.",
+              displayContent: "I need one detail first.",
+              createdAt: 4,
+            },
+          ]
+        : []),
+    ],
+    runtimeEvents: [
+      {
+        sessionId: "session-1",
+        turnId: "turn-clarify",
+        phase: "model_stream_delta",
+        payload: { text: "I need one detail first." },
+        timestamp: 2,
+      },
+    ],
+  };
+};
 
 const createPatchDetail = (): AgentSessionDetail => ({
   ...createDetail(),

@@ -63,6 +63,8 @@ pub struct AgentPolicySummary {
     pub status: String,
     pub permission_default: String,
     pub allowed_modes: Vec<String>,
+    pub default_execution_target: String,
+    pub allowed_execution_targets: Vec<String>,
     pub tool_policy_summary: AgentPolicyToolSummary,
     pub manifest_path: Option<String>,
     pub warnings: Vec<String>,

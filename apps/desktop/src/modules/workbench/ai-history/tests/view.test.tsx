@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { GlobalDialogOpenRequest } from "../../global-dialog";
 import {
@@ -160,6 +160,10 @@ const renderHistorySurface = (props: AiHistorySurfaceTestProps) =>
   );
 
 describe("AiHistorySurface", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   test("shows all threads by default and keeps project groups available", async () => {
     const desktop = createDesktopApi();
     renderHistorySurface({
@@ -230,10 +234,8 @@ describe("AiHistorySurface", () => {
         })
       );
     });
-    expect(screen.getByText("Reply for Brainstorm ideas")).toBeDefined();
-    await waitFor(() => {
-      expect(screen.queryByText("规划模式")).toBeNull();
-    });
+    expect(await screen.findByText("Reply for Brainstorm ideas")).toBeDefined();
+    expect(screen.queryByText("规划模式")).toBeNull();
     expect(captured).toEqual([]);
 
     const row = screen.getAllByText("Brainstorm ideas")[0]?.closest(".lyra-ai-history-row");

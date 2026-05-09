@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 
+import type { AgentVmSurfaceProps } from "../agent-vm";
 import type { AiHistorySurfaceProps } from "../ai-history";
 import type { AiPanelSurfaceProps, AiPlanReviewSurfaceProps } from "../ai-panel";
 import type {
@@ -39,6 +40,7 @@ export type WorkbenchSurfaceAdapters = {
   readonly mcpCenter: ComponentType<McpCenterSurfaceProps>;
   readonly skillsCenter: ComponentType<SkillsCenterSurfaceProps>;
   readonly pluginsCenter: ComponentType<PluginsCenterSurfaceProps>;
+  readonly agentVm: ComponentType<AgentVmSurfaceProps>;
   readonly aiHistory: ComponentType<AiHistorySurfaceProps>;
   readonly planReview: ComponentType<AiPlanReviewSurfaceProps>;
 };
@@ -58,6 +60,7 @@ export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
   "mcpCenter",
   "skillsCenter",
   "pluginsCenter",
+  "agentVm",
   "aiHistory",
   "planReview"
 ] as const satisfies readonly (keyof WorkbenchSurfaceAdapters)[];

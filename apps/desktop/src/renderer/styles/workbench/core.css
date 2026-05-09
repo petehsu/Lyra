@@ -357,6 +357,21 @@
   padding-left: var(--lyra-unit-8);
 }
 
+.lyra-titlebar-no-navigation {
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(var(--lyra-unit-220), var(--lyra-unit-280))
+    auto;
+}
+
+.lyra-titlebar-macos.lyra-titlebar-no-navigation {
+  grid-template-columns:
+    auto
+    minmax(0, 1fr)
+    minmax(var(--lyra-unit-220), var(--lyra-unit-280))
+    auto;
+}
+
 .lyra-titlebar-traffic-spacer {
   width: var(--lyra-unit-70);
   min-width: var(--lyra-unit-70);
@@ -1109,6 +1124,11 @@
   .lyra-titlebar {
     grid-template-columns: 1fr minmax(0, 1fr);
     padding: 0 var(--lyra-unit-8);
+  }
+
+  .lyra-titlebar-no-navigation,
+  .lyra-titlebar-macos.lyra-titlebar-no-navigation {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .lyra-titlebar-traffic-spacer {

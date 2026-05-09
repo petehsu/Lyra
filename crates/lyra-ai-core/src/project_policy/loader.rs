@@ -132,6 +132,46 @@ mod tests {
     }
 
     #[test]
+    fn documented_snake_case_manifest_fields_are_loaded() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let manifest_dir = temp.path().join(".lyra");
+        fs::create_dir_all(&manifest_dir).expect("manifest dir");
+        fs::write(
+            manifest_dir.join("project.manifest.json"),
+            r#"{
+              "schema_version": "v1",
+              "project_id": "docs-proj",
+              "permission": { "default_mode": "full_access", "allowed_modes": ["sandbox", "full_access"] },
+              "workspace": { "writable_scopes": ["."], "denied_paths": [".env*"], "symlink_policy": "never_follow" },
+              "tools": { "disabled_tools": ["/tools/filesystem/read_file"], "command_policy": "restricted", "network_policy": "localhost_only" },
+              "security": { "redaction_profile": "developer", "sensitive_file_policy": "deny" }
+            }"#,
+        )
+        .expect("manifest");
+
+        let draft = load_policy_draft(Some(temp.path().to_string_lossy().as_ref()));
+
+        assert_eq!(draft.source, "project_manifest");
+        assert_eq!(
+            draft.effective_policy.project_id.as_deref(),
+            Some("docs-proj")
+        );
+        assert_eq!(draft.effective_policy.permission_default, "full_access");
+        assert_eq!(
+            draft.effective_policy.tools.disabled,
+            vec!["/tools/filesystem/read_file".to_string()]
+        );
+        assert_eq!(
+            draft.effective_policy.security.redaction_profile,
+            "developer"
+        );
+        assert_eq!(
+            draft.effective_policy.security.sensitive_file_default,
+            "deny"
+        );
+    }
+
+    #[test]
     fn malformed_manifest_falls_back_with_warning() {
         let temp = tempfile::tempdir().expect("tempdir");
         let manifest_dir = temp.path().join(".lyra");

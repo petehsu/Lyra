@@ -42,6 +42,7 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
     const desktop = createDesktopApi(true);
     const openAppTab = vi.fn();
     const onRequestProjectBind = vi.fn().mockResolvedValue("/workspace");
+    const onFollowOpenFilePath = vi.fn();
     const { result } = renderHook(() =>
       useWorkbenchSidebarAiSurfaceProps({
         desktopApi: desktop.api,
@@ -50,6 +51,7 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
         aiPanelSide: "right",
         fileMentionFallbackRoots: [],
         workbenchTabMentions: [],
+        onFollowOpenFilePath,
         onToggleAiPanelSide: vi.fn(),
         openAppTab,
         onRequestProjectBind,
@@ -82,6 +84,7 @@ describe("useWorkbenchSidebarAiSurfaceProps", () => {
     expect(openAppTab).not.toHaveBeenCalledWith(expect.objectContaining({
       appId: "ai-history"
     }));
+    expect(result.current.onFollowOpenFilePath).toBe(onFollowOpenFilePath);
     expect(result.current.onRequestProjectBind).toBe(onRequestProjectBind);
     expect(result.current.onDefaultProfileSelect).toBe(settingsAiModel.setDefaultProfile);
   });

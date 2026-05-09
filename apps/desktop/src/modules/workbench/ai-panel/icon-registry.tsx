@@ -1,4 +1,4 @@
-import { Bot, Boxes, ClipboardList, History } from "lucide-react";
+import { Bot, Boxes, ClipboardList, History, Server } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import type { AiPanelAppIconKey } from "./types";
@@ -51,6 +51,9 @@ export const renderAiPanelTopbarIcon = (kind: "history" | "mcp" | "skills" | "pl
 export const renderAiPanelAppIcon = (iconKey: AiPanelAppIconKey) => {
   if (iconKey === "ai-panel-history") {
     return renderShell(<History size={SIZE} />);
+  }
+  if (iconKey === "ai-panel-agent-vm") {
+    return renderShell(<Server size={SIZE} />);
   }
   if (iconKey === "ai-panel-mcp") {
     return renderShell(

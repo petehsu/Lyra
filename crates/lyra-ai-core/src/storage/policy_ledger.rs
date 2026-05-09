@@ -160,6 +160,8 @@ impl AiStore {
                 status: snapshot.status,
                 permission_default: effective.permission_default,
                 allowed_modes: effective.allowed_modes,
+                default_execution_target: effective.permission.default_execution_target,
+                allowed_execution_targets: effective.permission.allowed_execution_targets,
                 tool_policy_summary: AgentPolicyToolSummary {
                     enabled_count: 6_i64.saturating_sub(effective.tools.disabled.len() as i64),
                     disabled_count: effective.tools.disabled.len() as i64,

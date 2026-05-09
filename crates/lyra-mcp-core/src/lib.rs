@@ -487,6 +487,27 @@ struct ReadMcpRuntimeIntrospectionRequest {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CallMcpRuntimeToolRequest {
+    storage_root: String,
+    project_root: Option<String>,
+    server_id: String,
+    tool_name: String,
+    arguments: Value,
+    #[serde(default)]
+    base_env: HashMap<String, String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CallMcpRuntimeToolResult {
+    server_id: String,
+    tool_name: String,
+    result: Value,
+    is_error: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ResolvedScope {
     scope: String,
     project_root: Option<String>,
@@ -1831,6 +1852,45 @@ fn probe_stdio_runtime_introspection(
     )
 }
 
+fn call_stdio_mcp_tool(
+    server: &PersistedMcpServerConfig,
+    environment: HashMap<String, String>,
+    tool_name: &str,
+    arguments: Value,
+) -> Result<Value> {
+    with_stdio_mcp_session(
+        server,
+        environment,
+        Duration::from_secs(30),
+        "MCP tool call",
+        |stdin, stdout| {
+            write_mcp_message(
+                stdin,
+                &json!({
+                    "jsonrpc": "2.0",
+                    "id": 301,
+                    "method": "tools/call",
+                    "params": {
+                        "name": tool_name,
+                        "arguments": arguments,
+                    }
+                }),
+            )?;
+            let response = read_mcp_response(stdout, 301)?;
+            if let Some(error) = response.get("error").and_then(Value::as_object) {
+                return Err(to_error(format!(
+                    "MCP tools/call failed: {}",
+                    read_mcp_error_message(error)
+                )));
+            }
+            response
+                .get("result")
+                .cloned()
+                .ok_or_else(|| to_error("MCP tools/call response missing result object"))
+        },
+    )
+}
+
 fn build_posix_launch_script(server: &PersistedMcpServerConfig) -> Option<String> {
     if server.transport != "stdio" {
         return None;
@@ -2552,6 +2612,58 @@ pub fn read_mcp_runtime_introspection_json(request_json: String) -> Result<Strin
         request.fallback_snapshot
     };
     to_json(&snapshot)
+}
+
+#[cfg_attr(feature = "node-api", napi(js_name = "callMcpRuntimeToolJson"))]
+pub fn call_mcp_runtime_tool_json(request_json: String) -> Result<String> {
+    let request: CallMcpRuntimeToolRequest = parse_json(&request_json)?;
+    let storage_root = build_storage_root_path(&request.storage_root);
+    let global_document = read_json_file(
+        &build_global_document_path(&storage_root),
+        build_default_scope_document(MCP_SCOPE_GLOBAL, None),
+    );
+    let project_document = match request.project_root.as_deref().and_then(trim_or_none) {
+        Some(project_root) => read_json_file(
+            &build_project_document_path(&storage_root, &project_root),
+            build_default_scope_document(MCP_SCOPE_PROJECT, Some(project_root.to_string())),
+        ),
+        None => build_default_scope_document(MCP_SCOPE_PROJECT, None),
+    };
+    let server = project_document
+        .servers
+        .iter()
+        .chain(global_document.servers.iter())
+        .find(|server| server.id == request.server_id)
+        .cloned()
+        .ok_or_else(|| to_error(format!("MCP server not found: {}", request.server_id)))?;
+    if server.enabled == false {
+        return Err(to_error(format!("MCP server is disabled: {}", server.id)));
+    }
+    if server.transport != "stdio" {
+        return Err(to_error(format!(
+            "MCP tools/call currently supports stdio servers only: {}",
+            server.transport
+        )));
+    }
+    let environment = materialize_runtime_environment(MaterializeRuntimeEnvironmentRequest {
+        entries: server.environment.clone(),
+        base_env: request.base_env,
+    })?;
+    let result = call_stdio_mcp_tool(
+        &server,
+        environment,
+        request.tool_name.trim(),
+        request.arguments.clone(),
+    )?;
+    to_json(&CallMcpRuntimeToolResult {
+        server_id: server.id,
+        tool_name: request.tool_name,
+        is_error: result
+            .get("isError")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        result,
+    })
 }
 
 #[cfg_attr(feature = "node-api", napi(js_name = "startMcpRuntimeJson"))]

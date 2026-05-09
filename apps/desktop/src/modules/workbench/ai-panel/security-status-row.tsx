@@ -1,15 +1,19 @@
 import { useMemo } from "react";
 
 import type { AgentSessionDetail } from "./agent-ui-types";
-import { createSecurityStatusModel } from "./security-status-model";
+import { createSecurityStatusModel, type SecurityStatusKind } from "./security-status-model";
 
 type SecurityStatusRowProps = {
   readonly detail: AgentSessionDetail | null;
+  readonly visibleKinds?: readonly SecurityStatusKind[] | undefined;
 };
 
-export const SecurityStatusRow = ({ detail }: SecurityStatusRowProps) => {
+export const SecurityStatusRow = ({ detail, visibleKinds }: SecurityStatusRowProps) => {
   const model = useMemo(() => createSecurityStatusModel(detail), [detail]);
   if (model === null) {
+    return null;
+  }
+  if (visibleKinds !== undefined && !visibleKinds.includes(model.kind)) {
     return null;
   }
   const Icon = model.icon;

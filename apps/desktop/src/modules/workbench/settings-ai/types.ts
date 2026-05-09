@@ -78,9 +78,11 @@ export type SettingsAiPresetSection = {
 
 export type SettingsAiModel = {
   readonly isSaving: boolean;
+  readonly errorMessage: string | null;
   readonly profiles: readonly AiProviderProfile[];
   readonly presetSections: readonly SettingsAiPresetSection[];
   readonly selectedProfileId: string | null;
+  readonly defaultProfileId: string | null;
   readonly defaultProviderId: string | null;
   readonly defaultModelNames: readonly string[];
   readonly selectedPresetId: string | null;
@@ -103,4 +105,5 @@ export type SettingsAiModel = {
   readonly deleteProfile: (profileId?: string) => Promise<void>;
   readonly deleteProviderModels: (providerId: string) => Promise<void>;
   readonly deleteConfiguredModel: (profileId: string, modelId: string) => Promise<void>;
+  readonly setDefaultProfile: (profileId: string) => Promise<void>;
 };

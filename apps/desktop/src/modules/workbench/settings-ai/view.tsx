@@ -2,7 +2,9 @@ import { Save, Trash2 } from "lucide-react";
 import { useId, useState } from "react";
 
 import { LyraListPicker } from "../list-picker";
+import type { AiProviderFieldSchema } from "../../../shared/ai";
 import {
+  additionalConnectionFields,
   readPrimaryConnectionValue,
   readPrimarySecretValue,
   resolvePrimarySecretFieldId,
@@ -31,6 +33,13 @@ type SettingsAiConfiguredProviderGroup = {
 type SettingsAiViewProps = {
   readonly labels: SettingsAiLabels;
   readonly model: SettingsAiModel;
+};
+
+const inputTypeForField = (field: AiProviderFieldSchema): "text" | "password" => {
+  if (field.kind === "password") {
+    return "password";
+  }
+  return "text";
 };
 
 const configuredModelCardsForProfile = (
@@ -97,6 +106,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   const primarySecretInputId = useId();
   const urlFieldId = resolvePrimaryUrlFieldId(selectedPreset);
   const secretFieldId = resolvePrimarySecretFieldId(selectedPreset);
+  const extraConnectionFields = additionalConnectionFields(selectedPreset);
   const providerOptions = model.presetSections.flatMap((section) =>
     section.presets.map((preset) => ({
       value: preset.id,
@@ -256,6 +266,24 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             </label>
           )}
 
+          {extraConnectionFields.map((field) => (
+            <label key={field.id} className="lyra-settings-ai-field">
+              <span>{field.label}</span>
+              <input
+                className="lyra-settings-ai-input"
+                type={inputTypeForField(field)}
+                value={model.draft.connectionConfig[field.id] ?? ""}
+                placeholder={field.placeholder}
+                onChange={(event) => {
+                  model.updateDraftField("connection", field.id, event.target.value);
+                }}
+              />
+              {field.description === undefined ? null : (
+                <small>{field.description}</small>
+              )}
+            </label>
+          ))}
+
           {secretFieldId === null ? null : (
             <div className="lyra-settings-ai-field">
               <label id={primarySecretInputId}>{labels.keyLabel}</label>
@@ -281,6 +309,12 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             onModelsTextChange={model.updateDraftModelsText}
           />
         </div>
+
+        {model.errorMessage === null ? null : (
+          <div className="lyra-settings-ai-error" role="alert">
+            {model.errorMessage}
+          </div>
+        )}
 
         <footer className="lyra-settings-ai-inline-editor-footer">
           <span className="lyra-settings-ai-actions">

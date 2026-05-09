@@ -21,6 +21,26 @@ pub fn create_session(request: CreateSessionRequest) -> Result<AgentSessionDetai
             .and_then(trim_to_string)
             .unwrap_or_else(|| "New thread".to_string()),
         profile_id,
+        model_id: request.model_id.as_deref().and_then(trim_to_string),
+        system_prompt: request.system_prompt.as_deref().and_then(trim_to_string),
+        permission_mode: request
+            .permission_mode
+            .as_deref()
+            .and_then(trim_to_string)
+            .map(|mode| {
+                normalize_permission_mode(Some(&mode), None)
+                    .as_str()
+                    .to_string()
+            }),
+        execution_target: request
+            .execution_target
+            .as_deref()
+            .and_then(trim_to_string)
+            .map(|target| {
+                normalize_execution_target(Some(&target))
+                    .as_str()
+                    .to_string()
+            }),
         project_name: project_name_from_root(project_root.as_deref()),
         project_root,
         collaboration_mode: normalize_collaboration_mode(request.collaboration_mode.as_deref()),
@@ -58,6 +78,29 @@ pub fn update_session(request: UpdateSessionRequest) -> Result<AgentSessionDetai
         .ok_or_else(|| anyhow!("AI session not found: {}", request.session_id))?;
     if let Some(title) = request.title.as_deref().and_then(trim_to_string) {
         session.title = title;
+    }
+    if let Some(profile_id) = request.profile_id.as_deref().and_then(trim_to_string) {
+        session.profile_id = Some(profile_id);
+    }
+    if request.model_id.is_some() {
+        session.model_id = request.model_id.as_deref().and_then(trim_to_string);
+    }
+    if request.system_prompt.is_some() {
+        session.system_prompt = request.system_prompt.as_deref().and_then(trim_to_string);
+    }
+    if let Some(permission_mode) = request.permission_mode.as_deref() {
+        session.permission_mode = Some(
+            normalize_permission_mode(Some(permission_mode), None)
+                .as_str()
+                .to_string(),
+        );
+    }
+    if let Some(execution_target) = request.execution_target.as_deref() {
+        session.execution_target = Some(
+            normalize_execution_target(Some(execution_target))
+                .as_str()
+                .to_string(),
+        );
     }
     if request.project_root.is_some() {
         session.project_root = request.project_root.as_deref().and_then(trim_to_string);
@@ -356,6 +399,29 @@ pub(super) fn ensure_session(
         id: new_id("session"),
         title,
         profile_id,
+        model_id: options.model.as_deref().and_then(trim_to_string),
+        system_prompt: None,
+        permission_mode: options
+            .permission_mode
+            .as_deref()
+            .or(options.approval_policy.as_deref())
+            .map(|_| {
+                normalize_permission_mode(
+                    options.permission_mode.as_deref(),
+                    options.approval_policy.as_deref(),
+                )
+                .as_str()
+                .to_string()
+            }),
+        execution_target: options
+            .execution_target
+            .as_deref()
+            .and_then(trim_to_string)
+            .map(|target| {
+                normalize_execution_target(Some(&target))
+                    .as_str()
+                    .to_string()
+            }),
         project_name: project_name_from_root(project_root.as_deref()),
         project_root,
         collaboration_mode: normalize_collaboration_mode(options.collaboration_mode.as_deref()),

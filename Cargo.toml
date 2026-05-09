@@ -16,8 +16,10 @@ members = [
   "crates/lyra-docs-napi",
   "crates/lyra-download-core",
   "crates/lyra-download-napi",
+  "crates/lyra-capsule-core",
   "crates/lyra-mcp-core",
   "crates/lyra-local-search",
+  "crates/lyra-local-inference-core",
   "crates/lyra-ai-core",
 ]
 resolver = "2"
@@ -34,6 +36,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 # Internal
 lyra-download-core = { path = "crates/lyra-download-core" }
+lyra-capsule-core = { path = "crates/lyra-capsule-core" }
 lyra-files-core = { path = "crates/lyra-files-core" }
 lyra-image-core = { path = "crates/lyra-image-core" }
 lyra-resource-core = { path = "crates/lyra-resource-core" }
@@ -126,7 +129,7 @@ ratatui = "0.29.0"
 ratatui-macros = "0.6.0"
 regex = "1.12.3"
 regex-lite = "0.1.8"
-reqwest = "0.12"
+reqwest = { version = "0.12", default-features = false }
 rmcp = { version = "0.15.0", default-features = false }
 rusqlite = "0.32.1"
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }

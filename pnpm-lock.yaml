@@ -23,6 +23,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@novnc/novnc':
+        specifier: ^1.7.0
+        version: 1.7.0
       '@react-three/fiber':
         specifier: ^8.18.0
         version: 8.18.0(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.184.0)
@@ -678,6 +681,9 @@ packages:
 
   '@mermaid-js/parser@1.0.1':
     resolution: {integrity: sha512-opmV19kN1JsK0T6HhhokHpcVkqKpF+x2pPDKKM2ThHtZAB5F4PROopk0amuVYK5qMrIA4erzpNm8gmPNJgMDxQ==}
+
+  '@novnc/novnc@1.7.0':
+    resolution: {integrity: sha512-ucEJOx4T2avIRCleodk7YobZj5O2Ga2AeLfQ69A/yjG9HHba2+PDgwSkN3FttrmG+70ZGx21sElNFouK13RzyA==}
 
   '@react-three/fiber@8.18.0':
     resolution: {integrity: sha512-FYZZqD0UUHUswKz3LQl2Z7H24AhD14XGTsIRw3SJaXUxyfVMi+1yiZGmqTcPt/CkPpdU7rrxqcyQ1zJE5DjvIQ==}
@@ -3389,6 +3395,8 @@ snapshots:
   '@mermaid-js/parser@1.0.1':
     dependencies:
       langium: 4.2.1
+
+  '@novnc/novnc@1.7.0': {}
 
   '@react-three/fiber@8.18.0(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.184.0)':
     dependencies:

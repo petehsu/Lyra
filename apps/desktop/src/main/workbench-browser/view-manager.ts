@@ -54,6 +54,7 @@ type BrowserPageEntry = {
   requestedAddress: string;
   titleHint: string | null;
   attached: boolean;
+  viewVisible: boolean;
   isDestroyed: boolean;
   layout: WorkbenchBrowserPageLayout | null;
   runtime: WorkbenchBrowserPageRuntimeState;
@@ -343,6 +344,7 @@ export const createWorkbenchBrowserViewManager = ({
   });
   const overlayView = new View();
   let overlayAttached = false;
+  let overlayVisible = false;
   let topology: WorkbenchBrowserTopologySnapshot = {
     activeTabId: null,
     pages: []
@@ -609,9 +611,14 @@ export const createWorkbenchBrowserViewManager = ({
         rootView.addChildView(overlayView);
         overlayAttached = true;
       }
-      overlayView.setVisible(true);
-    } else {
+      if (!overlayVisible) {
+        overlayView.setVisible(true);
+        overlayVisible = true;
+      }
+    }
+    if (visibleEntries.length === 0 && overlayVisible) {
       overlayView.setVisible(false);
+      overlayVisible = false;
     }
 
     for (const entry of entries.values()) {
@@ -635,7 +642,10 @@ export const createWorkbenchBrowserViewManager = ({
           overlayView.removeChildView(entry.view);
           entry.attached = false;
         }
-        entry.view.setVisible(false);
+        if (entry.viewVisible) {
+          entry.view.setVisible(false);
+          entry.viewVisible = false;
+        }
         scheduleTombstone(entry);
       } else {
         cancelTombstoneTimer(entry.tabId);
@@ -653,7 +663,10 @@ export const createWorkbenchBrowserViewManager = ({
       ) {
         entry.view.setBounds(nextBounds);
       }
-      entry.view.setVisible(true);
+      if (!entry.viewVisible) {
+        entry.view.setVisible(true);
+        entry.viewVisible = true;
+      }
       if (!entry.attached) {
         overlayView.addChildView(entry.view);
         entry.attached = true;
@@ -661,9 +674,17 @@ export const createWorkbenchBrowserViewManager = ({
     }
 
     const focusTargetId = getActiveOrFocusedTabId();
-    if (focusTargetId !== null && visibleIds.has(focusTargetId) && window.isFocused()) {
+    if (
+      focusTargetId !== null
+      && visibleIds.has(focusTargetId)
+      && window.isFocused()
+    ) {
       const focusTarget = entries.get(focusTargetId);
-      if (focusTarget !== undefined && focusTarget.isDestroyed === false) {
+      if (
+        focusTarget !== undefined
+        && focusTarget.isDestroyed === false
+        && focusTarget.webContents.isFocused() === false
+      ) {
         focusTarget.webContents.focus();
       }
     }
@@ -683,6 +704,7 @@ export const createWorkbenchBrowserViewManager = ({
     if (window !== null && window.isDestroyed() === false && entry.attached) {
       overlayView.removeChildView(entry.view);
       entry.attached = false;
+      entry.viewVisible = false;
     }
     entry.disposeListeners();
     if (entry.webContents.isDestroyed() === false) {
@@ -747,6 +769,7 @@ export const createWorkbenchBrowserViewManager = ({
       requestedAddress: spec.address,
       titleHint: spec.titleHint ?? null,
       attached: false,
+      viewVisible: false,
       isDestroyed: false,
       layout: null,
       runtime: {
@@ -1243,6 +1266,7 @@ export const createWorkbenchBrowserViewManager = ({
       if (window !== null && window.isDestroyed() === false && overlayAttached) {
         window.contentView.removeChildView(overlayView);
         overlayAttached = false;
+        overlayVisible = false;
       }
     },
     applyWebTheme: async (snapshot: WorkbenchBrowserWebThemeSnapshot) => {

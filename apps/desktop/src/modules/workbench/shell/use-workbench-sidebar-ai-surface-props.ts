@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import {
+  createAgentVmAppRequest,
   createAiHistoryAppRequest,
   createAiMcpAppRequest,
   createAiPluginsAppRequest,
@@ -28,6 +29,7 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   readonly aiPanelSide: AiPanelSide;
   readonly fileMentionFallbackRoots: readonly string[];
   readonly workbenchTabMentions: readonly AgentComposerWorkbenchTabMention[];
+  readonly onFollowOpenFilePath?: AiPanelSurfaceProps["onFollowOpenFilePath"] | undefined;
   readonly onToggleAiPanelSide: () => void;
   readonly openAppTab: WorkspaceTabsModel["openAppTab"];
   readonly onRequestProjectBind: (
@@ -43,6 +45,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   aiPanelSide,
   fileMentionFallbackRoots,
   workbenchTabMentions,
+  onFollowOpenFilePath,
   onToggleAiPanelSide,
   openAppTab,
   onRequestProjectBind,
@@ -63,6 +66,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onDefaultProfileSelect: settingsAiModel.setDefaultProfile,
       fileMentionFallbackRoots,
       workbenchTabMentions,
+      ...(onFollowOpenFilePath === undefined ? {} : { onFollowOpenFilePath }),
       openHistoryLabel: t("ai.openHistory"),
       openMcpLabel: t("ai.openMcp"),
       openSkillsLabel: t("ai.openSkills"),
@@ -92,12 +96,16 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenPlugins: () => {
         openAppTab(createAiPluginsAppRequest(t("ai.pluginsTabTitle")));
       },
+      onOpenAgentVm: (request) => {
+        openAppTab(createAgentVmAppRequest(t("ai.agentVmTabTitle"), request?.sessionId));
+      },
       onRequestProjectBind
     }),
     [
       aiPanelSide,
       desktopApi,
       fileMentionFallbackRoots,
+      onFollowOpenFilePath,
       workbenchTabMentions,
       onRequestProjectBind,
       onToggleAiPanelSide,

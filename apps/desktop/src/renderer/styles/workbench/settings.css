@@ -1039,6 +1039,14 @@
   align-items: center;
 }
 
+.lyra-settings-ai-error {
+  min-width: 0;
+  color: var(--lyra-accent-danger);
+  font-size: var(--lyra-unit-12);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
 .lyra-settings-ai-action {
   min-height: var(--lyra-unit-30);
   border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 78%, transparent);
@@ -1050,6 +1058,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: var(--lyra-unit-6);
   transition:
     color var(--lyra-transition-fast),
     background var(--lyra-transition-fast),
@@ -1202,7 +1211,21 @@
   min-width: 0;
   display: grid;
   align-content: start;
+  align-self: start;
+  grid-auto-rows: max-content;
   gap: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--lyra-scrollbar-thumb-idle) transparent;
+}
+
+.lyra-settings-ai-provider-list {
+  max-height: var(--lyra-unit-420);
+}
+
+.lyra-settings-ai-provider-models {
+  max-height: var(--lyra-unit-560);
 }
 
 .lyra-settings-ai-provider-row,
@@ -1214,13 +1237,21 @@
   border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 60%, transparent);
 }
 
+.lyra-settings-ai-provider-row {
+  min-height: var(--lyra-unit-40);
+}
+
+.lyra-settings-ai-model-row {
+  min-height: var(--lyra-unit-54);
+}
+
 .lyra-settings-ai-provider-tab,
 .lyra-settings-ai-model-card {
   min-width: 0;
   width: 100%;
   border: 0;
   border-radius: 0;
-  padding: var(--lyra-unit-10) var(--lyra-unit-2);
+  padding: var(--lyra-unit-8) var(--lyra-unit-2);
   background: transparent;
   color: var(--lyra-text-secondary);
   text-align: left;
@@ -1228,10 +1259,10 @@
 }
 
 .lyra-settings-ai-provider-tab {
-  min-height: var(--lyra-unit-54);
+  min-height: var(--lyra-unit-40);
   display: inline-flex;
   align-items: center;
-  gap: var(--lyra-unit-10);
+  gap: var(--lyra-unit-8);
 }
 
 .lyra-settings-ai-provider-tab > span,
@@ -1244,6 +1275,7 @@
 .lyra-settings-ai-model-card {
   min-height: var(--lyra-unit-54);
   align-content: center;
+  padding-block: var(--lyra-unit-10);
 }
 
 .lyra-settings-ai-provider-tab strong,

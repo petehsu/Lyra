@@ -80,6 +80,25 @@ pub(super) fn migrate_recovery_session(conn: &Connection) -> Result<()> {
             ON side_effect_record(session_id, created_at_ms);
         CREATE INDEX IF NOT EXISTS side_effect_record_tool_idx
             ON side_effect_record(session_id, tool_operation_id);
+        CREATE TABLE IF NOT EXISTS recovery_backup (
+            backup_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            turn_id TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            original_content TEXT,
+            original_hash TEXT,
+            original_kind TEXT NOT NULL DEFAULT 'missing',
+            post_hash TEXT,
+            post_kind TEXT,
+            rollback_id TEXT,
+            restore_status TEXT NOT NULL DEFAULT 'pending',
+            restored_at_ms INTEGER,
+            created_at_ms INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS recovery_backup_turn_idx
+            ON recovery_backup(session_id, turn_id, created_at_ms DESC);
+        CREATE INDEX IF NOT EXISTS recovery_backup_restore_idx
+            ON recovery_backup(session_id, restore_status, created_at_ms DESC);
         CREATE TABLE IF NOT EXISTS rollback_preview (
             rollback_id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,
@@ -146,6 +165,22 @@ pub(super) fn migrate_recovery_session(conn: &Connection) -> Result<()> {
     )?;
     ensure_column(conn, "session_dialog", "superseded_by_rollback_id", "TEXT")?;
     ensure_column(conn, "session_dialog", "reopened_by_rollback_id", "TEXT")?;
+    ensure_column(
+        conn,
+        "recovery_backup",
+        "original_kind",
+        "TEXT NOT NULL DEFAULT 'missing'",
+    )?;
+    ensure_column(conn, "recovery_backup", "post_hash", "TEXT")?;
+    ensure_column(conn, "recovery_backup", "post_kind", "TEXT")?;
+    ensure_column(conn, "recovery_backup", "rollback_id", "TEXT")?;
+    ensure_column(
+        conn,
+        "recovery_backup",
+        "restore_status",
+        "TEXT NOT NULL DEFAULT 'pending'",
+    )?;
+    ensure_column(conn, "recovery_backup", "restored_at_ms", "INTEGER")?;
     Ok(())
 }
 

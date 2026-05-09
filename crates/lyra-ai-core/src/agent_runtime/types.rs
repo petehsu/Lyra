@@ -17,6 +17,14 @@ pub struct CreateSessionRequest {
     #[serde(default)]
     pub profile_id: Option<String>,
     #[serde(default)]
+    pub model_id: Option<String>,
+    #[serde(default)]
+    pub system_prompt: Option<String>,
+    #[serde(default)]
+    pub permission_mode: Option<String>,
+    #[serde(default)]
+    pub execution_target: Option<String>,
+    #[serde(default)]
     pub project_root: Option<String>,
     #[serde(default)]
     pub cwd: Option<String>,
@@ -76,6 +84,19 @@ pub struct AgentPreviewMessageRollbackRequest {
     pub storage: StorageRequest,
     pub session_id: String,
     pub target_user_message_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRollbackToTurnRequest {
+    #[serde(flatten)]
+    pub storage: StorageRequest,
+    pub session_id: String,
+    pub target_turn_id: String,
+    #[serde(default)]
+    pub confirmation_token: Option<String>,
+    #[serde(default)]
+    pub strategy: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -158,6 +179,16 @@ pub struct UpdateSessionRequest {
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
+    pub profile_id: Option<String>,
+    #[serde(default)]
+    pub model_id: Option<String>,
+    #[serde(default)]
+    pub system_prompt: Option<String>,
+    #[serde(default)]
+    pub permission_mode: Option<String>,
+    #[serde(default)]
+    pub execution_target: Option<String>,
+    #[serde(default)]
     pub project_root: Option<String>,
     #[serde(default)]
     pub collaboration_mode: Option<String>,
@@ -205,6 +236,8 @@ pub struct RuntimeThreadOptions {
     pub approval_policy: Option<String>,
     #[serde(default)]
     pub permission_mode: Option<String>,
+    #[serde(default)]
+    pub execution_target: Option<String>,
     #[serde(default)]
     pub follow_enabled: Option<bool>,
 }

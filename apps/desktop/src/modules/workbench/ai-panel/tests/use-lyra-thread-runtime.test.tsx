@@ -90,6 +90,62 @@ describe("useLyraThreadRuntime shell", () => {
     expect(result.current.state.isSending).toBe(false);
   });
 
+  test("adds a local user message immediately while sendTurn is pending", async () => {
+    const detail = createDetail();
+    let resolveSend!: (value: {
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly detail: AgentSessionDetail;
+    }) => void;
+    const sendTurnPromise = new Promise<{
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly detail: AgentSessionDetail;
+    }>((resolve) => {
+      resolveSend = resolve;
+    });
+    const desktopApi = {
+      ai: {
+        listSessions: vi.fn().mockResolvedValue([]),
+        createSession: vi.fn(),
+        readSession: vi.fn(),
+        updateSession: vi.fn(),
+        sendTurn: vi.fn().mockReturnValue(sendTurnPromise),
+        cancelTurn: vi.fn(),
+        readConfig: vi.fn(),
+        upsertProfile: vi.fn(),
+        deleteProfile: vi.fn(),
+        discoverModels: vi.fn(),
+        onAgentEvent: () => () => {},
+      },
+    } as unknown as LyraDesktopApi;
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi,
+      })
+    );
+
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.actions.sendTurn({ text: "Hello now", attachments: [] });
+    });
+
+    expect(result.current.state.optimisticUserMessages).toHaveLength(1);
+    expect(result.current.state.optimisticUserMessages[0]?.content).toBe("Hello now");
+
+    await act(async () => {
+      resolveSend({
+        sessionId: "session-1",
+        turnId: "turn-1",
+        detail,
+      });
+      await pending;
+    });
+
+    expect(result.current.state.optimisticUserMessages).toHaveLength(0);
+    expect(result.current.state.activeThreadId).toBe("session-1");
+  });
+
   test("projects live tool runtime events into the active thread detail", async () => {
     let listener: ((event: AgentRuntimeStreamEvent) => void) | null = null;
     const detail = createDetail();
@@ -203,6 +259,191 @@ describe("useLyraThreadRuntime shell", () => {
     });
   });
 
+  test("shows raw model stream deltas in the live assistant draft", async () => {
+    let listener: ((event: AgentRuntimeStreamEvent) => void) | null = null;
+    const detail = createDetail();
+    const desktopApi = {
+      ai: {
+        listSessions: vi.fn().mockResolvedValue([]),
+        createSession: vi.fn().mockResolvedValue(detail),
+        readSession: vi.fn().mockResolvedValue(detail),
+        updateSession: vi.fn(),
+        sendTurn: vi.fn(),
+        cancelTurn: vi.fn(),
+        readConfig: vi.fn(),
+        upsertProfile: vi.fn(),
+        deleteProfile: vi.fn(),
+        discoverModels: vi.fn(),
+        onAgentEvent: (nextListener: (event: AgentRuntimeStreamEvent) => void) => {
+          listener = nextListener;
+          return () => {};
+        },
+      },
+    } as unknown as LyraDesktopApi;
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi,
+      })
+    );
+
+    await act(async () => {
+      await result.current.actions.createThread({ cwd: "/repo" });
+    });
+    act(() => {
+      listener?.({
+        schemaVersion: "v1",
+        eventId: "event-raw",
+        sequence: 1,
+        sessionId: "session-1",
+        runtimeTurnId: "turn-1",
+        eventType: "model_stream_delta",
+        payload: { text: "Raw model stream" },
+        createdAt: "2026-05-06T00:00:00.000Z",
+      });
+    });
+
+    expect(result.current.state.streamingTurnId).toBe("turn-1");
+    expect(result.current.state.streamingAssistantText).toBe("Raw model stream");
+    expect(result.current.state.activeDetail?.runtimeEvents).toContainEqual({
+      sessionId: "session-1",
+      turnId: "turn-1",
+      phase: "model_stream_delta",
+      payload: { text: "Raw model stream" },
+      timestamp: Date.parse("2026-05-06T00:00:00.000Z"),
+    });
+  });
+
+  test("clears live assistant draft when runtime rejects internal tool JSON", async () => {
+    let listener: ((event: AgentRuntimeStreamEvent) => void) | null = null;
+    const detail = createDetail();
+    const desktopApi = {
+      ai: {
+        listSessions: vi.fn().mockResolvedValue([]),
+        createSession: vi.fn().mockResolvedValue(detail),
+        readSession: vi.fn().mockResolvedValue(detail),
+        updateSession: vi.fn(),
+        sendTurn: vi.fn(),
+        cancelTurn: vi.fn(),
+        readConfig: vi.fn(),
+        upsertProfile: vi.fn(),
+        deleteProfile: vi.fn(),
+        discoverModels: vi.fn(),
+        onAgentEvent: (nextListener: (event: AgentRuntimeStreamEvent) => void) => {
+          listener = nextListener;
+          return () => {};
+        },
+      },
+    } as unknown as LyraDesktopApi;
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi,
+      })
+    );
+
+    await act(async () => {
+      await result.current.actions.createThread({ cwd: "/repo" });
+    });
+    act(() => {
+      listener?.({
+        schemaVersion: "v1",
+        eventId: "event-tool-json",
+        sequence: 1,
+        sessionId: "session-1",
+        runtimeTurnId: "turn-1",
+        eventType: "model_stream_delta",
+        payload: { text: "{\"kind\":\"tool_operation\"" },
+        createdAt: "2026-05-06T00:00:00.000Z",
+      });
+    });
+    expect(result.current.state.streamingAssistantText).toBe("{\"kind\":\"tool_operation\"");
+
+    act(() => {
+      listener?.({
+        schemaVersion: "v1",
+        eventId: "event-reset",
+        sequence: 2,
+        sessionId: "session-1",
+        runtimeTurnId: "turn-1",
+        eventType: "model_stream_reset",
+        payload: { reason: "invalid_tool_operation" },
+        createdAt: "2026-05-06T00:00:01.000Z",
+      });
+    });
+
+    expect(result.current.state.streamingTurnId).toBeNull();
+    expect(result.current.state.streamingAssistantText).toBe("");
+  });
+
+  test("runtime error stops the active stream and surfaces the failure", async () => {
+    let listener: ((event: AgentRuntimeStreamEvent) => void) | null = null;
+    const detail = createDetail();
+    const failedDetail = {
+      ...detail,
+      turns: detail.turns.map((turn) => ({
+        ...turn,
+        status: "failed",
+        errorCode: "MODEL_RUNTIME_FAILED",
+        errorMessage: "string or blob too big",
+        updatedAt: 2,
+      })),
+    } satisfies AgentSessionDetail;
+    const desktopApi = {
+      ai: {
+        listSessions: vi.fn().mockResolvedValue([]),
+        createSession: vi.fn().mockResolvedValue(detail),
+        readSession: vi.fn().mockResolvedValue(detail),
+        updateSession: vi.fn(),
+        sendTurn: vi.fn().mockResolvedValue({
+          sessionId: "session-1",
+          turnId: "turn-1",
+          detail,
+        }),
+        cancelTurn: vi.fn(),
+        readConfig: vi.fn(),
+        upsertProfile: vi.fn(),
+        deleteProfile: vi.fn(),
+        discoverModels: vi.fn(),
+        onAgentEvent: (nextListener: (event: AgentRuntimeStreamEvent) => void) => {
+          listener = nextListener;
+          return () => {};
+        },
+      },
+    } as unknown as LyraDesktopApi;
+    const { result } = renderHook(() =>
+      useLyraThreadRuntime({
+        desktopApi,
+      })
+    );
+
+    await act(async () => {
+      await result.current.actions.sendTurn({ text: "Inspect", attachments: [] });
+    });
+
+    expect(result.current.state.streamingTurnId).toBe("turn-1");
+    expect(result.current.state.isStreamActive).toBe(true);
+
+    act(() => {
+      listener?.({
+        schemaVersion: "v1",
+        eventId: "event-error",
+        sequence: 2,
+        sessionId: "session-1",
+        runtimeTurnId: "turn-1",
+        eventType: "runtime_error",
+        payload: {
+          message: "string or blob too big",
+          detail: failedDetail,
+        },
+        createdAt: "2026-05-09T04:22:00.000Z",
+      });
+    });
+
+    expect(result.current.state.streamingTurnId).toBeNull();
+    expect(result.current.state.isStreamActive).toBe(false);
+    expect(result.current.state.runtimeError).toBe("string or blob too big");
+    expect(result.current.state.activeDetail?.turns[0]?.status).toBe("failed");
+  });
+
   test("applyPatch refreshes session detail from the runtime", async () => {
     const detail = createDetail();
     const appliedDetail = {
@@ -265,11 +506,11 @@ describe("useLyraThreadRuntime shell", () => {
       });
     });
 
-    expect(desktopApi.ai.applyPatch).toHaveBeenCalledWith({
+    expect(desktopApi.ai!.applyPatch).toHaveBeenCalledWith({
       sessionId: "session-1",
       artifactId: "artifact_patch_1",
     });
-    expect(desktopApi.ai.readSession).toHaveBeenCalledWith({ sessionId: "session-1" });
+    expect(desktopApi.ai!.readSession).toHaveBeenCalledWith({ sessionId: "session-1" });
     expect(result.current.state.activeDetail?.runtimeEvents).toHaveLength(1);
   });
 
@@ -331,12 +572,12 @@ describe("useLyraThreadRuntime shell", () => {
       });
     });
 
-    expect(desktopApi.ai.resolveApproval).toHaveBeenCalledWith({
+    expect(desktopApi.ai!.resolveApproval).toHaveBeenCalledWith({
       sessionId: "session-1",
       approvalTicketId: "approval-1",
       decision: "deny",
     });
-    expect(desktopApi.ai.readSession).toHaveBeenCalledWith({ sessionId: "session-1" });
+    expect(desktopApi.ai!.readSession).toHaveBeenCalledWith({ sessionId: "session-1" });
     expect(result.current.state.activeDetail?.pendingInteractions).toHaveLength(0);
   });
 
@@ -399,13 +640,13 @@ describe("useLyraThreadRuntime shell", () => {
       });
     });
 
-    expect(desktopApi.ai.resolvePlanReview).toHaveBeenCalledWith({
+    expect(desktopApi.ai!.resolvePlanReview).toHaveBeenCalledWith({
       sessionId: "session-1",
       planId: "plan-1",
       versionId: "plan-version-1",
       decision: "approve",
     });
-    expect(desktopApi.ai.readSession).toHaveBeenCalledWith({ sessionId: "session-1" });
+    expect(desktopApi.ai!.readSession).toHaveBeenCalledWith({ sessionId: "session-1" });
     expect(result.current.state.activeDetail?.planningSummary?.status).toBe("approved");
   });
 });

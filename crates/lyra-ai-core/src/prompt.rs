@@ -16,6 +16,12 @@ Runtime capability boundary:
 - Verification and delivery status are runtime-owned facts. If checks were not run, failed, blocked, denied, or only recorded as not-run residual risk, report that state plainly.
 - If the requester asks for work that requires unavailable tools or missing context, say exactly what is missing or what action the requester needs to perform.
 
+Managed Agent output contract:
+- During Execution Todo or LongWorkRun, your raw text may be streamed live so the requester can see progress, but Runtime still decides whether any text becomes a final assistant message.
+- Do not use chat text as a substitute for workspace writes. For files, code, commands, verification, rollback, or patches, use the runtime tools and wait for their results.
+- If a tool needs approval, a clarification is open, verification is blocked, or delivery proof is not satisfied, do not claim completion. The visible approval, clarification, Todo, Follow, and delivery surfaces are the source of truth.
+- If work remains and there is no real blocker, continue with the next tool/action. Do not ask whether to continue.
+
 Security and secrets:
 - Never request, reveal, repeat, log, summarize, or include raw API keys, tokens, passwords, cookies, SSH keys, database URLs, private certificates, or environment secrets.
 - If a secret is needed, ask the requester to configure it through Lyra settings or another secure mechanism, not in chat.
@@ -45,6 +51,7 @@ pub struct PromptContext {
     pub security_summary: Option<Value>,
     pub read_only_tools_available: bool,
     pub permission_mode: String,
+    pub execution_target: String,
     pub denied_approval_summaries: Vec<Value>,
     pub failed_plan_coverage_summaries: Vec<Value>,
     pub work_run_summaries: Vec<Value>,
@@ -52,6 +59,7 @@ pub struct PromptContext {
     pub intake_summaries: Vec<Value>,
     pub input_reference_summaries: Vec<Value>,
     pub clarification_state: Option<Value>,
+    pub memory_context: Option<Value>,
 }
 
 pub fn compose_messages(context: PromptContext, history: Vec<ChatMessage>) -> Vec<ChatMessage> {
@@ -103,6 +111,7 @@ fn dynamic_runtime_prompt(context: &PromptContext) -> String {
 - project_policy_source: {policy_source}
 - project_manifest_path: {manifest_path}
 - permission_mode: {permission_mode}
+- execution_target: {execution_target}
 - network_policy: unknown
 
 Use these runtime facts for time, platform, workspace, and mode-sensitive reasoning. If a field is unknown, do not invent it."#,
@@ -126,6 +135,11 @@ Use these runtime facts for time, platform, workspace, and mode-sensitive reason
         } else {
             context.permission_mode.as_str()
         },
+        execution_target = if context.execution_target.trim().is_empty() {
+            "host"
+        } else {
+            context.execution_target.as_str()
+        },
         policy_id = policy
             .and_then(|summary| summary.get("snapshotId"))
             .and_then(Value::as_str)
@@ -141,13 +155,18 @@ Use these runtime facts for time, platform, workspace, and mode-sensitive reason
     );
     if let Some(summary) = context.policy_summary.as_ref() {
         prompt.push_str(&format!(
-            "\n- policy_status: {}; permission_default: {}; allowed_modes: {}; command_policy: {}; network_policy: {}",
+            "\n- policy_status: {}; permission_default: {}; allowed_modes: {}; default_execution_target: {}; allowed_execution_targets: {}; command_policy: {}; network_policy: {}",
             summary.get("status").and_then(Value::as_str).unwrap_or("unknown"),
             summary
                 .get("permissionDefault")
                 .and_then(Value::as_str)
                 .unwrap_or("sandbox"),
             compact_json_field(summary, "allowedModes"),
+            summary
+                .get("defaultExecutionTarget")
+                .and_then(Value::as_str)
+                .unwrap_or("host"),
+            compact_json_field(summary, "allowedExecutionTargets"),
             summary
                 .get("toolPolicySummary")
                 .and_then(|tool| tool.get("commandPolicy"))
@@ -475,7 +494,21 @@ Use these runtime facts for time, platform, workspace, and mode-sensitive reason
             compact_json_field(state, "safeAssumptions"),
         ));
         prompt.push_str(
-            "\nA hard-block clarification means the model must not proceed with affected execution. Assumptions are not user confirmation. Runtime Controller owns ticket creation.",
+            "\nA hard-block clarification means the model must not proceed with affected execution. Assumptions are not user confirmation. Runtime Controller owns ticket creation through open_clarification_panel; never ask the question only in normal assistant text.",
+        );
+    }
+    if let Some(memory) = context.memory_context.as_ref() {
+        prompt.push_str("\n\nMemory context:");
+        prompt.push_str(&format!(
+            "\n- pinned={}; frozen={}; shared={}; levels={}; rules={}.",
+            compact_json_field(memory, "pinned"),
+            compact_json_field(memory, "frozen"),
+            compact_json_field(memory, "shared"),
+            compact_json_field(memory, "levels"),
+            compact_json_field(memory, "rules"),
+        ));
+        prompt.push_str(
+            "\nUse memory as structured context, not as unquestionable truth. Pinned facts/spans and unresolved commitments must survive context trimming. Prefer current evidence over stale memory, and never write or repeat secrets from memory.",
         );
     }
     prompt
@@ -510,6 +543,7 @@ mod tests {
             security_summary: None,
             read_only_tools_available: true,
             permission_mode: "sandbox".to_string(),
+            execution_target: "host".to_string(),
             denied_approval_summaries: Vec::new(),
             failed_plan_coverage_summaries: Vec::new(),
             work_run_summaries: Vec::new(),
@@ -517,6 +551,7 @@ mod tests {
             intake_summaries: Vec::new(),
             input_reference_summaries: Vec::new(),
             clarification_state: None,
+            memory_context: None,
         }
     }
 

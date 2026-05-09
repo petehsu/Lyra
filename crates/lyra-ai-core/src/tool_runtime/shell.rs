@@ -9,7 +9,7 @@ use crate::tool_runtime::security::{redact_secrets, WorkspaceSecurity};
 use crate::tool_runtime::ToolExecutionContext;
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -219,7 +219,8 @@ fn execute_prepared_run_command(
         }
     }
     let started = Instant::now();
-    let output = run_child_process(&prepared)?;
+    let secret_env = materialize_secret_env(store, session_id, turn_id, op_id, &prepared)?;
+    let output = run_child_process(&prepared, &secret_env)?;
     let duration_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -410,6 +411,7 @@ pub fn prepare_run_command(
             "argv": argv,
             "command": command,
             "cwd": cwd_display,
+            "secretEnv": secret_env_fingerprint(args.secret_env.as_ref()),
         })
         .to_string()
         .as_bytes(),
@@ -441,7 +443,10 @@ struct ProcessOutput {
     timed_out: bool,
 }
 
-fn run_child_process(prepared: &PreparedRunCommand) -> Result<ProcessOutput> {
+fn run_child_process(
+    prepared: &PreparedRunCommand,
+    secret_env: &HashMap<String, String>,
+) -> Result<ProcessOutput> {
     let mut command = if prepared.mode == "shell" {
         let mut command = Command::new(shell_program());
         command.args(shell_args(&prepared.command));
@@ -454,7 +459,7 @@ fn run_child_process(prepared: &PreparedRunCommand) -> Result<ProcessOutput> {
     command
         .current_dir(&prepared.cwd)
         .env_clear()
-        .envs(safe_env(prepared.args.env.as_ref()))
+        .envs(safe_env(prepared.args.env.as_ref(), secret_env))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = command.spawn().with_context(|| {
@@ -488,7 +493,42 @@ fn run_child_process(prepared: &PreparedRunCommand) -> Result<ProcessOutput> {
     }
 }
 
-fn safe_env(extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
+fn materialize_secret_env(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    op_id: &str,
+    prepared: &PreparedRunCommand,
+) -> Result<HashMap<String, String>> {
+    let mut env = HashMap::new();
+    let Some(secret_env) = prepared.args.secret_env.as_ref() else {
+        return Ok(env);
+    };
+    for (name, handle_id) in secret_env {
+        if is_valid_env_name(name) == false {
+            return Err(tool_error(
+                TOOL_COMMAND_REJECTED,
+                format!("invalid secretEnv name: {name}"),
+            ));
+        }
+        let materialized = crate::secret_broker::materialize_handle_for_process(
+            store,
+            session_id,
+            turn_id,
+            handle_id,
+            op_id,
+            TOOL_SHELL_RUN_COMMAND,
+            name,
+        )?;
+        env.insert(name.clone(), materialized.value);
+    }
+    Ok(env)
+}
+
+fn safe_env(
+    extra: Option<&HashMap<String, String>>,
+    secret_env: &HashMap<String, String>,
+) -> HashMap<String, String> {
     let mut env = HashMap::new();
     for key in [
         "PATH",
@@ -508,12 +548,20 @@ fn safe_env(extra: Option<&HashMap<String, String>>) -> HashMap<String, String> 
     if let Some(extra) = extra {
         for (key, value) in extra {
             if is_secret_key(key) == false
+                && crate::security_gate::redaction::detect_and_redact(value)
+                    .findings
+                    .is_empty()
                 && key
                     .chars()
                     .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
             {
                 env.insert(key.clone(), value.clone());
             }
+        }
+    }
+    for (key, value) in secret_env {
+        if is_valid_env_name(key) {
+            env.insert(key.clone(), value.clone());
         }
     }
     env
@@ -557,6 +605,9 @@ fn is_safe_direct_command(mode: &str, argv: &[String], command: &str) -> bool {
 
 fn hard_rejection_reason(prepared: &PreparedRunCommand) -> Option<String> {
     let normalized = prepared.command.to_ascii_lowercase();
+    if let Some(reason) = raw_env_secret_rejection(prepared.args.env.as_ref()) {
+        return Some(reason);
+    }
     if LONG_RUNNING_MARKERS
         .iter()
         .any(|marker| normalized.contains(marker))
@@ -575,6 +626,44 @@ fn hard_rejection_reason(prepared: &PreparedRunCommand) -> Option<String> {
         return Some("Piping remote scripts is rejected".to_string());
     }
     None
+}
+
+fn raw_env_secret_rejection(env: Option<&HashMap<String, String>>) -> Option<String> {
+    let env = env?;
+    for (key, value) in env {
+        if is_secret_key(key) {
+            return Some(format!(
+                "Raw env `{key}` looks secret-bearing; create a SecretHandle and pass it via secretEnv"
+            ));
+        }
+        if crate::security_gate::redaction::detect_and_redact(value)
+            .findings
+            .is_empty()
+            == false
+        {
+            return Some(format!(
+                "Raw env `{key}` contains secret-like content; create a SecretHandle and pass it via secretEnv"
+            ));
+        }
+    }
+    None
+}
+
+fn is_valid_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(ch) if ch.is_ascii_alphabetic() || ch == '_')
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
+fn secret_env_fingerprint(secret_env: Option<&HashMap<String, String>>) -> Value {
+    let Some(secret_env) = secret_env else {
+        return Value::Null;
+    };
+    let mut values = BTreeMap::new();
+    for (name, handle_id) in secret_env {
+        values.insert(name.clone(), sha256_hex(handle_id.as_bytes()));
+    }
+    json!(values)
 }
 
 fn contains_shell_metachar(command: &str) -> bool {
@@ -708,6 +797,8 @@ mod tests {
                 command: None,
                 cwd: None,
                 env: None,
+                secret_env: None,
+                capsule_id: None,
                 timeout_ms: None,
                 output_limit_bytes: None,
                 purpose: None,
@@ -724,6 +815,41 @@ mod tests {
             purpose: None,
         };
         assert!(hard_rejection_reason(&prepared).is_some());
+    }
+
+    #[test]
+    fn hard_rejection_blocks_raw_secret_env() {
+        let prepared = PreparedRunCommand {
+            args: RunCommandArgs {
+                mode: Some("argv".to_string()),
+                argv: Some(vec!["echo".to_string(), "ok".to_string()]),
+                command: None,
+                cwd: None,
+                env: Some(HashMap::from([(
+                    "OPENAI_API_KEY".to_string(),
+                    "sk-test-secret".to_string(),
+                )])),
+                secret_env: None,
+                capsule_id: None,
+                timeout_ms: None,
+                output_limit_bytes: None,
+                purpose: None,
+            },
+            mode: "argv".to_string(),
+            argv: vec!["echo".to_string(), "ok".to_string()],
+            command: "echo ok".to_string(),
+            command_hash: "hash".to_string(),
+            cwd: PathBuf::new(),
+            cwd_display: ".".to_string(),
+            timeout_ms: DEFAULT_TIMEOUT_MS,
+            output_limit_bytes: DEFAULT_OUTPUT_LIMIT_BYTES,
+            safe_direct: true,
+            purpose: None,
+        };
+
+        assert!(hard_rejection_reason(&prepared)
+            .expect("secret env rejection")
+            .contains("secretEnv"));
     }
 
     #[test]
@@ -745,6 +871,8 @@ mod tests {
                 command: None,
                 cwd: Some(outside.to_string_lossy().to_string()),
                 env: None,
+                secret_env: None,
+                capsule_id: None,
                 timeout_ms: None,
                 output_limit_bytes: None,
                 purpose: None,

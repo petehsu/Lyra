@@ -16,8 +16,6 @@ use super::long_work_status::{
 };
 use super::*;
 
-const MAX_CONTINUATION_SLICES: i64 = 3;
-
 impl AiStore {
     pub fn evaluate_long_work_completion_candidate(
         &self,
@@ -78,7 +76,10 @@ impl AiStore {
                 read_progress_snapshot(conn, &run.execution_run_id, &items, audit.as_ref())?;
             let current_sequence = read_slice_sequence(conn, &run.current_slice_id)?;
             let next_slice_sequence = current_sequence + 1;
-            let stop_cause = "completion_candidate";
+            let stop_cause = input
+                .stop_cause
+                .as_deref()
+                .unwrap_or("completion_candidate");
 
             let completed = audit
                 .as_ref()
@@ -212,23 +213,16 @@ impl AiStore {
                 None,
             )?;
             let no_progress_count = consecutive_no_progress_slices(conn, &run.run_id)?;
-            if repeated_failure >= 2
-                || no_progress_count >= 2
-                || next_slice_sequence > MAX_CONTINUATION_SLICES + 1
-            {
+            if repeated_failure >= 2 || no_progress_count >= 2 {
                 let suspected_cause = if repeated_failure >= 2 {
                     "same_tool_failure"
-                } else if no_progress_count >= 2 {
-                    "model_looping"
                 } else {
-                    "unknown"
+                    "model_looping"
                 };
                 let reason = if repeated_failure >= 2 {
                     "Repeated same tool failure"
-                } else if no_progress_count >= 2 {
-                    "No progress across continuation slices"
                 } else {
-                    "Continuation slice limit reached"
+                    "No progress across continuation slices"
                 };
                 let stuck_report_id = insert_stuck_report(
                     conn,

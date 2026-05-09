@@ -114,7 +114,9 @@ fn plan_native_segments(
 }
 
 pub fn plan_download(request: &DownloadPlanRequest) -> DownloadPlanResponse {
-    let min_segment_bytes = request.min_segment_bytes.unwrap_or(DEFAULT_MIN_SEGMENT_BYTES);
+    let min_segment_bytes = request
+        .min_segment_bytes
+        .unwrap_or(DEFAULT_MIN_SEGMENT_BYTES);
     let native_segments = plan_native_segments(
         request.total_bytes,
         request.requested_connections,
@@ -125,7 +127,12 @@ pub fn plan_download(request: &DownloadPlanRequest) -> DownloadPlanResponse {
         .map(|segment| {
             let known_end = segment.end_inclusive != UNKNOWN_END;
             let size_bytes = if known_end {
-                Some(segment.end_inclusive.saturating_sub(segment.start).saturating_add(1))
+                Some(
+                    segment
+                        .end_inclusive
+                        .saturating_sub(segment.start)
+                        .saturating_add(1),
+                )
             } else {
                 None
             };
@@ -155,7 +162,8 @@ pub fn plan_download(request: &DownloadPlanRequest) -> DownloadPlanResponse {
 
     DownloadPlanResponse {
         protocol: classify_download_protocol(&request.url),
-        resumable: request.total_bytes > 0 && segments.iter().any(|segment| segment.existing_bytes > 0),
+        resumable: request.total_bytes > 0
+            && segments.iter().any(|segment| segment.existing_bytes > 0),
         connections: segments.len() as u32,
         segments,
     }
@@ -187,7 +195,10 @@ mod tests {
             classify_download_protocol("magnet:?xt=urn:btih:abc"),
             DownloadProtocol::Magnet
         );
-        assert_eq!(classify_download_protocol("file:///tmp/a"), DownloadProtocol::Unknown);
+        assert_eq!(
+            classify_download_protocol("file:///tmp/a"),
+            DownloadProtocol::Unknown
+        );
     }
 
     #[test]

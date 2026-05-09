@@ -116,12 +116,22 @@ impl AiStore {
             let restore_changes = preview
                 .workspace_changes
                 .iter()
-                .map(|change| RestoreWorkspaceChange {
-                    path: change.path.clone(),
-                    expected_hash: change.expected_hash.clone(),
+                .filter_map(|change| {
+                    match super::recovery_backup::workspace_snapshot_has_path(
+                        conn,
+                        &anchor.workspace_snapshot_id,
+                        &change.path,
+                    ) {
+                        Ok(true) => Some(Ok(RestoreWorkspaceChange {
+                            path: change.path.clone(),
+                            expected_hash: change.expected_hash.clone(),
+                        })),
+                        Ok(false) => None,
+                        Err(error) => Some(Err(error)),
+                    }
                 })
-                .collect::<Vec<_>>();
-            let workspace_result = match restore_workspace_snapshot_changes(
+                .collect::<Result<Vec<_>>>()?;
+            let mut workspace_result = match restore_workspace_snapshot_changes(
                 self,
                 conn,
                 session_id,
@@ -134,6 +144,27 @@ impl AiStore {
                 }
                 Err(error) => return Err(error),
             };
+            if let Some(workspace_root) = read_execution_workspace_root(
+                conn,
+                &anchor.workspace_snapshot_id,
+            )? {
+                let backup_restored_paths = match self.restore_recovery_backups_after_checkpoint(
+                    conn,
+                    session_id,
+                    rollback_id,
+                    &workspace_root,
+                    anchor.created_at,
+                ) {
+                    Ok(paths) => paths,
+                    Err(error) if error.to_string().contains("TOOL_ROLLBACK_CONFLICT") => {
+                        return block_preview(conn, &preview, &error.to_string(), Vec::new());
+                    }
+                    Err(error) => return Err(error),
+                };
+                for path in backup_restored_paths {
+                    push_unique(&mut workspace_result.restored_paths, path);
+                }
+            }
             let supersede = supersede_records_after_checkpoint(
                 conn,
                 session_id,
@@ -257,6 +288,26 @@ fn read_execution_anchor(
     )
     .optional()
     .context("failed to read rollback execution anchor")
+}
+
+fn read_execution_workspace_root(
+    conn: &Connection,
+    workspace_snapshot_id: &str,
+) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT workspace_root FROM workspace_snapshot WHERE workspace_snapshot_id = ?1",
+        params![workspace_snapshot_id],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .optional()
+    .map(|value| value.flatten().and_then(|root| trim_to_string(&root)))
+    .context("failed to read rollback workspace root")
+}
+
+fn push_unique(values: &mut Vec<String>, value: String) {
+    if value.trim().is_empty() == false && values.iter().any(|entry| entry == &value) == false {
+        values.push(value);
+    }
 }
 
 fn block_preview(

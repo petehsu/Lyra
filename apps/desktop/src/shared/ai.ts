@@ -14,6 +14,9 @@ export const AI_PROVIDER_IDS = [
   "mimo",
   "ollama",
   "lmstudio",
+  "llama_cpp",
+  "vllm",
+  "mlx",
   "custom_openai_compatible"
 ] as const;
 
@@ -21,6 +24,7 @@ export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
 
 export const AI_PROTOCOL_IDS = [
   "openai_chat_completions",
+  "openai_responses",
   "azure_openai_chat_completions",
   "openrouter_chat_completions",
   "anthropic_messages",
@@ -36,6 +40,10 @@ export const AI_PROTOCOL_IDS = [
   "mimo_anthropic_messages",
   "ollama_chat",
   "lmstudio_chat_completions",
+  "llama_cpp_server",
+  "vllm_chat_completions",
+  "llama_cpp_ffi",
+  "mlx_ffi",
   "custom_chat_completions",
 ] as const;
 
@@ -84,6 +92,12 @@ export type AiProviderModelEntry = {
 };
 
 export type AiModelRuntimeMetadata = {
+  readonly adapterId?: string;
+  readonly compatibilitySource?: "native" | "openai-compatible" | "provider-compatible" | "custom";
+  readonly localRuntimeKind?: "http" | "ffi";
+  readonly localBackend?: "ollama" | "lmstudio" | "llama_cpp_server" | "vllm" | "llama_cpp_ffi" | "mlx_ffi";
+  readonly nativeToolCalling?: boolean;
+  readonly localModelPath?: string;
   readonly shellType?: string;
   readonly applyPatchToolType?: string;
   readonly supportsSearchTool?: boolean;
@@ -100,6 +114,18 @@ export type AiModelRuntimeMetadata = {
   readonly maxContextWindow?: number;
   readonly effectiveContextWindowPercent?: number;
   readonly protocolBehavior?: AiProtocolBehaviorSummary;
+  readonly mimoRouteMode?: "api" | "token_plan";
+  readonly mimoProtocolId?: "mimo_openai_chat_completions" | "mimo_anthropic_messages";
+  readonly mimoBaseUrl?: string;
+  readonly mimoFallbackRoutes?: readonly AiMimoRouteMetadata[];
+};
+
+export type AiMimoRouteMetadata = {
+  readonly protocolId: "mimo_openai_chat_completions" | "mimo_anthropic_messages";
+  readonly baseUrl: string;
+  readonly region?: "cn" | "sgp" | "ams";
+  readonly authScheme: "api_key" | "bearer";
+  readonly latencyMs?: number;
 };
 
 export type AiProtocolBehaviorSummary = {
@@ -122,6 +148,7 @@ export type AiProviderPreset = {
   readonly id: AiProviderPresetId;
   readonly providerId: AiProviderId;
   readonly protocolId: AiProtocolId;
+  readonly runtimeMetadata?: AiModelRuntimeMetadata;
   readonly label: string;
   readonly description: string;
   readonly section: AiProviderCatalogSection;
@@ -180,8 +207,10 @@ export type AiUpsertProfileRequest = {
   readonly secretValues?: Record<string, string | null>;
   readonly headers?: Record<string, string>;
   readonly model: string;
+  readonly modelRuntimeMetadata?: AiModelRuntimeMetadata | null;
   readonly customModels?: readonly AiProviderModelEntry[];
   readonly discoveryState?: AiModelDiscoveryState;
+  readonly isDefault?: boolean;
 };
 
 export type AiDeleteProfileRequest = {

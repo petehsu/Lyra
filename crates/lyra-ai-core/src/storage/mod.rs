@@ -74,6 +74,7 @@ mod execution;
 mod follow_ledger;
 mod follow_live_edit;
 mod follow_projection;
+mod frozen_memory;
 mod intent_ledger;
 mod long_work_continuation;
 mod long_work_continuation_packet;
@@ -82,10 +83,12 @@ mod long_work_continuation_resume;
 mod long_work_continuation_state;
 mod long_work_ledger;
 mod long_work_status;
+mod memory_archive;
 mod patch_backup;
 mod planning;
 mod policy_ledger;
 mod profile;
+mod recovery_backup;
 mod recovery_checkpoint;
 mod recovery_execution;
 mod recovery_preview;
@@ -95,6 +98,11 @@ mod recovery_workspace;
 mod reference_ledger;
 mod security_ledger;
 mod session;
+pub(super) use memory_archive::contains_secret_like_text;
+pub use memory_archive::MemoryArchiveItem;
+#[cfg(not(test))]
+pub use memory_archive::MemoryGatewayJob;
+mod shared_memory;
 mod verification;
 #[derive(Clone)]
 pub struct AiStore {

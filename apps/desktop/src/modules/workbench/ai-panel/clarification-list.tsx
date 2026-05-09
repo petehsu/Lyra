@@ -1,5 +1,4 @@
-import { CircleHelp, Loader2, MessageSquareText } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   AgentResolveClarificationRequest,
@@ -7,9 +6,15 @@ import type {
   AgentSessionDetail,
 } from "./agent-ui-types";
 import {
+  ClarificationCard,
+  type ClarificationAnswerDraft,
+  type ClarificationCardState
+} from "./clarification-card";
+import {
+  type ClarificationPanel,
   type ClarificationOptionId,
   type ClarificationRow,
-  extractClarificationRows,
+  extractClarificationPanels,
 } from "./clarification-model";
 
 type ClarificationListProps = {
@@ -20,154 +25,212 @@ type ClarificationListProps = {
   readonly onResolved?: (() => Promise<void> | void) | undefined;
 };
 
-type RowState = "answering" | "answered" | "cancelled";
+type ClarificationStep = {
+  readonly panel: ClarificationPanel;
+  readonly row: ClarificationRow;
+};
+
+const isDraftComplete = (draft: ClarificationAnswerDraft | null): boolean => {
+  if (draft === null) {
+    return false;
+  }
+  if (draft.kind === "option") {
+    return draft.answerText.trim().length > 0;
+  }
+  return draft.customAnswer.trim().length > 0;
+};
+
+const requestFromDraft = (
+  draft: ClarificationAnswerDraft
+): Pick<AgentResolveClarificationRequest, "selectedOptionId" | "customAnswer" | "answerText"> =>
+  draft.kind === "option"
+    ? {
+        selectedOptionId: draft.selectedOptionId,
+        answerText: draft.answerText,
+      }
+    : {
+        customAnswer: draft.customAnswer.trim(),
+        answerText: draft.customAnswer.trim(),
+      };
 
 export const ClarificationList = ({
   detail,
   resolveClarification,
   onResolved,
 }: ClarificationListProps) => {
-  const rows = useMemo(() => extractClarificationRows(detail), [detail]);
-  const [rowStateById, setRowStateById] = useState<Record<string, RowState>>({});
-  const [errorById, setErrorById] = useState<Record<string, string>>({});
-  const [customOpenById, setCustomOpenById] = useState<Record<string, boolean>>({});
-  const [customAnswerById, setCustomAnswerById] = useState<Record<string, string>>({});
+  const panels = useMemo(() => extractClarificationPanels(detail), [detail]);
+  const steps = useMemo<readonly ClarificationStep[]>(() =>
+    panels.flatMap((panel) =>
+      panel.questions.map((question) => ({
+        panel,
+        row: { ...question, interaction: panel.interaction },
+      }))
+    ), [panels]);
+  const stepIds = useMemo(
+    () => steps.map((step) => step.row.questionTicketId).join("\n"),
+    [steps]
+  );
+  const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [answerById, setAnswerById] = useState<Record<string, ClarificationAnswerDraft>>({});
+  const [rowStateById, setRowStateById] = useState<Record<string, ClarificationCardState>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submittingTicketId, setSubmittingTicketId] = useState<string | null>(null);
 
-  if (rows.length === 0) {
+  useEffect(() => {
+    setActiveStepIndex((current) => Math.min(current, Math.max(steps.length - 1, 0)));
+    setAnswerById((current) => {
+      const allowedIds = new Set(steps.map((step) => step.row.questionTicketId));
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([id]) => allowedIds.has(id))
+      );
+      return next;
+    });
+    setSubmitError(null);
+    setSubmittingTicketId(null);
+  }, [stepIds, steps]);
+
+  if (steps.length === 0) {
     return null;
   }
 
-  const resolve = async (
-    row: ClarificationRow,
-    request: Pick<AgentResolveClarificationRequest, "selectedOptionId" | "customAnswer" | "answerText">
-  ) => {
+  const activeStep = steps[Math.min(activeStepIndex, steps.length - 1)];
+  const activeRow = activeStep?.row;
+  const activeAnswer = activeRow === undefined
+    ? null
+    : answerById[activeRow.questionTicketId] ?? null;
+  const submitting = submittingTicketId !== null;
+  const allAnswered = steps.every((step) =>
+    isDraftComplete(answerById[step.row.questionTicketId] ?? null)
+  );
+  const currentAnswered = isDraftComplete(activeAnswer);
+  const canGoPrevious = activeStepIndex > 0 && !submitting;
+  const canGoNext = activeStepIndex < steps.length - 1 && currentAnswered && !submitting;
+  const canSubmit = resolveClarification !== undefined && allAnswered && !submitting;
+
+  const submit = async () => {
     if (resolveClarification === undefined) {
       return;
     }
-    setRowStateById((current) => ({
-      ...current,
-      [row.questionTicketId]: "answering",
-    }));
-    setErrorById((current) => {
-      const next = { ...current };
-      delete next[row.questionTicketId];
-      return next;
-    });
+    if (!allAnswered) {
+      setSubmitError("Answer each question before submitting.");
+      return;
+    }
+    setSubmitError(null);
     try {
-      const result = await resolveClarification({
-        sessionId: row.interaction.sessionId,
-        questionTicketId: row.questionTicketId,
-        ...request,
-      });
-      setRowStateById((current) => ({
-        ...current,
-        [row.questionTicketId]: result.status,
-      }));
+      for (const [index, step] of steps.entries()) {
+        const draft = answerById[step.row.questionTicketId];
+        if (draft === undefined) {
+          throw new Error("Missing clarification answer");
+        }
+        setActiveStepIndex(index);
+        setSubmittingTicketId(step.row.questionTicketId);
+        setRowStateById((current) => ({
+          ...current,
+          [step.row.questionTicketId]: "answering",
+        }));
+        const result = await resolveClarification({
+          sessionId: step.row.interaction.sessionId,
+          questionTicketId: step.row.questionTicketId,
+          ...requestFromDraft(draft),
+        });
+        setRowStateById((current) => ({
+          ...current,
+          [step.row.questionTicketId]: result.status,
+        }));
+      }
+      setSubmittingTicketId(null);
       await onResolved?.();
     } catch (error) {
-      setRowStateById((current) => {
-        const next = { ...current };
-        delete next[row.questionTicketId];
-        return next;
-      });
-      setErrorById((current) => ({
-        ...current,
-        [row.questionTicketId]: error instanceof Error ? error.message : String(error),
-      }));
+      setSubmittingTicketId(null);
+      setRowStateById((current) => Object.fromEntries(
+        Object.entries(current).filter(([, state]) => state !== "answering")
+      ));
+      setSubmitError(error instanceof Error ? error.message : String(error));
     }
   };
 
   return (
     <section className="lyra-ai-clarification-list" aria-label="Pending clarifications">
-      {rows.map((row) => {
-        const rowState = rowStateById[row.questionTicketId] ?? null;
-        const isAnswering = rowState === "answering";
-        const customOpen = customOpenById[row.questionTicketId] ?? false;
-        const customAnswer = customAnswerById[row.questionTicketId] ?? "";
-        const error = errorById[row.questionTicketId] ?? null;
-        const disabled = resolveClarification === undefined || isAnswering || rowState === "answered";
-        return (
-          <div key={row.questionTicketId} className="lyra-ai-clarification-row">
-            <span className="lyra-ai-clarification-icon" aria-hidden="true">
-              <CircleHelp size={13} />
+      {activeStep === undefined ? null : (
+        <div
+          className="lyra-ai-clarification-panel"
+          data-presentation={activeStep.panel.presentation}
+          data-blocks-execution={activeStep.panel.blocksExecution ? "true" : "false"}
+        >
+          <ClarificationCard
+            row={activeStep.row}
+            stepIndex={activeStepIndex}
+            stepCount={steps.length}
+            panelTitle={activeStep.panel.title}
+            panelDescription={activeStep.panel.description}
+            answer={activeAnswer}
+            state={rowStateById[activeStep.row.questionTicketId] ?? null}
+            disabled={resolveClarification === undefined || submitting}
+            error={submitError}
+            onSelectOption={(optionId: ClarificationOptionId, answerText) => {
+              setSubmitError(null);
+              setAnswerById((current) => ({
+                ...current,
+                [activeStep.row.questionTicketId]: {
+                  kind: "option",
+                  selectedOptionId: optionId,
+                  answerText,
+                },
+              }));
+            }}
+            onCustomAnswerChange={(nextValue) => {
+              setSubmitError(null);
+              setAnswerById((current) => ({
+                ...current,
+                [activeStep.row.questionTicketId]: {
+                  kind: "custom",
+                  customAnswer: nextValue,
+                  answerText: nextValue,
+                },
+              }));
+            }}
+          />
+          <div className="lyra-ai-clarification-navigation">
+            <button
+              type="button"
+              className="lyra-ai-clarification-nav-button"
+              disabled={!canGoPrevious}
+              onClick={() => {
+                setActiveStepIndex((current) => Math.max(current - 1, 0));
+              }}
+            >
+              Previous
+            </button>
+            <span className="lyra-ai-clarification-navigation-state">
+              {steps.filter((step) => isDraftComplete(answerById[step.row.questionTicketId] ?? null)).length}
+              {" answered"}
             </span>
-            <span className="lyra-ai-clarification-main">
-              <span className="lyra-ai-clarification-title">{row.title}</span>
-              <span className="lyra-ai-clarification-question">{row.question}</span>
-              <span className="lyra-ai-clarification-detail">
-                {[row.why, row.targetSummary].filter(Boolean).join(" · ")}
-              </span>
-              {customOpen ? (
-                <span className="lyra-ai-clarification-custom">
-                  <input
-                    value={customAnswer}
-                    placeholder="Custom answer"
-                    disabled={disabled}
-                    onChange={(event) => {
-                      const nextValue = event.currentTarget.value;
-                      setCustomAnswerById((current) => ({
-                        ...current,
-                        [row.questionTicketId]: nextValue,
-                      }));
-                    }}
-                  />
-                  <button
-                    type="button"
-                    disabled={disabled || customAnswer.trim().length === 0}
-                    onClick={() => {
-                      void resolve(row, {
-                        customAnswer: customAnswer.trim(),
-                        answerText: customAnswer.trim(),
-                      });
-                    }}
-                  >
-                    {isAnswering ? <Loader2 size={12} aria-hidden="true" /> : <MessageSquareText size={12} aria-hidden="true" />}
-                    <span>{isAnswering ? "Answering" : "Send"}</span>
-                  </button>
-                </span>
-              ) : null}
-              {error === null ? null : (
-                <span className="lyra-ai-clarification-error" role="alert">{error}</span>
-              )}
-            </span>
-            <span className="lyra-ai-clarification-actions">
-              {rowState === "answered" ? (
-                <span className="lyra-ai-clarification-state">Answered</span>
-              ) : null}
-              {row.options.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  className="lyra-ai-clarification-option"
-                  title={option.description}
-                  disabled={disabled}
-                  onClick={() => {
-                    void resolve(row, { selectedOptionId: option.id as ClarificationOptionId });
-                  }}
-                >
-                  {isAnswering ? <Loader2 size={12} aria-hidden="true" /> : null}
-                  <span>{option.id}</span>
-                </button>
-              ))}
-              {row.allowCustomAnswer ? (
-                <button
-                  type="button"
-                  className="lyra-ai-clarification-custom-toggle"
-                  disabled={disabled}
-                  onClick={() => {
-                    setCustomOpenById((current) => ({
-                      ...current,
-                      [row.questionTicketId]: !(current[row.questionTicketId] ?? false),
-                    }));
-                  }}
-                >
-                  Custom
-                </button>
-              ) : null}
-            </span>
+            {activeStepIndex < steps.length - 1 ? (
+              <button
+                type="button"
+                className="lyra-ai-clarification-nav-button lyra-ai-clarification-nav-button-primary"
+                disabled={!canGoNext}
+                onClick={() => {
+                  setActiveStepIndex((current) => Math.min(current + 1, steps.length - 1));
+                }}
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="lyra-ai-clarification-nav-button lyra-ai-clarification-nav-button-primary"
+                disabled={!canSubmit}
+                onClick={() => {
+                  void submit();
+                }}
+              >
+                {submitting ? "Submitting" : "Submit"}
+              </button>
+            )}
           </div>
-        );
-      })}
+        </div>
+      )}
     </section>
   );
 };

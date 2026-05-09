@@ -84,5 +84,8 @@ const createDetail = (
       highConfidence: securityStatus === "clear" ? 0 : 1,
       lastReportId: securityStatus === "clear" ? null : "report-1",
     },
+    activeSecretHandles: 0,
+    lastExfiltrationAction: null,
+    lastCapsuleBridgeDecision: null,
   },
 });

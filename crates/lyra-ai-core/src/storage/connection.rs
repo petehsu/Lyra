@@ -7,6 +7,7 @@ impl AiStore {
             .with_context(|| format!("failed to create AI storage root {}", root.display()))?;
         let store = Self { root };
         store.with_index_conn(|conn| migrate_index(conn))?;
+        store.ensure_memory_v2_layout()?;
         Ok(store)
     }
 
@@ -93,6 +94,7 @@ impl AiStore {
                 | "workspace_file_snapshot"
                 | "message_rollback_anchor"
                 | "side_effect_record"
+                | "recovery_backup"
                 | "rollback_preview"
                 | "rollback_execution"
                 | "message_reopen"
@@ -108,6 +110,11 @@ impl AiStore {
                 | "security_decision_record"
                 | "secret_detection_report"
                 | "redacted_projection_record"
+                | "secret_record"
+                | "secret_handle"
+                | "secret_access_audit"
+                | "exfiltration_decision"
+                | "capsule_bridge_audit"
         ) == false
         {
             return Err(anyhow!("unsupported table for test count"));

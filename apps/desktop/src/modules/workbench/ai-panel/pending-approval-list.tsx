@@ -1,4 +1,3 @@
-import { Check, FileDiff, Loader2, RotateCcw, ShieldCheck, Terminal, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type {
@@ -7,6 +6,7 @@ import type {
   AgentResolveApprovalResult,
   AgentSessionDetail,
 } from "./agent-ui-types";
+import { ApprovalCard, type ApprovalCardRow, type ApprovalCardState } from "./approval-card";
 import { isRecord, readString } from "./patch-artifact";
 
 type PendingApprovalListProps = {
@@ -14,30 +14,18 @@ type PendingApprovalListProps = {
   readonly resolveApproval?: ((request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>) | undefined;
 };
 
-type ApprovalRow = {
-  readonly interaction: AgentPendingInteraction;
-  readonly approvalTicketId: string;
-  readonly toolPath: string;
-  readonly title: string;
-  readonly files: readonly string[];
-  readonly command: string | null;
-  readonly cwd: string | null;
-};
-
-type RowState = "approving" | "denying" | "denied";
-
 export const PendingApprovalList = ({
   detail,
   resolveApproval,
 }: PendingApprovalListProps) => {
-  const [rowStateById, setRowStateById] = useState<Record<string, RowState>>({});
+  const [rowStateById, setRowStateById] = useState<Record<string, ApprovalCardState>>({});
   const [errorById, setErrorById] = useState<Record<string, string>>({});
   const rows = useMemo(() => extractApprovalRows(detail), [detail]);
   if (rows.length === 0) {
     return null;
   }
 
-  const resolve = async (row: ApprovalRow, decision: "approve" | "deny") => {
+  const resolve = async (row: ApprovalCardRow, decision: "approve" | "deny") => {
     if (resolveApproval === undefined) {
       return;
     }
@@ -56,12 +44,10 @@ export const PendingApprovalList = ({
         approvalTicketId: row.approvalTicketId,
         decision,
       });
-      if (decision === "deny") {
-        setRowStateById((current) => ({
-          ...current,
-          [row.approvalTicketId]: "denied",
-        }));
-      }
+      setRowStateById((current) => ({
+        ...current,
+        [row.approvalTicketId]: decision === "approve" ? "approved" : "denied",
+      }));
     } catch (error) {
       setRowStateById((current) => {
         const next = { ...current };
@@ -82,63 +68,33 @@ export const PendingApprovalList = ({
         const disabled = resolveApproval === undefined || rowState === "approving" || rowState === "denying";
         const error = errorById[row.approvalTicketId] ?? null;
         return (
-          <div key={row.approvalTicketId} className="lyra-ai-pending-approval-row">
-            <span className="lyra-ai-pending-approval-icon">
-              {approvalIcon(row.toolPath)}
-            </span>
-            <span className="lyra-ai-pending-approval-main">
-              <span className="lyra-ai-pending-approval-title">{row.title}</span>
-              <span className="lyra-ai-pending-approval-detail">
-                {approvalImpact(row)}
-              </span>
-              {error === null ? null : (
-                <span className="lyra-ai-pending-approval-error" role="alert">
-                  {error}
-                </span>
-              )}
-            </span>
-            <span className="lyra-ai-pending-approval-actions">
-              {rowState === "denied" ? (
-                <span className="lyra-ai-pending-approval-state">Denied</span>
-              ) : null}
-              <button
-                type="button"
-                className="lyra-ai-pending-approval-button"
-                disabled={disabled || rowState === "denied"}
-                onClick={() => {
-                  void resolve(row, "approve");
-                }}
-              >
-                {rowState === "approving" ? <Loader2 size={12} aria-hidden="true" /> : <Check size={12} aria-hidden="true" />}
-                <span>{rowState === "approving" ? "Approving" : "Approve"}</span>
-              </button>
-              <button
-                type="button"
-                className="lyra-ai-pending-approval-button lyra-ai-pending-approval-button-deny"
-                disabled={disabled || rowState === "denied"}
-                onClick={() => {
-                  void resolve(row, "deny");
-                }}
-              >
-                {rowState === "denying" ? <Loader2 size={12} aria-hidden="true" /> : <X size={12} aria-hidden="true" />}
-                <span>{rowState === "denying" ? "Denying" : "Deny"}</span>
-              </button>
-            </span>
-          </div>
+          <ApprovalCard
+            key={row.approvalTicketId}
+            row={row}
+            state={rowState}
+            disabled={disabled}
+            error={error}
+            onResolve={(targetRow, decision) => {
+              void resolve(targetRow, decision);
+            }}
+          />
         );
       })}
     </section>
   );
 };
 
-const extractApprovalRows = (detail: AgentSessionDetail | null): readonly ApprovalRow[] =>
+const extractApprovalRows = (detail: AgentSessionDetail | null): readonly ApprovalCardRow[] =>
   detail?.pendingInteractions
     .filter((interaction) => interaction.kind === "tool_approval" && interaction.status === "pending")
     .map(extractApprovalRow)
-    .filter((row): row is ApprovalRow => row !== null)
+    .filter((row): row is ApprovalCardRow => row !== null)
   ?? [];
 
-const extractApprovalRow = (interaction: AgentPendingInteraction): ApprovalRow | null => {
+export const hasPendingApprovalRows = (detail: AgentSessionDetail | null): boolean =>
+  extractApprovalRows(detail).length > 0;
+
+const extractApprovalRow = (interaction: AgentPendingInteraction): ApprovalCardRow | null => {
   const payload = isRecord(interaction.payload) ? interaction.payload : {};
   const toolPath = readString(payload.toolPath);
   if (toolPath === null) {
@@ -147,19 +103,45 @@ const extractApprovalRow = (interaction: AgentPendingInteraction): ApprovalRow |
   const approvalTicketId = readString(payload.approvalTicketId) ?? interaction.id;
   const title = readString(payload.title) ?? approvalTitle(toolPath);
   const impactScope = isRecord(payload.impactScope) ? payload.impactScope : {};
-  const files = Array.isArray(impactScope.files)
-    ? impactScope.files.map(readString).filter((file): file is string => file !== null)
-    : [];
+  const requestedAction = isRecord(payload.requestedAction) ? payload.requestedAction : {};
+  const requestedArguments = isRecord(requestedAction.arguments) ? requestedAction.arguments : {};
+  const files = approvalFiles(impactScope, requestedArguments);
   return {
     interaction,
     approvalTicketId,
     toolPath,
     title,
     files,
-    command: readString(payload.command) ?? readString(impactScope.command),
+    command: readString(payload.command)
+      ?? readString(impactScope.command)
+      ?? readString(requestedArguments.command),
     cwd: readString(payload.cwd) ?? readString(impactScope.cwd),
   };
 };
+
+const approvalFiles = (
+  impactScope: Record<string, unknown>,
+  requestedArguments: Record<string, unknown>
+): readonly string[] => {
+  const files = readStringArray(impactScope.files);
+  if (files.length > 0) {
+    return files;
+  }
+  const workspacePaths = readStringArray(impactScope.workspacePaths);
+  if (workspacePaths.length > 0) {
+    return workspacePaths;
+  }
+  return [
+    readString(requestedArguments.path),
+    readString(requestedArguments.fromPath),
+    readString(requestedArguments.toPath),
+  ].filter((file): file is string => file !== null);
+};
+
+const readStringArray = (value: unknown): readonly string[] =>
+  Array.isArray(value)
+    ? value.map(readString).filter((item): item is string => item !== null)
+    : [];
 
 const approvalTitle = (toolPath: string): string => {
   if (toolPath.includes("/apply_patch")) {
@@ -172,29 +154,4 @@ const approvalTitle = (toolPath: string): string => {
     return "Run shell command";
   }
   return "Tool approval";
-};
-
-const approvalIcon = (toolPath: string) => {
-  if (toolPath.includes("/apply_patch")) {
-    return <FileDiff size={13} aria-hidden="true" />;
-  }
-  if (toolPath.includes("/rollback_patch")) {
-    return <RotateCcw size={13} aria-hidden="true" />;
-  }
-  if (toolPath.includes("/run_command")) {
-    return <Terminal size={13} aria-hidden="true" />;
-  }
-  return <ShieldCheck size={13} aria-hidden="true" />;
-};
-
-const approvalImpact = (row: ApprovalRow): string => {
-  if (row.command !== null) {
-    return `${row.toolPath} · ${row.command}${row.cwd === null ? "" : ` · ${row.cwd}`}`;
-  }
-  const fileLabel = row.files.length === 0
-    ? "workspace"
-    : row.files.length === 1
-      ? row.files[0]
-      : `${row.files[0]} +${String(row.files.length - 1)} more`;
-  return `${row.toolPath} · ${fileLabel}`;
 };

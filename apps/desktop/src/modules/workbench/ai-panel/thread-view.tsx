@@ -6,9 +6,15 @@ import type { WorkbenchLocale } from "../i18n";
 import type {
   AgentApplyPatchRequest,
   AgentApplyPatchResult,
+  AgentExecuteMessageRollbackRequest,
+  AgentExecuteMessageRollbackResult,
   AgentMessage,
   AgentResolveApprovalRequest,
   AgentResolveApprovalResult,
+  AgentResolveClarificationRequest,
+  AgentResolveClarificationResult,
+  AgentResolvePlanReviewRequest,
+  AgentResolvePlanReviewResult,
   AgentRuntimeEvent,
   AgentSessionDetail,
 } from "./agent-ui-types";
@@ -29,7 +35,13 @@ import {
 import { PatchPreviewCard } from "./patch-preview-card";
 import { AiPanelRichContent } from "./rich-content";
 import { SpinnerLabel } from "./stream-spinner";
+import {
+  buildTimelineRuntimeActionItems,
+  TimelineRuntimeAction,
+  type TimelineRuntimeActionItem,
+} from "./timeline-runtime-action";
 import type { ReadPatchArtifact } from "./use-patch-artifact";
+import type { OptimisticUserMessage } from "./use-lyra-thread-runtime";
 
 type AiPanelThreadViewProps = {
   readonly logoUrl: string;
@@ -38,6 +50,7 @@ type AiPanelThreadViewProps = {
   readonly emptyGreetingLabels?: readonly string[] | undefined;
   readonly locale?: WorkbenchLocale | undefined;
   readonly detail: AgentSessionDetail | null;
+  readonly optimisticUserMessages?: readonly OptimisticUserMessage[] | undefined;
   readonly streamingTurnId: string | null;
   readonly streamingAssistantText: string;
   readonly isLoading: boolean;
@@ -47,6 +60,17 @@ type AiPanelThreadViewProps = {
   readonly readArtifact?: ReadPatchArtifact | undefined;
   readonly applyPatch?: ((request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>) | undefined;
   readonly resolveApproval?: ((request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>) | undefined;
+  readonly resolveClarification?:
+    | ((request: AgentResolveClarificationRequest) => Promise<AgentResolveClarificationResult>)
+    | undefined;
+  readonly resolvePlanReview?:
+    | ((request: AgentResolvePlanReviewRequest) => Promise<AgentResolvePlanReviewResult>)
+    | undefined;
+  readonly executeMessageRollback?:
+    | ((request: AgentExecuteMessageRollbackRequest) => Promise<AgentExecuteMessageRollbackResult>)
+    | undefined;
+  readonly onClarificationResolved?: (() => Promise<void> | void) | undefined;
+  readonly onRollbackExecuted?: (() => Promise<void> | void) | undefined;
   readonly renderMessageActions?: ((message: AgentMessage) => ReactNode) | undefined;
 };
 
@@ -58,14 +82,20 @@ type ThreadTimelineItem =
     readonly kind: "message";
     readonly id: string;
     readonly createdAt: number;
+    readonly sortRank: number;
+    readonly live: boolean;
     readonly message: AgentMessage;
   }
   | {
     readonly kind: "toolEvent";
     readonly id: string;
     readonly createdAt: number;
+    readonly sortRank: number;
     readonly event: AgentRuntimeEvent;
-  };
+  }
+  | (TimelineRuntimeActionItem & {
+    readonly sortRank: number;
+  });
 
 const TOOL_EVENT_PHASES = new Set([
   "tool_operation_started",
@@ -73,25 +103,90 @@ const TOOL_EVENT_PHASES = new Set([
   "tool_operation_failed",
 ]);
 
-const buildTimelineItems = (detail: AgentSessionDetail | null): readonly ThreadTimelineItem[] => {
-  if (detail === null) {
-    return [];
+const MODEL_TEXT_PHASES = new Set([
+  "model_stream_delta",
+  "model_text_delta",
+  "model_stream_reset",
+]);
+
+const modelTextSegmentStartAt = (
+  events: readonly AgentRuntimeEvent[],
+  turnId: string | undefined,
+  fallback: number
+): number => {
+  if (turnId === undefined) {
+    return fallback;
   }
-  const messages = detail.messages.map<ThreadTimelineItem>((message) => ({
-    kind: "message",
-    id: `message:${message.id}`,
-    createdAt: message.createdAt,
-    message,
-  }));
-  const toolEvents = detail.runtimeEvents
+  const ordered = events
+    .filter((event) => event.turnId === turnId && MODEL_TEXT_PHASES.has(event.phase))
+    .sort((left, right) => left.timestamp - right.timestamp);
+  let segmentStart: number | null = null;
+  for (const event of ordered) {
+    if (event.phase === "model_stream_reset") {
+      segmentStart = null;
+      continue;
+    }
+    if (segmentStart === null) {
+      segmentStart = event.timestamp;
+    }
+  }
+  return segmentStart ?? fallback;
+};
+
+const buildTimelineItems = (
+  detail: AgentSessionDetail | null,
+  optimisticUserMessages: readonly OptimisticUserMessage[],
+  liveAssistant: { readonly turnId: string; readonly text: string } | null
+): readonly ThreadTimelineItem[] => {
+  const sessionMessages = detail?.messages ?? [];
+  const events = detail?.runtimeEvents ?? [];
+  const messages = [...sessionMessages, ...optimisticUserMessages].map<ThreadTimelineItem>((message) => {
+    const role = message.role === "assistant" ? "assistant" : "user";
+    return {
+      kind: "message",
+      id: `message:${message.id}`,
+      createdAt: role === "assistant"
+        ? modelTextSegmentStartAt(events, message.turnId, message.createdAt)
+        : message.createdAt,
+      sortRank: role === "assistant" ? 30 : 10,
+      live: false,
+      message,
+    };
+  });
+  const liveMessage: ThreadTimelineItem[] = liveAssistant === null ? [] : [
+    {
+      kind: "message",
+      id: `live:${liveAssistant.turnId}`,
+      createdAt: modelTextSegmentStartAt(events, liveAssistant.turnId, Date.now()),
+      sortRank: 30,
+      live: true,
+      message: {
+        id: `live:${liveAssistant.turnId}`,
+        sessionId: detail?.session.id ?? "",
+        turnId: liveAssistant.turnId,
+        role: "assistant",
+        content: liveAssistant.text,
+        displayContent: liveAssistant.text,
+        createdAt: Date.now(),
+      },
+    },
+  ];
+  const toolEvents = (detail?.runtimeEvents ?? [])
     .filter((event) => TOOL_EVENT_PHASES.has(event.phase))
     .map<ThreadTimelineItem>((event, index) => ({
       kind: "toolEvent",
       id: `tool:${event.turnId}:${event.phase}:${String(index)}:${String(event.timestamp)}`,
       createdAt: event.timestamp,
+      sortRank: 20,
       event,
     }));
-  return [...messages, ...toolEvents].sort((left, right) => left.createdAt - right.createdAt);
+  const runtimeActions = buildTimelineRuntimeActionItems(detail).map<ThreadTimelineItem>((item) => ({
+    ...item,
+    sortRank: 40,
+  }));
+  return [...messages, ...liveMessage, ...toolEvents, ...runtimeActions].sort((left, right) =>
+    left.createdAt - right.createdAt || left.sortRank - right.sortRank
+  );
 };
 
 const formatMessageTime = (timestamp: number, locale: string): string => {
@@ -103,6 +198,53 @@ const formatMessageTime = (timestamp: number, locale: string): string => {
   } catch {
     return "";
   }
+};
+
+const AiPanelAssistantGeneratingIndicator = () => (
+  <span className="lyra-ai-agent-generating-indicator" aria-label="Lyra is responding">
+    <SpinnerLabel size="sm" tone="muted" label="" />
+  </span>
+);
+
+const AiPanelMessageFooter = ({
+  role,
+  createdAt,
+  locale,
+  actions,
+  live,
+}: {
+  readonly role: "assistant" | "user";
+  readonly createdAt: number;
+  readonly locale: WorkbenchLocale;
+  readonly actions?: ReactNode;
+  readonly live: boolean;
+}) => {
+  const timeLabel = formatMessageTime(createdAt, locale);
+  const hasActions = actions !== undefined && actions !== null;
+  const showTime = !live;
+  return (
+    <footer
+      className="lyra-ai-agent-message-footer"
+      data-has-actions={hasActions ? "true" : "false"}
+    >
+      {role === "assistant" && live ? (
+        <AiPanelAssistantGeneratingIndicator />
+      ) : null}
+      <span className="lyra-ai-agent-message-footer-stack">
+        {showTime ? (
+          <time
+            className="lyra-ai-agent-message-time"
+            dateTime={new Date(createdAt).toISOString()}
+          >
+            {timeLabel}
+          </time>
+        ) : null}
+        {hasActions ? (
+          <span className="lyra-ai-agent-message-actions">{actions}</span>
+        ) : null}
+      </span>
+    </footer>
+  );
 };
 
 const AiPanelMessageBubble = ({
@@ -122,20 +264,18 @@ const AiPanelMessageBubble = ({
     <article
       className={`lyra-ai-agent-message lyra-ai-agent-message-${role}${live ? " lyra-ai-agent-message-live" : ""}`}
     >
-      <header className="lyra-ai-agent-message-meta">
-        <span>{role === "assistant" ? "Lyra" : "You"}</span>
-        <time dateTime={new Date(message.createdAt).toISOString()}>
-          {formatMessageTime(message.createdAt, locale)}
-        </time>
-        {actions === undefined || actions === null ? null : (
-          <span className="lyra-ai-agent-message-actions">{actions}</span>
-        )}
-      </header>
+      {role === "assistant" ? (
+        <header className="lyra-ai-agent-message-meta">
+          <span>Lyra</span>
+        </header>
+      ) : null}
       {role === "assistant" ? (
         content.length === 0 ? (
-          <div className="lyra-ai-agent-message-pending">
-            <SpinnerLabel size="sm" tone="muted" label="Thinking" />
-          </div>
+          live ? null : (
+            <div className="lyra-ai-agent-message-pending">
+              <SpinnerLabel size="sm" tone="muted" label="Thinking" />
+            </div>
+          )
         ) : (
           <AiPanelRichContent locale={locale} content={content} />
         )
@@ -144,6 +284,13 @@ const AiPanelMessageBubble = ({
           <InlineMessageContent content={content} parts={message.contentParts} />
         </div>
       )}
+      <AiPanelMessageFooter
+        role={role}
+        createdAt={message.createdAt}
+        locale={locale}
+        actions={actions}
+        live={live}
+      />
     </article>
   );
 };
@@ -254,20 +401,27 @@ const AiPanelToolEventRow = ({
     const expanded = expandedPatchKey === patchProposal.key;
     const approval = patchApprovalForProposal(sessionDetail, patchProposal);
     return (
-      <PatchPreviewCard
-        proposal={patchProposal}
-        expanded={expanded}
-        readArtifact={readArtifact}
-        applyPatch={applyPatch}
-        resolveApproval={resolveApproval}
-        applied={isPatchProposalApplied(sessionDetail, patchProposal)}
-        denied={isPatchProposalDenied(sessionDetail, patchProposal)}
-        approvalRequired={approval !== null}
-        approvalTicketId={approval?.approvalTicketId ?? null}
-        onToggle={(key) => {
-          onPatchExpandedChange?.(expanded ? null : key);
-        }}
-      />
+      <div className="lyra-ai-agent-timeline-event" data-kind="patch">
+        <span className="lyra-ai-agent-timeline-event-marker" aria-hidden="true">
+          {toolIcon("/tools/filesystem/propose_patch", event.phase)}
+        </span>
+        <div className="lyra-ai-agent-timeline-event-body">
+          <PatchPreviewCard
+            proposal={patchProposal}
+            expanded={expanded}
+            readArtifact={readArtifact}
+            applyPatch={applyPatch}
+            resolveApproval={resolveApproval}
+            applied={isPatchProposalApplied(sessionDetail, patchProposal)}
+            denied={isPatchProposalDenied(sessionDetail, patchProposal)}
+            approvalRequired={approval !== null}
+            approvalTicketId={approval?.approvalTicketId ?? null}
+            onToggle={(key) => {
+              onPatchExpandedChange?.(expanded ? null : key);
+            }}
+          />
+        </div>
+      </div>
     );
   }
   const { toolPath, summary, detail } = toolEventLabel(event);
@@ -277,14 +431,18 @@ const AiPanelToolEventRow = ({
       ? "running"
       : "done";
   return (
-    <div className={`lyra-ai-agent-tool-event lyra-ai-agent-tool-event-${tone}`}>
-      <span className="lyra-ai-agent-tool-event-icon">
+    <div className="lyra-ai-agent-timeline-event" data-kind="tool" data-tone={tone}>
+      <span className="lyra-ai-agent-timeline-event-marker" aria-hidden="true">
         {toolIcon(toolPath, event.phase)}
       </span>
-      <span className="lyra-ai-agent-tool-event-summary">{summary}</span>
-      {detail === null ? null : (
-        <span className="lyra-ai-agent-tool-event-detail">{detail}</span>
-      )}
+      <div className="lyra-ai-agent-timeline-event-body">
+        <div className={`lyra-ai-agent-tool-event lyra-ai-agent-tool-event-${tone}`}>
+          <span className="lyra-ai-agent-tool-event-summary">{summary}</span>
+          {detail === null ? null : (
+            <span className="lyra-ai-agent-tool-event-detail">{detail}</span>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -296,6 +454,7 @@ export const AiPanelThreadView = memo(({
   emptyGreetingLabels,
   locale = "en-US",
   detail,
+  optimisticUserMessages = [],
   streamingTurnId,
   streamingAssistantText,
   isLoading,
@@ -305,18 +464,32 @@ export const AiPanelThreadView = memo(({
   readArtifact,
   applyPatch,
   resolveApproval,
+  resolveClarification,
+  resolvePlanReview,
+  executeMessageRollback,
+  onClarificationResolved,
+  onRollbackExecuted,
   renderMessageActions,
 }: AiPanelThreadViewProps) => {
   const messages = detail?.messages ?? [];
-  const timelineItems = buildTimelineItems(detail);
   const hasLiveAssistant =
     streamingTurnId !== null
-    && streamingAssistantText.trim().length > 0
     && !messages.some((message) =>
       message.role === "assistant" && message.turnId === streamingTurnId
     );
+  const timelineItems = buildTimelineItems(
+    detail,
+    optimisticUserMessages,
+    hasLiveAssistant && streamingTurnId !== null
+      ? { turnId: streamingTurnId, text: streamingAssistantText }
+      : null
+  );
 
-  if (messages.length > 0 || hasLiveAssistant || runtimeError !== null || isLoading) {
+  if (
+    timelineItems.length > 0
+    || runtimeError !== null
+    || isLoading
+  ) {
     return (
       <div className="lyra-ai-agent-thread-view" role="log" aria-live="polite">
         {timelineItems.map((item) => (
@@ -325,7 +498,20 @@ export const AiPanelThreadView = memo(({
               key={item.id}
               message={item.message}
               locale={locale}
+              live={item.live || (item.message.role === "assistant" && item.message.turnId === streamingTurnId)}
               actions={renderMessageActions?.(item.message)}
+            />
+          ) : item.kind === "runtimeAction" ? (
+            <TimelineRuntimeAction
+              key={item.id}
+              actionKind={item.actionKind}
+              detail={detail}
+              resolveClarification={resolveClarification}
+              resolveApproval={resolveApproval}
+              resolvePlanReview={resolvePlanReview}
+              executeMessageRollback={executeMessageRollback}
+              onClarificationResolved={onClarificationResolved}
+              onRollbackExecuted={onRollbackExecuted}
             />
           ) : (
             <AiPanelToolEventRow
@@ -340,21 +526,6 @@ export const AiPanelThreadView = memo(({
             />
           )
         ))}
-        {hasLiveAssistant ? (
-          <AiPanelMessageBubble
-            message={{
-              id: `live:${streamingTurnId}`,
-              sessionId: detail?.session.id ?? "",
-              turnId: streamingTurnId,
-              role: "assistant",
-              content: streamingAssistantText,
-              displayContent: streamingAssistantText,
-              createdAt: Date.now(),
-            }}
-            locale={locale}
-            live
-          />
-        ) : null}
         {isLoading ? (
           <div className="lyra-ai-agent-thread-status">
             <SpinnerLabel size="sm" tone="muted" label="Loading thread" />

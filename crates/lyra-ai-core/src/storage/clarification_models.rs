@@ -7,6 +7,8 @@ pub struct QuestionTicketOption {
     pub id: String,
     pub label: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

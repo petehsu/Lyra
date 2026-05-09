@@ -10,6 +10,10 @@
   --lyra-tab-overlap: var(--lyra-unit-14);
   --lyra-tab-content-margin: var(--lyra-unit-9);
   --lyra-tab-divider-inset: var(--lyra-tab-content-margin);
+  --lyra-browser-tab-control-h: calc(var(--lyra-size-browser-tab-h) - var(--lyra-unit-6));
+  --lyra-browser-tab-active-control-h: calc(var(--lyra-size-browser-tab-h) - var(--lyra-unit-3));
+  --lyra-browser-tab-control-y: var(--lyra-unit-3);
+  --lyra-browser-tabs-navigation-w: clamp(var(--lyra-unit-180), 22vw, var(--lyra-unit-300));
   position: relative;
   min-height: 0;
   display: grid;
@@ -17,10 +21,19 @@
     var(--lyra-size-browser-nav-slot)
     var(--lyra-size-browser-nav-slot)
     var(--lyra-size-browser-nav-slot)
-    minmax(0, 1fr)
-    var(--lyra-size-browser-nav-slot);
+    minmax(0, 1fr);
   background: var(--lyra-tabstrip-bg);
   overflow: hidden;
+}
+
+.lyra-browser-tabs-with-navigation {
+  grid-template-columns:
+    var(--lyra-size-browser-nav-slot)
+    var(--lyra-size-browser-nav-slot)
+    var(--lyra-size-browser-nav-slot)
+    minmax(0, 1fr)
+    minmax(var(--lyra-unit-160), var(--lyra-browser-tabs-navigation-w));
+  column-gap: var(--lyra-unit-8);
 }
 
 .lyra-browser-tabs::before {
@@ -126,6 +139,22 @@
   z-index: 2;
 }
 
+.lyra-browser-tabs-navigation {
+  grid-column: 5;
+  min-width: 0;
+  width: 100%;
+  align-self: center;
+  justify-self: stretch;
+  padding-right: var(--lyra-unit-8);
+  position: relative;
+  z-index: 3;
+}
+
+.lyra-browser-tabs-navigation .lyra-titlebar-navigation {
+  width: 100%;
+  max-width: none;
+}
+
 .lyra-browser-tab-strip::-webkit-scrollbar {
   width: 0;
   height: 0;
@@ -168,7 +197,7 @@
   box-sizing: border-box;
   min-width: var(--lyra-tab-min-w);
   max-width: var(--lyra-tab-max-w);
-  height: calc(var(--lyra-size-browser-tab-h) - var(--lyra-unit-3));
+  height: var(--lyra-browser-tab-control-h);
   margin-top: var(--lyra-unit-3);
   margin-bottom: 0;
   margin-left: 0;
@@ -183,8 +212,14 @@
 }
 
 .lyra-browser-tabs .lyra-browser-tab-item {
-  margin-top: 0;
+  margin-top: var(--lyra-browser-tab-control-y);
   margin-bottom: var(--lyra-unit-3);
+}
+
+.lyra-browser-tabs .lyra-browser-tab-item-active,
+.lyra-browser-tabs .lyra-browser-tab-item-split-group-active {
+  height: var(--lyra-browser-tab-active-control-h);
+  margin-top: 0;
 }
 
 .lyra-browser-tab-strip > .lyra-browser-tab-item + .lyra-browser-tab-item {
@@ -478,20 +513,22 @@
 .lyra-browser-tab-add {
   box-sizing: border-box;
   align-self: start;
-  justify-self: stretch;
+  flex: 0 0 var(--lyra-size-browser-nav-slot);
   width: var(--lyra-size-browser-nav-slot);
   min-width: var(--lyra-size-browser-nav-slot);
-  height: calc(var(--lyra-size-browser-tab-h) - var(--lyra-unit-3));
+  height: var(--lyra-browser-tab-control-h);
   margin-top: var(--lyra-unit-3);
+  margin-left: var(--lyra-unit-2);
   padding: 0;
   border: 0;
   border-radius: 0;
   background: var(--lyra-tabstrip-bg);
-  color: var(--lyra-text-muted);
-  opacity: 0.72;
+  color: color-mix(in srgb, var(--lyra-text-muted) 72%, transparent);
+  opacity: 1;
   cursor: pointer;
-  position: relative;
-  z-index: 4;
+  position: sticky;
+  right: 0;
+  z-index: 7;
   display: grid;
   place-items: center;
   isolation: isolate;
@@ -504,20 +541,27 @@
 .lyra-browser-tab-add::before {
   content: "";
   position: absolute;
-  inset: 0;
-  z-index: -1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
   border-radius: inherit;
   background: var(--lyra-tabstrip-bg);
   pointer-events: none;
 }
 
+.lyra-browser-tab-add > svg {
+  position: relative;
+  z-index: 1;
+}
+
 .lyra-browser-tab-add:hover {
   background: transparent;
-  opacity: 1;
   color: var(--lyra-text-primary);
 }
 
 .lyra-browser-tabs .lyra-browser-tab-add {
-  margin-top: 0;
-  margin-bottom: var(--lyra-unit-3);
+  margin-top: var(--lyra-browser-tab-control-y);
+  margin-bottom: var(--lyra-browser-tab-control-y);
 }

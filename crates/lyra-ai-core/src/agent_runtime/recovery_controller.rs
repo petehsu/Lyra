@@ -1,7 +1,10 @@
 use super::*;
 use crate::storage::{
-    AgentMessageCheckpointSummary, AgentPreviewMessageRollbackResult, CreateRecoveryAnchorInput,
+    AgentExecuteMessageRollbackResult, AgentMessageCheckpointSummary,
+    AgentPreviewMessageRollbackResult, CreateRecoveryAnchorInput,
 };
+use anyhow::Context;
+use rusqlite::{params, OptionalExtension};
 
 pub fn read_rollback_preview(
     request: AgentReadRollbackPreviewRequest,
@@ -49,6 +52,30 @@ pub fn preview_message_rollback(
     Ok(result)
 }
 
+pub fn rollback_to_turn(
+    request: AgentRollbackToTurnRequest,
+) -> Result<AgentExecuteMessageRollbackResult> {
+    let store = AiStore::open(request.storage.storage_root.as_deref())?;
+    store
+        .read_session_index(&request.session_id)?
+        .ok_or_else(|| anyhow!("AI session not found: {}", request.session_id))?;
+    let target_user_message_id =
+        read_user_message_id_for_turn(&store, &request.session_id, &request.target_turn_id)?
+            .ok_or_else(|| anyhow!("rollback target turn not found: {}", request.target_turn_id))?;
+    let preview = preview_message_rollback(AgentPreviewMessageRollbackRequest {
+        storage: request.storage.clone(),
+        session_id: request.session_id.clone(),
+        target_user_message_id,
+    })?;
+    super::recovery_execution::execute_message_rollback(AgentExecuteMessageRollbackRequest {
+        storage: request.storage,
+        session_id: request.session_id,
+        rollback_id: preview.rollback_id,
+        confirmation_token: request.confirmation_token,
+        strategy: request.strategy,
+    })
+}
+
 pub(super) fn ensure_recovery_checkpoint_for_turn(
     store: &AiStore,
     session: &AgentSession,
@@ -93,4 +120,23 @@ pub(crate) fn ensure_recovery_anchor_for_write(
         ));
     }
     Ok(())
+}
+
+fn read_user_message_id_for_turn(
+    store: &AiStore,
+    session_id: &str,
+    target_turn_id: &str,
+) -> Result<Option<String>> {
+    store.with_session_conn(session_id, |conn| {
+        conn.query_row(
+            "SELECT user_message_id
+             FROM runtime_turn
+             WHERE session_id = ?1 AND runtime_turn_id = ?2
+             LIMIT 1",
+            params![session_id, target_turn_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .context("failed to read rollback target turn")
+    })
 }

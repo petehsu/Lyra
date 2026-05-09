@@ -14,7 +14,7 @@ describe("settings-ai provider presets", () => {
     expect(mimoPresets.every((preset) => preset.authFields.some((field) => field.id === "apiKey"))).toBe(true);
   });
 
-  test("keeps hosted provider URLs internal and leaves local/custom URLs editable", () => {
+  test("keeps hosted provider URLs internal and exposes local/custom connection fields", () => {
     const hostedProviderIds = new Set(["openai", "anthropic", "google_ai", "mimo"]);
     const hostedPresets = AI_PROVIDER_PRESETS.filter((preset) => hostedProviderIds.has(preset.providerId));
     const editablePresets = AI_PROVIDER_PRESETS.filter((preset) =>
@@ -23,12 +23,35 @@ describe("settings-ai provider presets", () => {
 
     expect(hostedPresets.every((preset) => preset.connectionFields.length === 0)).toBe(true);
     expect(editablePresets.every((preset) =>
-      preset.connectionFields.some((field) => field.id === "baseUrl")
+      preset.connectionFields.some((field) => field.id === "baseUrl" || field.id === "modelPath")
     )).toBe(true);
   });
 
-  test("does not ship preset model ids", () => {
-    expect(AI_PROVIDER_PRESETS.every((preset) => preset.defaultModel === "")).toBe(true);
-    expect(AI_PROVIDER_PRESETS.every((preset) => preset.recommendedModels.length === 0)).toBe(true);
+  test("does not ship hardcoded model ids", () => {
+    const presetsWithModels = AI_PROVIDER_PRESETS.filter((preset) =>
+      preset.defaultModel !== "" || preset.recommendedModels.length > 0
+    );
+
+    expect(presetsWithModels).toEqual([]);
+  });
+
+  test("exposes Responses and embedded local model protocols", () => {
+    expect(AI_PROVIDER_PRESETS.map((preset) => preset.protocolId)).toEqual(expect.arrayContaining([
+      "openai_responses",
+      "llama_cpp_server",
+      "vllm_chat_completions",
+      "llama_cpp_ffi",
+      "mlx_ffi"
+    ]));
+
+    const embeddedPresets = AI_PROVIDER_PRESETS.filter((preset) =>
+      preset.protocolId === "llama_cpp_ffi" || preset.protocolId === "mlx_ffi"
+    );
+    expect(embeddedPresets.every((preset) =>
+      preset.connectionFields.some((field) => field.id === "modelPath" && field.kind === "file")
+    )).toBe(true);
+    expect(embeddedPresets.every((preset) =>
+      preset.runtimeMetadata?.localRuntimeKind === "ffi"
+    )).toBe(true);
   });
 });

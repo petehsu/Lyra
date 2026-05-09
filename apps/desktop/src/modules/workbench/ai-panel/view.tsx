@@ -5,6 +5,7 @@ import { createSurfaceTextLabels } from "./surface-model";
 import { AiPanelSurfaceView } from "./surface-view";
 import type { AiPanelSurfaceProps } from "./types";
 import { useAiPanelSurfaceRuntime } from "./use-ai-panel-surface-runtime";
+import { useAgentWorkspaceFollow } from "./use-agent-workspace-follow";
 
 export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
   const {
@@ -27,6 +28,14 @@ export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
     fileMentionFallbackRoots: surfaceProps.fileMentionFallbackRoots,
     workbenchTabMentions: surfaceProps.workbenchTabMentions,
     onRequestProjectBind: surfaceProps.onRequestProjectBind,
+  });
+  const followWorkspaceRoot =
+    runtime.boundProjectRootForActiveThread ?? runtime.state.activeThread?.cwd ?? null;
+  useAgentWorkspaceFollow({
+    enabled: runtime.state.followEnabled,
+    detail: runtime.state.activeDetail,
+    workspaceRoot: followWorkspaceRoot,
+    onOpenFilePath: surfaceProps.onFollowOpenFilePath,
   });
 
   return (

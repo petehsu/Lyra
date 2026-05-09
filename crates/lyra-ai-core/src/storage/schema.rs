@@ -43,6 +43,10 @@ pub(super) fn migrate_index(conn: &Connection) -> Result<()> {
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
             profile_id TEXT,
+            model_id TEXT,
+            system_prompt TEXT,
+            permission_mode TEXT,
+            execution_target TEXT,
             project_root TEXT,
             project_name TEXT,
             collaboration_mode TEXT NOT NULL,
@@ -51,6 +55,10 @@ pub(super) fn migrate_index(conn: &Connection) -> Result<()> {
         );
         ",
     )?;
+    ensure_column(conn, "agent_session_index", "model_id", "TEXT")?;
+    ensure_column(conn, "agent_session_index", "system_prompt", "TEXT")?;
+    ensure_column(conn, "agent_session_index", "permission_mode", "TEXT")?;
+    ensure_column(conn, "agent_session_index", "execution_target", "TEXT")?;
     Ok(())
 }
 
@@ -82,6 +90,7 @@ pub(super) fn migrate_session(conn: &Connection) -> Result<()> {
             current_state TEXT NOT NULL,
             collaboration_mode TEXT,
             permission_mode TEXT NOT NULL DEFAULT 'sandbox',
+            execution_target TEXT NOT NULL DEFAULT 'host',
             project_policy_snapshot_id TEXT,
             security_policy_snapshot_id TEXT,
             created_at_ms INTEGER NOT NULL,
@@ -395,6 +404,12 @@ pub(super) fn migrate_session(conn: &Connection) -> Result<()> {
         "runtime_turn",
         "permission_mode",
         "TEXT NOT NULL DEFAULT 'sandbox'",
+    )?;
+    ensure_column(
+        conn,
+        "runtime_turn",
+        "execution_target",
+        "TEXT NOT NULL DEFAULT 'host'",
     )?;
     ensure_column(conn, "runtime_turn", "security_policy_snapshot_id", "TEXT")?;
     ensure_column(conn, "file_backup_record", "post_apply_sha256", "TEXT")?;

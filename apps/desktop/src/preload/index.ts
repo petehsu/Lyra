@@ -165,6 +165,36 @@ import {
   type AgentSession,
   type AgentSessionDetail,
   type AgentUpdateSessionRequest,
+  type AgentVmApplyInheritanceProfileRequest,
+  type AgentVmApplyInheritanceProfileResult,
+  type AgentVmAttachRequest,
+  type AgentVmBindingListRequest,
+  type AgentVmBindingListResult,
+  type AgentVmBindingResult,
+  type AgentVmCreateRequest,
+  type AgentVmCreateResult,
+  type AgentVmConsoleConnectRequest,
+  type AgentVmConsoleConnectResult,
+  type AgentVmCreateInheritanceProfileRequest,
+  type AgentVmForkRequest,
+  type AgentVmImageDownloadRequest,
+  type AgentVmImageDownloadResult,
+  type AgentVmImageImportRequest,
+  type AgentVmImageImportResult,
+  type AgentVmImageListRequest,
+  type AgentVmImageListResult,
+  type AgentVmInheritanceProfileResult,
+  type AgentVmLifecycleResult,
+  type AgentVmListRequest,
+  type AgentVmListResult,
+  type AgentVmPasswordMetadataRequest,
+  type AgentVmPasswordMetadataResult,
+  type AgentVmPasswordRevealRequest,
+  type AgentVmPasswordRevealResult,
+  type AgentVmReadBindingRequest,
+  type AgentVmRevokeBindingRequest,
+  type AgentVmStatusRequest,
+  type AgentVmTakeoverRequest,
   type LyraDesktopApi,
   type WindowStatePayload
 } from "../shared/desktop-bridge";
@@ -1088,6 +1118,71 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.aiApplyPatch, request) as Promise<AgentApplyPatchResult>,
     resolveApproval: (request: AgentResolveApprovalRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.aiResolveApproval, request) as Promise<AgentResolveApprovalResult>,
+    listAgentVms: (request?: AgentVmListRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAgentVmList, request ?? {}) as Promise<AgentVmListResult>,
+    listAgentVmImages: (request?: AgentVmImageListRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiAgentVmListImages,
+        request ?? {}
+      ) as Promise<AgentVmImageListResult>,
+    downloadAgentVmImage: (request: AgentVmImageDownloadRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiAgentVmDownloadImage,
+        request
+      ) as Promise<AgentVmImageDownloadResult>,
+    importAgentVmImage: (request: AgentVmImageImportRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiAgentVmImportImage,
+        request
+      ) as Promise<AgentVmImageImportResult>,
+    createAgentVm: (request: AgentVmCreateRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAgentVmCreate, request) as Promise<AgentVmCreateResult>,
+    listAgentVmBindings: (request?: AgentVmBindingListRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiAgentVmListBindings,
+        request ?? {}
+      ) as Promise<AgentVmBindingListResult>,
+    readAgentVmBinding: (request: AgentVmReadBindingRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAgentVmReadBinding, request) as Promise<AgentVmBindingResult>,
+    attachAgentVm: (request: AgentVmAttachRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAgentVmAttach, request) as Promise<AgentVmBindingResult>,
+    takeoverAgentVm: (request: AgentVmTakeoverRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAgentVmTakeover, request) as Promise<AgentVmBindingResult>,
+    forkAgentVm: (request: AgentVmForkRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAgentVmFork, request) as Promise<AgentVmBindingResult>,
+    createAgentVmInheritanceProfile: (request: AgentVmCreateInheritanceProfileRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiAgentVmCreateInheritanceProfile,
+        request
+      ) as Promise<AgentVmInheritanceProfileResult>,
+    applyAgentVmInheritanceProfile: (request: AgentVmApplyInheritanceProfileRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiAgentVmApplyInheritanceProfile,
+        request
+      ) as Promise<AgentVmApplyInheritanceProfileResult>,
+    revokeAgentVmBinding: (request: AgentVmRevokeBindingRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAgentVmRevokeBinding, request) as Promise<AgentVmBindingResult>,
+    readAgentVmStatus: (request: AgentVmStatusRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAgentVmStatus, request) as Promise<AgentVmLifecycleResult>,
+    startAgentVm: (request: AgentVmStatusRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAgentVmStart, request) as Promise<AgentVmLifecycleResult>,
+    stopAgentVm: (request: AgentVmStatusRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.aiAgentVmStop, request) as Promise<AgentVmLifecycleResult>,
+    readAgentVmPasswordMetadata: (request: AgentVmPasswordMetadataRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiAgentVmPasswordMetadata,
+        request
+      ) as Promise<AgentVmPasswordMetadataResult>,
+    revealAgentVmPassword: (request: AgentVmPasswordRevealRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiAgentVmPasswordReveal,
+        request
+      ) as Promise<AgentVmPasswordRevealResult>,
+    connectAgentVmConsole: (request: AgentVmConsoleConnectRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.aiAgentVmConsoleConnect,
+        request
+      ) as Promise<AgentVmConsoleConnectResult>,
     onAgentEvent: (listener: (event: AgentRuntimeStreamEvent) => void) => {
       ensureAiEventBridge();
       aiEventListeners.add(listener);

@@ -9,6 +9,7 @@
 @import "./file-manager.css";
 @import "./image-viewer.css";
 @import "./resource-monitor.css";
+@import "./agent-vm.css";
 @import "./ai-panel.css";
 @import "./notification-center.css";
 @import "./mcp-center-shell.css";

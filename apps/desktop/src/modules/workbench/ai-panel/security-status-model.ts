@@ -94,6 +94,15 @@ const detailFor = (
   [
     policy?.source === "project_manifest" ? "project manifest" : policy?.status,
     security?.redactionProfile === undefined ? null : `${security.redactionProfile} redaction`,
+    security === null || security.activeSecretHandles === 0
+      ? null
+      : `${security.activeSecretHandles} active secret handles`,
+    security?.lastExfiltrationAction === undefined || security.lastExfiltrationAction === null
+      ? null
+      : `exfiltration: ${security.lastExfiltrationAction}`,
+    security?.lastCapsuleBridgeDecision === undefined || security.lastCapsuleBridgeDecision === null
+      ? null
+      : `capsule bridge: ${security.lastCapsuleBridgeDecision}`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -122,6 +131,13 @@ const tooltipFor = (
     policy?.manifestPath === undefined || policy.manifestPath === null ? null : `Manifest: ${policy.manifestPath}`,
     policy?.snapshotId === undefined ? null : `Policy: ${policy.snapshotId}`,
     security?.snapshotId === undefined || security.snapshotId === null ? null : `Security: ${security.snapshotId}`,
+    security === null ? null : `Active secret handles: ${security.activeSecretHandles}`,
+    security?.lastExfiltrationAction === undefined || security.lastExfiltrationAction === null
+      ? null
+      : `Last exfiltration action: ${security.lastExfiltrationAction}`,
+    security?.lastCapsuleBridgeDecision === undefined || security.lastCapsuleBridgeDecision === null
+      ? null
+      : `Last capsule bridge decision: ${security.lastCapsuleBridgeDecision}`,
     security?.recentDecisions.length === 0 ? null : security?.recentDecisions.map((decision) => decision.decisionId).join(", "),
   ]
     .filter(Boolean)

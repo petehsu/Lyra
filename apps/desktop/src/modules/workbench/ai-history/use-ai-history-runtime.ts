@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { AgentSessionDetail } from "../ai-panel/agent-ui-types";
+import type {
+  AgentMessage,
+  AgentRuntimeStreamEvent,
+  AgentSession,
+  AgentSessionDetail
+} from "../ai-panel/agent-ui-types";
 import {
   normalizeProjectRoot,
   useProjectLogoMap
 } from "../project-identity";
 import { emitThreadSelected } from "../thread-selection-events";
 import {
+  lyraThreadToAgentDetail,
+  readLyraThread
+} from "../ai-panel/lyra-thread-adapter";
+import {
+  createAiHistoryRequestPayload,
+  createPreviewThreadSummary,
   groupThreadsByProject,
   isArchivedHistoryScope,
   isProjectHistoryScope,
   resolveThreadPreviewText,
+  sortThreadsByRecency,
+  toThreadSummary,
   type HistoryScope,
+  type JsonRecord,
   type LivePreviewEntry,
   type LyraThreadSummary,
   type ProjectGroup
@@ -26,6 +40,84 @@ type UseAiHistoryRuntimeOptions = {
   readonly deleteArchivedConversationConfirm: string;
   readonly deleteArchivedConversationCancel: string;
   readonly threadPreviewEmptyLabel: string;
+};
+
+type LegacyLyraApi = {
+  readonly request: (payload: Readonly<Record<string, unknown>>) => Promise<unknown>;
+};
+
+const getLegacyLyraApi = (
+  desktopApi: AiHistorySurfaceProps["desktopApi"]
+): LegacyLyraApi | null => {
+  if (desktopApi === null || typeof desktopApi !== "object") {
+    return null;
+  }
+  const value = (desktopApi as unknown as { readonly lyra?: unknown }).lyra;
+  if (value === null || typeof value !== "object") {
+    return null;
+  }
+  const request = (value as { readonly request?: unknown }).request;
+  return typeof request === "function"
+    ? { request: request as LegacyLyraApi["request"] }
+    : null;
+};
+
+const readRecord = (value: unknown): JsonRecord | null =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonRecord
+    : null;
+
+const readDetailFromPayload = (payload: unknown): AgentSessionDetail | null => {
+  const record = readRecord(payload);
+  const detail = readRecord(record?.detail);
+  return detail !== null && readRecord(detail.session) !== null
+    ? detail as unknown as AgentSessionDetail
+    : null;
+};
+
+const latestMessagePreview = (messages: readonly AgentMessage[]): string =>
+  [...messages]
+    .reverse()
+    .map((message) => (message.displayContent ?? message.content).trim())
+    .find((content) => content.length > 0)
+  ?? "";
+
+const sessionToThreadSummary = (session: AgentSession): LyraThreadSummary => ({
+  id: session.id,
+  name: session.title,
+  preview: "",
+  updatedAt: session.updatedAt,
+  modelProvider: session.profileId ?? null,
+  boundProjectRoot: session.projectRoot ?? null
+});
+
+const detailToThreadSummary = (detail: AgentSessionDetail): LyraThreadSummary => ({
+  ...createPreviewThreadSummary(detail),
+  preview: latestMessagePreview(detail.messages),
+  modelProvider: detail.turns.at(-1)?.profileId ?? detail.session.profileId ?? null
+});
+
+const parseThreadList = (response: unknown): readonly LyraThreadSummary[] => {
+  const record = readRecord(response);
+  const data = Array.isArray(record?.data) ? record.data : [];
+  return sortThreadsByRecency(
+    data.map(toThreadSummary).filter((thread): thread is LyraThreadSummary => thread !== null)
+  );
+};
+
+const updateThreadBucket = (
+  current: readonly LyraThreadSummary[],
+  thread: LyraThreadSummary
+): readonly LyraThreadSummary[] => {
+  const existingIndex = current.findIndex((entry) => entry.id === thread.id);
+  const next = existingIndex < 0
+    ? [thread, ...current]
+    : [
+        ...current.slice(0, existingIndex),
+        thread,
+        ...current.slice(existingIndex + 1)
+      ];
+  return sortThreadsByRecency(next);
 };
 
 export type AiHistoryRuntimeActions = {
@@ -99,6 +191,8 @@ export const useAiHistoryRuntime = ({
   const [isRenamingThread, setIsRenamingThread] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const previewRequestSeq = useRef(0);
+  const didAutoPreviewLatestRef = useRef(false);
+  const legacyLyraApi = useMemo(() => getLegacyLyraApi(desktopApi), [desktopApi]);
   const isArchivedScope = isArchivedHistoryScope(scope);
   const isProjectScope = isProjectHistoryScope(scope);
   const threads = isArchivedScope ? archivedThreads : activeThreads;
@@ -142,12 +236,39 @@ export const useAiHistoryRuntime = ({
   }, [activeThreads, archivedThreads]);
 
   const loadThreads = useCallback(async (): Promise<void> => {
+    const agentApi = desktopApi?.ai;
+    if (agentApi === undefined && legacyLyraApi === null) {
+      setErrorMessage(null);
+      setIsLoading(false);
+      setHasLoadedThreads(false);
+      setActiveThreads([]);
+      setArchivedThreads([]);
+      return;
+    }
     setErrorMessage(null);
-    setIsLoading(false);
-    setHasLoadedThreads(true);
-    setActiveThreads([]);
-    setArchivedThreads([]);
-  }, []);
+    setIsLoading(true);
+    didAutoPreviewLatestRef.current = false;
+    try {
+      if (agentApi !== undefined) {
+        const sessions = await agentApi.listSessions();
+        setActiveThreads(sortThreadsByRecency(sessions.map(sessionToThreadSummary)));
+        setArchivedThreads([]);
+      } else if (legacyLyraApi !== null) {
+        const [activeResponse, archivedResponse] = await Promise.all([
+          legacyLyraApi.request(createAiHistoryRequestPayload("thread/list", { archived: false })),
+          legacyLyraApi.request(createAiHistoryRequestPayload("thread/list", { archived: true }))
+        ]);
+        setActiveThreads(parseThreadList(activeResponse));
+        setArchivedThreads(parseThreadList(archivedResponse));
+      }
+      setHasLoadedThreads(true);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+      setHasLoadedThreads(true);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [desktopApi?.ai, legacyLyraApi]);
 
   const clearPreview = useCallback((): void => {
     previewRequestSeq.current += 1;
@@ -177,6 +298,7 @@ export const useAiHistoryRuntime = ({
 
   const previewThread = useCallback(
     async (threadId: string, options: { readonly silent?: boolean } = {}): Promise<void> => {
+      const agentApi = desktopApi?.ai;
       const silent = options.silent === true;
       const requestSeq = previewRequestSeq.current + 1;
       previewRequestSeq.current = requestSeq;
@@ -186,50 +308,123 @@ export const useAiHistoryRuntime = ({
         setPreviewError(null);
         setIsPreviewLoading(true);
       }
-      if (previewRequestSeq.current !== requestSeq) {
-        return;
-      }
-      setPreviewDetail(null);
-      setPreviewError(null);
-      if (!silent) {
-        setIsPreviewLoading(false);
+      try {
+        let detail: AgentSessionDetail | null = null;
+        if (agentApi !== undefined) {
+          detail = await agentApi.readSession({ sessionId: threadId });
+        } else if (legacyLyraApi !== null) {
+          const response = await legacyLyraApi.request(
+            createAiHistoryRequestPayload("thread/read", {
+              threadId,
+              includeTurns: true
+            })
+          );
+          const thread = readLyraThread(readRecord(response)?.thread);
+          detail = thread === null ? null : lyraThreadToAgentDetail(thread);
+        }
+        if (previewRequestSeq.current !== requestSeq) {
+          return;
+        }
+        if (detail === null) {
+          setPreviewDetail(null);
+          setPreviewError("Thread could not be loaded.");
+          return;
+        }
+        setPreviewDetail(detail);
+        setPreviewError(null);
+        const summary = detailToThreadSummary(detail);
+        setActiveThreads((current) =>
+          current.some((thread) => thread.id === summary.id)
+            ? updateThreadBucket(current, summary)
+            : current
+        );
+        setArchivedThreads((current) =>
+          current.some((thread) => thread.id === summary.id)
+            ? updateThreadBucket(current, summary)
+            : current
+        );
+      } catch (error) {
+        if (previewRequestSeq.current === requestSeq) {
+          setPreviewDetail(null);
+          setPreviewError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        if (previewRequestSeq.current === requestSeq && !silent) {
+          setIsPreviewLoading(false);
+        }
       }
     },
-    []
+    [desktopApi?.ai, legacyLyraApi]
   );
 
   const archiveThread = useCallback(
     async (threadId: string): Promise<void> => {
       setErrorMessage(null);
-      if (activeThreadId === threadId) {
-        clearPreview();
+      const thread = activeThreads.find((entry) => entry.id === threadId) ?? null;
+      try {
+        if (legacyLyraApi !== null) {
+          await legacyLyraApi.request(createAiHistoryRequestPayload("thread/archive", { threadId }));
+        }
+        if (activeThreadId === threadId) {
+          clearPreview();
+        }
+        setActiveThreads((current) => current.filter((entry) => entry.id !== threadId));
+        if (thread !== null) {
+          setArchivedThreads((current) => updateThreadBucket(current, thread));
+        }
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : String(error));
       }
-      setActiveThreads((current) => current.filter((thread) => thread.id !== threadId));
     },
-    [activeThreadId, clearPreview]
+    [activeThreadId, activeThreads, clearPreview, legacyLyraApi]
   );
 
   const unarchiveThread = useCallback(
     async (threadId: string): Promise<void> => {
       setErrorMessage(null);
-      if (activeThreadId === threadId) {
-        clearPreview();
+      const thread = archivedThreads.find((entry) => entry.id === threadId) ?? null;
+      try {
+        if (legacyLyraApi !== null) {
+          const response = await legacyLyraApi.request(
+            createAiHistoryRequestPayload("thread/unarchive", { threadId })
+          );
+          const restored = toThreadSummary(readRecord(response)?.thread);
+          if (restored !== null) {
+            setActiveThreads((current) => updateThreadBucket(current, restored));
+          } else if (thread !== null) {
+            setActiveThreads((current) => updateThreadBucket(current, thread));
+          }
+        } else if (thread !== null) {
+          setActiveThreads((current) => updateThreadBucket(current, thread));
+        }
+        if (activeThreadId === threadId) {
+          clearPreview();
+        }
+        setArchivedThreads((current) => current.filter((entry) => entry.id !== threadId));
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : String(error));
       }
-      setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId));
     },
-    [activeThreadId, clearPreview]
+    [activeThreadId, archivedThreads, clearPreview, legacyLyraApi]
   );
 
   const deleteThread = useCallback(
     async (threadId: string): Promise<void> => {
       setErrorMessage(null);
-      if (activeThreadId === threadId) {
-        clearPreview();
+      try {
+        if (legacyLyraApi !== null) {
+          await legacyLyraApi.request(createAiHistoryRequestPayload("thread/delete", { threadId }));
+        }
+        if (activeThreadId === threadId) {
+          clearPreview();
+        }
+        setActiveThreads((current) => current.filter((thread) => thread.id !== threadId));
+        setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId));
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : String(error));
       }
-      setActiveThreads((current) => current.filter((thread) => thread.id !== threadId));
-      setArchivedThreads((current) => current.filter((thread) => thread.id !== threadId));
     },
-    [activeThreadId, clearPreview]
+    [activeThreadId, clearPreview, legacyLyraApi]
   );
 
   const openThread = useCallback((threadId: string): void => {
@@ -258,13 +453,29 @@ export const useAiHistoryRuntime = ({
     }
     setIsRenamingThread(true);
     setErrorMessage(null);
-    patchThreadName(threadId, name);
-    cancelRenameThread();
-    setIsRenamingThread(false);
+    try {
+      if (desktopApi?.ai !== undefined) {
+        const detail = await desktopApi.ai.updateSession({ sessionId: threadId, title: name });
+        setPreviewDetail((current) => current?.session.id === threadId ? detail : current);
+      } else if (legacyLyraApi !== null) {
+        await legacyLyraApi.request(createAiHistoryRequestPayload("thread/rename", {
+          threadId,
+          name
+        }));
+      }
+      patchThreadName(threadId, name);
+      cancelRenameThread();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRenamingThread(false);
+    }
   }, [
     cancelRenameThread,
+    desktopApi?.ai,
     editingThreadName,
     isRenamingThread,
+    legacyLyraApi,
     patchThreadName
   ]);
 
@@ -332,15 +543,71 @@ export const useAiHistoryRuntime = ({
   }, [loadThreads]);
 
   useEffect(() => {
+    const agentApi = desktopApi?.ai;
+    if (agentApi === undefined) {
+      return;
+    }
+    return agentApi.onAgentEvent((event: AgentRuntimeStreamEvent) => {
+      if (event.eventType === "model_text_delta") {
+        const payload = readRecord(event.payload);
+        const delta = payload?.delta;
+        if (typeof delta === "string" && event.runtimeTurnId !== undefined) {
+          setLivePreviewByThread((current) => {
+            const existing = current.get(event.sessionId);
+            const next = new Map(current);
+            const existingText =
+              existing !== undefined && existing.turnId === event.runtimeTurnId
+                ? existing.text
+                : "";
+            next.set(event.sessionId, {
+              threadId: event.sessionId,
+              turnId: event.runtimeTurnId!,
+              text: `${existingText}${delta}`,
+              updatedAt: Date.now()
+            });
+            return next;
+          });
+        }
+      }
+      if (
+        event.eventType === "runtime_turn_completed"
+        || event.eventType === "runtime_turn_cancelled"
+        || event.eventType === "runtime_error"
+      ) {
+        setLivePreviewByThread((current) => {
+          if (!current.has(event.sessionId)) {
+            return current;
+          }
+          const next = new Map(current);
+          next.delete(event.sessionId);
+          return next;
+        });
+      }
+      const detail = readDetailFromPayload(event.payload);
+      if (detail !== null) {
+        const summary = detailToThreadSummary(detail);
+        setActiveThreads((current) => updateThreadBucket(current, summary));
+        setPreviewDetail((current) => current?.session.id === detail.session.id ? detail : current);
+      }
+    });
+  }, [desktopApi?.ai]);
+
+  useEffect(() => {
     if (
       hasLoadedThreads === false ||
       isLoading ||
       activeThreadId !== null ||
+      didAutoPreviewLatestRef.current ||
       latestThread === null
     ) {
       return;
     }
-    setScope(latestThread.archived ? "archivedGlobal" : "global");
+    didAutoPreviewLatestRef.current = true;
+    setScope((current) =>
+      current === "global" || current === "archivedGlobal"
+        ? latestThread.archived ? "archivedGlobal" : "global"
+        : current
+    );
     void previewThread(latestThread.thread.id);
   }, [
     activeThreadId,
@@ -358,7 +625,7 @@ export const useAiHistoryRuntime = ({
   }, [selectedProject, selectedProjectRoot]);
 
   return {
-    lyraAvailable: false,
+    lyraAvailable: desktopApi?.ai !== undefined || legacyLyraApi !== null,
     activeThreads,
     archivedThreads,
     threads,

@@ -15,6 +15,7 @@ export type AiPanelAppId =
   | "ai-skills"
   | "ai-plugins"
   | "ai-history"
+  | "agent-vm"
   | "ai-plan-review";
 
 export type AiPanelAppIconKey =
@@ -23,6 +24,7 @@ export type AiPanelAppIconKey =
   | "ai-panel-skills"
   | "ai-panel-plugins"
   | "ai-panel-history"
+  | "ai-panel-agent-vm"
   | "ai-panel-plan";
 
 export type AiPanelAppOpenRequest = {
@@ -89,6 +91,7 @@ export type AiPanelSurfaceProps = {
   readonly onOpenMcp?: () => void;
   readonly onOpenSkills?: () => void;
   readonly onOpenPlugins?: () => void;
+  readonly onOpenAgentVm?: (request?: { readonly sessionId?: string | null }) => void;
   readonly aiPanelSide?: AiPanelSide;
   readonly onToggleAiPanelSide?: () => void;
   readonly movePanelToLeftLabel?: string;

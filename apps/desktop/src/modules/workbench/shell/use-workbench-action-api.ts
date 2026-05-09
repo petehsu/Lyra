@@ -50,6 +50,7 @@ type UseWorkbenchActionApiParams = {
   readonly tabsModel: WorkspaceTabsModel;
   readonly fileManagerModel: FileManagerModel;
   readonly panelLayoutModel: PanelLayoutModel;
+  readonly onBeforePanelLayoutAnimation?: () => Promise<void> | void;
   readonly docsEntryAddress: string;
   readonly docsTabTitle: string;
   readonly activityMonitorTitle: string;
@@ -62,14 +63,27 @@ export const useWorkbenchActionApi = ({
   tabsModel,
   fileManagerModel,
   panelLayoutModel,
+  onBeforePanelLayoutAnimation,
   docsEntryAddress,
   docsTabTitle,
   activityMonitorTitle,
   locale,
   resolvedThemeId
 }: UseWorkbenchActionApiParams): WorkbenchActionApi =>
-  useMemo(
-    () => ({
+  useMemo(() => {
+    const runPanelLayoutAction = (action: () => void): void => {
+      const pendingTransition = onBeforePanelLayoutAnimation?.();
+      if (
+        pendingTransition !== undefined
+        && typeof pendingTransition.then === "function"
+      ) {
+        void pendingTransition.finally(action);
+        return;
+      }
+      action();
+    };
+
+    return {
       openNewTab: tabsModel.openNewTab,
       openSettings: tabsModel.openSettingsTab,
       openFileManager: () => {
@@ -89,9 +103,15 @@ export const useWorkbenchActionApi = ({
           docsTabTitle
         );
       },
-      toggleAiPanel: panelLayoutModel.toggleLeftPanel,
-      toggleTerminalPanel: panelLayoutModel.toggleBottomPanel,
-      toggleTerminalPanelSide: panelLayoutModel.toggleTerminalPanelSide,
+      toggleAiPanel: () => {
+        runPanelLayoutAction(panelLayoutModel.toggleLeftPanel);
+      },
+      toggleTerminalPanel: () => {
+        runPanelLayoutAction(panelLayoutModel.toggleBottomPanel);
+      },
+      toggleTerminalPanelSide: () => {
+        runPanelLayoutAction(panelLayoutModel.toggleTerminalPanelSide);
+      },
       minimizeWindow: () => {
         void desktopApi?.windowControls.minimize();
       },
@@ -101,21 +121,21 @@ export const useWorkbenchActionApi = ({
       closeWindow: () => {
         void desktopApi?.windowControls.close();
       }
-    }),
-    [
-      desktopApi,
-      docsEntryAddress,
-      docsTabTitle,
-      activityMonitorTitle,
-      fileManagerModel,
-      locale,
-      panelLayoutModel.toggleBottomPanel,
-      panelLayoutModel.toggleLeftPanel,
-      panelLayoutModel.toggleTerminalPanelSide,
-      resolvedThemeId,
-      tabsModel
-    ]
-  );
+    };
+  }, [
+    desktopApi,
+    docsEntryAddress,
+    docsTabTitle,
+    activityMonitorTitle,
+    fileManagerModel,
+    locale,
+    onBeforePanelLayoutAnimation,
+    panelLayoutModel.toggleBottomPanel,
+    panelLayoutModel.toggleLeftPanel,
+    panelLayoutModel.toggleTerminalPanelSide,
+    resolvedThemeId,
+    tabsModel
+  ]);
 
 export const createWorkbenchChromeLabels = (
   t: (key: I18nKey) => string

@@ -1,5 +1,6 @@
 use crate::model_gateway::{
-    default_base_url, discover_models as gateway_discover, ProviderRuntimeConfig,
+    default_base_url, discover_models as gateway_discover, protocol_uses_base_url,
+    ProviderRuntimeConfig,
 };
 use crate::secrets;
 use crate::storage::{
@@ -8,7 +9,7 @@ use crate::storage::{
 };
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::env;
 
@@ -198,7 +199,7 @@ pub fn upsert_model_profile(request: UpsertProfileRequest) -> Result<AiProviderP
             };
             connection_config.insert("mimoRoute".to_string(), route.to_string());
         }
-    } else if !connection_config.contains_key("baseUrl") {
+    } else if protocol_uses_base_url(&protocol_id) && !connection_config.contains_key("baseUrl") {
         connection_config.insert(
             "baseUrl".to_string(),
             default_base_url(&provider_id, &protocol_id),
@@ -351,20 +352,38 @@ pub fn runtime_config_for_profile(
 }
 
 fn runtime_metadata_for_model(profile: &AiProviderProfile, model_id: &str) -> Option<Value> {
-    profile
+    let entry = profile
         .discovery_state
         .models
         .iter()
         .chain(profile.custom_models.iter())
-        .find(|entry| entry.id.trim() == model_id)
-        .and_then(|entry| entry.runtime_metadata.clone())
-        .or_else(|| {
-            if profile.model.trim() == model_id {
-                profile.model_runtime_metadata.clone()
-            } else {
-                None
+        .find(|entry| entry.id.trim() == model_id);
+    if let Some(entry) = entry {
+        let mut metadata = entry.runtime_metadata.clone().unwrap_or_else(|| json!({}));
+        if metadata.is_object() == false {
+            metadata = json!({});
+        }
+        if let Some(context_window) = entry.context_window {
+            if let Some(object) = metadata.as_object_mut() {
+                object
+                    .entry("contextWindow".to_string())
+                    .or_insert_with(|| json!(context_window));
             }
-        })
+        }
+        if metadata
+            .as_object()
+            .map(|object| object.is_empty())
+            .unwrap_or(false)
+        {
+            None
+        } else {
+            Some(metadata)
+        }
+    } else if profile.model.trim() == model_id {
+        profile.model_runtime_metadata.clone()
+    } else {
+        None
+    }
 }
 
 pub fn resolve_profile_id(store: &AiStore, explicit_profile_id: Option<&str>) -> Result<String> {

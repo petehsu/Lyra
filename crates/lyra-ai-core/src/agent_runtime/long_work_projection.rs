@@ -113,7 +113,7 @@ pub(crate) fn project_work_after_model_candidate(
     turn_id: Option<&str>,
     candidate_text: &str,
 ) -> Result<ModelCandidateWorkProjection> {
-    project_model_candidate_after_completion(store, session_id, turn_id, candidate_text)
+    project_model_candidate_after_completion(store, session_id, turn_id, candidate_text, None)
 }
 
 #[allow(dead_code)]

@@ -1,5 +1,6 @@
 import { AiHistorySurface } from "../ai-history";
 import { AiPanelSurface, AiPlanReviewSurface } from "../ai-panel";
+import { AgentVmSurface } from "../agent-vm";
 import {
   BrowserPageSurface,
   BrowserSearchSurface,
@@ -68,6 +69,7 @@ export const CLASSIC_WORKBENCH_UI_PACK = {
       mcpCenter: McpCenterSurface,
       skillsCenter: SkillsCenterSurface,
       pluginsCenter: PluginsCenterSurface,
+      agentVm: AgentVmSurface,
       aiHistory: AiHistorySurface,
       planReview: AiPlanReviewSurface
     }

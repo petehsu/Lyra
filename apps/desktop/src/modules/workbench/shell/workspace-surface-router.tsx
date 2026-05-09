@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
+import type { AgentVmSurfaceLabels } from "../agent-vm";
 import type { AiHistorySurfaceProps } from "../ai-history";
 import type { AiPlanReviewModel } from "../ai-panel";
 import {
@@ -189,6 +190,9 @@ export type WorkspaceSurfaceRouterProps = {
     readonly model: PluginsCenterModel;
     readonly labels: PluginsCenterLabels;
   };
+  readonly agentVm: {
+    readonly labels: AgentVmSurfaceLabels;
+  };
   readonly aiHistory: {
     readonly locale: string;
     readonly title: string;
@@ -294,6 +298,10 @@ const renderSurfaceModel = (
     }
     case "pluginsCenter": {
       const Adapter = surfaceAdapters.pluginsCenter;
+      return <Adapter {...model.props} />;
+    }
+    case "agentVm": {
+      const Adapter = surfaceAdapters.agentVm;
       return <Adapter {...model.props} />;
     }
     case "aiHistory": {

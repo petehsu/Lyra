@@ -10,16 +10,27 @@ type Translator = ReturnType<typeof createTranslator>;
 
 export type AgentComposerSendVisualState = "idle" | "ready" | "sending";
 
+export type AgentComposerModelGroup = {
+  readonly providerId: string;
+  readonly providerLabel: string;
+  readonly options: readonly AgentComposerModelOption[];
+};
+
 export type AgentComposerModelState = {
   readonly resolvedPlanModeLabel: string;
   readonly resolvedModelAriaLabel: string;
   readonly resolvedSteerLabel: string;
   readonly resolvedModelOptions: readonly AgentComposerModelOption[];
+  readonly modelProviderGroups: readonly AgentComposerModelGroup[];
   readonly resolvedSelectedModelName: string | null;
+  readonly resolvedSelectedProviderId: string | null;
   readonly canOpenModelMenu: boolean;
   readonly selectedModelLabel: string;
   readonly modelMenuStyle: CSSProperties;
 };
+
+const DEFAULT_MODEL_PROVIDER_ID = "default";
+const DEFAULT_MODEL_PROVIDER_LABEL = "Default";
 
 export const normalizeComposerModelOptions = ({
   modelOptions,
@@ -27,15 +38,26 @@ export const normalizeComposerModelOptions = ({
 }: {
   readonly modelOptions?: readonly AgentComposerModelOption[] | undefined;
   readonly modelNames: readonly string[];
-}): readonly AgentComposerModelOption[] =>
-  (modelOptions ?? modelNames.map((entry) => ({ value: entry, label: entry })))
-    .map((entry) => ({
-      value: entry.value.trim(),
-      label: entry.label.trim().length > 0 ? entry.label.trim() : entry.value.trim()
-    }))
+}): readonly AgentComposerModelOption[] => {
+  const sourceOptions: readonly AgentComposerModelOption[] =
+    modelOptions ?? modelNames.map((entry) => ({ value: entry, label: entry }));
+  return sourceOptions
+    .map((entry) => {
+      const value = entry.value.trim();
+      const providerId = (entry.providerId ?? entry.modelProvider ?? "").trim();
+      const providerLabel = (entry.providerLabel ?? providerId).trim();
+      return {
+        value,
+        label: entry.label.trim().length > 0 ? entry.label.trim() : value,
+        ...(providerId.length === 0 ? {} : { providerId }),
+        ...(providerLabel.length === 0 ? {} : { providerLabel }),
+        ...(entry.modelProvider === undefined ? {} : { modelProvider: entry.modelProvider })
+      };
+    })
     .filter((entry, index, entries) =>
       entry.value.length > 0 && entries.findIndex((candidate) => candidate.value === entry.value) === index
     );
+};
 
 export const resolveSelectedComposerModelName = ({
   selectedModelName,
@@ -83,14 +105,47 @@ export const createComposerModelMenuStyle = (
     0,
     ...modelOptions.map((option) => option.label.length)
   );
+  const longestProviderLength = Math.max(
+    0,
+    ...modelOptions.map((option) =>
+      (option.providerLabel ?? option.providerId ?? option.modelProvider ?? DEFAULT_MODEL_PROVIDER_LABEL).length
+    )
+  );
   const safeCharacterWidth = Math.min(36, Math.max(12, longestLabelLength));
+  const safeProviderWidth = Math.min(22, Math.max(10, longestProviderLength));
   return {
-    "--lyra-ai-agent-model-menu-w": `clamp(var(--lyra-unit-160), calc(${String(safeCharacterWidth)}ch + var(--lyra-unit-52)), min(58cqw, var(--lyra-unit-320)))`
+    "--lyra-ai-agent-model-menu-w": `clamp(var(--lyra-unit-160), calc(${String(safeCharacterWidth)}ch + var(--lyra-unit-52)), min(58cqw, var(--lyra-unit-320)))`,
+    "--lyra-ai-agent-model-provider-menu-w": `clamp(var(--lyra-unit-112), calc(${String(safeProviderWidth)}ch + var(--lyra-unit-44)), var(--lyra-unit-184))`
   } as CSSProperties;
 };
 
 const resolveLabel = (value: string | undefined, fallback: string): string =>
   value !== undefined && value.trim().length > 0 ? value : fallback;
+
+export const groupComposerModelOptions = (
+  modelOptions: readonly AgentComposerModelOption[]
+): readonly AgentComposerModelGroup[] => {
+  const groups = new Map<string, AgentComposerModelGroup>();
+  for (const option of modelOptions) {
+    const providerId = (option.providerId ?? option.modelProvider ?? DEFAULT_MODEL_PROVIDER_ID).trim()
+      || DEFAULT_MODEL_PROVIDER_ID;
+    const providerLabel = (option.providerLabel ?? providerId).trim() || DEFAULT_MODEL_PROVIDER_LABEL;
+    const existing = groups.get(providerId);
+    if (existing === undefined) {
+      groups.set(providerId, {
+        providerId,
+        providerLabel,
+        options: [option],
+      });
+      continue;
+    }
+    groups.set(providerId, {
+      ...existing,
+      options: [...existing.options, option],
+    });
+  }
+  return [...groups.values()];
+};
 
 export const createAgentComposerModelState = ({
   t,
@@ -125,13 +180,23 @@ export const createAgentComposerModelState = ({
     resolvedModelOptions.find((option) => option.value === resolvedSelectedModelName)?.label
     ?? resolvedSelectedModelName
     ?? t("ai.modelLabel");
+  const modelProviderGroups = groupComposerModelOptions(resolvedModelOptions);
+  const selectedModelOption = resolvedModelOptions.find((option) => option.value === resolvedSelectedModelName);
+  const selectedProviderId = (selectedModelOption?.providerId ?? selectedModelOption?.modelProvider ?? "").trim();
+  const resolvedSelectedProviderId = selectedProviderId.length > 0
+    ? selectedProviderId
+    : selectedModelOption === undefined
+      ? modelProviderGroups[0]?.providerId ?? null
+      : DEFAULT_MODEL_PROVIDER_ID;
 
   return {
     resolvedPlanModeLabel: resolveLabel(planModeLabel, t("ai.planMode")),
     resolvedModelAriaLabel: resolveLabel(modelAriaLabel, t("ai.modelLabel")),
     resolvedSteerLabel: resolveLabel(steerLabel, t("ai.steerTurn")),
     resolvedModelOptions,
+    modelProviderGroups,
     resolvedSelectedModelName,
+    resolvedSelectedProviderId,
     canOpenModelMenu:
       resolvedModelOptions.length > 1 && !modelSwitchDisabled && onModelSelectAvailable,
     selectedModelLabel,

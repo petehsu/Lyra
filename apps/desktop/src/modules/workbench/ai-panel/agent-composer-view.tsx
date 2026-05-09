@@ -16,7 +16,9 @@ import {
   PanelTop,
   Plus,
   Search,
+  Server,
   Settings2,
+  Shield,
   Square,
   SquareTerminal,
   X
@@ -37,6 +39,7 @@ import type {
 import type {
   AgentComposerFileAttachment,
   AgentComposerModelControlOption,
+  AgentComposerEnvironmentProps,
   AgentComposerReasoningEffort,
   AgentComposerSubmitPayload,
   AgentComposerVerbosity
@@ -184,6 +187,7 @@ type AgentComposerViewProps = {
   readonly selectedVerbosity: AgentComposerVerbosity | null;
   readonly verbosityLabel: string;
   readonly onVerbositySelect?: ((value: AgentComposerVerbosity | null) => void) | undefined;
+  readonly environment?: AgentComposerEnvironmentProps | undefined;
   readonly onFollowToggle?: (() => void) | undefined;
   readonly onRequestFileAttachments?: (() => Promise<readonly AgentComposerFileAttachment[]>) | undefined;
   readonly onSteer?: ((value: AgentComposerSubmitPayload) => void | Promise<void>) | undefined;
@@ -222,6 +226,7 @@ export const AgentComposerView = ({
   selectedVerbosity,
   verbosityLabel,
   onVerbositySelect,
+  environment,
   onFollowToggle,
   onRequestFileAttachments,
   onSteer,
@@ -229,6 +234,15 @@ export const AgentComposerView = ({
   onStop,
   stopDisabled = false
 }: AgentComposerViewProps) => {
+  const resolvedActiveModelProviderId =
+    modelState.modelProviderGroups.some((group) => group.providerId === runtime.activeModelProviderId)
+      ? runtime.activeModelProviderId
+      : modelState.resolvedSelectedProviderId ?? modelState.modelProviderGroups[0]?.providerId ?? null;
+  const activeModelProviderGroup =
+    modelState.modelProviderGroups.find((group) => group.providerId === resolvedActiveModelProviderId)
+    ?? modelState.modelProviderGroups[0]
+    ?? null;
+
   const menuLayer = runtime.toolsMenuOpen
     ? createPortal(
         <div
@@ -286,37 +300,87 @@ export const AgentComposerView = ({
               <small>{modelState.selectedModelLabel}</small>
               <ChevronRight size={13} aria-hidden="true" />
             </button>
+            {environment === undefined ? null : (
+              <button
+                type="button"
+                role="menuitem"
+                aria-haspopup="menu"
+                aria-expanded={runtime.environmentSubmenuOpen}
+                className="lyra-ai-agent-composer-menu-item lyra-ai-agent-composer-menu-item-nested"
+                onClick={runtime.toggleEnvironmentSubmenu}
+              >
+                <Shield size={13} aria-hidden="true" />
+                <span>{environment.environmentLabel}</span>
+                <small>
+                  {environment.permissionOptions.find((option) => option.value === environment.permissionMode)?.label}
+                  {" · "}
+                  {environment.targetOptions.find((option) => option.value === environment.executionTarget)?.label}
+                </small>
+                <ChevronRight size={13} aria-hidden="true" />
+              </button>
+            )}
           </div>
           {runtime.modelSubmenuOpen && modelState.canOpenModelMenu ? (
             <div
-              className="lyra-ai-agent-composer-submenu"
+              className="lyra-ai-agent-composer-submenu lyra-ai-agent-composer-model-cascade"
               role="menu"
               style={{
                 ...modelState.modelMenuStyle,
                 ...runtime.submenuStyle,
               }}
             >
-              {modelState.resolvedModelOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={option.value === modelState.resolvedSelectedModelName}
-                  className={
-                    option.value === modelState.resolvedSelectedModelName
-                      ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
-                      : "lyra-ai-agent-composer-submenu-item"
-                  }
-                  onClick={() => {
-                    runtime.selectModel(option.value, onModelSelect);
-                  }}
-                >
-                  <span>{option.label}</span>
-                  {option.value === modelState.resolvedSelectedModelName ? <Check size={13} aria-hidden="true" /> : null}
-                </button>
-              ))}
+              <div className="lyra-ai-agent-composer-model-provider-menu" role="group">
+                {modelState.modelProviderGroups.map((group) => (
+                  <button
+                    key={group.providerId}
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    aria-expanded={group.providerId === activeModelProviderGroup?.providerId}
+                    className={
+                      group.providerId === activeModelProviderGroup?.providerId
+                        ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
+                        : "lyra-ai-agent-composer-submenu-item"
+                    }
+                    onMouseEnter={() => {
+                      runtime.setActiveModelProviderId(group.providerId);
+                    }}
+                    onFocus={() => {
+                      runtime.setActiveModelProviderId(group.providerId);
+                    }}
+                    onClick={() => {
+                      runtime.setActiveModelProviderId(group.providerId);
+                    }}
+                  >
+                    <span>{group.providerLabel}</span>
+                    <small>{String(group.options.length)}</small>
+                    <ChevronRight size={13} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+              <div className="lyra-ai-agent-composer-model-options-menu" role="group">
+                {activeModelProviderGroup?.options.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={option.value === modelState.resolvedSelectedModelName}
+                    className={
+                      option.value === modelState.resolvedSelectedModelName
+                        ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
+                        : "lyra-ai-agent-composer-submenu-item"
+                    }
+                    onClick={() => {
+                      runtime.selectModel(option.value, onModelSelect);
+                    }}
+                  >
+                    <span>{option.label}</span>
+                    {option.value === modelState.resolvedSelectedModelName ? <Check size={13} aria-hidden="true" /> : null}
+                  </button>
+                )) ?? null}
+              </div>
               {reasoningEffortOptions.length > 0 ? (
-                <>
+                <div className="lyra-ai-agent-composer-model-controls-menu">
                   <div className="lyra-ai-agent-composer-submenu-section" aria-hidden="true">
                     {reasoningEffortLabel}
                   </div>
@@ -341,10 +405,10 @@ export const AgentComposerView = ({
                       {selectedReasoningEffort === option.value ? <Check size={13} aria-hidden="true" /> : null}
                     </button>
                   ))}
-                </>
+                </div>
               ) : null}
               {verbosityOptions.length > 0 ? (
-                <>
+                <div className="lyra-ai-agent-composer-model-controls-menu">
                   <div className="lyra-ai-agent-composer-submenu-section" aria-hidden="true">
                     {verbosityLabel}
                   </div>
@@ -369,8 +433,85 @@ export const AgentComposerView = ({
                       {selectedVerbosity === option.value ? <Check size={13} aria-hidden="true" /> : null}
                     </button>
                   ))}
-                </>
+                </div>
               ) : null}
+            </div>
+          ) : null}
+          {runtime.environmentSubmenuOpen && environment !== undefined ? (
+            <div
+              className="lyra-ai-agent-composer-submenu"
+              role="menu"
+              style={runtime.submenuStyle}
+            >
+              <div className="lyra-ai-agent-composer-submenu-section" aria-hidden="true">
+                {environment.permissionLabel}
+              </div>
+              {environment.permissionOptions.map((option) => (
+                <button
+                  key={`permission-${option.value}`}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={environment.permissionMode === option.value}
+                  className={
+                    environment.permissionMode === option.value
+                      ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
+                      : "lyra-ai-agent-composer-submenu-item"
+                  }
+                  disabled={option.disabled === true}
+                  title={option.disabledReason}
+                  onClick={() => {
+                    environment.onPermissionModeSelect(option.value);
+                    runtime.closeMenus();
+                  }}
+                >
+                  <span>{option.label}</span>
+                  {environment.permissionMode === option.value ? <Check size={13} aria-hidden="true" /> : null}
+                </button>
+              ))}
+              <div className="lyra-ai-agent-composer-submenu-section" aria-hidden="true">
+                {environment.targetLabel}
+              </div>
+              {environment.targetOptions.map((option) => (
+                <button
+                  key={`target-${option.value}`}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={environment.executionTarget === option.value}
+                  className={
+                    environment.executionTarget === option.value
+                      ? "lyra-ai-agent-composer-submenu-item lyra-ai-agent-composer-submenu-item-active"
+                      : "lyra-ai-agent-composer-submenu-item"
+                  }
+                  disabled={option.disabled === true}
+                  title={option.disabledReason}
+                  onClick={() => {
+                    environment.onExecutionTargetSelect(option.value);
+                    runtime.closeMenus();
+                  }}
+                >
+                  <span>{option.label}</span>
+                  {environment.executionTarget === option.value ? <Check size={13} aria-hidden="true" /> : null}
+                </button>
+              ))}
+              {environment.onOpenAgentVm === undefined ? null : (
+                <>
+                  <div className="lyra-ai-agent-composer-submenu-section" aria-hidden="true">
+                    {environment.agentVmLabel}
+                  </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="lyra-ai-agent-composer-submenu-item"
+                    onClick={() => {
+                      environment.onOpenAgentVm?.();
+                      runtime.closeMenus();
+                    }}
+                  >
+                    <Server size={13} aria-hidden="true" />
+                    <span>{environment.openAgentVmLabel}</span>
+                  </button>
+                </>
+              )}
             </div>
           ) : null}
         </div>,

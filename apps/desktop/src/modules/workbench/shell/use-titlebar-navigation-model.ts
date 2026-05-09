@@ -6,6 +6,7 @@ import type { FileManagerAppState } from "../file-manager";
 import type { WorkbenchOmniboxNonBrowserSubmitTarget } from "../preferences";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs";
 import { resolveWorkbenchNavigationInput } from "./navigation-input";
+import type { TitlebarNavigationPrimaryActionKind } from "./titlebar-navigation";
 
 type UseTitlebarNavigationModelOptions = {
   readonly desktopApi: LyraDesktopApi | null;
@@ -20,6 +21,9 @@ type UseTitlebarNavigationModelOptions = {
   readonly omniboxNonBrowserSubmitTarget: WorkbenchOmniboxNonBrowserSubmitTarget;
   readonly placeholder: string;
   readonly ariaLabel: string;
+  readonly submitLabel: string;
+  readonly reloadLabel: string;
+  readonly onReload: () => void;
   readonly onOpenFilePath: (path: string) => string | null;
   readonly onOpenDirectoryPath: (path: string) => Promise<void> | void;
 };
@@ -28,6 +32,9 @@ type TitlebarNavigationModel = {
   readonly value: string;
   readonly placeholder: string;
   readonly ariaLabel: string;
+  readonly submitLabel: string;
+  readonly reloadLabel: string;
+  readonly primaryActionKind: TitlebarNavigationPrimaryActionKind;
   readonly isContextualAddress: boolean;
   readonly onChange: (value: string) => void;
   readonly onSubmit: () => Promise<void>;
@@ -82,6 +89,9 @@ export const useTitlebarNavigationModel = ({
   omniboxNonBrowserSubmitTarget,
   placeholder,
   ariaLabel,
+  submitLabel,
+  reloadLabel,
+  onReload,
   onOpenFilePath,
   onOpenDirectoryPath
 }: UseTitlebarNavigationModelOptions): TitlebarNavigationModel => {
@@ -103,6 +113,16 @@ export const useTitlebarNavigationModel = ({
   const value = isBrowserLikeTab(activeTab)
     ? activeTab.inputValue
     : currentDraft ?? contextualValue;
+  const activePageAddress =
+    activeTab?.pageKind === "page"
+      ? activePageRuntimeState?.address ?? activeTab.displayAddress
+      : "";
+  const primaryActionKind: TitlebarNavigationPrimaryActionKind =
+    activeTab?.pageKind === "page" &&
+    activePageAddress.length > 0 &&
+    value.trim() === activePageAddress
+      ? "reload"
+      : "submit";
   const isContextualAddress =
     isBrowserLikeTab(activeTab) === false &&
     currentDraft === undefined &&
@@ -142,6 +162,11 @@ export const useTitlebarNavigationModel = ({
 
   const onSubmit = useCallback(async (): Promise<void> => {
     if (activeTab === undefined || activeTabId === null) {
+      return;
+    }
+
+    if (primaryActionKind === "reload") {
+      onReload();
       return;
     }
 
@@ -217,6 +242,8 @@ export const useTitlebarNavigationModel = ({
     omniboxNonBrowserSubmitTarget,
     onOpenDirectoryPath,
     onOpenFilePath,
+    onReload,
+    primaryActionKind,
     tabsModel,
     value
   ]);
@@ -234,6 +261,9 @@ export const useTitlebarNavigationModel = ({
     value,
     placeholder,
     ariaLabel,
+    submitLabel,
+    reloadLabel,
+    primaryActionKind,
     isContextualAddress,
     onChange,
     onSubmit,

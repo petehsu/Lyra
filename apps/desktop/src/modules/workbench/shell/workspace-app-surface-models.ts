@@ -4,12 +4,14 @@ import {
   isAiPlanReviewAppId,
   isAiPluginsAppId,
   isAiSkillsAppId,
+  isAgentVmAppId,
   isFileEditorAppId,
   isFileManagerAppId,
   isImageViewerAppId,
   isNotificationCenterAppId,
   isResourceMonitorAppId
 } from "../workspace-apps";
+import { readAgentVmSessionIdFromAppInstanceId } from "../ai-panel";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type {
   SurfacePropsByKind,
@@ -243,6 +245,20 @@ export const createAppSurfaceRenderModel = (
         model: context.pluginsCenter.model,
         labels: context.pluginsCenter.labels
       }
+    };
+  }
+
+  if (isAgentVmAppId(tab.appId)) {
+    return {
+      kind: "agentVm",
+      props: {
+        desktopApi: context.desktopApi,
+        labels: context.agentVm.labels,
+        sessionId:
+          tab.appInstanceId === undefined
+            ? null
+            : readAgentVmSessionIdFromAppInstanceId(tab.appInstanceId),
+      },
     };
   }
 

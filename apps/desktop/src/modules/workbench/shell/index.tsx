@@ -22,15 +22,13 @@ import { useTerminalDockModel } from "../terminal-dock";
 import { useWorkspaceTabsModel } from "../workspace-tabs";
 import { useWorkbenchUiRuntime } from "../ui-platform";
 import { cx } from "../ui-primitives";
-import {
-  getDesktopApi,
-  syncCssVarsToDocumentRoot
-} from "./service";
+import { getDesktopApi, syncCssVarsToDocumentRoot } from "./service";
 import type { AgentComposerWorkbenchTabMention } from "../ai-panel";
 import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
 import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "./titlebar-context";
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "../browser-search";
+import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
 import { useWorkbenchAiFileMentionFallbackRoots } from "./use-workbench-ai-file-mention-fallback-roots";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
@@ -73,6 +71,9 @@ import { useWorkspaceSurfaceRouterProps } from "./use-workspace-surface-router-p
 import { useTitlebarElementPickerModel } from "./use-titlebar-element-picker-model";
 import { useTitlebarNavigationModel } from "./use-titlebar-navigation-model";
 import { createInitialWorkbenchPreferences, createWorkbenchBrowserTabsConfig } from "./workbench-shell-defaults";
+
+const WORKBENCH_BROWSER_LAYOUT_ANIMATION_MS = 260;
+const WORKBENCH_BROWSER_LAYOUT_ANIMATION_SYNC_INTERVAL_MS = 16;
 
 export const WorkbenchShell = () => {
   const desktopApi = getDesktopApi();
@@ -124,7 +125,8 @@ export const WorkbenchShell = () => {
     registerPageHost,
     scheduleBrowserLayoutSync,
     onGoBack,
-    onGoForward
+    onGoForward,
+    onReload
   } = useWorkbenchBrowserRuntime({
     desktopApi,
     tabsModel,
@@ -135,7 +137,14 @@ export const WorkbenchShell = () => {
     forceWebPageThemingEnabled:
       preferencesModel.preferences.forceWebPageThemingEnabled
   });
-
+  const beginBrowserLayoutAnimationSync = useBrowserLayoutAnimationSync({
+    panelLayoutModel,
+    scheduleBrowserLayoutSync,
+    stackedBrowserTabs,
+    activeTabId: tabsModel.activeTabId,
+    animationDurationMs: WORKBENCH_BROWSER_LAYOUT_ANIMATION_MS,
+    animationSyncIntervalMs: WORKBENCH_BROWSER_LAYOUT_ANIMATION_SYNC_INTERVAL_MS
+  });
   const searchSettingsFacade = useWorkbenchSearchSettings(preferencesModel.preferences);
   const {
     searchIndexStatus,
@@ -180,6 +189,7 @@ export const WorkbenchShell = () => {
     tabsModel,
     fileManagerModel,
     panelLayoutModel,
+    onBeforePanelLayoutAnimation: beginBrowserLayoutAnimationSync,
     docsEntryAddress: WORKBENCH_CONFIG.browser.docsEntryAddress,
     docsTabTitle: t("docs.tabTitle"),
     activityMonitorTitle: t("resources.activityMonitorTitle"),
@@ -275,6 +285,17 @@ export const WorkbenchShell = () => {
       ...(tab.faviconUrl === undefined ? {} : { faviconUrl: tab.faviconUrl }),
     }));
   }, [tabsModel.activeTabId, tabsModel.tabs, visibleWorkspaceLayout.visibleTabIds]);
+  const {
+    onOpenFileFromManager,
+    onRevealPathInFileManager,
+    openDirectoryFromNavigation
+  } = useWorkbenchFileActions({
+    activeTab,
+    tabsModel,
+    fileManagerModel,
+    fileEditorModel,
+    imageViewerModel
+  });
   const sidebarAiSurfaceProps = useWorkbenchSidebarAiSurfaceProps({
     desktopApi,
     preferences: preferencesModel.preferences,
@@ -282,7 +303,11 @@ export const WorkbenchShell = () => {
     aiPanelSide: panelLayoutModel.aiPanelSide,
     fileMentionFallbackRoots: aiFileMentionFallbackRoots,
     workbenchTabMentions,
-    onToggleAiPanelSide: panelLayoutModel.toggleAiPanelSide,
+    onFollowOpenFilePath: onOpenFileFromManager,
+    onToggleAiPanelSide: () => {
+      beginBrowserLayoutAnimationSync();
+      panelLayoutModel.toggleAiPanelSide();
+    },
     openAppTab: tabsModel.openAppTab,
     onRequestProjectBind: requestProjectBind,
     t
@@ -319,20 +344,6 @@ export const WorkbenchShell = () => {
   );
 
   useEffect(() => {
-    scheduleBrowserLayoutSync({
-      force: true,
-      followUpFrames: 4
-    });
-  }, [
-    panelLayoutModel.aiPanelSide,
-    panelLayoutModel.terminalPanelSide,
-    panelLayoutModel.cssVars,
-    scheduleBrowserLayoutSync,
-    stackedBrowserTabs,
-    tabsModel.activeTabId
-  ]);
-
-  useEffect(() => {
     syncCssVarsToDocumentRoot({
       ...themeVars,
       ...terminalThemeVars,
@@ -351,17 +362,6 @@ export const WorkbenchShell = () => {
     imageViewerModel
   });
 
-  const {
-    onOpenFileFromManager,
-    onRevealPathInFileManager,
-    openDirectoryFromNavigation
-  } = useWorkbenchFileActions({
-    activeTab,
-    tabsModel,
-    fileManagerModel,
-    fileEditorModel,
-    imageViewerModel
-  });
   const {
     editorReviewItems,
     activeEditorReviewIndex,
@@ -388,6 +388,9 @@ export const WorkbenchShell = () => {
       preferencesModel.preferences.omniboxNonBrowserSubmitTarget,
     placeholder: t("navigation.titlebarPlaceholder"),
     ariaLabel: t("navigation.titlebarAriaLabel"),
+    submitLabel: t("navigation.submitAction"),
+    reloadLabel: t("navigation.reloadAction"),
+    onReload,
     onOpenFilePath: (path) => onOpenFileFromManager(path),
     onOpenDirectoryPath: openDirectoryFromNavigation
   });
@@ -540,22 +543,7 @@ export const WorkbenchShell = () => {
     ]
   );
   const workbenchChromeSlots = useWorkbenchShellSlots({
-    titlebarNavigation: (
-      <TitlebarNavigation
-        {...titlebarNavigation}
-        trailingControl={
-          titlebarElementPicker.visible ? (
-            <TitlebarElementPickerButton
-              active={titlebarElementPicker.enabled}
-              mode={titlebarElementPicker.mode}
-              ariaLabel={titlebarElementPicker.ariaLabel}
-              activeDescription={titlebarElementPicker.activeDescription}
-              onToggle={titlebarElementPicker.onToggle}
-            />
-          ) : undefined
-        }
-      />
-    ),
+    titlebarNavigation: null,
     titlebarContext: <WorkbenchTitlebarContextSlot />,
     leftPanel: sidebarAiSurfacePropsWithFileOpen === null ? null : (
       <AiPanelAdapter {...sidebarAiSurfacePropsWithFileOpen} />
@@ -566,7 +554,27 @@ export const WorkbenchShell = () => {
         surfaceAdapters={uiRuntime.adapters.surfaces}
       />
     ),
-    browserTabs: <WorkspaceTabsAdapter {...workspaceTabsProps} />,
+    browserTabs: (
+      <WorkspaceTabsAdapter
+        {...workspaceTabsProps}
+        navigationControl={
+          <TitlebarNavigation
+            {...titlebarNavigation}
+            trailingControl={
+              titlebarElementPicker.visible ? (
+                <TitlebarElementPickerButton
+                  active={titlebarElementPicker.enabled}
+                  mode={titlebarElementPicker.mode}
+                  ariaLabel={titlebarElementPicker.ariaLabel}
+                  activeDescription={titlebarElementPicker.activeDescription}
+                  onToggle={titlebarElementPicker.onToggle}
+                />
+              ) : undefined
+            }
+          />
+        }
+      />
+    ),
     terminalPanel: (
       <TerminalDockAdapter
         desktopApi={desktopApi}

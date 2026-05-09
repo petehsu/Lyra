@@ -14,6 +14,20 @@ export const connectionField = (
   required
 });
 
+export const localPathField = (
+  id: string,
+  label: string,
+  placeholder: string,
+  required = true
+): AiProviderFieldSchema => ({
+  id,
+  label,
+  kind: "file",
+  scope: "connection",
+  placeholder,
+  required
+});
+
 export const apiKeyField = (
   required = true,
   placeholder = "sk-..."

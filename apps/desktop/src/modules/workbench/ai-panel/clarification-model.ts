@@ -7,8 +7,7 @@ import { isRecord, readString } from "./patch-artifact";
 
 export type ClarificationOptionId = "A" | "B" | "C" | "D";
 
-export type ClarificationRow = {
-  readonly interaction: AgentPendingInteraction;
+export type ClarificationQuestion = {
   readonly questionTicketId: string;
   readonly title: string;
   readonly question: string;
@@ -18,26 +17,88 @@ export type ClarificationRow = {
   readonly allowCustomAnswer: boolean;
 };
 
+export type ClarificationPanel = {
+  readonly interaction: AgentPendingInteraction;
+  readonly panelId: string;
+  readonly title: string;
+  readonly description: string;
+  readonly presentation: string;
+  readonly blocksExecution: boolean;
+  readonly questions: readonly ClarificationQuestion[];
+};
+
+export type ClarificationRow = ClarificationQuestion & {
+  readonly interaction: AgentPendingInteraction;
+};
+
 const OPTION_IDS: readonly ClarificationOptionId[] = ["A", "B", "C", "D"];
+
+export const extractClarificationPanels = (
+  detail: AgentSessionDetail | null
+): readonly ClarificationPanel[] =>
+  detail?.pendingInteractions
+    .filter((interaction) => interaction.kind === "clarification" && interaction.status === "pending")
+    .map(extractClarificationPanel)
+    .filter((panel): panel is ClarificationPanel => panel !== null)
+  ?? [];
 
 export const extractClarificationRows = (
   detail: AgentSessionDetail | null
 ): readonly ClarificationRow[] =>
-  detail?.pendingInteractions
-    .filter((interaction) => interaction.kind === "clarification" && interaction.status === "pending")
-    .map(extractClarificationRow)
-    .filter((row): row is ClarificationRow => row !== null)
-  ?? [];
+  extractClarificationPanels(detail).flatMap((panel) =>
+    panel.questions.map((question) => ({
+      ...question,
+      interaction: panel.interaction,
+    }))
+  );
 
-const extractClarificationRow = (
+export const hasPendingClarification = (detail: AgentSessionDetail | null): boolean =>
+  extractClarificationPanels(detail).length > 0;
+
+const extractClarificationPanel = (
   interaction: AgentPendingInteraction
-): ClarificationRow | null => {
+): ClarificationPanel | null => {
   const payload = isRecord(interaction.payload) ? interaction.payload : {};
-  const questionTicketId = readString(payload.questionTicketId) ?? interaction.id;
-  const title = readString(payload.title) ?? "Clarification";
-  const question = readString(payload.question) ?? title;
-  const why = readString(payload.why) ?? "";
-  const rawOptions = Array.isArray(payload.options) ? payload.options : [];
+  const questions = Array.isArray(payload.questions)
+    ? payload.questions
+      .map(extractClarificationQuestion)
+      .filter((question): question is ClarificationQuestion => question !== null)
+    : [];
+  const fallbackQuestion = extractClarificationQuestion(payload);
+  const panelQuestions = questions.length > 0
+    ? questions
+    : fallbackQuestion === null
+      ? []
+      : [fallbackQuestion];
+  if (panelQuestions.length === 0) {
+    return null;
+  }
+  return {
+    interaction,
+    panelId: readString(payload.panelId) ?? interaction.id,
+    title: readString(payload.title) ?? panelQuestions[0]?.title ?? "Clarification",
+    description: readString(payload.description)
+      ?? readString(payload.why)
+      ?? panelQuestions[0]?.why
+      ?? "",
+    presentation: readString(payload.presentation) ?? "inline_card",
+    blocksExecution: payload.blocksExecution === true || readString(payload.blockingLevel) === "hard_block",
+    questions: panelQuestions,
+  };
+};
+
+const extractClarificationQuestion = (value: unknown): ClarificationQuestion | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const questionTicketId = readString(value.questionTicketId);
+  if (questionTicketId === null) {
+    return null;
+  }
+  const title = readString(value.title) ?? "Clarification";
+  const question = readString(value.question) ?? title;
+  const why = readString(value.why) ?? readString(value.whyItMatters) ?? "";
+  const rawOptions = Array.isArray(value.options) ? value.options : [];
   const options = rawOptions
     .map((value): QuestionTicketOption | null => {
       if (!isRecord(value)) {
@@ -51,6 +112,7 @@ const extractClarificationRow = (
         id,
         label: readString(value.label) ?? id,
         description: readString(value.description) ?? "",
+        recommended: value.recommended === true,
       };
     })
     .filter((option): option is QuestionTicketOption => option !== null)
@@ -59,13 +121,12 @@ const extractClarificationRow = (
     return null;
   }
   return {
-    interaction,
     questionTicketId,
     title,
     question,
     why,
-    targetSummary: readString(payload.targetSummary),
+    targetSummary: readString(value.targetSummary),
     options,
-    allowCustomAnswer: payload.allowCustomAnswer === true,
+    allowCustomAnswer: value.allowCustomAnswer !== false,
   };
 };

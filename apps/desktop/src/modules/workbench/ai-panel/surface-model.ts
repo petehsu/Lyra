@@ -65,6 +65,8 @@ export const createRuntimeModelOptions = ({
       nextOptions.push({
         value: `${profile.id}${MODEL_OPTION_DELIMITER}${model}`,
         label: multipleProfiles ? `${model} · ${profile.name}` : model,
+        providerId,
+        providerLabel: providerId,
         model,
         modelProvider: providerId,
         profileId: profile.id,
@@ -78,6 +80,12 @@ export const createRuntimeModelOptions = ({
   return uniqueModelIds(defaultModelNames).map((model) => ({
     value: model,
     label: model,
+    ...(defaultProviderId === undefined || defaultProviderId === null
+      ? {}
+      : {
+          providerId: defaultProviderId,
+          providerLabel: defaultProviderId,
+        }),
     model,
     modelProvider: defaultProviderId ?? null
   }));
@@ -131,6 +139,8 @@ export const createRuntimeTurnOptions = ({
   defaultProviderId,
   boundProjectRoot,
   collaborationMode,
+  permissionMode,
+  executionTarget,
   effort,
   verbosity,
   followEnabled
@@ -139,6 +149,8 @@ export const createRuntimeTurnOptions = ({
   readonly defaultProviderId?: string | null | undefined;
   readonly boundProjectRoot: string | null;
   readonly collaborationMode?: "default" | "plan" | undefined;
+  readonly permissionMode?: RuntimeThreadOptions["permissionMode"] | undefined;
+  readonly executionTarget?: RuntimeThreadOptions["executionTarget"] | undefined;
   readonly effort?: RuntimeThreadOptions["effort"] | null | undefined;
   readonly verbosity?: RuntimeThreadOptions["verbosity"] | null | undefined;
   readonly followEnabled?: boolean | undefined;
@@ -149,6 +161,8 @@ export const createRuntimeTurnOptions = ({
     ...(selectedModelOption?.model === undefined ? {} : { model: selectedModelOption.model }),
     ...(modelProvider === undefined ? {} : { modelProvider }),
     cwd: boundProjectRoot,
+    ...(permissionMode === undefined ? {} : { permissionMode }),
+    ...(executionTarget === undefined ? {} : { executionTarget }),
     ...(effort === null || effort === undefined ? {} : { effort }),
     ...(verbosity === null || verbosity === undefined ? {} : { verbosity }),
     ...(followEnabled === undefined ? {} : { followEnabled }),
@@ -195,6 +209,15 @@ export type AiPanelSurfaceTextLabels = {
   readonly planMode: string;
   readonly planModeArmed: string;
   readonly followMode: string;
+  readonly environment: string;
+  readonly permission: string;
+  readonly permissionSandbox: string;
+  readonly permissionFullAccess: string;
+  readonly executionTarget: string;
+  readonly executionTargetHost: string;
+  readonly executionTargetAgentVm: string;
+  readonly agentVmSection: string;
+  readonly openAgentVm: string;
   readonly steerTurn: string;
 };
 
@@ -218,6 +241,15 @@ export const createSurfaceTextLabels = (t: Translator): AiPanelSurfaceTextLabels
   planMode: t("ai.planMode"),
   planModeArmed: t("ai.planModeArmed"),
   followMode: t("ai.followMode"),
+  environment: t("ai.environmentLabel"),
+  permission: t("ai.permissionLabel"),
+  permissionSandbox: t("ai.permissionSandbox"),
+  permissionFullAccess: t("ai.permissionFullAccess"),
+  executionTarget: t("ai.executionTargetLabel"),
+  executionTargetHost: t("ai.executionTargetHost"),
+  executionTargetAgentVm: t("ai.executionTargetAgentVm"),
+  agentVmSection: t("ai.agentVmSection"),
+  openAgentVm: t("ai.openAgentVm"),
   steerTurn: t("ai.steerTurn")
 });
 

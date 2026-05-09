@@ -75,6 +75,7 @@ type UseAgentComposerRuntimeInput = {
   readonly inputDisabled: boolean;
   readonly sendDisabled: boolean;
   readonly sending: boolean;
+  readonly selectedModelProviderId: string | null;
   readonly onHeightChange?: ((height: number) => void) | undefined;
   readonly onSend: (payload: AgentComposerSubmitPayload) => void | Promise<void>;
   readonly onSendWithFollow?: (() => void) | undefined;
@@ -106,6 +107,8 @@ export type AgentComposerRuntime = {
   readonly inputFocused: boolean;
   readonly toolsMenuOpen: boolean;
   readonly modelSubmenuOpen: boolean;
+  readonly activeModelProviderId: string | null;
+  readonly environmentSubmenuOpen: boolean;
   readonly attachments: readonly AgentComposerInlineAttachment[];
   readonly draftParts: readonly AgentComposerContentPart[];
   readonly inputScrollTop: number;
@@ -123,6 +126,8 @@ export type AgentComposerRuntime = {
   readonly submit: (action: AgentComposerSubmitAction) => Promise<void>;
   readonly toggleToolsMenu: () => void;
   readonly toggleModelSubmenu: () => void;
+  readonly setActiveModelProviderId: (providerId: string) => void;
+  readonly toggleEnvironmentSubmenu: () => void;
   readonly closeMenus: () => void;
   readonly selectModel: (
     value: string,
@@ -150,6 +155,7 @@ export const useAgentComposerRuntime = ({
   inputDisabled,
   sendDisabled,
   sending,
+  selectedModelProviderId,
   onHeightChange,
   onSend,
   onSendWithFollow,
@@ -181,6 +187,8 @@ export const useAgentComposerRuntime = ({
   const [inputFocused, setInputFocused] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [modelSubmenuOpen, setModelSubmenuOpen] = useState(false);
+  const [activeModelProviderId, setActiveModelProviderId] = useState<string | null>(null);
+  const [environmentSubmenuOpen, setEnvironmentSubmenuOpen] = useState(false);
   const [menuPlacement, setMenuPlacement] = useState<MenuPlacement>({
     menuLeft: MENU_VIEWPORT_MARGIN,
     menuTop: MENU_VIEWPORT_MARGIN,
@@ -653,6 +661,7 @@ export const useAgentComposerRuntime = ({
   const closeMenus = useCallback((): void => {
     setToolsMenuOpen(false);
     setModelSubmenuOpen(false);
+    setEnvironmentSubmenuOpen(false);
   }, []);
 
   useEffect(() => {
@@ -722,7 +731,7 @@ export const useAgentComposerRuntime = ({
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("scroll", handleViewportChange, true);
     };
-  }, [modelSubmenuOpen, toolsMenuOpen, updateMenuPlacement]);
+  }, [environmentSubmenuOpen, modelSubmenuOpen, toolsMenuOpen, updateMenuPlacement]);
 
   useLayoutEffect(() => {
     if (!mentionPanelOpen) {
@@ -759,13 +768,27 @@ export const useAgentComposerRuntime = ({
     };
   }, [onFileMentionSearchStop]);
 
+  useEffect(() => {
+    if (!modelSubmenuOpen) {
+      return;
+    }
+    setActiveModelProviderId(selectedModelProviderId);
+  }, [modelSubmenuOpen, selectedModelProviderId]);
+
   const toggleToolsMenu = useCallback((): void => {
     setToolsMenuOpen((current) => !current);
     setModelSubmenuOpen(false);
+    setEnvironmentSubmenuOpen(false);
   }, []);
 
   const toggleModelSubmenu = useCallback((): void => {
     setModelSubmenuOpen((current) => !current);
+    setEnvironmentSubmenuOpen(false);
+  }, []);
+
+  const toggleEnvironmentSubmenu = useCallback((): void => {
+    setEnvironmentSubmenuOpen((current) => !current);
+    setModelSubmenuOpen(false);
   }, []);
 
   const selectModel = useCallback((
@@ -1008,6 +1031,8 @@ export const useAgentComposerRuntime = ({
     inputFocused,
     toolsMenuOpen,
     modelSubmenuOpen,
+    activeModelProviderId,
+    environmentSubmenuOpen,
     attachments,
     draftParts,
     inputScrollTop,
@@ -1023,6 +1048,8 @@ export const useAgentComposerRuntime = ({
     submit,
     toggleToolsMenu,
     toggleModelSubmenu,
+    setActiveModelProviderId,
+    toggleEnvironmentSubmenu,
     closeMenus,
     selectModel,
     onTextareaCompositionStart,

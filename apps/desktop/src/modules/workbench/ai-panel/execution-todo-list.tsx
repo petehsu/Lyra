@@ -32,12 +32,12 @@ export const ExecutionTodoList = ({ detail }: ExecutionTodoListProps) => {
       <ol className="lyra-ai-execution-todo-items">
         {todo.items.map((item) => (
           <li key={item.todoItemId} className="lyra-ai-execution-todo-item" data-status={item.status}>
-            <span className="lyra-ai-execution-todo-status" aria-label={statusLabel(item.status)}>
-              {statusIcon(item.status)}
+            <span className="lyra-ai-execution-todo-status" aria-label={todoStatusLabel(item.status)}>
+              {todoStatusIcon(item.status)}
             </span>
             <span className="lyra-ai-execution-todo-item-main">
               <span className="lyra-ai-execution-todo-item-title">{item.title}</span>
-              <span className="lyra-ai-execution-todo-item-detail">{itemDetail(item)}</span>
+              <span className="lyra-ai-execution-todo-item-detail">{todoItemDetail(item)}</span>
             </span>
           </li>
         ))}
@@ -46,7 +46,7 @@ export const ExecutionTodoList = ({ detail }: ExecutionTodoListProps) => {
   );
 };
 
-const todoSummary = (detail: AgentSessionDetail | null): string => {
+export const todoSummary = (detail: AgentSessionDetail | null): string => {
   const todo = detail?.activeTodo ?? null;
   if (todo === null) {
     return "";
@@ -65,7 +65,7 @@ const todoSummary = (detail: AgentSessionDetail | null): string => {
   return [todo.kind, coverageLabel, progress].filter((part): part is string => part !== null).join(" · ");
 };
 
-const statusIcon = (status: string) => {
+export const todoStatusIcon = (status: string) => {
   if (status === "completed") {
     return <CheckCircle2 size={13} aria-hidden="true" />;
   }
@@ -84,7 +84,7 @@ const statusIcon = (status: string) => {
   return <Circle size={13} aria-hidden="true" />;
 };
 
-const statusLabel = (status: string): string => {
+export const todoStatusLabel = (status: string): string => {
   if (status === "completed") {
     return "Completed";
   }
@@ -103,7 +103,7 @@ const statusLabel = (status: string): string => {
   return "Pending";
 };
 
-const itemDetail = (item: AgentTodoItem): string => {
+export const todoItemDetail = (item: AgentTodoItem): string => {
   if (item.status === "blocked" && hasApprovalBlocker(item.blockers)) {
     return "Waiting for approval";
   }
@@ -114,7 +114,7 @@ const itemDetail = (item: AgentTodoItem): string => {
     return `${String(item.evidenceRefs.length)} evidence ref${item.evidenceRefs.length === 1 ? "" : "s"}`;
   }
   if (item.expectedTools.length === 0) {
-    return statusLabel(item.status);
+    return todoStatusLabel(item.status);
   }
   const firstTool = item.expectedTools[0]?.split("/").filter(Boolean).at(-1) ?? "tool";
   return item.expectedTools.length === 1

@@ -1,24 +1,14 @@
 import { AgentComposer } from "./agent-composer";
 import type { AgentComposerFileAttachment } from "./agent-composer";
-import { ClarificationList } from "./clarification-list";
+import { AgentTodoRail } from "./agent-todo-rail";
+import { hasPendingClarification } from "./clarification-model";
 import { resolveAiPanelEmptyGreetingCandidates } from "./empty-greeting";
-import { ExecutionTodoList } from "./execution-todo-list";
-import { FollowProcessList } from "./follow-process-list";
-import { DeliveryStatusRow } from "./delivery-status-row";
-import { LiveDraftStatusRow } from "./live-draft-status-row";
-import { LongWorkStatusRow } from "./long-work-status-row";
-import { PendingApprovalList } from "./pending-approval-list";
-import { AiPlanReviewSurface } from "./plan-review-surface";
-import { PatchReviewStrip } from "./patch-review-strip";
 import { RollbackMessageAction } from "./rollback-message-action";
-import { RollbackPreviewRow } from "./rollback-preview-row";
-import { SecurityStatusRow } from "./security-status-row";
 import type { AiPanelSurfaceTextLabels } from "./surface-model";
 import { AiPanelSurfaceFrame } from "./surface-frame";
 import { AiPanelThreadTabs } from "./thread-tabs";
 import { AiPanelThreadView } from "./thread-view";
 import { AiPanelTopbarActions } from "./topbar-actions";
-import { VerificationSummaryList } from "./verification-summary-list";
 import type { AiPanelSide, AiPanelSurfaceProps } from "./types";
 import type { AiPanelSurfaceRuntime } from "./use-ai-panel-surface-runtime";
 import type { WorkbenchLocale } from "../i18n";
@@ -61,24 +51,13 @@ export const AiPanelSurfaceView = ({
     onOpenMcp,
     onOpenSkills,
     onOpenPlugins,
+    onOpenAgentVm,
     onRequestProjectBind
   } = surfaceProps;
   const { state, actions } = runtime;
   const previewMessageRollback = desktopApi?.ai?.previewMessageRollback;
   const executeMessageRollback = desktopApi?.ai?.executeMessageRollback;
-  const openFollowWorkspaceUri =
-    surfaceProps.onFollowOpenFilePath === undefined
-      ? undefined
-      : (workspaceUri: string): void => {
-          surfaceProps.onFollowOpenFilePath?.(
-            resolveFollowWorkspaceUri(
-              workspaceUri,
-              runtime.boundProjectRootForActiveThread ?? state.activeThread?.cwd ?? null
-            ),
-            undefined,
-            { forceReloadIfOpen: true }
-          );
-        };
+  const waitingForClarification = hasPendingClarification(state.activeDetail);
   const emptyGreetingLabels = resolveAiPanelEmptyGreetingCandidates({
     locale,
     appMeta: desktopApi?.appMeta,
@@ -142,6 +121,8 @@ export const AiPanelSurfaceView = ({
       topbarActions={topbarActions}
     >
       <div className="lyra-ai-agent-shell" style={runtime.composerReserveStyle}>
+        <AgentTodoRail detail={state.activeDetail} />
+
         <div className="lyra-ai-agent-thread-shell">
           <AiPanelThreadView
             logoUrl={LOGO_URL}
@@ -150,6 +131,7 @@ export const AiPanelSurfaceView = ({
             emptyGreetingLabels={emptyGreetingLabels}
             locale={locale}
             detail={state.activeDetail}
+            optimisticUserMessages={state.optimisticUserMessages}
             streamingTurnId={state.streamingTurnId}
             streamingAssistantText={state.streamingAssistantText}
             isLoading={state.isLoadingThreads || state.isLoadingThread}
@@ -159,6 +141,11 @@ export const AiPanelSurfaceView = ({
             readArtifact={desktopApi?.ai?.readArtifact}
             applyPatch={desktopApi?.ai === undefined ? undefined : actions.applyPatch}
             resolveApproval={desktopApi?.ai === undefined ? undefined : actions.resolveApproval}
+            resolveClarification={desktopApi?.ai?.resolveClarification}
+            resolvePlanReview={desktopApi?.ai === undefined ? undefined : actions.resolvePlanReview}
+            executeMessageRollback={executeMessageRollback}
+            onClarificationResolved={actions.refreshActiveThread}
+            onRollbackExecuted={actions.refreshActiveThread}
             renderMessageActions={(message) => (
               <RollbackMessageAction
                 message={message}
@@ -169,53 +156,6 @@ export const AiPanelSurfaceView = ({
             )}
           />
         </div>
-
-        <ClarificationList
-          detail={state.activeDetail}
-          resolveClarification={desktopApi?.ai?.resolveClarification}
-          onResolved={actions.refreshActiveThread}
-        />
-
-        <PendingApprovalList
-          detail={state.activeDetail}
-          resolveApproval={desktopApi?.ai === undefined ? undefined : actions.resolveApproval}
-        />
-
-        <AiPlanReviewSurface
-          detail={state.activeDetail}
-          resolvePlanReview={desktopApi?.ai === undefined ? undefined : actions.resolvePlanReview}
-        />
-
-        <SecurityStatusRow detail={state.activeDetail} />
-
-        <ExecutionTodoList detail={state.activeDetail} />
-
-        <VerificationSummaryList detail={state.activeDetail} />
-
-        <DeliveryStatusRow detail={state.activeDetail} />
-
-        <LongWorkStatusRow detail={state.activeDetail} />
-
-        <FollowProcessList
-          detail={state.activeDetail}
-          pauseFollow={desktopApi?.ai === undefined ? undefined : actions.pauseFollow}
-          resumeFollow={desktopApi?.ai === undefined ? undefined : actions.resumeFollow}
-          onOpenWorkspaceUri={openFollowWorkspaceUri}
-        />
-
-        <LiveDraftStatusRow detail={state.activeDetail} />
-
-        <RollbackPreviewRow
-          detail={state.activeDetail}
-          executeMessageRollback={executeMessageRollback}
-          onExecuteComplete={actions.refreshActiveThread}
-        />
-
-        <PatchReviewStrip
-          detail={state.activeDetail}
-          expandedPatchKey={runtime.expandedPatchKey}
-          onSelectPatch={actions.setExpandedPatchKey}
-        />
 
         <AgentComposer
           locale={locale}
@@ -232,11 +172,44 @@ export const AiPanelSurfaceView = ({
           verbosityOptions={runtime.verbosityOptions}
           selectedVerbosity={runtime.selectedVerbosity ?? null}
           onVerbositySelect={actions.setSelectedVerbosity}
+          environment={{
+            permissionMode: runtime.agentEnvironment.permissionMode,
+            executionTarget: runtime.agentEnvironment.executionTarget,
+            environmentLabel: textLabels.environment,
+            permissionLabel: textLabels.permission,
+            targetLabel: textLabels.executionTarget,
+            agentVmLabel: textLabels.agentVmSection,
+            openAgentVmLabel: textLabels.openAgentVm,
+            permissionOptions: runtime.permissionModeOptions.map((option) => ({
+              value: option.value,
+              label: option.value === "full_access"
+                ? textLabels.permissionFullAccess
+                : textLabels.permissionSandbox,
+            })),
+            targetOptions: runtime.executionTargetOptions.map((option) => ({
+              value: option.value,
+              label: option.value === "agent_vm"
+                ? textLabels.executionTargetAgentVm
+                : textLabels.executionTargetHost,
+            })),
+            onPermissionModeSelect: actions.setPermissionMode,
+            onExecutionTargetSelect: actions.setExecutionTarget,
+            ...(onOpenAgentVm === undefined
+              ? {}
+              : {
+                  onOpenAgentVm: () => {
+                    onOpenAgentVm({ sessionId: state.activeThreadId });
+                  },
+                }),
+          }}
           ariaLabel={composeAriaLabel ?? title}
-          placeholder={composePlaceholder ?? ""}
+          placeholder={waitingForClarification ? "等待澄清回复..." : composePlaceholder ?? ""}
           sendLabel={composeSendLabel ?? "Send"}
-          inputDisabled={!runtime.isAgentAvailable}
-          sendDisabled={!runtime.isAgentAvailable}
+          followEnabled={state.followEnabled}
+          onFollowToggle={actions.toggleFollow}
+          onSendWithFollow={actions.enableFollow}
+          inputDisabled={!runtime.isAgentAvailable || waitingForClarification}
+          sendDisabled={!runtime.isAgentAvailable || waitingForClarification}
           sending={runtime.isBusy}
           stopDisabled={
             state.streamingTurnId === null
@@ -273,27 +246,3 @@ export const AiPanelSurfaceView = ({
     </AiPanelSurfaceFrame>
   );
 };
-
-const resolveFollowWorkspaceUri = (workspaceUri: string, workspaceRoot: string | null): string => {
-  const trimmed = workspaceUri.trim();
-  if (trimmed.length === 0) {
-    return trimmed;
-  }
-  if (trimmed.startsWith("file://")) {
-    try {
-      return decodeURIComponent(new URL(trimmed).pathname);
-    } catch {
-      return trimmed;
-    }
-  }
-  const root = workspaceRoot?.trim() ?? "";
-  if (root.length === 0 || isAbsolutePath(trimmed)) {
-    return trimmed;
-  }
-  return `${root.replace(/[\\/]+$/, "")}/${trimmed.replace(/^[\\/]+/, "")}`;
-};
-
-const isAbsolutePath = (value: string): boolean =>
-  value.startsWith("/")
-  || /^[A-Za-z]:[\\/]/.test(value)
-  || value.startsWith("\\\\");

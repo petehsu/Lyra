@@ -173,6 +173,266 @@ describe("useSettingsAiModel", () => {
     }));
   });
 
+  test("blocks all-mode save when dynamic discovery is unavailable", async () => {
+    const readConfig = vi.fn().mockResolvedValue(emptySnapshot);
+    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
+      ...savedProfile(request.model),
+      id: "profile-mimo",
+      providerId: "mimo",
+      protocolId: "mimo_openai_chat_completions",
+      presetId: "mimo_api"
+    }));
+    const discoverModels = vi.fn().mockRejectedValue(new Error("Could not resolve host"));
+    const desktopApi = {
+      ai: {
+        readConfig,
+        upsertProfile,
+        deleteProfile: vi.fn(),
+        discoverModels
+      }
+    } as unknown as LyraDesktopApi;
+
+    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
+
+    await waitFor(() => {
+      expect(readConfig).toHaveBeenCalled();
+    });
+
+    act(() => {
+      result.current.applyPreset("mimo_api");
+    });
+    await act(async () => {
+      await result.current.saveProfile();
+    });
+
+    expect(discoverModels).toHaveBeenCalledTimes(1);
+    expect(upsertProfile).not.toHaveBeenCalled();
+    expect(result.current.errorMessage).toBe("Could not resolve host");
+  });
+
+  test("saves custom MiMo models without discovery", async () => {
+    const readConfig = vi.fn().mockResolvedValue(emptySnapshot);
+    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
+      ...savedProfile(request.model),
+      id: "profile-mimo",
+      providerId: "mimo",
+      protocolId: "mimo_openai_chat_completions",
+      presetId: "mimo_api"
+    }));
+    const discoverModels = vi.fn();
+    const desktopApi = {
+      ai: {
+        readConfig,
+        upsertProfile,
+        deleteProfile: vi.fn(),
+        discoverModels
+      }
+    } as unknown as LyraDesktopApi;
+
+    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
+
+    await waitFor(() => {
+      expect(readConfig).toHaveBeenCalled();
+    });
+
+    act(() => {
+      result.current.applyPreset("mimo_api");
+      result.current.updateDraftModelSelectionMode("custom");
+      result.current.updateDraftModelsText("user-model-a\nuser-model-b");
+    });
+    await act(async () => {
+      await result.current.saveProfile();
+    });
+
+    expect(discoverModels).not.toHaveBeenCalled();
+    expect(upsertProfile).toHaveBeenCalledWith(expect.objectContaining({
+      providerId: "mimo",
+      protocolId: "mimo_openai_chat_completions",
+      model: "user-model-a",
+      customModels: [
+        expect.objectContaining({
+          id: "user-model-b"
+        })
+      ],
+      discoveryState: expect.objectContaining({
+        status: "idle",
+        models: []
+      })
+    }));
+  });
+
+  test("merges newly entered custom models into the selected provider profile", async () => {
+    const profile: AiProviderProfile = {
+      ...savedProfile("model-a"),
+      customModels: [
+        modelEntry("model-b", { name: "Model B" })
+      ],
+      discoveryState: {
+        status: "ready",
+        lastCheckedAt: 2,
+        models: [
+          modelEntry("model-a", { source: "dynamic" }),
+          modelEntry("model-b", { name: "Model B", source: "dynamic" })
+        ]
+      }
+    };
+    const readConfig = vi.fn()
+      .mockResolvedValueOnce({
+        ...emptySnapshot,
+        profiles: [profile]
+      })
+      .mockResolvedValueOnce({
+        ...emptySnapshot,
+        profiles: [profile]
+      });
+    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
+      ...profile,
+      model: request.model,
+      customModels: request.customModels ?? [],
+      discoveryState: request.discoveryState ?? profile.discoveryState
+    }));
+    const desktopApi = {
+      ai: {
+        readConfig,
+        upsertProfile,
+        deleteProfile: vi.fn(),
+        discoverModels: vi.fn()
+      }
+    } as unknown as LyraDesktopApi;
+
+    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
+
+    await waitFor(() => {
+      expect(result.current.profiles).toHaveLength(1);
+    });
+
+    act(() => {
+      result.current.updateDraftModelSelectionMode("custom");
+      result.current.updateDraftModelsText("model-c");
+    });
+    await act(async () => {
+      await result.current.saveProfile();
+    });
+
+    const request = upsertProfile.mock.calls[0]?.[0] as AiUpsertProfileRequest;
+    expect(request).toMatchObject({
+      id: "profile-openai",
+      model: "model-c",
+      customModels: [
+        expect.objectContaining({
+          id: "model-a"
+        }),
+        expect.objectContaining({
+          id: "model-b",
+          name: "Model B"
+        })
+      ]
+    });
+    expect(request.discoveryState?.models.map((entry) => entry.id)).toEqual(["model-a", "model-b"]);
+  });
+
+  test("creates a new profile when a different provider is saved from an existing draft", async () => {
+    const profile = savedProfile("model-a");
+    const readConfig = vi.fn()
+      .mockResolvedValueOnce({
+        ...emptySnapshot,
+        profiles: [profile]
+      })
+      .mockResolvedValueOnce({
+        ...emptySnapshot,
+        profiles: [profile]
+      });
+    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
+      ...savedProfile(request.model),
+      id: request.id ?? "profile-mimo",
+      providerId: request.providerId,
+      protocolId: request.protocolId,
+      presetId: request.presetId ?? null,
+      customModels: request.customModels ?? []
+    }));
+    const desktopApi = {
+      ai: {
+        readConfig,
+        upsertProfile,
+        deleteProfile: vi.fn(),
+        discoverModels: vi.fn()
+      }
+    } as unknown as LyraDesktopApi;
+
+    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
+
+    await waitFor(() => {
+      expect(result.current.selectedProfileId).toBe("profile-openai");
+    });
+
+    act(() => {
+      result.current.applyPreset("mimo_api");
+      result.current.updateDraftModelSelectionMode("custom");
+      result.current.updateDraftModelsText("mimo-model");
+    });
+    await act(async () => {
+      await result.current.saveProfile();
+    });
+
+    expect(upsertProfile).toHaveBeenCalledWith(expect.objectContaining({
+      providerId: "mimo",
+      model: "mimo-model"
+    }));
+    expect(upsertProfile.mock.calls[0]?.[0]).not.toHaveProperty("id");
+  });
+
+  test("creates a new profile when saved provider connection details are changed", async () => {
+    const profile = savedProfile("model-a");
+    const readConfig = vi.fn()
+      .mockResolvedValueOnce({
+        ...emptySnapshot,
+        profiles: [profile]
+      })
+      .mockResolvedValueOnce({
+        ...emptySnapshot,
+        profiles: [profile]
+      });
+    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
+      ...profile,
+      id: request.id ?? "profile-openai-copy",
+      connectionConfig: request.connectionConfig,
+      model: request.model,
+      customModels: request.customModels ?? []
+    }));
+    const desktopApi = {
+      ai: {
+        readConfig,
+        upsertProfile,
+        deleteProfile: vi.fn(),
+        discoverModels: vi.fn()
+      }
+    } as unknown as LyraDesktopApi;
+
+    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
+
+    await waitFor(() => {
+      expect(result.current.selectedProfileId).toBe("profile-openai");
+    });
+
+    act(() => {
+      result.current.updateDraftField("connection", "baseUrl", "https://gateway.example.com/v1");
+      result.current.updateDraftModelSelectionMode("custom");
+      result.current.updateDraftModelsText("model-c");
+    });
+    await act(async () => {
+      await result.current.saveProfile();
+    });
+
+    expect(upsertProfile).toHaveBeenCalledWith(expect.objectContaining({
+      providerId: "openai",
+      model: "model-c",
+      connectionConfig: {
+        baseUrl: "https://gateway.example.com/v1"
+      }
+    }));
+    expect(upsertProfile.mock.calls[0]?.[0]).not.toHaveProperty("id");
+  });
+
   test("deletes every profile for a configured provider", async () => {
     const openaiProfile = savedProfile("model-a");
     const secondOpenaiProfile: AiProviderProfile = {

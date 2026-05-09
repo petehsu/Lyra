@@ -12,6 +12,7 @@ pub use executor::{
     tool_runtime_prompt, ToolExecutionContext,
 };
 pub use operation::{
-    parse_tool_operation, tool_result_chat_message, ToolFsOp, ToolOperationEnvelope,
-    ToolResultEnvelope, ToolResultStatus,
+    parse_tool_operation, tool_error_code, tool_result_chat_message, ToolFsOp,
+    ToolOperationEnvelope, ToolOperationParseError, ToolResultEnvelope, ToolResultStatus,
+    TOOL_INVALID_ARGUMENT, TOOL_OPERATION_KIND, TOOL_SCHEMA_VERSION,
 };

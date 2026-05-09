@@ -25,6 +25,16 @@ import type {
 } from "./agent-composer";
 import { runtimeInputFromComposerReferenceParts } from "./agent-composer-reference-parts";
 import {
+  AGENT_EXECUTION_TARGET_OPTIONS,
+  AGENT_PERMISSION_MODE_OPTIONS,
+  DEFAULT_AGENT_ENVIRONMENT,
+  type AgentEnvironmentState,
+} from "./agent-environment-model";
+import type {
+  AgentExecutionTarget,
+  AgentPermissionMode,
+} from "./agent-ui-types";
+import {
   createComposerReserveStyle,
   createRuntimeModelOptions,
   createRuntimeTurnOptions,
@@ -176,6 +186,8 @@ export type AiPanelSurfaceRuntimeActions = {
   readonly selectModelOptionValue: (value: string) => void;
   readonly setSelectedReasoningEffort: Dispatch<SetStateAction<RuntimeThreadOptions["effort"] | null>>;
   readonly setSelectedVerbosity: Dispatch<SetStateAction<RuntimeThreadOptions["verbosity"] | null>>;
+  readonly setPermissionMode: (value: AgentPermissionMode) => void;
+  readonly setExecutionTarget: (value: AgentExecutionTarget) => void;
   readonly setComposerHeight: Dispatch<SetStateAction<number>>;
   readonly createThread: () => Promise<void>;
   readonly bindProject: () => Promise<void>;
@@ -209,6 +221,9 @@ export type AiPanelSurfaceRuntime = {
   readonly selectedReasoningEffort: RuntimeThreadOptions["effort"] | null;
   readonly verbosityOptions: readonly AgentComposerModelControlOption<AgentComposerVerbosity>[];
   readonly selectedVerbosity: RuntimeThreadOptions["verbosity"] | null;
+  readonly agentEnvironment: AgentEnvironmentState;
+  readonly permissionModeOptions: typeof AGENT_PERMISSION_MODE_OPTIONS;
+  readonly executionTargetOptions: typeof AGENT_EXECUTION_TARGET_OPTIONS;
   readonly fileMentionSearchRoots: readonly string[];
   readonly fileMentionSearchResults: readonly FuzzyFileSearchResult[];
   readonly workbenchTabMentions: readonly AgentComposerWorkbenchTabMention[];
@@ -239,6 +254,8 @@ export const useAiPanelSurfaceRuntime = ({
     useState<RuntimeThreadOptions["effort"] | null>(null);
   const [selectedVerbosity, setSelectedVerbosity] =
     useState<RuntimeThreadOptions["verbosity"] | null>(null);
+  const [agentEnvironment, setAgentEnvironment] =
+    useState<AgentEnvironmentState>(DEFAULT_AGENT_ENVIRONMENT);
   const [composerHeight, setComposerHeight] = useState(96);
   const [expandedPatchKey, setExpandedPatchKey] = useState<string | null>(null);
   const [boundProjectRootByThread, setBoundProjectRootByThread] = useState<
@@ -611,12 +628,16 @@ export const useAiPanelSurfaceRuntime = ({
       defaultProviderId,
       boundProjectRoot: boundProjectRootForActiveThread,
       collaborationMode,
+      permissionMode: agentEnvironment.permissionMode,
+      executionTarget: agentEnvironment.executionTarget,
       effort: selectedReasoningEffort,
       verbosity: selectedVerbosity,
       followEnabled: state.followEnabled
     }), [
     boundProjectRootForActiveThread,
     defaultProviderId,
+    agentEnvironment.executionTarget,
+    agentEnvironment.permissionMode,
     selectedModelOption,
     selectedReasoningEffort,
     selectedVerbosity,
@@ -628,10 +649,14 @@ export const useAiPanelSurfaceRuntime = ({
       selectedModelOption,
       defaultProviderId,
       boundProjectRoot: null,
+      permissionMode: agentEnvironment.permissionMode,
+      executionTarget: agentEnvironment.executionTarget,
       effort: selectedReasoningEffort,
       verbosity: selectedVerbosity
     }), [
     defaultProviderId,
+    agentEnvironment.executionTarget,
+    agentEnvironment.permissionMode,
     selectedModelOption,
     selectedReasoningEffort,
     selectedVerbosity
@@ -667,6 +692,14 @@ export const useAiPanelSurfaceRuntime = ({
   const handleFollowToggle = useCallback((): void => {
     setFollowEnabled(!state.followEnabled);
   }, [setFollowEnabled, state.followEnabled]);
+
+  const setPermissionMode = useCallback((value: AgentPermissionMode): void => {
+    setAgentEnvironment((current) => ({ ...current, permissionMode: value }));
+  }, []);
+
+  const setExecutionTarget = useCallback((value: AgentExecutionTarget): void => {
+    setAgentEnvironment((current) => ({ ...current, executionTarget: value }));
+  }, []);
 
   const enableFollow = useCallback((): void => {
     setFollowEnabled(true);
@@ -716,6 +749,8 @@ export const useAiPanelSurfaceRuntime = ({
       selectModelOptionValue,
       setSelectedReasoningEffort,
       setSelectedVerbosity,
+      setPermissionMode,
+      setExecutionTarget,
       setComposerHeight,
       createThread,
       bindProject: handleBindProject,
@@ -745,6 +780,9 @@ export const useAiPanelSurfaceRuntime = ({
     selectedReasoningEffort,
     verbosityOptions,
     selectedVerbosity,
+    agentEnvironment,
+    permissionModeOptions: AGENT_PERMISSION_MODE_OPTIONS,
+    executionTargetOptions: AGENT_EXECUTION_TARGET_OPTIONS,
     fileMentionSearchRoots,
     fileMentionSearchResults,
     workbenchTabMentions: workbenchTabMentions ?? [],

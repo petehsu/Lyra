@@ -42,6 +42,7 @@ export const AgentComposer = memo(({
   selectedVerbosity = null,
   verbosityLabel,
   onVerbositySelect,
+  environment,
   initialValue = "",
   appendRequest = null,
   ariaLabel,
@@ -78,25 +79,6 @@ export const AgentComposer = memo(({
   onFileMentionSearchStop
 }: AgentComposerProps) => {
   const t = useMemo(() => createTranslator(locale), [locale]);
-  const runtime = useAgentComposerRuntime({
-    currentThreadId,
-    initialValue,
-    appendRequest,
-    inputDisabled,
-    sendDisabled,
-    sending,
-    onHeightChange,
-    onSend,
-    onSendWithFollow,
-    onSteer,
-    fileMentionSearchRoots,
-    fileMentionSearchResults,
-    workbenchTabMentions,
-    aiThreadMentions,
-    onFileMentionSearchStart,
-    onFileMentionSearchUpdate,
-    onFileMentionSearchStop
-  });
   const modelState = useMemo(
     () => createAgentComposerModelState({
       t,
@@ -121,6 +103,26 @@ export const AgentComposer = memo(({
       t
     ]
   );
+  const runtime = useAgentComposerRuntime({
+    currentThreadId,
+    initialValue,
+    appendRequest,
+    inputDisabled,
+    sendDisabled,
+    sending,
+    selectedModelProviderId: modelState.resolvedSelectedProviderId,
+    onHeightChange,
+    onSend,
+    onSendWithFollow,
+    onSteer,
+    fileMentionSearchRoots,
+    fileMentionSearchResults,
+    workbenchTabMentions,
+    aiThreadMentions,
+    onFileMentionSearchStart,
+    onFileMentionSearchUpdate,
+    onFileMentionSearchStop
+  });
   const composerClassName = resolveAgentComposerClassName({
     surfaceDimmed,
     sending
@@ -162,6 +164,7 @@ export const AgentComposer = memo(({
       selectedVerbosity={selectedVerbosity}
       verbosityLabel={verbosityLabel ?? t("ai.verbosityLabel")}
       onVerbositySelect={onVerbositySelect}
+      environment={environment}
       onFollowToggle={onFollowToggle}
       onRequestFileAttachments={onRequestFileAttachments}
       onSteer={onSteer}

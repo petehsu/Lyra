@@ -89,6 +89,14 @@ pub struct AgentSession {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub project_root: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_name: Option<String>,
@@ -107,6 +115,7 @@ pub struct AgentTurn {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collaboration_mode: Option<String>,
     pub permission_mode: String,
+    pub execution_target: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

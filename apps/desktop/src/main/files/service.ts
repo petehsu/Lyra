@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { basename } from "node:path";
 
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
@@ -8,6 +9,7 @@ import type {
   FileManagerCreateFolderRequest,
   FileManagerEjectDeviceRequest,
   FileManagerFavoritesPayload,
+  FileReadResult,
   FileReadTextRequest,
   FileStatRequest,
   FileManagerMountDeviceRequest,
@@ -126,6 +128,54 @@ const normalizeReadTextRequest = (
 ): FileReadTextRequest => ({
   path: normalizePath(payload.path)
 });
+
+const isVirtualToolPath = (filePath: string): boolean =>
+  filePath === "/tools" || filePath.startsWith("/tools/");
+
+const unsupportedReadResult = (
+  filePath: string,
+  reason: string,
+  sizeBytes = 0
+): FileReadResult => ({
+  kind: "unsupported",
+  path: filePath,
+  reason,
+  readOnly: true,
+  sizeBytes
+});
+
+const safeReadTextFile = (
+  bindings: FilesNativeBindings,
+  payload: FileReadTextRequest
+): FileReadResult => {
+  const request = normalizeReadTextRequest(payload);
+  if (isVirtualToolPath(request.path)) {
+    return unsupportedReadResult(request.path, "virtual-tool-path");
+  }
+  let stats: ReturnType<typeof statSync>;
+  try {
+    stats = statSync(request.path);
+  } catch (error) {
+    if (
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+      || (error as NodeJS.ErrnoException).code === "ENOTDIR"
+    ) {
+      return unsupportedReadResult(request.path, "not-found");
+    }
+    throw error;
+  }
+  if (!stats.isFile()) {
+    return unsupportedReadResult(request.path, "not-file", stats.size);
+  }
+  try {
+    return bindings.readTextFile(request);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return unsupportedReadResult(request.path, "not-found");
+    }
+    throw error;
+  }
+};
 
 const normalizeWriteTextRequest = (
   payload: FileWriteTextRequest
@@ -349,7 +399,7 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
     [
       LYRA_CHANNELS.filesReadTextFile,
       (_event, payload) =>
-        bindings.readTextFile(normalizeReadTextRequest(payload as FileReadTextRequest))
+        safeReadTextFile(bindings, payload as FileReadTextRequest)
     ],
     [
       LYRA_CHANNELS.filesWriteTextFile,

@@ -1,12 +1,17 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("../../browser-tabs", () => ({
   BrowserPageSurface: () => <div aria-label="browser-page-surface" />,
   BrowserSearchSurface: () => <div aria-label="browser-search-surface" />,
   BrowserSettingsSurface: () => <div aria-label="settings-surface" />,
-  BrowserTabStrip: () => <nav aria-label="browser-tabs" />,
-  ClassicWorkspaceTabsAdapter: () => <nav aria-label="browser-tabs" />
+  BrowserTabStrip: (props: { readonly navigationControl?: ReactNode }) => (
+    <nav aria-label="browser-tabs">{props.navigationControl}</nav>
+  ),
+  ClassicWorkspaceTabsAdapter: (props: { readonly navigationControl?: ReactNode }) => (
+    <nav aria-label="browser-tabs">{props.navigationControl}</nav>
+  )
 }));
 
 vi.mock("../../terminal-dock", () => ({

@@ -1,4 +1,5 @@
-import type { AgentPatchChangedFile } from "./agent-ui-types";
+import type { AgentPatchChangedFile, AgentRuntimeEvent } from "./agent-ui-types";
+import { isRecord, readString } from "./patch-artifact";
 
 type DiffPreviewProps = {
   readonly content: string;
@@ -154,4 +155,94 @@ export const DiffPreview = ({ content, changedFiles }: DiffPreviewProps) => {
       </div>
     </div>
   );
+};
+
+type LiveDiffPreviewProps = {
+  readonly events: readonly AgentRuntimeEvent[];
+};
+
+type LiveDiffRow = {
+  readonly id: string;
+  readonly filePath: string;
+  readonly finalized: boolean;
+  readonly changedFiles: readonly AgentPatchChangedFile[];
+};
+
+export const LiveDiffPreview = ({ events }: LiveDiffPreviewProps) => {
+  const rows = liveDiffRows(events);
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <section className="lyra-ai-patch-diff-preview" aria-label="Live diff preview">
+      <div className="lyra-ai-patch-diff-files" aria-label="Live changed files">
+        {rows.map((row) => (
+          <span key={row.id} className="lyra-ai-patch-diff-file-chip" data-status={row.finalized ? "finalized" : "streaming"}>
+            <span>{row.filePath}</span>
+            <small>{row.finalized ? "finalized" : "editing"}{changeCountLabel(row.changedFiles)}</small>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+const liveDiffRows = (events: readonly AgentRuntimeEvent[]): readonly LiveDiffRow[] => {
+  const finalized = new Set(
+    events
+      .filter((event) => event.phase === "follow_live_edit_finalized")
+      .map((event) => readStringFromPayload(event.payload, "filePath"))
+      .filter((filePath): filePath is string => filePath !== null)
+  );
+  return events
+    .filter((event) => event.phase === "follow_live_edit_delta")
+    .map((event, index): LiveDiffRow | null => {
+      const filePath = readStringFromPayload(event.payload, "filePath");
+      if (filePath === null) {
+        return null;
+      }
+      return {
+        id: `live-diff:${String(index)}:${filePath}`,
+        filePath,
+        finalized: finalized.has(filePath),
+        changedFiles: changedFilesFromPayload(event.payload),
+      };
+    })
+    .filter((row): row is LiveDiffRow => row !== null)
+    .slice(-4);
+};
+
+const readStringFromPayload = (payload: unknown, key: string): string | null =>
+  isRecord(payload) ? readString(payload[key]) : null;
+
+const changedFilesFromPayload = (payload: unknown): readonly AgentPatchChangedFile[] => {
+  if (!isRecord(payload) || !Array.isArray(payload.diffHunks)) {
+    return [];
+  }
+  return payload.diffHunks
+    .map((value): AgentPatchChangedFile | null => {
+      if (!isRecord(value)) {
+        return null;
+      }
+      const path = readString(value.path);
+      if (path === null) {
+        return null;
+      }
+      return {
+        path,
+        changeType: readString(value.changeType) ?? "modified",
+        additions: typeof value.additions === "number" ? value.additions : 0,
+        deletions: typeof value.deletions === "number" ? value.deletions : 0,
+      };
+    })
+    .filter((file): file is AgentPatchChangedFile => file !== null);
+};
+
+const changeCountLabel = (files: readonly AgentPatchChangedFile[]): string => {
+  if (files.length === 0) {
+    return "";
+  }
+  const additions = files.reduce((total, file) => total + file.additions, 0);
+  const deletions = files.reduce((total, file) => total + file.deletions, 0);
+  return ` · +${String(additions)} -${String(deletions)}`;
 };

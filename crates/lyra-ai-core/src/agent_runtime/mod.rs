@@ -1,10 +1,12 @@
 use crate::config::{resolve_profile_id, runtime_config_for_profile};
 use crate::events::emit_event;
 use crate::model_gateway::{
-    generate_response, ChatMessage, ModelResponse, ProviderRuntimeConfig, Usage,
+    stream_completion_with_tools_retrying, ChatMessage, ChatResponse, ProviderRuntimeConfig,
+    ToolCall, ToolDefinition, Usage,
 };
 use crate::patch_apply::{
-    apply_patch_tool_result, normalize_permission_mode, rollback_patch_tool_result, PermissionMode,
+    apply_patch_tool_result, normalize_execution_target, normalize_permission_mode,
+    rollback_patch_tool_result, ExecutionTarget, PermissionMode,
 };
 use crate::prompt::{compose_messages, PromptContext};
 use crate::security_gate::{
@@ -12,19 +14,30 @@ use crate::security_gate::{
     security_event_payload, SECURITY_RESOURCE_DENIED,
 };
 use crate::storage::{
-    new_id, now_ms, project_name_from_root, trim_to_string, AgentMessage, AgentMessageContentPart,
-    AgentSession, AgentSessionDetail, AgentTurn, AiStore, CreateTodoItemInput, StorageRequest,
-    TodoUpdateRecord, ToolResultBlobMeta,
+    new_id, now_iso, now_ms, project_name_from_root, trim_to_string, AgentLongWorkSummary,
+    AgentMessage, AgentMessageContentPart, AgentSession, AgentSessionDetail, AgentTurn, AiStore,
+    CreateTodoItemInput, MemoryArchiveItem, StorageRequest, TodoUpdateRecord, ToolResultBlobMeta,
 };
 use crate::tool_runtime::catalog::{
     TOOL_FS_APPLY_PATCH, TOOL_FS_LIST_FILES, TOOL_FS_PROPOSE_PATCH, TOOL_FS_READ_FILE,
-    TOOL_FS_ROLLBACK_PATCH, TOOL_FS_SEARCH_TEXT, TOOL_SHELL_RUN_COMMAND,
+    TOOL_FS_READ_RANGE, TOOL_FS_ROLLBACK_PATCH, TOOL_FS_SEARCH_FILES, TOOL_FS_SEARCH_TEXT,
+    TOOL_FS_STAT_PATH, TOOL_GIT_DIFF, TOOL_GIT_STATUS, TOOL_MEMORY_ASSEMBLE_CONTEXT,
+    TOOL_MEMORY_AUDIT_MEMORY, TOOL_MEMORY_CREATE_CONFLICT_CANDIDATE,
+    TOOL_MEMORY_GET_CONTEXT_SNAPSHOT, TOOL_MEMORY_PROPOSE_MEMORY, TOOL_MEMORY_SEARCH_FROZEN,
+    TOOL_MEMORY_SEARCH_SESSION, TOOL_MEMORY_SEARCH_SHARED, TOOL_MEMORY_UPDATE_MEMORY, TOOL_SEARCH,
+    TOOL_SHELL_RUN_COMMAND,
 };
 use crate::tool_runtime::shell;
 use crate::tool_runtime::{
     execute_tool, inspect_required_result, normalized_tool_path, parse_tool_operation,
-    tool_event_metadata, tool_result_chat_message, ToolExecutionContext, ToolFsOp,
-    ToolOperationEnvelope, ToolResultEnvelope, ToolResultStatus,
+    tool_error_code, tool_event_metadata, tool_result_chat_message, ToolExecutionContext, ToolFsOp,
+    ToolOperationEnvelope, ToolOperationParseError, ToolResultEnvelope, ToolResultStatus,
+    TOOL_INVALID_ARGUMENT, TOOL_OPERATION_KIND, TOOL_SCHEMA_VERSION,
+};
+use crate::tools::{
+    built_in_tool_definitions, mcp_tool_definitions, mcp_tool_operation_path, resolve_mcp_tool_ref,
+    run_registered_tool, workspace_write_paths_for_tool, ToolContext, ToolPermissionDecision,
+    ToolPermissionPolicy, ToolPermissionRuleSet, ALL_TOOL_NAMES,
 };
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
@@ -59,9 +72,17 @@ mod intent_projection;
 use intent_projection::project_intake_prompt_value;
 mod clarification_gate;
 mod reference_resolution;
-pub use clarification_gate::resolve_clarification;
+#[cfg(test)]
+pub(crate) use clarification_gate::resolve_clarification;
+pub use clarification_gate::submit_clarification_response;
 mod clarification_projection;
-use clarification_projection::project_clarification_prompt_value;
+use clarification_projection::{
+    answered_clarification_tool_result_message, clarification_resume_context_message,
+    has_answered_blocking_clarification_for_turn, project_clarification_prompt_value,
+};
+mod prompt_repetition;
+use prompt_repetition::apply_prompt_repetition;
+mod memory_pipeline;
 
 mod follow_controller;
 use follow_controller::{ensure_follow_for_long_work, ensure_follow_for_turn};
@@ -79,7 +100,7 @@ pub(crate) use follow_projection::{
 mod recovery_controller;
 pub(crate) use recovery_controller::ensure_recovery_anchor_for_write;
 use recovery_controller::ensure_recovery_checkpoint_for_turn;
-pub use recovery_controller::{preview_message_rollback, read_rollback_preview};
+pub use recovery_controller::{preview_message_rollback, read_rollback_preview, rollback_to_turn};
 mod recovery_execution;
 pub use recovery_execution::execute_message_rollback;
 mod recovery_projection;

@@ -1,8 +1,15 @@
 import type { WorkbenchLocale } from "../i18n";
+import type {
+  AgentExecutionTarget,
+  AgentPermissionMode
+} from "./agent-ui-types";
 
 export type AgentComposerModelOption = {
   readonly value: string;
   readonly label: string;
+  readonly providerId?: string | undefined;
+  readonly providerLabel?: string | undefined;
+  readonly modelProvider?: string | null | undefined;
 };
 
 export type AgentComposerReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -13,6 +20,21 @@ export type AgentComposerModelControlOption<Value extends string> = {
   readonly label: string;
   readonly disabled?: boolean;
   readonly disabledReason?: string;
+};
+
+export type AgentComposerEnvironmentProps = {
+  readonly permissionMode: AgentPermissionMode;
+  readonly executionTarget: AgentExecutionTarget;
+  readonly environmentLabel: string;
+  readonly permissionLabel: string;
+  readonly targetLabel: string;
+  readonly agentVmLabel: string;
+  readonly openAgentVmLabel: string;
+  readonly permissionOptions: readonly AgentComposerModelControlOption<AgentPermissionMode>[];
+  readonly targetOptions: readonly AgentComposerModelControlOption<AgentExecutionTarget>[];
+  readonly onPermissionModeSelect: (value: AgentPermissionMode) => void;
+  readonly onExecutionTargetSelect: (value: AgentExecutionTarget) => void;
+  readonly onOpenAgentVm?: (() => void) | undefined;
 };
 
 export type AgentComposerAppendRequest = {
@@ -118,6 +140,7 @@ export type AgentComposerProps = {
   readonly selectedVerbosity?: AgentComposerVerbosity | null;
   readonly verbosityLabel?: string;
   readonly onVerbositySelect?: (value: AgentComposerVerbosity | null) => void;
+  readonly environment?: AgentComposerEnvironmentProps;
   readonly initialValue?: string;
   readonly appendRequest?: AgentComposerAppendRequest | null;
   readonly ariaLabel: string;

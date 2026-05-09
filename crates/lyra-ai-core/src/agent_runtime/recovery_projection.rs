@@ -18,6 +18,10 @@ pub(crate) fn project_recovery_side_effect(
         project_patch_side_effects(store, session_id, turn_id, operation, result)?;
         return Ok(());
     }
+    if operation.path.starts_with("/tools/agent/") {
+        project_agent_tool_side_effects(store, session_id, turn_id, operation, result)?;
+        return Ok(());
+    }
     if operation.path == TOOL_SHELL_RUN_COMMAND {
         project_command_side_effect(store, session_id, turn_id, operation, result)?;
     }
@@ -104,6 +108,36 @@ fn project_command_side_effect(
         follow_target_id,
         artifact_refs: collect_artifact_refs(metadata),
     })?;
+    Ok(())
+}
+
+fn project_agent_tool_side_effects(
+    store: &AiStore,
+    session_id: &str,
+    turn_id: &str,
+    operation: &ToolOperationEnvelope,
+    result: &ToolResultEnvelope,
+) -> Result<()> {
+    if result.status != ToolResultStatus::Completed {
+        return Ok(());
+    }
+    let metadata = result.metadata.as_ref();
+    let follow_target_id =
+        store.read_follow_target_id_for_operation(session_id, &operation.op_id)?;
+    for changed_file in changed_files(metadata) {
+        store.append_side_effect_record(SideEffectRecordInput {
+            session_id: session_id.to_string(),
+            runtime_turn_id: turn_id.to_string(),
+            user_message_id: user_message_id_for_turn(store, session_id, turn_id)?,
+            tool_operation_id: Some(operation.op_id.clone()),
+            kind: workspace_effect_kind(&operation.path, &changed_file.change_type).to_string(),
+            target_ref: changed_file.path,
+            rollback_status: "reversible".to_string(),
+            evidence_ref: string_field(metadata, "evidenceId"),
+            follow_target_id: follow_target_id.clone(),
+            artifact_refs: collect_artifact_refs(metadata),
+        })?;
+    }
     Ok(())
 }
 

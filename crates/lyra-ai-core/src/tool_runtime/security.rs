@@ -82,6 +82,18 @@ impl WorkspaceSecurity {
     }
 
     pub fn validate_relative_path_for_write_preview(&self, raw_path: &str) -> Result<String> {
+        self.validate_relative_path_for_write(raw_path, false)
+    }
+
+    pub fn validate_relative_path_for_write_create(&self, raw_path: &str) -> Result<String> {
+        self.validate_relative_path_for_write(raw_path, true)
+    }
+
+    fn validate_relative_path_for_write(
+        &self,
+        raw_path: &str,
+        allow_missing_parent: bool,
+    ) -> Result<String> {
         let raw_path = raw_path.trim();
         if raw_path.is_empty() {
             return Err(tool_error(
@@ -115,10 +127,15 @@ impl WorkspaceSecurity {
                 ));
             }
         } else {
-            let parent = candidate
+            let mut parent = candidate
                 .parent()
                 .filter(|path| path.as_os_str().is_empty() == false)
                 .unwrap_or(&self.root);
+            if allow_missing_parent {
+                while parent.exists() == false {
+                    parent = parent.parent().unwrap_or(&self.root);
+                }
+            }
             let parent = parent.canonicalize().map_err(|error| {
                 if error.kind() == ErrorKind::NotFound {
                     tool_error(

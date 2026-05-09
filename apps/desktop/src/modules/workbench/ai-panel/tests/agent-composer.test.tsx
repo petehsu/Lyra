@@ -190,6 +190,35 @@ describe("agent composer", () => {
     expect(onModelSelect).toHaveBeenCalledWith("gpt-b");
   });
 
+  test("groups composer models under provider categories", async () => {
+    const onModelSelect = vi.fn();
+    render(
+      <AgentComposer
+        {...createProps({
+          initialValue: "",
+          modelOptions: [
+            { value: "openai:gpt-a", label: "GPT A", providerId: "openai", providerLabel: "OpenAI" },
+            { value: "anthropic:claude", label: "Claude", providerId: "anthropic", providerLabel: "Anthropic" },
+          ],
+          selectedModelName: "openai:gpt-a",
+          onModelSelect,
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText("Composer menu"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Model/i }));
+
+    expect(screen.getByRole("menuitem", { name: /OpenAI/i })).toBeDefined();
+    expect(screen.getByRole("menuitem", { name: /Anthropic/i })).toBeDefined();
+    expect(screen.getByRole("menuitemradio", { name: /GPT A/i })).toBeDefined();
+    expect(screen.queryByRole("menuitemradio", { name: /Claude/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /Anthropic/i }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Claude/i }));
+    expect(onModelSelect).toHaveBeenCalledWith("anthropic:claude");
+  });
+
   test("closes the portal plus menu on outside click and Escape", () => {
     render(<AgentComposer {...createProps({ initialValue: "" })} />);
 

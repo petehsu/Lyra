@@ -7,7 +7,10 @@ import type {
 import type {
   AgentApplyPatchRequest,
   AgentApplyPatchResult,
+  AgentExecutionTarget,
   AgentMessage,
+  AgentMessageContentPart,
+  AgentPermissionMode,
   AgentResolvePlanReviewRequest,
   AgentResolvePlanReviewResult,
   AgentResolveApprovalRequest,
@@ -39,14 +42,11 @@ export type LyraThreadTab = {
   readonly status: LyraThreadTabStatus;
 };
 
-type OptimisticUserMessage = {
-  readonly id: string;
-  readonly sessionId?: string;
-  readonly turnId?: string;
+export type OptimisticUserMessage = AgentMessage & {
+  readonly clientRequestId: string;
+  readonly tabId: string;
+  readonly targetSessionId: string | null;
   readonly role: "user";
-  readonly content: string;
-  readonly contentParts?: AgentSessionDetail["messages"][number]["contentParts"];
-  readonly createdAt: number;
   readonly optimistic: true;
 };
 
@@ -100,7 +100,8 @@ export type RuntimeThreadOptions = {
   readonly verbosity?: "low" | "medium" | "high";
   readonly approvalPolicy?: "untrusted" | "on-failure" | "on-request" | "never";
   readonly approvalsReviewer?: "user" | "auto_review";
-  readonly permissionMode?: "sandbox" | "full_access";
+  readonly permissionMode?: AgentPermissionMode;
+  readonly executionTarget?: AgentExecutionTarget;
   readonly followEnabled?: boolean;
 };
 
@@ -144,12 +145,18 @@ const PROJECTED_RUNTIME_EVENT_TYPES = new Set([
   "tool_operation_started",
   "tool_operation_completed",
   "tool_operation_failed",
+  "context_window_truncated",
+  "model_call_retrying",
+  "model_stream_delta",
   "verification_plan_created",
   "verification_run_updated",
 ]);
 
 const createTabId = (): string =>
   `draft:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+
+const createOptimisticMessageId = (): string =>
+  `optimistic:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
 
 const createDraftTab = (): LyraThreadTab => {
   const now = Date.now();
@@ -196,6 +203,57 @@ const readDetailFromPayload = (payload: unknown): AgentSessionDetail | null => {
     return null;
   }
   return detail as AgentSessionDetail;
+};
+
+const runtimeInputToContentParts = (
+  input: RuntimeTurnInput
+): readonly AgentMessageContentPart[] | undefined => {
+  const sourceParts = input.parts !== undefined && input.parts.length > 0
+    ? input.parts
+    : [
+        ...(input.text.trim().length === 0 ? [] : [{ type: "text" as const, text: input.text }]),
+        ...input.attachments.map((attachment) => ({
+          type: "attachment" as const,
+          attachment,
+        })),
+      ];
+  const parts = sourceParts.map((part): AgentMessageContentPart => {
+    if (part.type === "text") {
+      return { type: "text", text: part.text };
+    }
+    return {
+      type: "attachment",
+      name: part.attachment.name,
+      path: part.attachment.path,
+      kind: part.attachment.kind,
+      ...(part.attachment.contextText === undefined ? {} : { text: part.attachment.contextText }),
+    };
+  });
+  return parts.length === 0 ? undefined : parts;
+};
+
+const createOptimisticUserMessage = (
+  input: RuntimeTurnInput,
+  tab: LyraThreadTab | null
+): OptimisticUserMessage => {
+  const clientRequestId = createOptimisticMessageId();
+  const targetSessionId = tab?.threadId ?? null;
+  const tabId = tab?.tabId ?? clientRequestId;
+  const content = input.text.trim();
+  const contentParts = runtimeInputToContentParts(input);
+  return {
+    id: clientRequestId,
+    clientRequestId,
+    tabId,
+    targetSessionId,
+    sessionId: targetSessionId ?? tabId,
+    role: "user",
+    content,
+    displayContent: content,
+    ...(contentParts === undefined ? {} : { contentParts }),
+    createdAt: Date.now(),
+    optimistic: true,
+  };
 };
 
 const streamEventToRuntimeEvent = (event: AgentRuntimeStreamEvent): AgentRuntimeEvent => {
@@ -364,6 +422,8 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
   const [isLoadingThread, setIsLoadingThread] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [optimisticUserMessages, setOptimisticUserMessages] =
+    useState<readonly OptimisticUserMessage[]>(emptyOptimisticMessages);
   const activeTabRef = useRef<LyraThreadTab | null>(null);
 
   const activeTab = useMemo(
@@ -463,9 +523,9 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
       return;
     }
     return api.onAgentEvent((event: AgentRuntimeStreamEvent) => {
-      if (event.eventType === "model_text_delta") {
+      if (event.eventType === "model_stream_delta") {
         const delta = event.payload !== null && typeof event.payload === "object"
-          ? (event.payload as { readonly delta?: unknown }).delta
+          ? (event.payload as { readonly text?: unknown }).text
           : null;
         if (typeof delta === "string" && event.runtimeTurnId !== undefined) {
           setStreamingTurnId(event.runtimeTurnId);
@@ -474,12 +534,26 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
             next.set(event.runtimeTurnId!, `${next.get(event.runtimeTurnId!) ?? ""}${delta}`);
             return next;
           });
+          appendRuntimeEvent(streamEventToRuntimeEvent(event));
+        }
+        return;
+      }
+      if (event.eventType === "model_stream_reset") {
+        if (event.runtimeTurnId !== undefined) {
+          setStreamingTextByTurn((current) => {
+            const next = new Map(current);
+            next.delete(event.runtimeTurnId!);
+            return next;
+          });
+          setStreamingTurnId((current) => current === event.runtimeTurnId ? null : current);
+          appendRuntimeEvent(streamEventToRuntimeEvent(event));
         }
         return;
       }
       if (
         event.eventType === "runtime_turn_completed"
         || event.eventType === "runtime_turn_cancelled"
+        || event.eventType === "runtime_error"
         || event.eventType === "model_message_end"
       ) {
         if (event.runtimeTurnId !== undefined) {
@@ -570,6 +644,7 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
       ...(options?.profileId === undefined ? {} : { profileId: options.profileId }),
       projectRoot: options?.cwd ?? null,
       cwd: options?.cwd ?? null,
+      ...(options?.executionTarget === undefined ? {} : { executionTarget: options.executionTarget }),
       ...(options?.collaborationMode === undefined ? {} : { collaborationMode: options.collaborationMode }),
     });
     upsertDetail(detail);
@@ -653,6 +728,20 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     setIsSending(true);
     setRuntimeError(null);
     const activeTabSnapshot = activeTabRef.current;
+    const optimisticMessage = createOptimisticUserMessage(input, activeTabSnapshot);
+    setOptimisticUserMessages((current) => [...current, optimisticMessage]);
+    setTabState((current) => ({
+      ...current,
+      tabs: current.tabs.map((tab) =>
+        tab.tabId === activeTabSnapshot?.tabId
+          ? {
+              ...tab,
+              updatedAt: optimisticMessage.createdAt,
+              status: "running",
+            }
+          : tab
+      ),
+    }));
     try {
       const result = await api.sendTurn({
         sessionId: activeTabSnapshot?.threadId ?? null,
@@ -681,7 +770,18 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
       }));
     } catch (error) {
       setRuntimeError(error instanceof Error ? error.message : String(error));
+      setTabState((current) => ({
+        ...current,
+        tabs: current.tabs.map((tab) =>
+          tab.tabId === activeTabSnapshot?.tabId
+            ? { ...tab, status: "error" }
+            : tab
+        ),
+      }));
     } finally {
+      setOptimisticUserMessages((current) =>
+        current.filter((message) => message.clientRequestId !== optimisticMessage.clientRequestId)
+      );
       setIsSending(false);
     }
   }, [desktopApi?.ai, upsertDetail]);
@@ -778,6 +878,10 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
   const activeThread = activeThreadId === null
     ? null
     : threads.find((thread) => thread.id === activeThreadId) ?? (activeDetail === null ? null : detailToThread(activeDetail));
+  const activeOptimisticUserMessages = optimisticUserMessages.filter((message) =>
+    message.tabId === activeTab?.tabId
+    || (activeThreadId !== null && message.targetSessionId === activeThreadId)
+  );
   const streamingAssistantText = streamingTurnId === null ? "" : streamingTextByTurn.get(streamingTurnId) ?? "";
   const isStreamActive = streamingTurnId !== null && streamingAssistantText.length >= 0;
 
@@ -790,7 +894,7 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     activeDetail,
     planModeEnabled,
     followEnabled,
-    optimisticUserMessages: emptyOptimisticMessages,
+    optimisticUserMessages: activeOptimisticUserMessages,
     isLoadingThreads,
     isLoadingThread,
     isSending,
@@ -802,6 +906,7 @@ export const useLyraThreadRuntime = ({ desktopApi }: UseLyraThreadRuntimeOptions
     activeDetail,
     activeThread,
     activeThreadId,
+    activeOptimisticUserMessages,
     followEnabled,
     isLoadingThread,
     isLoadingThreads,

@@ -15,7 +15,8 @@ import {
   ChromeIconButton,
   ChromeTabButton,
   ChromeTabFrame,
-  ChromeTabShape
+  ChromeTabShape,
+  cx
 } from "../ui-primitives";
 import { renderWorkspaceAppIcon } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
@@ -32,6 +33,7 @@ type BrowserTabStripViewProps = Pick<
   | "canGoBack"
   | "canGoForward"
   | "openNewTabLabel"
+  | "navigationControl"
   | "onGoBack"
   | "onGoForward"
   | "onToggleStackedMode"
@@ -89,6 +91,7 @@ export const BrowserTabStripView = ({
   canGoBack,
   canGoForward,
   openNewTabLabel,
+  navigationControl,
   onGoBack,
   onGoForward,
   onToggleStackedMode,
@@ -98,7 +101,11 @@ export const BrowserTabStripView = ({
 }: BrowserTabStripViewProps) => (
   <nav
     ref={runtime.navRef}
-    className={renderModel.navClassName}
+    className={cx(
+      renderModel.navClassName,
+      navigationControl !== undefined && navigationControl !== null
+        && "lyra-browser-tabs-with-navigation"
+    )}
     style={renderModel.navStyle}
     aria-label="browser-tabs"
     onDragOver={runtime.onTabBarDragOver}
@@ -197,14 +204,19 @@ export const BrowserTabStripView = ({
           ) : null}
         </ChromeTabFrame>
       ))}
+      <ChromeIconButton
+        className="lyra-browser-tab-add"
+        aria-label={openNewTabLabel}
+        onClick={onOpenNewTab}
+      >
+        <Plus size={14} />
+      </ChromeIconButton>
     </div>
-    <ChromeIconButton
-      className="lyra-browser-tab-add"
-      aria-label={openNewTabLabel}
-      onClick={onOpenNewTab}
-    >
-      <Plus size={14} />
-    </ChromeIconButton>
+    {navigationControl !== undefined && navigationControl !== null ? (
+      <div className="lyra-browser-tabs-navigation">
+        {navigationControl}
+      </div>
+    ) : null}
     {renderModel.preview !== null ? (
       <div
         className="lyra-browser-tab-right-drag-preview-shell"

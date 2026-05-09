@@ -30,6 +30,10 @@ fn seed_turn(store: &AiStore, workspace_root: &str) -> (String, String, String) 
         id: new_id("session"),
         title: "Test".to_string(),
         profile_id: Some("profile-test".to_string()),
+        model_id: None,
+        system_prompt: None,
+        permission_mode: None,
+        execution_target: None,
         project_root: Some(workspace_root.to_string()),
         project_name: Some("workspace".to_string()),
         collaboration_mode: "default".to_string(),
@@ -44,6 +48,7 @@ fn seed_turn(store: &AiStore, workspace_root: &str) -> (String, String, String) 
         status: "running".to_string(),
         collaboration_mode: Some("default".to_string()),
         permission_mode: "sandbox".to_string(),
+        execution_target: "host".to_string(),
         error_code: None,
         error_message: None,
         usage: None,
@@ -557,6 +562,7 @@ fn long_work_turn_loop_suppresses_premature_assistant_message() {
     let refs = seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_SHELL_RUN_COMMAND);
     seed_run_for_refs(&store, &session_id, &turn_id, &user_message_id, &refs);
 
+    let mut invocations = 0;
     run_turn_worker_inner(
         &store,
         test_config(),
@@ -564,12 +570,14 @@ fn long_work_turn_loop_suppresses_premature_assistant_message() {
         &turn_id,
         None,
         PermissionMode::FullAccess,
+        ExecutionTarget::Host,
         Arc::new(AtomicBool::new(false)),
-        |_config, _messages, _cancel| {
-            Ok(ModelResponse {
-                text: "Done. Everything is complete.".to_string(),
-                usage: None,
-            })
+        |_config, _messages, _tools, _cancel, _on_delta, _on_retry| {
+            invocations += 1;
+            Ok(ChatResponse::text(
+                "Done. Everything is complete.".to_string(),
+                None,
+            ))
         },
     )
     .expect("worker");
@@ -582,21 +590,90 @@ fn long_work_turn_loop_suppresses_premature_assistant_message() {
         .messages
         .iter()
         .all(|message| message.role != "assistant"));
+    assert_eq!(invocations, 2);
     assert_eq!(
         detail
             .durable_work_summary
             .as_ref()
             .expect("work summary")
-            .continuation
-            .as_ref()
-            .expect("continuation")
             .status,
-        "queued"
+        "stuck"
     );
+    assert!(detail
+        .runtime_events
+        .iter()
+        .any(|event| event.phase == "long_work.auto_resuming"));
     assert!(detail.runtime_events.iter().any(|event| {
         event.phase == "runtime_turn_completed"
             && event.payload["outputSuppressed"].as_bool() == Some(true)
     }));
+}
+
+#[test]
+fn long_work_allows_many_tool_calls_before_completion_candidate() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        temp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .expect("cargo");
+    let store =
+        AiStore::open(Some(temp.path().join("ai").to_string_lossy().as_ref())).expect("store");
+    let (session_id, turn_id, user_message_id) =
+        seed_turn(&store, temp.path().to_string_lossy().as_ref());
+    let refs = seed_todo_for_tool(&store, &session_id, &turn_id, TOOL_SHELL_RUN_COMMAND);
+    seed_run_for_refs(&store, &session_id, &turn_id, &user_message_id, &refs);
+    let mut invocations = 0;
+
+    run_turn_worker_inner(
+        &store,
+        test_config(),
+        &session_id,
+        &turn_id,
+        None,
+        PermissionMode::FullAccess,
+        ExecutionTarget::Host,
+        Arc::new(AtomicBool::new(false)),
+        |_config, _messages, _tools, _cancel, _on_delta, _on_retry| {
+            invocations += 1;
+            if invocations <= 7 {
+                return Ok(ChatResponse {
+                    text: String::new(),
+                    usage: None,
+                    tool_calls: vec![ToolCall {
+                        id: format!("call-terminal-{invocations}"),
+                        name: "terminal".to_string(),
+                        arguments: json!({
+                            "mode": "argv",
+                            "argv": ["true"],
+                            "cwd": ".",
+                            "purpose": "Verify long work can keep using tools"
+                        }),
+                    }],
+                });
+            }
+            Ok(ChatResponse::text("Done.".to_string(), None))
+        },
+    )
+    .expect("worker");
+
+    let detail = store
+        .read_session_detail(&session_id)
+        .expect("detail")
+        .expect("session");
+    assert_eq!(invocations, 8);
+    assert_eq!(
+        detail
+            .runtime_events
+            .iter()
+            .filter(|event| event.phase == "tool_operation_completed")
+            .count(),
+        7
+    );
+    assert!(detail
+        .runtime_events
+        .iter()
+        .all(|event| event.phase != "long_work.continuation_queued"));
 }
 
 #[test]

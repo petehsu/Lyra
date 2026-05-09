@@ -114,6 +114,7 @@ const draft: SettingsAiDraft = {
 
 const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel => ({
   isSaving: false,
+  errorMessage: null,
   profiles: [],
   presetSections: [
     {
@@ -123,6 +124,7 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
     }
   ],
   selectedProfileId: null,
+  defaultProfileId: null,
   defaultProviderId: null,
   defaultModelNames: [],
   selectedPresetId: "openai",
@@ -141,6 +143,7 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
   deleteProfile: vi.fn(),
   deleteProviderModels: vi.fn(),
   deleteConfiguredModel: vi.fn(),
+  setDefaultProfile: vi.fn(),
   ...overrides
 });
 
@@ -199,6 +202,16 @@ describe("SettingsAiView", () => {
     expect(model.saveProfile).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Test connection" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Clear key" })).not.toBeInTheDocument();
+  });
+
+  test("shows profile save errors inline", () => {
+    const model = createModel({
+      errorMessage: "Could not resolve host"
+    });
+
+    render(<SettingsAiView labels={labels} model={model} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not resolve host");
   });
 
   test("shows the custom model id input only in custom mode", () => {
@@ -262,6 +275,7 @@ describe("SettingsAiView", () => {
 
     render(<SettingsAiView labels={labels} model={model} />);
 
+    expect(screen.queryByRole("button", { name: "Add profile" })).not.toBeInTheDocument();
     expect(screen.getByText("saved-model-a")).toBeInTheDocument();
     expect(screen.getByText("Saved B")).toBeInTheDocument();
     expect(screen.queryByText("claude-a")).not.toBeInTheDocument();

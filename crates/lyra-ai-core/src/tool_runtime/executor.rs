@@ -1,9 +1,12 @@
 use crate::tool_runtime::catalog::{
-    self, GitDiffArgs, GitStatusArgs, ProposePatchArgs, ReadFileArgs, ReadRangeArgs,
-    SearchCodeArgs, SearchFilesArgs, SearchTextArgs, SearchToolsArgs, StatPathArgs,
+    self, GitDiffArgs, GitStatusArgs, ListCatalogArgs, ProposePatchArgs, ReadFileArgs,
+    ReadRangeArgs, SearchCodeArgs, SearchFilesArgs, SearchTextArgs, SearchToolsArgs, StatPathArgs,
     WalkDirectoryArgs, TOOL_CODE_SEARCH_CODE, TOOL_FS_LIST_FILES, TOOL_FS_PROPOSE_PATCH,
     TOOL_FS_READ_FILE, TOOL_FS_READ_RANGE, TOOL_FS_SEARCH_FILES, TOOL_FS_SEARCH_TEXT,
-    TOOL_FS_STAT_PATH, TOOL_FS_WALK_DIRECTORY, TOOL_GIT_DIFF, TOOL_GIT_STATUS, TOOL_SEARCH,
+    TOOL_FS_STAT_PATH, TOOL_FS_WALK_DIRECTORY, TOOL_GIT_DIFF, TOOL_GIT_STATUS,
+    TOOL_MEMORY_ASSEMBLE_CONTEXT, TOOL_MEMORY_AUDIT_MEMORY, TOOL_MEMORY_CREATE_CONFLICT_CANDIDATE,
+    TOOL_MEMORY_GET_CONTEXT_SNAPSHOT, TOOL_MEMORY_PROPOSE_MEMORY, TOOL_MEMORY_SEARCH_FROZEN,
+    TOOL_MEMORY_SEARCH_SESSION, TOOL_MEMORY_SEARCH_SHARED, TOOL_MEMORY_UPDATE_MEMORY, TOOL_SEARCH,
     TOOL_SHELL_RUN_COMMAND,
 };
 use crate::tool_runtime::filesystem;
@@ -65,7 +68,8 @@ pub fn tool_runtime_prompt(workspace_root: Option<&str>) -> String {
 - To call ToolFS, respond with exactly one JSON object and no Markdown:
 {{"schemaVersion":"v1","kind":"tool_operation","opId":"short-unique-id","op":"list","path":"/tools"}}
 - Real tools are addressed only by /tools/... paths discovered from ToolFS results.
-- The runtime requires inspect on a concrete /tools/... tool path before run in the same turn.
+- The runtime requires inspect on a concrete /tools/... tool path before run in the same turn, except /tools/search which only discovers tools.
+- Use list /tools/manifest with optional args {{"limit": number, "offset": number}} for paged registry manifests.
 - Tool results may include resultRef and continuation fields such as nextOffset, nextOffsetBytes, or nextStartLine.
 - You may propose a patch preview through /tools/filesystem/propose_patch when requested.
 - You may request applying an existing patch proposal artifact through /tools/filesystem/apply_patch. The runtime accepts only artifactId or patchRef from the current session, never arbitrary patch text. In sandbox permission mode this returns approval required instead of writing files; in full_access permission mode the runtime may auto-approve and apply.
@@ -82,7 +86,14 @@ fn execute_tool_result(
 ) -> Result<ToolResultEnvelope> {
     match operation.op {
         ToolFsOp::List => {
-            let content = catalog::list_catalog_path(&operation.path)?;
+            let content = if operation.args.is_null() {
+                catalog::list_catalog_path(&operation.path)?
+            } else {
+                catalog::list_catalog_path_with_args(
+                    &operation.path,
+                    catalog::parse_args::<ListCatalogArgs>(&operation.args)?,
+                )?
+            };
             Ok(ToolResultEnvelope::completed(
                 operation,
                 format!("Listed {}", operation.path),
@@ -184,6 +195,30 @@ fn run_tool_path(
             operation,
             catalog::parse_args::<GitDiffArgs>(&operation.args)?,
         ),
+        TOOL_MEMORY_SEARCH_SESSION
+        | TOOL_MEMORY_SEARCH_SHARED
+        | TOOL_MEMORY_SEARCH_FROZEN
+        | TOOL_MEMORY_GET_CONTEXT_SNAPSHOT
+        | TOOL_MEMORY_ASSEMBLE_CONTEXT
+        | TOOL_MEMORY_PROPOSE_MEMORY
+        | TOOL_MEMORY_UPDATE_MEMORY
+        | TOOL_MEMORY_CREATE_CONFLICT_CANDIDATE
+        | TOOL_MEMORY_AUDIT_MEMORY => Err(anyhow!(
+            "{} requires Agent runtime memory context",
+            operation.path
+        )),
+        path if path.starts_with("/tools/clarification/") => Err(anyhow!(
+            "{} requires Agent runtime clarification context",
+            operation.path
+        )),
+        path if path.starts_with("/tools/security/") => Err(anyhow!(
+            "{} requires Agent runtime security context",
+            operation.path
+        )),
+        path if path.starts_with("/tools/capsule/") => Err(anyhow!(
+            "{} requires Agent runtime capsule context",
+            operation.path
+        )),
         _ => Err(anyhow!(
             "ToolFS runnable tool not found: {}",
             operation.path

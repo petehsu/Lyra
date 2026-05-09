@@ -150,6 +150,7 @@ pub struct LongWorkCompletionCandidateInput {
     pub session_id: String,
     pub runtime_turn_id: Option<String>,
     pub candidate_text: String,
+    pub stop_cause: Option<String>,
 }
 
 #[derive(Clone, Debug)]

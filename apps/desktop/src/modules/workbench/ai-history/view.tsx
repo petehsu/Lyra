@@ -16,6 +16,7 @@ export const AiHistorySurface = (surfaceProps: AiHistorySurfaceProps) => {
     threadPreviewEmptyLabel: surfaceProps.threadPreviewEmptyLabel
   });
   const totalThreadCount = runtime.activeThreads.length + runtime.archivedThreads.length;
+  const selectHistoryScope = runtime.actions.selectScope;
 
   useEffect(() => {
     if (
@@ -57,7 +58,7 @@ export const AiHistorySurface = (surfaceProps: AiHistorySurfaceProps) => {
                   : "lyra-titlebar-context-text-button"
               }
               onClick={() => {
-                runtime.actions.selectScope(scope);
+                selectHistoryScope(scope);
               }}
             >
               {label}
@@ -67,7 +68,19 @@ export const AiHistorySurface = (surfaceProps: AiHistorySurfaceProps) => {
         </div>
       )
     }),
-    [runtime, surfaceProps]
+    [
+      runtime.activeProjectGroupCount,
+      runtime.activeThreads.length,
+      runtime.archivedProjectGroupCount,
+      runtime.archivedThreads.length,
+      runtime.scope,
+      selectHistoryScope,
+      surfaceProps.archivedConversationLabel,
+      surfaceProps.archivedProjectLabel,
+      surfaceProps.scopeGlobalLabel,
+      surfaceProps.scopeProjectLabel,
+      surfaceProps.title
+    ]
   );
   useWorkbenchTitlebarContribution(titlebarContribution);
 

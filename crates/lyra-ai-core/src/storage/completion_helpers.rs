@@ -1,4 +1,8 @@
 use super::*;
+use crate::tool_runtime::catalog::{TOOL_FS_APPLY_PATCH, TOOL_FS_ROLLBACK_PATCH};
+use crate::tool_runtime::operation::TOOL_APPROVAL_REQUIRED;
+
+const TOOL_AGENT_WRITE_FILE: &str = "/tools/agent/write_file";
 
 struct TodoAuditSnapshot {
     missing_todo_item_ids: Vec<String>,
@@ -34,10 +38,13 @@ pub(super) fn upsert_completion_audit_and_delivery_proof(
     let execution = read_execution_audit(conn, session_id, execution_run_id)?;
     let verification_plan = read_latest_verification_plan_audit(conn, session_id)?;
     let pending_approval_ticket_ids = read_pending_approval_ticket_ids(conn, session_id)?;
+    let failed_tool_operation_refs =
+        read_unresolved_failed_write_operation_refs(conn, session_id, turn_id)?;
     if todo.is_none()
         && execution.is_none()
         && verification_plan.is_none()
         && pending_approval_ticket_ids.is_empty()
+        && failed_tool_operation_refs.is_empty()
     {
         return Ok(false);
     }
@@ -111,6 +118,7 @@ pub(super) fn upsert_completion_audit_and_delivery_proof(
     let has_not_run = not_run.is_empty() == false || not_run_plan_records.is_empty() == false;
     let has_failure = failed_runs.is_empty() == false
         || failed_todo_item_ids.is_empty() == false
+        || failed_tool_operation_refs.is_empty() == false
         || execution_failed;
     let has_blocker = blocked_runs.is_empty() == false
         || pending_runs.is_empty() == false
@@ -161,6 +169,7 @@ pub(super) fn upsert_completion_audit_and_delivery_proof(
         not_run.len() + not_run_plan_records.len(),
         missing_todo_item_ids.len(),
         pending_approval_ticket_ids.len(),
+        failed_tool_operation_refs.len(),
     );
     let completion_audit_id = new_id("completion_audit");
     conn.execute(
@@ -186,6 +195,7 @@ pub(super) fn upsert_completion_audit_and_delivery_proof(
                 "notRunVerificationRunIds": not_run.clone(),
                 "missingRequiredVerificationCount": missing_required_verification_count,
                 "pendingApprovalTicketIds": pending_approval_ticket_ids.clone(),
+                "failedToolOperationRefs": failed_tool_operation_refs.clone(),
                 "execution": execution.as_ref().map(|execution| json!({
                     "executionRunId": execution.execution_run_id.clone(),
                     "status": execution.status.clone(),
@@ -235,6 +245,7 @@ pub(super) fn upsert_completion_audit_and_delivery_proof(
         "pendingVerificationRunIds": pending_runs,
         "notRunVerificationRunIds": not_run,
         "pendingApprovalTicketIds": pending_approval_ticket_ids,
+        "failedToolOperationRefs": failed_tool_operation_refs,
         "missingTodoItemIds": missing_todo_item_ids,
         "missingEvidenceRefs": missing_evidence_refs,
         "missingRequiredVerificationCount": missing_required_verification_count,
@@ -441,6 +452,94 @@ pub(super) fn read_pending_approval_ticket_ids(
     Ok(result)
 }
 
+fn read_unresolved_failed_write_operation_refs(
+    conn: &Connection,
+    session_id: &str,
+    turn_id: Option<&str>,
+) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT event_type, payload_json
+         FROM runtime_event
+         WHERE session_id = ?1
+           AND (?2 IS NULL OR runtime_turn_id = ?2)
+           AND event_type IN ('tool_operation_failed', 'tool_operation_completed')
+         ORDER BY sequence ASC",
+    )?;
+    let rows = stmt.query_map(params![session_id, turn_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut unresolved: Vec<(String, String)> = Vec::new();
+    for row in rows {
+        let (event_type, payload_json) = row?;
+        let payload = serde_json::from_str::<Value>(&payload_json).unwrap_or_else(|_| json!({}));
+        let Some(tool_path) = payload
+            .pointer("/operation/path")
+            .and_then(Value::as_str)
+            .and_then(trim_to_string)
+        else {
+            continue;
+        };
+        if is_write_delivery_tool(&tool_path) == false {
+            continue;
+        }
+        let key = write_delivery_operation_key(&payload, &tool_path);
+        if event_type == "tool_operation_completed" {
+            unresolved.retain(|(existing, _)| existing != &key);
+            continue;
+        }
+        if payload.pointer("/result/errorCode").and_then(Value::as_str)
+            == Some(TOOL_APPROVAL_REQUIRED)
+        {
+            continue;
+        }
+        let reference = write_delivery_operation_ref(&payload, &tool_path);
+        if unresolved
+            .iter()
+            .all(|(existing, _)| existing.as_str() != key.as_str())
+        {
+            unresolved.push((key, reference));
+        }
+    }
+    Ok(unresolved
+        .into_iter()
+        .map(|(_, reference)| reference)
+        .collect())
+}
+
+fn is_write_delivery_tool(tool_path: &str) -> bool {
+    matches!(
+        tool_path,
+        TOOL_AGENT_WRITE_FILE | TOOL_FS_APPLY_PATCH | TOOL_FS_ROLLBACK_PATCH
+    )
+}
+
+fn write_delivery_operation_key(payload: &Value, tool_path: &str) -> String {
+    let target_path = payload
+        .pointer("/operation/args/path")
+        .and_then(Value::as_str)
+        .and_then(trim_to_string);
+    if let Some(target_path) = target_path {
+        return format!("{tool_path}:{target_path}");
+    }
+    write_delivery_operation_ref(payload, tool_path)
+}
+
+fn write_delivery_operation_ref(payload: &Value, tool_path: &str) -> String {
+    let op_id = payload
+        .pointer("/operation/opId")
+        .and_then(Value::as_str)
+        .and_then(trim_to_string)
+        .unwrap_or_else(|| "unknown".to_string());
+    let target_path = payload
+        .pointer("/operation/args/path")
+        .and_then(Value::as_str)
+        .and_then(trim_to_string);
+    if let Some(target_path) = target_path {
+        return format!("{tool_path}:{target_path}:{op_id}");
+    }
+    format!("{tool_path}:{op_id}")
+}
+
 pub(super) fn read_latest_execution_run_id(
     conn: &Connection,
     session_id: &str,
@@ -522,11 +621,12 @@ pub(super) fn delivery_audit_summary_text(
     not_run_count: usize,
     missing_todo_count: usize,
     pending_approval_count: usize,
+    failed_tool_operation_count: usize,
 ) -> String {
     match status {
         "passed" => "Completion audit passed.".to_string(),
         "failed" => format!(
-            "Completion audit failed: {failed_verification_count} failed verification run(s)."
+            "Completion audit failed: {failed_verification_count} failed verification run(s) and {failed_tool_operation_count} failed workspace write operation(s)."
         ),
         "blocked" => format!(
             "Completion audit blocked: {missing_todo_count} todo item(s), {blocked_verification_count} verification run(s), and {pending_approval_count} approval(s) still need resolution."

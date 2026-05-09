@@ -135,7 +135,9 @@ import type {
   AgentCreateTodoResult,
   AgentCreateSessionRequest,
   AgentFollowSummary,
+  AgentExecutionTarget,
   AgentPauseFollowRequest,
+  AgentPermissionMode,
   AgentPreviewMessageRollbackRequest,
   AgentPreviewMessageRollbackResult,
   AgentReadArtifactRequest,
@@ -156,7 +158,37 @@ import type {
   AgentSendTurnResult,
   AgentSession,
   AgentSessionDetail,
-  AgentUpdateSessionRequest
+  AgentUpdateSessionRequest,
+  AgentVmApplyInheritanceProfileRequest,
+  AgentVmApplyInheritanceProfileResult,
+  AgentVmAttachRequest,
+  AgentVmBindingListRequest,
+  AgentVmBindingListResult,
+  AgentVmBindingResult,
+  AgentVmCreateRequest,
+  AgentVmCreateResult,
+  AgentVmConsoleConnectRequest,
+  AgentVmConsoleConnectResult,
+  AgentVmCreateInheritanceProfileRequest,
+  AgentVmForkRequest,
+  AgentVmImageDownloadRequest,
+  AgentVmImageDownloadResult,
+  AgentVmImageImportRequest,
+  AgentVmImageImportResult,
+  AgentVmImageListRequest,
+  AgentVmImageListResult,
+  AgentVmInheritanceProfileResult,
+  AgentVmLifecycleResult,
+  AgentVmListRequest,
+  AgentVmListResult,
+  AgentVmPasswordMetadataRequest,
+  AgentVmPasswordMetadataResult,
+  AgentVmPasswordRevealRequest,
+  AgentVmPasswordRevealResult,
+  AgentVmReadBindingRequest,
+  AgentVmRevokeBindingRequest,
+  AgentVmStatusRequest,
+  AgentVmTakeoverRequest
 } from "./agent";
 import type {
   InstalledUiuxPack,
@@ -185,7 +217,9 @@ export type {
   AgentCreateTodoResult,
   AgentCreateSessionRequest,
   AgentFollowSummary,
+  AgentExecutionTarget,
   AgentPauseFollowRequest,
+  AgentPermissionMode,
   AgentPreviewMessageRollbackRequest,
   AgentPreviewMessageRollbackResult,
   AgentReadArtifactRequest,
@@ -203,7 +237,45 @@ export type {
   AgentSendTurnResult,
   AgentSession,
   AgentSessionDetail,
-  AgentUpdateSessionRequest
+  AgentUpdateSessionRequest,
+  AgentVmApplyInheritanceProfileRequest,
+  AgentVmApplyInheritanceProfileResult,
+  AgentVmAttachRequest,
+  AgentVmBinding,
+  AgentVmBindingListRequest,
+  AgentVmBindingListResult,
+  AgentVmBindingResult,
+  AgentVmCreateRequest,
+  AgentVmCreateResult,
+  AgentVmConsoleConnectRequest,
+  AgentVmConsoleConnectResult,
+  AgentVmCreateInheritanceProfileRequest,
+  AgentVmForkRequest,
+  AgentVmImageDescriptor,
+  AgentVmImageDownloadRequest,
+  AgentVmImageDownloadResult,
+  AgentVmImageEntry,
+  AgentVmImageImportRequest,
+  AgentVmImageImportResult,
+  AgentVmImageListRequest,
+  AgentVmImageListResult,
+  AgentVmImageRecord,
+  AgentVmImageUrlDescriptor,
+  AgentVmInheritanceProfile,
+  AgentVmInheritanceProfileResult,
+  AgentVmLifecycleResult,
+  AgentVmListRequest,
+  AgentVmListResult,
+  AgentVmPasswordMetadata,
+  AgentVmPasswordMetadataRequest,
+  AgentVmPasswordMetadataResult,
+  AgentVmPasswordRevealRequest,
+  AgentVmPasswordRevealResult,
+  AgentVmReadBindingRequest,
+  AgentVmRevokeBindingRequest,
+  AgentVmStatusRequest,
+  AgentVmSummary,
+  AgentVmTakeoverRequest
 } from "./agent";
 export type {
   AiDiscoverModelsRequest,
@@ -544,6 +616,25 @@ export const LYRA_CHANNELS = {
   aiReadArtifact: "lyra:ai/artifact/read",
   aiApplyPatch: "lyra:ai/patch/apply",
   aiResolveApproval: "lyra:ai/approval/resolve",
+  aiAgentVmList: "lyra:ai/agent-vm/list",
+  aiAgentVmListImages: "lyra:ai/agent-vm/images/list",
+  aiAgentVmDownloadImage: "lyra:ai/agent-vm/image/download",
+  aiAgentVmImportImage: "lyra:ai/agent-vm/image/import",
+  aiAgentVmCreate: "lyra:ai/agent-vm/create",
+  aiAgentVmListBindings: "lyra:ai/agent-vm/bindings/list",
+  aiAgentVmReadBinding: "lyra:ai/agent-vm/binding/read",
+  aiAgentVmAttach: "lyra:ai/agent-vm/attach",
+  aiAgentVmTakeover: "lyra:ai/agent-vm/takeover",
+  aiAgentVmFork: "lyra:ai/agent-vm/fork",
+  aiAgentVmCreateInheritanceProfile: "lyra:ai/agent-vm/inheritance/create",
+  aiAgentVmApplyInheritanceProfile: "lyra:ai/agent-vm/inheritance/apply",
+  aiAgentVmRevokeBinding: "lyra:ai/agent-vm/binding/revoke",
+  aiAgentVmStatus: "lyra:ai/agent-vm/status",
+  aiAgentVmStart: "lyra:ai/agent-vm/start",
+  aiAgentVmStop: "lyra:ai/agent-vm/stop",
+  aiAgentVmPasswordMetadata: "lyra:ai/agent-vm/password/metadata",
+  aiAgentVmPasswordReveal: "lyra:ai/agent-vm/password/reveal",
+  aiAgentVmConsoleConnect: "lyra:ai/agent-vm/console/connect",
   aiEvent: "lyra:ai/event",
   workbenchObservationQuery: "lyra:workbench-observation/query",
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
@@ -1633,6 +1724,39 @@ export type AiApi = {
   readonly readArtifact: (request: AgentReadArtifactRequest) => Promise<AgentArtifactContent>;
   readonly applyPatch: (request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>;
   readonly resolveApproval: (request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>;
+  readonly listAgentVms: (request?: AgentVmListRequest) => Promise<AgentVmListResult>;
+  readonly listAgentVmImages: (request?: AgentVmImageListRequest) => Promise<AgentVmImageListResult>;
+  readonly downloadAgentVmImage: (
+    request: AgentVmImageDownloadRequest
+  ) => Promise<AgentVmImageDownloadResult>;
+  readonly importAgentVmImage: (request: AgentVmImageImportRequest) => Promise<AgentVmImageImportResult>;
+  readonly createAgentVm: (request: AgentVmCreateRequest) => Promise<AgentVmCreateResult>;
+  readonly listAgentVmBindings: (
+    request?: AgentVmBindingListRequest
+  ) => Promise<AgentVmBindingListResult>;
+  readonly readAgentVmBinding: (request: AgentVmReadBindingRequest) => Promise<AgentVmBindingResult>;
+  readonly attachAgentVm: (request: AgentVmAttachRequest) => Promise<AgentVmBindingResult>;
+  readonly takeoverAgentVm: (request: AgentVmTakeoverRequest) => Promise<AgentVmBindingResult>;
+  readonly forkAgentVm: (request: AgentVmForkRequest) => Promise<AgentVmBindingResult>;
+  readonly createAgentVmInheritanceProfile: (
+    request: AgentVmCreateInheritanceProfileRequest
+  ) => Promise<AgentVmInheritanceProfileResult>;
+  readonly applyAgentVmInheritanceProfile: (
+    request: AgentVmApplyInheritanceProfileRequest
+  ) => Promise<AgentVmApplyInheritanceProfileResult>;
+  readonly revokeAgentVmBinding: (request: AgentVmRevokeBindingRequest) => Promise<AgentVmBindingResult>;
+  readonly readAgentVmStatus: (request: AgentVmStatusRequest) => Promise<AgentVmLifecycleResult>;
+  readonly startAgentVm: (request: AgentVmStatusRequest) => Promise<AgentVmLifecycleResult>;
+  readonly stopAgentVm: (request: AgentVmStatusRequest) => Promise<AgentVmLifecycleResult>;
+  readonly readAgentVmPasswordMetadata: (
+    request: AgentVmPasswordMetadataRequest
+  ) => Promise<AgentVmPasswordMetadataResult>;
+  readonly revealAgentVmPassword: (
+    request: AgentVmPasswordRevealRequest
+  ) => Promise<AgentVmPasswordRevealResult>;
+  readonly connectAgentVmConsole: (
+    request: AgentVmConsoleConnectRequest
+  ) => Promise<AgentVmConsoleConnectResult>;
   readonly onAgentEvent: (listener: (event: AgentRuntimeStreamEvent) => void) => () => void;
 };
 

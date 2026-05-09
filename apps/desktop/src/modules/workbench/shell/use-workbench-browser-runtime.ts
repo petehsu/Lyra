@@ -45,10 +45,13 @@ type WorkbenchBrowserRuntimeModel = {
     options?: {
       readonly force?: boolean;
       readonly followUpFrames?: number;
+      readonly animatedLayoutDurationMs?: number;
+      readonly animatedLayoutSyncIntervalMs?: number;
     }
   ) => void;
   readonly onGoBack: () => void;
   readonly onGoForward: () => void;
+  readonly onReload: () => void;
 };
 
 const DEFAULT_PAGE_NAVIGATION_STATE: PageNavigationState = {
@@ -268,13 +271,21 @@ export const useWorkbenchBrowserRuntime = ({
     void desktopApi.workbenchBrowser.goForward({ tabId: activePageTabId });
   }, [activePageTabId, desktopApi]);
 
+  const onReload = useCallback(() => {
+    if (desktopApi === null || activePageTabId.length === 0) {
+      return;
+    }
+    void desktopApi.workbenchBrowser.reload({ tabId: activePageTabId });
+  }, [activePageTabId, desktopApi]);
+
   return {
     activePageRuntimeState,
     pageNavigationState,
     registerPageHost,
     scheduleBrowserLayoutSync,
     onGoBack,
-    onGoForward
+    onGoForward,
+    onReload
   };
 };
 

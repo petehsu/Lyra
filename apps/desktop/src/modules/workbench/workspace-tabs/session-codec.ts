@@ -19,8 +19,12 @@ const VALID_WORKSPACE_APP_IDS = new Set([
   "ai-mcp",
   "ai-skills",
   "ai-plugins",
+  "agent-vm",
   "notification-center"
 ] as const);
+
+const isVirtualToolPath = (value: string): boolean =>
+  value === "/tools" || value.startsWith("/tools/");
 
 export const createInitialRuntimeState = (
   config: WorkspaceTabsConfig
@@ -98,7 +102,11 @@ export const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
   const appId = sanitizeOptionalString(value.appId);
   const appInstanceId = sanitizeOptionalString(value.appInstanceId);
   const appIconKey = sanitizeOptionalString(value.appIconKey);
-  const filePath = sanitizeOptionalString(value.filePath);
+  const rawFilePath = sanitizeOptionalString(value.filePath);
+  const filePath =
+    rawFilePath === undefined || isVirtualToolPath(rawFilePath)
+      ? undefined
+      : rawFilePath;
   const fileSessionId = sanitizeOptionalString(value.fileSessionId);
   const isDirty = sanitizeOptionalBoolean(value.isDirty);
 

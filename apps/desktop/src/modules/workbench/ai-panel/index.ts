@@ -1,9 +1,11 @@
 export {
+  createAgentVmAppRequest,
   createAiHistoryAppRequest,
   createAiMcpAppRequest,
   createAiPlanReviewAppRequest,
   createAiPluginsAppRequest,
-  createAiSkillsAppRequest
+  createAiSkillsAppRequest,
+  readAgentVmSessionIdFromAppInstanceId
 } from "./service";
 export { renderAiPanelAppIcon, renderAiPanelTopbarIcon } from "./icon-registry";
 export { AiPanelSurface } from "./view";

@@ -116,6 +116,48 @@ fn is_execution_request(text: &str) -> bool {
     if normalized.is_empty() {
         return false;
     }
+    let greeting_markers = ["hi", "hello", "hey", "你好", "早上好", "晚上好"];
+    if greeting_markers
+        .iter()
+        .any(|marker| normalized == *marker || normalized.starts_with(&format!("{marker} ")))
+    {
+        return false;
+    }
+    let inspection_markers = [
+        "详细看一下",
+        "看一下这些",
+        "分析这些",
+        "梳理一下",
+        "了解这些",
+        "读一下这些",
+        "具体是什么",
+        "look through these",
+        "inspect these",
+        "analyze these",
+        "summarize these",
+        "read through these",
+    ];
+    let workspace_object_markers = [
+        "文档",
+        "文件",
+        "项目",
+        "代码",
+        "docs",
+        "documents",
+        "files",
+        "repo",
+        "codebase",
+        "workspace",
+    ];
+    if inspection_markers
+        .iter()
+        .any(|marker| normalized.contains(marker))
+        && workspace_object_markers
+            .iter()
+            .any(|marker| normalized.contains(marker))
+    {
+        return true;
+    }
     let question_markers = [
         "what is",
         "why",
@@ -132,13 +174,6 @@ fn is_execution_request(text: &str) -> bool {
         && question_markers
             .iter()
             .any(|marker| normalized.contains(marker))
-    {
-        return false;
-    }
-    let greeting_markers = ["hi", "hello", "hey", "你好", "早上好", "晚上好"];
-    if greeting_markers
-        .iter()
-        .any(|marker| normalized == *marker || normalized.starts_with(&format!("{marker} ")))
     {
         return false;
     }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { Undo2 } from "lucide-react";
 
 import type {
   AgentMessage,
@@ -53,7 +53,7 @@ export const RollbackMessageAction = ({
           });
       }}
     >
-      <RotateCcw size={12} aria-hidden="true" />
+      <Undo2 size={13} aria-hidden="true" />
     </button>
   );
 };

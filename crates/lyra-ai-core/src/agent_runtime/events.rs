@@ -156,8 +156,35 @@ pub(super) fn tool_operation_payload(operation: &ToolOperationEnvelope) -> Value
             Value::String(operation.schema_version.clone()),
         );
         object.insert("opId".to_string(), Value::String(operation.op_id.clone()));
+        if let Some(args) = follow_safe_operation_args(operation) {
+            object.insert("args".to_string(), args);
+        }
     }
     payload
+}
+
+fn follow_safe_operation_args(operation: &ToolOperationEnvelope) -> Option<Value> {
+    let args = operation.args.as_object()?;
+    let mut safe = serde_json::Map::new();
+    for key in [
+        "path",
+        "filePath",
+        "workspaceUri",
+        "toPath",
+        "line",
+        "startLine",
+        "endLine",
+        "column",
+    ] {
+        if let Some(value) = args.get(key) {
+            safe.insert(key.to_string(), value.clone());
+        }
+    }
+    if safe.is_empty() {
+        None
+    } else {
+        Some(Value::Object(safe))
+    }
 }
 
 pub(super) fn tool_result_payload(result: &ToolResultEnvelope, blob: &ToolResultBlobMeta) -> Value {
@@ -192,7 +219,54 @@ pub(super) fn emit_store_event(
     event_type: &str,
     payload: Value,
 ) -> Result<()> {
-    let event = store.append_event(session_id, turn_id, event_type, payload)?;
+    let stored_payload = stored_runtime_event_payload(&payload);
+    let mut event = store.append_event(session_id, turn_id, event_type, stored_payload)?;
+    event.payload = payload;
     emit_event(&event);
     Ok(())
+}
+
+fn stored_runtime_event_payload(payload: &Value) -> Value {
+    let Some(object) = payload.as_object() else {
+        return payload.clone();
+    };
+    if object.contains_key("detail") == false {
+        return payload.clone();
+    }
+    let mut stored = serde_json::Map::with_capacity(object.len() + 1);
+    for (key, value) in object {
+        if key == "detail" {
+            stored.insert(key.clone(), compact_session_detail_payload(value));
+        } else {
+            stored.insert(key.clone(), value.clone());
+        }
+    }
+    stored.insert("detailCompacted".to_string(), Value::Bool(true));
+    Value::Object(stored)
+}
+
+fn compact_session_detail_payload(detail: &Value) -> Value {
+    let session = detail.get("session");
+    json!({
+        "compacted": true,
+        "reason": "session_detail_not_stored_in_runtime_event",
+        "sessionId": session.and_then(|value| value.get("id")).cloned().unwrap_or(Value::Null),
+        "title": session.and_then(|value| value.get("title")).cloned().unwrap_or(Value::Null),
+        "updatedAt": session.and_then(|value| value.get("updatedAt")).cloned().unwrap_or(Value::Null),
+        "turnCount": detail
+            .get("turns")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0),
+        "messageCount": detail
+            .get("messages")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0),
+        "runtimeEventCount": detail
+            .get("runtimeEvents")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0),
+    })
 }

@@ -16,8 +16,26 @@ const electronMock = vi.hoisted(() => {
   };
 });
 
+const consoleBridgeMock = vi.hoisted(() => {
+  const open = vi.fn(async ({ vmId, vncPort }: { readonly vmId: string; readonly vncPort: number }) => ({
+    vmId,
+    vncPort,
+    url: `ws://127.0.0.1:59000/agent-vm/${vmId}`
+  }));
+  const dispose = vi.fn();
+  return {
+    open,
+    dispose,
+    createAgentVmConsoleBridge: vi.fn(() => ({ open, dispose }))
+  };
+});
+
 vi.mock("electron", () => ({
   ipcMain: electronMock.ipcMain
+}));
+
+vi.mock("../agent-vm-console", () => ({
+  createAgentVmConsoleBridge: consoleBridgeMock.createAgentVmConsoleBridge
 }));
 
 import { LYRA_CHANNELS } from "../../../shared/desktop-bridge";
@@ -29,6 +47,9 @@ describe("AI IPC bridge", () => {
     electronMock.handlers.clear();
     electronMock.ipcMain.handle.mockClear();
     electronMock.ipcMain.removeHandler.mockClear();
+    consoleBridgeMock.open.mockClear();
+    consoleBridgeMock.dispose.mockClear();
+    consoleBridgeMock.createAgentVmConsoleBridge.mockClear();
   });
 
   test("forwards Settings AI channels to runtime model config methods", async () => {
@@ -114,6 +135,24 @@ describe("AI IPC bridge", () => {
     ).resolves.toEqual({
       method: "agent.sessions.create",
       payload: { title: "New", storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiUpdateSession)?.({}, {
+        sessionId: "session-a",
+        modelId: "gpt-5.4",
+        systemPrompt: "Answer tersely.",
+        permissionMode: "full_access"
+      })
+    ).resolves.toEqual({
+      method: "agent.sessions.update",
+      payload: {
+        sessionId: "session-a",
+        modelId: "gpt-5.4",
+        systemPrompt: "Answer tersely.",
+        permissionMode: "full_access",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
     });
 
     await expect(
@@ -303,7 +342,7 @@ describe("AI IPC bridge", () => {
         decision: "deny"
       })
     ).resolves.toEqual({
-      method: "agent.approval.resolve",
+      method: "agent.approval.deny_and_resume_tool",
       payload: {
         sessionId: "session-a",
         approvalTicketId: "approval-1",
@@ -333,6 +372,7 @@ describe("AI IPC bridge", () => {
     expect(unsubscribe).toHaveBeenCalled();
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiSendTurn);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiCancelTurn);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiUpdateSession);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiCreateTodo);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiCreatePlan);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiResolvePlanReview);
@@ -344,5 +384,273 @@ describe("AI IPC bridge", () => {
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiExecuteMessageRollback);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiReadArtifact);
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiApplyPatch);
+  });
+
+  test("forwards Agent VM channels to runtime methods", async () => {
+    const request = vi.fn(async (method: string, payload: unknown) => ({
+      method,
+      payload
+    }));
+    const bridge = createAiIpcBridge({
+      runtimeClient: {
+        request,
+        subscribe: vi.fn(() => vi.fn()),
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-ai-test"
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmList)?.({}, { sessionId: "session-a" })
+    ).resolves.toEqual({
+      method: "agent.vm.list",
+      payload: { sessionId: "session-a", storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmListImages)?.({}, {})
+    ).resolves.toEqual({
+      method: "agent.vm.images.list",
+      payload: { storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmDownloadImage)?.({}, {
+        imageId: "lyra-agent-lite-ubuntu-24.04"
+      })
+    ).resolves.toEqual({
+      method: "agent.vm.image.download",
+      payload: {
+        imageId: "lyra-agent-lite-ubuntu-24.04",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmImportImage)?.({}, {
+        imageId: "debian-agent-minimal",
+        filePath: "/tmp/debian.qcow2"
+      })
+    ).resolves.toEqual({
+      method: "agent.vm.image.import",
+      payload: {
+        imageId: "debian-agent-minimal",
+        filePath: "/tmp/debian.qcow2",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmCreate)?.({}, {
+        sessionId: "session-a",
+        imageId: "debian-agent-minimal"
+      })
+    ).resolves.toEqual({
+      method: "agent.vm.create",
+      payload: {
+        sessionId: "session-a",
+        imageId: "debian-agent-minimal",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmListBindings)?.({}, { sessionId: "session-a" })
+    ).resolves.toEqual({
+      method: "agent.vm.bindings.list",
+      payload: { sessionId: "session-a", storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmReadBinding)?.({}, {
+        sessionId: "session-a",
+        vmId: "vm-a"
+      })
+    ).resolves.toEqual({
+      method: "agent.vm.binding.read",
+      payload: { sessionId: "session-a", vmId: "vm-a", storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmAttach)?.({}, {
+        sessionId: "session-a",
+        vmId: "vm-a",
+        attachMode: "shared"
+      })
+    ).resolves.toEqual({
+      method: "agent.vm.attach",
+      payload: {
+        sessionId: "session-a",
+        vmId: "vm-a",
+        attachMode: "shared",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmTakeover)?.({}, {
+        sessionId: "session-a",
+        vmId: "vm-a",
+        reason: "user_requested"
+      })
+    ).resolves.toEqual({
+      method: "agent.vm.takeover",
+      payload: {
+        sessionId: "session-a",
+        vmId: "vm-a",
+        reason: "user_requested",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmFork)?.({}, {
+        sessionId: "session-a",
+        sourceVmId: "vm-a",
+        targetVmId: "vm-b"
+      })
+    ).resolves.toEqual({
+      method: "agent.vm.fork",
+      payload: {
+        sessionId: "session-a",
+        sourceVmId: "vm-a",
+        targetVmId: "vm-b",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmCreateInheritanceProfile)?.({}, {
+        sessionId: "session-a",
+        sourceVmId: "vm-a",
+        include: ["login_state", "package_cache"]
+      })
+    ).resolves.toEqual({
+      method: "agent.vm.inheritance.create",
+      payload: {
+        sessionId: "session-a",
+        sourceVmId: "vm-a",
+        include: ["login_state", "package_cache"],
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmApplyInheritanceProfile)?.({}, {
+        sessionId: "session-a",
+        profileId: "inherit-a"
+      })
+    ).resolves.toEqual({
+      method: "agent.vm.inheritance.apply",
+      payload: {
+        sessionId: "session-a",
+        profileId: "inherit-a",
+        storageRoot: "/tmp/lyra-ai-test"
+      }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmRevokeBinding)?.({}, {
+        sessionId: "session-a",
+        vmId: "vm-a"
+      })
+    ).resolves.toEqual({
+      method: "agent.vm.binding.revoke",
+      payload: { sessionId: "session-a", vmId: "vm-a", storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmStatus)?.({}, { vmId: "vm-a" })
+    ).resolves.toEqual({
+      method: "agent.vm.status",
+      payload: { vmId: "vm-a", storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmStart)?.({}, { vmId: "vm-a" })
+    ).resolves.toEqual({
+      method: "agent.vm.start",
+      payload: { vmId: "vm-a", storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmStop)?.({}, { vmId: "vm-a" })
+    ).resolves.toEqual({
+      method: "agent.vm.stop",
+      payload: { vmId: "vm-a", storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmPasswordMetadata)?.({}, { vmId: "vm-a" })
+    ).resolves.toEqual({
+      method: "agent.vm.password.metadata",
+      payload: { vmId: "vm-a", storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmPasswordReveal)?.({}, { vmId: "vm-a" })
+    ).resolves.toEqual({
+      method: "agent.vm.password.reveal",
+      payload: { vmId: "vm-a", storageRoot: "/tmp/lyra-ai-test" }
+    });
+
+    bridge.dispose();
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmList);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmListImages);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmDownloadImage);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmImportImage);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmCreate);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmListBindings);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmReadBinding);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmAttach);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmTakeover);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmFork);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmCreateInheritanceProfile);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmApplyInheritanceProfile);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmRevokeBinding);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmStatus);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmStart);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmStop);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmPasswordMetadata);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmPasswordReveal);
+    expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.aiAgentVmConsoleConnect);
+  });
+
+  test("opens Agent VM console bridge only for running VNC-backed VMs", async () => {
+    const request = vi.fn(async () => ({
+      status: "running",
+      capsule: {
+        state: "running",
+        vncPort: 5901
+      }
+    }));
+    const bridge = createAiIpcBridge({
+      runtimeClient: {
+        request,
+        subscribe: vi.fn(() => vi.fn()),
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-ai-test"
+    });
+
+    const result = await electronMock.handlers.get(LYRA_CHANNELS.aiAgentVmConsoleConnect)?.(
+      {},
+      { vmId: "vm-a" }
+    );
+
+    expect(request).toHaveBeenCalledWith("agent.vm.status", {
+      vmId: "vm-a",
+      storageRoot: "/tmp/lyra-ai-test"
+    });
+    expect(result).toMatchObject({
+      vmId: "vm-a",
+      vncPort: 5901
+    });
+    expect((result as { url: string }).url).toBe("ws://127.0.0.1:59000/agent-vm/vm-a");
+    expect(consoleBridgeMock.open).toHaveBeenCalledWith({
+      vmId: "vm-a",
+      vncPort: 5901
+    });
+
+    bridge.dispose();
+    expect(consoleBridgeMock.dispose).toHaveBeenCalled();
   });
 });

@@ -359,17 +359,22 @@ fn workspace_changes_for_side_effects(
 }
 
 fn read_expected_post_effect_hash(conn: &Connection, path: &str) -> Result<Option<String>> {
-    conn.query_row(
-        "SELECT post_apply_sha256
+    let patch_hash: Option<String> = conn
+        .query_row(
+            "SELECT post_apply_sha256
          FROM file_backup_record
          WHERE path = ?1 AND post_apply_sha256 IS NOT NULL
          ORDER BY created_at_ms DESC
          LIMIT 1",
-        params![path],
-        |row| row.get(0),
-    )
-    .optional()
-    .context("failed to read expected post-effect hash")
+            params![path],
+            |row| row.get(0),
+        )
+        .optional()
+        .context("failed to read expected post-effect hash")?;
+    if patch_hash.is_some() {
+        return Ok(patch_hash);
+    }
+    super::recovery_backup::read_recovery_backup_post_hash(conn, path)
 }
 
 fn hash_workspace_file(root: &str, relative_path: &str) -> Result<Option<String>> {

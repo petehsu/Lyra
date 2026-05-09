@@ -181,7 +181,8 @@ export const WorkbenchChrome = ({
     <header
       className={cx(
         "lyra-titlebar",
-        isMac && "lyra-titlebar-macos"
+        isMac && "lyra-titlebar-macos",
+        slots.titlebarNavigation === null && "lyra-titlebar-no-navigation"
       )}
     >
       {isMac ? (

@@ -34,6 +34,36 @@ import {
   type AgentSession,
   type AgentSessionDetail,
   type AgentUpdateSessionRequest,
+  type AgentVmApplyInheritanceProfileRequest,
+  type AgentVmApplyInheritanceProfileResult,
+  type AgentVmAttachRequest,
+  type AgentVmBindingListRequest,
+  type AgentVmBindingListResult,
+  type AgentVmBindingResult,
+  type AgentVmCreateRequest,
+  type AgentVmCreateResult,
+  type AgentVmConsoleConnectRequest,
+  type AgentVmConsoleConnectResult,
+  type AgentVmCreateInheritanceProfileRequest,
+  type AgentVmForkRequest,
+  type AgentVmImageDownloadRequest,
+  type AgentVmImageDownloadResult,
+  type AgentVmImageImportRequest,
+  type AgentVmImageImportResult,
+  type AgentVmImageListRequest,
+  type AgentVmImageListResult,
+  type AgentVmInheritanceProfileResult,
+  type AgentVmLifecycleResult,
+  type AgentVmListRequest,
+  type AgentVmListResult,
+  type AgentVmPasswordMetadataRequest,
+  type AgentVmPasswordMetadataResult,
+  type AgentVmPasswordRevealRequest,
+  type AgentVmPasswordRevealResult,
+  type AgentVmReadBindingRequest,
+  type AgentVmRevokeBindingRequest,
+  type AgentVmStatusRequest,
+  type AgentVmTakeoverRequest,
   type AiDeleteProfileRequest,
   type AiDiscoverModelsRequest,
   type AiModelDiscoveryResult,
@@ -42,6 +72,7 @@ import {
   type AiUpsertProfileRequest
 } from "../../shared/desktop-bridge";
 import type { LyraRuntimeClient } from "../runtime-client";
+import { createAgentVmConsoleBridge } from "./agent-vm-console";
 
 type AiBridgeOptions = {
   readonly runtimeClient: LyraRuntimeClient;
@@ -50,6 +81,30 @@ type AiBridgeOptions = {
 };
 
 const AI_RUNTIME_EVENT_NAME = "agent.runtime";
+
+type AgentVmStatusPayload = AgentVmLifecycleResult & {
+  readonly status?: unknown;
+  readonly capsule?: {
+    readonly state?: unknown;
+    readonly vncPort?: unknown;
+  };
+};
+
+const resolveRunningVncPort = (payload: AgentVmStatusPayload): number => {
+  const state = typeof payload.capsule?.state === "string"
+    ? payload.capsule.state
+    : typeof payload.status === "string"
+      ? payload.status
+      : "unknown";
+  if (state !== "running") {
+    throw new Error("AgentVmConsoleUnavailable: VM is not running");
+  }
+  const vncPort = payload.capsule?.vncPort;
+  if (typeof vncPort !== "number" || !Number.isInteger(vncPort)) {
+    throw new Error("AgentVmConsoleUnavailable: VM has no console port");
+  }
+  return vncPort;
+};
 
 export const createAiIpcBridge = ({
   runtimeClient,
@@ -62,6 +117,7 @@ export const createAiIpcBridge = ({
   });
   const requestRuntime = async <T>(method: string, payload: object = {}): Promise<T> =>
     runtimeClient.request<T>(method, withStorageRoot(payload));
+  const consoleBridge = createAgentVmConsoleBridge();
   const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
     if (eventName !== AI_RUNTIME_EVENT_NAME) {
       return;
@@ -181,13 +237,136 @@ export const createAiIpcBridge = ({
   );
   ipcMain.handle(
     LYRA_CHANNELS.aiResolveApproval,
-    async (_event, request: AgentResolveApprovalRequest): Promise<AgentResolveApprovalResult> =>
-      requestRuntime<AgentResolveApprovalResult>("agent.approval.resolve", request)
+    async (_event, request: AgentResolveApprovalRequest): Promise<AgentResolveApprovalResult> => {
+      const method = request.decision === "approve"
+        ? "agent.approval.approve_and_resume_tool"
+        : "agent.approval.deny_and_resume_tool";
+      return requestRuntime<AgentResolveApprovalResult>(method, request);
+    }
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmList,
+    async (_event, request: AgentVmListRequest = {}): Promise<AgentVmListResult> =>
+      requestRuntime<AgentVmListResult>("agent.vm.list", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmListImages,
+    async (_event, request: AgentVmImageListRequest = {}): Promise<AgentVmImageListResult> =>
+      requestRuntime<AgentVmImageListResult>("agent.vm.images.list", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmDownloadImage,
+    async (
+      _event,
+      request: AgentVmImageDownloadRequest
+    ): Promise<AgentVmImageDownloadResult> =>
+      requestRuntime<AgentVmImageDownloadResult>("agent.vm.image.download", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmImportImage,
+    async (_event, request: AgentVmImageImportRequest): Promise<AgentVmImageImportResult> =>
+      requestRuntime<AgentVmImageImportResult>("agent.vm.image.import", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmCreate,
+    async (_event, request: AgentVmCreateRequest): Promise<AgentVmCreateResult> =>
+      requestRuntime<AgentVmCreateResult>("agent.vm.create", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmListBindings,
+    async (_event, request: AgentVmBindingListRequest = {}): Promise<AgentVmBindingListResult> =>
+      requestRuntime<AgentVmBindingListResult>("agent.vm.bindings.list", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmReadBinding,
+    async (_event, request: AgentVmReadBindingRequest): Promise<AgentVmBindingResult> =>
+      requestRuntime<AgentVmBindingResult>("agent.vm.binding.read", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmAttach,
+    async (_event, request: AgentVmAttachRequest): Promise<AgentVmBindingResult> =>
+      requestRuntime<AgentVmBindingResult>("agent.vm.attach", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmTakeover,
+    async (_event, request: AgentVmTakeoverRequest): Promise<AgentVmBindingResult> =>
+      requestRuntime<AgentVmBindingResult>("agent.vm.takeover", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmFork,
+    async (_event, request: AgentVmForkRequest): Promise<AgentVmBindingResult> =>
+      requestRuntime<AgentVmBindingResult>("agent.vm.fork", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmCreateInheritanceProfile,
+    async (
+      _event,
+      request: AgentVmCreateInheritanceProfileRequest
+    ): Promise<AgentVmInheritanceProfileResult> =>
+      requestRuntime<AgentVmInheritanceProfileResult>("agent.vm.inheritance.create", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmApplyInheritanceProfile,
+    async (
+      _event,
+      request: AgentVmApplyInheritanceProfileRequest
+    ): Promise<AgentVmApplyInheritanceProfileResult> =>
+      requestRuntime<AgentVmApplyInheritanceProfileResult>("agent.vm.inheritance.apply", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmRevokeBinding,
+    async (_event, request: AgentVmRevokeBindingRequest): Promise<AgentVmBindingResult> =>
+      requestRuntime<AgentVmBindingResult>("agent.vm.binding.revoke", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmStatus,
+    async (_event, request: AgentVmStatusRequest): Promise<AgentVmLifecycleResult> =>
+      requestRuntime<AgentVmLifecycleResult>("agent.vm.status", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmStart,
+    async (_event, request: AgentVmStatusRequest): Promise<AgentVmLifecycleResult> =>
+      requestRuntime<AgentVmLifecycleResult>("agent.vm.start", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmStop,
+    async (_event, request: AgentVmStatusRequest): Promise<AgentVmLifecycleResult> =>
+      requestRuntime<AgentVmLifecycleResult>("agent.vm.stop", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmPasswordMetadata,
+    async (
+      _event,
+      request: AgentVmPasswordMetadataRequest
+    ): Promise<AgentVmPasswordMetadataResult> =>
+      requestRuntime<AgentVmPasswordMetadataResult>("agent.vm.password.metadata", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmPasswordReveal,
+    async (
+      _event,
+      request: AgentVmPasswordRevealRequest
+    ): Promise<AgentVmPasswordRevealResult> =>
+      requestRuntime<AgentVmPasswordRevealResult>("agent.vm.password.reveal", request)
+  );
+  ipcMain.handle(
+    LYRA_CHANNELS.aiAgentVmConsoleConnect,
+    async (_event, request: AgentVmConsoleConnectRequest): Promise<AgentVmConsoleConnectResult> => {
+      const status = await requestRuntime<AgentVmStatusPayload>("agent.vm.status", {
+        vmId: request.vmId
+      });
+      const vncPort = resolveRunningVncPort(status);
+      return consoleBridge.open({
+        vmId: request.vmId,
+        vncPort
+      });
+    }
   );
 
   return {
     dispose: () => {
       unsubscribeRuntimeEvents();
+      consoleBridge.dispose();
       ipcMain.removeHandler(LYRA_CHANNELS.aiReadConfig);
       ipcMain.removeHandler(LYRA_CHANNELS.aiUpsertProfile);
       ipcMain.removeHandler(LYRA_CHANNELS.aiDeleteProfile);
@@ -210,6 +389,25 @@ export const createAiIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.aiReadArtifact);
       ipcMain.removeHandler(LYRA_CHANNELS.aiApplyPatch);
       ipcMain.removeHandler(LYRA_CHANNELS.aiResolveApproval);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmList);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmListImages);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmDownloadImage);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmImportImage);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmCreate);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmListBindings);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmReadBinding);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmAttach);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmTakeover);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmFork);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmCreateInheritanceProfile);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmApplyInheritanceProfile);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmRevokeBinding);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmStatus);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmStart);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmStop);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmPasswordMetadata);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmPasswordReveal);
+      ipcMain.removeHandler(LYRA_CHANNELS.aiAgentVmConsoleConnect);
     }
   };
 };

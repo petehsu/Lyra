@@ -4,6 +4,7 @@ import { createTranslator } from "../../i18n";
 import {
   createAgentComposerModelState,
   createComposerModelMenuStyle,
+  groupComposerModelOptions,
   normalizeComposerModelOptions,
   resolveAgentComposerClassName,
   resolveComposerSendVisualState,
@@ -52,8 +53,33 @@ describe("agent composer model", () => {
       modelOptions: []
     })).toBeNull();
     expect(createComposerModelMenuStyle(options)).toEqual({
-      "--lyra-ai-agent-model-menu-w": "clamp(var(--lyra-unit-160), calc(16ch + var(--lyra-unit-52)), min(58cqw, var(--lyra-unit-320)))"
+      "--lyra-ai-agent-model-menu-w": "clamp(var(--lyra-unit-160), calc(16ch + var(--lyra-unit-52)), min(58cqw, var(--lyra-unit-320)))",
+      "--lyra-ai-agent-model-provider-menu-w": "clamp(var(--lyra-unit-112), calc(10ch + var(--lyra-unit-44)), var(--lyra-unit-184))"
     });
+  });
+
+  test("groups model options by provider", () => {
+    expect(groupComposerModelOptions([
+      { value: "openai:gpt-a", label: "GPT A", providerId: "openai", providerLabel: "OpenAI" },
+      { value: "openai:gpt-b", label: "GPT B", providerId: "openai", providerLabel: "OpenAI" },
+      { value: "anthropic:claude", label: "Claude", providerId: "anthropic", providerLabel: "Anthropic" },
+    ])).toEqual([
+      {
+        providerId: "openai",
+        providerLabel: "OpenAI",
+        options: [
+          { value: "openai:gpt-a", label: "GPT A", providerId: "openai", providerLabel: "OpenAI" },
+          { value: "openai:gpt-b", label: "GPT B", providerId: "openai", providerLabel: "OpenAI" },
+        ],
+      },
+      {
+        providerId: "anthropic",
+        providerLabel: "Anthropic",
+        options: [
+          { value: "anthropic:claude", label: "Claude", providerId: "anthropic", providerLabel: "Anthropic" },
+        ],
+      },
+    ]);
   });
 
   test("computes composer labels and state", () => {

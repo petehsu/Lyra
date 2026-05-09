@@ -7,6 +7,7 @@ use crate::storage::{
 pub(crate) struct ModelCandidateWorkProjection {
     pub suppress_user_output: bool,
     pub replacement_text: Option<String>,
+    pub continuation_id: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -88,17 +89,20 @@ pub(crate) fn project_model_candidate_after_completion(
     session_id: &str,
     turn_id: Option<&str>,
     candidate_text: &str,
+    stop_cause: Option<&str>,
 ) -> Result<ModelCandidateWorkProjection> {
     let evaluation =
         store.evaluate_long_work_completion_candidate(LongWorkCompletionCandidateInput {
             session_id: session_id.to_string(),
             runtime_turn_id: turn_id.map(ToString::to_string),
             candidate_text: candidate_text.to_string(),
+            stop_cause: stop_cause.map(ToString::to_string),
         })?;
     let Some(summary) = evaluation.summary.as_ref() else {
         return Ok(ModelCandidateWorkProjection {
             suppress_user_output: false,
             replacement_text: None,
+            continuation_id: None,
         });
     };
     if let Some(slice) = summary.current_slice.as_ref() {
@@ -163,6 +167,7 @@ pub(crate) fn project_model_candidate_after_completion(
         return Ok(ModelCandidateWorkProjection {
             suppress_user_output: true,
             replacement_text: None,
+            continuation_id: None,
         });
     }
     if evaluation.blocked {
@@ -177,6 +182,7 @@ pub(crate) fn project_model_candidate_after_completion(
     Ok(ModelCandidateWorkProjection {
         suppress_user_output: evaluation.suppressed,
         replacement_text: None,
+        continuation_id: evaluation.continuation_id,
     })
 }
 

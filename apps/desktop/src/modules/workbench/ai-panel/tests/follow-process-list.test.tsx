@@ -15,10 +15,39 @@ describe("FollowProcessList", () => {
     render(<FollowProcessList detail={createDetail(createSummary())} />);
 
     expect(screen.getByLabelText("Follow process")).toBeDefined();
+    expect(screen.getByLabelText("Tool progress")).toBeDefined();
     expect(screen.getByText("Following")).toBeDefined();
     expect(screen.getAllByText("Patch applied").length).toBeGreaterThan(0);
     expect(screen.getByText("src/main.rs")).toBeDefined();
     expect(screen.getByText("Tests passed")).toBeDefined();
+  });
+
+  test("renders follow projection events when no summary is present yet", () => {
+    render(
+      <FollowProcessList
+        detail={{
+          ...createDetail(null),
+          runtimeEvents: [{
+            sessionId: "session-1",
+            turnId: "turn-1",
+            phase: "follow_projection_updated",
+            payload: {
+              operations: [{
+                toolName: "write_file",
+                status: "running",
+                filePath: "src/generated.ts",
+                startedAt: 1,
+                finishedAt: null,
+              }],
+            },
+            timestamp: 1,
+          }],
+        }}
+      />
+    );
+
+    expect(screen.getByText("Running write_file")).toBeDefined();
+    expect(screen.getByText("src/generated.ts")).toBeDefined();
   });
 
   test("shows compact failed command state", () => {

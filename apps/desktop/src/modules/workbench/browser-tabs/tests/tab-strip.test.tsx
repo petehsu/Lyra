@@ -63,17 +63,22 @@ describe("BrowserTabStrip", () => {
     );
 
     const nav = screen.getByLabelText("browser-tabs");
+    const strip = nav.querySelector(".lyra-browser-tab-strip");
+    expect(strip).not.toBeNull();
     const tabShapes = nav.querySelectorAll(".lyra-chrome-tab-shape");
     expect(tabShapes).toHaveLength(2);
     expect(nav.querySelector(".lyra-chrome-tab-dividers")).not.toBeNull();
     expect(nav.querySelector(".lyra-chrome-tab-background-svg")).not.toBeNull();
     expect(nav.querySelector(".lyra-browser-tab-item-active .lyra-chrome-tab-shape")).not.toBeNull();
+    const newTabButton = within(nav).getByRole("button", { name: "New tab" });
+    expect(strip).toContainElement(newTabButton);
+    expect(strip?.lastElementChild).toBe(newTabButton);
 
     fireEvent.click(within(nav).getByRole("button", { name: "Back" }));
     fireEvent.click(within(nav).getByRole("button", { name: "Stack tabs" }));
     fireEvent.click(within(nav).getByRole("button", { name: "Docs" }));
     fireEvent.click(within(nav).getByRole("button", { name: "Close-Docs" }));
-    fireEvent.click(within(nav).getByRole("button", { name: "New tab" }));
+    fireEvent.click(newTabButton);
 
     expect(within(nav).getByRole("button", { name: "Forward" })).toBeDisabled();
     expect(onGoBack).toHaveBeenCalledTimes(1);
@@ -81,6 +86,21 @@ describe("BrowserTabStrip", () => {
     expect(onActivateTab).toHaveBeenCalledWith("docs");
     expect(onCloseTab).toHaveBeenCalledWith("docs");
     expect(onOpenNewTab).toHaveBeenCalledTimes(1);
+  });
+
+  test("renders navigation control on the right side of the tab strip", () => {
+    render(
+      <BrowserTabStrip
+        {...createProps({
+          navigationControl: <div data-testid="navigation-control" />
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("browser-tabs");
+    const navigationShell = nav.querySelector(".lyra-browser-tabs-navigation");
+    expect(nav).toHaveClass("lyra-browser-tabs-with-navigation");
+    expect(navigationShell).toContainElement(screen.getByTestId("navigation-control"));
   });
 
   test("keeps collapsed stacked tabs from rendering close buttons", () => {

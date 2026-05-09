@@ -6,6 +6,12 @@ pub enum PermissionMode {
     FullAccess,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExecutionTarget {
+    Host,
+    AgentVm,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentApplyPatchRequest {
@@ -120,15 +126,31 @@ impl PermissionMode {
     }
 }
 
+impl ExecutionTarget {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Host => "host",
+            Self::AgentVm => "agent_vm",
+        }
+    }
+}
+
 pub fn normalize_permission_mode(
     permission_mode: Option<&str>,
     approval_policy: Option<&str>,
 ) -> PermissionMode {
-    if permission_mode.and_then(trim_to_string).as_deref() == Some("full_access")
-        || approval_policy.and_then(trim_to_string).as_deref() == Some("never")
-    {
-        PermissionMode::FullAccess
-    } else {
-        PermissionMode::Sandbox
+    match permission_mode.and_then(trim_to_string).as_deref() {
+        Some("full_access") => PermissionMode::FullAccess,
+        _ if approval_policy.and_then(trim_to_string).as_deref() == Some("never") => {
+            PermissionMode::FullAccess
+        }
+        _ => PermissionMode::Sandbox,
+    }
+}
+
+pub fn normalize_execution_target(execution_target: Option<&str>) -> ExecutionTarget {
+    match execution_target.and_then(trim_to_string).as_deref() {
+        Some("agent_vm") => ExecutionTarget::AgentVm,
+        _ => ExecutionTarget::Host,
     }
 }

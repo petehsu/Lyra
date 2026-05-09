@@ -43,6 +43,7 @@ export type WorkbenchNotificationTarget =
         | "ai-plan-review"
         | "ai-skills"
         | "ai-plugins"
+        | "agent-vm"
         | NotificationCenterAppId;
       readonly appInstanceId: string;
       readonly title?: string;
