@@ -462,11 +462,7 @@ const TurnGroupView = ({
   readArtifact,
   applyPatch,
   resolveApproval,
-  resolveClarification,
-  resolvePlanReview,
-  executeMessageRollback,
-  onClarificationResolved,
-  onRollbackExecuted,
+  renderRuntimeAction,
   renderMessageActions,
 }: {
   readonly group: TurnGroup;
@@ -482,17 +478,7 @@ const TurnGroupView = ({
     readonly patchRef?: string;
   }) => Promise<AgentApplyPatchResult>) | undefined;
   readonly resolveApproval?: ((request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>) | undefined;
-  readonly resolveClarification?:
-    | ((request: AgentResolveClarificationRequest) => Promise<AgentResolveClarificationResult>)
-    | undefined;
-  readonly resolvePlanReview?:
-    | ((request: AgentResolvePlanReviewRequest) => Promise<AgentResolvePlanReviewResult>)
-    | undefined;
-  readonly executeMessageRollback?:
-    | ((request: AgentExecuteMessageRollbackRequest) => Promise<AgentExecuteMessageRollbackResult>)
-    | undefined;
-  readonly onClarificationResolved?: (() => Promise<void> | void) | undefined;
-  readonly onRollbackExecuted?: (() => Promise<void> | void) | undefined;
+  readonly renderRuntimeAction: (action: TimelineRuntimeActionItem) => ReactNode;
   readonly renderMessageActions?: ((message: AgentMessage) => ReactNode) | undefined;
 }) => (
   <div className="lyra-ai-turn-group" data-turn-id={group.turnId}>
@@ -530,19 +516,7 @@ const TurnGroupView = ({
         );
       }
       if (item.kind === "runtimeAction") {
-        return (
-          <TimelineRuntimeAction
-            key={item.action.id}
-            actionKind={item.action.actionKind}
-            detail={detail}
-            resolveClarification={resolveClarification}
-            resolveApproval={resolveApproval}
-            resolvePlanReview={resolvePlanReview}
-            executeMessageRollback={executeMessageRollback}
-            onClarificationResolved={onClarificationResolved}
-            onRollbackExecuted={onRollbackExecuted}
-          />
-        );
+        return renderRuntimeAction(item.action);
       }
       return (
         <AiPanelLiveAssistantBubble
@@ -616,11 +590,19 @@ export const AiPanelThreadView = memo(({
             readArtifact={readArtifact}
             applyPatch={applyPatch}
             resolveApproval={resolveApproval}
-            resolveClarification={resolveClarification}
-            resolvePlanReview={resolvePlanReview}
-            executeMessageRollback={executeMessageRollback}
-            onClarificationResolved={onClarificationResolved}
-            onRollbackExecuted={onRollbackExecuted}
+            renderRuntimeAction={(action) => (
+              <TimelineRuntimeAction
+                key={action.id}
+                actionKind={action.actionKind}
+                detail={detail}
+                resolveClarification={resolveClarification}
+                resolveApproval={resolveApproval}
+                resolvePlanReview={resolvePlanReview}
+                executeMessageRollback={executeMessageRollback}
+                onClarificationResolved={onClarificationResolved}
+                onRollbackExecuted={onRollbackExecuted}
+              />
+            )}
             renderMessageActions={renderMessageActions}
           />
         ))}
