@@ -41,7 +41,7 @@ describe("AiPanelThreadView", () => {
     const userMessage = screen.getByText("Inspect README");
     const approval = screen.getByText("Run shell command");
     const assistantMessage = screen.getByText("Done.");
-    expect(approval.closest(".lyra-ai-agent-timeline-event")).not.toBeNull();
+    expect(approval.closest(".lyra-ai-agent-runtime-action")).not.toBeNull();
     expect(
       userMessage.compareDocumentPosition(approval) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();

@@ -1,4 +1,3 @@
-import { CircleDashed } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { ClarificationList } from "./clarification-list";
@@ -42,6 +41,7 @@ export type TimelineRuntimeActionItem = {
   readonly id: string;
   readonly createdAt: number;
   readonly actionKind: TimelineRuntimeActionKind;
+  readonly turnId: string | null;
 };
 
 type TimelineRuntimeActionProps = {
@@ -70,6 +70,8 @@ export const buildTimelineRuntimeActionItems = (
     return [];
   }
   const items: TimelineRuntimeActionItem[] = [];
+  const latestTurnId = detail.turns.at(-1)?.id ?? null;
+
   const clarificationAt = firstPendingInteractionAt(detail, "clarification");
   if (clarificationAt !== null && hasPendingClarification(detail)) {
     items.push({
@@ -77,6 +79,7 @@ export const buildTimelineRuntimeActionItems = (
       id: "runtime-action:clarification",
       createdAt: clarificationAt,
       actionKind: "clarification",
+      turnId: firstPendingInteractionTurnId(detail, "clarification") ?? latestTurnId,
     });
   }
 
@@ -87,6 +90,7 @@ export const buildTimelineRuntimeActionItems = (
       id: "runtime-action:approval",
       createdAt: approvalAt,
       actionKind: "approval",
+      turnId: firstPendingInteractionTurnId(detail, "tool_approval") ?? latestTurnId,
     });
   }
 
@@ -97,6 +101,7 @@ export const buildTimelineRuntimeActionItems = (
       id: `runtime-action:plan-review:${plan.planId}:${plan.activeVersionId}`,
       createdAt: plan.createdAt,
       actionKind: "planReview",
+      turnId: latestTurnId,
     });
   }
 
@@ -107,6 +112,7 @@ export const buildTimelineRuntimeActionItems = (
       id: "runtime-action:security",
       createdAt: securityAt,
       actionKind: "security",
+      turnId: latestTurnId,
     });
   }
 
@@ -117,6 +123,7 @@ export const buildTimelineRuntimeActionItems = (
       id: "runtime-action:verification",
       createdAt: verificationAt,
       actionKind: "verification",
+      turnId: latestTurnId,
     });
   }
 
@@ -127,6 +134,7 @@ export const buildTimelineRuntimeActionItems = (
       id: "runtime-action:delivery",
       createdAt: deliveryAt,
       actionKind: "delivery",
+      turnId: latestTurnId,
     });
   }
 
@@ -137,6 +145,7 @@ export const buildTimelineRuntimeActionItems = (
       id: "runtime-action:live-diff",
       createdAt: liveDiffAt,
       actionKind: "liveDiff",
+      turnId: latestTurnId,
     });
   }
 
@@ -147,6 +156,7 @@ export const buildTimelineRuntimeActionItems = (
       id: `runtime-action:live-draft:${liveDraft.liveEditId}`,
       createdAt: liveDraft.updatedAt,
       actionKind: "liveDraft",
+      turnId: latestTurnId,
     });
   }
 
@@ -157,6 +167,7 @@ export const buildTimelineRuntimeActionItems = (
       id: `runtime-action:rollback:${rollbackPreview.rollbackId}`,
       createdAt: rollbackPreview.updatedAt,
       actionKind: "rollback",
+      turnId: latestTurnId,
     });
   }
 
@@ -187,13 +198,8 @@ export const TimelineRuntimeAction = ({
     return null;
   }
   return (
-    <div className="lyra-ai-agent-timeline-event" data-kind={actionKind}>
-      <span className="lyra-ai-agent-timeline-event-marker" aria-hidden="true">
-        <CircleDashed size={10} />
-      </span>
-      <div className="lyra-ai-agent-timeline-event-body">
-        {content}
-      </div>
+    <div className="lyra-ai-agent-runtime-action" data-kind={actionKind}>
+      {content}
     </div>
   );
 };
@@ -270,6 +276,20 @@ const firstPendingInteractionAt = (
     return null;
   }
   return Math.min(...matching.map((interaction) => interaction.createdAt));
+};
+
+const firstPendingInteractionTurnId = (
+  detail: AgentSessionDetail,
+  kind: string
+): string | null => {
+  const matching = detail.pendingInteractions.filter((interaction) =>
+    interaction.kind === kind && interaction.status === "pending"
+  );
+  if (matching.length === 0) {
+    return null;
+  }
+  matching.sort((a, b) => a.createdAt - b.createdAt);
+  return matching[0]?.turnId ?? null;
 };
 
 const securityNeedsAttentionAt = (detail: AgentSessionDetail): number | null => {

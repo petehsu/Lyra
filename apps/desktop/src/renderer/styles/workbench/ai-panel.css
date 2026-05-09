@@ -1970,6 +1970,133 @@
   background: color-mix(in srgb, var(--lyra-danger-500, #d95c4f) 9%, var(--lyra-bg-surface));
 }
 
+/* ── Turn group layout ────────────────────────────────── */
+
+.lyra-ai-turn-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lyra-unit-8);
+}
+
+/* ── Compact tool call rows ───────────────────────────── */
+
+.lyra-ai-tool-call-group {
+  min-width: 0;
+  width: min(47.5rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--lyra-unit-2);
+  padding: var(--lyra-unit-4) 0;
+}
+
+.lyra-ai-tool-call-row {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-6);
+  padding: var(--lyra-unit-2) var(--lyra-unit-4);
+  border-radius: var(--lyra-radius-4);
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-12);
+  line-height: var(--lyra-text-line-16);
+  transition: background var(--lyra-transition-fast);
+}
+
+.lyra-ai-tool-call-row:hover {
+  background: color-mix(in srgb, var(--lyra-bg-surface) 60%, var(--lyra-bg-editor) 40%);
+}
+
+.lyra-ai-tool-call-icon {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  color: var(--lyra-text-tertiary);
+}
+
+.lyra-ai-tool-call-row[data-status="done"] .lyra-ai-tool-call-icon {
+  color: var(--lyra-success-500, #57a773);
+}
+
+.lyra-ai-tool-call-row[data-status="error"] .lyra-ai-tool-call-icon {
+  color: var(--lyra-danger-500, #d95c4f);
+}
+
+.lyra-ai-tool-call-row[data-status="error"] {
+  color: var(--lyra-danger-500, #d95c4f);
+}
+
+.lyra-ai-tool-call-spinner {
+  animation: lyra-ai-topbar-action-pulse 0.95s ease-in-out infinite;
+}
+
+.lyra-ai-tool-call-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--lyra-font-weight-medium);
+}
+
+.lyra-ai-tool-call-detail {
+  min-width: 0;
+  max-width: var(--lyra-unit-320);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lyra-text-tertiary);
+}
+
+.lyra-ai-tool-call-expand {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-4);
+  padding: var(--lyra-unit-2) var(--lyra-unit-4);
+  border: 0;
+  border-radius: var(--lyra-radius-4);
+  background: transparent;
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  line-height: var(--lyra-text-line-14);
+  cursor: pointer;
+  transition: color var(--lyra-transition-fast);
+}
+
+.lyra-ai-tool-call-expand:hover {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-ai-tool-call-patch {
+  min-width: 0;
+  width: 100%;
+  margin: var(--lyra-unit-2) 0;
+}
+
+/* ── Runtime action (simplified, no marker/line) ──────── */
+
+.lyra-ai-agent-runtime-action {
+  min-width: 0;
+  width: min(47.5rem, 100%);
+  align-self: flex-start;
+}
+
+.lyra-ai-agent-runtime-action > .lyra-ai-clarification-list,
+.lyra-ai-agent-runtime-action > .lyra-ai-pending-approval-list,
+.lyra-ai-agent-runtime-action > .lyra-ai-plan-review-compact,
+.lyra-ai-agent-runtime-action > .lyra-ai-security-status-row,
+.lyra-ai-agent-runtime-action > .lyra-ai-verification-list,
+.lyra-ai-agent-runtime-action > .lyra-ai-delivery-status,
+.lyra-ai-agent-runtime-action > .lyra-ai-patch-diff-preview,
+.lyra-ai-agent-runtime-action > .lyra-ai-live-draft-row,
+.lyra-ai-agent-runtime-action > .lyra-ai-rollback-preview-row,
+.lyra-ai-agent-runtime-action > .lyra-ai-patch-preview-card {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  align-self: stretch;
+}
+
 .lyra-ai-agent-tool-event {
   width: fit-content;
   max-width: min(38.75rem, 92%);

@@ -1,10 +1,8 @@
 import { memo, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, FileDiff, FileSearch, FileText, FolderOpen, GitBranch, Info, Loader2, Terminal } from "lucide-react";
 
 import { LyraBrandLogo } from "../brand";
 import type { WorkbenchLocale } from "../i18n";
 import type {
-  AgentApplyPatchRequest,
   AgentApplyPatchResult,
   AgentExecuteMessageRollbackRequest,
   AgentExecuteMessageRollbackResult,
@@ -24,15 +22,11 @@ import {
   changedFilesSummary,
   extractChangedFiles,
   extractPatchProposalEvent,
-  isPatchProposalApplied,
-  isPatchProposalDenied,
   isRecord,
-  patchApprovalForProposal,
   readBoolean,
   readNumber,
   readString,
 } from "./patch-artifact";
-import { PatchPreviewCard } from "./patch-preview-card";
 import { AiPanelRichContent } from "./rich-content";
 import { SpinnerLabel } from "./stream-spinner";
 import {
@@ -40,6 +34,7 @@ import {
   TimelineRuntimeAction,
   type TimelineRuntimeActionItem,
 } from "./timeline-runtime-action";
+import { ToolCallGroup, type DeduplicatedToolCall } from "./tool-call-group";
 import type { ReadPatchArtifact } from "./use-patch-artifact";
 import type { OptimisticUserMessage } from "./use-lyra-thread-runtime";
 
@@ -58,7 +53,11 @@ type AiPanelThreadViewProps = {
   readonly expandedPatchKey?: string | null | undefined;
   readonly onPatchExpandedChange?: ((key: string | null) => void) | undefined;
   readonly readArtifact?: ReadPatchArtifact | undefined;
-  readonly applyPatch?: ((request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>) | undefined;
+  readonly applyPatch?: ((request: {
+    readonly sessionId: string;
+    readonly artifactId?: string;
+    readonly patchRef?: string;
+  }) => Promise<AgentApplyPatchResult>) | undefined;
   readonly resolveApproval?: ((request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>) | undefined;
   readonly resolveClarification?:
     | ((request: AgentResolveClarificationRequest) => Promise<AgentResolveClarificationResult>)
@@ -77,25 +76,7 @@ type AiPanelThreadViewProps = {
 const messageText = (message: AgentMessage): string =>
   (message.displayContent ?? message.content).trim();
 
-type ThreadTimelineItem =
-  | {
-    readonly kind: "message";
-    readonly id: string;
-    readonly createdAt: number;
-    readonly sortRank: number;
-    readonly live: boolean;
-    readonly message: AgentMessage;
-  }
-  | {
-    readonly kind: "toolEvent";
-    readonly id: string;
-    readonly createdAt: number;
-    readonly sortRank: number;
-    readonly event: AgentRuntimeEvent;
-  }
-  | (TimelineRuntimeActionItem & {
-    readonly sortRank: number;
-  });
+/* ── Turn group model ─────────────────────────────────────── */
 
 const TOOL_EVENT_PHASES = new Set([
   "tool_operation_started",
@@ -133,61 +114,205 @@ const modelTextSegmentStartAt = (
   return segmentStart ?? fallback;
 };
 
-const buildTimelineItems = (
+type TurnResponseItem =
+  | { readonly kind: "assistantMessage"; readonly sortRank: number; readonly message: AgentMessage }
+  | { readonly kind: "runtimeAction"; readonly sortRank: number; readonly action: TimelineRuntimeActionItem }
+  | { readonly kind: "liveAssistant"; readonly sortRank: number; readonly text: string };
+
+type TurnGroup = {
+  readonly turnId: string;
+  readonly userMessages: readonly AgentMessage[];
+  readonly toolCalls: readonly DeduplicatedToolCall[];
+  readonly responseItems: readonly TurnResponseItem[];
+};
+
+const toolEventToCall = (event: AgentRuntimeEvent): {
+  readonly opId: string;
+  readonly toolPath: string;
+  readonly summary: string;
+  readonly detail: string | null;
+  readonly status: "running" | "done" | "error";
+  readonly timestamp: number;
+} => {
+  const payload = isRecord(event.payload) ? event.payload : {};
+  const operation = isRecord(payload.operation) ? payload.operation : {};
+  const result = isRecord(payload.result) ? payload.result : {};
+  const toolPath = readString(operation.toolPath)
+    ?? readString(operation.path)
+    ?? readString(result.path)
+    ?? "/tools";
+  const opId = readString(operation.opId) ?? `${event.turnId}:${String(event.timestamp)}`;
+  const summary = readString(result.summary)
+    ?? readString(operation.summary)
+    ?? (event.phase === "tool_operation_started" ? `Running ${toolPath}` : "ToolFS event");
+  const truncated = readBoolean(result.truncated);
+  const resultRef = readString(result.resultRef);
+  const patchRef = readString(result.patchRef);
+  const artifactId = readString(result.artifactId);
+  const evidenceId = readString(result.evidenceId);
+  const contentBytes = readNumber(result.contentBytes);
+  const patchDetail = toolPath.includes("/propose_patch") || patchRef !== null || artifactId !== null
+    ? [
+        changedFilesSummary(extractChangedFiles(result.changedFiles)),
+        patchRef === null ? resultRef : `patch ${patchRef}`,
+        artifactId === null ? null : `artifact ${artifactId}`,
+        evidenceId === null ? null : `evidence ${evidenceId}`,
+        truncated ? "truncated" : null,
+      ].filter((value): value is string => value !== null).join(" · ")
+    : "";
+  const resultDetail = patchDetail.length > 0
+    ? patchDetail
+    : [
+        resultRef,
+        truncated ? "truncated" : null,
+        contentBytes === null ? null : `${String(contentBytes)} bytes`,
+      ].filter((value): value is string => value !== null).join(" · ");
+  const detail = readString(result.errorMessage)
+    ?? readString(result.errorCode)
+    ?? (resultDetail.length > 0 ? resultDetail : toolPath);
+  const status: "running" | "done" | "error" =
+    event.phase === "tool_operation_failed"
+      ? "error"
+      : event.phase === "tool_operation_started"
+        ? "running"
+        : "done";
+  return { opId, toolPath, summary, detail, status, timestamp: event.timestamp };
+};
+
+const deduplicateToolEvents = (events: readonly AgentRuntimeEvent[]): DeduplicatedToolCall[] => {
+  const byOpId = new Map<string, DeduplicatedToolCall>();
+  const ordered: string[] = [];
+  for (const event of events) {
+    const call = toolEventToCall(event);
+    const patchProposal = extractPatchProposalEvent(event);
+    const existing = byOpId.get(call.opId);
+    if (existing === undefined) {
+      ordered.push(call.opId);
+      byOpId.set(call.opId, { ...call, patchProposal });
+    } else {
+      const betterStatus =
+        call.status === "done" || call.status === "error" || existing.status === "running";
+      if (betterStatus) {
+        byOpId.set(call.opId, {
+          ...call,
+          patchProposal: patchProposal ?? existing.patchProposal,
+        });
+      }
+    }
+  }
+  return ordered.map((opId) => byOpId.get(opId)!);
+};
+
+const buildTurnGroups = (
   detail: AgentSessionDetail | null,
   optimisticUserMessages: readonly OptimisticUserMessage[],
   liveAssistant: { readonly turnId: string; readonly text: string } | null
-): readonly ThreadTimelineItem[] => {
+): readonly TurnGroup[] => {
   const sessionMessages = detail?.messages ?? [];
   const events = detail?.runtimeEvents ?? [];
-  const messages = [...sessionMessages, ...optimisticUserMessages].map<ThreadTimelineItem>((message) => {
-    const role = message.role === "assistant" ? "assistant" : "user";
-    return {
-      kind: "message",
-      id: `message:${message.id}`,
-      createdAt: role === "assistant"
-        ? modelTextSegmentStartAt(events, message.turnId, message.createdAt)
-        : message.createdAt,
-      sortRank: role === "assistant" ? 30 : 10,
-      live: false,
-      message,
-    };
-  });
-  const liveMessage: ThreadTimelineItem[] = liveAssistant === null ? [] : [
-    {
-      kind: "message",
-      id: `live:${liveAssistant.turnId}`,
-      createdAt: modelTextSegmentStartAt(events, liveAssistant.turnId, Date.now()),
-      sortRank: 30,
-      live: true,
-      message: {
-        id: `live:${liveAssistant.turnId}`,
-        sessionId: detail?.session.id ?? "",
-        turnId: liveAssistant.turnId,
-        role: "assistant",
-        content: liveAssistant.text,
-        displayContent: liveAssistant.text,
-        createdAt: Date.now(),
-      },
-    },
-  ];
-  const toolEvents = (detail?.runtimeEvents ?? [])
-    .filter((event) => TOOL_EVENT_PHASES.has(event.phase))
-    .map<ThreadTimelineItem>((event, index) => ({
-      kind: "toolEvent",
-      id: `tool:${event.turnId}:${event.phase}:${String(index)}:${String(event.timestamp)}`,
-      createdAt: event.timestamp,
-      sortRank: 20,
-      event,
-    }));
-  const runtimeActions = buildTimelineRuntimeActionItems(detail).map<ThreadTimelineItem>((item) => ({
-    ...item,
-    sortRank: 40,
-  }));
-  return [...messages, ...liveMessage, ...toolEvents, ...runtimeActions].sort((left, right) =>
-    left.createdAt - right.createdAt || left.sortRank - right.sortRank
+  const allMessages = [...sessionMessages, ...optimisticUserMessages];
+  const runtimeActionItems = buildTimelineRuntimeActionItems(detail);
+
+  const turnIds: string[] = [];
+  const turnIdSet = new Set<string>();
+
+  const addTurnId = (turnId: string) => {
+    if (!turnIdSet.has(turnId)) {
+      turnIdSet.add(turnId);
+      turnIds.push(turnId);
+    }
+  };
+
+  for (const message of allMessages) {
+    const turnId = message.turnId ?? message.id;
+    addTurnId(turnId);
+  }
+  for (const event of events) {
+    if (TOOL_EVENT_PHASES.has(event.phase)) {
+      addTurnId(event.turnId);
+    }
+  }
+  for (const action of runtimeActionItems) {
+    const turnId = extractRuntimeActionTurnId(action);
+    if (turnId !== null) {
+      addTurnId(turnId);
+    }
+  }
+  if (liveAssistant !== null && !turnIdSet.has(liveAssistant.turnId)) {
+    addTurnId(liveAssistant.turnId);
+  }
+
+  const groups: TurnGroup[] = [];
+
+  for (const turnId of turnIds) {
+    const userMsgs = allMessages.filter(
+      (m) => (m.turnId ?? m.id) === turnId && m.role !== "assistant"
+    );
+    const assistantMsgs = allMessages.filter(
+      (m) => m.turnId === turnId && m.role === "assistant"
+    );
+    const turnToolEvents = events.filter(
+      (e) => e.turnId === turnId && TOOL_EVENT_PHASES.has(e.phase)
+    );
+    const toolCalls = deduplicateToolEvents(turnToolEvents);
+    const turnActions = runtimeActionItems.filter(
+      (a) => extractRuntimeActionTurnId(a) === turnId
+    );
+    const isLiveTurn = liveAssistant !== null && liveAssistant.turnId === turnId;
+    const hasLiveText = isLiveTurn && !assistantMsgs.some(
+      (m) => m.role === "assistant"
+    );
+
+    const responseItems: TurnResponseItem[] = [];
+    for (const msg of assistantMsgs) {
+      const sortRank = modelTextSegmentStartAt(events, msg.turnId, msg.createdAt);
+      responseItems.push({ kind: "assistantMessage", sortRank, message: msg });
+    }
+    for (const action of turnActions) {
+      responseItems.push({ kind: "runtimeAction", sortRank: action.createdAt, action });
+    }
+    if (hasLiveText) {
+      const liveRank = modelTextSegmentStartAt(events, turnId, Date.now());
+      responseItems.push({
+        kind: "liveAssistant",
+        sortRank: liveRank,
+        text: liveAssistant!.text,
+      });
+    }
+    responseItems.sort((a, b) => a.sortRank - b.sortRank);
+
+    groups.push({
+      turnId,
+      userMessages: userMsgs,
+      toolCalls,
+      responseItems,
+    });
+  }
+
+  const orphanActions = runtimeActionItems.filter(
+    (a) => extractRuntimeActionTurnId(a) === null
   );
+  if (orphanActions.length > 0) {
+    groups.push({
+      turnId: "__orphan__",
+      userMessages: [],
+      toolCalls: [],
+      responseItems: orphanActions.map((action) => ({
+        kind: "runtimeAction" as const,
+        sortRank: action.createdAt,
+        action,
+      })),
+    });
+  }
+
+  return groups;
 };
+
+const extractRuntimeActionTurnId = (
+  action: TimelineRuntimeActionItem,
+): string | null => action.turnId;
+
+/* ── Presentation components ─────────────────────────────── */
 
 const formatMessageTime = (timestamp: number, locale: string): string => {
   try {
@@ -295,157 +420,144 @@ const AiPanelMessageBubble = ({
   );
 };
 
-const toolIcon = (toolPath: string, phase: string) => {
-  if (phase === "tool_operation_failed") {
-    return <AlertTriangle size={13} aria-hidden="true" />;
-  }
-  if (phase === "tool_operation_started") {
-    return <Loader2 size={13} aria-hidden="true" />;
-  }
-  if (toolPath.startsWith("/tools/git")) {
-    return <GitBranch size={13} aria-hidden="true" />;
-  }
-  if (toolPath.startsWith("/tools/shell")) {
-    return <Terminal size={13} aria-hidden="true" />;
-  }
-  if (toolPath.includes("/propose_patch")) {
-    return <FileDiff size={13} aria-hidden="true" />;
-  }
-  if (
-    toolPath.includes("/list_files")
-    || toolPath.includes("/walk_directory")
-    || toolPath === "/tools/filesystem"
-  ) {
-    return <FolderOpen size={13} aria-hidden="true" />;
-  }
-  if (
-    toolPath.includes("/read_file")
-    || toolPath.includes("/read_range")
-    || toolPath.includes("/stat_path")
-  ) {
-    return <FileText size={13} aria-hidden="true" />;
-  }
-  if (
-    toolPath.includes("/search")
-    || toolPath.startsWith("/tools/code")
-  ) {
-    return <FileSearch size={13} aria-hidden="true" />;
-  }
-  return phase === "tool_operation_completed"
-    ? <CheckCircle2 size={13} aria-hidden="true" />
-    : <Info size={13} aria-hidden="true" />;
+const AiPanelLiveAssistantBubble = ({
+  text,
+  turnId,
+  sessionId,
+  locale,
+}: {
+  readonly text: string;
+  readonly turnId: string;
+  readonly sessionId: string;
+  readonly locale: WorkbenchLocale;
+}) => {
+  const content = text.trim();
+  return (
+    <article className="lyra-ai-agent-message lyra-ai-agent-message-assistant lyra-ai-agent-message-live">
+      <header className="lyra-ai-agent-message-meta">
+        <span>Lyra</span>
+      </header>
+      {content.length === 0 ? null : (
+        <AiPanelRichContent locale={locale} content={content} />
+      )}
+      <AiPanelMessageFooter
+        role="assistant"
+        createdAt={Date.now()}
+        locale={locale}
+        live
+      />
+    </article>
+  );
 };
 
-const toolEventLabel = (event: AgentRuntimeEvent): {
-  readonly toolPath: string;
-  readonly summary: string;
-  readonly detail: string | null;
-} => {
-  const payload = isRecord(event.payload) ? event.payload : {};
-  const operation = isRecord(payload.operation) ? payload.operation : {};
-  const result = isRecord(payload.result) ? payload.result : {};
-  const toolPath = readString(operation.toolPath)
-    ?? readString(operation.path)
-    ?? readString(result.path)
-    ?? "/tools";
-  const summary = readString(result.summary)
-    ?? readString(operation.summary)
-    ?? (event.phase === "tool_operation_started" ? `Running ${toolPath}` : "ToolFS event");
-  const truncated = readBoolean(result.truncated);
-  const resultRef = readString(result.resultRef);
-  const patchRef = readString(result.patchRef);
-  const artifactId = readString(result.artifactId);
-  const evidenceId = readString(result.evidenceId);
-  const contentBytes = readNumber(result.contentBytes);
-  const patchDetail = toolPath.includes("/propose_patch") || patchRef !== null || artifactId !== null
-    ? [
-        changedFilesSummary(extractChangedFiles(result.changedFiles)),
-        patchRef === null ? resultRef : `patch ${patchRef}`,
-        artifactId === null ? null : `artifact ${artifactId}`,
-        evidenceId === null ? null : `evidence ${evidenceId}`,
-        truncated ? "truncated" : null,
-      ].filter((value): value is string => value !== null).join(" · ")
-    : "";
-  const resultDetail = patchDetail.length > 0
-    ? patchDetail
-    : [
-        resultRef,
-        truncated ? "truncated" : null,
-        contentBytes === null ? null : `${String(contentBytes)} bytes`,
-      ].filter((value): value is string => value !== null).join(" · ");
-  const detail = readString(result.errorMessage)
-    ?? readString(result.errorCode)
-    ?? (resultDetail.length > 0 ? resultDetail : toolPath);
-  return { toolPath, summary, detail };
-};
+/* ── Turn group view ─────────────────────────────────────── */
 
-const AiPanelToolEventRow = ({
-  event,
-  detail: sessionDetail,
-  expandedPatchKey = null,
+const TurnGroupView = ({
+  group,
+  locale,
+  detail,
+  streamingTurnId,
+  expandedPatchKey,
   onPatchExpandedChange,
   readArtifact,
   applyPatch,
   resolveApproval,
+  resolveClarification,
+  resolvePlanReview,
+  executeMessageRollback,
+  onClarificationResolved,
+  onRollbackExecuted,
+  renderMessageActions,
 }: {
-  readonly event: AgentRuntimeEvent;
+  readonly group: TurnGroup;
+  readonly locale: WorkbenchLocale;
   readonly detail: AgentSessionDetail | null;
+  readonly streamingTurnId: string | null;
   readonly expandedPatchKey?: string | null | undefined;
   readonly onPatchExpandedChange?: ((key: string | null) => void) | undefined;
   readonly readArtifact?: ReadPatchArtifact | undefined;
-  readonly applyPatch?: ((request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>) | undefined;
+  readonly applyPatch?: ((request: {
+    readonly sessionId: string;
+    readonly artifactId?: string;
+    readonly patchRef?: string;
+  }) => Promise<AgentApplyPatchResult>) | undefined;
   readonly resolveApproval?: ((request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>) | undefined;
-}) => {
-  const patchProposal = extractPatchProposalEvent(event);
-  if (patchProposal !== null) {
-    const expanded = expandedPatchKey === patchProposal.key;
-    const approval = patchApprovalForProposal(sessionDetail, patchProposal);
-    return (
-      <div className="lyra-ai-agent-timeline-event" data-kind="patch">
-        <span className="lyra-ai-agent-timeline-event-marker" aria-hidden="true">
-          {toolIcon("/tools/filesystem/propose_patch", event.phase)}
-        </span>
-        <div className="lyra-ai-agent-timeline-event-body">
-          <PatchPreviewCard
-            proposal={patchProposal}
-            expanded={expanded}
-            readArtifact={readArtifact}
-            applyPatch={applyPatch}
-            resolveApproval={resolveApproval}
-            applied={isPatchProposalApplied(sessionDetail, patchProposal)}
-            denied={isPatchProposalDenied(sessionDetail, patchProposal)}
-            approvalRequired={approval !== null}
-            approvalTicketId={approval?.approvalTicketId ?? null}
-            onToggle={(key) => {
-              onPatchExpandedChange?.(expanded ? null : key);
-            }}
+  readonly resolveClarification?:
+    | ((request: AgentResolveClarificationRequest) => Promise<AgentResolveClarificationResult>)
+    | undefined;
+  readonly resolvePlanReview?:
+    | ((request: AgentResolvePlanReviewRequest) => Promise<AgentResolvePlanReviewResult>)
+    | undefined;
+  readonly executeMessageRollback?:
+    | ((request: AgentExecuteMessageRollbackRequest) => Promise<AgentExecuteMessageRollbackResult>)
+    | undefined;
+  readonly onClarificationResolved?: (() => Promise<void> | void) | undefined;
+  readonly onRollbackExecuted?: (() => Promise<void> | void) | undefined;
+  readonly renderMessageActions?: ((message: AgentMessage) => ReactNode) | undefined;
+}) => (
+  <div className="lyra-ai-turn-group" data-turn-id={group.turnId}>
+    {group.userMessages.map((message) => (
+      <AiPanelMessageBubble
+        key={message.id}
+        message={message}
+        locale={locale}
+        actions={renderMessageActions?.(message)}
+      />
+    ))}
+
+    {group.toolCalls.length > 0 ? (
+      <ToolCallGroup
+        calls={group.toolCalls}
+        detail={detail}
+        expandedPatchKey={expandedPatchKey}
+        onPatchExpandedChange={onPatchExpandedChange}
+        readArtifact={readArtifact}
+        applyPatch={applyPatch}
+        resolveApproval={resolveApproval}
+      />
+    ) : null}
+
+    {group.responseItems.map((item) => {
+      if (item.kind === "assistantMessage") {
+        return (
+          <AiPanelMessageBubble
+            key={item.message.id}
+            message={item.message}
+            locale={locale}
+            live={item.message.turnId === streamingTurnId}
+            actions={renderMessageActions?.(item.message)}
           />
-        </div>
-      </div>
-    );
-  }
-  const { toolPath, summary, detail } = toolEventLabel(event);
-  const tone = event.phase === "tool_operation_failed"
-    ? "error"
-    : event.phase === "tool_operation_started"
-      ? "running"
-      : "done";
-  return (
-    <div className="lyra-ai-agent-timeline-event" data-kind="tool" data-tone={tone}>
-      <span className="lyra-ai-agent-timeline-event-marker" aria-hidden="true">
-        {toolIcon(toolPath, event.phase)}
-      </span>
-      <div className="lyra-ai-agent-timeline-event-body">
-        <div className={`lyra-ai-agent-tool-event lyra-ai-agent-tool-event-${tone}`}>
-          <span className="lyra-ai-agent-tool-event-summary">{summary}</span>
-          {detail === null ? null : (
-            <span className="lyra-ai-agent-tool-event-detail">{detail}</span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
+        );
+      }
+      if (item.kind === "runtimeAction") {
+        return (
+          <TimelineRuntimeAction
+            key={item.action.id}
+            actionKind={item.action.actionKind}
+            detail={detail}
+            resolveClarification={resolveClarification}
+            resolveApproval={resolveApproval}
+            resolvePlanReview={resolvePlanReview}
+            executeMessageRollback={executeMessageRollback}
+            onClarificationResolved={onClarificationResolved}
+            onRollbackExecuted={onRollbackExecuted}
+          />
+        );
+      }
+      return (
+        <AiPanelLiveAssistantBubble
+          key={`live-${group.turnId}`}
+          text={item.text}
+          turnId={group.turnId}
+          sessionId={detail?.session.id ?? ""}
+          locale={locale}
+        />
+      );
+    })}
+  </div>
+);
+
+/* ── Main thread view ────────────────────────────────────── */
 
 export const AiPanelThreadView = memo(({
   logoUrl,
@@ -477,7 +589,7 @@ export const AiPanelThreadView = memo(({
     && !messages.some((message) =>
       message.role === "assistant" && message.turnId === streamingTurnId
     );
-  const timelineItems = buildTimelineItems(
+  const turnGroups = buildTurnGroups(
     detail,
     optimisticUserMessages,
     hasLiveAssistant && streamingTurnId !== null
@@ -486,45 +598,31 @@ export const AiPanelThreadView = memo(({
   );
 
   if (
-    timelineItems.length > 0
+    turnGroups.length > 0
     || runtimeError !== null
     || isLoading
   ) {
     return (
       <div className="lyra-ai-agent-thread-view" role="log" aria-live="polite">
-        {timelineItems.map((item) => (
-          item.kind === "message" ? (
-            <AiPanelMessageBubble
-              key={item.id}
-              message={item.message}
-              locale={locale}
-              live={item.live || (item.message.role === "assistant" && item.message.turnId === streamingTurnId)}
-              actions={renderMessageActions?.(item.message)}
-            />
-          ) : item.kind === "runtimeAction" ? (
-            <TimelineRuntimeAction
-              key={item.id}
-              actionKind={item.actionKind}
-              detail={detail}
-              resolveClarification={resolveClarification}
-              resolveApproval={resolveApproval}
-              resolvePlanReview={resolvePlanReview}
-              executeMessageRollback={executeMessageRollback}
-              onClarificationResolved={onClarificationResolved}
-              onRollbackExecuted={onRollbackExecuted}
-            />
-          ) : (
-            <AiPanelToolEventRow
-              key={item.id}
-              event={item.event}
-              detail={detail}
-              expandedPatchKey={expandedPatchKey}
-              onPatchExpandedChange={onPatchExpandedChange}
-              readArtifact={readArtifact}
-              applyPatch={applyPatch}
-              resolveApproval={resolveApproval}
-            />
-          )
+        {turnGroups.map((group) => (
+          <TurnGroupView
+            key={group.turnId}
+            group={group}
+            locale={locale}
+            detail={detail}
+            streamingTurnId={streamingTurnId}
+            expandedPatchKey={expandedPatchKey}
+            onPatchExpandedChange={onPatchExpandedChange}
+            readArtifact={readArtifact}
+            applyPatch={applyPatch}
+            resolveApproval={resolveApproval}
+            resolveClarification={resolveClarification}
+            resolvePlanReview={resolvePlanReview}
+            executeMessageRollback={executeMessageRollback}
+            onClarificationResolved={onClarificationResolved}
+            onRollbackExecuted={onRollbackExecuted}
+            renderMessageActions={renderMessageActions}
+          />
         ))}
         {isLoading ? (
           <div className="lyra-ai-agent-thread-status">
