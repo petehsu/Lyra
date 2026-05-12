@@ -1,12 +1,7 @@
-import { useMemo } from "react";
-
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { FileEditorModel } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
-import { useMcpCenterModel } from "../mcp-center";
-import { usePluginsCenterModel } from "../plugins-center";
 import { useSettingsAiModel } from "../settings-ai";
-import { useSkillsCenterModel } from "../skills-center";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type { WorkbenchLabels } from "./use-workbench-labels";
 
@@ -37,28 +32,6 @@ export const useWorkbenchActiveAppContext = ({
     activeTab.appInstanceId !== undefined
       ? fileEditorModel.getState(activeTab.appInstanceId)
       : null;
-  const mcpProjectHintPath = useMemo(() => {
-    if (activeFileEditorState !== null) {
-      return activeFileEditorState.filePath;
-    }
-    if (activeFileManagerState?.currentLocation?.path !== undefined) {
-      return activeFileManagerState.currentLocation.path;
-    }
-    return activeTab?.filePath;
-  }, [activeFileEditorState, activeFileManagerState, activeTab?.filePath]);
-  const mcpCenterModel = useMcpCenterModel({
-    desktopApi,
-    ...(mcpProjectHintPath === undefined ? {} : { projectHintPath: mcpProjectHintPath })
-  });
-  const skillsCenterModel = useSkillsCenterModel({
-    desktopApi,
-    ...(mcpProjectHintPath === undefined ? {} : { projectHintPath: mcpProjectHintPath }),
-    labels: labels.skillsCenter
-  });
-  const pluginsCenterModel = usePluginsCenterModel({
-    desktopApi,
-    ...(mcpProjectHintPath === undefined ? {} : { projectHintPath: mcpProjectHintPath })
-  });
   const settingsAiModel = useSettingsAiModel({
     desktopApi,
     labels: labels.settingsAi
@@ -67,9 +40,6 @@ export const useWorkbenchActiveAppContext = ({
   return {
     activeFileManagerState,
     activeFileEditorState,
-    mcpCenterModel,
-    skillsCenterModel,
-    pluginsCenterModel,
     settingsAiModel
   };
 };

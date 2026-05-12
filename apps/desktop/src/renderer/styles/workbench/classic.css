@@ -9,14 +9,7 @@
 @import "./file-manager.css";
 @import "./image-viewer.css";
 @import "./resource-monitor.css";
-@import "./agent-vm.css";
 @import "./ai-panel.css";
 @import "./notification-center.css";
-@import "./mcp-center-shell.css";
-@import "./mcp-center-list.css";
-@import "./mcp-center-panels.css";
-@import "./mcp-center-forms.css";
-@import "./skills-center.css";
-@import "./plugins-center.css";
 @import "./terminal.css";
 @import "./file-editor.css";

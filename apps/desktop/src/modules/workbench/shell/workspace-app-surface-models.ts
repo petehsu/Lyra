@@ -1,17 +1,10 @@
 import {
-  isAiHistoryAppId,
-  isAiMcpAppId,
-  isAiPlanReviewAppId,
-  isAiPluginsAppId,
-  isAiSkillsAppId,
-  isAgentVmAppId,
   isFileEditorAppId,
   isFileManagerAppId,
   isImageViewerAppId,
   isNotificationCenterAppId,
   isResourceMonitorAppId
 } from "../workspace-apps";
-import { readAgentVmSessionIdFromAppInstanceId } from "../ai-panel";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type {
   SurfacePropsByKind,
@@ -53,54 +46,6 @@ const createFileEditorProps = (
         })
   };
 };
-
-const createAiHistoryProps = (
-  context: WorkspaceSurfaceRenderContext
-): SurfacePropsByKind["aiHistory"] => ({
-  desktopApi: context.desktopApi,
-  locale: context.aiHistory.locale,
-  title: context.aiHistory.title,
-  openConversationLabel: context.aiHistory.openConversationLabel,
-  ...(context.aiHistory.renameConversationLabel === undefined
-    ? {}
-    : { renameConversationLabel: context.aiHistory.renameConversationLabel }),
-  deleteConversationLabel: context.aiHistory.deleteConversationLabel,
-  archiveConversationLabel: context.aiHistory.archiveConversationLabel,
-  unarchiveConversationLabel: context.aiHistory.unarchiveConversationLabel,
-  archivedConversationLabel: context.aiHistory.archivedConversationLabel,
-  archivedProjectLabel: context.aiHistory.archivedProjectLabel,
-  deleteArchivedConversationTitle: context.aiHistory.deleteArchivedConversationTitle,
-  deleteArchivedConversationDescription: context.aiHistory.deleteArchivedConversationDescription,
-  deleteArchivedConversationConfirm: context.aiHistory.deleteArchivedConversationConfirm,
-  deleteArchivedConversationCancel: context.aiHistory.deleteArchivedConversationCancel,
-  sessionIdLabel: context.aiHistory.sessionIdLabel,
-  loadingSessionsLabel: context.aiHistory.loadingSessionsLabel,
-  emptyStateTitle: context.aiHistory.emptyStateTitle,
-  emptyStateDescription: context.aiHistory.emptyStateDescription,
-  scopeGlobalLabel: context.aiHistory.scopeGlobalLabel,
-  scopeProjectLabel: context.aiHistory.scopeProjectLabel,
-  noProjectsEmptyLabel: context.aiHistory.noProjectsEmptyLabel,
-  projectSessionCountLabel: context.aiHistory.projectSessionCountLabel,
-  backToProjectsLabel: context.aiHistory.backToProjectsLabel,
-  projectPathLabel: context.aiHistory.projectPathLabel,
-  threadPreviewEmptyLabel: context.aiHistory.threadPreviewEmptyLabel,
-  previewLoadingLabel: context.aiHistory.previewLoadingLabel,
-  ...(context.aiHistory.planModeLabel === undefined
-    ? {}
-    : { planModeLabel: context.aiHistory.planModeLabel }),
-  ...(context.aiHistory.richRenderingEnabled === undefined
-    ? {}
-    : { richRenderingEnabled: context.aiHistory.richRenderingEnabled }),
-  ...(context.aiHistory.themeSignature === undefined
-    ? {}
-    : { themeSignature: context.aiHistory.themeSignature }),
-  ...(context.aiHistory.openDialog === undefined
-    ? {}
-    : { openDialog: context.aiHistory.openDialog }),
-  ...(context.aiHistory.onHistoryEmptied === undefined
-    ? {}
-    : { onHistoryEmptied: context.aiHistory.onHistoryEmptied })
-});
 
 export const createTerminalWorkspaceModel = (
   tab: WorkspaceTab,
@@ -215,67 +160,6 @@ export const createAppSurfaceRenderModel = (
         onClearAll: context.notifications.onRequestClearAll,
         onOpenNotificationSource: context.notifications.onOpenNotificationSource
       }
-    };
-  }
-
-  if (isAiMcpAppId(tab.appId)) {
-    return {
-      kind: "mcpCenter",
-      props: {
-        model: context.mcpCenter.model,
-        labels: context.mcpCenter.labels
-      }
-    };
-  }
-
-  if (isAiSkillsAppId(tab.appId)) {
-    return {
-      kind: "skillsCenter",
-      props: {
-        model: context.skillsCenter.model,
-        labels: context.skillsCenter.labels
-      }
-    };
-  }
-
-  if (isAiPluginsAppId(tab.appId)) {
-    return {
-      kind: "pluginsCenter",
-      props: {
-        model: context.pluginsCenter.model,
-        labels: context.pluginsCenter.labels
-      }
-    };
-  }
-
-  if (isAgentVmAppId(tab.appId)) {
-    return {
-      kind: "agentVm",
-      props: {
-        desktopApi: context.desktopApi,
-        labels: context.agentVm.labels,
-        sessionId:
-          tab.appInstanceId === undefined
-            ? null
-            : readAgentVmSessionIdFromAppInstanceId(tab.appInstanceId),
-      },
-    };
-  }
-
-  if (isAiHistoryAppId(tab.appId)) {
-    return {
-      kind: "aiHistory",
-      props: createAiHistoryProps(context)
-    };
-  }
-
-  if (isAiPlanReviewAppId(tab.appId) && tab.appInstanceId !== undefined) {
-    return {
-      kind: "planReview",
-      props: {
-        instanceId: tab.appInstanceId,
-        model: context.planReview.model,
-      },
     };
   }
 

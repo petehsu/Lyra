@@ -25,12 +25,6 @@ Lyra Desktop renderer 样式采用“基础层 + 模块层”结构，避免回�
 - `workbench/global-dialog.css`
 - `workbench/file-manager.css`
 - `workbench/ai-panel.css`
-- `workbench/mcp-center-shell.css`
-- `workbench/mcp-center-list.css`
-- `workbench/mcp-center-panels.css`
-- `workbench/mcp-center-forms.css`
-- `workbench/mcp-center.css`（迁移过渡壳，原则上不再新增规则）
-- `workbench/skills-center.css`
 - `workbench/terminal.css`
 - `workbench/file-editor.css`
 

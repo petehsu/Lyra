@@ -60,17 +60,6 @@ describe("workbench UI guard", () => {
     expect(violations.some((violation) => violation.includes("tab stacking"))).toBe(true);
   });
 
-  test("keeps AI history rows free of colored project logos", () => {
-    const source = `
-      import { projectLogoUrlForRoot } from "../project-identity";
-      export const Row = () => <ProjectIdentityIcon projectLogoUrl={projectLogoUrlForRoot(logos, root)} />;
-    `;
-    expect(scanWorkbenchDesignContracts(
-      "apps/desktop/src/modules/workbench/ai-history/surface-view.tsx",
-      source
-    )[0]).toContain("neutral project symbols");
-  });
-
   test("keeps AI thread tabs free of colored project logos", () => {
     const source = `
       import { projectLogoUrlForRoot } from "../project-identity";

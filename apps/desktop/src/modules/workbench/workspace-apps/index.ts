@@ -1,11 +1,5 @@
 export {
   renderWorkspaceAppIcon,
-  isAiHistoryAppId,
-  isAiMcpAppId,
-  isAiPlanReviewAppId,
-  isAiPluginsAppId,
-  isAiSkillsAppId,
-  isAgentVmAppId,
   isFileEditorAppId,
   isFileManagerAppId,
   isImageViewerAppId,

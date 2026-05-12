@@ -23,19 +23,16 @@ import {
   resolveLyraAppIconPath,
   type LyraAppIconVariant
 } from "./app-identity";
-import { createAiIpcBridge } from "./ai";
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createFilesIpcBridge } from "./files";
 import { createDownloadManagerIpcBridge } from "./download-manager";
 import { createImageViewerIpcBridge } from "./image-viewer";
 import { createLspIpcBridge } from "./lsp";
 import { createLinuxCompatBridge } from "./linux-compat";
-import { createMcpIpcBridge } from "./mcp";
 import { resolveCurrentDesktopTarget } from "./platform-target";
 import { createResourceRuntimeService } from "./resources/service";
 import { createLyraRuntimeClient } from "./runtime-client";
 import { createSearchIpcBridge } from "./search";
-import { createSkillsIpcBridge } from "./skills";
 import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
 import {
   applyElectronStoragePaths,
@@ -95,13 +92,10 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null;
 let disposeTerminalBridge: (() => void) | null = null;
-let disposeAiBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
 let disposeDownloadManagerBridge: (() => void) | null = null;
 let disposeImageViewerBridge: (() => void) | null = null;
 let disposeLspBridge: (() => void) | null = null;
-let disposeMcpBridge: (() => Promise<void>) | null = null;
-let disposeSkillsBridge: (() => Promise<void>) | null = null;
 let disposeWorkbenchBrowserBridge: (() => void) | null = null;
 let disposeResourceRuntimeService: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
@@ -657,11 +651,6 @@ const registerIpcHandlers = (): void => {
   const filesBridge = createFilesIpcBridge(storageRoots.modules.fileManager);
   console.info(`[lyra-files] native loaded: ${filesBridge.loadResult.loadedFrom}`);
   disposeFilesBridge = filesBridge.dispose;
-  const downloadManagerBridge = createDownloadManagerIpcBridge({
-    storageRoot: storageRoots.modules.downloadManager,
-    getWindow: () => mainWindow
-  });
-  disposeDownloadManagerBridge = downloadManagerBridge.dispose;
   const imageViewerBridge = createImageViewerIpcBridge(storageRoots.modules.imageViewer);
   console.info(`[lyra-image-viewer] native loaded: ${imageViewerBridge.loadResult.loadedFrom}`);
   disposeImageViewerBridge = imageViewerBridge.dispose;
@@ -673,13 +662,12 @@ const registerIpcHandlers = (): void => {
     storageRoot: storageRoots.modules.runtime
   });
   disposeRuntimeClient = runtimeClient.dispose;
-
-  const aiBridge = createAiIpcBridge({
+  const downloadManagerBridge = createDownloadManagerIpcBridge({
+    storageRoot: storageRoots.modules.downloadManager,
     runtimeClient,
-    storageRoot: storageRoots.modules.ai,
     getWindow: () => mainWindow
   });
-  disposeAiBridge = aiBridge.dispose;
+  disposeDownloadManagerBridge = downloadManagerBridge.dispose;
 
   const terminalBridge = createTerminalIpcBridge(
     storageRoots.modules.terminal,
@@ -698,21 +686,6 @@ const registerIpcHandlers = (): void => {
   const lspBridge = createLspIpcBridge(runtimeClient, () => mainWindow);
   console.info(`[lyra-lsp] runtime attached: ${lspBridge.loadResult.loadedFrom}`);
   disposeLspBridge = lspBridge.dispose;
-
-  const mcpBridge = createMcpIpcBridge(
-    storageRoots.modules.mcp,
-    runtimeClient,
-    () => mainWindow,
-    filesBridge.nativeBindings
-  );
-  disposeMcpBridge = mcpBridge.dispose;
-
-  const skillsBridge = createSkillsIpcBridge({
-    storageRoot: storageRoots.modules.skills,
-    getWindow: () => mainWindow,
-    filesNativeBindings: filesBridge.nativeBindings
-  });
-  disposeSkillsBridge = skillsBridge.dispose;
 
   workbenchBrowserBridge = createWorkbenchBrowserIpcBridge({
     getWindow: () => mainWindow,
@@ -899,21 +872,9 @@ app.on("before-quit", () => {
     disposeTerminalBridge();
     disposeTerminalBridge = null;
   }
-  if (disposeAiBridge !== null) {
-    disposeAiBridge();
-    disposeAiBridge = null;
-  }
   if (disposeLspBridge !== null) {
     disposeLspBridge();
     disposeLspBridge = null;
-  }
-  if (disposeMcpBridge !== null) {
-    void disposeMcpBridge();
-    disposeMcpBridge = null;
-  }
-  if (disposeSkillsBridge !== null) {
-    void disposeSkillsBridge();
-    disposeSkillsBridge = null;
   }
   if (disposeWorkbenchBrowserBridge !== null) {
     disposeWorkbenchBrowserBridge();

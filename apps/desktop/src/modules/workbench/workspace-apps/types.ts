@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import type { AiPanelAppIconKey, AiPanelAppId } from "../ai-panel/types";
 import type { FileManagerAppIconKey, FileManagerAppId } from "../file-manager/types";
 import type { FileEditorAppIconKey, FileEditorAppId } from "../file-editor/types";
 import type { ImageViewerAppIconKey, ImageViewerAppId } from "../image-viewer";
@@ -24,7 +23,6 @@ export type WorkbenchAppId =
   | FileEditorAppId
   | ImageViewerAppId
   | ResourceMonitorAppId
-  | AiPanelAppId
   | NotificationCenterAppId;
 
 export type WorkspaceAppRef = {
@@ -37,7 +35,6 @@ export type WorkspaceAppIconKey =
   | FileEditorAppIconKey
   | ImageViewerAppIconKey
   | ResourceMonitorAppIconKey
-  | AiPanelAppIconKey
   | NotificationCenterAppIconKey;
 
 export type WorkspaceAppIconRenderer = (iconKey: WorkspaceAppIconKey) => ReactNode;

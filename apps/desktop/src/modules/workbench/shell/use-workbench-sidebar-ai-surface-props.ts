@@ -1,25 +1,15 @@
 import { useMemo } from "react";
 
-import {
-  createAgentVmAppRequest,
-  createAiHistoryAppRequest,
-  createAiMcpAppRequest,
-  createAiPluginsAppRequest,
-  createAiSkillsAppRequest,
-  type AgentComposerWorkbenchTabMention
-} from "../ai-panel";
-import { readAiHistoryHasThreads } from "../ai-history/availability";
 import type { I18nKey } from "../i18n";
 import type { WorkbenchPreferences } from "../preferences";
 import type { SettingsAiModel } from "../settings-ai";
-import type { WorkspaceTabsModel } from "../workspace-tabs";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { AiPanelSide } from "./use-panel-layout";
 import type { AiPanelSurfaceProps } from "../ai-panel";
 
 type SidebarAiPreferences = Pick<
   WorkbenchPreferences,
-  "locale" | "aiStopBehavior"
+  "locale" | "aiStopBehavior" | "aiRichRenderingEnabled"
 >;
 
 type UseWorkbenchSidebarAiSurfacePropsParams = {
@@ -27,11 +17,8 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   readonly preferences: SidebarAiPreferences;
   readonly settingsAiModel: SettingsAiModel;
   readonly aiPanelSide: AiPanelSide;
-  readonly fileMentionFallbackRoots: readonly string[];
-  readonly workbenchTabMentions: readonly AgentComposerWorkbenchTabMention[];
-  readonly onFollowOpenFilePath?: AiPanelSurfaceProps["onFollowOpenFilePath"] | undefined;
+  readonly themeSignature?: string | undefined;
   readonly onToggleAiPanelSide: () => void;
-  readonly openAppTab: WorkspaceTabsModel["openAppTab"];
   readonly onRequestProjectBind: (
     currentPath?: string
   ) => Promise<string | null>;
@@ -41,14 +28,8 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
 export const useWorkbenchSidebarAiSurfaceProps = ({
   desktopApi,
   preferences,
-  settingsAiModel,
   aiPanelSide,
-  fileMentionFallbackRoots,
-  workbenchTabMentions,
-  onFollowOpenFilePath,
   onToggleAiPanelSide,
-  openAppTab,
-  onRequestProjectBind,
   t
 }: UseWorkbenchSidebarAiSurfacePropsParams): AiPanelSurfaceProps =>
   useMemo(
@@ -57,66 +38,17 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       desktopApi,
       locale: preferences.locale,
       title: t("ai.tabTitle"),
-      stopBehavior: preferences.aiStopBehavior,
-      newSessionTitle: t("ai.sessionDefaultTitle"),
-      defaultProfileId: settingsAiModel.defaultProfileId,
-      defaultProviderId: settingsAiModel.defaultProviderId,
-      defaultModelNames: settingsAiModel.defaultModelNames,
-      configuredProfiles: settingsAiModel.profiles,
-      onDefaultProfileSelect: settingsAiModel.setDefaultProfile,
-      fileMentionFallbackRoots,
-      workbenchTabMentions,
-      ...(onFollowOpenFilePath === undefined ? {} : { onFollowOpenFilePath }),
-      openHistoryLabel: t("ai.openHistory"),
-      openMcpLabel: t("ai.openMcp"),
-      openSkillsLabel: t("ai.openSkills"),
-      openPluginsLabel: t("ai.openPlugins"),
       aiPanelSide,
       onToggleAiPanelSide,
       movePanelToLeftLabel: t("ai.movePanelToLeft"),
       movePanelToRightLabel: t("ai.movePanelToRight"),
-      bindProjectLabel: t("ai.bindProjectLabel"),
-      composeAriaLabel: t("sidebar.composeAriaLabel"),
-      composePlaceholder: t("sidebar.composePlaceholder"),
-      composeSendLabel: t("sidebar.composeSend"),
       emptyThreadLabel: t("ai.startBySending"),
-      onOpenHistory: () => {
-        void readAiHistoryHasThreads(desktopApi).then((hasThreads) => {
-          if (hasThreads) {
-            openAppTab(createAiHistoryAppRequest(t("ai.historyTitle")));
-          }
-        });
-      },
-      onOpenMcp: () => {
-        openAppTab(createAiMcpAppRequest(t("ai.mcpTabTitle")));
-      },
-      onOpenSkills: () => {
-        openAppTab(createAiSkillsAppRequest(t("ai.skillsTabTitle")));
-      },
-      onOpenPlugins: () => {
-        openAppTab(createAiPluginsAppRequest(t("ai.pluginsTabTitle")));
-      },
-      onOpenAgentVm: (request) => {
-        openAppTab(createAgentVmAppRequest(t("ai.agentVmTabTitle"), request?.sessionId));
-      },
-      onRequestProjectBind
     }),
     [
       aiPanelSide,
       desktopApi,
-      fileMentionFallbackRoots,
-      onFollowOpenFilePath,
-      workbenchTabMentions,
-      onRequestProjectBind,
       onToggleAiPanelSide,
-      openAppTab,
-      preferences.aiStopBehavior,
       preferences.locale,
-      settingsAiModel.defaultModelNames,
-      settingsAiModel.defaultProfileId,
-      settingsAiModel.defaultProviderId,
-      settingsAiModel.profiles,
-      settingsAiModel.setDefaultProfile,
-      t
+      t,
     ]
   );

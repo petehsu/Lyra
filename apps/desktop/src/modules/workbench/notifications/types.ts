@@ -6,13 +6,10 @@ export type NotificationCenterAppIconKey = "notification-center-default";
 export type WorkbenchNotificationLevel = "info" | "success" | "warning" | "error";
 
 export type WorkbenchNotificationSourceIconKey =
-  | "ai"
   | "file-manager"
   | "file-editor"
   | "browser"
   | "terminal"
-  | "mcp"
-  | "skills"
   | "system"
   | "notification";
 
@@ -38,12 +35,6 @@ export type WorkbenchNotificationTarget =
         | "file-editor"
         | "image-viewer"
         | "resource-monitor"
-        | "ai-history"
-        | "ai-mcp"
-        | "ai-plan-review"
-        | "ai-skills"
-        | "ai-plugins"
-        | "agent-vm"
         | NotificationCenterAppId;
       readonly appInstanceId: string;
       readonly title?: string;

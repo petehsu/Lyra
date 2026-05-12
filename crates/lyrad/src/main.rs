@@ -14,19 +14,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[cfg(unix)]
-use lyra_ai_core::{
-    clear_rust_event_callback as clear_ai_event_callback,
-    register_rust_event_callback as register_ai_event_callback,
+use lyra_download_core::{
+    clear_rust_event_callback as clear_download_event_callback,
+    register_rust_event_callback as register_download_event_callback,
 };
 #[cfg(unix)]
 use lyra_lsp_core::{
     clear_rust_event_callback as clear_lsp_event_callback,
     register_rust_event_callback as register_lsp_event_callback, shutdown as shutdown_lsp,
-};
-#[cfg(unix)]
-use lyra_mcp_core::{
-    clear_rust_event_callback as clear_mcp_event_callback,
-    register_rust_event_callback as register_mcp_event_callback, shutdown_mcp_runtime,
 };
 #[cfg(unix)]
 use lyra_runtime_protocol::{RuntimeEnvelope, RuntimeError};
@@ -51,11 +46,9 @@ const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 #[cfg(unix)]
 const TERMINAL_RUNTIME_EVENT_NAME: &str = "terminal.runtime";
 #[cfg(unix)]
-const MCP_RUNTIME_EVENT_NAME: &str = "mcp.runtime";
-#[cfg(unix)]
 const LSP_RUNTIME_EVENT_NAME: &str = "lsp.runtime";
 #[cfg(unix)]
-const AI_RUNTIME_EVENT_NAME: &str = "agent.runtime";
+const DOWNLOAD_RUNTIME_EVENT_NAME: &str = "download.runtime";
 
 fn main() {
     run();
@@ -221,31 +214,24 @@ fn register_runtime_hooks(sessions: &DaemonSessionManager) {
         forward_json_event(&terminal_sessions, TERMINAL_RUNTIME_EVENT_NAME, &event_json);
     }));
 
-    let mcp_sessions = sessions.clone();
-    register_mcp_event_callback(Arc::new(move |event_json| {
-        forward_json_event(&mcp_sessions, MCP_RUNTIME_EVENT_NAME, &event_json);
-    }));
-
     let lsp_sessions = sessions.clone();
     register_lsp_event_callback(Arc::new(move |event_json| {
         forward_json_event(&lsp_sessions, LSP_RUNTIME_EVENT_NAME, &event_json);
     }));
 
-    let ai_sessions = sessions.clone();
-    register_ai_event_callback(Arc::new(move |event_json| {
-        forward_json_event(&ai_sessions, AI_RUNTIME_EVENT_NAME, &event_json);
+    let download_sessions = sessions.clone();
+    register_download_event_callback(Arc::new(move |event_json| {
+        forward_json_event(&download_sessions, DOWNLOAD_RUNTIME_EVENT_NAME, &event_json);
     }));
 }
 
 #[cfg(unix)]
 fn shutdown_runtime_modules() {
     let _ = shutdown_terminal();
-    let _ = shutdown_mcp_runtime();
     let _ = shutdown_lsp();
     clear_terminal_event_callback();
-    clear_mcp_event_callback();
     clear_lsp_event_callback();
-    clear_ai_event_callback();
+    clear_download_event_callback();
 }
 
 #[cfg(unix)]
@@ -355,7 +341,7 @@ async fn serve_connection(
 
 #[cfg(test)]
 mod tests {
-    use crate::router::{handle_ai_request, handle_runtime_request};
+    use crate::router::handle_runtime_request;
     use crate::DaemonSessionManager;
     use lyra_runtime_protocol::RuntimeEnvelope;
     use tokio::sync::mpsc::unbounded_channel;
@@ -377,23 +363,6 @@ mod tests {
     }
 
     #[test]
-    fn ai_artifact_read_route_is_registered() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let error = handle_ai_request(
-            "agent.artifact.read",
-            serde_json::json!({
-                "storageRoot": temp.path().to_string_lossy(),
-                "sessionId": "session-missing",
-                "artifactId": "artifact-missing"
-            }),
-        )
-        .expect_err("missing artifact should be a runtime error");
-
-        assert_eq!(error.code, "RUNTIME_ERROR");
-        assert!(error.message.contains("AI diff artifact not found"));
-    }
-
-    #[test]
     fn runtime_reload_route_is_registered() {
         let result =
             handle_runtime_request("runtime.reload", serde_json::json!({})).expect("reload route");
@@ -402,237 +371,30 @@ mod tests {
     }
 
     #[test]
-    fn ai_patch_apply_route_is_registered() {
+    fn download_routes_are_registered() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let error = handle_ai_request(
-            "agent.patch.apply",
-            serde_json::json!({
-                "storageRoot": temp.path().to_string_lossy(),
-                "sessionId": "session-missing",
-                "artifactId": "artifact-missing"
-            }),
+        let storage_root = temp.path().to_string_lossy();
+
+        let snapshot = handle_runtime_request(
+            "download.list",
+            serde_json::json!({ "storageRoot": storage_root }),
         )
-        .expect_err("missing session should be a runtime error");
+        .expect("download list route");
+        assert_eq!(snapshot["tasks"].as_array().expect("tasks").len(), 0);
 
-        assert_eq!(error.code, "RUNTIME_ERROR");
-        assert!(error.message.contains("AI session not found"));
-    }
-
-    #[test]
-    fn ai_follow_routes_are_registered() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        for method in [
-            "agent.follow.read",
-            "agent.follow.pause",
-            "agent.follow.resume",
-            "agent.follow.live_edit.start",
-        ] {
-            let error = handle_ai_request(
-                method,
-                serde_json::json!({
-                    "storageRoot": temp.path().to_string_lossy(),
-                    "sessionId": "session-missing",
-                    "path": "README.md"
-                }),
-            )
-            .expect_err("missing session should be a runtime error");
-
-            assert_eq!(error.code, "RUNTIME_ERROR");
-            assert!(error.message.contains("AI session not found"));
-        }
-        for (method, payload) in [
-            (
-                "agent.follow.live_edit.append",
-                serde_json::json!({
-                    "storageRoot": temp.path().to_string_lossy(),
-                    "sessionId": "session-missing",
-                    "liveEditId": "live-edit-missing",
-                    "kind": "insert",
-                    "range": {},
-                    "payload": {}
-                }),
-            ),
-            (
-                "agent.follow.live_edit.commit",
-                serde_json::json!({
-                    "storageRoot": temp.path().to_string_lossy(),
-                    "sessionId": "session-missing",
-                    "liveEditId": "live-edit-missing",
-                    "toolOperationId": "op-missing"
-                }),
-            ),
-            (
-                "agent.follow.live_edit.discard",
-                serde_json::json!({
-                    "storageRoot": temp.path().to_string_lossy(),
-                    "sessionId": "session-missing",
-                    "liveEditId": "live-edit-missing"
-                }),
-            ),
-        ] {
-            let error = handle_ai_request(method, payload)
-                .expect_err("missing session should be a runtime error");
-
-            assert_eq!(error.code, "RUNTIME_ERROR");
-            assert!(error.message.contains("AI session not found"));
-        }
-    }
-
-    #[test]
-    fn ai_rollback_preview_route_is_registered() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        for (method, payload) in [
-            (
-                "agent.rollback.preview",
-                serde_json::json!({
-                    "storageRoot": temp.path().to_string_lossy(),
-                    "sessionId": "session-missing",
-                    "targetUserMessageId": "msg-missing"
-                }),
-            ),
-            (
-                "agent.rollback.read",
-                serde_json::json!({
-                    "storageRoot": temp.path().to_string_lossy(),
-                    "sessionId": "session-missing",
-                    "rollbackId": "rollback-missing"
-                }),
-            ),
-            (
-                "agent.rollback.execute",
-                serde_json::json!({
-                    "storageRoot": temp.path().to_string_lossy(),
-                    "sessionId": "session-missing",
-                    "rollbackId": "rollback-missing",
-                    "confirmationToken": "restore"
-                }),
-            ),
-            (
-                "agent.rollback.to_turn",
-                serde_json::json!({
-                    "storageRoot": temp.path().to_string_lossy(),
-                    "sessionId": "session-missing",
-                    "targetTurnId": "turn-missing",
-                    "confirmationToken": "restore"
-                }),
-            ),
-        ] {
-            let error = handle_ai_request(method, payload)
-                .expect_err("missing session should be a runtime error");
-
-            assert_eq!(error.code, "RUNTIME_ERROR");
-            assert!(error.message.contains("AI session not found"));
-        }
-    }
-
-    #[test]
-    fn ai_approval_resolve_route_is_registered() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let error = handle_ai_request(
-            "agent.approval.resolve",
-            serde_json::json!({
-                "storageRoot": temp.path().to_string_lossy(),
-                "sessionId": "session-missing",
-                "approvalTicketId": "approval-missing",
-                "decision": "deny"
-            }),
+        let settings = handle_runtime_request(
+            "download.settings.read",
+            serde_json::json!({ "storageRoot": storage_root }),
         )
-        .expect_err("missing ticket should be a runtime error");
+        .expect("download settings route");
+        assert_eq!(settings["version"], 1);
 
-        assert_eq!(error.code, "RUNTIME_ERROR");
-        assert!(error.message.contains("approval ticket not found"));
-    }
-
-    #[test]
-    fn ai_approval_resume_alias_routes_are_registered() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        for method in [
-            "agent.approval.approve_and_resume_tool",
-            "agent.approval.deny_and_resume_tool",
-        ] {
-            let error = handle_ai_request(
-                method,
-                serde_json::json!({
-                    "storageRoot": temp.path().to_string_lossy(),
-                    "sessionId": "session-missing",
-                    "approvalTicketId": "approval-missing"
-                }),
-            )
-            .expect_err("missing ticket should be a runtime error");
-
-            assert_eq!(error.code, "RUNTIME_ERROR");
-            assert!(error.message.contains("approval ticket not found"));
-        }
-    }
-
-    #[test]
-    fn ai_todo_create_route_is_registered() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let error = handle_ai_request(
-            "agent.todo.create",
-            serde_json::json!({
-                "storageRoot": temp.path().to_string_lossy(),
-                "sessionId": "session-missing",
-                "kind": "plan_bound",
-                "title": "Plan",
-                "items": [{ "title": "Apply patch" }]
-            }),
+        let remote_status = handle_runtime_request(
+            "download.remote.status",
+            serde_json::json!({ "storageRoot": storage_root }),
         )
-        .expect_err("missing session should be a runtime error");
-
-        assert_eq!(error.code, "RUNTIME_ERROR");
-        assert!(error.message.contains("AI session not found"));
+        .expect("download remote status route");
+        assert_eq!(remote_status["running"], false);
     }
 
-    #[test]
-    fn ai_plan_routes_are_registered() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let create_error = handle_ai_request(
-            "agent.plan.create",
-            serde_json::json!({
-                "storageRoot": temp.path().to_string_lossy(),
-                "sessionId": "session-missing",
-                "title": "Plan",
-                "objectiveSummary": "Ship the plan",
-                "version": { "steps": [] }
-            }),
-        )
-        .expect_err("missing session should be a runtime error");
-
-        assert_eq!(create_error.code, "RUNTIME_ERROR");
-        assert!(create_error.message.contains("AI session not found"));
-
-        let resolve_error = handle_ai_request(
-            "agent.plan.review.resolve",
-            serde_json::json!({
-                "storageRoot": temp.path().to_string_lossy(),
-                "sessionId": "session-missing",
-                "planId": "plan-missing",
-                "versionId": "plan-version-missing",
-                "decision": "approve"
-            }),
-        )
-        .expect_err("missing session should be a runtime error");
-
-        assert_eq!(resolve_error.code, "RUNTIME_ERROR");
-        assert!(resolve_error.message.contains("AI session not found"));
-    }
-
-    #[test]
-    fn ai_clarification_resolve_route_is_registered() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let error = handle_ai_request(
-            "agent.clarification.resolve",
-            serde_json::json!({
-                "storageRoot": temp.path().to_string_lossy(),
-                "sessionId": "session-missing",
-                "questionTicketId": "question-missing",
-                "selectedOptionId": "A"
-            }),
-        )
-        .expect_err("missing session should be a runtime error");
-
-        assert_eq!(error.code, "RUNTIME_ERROR");
-        assert!(error.message.contains("AI session not found"));
-    }
 }

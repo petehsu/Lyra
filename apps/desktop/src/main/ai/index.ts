@@ -1,1 +1,0 @@
-export { createAiIpcBridge } from "./service";

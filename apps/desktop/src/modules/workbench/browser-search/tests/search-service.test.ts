@@ -312,33 +312,6 @@ describe("aggregated search service", () => {
           applyWebTheme: vi.fn(async () => undefined),
           onEvent: vi.fn(() => () => undefined)
         },
-        mcp: {
-          readCatalog: vi.fn(async () => []),
-          readServers: vi.fn(async () => []),
-          readEffectiveServers: vi.fn(async () => ({ servers: [] })),
-          createServer: vi.fn(),
-          updateServer: vi.fn(),
-          deleteServer: vi.fn(),
-          installTemplate: vi.fn(),
-          validateServer: vi.fn(),
-          startServer: vi.fn(),
-          stopServer: vi.fn(),
-          restartServer: vi.fn(),
-          readServerIntrospection: vi.fn(),
-          onEvent: vi.fn(() => () => undefined)
-        },
-        skills: {
-          readCatalog: vi.fn(async () => []),
-          readInstalled: vi.fn(async () => []),
-          readEffectiveSkills: vi.fn(async () => []),
-          discoverImportSource: vi.fn(),
-          importSkills: vi.fn(),
-          createLyraSkill: vi.fn(),
-          updateSkillState: vi.fn(),
-          deleteSkill: vi.fn(),
-          readSkillDetails: vi.fn(),
-          onEvent: vi.fn(() => () => undefined)
-        },
         lsp: {
           openDocument: vi.fn(),
           changeDocument: vi.fn(),

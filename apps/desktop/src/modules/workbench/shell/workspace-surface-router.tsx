@@ -2,9 +2,6 @@ import type { ReactNode } from "react";
 
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
-import type { AgentVmSurfaceLabels } from "../agent-vm";
-import type { AiHistorySurfaceProps } from "../ai-history";
-import type { AiPlanReviewModel } from "../ai-panel";
 import {
   type FileManagerChooserMode,
   type FileManagerModel,
@@ -16,15 +13,12 @@ import {
   type FileEditorModel
 } from "../file-editor";
 import type { ImageViewerLabels, ImageViewerModel } from "../image-viewer";
-import type { McpCenterLabels, McpCenterModel } from "../mcp-center";
 import {
   type NotificationCenterLabels,
   type WorkbenchNotificationModel
 } from "../notifications";
-import type { PluginsCenterLabels, PluginsCenterModel } from "../plugins-center";
 import type { ResourceMonitorSurfaceLabels } from "../resource-monitor";
 import type { WorkbenchSplitThreePaneLayout } from "../preferences";
-import type { SkillsCenterLabels, SkillsCenterModel } from "../skills-center";
 import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/types";
 import type { TerminalThemeMode } from "../terminal-theme";
 import type { WorkbenchSurfaceAdapters } from "../ui-platform/surface-types";
@@ -178,56 +172,6 @@ export type WorkspaceSurfaceRouterProps = {
   readonly searchResultsSourceFilter: "all" | "web" | "local";
   readonly onSearchResultsSourceFilterChange: (value: "all" | "web" | "local") => void;
   readonly i18n: WorkspaceSurfaceI18nProps;
-  readonly mcpCenter: {
-    readonly model: McpCenterModel;
-    readonly labels: McpCenterLabels;
-  };
-  readonly skillsCenter: {
-    readonly model: SkillsCenterModel;
-    readonly labels: SkillsCenterLabels;
-  };
-  readonly pluginsCenter: {
-    readonly model: PluginsCenterModel;
-    readonly labels: PluginsCenterLabels;
-  };
-  readonly agentVm: {
-    readonly labels: AgentVmSurfaceLabels;
-  };
-  readonly aiHistory: {
-    readonly locale: string;
-    readonly title: string;
-    readonly openConversationLabel: string;
-    readonly renameConversationLabel?: string;
-    readonly deleteConversationLabel: string;
-    readonly archiveConversationLabel: string;
-    readonly unarchiveConversationLabel: string;
-    readonly archivedConversationLabel: string;
-    readonly archivedProjectLabel: string;
-    readonly deleteArchivedConversationTitle: string;
-    readonly deleteArchivedConversationDescription: string;
-    readonly deleteArchivedConversationConfirm: string;
-    readonly deleteArchivedConversationCancel: string;
-    readonly sessionIdLabel: string;
-    readonly loadingSessionsLabel: string;
-    readonly emptyStateTitle: string;
-    readonly emptyStateDescription: string;
-    readonly scopeGlobalLabel: string;
-    readonly scopeProjectLabel: string;
-    readonly noProjectsEmptyLabel: string;
-    readonly projectSessionCountLabel: string;
-    readonly backToProjectsLabel: string;
-    readonly projectPathLabel: string;
-    readonly threadPreviewEmptyLabel: string;
-    readonly previewLoadingLabel: string;
-    readonly planModeLabel?: string;
-    readonly richRenderingEnabled?: boolean;
-    readonly themeSignature?: string;
-    readonly openDialog?: AiHistorySurfaceProps["openDialog"];
-    readonly onHistoryEmptied?: AiHistorySurfaceProps["onHistoryEmptied"];
-  };
-  readonly planReview: {
-    readonly model: AiPlanReviewModel;
-  };
   readonly resourceMonitor: {
     readonly labels: ResourceMonitorSurfaceLabels;
   };
@@ -286,30 +230,6 @@ const renderSurfaceModel = (
     }
     case "notificationCenter": {
       const Adapter = surfaceAdapters.notificationCenter;
-      return <Adapter {...model.props} />;
-    }
-    case "mcpCenter": {
-      const Adapter = surfaceAdapters.mcpCenter;
-      return <Adapter {...model.props} />;
-    }
-    case "skillsCenter": {
-      const Adapter = surfaceAdapters.skillsCenter;
-      return <Adapter {...model.props} />;
-    }
-    case "pluginsCenter": {
-      const Adapter = surfaceAdapters.pluginsCenter;
-      return <Adapter {...model.props} />;
-    }
-    case "agentVm": {
-      const Adapter = surfaceAdapters.agentVm;
-      return <Adapter {...model.props} />;
-    }
-    case "aiHistory": {
-      const Adapter = surfaceAdapters.aiHistory;
-      return <Adapter {...model.props} />;
-    }
-    case "planReview": {
-      const Adapter = surfaceAdapters.planReview;
       return <Adapter {...model.props} />;
     }
     case "empty":

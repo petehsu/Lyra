@@ -14,12 +14,6 @@ const VALID_WORKSPACE_APP_IDS = new Set([
   "file-editor",
   "image-viewer",
   "resource-monitor",
-  "ai-history",
-  "ai-plan-review",
-  "ai-mcp",
-  "ai-skills",
-  "ai-plugins",
-  "agent-vm",
   "notification-center"
 ] as const);
 

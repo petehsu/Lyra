@@ -41,16 +41,10 @@ const resolveNotificationAppIconKey = (
       return "file-editor-code";
     case "resource-monitor":
       return "resource-monitor-default";
-    case "ai-history":
-      return "ai-panel-history";
-    case "ai-mcp":
-      return "ai-panel-mcp";
-    case "ai-skills":
-      return "ai-panel-skills";
     case "notification-center":
       return "notification-center-default";
     default:
-      return "ai-panel-default";
+      return "notification-center-default";
   }
 };
 

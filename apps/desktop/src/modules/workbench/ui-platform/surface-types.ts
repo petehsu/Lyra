@@ -1,8 +1,6 @@
 import type { ComponentType } from "react";
 
-import type { AgentVmSurfaceProps } from "../agent-vm";
-import type { AiHistorySurfaceProps } from "../ai-history";
-import type { AiPanelSurfaceProps, AiPlanReviewSurfaceProps } from "../ai-panel";
+import type { AiPanelSurfaceProps } from "../ai-panel";
 import type {
   BrowserPageSurfaceProps,
   BrowserSearchSurfaceProps,
@@ -15,11 +13,8 @@ import type {
 import type { FileEditorSurfaceProps } from "../file-editor";
 import type { FileManagerSurfaceProps } from "../file-manager";
 import type { ImageViewerSurfaceProps } from "../image-viewer";
-import type { McpCenterSurfaceProps } from "../mcp-center";
 import type { NotificationCenterSurfaceProps } from "../notifications";
-import type { PluginsCenterSurfaceProps } from "../plugins-center";
 import type { ResourceMonitorSurfaceProps } from "../resource-monitor";
-import type { SkillsCenterSurfaceProps } from "../skills-center";
 import type {
   TerminalDockProps,
   TerminalWorkspaceSurfaceProps
@@ -37,12 +32,6 @@ export type WorkbenchSurfaceAdapters = {
   readonly imageViewer: ComponentType<ImageViewerSurfaceProps>;
   readonly resourceMonitor: ComponentType<ResourceMonitorSurfaceProps>;
   readonly notificationCenter: ComponentType<NotificationCenterSurfaceProps>;
-  readonly mcpCenter: ComponentType<McpCenterSurfaceProps>;
-  readonly skillsCenter: ComponentType<SkillsCenterSurfaceProps>;
-  readonly pluginsCenter: ComponentType<PluginsCenterSurfaceProps>;
-  readonly agentVm: ComponentType<AgentVmSurfaceProps>;
-  readonly aiHistory: ComponentType<AiHistorySurfaceProps>;
-  readonly planReview: ComponentType<AiPlanReviewSurfaceProps>;
 };
 
 export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
@@ -56,13 +45,7 @@ export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
   "fileEditor",
   "imageViewer",
   "resourceMonitor",
-  "notificationCenter",
-  "mcpCenter",
-  "skillsCenter",
-  "pluginsCenter",
-  "agentVm",
-  "aiHistory",
-  "planReview"
+  "notificationCenter"
 ] as const satisfies readonly (keyof WorkbenchSurfaceAdapters)[];
 
 export type WorkbenchPanelAdapters = {

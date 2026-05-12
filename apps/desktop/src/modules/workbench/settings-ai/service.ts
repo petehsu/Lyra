@@ -1,20 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type {
-  AiDiscoverModelsRequest,
-  AiModelRuntimeMetadata,
-  AiModelDiscoveryResult,
   AiModelDiscoveryState,
   AiProviderModelEntry,
-  AiRuntimeConfigSnapshot,
-  AiUpsertProfileRequest
+  AiProviderProfile
 } from "../../../shared/ai";
 import {
-  findSelectedProfile,
   MODEL_SELECTION_MODE_AUTH_CONFIG_KEY,
+  findSelectedProfile,
   resolveConfiguredModels,
-  serializeConfiguredModels,
   toDraft,
 } from "./draft";
 import { buildModelOptions } from "./model-options";
@@ -33,23 +28,12 @@ type UseSettingsAiModelOptions = {
   readonly labels: SettingsAiLabels;
 };
 
-type SettingsAiModelPayload = {
-  readonly primaryModel: string;
-  readonly customModels: readonly AiProviderModelEntry[];
-  readonly discoveryState: AiModelDiscoveryState;
-};
+const now = (): number => Date.now();
 
-const createEmptySnapshot = (): AiRuntimeConfigSnapshot => ({
-  schemaVersion: "v1",
-  profiles: [],
-  defaultProfileId: null,
-  defaultProviderId: null,
-  defaultModelNames: [],
-  runtimeHealth: {
-    backend: "desktop",
-    transport: "unavailable",
-    version: "0"
-  }
+const emptyDiscoveryState = (): AiModelDiscoveryState => ({
+  status: "idle",
+  lastCheckedAt: null,
+  models: []
 });
 
 const createDefaultDraft = (): SettingsAiDraft => toDraft(null, AI_PROVIDER_PRESETS);
@@ -85,385 +69,130 @@ const updateDraftMapField = (
   return next;
 };
 
-const discoveryStateFromResult = (
-  result: AiModelDiscoveryResult | null,
-  fallback: AiModelDiscoveryState | undefined
-): AiModelDiscoveryState => {
-  if (result === null) {
-    return fallback ?? {
-      status: "idle",
-      lastCheckedAt: null,
-      models: []
-    };
-  }
-  return {
-    status: result.status,
-    lastCheckedAt: result.checkedAt,
-    ...(result.status === "error" ? { errorMessage: result.message } : {}),
-    models: result.models
-  };
-};
-
-const emptyDiscoveryState = (): AiModelDiscoveryState => ({
-  status: "idle",
-  lastCheckedAt: null,
-  models: []
-});
-
-const messageFromError = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 const authConfigForDraft = (draft: SettingsAiDraft): Record<string, string> => ({
   ...draft.authConfig,
   [MODEL_SELECTION_MODE_AUTH_CONFIG_KEY]: draft.modelSelectionMode
 });
 
-const stableAuthConfig = (
-  value: Readonly<Record<string, string>>
-): Record<string, string> => {
-  const result = { ...value };
-  delete result[MODEL_SELECTION_MODE_AUTH_CONFIG_KEY];
-  return result;
-};
-
-const normalizedRecordEntries = (
-  value: Readonly<Record<string, string>>
-): readonly string[] => Object.entries(value)
-  .map(([key, entry]) => [key.trim(), entry.trim()] as const)
-  .filter(([key, entry]) => key.length > 0 && entry.length > 0)
-  .sort(([left], [right]) => left.localeCompare(right))
-  .map(([key, entry]) => `${key}\u001F${entry}`);
-
-const recordsEqual = (
-  left: Readonly<Record<string, string>>,
-  right: Readonly<Record<string, string>>
-): boolean => {
-  const leftEntries = normalizedRecordEntries(left);
-  const rightEntries = normalizedRecordEntries(right);
-  return leftEntries.length === rightEntries.length
-    && leftEntries.every((entry, index) => entry === rightEntries[index]);
-};
-
-const hasEnteredSecretValues = (
-  value: Readonly<Record<string, string>>
-): boolean => Object.values(value).some((entry) => entry.trim().length > 0);
-
-const normalizeDiscoveredModelEntries = (
-  models: readonly AiProviderModelEntry[]
-): readonly AiProviderModelEntry[] => {
-  const seen = new Set<string>();
-  const result: AiProviderModelEntry[] = [];
-  models.forEach((entry) => {
-    const id = entry.id.trim();
-    if (id.length === 0 || seen.has(id)) {
-      return;
-    }
-    seen.add(id);
-    result.push({
-      ...entry,
-      id,
-      name: entry.name.trim().length > 0 ? entry.name : id
-    });
-  });
-  return result;
-};
-
-const configuredModelIdsForProfile = (profile: SettingsAiModel["profiles"][number]): readonly string[] => {
-  const ids: string[] = [];
-  [
-    profile.model,
-    ...profile.customModels.map((entry) => entry.id),
-    ...profile.discoveryState.models.map((entry) => entry.id)
-  ].forEach((entry) => {
-    const id = entry.trim();
-    if (id.length > 0 && !ids.includes(id)) {
-      ids.push(id);
+const configuredSecretFieldsForDraft = (
+  draft: SettingsAiDraft
+): readonly string[] => {
+  const configured = new Set(draft.configuredSecretFields);
+  Object.entries(draft.secretValues).forEach(([fieldId, value]) => {
+    if (value.trim().length > 0) {
+      configured.add(fieldId);
     }
   });
-  return ids;
+  return [...configured];
 };
 
-const configuredModelIdsForPayload = (payload: SettingsAiModelPayload): readonly string[] => {
-  const ids: string[] = [];
-  [
-    payload.primaryModel,
-    ...payload.customModels.map((entry) => entry.id),
-    ...payload.discoveryState.models.map((entry) => entry.id)
-  ].forEach((entry) => {
-    const id = entry.trim();
-    if (id.length > 0 && !ids.includes(id)) {
-      ids.push(id);
-    }
-  });
-  return ids;
-};
-
-const modelEntryFromSources = (
-  modelId: string,
-  sources: readonly AiProviderModelEntry[]
-): AiProviderModelEntry => {
-  const entry = sources.find((source) => source.id.trim() === modelId);
-  return entry === undefined
-    ? {
-        id: modelId,
-        name: modelId,
-        source: "custom"
-      }
-    : {
-        ...entry,
-        id: modelId,
-        name: entry.name.trim().length > 0 ? entry.name : modelId
-      };
-};
-
-const modelEntryForProfile = (
-  profile: SettingsAiModel["profiles"][number],
-  modelId: string
-): AiProviderModelEntry => {
-  return modelEntryFromSources(modelId, [...profile.customModels, ...profile.discoveryState.models]);
-};
-
-const modelEntryForPayloadAndProfile = (
-  payload: SettingsAiModelPayload,
-  profile: SettingsAiModel["profiles"][number],
-  modelId: string
-): AiProviderModelEntry => {
-  const payloadSources = [...payload.customModels, ...payload.discoveryState.models];
-  const payloadEntry = payloadSources.find((entry) => entry.id.trim() === modelId);
-  if (payloadEntry !== undefined) {
-    return modelEntryFromSources(modelId, [payloadEntry]);
-  }
-  return modelEntryForProfile(profile, modelId);
-};
-
-const discoveryStateWithModels = (
-  profile: SettingsAiModel["profiles"][number],
-  modelIds: readonly string[]
-): AiModelDiscoveryState => {
-  const remainingIds = new Set(modelIds);
-  const models = normalizeDiscoveredModelEntries(
-    profile.discoveryState.models.filter((entry) => remainingIds.has(entry.id.trim()))
-  );
-  return {
-    status: profile.discoveryState.status,
-    lastCheckedAt: profile.discoveryState.lastCheckedAt,
-    ...(profile.discoveryState.errorMessage === undefined
-      ? {}
-      : { errorMessage: profile.discoveryState.errorMessage }),
-    models
-  };
-};
-
-const mergeDiscoveryStateForProfile = (
-  profile: SettingsAiModel["profiles"][number],
-  payload: SettingsAiModelPayload,
-  modelIds: readonly string[]
-): AiModelDiscoveryState => {
-  const remainingIds = new Set(modelIds);
-  const payloadHasDiscoveryState =
-    payload.discoveryState.status !== "idle"
-    || payload.discoveryState.lastCheckedAt !== null
-    || payload.discoveryState.models.length > 0
-    || payload.discoveryState.errorMessage !== undefined;
-  const sourceState = payloadHasDiscoveryState ? payload.discoveryState : profile.discoveryState;
-  const models = normalizeDiscoveredModelEntries(
-    [...payload.discoveryState.models, ...profile.discoveryState.models]
-      .filter((entry) => remainingIds.has(entry.id.trim()))
-  );
-  return {
-    status: sourceState.status,
-    lastCheckedAt: sourceState.lastCheckedAt,
-    ...(sourceState.errorMessage === undefined ? {} : { errorMessage: sourceState.errorMessage }),
-    models
-  };
-};
-
-const mergeModelPayloadWithProfile = (
-  profile: SettingsAiModel["profiles"][number],
-  payload: SettingsAiModelPayload
-): SettingsAiModelPayload => {
-  const modelIds = [
-    ...configuredModelIdsForPayload(payload),
-    ...configuredModelIdsForProfile(profile)
-  ].filter((entry, index, entries) => entries.indexOf(entry) === index);
-  const primaryModel = modelIds[0] ?? payload.primaryModel;
-  return {
-    primaryModel,
-    customModels: modelIds.slice(1).map((modelId) =>
-      modelEntryForPayloadAndProfile(payload, profile, modelId)
-    ),
-    discoveryState: mergeDiscoveryStateForProfile(profile, payload, modelIds)
-  };
-};
-
-const canSaveDraftIntoProfile = (
+const profileFromDraft = (
   draft: SettingsAiDraft,
-  profile: SettingsAiModel["profiles"][number] | null
-): profile is SettingsAiModel["profiles"][number] => {
-  if (profile === null) {
-    return false;
-  }
-  const draftName = draft.name.trim();
-  return profile.providerId === draft.providerId
-    && profile.protocolId === draft.protocolId
-    && (profile.presetId ?? null) === (draft.presetId ?? null)
-    && profile.name.trim() === draftName
-    && recordsEqual(profile.connectionConfig, draft.connectionConfig)
-    && recordsEqual(stableAuthConfig(profile.authConfig), stableAuthConfig(draft.authConfig))
-    && !hasEnteredSecretValues(draft.secretValues);
-};
-
-const requestFromExistingProfile = (
-  profile: SettingsAiModel["profiles"][number],
-  modelIds: readonly string[]
-): AiUpsertProfileRequest => {
-  const modelRuntimeMetadata = profile.modelRuntimeMetadata;
+  existing: AiProviderProfile | null,
+  makeDefault: boolean
+): AiProviderProfile => {
+  const preset = resolvePreset(
+    AI_PROVIDER_PRESETS,
+    draft.presetId,
+    draft.providerId,
+    draft.protocolId
+  );
+  const availableModels = buildModelOptions(preset, null, draft.modelsText);
+  const configuredModels = resolveConfiguredModels(
+    draft.modelsText,
+    availableModels,
+    preset?.defaultModel ?? ""
+  );
+  const timestamp = now();
   return {
-    id: profile.id,
-    name: profile.name,
-    providerId: profile.providerId as AiUpsertProfileRequest["providerId"],
-    protocolId: profile.protocolId as AiUpsertProfileRequest["protocolId"],
-    presetId: profile.presetId,
-    connectionConfig: { ...profile.connectionConfig },
-    authConfig: { ...profile.authConfig },
-    headers: { ...profile.headers },
-    model: modelIds[0] ?? "",
-    ...(modelRuntimeMetadata === undefined ? {} : { modelRuntimeMetadata }),
-    customModels: modelIds.slice(1).map((modelId) => modelEntryForProfile(profile, modelId)),
-    discoveryState: discoveryStateWithModels(profile, modelIds)
+    id: draft.id ?? `local-profile-${timestamp}`,
+    name: draft.name.trim() || preset?.label || "Local AI Profile",
+    providerId: draft.providerId as AiProviderProfile["providerId"],
+    protocolId: draft.protocolId as AiProviderProfile["protocolId"],
+    runtimeProviderId: draft.providerId,
+    runtimeSupported: false,
+    secretStatus: configuredSecretFieldsForDraft(draft).length > 0 ? "configured" : "missing",
+    presetId: draft.presetId,
+    connectionConfig: { ...draft.connectionConfig },
+    authConfig: authConfigForDraft(draft),
+    configuredSecretFields: configuredSecretFieldsForDraft(draft),
+    headers: {},
+    model: configuredModels.primaryModel,
+    customModels: configuredModels.customModels,
+    discoveryState: emptyDiscoveryState(),
+    isDefault: makeDefault,
+    createdAt: existing?.createdAt ?? timestamp,
+    updatedAt: timestamp
   };
 };
 
 export const useSettingsAiModel = ({
-  desktopApi,
-  labels,
+  labels: _labels
 }: UseSettingsAiModelOptions): SettingsAiModel => {
-  const [snapshot, setSnapshot] = useState<AiRuntimeConfigSnapshot>(() => createEmptySnapshot());
+  const [profiles, setProfiles] = useState<readonly AiProviderProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
-  const selectedProfileIdRef = useRef<string | null>(null);
   const [draft, setDraft] = useState<SettingsAiDraft>(() => createDefaultDraft());
-  const [discoveryResult, setDiscoveryResult] = useState<AiModelDiscoveryResult | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage] = useState<string | null>(null);
 
   const selectedPreset = useMemo(
-    () => resolvePreset(
-      AI_PROVIDER_PRESETS,
-      draft.presetId,
-      draft.providerId,
-      draft.protocolId
-    ),
+    () => resolvePreset(AI_PROVIDER_PRESETS, draft.presetId, draft.providerId, draft.protocolId),
     [draft.presetId, draft.providerId, draft.protocolId]
   );
-  const availableModels = useMemo(
-    () => normalizeDiscoveredModelEntries(buildModelOptions(
-      selectedPreset,
-      discoveryResult,
-      draft.modelsText
-    )),
-    [discoveryResult, draft.modelsText, selectedPreset]
+  const availableModels = useMemo<readonly AiProviderModelEntry[]>(
+    () => buildModelOptions(selectedPreset, null, draft.modelsText),
+    [draft.modelsText, selectedPreset]
   );
-  const targetProfileForDraft = useMemo(
-    () => {
-      const profile = draft.id === null
-        ? null
-        : findSelectedProfile(snapshot.profiles, draft.id);
-      return canSaveDraftIntoProfile(draft, profile) ? profile : null;
-    },
-    [draft, snapshot.profiles]
-  );
-
-  const applySnapshot = useCallback((
-    nextSnapshot: AiRuntimeConfigSnapshot,
-    preferredProfileId?: string | null
-  ): void => {
-    setSnapshot(nextSnapshot);
-    const targetProfileId = preferredProfileId === undefined
-      ? selectedProfileIdRef.current
-      : preferredProfileId;
-    const nextProfile =
-      findSelectedProfile(nextSnapshot.profiles, targetProfileId)
-      ?? nextSnapshot.profiles[0]
-      ?? null;
-    const nextProfileId = nextProfile?.id ?? null;
-    selectedProfileIdRef.current = nextProfileId;
-    setSelectedProfileId(nextProfileId);
-    setDraft(toDraft(nextProfile, AI_PROVIDER_PRESETS));
-    setDiscoveryResult(null);
-    setErrorMessage(null);
-  }, []);
-
-  const refreshConfig = useCallback(async (): Promise<void> => {
-    try {
-      const api = desktopApi?.ai;
-      const nextSnapshot = api === undefined ? createEmptySnapshot() : await api.readConfig();
-      applySnapshot(nextSnapshot);
-    } catch (error) {
-      console.error("Failed to load AI profiles", error);
-    }
-  }, [applySnapshot, desktopApi?.ai]);
-
-  useEffect(() => {
-    void refreshConfig();
-  }, [refreshConfig]);
+  const defaultProfile = profiles.find((profile) => profile.isDefault) ?? null;
 
   const selectProfile = useCallback((profileId: string | null): void => {
-    const profile = findSelectedProfile(snapshot.profiles, profileId);
-    const nextProfileId = profile?.id ?? null;
-    selectedProfileIdRef.current = nextProfileId;
-    setSelectedProfileId(nextProfileId);
+    const profile = findSelectedProfile(profiles, profileId);
+    setSelectedProfileId(profile?.id ?? null);
     setDraft(toDraft(profile, AI_PROVIDER_PRESETS));
-    setDiscoveryResult(null);
-    setErrorMessage(null);
-  }, [snapshot.profiles]);
+  }, [profiles]);
 
   const applyPreset = useCallback((presetId: string): void => {
-    const preset = resolvePreset(AI_PROVIDER_PRESETS, presetId, draft.providerId, draft.protocolId);
-    if (preset === null) {
+    const preset = AI_PROVIDER_PRESETS.find((entry) => entry.id === presetId);
+    if (preset === undefined) {
       return;
     }
-    setDraft((current) => ({
-      ...current,
+    setSelectedProfileId(null);
+    setDraft(toDraft({
+      id: `draft-${preset.id}`,
+      name: preset.label,
       providerId: preset.providerId,
       protocolId: preset.protocolId,
+      runtimeProviderId: preset.providerId,
+      runtimeSupported: false,
+      secretStatus: "missing",
       presetId: preset.id,
-      connectionConfig: { ...preset.defaultConnectionConfig },
-      authConfig: { ...preset.defaultAuthConfig },
-      secretValues: {},
+      connectionConfig: preset.defaultConnectionConfig,
+      authConfig: preset.defaultAuthConfig,
       configuredSecretFields: [],
-      modelSelectionMode: "all",
-      modelsText: serializeConfiguredModels("", []),
-      name: current.name.trim().length === 0 ? preset.label : current.name
-    }));
-    setDiscoveryResult(null);
-    setErrorMessage(null);
-  }, [draft.providerId, draft.protocolId]);
+      headers: {},
+      model: preset.defaultModel,
+      customModels: [],
+      discoveryState: emptyDiscoveryState(),
+      isDefault: false,
+      createdAt: now(),
+      updatedAt: now()
+    }, AI_PROVIDER_PRESETS));
+  }, []);
 
   const updateDraftName = useCallback((value: string): void => {
     setDraft((current) => ({ ...current, name: value }));
-    setErrorMessage(null);
   }, []);
 
   const updateDraftModelSelectionMode = useCallback((value: SettingsAiModelSelectionMode): void => {
-    setDraft((current) => ({
-      ...current,
-      modelSelectionMode: value,
-    }));
-    setDiscoveryResult(null);
-    setErrorMessage(null);
+    setDraft((current) => ({ ...current, modelSelectionMode: value }));
   }, []);
 
   const updateDraftHeadersText = useCallback((value: string): void => {
-    setDraft((current) => ({
-      ...current,
-      headersText: value,
-    }));
-    setErrorMessage(null);
+    setDraft((current) => ({ ...current, headersText: value }));
   }, []);
 
   const updateDraftModelsText = useCallback((value: string): void => {
     setDraft((current) => ({ ...current, modelsText: value }));
-    setErrorMessage(null);
   }, []);
 
   const updateDraftField = useCallback<SettingsAiModel["updateDraftField"]>((target, fieldId, value) => {
@@ -471,291 +200,125 @@ export const useSettingsAiModel = ({
       if (target === "connection") {
         return {
           ...current,
-          connectionConfig: updateDraftMapField(current.connectionConfig, fieldId, value),
+          connectionConfig: updateDraftMapField(current.connectionConfig, fieldId, value)
         };
       }
-      if (target === "auth") {
+      if (target === "secret") {
         return {
           ...current,
-          authConfig: updateDraftMapField(current.authConfig, fieldId, value),
+          secretValues: updateDraftMapField(current.secretValues, fieldId, value)
         };
       }
       return {
         ...current,
-        secretValues: updateDraftMapField(current.secretValues, fieldId, value),
+        authConfig: updateDraftMapField(current.authConfig, fieldId, value)
       };
     });
-    setErrorMessage(null);
   }, []);
 
-  const runtimeMetadataForPayload = useCallback((
-    modelPayload: SettingsAiModelPayload
-  ): AiModelRuntimeMetadata | null => {
-    const entry = availableModels.find((model) => model.id === modelPayload.primaryModel);
-    return entry?.runtimeMetadata ?? selectedPreset?.runtimeMetadata ?? null;
-  }, [availableModels, selectedPreset?.runtimeMetadata]);
-
-  const requestFromDraft = useCallback((
-    modelPayload: SettingsAiModelPayload,
-    targetProfile: SettingsAiModel["profiles"][number] | null
-  ): AiUpsertProfileRequest => ({
-    ...(targetProfile === null ? {} : { id: targetProfile.id }),
-    name: draft.name.trim() || selectedPreset?.label || "AI Provider",
-    providerId: draft.providerId as AiUpsertProfileRequest["providerId"],
-    protocolId: draft.protocolId as AiUpsertProfileRequest["protocolId"],
-    presetId: draft.presetId,
-    connectionConfig: { ...draft.connectionConfig },
-    authConfig: authConfigForDraft(draft),
-    secretValues: { ...draft.secretValues },
-    headers: {},
-    model: modelPayload.primaryModel,
-    modelRuntimeMetadata: runtimeMetadataForPayload(modelPayload),
-    customModels: modelPayload.customModels,
-    discoveryState: modelPayload.discoveryState,
-    isDefault: snapshot.profiles.length === 0
-  }), [
-    draft.authConfig,
-    draft.connectionConfig,
-    draft.modelSelectionMode,
-    draft.name,
-    draft.presetId,
-    draft.providerId,
-    draft.protocolId,
-    draft.secretValues,
-    runtimeMetadataForPayload,
-    selectedPreset?.label,
-    snapshot.profiles.length,
-  ]);
-
-  const discoverRequestFromDraft = useCallback((): AiDiscoverModelsRequest => ({
-    ...(targetProfileForDraft === null ? {} : { id: targetProfileForDraft.id }),
-    providerId: draft.providerId as AiDiscoverModelsRequest["providerId"],
-    protocolId: draft.protocolId as AiDiscoverModelsRequest["protocolId"],
-    presetId: draft.presetId,
-    connectionConfig: { ...draft.connectionConfig },
-    authConfig: authConfigForDraft(draft),
-    secretValues: { ...draft.secretValues },
-    headers: {},
-    forceRefresh: true
-  }), [
-    draft.authConfig,
-    draft.connectionConfig,
-    draft.modelSelectionMode,
-    draft.presetId,
-    draft.providerId,
-    draft.protocolId,
-    draft.secretValues,
-    targetProfileForDraft
-  ]);
-
-  const discoverAllModelPayload = useCallback(async (): Promise<SettingsAiModelPayload> => {
-    if (desktopApi?.ai === undefined) {
-      throw new Error("AI runtime is not connected");
-    }
-    const result = await desktopApi.ai.discoverModels(discoverRequestFromDraft());
-    setDiscoveryResult(result);
-    if (result.status !== "ready") {
-      throw new Error(result.message);
-    }
-    const models = normalizeDiscoveredModelEntries(result.models);
-    const primary = models[0];
-    if (primary === undefined) {
-      throw new Error(labels.noDiscoveredModels);
-    }
-    return {
-      primaryModel: primary.id,
-      customModels: models.slice(1),
-      discoveryState: discoveryStateFromResult({ ...result, models }, undefined)
-    };
-  }, [desktopApi?.ai, discoverRequestFromDraft, labels.noDiscoveredModels]);
-
-  const configuredModelPayloadFromDraft = useCallback((
-    discoveryState: AiModelDiscoveryState = emptyDiscoveryState()
-  ): SettingsAiModelPayload => {
-    const resolved = resolveConfiguredModels(
-      draft.modelsText,
-      availableModels,
-      selectedPreset?.defaultModel ?? ""
-    );
-    return {
-      primaryModel: resolved.primaryModel,
-      customModels: resolved.customModels,
-      discoveryState
-    };
-  }, [
-    availableModels,
-    draft.modelsText,
-    selectedPreset?.defaultModel
-  ]);
-
-  const modelPayloadFromDraft = useCallback(async (): Promise<SettingsAiModelPayload> => {
-    if (draft.modelSelectionMode !== "all") {
-      const payload = configuredModelPayloadFromDraft();
-      if (payload.primaryModel.trim().length === 0) {
-        throw new Error(labels.noDiscoveredModels);
-      }
-      return payload;
-    }
-    return discoverAllModelPayload();
-  }, [
-    configuredModelPayloadFromDraft,
-    discoverAllModelPayload,
-    draft.modelSelectionMode,
-    labels.noDiscoveredModels
-  ]);
-
   const saveProfile = useCallback(async (): Promise<void> => {
-    if (desktopApi?.ai === undefined) {
-      const message = "AI runtime is not connected";
-      setErrorMessage(message);
-      console.error(message);
-      return;
-    }
     setIsSaving(true);
-    setErrorMessage(null);
     try {
-      const rawModelPayload = await modelPayloadFromDraft();
-      const modelPayload = targetProfileForDraft === null
-        ? rawModelPayload
-        : mergeModelPayloadWithProfile(targetProfileForDraft, rawModelPayload);
-      const saved = await desktopApi.ai.upsertProfile(requestFromDraft(modelPayload, targetProfileForDraft));
-      const nextSnapshot = await desktopApi.ai.readConfig();
-      applySnapshot(nextSnapshot, saved.id);
-    } catch (error) {
-      setErrorMessage(messageFromError(error));
-      console.error("Failed to save AI profile", error);
+      const savedId = draft.id ?? `local-profile-${Date.now()}`;
+      const draftWithId = { ...draft, id: savedId };
+      setProfiles((current) => {
+        const existing = findSelectedProfile(current, savedId);
+        const shouldDefault = draft.isDefault || current.length === 0;
+        const saved = profileFromDraft(draftWithId, existing, shouldDefault);
+        const next = current.filter((profile) => profile.id !== saved.id)
+          .map((profile) => shouldDefault ? { ...profile, isDefault: false } : profile);
+        return [...next, saved];
+      });
+      setSelectedProfileId(savedId);
+      setDraft(draftWithId);
     } finally {
       setIsSaving(false);
     }
-  }, [
-    applySnapshot,
-    desktopApi?.ai,
-    modelPayloadFromDraft,
-    requestFromDraft,
-    targetProfileForDraft
-  ]);
+  }, [draft]);
 
   const deleteProfile = useCallback(async (profileId?: string): Promise<void> => {
-    const id = profileId ?? draft.id;
-    if (id === null || id === undefined) {
-      setDraft(createDefaultDraft());
-      selectedProfileIdRef.current = null;
+    const targetId = profileId ?? selectedProfileId;
+    if (targetId === null || targetId === undefined) {
+      return;
+    }
+    setProfiles((current) => current.filter((profile) => profile.id !== targetId));
+    if (selectedProfileId === targetId) {
       setSelectedProfileId(null);
-      return;
+      setDraft(createDefaultDraft());
     }
-    if (desktopApi?.ai === undefined) {
-      console.error("AI runtime is not connected");
-      return;
-    }
-    try {
-      await desktopApi.ai.deleteProfile({ id });
-      const nextSnapshot = await desktopApi.ai.readConfig();
-      applySnapshot(nextSnapshot);
-    } catch (error) {
-      console.error("Failed to delete AI profile", error);
-    }
-  }, [applySnapshot, desktopApi?.ai, draft.id]);
+  }, [selectedProfileId]);
 
   const deleteProviderModels = useCallback(async (providerId: string): Promise<void> => {
-    const normalizedProviderId = providerId.trim();
-    if (normalizedProviderId.length === 0) {
-      return;
+    setProfiles((current) => current.filter((profile) => profile.providerId !== providerId));
+    const selected = findSelectedProfile(profiles, selectedProfileId);
+    if (selected?.providerId === providerId) {
+      setSelectedProfileId(null);
+      setDraft(createDefaultDraft());
     }
-    if (desktopApi?.ai === undefined) {
-      console.error("AI runtime is not connected");
-      return;
-    }
-    const profileIds = snapshot.profiles
-      .filter((profile) => profile.providerId === normalizedProviderId)
-      .map((profile) => profile.id);
-    if (profileIds.length === 0) {
-      return;
-    }
-    try {
-      for (const profileId of profileIds) {
-        await desktopApi.ai.deleteProfile({ id: profileId });
-      }
-      const nextSnapshot = await desktopApi.ai.readConfig();
-      applySnapshot(nextSnapshot, selectedProfileId);
-    } catch (error) {
-      console.error("Failed to delete AI provider models", error);
-    }
-  }, [applySnapshot, desktopApi?.ai, selectedProfileId, snapshot.profiles]);
+  }, [profiles, selectedProfileId]);
 
-  const deleteConfiguredModel = useCallback(async (
-    profileId: string,
-    modelId: string
-  ): Promise<void> => {
+  const deleteConfiguredModel = useCallback(async (profileId: string, modelId: string): Promise<void> => {
     const normalizedModelId = modelId.trim();
-    if (normalizedModelId.length === 0) {
-      return;
-    }
-    if (desktopApi?.ai === undefined) {
-      console.error("AI runtime is not connected");
-      return;
-    }
-    const profile = findSelectedProfile(snapshot.profiles, profileId);
-    if (profile === null) {
-      return;
-    }
-    const remainingModelIds = configuredModelIdsForProfile(profile)
-      .filter((entry) => entry !== normalizedModelId);
-    try {
-      if (remainingModelIds.length === 0) {
-        await desktopApi.ai.deleteProfile({ id: profile.id });
-        const nextSnapshot = await desktopApi.ai.readConfig();
-        applySnapshot(nextSnapshot, selectedProfileId);
-        return;
+    const selectedProfileWillBeDeleted = selectedProfileId === profileId
+      && profiles.some((profile) => {
+        if (profile.id !== profileId) {
+          return false;
+        }
+        return [profile.model, ...profile.customModels.map((entry) => entry.id)]
+          .filter((entry, index, all) => (
+            entry !== normalizedModelId
+            && entry.trim().length > 0
+            && all.indexOf(entry) === index
+          )).length === 0;
+      });
+    setProfiles((current) => current.flatMap((profile) => {
+      if (profile.id !== profileId) {
+        return [profile];
       }
-      const saved = await desktopApi.ai.upsertProfile(requestFromExistingProfile(profile, remainingModelIds));
-      const nextSnapshot = await desktopApi.ai.readConfig();
-      applySnapshot(nextSnapshot, profile.id === selectedProfileId ? saved.id : selectedProfileId);
-    } catch (error) {
-      console.error("Failed to delete AI model", error);
+      const entries = [
+        { id: profile.model, name: profile.model, source: "custom" as const },
+        ...profile.customModels
+      ].filter((entry, index, all) => (
+        entry.id !== normalizedModelId
+        && entry.id.trim().length > 0
+        && all.findIndex((candidate) => candidate.id === entry.id) === index
+      ));
+      if (entries.length === 0) {
+        return [];
+      }
+      return {
+        ...profile,
+        model: entries[0]?.id ?? "",
+        customModels: entries.slice(1),
+        discoveryState: {
+          ...profile.discoveryState,
+          models: profile.discoveryState.models.filter((entry) => entry.id !== normalizedModelId)
+        },
+        updatedAt: now()
+      };
+    }));
+    if (selectedProfileWillBeDeleted) {
+      setSelectedProfileId(null);
+      setDraft(createDefaultDraft());
     }
-  }, [applySnapshot, desktopApi?.ai, selectedProfileId, snapshot.profiles]);
+  }, [profiles, selectedProfileId]);
 
   const setDefaultProfile = useCallback(async (profileId: string): Promise<void> => {
-    if (desktopApi?.ai === undefined) {
-      return;
-    }
-    const profile = findSelectedProfile(snapshot.profiles, profileId);
-    if (profile === null) {
-      return;
-    }
-    try {
-      const modelRuntimeMetadata = profile.modelRuntimeMetadata;
-      const saved = await desktopApi.ai.upsertProfile({
-        id: profile.id,
-        name: profile.name,
-        providerId: profile.providerId,
-        protocolId: profile.protocolId,
-        presetId: profile.presetId,
-        connectionConfig: { ...profile.connectionConfig },
-        authConfig: { ...profile.authConfig },
-        headers: { ...profile.headers },
-        model: profile.model,
-        ...(modelRuntimeMetadata === undefined ? {} : { modelRuntimeMetadata }),
-        customModels: profile.customModels,
-        discoveryState: profile.discoveryState,
-        isDefault: true
-      });
-      const nextSnapshot = await desktopApi.ai.readConfig();
-      applySnapshot(nextSnapshot, saved.id);
-    } catch (error) {
-      console.error("Failed to set default AI profile", error);
-    }
-  }, [applySnapshot, desktopApi?.ai, snapshot.profiles]);
+    setProfiles((current) => current.map((profile) => ({
+      ...profile,
+      isDefault: profile.id === profileId
+    })));
+  }, []);
 
   return {
     isSaving,
     errorMessage,
-    profiles: snapshot.profiles,
-    presetSections: groupPresetSections(labels),
+    profiles,
+    presetSections: groupPresetSections(_labels),
     selectedProfileId,
-    defaultProfileId: snapshot.defaultProfileId,
-    defaultProviderId: snapshot.defaultProviderId,
-    defaultModelNames: snapshot.defaultModelNames,
+    defaultProfileId: defaultProfile?.id ?? null,
+    defaultProviderId: defaultProfile?.providerId ?? null,
+    defaultModelNames: defaultProfile === null ? [] : [defaultProfile.model],
     selectedPresetId: draft.presetId,
     selectedPreset,
     draft,

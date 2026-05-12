@@ -27,21 +27,16 @@ describe("workbench ui platform service", () => {
     expect(pack.adapters.terminalDock).toBeTypeOf("function");
     expect(pack.adapters.workspaceSurface).toBeTypeOf("function");
     expect(Object.keys(pack.adapters.surfaces).sort()).toEqual([
-      "aiHistory",
       "browserPage",
       "deepSearchResults",
       "fileEditor",
       "fileManager",
       "imageViewer",
-      "mcpCenter",
       "notificationCenter",
-      "planReview",
-      "pluginsCenter",
       "resourceMonitor",
       "searchHome",
       "searchResults",
       "settings",
-      "skillsCenter",
       "terminalWorkspace"
     ]);
     expect(pack.manifest.capabilities.supportsWorkbenchSurfaceAdapters).toBe(true);
@@ -89,14 +84,14 @@ describe("workbench ui platform service", () => {
         ...pack.adapters,
         surfaces: {
           ...pack.adapters.surfaces,
-          aiHistory: undefined
+          browserPage: undefined
         }
       }
     } as unknown as typeof pack;
 
     expect(validateWorkbenchUiPack(invalid)).toEqual({
       valid: false,
-      errors: ["Missing surface adapter: aiHistory"]
+      errors: ["Missing surface adapter: browserPage"]
     });
   });
 

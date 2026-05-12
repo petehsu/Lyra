@@ -11,16 +11,12 @@ members = [
   "crates/lyra-resource-core",
   "crates/lyra-resource-napi",
   "crates/lyra-lsp-core",
-  "crates/lyra-skills-napi",
   "crates/lyra-docs-core",
   "crates/lyra-docs-napi",
   "crates/lyra-download-core",
   "crates/lyra-download-napi",
-  "crates/lyra-capsule-core",
-  "crates/lyra-mcp-core",
   "crates/lyra-local-search",
   "crates/lyra-local-inference-core",
-  "crates/lyra-ai-core",
 ]
 resolver = "2"
 
@@ -36,7 +32,6 @@ license = "Apache-2.0"
 [workspace.dependencies]
 # Internal
 lyra-download-core = { path = "crates/lyra-download-core" }
-lyra-capsule-core = { path = "crates/lyra-capsule-core" }
 lyra-files-core = { path = "crates/lyra-files-core" }
 lyra-image-core = { path = "crates/lyra-image-core" }
 lyra-resource-core = { path = "crates/lyra-resource-core" }

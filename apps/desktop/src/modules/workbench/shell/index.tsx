@@ -23,14 +23,12 @@ import { useWorkspaceTabsModel } from "../workspace-tabs";
 import { useWorkbenchUiRuntime } from "../ui-platform";
 import { cx } from "../ui-primitives";
 import { getDesktopApi, syncCssVarsToDocumentRoot } from "./service";
-import type { AgentComposerWorkbenchTabMention } from "../ai-panel";
 import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
 import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "./titlebar-context";
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "../browser-search";
 import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
-import { useWorkbenchAiFileMentionFallbackRoots } from "./use-workbench-ai-file-mention-fallback-roots";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
 import { useWorkbenchBrowserRuntime } from "./use-workbench-browser-runtime";
 import {
@@ -51,7 +49,6 @@ import { useWorkbenchLinuxCompatNotice } from "./use-workbench-linux-compat-noti
 import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
 import { useWorkbenchObservationBridge } from "./use-workbench-observation-bridge";
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
-import { useWorkbenchPlanReviewModel } from "./use-workbench-plan-review-model";
 import { useWorkbenchResourceRegistration } from "./use-workbench-resource-registration";
 import { useWorkbenchSearchIndexStatus } from "./use-workbench-search-index-status";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
@@ -223,9 +220,6 @@ export const WorkbenchShell = () => {
   const {
     activeFileManagerState,
     activeFileEditorState,
-    mcpCenterModel,
-    skillsCenterModel,
-    pluginsCenterModel,
     settingsAiModel
   } = useWorkbenchActiveAppContext({
     activeTab,
@@ -259,32 +253,6 @@ export const WorkbenchShell = () => {
       tabsModel,
       confirmLabel: t("ai.bindProjectConfirm")
     });
-  const aiFileMentionFallbackRoots = useWorkbenchAiFileMentionFallbackRoots({
-    currentPath: activeFileManagerState?.currentLocation?.path,
-    tabs: tabsModel.tabs
-  });
-  const planReview = useWorkbenchPlanReviewModel({
-    openAppTab: tabsModel.openAppTab,
-    title: t("ai.planReviewTitle")
-  });
-  const workbenchTabMentions = useMemo<readonly AgentComposerWorkbenchTabMention[]>(() => {
-    const visibleTabIds = new Set(visibleWorkspaceLayout.visibleTabIds);
-    return tabsModel.tabs.map((tab) => ({
-      tabId: tab.id,
-      title: tab.title,
-      kind: tab.pageKind,
-      active: tab.id === tabsModel.activeTabId,
-      visible: visibleTabIds.has(tab.id),
-      ...(tab.displayAddress.trim().length === 0 ? {} : { address: tab.displayAddress }),
-      ...(tab.inputValue.trim().length === 0 ? {} : { inputValue: tab.inputValue }),
-      ...(tab.query === undefined ? {} : { query: tab.query }),
-      ...(tab.filePath === undefined ? {} : { filePath: tab.filePath }),
-      ...(tab.appId === undefined ? {} : { appId: tab.appId }),
-      ...(tab.appIconKey === undefined ? {} : { appIconKey: tab.appIconKey }),
-      ...(tab.terminalTabId === undefined ? {} : { terminalTabId: tab.terminalTabId }),
-      ...(tab.faviconUrl === undefined ? {} : { faviconUrl: tab.faviconUrl }),
-    }));
-  }, [tabsModel.activeTabId, tabsModel.tabs, visibleWorkspaceLayout.visibleTabIds]);
   const {
     onOpenFileFromManager,
     onRevealPathInFileManager,
@@ -301,14 +269,10 @@ export const WorkbenchShell = () => {
     preferences: preferencesModel.preferences,
     settingsAiModel,
     aiPanelSide: panelLayoutModel.aiPanelSide,
-    fileMentionFallbackRoots: aiFileMentionFallbackRoots,
-    workbenchTabMentions,
-    onFollowOpenFilePath: onOpenFileFromManager,
     onToggleAiPanelSide: () => {
       beginBrowserLayoutAnimationSync();
       panelLayoutModel.toggleAiPanelSide();
     },
-    openAppTab: tabsModel.openAppTab,
     onRequestProjectBind: requestProjectBind,
     t
   });
@@ -407,7 +371,7 @@ export const WorkbenchShell = () => {
   const aiLaunchProps = useWorkbenchAiLaunchProps(t);
 
   const sidebarAiSurfacePropsWithFileOpen = sidebarAiSurfaceProps;
-  const emptyAppTabGuards = useWorkbenchEmptyAppTabGuards({
+  useWorkbenchEmptyAppTabGuards({
     tabsModel,
     notificationCount: notificationModel.notifications.length
   });
@@ -458,18 +422,12 @@ export const WorkbenchShell = () => {
     onUndoEditorWorkItem,
     preferencesModel,
     settings: settingsSurfaceProps,
-    mcpCenterModel,
-    skillsCenterModel,
-    pluginsCenterModel,
-    planReviewModel: planReview.model,
     notificationModel,
     labels,
-    openDialog: globalDialogModel.openDialog,
     onOpenFileFromManager,
     onRevealPathInFileManager,
     onOpenNotificationSource,
-    onRequestClearNotifications,
-    onHistoryEmptied: emptyAppTabGuards.onHistoryEmptied
+    onRequestClearNotifications
   });
 
   const rootClassName = cx(

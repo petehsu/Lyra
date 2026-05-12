@@ -8,10 +8,6 @@ type UseWorkbenchEmptyAppTabGuardsParams = {
   readonly notificationCount: number;
 };
 
-type WorkbenchEmptyAppTabGuards = {
-  readonly onHistoryEmptied: () => void;
-};
-
 const closeAppTabsById = (
   tabs: WorkspaceTabsModel["tabs"],
   closeTab: WorkspaceTabsModel["closeTab"],
@@ -27,14 +23,10 @@ const closeAppTabsById = (
 export const useWorkbenchEmptyAppTabGuards = ({
   tabsModel,
   notificationCount
-}: UseWorkbenchEmptyAppTabGuardsParams): WorkbenchEmptyAppTabGuards => {
+}: UseWorkbenchEmptyAppTabGuardsParams): void => {
   const { closeTab, tabs } = tabsModel;
   const closeNotificationCenterTabs = useCallback((): void => {
     closeAppTabsById(tabs, closeTab, "notification-center");
-  }, [closeTab, tabs]);
-
-  const closeAiHistoryTabs = useCallback((): void => {
-    closeAppTabsById(tabs, closeTab, "ai-history");
   }, [closeTab, tabs]);
 
   useEffect(() => {
@@ -44,7 +36,4 @@ export const useWorkbenchEmptyAppTabGuards = ({
     closeNotificationCenterTabs();
   }, [closeNotificationCenterTabs, notificationCount]);
 
-  return {
-    onHistoryEmptied: closeAiHistoryTabs
-  };
 };

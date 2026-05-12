@@ -29,7 +29,7 @@ const WORKBENCH_SHELL_ENTRYPOINT = path.join(MODULES_WORKBENCH_DIR, "shell/index
 const WORKBENCH_SHELL_ENTRYPOINT_RELATIVE = "apps/desktop/src/modules/workbench/shell/index.tsx";
 const LEGACY_CSS_PATH = path.join(ROOT, "apps/desktop/src/renderer/styles/workbench.css");
 const WORKBENCH_SHELL_ENTRYPOINT_MAX_LINES = 650;
-const APPROVED_BREAKPOINTS = new Set(["720px", "860px", "980px", "1180px"]);
+const APPROVED_BREAKPOINTS = new Set(["360px", "720px", "860px", "980px", "1180px"]);
 const FOUNDATION_TOKEN_NAMES = new Set(Object.keys(WORKBENCH_FOUNDATION_TOKENS));
 const VISUAL_STYLE_KEYS = new Set([
   "fontSize",
@@ -92,15 +92,8 @@ const DISALLOWED_LOCAL_TITLEBAR_CLASSES = [
   "lyra-deep-search-topbar",
   "lyra-deep-search-toolbar",
   "lyra-image-viewer-toolbar",
-  "lyra-mcp-center-toolbar",
-  "lyra-skills-center-toolbar",
-  "lyra-plugins-center-toolbar",
   "lyra-notification-center-header",
   "lyra-resource-monitor-header",
-  "lyra-ai-history-topbar",
-  "lyra-ai-history-scope-tabs",
-  "lyra-ai-plan-review__header",
-  "lyra-ai-plan-review__toolbar"
 ] as const;
 
 const selectorRules: readonly SelectorRule[] = [
@@ -144,45 +137,6 @@ const selectorRules: readonly SelectorRule[] = [
   {
     selector: ".lyra-context-menu-item:hover:enabled",
     required: [/background:\s*transparent\s*;/]
-  },
-  {
-    selector: ".lyra-ai-panel-project-bind-active",
-    required: [/background:\s*transparent\s*;/],
-    forbidden: [/var\(--lyra-(?:text-accent|line-focused)\)/]
-  },
-  {
-    selector: ".lyra-ai-agent-follow-toggle-active",
-    required: [/color:\s*var\(--lyra-text-primary\)\s*;/, /background:\s*transparent\s*;/],
-    forbidden: [/var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
-  },
-  {
-    selector: ".lyra-ai-agent-send-ready",
-    required: [
-      /color:\s*var\(--lyra-text-primary\)\s*;/,
-      /border-color:\s*transparent\s*;/,
-      /background:\s*transparent\s*;/,
-      /box-shadow:\s*none\s*;/
-    ],
-    forbidden: [/#ffffff/i, /var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
-  },
-  {
-    selector: ".lyra-ai-agent-send-ready .lyra-ai-agent-send-icon",
-    required: [/transform:\s*none\s*;/]
-  },
-  {
-    selector: ".lyra-ai-agent-send-sending",
-    required: [/border-color:\s*transparent\s*;/, /background:\s*transparent\s*;/],
-    forbidden: [/animation\s*:/, /var\(--lyra-(?:text-accent|line-focused|warning-500)\)/]
-  },
-  {
-    selector: ".lyra-ai-history-row-project-icon",
-    required: [/color:\s*var\(--lyra-text-muted\)\s*;/],
-    forbidden: [/var\(--lyra-line-focused\)/]
-  },
-  {
-    selector: ".lyra-ai-history-project-card-icon",
-    required: [/color:\s*var\(--lyra-text-muted\)\s*;/],
-    forbidden: [/var\(--lyra-line-focused\)/]
   },
   {
     selector: ".lyra-settings-ai-action-icon",
@@ -248,26 +202,6 @@ const selectorRules: readonly SelectorRule[] = [
     forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
   },
   {
-    selector: ".lyra-ai-plan-review__approve",
-    required: [/background:\s*transparent\s*;/],
-    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
-  },
-  {
-    selector: ".lyra-ai-thread-tab-item[data-status=\"running\"] .lyra-ai-thread-tab-icon",
-    required: [/color:\s*var\(--lyra-text-primary\)\s*;/],
-    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
-  },
-  {
-    selector: ".lyra-mcp-center-side-button-active::before",
-    required: [/background:\s*color-mix\(in srgb,\s*var\(--lyra-text-primary\)/],
-    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
-  },
-  {
-    selector: ".lyra-mcp-center-server-row-active::before",
-    required: [/background:\s*color-mix\(in srgb,\s*var\(--lyra-text-primary\)/],
-    forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
-  },
-  {
     selector: ".lyra-global-dialog-action-primary",
     required: [/color:\s*var\(--lyra-text-primary\)\s*;/],
     forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
@@ -329,32 +263,10 @@ const iconOnlyHoverRules: readonly IconOnlyHoverRule[] = [
   { selector: ".lyra-browser-nav-button:hover" },
   { selector: ".lyra-browser-tab-close:hover" },
   { selector: ".lyra-browser-tab-add:hover" },
-  { selector: ".lyra-ai-panel-topbar-nav:hover" },
-  { selector: ".lyra-ai-thread-tab-new:hover" },
-  { selector: ".lyra-ai-panel-topbar-action:hover" },
-  { selector: ".lyra-ai-panel-topbar-more-item:hover:enabled" },
-  { selector: ".lyra-ai-panel-history-item-delete:hover:enabled" },
-  { selector: ".lyra-ai-agent-composer-attachment-remove:hover" },
-  { selector: ".lyra-ai-agent-composer-menu-item:hover:enabled" },
-  { selector: ".lyra-ai-agent-composer-submenu-item:hover" },
-  { selector: ".lyra-ai-plan-review__action:hover:enabled" },
-  { selector: ".lyra-ai-plan-review__comment-submit:hover:enabled" },
-  { selector: ".lyra-ai-plan-review__comment-cancel:hover:enabled" },
-  { selector: ".lyra-ai-plan-review__line-comment:hover" },
-  { selector: ".lyra-ai-agent-composer-tools-trigger:hover:enabled" },
-  { selector: ".lyra-ai-agent-follow-toggle:hover:enabled" },
-  { selector: ".lyra-ai-agent-send-idle:hover:enabled" },
-  { selector: ".lyra-ai-agent-send-ready:hover:enabled", requireTransparentBackground: false },
-  { selector: ".lyra-ai-agent-send-sending:hover:enabled", requireTransparentBackground: false },
-  { selector: ".lyra-ai-history-topbar-action:hover:enabled" },
-  { selector: ".lyra-ai-history-row-action:hover" },
-  { selector: ".lyra-ai-history-row-action-open:hover" }
+  { selector: ".lyra-ai-panel-shell-icon-button:hover" }
 ];
 
-const transparentMenuSelectionSelectors = [
-  ".lyra-ai-agent-composer-menu-item-active",
-  ".lyra-ai-agent-composer-submenu-item-active"
-];
+const transparentMenuSelectionSelectors: readonly string[] = [];
 
 const globalForbiddenPatterns: readonly { readonly pattern: RegExp; readonly message: string }[] = [
   {
@@ -418,7 +330,7 @@ const isTsInlinePxAllowlisted = (filePath: string): boolean =>
   TS_INLINE_PX_ALLOWLIST.some((pattern) => pattern.test(filePath));
 
 const isBreakpointLine = (line: string, literal: string): boolean =>
-  line.includes("@media") && APPROVED_BREAKPOINTS.has(literal);
+  (line.includes("@media") || line.includes("@container")) && APPROVED_BREAKPOINTS.has(literal);
 
 const lineNumberAt = (text: string, index: number): number =>
   text.slice(0, index).split("\n").length;
@@ -924,13 +836,6 @@ export const scanWorkbenchDesignContracts = (filePath: string, text: string): st
         violations.push(`${relativePath}:1 Workspace surfaces must move ${className} controls into the global titlebar contribution.`);
       }
     }
-  }
-
-  if (
-    /apps\/desktop\/src\/modules\/workbench\/ai-history\/surface-view\.tsx$/.test(normalizedPath)
-    && (/\bprojectLogoUrlForRoot\b/.test(text) || /projectLogoUrl=\{(?!null\})/u.test(text))
-  ) {
-    violations.push(`${relativePath}:1 AI history rows must use neutral project symbols, not colored project logos.`);
   }
 
   if (

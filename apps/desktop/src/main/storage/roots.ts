@@ -5,10 +5,7 @@ import path from "node:path";
 
 export type LyraModuleStorageRoots = {
   readonly fileManager: string;
-  readonly ai: string;
   readonly runtime: string;
-  readonly mcp: string;
-  readonly skills: string;
   readonly linuxCompat: string;
   readonly terminal: string;
   readonly workbenchState: string;
@@ -39,10 +36,7 @@ export const resolveLyraStorageRoots = (): LyraStorageRoots => {
     electronDesktopRoot,
     modules: {
       fileManager: path.join(modulesRoot, "file-manager"),
-      ai: path.join(modulesRoot, "ai"),
       runtime: path.join(modulesRoot, "runtime"),
-      mcp: path.join(modulesRoot, "mcp"),
-      skills: path.join(modulesRoot, "skills"),
       linuxCompat: path.join(modulesRoot, "linux-compat"),
       terminal: path.join(modulesRoot, "terminal"),
       workbenchState: path.join(modulesRoot, "workbench-state"),

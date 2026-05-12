@@ -1,13 +1,10 @@
 import {
   Bell,
-  Bot,
   Braces,
-  Folder,
   FolderOpen,
   Globe,
   HardDrive,
-  TerminalSquare,
-  Wrench
+  TerminalSquare
 } from "lucide-react";
 
 import type {
@@ -34,9 +31,6 @@ export const renderNotificationSourceIcon = (
   iconKey: WorkbenchNotificationSourceIconKey,
   size = 14
 ): JSX.Element => {
-  if (iconKey === "ai") {
-    return <Bot size={size} />;
-  }
   if (iconKey === "file-manager") {
     return <FolderOpen size={size} />;
   }
@@ -48,12 +42,6 @@ export const renderNotificationSourceIcon = (
   }
   if (iconKey === "terminal") {
     return <TerminalSquare size={size} />;
-  }
-  if (iconKey === "mcp") {
-    return <Wrench size={size} />;
-  }
-  if (iconKey === "skills") {
-    return <Folder size={size} />;
   }
   if (iconKey === "system") {
     return <HardDrive size={size} />;

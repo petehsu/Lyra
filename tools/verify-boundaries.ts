@@ -143,78 +143,6 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
       "Do not import browser-tabs lifecycle types. Use workspace-tabs types."
   },
   {
-    scopePrefix: "apps/desktop/src/modules/workbench/mcp-center/view.tsx",
-    pattern: /from\s+["']\.\/service["']/,
-    message:
-      "MCP view layer must not import service internals directly. Import selectors/types/view-panels only."
-  },
-  {
-    scopePrefix: "apps/desktop/src/modules/workbench/skills-center/view.tsx",
-    pattern: /from\s+["']\.\/service["']/,
-    message:
-      "Skills view layer must not import service internals directly. Import selectors/types/view-panels only."
-  },
-  {
-    scopePrefix: "apps/desktop/src/modules/workbench/mcp-center/view-panels.tsx",
-    pattern: /from\s+["']\.\/service["']/,
-    message:
-      "MCP panel components must stay presentational and must not import service internals."
-  },
-  {
-    scopePrefix: "apps/desktop/src/modules/workbench/skills-center/view-panels.tsx",
-    pattern: /from\s+["']\.\/service["']/,
-    message:
-      "Skills panel components must stay presentational and must not import service internals."
-  },
-  {
-    scopePrefix: "apps/desktop/src/modules/workbench/mcp-center/service.tsx",
-    pattern: /from\s+["']\.\/view(-panels)?["']/,
-    message:
-      "MCP service layer must not import renderer views."
-  },
-  {
-    scopePrefix: "apps/desktop/src/modules/workbench/skills-center/service.tsx",
-    pattern: /from\s+["']\.\/view(-panels)?["']/,
-    message:
-      "Skills service layer must not import renderer views."
-  },
-  {
-    scopePrefix: "apps/desktop/src/main/mcp/service.ts",
-    pattern: /Fall through to the existing TypeScript implementation/,
-    message:
-      "MCP main service must not keep TypeScript fallback branches once native ownership exists."
-  },
-  {
-    scopePrefix: "apps/desktop/src/main/skills/service.ts",
-    pattern: /Fall through to the existing TypeScript implementation/,
-    message:
-      "Skills main service must not keep TypeScript fallback branches once native ownership exists."
-  },
-  {
-    scopePrefix: "apps/desktop/src/main/skills/service.ts",
-    pattern: /\bfallbackCreate\b/,
-    message:
-      "Skills main service must not retain create fallback helpers after native refactor."
-  },
-  {
-    scopePrefix: "apps/desktop/src/main/skills/service.ts",
-    pattern: /\binstallBuiltins\b|\binstallDiscoveredSkills\b|\bpersistInstalled\b|\bfindInstalledSkill\b/,
-    message:
-      "Skills main service must stay as a thin bridge; install and storage mutation logic belongs in native."
-  },
-  {
-    scopePrefix: "apps/desktop/src/main/mcp/service.ts",
-    pattern: /\bruntimeByServerId\b|\bhandleByServerId\b|\bintrospectionByServerId\b/,
-    message:
-      "MCP runtime registry state must live in native, not in Electron main service maps."
-  },
-  {
-    scopePrefix: "apps/desktop/src/main/mcp/service.ts",
-    pattern: /\bstopRuntimeHandle\b|\bstartPersistedServer\b/,
-    message:
-      "MCP process lifecycle must stay in native; do not reintroduce TypeScript runtime handlers."
-  },
-  {
     scopePrefix: "apps/desktop/src/main/runtime/workbench-fs-port.ts",
     pattern: /\bprobePathFallback\b|\bcollectFilePathsFallback\b/,
     message:
@@ -243,7 +171,7 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     scopePrefix: "apps/desktop/src/",
     pattern: /\bApp Connectors\b/,
     message:
-      "Desktop must not expose App Connectors as an independent product surface; use Plugins, MCP, or Skills UI."
+      "Desktop must not expose App Connectors as an independent product surface; use the plugin UI."
   },
   {
     scopePrefix: "apps/desktop/src/",
@@ -291,96 +219,6 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     excludePathPattern: /\/tests\//,
     message:
       "AI panel must not expose unsupported Codex-style slash commands. Use explicit Lyra UI actions instead."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/planning.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "LongWork storage must live in focused long-work storage modules, not in planning storage."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/session.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "LongWork session projections must live in focused long-work storage modules, not in session storage."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/execution.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "LongWork state must not be folded into execution storage. Keep the long-work ledger in its own storage module and link by ids."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/execution_helpers.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "LongWork projection helpers must live with focused long-work storage, not execution helper code."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/verification.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "Verification storage must not own LongWork state. Link verification evidence to long-work records from a focused module."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/completion.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "Completion storage must not own LongWork state. Completion audit can gate long work through ids and focused projection code."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/completion_helpers.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "Completion helper code must not become LongWork projection logic. Use a focused long-work projection module."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/models.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "LongWork model types must live in focused long-work model modules, not in the shared storage model file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/schema.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "LongWork schema must be split into a focused schema module instead of growing the shared schema file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/turn_loop.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "LongWork runtime control must live in focused controller/projection modules, not in the turn loop."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/session_ops.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "LongWork runtime APIs must live in focused modules, not in session_ops."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/tests.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "LongWork tests must live in focused test modules, not in the legacy broad agent_runtime test file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/todo_projection.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "Todo projection must not own LongWork state transitions. Add a focused long-work projection module instead."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/tool_runtime/executor.rs",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "Tool executor must stay tool-oriented; route LongWork bookkeeping through focused runtime projection code."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/patch_apply/",
-    pattern: LONG_WORK_RUST_PATTERN,
-    message:
-      "Patch apply/rollback must not own LongWork bookkeeping. Keep patch side effects and long-work projection separate."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/thread-view.tsx",
@@ -449,60 +287,6 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
       "LongWork runtime tests must target focused helpers, not the broad Lyra thread runtime test."
   },
   {
-    scopePrefix: "crates/lyra-ai-core/src/storage/session.rs",
-    pattern: FOLLOW_RUST_PATTERN,
-    message:
-      "Follow session projections must live in focused follow storage modules, not in session storage."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/execution.rs",
-    pattern: FOLLOW_RUST_PATTERN,
-    message:
-      "Execution storage must not own Follow state. Link execution evidence to focused Follow records by id."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/verification.rs",
-    pattern: FOLLOW_RUST_PATTERN,
-    message:
-      "Verification storage must not own Follow state. Link report artifacts through focused Follow projection code."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/completion.rs",
-    pattern: FOLLOW_RUST_PATTERN,
-    message:
-      "Completion storage must not own Follow state. Completion audit can reference Follow evidence by id only."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/models.rs",
-    pattern: FOLLOW_RUST_PATTERN,
-    message:
-      "Follow ledger model types must live in focused Follow model modules, not in the shared storage model file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/schema.rs",
-    pattern: FOLLOW_RUST_PATTERN,
-    message:
-      "Follow schema must be split into a focused schema module instead of growing the shared schema file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/turn_loop.rs",
-    pattern: FOLLOW_RUST_PATTERN,
-    message:
-      "Follow runtime control must live in focused controller/projection modules, not in the turn loop."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/session_ops.rs",
-    pattern: FOLLOW_RUST_PATTERN,
-    message:
-      "Follow runtime APIs must live in focused modules, not in session_ops."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/tool_runtime/executor.rs",
-    pattern: FOLLOW_RUST_PATTERN,
-    message:
-      "Tool executor must stay tool-oriented; route Follow bookkeeping through focused runtime projection code."
-  },
-  {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/thread-view.tsx",
     pattern: FOLLOW_TS_PATTERN,
     message:
@@ -549,60 +333,6 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     pattern: FOLLOW_TS_PATTERN,
     message:
       "Patch review strip must stay patch-focused; do not add Follow UI or state there."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/session.rs",
-    pattern: ROLLBACK_RUST_PATTERN,
-    message:
-      "Message rollback and recovery storage must live in focused rollback/checkpoint modules, not in session storage."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/execution.rs",
-    pattern: ROLLBACK_RUST_PATTERN,
-    message:
-      "Execution storage must not own rollback state. Link rollback effects through focused recovery records by id."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/verification.rs",
-    pattern: ROLLBACK_RUST_PATTERN,
-    message:
-      "Verification storage must not own rollback state. Supersede verification records through focused recovery projection code."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/completion.rs",
-    pattern: ROLLBACK_RUST_PATTERN,
-    message:
-      "Completion storage must not own rollback state. Completion audit can be superseded through focused recovery records."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/models.rs",
-    pattern: ROLLBACK_RUST_PATTERN,
-    message:
-      "Rollback model types must live in focused rollback/checkpoint model modules, not in the shared storage model file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/schema.rs",
-    pattern: ROLLBACK_RUST_PATTERN,
-    message:
-      "Rollback schema must be split into focused schema modules instead of growing the shared schema file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/turn_loop.rs",
-    pattern: ROLLBACK_RUST_PATTERN,
-    message:
-      "Rollback runtime control must live in focused recovery controller/projection modules, not in the turn loop."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/session_ops.rs",
-    pattern: ROLLBACK_RUST_PATTERN,
-    message:
-      "Rollback runtime APIs must live in focused recovery modules, not in session_ops."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/tool_runtime/executor.rs",
-    pattern: ROLLBACK_RUST_PATTERN,
-    message:
-      "Tool executor must stay tool-oriented; route rollback bookkeeping through focused recovery projection code."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/thread-view.tsx",
@@ -653,66 +383,6 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
       "Patch review strip must stay patch-focused; do not add message rollback UI or state there."
   },
   {
-    scopePrefix: "crates/lyra-ai-core/src/storage/session.rs",
-    pattern: INTAKE_RUST_PATTERN,
-    message:
-      "Intent, reference, clarification, and assumption records must live in focused intake storage modules, not in session storage."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/models.rs",
-    pattern: INTAKE_RUST_PATTERN,
-    message:
-      "Intake model types must live in focused intent/reference/clarification model modules, not in the shared storage model file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/schema.rs",
-    pattern: INTAKE_RUST_PATTERN,
-    message:
-      "Intake schema must be split into focused schema modules instead of growing the shared schema file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/execution.rs",
-    pattern: INTAKE_RUST_PATTERN,
-    message:
-      "Execution storage must not own intake records. Link Todo and execution state to focused intent/reference records by id."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/planning.rs",
-    pattern: INTAKE_RUST_PATTERN,
-    message:
-      "Planning storage must not own intake records. Plan coverage may reference focused intent/reference records by id."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/completion.rs",
-    pattern: INTAKE_RUST_PATTERN,
-    message:
-      "Completion storage must not own intake records. Completion audit should link to focused intake summaries by id."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/turn_loop.rs",
-    pattern: INTAKE_RUST_PATTERN,
-    message:
-      "Runtime intake classification, reference resolution, clarification gates, and assumption logic must live in focused runtime modules, not in the turn loop."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/session_ops.rs",
-    pattern: INTAKE_RUST_PATTERN,
-    message:
-      "Runtime intake APIs must live in focused modules, not in session_ops."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/tests.rs",
-    pattern: INTAKE_RUST_PATTERN,
-    message:
-      "Intake tests must live beside focused intent/reference/clarification modules, not in the legacy broad agent_runtime test file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/tool_runtime/executor.rs",
-    pattern: INTAKE_RUST_PATTERN,
-    message:
-      "Tool executor must stay tool-oriented; route clarification and intake bookkeeping through focused runtime projection code."
-  },
-  {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/thread-view.tsx",
     pattern: INTAKE_TS_PATTERN,
     message:
@@ -747,73 +417,6 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     pattern: INTAKE_TS_PATTERN,
     message:
       "Execution todo UI must not absorb intake or clarification rendering. Keep those rows focused and separate."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/project_manifest.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    message:
-      "Project policy and security implementation must live in focused project_policy/security_gate modules. Keep project_manifest.rs as a thin compatibility facade."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/session.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    message:
-      "Policy and security session projections must live in focused policy/security storage modules, not in session storage."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/models.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    message:
-      "Policy and security model types must live in focused policy/security model modules, not in the shared storage model file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/schema.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    message:
-      "Policy and security schema must be split into focused schema modules instead of growing the shared schema file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/execution.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    message:
-      "Execution storage must not own policy or security state. Link decisions and snapshots by id from focused ledgers."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/verification.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    message:
-      "Verification storage must not own policy or security state. Attach verification to focused policy/security decision ids."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/storage/completion.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    message:
-      "Completion storage must not own policy or security state. Completion audit should reference focused decision records."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/turn_loop.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    allowLinePattern: /loaded_policy\.effective_policy|read_effective_policy_for_turn/,
-    message:
-      "Runtime turn loop must only orchestrate policy/security loading and decisions. Keep manifest merge, security gate, and redaction logic in focused modules."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/session_ops.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    message:
-      "Runtime session APIs must not absorb policy/security ledgers. Use focused projection modules."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/agent_runtime/tests.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    message:
-      "Policy and security tests must live beside focused modules, not in the legacy broad agent_runtime test file."
-  },
-  {
-    scopePrefix: "crates/lyra-ai-core/src/tool_runtime/executor.rs",
-    pattern: POLICY_SECURITY_RUST_PATTERN,
-    message:
-      "Tool executor must stay tool-oriented; route policy and security decisions through focused gate adapters."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/ai-panel/thread-view.tsx",

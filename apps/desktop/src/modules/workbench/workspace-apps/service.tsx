@@ -1,10 +1,6 @@
 import type { ReactNode } from "react";
 
 import {
-  renderAiPanelAppIcon,
-  type AiPanelAppIconKey
-} from "../ai-panel";
-import {
   renderFileEditorAppIcon,
   type FileEditorAppIconKey,
   type FileEditorAppId
@@ -35,12 +31,6 @@ const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactN
   "image-viewer": (iconKey) => renderImageViewerAppIcon(iconKey as ImageViewerAppIconKey),
   "resource-monitor": (iconKey) =>
     renderResourceMonitorAppIcon(iconKey as ResourceMonitorAppIconKey),
-  "ai-history": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
-  "ai-plan-review": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
-  "ai-mcp": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
-  "ai-skills": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
-  "ai-plugins": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
-  "agent-vm": (iconKey) => renderAiPanelAppIcon(iconKey as AiPanelAppIconKey),
   "notification-center": (iconKey) =>
     renderNotificationCenterAppIcon(iconKey as "notification-center-default")
 };
@@ -68,24 +58,6 @@ export const isImageViewerAppId = (value: WorkbenchAppId): value is ImageViewerA
 
 export const isResourceMonitorAppId = (value: WorkbenchAppId): value is ResourceMonitorAppId =>
   value === "resource-monitor";
-
-export const isAiHistoryAppId = (value: WorkbenchAppId): value is "ai-history" =>
-  value === "ai-history";
-
-export const isAiPlanReviewAppId = (value: WorkbenchAppId): value is "ai-plan-review" =>
-  value === "ai-plan-review";
-
-export const isAiMcpAppId = (value: WorkbenchAppId): value is "ai-mcp" =>
-  value === "ai-mcp";
-
-export const isAiSkillsAppId = (value: WorkbenchAppId): value is "ai-skills" =>
-  value === "ai-skills";
-
-export const isAiPluginsAppId = (value: WorkbenchAppId): value is "ai-plugins" =>
-  value === "ai-plugins";
-
-export const isAgentVmAppId = (value: WorkbenchAppId): value is "agent-vm" =>
-  value === "agent-vm";
 
 export const isNotificationCenterAppId = (value: WorkbenchAppId): value is "notification-center" =>
   value === "notification-center";

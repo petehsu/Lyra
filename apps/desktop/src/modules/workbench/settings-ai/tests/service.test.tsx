@@ -1,14 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 
-import type {
-  AiModelDiscoveryResult,
-  AiProviderModelEntry,
-  AiProviderProfile,
-  AiRuntimeConfigSnapshot,
-  AiUpsertProfileRequest,
-} from "../../../../shared/ai";
-import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import { useSettingsAiModel } from "../service";
 import type { SettingsAiLabels } from "../types";
 
@@ -60,183 +52,25 @@ const labels: SettingsAiLabels = {
   memoryConfigStatusInvalidJson: "Invalid JSON"
 };
 
-const emptySnapshot: AiRuntimeConfigSnapshot = {
-  schemaVersion: "v1",
-  profiles: [],
-  defaultProfileId: null,
-  defaultProviderId: null,
-  defaultModelNames: [],
-  runtimeHealth: {
-    backend: "lyrad",
-    transport: "test",
-    version: "0"
-  }
-};
-
-const discoveryResult: AiModelDiscoveryResult = {
-  providerId: "openai",
-  protocolId: "openai_chat_completions",
-  status: "ready",
-  message: "Models discovered.",
-  checkedAt: 1,
-  models: [
-    {
-      id: "model-a",
-      name: "model-a",
-      source: "dynamic"
-    },
-    {
-      id: "model-b",
-      name: "model-b",
-      source: "dynamic"
-    }
-  ]
-};
-
-const savedProfile = (model: string): AiProviderProfile => ({
-  id: "profile-openai",
-  name: "OpenAI",
-  providerId: "openai",
-  protocolId: "openai_chat_completions",
-  runtimeProviderId: "openai",
-  runtimeSupported: true,
-  secretStatus: "configured",
-  presetId: "openai",
-  connectionConfig: {
-    baseUrl: "https://api.openai.com/v1"
-  },
-  authConfig: {
-    modelSelectionMode: "all"
-  },
-  configuredSecretFields: ["apiKey"],
-  headers: {},
-  model,
-  customModels: [],
-  discoveryState: {
-    status: "idle",
-    lastCheckedAt: null,
-    models: []
-  },
-  isDefault: true,
-  createdAt: 1,
-  updatedAt: 1
-});
-
-const modelEntry = (
-  id: string,
-  overrides: Partial<AiProviderModelEntry> = {}
-): AiProviderModelEntry => ({
-  id,
-  name: id,
-  source: "dynamic",
-  ...overrides
-});
+const renderModel = () =>
+  renderHook(() => useSettingsAiModel({ desktopApi: null, labels }));
 
 describe("useSettingsAiModel", () => {
-  test("discovers and stores all models when the all mode is selected", async () => {
-    const readConfig = vi.fn().mockResolvedValue(emptySnapshot);
-    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => savedProfile(request.model));
-    const discoverModels = vi.fn().mockResolvedValue(discoveryResult);
-    const desktopApi = {
-      ai: {
-        readConfig,
-        upsertProfile,
-        deleteProfile: vi.fn(),
-        discoverModels
-      }
-    } as unknown as LyraDesktopApi;
+  test("starts as a local-only settings model without runtime state", () => {
+    const { result } = renderModel();
 
-    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
-
-    await waitFor(() => {
-      expect(readConfig).toHaveBeenCalled();
-    });
-
-    await act(async () => {
-      await result.current.saveProfile();
-    });
-
-    expect(discoverModels).toHaveBeenCalledTimes(1);
-    expect(upsertProfile).toHaveBeenCalledWith(expect.objectContaining({
-      authConfig: expect.objectContaining({
-        modelSelectionMode: "all"
-      }),
-      model: "model-a",
-      customModels: [
-        expect.objectContaining({
-          id: "model-b"
-        })
-      ],
-      discoveryState: expect.objectContaining({
-        models: discoveryResult.models
-      })
-    }));
+    expect(result.current.profiles).toEqual([]);
+    expect(result.current.selectedProfileId).toBeNull();
+    expect(result.current.errorMessage).toBeNull();
+    expect(result.current.availableModels).toEqual([]);
+    expect(result.current.presetSections.length).toBeGreaterThan(0);
   });
 
-  test("blocks all-mode save when dynamic discovery is unavailable", async () => {
-    const readConfig = vi.fn().mockResolvedValue(emptySnapshot);
-    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
-      ...savedProfile(request.model),
-      id: "profile-mimo",
-      providerId: "mimo",
-      protocolId: "mimo_openai_chat_completions",
-      presetId: "mimo_api"
-    }));
-    const discoverModels = vi.fn().mockRejectedValue(new Error("Could not resolve host"));
-    const desktopApi = {
-      ai: {
-        readConfig,
-        upsertProfile,
-        deleteProfile: vi.fn(),
-        discoverModels
-      }
-    } as unknown as LyraDesktopApi;
-
-    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
-
-    await waitFor(() => {
-      expect(readConfig).toHaveBeenCalled();
-    });
+  test("saves custom models into local memory only", async () => {
+    const { result } = renderModel();
 
     act(() => {
-      result.current.applyPreset("mimo_api");
-    });
-    await act(async () => {
-      await result.current.saveProfile();
-    });
-
-    expect(discoverModels).toHaveBeenCalledTimes(1);
-    expect(upsertProfile).not.toHaveBeenCalled();
-    expect(result.current.errorMessage).toBe("Could not resolve host");
-  });
-
-  test("saves custom MiMo models without discovery", async () => {
-    const readConfig = vi.fn().mockResolvedValue(emptySnapshot);
-    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
-      ...savedProfile(request.model),
-      id: "profile-mimo",
-      providerId: "mimo",
-      protocolId: "mimo_openai_chat_completions",
-      presetId: "mimo_api"
-    }));
-    const discoverModels = vi.fn();
-    const desktopApi = {
-      ai: {
-        readConfig,
-        upsertProfile,
-        deleteProfile: vi.fn(),
-        discoverModels
-      }
-    } as unknown as LyraDesktopApi;
-
-    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
-
-    await waitFor(() => {
-      expect(readConfig).toHaveBeenCalled();
-    });
-
-    act(() => {
-      result.current.applyPreset("mimo_api");
+      result.current.updateDraftName("Local test profile");
       result.current.updateDraftModelSelectionMode("custom");
       result.current.updateDraftModelsText("user-model-a\nuser-model-b");
     });
@@ -244,126 +78,33 @@ describe("useSettingsAiModel", () => {
       await result.current.saveProfile();
     });
 
-    expect(discoverModels).not.toHaveBeenCalled();
-    expect(upsertProfile).toHaveBeenCalledWith(expect.objectContaining({
-      providerId: "mimo",
-      protocolId: "mimo_openai_chat_completions",
-      model: "user-model-a",
-      customModels: [
-        expect.objectContaining({
-          id: "user-model-b"
-        })
-      ],
-      discoveryState: expect.objectContaining({
-        status: "idle",
-        models: []
-      })
-    }));
-  });
-
-  test("merges newly entered custom models into the selected provider profile", async () => {
-    const profile: AiProviderProfile = {
-      ...savedProfile("model-a"),
-      customModels: [
-        modelEntry("model-b", { name: "Model B" })
-      ],
-      discoveryState: {
-        status: "ready",
-        lastCheckedAt: 2,
-        models: [
-          modelEntry("model-a", { source: "dynamic" }),
-          modelEntry("model-b", { name: "Model B", source: "dynamic" })
-        ]
-      }
-    };
-    const readConfig = vi.fn()
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [profile]
-      })
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [profile]
-      });
-    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
-      ...profile,
-      model: request.model,
-      customModels: request.customModels ?? [],
-      discoveryState: request.discoveryState ?? profile.discoveryState
-    }));
-    const desktopApi = {
-      ai: {
-        readConfig,
-        upsertProfile,
-        deleteProfile: vi.fn(),
-        discoverModels: vi.fn()
-      }
-    } as unknown as LyraDesktopApi;
-
-    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
-
     await waitFor(() => {
       expect(result.current.profiles).toHaveLength(1);
     });
-
-    act(() => {
-      result.current.updateDraftModelSelectionMode("custom");
-      result.current.updateDraftModelsText("model-c");
+    expect(result.current.profiles[0]).toMatchObject({
+      name: "Local test profile",
+      model: "user-model-a",
+      runtimeSupported: false,
+      isDefault: true,
+      discoveryState: {
+        status: "idle",
+        models: []
+      }
     });
+    expect(result.current.profiles[0]?.customModels.map((entry) => entry.id)).toEqual(["user-model-b"]);
+    expect(result.current.selectedProfileId).toBe(result.current.profiles[0]?.id);
+  });
+
+  test("saves a different preset as a separate local profile", async () => {
+    const { result } = renderModel();
+
     await act(async () => {
       await result.current.saveProfile();
     });
-
-    const request = upsertProfile.mock.calls[0]?.[0] as AiUpsertProfileRequest;
-    expect(request).toMatchObject({
-      id: "profile-openai",
-      model: "model-c",
-      customModels: [
-        expect.objectContaining({
-          id: "model-a"
-        }),
-        expect.objectContaining({
-          id: "model-b",
-          name: "Model B"
-        })
-      ]
-    });
-    expect(request.discoveryState?.models.map((entry) => entry.id)).toEqual(["model-a", "model-b"]);
-  });
-
-  test("creates a new profile when a different provider is saved from an existing draft", async () => {
-    const profile = savedProfile("model-a");
-    const readConfig = vi.fn()
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [profile]
-      })
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [profile]
-      });
-    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
-      ...savedProfile(request.model),
-      id: request.id ?? "profile-mimo",
-      providerId: request.providerId,
-      protocolId: request.protocolId,
-      presetId: request.presetId ?? null,
-      customModels: request.customModels ?? []
-    }));
-    const desktopApi = {
-      ai: {
-        readConfig,
-        upsertProfile,
-        deleteProfile: vi.fn(),
-        discoverModels: vi.fn()
-      }
-    } as unknown as LyraDesktopApi;
-
-    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
-
     await waitFor(() => {
-      expect(result.current.selectedProfileId).toBe("profile-openai");
+      expect(result.current.profiles).toHaveLength(1);
     });
+    const firstProfileId = result.current.profiles[0]?.id;
 
     act(() => {
       result.current.applyPreset("mimo_api");
@@ -374,213 +115,144 @@ describe("useSettingsAiModel", () => {
       await result.current.saveProfile();
     });
 
-    expect(upsertProfile).toHaveBeenCalledWith(expect.objectContaining({
-      providerId: "mimo",
+    await waitFor(() => {
+      expect(result.current.profiles).toHaveLength(2);
+    });
+    expect(result.current.profiles.map((profile) => profile.id)).toContain(firstProfileId);
+    expect(result.current.profiles.find((profile) => profile.providerId === "mimo")).toMatchObject({
+      protocolId: "mimo_openai_chat_completions",
       model: "mimo-model"
-    }));
-    expect(upsertProfile.mock.calls[0]?.[0]).not.toHaveProperty("id");
+    });
   });
 
-  test("creates a new profile when saved provider connection details are changed", async () => {
-    const profile = savedProfile("model-a");
-    const readConfig = vi.fn()
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [profile]
-      })
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [profile]
-      });
-    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
-      ...profile,
-      id: request.id ?? "profile-openai-copy",
-      connectionConfig: request.connectionConfig,
-      model: request.model,
-      customModels: request.customModels ?? []
-    }));
-    const desktopApi = {
-      ai: {
-        readConfig,
-        upsertProfile,
-        deleteProfile: vi.fn(),
-        discoverModels: vi.fn()
-      }
-    } as unknown as LyraDesktopApi;
-
-    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
-
-    await waitFor(() => {
-      expect(result.current.selectedProfileId).toBe("profile-openai");
-    });
+  test("updates a selected local profile in memory", async () => {
+    const { result } = renderModel();
 
     act(() => {
-      result.current.updateDraftField("connection", "baseUrl", "https://gateway.example.com/v1");
       result.current.updateDraftModelSelectionMode("custom");
-      result.current.updateDraftModelsText("model-c");
+      result.current.updateDraftModelsText("model-a\nmodel-b");
+    });
+    await act(async () => {
+      await result.current.saveProfile();
+    });
+    await waitFor(() => {
+      expect(result.current.profiles).toHaveLength(1);
+    });
+    const profileId = result.current.profiles[0]?.id ?? "";
+
+    act(() => {
+      result.current.selectProfile(profileId);
+      result.current.updateDraftModelsText("model-c\nmodel-d");
     });
     await act(async () => {
       await result.current.saveProfile();
     });
 
-    expect(upsertProfile).toHaveBeenCalledWith(expect.objectContaining({
-      providerId: "openai",
-      model: "model-c",
-      connectionConfig: {
-        baseUrl: "https://gateway.example.com/v1"
-      }
-    }));
-    expect(upsertProfile.mock.calls[0]?.[0]).not.toHaveProperty("id");
+    await waitFor(() => {
+      expect(result.current.profiles).toHaveLength(1);
+    });
+    expect(result.current.profiles[0]).toMatchObject({
+      id: profileId,
+      model: "model-c"
+    });
+    expect(result.current.profiles[0]?.customModels.map((entry) => entry.id)).toEqual(["model-d"]);
   });
 
-  test("deletes every profile for a configured provider", async () => {
-    const openaiProfile = savedProfile("model-a");
-    const secondOpenaiProfile: AiProviderProfile = {
-      ...savedProfile("model-b"),
-      id: "profile-openai-secondary",
-      name: "OpenAI secondary",
-      runtimeProviderId: "openai-secondary"
-    };
-    const anthropicProfile: AiProviderProfile = {
-      ...savedProfile("claude-a"),
-      id: "profile-anthropic",
-      name: "Anthropic",
-      providerId: "anthropic",
-      protocolId: "anthropic_messages",
-      runtimeProviderId: "anthropic"
-    };
-    const readConfig = vi.fn()
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [openaiProfile, secondOpenaiProfile, anthropicProfile]
-      })
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [anthropicProfile]
-      });
-    const deleteProfile = vi.fn().mockResolvedValue(undefined);
-    const desktopApi = {
-      ai: {
-        readConfig,
-        upsertProfile: vi.fn(),
-        deleteProfile,
-        discoverModels: vi.fn()
-      }
-    } as unknown as LyraDesktopApi;
+  test("deletes provider profiles from local memory", async () => {
+    const { result } = renderModel();
 
-    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
-
+    await act(async () => {
+      await result.current.saveProfile();
+    });
+    act(() => {
+      result.current.applyPreset("anthropic");
+      result.current.updateDraftModelSelectionMode("custom");
+      result.current.updateDraftModelsText("claude-test");
+    });
+    await act(async () => {
+      await result.current.saveProfile();
+    });
     await waitFor(() => {
-      expect(result.current.profiles).toHaveLength(3);
+      expect(result.current.profiles).toHaveLength(2);
     });
 
     await act(async () => {
-      await result.current.deleteProviderModels("openai");
+      await result.current.deleteProviderModels("lmstudio");
     });
-
-    expect(deleteProfile).toHaveBeenNthCalledWith(1, { id: "profile-openai" });
-    expect(deleteProfile).toHaveBeenNthCalledWith(2, { id: "profile-openai-secondary" });
-    expect(readConfig).toHaveBeenCalledTimes(2);
-  });
-
-  test("removes one configured model by rewriting the saved profile", async () => {
-    const profile: AiProviderProfile = {
-      ...savedProfile("model-a"),
-      customModels: [
-        modelEntry("model-b", { name: "Model B" }),
-        modelEntry("model-c", { name: "Model C" })
-      ],
-      discoveryState: {
-        status: "ready",
-        lastCheckedAt: 2,
-        models: [
-          modelEntry("model-a"),
-          modelEntry("model-b", { name: "Model B" }),
-          modelEntry("model-c", { name: "Model C" })
-        ]
-      }
-    };
-    const readConfig = vi.fn()
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [profile]
-      })
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [profile]
-      });
-    const upsertProfile = vi.fn().mockImplementation(async (request: AiUpsertProfileRequest) => ({
-      ...profile,
-      model: request.model,
-      customModels: request.customModels ?? [],
-      discoveryState: request.discoveryState ?? profile.discoveryState
-    }));
-    const deleteProfile = vi.fn();
-    const desktopApi = {
-      ai: {
-        readConfig,
-        upsertProfile,
-        deleteProfile,
-        discoverModels: vi.fn()
-      }
-    } as unknown as LyraDesktopApi;
-
-    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
 
     await waitFor(() => {
       expect(result.current.profiles).toHaveLength(1);
     });
-
-    await act(async () => {
-      await result.current.deleteConfiguredModel("profile-openai", "model-b");
-    });
-
-    const request = upsertProfile.mock.calls[0]?.[0] as AiUpsertProfileRequest;
-    expect(request).toMatchObject({
-      id: "profile-openai",
-      model: "model-a",
-      customModels: [
-        expect.objectContaining({
-          id: "model-c",
-          name: "Model C"
-        })
-      ]
-    });
-    expect(request.discoveryState?.models.map((entry) => entry.id)).toEqual(["model-a", "model-c"]);
-    expect(request).not.toHaveProperty("secretValues");
-    expect(deleteProfile).not.toHaveBeenCalled();
+    expect(result.current.profiles[0]?.providerId).toBe("anthropic");
   });
 
-  test("deletes the profile when removing its last configured model", async () => {
-    const profile = savedProfile("model-a");
-    const readConfig = vi.fn()
-      .mockResolvedValueOnce({
-        ...emptySnapshot,
-        profiles: [profile]
-      })
-      .mockResolvedValueOnce(emptySnapshot);
-    const upsertProfile = vi.fn();
-    const deleteProfile = vi.fn().mockResolvedValue(undefined);
-    const desktopApi = {
-      ai: {
-        readConfig,
-        upsertProfile,
-        deleteProfile,
-        discoverModels: vi.fn()
-      }
-    } as unknown as LyraDesktopApi;
+  test("removes configured models and deletes the profile when none remain", async () => {
+    const { result } = renderModel();
 
-    const { result } = renderHook(() => useSettingsAiModel({ desktopApi, labels }));
-
+    act(() => {
+      result.current.updateDraftModelSelectionMode("custom");
+      result.current.updateDraftModelsText("model-a\nmodel-b\nmodel-c");
+    });
+    await act(async () => {
+      await result.current.saveProfile();
+    });
     await waitFor(() => {
       expect(result.current.profiles).toHaveLength(1);
     });
+    const profileId = result.current.profiles[0]?.id ?? "";
 
     await act(async () => {
-      await result.current.deleteConfiguredModel("profile-openai", "model-a");
+      await result.current.deleteConfiguredModel(profileId, "model-b");
     });
 
-    expect(deleteProfile).toHaveBeenCalledWith({ id: "profile-openai" });
-    expect(upsertProfile).not.toHaveBeenCalled();
+    expect(result.current.profiles[0]).toMatchObject({
+      model: "model-a"
+    });
+    expect(result.current.profiles[0]?.customModels.map((entry) => entry.id)).toEqual(["model-c"]);
+
+    await act(async () => {
+      await result.current.deleteConfiguredModel(profileId, "model-a");
+    });
+    expect(result.current.profiles[0]).toMatchObject({
+      model: "model-c"
+    });
+    expect(result.current.profiles[0]?.customModels).toEqual([]);
+
+    await act(async () => {
+      await result.current.deleteConfiguredModel(profileId, "model-c");
+    });
+
+    await waitFor(() => {
+      expect(result.current.profiles).toEqual([]);
+    });
+    expect(result.current.selectedProfileId).toBeNull();
+  });
+
+  test("sets the default profile locally", async () => {
+    const { result } = renderModel();
+
+    await act(async () => {
+      await result.current.saveProfile();
+    });
+    act(() => {
+      result.current.applyPreset("openai");
+      result.current.updateDraftModelSelectionMode("custom");
+      result.current.updateDraftModelsText("gpt-test");
+    });
+    await act(async () => {
+      await result.current.saveProfile();
+    });
+    await waitFor(() => {
+      expect(result.current.profiles).toHaveLength(2);
+    });
+    const openAiProfileId = result.current.profiles.find((profile) => profile.providerId === "openai")?.id ?? "";
+
+    await act(async () => {
+      await result.current.setDefaultProfile(openAiProfileId);
+    });
+
+    expect(result.current.defaultProfileId).toBe(openAiProfileId);
+    expect(result.current.defaultProviderId).toBe("openai");
+    expect(result.current.defaultModelNames).toEqual(["gpt-test"]);
   });
 });

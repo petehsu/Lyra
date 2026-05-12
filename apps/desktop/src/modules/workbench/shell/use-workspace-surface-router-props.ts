@@ -1,5 +1,4 @@
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
-import type { AiPlanReviewModel } from "../ai-panel";
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type {
   FileEditorChangeReviewItem,
@@ -7,11 +6,8 @@ import type {
 } from "../file-editor";
 import type { ImageViewerModel } from "../image-viewer";
 import type { FileManagerChooserMode, FileManagerModel } from "../file-manager";
-import type { McpCenterModel } from "../mcp-center";
 import type { WorkbenchNotificationModel } from "../notifications";
-import type { PluginsCenterModel } from "../plugins-center";
 import type { WorkbenchPreferencesModel } from "../preferences";
-import type { SkillsCenterModel } from "../skills-center";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel, WorkspaceTab } from "../workspace-tabs/types";
 import { LOGO_URL } from "./service";
@@ -49,18 +45,12 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly onUndoEditorWorkItem: (item: FileEditorChangeReviewItem) => void;
   readonly preferencesModel: WorkbenchPreferencesModel;
   readonly settings: WorkspaceSurfaceRouterProps["settings"];
-  readonly mcpCenterModel: McpCenterModel;
-  readonly skillsCenterModel: SkillsCenterModel;
-  readonly pluginsCenterModel: PluginsCenterModel;
   readonly notificationModel: WorkbenchNotificationModel;
   readonly labels: WorkbenchLabels;
-  readonly openDialog: NonNullable<WorkspaceSurfaceRouterProps["aiHistory"]["openDialog"]>;
-  readonly planReviewModel: AiPlanReviewModel;
   readonly onOpenFileFromManager: (filePath: string) => void;
   readonly onRevealPathInFileManager: (filePath: string) => void;
   readonly onOpenNotificationSource: (notificationId: string) => void;
   readonly onRequestClearNotifications: () => void;
-  readonly onHistoryEmptied: () => void;
 };
 
 export const useWorkspaceSurfaceRouterProps = ({
@@ -88,18 +78,12 @@ export const useWorkspaceSurfaceRouterProps = ({
   onUndoEditorWorkItem,
   preferencesModel,
   settings,
-  mcpCenterModel,
-  skillsCenterModel,
-  pluginsCenterModel,
   notificationModel,
   labels,
-  openDialog,
-  planReviewModel,
   onOpenFileFromManager,
   onRevealPathInFileManager,
   onOpenNotificationSource,
-  onRequestClearNotifications,
-  onHistoryEmptied
+  onRequestClearNotifications
 }: UseWorkspaceSurfaceRouterPropsParams): WorkspaceSurfaceRouterCoreProps => {
   const preferences = preferencesModel.preferences;
 
@@ -153,32 +137,6 @@ export const useWorkspaceSurfaceRouterProps = ({
     onOpenFileFromManager,
     onRevealPathInFileManager,
     i18n: labels.workspaceI18n,
-    mcpCenter: {
-      model: mcpCenterModel,
-      labels: labels.mcpCenter
-    },
-    skillsCenter: {
-      model: skillsCenterModel,
-      labels: labels.skillsCenter
-    },
-    pluginsCenter: {
-      model: pluginsCenterModel,
-      labels: labels.pluginsCenter
-    },
-    agentVm: {
-      labels: labels.agentVm
-    },
-    aiHistory: {
-      locale: preferences.locale,
-      ...labels.aiHistory,
-      richRenderingEnabled: preferences.aiRichRenderingEnabled,
-      themeSignature: resolvedThemeId,
-      openDialog,
-      onHistoryEmptied
-    },
-    planReview: {
-      model: planReviewModel
-    },
     resourceMonitor: {
       labels: labels.resourceMonitor
     },

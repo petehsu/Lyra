@@ -148,88 +148,6 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
     ]
   },
   {
-    name: "skills",
-    dirName: "skills",
-    crateDir: "crates/lyra-skills-napi",
-    cratePackageName: "lyra-skills-napi",
-    servicePath: "apps/desktop/src/main/skills/service.ts",
-    loaderPath: "apps/desktop/src/main/skills/native-loader.ts",
-    typesPath: "apps/desktop/src/main/skills/types.ts",
-    indexPath: "apps/desktop/src/main/skills/index.ts",
-    mainBridgeFactoryName: "createSkillsIpcBridge",
-    requiredServiceRules: [
-      {
-        pattern: /from\s+["']\.\/native-loader["']/,
-        message: "Skills service must import its native loader."
-      },
-      {
-        pattern: /\bloadSkillsNativeBindings\b/,
-        message: "Skills service must load native bindings explicitly."
-      }
-    ],
-    forbiddenServiceRules: [
-      {
-        pattern: /from\s+["']node:fs["']|from\s+["']node:fs\/promises["']/,
-        message: "Skills package IO belongs in Rust, not in TypeScript service fallbacks."
-      },
-      {
-        pattern: /from\s+["']node:child_process["']/,
-        message: "Skills service must not grow TypeScript runtime process management."
-      },
-      {
-        pattern: /safeStorage/,
-        message: "Skills service must not grow a TypeScript secret backend."
-      },
-      {
-        pattern: /Fall through to the existing TypeScript implementation/,
-        message: "Skills service must not keep TypeScript fallback implementation notes or branches."
-      },
-      {
-        pattern: /\bfallbackCreate\b|\binstallBuiltins\b|\binstallDiscoveredSkills\b|\bpersistInstalled\b|\bfindInstalledSkill\b/,
-        message: "Skills service must stay a bridge; install and storage mutation logic belongs in Rust."
-      }
-    ]
-  },
-  {
-    name: "mcp",
-    dirName: "mcp",
-    crateDir: "crates/lyra-mcp-core",
-    cratePackageName: "lyra-mcp-core",
-    servicePath: "apps/desktop/src/main/mcp/service.ts",
-    loaderPath: "apps/desktop/src/main/runtime-client.ts",
-    typesPath: "apps/desktop/src/main/mcp/types.ts",
-    indexPath: "apps/desktop/src/main/mcp/index.ts",
-    mainBridgeFactoryName: "createMcpIpcBridge",
-    requiredServiceRules: [
-      {
-        pattern: /from\s+["']\.\.\/runtime-client["']/,
-        message: "MCP service must import the shared runtime client."
-      },
-      {
-        pattern: /\bruntimeClient\.request\b/,
-        message: "MCP service must issue daemon requests through the shared runtime client."
-      }
-    ],
-    forbiddenServiceRules: [
-      {
-        pattern: /from\s+["']node:child_process["']/,
-        message: "MCP runtime lifecycle belongs in Rust, not in TypeScript child_process handlers."
-      },
-      {
-        pattern: /safeStorage/,
-        message: "MCP secret backend must stay native."
-      },
-      {
-        pattern: /Fall through to the existing TypeScript implementation/,
-        message: "MCP service must not keep TypeScript fallback implementation notes or branches."
-      },
-      {
-        pattern: /\bruntimeByServerId\b|\bhandleByServerId\b|\bintrospectionByServerId\b|\bstopRuntimeHandle\b|\bstartPersistedServer\b/,
-        message: "MCP runtime registry and lifecycle must stay in Rust."
-      }
-    ]
-  },
-  {
     name: "resources",
     dirName: "resources",
     crateDir: "crates/lyra-resource-napi",
@@ -304,37 +222,37 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
     ]
   },
   {
-    name: "ai",
-    dirName: "ai",
-    crateDir: "crates/lyra-ai-core",
-    cratePackageName: "lyra-ai-core",
-    servicePath: "apps/desktop/src/main/ai/service.ts",
+    name: "download-manager",
+    dirName: "download-manager",
+    crateDir: "crates/lyra-download-core",
+    cratePackageName: "lyra-download-core",
+    servicePath: "apps/desktop/src/main/download-manager/service.ts",
     loaderPath: "apps/desktop/src/main/runtime-client.ts",
-    typesPath: "apps/desktop/src/main/ai/types.ts",
-    indexPath: "apps/desktop/src/main/ai/index.ts",
-    mainBridgeFactoryName: "createAiIpcBridge",
+    typesPath: "apps/desktop/src/main/download-manager/native-types.ts",
+    indexPath: "apps/desktop/src/main/download-manager/index.ts",
+    mainBridgeFactoryName: "createDownloadManagerIpcBridge",
     requiredServiceRules: [
       {
         pattern: /from\s+["']\.\.\/runtime-client["']/,
-        message: "AI service must import the shared runtime client."
+        message: "Download manager service must import the shared runtime client."
       },
       {
         pattern: /\bruntimeClient\.request\b/,
-        message: "AI service must issue daemon requests through the shared runtime client."
+        message: "Download manager service must issue daemon requests through the shared runtime client."
       }
     ],
     forbiddenServiceRules: [
       {
         pattern: /from\s+["']node:child_process["']/,
-        message: "AI runtime lifecycle belongs in Rust, not TypeScript child_process handlers."
+        message: "Download process lifecycle belongs in Rust, not TypeScript child_process handlers."
       },
       {
-        pattern: /safeStorage/,
-        message: "AI service must not grow TypeScript secret handling."
+        pattern: /\bloadDownloadNativeBindings\b|\bplanNativeDownloadJson\b/,
+        message: "Download manager service must not call the legacy NAPI planner directly."
       },
       {
-        pattern: /Fall through to the existing TypeScript implementation/,
-        message: "AI service must not keep TypeScript fallback implementation notes or branches."
+        pattern: /\bactive(Http|Curl|Aria2)Downloads\b|\bqueued(Native|Curl|Aria2)TaskIds\b/,
+        message: "Download queues and active engine maps must stay in Rust."
       }
     ]
   }
@@ -348,10 +266,6 @@ const tsOwnedMainModules = new Map<string, string>([
   [
     "workbench-documents",
     "TypeScript-owned shell module: document detection/fetch/view coordination above native parsers."
-  ],
-  [
-    "download-manager",
-    "TypeScript-owned shell module: download orchestration with native planning and bundled helper runtimes."
   ],
   [
     "workbench-observation",

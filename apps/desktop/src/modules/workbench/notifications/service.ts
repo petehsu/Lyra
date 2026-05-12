@@ -51,11 +51,6 @@ const APP_IDS = new Set<WorkbenchAppId>([
   "file-editor",
   "image-viewer",
   "resource-monitor",
-  "ai-history",
-  "ai-mcp",
-  "ai-plan-review",
-  "ai-skills",
-  "ai-plugins",
   "notification-center"
 ]);
 
@@ -69,12 +64,6 @@ const APP_ICON_KEYS = new Set<WorkspaceAppIconKey>([
   "file-editor-unsupported",
   "image-viewer-default",
   "resource-monitor-default",
-  "ai-panel-default",
-  "ai-panel-history",
-  "ai-panel-mcp",
-  "ai-panel-plan",
-  "ai-panel-skills",
-  "ai-panel-plugins",
   "notification-center-default"
 ]);
 

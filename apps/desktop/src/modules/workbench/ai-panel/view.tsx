@@ -1,50 +1,42 @@
-import { useMemo } from "react";
+import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 
 import { createTranslator } from "../i18n";
-import { createSurfaceTextLabels } from "./surface-model";
-import { AiPanelSurfaceView } from "./surface-view";
 import type { AiPanelSurfaceProps } from "./types";
-import { useAiPanelSurfaceRuntime } from "./use-ai-panel-surface-runtime";
-import { useAgentWorkspaceFollow } from "./use-agent-workspace-follow";
 
-export const AiPanelSurface = (surfaceProps: AiPanelSurfaceProps) => {
-  const {
-    locale = "en-US",
-    stopBehavior = "turn_only",
-    configuredProfiles = [],
-    aiPanelSide = "left"
-  } = surfaceProps;
-  const t = useMemo(() => createTranslator(locale), [locale]);
-  const textLabels = useMemo(() => createSurfaceTextLabels(t), [t]);
-  const runtime = useAiPanelSurfaceRuntime({
-    desktopApi: surfaceProps.desktopApi,
-    t,
-    stopBehavior,
-    defaultProfileId: surfaceProps.defaultProfileId,
-    defaultProviderId: surfaceProps.defaultProviderId,
-    defaultModelNames: surfaceProps.defaultModelNames,
-    configuredProfiles,
-    onDefaultProfileSelect: surfaceProps.onDefaultProfileSelect,
-    fileMentionFallbackRoots: surfaceProps.fileMentionFallbackRoots,
-    workbenchTabMentions: surfaceProps.workbenchTabMentions,
-    onRequestProjectBind: surfaceProps.onRequestProjectBind,
-  });
-  const followWorkspaceRoot =
-    runtime.boundProjectRootForActiveThread ?? runtime.state.activeThread?.cwd ?? null;
-  useAgentWorkspaceFollow({
-    enabled: runtime.state.followEnabled,
-    detail: runtime.state.activeDetail,
-    workspaceRoot: followWorkspaceRoot,
-    onOpenFilePath: surfaceProps.onFollowOpenFilePath,
-  });
+export const AiPanelSurface = ({
+  locale = "en-US",
+  title,
+  emptyThreadLabel,
+  aiPanelSide = "left",
+  onToggleAiPanelSide,
+  movePanelToLeftLabel,
+  movePanelToRightLabel
+}: AiPanelSurfaceProps) => {
+  const t = createTranslator(locale);
+  const moveLabel = aiPanelSide === "left"
+    ? (movePanelToRightLabel ?? t("ai.movePanelToRight"))
+    : (movePanelToLeftLabel ?? t("ai.movePanelToLeft"));
+  const MoveIcon = aiPanelSide === "left" ? PanelRightOpen : PanelLeftOpen;
 
   return (
-    <AiPanelSurfaceView
-      surfaceProps={surfaceProps}
-      locale={locale}
-      aiPanelSide={aiPanelSide}
-      textLabels={textLabels}
-      runtime={runtime}
-    />
+    <section className="lyra-ai-panel-shell" aria-label={title}>
+      <header className="lyra-ai-panel-shell-header">
+        <div className="lyra-ai-panel-shell-title">{title}</div>
+        {onToggleAiPanelSide === undefined ? null : (
+          <button
+            className="lyra-ai-panel-shell-icon-button"
+            type="button"
+            title={moveLabel}
+            aria-label={moveLabel}
+            onClick={onToggleAiPanelSide}
+          >
+            <MoveIcon aria-hidden="true" size={16} strokeWidth={1.8} />
+          </button>
+        )}
+      </header>
+      <div className="lyra-ai-panel-shell-body">
+        <p>{emptyThreadLabel}</p>
+      </div>
+    </section>
   );
 };

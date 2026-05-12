@@ -55,41 +55,6 @@ import type {
   ImageViewerReadTileRequest,
   ImageViewerTileResponse
 } from "./image-viewer";
-import type {
-  McpCatalogItem,
-  McpCatalogQuickSetup,
-  McpCatalogQuickSetupField,
-  McpCatalogQuickSetupFieldKind,
-  McpCreateServerRequest,
-  McpDeleteServerRequest,
-  McpEffectiveConfig,
-  McpInstallTemplateRequest,
-  McpIntrospectionSnapshot,
-  McpReadEffectiveServersRequest,
-  McpReadServersRequest,
-  McpRuntimeEvent,
-  McpScope,
-  McpServerConfig,
-  McpServerRequest,
-  McpUpdateServerRequest,
-  McpValidationResult
-} from "./mcp";
-import type {
-  CreateLyraSkillRequest,
-  DeleteSkillRequest,
-  EffectiveSkillConfig,
-  InstalledSkillConfig,
-  LyraSkillManifest,
-  ReadEffectiveSkillsRequest,
-  ReadInstalledSkillsRequest,
-  SkillCatalogItem,
-  SkillDetails,
-  SkillImportDiscovery,
-  SkillImportRequest,
-  SkillRuntimeEvent,
-  SkillRequest,
-  UpdateSkillStateRequest
-} from "./skills";
 import type { TerminalThemePresetId } from "./terminal-theme";
 import type {
   WorkbenchBrowserElementPickerAppearance,
@@ -114,83 +79,6 @@ import type {
   WorkbenchObservationQueryResult
 } from "./workbench-observation";
 import type {
-  AiDeleteProfileRequest,
-  AiDiscoverModelsRequest,
-  AiModelDiscoveryResult,
-  AiProviderProfile,
-  AiRuntimeConfigSnapshot,
-  AiUpsertProfileRequest
-} from "./ai";
-import type {
-  AgentCancelTurnRequest,
-  AgentCancelTurnResult,
-  AgentExecuteMessageRollbackRequest,
-  AgentExecuteMessageRollbackResult,
-  AgentApplyPatchRequest,
-  AgentApplyPatchResult,
-  AgentArtifactContent,
-  AgentCreatePlanRequest,
-  AgentCreatePlanResult,
-  AgentCreateTodoRequest,
-  AgentCreateTodoResult,
-  AgentCreateSessionRequest,
-  AgentFollowSummary,
-  AgentExecutionTarget,
-  AgentPauseFollowRequest,
-  AgentPermissionMode,
-  AgentPreviewMessageRollbackRequest,
-  AgentPreviewMessageRollbackResult,
-  AgentReadArtifactRequest,
-  AgentReadFollowRequest,
-  AgentReadSessionRequest,
-  AgentPlanningSummary,
-  AgentPlanReviewAnnotationSummary,
-  AgentResolveApprovalRequest,
-  AgentResolveApprovalResult,
-  AgentResolveClarificationRequest,
-  AgentResolveClarificationResult,
-  AgentResolvePlanReviewDecision,
-  AgentResolvePlanReviewRequest,
-  AgentResolvePlanReviewResult,
-  AgentResumeFollowRequest,
-  AgentRuntimeStreamEvent,
-  AgentSendTurnRequest,
-  AgentSendTurnResult,
-  AgentSession,
-  AgentSessionDetail,
-  AgentUpdateSessionRequest,
-  AgentVmApplyInheritanceProfileRequest,
-  AgentVmApplyInheritanceProfileResult,
-  AgentVmAttachRequest,
-  AgentVmBindingListRequest,
-  AgentVmBindingListResult,
-  AgentVmBindingResult,
-  AgentVmCreateRequest,
-  AgentVmCreateResult,
-  AgentVmConsoleConnectRequest,
-  AgentVmConsoleConnectResult,
-  AgentVmCreateInheritanceProfileRequest,
-  AgentVmForkRequest,
-  AgentVmImageDownloadRequest,
-  AgentVmImageDownloadResult,
-  AgentVmImageImportRequest,
-  AgentVmImageImportResult,
-  AgentVmImageListRequest,
-  AgentVmImageListResult,
-  AgentVmInheritanceProfileResult,
-  AgentVmLifecycleResult,
-  AgentVmListRequest,
-  AgentVmListResult,
-  AgentVmPasswordMetadataRequest,
-  AgentVmPasswordMetadataResult,
-  AgentVmPasswordRevealRequest,
-  AgentVmPasswordRevealResult,
-  AgentVmReadBindingRequest,
-  AgentVmRevokeBindingRequest,
-  AgentVmStatusRequest,
-  AgentVmTakeoverRequest
-} from "./agent";
-import type {
   InstalledUiuxPack,
   UiuxInstallFromGitRequest,
   UiuxInstallFromLocalRequest,
@@ -203,80 +91,6 @@ import type {
   UiuxSetTrustStateRequest
 } from "./uiux-packs";
 
-export type {
-  AgentCancelTurnRequest,
-  AgentCancelTurnResult,
-  AgentExecuteMessageRollbackRequest,
-  AgentExecuteMessageRollbackResult,
-  AgentApplyPatchRequest,
-  AgentApplyPatchResult,
-  AgentArtifactContent,
-  AgentCreatePlanRequest,
-  AgentCreatePlanResult,
-  AgentCreateTodoRequest,
-  AgentCreateTodoResult,
-  AgentCreateSessionRequest,
-  AgentFollowSummary,
-  AgentExecutionTarget,
-  AgentPauseFollowRequest,
-  AgentPermissionMode,
-  AgentPreviewMessageRollbackRequest,
-  AgentPreviewMessageRollbackResult,
-  AgentReadArtifactRequest,
-  AgentReadFollowRequest,
-  AgentReadSessionRequest,
-  AgentResolveApprovalRequest,
-  AgentResolveApprovalResult,
-  AgentResolveClarificationRequest,
-  AgentResolveClarificationResult,
-  AgentResolvePlanReviewRequest,
-  AgentResolvePlanReviewResult,
-  AgentResumeFollowRequest,
-  AgentRuntimeStreamEvent,
-  AgentSendTurnRequest,
-  AgentSendTurnResult,
-  AgentSession,
-  AgentSessionDetail,
-  AgentUpdateSessionRequest,
-  AgentVmApplyInheritanceProfileRequest,
-  AgentVmApplyInheritanceProfileResult,
-  AgentVmAttachRequest,
-  AgentVmBinding,
-  AgentVmBindingListRequest,
-  AgentVmBindingListResult,
-  AgentVmBindingResult,
-  AgentVmCreateRequest,
-  AgentVmCreateResult,
-  AgentVmConsoleConnectRequest,
-  AgentVmConsoleConnectResult,
-  AgentVmCreateInheritanceProfileRequest,
-  AgentVmForkRequest,
-  AgentVmImageDescriptor,
-  AgentVmImageDownloadRequest,
-  AgentVmImageDownloadResult,
-  AgentVmImageEntry,
-  AgentVmImageImportRequest,
-  AgentVmImageImportResult,
-  AgentVmImageListRequest,
-  AgentVmImageListResult,
-  AgentVmImageRecord,
-  AgentVmImageUrlDescriptor,
-  AgentVmInheritanceProfile,
-  AgentVmInheritanceProfileResult,
-  AgentVmLifecycleResult,
-  AgentVmListRequest,
-  AgentVmListResult,
-  AgentVmPasswordMetadata,
-  AgentVmPasswordMetadataRequest,
-  AgentVmPasswordMetadataResult,
-  AgentVmPasswordRevealRequest,
-  AgentVmPasswordRevealResult,
-  AgentVmReadBindingRequest,
-  AgentVmRevokeBindingRequest,
-  AgentVmStatusRequest,
-  AgentVmSummary,
-  AgentVmTakeoverRequest
-} from "./agent";
 export type {
   AiDiscoverModelsRequest,
   AiDeleteProfileRequest,
@@ -346,61 +160,6 @@ export type {
   DownloadManagerTaskState,
   DownloadManagerUpdateSettingsRequest
 } from "./download-manager";
-export type {
-  McpCatalogItem,
-  McpCatalogQuickSetup,
-  McpCatalogQuickSetupField,
-  McpCatalogQuickSetupFieldKind,
-  McpCreateServerRequest,
-  McpDeleteServerRequest,
-  McpEffectiveConfig,
-  McpEffectiveServerConfig,
-  McpEnvironmentEntry,
-  McpEnvironmentInput,
-  McpInstallKind,
-  McpInstallTemplateRequest,
-  McpIntrospectionSnapshot,
-  McpReadEffectiveServersRequest,
-  McpReadServersRequest,
-  McpRuntimeEvent,
-  McpRuntimePhase,
-  McpRuntimeStatus,
-  McpScope,
-  McpSecretFieldRef,
-  McpServerConfig,
-  McpServerId,
-  McpServerRequest,
-  McpTransport,
-  McpUpdateServerRequest,
-  McpValidationResult
-} from "./mcp";
-export type {
-  CreateLyraSkillRequest,
-  DeleteSkillRequest,
-  EffectiveSkillConfig,
-  InstalledSkillConfig,
-  LyraSkillManifest,
-  ReadEffectiveSkillsRequest,
-  ReadInstalledSkillsRequest,
-  SkillCatalogItem,
-  SkillCompatibility,
-  SkillDetails,
-  SkillEnableState,
-  SkillFileKind,
-  SkillFileSummary,
-  SkillId,
-  SkillImportDetectedKind,
-  SkillImportDiscovery,
-  SkillImportPreviewItem,
-  SkillImportRequest,
-  SkillRuntimeEvent,
-  SkillScope,
-  SkillSourceKind,
-  SkillTrustState,
-  SkillType,
-  SkillRequest,
-  UpdateSkillStateRequest
-} from "./skills";
 export type {
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
@@ -557,29 +316,6 @@ export const LYRA_CHANNELS = {
   resourcesRequestLifecycle: "lyra:resources/request-lifecycle",
   resourcesRequestActivityAction: "lyra:resources/request-activity-action",
   resourcesEvent: "lyra:resources/event",
-  mcpReadCatalog: "lyra:mcp/read-catalog",
-  mcpReadServers: "lyra:mcp/read-servers",
-  mcpReadEffectiveServers: "lyra:mcp/read-effective-servers",
-  mcpCreateServer: "lyra:mcp/create-server",
-  mcpUpdateServer: "lyra:mcp/update-server",
-  mcpDeleteServer: "lyra:mcp/delete-server",
-  mcpInstallTemplate: "lyra:mcp/install-template",
-  mcpValidateServer: "lyra:mcp/validate-server",
-  mcpStartServer: "lyra:mcp/start-server",
-  mcpStopServer: "lyra:mcp/stop-server",
-  mcpRestartServer: "lyra:mcp/restart-server",
-  mcpReadServerIntrospection: "lyra:mcp/read-server-introspection",
-  mcpEvent: "lyra:mcp/event",
-  skillsReadCatalog: "lyra:skills/read-catalog",
-  skillsReadInstalled: "lyra:skills/read-installed",
-  skillsReadEffective: "lyra:skills/read-effective",
-  skillsDiscoverImportSource: "lyra:skills/discover-import-source",
-  skillsImport: "lyra:skills/import",
-  skillsCreateLyraSkill: "lyra:skills/create-lyra-skill",
-  skillsUpdateState: "lyra:skills/update-state",
-  skillsDelete: "lyra:skills/delete",
-  skillsReadDetails: "lyra:skills/read-details",
-  skillsEvent: "lyra:skills/event",
   lspOpenDocument: "lyra:lsp/open-document",
   lspChangeDocument: "lyra:lsp/change-document",
   lspSaveDocument: "lyra:lsp/save-document",
@@ -594,48 +330,6 @@ export const LYRA_CHANNELS = {
   terminalResizeSession: "lyra:terminal/resize-session",
   terminalCloseSession: "lyra:terminal/close-session",
   terminalEvent: "lyra:terminal/event",
-  aiReadConfig: "lyra:ai/config/read",
-  aiUpsertProfile: "lyra:ai/profile/upsert",
-  aiDeleteProfile: "lyra:ai/profile/delete",
-  aiDiscoverModels: "lyra:ai/models/discover",
-  aiListSessions: "lyra:ai/sessions/list",
-  aiCreateSession: "lyra:ai/sessions/create",
-  aiReadSession: "lyra:ai/sessions/read",
-  aiUpdateSession: "lyra:ai/sessions/update",
-  aiReadFollow: "lyra:ai/follow/read",
-  aiPauseFollow: "lyra:ai/follow/pause",
-  aiResumeFollow: "lyra:ai/follow/resume",
-  aiPreviewMessageRollback: "lyra:ai/rollback/preview",
-  aiExecuteMessageRollback: "lyra:ai/rollback/execute",
-  aiSendTurn: "lyra:ai/turn/send",
-  aiCancelTurn: "lyra:ai/turn/cancel",
-  aiCreateTodo: "lyra:ai/todo/create",
-  aiCreatePlan: "lyra:ai/plan/create",
-  aiResolvePlanReview: "lyra:ai/plan/review/resolve",
-  aiResolveClarification: "lyra:ai/clarification/resolve",
-  aiReadArtifact: "lyra:ai/artifact/read",
-  aiApplyPatch: "lyra:ai/patch/apply",
-  aiResolveApproval: "lyra:ai/approval/resolve",
-  aiAgentVmList: "lyra:ai/agent-vm/list",
-  aiAgentVmListImages: "lyra:ai/agent-vm/images/list",
-  aiAgentVmDownloadImage: "lyra:ai/agent-vm/image/download",
-  aiAgentVmImportImage: "lyra:ai/agent-vm/image/import",
-  aiAgentVmCreate: "lyra:ai/agent-vm/create",
-  aiAgentVmListBindings: "lyra:ai/agent-vm/bindings/list",
-  aiAgentVmReadBinding: "lyra:ai/agent-vm/binding/read",
-  aiAgentVmAttach: "lyra:ai/agent-vm/attach",
-  aiAgentVmTakeover: "lyra:ai/agent-vm/takeover",
-  aiAgentVmFork: "lyra:ai/agent-vm/fork",
-  aiAgentVmCreateInheritanceProfile: "lyra:ai/agent-vm/inheritance/create",
-  aiAgentVmApplyInheritanceProfile: "lyra:ai/agent-vm/inheritance/apply",
-  aiAgentVmRevokeBinding: "lyra:ai/agent-vm/binding/revoke",
-  aiAgentVmStatus: "lyra:ai/agent-vm/status",
-  aiAgentVmStart: "lyra:ai/agent-vm/start",
-  aiAgentVmStop: "lyra:ai/agent-vm/stop",
-  aiAgentVmPasswordMetadata: "lyra:ai/agent-vm/password/metadata",
-  aiAgentVmPasswordReveal: "lyra:ai/agent-vm/password/reveal",
-  aiAgentVmConsoleConnect: "lyra:ai/agent-vm/console/connect",
-  aiEvent: "lyra:ai/event",
   workbenchObservationQuery: "lyra:workbench-observation/query",
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
   uiuxListPacks: "lyra:uiux/list-packs",
@@ -1495,47 +1189,6 @@ export type SearchApi = {
   ) => Promise<SearchDeepExpandResponse>;
 };
 
-export type McpApi = {
-  readonly readCatalog: () => Promise<readonly McpCatalogItem[]>;
-  readonly readServers: (request: McpReadServersRequest) => Promise<readonly McpServerConfig[]>;
-  readonly readEffectiveServers: (
-    request?: McpReadEffectiveServersRequest
-  ) => Promise<McpEffectiveConfig>;
-  readonly createServer: (request: McpCreateServerRequest) => Promise<McpServerConfig>;
-  readonly updateServer: (request: McpUpdateServerRequest) => Promise<McpServerConfig>;
-  readonly deleteServer: (request: McpDeleteServerRequest) => Promise<void>;
-  readonly installTemplate: (request: McpInstallTemplateRequest) => Promise<McpServerConfig>;
-  readonly validateServer: (request: McpServerRequest) => Promise<McpValidationResult>;
-  readonly startServer: (request: McpServerRequest) => Promise<McpServerConfig>;
-  readonly stopServer: (request: McpServerRequest) => Promise<McpServerConfig>;
-  readonly restartServer: (request: McpServerRequest) => Promise<McpServerConfig>;
-  readonly readServerIntrospection: (request: McpServerRequest) => Promise<McpIntrospectionSnapshot>;
-  readonly onEvent: (listener: (event: McpRuntimeEvent) => void) => () => void;
-};
-
-export type SkillsApi = {
-  readonly readCatalog: () => Promise<readonly SkillCatalogItem[]>;
-  readonly readInstalled: (
-    request: ReadInstalledSkillsRequest
-  ) => Promise<readonly InstalledSkillConfig[]>;
-  readonly readEffectiveSkills: (
-    request?: ReadEffectiveSkillsRequest
-  ) => Promise<readonly EffectiveSkillConfig[]>;
-  readonly discoverImportSource: (sourcePath: string) => Promise<SkillImportDiscovery>;
-  readonly importSkills: (
-    request: SkillImportRequest
-  ) => Promise<readonly InstalledSkillConfig[]>;
-  readonly createLyraSkill: (
-    request: CreateLyraSkillRequest
-  ) => Promise<InstalledSkillConfig>;
-  readonly updateSkillState: (
-    request: UpdateSkillStateRequest
-  ) => Promise<InstalledSkillConfig>;
-  readonly deleteSkill: (request: DeleteSkillRequest) => Promise<void>;
-  readonly readSkillDetails: (request: SkillRequest) => Promise<SkillDetails | null>;
-  readonly onEvent: (listener: (event: SkillRuntimeEvent) => void) => () => void;
-};
-
 export type LinuxCompatApi = {
   readonly readStatus: () => Promise<LinuxCompatReadStatusResponse>;
   readonly readConfig: () => Promise<LinuxCompatReadConfigResponse>;
@@ -1695,71 +1348,6 @@ export type WorkbenchObservationBridgeApi = {
   ) => () => void;
 };
 
-export type AiApi = {
-  readonly readConfig: () => Promise<AiRuntimeConfigSnapshot>;
-  readonly upsertProfile: (request: AiUpsertProfileRequest) => Promise<AiProviderProfile>;
-  readonly deleteProfile: (request: AiDeleteProfileRequest) => Promise<void>;
-  readonly discoverModels: (request: AiDiscoverModelsRequest) => Promise<AiModelDiscoveryResult>;
-  readonly listSessions: () => Promise<readonly AgentSession[]>;
-  readonly createSession: (request: AgentCreateSessionRequest) => Promise<AgentSessionDetail>;
-  readonly readSession: (request: AgentReadSessionRequest) => Promise<AgentSessionDetail>;
-  readonly updateSession: (request: AgentUpdateSessionRequest) => Promise<AgentSessionDetail>;
-  readonly readFollow: (request: AgentReadFollowRequest) => Promise<AgentFollowSummary | null>;
-  readonly pauseFollow: (request: AgentPauseFollowRequest) => Promise<AgentFollowSummary | null>;
-  readonly resumeFollow: (request: AgentResumeFollowRequest) => Promise<AgentFollowSummary | null>;
-  readonly previewMessageRollback: (
-    request: AgentPreviewMessageRollbackRequest
-  ) => Promise<AgentPreviewMessageRollbackResult>;
-  readonly executeMessageRollback: (
-    request: AgentExecuteMessageRollbackRequest
-  ) => Promise<AgentExecuteMessageRollbackResult>;
-  readonly sendTurn: (request: AgentSendTurnRequest) => Promise<AgentSendTurnResult>;
-  readonly cancelTurn: (request: AgentCancelTurnRequest) => Promise<AgentCancelTurnResult>;
-  readonly createTodo: (request: AgentCreateTodoRequest) => Promise<AgentCreateTodoResult>;
-  readonly createPlan: (request: AgentCreatePlanRequest) => Promise<AgentCreatePlanResult>;
-  readonly resolvePlanReview: (request: AgentResolvePlanReviewRequest) => Promise<AgentResolvePlanReviewResult>;
-  readonly resolveClarification: (
-    request: AgentResolveClarificationRequest
-  ) => Promise<AgentResolveClarificationResult>;
-  readonly readArtifact: (request: AgentReadArtifactRequest) => Promise<AgentArtifactContent>;
-  readonly applyPatch: (request: AgentApplyPatchRequest) => Promise<AgentApplyPatchResult>;
-  readonly resolveApproval: (request: AgentResolveApprovalRequest) => Promise<AgentResolveApprovalResult>;
-  readonly listAgentVms: (request?: AgentVmListRequest) => Promise<AgentVmListResult>;
-  readonly listAgentVmImages: (request?: AgentVmImageListRequest) => Promise<AgentVmImageListResult>;
-  readonly downloadAgentVmImage: (
-    request: AgentVmImageDownloadRequest
-  ) => Promise<AgentVmImageDownloadResult>;
-  readonly importAgentVmImage: (request: AgentVmImageImportRequest) => Promise<AgentVmImageImportResult>;
-  readonly createAgentVm: (request: AgentVmCreateRequest) => Promise<AgentVmCreateResult>;
-  readonly listAgentVmBindings: (
-    request?: AgentVmBindingListRequest
-  ) => Promise<AgentVmBindingListResult>;
-  readonly readAgentVmBinding: (request: AgentVmReadBindingRequest) => Promise<AgentVmBindingResult>;
-  readonly attachAgentVm: (request: AgentVmAttachRequest) => Promise<AgentVmBindingResult>;
-  readonly takeoverAgentVm: (request: AgentVmTakeoverRequest) => Promise<AgentVmBindingResult>;
-  readonly forkAgentVm: (request: AgentVmForkRequest) => Promise<AgentVmBindingResult>;
-  readonly createAgentVmInheritanceProfile: (
-    request: AgentVmCreateInheritanceProfileRequest
-  ) => Promise<AgentVmInheritanceProfileResult>;
-  readonly applyAgentVmInheritanceProfile: (
-    request: AgentVmApplyInheritanceProfileRequest
-  ) => Promise<AgentVmApplyInheritanceProfileResult>;
-  readonly revokeAgentVmBinding: (request: AgentVmRevokeBindingRequest) => Promise<AgentVmBindingResult>;
-  readonly readAgentVmStatus: (request: AgentVmStatusRequest) => Promise<AgentVmLifecycleResult>;
-  readonly startAgentVm: (request: AgentVmStatusRequest) => Promise<AgentVmLifecycleResult>;
-  readonly stopAgentVm: (request: AgentVmStatusRequest) => Promise<AgentVmLifecycleResult>;
-  readonly readAgentVmPasswordMetadata: (
-    request: AgentVmPasswordMetadataRequest
-  ) => Promise<AgentVmPasswordMetadataResult>;
-  readonly revealAgentVmPassword: (
-    request: AgentVmPasswordRevealRequest
-  ) => Promise<AgentVmPasswordRevealResult>;
-  readonly connectAgentVmConsole: (
-    request: AgentVmConsoleConnectRequest
-  ) => Promise<AgentVmConsoleConnectResult>;
-  readonly onAgentEvent: (listener: (event: AgentRuntimeStreamEvent) => void) => () => void;
-};
-
 export type UiuxPacksApi = {
   readonly listPacks: () => Promise<UiuxListPacksResponse>;
   readonly installFromLocal: (request: UiuxInstallFromLocalRequest) => Promise<InstalledUiuxPack>;
@@ -1785,11 +1373,8 @@ export type LyraDesktopApi = {
   readonly imageViewer?: ImageViewerApi;
   readonly workbenchBrowser: WorkbenchBrowserApi;
   readonly resources?: ResourcesApi;
-  readonly mcp: McpApi;
-  readonly skills: SkillsApi;
   readonly lsp: LspApi;
   readonly terminal: TerminalApi;
-  readonly ai?: AiApi;
   readonly workbenchObservation: WorkbenchObservationBridgeApi;
   readonly uiux: UiuxPacksApi;
   readonly workbenchState: WorkbenchStateApi;
