@@ -32,7 +32,6 @@ const nativeAddonPackages = [
   "lyra-skills-napi",
   "lyra-docs-napi",
   "lyra-download-napi",
-  "lyra-mcp-core",
 ] as const;
 
 const artifactStems = [
@@ -44,7 +43,6 @@ const artifactStems = [
   "lyra_skills_napi",
   "lyra_docs_napi",
   "lyra_download_napi",
-  "lyra_mcp_core",
 ] as const;
 
 const printUsage = (): void => {

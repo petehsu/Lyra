@@ -10,6 +10,10 @@ use crate::modules::fs::{
 use crate::modules::web::{
     search_site_stream_cancel_json, search_site_stream_read_json, search_site_stream_start_json,
 };
+use lyra_agent_core::{
+    cancel_turn_json, create_session_json, read_session_json, respond_permission_json,
+    send_turn_json, submit_decision_json,
+};
 use lyra_download_core::{
     cancel_all_downloads_json, cancel_download_json, download_remote_status_json,
     enqueue_download_json, import_external_browser_downloads_json, list_downloads_json,
@@ -94,10 +98,23 @@ pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Val
         method if method.starts_with("terminal.") => handle_terminal_request(method, payload),
         method if method.starts_with("lsp.") => handle_lsp_request(method, payload),
         method if method.starts_with("download.") => handle_download_request(method, payload),
+        method if method.starts_with("agent.") => handle_agent_request(method, payload),
         other => Err(runtime_error(
             "METHOD_NOT_FOUND",
             format!("unknown runtime method: {other}"),
         )),
+    }
+}
+
+fn handle_agent_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
+    match method {
+        "agent.session.create" => call_json(payload, create_session_json),
+        "agent.session.read" => call_json(payload, read_session_json),
+        "agent.turn.send" => call_json(payload, send_turn_json),
+        "agent.turn.cancel" => call_json(payload, cancel_turn_json),
+        "agent.decision.submit" => call_json(payload, submit_decision_json),
+        "agent.permission.respond" => call_json(payload, respond_permission_json),
+        _ => unknown_method("agent", method),
     }
 }
 

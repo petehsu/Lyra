@@ -1,4 +1,4 @@
-name: Agent Regression
+name: Agent Vertical Slice
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
     branches: ["main"]
 
 jobs:
-  agent-regression:
+  agent-vertical-slice:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,16 +28,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run Rust Agent regression tests
-        run: cargo test -p lyra-ai-napi tests::turn::agent:: -- --nocapture
+      - name: Run Rust Agent slice tests
+        run: cargo test -p lyrad -p lyra-agent-core
 
       - name: Run desktop AI regression tests
         run: |
-          pnpm --filter @lyra/desktop test -- src/main/ai/tests/capability-preflight.test.ts
-          pnpm --filter @lyra/desktop test -- src/main/ai/tests/runtime-events.test.ts
-          pnpm --filter @lyra/desktop test -- src/main/capabilities/tests/registry.test.ts
-          pnpm --filter @lyra/desktop test -- src/modules/workbench/ai-panel/tests/native-mappers.test.ts
-          pnpm --filter @lyra/desktop test -- src/modules/workbench/ai-panel/tests/session-store.test.tsx
+          pnpm --filter @lyra/desktop test -- ai-panel
 
       - name: Typecheck desktop
         run: pnpm --filter @lyra/desktop typecheck

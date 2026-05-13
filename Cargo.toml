@@ -3,6 +3,7 @@ members = [
   "crates/lyra-code-intel-core",
   "crates/lyrad",
   "crates/lyra-runtime-protocol",
+  "crates/lyra-agent-core",
   "crates/lyra-terminal-core",
   "crates/lyra-files-core",
   "crates/lyra-files-napi",
@@ -34,6 +35,7 @@ license = "Apache-2.0"
 lyra-download-core = { path = "crates/lyra-download-core" }
 lyra-files-core = { path = "crates/lyra-files-core" }
 lyra-image-core = { path = "crates/lyra-image-core" }
+lyra-agent-core = { path = "crates/lyra-agent-core" }
 lyra-resource-core = { path = "crates/lyra-resource-core" }
 lyra-local-search = { path = "crates/lyra-local-search" }
 

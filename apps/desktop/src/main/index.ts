@@ -24,6 +24,7 @@ import {
   type LyraAppIconVariant
 } from "./app-identity";
 import { loadDocsNativeBindings } from "./documents/native-loader";
+import { createAgentIpcBridge } from "./agent";
 import { createFilesIpcBridge } from "./files";
 import { createDownloadManagerIpcBridge } from "./download-manager";
 import { createImageViewerIpcBridge } from "./image-viewer";
@@ -92,6 +93,7 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null;
 let disposeTerminalBridge: (() => void) | null = null;
+let disposeAgentBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
 let disposeDownloadManagerBridge: (() => void) | null = null;
 let disposeImageViewerBridge: (() => void) | null = null;
@@ -687,6 +689,12 @@ const registerIpcHandlers = (): void => {
   console.info(`[lyra-lsp] runtime attached: ${lspBridge.loadResult.loadedFrom}`);
   disposeLspBridge = lspBridge.dispose;
 
+  const agentBridge = createAgentIpcBridge({
+    runtimeClient,
+    getWindow: () => mainWindow
+  });
+  disposeAgentBridge = agentBridge.dispose;
+
   workbenchBrowserBridge = createWorkbenchBrowserIpcBridge({
     getWindow: () => mainWindow,
     resourceRuntime: resourceRuntimeService,
@@ -871,6 +879,10 @@ app.on("before-quit", () => {
   if (disposeTerminalBridge !== null) {
     disposeTerminalBridge();
     disposeTerminalBridge = null;
+  }
+  if (disposeAgentBridge !== null) {
+    disposeAgentBridge();
+    disposeAgentBridge = null;
   }
   if (disposeLspBridge !== null) {
     disposeLspBridge();

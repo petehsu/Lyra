@@ -14,6 +14,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[cfg(unix)]
+use lyra_agent_core::{
+    clear_rust_event_callback as clear_agent_event_callback,
+    register_rust_event_callback as register_agent_event_callback,
+};
+#[cfg(unix)]
 use lyra_download_core::{
     clear_rust_event_callback as clear_download_event_callback,
     register_rust_event_callback as register_download_event_callback,
@@ -49,6 +54,8 @@ const TERMINAL_RUNTIME_EVENT_NAME: &str = "terminal.runtime";
 const LSP_RUNTIME_EVENT_NAME: &str = "lsp.runtime";
 #[cfg(unix)]
 const DOWNLOAD_RUNTIME_EVENT_NAME: &str = "download.runtime";
+#[cfg(unix)]
+const AGENT_RUNTIME_EVENT_NAME: &str = "agent.runtime";
 
 fn main() {
     run();
@@ -223,6 +230,11 @@ fn register_runtime_hooks(sessions: &DaemonSessionManager) {
     register_download_event_callback(Arc::new(move |event_json| {
         forward_json_event(&download_sessions, DOWNLOAD_RUNTIME_EVENT_NAME, &event_json);
     }));
+
+    let agent_sessions = sessions.clone();
+    register_agent_event_callback(Arc::new(move |event_json| {
+        forward_json_event(&agent_sessions, AGENT_RUNTIME_EVENT_NAME, &event_json);
+    }));
 }
 
 #[cfg(unix)]
@@ -232,6 +244,7 @@ fn shutdown_runtime_modules() {
     clear_terminal_event_callback();
     clear_lsp_event_callback();
     clear_download_event_callback();
+    clear_agent_event_callback();
 }
 
 #[cfg(unix)]
@@ -397,4 +410,28 @@ mod tests {
         assert_eq!(remote_status["running"], false);
     }
 
+    #[test]
+    fn agent_routes_are_registered() {
+        let snapshot = handle_runtime_request(
+            "agent.session.create",
+            serde_json::json!({ "title": "Route Test" }),
+        )
+        .expect("agent create route");
+        assert_eq!(snapshot["title"], "Route Test");
+
+        let session_id = snapshot["id"].as_str().expect("session id");
+        let read = handle_runtime_request(
+            "agent.session.read",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .expect("agent read route");
+        assert_eq!(read["id"], session_id);
+    }
+
+    #[test]
+    fn unknown_agent_route_errors() {
+        let error = handle_runtime_request("agent.unknown", serde_json::json!({}))
+            .expect_err("unknown route should fail");
+        assert_eq!(error.code, "METHOD_NOT_FOUND");
+    }
 }

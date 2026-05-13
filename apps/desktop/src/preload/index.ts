@@ -2,6 +2,16 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import {
   LYRA_CHANNELS,
+  type AgentDecisionSubmitRequest,
+  type AgentPermissionRespondRequest,
+  type AgentRuntimeEvent,
+  type AgentSessionCreateRequest,
+  type AgentSessionReadRequest,
+  type AgentSessionSnapshot,
+  type AgentTurnCancelRequest,
+  type AgentTurnCancelResponse,
+  type AgentTurnSendRequest,
+  type AgentTurnSendResponse,
   type AppMetaPayload,
   type DownloadManagerBatchRequest,
   type DownloadManagerEnqueueRequest,
@@ -195,6 +205,8 @@ const downloadEventListeners = new Set<(event: DownloadManagerEvent) => void>();
 let downloadEventBridgeReady = false;
 const lspEventListeners = new Set<(event: LspRuntimeEvent) => void>();
 let lspEventBridgeReady = false;
+const agentEventListeners = new Set<(event: AgentRuntimeEvent) => void>();
+let agentEventBridgeReady = false;
 let workbenchObservationHandler:
   | ((
       request: WorkbenchObservationQueryRequest
@@ -233,6 +245,24 @@ const ensureTerminalEventBridge = (): void => {
         for (const listener of terminalErrorListeners) {
           listener(payload);
         }
+      }
+    }
+  );
+};
+
+const ensureAgentEventBridge = (): void => {
+  if (agentEventBridgeReady) {
+    return;
+  }
+  agentEventBridgeReady = true;
+  ipcRenderer.on(
+    LYRA_CHANNELS.agentEvent,
+    (_event: Electron.IpcRendererEvent, payload: AgentRuntimeEvent): void => {
+      if (payload === null || typeof payload !== "object" || !("kind" in payload)) {
+        return;
+      }
+      for (const listener of agentEventListeners) {
+        listener(payload);
       }
     }
   );
@@ -831,6 +861,39 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       terminalErrorListeners.add(listener);
       return () => {
         terminalErrorListeners.delete(listener);
+      };
+    }
+  },
+  agent: {
+    createSession: (request?: AgentSessionCreateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSessionCreate,
+        request ?? {}
+      ) as Promise<AgentSessionSnapshot>,
+    readSession: (request?: AgentSessionReadRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSessionRead,
+        request ?? {}
+      ) as Promise<AgentSessionSnapshot>,
+    sendTurn: (request: AgentTurnSendRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentTurnSend,
+        request
+      ) as Promise<AgentTurnSendResponse>,
+    cancelTurn: (request: AgentTurnCancelRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentTurnCancel,
+        request
+      ) as Promise<AgentTurnCancelResponse>,
+    submitDecision: (request: AgentDecisionSubmitRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentDecisionSubmit, request) as Promise<unknown>,
+    respondPermission: (request: AgentPermissionRespondRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentPermissionRespond, request) as Promise<unknown>,
+    onEvent: (listener: (event: AgentRuntimeEvent) => void) => {
+      ensureAgentEventBridge();
+      agentEventListeners.add(listener);
+      return () => {
+        agentEventListeners.delete(listener);
       };
     }
   },

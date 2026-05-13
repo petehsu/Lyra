@@ -90,7 +90,27 @@ import type {
   UiuxResolveRuntimeRequest,
   UiuxSetTrustStateRequest
 } from "./uiux-packs";
+import type { AgentApi } from "./agent";
 
+export type {
+  AgentApi,
+  AgentDecisionSubmitRequest,
+  AgentFollowState,
+  AgentMessage,
+  AgentPermissionRespondRequest,
+  AgentRole,
+  AgentRuntimeEvent,
+  AgentSessionCreateRequest,
+  AgentSessionReadRequest,
+  AgentSessionSnapshot,
+  AgentToolActivity,
+  AgentToolStatus,
+  AgentTurnCancelRequest,
+  AgentTurnCancelResponse,
+  AgentTurnSendRequest,
+  AgentTurnSendResponse,
+  AgentTurnStatus
+} from "./agent";
 export type {
   AiDiscoverModelsRequest,
   AiDeleteProfileRequest,
@@ -330,6 +350,13 @@ export const LYRA_CHANNELS = {
   terminalResizeSession: "lyra:terminal/resize-session",
   terminalCloseSession: "lyra:terminal/close-session",
   terminalEvent: "lyra:terminal/event",
+  agentSessionCreate: "lyra:agent/session/create",
+  agentSessionRead: "lyra:agent/session/read",
+  agentTurnSend: "lyra:agent/turn/send",
+  agentTurnCancel: "lyra:agent/turn/cancel",
+  agentDecisionSubmit: "lyra:agent/decision/submit",
+  agentPermissionRespond: "lyra:agent/permission/respond",
+  agentEvent: "lyra:agent/event",
   workbenchObservationQuery: "lyra:workbench-observation/query",
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
   uiuxListPacks: "lyra:uiux/list-packs",
@@ -1375,6 +1402,7 @@ export type LyraDesktopApi = {
   readonly resources?: ResourcesApi;
   readonly lsp: LspApi;
   readonly terminal: TerminalApi;
+  readonly agent?: AgentApi;
   readonly workbenchObservation: WorkbenchObservationBridgeApi;
   readonly uiux: UiuxPacksApi;
   readonly workbenchState: WorkbenchStateApi;

@@ -283,6 +283,7 @@ const tsOwnedMainModules = new Map<string, string>([
 ]);
 
 const bridgeOnlyMainModules = new Map<string, string>([
+  ["agent", "Bridge-only module: Agent IPC forwards to lyrad and owns no Agent state machine."],
   [
     "documents",
     "Bridge-only module: native document parser loader/types exposed to shell services."
