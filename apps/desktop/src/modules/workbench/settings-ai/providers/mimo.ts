@@ -26,7 +26,7 @@ const mimoPreset = ({
   modelDiscoverySupported: true,
   customHeadersSupported: false,
   customModelsSupported: false,
-  runtimeSupported: true,
+  runtimeSupported: false,
   simpleFields: ["apiKey"],
   connectionFields: [],
   authFields: [apiKeyField(true, keyPlaceholder)],

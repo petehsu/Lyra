@@ -1,0 +1,109 @@
+/* =============================================================================
+ * Lyra Agent UI — Design Tokens
+ * =============================================================================
+ *
+ * All visual values flow from this file. Components must never hardcode
+ * colors, font families, or sizes that could reasonably be a token. To add a
+ * new theme, duplicate the :root block inside a new selector (eg `[data-theme="light"]`).
+ */
+
+:root {
+  /* -------- Color — surfaces -------- */
+  --color-bg: #1a1b1e;
+  --color-surface-0: rgba(255, 255, 255, 0.03);
+  --color-surface-1: rgba(255, 255, 255, 0.04);
+  --color-surface-2: rgba(255, 255, 255, 0.06);
+  --color-surface-3: rgba(255, 255, 255, 0.1);
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-default: rgba(255, 255, 255, 0.1);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+
+  /* -------- Color — text -------- */
+  --color-text: #e6e7ea;
+  --color-text-dim: #9a9da6;
+  --color-text-dimmer: #6f7380;
+
+  /* -------- Color — accent & status -------- */
+  --color-accent: #7aa2ff;
+  --color-ok: #63d26b;
+  --color-err: #ff6b6b;
+  --color-warn: #f0b752;
+
+  /* -------- Diff colors -------- */
+  --color-diff-add-bg: rgba(78, 201, 108, 0.1);
+  --color-diff-del-bg: rgba(255, 107, 107, 0.1);
+  --color-diff-add-fg: #9be0a4;
+  --color-diff-del-fg: #ff9a9a;
+
+  /* -------- Typography -------- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-base: 14px;
+  --fs-lg: 16px;
+
+  --lh-tight: 1.4;
+  --lh-normal: 1.55;
+  --lh-relaxed: 1.65;
+
+  /* -------- Radius -------- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+  --radius-2xl: 16px;
+  --radius-pill: 20px;
+  --radius-full: 9999px;
+
+  /* -------- Spacing -------- */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-10: 20px;
+  --space-12: 24px;
+
+  /* -------- Elevation — glass frosted chrome -------- */
+  --blur-glass: blur(20px) saturate(1.4);
+  --shadow-glass:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 4px 20px rgba(0, 0, 0, 0.35);
+  --shadow-panel:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 8px 32px rgba(0, 0, 0, 0.4);
+
+  /* -------- Motion -------- */
+  --ease-standard: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.22, 0.8, 0.28, 1);
+  --duration-instant: 120ms;
+  --duration-fast: 160ms;
+  --duration-medium: 260ms;
+  --duration-slow: 320ms;
+
+  /* -------- Layout -------- */
+  --column-max-width: 820px;
+  --header-height: 36px;
+  --z-header: 10;
+  --z-pills: 9;
+  --z-floating: 11;
+  --z-debug: 999;
+}
+
+/* Reduced motion overrides */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-medium: 0ms;
+    --duration-slow: 0ms;
+  }
+}

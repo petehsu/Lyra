@@ -84,7 +84,7 @@ describe("useSettingsAiModel", () => {
     expect(result.current.profiles[0]).toMatchObject({
       name: "Local test profile",
       model: "user-model-a",
-      runtimeSupported: false,
+      runtimeSupported: true,
       isDefault: true,
       discoveryState: {
         status: "idle",

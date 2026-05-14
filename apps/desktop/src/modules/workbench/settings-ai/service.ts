@@ -71,6 +71,9 @@ const updateDraftMapField = (
 
 const authConfigForDraft = (draft: SettingsAiDraft): Record<string, string> => ({
   ...draft.authConfig,
+  ...Object.fromEntries(
+    Object.entries(draft.secretValues).filter(([, value]) => value.trim().length > 0)
+  ),
   [MODEL_SELECTION_MODE_AUTH_CONFIG_KEY]: draft.modelSelectionMode
 });
 
@@ -109,8 +112,8 @@ const profileFromDraft = (
     name: draft.name.trim() || preset?.label || "Local AI Profile",
     providerId: draft.providerId as AiProviderProfile["providerId"],
     protocolId: draft.protocolId as AiProviderProfile["protocolId"],
-    runtimeProviderId: draft.providerId,
-    runtimeSupported: false,
+    runtimeProviderId: `${draft.providerId}:${draft.id ?? timestamp}`,
+    runtimeSupported: preset?.runtimeSupported ?? false,
     secretStatus: configuredSecretFieldsForDraft(draft).length > 0 ? "configured" : "missing",
     presetId: draft.presetId,
     connectionConfig: { ...draft.connectionConfig },
@@ -163,7 +166,7 @@ export const useSettingsAiModel = ({
       providerId: preset.providerId,
       protocolId: preset.protocolId,
       runtimeProviderId: preset.providerId,
-      runtimeSupported: false,
+      runtimeSupported: preset.runtimeSupported,
       secretStatus: "missing",
       presetId: preset.id,
       connectionConfig: preset.defaultConnectionConfig,

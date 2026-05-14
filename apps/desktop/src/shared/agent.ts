@@ -1,3 +1,5 @@
+import type { AiProviderProfile } from "./ai";
+
 export type AgentRole = "user" | "assistant" | "system";
 export type AgentTurnStatus = "idle" | "running" | "cancelled" | "finished" | "failed";
 export type AgentToolStatus = "running" | "completed" | "failed" | "cancelled";
@@ -48,6 +50,7 @@ export type AgentTurnSendRequest = {
   readonly sessionId?: string | null;
   readonly text: string;
   readonly providerProfileId?: string | null;
+  readonly providerProfile?: AiProviderProfile | null;
 };
 
 export type AgentTurnSendResponse = {

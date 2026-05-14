@@ -6,17 +6,23 @@ import type {
   AgentToolActivity
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { SettingsAiModel } from "../settings-ai";
+import type {
+  ChatMessage,
+  DiffFileEntry,
+  PermissionRequest,
+  SessionMeta,
+  TodoItem,
+  ToolCall,
+  ToolGroup
+} from "./agent-chat-demo/core/types";
 import {
-  createEmptyDataProviderValue,
-  type AgentDecisionItem,
-  type AgentPermissionItem,
-  type DataProviderValue
-} from "./data-provider";
+  createDataProviderValue,
+  type CreateDataProviderValueInput
+} from "./agent-chat-demo/data/createDataProviderValue";
 
 type State = {
   readonly session: AgentSessionSnapshot | null;
-  readonly decisions: readonly AgentDecisionItem[];
-  readonly permissions: readonly AgentPermissionItem[];
   readonly error: string | null;
   readonly loading: boolean;
 };
@@ -31,8 +37,6 @@ let lastAgentSessionId: string | null = null;
 
 const initialState: State = {
   session: null,
-  decisions: [],
-  permissions: [],
   error: null,
   loading: true
 };
@@ -60,9 +64,12 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
     return state;
   }
 
+  const session = state.session;
+  if (session === null) {
+    return state;
+  }
+
   if (event.kind === "messageAppended") {
-    const session = state.session;
-    if (session === null) return state;
     return {
       ...state,
       session: {
@@ -77,8 +84,6 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
   }
 
   if (event.kind === "messageDelta") {
-    const session = state.session;
-    if (session === null) return state;
     return {
       ...state,
       session: {
@@ -94,8 +99,6 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
   }
 
   if (event.kind === "toolStarted" || event.kind === "toolFinished") {
-    const session = state.session;
-    if (session === null) return state;
     return {
       ...state,
       session: {
@@ -107,8 +110,6 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
   }
 
   if (event.kind === "followStateChanged") {
-    const session = state.session;
-    if (session === null) return state;
     return {
       ...state,
       session: {
@@ -121,8 +122,6 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
   }
 
   if (event.kind === "turnFinished") {
-    const session = state.session;
-    if (session === null) return state;
     return {
       ...state,
       session: {
@@ -137,26 +136,6 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
 
   if (event.kind === "turnFailed") {
     return { ...state, error: event.message };
-  }
-
-  if (event.kind === "decisionRequired") {
-    return {
-      ...state,
-      decisions: [
-        ...state.decisions.filter((decision) => decision.id !== event.decisionId),
-        { id: event.decisionId, title: event.title, detail: event.detail }
-      ]
-    };
-  }
-
-  if (event.kind === "permissionRequired") {
-    return {
-      ...state,
-      permissions: [
-        ...state.permissions.filter((permission) => permission.id !== event.permissionId),
-        { id: event.permissionId, title: event.title, detail: event.detail }
-      ]
-    };
   }
 
   return state;
@@ -175,9 +154,95 @@ const reducer = (state: State, action: Action): State => {
 const toErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
+const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
+  if (tool.name.includes("read")) return "read";
+  if (tool.name.includes("search")) return "search";
+  if (tool.name.includes("shell") || tool.name.includes("command")) return "shell";
+  return "thought";
+};
+
+const toToolCall = (tool: AgentToolActivity): ToolCall => ({
+  id: tool.id,
+  kind: toolKind(tool),
+  title: tool.label,
+  status: tool.status === "running" ? "running" : tool.status === "failed" ? "error" : "success",
+  details: {
+    type: "text",
+    body: JSON.stringify(tool.output ?? tool.input, null, 2)
+  }
+});
+
+const toToolGroup = (tools: readonly AgentToolActivity[]): ToolGroup | null => {
+  if (tools.length === 0) return null;
+  const running = tools.find((tool) => tool.status === "running");
+  return {
+    id: "lyra-agent-tools",
+    status: running === undefined ? "done" : "running",
+    label: running?.label ?? "Agent activity",
+    hint: running === undefined ? `${tools.length} tool events` : "Running...",
+    ...(running === undefined ? {} : { currentCallId: running.id }),
+    calls: tools.map(toToolCall)
+  };
+};
+
+const toMessages = (session: AgentSessionSnapshot | null): ChatMessage[] => {
+  if (session === null) return [];
+  const messages: ChatMessage[] = session.messages.map((message) => ({
+    id: message.id,
+    author: message.role === "user" ? "user" : "agent",
+    time: message.createdAt,
+    blocks: [
+      {
+        type: "text",
+        id: `${message.id}-text`,
+        body: message.text.length === 0 ? "..." : message.text
+      }
+    ]
+  }));
+  const group = toToolGroup(session.tools);
+  if (group !== null) {
+    messages.push({
+      id: "lyra-agent-tool-message",
+      author: "agent",
+      blocks: [
+        {
+          type: "tools",
+          id: "lyra-agent-tools-block",
+          group
+        }
+      ]
+    });
+  }
+  return messages;
+};
+
+const toSessionMeta = (session: AgentSessionSnapshot | null): SessionMeta => ({
+  title: session?.title ?? "Lyra Agent",
+  project: session?.follow.running ? (session.follow.activity ?? "Running") : "Lyra",
+  totalAdditions: 0,
+  totalDeletions: 0
+});
+
+const toTodos = (session: AgentSessionSnapshot | null): TodoItem[] => {
+  const activity = session?.follow.activity;
+  if (activity === undefined || activity === null) return [];
+  return [{
+    id: "follow-activity",
+    title: activity,
+    status: session?.follow.running ? "running" : "done"
+  }];
+};
+
 export const useLyraAgentDataProvider = (
-  desktopApi: LyraDesktopApi | null
-): DataProviderValue => {
+  desktopApi: LyraDesktopApi | null,
+  settingsAiModel?: SettingsAiModel
+): {
+  readonly data: ReturnType<typeof createDataProviderValue>;
+  readonly followRunning: boolean;
+  readonly followActivity: string | null;
+  readonly error: string | null;
+  readonly cancel: () => Promise<void>;
+} => {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   useEffect(() => {
@@ -213,13 +278,27 @@ export const useLyraAgentDataProvider = (
     if (desktopApi?.agent === undefined) return;
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
-    const sessionId = state.session?.id ?? lastAgentSessionId;
+    const defaultProfile = settingsAiModel?.profiles.find((profile) => profile.id === settingsAiModel.defaultProfileId)
+      ?? null;
+    const providerProfile = settingsAiModel === undefined
+      ? null
+      : (defaultProfile?.runtimeSupported === true
+          ? defaultProfile
+          : settingsAiModel.profiles.find((profile) => profile.runtimeSupported) ?? null);
+    if (settingsAiModel !== undefined && providerProfile === null) {
+      dispatch({
+        type: "error",
+        message: "Configure a runtime-supported AI profile before sending an Agent turn."
+      });
+      return;
+    }
     await desktopApi.agent.sendTurn({
-      sessionId,
+      sessionId: state.session?.id ?? lastAgentSessionId,
       text: trimmed,
-      providerProfileId: "lyra-default"
+      providerProfileId: providerProfile?.id ?? "lyra-default",
+      providerProfile
     });
-  }, [desktopApi, state.session?.id]);
+  }, [desktopApi, settingsAiModel?.defaultProfileId, settingsAiModel?.profiles, state.session?.id]);
 
   const cancel = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
@@ -228,72 +307,61 @@ export const useLyraAgentDataProvider = (
     await desktopApi.agent.cancelTurn({ sessionId });
   }, [desktopApi, state.session?.id]);
 
-  const submitDecisions = useCallback<DataProviderValue["submitDecisions"]>(async (decision) => {
+  const submitDecisions = useCallback(async (_answers: Record<string, string>) => {
     if (desktopApi?.agent === undefined || state.session === null) return;
     await desktopApi.agent.submitDecision({
       sessionId: state.session.id,
-      ...decision
+      decisionId: "agent-chat-demo-decision",
+      accepted: true
     });
   }, [desktopApi, state.session]);
 
-  const approvePermission = useCallback<DataProviderValue["approvePermission"]>(async (permission) => {
+  const approvePermission = useCallback(async (id: string) => {
     if (desktopApi?.agent === undefined || state.session === null) return;
     await desktopApi.agent.respondPermission({
       sessionId: state.session.id,
-      permissionId: permission.permissionId,
+      permissionId: id,
       allowed: true
     });
   }, [desktopApi, state.session]);
 
-  const denyPermission = useCallback<DataProviderValue["denyPermission"]>(async (permission) => {
+  const denyPermission = useCallback(async (id: string) => {
     if (desktopApi?.agent === undefined || state.session === null) return;
     await desktopApi.agent.respondPermission({
       sessionId: state.session.id,
-      permissionId: permission.permissionId,
+      permissionId: id,
       allowed: false
     });
   }, [desktopApi, state.session]);
 
-  return useMemo(() => {
-    if (desktopApi?.agent === undefined) {
-      return createEmptyDataProviderValue({
-        sendMessage,
-        cancel,
-        submitDecisions,
-        approvePermission,
-        denyPermission
-      });
-    }
-    return {
-      session: state.session,
-      messages: state.session?.messages ?? [],
-      toolGroups: state.session?.tools ?? [],
-      todos: state.session?.follow.activity === undefined || state.session?.follow.activity === null
-        ? []
-        : [state.session.follow.activity],
-      diffFiles: [],
-      decisions: state.decisions,
-      permissions: state.permissions,
-      follow: state.session?.follow ?? { running: state.loading, activity: state.loading ? "Connecting" : null },
-      busy: state.loading || state.session?.turnStatus === "running",
-      error: state.error,
+  const data = useMemo(() => {
+    const input: CreateDataProviderValueInput = {
+      session: toSessionMeta(state.session),
+      messages: toMessages(state.session),
+      todos: toTodos(state.session),
+      diffFiles: [] satisfies DiffFileEntry[],
+      decisions: [],
+      permissions: [] satisfies PermissionRequest[],
       sendMessage,
-      cancel,
       submitDecisions,
       approvePermission,
-      denyPermission
+      denyPermission,
+      isMock: false
     };
+    return createDataProviderValue(input);
   }, [
     approvePermission,
-    cancel,
     denyPermission,
-    desktopApi,
     sendMessage,
-    state.decisions,
-    state.error,
-    state.loading,
-    state.permissions,
     state.session,
     submitDecisions
   ]);
+
+  return {
+    data,
+    followRunning: state.session?.follow.running ?? state.loading,
+    followActivity: state.session?.follow.activity ?? (state.loading ? "Connecting" : null),
+    error: state.error,
+    cancel
+  };
 };

@@ -28,6 +28,7 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
 export const useWorkbenchSidebarAiSurfaceProps = ({
   desktopApi,
   preferences,
+  settingsAiModel,
   aiPanelSide,
   onToggleAiPanelSide,
   t
@@ -36,6 +37,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
     () => ({
       variant: "sidebar",
       desktopApi,
+      settingsAiModel,
       locale: preferences.locale,
       title: t("ai.tabTitle"),
       aiPanelSide,
@@ -47,6 +49,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
     [
       aiPanelSide,
       desktopApi,
+      settingsAiModel,
       onToggleAiPanelSide,
       preferences.locale,
       t,

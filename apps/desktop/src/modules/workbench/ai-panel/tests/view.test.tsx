@@ -6,6 +6,7 @@ import type {
   AgentSessionSnapshot
 } from "../../../../shared/desktop-bridge";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
+import type { SettingsAiModel } from "../../settings-ai";
 import { AiPanelSurface } from "../view";
 
 const snapshot: AgentSessionSnapshot = {
@@ -62,6 +63,43 @@ const renderPanel = (desktopApi: LyraDesktopApi) =>
     />
   );
 
+const runtimeProfile = {
+  id: "profile-openai",
+  name: "OpenAI",
+  providerId: "openai",
+  protocolId: "openai_chat_completions",
+  runtimeProviderId: "openai:profile-openai",
+  runtimeSupported: true,
+  secretStatus: "configured",
+  presetId: "openai",
+  connectionConfig: { baseUrl: "https://api.openai.com/v1" },
+  authConfig: { apiKey: "test-key" },
+  configuredSecretFields: ["apiKey"],
+  headers: {},
+  model: "gpt-5.4",
+  customModels: [],
+  discoveryState: { status: "idle", lastCheckedAt: null, models: [] },
+  isDefault: true,
+  createdAt: 0,
+  updatedAt: 0
+} as const;
+
+const settingsAiModel = {
+  profiles: [runtimeProfile],
+  defaultProfileId: runtimeProfile.id
+} as unknown as SettingsAiModel;
+
+const renderPanelWithSettings = (desktopApi: LyraDesktopApi) =>
+  render(
+    <AiPanelSurface
+      variant="sidebar"
+      desktopApi={desktopApi}
+      settingsAiModel={settingsAiModel}
+      title="Agent"
+      emptyThreadLabel="No messages"
+    />
+  );
+
 describe("AiPanelSurface", () => {
   test("sends composer text through the Agent provider", async () => {
     const { api } = createDesktopApi();
@@ -70,16 +108,39 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(api.agent?.readSession).toHaveBeenCalled();
     });
-    fireEvent.change(screen.getByLabelText("Message Lyra Agent"), {
+    fireEvent.change(screen.getByPlaceholderText("Send a message to Agent"), {
       target: { value: "Build the slice" }
     });
-    fireEvent.click(screen.getByLabelText("Send message"));
+    fireEvent.click(screen.getByLabelText("Send"));
 
     await waitFor(() => {
       expect(api.agent?.sendTurn).toHaveBeenCalledWith({
         sessionId: "session-1",
         text: "Build the slice",
-        providerProfileId: "lyra-default"
+        providerProfileId: "lyra-default",
+        providerProfile: null
+      });
+    });
+  });
+
+  test("sends the default runtime provider profile with the Agent turn", async () => {
+    const { api } = createDesktopApi();
+    renderPanelWithSettings(api);
+
+    await waitFor(() => {
+      expect(api.agent?.readSession).toHaveBeenCalled();
+    });
+    fireEvent.change(screen.getByPlaceholderText("Send a message to Agent"), {
+      target: { value: "Use the configured model" }
+    });
+    fireEvent.click(screen.getByLabelText("Send"));
+
+    await waitFor(() => {
+      expect(api.agent?.sendTurn).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        text: "Use the configured model",
+        providerProfileId: "profile-openai",
+        providerProfile: runtimeProfile
       });
     });
   });
@@ -128,7 +189,7 @@ describe("AiPanelSurface", () => {
     });
 
     expect(await screen.findByText("Streaming response")).toBeInTheDocument();
-    expect(screen.getByText("Searching workspace")).toBeInTheDocument();
+    expect(screen.getAllByText("Searching workspace").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByLabelText("Cancel turn"));
     expect(api.agent?.cancelTurn).toHaveBeenCalledWith({ sessionId: "session-1" });
   });

@@ -53,5 +53,24 @@ describe("settings-ai provider presets", () => {
     expect(embeddedPresets.every((preset) =>
       preset.runtimeMetadata?.localRuntimeKind === "ffi"
     )).toBe(true);
+    expect(embeddedPresets.every((preset) => preset.runtimeSupported === false)).toBe(true);
+  });
+
+  test("exposes jcode provider routes while marking unwired backends explicitly", () => {
+    expect(AI_PROVIDER_PRESETS.map((preset) => preset.providerId)).toEqual(expect.arrayContaining([
+      "openrouter",
+      "copilot",
+      "antigravity",
+      "cursor",
+      "aws_bedrock"
+    ]));
+
+    const openRouter = AI_PROVIDER_PRESETS.find((preset) => preset.providerId === "openrouter");
+    expect(openRouter?.runtimeSupported).toBe(true);
+
+    const unwired = AI_PROVIDER_PRESETS.filter((preset) =>
+      ["copilot", "antigravity", "cursor", "aws_bedrock", "mimo"].includes(preset.providerId)
+    );
+    expect(unwired.every((preset) => preset.runtimeSupported === false)).toBe(true);
   });
 });

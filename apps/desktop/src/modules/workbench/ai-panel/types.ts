@@ -1,5 +1,6 @@
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
+import type { SettingsAiModel } from "../settings-ai";
 
 export type AiPanelSurfaceVariant = "sidebar" | "workspace" | "detached";
 export type AiPanelSide = "left" | "right";
@@ -7,6 +8,7 @@ export type AiPanelSide = "left" | "right";
 export type AiPanelSurfaceProps = {
   readonly variant: AiPanelSurfaceVariant;
   readonly desktopApi: LyraDesktopApi | null;
+  readonly settingsAiModel?: SettingsAiModel;
   readonly locale?: WorkbenchLocale;
   readonly title: string;
   readonly emptyThreadLabel: string;
