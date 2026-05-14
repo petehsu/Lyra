@@ -416,10 +416,11 @@ where
                         Ok(value) => value,
                         Err(_) => continue,
                     };
-                    if let Some(delta) = value.pointer("/choices/0/delta/content").and_then(Value::as_str)
-                        && !delta.is_empty()
-                    {
-                        yield StreamEvent::TextDelta(delta.to_string());
+                    if let Some(reasoning) = openai_delta_text(&value, "reasoning_content") {
+                        yield StreamEvent::ThinkingDelta(reasoning);
+                    }
+                    if let Some(delta) = openai_delta_text(&value, "content") {
+                        yield StreamEvent::TextDelta(delta);
                     }
                     if let Some(reason) = value.pointer("/choices/0/finish_reason").and_then(Value::as_str) {
                         yield StreamEvent::MessageEnd { stop_reason: Some(reason.to_string()) };
@@ -430,6 +431,27 @@ where
         }
         yield StreamEvent::MessageEnd { stop_reason: None };
     })
+}
+
+fn openai_delta_text(value: &Value, field: &str) -> Option<String> {
+    let delta = value.pointer("/choices/0/delta")?;
+    let value = delta.get(field)?;
+    if let Some(text) = value.as_str() {
+        let trimmed = text.trim();
+        return (!trimmed.is_empty()).then(|| text.to_string());
+    }
+    let array = value.as_array()?;
+    let text = array
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .get("text")
+                .and_then(Value::as_str)
+                .or_else(|| entry.get("content").and_then(Value::as_str))
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    (!text.trim().is_empty()).then_some(text)
 }
 
 #[derive(Clone)]
@@ -753,6 +775,34 @@ mod tests {
         let provider = provider_from_profile(openai).unwrap();
         assert_eq!(provider.model(), "mimo-v2.5-pro");
         assert!(provider_from_profile(mimo_profile("token_plan", "anthropic", Some("cn"))).is_ok());
+    }
+
+    #[test]
+    fn parses_openai_reasoning_content_and_text_deltas() {
+        let events = futures::executor::block_on(async {
+            let chunks = stream::iter(vec![Ok::<_, std::io::Error>(bytes::Bytes::from(concat!(
+                "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\n",
+                "data: {\"choices\":[{\"delta\":{\"content\":\"answer\"}}]}\n\n",
+                "data: [DONE]\n\n",
+            )))]);
+            parse_openai_sse(chunks)
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .collect::<Result<Vec<_>>>()
+                .unwrap()
+        });
+
+        assert!(
+            events.iter().any(
+                |event| matches!(event, StreamEvent::ThinkingDelta(text) if text == "thinking")
+            )
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, StreamEvent::TextDelta(text) if text == "answer"))
+        );
     }
 
     #[test]

@@ -189,8 +189,39 @@ describe("AiPanelSurface", () => {
     });
 
     expect(await screen.findByText("Streaming response")).toBeInTheDocument();
+    expect(screen.queryByText("2026-05-13T00:00:01.000Z")).not.toBeInTheDocument();
     expect(screen.getAllByText("Searching workspace").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByLabelText("Cancel turn"));
     expect(api.agent?.cancelTurn).toHaveBeenCalledWith({ sessionId: "session-1" });
+  });
+
+  test("does not leave a finished empty assistant response as an ellipsis", async () => {
+    const { api, emit } = createDesktopApi();
+    renderPanel(api);
+
+    await waitFor(() => {
+      expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+    });
+    act(() => {
+      emit({
+        kind: "messageAppended",
+        sessionId: "session-1",
+        message: {
+          id: "message-empty",
+          role: "assistant",
+          text: "",
+          createdAt: "2026-05-13T00:00:01.000Z"
+        }
+      });
+      emit({
+        kind: "turnFinished",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        status: "finished"
+      });
+    });
+
+    expect(await screen.findByText("No response text received.")).toBeInTheDocument();
+    expect(screen.queryByText("...")).not.toBeInTheDocument();
   });
 });

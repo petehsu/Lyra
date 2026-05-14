@@ -185,20 +185,45 @@ const toToolGroup = (tools: readonly AgentToolActivity[]): ToolGroup | null => {
   };
 };
 
+const formatMessageTime = (value: string | undefined): string | undefined => {
+  if (value === undefined) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+};
+
+const messageBody = (
+  session: AgentSessionSnapshot,
+  message: AgentSessionSnapshot["messages"][number],
+  index: number
+): string => {
+  if (message.text.length > 0) return message.text;
+  const isLastAssistant = message.role === "assistant" && index === session.messages.length - 1;
+  return isLastAssistant && session.turnStatus === "running"
+    ? "..."
+    : "No response text received.";
+};
+
 const toMessages = (session: AgentSessionSnapshot | null): ChatMessage[] => {
   if (session === null) return [];
-  const messages: ChatMessage[] = session.messages.map((message) => ({
-    id: message.id,
-    author: message.role === "user" ? "user" : "agent",
-    time: message.createdAt,
-    blocks: [
-      {
-        type: "text",
-        id: `${message.id}-text`,
-        body: message.text.length === 0 ? "..." : message.text
-      }
-    ]
-  }));
+  const messages: ChatMessage[] = session.messages.map((message, index) => {
+    const formattedTime = formatMessageTime(message.createdAt);
+    return {
+      id: message.id,
+      author: message.role === "user" ? "user" : "agent",
+      ...(formattedTime === undefined ? {} : { time: formattedTime }),
+      blocks: [
+        {
+          type: "text",
+          id: `${message.id}-text`,
+          body: messageBody(session, message, index)
+        }
+      ]
+    };
+  });
   const group = toToolGroup(session.tools);
   if (group !== null) {
     messages.push({
