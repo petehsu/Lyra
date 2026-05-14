@@ -89,6 +89,39 @@ const configuredSecretFieldsForDraft = (
   return [...configured];
 };
 
+const normalizeProfileModelId = (providerId: string, modelId: string): string => {
+  const trimmed = modelId.trim();
+  return providerId === "mimo" ? trimmed.toLowerCase() : trimmed;
+};
+
+const normalizeConfiguredModelsForProvider = (
+  providerId: string,
+  primaryModel: string,
+  customModels: readonly AiProviderModelEntry[]
+): {
+  readonly primaryModel: string;
+  readonly customModels: readonly AiProviderModelEntry[];
+} => {
+  const normalizedPrimary = normalizeProfileModelId(providerId, primaryModel);
+  const seen = new Set([normalizedPrimary].filter((entry) => entry.length > 0));
+  const normalizedCustomModels = customModels.flatMap((model) => {
+    const id = normalizeProfileModelId(providerId, model.id);
+    if (id.length === 0 || seen.has(id)) {
+      return [];
+    }
+    seen.add(id);
+    return [{
+      ...model,
+      id,
+      name: model.name.trim() === model.id ? id : model.name
+    }];
+  });
+  return {
+    primaryModel: normalizedPrimary,
+    customModels: normalizedCustomModels
+  };
+};
+
 const profileFromDraft = (
   draft: SettingsAiDraft,
   existing: AiProviderProfile | null,
@@ -106,6 +139,11 @@ const profileFromDraft = (
     availableModels,
     preset?.defaultModel ?? ""
   );
+  const normalizedModels = normalizeConfiguredModelsForProvider(
+    draft.providerId,
+    configuredModels.primaryModel,
+    configuredModels.customModels
+  );
   const timestamp = now();
   return {
     id: draft.id ?? `local-profile-${timestamp}`,
@@ -120,8 +158,8 @@ const profileFromDraft = (
     authConfig: authConfigForDraft(draft),
     configuredSecretFields: configuredSecretFieldsForDraft(draft),
     headers: {},
-    model: configuredModels.primaryModel,
-    customModels: configuredModels.customModels,
+    model: normalizedModels.primaryModel,
+    customModels: normalizedModels.customModels,
     discoveryState: emptyDiscoveryState(),
     isDefault: makeDefault,
     createdAt: existing?.createdAt ?? timestamp,

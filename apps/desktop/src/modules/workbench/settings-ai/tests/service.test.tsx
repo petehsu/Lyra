@@ -125,6 +125,32 @@ describe("useSettingsAiModel", () => {
     });
   });
 
+  test("normalizes Xiaomi MiMo model ids before saving", async () => {
+    const { result } = renderModel();
+
+    act(() => {
+      result.current.applyPreset("mimo_token_plan");
+      result.current.updateDraftModelSelectionMode("custom");
+      result.current.updateDraftModelsText("MiMo-V2.5-Pro\nMIMO-V2.5-PRO\nmimo-v2.5-pro-plus");
+    });
+    await act(async () => {
+      await result.current.saveProfile();
+    });
+
+    await waitFor(() => {
+      expect(result.current.profiles).toHaveLength(1);
+    });
+    expect(result.current.profiles[0]).toMatchObject({
+      providerId: "mimo",
+      model: "mimo-v2.5-pro",
+      customModels: [
+        expect.objectContaining({
+          id: "mimo-v2.5-pro-plus"
+        })
+      ]
+    });
+  });
+
   test("updates a selected local profile in memory", async () => {
     const { result } = renderModel();
 

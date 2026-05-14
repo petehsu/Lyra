@@ -65,9 +65,15 @@ fn required_model(profile: &AgentProviderProfile) -> Result<String> {
             "{} requires a model before Agent can run",
             profile.name
         ))
+    } else if profile.provider_id == "mimo" {
+        Ok(normalize_mimo_model_id(model))
     } else {
         Ok(model.to_string())
     }
+}
+
+fn normalize_mimo_model_id(model: &str) -> String {
+    model.trim().to_ascii_lowercase()
 }
 
 fn string_field(source: &Value, key: &str) -> Option<String> {
@@ -742,7 +748,10 @@ mod tests {
 
     #[test]
     fn builds_mimo_provider_for_both_api_formats() {
-        assert!(provider_from_profile(mimo_profile("api", "openai", None)).is_ok());
+        let mut openai = mimo_profile("api", "openai", None);
+        openai.model = "MiMo-V2.5-Pro".to_string();
+        let provider = provider_from_profile(openai).unwrap();
+        assert_eq!(provider.model(), "mimo-v2.5-pro");
         assert!(provider_from_profile(mimo_profile("token_plan", "anthropic", Some("cn"))).is_ok());
     }
 
