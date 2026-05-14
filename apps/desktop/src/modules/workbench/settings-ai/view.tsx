@@ -2,7 +2,6 @@ import { Save, Trash2 } from "lucide-react";
 import { useId, useState } from "react";
 
 import { LyraListPicker } from "../list-picker";
-import type { AiProviderFieldSchema } from "../../../shared/ai";
 import {
   additionalConnectionFields,
   readPrimaryConnectionValue,
@@ -10,6 +9,7 @@ import {
   resolvePrimarySecretFieldId,
   resolvePrimaryUrlFieldId
 } from "./draft";
+import { SettingsAiFieldRenderer } from "./field-renderer";
 import { SettingsAiProviderIcon } from "./icon-registry";
 import { SettingsAiModelPicker } from "./model-picker";
 import type { SettingsAiLabels, SettingsAiModel } from "./types";
@@ -33,13 +33,6 @@ type SettingsAiConfiguredProviderGroup = {
 type SettingsAiViewProps = {
   readonly labels: SettingsAiLabels;
   readonly model: SettingsAiModel;
-};
-
-const inputTypeForField = (field: AiProviderFieldSchema): "text" | "password" => {
-  if (field.kind === "password") {
-    return "password";
-  }
-  return "text";
 };
 
 const configuredModelCardsForProfile = (
@@ -267,21 +260,13 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
           )}
 
           {extraConnectionFields.map((field) => (
-            <label key={field.id} className="lyra-settings-ai-field">
-              <span>{field.label}</span>
-              <input
-                className="lyra-settings-ai-input"
-                type={inputTypeForField(field)}
-                value={model.draft.connectionConfig[field.id] ?? ""}
-                placeholder={field.placeholder}
-                onChange={(event) => {
-                  model.updateDraftField("connection", field.id, event.target.value);
-                }}
-              />
-              {field.description === undefined ? null : (
-                <small>{field.description}</small>
-              )}
-            </label>
+            <SettingsAiFieldRenderer
+              key={field.id}
+              field={field}
+              model={model}
+              labels={labels}
+              target="connection"
+            />
           ))}
 
           {secretFieldId === null ? null : (

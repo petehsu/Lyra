@@ -84,6 +84,33 @@ fn api_key(profile: &AgentProviderProfile) -> Option<String> {
         .or_else(|| string_field(&profile.auth_config, "api_key"))
 }
 
+fn mimo_route(profile: &AgentProviderProfile) -> String {
+    string_field(&profile.connection_config, "mimoRoute").unwrap_or_else(|| "api".to_string())
+}
+
+fn validated_mimo_api_key(profile: &AgentProviderProfile) -> Result<Option<String>> {
+    let Some(api_key) = api_key(profile) else {
+        return Ok(None);
+    };
+    if profile.provider_id != "mimo" {
+        return Ok(Some(api_key));
+    }
+    let route = mimo_route(profile);
+    if route == "token_plan" && !api_key.starts_with("tp-") {
+        return Err(anyhow!(
+            "{} Token Plan requires a tp- API key; the pay-as-you-go sk- key cannot be used there",
+            profile.name
+        ));
+    }
+    if route != "token_plan" && !api_key.starts_with("sk-") {
+        return Err(anyhow!(
+            "{} API requires an sk- API key; the Token Plan tp- key cannot be used there",
+            profile.name
+        ));
+    }
+    Ok(Some(api_key))
+}
+
 fn base_url(profile: &AgentProviderProfile, fallback: &str) -> String {
     string_field(&profile.connection_config, "baseUrl").unwrap_or_else(|| fallback.to_string())
 }
@@ -92,8 +119,7 @@ fn mimo_base_url(profile: &AgentProviderProfile, protocol: &str) -> Option<Strin
     if profile.provider_id != "mimo" {
         return None;
     }
-    let route =
-        string_field(&profile.connection_config, "mimoRoute").unwrap_or_else(|| "api".to_string());
+    let route = mimo_route(profile);
     if route == "token_plan" {
         let region = string_field(&profile.connection_config, "mimoRegion")
             .unwrap_or_else(|| "cn".to_string());
@@ -171,7 +197,7 @@ impl OpenAiCompatibleProvider {
             base_url.push_str("/v1");
         }
         Ok(Self {
-            api_key: api_key(&profile),
+            api_key: validated_mimo_api_key(&profile)?,
             profile,
             base_url,
             model,
@@ -209,7 +235,7 @@ impl Provider for OpenAiCompatibleProvider {
             .json(&body);
         if let Some(api_key) = &self.api_key {
             request = if self.profile.provider_id == "mimo" {
-                request.header("api-key", api_key)
+                request.header("api-key", api_key).bearer_auth(api_key)
             } else {
                 request.bearer_auth(api_key)
             };
@@ -295,8 +321,8 @@ struct AnthropicMessagesProvider {
 impl AnthropicMessagesProvider {
     fn new(profile: AgentProviderProfile) -> Result<Self> {
         let model = required_model(&profile)?;
-        let api_key =
-            api_key(&profile).ok_or_else(|| anyhow!("{} requires an API key", profile.name))?;
+        let api_key = validated_mimo_api_key(&profile)?
+            .ok_or_else(|| anyhow!("{} requires an API key", profile.name))?;
         Ok(Self {
             base_url: mimo_base_url(&profile, "anthropic")
                 .unwrap_or_else(|| base_url(&profile, "https://api.anthropic.com"))
@@ -328,20 +354,15 @@ impl Provider for AnthropicMessagesProvider {
             })).collect::<Vec<_>>(),
             "stream": true,
         });
-        let response = shared_http_client()
+        let mut request = shared_http_client()
             .post(format!("{}/v1/messages", self.base_url))
-            .header(
-                if self.profile.provider_id == "mimo" {
-                    "api-key"
-                } else {
-                    "x-api-key"
-                },
-                &self.api_key,
-            )
+            .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
-            .json(&body)
-            .send()
-            .await?;
+            .json(&body);
+        if self.profile.provider_id == "mimo" {
+            request = request.header("api-key", &self.api_key);
+        }
+        let response = request.send().await?;
         if !response.status().is_success() {
             return Err(anyhow!(
                 "{} request failed: {}",
@@ -511,7 +532,9 @@ mod tests {
             protocol_id: "mimo_openai_chat_completions".to_string(),
             runtime_supported: true,
             connection_config,
-            auth_config: json!({ "apiKey": "sk-test" }),
+            auth_config: json!({
+                "apiKey": if route == "token_plan" { "tp-test" } else { "sk-test" },
+            }),
             model: "mimo-v2.5-pro".to_string(),
         }
     }
@@ -551,6 +574,25 @@ mod tests {
     fn builds_mimo_provider_for_both_api_formats() {
         assert!(provider_from_profile(mimo_profile("api", "openai", None)).is_ok());
         assert!(provider_from_profile(mimo_profile("token_plan", "anthropic", Some("cn"))).is_ok());
+    }
+
+    #[test]
+    fn rejects_mimo_key_route_mismatches_before_request() {
+        let mut token_plan = mimo_profile("token_plan", "openai", Some("cn"));
+        token_plan.auth_config = json!({ "apiKey": "sk-wrong" });
+        let token_error = match provider_from_profile(token_plan) {
+            Ok(_) => panic!("expected token plan sk key to fail"),
+            Err(error) => error.to_string(),
+        };
+        assert!(token_error.contains("requires a tp- API key"));
+
+        let mut api = mimo_profile("api", "openai", None);
+        api.auth_config = json!({ "apiKey": "tp-wrong" });
+        let api_error = match provider_from_profile(api) {
+            Ok(_) => panic!("expected api tp key to fail"),
+            Err(error) => error.to_string(),
+        };
+        assert!(api_error.contains("requires an sk- API key"));
     }
 
     #[test]
