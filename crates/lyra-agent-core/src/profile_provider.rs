@@ -123,30 +123,41 @@ fn base_url(profile: &AgentProviderProfile, fallback: &str) -> String {
     string_field(&profile.connection_config, "baseUrl").unwrap_or_else(|| fallback.to_string())
 }
 
-fn mimo_base_url(profile: &AgentProviderProfile, protocol: &str) -> Option<String> {
+fn mimo_base_urls(profile: &AgentProviderProfile, protocol: &str) -> Vec<String> {
     if profile.provider_id != "mimo" {
-        return None;
+        return Vec::new();
     }
     let route = mimo_route(profile);
     if route == "token_plan" {
-        let region = string_field(&profile.connection_config, "mimoRegion")
+        let selected_region = string_field(&profile.connection_config, "mimoRegion")
             .unwrap_or_else(|| "cn".to_string());
-        let host = match region.as_str() {
-            "sgp" => "https://token-plan-sgp.xiaomimimo.com",
-            "ams" => "https://token-plan-ams.xiaomimimo.com",
-            _ => "https://token-plan-cn.xiaomimimo.com",
-        };
-        return Some(if protocol == "anthropic" {
-            format!("{host}/anthropic")
-        } else {
-            format!("{host}/v1")
-        });
+        let mut regions = vec![selected_region.as_str()];
+        for fallback in ["cn", "sgp", "ams"] {
+            if !regions.contains(&fallback) {
+                regions.push(fallback);
+            }
+        }
+        return regions
+            .into_iter()
+            .map(|region| {
+                let host = match region {
+                    "sgp" => "https://token-plan-sgp.xiaomimimo.com",
+                    "ams" => "https://token-plan-ams.xiaomimimo.com",
+                    _ => "https://token-plan-cn.xiaomimimo.com",
+                };
+                if protocol == "anthropic" {
+                    format!("{host}/anthropic")
+                } else {
+                    format!("{host}/v1")
+                }
+            })
+            .collect();
     }
-    Some(if protocol == "anthropic" {
+    vec![if protocol == "anthropic" {
         "https://api.xiaomimimo.com/anthropic".to_string()
     } else {
         "https://api.xiaomimimo.com/v1".to_string()
-    })
+    }]
 }
 
 fn mimo_config_summary(profile: &AgentProviderProfile, protocol: &str) -> String {
@@ -157,6 +168,58 @@ fn mimo_config_summary(profile: &AgentProviderProfile, protocol: &str) -> String
         format!("MiMo Token Plan/{protocol}/{region}")
     } else {
         format!("MiMo API/{protocol}")
+    }
+}
+
+#[derive(Clone, Copy)]
+enum OpenAiAuthMode {
+    ApiKey,
+    Bearer,
+    Both,
+}
+
+impl OpenAiAuthMode {
+    fn apply(self, request: reqwest::RequestBuilder, api_key: &str) -> reqwest::RequestBuilder {
+        match self {
+            Self::ApiKey => request.header("api-key", api_key),
+            Self::Bearer => request.bearer_auth(api_key),
+            Self::Both => request.header("api-key", api_key).bearer_auth(api_key),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::ApiKey => "api-key",
+            Self::Bearer => "bearer",
+            Self::Both => "api-key+bearer",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum AnthropicAuthMode {
+    ApiKey,
+    XApiKey,
+    Both,
+}
+
+impl AnthropicAuthMode {
+    fn apply(self, request: reqwest::RequestBuilder, api_key: &str) -> reqwest::RequestBuilder {
+        match self {
+            Self::ApiKey => request.header("api-key", api_key),
+            Self::XApiKey => request.header("x-api-key", api_key),
+            Self::Both => request
+                .header("api-key", api_key)
+                .header("x-api-key", api_key),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::ApiKey => "api-key",
+            Self::XApiKey => "x-api-key",
+            Self::Both => "api-key+x-api-key",
+        }
     }
 }
 
@@ -191,7 +254,7 @@ fn boxed_once_text(text: String) -> EventStream {
 #[derive(Clone)]
 struct OpenAiCompatibleProvider {
     profile: AgentProviderProfile,
-    base_url: String,
+    base_urls: Vec<String>,
     api_key: Option<String>,
     model: String,
 }
@@ -208,17 +271,25 @@ impl OpenAiCompatibleProvider {
             _ => "https://api.openai.com/v1",
         };
         let model = required_model(&profile)?;
-        let mut base_url = mimo_base_url(&profile, "openai")
-            .unwrap_or_else(|| base_url(&profile, fallback))
-            .trim_end_matches('/')
-            .to_string();
-        if profile.protocol_id == "ollama_chat" && !base_url.ends_with("/v1") {
-            base_url.push_str("/v1");
+        let mut base_urls = if profile.provider_id == "mimo" {
+            mimo_base_urls(&profile, "openai")
+        } else {
+            vec![base_url(&profile, fallback)]
+        }
+        .into_iter()
+        .map(|url| url.trim_end_matches('/').to_string())
+        .collect::<Vec<_>>();
+        if profile.protocol_id == "ollama_chat" {
+            for base_url in &mut base_urls {
+                if !base_url.ends_with("/v1") {
+                    base_url.push_str("/v1");
+                }
+            }
         }
         Ok(Self {
             api_key: required_provider_api_key(&profile)?,
             profile,
-            base_url,
+            base_urls,
             model,
         })
     }
@@ -249,37 +320,56 @@ impl Provider for OpenAiCompatibleProvider {
             "messages": payload_messages,
             "stream": true,
         });
-        let mut request = shared_http_client()
-            .post(format!("{}/chat/completions", self.base_url))
-            .json(&body);
-        if let Some(api_key) = &self.api_key {
-            request = if self.profile.provider_id == "mimo" {
-                request.header("api-key", api_key)
-            } else {
-                request.bearer_auth(api_key)
-            };
-        }
-        if self.profile.provider_id == "openrouter" {
-            request = request
-                .header("HTTP-Referer", "https://lyra.local")
-                .header("X-Title", "Lyra");
-        }
-        let response = request.send().await?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            if self.profile.provider_id == "mimo" && status.as_u16() == 401 {
-                return Err(anyhow!(
-                    "{} request failed with 401 invalid key for {} at {}. Check that the API key belongs to this MiMo route and cluster. Upstream response: {}",
-                    self.profile.name,
-                    mimo_config_summary(&self.profile, "openai"),
-                    self.base_url,
-                    body
+        let mut failures = Vec::new();
+        let auth_modes = if self.profile.provider_id == "mimo" {
+            vec![
+                OpenAiAuthMode::ApiKey,
+                OpenAiAuthMode::Bearer,
+                OpenAiAuthMode::Both,
+            ]
+        } else {
+            vec![OpenAiAuthMode::Bearer]
+        };
+        for base_url in &self.base_urls {
+            for auth_mode in &auth_modes {
+                let mut request = shared_http_client()
+                    .post(format!("{base_url}/chat/completions"))
+                    .json(&body);
+                if let Some(api_key) = &self.api_key {
+                    request = auth_mode.apply(request, api_key);
+                }
+                if self.profile.provider_id == "openrouter" {
+                    request = request
+                        .header("HTTP-Referer", "https://lyra.local")
+                        .header("X-Title", "Lyra");
+                }
+                let response = request.send().await?;
+                if response.status().is_success() {
+                    return Ok(parse_openai_sse(response.bytes_stream()));
+                }
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                failures.push(format!(
+                    "{base_url} via {} -> {status}: {body}",
+                    auth_mode.label()
                 ));
             }
-            return Err(anyhow!("{} request failed: {}", self.profile.name, body));
         }
-        Ok(parse_openai_sse(response.bytes_stream()))
+
+        if self.profile.provider_id == "mimo" {
+            return Err(anyhow!(
+                "{} request failed for {} after trying all MiMo Token Plan/API routes. Attempts: {}",
+                self.profile.name,
+                mimo_config_summary(&self.profile, "openai"),
+                failures.join(" | ")
+            ));
+        }
+
+        Err(anyhow!(
+            "{} request failed: {}",
+            self.profile.name,
+            failures.join(" | ")
+        ))
     }
 
     fn name(&self) -> &str {
@@ -339,7 +429,7 @@ where
 #[derive(Clone)]
 struct AnthropicMessagesProvider {
     profile: AgentProviderProfile,
-    base_url: String,
+    base_urls: Vec<String>,
     api_key: String,
     model: String,
 }
@@ -350,10 +440,14 @@ impl AnthropicMessagesProvider {
         let api_key = validated_mimo_api_key(&profile)?
             .ok_or_else(|| anyhow!("{} requires an API key", profile.name))?;
         Ok(Self {
-            base_url: mimo_base_url(&profile, "anthropic")
-                .unwrap_or_else(|| base_url(&profile, "https://api.anthropic.com"))
-                .trim_end_matches('/')
-                .to_string(),
+            base_urls: if profile.provider_id == "mimo" {
+                mimo_base_urls(&profile, "anthropic")
+            } else {
+                vec![base_url(&profile, "https://api.anthropic.com")]
+            }
+            .into_iter()
+            .map(|url| url.trim_end_matches('/').to_string())
+            .collect(),
             profile,
             api_key,
             model,
@@ -380,23 +474,54 @@ impl Provider for AnthropicMessagesProvider {
             })).collect::<Vec<_>>(),
             "stream": true,
         });
-        let mut request = shared_http_client()
-            .post(format!("{}/v1/messages", self.base_url))
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .json(&body);
-        if self.profile.provider_id == "mimo" {
-            request = request.header("api-key", &self.api_key);
+        let mut failures = Vec::new();
+        let auth_modes = if self.profile.provider_id == "mimo" {
+            vec![
+                AnthropicAuthMode::ApiKey,
+                AnthropicAuthMode::XApiKey,
+                AnthropicAuthMode::Both,
+            ]
+        } else {
+            vec![AnthropicAuthMode::XApiKey]
+        };
+        for base_url in &self.base_urls {
+            for auth_mode in &auth_modes {
+                let response = auth_mode
+                    .apply(
+                        shared_http_client()
+                            .post(format!("{base_url}/v1/messages"))
+                            .header("anthropic-version", "2023-06-01")
+                            .json(&body),
+                        &self.api_key,
+                    )
+                    .send()
+                    .await?;
+                if response.status().is_success() {
+                    return Ok(parse_anthropic_sse(response.bytes_stream()));
+                }
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                failures.push(format!(
+                    "{base_url} via {} -> {status}: {body}",
+                    auth_mode.label()
+                ));
+            }
         }
-        let response = request.send().await?;
-        if !response.status().is_success() {
+
+        if self.profile.provider_id == "mimo" {
             return Err(anyhow!(
-                "{} request failed: {}",
+                "{} request failed for {} after trying all MiMo Token Plan/API routes. Attempts: {}",
                 self.profile.name,
-                response.text().await.unwrap_or_default()
+                mimo_config_summary(&self.profile, "anthropic"),
+                failures.join(" | ")
             ));
         }
-        Ok(parse_anthropic_sse(response.bytes_stream()))
+
+        Err(anyhow!(
+            "{} request failed: {}",
+            self.profile.name,
+            failures.join(" | ")
+        ))
     }
 
     fn name(&self) -> &str {
@@ -575,24 +700,43 @@ mod tests {
     #[test]
     fn maps_mimo_api_and_token_plan_base_urls() {
         assert_eq!(
-            mimo_base_url(&mimo_profile("api", "openai", None), "openai").as_deref(),
+            mimo_base_urls(&mimo_profile("api", "openai", None), "openai")
+                .first()
+                .map(String::as_str),
             Some("https://api.xiaomimimo.com/v1")
         );
         assert_eq!(
-            mimo_base_url(&mimo_profile("api", "anthropic", None), "anthropic").as_deref(),
+            mimo_base_urls(&mimo_profile("api", "anthropic", None), "anthropic")
+                .first()
+                .map(String::as_str),
             Some("https://api.xiaomimimo.com/anthropic")
         );
         assert_eq!(
-            mimo_base_url(&mimo_profile("token_plan", "openai", Some("sgp")), "openai").as_deref(),
+            mimo_base_urls(&mimo_profile("token_plan", "openai", Some("sgp")), "openai")
+                .first()
+                .map(String::as_str),
             Some("https://token-plan-sgp.xiaomimimo.com/v1")
         );
         assert_eq!(
-            mimo_base_url(
+            mimo_base_urls(
                 &mimo_profile("token_plan", "anthropic", Some("ams")),
                 "anthropic"
             )
-            .as_deref(),
+            .first()
+            .map(String::as_str),
             Some("https://token-plan-ams.xiaomimimo.com/anthropic")
+        );
+    }
+
+    #[test]
+    fn token_plan_base_urls_try_selected_region_first_then_fallbacks() {
+        assert_eq!(
+            mimo_base_urls(&mimo_profile("token_plan", "openai", Some("ams")), "openai"),
+            vec![
+                "https://token-plan-ams.xiaomimimo.com/v1",
+                "https://token-plan-cn.xiaomimimo.com/v1",
+                "https://token-plan-sgp.xiaomimimo.com/v1",
+            ]
         );
     }
 
