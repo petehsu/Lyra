@@ -1,6 +1,31 @@
 import type { AiProviderPreset } from "../../../../shared/ai";
 import { apiKeyField } from "./shared";
 
+const mimoProtocolField = () => ({
+  id: "mimoProtocol",
+  label: "API format",
+  kind: "select" as const,
+  scope: "connection" as const,
+  required: true,
+  options: [
+    { value: "openai", label: "OpenAI compatible" },
+    { value: "anthropic", label: "Anthropic compatible" }
+  ]
+});
+
+const mimoRegionField = () => ({
+  id: "mimoRegion",
+  label: "Token Plan cluster",
+  kind: "select" as const,
+  scope: "connection" as const,
+  required: true,
+  options: [
+    { value: "cn", label: "China" },
+    { value: "sgp", label: "Singapore" },
+    { value: "ams", label: "Europe" }
+  ]
+});
+
 const mimoPreset = ({
   id,
   label,
@@ -26,11 +51,15 @@ const mimoPreset = ({
   modelDiscoverySupported: true,
   customHeadersSupported: false,
   customModelsSupported: false,
-  runtimeSupported: false,
-  simpleFields: ["apiKey"],
-  connectionFields: [],
+  runtimeSupported: true,
+  simpleFields: route === "token_plan" ? ["mimoProtocol", "mimoRegion", "apiKey"] : ["mimoProtocol", "apiKey"],
+  connectionFields: route === "token_plan" ? [mimoProtocolField(), mimoRegionField()] : [mimoProtocolField()],
   authFields: [apiKeyField(true, keyPlaceholder)],
-  defaultConnectionConfig: { mimoRoute: route },
+  defaultConnectionConfig: {
+    mimoRoute: route,
+    mimoProtocol: "openai",
+    ...(route === "token_plan" ? { mimoRegion: "cn" } : {})
+  },
   defaultAuthConfig: {},
   recommendedModels: []
 });

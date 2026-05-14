@@ -37,6 +37,15 @@ pub fn provider_from_profile(profile: AgentProviderProfile) -> Result<Box<dyn Pr
     match profile.protocol_id.as_str() {
         "anthropic_messages" => Ok(Box::new(AnthropicMessagesProvider::new(profile)?)),
         "gemini_generate_content" => Ok(Box::new(GeminiGenerateContentProvider::new(profile)?)),
+        "mimo_openai_chat_completions" => {
+            let protocol = string_field(&profile.connection_config, "mimoProtocol")
+                .unwrap_or_else(|| "openai".to_string());
+            if protocol == "anthropic" {
+                Ok(Box::new(AnthropicMessagesProvider::new(profile)?))
+            } else {
+                Ok(Box::new(OpenAiCompatibleProvider::new(profile)?))
+            }
+        }
         "openai_chat_completions"
         | "openai_responses"
         | "openrouter_chat_completions"
@@ -79,6 +88,33 @@ fn base_url(profile: &AgentProviderProfile, fallback: &str) -> String {
     string_field(&profile.connection_config, "baseUrl").unwrap_or_else(|| fallback.to_string())
 }
 
+fn mimo_base_url(profile: &AgentProviderProfile, protocol: &str) -> Option<String> {
+    if profile.provider_id != "mimo" {
+        return None;
+    }
+    let route =
+        string_field(&profile.connection_config, "mimoRoute").unwrap_or_else(|| "api".to_string());
+    if route == "token_plan" {
+        let region = string_field(&profile.connection_config, "mimoRegion")
+            .unwrap_or_else(|| "cn".to_string());
+        let host = match region.as_str() {
+            "sgp" => "https://token-plan-sgp.xiaomimimo.com",
+            "ams" => "https://token-plan-ams.xiaomimimo.com",
+            _ => "https://token-plan-cn.xiaomimimo.com",
+        };
+        return Some(if protocol == "anthropic" {
+            format!("{host}/anthropic")
+        } else {
+            format!("{host}/v1")
+        });
+    }
+    Some(if protocol == "anthropic" {
+        "https://api.xiaomimimo.com/anthropic".to_string()
+    } else {
+        "https://api.xiaomimimo.com/v1".to_string()
+    })
+}
+
 fn message_text(message: &Message) -> String {
     message
         .content
@@ -118,6 +154,7 @@ struct OpenAiCompatibleProvider {
 impl OpenAiCompatibleProvider {
     fn new(profile: AgentProviderProfile) -> Result<Self> {
         let fallback = match profile.protocol_id.as_str() {
+            "mimo_openai_chat_completions" => "https://api.xiaomimimo.com/v1",
             "openrouter_chat_completions" => "https://openrouter.ai/api/v1",
             "ollama_chat" => "http://127.0.0.1:11434/v1",
             "lmstudio_chat_completions" => "http://127.0.0.1:1234/v1",
@@ -126,7 +163,8 @@ impl OpenAiCompatibleProvider {
             _ => "https://api.openai.com/v1",
         };
         let model = required_model(&profile)?;
-        let mut base_url = base_url(&profile, fallback)
+        let mut base_url = mimo_base_url(&profile, "openai")
+            .unwrap_or_else(|| base_url(&profile, fallback))
             .trim_end_matches('/')
             .to_string();
         if profile.protocol_id == "ollama_chat" && !base_url.ends_with("/v1") {
@@ -170,7 +208,11 @@ impl Provider for OpenAiCompatibleProvider {
             .post(format!("{}/chat/completions", self.base_url))
             .json(&body);
         if let Some(api_key) = &self.api_key {
-            request = request.bearer_auth(api_key);
+            request = if self.profile.provider_id == "mimo" {
+                request.header("api-key", api_key)
+            } else {
+                request.bearer_auth(api_key)
+            };
         }
         if self.profile.provider_id == "openrouter" {
             request = request
@@ -256,7 +298,8 @@ impl AnthropicMessagesProvider {
         let api_key =
             api_key(&profile).ok_or_else(|| anyhow!("{} requires an API key", profile.name))?;
         Ok(Self {
-            base_url: base_url(&profile, "https://api.anthropic.com")
+            base_url: mimo_base_url(&profile, "anthropic")
+                .unwrap_or_else(|| base_url(&profile, "https://api.anthropic.com"))
                 .trim_end_matches('/')
                 .to_string(),
             profile,
@@ -287,7 +330,14 @@ impl Provider for AnthropicMessagesProvider {
         });
         let response = shared_http_client()
             .post(format!("{}/v1/messages", self.base_url))
-            .header("x-api-key", &self.api_key)
+            .header(
+                if self.profile.provider_id == "mimo" {
+                    "api-key"
+                } else {
+                    "x-api-key"
+                },
+                &self.api_key,
+            )
             .header("anthropic-version", "2023-06-01")
             .json(&body)
             .send()
@@ -446,11 +496,61 @@ mod tests {
         }
     }
 
+    fn mimo_profile(route: &str, protocol: &str, region: Option<&str>) -> AgentProviderProfile {
+        let mut connection_config = json!({
+            "mimoRoute": route,
+            "mimoProtocol": protocol,
+        });
+        if let Some(region) = region {
+            connection_config["mimoRegion"] = json!(region);
+        }
+        AgentProviderProfile {
+            id: "mimo-profile".to_string(),
+            name: "Xiaomi MiMo".to_string(),
+            provider_id: "mimo".to_string(),
+            protocol_id: "mimo_openai_chat_completions".to_string(),
+            runtime_supported: true,
+            connection_config,
+            auth_config: json!({ "apiKey": "sk-test" }),
+            model: "mimo-v2.5-pro".to_string(),
+        }
+    }
+
     #[test]
     fn builds_openai_compatible_provider_from_profile() {
         let provider = provider_from_profile(profile("openai_chat_completions")).unwrap();
         assert_eq!(provider.model(), "test-model");
         assert_eq!(provider.name(), "Test Provider");
+    }
+
+    #[test]
+    fn maps_mimo_api_and_token_plan_base_urls() {
+        assert_eq!(
+            mimo_base_url(&mimo_profile("api", "openai", None), "openai").as_deref(),
+            Some("https://api.xiaomimimo.com/v1")
+        );
+        assert_eq!(
+            mimo_base_url(&mimo_profile("api", "anthropic", None), "anthropic").as_deref(),
+            Some("https://api.xiaomimimo.com/anthropic")
+        );
+        assert_eq!(
+            mimo_base_url(&mimo_profile("token_plan", "openai", Some("sgp")), "openai").as_deref(),
+            Some("https://token-plan-sgp.xiaomimimo.com/v1")
+        );
+        assert_eq!(
+            mimo_base_url(
+                &mimo_profile("token_plan", "anthropic", Some("ams")),
+                "anthropic"
+            )
+            .as_deref(),
+            Some("https://token-plan-ams.xiaomimimo.com/anthropic")
+        );
+    }
+
+    #[test]
+    fn builds_mimo_provider_for_both_api_formats() {
+        assert!(provider_from_profile(mimo_profile("api", "openai", None)).is_ok());
+        assert!(provider_from_profile(mimo_profile("token_plan", "anthropic", Some("cn"))).is_ok());
     }
 
     #[test]

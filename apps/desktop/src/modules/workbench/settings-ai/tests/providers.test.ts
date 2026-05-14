@@ -10,12 +10,18 @@ describe("settings-ai provider presets", () => {
       "mimo_api",
       "mimo_token_plan"
     ]);
-    expect(mimoPresets.every((preset) => preset.connectionFields.length === 0)).toBe(true);
+    expect(mimoPresets.every((preset) =>
+      preset.connectionFields.some((field) => field.id === "mimoProtocol")
+    )).toBe(true);
+    expect(mimoPresets.find((preset) => preset.id === "mimo_token_plan")?.connectionFields.some((field) =>
+      field.id === "mimoRegion"
+    )).toBe(true);
     expect(mimoPresets.every((preset) => preset.authFields.some((field) => field.id === "apiKey"))).toBe(true);
+    expect(mimoPresets.every((preset) => preset.runtimeSupported)).toBe(true);
   });
 
   test("keeps hosted provider URLs internal and exposes local/custom connection fields", () => {
-    const hostedProviderIds = new Set(["openai", "anthropic", "google_ai", "mimo"]);
+    const hostedProviderIds = new Set(["openai", "anthropic", "google_ai"]);
     const hostedPresets = AI_PROVIDER_PRESETS.filter((preset) => hostedProviderIds.has(preset.providerId));
     const editablePresets = AI_PROVIDER_PRESETS.filter((preset) =>
       preset.section === "local" || preset.section === "custom"
@@ -69,7 +75,7 @@ describe("settings-ai provider presets", () => {
     expect(openRouter?.runtimeSupported).toBe(true);
 
     const unwired = AI_PROVIDER_PRESETS.filter((preset) =>
-      ["copilot", "antigravity", "cursor", "aws_bedrock", "mimo"].includes(preset.providerId)
+      ["copilot", "antigravity", "cursor", "aws_bedrock"].includes(preset.providerId)
     );
     expect(unwired.every((preset) => preset.runtimeSupported === false)).toBe(true);
   });
