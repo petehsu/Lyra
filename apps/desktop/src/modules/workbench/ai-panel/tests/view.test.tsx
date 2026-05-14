@@ -22,10 +22,11 @@ const snapshot: AgentSessionSnapshot = {
 
 const createDesktopApi = () => {
   let listener: ((event: AgentRuntimeEvent) => void) | null = null;
+  let readSnapshot = snapshot;
   const api = {
     agent: {
       createSession: vi.fn(async () => snapshot),
-      readSession: vi.fn(async () => snapshot),
+      readSession: vi.fn(async () => readSnapshot),
       sendTurn: vi.fn(async () => ({
         sessionId: "session-1",
         turnId: "turn-1",
@@ -49,6 +50,9 @@ const createDesktopApi = () => {
     api,
     emit: (event: AgentRuntimeEvent) => {
       listener?.(event);
+    },
+    setReadSnapshot: (nextSnapshot: AgentSessionSnapshot) => {
+      readSnapshot = nextSnapshot;
     }
   };
 };
@@ -196,11 +200,21 @@ describe("AiPanelSurface", () => {
   });
 
   test("does not leave a finished empty assistant response as an ellipsis", async () => {
-    const { api, emit } = createDesktopApi();
+    const { api, emit, setReadSnapshot } = createDesktopApi();
     renderPanel(api);
 
     await waitFor(() => {
       expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+    });
+    setReadSnapshot({
+      ...snapshot,
+      messages: [{
+        id: "message-empty",
+        role: "assistant",
+        text: "",
+        createdAt: "2026-05-13T00:00:01.000Z"
+      }],
+      turnStatus: "finished"
     });
     act(() => {
       emit({
@@ -223,5 +237,46 @@ describe("AiPanelSurface", () => {
 
     expect(await screen.findByText("No response text received.")).toBeInTheDocument();
     expect(screen.queryByText("...")).not.toBeInTheDocument();
+  });
+
+  test("refreshes the final session snapshot when a turn finishes", async () => {
+    const { api, emit, setReadSnapshot } = createDesktopApi();
+    renderPanel(api);
+
+    await waitFor(() => {
+      expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+    });
+    act(() => {
+      emit({
+        kind: "messageAppended",
+        sessionId: "session-1",
+        message: {
+          id: "message-refresh",
+          role: "assistant",
+          text: "",
+          createdAt: "2026-05-13T00:00:01.000Z"
+        }
+      });
+    });
+    setReadSnapshot({
+      ...snapshot,
+      messages: [{
+        id: "message-refresh",
+        role: "assistant",
+        text: "Recovered final response",
+        createdAt: "2026-05-13T00:00:01.000Z"
+      }],
+      turnStatus: "finished"
+    });
+    act(() => {
+      emit({
+        kind: "turnFinished",
+        sessionId: "session-1",
+        turnId: "turn-1",
+        status: "finished"
+      });
+    });
+
+    expect(await screen.findByText("Recovered final response")).toBeInTheDocument();
   });
 });

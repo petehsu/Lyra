@@ -595,7 +595,7 @@ fn set_follow_activity(session_id: &str, activity: &str) {
 }
 
 fn finish_turn(session_id: &str, turn_id: &str, status: TurnStatus) {
-    let _ = with_session(session_id, |session| {
+    let snapshot = with_session_snapshot(session_id, |session| {
         session.snapshot.turn_status = status.clone();
         session.snapshot.active_turn_id = None;
         session.snapshot.follow = AgentFollowState {
@@ -604,7 +604,11 @@ fn finish_turn(session_id: &str, turn_id: &str, status: TurnStatus) {
         };
         session.snapshot.updated_at = Utc::now();
         session.interrupt = None;
+        session.snapshot.clone()
     });
+    if let Ok(snapshot) = snapshot {
+        emit_event(AgentRuntimeEvent::SessionSnapshot { snapshot });
+    }
     emit_event(AgentRuntimeEvent::TurnFinished {
         session_id: session_id.to_string(),
         turn_id: turn_id.to_string(),
@@ -620,7 +624,7 @@ fn finish_turn(session_id: &str, turn_id: &str, status: TurnStatus) {
 }
 
 fn fail_turn(session_id: &str, turn_id: &str, message: String) {
-    let _ = with_session(session_id, |session| {
+    let snapshot = with_session_snapshot(session_id, |session| {
         session.snapshot.turn_status = TurnStatus::Failed;
         session.snapshot.active_turn_id = None;
         session.snapshot.follow = AgentFollowState {
@@ -629,7 +633,11 @@ fn fail_turn(session_id: &str, turn_id: &str, message: String) {
         };
         session.snapshot.updated_at = Utc::now();
         session.interrupt = None;
+        session.snapshot.clone()
     });
+    if let Ok(snapshot) = snapshot {
+        emit_event(AgentRuntimeEvent::SessionSnapshot { snapshot });
+    }
     emit_event(AgentRuntimeEvent::TurnFailed {
         session_id: session_id.to_string(),
         turn_id: turn_id.to_string(),

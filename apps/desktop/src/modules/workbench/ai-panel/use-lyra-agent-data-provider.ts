@@ -280,6 +280,14 @@ export const useLyraAgentDataProvider = (
     const agentApi = desktopApi.agent;
     const unsubscribe = agentApi.onEvent((event) => {
       dispatch({ type: "event", event });
+      if (event.kind === "turnFinished" || event.kind === "turnFailed") {
+        void agentApi.readSession({ sessionId: event.sessionId })
+          .then((snapshot) => {
+            if (disposed) return;
+            dispatch({ type: "snapshot", snapshot });
+          })
+          .catch(() => undefined);
+      }
     });
 
     void agentApi.readSession({ sessionId: lastAgentSessionId })
