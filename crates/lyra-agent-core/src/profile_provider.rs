@@ -111,6 +111,14 @@ fn validated_mimo_api_key(profile: &AgentProviderProfile) -> Result<Option<Strin
     Ok(Some(api_key))
 }
 
+fn required_provider_api_key(profile: &AgentProviderProfile) -> Result<Option<String>> {
+    let api_key = validated_mimo_api_key(profile)?;
+    if profile.provider_id == "mimo" && api_key.is_none() {
+        return Err(anyhow!("{} requires an API key", profile.name));
+    }
+    Ok(api_key)
+}
+
 fn base_url(profile: &AgentProviderProfile, fallback: &str) -> String {
     string_field(&profile.connection_config, "baseUrl").unwrap_or_else(|| fallback.to_string())
 }
@@ -139,6 +147,17 @@ fn mimo_base_url(profile: &AgentProviderProfile, protocol: &str) -> Option<Strin
     } else {
         "https://api.xiaomimimo.com/v1".to_string()
     })
+}
+
+fn mimo_config_summary(profile: &AgentProviderProfile, protocol: &str) -> String {
+    let route = mimo_route(profile);
+    if route == "token_plan" {
+        let region = string_field(&profile.connection_config, "mimoRegion")
+            .unwrap_or_else(|| "cn".to_string());
+        format!("MiMo Token Plan/{protocol}/{region}")
+    } else {
+        format!("MiMo API/{protocol}")
+    }
 }
 
 fn message_text(message: &Message) -> String {
@@ -197,7 +216,7 @@ impl OpenAiCompatibleProvider {
             base_url.push_str("/v1");
         }
         Ok(Self {
-            api_key: validated_mimo_api_key(&profile)?,
+            api_key: required_provider_api_key(&profile)?,
             profile,
             base_url,
             model,
@@ -235,7 +254,7 @@ impl Provider for OpenAiCompatibleProvider {
             .json(&body);
         if let Some(api_key) = &self.api_key {
             request = if self.profile.provider_id == "mimo" {
-                request.header("api-key", api_key).bearer_auth(api_key)
+                request.header("api-key", api_key)
             } else {
                 request.bearer_auth(api_key)
             };
@@ -247,11 +266,18 @@ impl Provider for OpenAiCompatibleProvider {
         }
         let response = request.send().await?;
         if !response.status().is_success() {
-            return Err(anyhow!(
-                "{} request failed: {}",
-                self.profile.name,
-                response.text().await.unwrap_or_default()
-            ));
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            if self.profile.provider_id == "mimo" && status.as_u16() == 401 {
+                return Err(anyhow!(
+                    "{} request failed with 401 invalid key for {} at {}. Check that the API key belongs to this MiMo route and cluster. Upstream response: {}",
+                    self.profile.name,
+                    mimo_config_summary(&self.profile, "openai"),
+                    self.base_url,
+                    body
+                ));
+            }
+            return Err(anyhow!("{} request failed: {}", self.profile.name, body));
         }
         Ok(parse_openai_sse(response.bytes_stream()))
     }
@@ -593,6 +619,17 @@ mod tests {
             Err(error) => error.to_string(),
         };
         assert!(api_error.contains("requires an sk- API key"));
+    }
+
+    #[test]
+    fn rejects_mimo_without_api_key_before_request() {
+        let mut profile = mimo_profile("token_plan", "openai", Some("cn"));
+        profile.auth_config = json!({});
+        let error = match provider_from_profile(profile) {
+            Ok(_) => panic!("expected missing MiMo key to fail"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("requires an API key"));
     }
 
     #[test]
