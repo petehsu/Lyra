@@ -205,7 +205,6 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
       "[\"'`]\\/quit\\b",
       "[\"'`]\\/exit\\b",
       "[\"'`]\\/logout\\b",
-      "[\"'`]\\/feedback\\b",
       "[\"'`]\\/apps\\b",
       "[\"'`]\\/plugins\\b",
       "[\"'`]\\/collab\\b",

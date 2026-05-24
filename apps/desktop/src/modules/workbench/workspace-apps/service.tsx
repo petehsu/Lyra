@@ -19,18 +19,46 @@ import {
   renderNotificationCenterAppIcon
 } from "../notifications/icon-registry";
 import {
-  renderResourceMonitorAppIcon,
-  type ResourceMonitorAppIconKey,
-  type ResourceMonitorAppId
-} from "../resource-monitor";
+  renderAgentSessionHistoryAppIcon,
+  type AgentSessionHistoryAppIconKey,
+  type AgentSessionHistoryAppId
+} from "../agent-session-history";
+import {
+  renderAgentProjectTreeAppIcon,
+  type AgentProjectTreeAppIconKey,
+  type AgentProjectTreeAppId
+} from "../agent-project-tree";
+import {
+  renderAgentGitAppIcon,
+  type AgentGitAppIconKey,
+  type AgentGitAppId
+} from "../agent-git";
+import {
+  renderAgentSelfDevAppIcon,
+  type AgentSelfDevAppIconKey,
+  type AgentSelfDevAppId
+} from "../agent-selfdev";
+import {
+  renderAgentOvernightAppIcon,
+  type AgentOvernightAppIconKey,
+  type AgentOvernightAppId
+} from "../agent-overnight";
 import type { WorkbenchAppId, WorkspaceAppIconKey } from "./types";
 
 const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactNode> = {
   "file-manager": (iconKey) => renderFileManagerAppIcon(iconKey as FileManagerAppIconKey),
   "file-editor": (iconKey) => renderFileEditorAppIcon(iconKey as FileEditorAppIconKey),
   "image-viewer": (iconKey) => renderImageViewerAppIcon(iconKey as ImageViewerAppIconKey),
-  "resource-monitor": (iconKey) =>
-    renderResourceMonitorAppIcon(iconKey as ResourceMonitorAppIconKey),
+  "agent-project-tree": (iconKey) =>
+    renderAgentProjectTreeAppIcon(iconKey as AgentProjectTreeAppIconKey),
+  "agent-git": (iconKey) =>
+    renderAgentGitAppIcon(iconKey as AgentGitAppIconKey),
+  "agent-selfdev": (iconKey) =>
+    renderAgentSelfDevAppIcon(iconKey as AgentSelfDevAppIconKey),
+  "agent-overnight": (iconKey) =>
+    renderAgentOvernightAppIcon(iconKey as AgentOvernightAppIconKey),
+  "agent-session-history": (iconKey) =>
+    renderAgentSessionHistoryAppIcon(iconKey as AgentSessionHistoryAppIconKey),
   "notification-center": (iconKey) =>
     renderNotificationCenterAppIcon(iconKey as "notification-center-default")
 };
@@ -56,8 +84,30 @@ export const isFileEditorAppId = (value: WorkbenchAppId): value is FileEditorApp
 export const isImageViewerAppId = (value: WorkbenchAppId): value is ImageViewerAppId =>
   value === "image-viewer";
 
-export const isResourceMonitorAppId = (value: WorkbenchAppId): value is ResourceMonitorAppId =>
-  value === "resource-monitor";
+export const isAgentProjectTreeAppId = (
+  value: WorkbenchAppId
+): value is AgentProjectTreeAppId =>
+  value === "agent-project-tree";
+
+export const isAgentGitAppId = (
+  value: WorkbenchAppId
+): value is AgentGitAppId =>
+  value === "agent-git";
+
+export const isAgentSelfDevAppId = (
+  value: WorkbenchAppId
+): value is AgentSelfDevAppId =>
+  value === "agent-selfdev";
+
+export const isAgentOvernightAppId = (
+  value: WorkbenchAppId
+): value is AgentOvernightAppId =>
+  value === "agent-overnight";
+
+export const isAgentSessionHistoryAppId = (
+  value: WorkbenchAppId
+): value is AgentSessionHistoryAppId =>
+  value === "agent-session-history";
 
 export const isNotificationCenterAppId = (value: WorkbenchAppId): value is "notification-center" =>
   value === "notification-center";

@@ -126,11 +126,7 @@ describe("aggregated search service", () => {
               updatedAt: "2026-03-27T00:00:00.000Z"
             }
           })),
-          requestRestart: vi.fn(async () => ({ ok: true as const })),
-          exportDiagnostics: vi.fn(async () => ({
-            ok: true,
-            filePath: "/tmp/linux-compat.json"
-          }))
+          requestRestart: vi.fn(async () => ({ ok: true as const }))
         },
         search: {
           aggregate,

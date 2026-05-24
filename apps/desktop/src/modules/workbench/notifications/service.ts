@@ -50,7 +50,11 @@ const APP_IDS = new Set<WorkbenchAppId>([
   "file-manager",
   "file-editor",
   "image-viewer",
-  "resource-monitor",
+  "agent-project-tree",
+  "agent-git",
+  "agent-selfdev",
+  "agent-overnight",
+  "agent-session-history",
   "notification-center"
 ]);
 
@@ -63,7 +67,11 @@ const APP_ICON_KEYS = new Set<WorkspaceAppIconKey>([
   "file-editor-readonly",
   "file-editor-unsupported",
   "image-viewer-default",
-  "resource-monitor-default",
+  "agent-project-tree-default",
+  "agent-git-default",
+  "agent-selfdev-default",
+  "agent-overnight-default",
+  "agent-session-history-default",
   "notification-center-default"
 ]);
 

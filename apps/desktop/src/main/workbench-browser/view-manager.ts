@@ -29,7 +29,6 @@ import type {
   BrowserTextExtractOptions
 } from "../workbench-observation/browser/types";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
-import type { ResourceRuntimeService } from "../resources/types";
 import {
   buildFrameDomProbeScript,
   normalizeFrameDomProbeResult
@@ -319,12 +318,10 @@ const toNativeInputEvent = (event: WorkbenchBrowserNativeInputEvent):
 export const createWorkbenchBrowserViewManager = ({
   getWindow,
   publishEvent,
-  resourceRuntime,
   onWebContentsCreated
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
-  readonly resourceRuntime?: ResourceRuntimeService;
   readonly onWebContentsCreated?: (tabId: string, webContents: WebContents) => () => void;
 }): WorkbenchBrowserViewManager => {
   const entries = new Map<string, BrowserPageEntry>();
@@ -375,7 +372,6 @@ export const createWorkbenchBrowserViewManager = ({
       kind: "page-runtime-state",
       page: nextRuntime
     });
-    syncEntryResource(entry);
   };
 
   const publishRuntimeState = (runtime: WorkbenchBrowserPageRuntimeState): void => {
@@ -383,29 +379,6 @@ export const createWorkbenchBrowserViewManager = ({
       kind: "page-runtime-state",
       page: runtime
     });
-  };
-
-  const syncBrowserResource = (runtime: WorkbenchBrowserPageRuntimeState): void => {
-    try {
-      resourceRuntime?.registerOrUpdate({
-        resourceId: `browser:${runtime.tabId}`,
-        kind: "browser-page",
-        label: runtime.title.length > 0 ? runtime.title : runtime.address,
-        viewId: `tab:${runtime.tabId}`,
-        stateKey: runtime.stateKey ?? `web-state:${runtime.tabId}`,
-        coreKey: runtime.coreKey ?? resolveBrowserCoreKey(runtime.address),
-        lifecycleState: runtime.lifecycleState ?? "hot-hidden",
-        tabId: runtime.tabId,
-        address: runtime.address,
-        visible: runtime.isVisible
-      });
-    } catch (error) {
-      console.warn(`[lyra-resources] browser resource sync failed ${String(error)}`);
-    }
-  };
-
-  const syncEntryResource = (entry: BrowserPageEntry): void => {
-    syncBrowserResource(entry.runtime);
   };
 
   const cancelTombstoneTimer = (tabId: string): void => {
@@ -497,7 +470,6 @@ export const createWorkbenchBrowserViewManager = ({
     destroyEntry(entry, false);
     entries.delete(entry.tabId);
     publishRuntimeState(runtime);
-    syncBrowserResource(runtime);
   };
 
   const scheduleTombstone = (entry: BrowserPageEntry): void => {
@@ -712,11 +684,6 @@ export const createWorkbenchBrowserViewManager = ({
     }
     if (emitClosedEvent) {
       tombstones.delete(entry.tabId);
-      try {
-        resourceRuntime?.remove(`browser:${entry.tabId}`);
-      } catch (error) {
-        console.warn(`[lyra-resources] browser resource remove failed ${String(error)}`);
-      }
       publishEvent({
         kind: "page-closed",
         tabId: entry.tabId
@@ -888,7 +855,6 @@ export const createWorkbenchBrowserViewManager = ({
       kind: "page-runtime-state",
       page: entry.runtime
     });
-    syncEntryResource(entry);
     return entry;
   };
 
@@ -930,7 +896,6 @@ export const createWorkbenchBrowserViewManager = ({
         runtime
       });
       publishRuntimeState(tombstones.get(spec.tabId)!.runtime);
-      syncBrowserResource(tombstones.get(spec.tabId)!.runtime);
       return null;
     }
     const restoredRuntime = tombstone?.runtime;
@@ -958,11 +923,6 @@ export const createWorkbenchBrowserViewManager = ({
         continue;
       }
       tombstones.delete(tabId);
-      try {
-        resourceRuntime?.remove(`browser:${tabId}`);
-      } catch (error) {
-        console.warn(`[lyra-resources] browser tombstone remove failed ${String(error)}`);
-      }
       publishEvent({
         kind: "page-closed",
         tabId

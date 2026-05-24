@@ -5,7 +5,10 @@ import type { FileManagerModel } from "../file-manager";
 import type { I18nKey, WorkbenchLocale } from "../i18n";
 import type { WorkbenchResolvedThemeId } from "../theme";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
-import { createResourceMonitorAppRequest } from "../resource-monitor";
+import {
+  AGENT_SESSION_HISTORY_INSTANCE_ID,
+  createAgentSessionHistoryAppRequest
+} from "../agent-session-history";
 import { resolveDocsEntryUrl } from "./service";
 import type { PanelLayoutModel } from "./use-panel-layout";
 
@@ -13,7 +16,7 @@ export type WorkbenchActionApi = {
   readonly openNewTab: () => void;
   readonly openSettings: () => void;
   readonly openFileManager: () => void;
-  readonly openActivityMonitor: () => void;
+  readonly openAgentSessionHistory: () => void;
   readonly openDocs: () => void;
   readonly toggleAiPanel: () => void;
   readonly toggleTerminalPanel: () => void;
@@ -38,7 +41,7 @@ export type WorkbenchChromeLabels = {
   readonly moveTerminalToBottom: string;
   readonly openSettings: string;
   readonly openFiles: string;
-  readonly openActivityMonitor: string;
+  readonly openAgentSessionHistory: string;
   readonly openDocs: string;
   readonly minimizeWindow: string;
   readonly toggleMaximizeWindow: string;
@@ -53,7 +56,7 @@ type UseWorkbenchActionApiParams = {
   readonly onBeforePanelLayoutAnimation?: () => Promise<void> | void;
   readonly docsEntryAddress: string;
   readonly docsTabTitle: string;
-  readonly activityMonitorTitle: string;
+  readonly agentSessionHistoryTitle: string;
   readonly locale: WorkbenchLocale;
   readonly resolvedThemeId: WorkbenchResolvedThemeId;
 };
@@ -66,7 +69,7 @@ export const useWorkbenchActionApi = ({
   onBeforePanelLayoutAnimation,
   docsEntryAddress,
   docsTabTitle,
-  activityMonitorTitle,
+  agentSessionHistoryTitle,
   locale,
   resolvedThemeId
 }: UseWorkbenchActionApiParams): WorkbenchActionApi =>
@@ -91,8 +94,18 @@ export const useWorkbenchActionApi = ({
         tabsModel.openAppTab(nextApp);
         void fileManagerModel.openHome(nextApp.appInstanceId);
       },
-      openActivityMonitor: () => {
-        tabsModel.openAppTab(createResourceMonitorAppRequest(activityMonitorTitle));
+      openAgentSessionHistory: () => {
+        const existingTab = tabsModel.tabs.find(
+          (tab) =>
+            tab.pageKind === "app" &&
+            tab.appId === "agent-session-history" &&
+            tab.appInstanceId === AGENT_SESSION_HISTORY_INSTANCE_ID
+        );
+        if (existingTab !== undefined) {
+          tabsModel.setActiveTab(existingTab.id);
+          return;
+        }
+        tabsModel.openAppTab(createAgentSessionHistoryAppRequest(agentSessionHistoryTitle));
       },
       openDocs: () => {
         tabsModel.openPageInNewTab(
@@ -126,7 +139,7 @@ export const useWorkbenchActionApi = ({
     desktopApi,
     docsEntryAddress,
     docsTabTitle,
-    activityMonitorTitle,
+    agentSessionHistoryTitle,
     fileManagerModel,
     locale,
     onBeforePanelLayoutAnimation,
@@ -146,7 +159,7 @@ export const createWorkbenchChromeLabels = (
   moveTerminalToBottom: t("panel.moveTerminalToBottom"),
   openSettings: t("settings.open"),
   openFiles: t("files.open"),
-  openActivityMonitor: t("resources.openActivityMonitor"),
+  openAgentSessionHistory: t("agentHistory.open"),
   openDocs: t("docs.open"),
   minimizeWindow: t("window.minimize"),
   toggleMaximizeWindow: t("window.toggleMaximize"),

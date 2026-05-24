@@ -14,6 +14,7 @@ export type FileEditorSurfaceProps = {
   readonly model: FileEditorModel;
   readonly surfaceVariant?: FileEditorSurfaceVariant;
   readonly controlMode?: FileEditorControlMode;
+  readonly contributeTitlebar?: boolean;
   readonly editorWorkAcceptLabel?: string;
   readonly editorWorkRejectLabel?: string;
   readonly editorWorkUndoLabel?: string;

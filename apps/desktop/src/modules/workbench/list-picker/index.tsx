@@ -10,11 +10,13 @@ type LyraListPickerProps<T extends string> = {
   readonly ariaLabel: string;
   readonly listAriaLabel?: string;
   readonly value: T;
+  readonly displayLabel?: string;
   readonly options: readonly LyraListPickerOption<T>[];
   readonly className?: string;
   readonly style?: CSSProperties;
   readonly variant?: "default" | "compact";
   readonly shape?: "pill" | "rounded";
+  readonly visibleOptionCount?: number;
   readonly disabled?: boolean;
   readonly onChange: (nextValue: T) => void;
 };
@@ -27,11 +29,13 @@ export const LyraListPicker = <T extends string>({
   ariaLabel,
   listAriaLabel,
   value,
+  displayLabel,
   options,
   className,
   style,
   variant = "default",
   shape = "pill",
+  visibleOptionCount,
   disabled = false,
   onChange
 }: LyraListPickerProps<T>) => {
@@ -46,7 +50,7 @@ export const LyraListPicker = <T extends string>({
   );
   const pickerStyle = {
     ...style,
-    "--lyra-list-picker-option-count": String(Math.max(1, options.length))
+    "--lyra-list-picker-option-count": String(Math.max(1, visibleOptionCount ?? options.length))
   } as CSSProperties;
 
   useEffect(() => {
@@ -160,7 +164,9 @@ export const LyraListPicker = <T extends string>({
           }}
           onKeyDown={handleTriggerKeyDown}
         >
-          <span className="lyra-list-picker-trigger-label">{activeOption?.label ?? ""}</span>
+          <span className="lyra-list-picker-trigger-label">
+            {displayLabel ?? activeOption?.label ?? ""}
+          </span>
         </button>
       </div>
     </div>

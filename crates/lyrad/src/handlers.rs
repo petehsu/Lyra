@@ -1,9 +1,9 @@
 use lyra_lsp_core::{
     change_document as lsp_change_document, close_document as lsp_close_document,
     completion as lsp_completion, find_references as lsp_find_references,
-    get_diagnostics as lsp_get_diagnostics, goto_definition as lsp_goto_definition,
-    hover as lsp_hover, open_document as lsp_open_document, save_document as lsp_save_document,
-    LspCompletionRequest, LspDiagnosticsRequest, LspDocumentRequest, LspPositionRequest,
+    goto_definition as lsp_goto_definition, hover as lsp_hover, open_document as lsp_open_document,
+    save_document as lsp_save_document, LspCompletionRequest, LspDocumentRequest,
+    LspPositionRequest,
 };
 use lyra_runtime_protocol::RuntimeError;
 use lyra_terminal_core::{
@@ -158,18 +158,6 @@ pub(crate) fn handle_lsp_request(method: &str, payload: Value) -> Result<Value, 
             .map_err(map_runtime_error)?;
             to_value(&result)
         }
-        "lsp.get_diagnostics" => {
-            let request: RuntimeLspDiagnosticsRequest = from_payload(payload)?;
-            let result = lsp_get_diagnostics(LspDiagnosticsRequest {
-                file_path: request.file_path,
-                language_id: request.language_id,
-                content: request.content,
-                version: request.version,
-                project_root: request.project_root,
-            })
-            .map_err(map_runtime_error)?;
-            to_value(&result)
-        }
         _ => unknown_method("lsp", method),
     }
 }
@@ -239,14 +227,6 @@ bridge_request!(RuntimeLspPositionRequest {
     language_id: String,
     line: u32,
     column: u32,
-    project_root: Option<String>
-});
-
-bridge_request!(RuntimeLspDiagnosticsRequest {
-    file_path: String,
-    language_id: String,
-    content: String,
-    version: i32,
     project_root: Option<String>
 });
 

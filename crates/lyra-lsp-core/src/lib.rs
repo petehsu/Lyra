@@ -103,15 +103,6 @@ pub struct LspPositionRequest {
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]
-pub struct LspDiagnosticsRequest {
-    pub file_path: String,
-    pub language_id: String,
-    pub content: String,
-    pub version: i32,
-    pub project_root: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LspLocation {
@@ -157,20 +148,6 @@ pub struct LspCompletionResult {
 #[cfg_attr(feature = "node-api", napi(object))]
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LspDiagnostic {
-    pub start_line: u32,
-    pub start_character: u32,
-    pub end_line: u32,
-    pub end_character: u32,
-    pub severity: Option<u32>,
-    pub code: Option<String>,
-    pub source: Option<String>,
-    pub message: String,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LspRuntimeEvent {
     pub kind: String,
     pub session_id: Option<String>,
@@ -179,7 +156,6 @@ pub struct LspRuntimeEvent {
     pub project_root: Option<String>,
     pub status: Option<String>,
     pub message: Option<String>,
-    pub diagnostics: Option<Vec<LspDiagnostic>>,
 }
 
 fn to_error(message: impl Into<String>) -> Error {
@@ -419,104 +395,7 @@ fn parse_lsp_message<R: Read>(reader: &mut BufReader<R>) -> std::io::Result<Opti
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))
 }
 
-fn parse_diagnostics(value: &Value) -> Vec<LspDiagnostic> {
-    let Some(items) = value.as_array() else {
-        return Vec::new();
-    };
-
-    items
-        .iter()
-        .filter_map(|entry| {
-            let range = entry.get("range")?;
-            let start = range.get("start")?;
-            let end = range.get("end")?;
-            let start_line = start.get("line")?.as_u64()? as u32;
-            let start_character = start.get("character")?.as_u64()? as u32;
-            let end_line = end.get("line")?.as_u64()? as u32;
-            let end_character = end.get("character")?.as_u64()? as u32;
-            let message = entry
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown diagnostic")
-                .to_string();
-
-            let severity = entry
-                .get("severity")
-                .and_then(Value::as_u64)
-                .map(|value| value as u32);
-
-            let code = match entry.get("code") {
-                Some(Value::String(value)) => Some(value.to_string()),
-                Some(Value::Number(value)) => Some(value.to_string()),
-                _ => None,
-            };
-
-            let source = entry
-                .get("source")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-
-            Some(LspDiagnostic {
-                start_line,
-                start_character,
-                end_line,
-                end_character,
-                severity,
-                code,
-                source,
-                message,
-            })
-        })
-        .collect()
-}
-
-fn dispatch_lsp_notification(runtime: &Arc<LspServerRuntime>, message: &Value) {
-    let method = message
-        .get("method")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-
-    if method != "textDocument/publishDiagnostics" {
-        return;
-    }
-
-    let params = message.get("params").cloned().unwrap_or(Value::Null);
-    let uri = params
-        .get("uri")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-
-    let diagnostics = parse_diagnostics(params.get("diagnostics").unwrap_or(&Value::Null));
-    let session_id = runtime
-        .uri_sessions
-        .lock()
-        .ok()
-        .and_then(|entries| entries.get(&uri).cloned());
-
-    let file_path = runtime
-        .uri_paths
-        .lock()
-        .ok()
-        .and_then(|entries| entries.get(&uri).cloned())
-        .or_else(|| file_uri_to_path(&uri));
-
-    // Cache diagnostics for pull-based access by Agent tools.
-    if let Some(ref path) = file_path {
-        cache_diagnostics(path, diagnostics.clone());
-    }
-
-    emit_event(LspRuntimeEvent {
-        kind: "diagnostic".to_string(),
-        session_id,
-        file_path,
-        language_id: Some(runtime.language_id.clone()),
-        project_root: Some(runtime.project_root.clone()),
-        status: None,
-        message: None,
-        diagnostics: Some(diagnostics),
-    });
-}
+fn dispatch_lsp_notification(_runtime: &Arc<LspServerRuntime>, _message: &Value) {}
 
 fn spawn_server_threads(
     runtime: Arc<LspServerRuntime>,
@@ -549,7 +428,6 @@ fn spawn_server_threads(
                         project_root: Some(reader_runtime.project_root.clone()),
                         status: None,
                         message: Some(format!("lsp reader failed: {error}")),
-                        diagnostics: None,
                     });
                     break;
                 }
@@ -578,7 +456,6 @@ fn spawn_server_threads(
                         project_root: Some(stderr_runtime.project_root.clone()),
                         status: None,
                         message: Some(text.to_string()),
-                        diagnostics: None,
                     });
                 }
                 Err(_) => break,
@@ -610,7 +487,6 @@ fn spawn_server_threads(
             project_root: Some(wait_runtime.project_root.clone()),
             status: Some(status_text),
             message: None,
-            diagnostics: None,
         });
     });
 }
@@ -678,9 +554,6 @@ fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerR
                             "snippetSupport": false
                         }
                     },
-                    "publishDiagnostics": {
-                        "relatedInformation": true
-                    },
                     "definition": {
                         "dynamicRegistration": false
                     },
@@ -736,7 +609,6 @@ fn get_or_create_server(
         project_root: Some(resolved_root.to_string_lossy().into_owned()),
         status: Some("starting".to_string()),
         message: None,
-        diagnostics: None,
     });
 
     let runtime = start_server(normalized_language, &resolved_root).map_err(|error| {
@@ -748,7 +620,6 @@ fn get_or_create_server(
             project_root: Some(resolved_root.to_string_lossy().into_owned()),
             status: Some("unavailable".to_string()),
             message: Some(error.to_string()),
-            diagnostics: None,
         });
         error
     })?;
@@ -761,7 +632,6 @@ fn get_or_create_server(
         project_root: Some(runtime.project_root.clone()),
         status: Some("ready".to_string()),
         message: None,
-        diagnostics: None,
     });
 
     if let Ok(mut guard) = SERVERS.lock() {
@@ -1020,7 +890,6 @@ fn handle_completion(request: LspCompletionRequest) -> Result<LspCompletionResul
                 project_root: request.project_root,
                 status: None,
                 message: Some(error.to_string()),
-                diagnostics: None,
             });
             Ok(LspCompletionResult {
                 items: Vec::new(),
@@ -1191,76 +1060,6 @@ fn handle_hover(request: LspPositionRequest) -> Result<Option<LspHoverResult>> {
     }))
 }
 
-// --- Get diagnostics (pull from cached events + trigger re-sync) ---
-
-static CACHED_DIAGNOSTICS: Lazy<Mutex<HashMap<String, Vec<LspDiagnostic>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-
-fn cache_diagnostics(file_path: &str, diagnostics: Vec<LspDiagnostic>) {
-    if let Ok(mut cache) = CACHED_DIAGNOSTICS.lock() {
-        if diagnostics.is_empty() {
-            cache.remove(file_path);
-        } else {
-            cache.insert(file_path.to_string(), diagnostics);
-        }
-    }
-}
-
-fn handle_get_diagnostics(request: LspDiagnosticsRequest) -> Result<Vec<LspDiagnostic>> {
-    let file_path = normalize_file_path(&request.file_path)?;
-    let uri = path_to_file_uri(&file_path)?;
-    let runtime = get_or_create_server(
-        &request.language_id,
-        &file_path,
-        request.project_root.as_deref(),
-    )?;
-
-    // Ensure the document is synced so the server has current content.
-    let already_open = runtime
-        .uri_sessions
-        .lock()
-        .ok()
-        .map(|sessions| sessions.get(&uri).is_some())
-        .unwrap_or(false);
-
-    if already_open {
-        let _ = send_notification(
-            &runtime,
-            "textDocument/didChange",
-            json!({
-                "textDocument": { "uri": uri, "version": request.version },
-                "contentChanges": [{ "text": request.content }]
-            }),
-        );
-    } else {
-        let language = normalize_language_id(&request.language_id).unwrap_or("plaintext");
-        let _ = send_notification(
-            &runtime,
-            "textDocument/didOpen",
-            json!({
-                "textDocument": {
-                    "uri": uri,
-                    "languageId": language,
-                    "version": request.version,
-                    "text": request.content
-                }
-            }),
-        );
-    }
-
-    // Wait briefly for diagnostics to arrive via publishDiagnostics notification.
-    thread::sleep(Duration::from_millis(500));
-
-    let path_str = file_path.to_string_lossy().into_owned();
-    let diagnostics = CACHED_DIAGNOSTICS
-        .lock()
-        .ok()
-        .and_then(|cache| cache.get(&path_str).cloned())
-        .unwrap_or_default();
-
-    Ok(diagnostics)
-}
-
 // --- Public exports ---
 
 #[cfg_attr(feature = "node-api", napi)]
@@ -1301,11 +1100,6 @@ pub fn find_references(request: LspPositionRequest) -> Result<Vec<LspLocation>> 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn hover(request: LspPositionRequest) -> Result<Option<LspHoverResult>> {
     handle_hover(request)
-}
-
-#[cfg_attr(feature = "node-api", napi)]
-pub fn get_diagnostics(request: LspDiagnosticsRequest) -> Result<Vec<LspDiagnostic>> {
-    handle_get_diagnostics(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]

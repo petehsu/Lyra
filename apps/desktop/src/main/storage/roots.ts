@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 export type LyraModuleStorageRoots = {
+  readonly agent: string;
   readonly fileManager: string;
   readonly runtime: string;
   readonly linuxCompat: string;
@@ -35,6 +36,7 @@ export const resolveLyraStorageRoots = (): LyraStorageRoots => {
     electronRoot,
     electronDesktopRoot,
     modules: {
+      agent: path.join(modulesRoot, "agent"),
       fileManager: path.join(modulesRoot, "file-manager"),
       runtime: path.join(modulesRoot, "runtime"),
       linuxCompat: path.join(modulesRoot, "linux-compat"),

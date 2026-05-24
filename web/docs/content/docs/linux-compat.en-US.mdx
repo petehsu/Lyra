@@ -1,13 +1,13 @@
 ---
 title: Linux Compatibility
-description: Startup strategy, degradation path, and diagnostics export
+description: Startup strategy and degradation path
 ---
 
 ## Goals
 
 1. deterministic startup behavior on Linux
 2. fast degradation path when graphics/driver issues occur
-3. exportable diagnostics for support and release validation
+3. persisted recovery status for support and release validation
 
 ## Startup decision order
 
@@ -27,12 +27,6 @@ GPU selection:
 
 1. mutually exclusive Wayland/X11 environment handling
 2. hardware acceleration fallback controls
-3. persisted runtime compatibility status for diagnostics
+3. persisted runtime compatibility status for recovery
 
-## Diagnostics APIs
-
-1. `lyraDesktop.linuxCompat.readStatus()`
-2. `lyraDesktop.linuxCompat.exportDiagnostics()`
-
-When startup fails, export diagnostics first, then tune backend/GPU overrides.
-
+When startup fails, check the Linux compatibility status, then tune backend/GPU overrides.

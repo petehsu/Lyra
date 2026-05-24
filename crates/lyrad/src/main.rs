@@ -101,6 +101,8 @@ struct DaemonSessionManager {
 struct DaemonSessionManagerInner {
     next_id: AtomicU64,
     connections: Mutex<HashMap<u64, UnboundedSender<RuntimeEnvelope>>>,
+    pending_requests:
+        Mutex<HashMap<String, tokio::sync::oneshot::Sender<Result<Value, RuntimeError>>>>,
 }
 
 #[cfg(unix)]
@@ -125,6 +127,31 @@ impl DaemonSessionManager {
         };
         for outgoing in connections.values() {
             let _ = outgoing.send(envelope.clone());
+        }
+    }
+
+    fn request(&self, method: String, payload: Value) -> Result<Value, RuntimeError> {
+        let req_id = format!(
+            "srv-req-{}",
+            self.inner.next_id.fetch_add(1, Ordering::Relaxed)
+        );
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        if let Ok(mut pending) = self.inner.pending_requests.lock() {
+            pending.insert(req_id.clone(), tx);
+        }
+
+        self.broadcast(RuntimeEnvelope::Request {
+            id: req_id.clone(),
+            method,
+            payload,
+        });
+
+        match futures::executor::block_on(rx) {
+            Ok(res) => res,
+            Err(_) => Err(RuntimeError::new(
+                "CAPABILITY_BRIDGE_DISCONNECTED",
+                "oneshot channel closed before reply received",
+            )),
         }
     }
 
@@ -235,6 +262,19 @@ fn register_runtime_hooks(sessions: &DaemonSessionManager) {
     register_agent_event_callback(Arc::new(move |event_json| {
         forward_json_event(&agent_sessions, AGENT_RUNTIME_EVENT_NAME, &event_json);
     }));
+
+    let host_sessions = sessions.clone();
+    lyra_agent_core::register_host_capability_dispatcher(Arc::new(move |method, payload_json| {
+        let payload = match serde_json::from_str::<Value>(&payload_json) {
+            Ok(val) => val,
+            Err(e) => return Err(format!("Failed to parse payload: {e}")),
+        };
+        match host_sessions.request(method, payload) {
+            Ok(result) => serde_json::to_string(&result)
+                .map_err(|e| format!("Failed to serialize response: {e}")),
+            Err(error) => Err(error.message),
+        }
+    }));
 }
 
 #[cfg(unix)]
@@ -245,6 +285,7 @@ fn shutdown_runtime_modules() {
     clear_lsp_event_callback();
     clear_download_event_callback();
     clear_agent_event_callback();
+    lyra_agent_core::clear_host_capability_dispatcher();
 }
 
 #[cfg(unix)]
@@ -340,7 +381,26 @@ async fn serve_connection(
                         payload,
                     ));
                 }
-                RuntimeEnvelope::Response { .. } | RuntimeEnvelope::Event { .. } => {}
+                RuntimeEnvelope::Response {
+                    id,
+                    ok,
+                    result,
+                    error,
+                } => {
+                    if let Ok(mut pending) = sessions.inner.pending_requests.lock() {
+                        if let Some(tx) = pending.remove(&id) {
+                            let val = if ok {
+                                Ok(result.unwrap_or(Value::Null))
+                            } else {
+                                Err(error.unwrap_or_else(|| {
+                                    router::runtime_error("UNKNOWN_ERROR", "unknown error")
+                                }))
+                            };
+                            let _ = tx.send(val);
+                        }
+                    }
+                }
+                RuntimeEnvelope::Event { .. } => {}
             }
         }
         Ok(())
@@ -426,6 +486,38 @@ mod tests {
         )
         .expect("agent read route");
         assert_eq!(read["id"], session_id);
+
+        let bound = handle_runtime_request(
+            "agent.session.bindProject",
+            serde_json::json!({
+                "sessionId": session_id,
+                "workingDir": "/"
+            }),
+        )
+        .expect("agent bind project route");
+        assert_eq!(bound["id"], session_id);
+        assert_eq!(bound["workingDir"], "/");
+
+        let rollback_preview = handle_runtime_request(
+            "agent.rollback.preview",
+            serde_json::json!({
+                "sessionId": session_id,
+                "messageId": "missing-message"
+            }),
+        )
+        .expect("agent rollback preview route");
+        assert_eq!(rollback_preview["available"], false);
+
+        let rollback_restore = handle_runtime_request(
+            "agent.rollback.restore",
+            serde_json::json!({
+                "sessionId": session_id,
+                "messageId": "missing-message",
+                "mode": "taskAndWorkspace"
+            }),
+        )
+        .expect_err("rollback restore without checkpoint should fail");
+        assert_eq!(rollback_restore.code, "RUNTIME_ERROR");
     }
 
     #[test]

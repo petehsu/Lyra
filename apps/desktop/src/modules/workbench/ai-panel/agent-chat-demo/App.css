@@ -7,7 +7,7 @@
  * during the refactor. New styles should use the canonical names directly.
  */
 
-:root {
+.lyra-ai-panel-agent-chat {
   /* Legacy aliases — forward to canonical tokens defined in tokens.css */
   --bg: var(--color-bg);
   --text: var(--color-text);
@@ -25,34 +25,27 @@
   --code-font: var(--font-mono);
 }
 
-* {
+.lyra-ai-panel-agent-chat,
+.lyra-ai-panel-agent-chat * {
   box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
 }
 
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  max-width: 820px;
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
   position: relative;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* -------- Selection policy --------
@@ -92,27 +85,26 @@ body {
 }
 
 .app-header {
-  position: fixed;
+  position: relative;
   top: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  left: auto;
+  transform: none;
   width: 100%;
-  max-width: 820px;
+  max-width: none;
+  flex: 0 0 auto;
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
   height: 36px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--color-surface-1) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 72%, transparent);
   border-top: 0;
   border-radius: 0 0 14px 14px;
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 4px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: none;
 }
 
 .app-header-title {
@@ -129,26 +121,233 @@ body {
   color: var(--text-dim);
 }
 
-.app-header-project {
-  font-family: var(--code-font);
+.app-header-action {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.app-header-action:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.app-header-action:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.app-header-action:disabled:hover {
+  color: var(--text-dim);
+  background: transparent;
+}
+
+.app-header-project-bind {
+  width: auto;
+  max-width: 132px;
+  gap: 5px;
+  padding: 0 6px;
+}
+
+.app-header-project-controls {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.app-header-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: inherit;
+}
+
+.app-header-more {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.app-header-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 30;
+  min-width: 176px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: color-mix(in srgb, var(--color-surface-1) 96%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 78%, transparent);
+  border-radius: 8px;
+  box-shadow: none;
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+}
+
+.app-header-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 46px 12px 12px;
+  background: color-mix(in srgb, var(--color-bg) 28%, transparent);
+}
+
+.app-header-dialog-card {
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100vh - 58px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-surface-1) 98%, var(--color-bg));
+  box-shadow:
+    0 18px 42px color-mix(in srgb, var(--color-text) 12%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--color-border-subtle) 20%, transparent) inset;
+}
+
+.app-header-dialog-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.app-header-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11.5px;
   color: var(--text-dim);
 }
 
-.app-header-diff {
-  font-family: var(--code-font);
+.app-header-dialog-field input,
+.app-header-dialog-field textarea {
+  width: 100%;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  background: var(--color-surface-0);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 7px 8px;
+  resize: vertical;
+}
+
+.app-header-toggle-row {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.app-header-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.app-header-dialog-actions button {
+  min-height: 28px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: color-mix(in srgb, var(--color-surface-2) 84%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.app-header-dialog-actions button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.app-header-menu-item {
+  width: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0.78;
+  transition:
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.app-header-menu-item svg {
+  opacity: 0.72;
+  transition: opacity 120ms ease;
+}
+
+.app-header-menu-item:hover,
+.app-header-menu-item:focus-visible {
+  background: transparent;
+  color: var(--text);
+  opacity: 1;
+}
+
+.app-header-menu-item:hover svg,
+.app-header-menu-item:focus-visible svg {
+  opacity: 1;
+}
+
+.app-header-menu-item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.app-header-menu-item:disabled:hover {
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.app-header-menu-item:disabled:hover svg {
+  opacity: 0.72;
 }
 
 /* Floating pills bar: below the header. When one pill → centered.
    When two pills → space-between (left + right). */
 .pills-rail {
-  position: fixed;
-  top: 36px;
-  left: 50%;
-  transform: translateX(-50%);
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
   width: 100%;
-  max-width: 820px;
+  max-width: none;
+  flex: 0 0 auto;
   z-index: 9;
   display: flex;
   align-items: flex-start;
@@ -166,6 +365,44 @@ body {
   pointer-events: auto;
   position: relative;
   isolation: isolate;
+}
+
+.agent-side-panel-preview {
+  flex: 0 0 auto;
+  width: calc(100% - 20px);
+  max-height: min(220px, 32vh);
+  margin: 8px 10px 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-surface-1) 90%, transparent);
+}
+
+.agent-side-panel-preview-head {
+  flex: 0 0 auto;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.agent-side-panel-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 10px;
+  color: var(--text);
+  font-family: var(--code-font);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .app-header-title {
@@ -227,11 +464,11 @@ body {
 .chat-scroll:hover::-webkit-scrollbar-thumb,
 .chat-scroll:focus-within::-webkit-scrollbar-thumb,
 .chat-scroll:active::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.16);
+  background-color: color-mix(in srgb, var(--color-border-default) 46%, transparent);
 }
 
 .chat-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.28);
+  background-color: color-mix(in srgb, var(--color-border-default) 64%, transparent);
 }
 
 /* Firefox */
@@ -249,7 +486,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: 100px 24px 280px;
+  padding: 24px 24px 32px;
 }
 
 /* -------- Messages -------- */
@@ -264,11 +501,13 @@ body {
 }
 
 .msg-user .msg-bubble {
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-1));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 14%, var(--color-border-subtle));
   border-radius: 12px;
   padding: 8px 14px;
-  max-width: 75%;
+  max-width: none;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .msg-agent {
@@ -292,7 +531,8 @@ body {
 .msg-text {
   margin: 0;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 /* Message time labels — switch to copy icon on hover */
@@ -305,7 +545,7 @@ body {
   display: inline-flex;
   align-items: center;
   height: 16px;
-  min-width: 32px;
+  min-width: 44px;
 }
 
 .msg-time-agent {
@@ -316,9 +556,9 @@ body {
   align-self: flex-end;
 }
 
-.msg-time .time-text,
-.msg-time .time-copy,
-.msg-time .time-actions {
+.msg-time > .time-text,
+.msg-time > .time-copy,
+.msg-time > .time-actions {
   position: absolute;
   transition: opacity 150ms ease;
 }
@@ -327,26 +567,32 @@ body {
   opacity: 1;
 }
 
-.msg-time .time-copy,
-.msg-time .time-actions {
+.msg-time > .time-copy,
+.msg-time > .time-actions {
   opacity: 0;
   cursor: pointer;
   color: var(--text-dimmer);
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
   transition: opacity 150ms ease, color 120ms ease;
 }
 
-.msg-time-user .time-text,
-.msg-time-user .time-copy,
-.msg-time-user .time-actions {
+.msg-time .time-actions .time-copy {
+  position: static;
+  opacity: 1;
+}
+
+.msg-time-user > .time-text,
+.msg-time-user > .time-copy,
+.msg-time-user > .time-actions {
   right: 0;
 }
 
-.msg-time-agent .time-text,
-.msg-time-agent .time-copy,
-.msg-time-agent .time-actions {
+.msg-time-agent > .time-text,
+.msg-time-agent > .time-copy,
+.msg-time-agent > .time-actions {
   left: 0;
 }
 
@@ -364,11 +610,90 @@ body {
   color: var(--text);
 }
 
+.msg-time .time-copy[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.msg-rollback-popover {
+  align-self: flex-end;
+  width: min(320px, 100%);
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-border-default) 72%, transparent);
+  border-radius: 8px;
+  background: var(--color-surface-1);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--color-text) 9%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  z-index: 2;
+}
+
+.msg-rollback-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.msg-rollback-body {
+  margin-top: 4px;
+  color: var(--text-dim);
+}
+
+.msg-rollback-files {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 88px;
+  overflow: hidden;
+  margin-top: 8px;
+  color: var(--text-dimmer);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.msg-rollback-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.msg-rollback-actions button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--color-border-default) 72%, transparent);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.msg-rollback-actions button:last-child {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--color-bg);
+}
+
+.msg-rollback-actions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .braille-spinner {
   font-size: 13px;
   color: var(--text-dimmer);
   font-family: monospace;
   letter-spacing: 0;
+}
+
+.msg-loading {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dimmer);
 }
 
 /* -------- Streaming text cursor -------- */
@@ -400,6 +725,7 @@ body {
   flex-direction: column;
   align-items: flex-end;
   max-width: 75%;
+  min-width: 0;
 }
 
 /* -------- Tool group (level 1): a single inline line, no container -------- */
@@ -748,8 +1074,8 @@ body {
   transform: translateX(-50%) scaleX(0.5);
   transform-origin: center;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--color-border-default) 42%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-border-subtle) 14%, transparent);
 }
 
 .fold-line:hover::before,
@@ -1131,14 +1457,14 @@ body {
   flex-direction: column;
   max-width: 420px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 72%, transparent);
   border-top: none;
   border-radius: 0 0 14px 14px;
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 4px 20px rgba(0, 0, 0, 0.35);
+    0 0 0 1px color-mix(in srgb, var(--color-border-subtle) 18%, transparent) inset,
+    0 4px 20px color-mix(in srgb, var(--color-text) 8%, transparent);
   transition:
     background 150ms ease,
     border-color 150ms ease;
@@ -1308,7 +1634,7 @@ body {
   font-size: 13px;
   color: var(--text);
   padding-left: 10px;
-  border-left: 2px solid rgba(255, 255, 255, 0.15);
+  border-left: 2px solid color-mix(in srgb, var(--color-border-subtle) 72%, transparent);
 }
 
 /* -------- Todo Pill (floating, morphs in-place) -------- */
@@ -1319,14 +1645,14 @@ body {
   flex-direction: column;
   max-width: 420px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 72%, transparent);
   border-top: none;
   border-radius: 0 0 14px 14px;
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 4px 20px rgba(0, 0, 0, 0.35);
+    0 0 0 1px color-mix(in srgb, var(--color-border-subtle) 18%, transparent) inset,
+    0 4px 20px color-mix(in srgb, var(--color-text) 8%, transparent);
   transition:
     background 150ms ease,
     border-color 150ms ease;
@@ -1336,16 +1662,59 @@ body {
 .todo-pill-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  gap: 6px;
+  padding: 0 8px 0 12px;
   height: 36px;
   background: transparent;
   border: 0;
   color: var(--text-dim);
   font: inherit;
   font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.todo-pill-toggle {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.todo-pill-poke {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-surface-2) 82%, transparent);
+  color: var(--text-dimmer);
+  padding: 0;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.todo-pill-poke:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-surface-3) 92%, transparent);
+  color: var(--text);
+}
+
+.todo-pill-poke:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .todo-pill-progress {
@@ -1693,7 +2062,7 @@ body {
 }
 
 .scroll-to-bottom:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--color-surface-2) 72%, transparent);
   color: var(--text);
 }
 
@@ -1712,7 +2081,7 @@ body {
 
 .scroll-to-bottom svg.scroll-circle circle {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.2);
+  stroke: color-mix(in srgb, var(--color-border-default) 58%, transparent);
   stroke-width: 1.5;
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
@@ -1730,7 +2099,7 @@ body {
 }
 
 .scroll-to-bottom:hover svg.scroll-circle circle {
-  stroke: rgba(255, 255, 255, 0.4);
+  stroke: color-mix(in srgb, var(--color-border-strong) 62%, transparent);
 }
 
 /* Arrow fades in after circle draws, fades out immediately on exit */
@@ -1754,16 +2123,16 @@ body {
 .decision-panel {
   pointer-events: auto;
   align-self: center;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--color-surface-1) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
   border-radius: 14px 14px 0 0;
   border-bottom: none;
   padding: 0 14px;
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 -4px 20px rgba(0, 0, 0, 0.25);
+    0 0 0 1px color-mix(in srgb, var(--color-border-subtle) 16%, transparent) inset,
+    0 -4px 20px color-mix(in srgb, var(--color-text) 8%, transparent);
   display: flex;
   flex-direction: column;
   margin-bottom: -1px;
@@ -1852,8 +2221,8 @@ body {
   font: inherit;
   font-size: 12.5px;
   color: var(--text-dim);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--color-surface-2) 62%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
   border-radius: 8px;
   cursor: pointer;
   transition:
@@ -1863,14 +2232,14 @@ body {
 }
 
 .decision-option:hover {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.16);
+  background: color-mix(in srgb, var(--color-surface-2) 84%, transparent);
+  border-color: color-mix(in srgb, var(--color-border-default) 70%, transparent);
   color: var(--text);
 }
 
 .decision-option.active {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.3);
+  background: color-mix(in srgb, var(--color-surface-3) 74%, transparent);
+  border-color: color-mix(in srgb, var(--color-border-strong) 54%, transparent);
   color: var(--text);
 }
 
@@ -1884,15 +2253,15 @@ body {
   font: inherit;
   font-size: 13px;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--color-surface-0) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 76%, transparent);
   border-radius: 8px;
   outline: none;
   transition: border-color 150ms ease;
 }
 
 .decision-custom-input:focus {
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: color-mix(in srgb, var(--color-border-strong) 52%, transparent);
 }
 
 .decision-custom-input::placeholder {
@@ -2032,7 +2401,7 @@ body {
 /* -------- Debug Panel (top-right floating) -------- */
 
 .debug-panel {
-  position: fixed;
+  position: absolute;
   top: 10px;
   right: 10px;
   z-index: 999;
@@ -2048,8 +2417,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--color-surface-2) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
   border-radius: 8px;
   color: var(--text-dimmer);
   cursor: pointer;
@@ -2058,12 +2427,12 @@ body {
 
 .debug-toggle:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--color-surface-2) 88%, transparent);
 }
 
 .debug-body {
   background: rgba(30, 32, 36, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
   border-radius: 10px;
   padding: 10px 14px;
   display: flex;
@@ -2101,13 +2470,14 @@ body {
 /* -------- Composer -------- */
 
 .composer-wrap {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  position: relative;
+  bottom: auto;
+  left: auto;
+  transform: none;
   width: 100%;
-  max-width: 820px;
-  padding: 16px 24px 20px;
+  max-width: none;
+  padding: 10px 20px 14px;
+  flex: 0 0 auto;
   z-index: 10;
   pointer-events: none;
   display: flex;
@@ -2130,54 +2500,33 @@ body {
   flex-direction: column;
   width: 100%;
   gap: 0;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 10px 14px 8px;
+  background: color-mix(in srgb, var(--color-surface-1) 92%, transparent);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 14px;
+  padding: 8px 10px 7px;
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 8px 32px rgba(0, 0, 0, 0.4);
-  transition:
-    background 160ms ease,
-    border-color 160ms ease;
-}
-
-.composer:focus-within {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
 }
 
 .composer-input {
   flex: none;
   resize: none;
-  background: transparent;
+  background: color-mix(in srgb, var(--color-bg) 76%, var(--color-surface-2) 24%);
   color: var(--text);
   border: 0;
+  border-radius: 10px;
   outline: none;
   font: inherit;
   font-size: 14px;
-  padding: 0;
+  padding: 8px 10px;
   line-height: 1.55;
   height: 64px;
+  min-height: 64px;
   overflow-y: hidden;
   scrollbar-width: none;
-  /* Fade top/bottom edges when scrolling inside */
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    black 8px,
-    black calc(100% - 8px),
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    black 8px,
-    black calc(100% - 8px),
-    transparent 100%
-  );
+  mask-image: none;
+  -webkit-mask-image: none;
 }
 
 .composer-input::-webkit-scrollbar {
@@ -2192,7 +2541,133 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 7px;
+  min-height: 28px;
+}
+
+.composer-model-controls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+
+.composer-mini-select {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 78%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--color-surface-2) 88%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0;
+  padding: 0 22px 0 8px;
+  outline: none;
+}
+
+.composer-model-picker {
+  --lyra-list-picker-row-height: 28px;
+  --lyra-list-picker-option-height: 28px;
+  --lyra-list-picker-option-gap: 2px;
+  --lyra-list-picker-surface-padding: 4px;
+  --lyra-list-picker-expanded-radius: 8px;
+  --lyra-list-picker-font-size: 12px;
+  --lyra-list-picker-padding-inline: 8px;
+  flex: 1 1 160px;
+  min-width: 92px;
+  max-width: 260px;
+}
+
+.composer-model-picker .lyra-list-picker-surface {
+  border-color: color-mix(in srgb, var(--color-border-subtle) 78%, transparent);
+  background: color-mix(in srgb, var(--color-surface-2) 92%, transparent);
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(14px) saturate(1.18);
+  backdrop-filter: blur(14px) saturate(1.18);
+}
+
+.composer-model-picker.lyra-list-picker-open .lyra-list-picker-surface {
+  border-color: color-mix(in srgb, var(--color-border-subtle) 58%, var(--text-dim));
+  box-shadow:
+    0 12px 28px color-mix(in srgb, var(--color-text) 16%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--color-border-subtle) 36%, transparent) inset;
+}
+
+.composer-model-picker .lyra-list-picker-options {
+  max-height: calc(
+    (var(--lyra-list-picker-option-count) * var(--lyra-list-picker-option-height)) +
+    ((var(--lyra-list-picker-option-count) - 1) * var(--lyra-list-picker-option-gap)) +
+    (var(--lyra-list-picker-surface-padding) * 2)
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.composer-model-picker .lyra-list-picker-option {
+  color: var(--text-dim);
+  border-radius: 6px;
+}
+
+.composer-model-picker .lyra-list-picker-option:hover,
+.composer-model-picker .lyra-list-picker-option-active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--color-surface-3) 72%, transparent);
+}
+
+.composer-model-picker .lyra-list-picker-trigger {
+  color: var(--text-dim);
+}
+
+.composer-model-picker .lyra-list-picker-trigger:hover {
+  color: var(--text);
+}
+
+.composer-model-settings-button {
+  height: 28px;
+  min-width: 0;
+  flex: 1 1 160px;
+  max-width: 260px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 82%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--color-surface-2) 88%, transparent);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0;
+  padding: 0 8px;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.composer-model-settings-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-model-settings-button:hover {
+  background: color-mix(in srgb, var(--color-surface-3) 84%, transparent);
+  border-color: color-mix(in srgb, var(--color-border-subtle) 64%, var(--text-dim));
+  color: var(--text);
+}
+
+.composer-mini-select {
+  flex: 0 0 auto;
+  max-width: 92px;
+}
+
+.composer-mini-select:disabled {
+  opacity: 0.58;
 }
 
 .composer-action {
@@ -2221,9 +2696,9 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--bg);
-  border: 0;
+  background: color-mix(in srgb, var(--color-text) 88%, var(--color-surface-3) 12%);
+  color: var(--color-bg);
+  border: 1px solid color-mix(in srgb, var(--color-text) 18%, transparent);
   border-radius: 50%;
   padding: 0;
   cursor: pointer;
@@ -2234,7 +2709,7 @@ body {
 }
 
 .composer-send:not(:disabled):hover {
-  background: #fff;
+  background: color-mix(in srgb, var(--color-text) 96%, var(--color-surface-3) 4%);
 }
 
 .composer-send:not(:disabled):active {
@@ -2242,14 +2717,17 @@ body {
 }
 
 .composer-send:disabled {
-  opacity: 0.25;
+  opacity: 1;
+  background: color-mix(in srgb, var(--color-surface-2) 92%, transparent);
+  color: var(--text-dimmer);
+  border-color: color-mix(in srgb, var(--color-border-subtle) 82%, transparent);
   cursor: default;
 }
 
 /* ======== Responsive Adaptations ======== */
 
-/* Tablet and below (< 768px) */
-@media (max-width: 768px) {
+/* Narrow AI panel layouts. Container queries track panel width, not window width. */
+@container (max-width: 768px) {
   .app {
     max-width: 100%;
   }
@@ -2269,11 +2747,8 @@ body {
     font-size: 11px;
   }
 
-  .app-header-project {
+  .app-header-project-bind {
     max-width: 100px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .pills-rail {
@@ -2294,27 +2769,36 @@ body {
   }
 
   .chat-inner {
-    padding: 90px 14px 110px;
+    padding: 20px 14px 28px;
     gap: 18px;
   }
 
   .composer-wrap {
     max-width: 100%;
-    padding: 12px 12px 14px;
+    padding: 10px 12px 12px;
   }
 
   .composer {
     border-radius: 14px;
-    padding: 8px 12px 6px;
+    padding: 8px 10px 7px;
   }
 
   .composer-input {
     font-size: 16px; /* Prevent iOS zoom on focus */
     height: 52px;
+    min-height: 52px;
   }
 
   .composer-send {
     margin-left: auto;
+  }
+
+  .composer-model-controls {
+    gap: 5px;
+  }
+
+  .composer-mini-select {
+    display: none;
   }
 
   .msg-user .msg-content-user {
@@ -2358,14 +2842,13 @@ body {
   }
 }
 
-/* Mobile (< 480px) */
-@media (max-width: 480px) {
+@container (max-width: 480px) {
   .app-header {
     height: 32px;
     padding: 0 10px;
   }
 
-  .app-header-project {
+  .app-header-project-bind {
     max-width: 80px;
     font-size: 10.5px;
   }
@@ -2395,22 +2878,23 @@ body {
   }
 
   .chat-inner {
-    padding: 80px 10px 100px;
+    padding: 18px 10px 24px;
     gap: 16px;
   }
 
   .composer-wrap {
-    padding: 10px 10px 12px;
+    padding: 8px 10px 10px;
     gap: 0;
   }
 
   .composer {
-    padding: 8px 10px 6px;
+    padding: 7px 9px 6px;
     border-radius: 12px;
   }
 
   .composer-input {
     height: 48px;
+    min-height: 48px;
   }
 
   .msg-user .msg-bubble {
@@ -2476,29 +2960,10 @@ body {
   }
 }
 
-/* Large screens (> 1200px): slightly wider container */
-@media (min-width: 1200px) {
-  .app {
-    max-width: 900px;
-  }
-
-  .app-header {
-    max-width: 900px;
-  }
-
-  .composer-wrap {
-    max-width: 900px;
-  }
-}
-
 /* Safe area insets for notched devices */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .composer-wrap {
-    padding-bottom: calc(20px + env(safe-area-inset-bottom));
-  }
-
-  .app-header {
-    padding-top: env(safe-area-inset-top);
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
 }
 

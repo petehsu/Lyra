@@ -13,7 +13,11 @@ const VALID_WORKSPACE_APP_IDS = new Set([
   "file-manager",
   "file-editor",
   "image-viewer",
-  "resource-monitor",
+  "agent-project-tree",
+  "agent-git",
+  "agent-selfdev",
+  "agent-overnight",
+  "agent-session-history",
   "notification-center"
 ] as const);
 

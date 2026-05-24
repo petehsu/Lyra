@@ -73,7 +73,7 @@ export function PermissionPanel({
               className="decision-nav-btn"
               disabled={!canPrev}
               onClick={(e) => { e.stopPropagation(); setCurrentIndex((i) => i - 1); }}
-              aria-label="Previous"
+              aria-label={t("permission.prev")}
             >
               <ChevronLeft size={14} strokeWidth={2.2} />
             </button>
@@ -85,7 +85,7 @@ export function PermissionPanel({
               className="decision-nav-btn"
               disabled={!canNext}
               onClick={(e) => { e.stopPropagation(); setCurrentIndex((i) => i + 1); }}
-              aria-label="Next"
+              aria-label={t("permission.next")}
             >
               <ChevronRight size={14} strokeWidth={2.2} />
             </button>

@@ -44,7 +44,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0 var(--lyra-unit-8);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 34%, transparent);
   border-radius: var(--lyra-list-radius);
   background:
     linear-gradient(
@@ -53,8 +53,8 @@
       color-mix(in srgb, var(--lyra-bg-editor) 84%, transparent) 100%
     );
   box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 40%, transparent),
-    0 var(--lyra-unit-6) var(--lyra-unit-18) color-mix(in srgb, var(--lyra-bg-app) 22%, transparent);
+    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 28%, transparent),
+    0 var(--lyra-unit-6) var(--lyra-unit-18) color-mix(in srgb, var(--lyra-bg-app) 10%, transparent);
   -webkit-backdrop-filter: blur(var(--lyra-unit-10)) saturate(1.08);
   backdrop-filter: blur(var(--lyra-unit-10)) saturate(1.08);
   transition:
@@ -64,10 +64,10 @@
 }
 
 .lyra-list-surface:hover {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 48%, var(--lyra-text-secondary) 28%);
   box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 46%, transparent),
-    0 var(--lyra-unit-7) var(--lyra-unit-22) color-mix(in srgb, var(--lyra-bg-app) 28%, transparent);
+    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 32%, transparent),
+    0 var(--lyra-unit-7) var(--lyra-unit-22) color-mix(in srgb, var(--lyra-bg-app) 12%, transparent);
 }
 
 .lyra-list-surface-pill {
@@ -174,7 +174,7 @@
   min-height: var(--lyra-list-picker-row-height);
   height: var(--lyra-list-picker-row-height);
   overflow: hidden;
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 34%, transparent);
   border-radius: var(--lyra-list-picker-closed-radius);
   background:
     linear-gradient(
@@ -183,8 +183,8 @@
       color-mix(in srgb, var(--lyra-bg-editor) 84%, transparent) 100%
     );
   box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 40%, transparent),
-    0 var(--lyra-unit-7) var(--lyra-unit-22) color-mix(in srgb, var(--lyra-bg-app) 22%, transparent);
+    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 28%, transparent),
+    0 var(--lyra-unit-7) var(--lyra-unit-22) color-mix(in srgb, var(--lyra-bg-app) 10%, transparent);
   -webkit-backdrop-filter: blur(var(--lyra-unit-10)) saturate(1.08);
   backdrop-filter: blur(var(--lyra-unit-10)) saturate(1.08);
   transition:
@@ -194,11 +194,11 @@
 }
 
 .lyra-list-picker:hover .lyra-list-picker-surface {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 48%, var(--lyra-text-secondary) 28%);
 }
 
 .lyra-list-picker:focus-within .lyra-list-picker-surface {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 48%, var(--lyra-text-secondary) 28%);
 }
 
 .lyra-list-picker-open .lyra-list-picker-surface {
@@ -211,8 +211,8 @@
   );
   border-radius: var(--lyra-list-picker-expanded-radius);
   box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 44%, transparent),
-    0 var(--lyra-unit-14) var(--lyra-unit-30) color-mix(in srgb, var(--lyra-bg-app) 20%, transparent);
+    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 30%, transparent),
+    0 var(--lyra-unit-14) var(--lyra-unit-30) color-mix(in srgb, var(--lyra-bg-app) 10%, transparent);
 }
 
 .lyra-list-picker-options {
@@ -302,7 +302,7 @@
 }
 
 .lyra-list-picker-open .lyra-list-picker-trigger {
-  border-top-color: color-mix(in srgb, var(--lyra-line-default) 62%, transparent);
+  border-top-color: color-mix(in srgb, var(--lyra-line-default) 38%, transparent);
 }
 
 .lyra-list-picker-trigger-label {
@@ -342,7 +342,7 @@
   padding: 0 var(--lyra-unit-10);
   position: relative;
   background: var(--lyra-bg-surface);
-  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 88%, transparent);
+  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 34%, transparent);
   -webkit-app-region: drag;
   transition: filter 180ms ease, opacity 180ms ease;
 }
@@ -402,7 +402,7 @@
   gap: 0;
   padding: 0;
   border: var(--lyra-stroke-hairline) solid
-    color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+    color-mix(in srgb, var(--lyra-line-default) 32%, transparent);
   border-radius: var(--lyra-control-radius-pill);
   background:
     linear-gradient(
@@ -411,8 +411,8 @@
       color-mix(in srgb, var(--lyra-bg-editor) 82%, transparent) 100%
     );
   box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 42%, transparent),
-    0 var(--lyra-unit-6) var(--lyra-unit-18) color-mix(in srgb, var(--lyra-bg-app) 16%, transparent);
+    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 28%, transparent),
+    0 var(--lyra-unit-6) var(--lyra-unit-18) color-mix(in srgb, var(--lyra-bg-app) 8%, transparent);
   -webkit-backdrop-filter: var(--lyra-backdrop-blur-sm);
   backdrop-filter: var(--lyra-backdrop-blur-sm);
   transition:
@@ -424,10 +424,10 @@
 
 .lyra-titlebar-navigation-shell:hover,
 .lyra-titlebar-navigation-shell:focus-within {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 46%, var(--lyra-text-secondary) 54%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 46%, var(--lyra-text-secondary) 32%);
   box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 48%, transparent),
-    0 var(--lyra-unit-8) var(--lyra-unit-22) color-mix(in srgb, var(--lyra-bg-app) 20%, transparent);
+    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 32%, transparent),
+    0 var(--lyra-unit-8) var(--lyra-unit-22) color-mix(in srgb, var(--lyra-bg-app) 10%, transparent);
 }
 
 .lyra-titlebar-navigation-icon {
@@ -605,25 +605,6 @@
 .lyra-titlebar-context-button-active {
   color: var(--lyra-text-primary);
   opacity: 1;
-}
-
-.lyra-resource-monitor-titlebar-pid,
-.lyra-resource-monitor-titlebar-memory,
-.lyra-resource-monitor-titlebar-scope-button {
-  font-variant-numeric: tabular-nums;
-}
-
-.lyra-resource-monitor-titlebar-pid {
-  min-width: var(--lyra-unit-58);
-}
-
-.lyra-resource-monitor-titlebar-memory {
-  min-width: var(--lyra-unit-64);
-}
-
-.lyra-resource-monitor-titlebar-scope-button {
-  width: var(--lyra-unit-52);
-  min-width: var(--lyra-unit-52);
 }
 
 .lyra-titlebar-context-danger {
@@ -879,7 +860,7 @@
   min-height: 0;
   display: grid;
   gap: var(--lyra-unit-1);
-  background: color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
+  background: color-mix(in srgb, var(--lyra-line-default) 34%, transparent);
 }
 
 .lyra-workspace-split-pane {
@@ -891,7 +872,7 @@
 }
 
 .lyra-workspace-split-pane-active {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 38%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-workspace-split-count-2 {
@@ -1022,7 +1003,7 @@
 }
 
 .lyra-resizer {
-  --lyra-resizer-line: var(--lyra-line-default);
+  --lyra-resizer-line: color-mix(in srgb, var(--lyra-line-default) 32%, transparent);
   position: relative;
   z-index: 4;
 }
@@ -1039,7 +1020,7 @@
 }
 
 .lyra-resizer:hover::after {
-  --lyra-resizer-line: color-mix(in srgb, var(--lyra-line-default) 56%, var(--lyra-text-secondary) 44%);
+  --lyra-resizer-line: color-mix(in srgb, var(--lyra-line-default) 44%, var(--lyra-text-secondary) 18%);
 }
 
 .lyra-layout-resizing .lyra-main,

@@ -2,8 +2,12 @@ import {
   isFileEditorAppId,
   isFileManagerAppId,
   isImageViewerAppId,
-  isNotificationCenterAppId,
-  isResourceMonitorAppId
+  isAgentGitAppId,
+  isAgentProjectTreeAppId,
+  isAgentSelfDevAppId,
+  isAgentOvernightAppId,
+  isAgentSessionHistoryAppId,
+  isNotificationCenterAppId
 } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type {
@@ -138,12 +142,67 @@ export const createAppSurfaceRenderModel = (
     };
   }
 
-  if (isResourceMonitorAppId(tab.appId)) {
+  if (isAgentProjectTreeAppId(tab.appId) && tab.appInstanceId !== undefined) {
+    const state = context.agentProjectTreeModel.getState(tab.appInstanceId);
+    if (state === null) {
+      return { kind: "empty" };
+    }
     return {
-      kind: "resourceMonitor",
+      kind: "agentProjectTree",
       props: {
         desktopApi: context.desktopApi,
-        labels: context.resourceMonitor.labels
+        labels: context.agentProjectTreeLabels,
+        state,
+        model: context.agentProjectTreeModel,
+        fileEditorModel: context.fileEditorModel,
+        fileEditorLabels: context.fileEditorLabels,
+        themeSignature: context.resolvedThemeId,
+        onOpenGitPanel: context.onOpenAgentGit
+      }
+    };
+  }
+
+  if (isAgentGitAppId(tab.appId)) {
+    const rootPath = tab.filePath?.trim() ?? "";
+    if (rootPath.length === 0) {
+      return { kind: "empty" };
+    }
+    return {
+      kind: "agentGit",
+      props: {
+        desktopApi: context.desktopApi,
+        labels: context.agentGitLabels,
+        agentSessionId: tab.fileSessionId ?? tab.appInstanceId ?? tab.id,
+        rootPath,
+        title: tab.title
+      }
+    };
+  }
+
+  if (isAgentSelfDevAppId(tab.appId)) {
+    return {
+      kind: "agentSelfDev",
+      props: {
+        desktopApi: context.desktopApi,
+        labels: context.agentSelfDevLabels,
+        parentSessionId: tab.fileSessionId ?? null,
+        ...(context.agentSelfDevLocale === undefined
+          ? {}
+          : { locale: context.agentSelfDevLocale })
+      }
+    };
+  }
+
+  if (isAgentOvernightAppId(tab.appId)) {
+    return {
+      kind: "agentOvernight",
+      props: {
+        desktopApi: context.desktopApi,
+        labels: context.agentOvernightLabels,
+        parentSessionId: tab.fileSessionId ?? null,
+        ...(context.agentOvernightLocale === undefined
+          ? {}
+          : { locale: context.agentOvernightLocale })
       }
     };
   }
@@ -159,6 +218,21 @@ export const createAppSurfaceRenderModel = (
         onMarkAllRead: context.notifications.model.markAllNotificationsRead,
         onClearAll: context.notifications.onRequestClearAll,
         onOpenNotificationSource: context.notifications.onOpenNotificationSource
+      }
+    };
+  }
+
+  if (isAgentSessionHistoryAppId(tab.appId)) {
+    return {
+      kind: "agentSessionHistory",
+      props: {
+        desktopApi: context.desktopApi,
+        labels: context.agentSessionHistory.labels,
+        activeSessionId: context.agentSessionHistory.activeSessionId,
+        onOpenSession: context.agentSessionHistory.onOpenSession,
+        ...(context.agentSessionHistory.locale === undefined
+          ? {}
+          : { locale: context.agentSessionHistory.locale })
       }
     };
   }

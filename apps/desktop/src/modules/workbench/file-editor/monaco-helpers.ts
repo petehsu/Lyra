@@ -2,7 +2,6 @@ import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api";
 
 export const MONACO_THEME_ID = "lyra-workbench";
 export const AUTO_SAVE_DELAY_MS = 800;
-export const LSP_MARKER_OWNER = "lyra-lsp";
 export const MONACO_FONT_SIZE = 13;
 export const MONACO_LINE_HEIGHT = 20;
 export const MONACO_PADDING = 12;
@@ -64,17 +63,6 @@ export const mapCompletionKind = (
     default:
       return monaco.languages.CompletionItemKind.Text;
   }
-};
-
-export const mapDiagnosticSeverity = (
-  monaco: typeof Monaco,
-  severity: number | undefined
-): Monaco.MarkerSeverity => {
-  if (severity === 1) return monaco.MarkerSeverity.Error;
-  if (severity === 2) return monaco.MarkerSeverity.Warning;
-  if (severity === 3) return monaco.MarkerSeverity.Info;
-  if (severity === 4) return monaco.MarkerSeverity.Hint;
-  return monaco.MarkerSeverity.Info;
 };
 
 const readRootCssVar = (name: string, fallback: string): string => {

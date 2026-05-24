@@ -14,7 +14,11 @@ import type { FileEditorSurfaceProps } from "../file-editor";
 import type { FileManagerSurfaceProps } from "../file-manager";
 import type { ImageViewerSurfaceProps } from "../image-viewer";
 import type { NotificationCenterSurfaceProps } from "../notifications";
-import type { ResourceMonitorSurfaceProps } from "../resource-monitor";
+import type { AgentSessionHistorySurfaceProps } from "../agent-session-history";
+import type { AgentProjectTreeSurfaceProps } from "../agent-project-tree";
+import type { AgentGitSurfaceProps } from "../agent-git";
+import type { AgentSelfDevSurfaceProps } from "../agent-selfdev";
+import type { AgentOvernightSurfaceProps } from "../agent-overnight";
 import type {
   TerminalDockProps,
   TerminalWorkspaceSurfaceProps
@@ -30,8 +34,12 @@ export type WorkbenchSurfaceAdapters = {
   readonly fileManager: ComponentType<FileManagerSurfaceProps>;
   readonly fileEditor: ComponentType<FileEditorSurfaceProps>;
   readonly imageViewer: ComponentType<ImageViewerSurfaceProps>;
-  readonly resourceMonitor: ComponentType<ResourceMonitorSurfaceProps>;
+  readonly agentProjectTree: ComponentType<AgentProjectTreeSurfaceProps>;
+  readonly agentGit: ComponentType<AgentGitSurfaceProps>;
+  readonly agentSelfDev: ComponentType<AgentSelfDevSurfaceProps>;
+  readonly agentOvernight: ComponentType<AgentOvernightSurfaceProps>;
   readonly notificationCenter: ComponentType<NotificationCenterSurfaceProps>;
+  readonly agentSessionHistory: ComponentType<AgentSessionHistorySurfaceProps>;
 };
 
 export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
@@ -44,8 +52,12 @@ export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
   "fileManager",
   "fileEditor",
   "imageViewer",
-  "resourceMonitor",
-  "notificationCenter"
+  "agentProjectTree",
+  "agentGit",
+  "agentSelfDev",
+  "agentOvernight",
+  "notificationCenter",
+  "agentSessionHistory"
 ] as const satisfies readonly (keyof WorkbenchSurfaceAdapters)[];
 
 export type WorkbenchPanelAdapters = {

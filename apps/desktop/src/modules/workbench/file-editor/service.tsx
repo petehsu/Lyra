@@ -100,7 +100,6 @@ const createInitialState = (
   message: undefined,
   lastSavedAt: undefined,
   lspVersion: 1,
-  diagnostics: [],
   pendingRevealLocation: undefined
 });
 
@@ -223,8 +222,7 @@ export const useFileEditorModel = ({
         ...target,
         content: "",
         lastSavedContent: "",
-        isHydrated: false,
-        diagnostics: []
+        isHydrated: false
       };
       hydratedCount -= 1;
       publishMeta(next[instanceId]);
@@ -280,44 +278,6 @@ export const useFileEditorModel = ({
     }
 
     return desktopApi.lsp.onEvent((event: LspRuntimeEvent) => {
-      if (event.kind === "diagnostic") {
-        setStatesById((current) => {
-          const entries = Object.entries(current);
-          let targetId: string | null = null;
-
-          if (event.sessionId !== undefined) {
-            const bySession = entries.find(([, state]) => state.sessionId === event.sessionId);
-            targetId = bySession?.[0] ?? null;
-          }
-
-          if (targetId === null && event.filePath !== undefined) {
-            const comparable = toComparablePath(event.filePath, platform);
-            const byPath = entries.find(([, state]) =>
-              toComparablePath(state.filePath, platform) === comparable
-            );
-            targetId = byPath?.[0] ?? null;
-          }
-
-          if (targetId === null) {
-            return current;
-          }
-
-          const base = current[targetId];
-          if (base === undefined) {
-            return current;
-          }
-
-          return {
-            ...current,
-            [targetId]: {
-              ...base,
-              diagnostics: event.diagnostics
-            }
-          };
-        });
-        return;
-      }
-
       if (event.kind === "error" && event.sessionId !== undefined) {
         const match = Object.values(statesRef.current).find(
           (state) => state.sessionId === event.sessionId
@@ -399,7 +359,6 @@ export const useFileEditorModel = ({
           revision: undefined,
           sizeBytes: result.sizeBytes,
           lspVersion: 1,
-          diagnostics: [],
           pendingRevealLocation: current.pendingRevealLocation
         });
         touch(instanceId);
@@ -426,7 +385,6 @@ export const useFileEditorModel = ({
         unsupportedReason: undefined,
         message: undefined,
         lspVersion: 1,
-        diagnostics: [],
         pendingRevealLocation: current.pendingRevealLocation
       };
       replaceState(instanceId, nextState);
@@ -559,7 +517,6 @@ export const useFileEditorModel = ({
         isHydrated: false,
         content: "",
         lastSavedContent: "",
-        diagnostics: [],
         pendingRevealLocation: existing.pendingRevealLocation,
         ...(normalizedSessionId === undefined ? {} : { sessionId: normalizedSessionId })
       };

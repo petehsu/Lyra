@@ -1,13 +1,9 @@
-import type { BrowserSettingsSurfaceProps } from "./settings-surface-types";
+import type {
+  BrowserSettingsCategoryId,
+  BrowserSettingsSurfaceProps
+} from "./settings-surface-types";
 
-export type SettingsCategoryId =
-  | "general"
-  | "appearance"
-  | "workspace"
-  | "notifications"
-  | "linux"
-  | "search"
-  | "ai";
+export type SettingsCategoryId = BrowserSettingsCategoryId;
 
 export type SettingsFieldKind =
   | "choice"

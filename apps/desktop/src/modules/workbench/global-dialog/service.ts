@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import type {
   GlobalDialogAction,
   GlobalDialogCopyItem,
+  GlobalDialogDefaults,
   GlobalDialogSource,
   GlobalDialogModel,
   GlobalDialogOpenRequest,
@@ -13,14 +14,19 @@ const MAX_DIALOG_ACTIONS = 3;
 const DEFAULT_COPY_ACTION_LABEL = "Copy";
 const DEFAULT_COPIED_ACTION_LABEL = "Copied";
 
-const CLOSED_STATE: GlobalDialogState = {
+const FALLBACK_DEFAULTS: GlobalDialogDefaults = {
+  copyActionLabel: DEFAULT_COPY_ACTION_LABEL,
+  copiedActionLabel: DEFAULT_COPIED_ACTION_LABEL
+};
+
+const createClosedState = (defaults: GlobalDialogDefaults): GlobalDialogState => ({
   isOpen: false,
   title: "",
   copyItems: [],
-  copyActionLabel: DEFAULT_COPY_ACTION_LABEL,
-  copiedActionLabel: DEFAULT_COPIED_ACTION_LABEL,
+  copyActionLabel: defaults.copyActionLabel,
+  copiedActionLabel: defaults.copiedActionLabel,
   actions: []
-};
+});
 
 const normalizeText = (value: string, field: string): string => {
   const normalized = value.trim();
@@ -88,8 +94,10 @@ const normalizeActions = (
   }));
 };
 
-export const useGlobalDialogModel = (): GlobalDialogModel => {
-  const [state, setState] = useState<GlobalDialogState>(CLOSED_STATE);
+export const useGlobalDialogModel = (
+  defaults: GlobalDialogDefaults = FALLBACK_DEFAULTS
+): GlobalDialogModel => {
+  const [state, setState] = useState<GlobalDialogState>(() => createClosedState(defaults));
 
   const openDialog = useCallback((request: GlobalDialogOpenRequest): void => {
     const title = normalizeText(request.title, "title");
@@ -97,9 +105,9 @@ export const useGlobalDialogModel = (): GlobalDialogModel => {
     const source = normalizeSource(request.source);
     const copyItems = normalizeCopyItems(request.copyItems);
     const copyActionLabel = normalizeOptionalText(request.copyActionLabel)
-      ?? DEFAULT_COPY_ACTION_LABEL;
+      ?? defaults.copyActionLabel;
     const copiedActionLabel = normalizeOptionalText(request.copiedActionLabel)
-      ?? DEFAULT_COPIED_ACTION_LABEL;
+      ?? defaults.copiedActionLabel;
     const actions = normalizeActions(request.actions);
 
     setState({
@@ -114,11 +122,11 @@ export const useGlobalDialogModel = (): GlobalDialogModel => {
       copiedActionLabel,
       actions
     });
-  }, []);
+  }, [defaults.copiedActionLabel, defaults.copyActionLabel]);
 
   const closeDialog = useCallback((): void => {
-    setState(CLOSED_STATE);
-  }, []);
+    setState(createClosedState(defaults));
+  }, [defaults]);
 
   const selectAction = useCallback((actionId: string): void => {
     const target = state.actions.find((action) => action.id === actionId);

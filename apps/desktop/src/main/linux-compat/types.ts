@@ -132,12 +132,6 @@ export type LinuxCompatUpdateConfigResponse = {
   readonly error?: string;
 };
 
-export type LinuxCompatExportResponse = {
-  readonly ok: boolean;
-  readonly filePath?: string;
-  readonly error?: string;
-};
-
 export type LinuxCompatRestartRequest = {
   readonly recovery?: boolean;
   readonly reason?: string;
@@ -160,5 +154,4 @@ export type LinuxCompatBridge = {
   readonly captureGpuSnapshot: (app: Electron.App) => Promise<void>;
   readonly requestRestart: (app: Electron.App, request?: LinuxCompatRestartRequest) => LinuxCompatRestartResponse;
   readonly persistStatusSnapshot: (storageRoot: string) => void;
-  readonly exportDiagnosticsSnapshot: (storageRoot: string) => LinuxCompatExportResponse;
 };

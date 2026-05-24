@@ -7,7 +7,6 @@ import { resolveDesktopTarget } from "../platform-target";
 import type {
   LinuxCompatBridge,
   LinuxCompatConfig,
-  LinuxCompatExportResponse,
   LinuxCompatPlan,
   LinuxCompatProfile,
   LinuxCompatRecoveryStatus,
@@ -821,31 +820,6 @@ const buildStatus = (
   generatedAt: nowIso()
 });
 
-const exportSnapshot = (
-  snapshot: LinuxCompatStatus,
-  config: LinuxCompatConfig,
-  storageRoot: string
-): LinuxCompatExportResponse => {
-  try {
-    const timestamp = snapshot.generatedAt.replaceAll(":", "-");
-    const outputPath = path.join(
-      storageRoot,
-      "diagnostics",
-      `linux-compat-${timestamp}.json`
-    );
-    writeJsonFile(outputPath, { status: snapshot, config });
-    return {
-      ok: true,
-      filePath: outputPath
-    };
-  } catch (error: unknown) {
-    return {
-      ok: false,
-      error: String(error)
-    };
-  }
-};
-
 const isRendererFailure = (details: Electron.RenderProcessGoneDetails): boolean =>
   details.reason === "crashed" ||
   details.reason === "oom" ||
@@ -1042,8 +1016,6 @@ export const createLinuxCompatBridge = (input: {
     persistStatusSnapshot: (storageRoot: string) => {
       const targetPath = path.join(storageRoot, "last-status.json");
       writeJsonFile(targetPath, status);
-    },
-    exportDiagnosticsSnapshot: (storageRoot: string) =>
-      exportSnapshot(status, config, storageRoot)
+    }
   };
 };

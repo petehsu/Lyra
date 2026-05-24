@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import type { FileEditorModel } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
 import type { ImageViewerModel } from "../image-viewer";
+import type { AgentProjectTreeModel } from "../agent-project-tree";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs/types";
 
 type UseWorkbenchAppRestorationParams = {
@@ -11,6 +12,7 @@ type UseWorkbenchAppRestorationParams = {
   readonly fileManagerModel: FileManagerModel;
   readonly fileEditorModel: FileEditorModel;
   readonly imageViewerModel: ImageViewerModel;
+  readonly agentProjectTreeModel: AgentProjectTreeModel;
 };
 
 export const useWorkbenchAppRestoration = ({
@@ -18,11 +20,13 @@ export const useWorkbenchAppRestoration = ({
   tabsModel,
   fileManagerModel,
   fileEditorModel,
-  imageViewerModel
+  imageViewerModel,
+  agentProjectTreeModel
 }: UseWorkbenchAppRestorationParams): void => {
   const restoredFileManagerInstanceIdsRef = useRef<Set<string>>(new Set());
   const restoredFileEditorInstanceIdsRef = useRef<Set<string>>(new Set());
   const restoredImageViewerInstanceIdsRef = useRef<Set<string>>(new Set());
+  const restoredAgentProjectTreeInstanceIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const fileManagerTabs = tabsModel.tabs
@@ -69,6 +73,50 @@ export const useWorkbenchAppRestoration = ({
     fileManagerModel.ensureInstance,
     fileManagerModel.openDirectory,
     fileManagerModel.openHome,
+    tabsModel.tabs
+  ]);
+
+  useEffect(() => {
+    const projectTreeTabs = tabsModel.tabs
+      .filter(
+        (tab) =>
+          tab.pageKind === "app" &&
+          tab.appId === "agent-project-tree" &&
+          tab.appInstanceId !== undefined
+      );
+    const projectTreeInstanceIds = projectTreeTabs
+      .map((tab) => tab.appInstanceId as string);
+    agentProjectTreeModel.syncTabInstances(projectTreeInstanceIds);
+
+    for (const tab of projectTreeTabs) {
+      const instanceId = tab.appInstanceId;
+      if (
+        instanceId === undefined ||
+        restoredAgentProjectTreeInstanceIdsRef.current.has(instanceId)
+      ) {
+        continue;
+      }
+      if (tab.filePath === undefined || tab.filePath.trim().length === 0) {
+        continue;
+      }
+
+      restoredAgentProjectTreeInstanceIdsRef.current.add(instanceId);
+      agentProjectTreeModel.ensureInstance(instanceId, {
+        agentSessionId: tab.fileSessionId ?? instanceId,
+        rootPath: tab.filePath,
+        title: tab.title
+      });
+    }
+
+    const activeIds = new Set(projectTreeInstanceIds);
+    for (const instanceId of [...restoredAgentProjectTreeInstanceIdsRef.current]) {
+      if (activeIds.has(instanceId) === false) {
+        restoredAgentProjectTreeInstanceIdsRef.current.delete(instanceId);
+      }
+    }
+  }, [
+    agentProjectTreeModel.syncTabInstances,
+    agentProjectTreeModel.ensureInstance,
     tabsModel.tabs
   ]);
 

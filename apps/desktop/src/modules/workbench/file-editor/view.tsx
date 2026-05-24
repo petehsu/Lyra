@@ -73,6 +73,7 @@ export const FileEditorSurface = ({
   model,
   surfaceVariant = "full",
   controlMode = "human_takeover",
+  contributeTitlebar = true,
   editorWorkAcceptLabel,
   editorWorkRejectLabel,
   editorWorkUndoLabel,
@@ -130,17 +131,19 @@ export const FileEditorSurface = ({
 
   return (
     <>
-      <FileEditorTitlebarBridge
-        renderModel={renderModel}
-        onToggleDiff={onToggleDiff}
-        onSave={onSave}
-        onGoToPreviousEditorWorkItem={onGoToPreviousEditorWorkItem}
-        onGoToNextEditorWorkItem={onGoToNextEditorWorkItem}
-        onAcceptAllEditorWorkItems={onAcceptAllEditorWorkItems}
-        onAcceptEditorWorkItem={onAcceptEditorWorkItem}
-        onRejectEditorWorkItem={onRejectEditorWorkItem}
-        onUndoEditorWorkItem={onUndoEditorWorkItem}
-      />
+      {contributeTitlebar ? (
+        <FileEditorTitlebarBridge
+          renderModel={renderModel}
+          onToggleDiff={onToggleDiff}
+          onSave={onSave}
+          onGoToPreviousEditorWorkItem={onGoToPreviousEditorWorkItem}
+          onGoToNextEditorWorkItem={onGoToNextEditorWorkItem}
+          onAcceptAllEditorWorkItems={onAcceptAllEditorWorkItems}
+          onAcceptEditorWorkItem={onAcceptEditorWorkItem}
+          onRejectEditorWorkItem={onRejectEditorWorkItem}
+          onUndoEditorWorkItem={onUndoEditorWorkItem}
+        />
+      ) : null}
     <FileEditorSurfaceView
       renderModel={renderModel}
       hostRef={runtime.hostRef}

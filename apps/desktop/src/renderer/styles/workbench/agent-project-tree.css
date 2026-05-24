@@ -1,0 +1,174 @@
+.lyra-agent-project-tree-surface {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: var(--lyra-unit-260) minmax(0, 1fr);
+  background: var(--lyra-bg-editor);
+  color: var(--lyra-text-primary);
+}
+
+.lyra-agent-project-tree-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 92%, var(--lyra-bg-editor) 8%);
+}
+
+.lyra-agent-project-tree-root-row,
+.lyra-agent-project-tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-unit-6);
+  width: 100%;
+  min-width: 0;
+  height: var(--lyra-unit-26);
+  border: 0;
+  border-radius: var(--lyra-unit-7);
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color var(--lyra-transition-fast),
+    opacity var(--lyra-transition-fast);
+}
+
+.lyra-agent-project-tree-root-row {
+  margin: var(--lyra-unit-8) var(--lyra-unit-8) 0;
+  width: calc(100% - var(--lyra-unit-16));
+  padding: 0 var(--lyra-unit-8);
+  font-size: var(--lyra-unit-12);
+  font-weight: 500;
+}
+
+.lyra-agent-project-tree-row {
+  padding-top: 0;
+  padding-right: var(--lyra-unit-8);
+  padding-bottom: 0;
+  font-size: var(--lyra-unit-12);
+}
+
+.lyra-agent-project-tree-root-row:hover,
+.lyra-agent-project-tree-row:hover {
+  background: transparent;
+  color: var(--lyra-text-primary);
+}
+
+.lyra-agent-project-tree-row-selected {
+  background: transparent;
+  color: var(--lyra-text-primary);
+  font-weight: 500;
+  position: relative;
+}
+
+.lyra-agent-project-tree-row-selected::before {
+  content: "";
+  position: absolute;
+  left: var(--lyra-unit-2);
+  top: var(--lyra-unit-6);
+  bottom: var(--lyra-unit-6);
+  width: var(--lyra-unit-2);
+  border-radius: var(--lyra-unit-999);
+  background: color-mix(in srgb, var(--lyra-text-primary) 54%, transparent);
+}
+
+.lyra-agent-project-tree-twist {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lyra-unit-13);
+  height: var(--lyra-unit-13);
+  flex: 0 0 var(--lyra-unit-13);
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agent-project-tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-agent-project-tree-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--lyra-unit-4) var(--lyra-unit-8) var(--lyra-unit-10);
+}
+
+.lyra-agent-project-tree-inline-state {
+  display: flex;
+  align-items: center;
+  min-height: var(--lyra-unit-24);
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+}
+
+.lyra-agent-project-tree-inline-error,
+.lyra-agent-project-tree-error {
+  color: color-mix(in srgb, var(--lyra-terminal-red) 88%, var(--lyra-text-primary) 12%);
+}
+
+.lyra-agent-project-tree-error {
+  margin: var(--lyra-unit-8);
+  padding: var(--lyra-unit-8);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-terminal-red) 36%, transparent);
+  border-radius: var(--lyra-unit-7);
+  background: color-mix(in srgb, var(--lyra-terminal-red) 8%, var(--lyra-bg-surface) 92%);
+  font-size: var(--lyra-unit-12);
+}
+
+.lyra-agent-project-tree-editor {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--lyra-bg-editor);
+}
+
+.lyra-agent-project-tree-editor .lyra-file-editor-surface {
+  height: 100%;
+  min-height: 0;
+}
+
+.lyra-agent-project-tree-empty {
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: var(--lyra-unit-24);
+  text-align: center;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-agent-project-tree-empty h2 {
+  margin: 0;
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-unit-15);
+  font-weight: 600;
+}
+
+.lyra-agent-project-tree-empty p {
+  max-width: 380px;
+  margin: 0;
+  font-size: var(--lyra-unit-12);
+  line-height: 1.5;
+  color: var(--lyra-text-muted);
+}
+
+@media (max-width: 760px) {
+  .lyra-agent-project-tree-surface {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 38vh) minmax(0, 1fr);
+  }
+
+  .lyra-agent-project-tree-sidebar {
+    border-right: 0;
+    border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
+  }
+}

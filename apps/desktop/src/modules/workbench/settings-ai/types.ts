@@ -3,6 +3,15 @@ import type {
   AiProviderPreset,
   AiProviderProfile,
 } from "../../../shared/ai";
+import type {
+  JcodeConfigSnapshot,
+  JcodeConfigUpdateRequest,
+  JcodeAgentRolesUpdateRequest,
+  JcodeAccountsResponse,
+  JcodeAccountRequest,
+  JcodeProviderProfileSaveRequest,
+  JcodeRegisteredCommand,
+} from "../../../shared/desktop-bridge";
 
 export type SettingsAiLabels = {
   readonly categoryLabel: string;
@@ -41,6 +50,41 @@ export type SettingsAiLabels = {
   readonly selectProviderLabel: string;
   readonly deleteProfileConfirmTitle: string;
   readonly deleteProfileConfirmDescription: string;
+  readonly configFileTitle: string;
+  readonly configFileDescription: string;
+  readonly openConfigFile: string;
+  readonly refreshJcode: string;
+  readonly jcodeConfigAriaLabel: string;
+  readonly providerAutoFallback: string;
+  readonly defaultModelFallback: string;
+  readonly customProviderFallback: string;
+  readonly accountsTitle: string;
+  readonly accountsAriaLabel: string;
+  readonly noDefaultProvider: string;
+  readonly noDefaultModel: string;
+  readonly accountsEmptyTitle: string;
+  readonly accountsEmptyDescription: string;
+  readonly accountConfigured: string;
+  readonly accountNotConfigured: string;
+  readonly removeAccount: string;
+  readonly providerProfileTitle: string;
+  readonly authHeaderLabel: string;
+  readonly roleModelsTitle: string;
+  readonly roleSwarmSubagentLabel: string;
+  readonly roleReviewLabel: string;
+  readonly roleJudgeLabel: string;
+  readonly roleMemoryLabel: string;
+  readonly roleAmbientLabel: string;
+  readonly roleProviderDefaultPlaceholder: string;
+  readonly roleMemoryDefaultPlaceholder: string;
+  readonly saveRoleModels: string;
+  readonly commandsAriaLabel: string;
+  readonly runtimeUnavailable: string;
+  readonly fileEditorUnavailable: string;
+  readonly configPathUnavailable: string;
+  readonly sectionJcode: string;
+  readonly sectionSessions: string;
+  readonly sectionCommands: string;
   readonly memoryConfigTitle: string;
   readonly memoryConfigDescription: string;
   readonly memoryConfigPlaceholder: string;
@@ -87,6 +131,9 @@ export type SettingsAiModel = {
   readonly defaultModelNames: readonly string[];
   readonly selectedPresetId: string | null;
   readonly selectedPreset: AiProviderPreset | null;
+  readonly jcodeConfig?: JcodeConfigSnapshot | null;
+  readonly jcodeAccounts?: JcodeAccountsResponse | null;
+  readonly jcodeCommands?: readonly JcodeRegisteredCommand[];
   readonly draft: SettingsAiDraft;
   readonly modelSelectionMode: SettingsAiModelSelectionMode;
   readonly availableModels: readonly AiProviderModelEntry[];
@@ -106,4 +153,15 @@ export type SettingsAiModel = {
   readonly deleteProviderModels: (providerId: string) => Promise<void>;
   readonly deleteConfiguredModel: (profileId: string, modelId: string) => Promise<void>;
   readonly setDefaultProfile: (profileId: string) => Promise<void>;
+  readonly refreshJcode?: () => Promise<void>;
+  readonly openJcodeConfigFile?: () => Promise<void>;
+  readonly updateJcodeConfig?: (request: JcodeConfigUpdateRequest) => Promise<void>;
+  readonly saveJcodeProviderProfile?: (
+    request: JcodeProviderProfileSaveRequest
+  ) => Promise<void>;
+  readonly updateJcodeAgentRoles?: (
+    request: JcodeAgentRolesUpdateRequest
+  ) => Promise<void>;
+  readonly switchJcodeAccount?: (request: JcodeAccountRequest) => Promise<void>;
+  readonly removeJcodeAccount?: (request: JcodeAccountRequest) => Promise<void>;
 };

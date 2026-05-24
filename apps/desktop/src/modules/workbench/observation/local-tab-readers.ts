@@ -218,12 +218,6 @@ export const readObservedLocalTab = (
         isDirty: state.isDirty,
         isReadOnly: state.isReadOnly,
         ...(state.revision === undefined ? {} : { revision: state.revision }),
-        diagnostics: state.diagnostics.slice(0, 100).map((diagnostic) => ({
-          ...(diagnostic.severity === undefined ? {} : { severity: diagnostic.severity }),
-          message: diagnostic.message,
-          line: diagnostic.startLine,
-          column: diagnostic.startCharacter
-        })),
         content: sliced.content,
         truncated: sliced.truncated
       }

@@ -6,7 +6,6 @@ export {
 export type {
   LinuxCompatBridge,
   LinuxCompatConfig,
-  LinuxCompatExportResponse,
   LinuxCompatProfile,
   LinuxCompatReadStatusResponse,
   LinuxCompatReadConfigResponse,

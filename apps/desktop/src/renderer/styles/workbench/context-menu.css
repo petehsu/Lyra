@@ -15,7 +15,7 @@
   isolation: isolate;
   pointer-events: auto;
   border-radius: calc(var(--lyra-radius-lg) + var(--lyra-unit-2));
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
   background: transparent;
   box-shadow: none;
   -webkit-backdrop-filter: blur(var(--lyra-unit-16)) saturate(1.08);

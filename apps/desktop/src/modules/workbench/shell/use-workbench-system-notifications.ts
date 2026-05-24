@@ -4,14 +4,12 @@ import type {
   LyraDesktopApi,
   SystemNotificationAction
 } from "../../../shared/desktop-bridge";
-import type { WorkbenchFeedbackModel } from "../feedback";
 import type { createTranslator } from "../i18n";
 import type {
   WorkbenchNotificationItem,
   WorkbenchNotificationModel,
   WorkbenchNotificationPublishRequest
 } from "../notifications";
-import { mapFeedbackEventToNotification as mapFeedback } from "../notifications";
 import type { WorkbenchPreferences } from "../preferences";
 import type { WorkbenchPreferencesModel } from "../preferences";
 
@@ -32,11 +30,6 @@ type UseWorkbenchSystemNotificationActivationParams = {
   readonly notificationModel: WorkbenchNotificationModel;
   readonly onOpenNotificationCenter: () => void;
   readonly onOpenNotificationSource: (notificationId: string) => void;
-};
-
-type UseWorkbenchFeedbackNotificationsParams = {
-  readonly feedbackModel: WorkbenchFeedbackModel;
-  readonly publishNotification: WorkbenchNotificationModel["publishNotification"];
 };
 
 type UseWorkbenchSystemNotificationPermissionGuardParams = {
@@ -140,20 +133,6 @@ export const useWorkbenchSystemNotificationActivation = ({
     onOpenNotificationCenter,
     onOpenNotificationSource
   ]);
-};
-
-export const useWorkbenchFeedbackNotifications = ({
-  feedbackModel,
-  publishNotification
-}: UseWorkbenchFeedbackNotificationsParams): void => {
-  useEffect(() => {
-    const unsubscribe = feedbackModel.subscribe((event) => {
-      publishNotification(mapFeedback(event));
-    });
-    return () => {
-      unsubscribe();
-    };
-  }, [feedbackModel, publishNotification]);
 };
 
 export const useWorkbenchSystemNotificationPermissionGuard = ({

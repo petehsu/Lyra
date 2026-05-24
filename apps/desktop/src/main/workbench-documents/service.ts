@@ -19,7 +19,6 @@ import type {
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { WorkbenchDocumentsCache } from "./cache";
 import { detectDocumentCandidates } from "./detector";
-import { buildDocumentDiagnostics, createDocumentServiceError } from "./diagnostics";
 import { readDocumentFallback, searchFallbackDocument } from "./fallback";
 import { fetchDocumentBytes } from "./fetch";
 import { resolveActiveDocumentCandidate } from "./resolver";
@@ -31,6 +30,9 @@ import type {
 
 const DEFAULT_MAX_CHARS = 28_000;
 const DEFAULT_MAX_MATCHES = 20;
+
+const createCodedError = (code: string, message: string): Error =>
+  Object.assign(new Error(message), { code });
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -373,40 +375,10 @@ export const createWorkbenchDocumentsService = ({
       } catch (error) {
         const code = (error as { code?: string }).code;
         if (code === "document_unsupported_format" && target.candidate.documentUrl !== undefined) {
-          let bytesForDiagnosis =
-            cache.bytes.read(buildBytesCacheKey(target.tabId, target.candidate.documentUrl)) as
-              | { finalUrl: string; mimeType?: string; body: Buffer }
-              | null;
-          if (bytesForDiagnosis === null) {
-            try {
-              bytesForDiagnosis = await fetchDocumentBytes({
-                browserBridge,
-                tabId: target.tabId,
-                url: target.candidate.documentUrl,
-                ...(target.candidate.frameUrl === undefined ? {} : { referrer: target.candidate.frameUrl })
-              });
-              cache.bytes.write(buildBytesCacheKey(target.tabId, target.candidate.documentUrl), bytesForDiagnosis);
-            } catch {
-              bytesForDiagnosis = null;
-            }
-          }
-          throw createDocumentServiceError({
+          throw createCodedError(
             code,
-            message: error instanceof Error ? error.message : "document format is unsupported",
-            details: buildDocumentDiagnostics({
-              stage: "parse",
-              target,
-              ...(bytesForDiagnosis === null ? {} : { fetch: bytesForDiagnosis }),
-              request: {
-                scope,
-                maxChars,
-                cursor,
-                ...(typeof request.pageStart === "number" ? { pageStart: request.pageStart } : {}),
-                ...(typeof request.pageEnd === "number" ? { pageEnd: request.pageEnd } : {})
-              },
-              causeCode: code
-            })
-          });
+            error instanceof Error ? error.message : "document format is unsupported"
+          );
         }
         const fallbackable = code === "document_parse_failed" || code === "document_unsupported_scheme" || code === "document_fetch_failed";
         if (!fallbackable) {

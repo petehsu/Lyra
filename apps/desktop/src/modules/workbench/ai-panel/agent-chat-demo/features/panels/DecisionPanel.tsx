@@ -88,7 +88,7 @@ export function DecisionPanel({
             className="decision-nav-btn"
             disabled={!canPrev}
             onClick={(e) => { e.stopPropagation(); setCurrentIndex((i) => i - 1); }}
-            aria-label="Previous question"
+            aria-label={t("decision.prevQuestion")}
           >
             <ChevronLeft size={14} strokeWidth={2.2} />
           </button>
@@ -100,7 +100,7 @@ export function DecisionPanel({
             className="decision-nav-btn"
             disabled={!canNext}
             onClick={(e) => { e.stopPropagation(); setCurrentIndex((i) => i + 1); }}
-            aria-label="Next question"
+            aria-label={t("decision.nextQuestion")}
           >
             <ChevronRight size={14} strokeWidth={2.2} />
           </button>
@@ -155,7 +155,7 @@ export function DecisionPanel({
                 type="button"
                 className="decision-submit"
                 onClick={handleSubmit}
-                aria-label="Submit"
+                aria-label={t("decision.submit")}
               >
                 <ArrowUp size={14} strokeWidth={2.4} />
               </button>

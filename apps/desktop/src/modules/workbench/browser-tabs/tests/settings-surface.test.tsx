@@ -35,6 +35,22 @@ describe("BrowserSettingsSurface", () => {
     );
   });
 
+  test("opens directly to the AI provider settings category when requested", () => {
+    render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          focusCategoryRequest: { categoryId: "ai", requestId: 1 }
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("settings-nav");
+    expect(within(nav).getByRole("button", { name: "AI" })).toHaveClass(
+      "lyra-settings-nav-item-active"
+    );
+    expect(screen.getByLabelText("ai-provider-settings")).toBeInTheDocument();
+  });
+
   test("routes choice, boolean, and multi-choice controls through props", () => {
     const onThemeChange = vi.fn();
     const onPreventSleepChange = vi.fn();

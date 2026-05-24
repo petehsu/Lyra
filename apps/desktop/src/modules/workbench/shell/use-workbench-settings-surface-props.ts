@@ -10,7 +10,10 @@ import type {
   SystemNotificationStatus,
   UiuxListPacksResponse
 } from "../../../shared/desktop-bridge";
-import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
+import type {
+  BrowserSettingsCategoryFocusRequest,
+  BrowserSettingsSurfaceProps
+} from "../browser-tabs/settings-surface";
 import type { GlobalDialogModel } from "../global-dialog";
 import type { WorkbenchNotificationModel } from "../notifications";
 import type { WorkbenchPreferencesModel } from "../preferences";
@@ -29,6 +32,7 @@ type UseWorkbenchSettingsSurfacePropsParams = {
   readonly jsReplEnabled: boolean;
   readonly searchIndexStatus: SearchIndexStatusResponse | null;
   readonly searchRebuildIndexPending: boolean;
+  readonly focusCategoryRequest?: BrowserSettingsCategoryFocusRequest | null;
   readonly openDialog: GlobalDialogModel["openDialog"];
   readonly publishNotification: WorkbenchNotificationModel["publishNotification"];
   readonly onJsReplChange: (enabled: boolean) => void;
@@ -51,6 +55,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
   jsReplEnabled,
   searchIndexStatus,
   searchRebuildIndexPending,
+  focusCategoryRequest = null,
   openDialog,
   publishNotification,
   onJsReplChange,
@@ -258,7 +263,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
         }
         publishLinuxCompatNotification(
           labels.settingsSurface.linuxCompatRestartLabel,
-          response.error ?? labels.settingsSurface.linuxCompatDiagnosticsFailed,
+          response.error ?? labels.settingsSurface.linuxCompatRequestFailed,
           "error"
         );
       })
@@ -318,37 +323,13 @@ export const useWorkbenchSettingsSurfaceProps = ({
         }
         publishLinuxCompatNotification(
           labels.settingsSurface.linuxCompatProfileLabel,
-          response.error ?? labels.settingsSurface.linuxCompatDiagnosticsFailed,
+          response.error ?? labels.settingsSurface.linuxCompatRequestFailed,
           "error"
         );
       })
       .catch((error: unknown) => {
         publishLinuxCompatNotification(
           labels.settingsSurface.linuxCompatProfileLabel,
-          String(error),
-          "error"
-        );
-      });
-  };
-
-  const handleLinuxCompatExportDiagnostics = (): void => {
-    const linuxCompat = desktopApi?.linuxCompat;
-    if (linuxCompat === undefined) {
-      return;
-    }
-    void linuxCompat.exportDiagnostics()
-      .then((response) => {
-        publishLinuxCompatNotification(
-          labels.settingsSurface.linuxCompatExportDiagnosticsLabel,
-          response.ok
-            ? `${labels.settingsSurface.linuxCompatDiagnosticsExported}${response.filePath === undefined ? "" : ` ${response.filePath}`}`
-            : response.error ?? labels.settingsSurface.linuxCompatDiagnosticsFailed,
-          response.ok ? "success" : "error"
-        );
-      })
-      .catch((error: unknown) => {
-        publishLinuxCompatNotification(
-          labels.settingsSurface.linuxCompatExportDiagnosticsLabel,
           String(error),
           "error"
         );
@@ -363,6 +344,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
 
   return {
     ...labels.settingsSurface,
+    focusCategoryRequest,
     localeValue: preferences.locale,
     themeValue: preferences.theme,
     uiStyleValue: pendingUiPackId ?? preferences.uiPackId,
@@ -458,7 +440,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onSystemNotificationClickBehaviorChange: preferencesModel.setSystemNotificationClickBehavior,
     onSystemNotificationActionsChange: preferencesModel.setSystemNotificationActionsEnabled,
     onLinuxCompatProfileChange: handleLinuxCompatProfileChange,
-    onLinuxCompatExportDiagnostics: handleLinuxCompatExportDiagnostics,
     onLinuxCompatRestart: () => {
       openLinuxCompatRestartDialog("linux-compat-settings");
     }

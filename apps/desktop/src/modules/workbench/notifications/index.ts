@@ -2,7 +2,6 @@ export {
   createNotificationCenterAppRequest,
   useWorkbenchNotificationModel
 } from "./service";
-export { mapFeedbackEventToNotification } from "./feedback-adapter";
 export { WorkbenchNotificationTopbar } from "./topbar";
 export type {
   WorkbenchNotificationTopbarProps,

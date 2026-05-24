@@ -11,6 +11,7 @@ type UseWorkbenchActiveAppContextParams = {
   readonly fileManagerModel: FileManagerModel;
   readonly fileEditorModel: FileEditorModel;
   readonly labels: WorkbenchLabels;
+  readonly onOpenJcodeConfigFile?: (filePath: string) => void | Promise<void>;
 };
 
 export const useWorkbenchActiveAppContext = ({
@@ -18,7 +19,8 @@ export const useWorkbenchActiveAppContext = ({
   desktopApi,
   fileManagerModel,
   fileEditorModel,
-  labels
+  labels,
+  onOpenJcodeConfigFile
 }: UseWorkbenchActiveAppContextParams) => {
   const activeFileManagerState =
     activeTab?.pageKind === "app" &&
@@ -34,7 +36,8 @@ export const useWorkbenchActiveAppContext = ({
       : null;
   const settingsAiModel = useSettingsAiModel({
     desktopApi,
-    labels: labels.settingsAi
+    labels: labels.settingsAi,
+    onOpenJcodeConfigFile
   });
 
   return {

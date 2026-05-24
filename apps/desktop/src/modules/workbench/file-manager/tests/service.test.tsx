@@ -373,11 +373,7 @@ const createDesktopApi = (): {
           updatedAt: new Date().toISOString()
         }
       }),
-      requestRestart: async () => ({ ok: true as const }),
-      exportDiagnostics: async () => ({
-        ok: true,
-        filePath: "/tmp/linux-compat.json"
-      })
+      requestRestart: async () => ({ ok: true as const })
     },
     search: {
       aggregate: async () => ({

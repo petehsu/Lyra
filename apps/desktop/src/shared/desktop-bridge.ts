@@ -1,13 +1,4 @@
 import type {
-  LyraResourceEvent,
-  LyraResourceLifecycleRequest,
-  LyraResourceRegisterRequest,
-  LyraResourceSnapshot,
-  LyraSystemActivityActionRequest,
-  LyraSystemActivityActionResult,
-  LyraSystemSnapshot
-} from "./resource-runtime";
-import type {
   FileManagerCreateFileRequest,
   FileManagerCreateFolderRequest,
   FileManagerDirectoryMutationResponse,
@@ -96,20 +87,89 @@ export type {
   AgentApi,
   AgentDecisionSubmitRequest,
   AgentFollowState,
+  AgentGitChangedFile,
+  AgentGitDiffRequest,
+  AgentGitDiffResponse,
+  AgentGitDiffScope,
+  AgentGitFileRequest,
+  AgentGitFileStatus,
+  AgentGitMutationResponse,
+  AgentGitStatusRequest,
+  AgentGitStatusSnapshot,
+  AgentGitStatusSummary,
   AgentMessage,
   AgentPermissionRespondRequest,
+  AgentRollbackPreviewResponse,
+  AgentRollbackRequest,
+  AgentRollbackRestoreResponse,
   AgentRole,
   AgentRuntimeEvent,
+  AgentSelfDevStartRequest,
+  AgentSelfDevStartResponse,
+  AgentSelfDevStatusRequest,
+  AgentSelfDevStatusResponse,
+  AgentSessionArchiveRequest,
+  AgentSessionBindProjectRequest,
   AgentSessionCreateRequest,
+  AgentSessionDeleteRequest,
+  AgentSessionDeleteResponse,
   AgentSessionReadRequest,
+  AgentSessionRenameRequest,
+  AgentSessionSaveRequest,
   AgentSessionSnapshot,
+  AgentSessionKind,
+  AgentSessionAutomationSnapshot,
+  AgentSidePanelPageSnapshot,
+  AgentSidePanelSnapshot,
   AgentToolActivity,
   AgentToolStatus,
   AgentTurnCancelRequest,
   AgentTurnCancelResponse,
   AgentTurnSendRequest,
   AgentTurnSendResponse,
-  AgentTurnStatus
+  AgentTurnStatus,
+  JcodeCommandsListResponse,
+  JcodeConfigSnapshot,
+  JcodeConfigUpdateRequest,
+  JcodeAccountLoginRequest,
+  JcodeAccountRequest,
+  JcodeAccountSnapshot,
+  JcodeAccountsResponse,
+  JcodeAgentRolesUpdateRequest,
+  JcodeAgentActionRunRequest,
+  JcodeAutomationUpdateRequest,
+  JcodeAutomationUpdateResponse,
+  JcodeBtwRunRequest,
+  JcodeCompactResponse,
+  JcodeFeedbackRunRequest,
+  JcodeGoalsRequest,
+  JcodeGoalsResponse,
+  JcodeModelEntry,
+  JcodeModelRefreshRequest,
+  JcodeModelRoute,
+  JcodeModelsListRequest,
+  JcodeModelsListResponse,
+  JcodeModelSwitchRequest,
+  JcodeOvernightListResponse,
+  JcodeOvernightRunRequest,
+  JcodeOvernightRunResponse,
+  JcodeOvernightRunSnapshot,
+  JcodeOvernightStartRequest,
+  JcodeOvernightStartResponse,
+  JcodeProviderOptionState,
+  JcodeProviderOptionsUpdateRequest,
+  JcodeProviderProfileSaveRequest,
+  JcodePokeRequest,
+  JcodePokeResponse,
+  JcodeRegisteredCommand,
+  JcodeSessionActionRequest,
+  JcodeSessionForkResponse,
+  JcodeSessionSummary,
+  JcodeSessionsListRequest,
+  JcodeSessionsListResponse,
+  JcodeSidePanelActionResponse,
+  JcodeSubagentRunRequest,
+  JcodeSubagentRunResponse
 } from "./agent";
 export type {
   AiDiscoverModelsRequest,
@@ -141,25 +201,6 @@ export type {
   ImageViewerReadTileRequest,
   ImageViewerTileResponse
 } from "./image-viewer";
-export type {
-  LyraResourceCoreGroup,
-  LyraResourceEvent,
-  LyraResourceLifecycleRequest,
-  LyraResourceLifecycleState,
-  LyraResourceNode,
-  LyraResourceProcessSnapshot,
-  LyraResourceRegisterRequest,
-  LyraResourceSnapshot,
-  LyraResourceMonitorScope,
-  LyraSystemActivity,
-  LyraSystemActivityAction,
-  LyraSystemActivityActionRequest,
-  LyraSystemActivityActionResult,
-  LyraSystemActivityKind,
-  LyraSystemLoadSample,
-  LyraSystemMetricSnapshot,
-  LyraSystemSnapshot
-} from "./resource-runtime";
 export type {
   DownloadManagerBtTaskOptions,
   DownloadManagerChecksum,
@@ -259,7 +300,6 @@ export const LYRA_CHANNELS = {
   linuxCompatReadConfig: "lyra:linux-compat/read-config",
   linuxCompatUpdateConfig: "lyra:linux-compat/update-config",
   linuxCompatRestart: "lyra:linux-compat/restart",
-  linuxCompatExportDiagnostics: "lyra:linux-compat/export-diagnostics",
   windowStateChanged: "lyra:shell/window/state-changed",
   aggregateSearch: "lyra:search/aggregate",
   localSearch: "lyra:search/local",
@@ -329,13 +369,6 @@ export const LYRA_CHANNELS = {
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
   workbenchBrowserApplyWebTheme: "lyra:workbench-browser/apply-web-theme",
   workbenchBrowserEvent: "lyra:workbench-browser/event",
-  resourcesReadSnapshot: "lyra:resources/read-snapshot",
-  resourcesReadSystemSnapshot: "lyra:resources/read-system-snapshot",
-  resourcesRegisterOrUpdate: "lyra:resources/register-or-update",
-  resourcesRemove: "lyra:resources/remove",
-  resourcesRequestLifecycle: "lyra:resources/request-lifecycle",
-  resourcesRequestActivityAction: "lyra:resources/request-activity-action",
-  resourcesEvent: "lyra:resources/event",
   lspOpenDocument: "lyra:lsp/open-document",
   lspChangeDocument: "lyra:lsp/change-document",
   lspSaveDocument: "lyra:lsp/save-document",
@@ -352,10 +385,62 @@ export const LYRA_CHANNELS = {
   terminalEvent: "lyra:terminal/event",
   agentSessionCreate: "lyra:agent/session/create",
   agentSessionRead: "lyra:agent/session/read",
+  agentSessionList: "lyra:agent/session/list",
+  agentSessionSave: "lyra:agent/session/save",
+  agentSessionUnsave: "lyra:agent/session/unsave",
+  agentSessionRename: "lyra:agent/session/rename",
+  agentSessionArchive: "lyra:agent/session/archive",
+  agentSessionDelete: "lyra:agent/session/delete",
+  agentSessionBindProject: "lyra:agent/session/bind-project",
+  agentSelfDevStart: "lyra:agent/selfdev/start",
+  agentSelfDevStatus: "lyra:agent/selfdev/status",
+  agentSelfDevSendTurn: "lyra:agent/selfdev/send-turn",
+  jcodeOvernightStart: "lyra:jcode/overnight/start",
+  jcodeOvernightList: "lyra:jcode/overnight/list",
+  jcodeOvernightStatus: "lyra:jcode/overnight/status",
+  jcodeOvernightLog: "lyra:jcode/overnight/log",
+  jcodeOvernightReview: "lyra:jcode/overnight/review",
+  jcodeOvernightCancel: "lyra:jcode/overnight/cancel",
   agentTurnSend: "lyra:agent/turn/send",
   agentTurnCancel: "lyra:agent/turn/cancel",
+  agentRollbackPreview: "lyra:agent/rollback/preview",
+  agentRollbackRestore: "lyra:agent/rollback/restore",
+  agentGitStatus: "lyra:agent/git/status",
+  agentGitDiff: "lyra:agent/git/diff",
+  agentGitStage: "lyra:agent/git/stage",
+  agentGitUnstage: "lyra:agent/git/unstage",
+  agentGitDiscard: "lyra:agent/git/discard",
   agentDecisionSubmit: "lyra:agent/decision/submit",
   agentPermissionRespond: "lyra:agent/permission/respond",
+  jcodeConfigRead: "lyra:jcode/config/read",
+  jcodeConfigUpdate: "lyra:jcode/config/update",
+  jcodeProviderProfileSave: "lyra:jcode/provider-profile/save",
+  jcodeCommandsList: "lyra:jcode/commands/list",
+  jcodeSessionsList: "lyra:jcode/sessions/list",
+  jcodeModelsList: "lyra:jcode/models/list",
+  jcodeModelSwitch: "lyra:jcode/model/switch",
+  jcodeModelRefresh: "lyra:jcode/model/refresh",
+  jcodeProviderOptionsUpdate: "lyra:jcode/provider-options/update",
+  jcodeAgentRolesUpdate: "lyra:jcode/agent-roles/update",
+  jcodeImproveRun: "lyra:jcode/improve/run",
+  jcodeRefactorRun: "lyra:jcode/refactor/run",
+  jcodePokeTrigger: "lyra:jcode/poke/trigger",
+  jcodeReviewRun: "lyra:jcode/review/run",
+  jcodeJudgeRun: "lyra:jcode/judge/run",
+  jcodeSubagentRun: "lyra:jcode/subagent/run",
+  jcodeBtwRun: "lyra:jcode/btw/run",
+  jcodeSessionSplit: "lyra:jcode/session/split",
+  jcodeSessionTransfer: "lyra:jcode/session/transfer",
+  jcodeSessionCompact: "lyra:jcode/session/compact",
+  jcodeSessionAutomationUpdate: "lyra:jcode/session/automation/update",
+  jcodeGoalsList: "lyra:jcode/goals/list",
+  jcodeGoalsOpen: "lyra:jcode/goals/open",
+  jcodeGoalsResume: "lyra:jcode/goals/resume",
+  jcodeGoalsShow: "lyra:jcode/goals/show",
+  jcodeAccountsList: "lyra:jcode/accounts/list",
+  jcodeAccountsLogin: "lyra:jcode/accounts/login",
+  jcodeAccountsSwitch: "lyra:jcode/accounts/switch",
+  jcodeAccountsRemove: "lyra:jcode/accounts/remove",
   agentEvent: "lyra:agent/event",
   workbenchObservationQuery: "lyra:workbench-observation/query",
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
@@ -569,12 +654,6 @@ export type LinuxCompatUpdateConfigRequest = {
 export type LinuxCompatUpdateConfigResponse = {
   readonly ok: boolean;
   readonly config?: LinuxCompatConfig;
-  readonly error?: string;
-};
-
-export type LinuxCompatExportResponse = {
-  readonly ok: boolean;
-  readonly filePath?: string;
   readonly error?: string;
 };
 
@@ -1126,26 +1205,7 @@ export type LspCompletionResult = {
   readonly isIncomplete: boolean;
 };
 
-export type LspDiagnostic = {
-  readonly startLine: number;
-  readonly startCharacter: number;
-  readonly endLine: number;
-  readonly endCharacter: number;
-  readonly severity?: number;
-  readonly code?: string;
-  readonly source?: string;
-  readonly message: string;
-};
-
 export type LspRuntimeEvent =
-  | {
-      readonly kind: "diagnostic";
-      readonly sessionId?: string;
-      readonly filePath?: string;
-      readonly languageId?: LspLanguageId;
-      readonly projectRoot?: string;
-      readonly diagnostics: readonly LspDiagnostic[];
-    }
   | {
       readonly kind: "server-status";
       readonly languageId?: LspLanguageId;
@@ -1225,7 +1285,6 @@ export type LinuxCompatApi = {
   readonly requestRestart: (
     request?: LinuxCompatRestartRequest
   ) => Promise<LinuxCompatRestartResponse>;
-  readonly exportDiagnostics: () => Promise<LinuxCompatExportResponse>;
 };
 
 export type FilesApi = {
@@ -1319,18 +1378,6 @@ export type WorkbenchBrowserApi = {
   readonly onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => () => void;
 };
 
-export type ResourcesApi = {
-  readonly readSnapshot: () => Promise<LyraResourceSnapshot>;
-  readonly readSystemSnapshot: () => Promise<LyraSystemSnapshot>;
-  readonly registerOrUpdate: (request: LyraResourceRegisterRequest) => Promise<void>;
-  readonly remove: (resourceId: string) => Promise<void>;
-  readonly requestLifecycle: (request: LyraResourceLifecycleRequest) => Promise<void>;
-  readonly requestActivityAction: (
-    request: LyraSystemActivityActionRequest
-  ) => Promise<LyraSystemActivityActionResult>;
-  readonly onEvent: (listener: (event: LyraResourceEvent) => void) => () => void;
-};
-
 export type TerminalApi = {
   readonly createSession: (request: TerminalCreateRequest) => Promise<TerminalSessionSnapshot>;
   readonly restoreSessions: (request: TerminalRestoreRequest) => Promise<readonly TerminalSessionSnapshot[]>;
@@ -1399,7 +1446,6 @@ export type LyraDesktopApi = {
   readonly downloads?: DownloadManagerApi;
   readonly imageViewer?: ImageViewerApi;
   readonly workbenchBrowser: WorkbenchBrowserApi;
-  readonly resources?: ResourcesApi;
   readonly lsp: LspApi;
   readonly terminal: TerminalApi;
   readonly agent?: AgentApi;

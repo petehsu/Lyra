@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
 import { APP_CONFIG } from "../../core/config";
+import { t } from "../../core/i18n";
 import { useData } from "../../data/DataProvider";
 import { Message } from "./Message";
 import { Composer } from "./Composer";
@@ -29,6 +30,8 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
     submitDecisions,
     approvePermission,
     denyPermission,
+    modelControls,
+    openModelSettings,
   } = useData();
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -103,7 +106,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
           type="button"
           className={`scroll-to-bottom ${isAtBottom ? "out" : "in"}`}
           onClick={scrollToBottom}
-          aria-label="Scroll to bottom"
+          aria-label={t("scroll.toBottom")}
           aria-hidden={isAtBottom}
         >
           <svg className="scroll-circle" viewBox="0 0 34 34">
@@ -134,7 +137,11 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
           />
         )}
 
-        <Composer onSend={sendMessage} />
+        <Composer
+          onSend={sendMessage}
+          modelControls={modelControls ?? null}
+          onOpenModelSettings={openModelSettings}
+        />
       </div>
     </>
   );

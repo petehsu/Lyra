@@ -7,6 +7,8 @@ import type {
 import type { ImageViewerModel } from "../image-viewer";
 import type { FileManagerChooserMode, FileManagerModel } from "../file-manager";
 import type { WorkbenchNotificationModel } from "../notifications";
+import type { AgentSessionHistorySurfaceProps } from "../agent-session-history";
+import type { AgentProjectTreeModel } from "../agent-project-tree";
 import type { WorkbenchPreferencesModel } from "../preferences";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel, WorkspaceTab } from "../workspace-tabs/types";
@@ -34,6 +36,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly resolveFileManagerChooser: (instanceId: string) => FileManagerChooserMode | null;
   readonly fileEditorModel: FileEditorModel;
   readonly imageViewerModel: ImageViewerModel;
+  readonly agentProjectTreeModel: AgentProjectTreeModel;
   readonly activeEditorReviewIndex: number;
   readonly editorReviewItems: readonly FileEditorChangeReviewItem[];
   readonly resolveActiveEditorWorkItem: (filePath: string) => FileEditorChangeReviewItem | undefined;
@@ -51,6 +54,16 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly onRevealPathInFileManager: (filePath: string) => void;
   readonly onOpenNotificationSource: (notificationId: string) => void;
   readonly onRequestClearNotifications: () => void;
+  readonly onOpenAgentGit: (request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+  }) => Promise<void> | void;
+  readonly agentSessionHistory: {
+    readonly labels: AgentSessionHistorySurfaceProps["labels"];
+    readonly activeSessionId: string | null;
+    readonly onOpenSession: AgentSessionHistorySurfaceProps["onOpenSession"];
+    readonly locale?: AgentSessionHistorySurfaceProps["locale"];
+  };
 };
 
 export const useWorkspaceSurfaceRouterProps = ({
@@ -67,6 +80,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   resolveFileManagerChooser,
   fileEditorModel,
   imageViewerModel,
+  agentProjectTreeModel,
   activeEditorReviewIndex,
   editorReviewItems,
   resolveActiveEditorWorkItem,
@@ -83,7 +97,9 @@ export const useWorkspaceSurfaceRouterProps = ({
   onOpenFileFromManager,
   onRevealPathInFileManager,
   onOpenNotificationSource,
-  onRequestClearNotifications
+  onRequestClearNotifications,
+  onOpenAgentGit,
+  agentSessionHistory
 }: UseWorkspaceSurfaceRouterPropsParams): WorkspaceSurfaceRouterCoreProps => {
   const preferences = preferencesModel.preferences;
 
@@ -108,6 +124,14 @@ export const useWorkspaceSurfaceRouterProps = ({
     fileEditorLabels: labels.fileEditor,
     imageViewerModel,
     imageViewerLabels: labels.imageViewer,
+    agentProjectTreeModel,
+    agentProjectTreeLabels: labels.agentProjectTree,
+    agentGitLabels: labels.agentGit,
+    agentSelfDevLabels: labels.agentSelfDev,
+    agentSelfDevLocale: preferences.locale,
+    agentOvernightLabels: labels.agentOvernight,
+    agentOvernightLocale: preferences.locale,
+    onOpenAgentGit,
     fileEditorReview: {
       editorWorkAcceptLabel: labels.fileEditorReview.accept,
       editorWorkRejectLabel: labels.fileEditorReview.reject,
@@ -137,14 +161,12 @@ export const useWorkspaceSurfaceRouterProps = ({
     onOpenFileFromManager,
     onRevealPathInFileManager,
     i18n: labels.workspaceI18n,
-    resourceMonitor: {
-      labels: labels.resourceMonitor
-    },
     notifications: {
       model: notificationModel,
       labels: labels.notificationCenter,
       onOpenNotificationSource,
       onRequestClearAll: onRequestClearNotifications
-    }
+    },
+    agentSessionHistory
   };
 };

@@ -9,6 +9,7 @@ type SelectorRule = {
   readonly selector: string;
   readonly required: readonly RegExp[];
   readonly forbidden?: readonly RegExp[];
+  readonly optional?: boolean;
 };
 
 type IconOnlyHoverRule = {
@@ -93,7 +94,6 @@ const DISALLOWED_LOCAL_TITLEBAR_CLASSES = [
   "lyra-deep-search-toolbar",
   "lyra-image-viewer-toolbar",
   "lyra-notification-center-header",
-  "lyra-resource-monitor-header",
 ] as const;
 
 const selectorRules: readonly SelectorRule[] = [
@@ -251,6 +251,12 @@ const selectorRules: readonly SelectorRule[] = [
   {
     selector: ".lyra-browser-tab-item:hover .lyra-browser-tab-title",
     required: [/color:\s*var\(--lyra-text-primary\)\s*;/]
+  },
+  {
+    selector: ".lyra-ai-agent-send-ready",
+    required: [],
+    forbidden: [/border-color\s*:/, /background\s*:/, /box-shadow\s*:/],
+    optional: true
   }
 ];
 
@@ -462,6 +468,9 @@ export const validateSelectorRules = (css: string): string[] => {
   for (const rule of selectorRules) {
     const block = findSelectorBlock(css, rule.selector);
     if (block === null) {
+      if (rule.optional === true) {
+        continue;
+      }
       violations.push(`Missing selector block: ${rule.selector}`);
       continue;
     }

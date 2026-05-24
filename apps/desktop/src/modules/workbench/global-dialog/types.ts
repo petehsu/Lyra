@@ -51,3 +51,8 @@ export type GlobalDialogModel = {
   readonly closeDialog: () => void;
   readonly selectAction: (actionId: string) => void;
 };
+
+export type GlobalDialogDefaults = {
+  readonly copyActionLabel: string;
+  readonly copiedActionLabel: string;
+};

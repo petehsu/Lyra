@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   buildSettingsCategoryDomId,
@@ -9,10 +9,15 @@ import type { BrowserSettingsSurfaceProps } from "./settings-surface-types";
 import type { SettingsCategoryId } from "./settings-schema";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
-export type { BrowserSettingsSurfaceProps } from "./settings-surface-types";
+export type {
+  BrowserSettingsCategoryFocusRequest,
+  BrowserSettingsSurfaceProps
+} from "./settings-surface-types";
 
 export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
-  const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>("general");
+  const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>(
+    props.focusCategoryRequest?.categoryId ?? "general"
+  );
   const model = useMemo(() => createSettingsSurfaceModel(props), [props]);
 
   const scrollToCategory = (categoryId: SettingsCategoryId): void => {
@@ -27,6 +32,18 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
     setActiveCategory(categoryId);
     scrollToCategory(categoryId);
   };
+
+  useEffect(() => {
+    const categoryId = props.focusCategoryRequest?.categoryId;
+    if (categoryId === undefined) {
+      return;
+    }
+    setActiveCategory(categoryId);
+    requestAnimationFrame(() => {
+      scrollToCategory(categoryId);
+    });
+  }, [props.focusCategoryRequest?.categoryId, props.focusCategoryRequest?.requestId]);
+
   const titlebarContribution = useMemo(
     () => ({
       ariaLabel: model.title,

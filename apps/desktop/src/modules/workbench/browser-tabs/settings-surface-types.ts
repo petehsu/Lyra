@@ -21,6 +21,20 @@ import type { TerminalThemeMode } from "../terminal-theme";
 import type { WorkbenchThemeId } from "../theme";
 import type { WorkbenchUiPackId } from "../ui-platform";
 
+export type BrowserSettingsCategoryId =
+  | "general"
+  | "appearance"
+  | "workspace"
+  | "notifications"
+  | "linux"
+  | "search"
+  | "ai";
+
+export type BrowserSettingsCategoryFocusRequest = {
+  readonly categoryId: BrowserSettingsCategoryId;
+  readonly requestId: number;
+};
+
 export type SettingsOption<T extends string = string> = {
   readonly value: T;
   readonly label: string;
@@ -29,6 +43,7 @@ export type SettingsOption<T extends string = string> = {
 
 export type BrowserSettingsSurfaceProps = {
   readonly title: string;
+  readonly focusCategoryRequest?: BrowserSettingsCategoryFocusRequest | null;
   readonly aiCategoryLabel: string;
   readonly notificationsCategoryLabel: string;
   readonly linuxCategoryLabel: string;
@@ -108,7 +123,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly linuxCompatGpuLabel: string;
   readonly linuxCompatSwitchesLabel: string;
   readonly linuxCompatWarningsLabel: string;
-  readonly linuxCompatExportDiagnosticsLabel: string;
   readonly linuxCompatRestartLabel: string;
   readonly linuxCompatRestartDescription: string;
   readonly linuxCompatRestartNowLabel: string;
@@ -117,8 +131,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly linuxCompatRestartDialogCancel: string;
   readonly linuxCompatRecoveryTitle: string;
   readonly linuxCompatRecoveryDescription: string;
-  readonly linuxCompatDiagnosticsExported: string;
-  readonly linuxCompatDiagnosticsFailed: string;
+  readonly linuxCompatRequestFailed: string;
   readonly localeValue: WorkbenchLocale;
   readonly themeValue: WorkbenchThemeId;
   readonly uiStyleValue: WorkbenchUiPackId;
@@ -207,6 +220,5 @@ export type BrowserSettingsSurfaceProps = {
   ) => void;
   readonly onSystemNotificationActionsChange: (value: boolean) => void;
   readonly onLinuxCompatProfileChange: (value: LinuxCompatProfile) => void;
-  readonly onLinuxCompatExportDiagnostics: () => void;
   readonly onLinuxCompatRestart: () => void;
 };

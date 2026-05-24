@@ -9,6 +9,7 @@ import {
 import { ToolDetails } from "./ToolDetails";
 import { TickingNumber } from "../../components/TickingNumber";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
+import { t } from "../../core/i18n";
 
 /**
  * If the tool call is an edit, return its current +/- counts; otherwise null.
@@ -91,7 +92,7 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
           type="button"
           className="fold-line fold-line-group"
           onClick={() => setOpen(false)}
-          aria-label="Collapse tool group"
+          aria-label={t("tool.collapseGroup")}
         />
       )}
 
@@ -170,7 +171,7 @@ function ToolCallRow({ call }: { call: ToolCall }) {
               type="button"
               className="fold-line fold-line-call"
               onClick={() => setOpen(false)}
-              aria-label="Collapse tool call"
+              aria-label={t("tool.collapseCall")}
             />
           )}
 

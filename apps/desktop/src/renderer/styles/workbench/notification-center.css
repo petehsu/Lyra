@@ -58,7 +58,7 @@
   min-width: var(--lyra-size-notification-preview-min-w);
   height: var(--lyra-unit-28);
   border-radius: var(--lyra-unit-999);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
   background: color-mix(in srgb, var(--lyra-bg-surface) 92%, var(--lyra-bg-editor) 8%);
   color: var(--lyra-text-secondary);
   display: inline-flex;
@@ -76,7 +76,7 @@
 
 .lyra-notification-topbar-preview:hover {
   color: var(--lyra-text-primary);
-  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 38%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-notification-topbar-preview-source {
@@ -173,7 +173,7 @@
   justify-content: space-between;
   gap: var(--lyra-unit-12);
   padding: var(--lyra-unit-12) var(--lyra-unit-14);
-  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 88%, transparent);
+  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
 }
 
 .lyra-notification-center-header h2 {
@@ -218,7 +218,7 @@
 .lyra-notification-center-list {
   min-height: 0;
   overflow-y: auto;
-  border-right: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 84%, transparent);
+  border-right: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 50%, transparent);
   padding: var(--lyra-unit-10);
   display: grid;
   grid-auto-rows: min-content;
@@ -226,7 +226,7 @@
 }
 
 .lyra-notification-center-item {
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
   border-radius: var(--lyra-unit-10);
   background: color-mix(in srgb, var(--lyra-bg-surface) 82%, transparent);
   color: inherit;
@@ -243,11 +243,11 @@
 }
 
 .lyra-notification-center-item:hover {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 38%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-notification-center-item-active {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 46%, var(--lyra-text-secondary) 54%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 34%, var(--lyra-text-secondary) 54%);
   background: color-mix(in srgb, var(--lyra-bg-hover) 30%, transparent);
 }
 
@@ -306,7 +306,7 @@
 .lyra-notification-center-detail-card {
   height: 100%;
   min-height: 0;
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
   border-radius: var(--lyra-unit-12);
   background: color-mix(in srgb, var(--lyra-bg-surface) 86%, transparent);
   display: grid;
@@ -319,7 +319,7 @@
   align-items: center;
   gap: var(--lyra-unit-10);
   padding: var(--lyra-unit-12);
-  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 76%, transparent);
+  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 50%, transparent);
 }
 
 .lyra-notification-center-detail-icon {
@@ -372,7 +372,7 @@
   margin: 0;
   padding: var(--lyra-unit-10);
   border-radius: var(--lyra-unit-8);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 62%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 42%, transparent);
   background: color-mix(in srgb, var(--lyra-bg-editor) 90%, transparent);
   color: var(--lyra-text-secondary);
   font-size: var(--lyra-unit-11);
@@ -385,7 +385,7 @@
   display: flex;
   justify-content: flex-end;
   padding: var(--lyra-unit-10) var(--lyra-unit-12) var(--lyra-unit-12);
-  border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
 }
 
 .lyra-notification-center-detail-open {
@@ -425,6 +425,6 @@
 
   .lyra-notification-center-list {
     border-right: 0;
-    border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 84%, transparent);
+    border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 50%, transparent);
   }
 }

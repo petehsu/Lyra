@@ -45,6 +45,7 @@ export type RuntimeRequestHandler = (payload: unknown) => Promise<unknown> | unk
 
 export type LyraRuntimeClientOptions = {
   readonly storageRoot: string;
+  readonly agentStorageRoot: string;
 };
 
 export type LyraRuntimeClient = {
@@ -114,6 +115,29 @@ const ensureSocketParent = (socketPath: string): void => {
   fs.mkdirSync(path.dirname(socketPath), { recursive: true });
 };
 
+const resolveJcodeRuntimeDir = (agentStorageRoot: string): string =>
+  path.join(agentStorageRoot, "runtime");
+
+const ensureAgentStoragePaths = (options: LyraRuntimeClientOptions): void => {
+  fs.mkdirSync(options.agentStorageRoot, { recursive: true });
+  fs.mkdirSync(resolveJcodeRuntimeDir(options.agentStorageRoot), { recursive: true });
+};
+
+const buildRuntimeDaemonEnv = (
+  baseEnv: NodeJS.ProcessEnv,
+  options: LyraRuntimeClientOptions,
+  nodePath: string
+): NodeJS.ProcessEnv => ({
+  ...baseEnv,
+  ELECTRON_RUN_AS_NODE: "",
+  LYRA_AGENT_HOME: options.agentStorageRoot,
+  LYRA_AGENT_RUNTIME_DIR: resolveJcodeRuntimeDir(options.agentStorageRoot),
+  JCODE_HOME: options.agentStorageRoot,
+  JCODE_RUNTIME_DIR: resolveJcodeRuntimeDir(options.agentStorageRoot),
+  LYRA_JS_REPL_NODE_PATH: nodePath,
+  LYRA_JS_REPL_NODE_RUN_AS_NODE: "1"
+});
+
 const createRequestId = (): string =>
   `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -122,6 +146,7 @@ export const createLyraRuntimeClient = (
 ): LyraRuntimeClient => {
   const socketPath = resolveSocketPath(options.storageRoot);
   ensureSocketParent(socketPath);
+  ensureAgentStoragePaths(options);
   const binaryPath = resolveRuntimeBinaryPath();
   const pending = new Map<string, PendingRequest>();
   const listeners = new Set<RuntimeEventListener>();
@@ -277,12 +302,7 @@ export const createLyraRuntimeClient = (
     child = spawn(binaryPath, ["--socket", socketPath], {
       cwd: resolveRuntimeWorkingDirectory(),
       stdio: "pipe",
-      env: {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: "",
-        LYRA_JS_REPL_NODE_PATH: process.execPath,
-        LYRA_JS_REPL_NODE_RUN_AS_NODE: "1"
-      }
+      env: buildRuntimeDaemonEnv(process.env, options, process.execPath)
     });
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString().trim();
@@ -397,4 +417,10 @@ export const createLyraRuntimeClient = (
       child = null;
     }
   };
+};
+
+export const runtimeClientInternalsForTests = {
+  buildRuntimeDaemonEnv,
+  resolveJcodeRuntimeDir,
+  resolveSocketPath
 };

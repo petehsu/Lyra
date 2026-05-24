@@ -20,7 +20,6 @@ import type {
   BrowserDomSummaryReadOptions,
   BrowserTextExtractOptions
 } from "../workbench-observation/browser/types";
-import type { ResourceRuntimeService } from "../resources/types";
 import type { DownloadManagerIpcBridge } from "../download-manager";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import { createWorkbenchBrowserViewManager } from "./view-manager";
@@ -110,17 +109,14 @@ export type WorkbenchBrowserIpcBridge = {
 
 export const createWorkbenchBrowserIpcBridge = ({
   getWindow,
-  resourceRuntime,
   downloadManager
 }: {
   readonly getWindow: () => BrowserWindow | null;
-  readonly resourceRuntime?: ResourceRuntimeService;
   readonly downloadManager?: DownloadManagerIpcBridge;
 }): WorkbenchBrowserIpcBridge => {
   const manager: WorkbenchBrowserViewManager = createWorkbenchBrowserViewManager({
     getWindow,
     publishEvent: (event) => publishEvent(getWindow, event),
-    ...(resourceRuntime === undefined ? {} : { resourceRuntime }),
     ...(downloadManager === undefined
       ? {}
       : { onWebContentsCreated: downloadManager.attachWebContents })

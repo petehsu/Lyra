@@ -153,12 +153,6 @@ export type FileEditorObservation = {
   readonly isDirty: boolean;
   readonly isReadOnly: boolean;
   readonly revision?: string;
-  readonly diagnostics: readonly {
-    readonly severity?: number;
-    readonly message: string;
-    readonly line?: number;
-    readonly column?: number;
-  }[];
   readonly content: string;
   readonly truncated: boolean;
 };

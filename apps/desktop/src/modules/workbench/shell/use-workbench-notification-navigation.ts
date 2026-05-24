@@ -39,8 +39,14 @@ const resolveNotificationAppIconKey = (
       return "file-manager-home";
     case "file-editor":
       return "file-editor-code";
-    case "resource-monitor":
-      return "resource-monitor-default";
+    case "agent-project-tree":
+      return "agent-project-tree-default";
+    case "agent-session-history":
+      return "agent-session-history-default";
+    case "agent-selfdev":
+      return "agent-selfdev-default";
+    case "agent-overnight":
+      return "agent-overnight-default";
     case "notification-center":
       return "notification-center-default";
     default:

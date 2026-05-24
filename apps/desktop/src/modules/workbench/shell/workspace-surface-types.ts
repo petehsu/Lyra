@@ -18,8 +18,12 @@ export type SurfacePropsByKind = {
   readonly fileManager: ComponentProps<WorkbenchSurfaceAdapters["fileManager"]>;
   readonly fileEditor: ComponentProps<WorkbenchSurfaceAdapters["fileEditor"]>;
   readonly imageViewer: ComponentProps<WorkbenchSurfaceAdapters["imageViewer"]>;
-  readonly resourceMonitor: ComponentProps<WorkbenchSurfaceAdapters["resourceMonitor"]>;
+  readonly agentProjectTree: ComponentProps<WorkbenchSurfaceAdapters["agentProjectTree"]>;
+  readonly agentGit: ComponentProps<WorkbenchSurfaceAdapters["agentGit"]>;
+  readonly agentSelfDev: ComponentProps<WorkbenchSurfaceAdapters["agentSelfDev"]>;
+  readonly agentOvernight: ComponentProps<WorkbenchSurfaceAdapters["agentOvernight"]>;
   readonly notificationCenter: ComponentProps<WorkbenchSurfaceAdapters["notificationCenter"]>;
+  readonly agentSessionHistory: ComponentProps<WorkbenchSurfaceAdapters["agentSessionHistory"]>;
 };
 
 export type WorkspaceSurfaceRenderModel =

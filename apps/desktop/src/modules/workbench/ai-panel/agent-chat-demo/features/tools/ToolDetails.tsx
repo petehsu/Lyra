@@ -4,6 +4,7 @@ import { ChevronIcon } from "../../components/Icons";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { TickingNumber } from "../../components/TickingNumber";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
+import { t } from "../../core/i18n";
 
 /**
  * Level-3 renderer. Rendered inline without surrounding borders or panels so
@@ -70,7 +71,7 @@ function EditCard({
           type="button"
           className="fold-line fold-line-edit"
           onClick={() => setOpen(false)}
-          aria-label="Collapse edit details"
+          aria-label={t("tool.collapseEditDetails")}
         />
       )}
 

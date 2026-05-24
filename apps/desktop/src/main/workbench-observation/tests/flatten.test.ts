@@ -17,7 +17,6 @@ describe("createExtractedObservationText", () => {
         status: "ready",
         isDirty: true,
         isReadOnly: false,
-        diagnostics: [],
         content: "x".repeat(100),
         truncated: true
       }

@@ -3,16 +3,28 @@ export {
   isFileEditorAppId,
   isFileManagerAppId,
   isImageViewerAppId,
-  isNotificationCenterAppId,
-  isResourceMonitorAppId
+  isAgentProjectTreeAppId,
+  isAgentGitAppId,
+  isAgentSelfDevAppId,
+  isAgentOvernightAppId,
+  isAgentSessionHistoryAppId,
+  isNotificationCenterAppId
 } from "./service";
 export type {
+  AgentGitAppIconKey,
+  AgentGitAppId,
+  AgentSelfDevAppIconKey,
+  AgentSelfDevAppId,
+  AgentOvernightAppIconKey,
+  AgentOvernightAppId,
+  AgentProjectTreeAppIconKey,
+  AgentProjectTreeAppId,
+  AgentSessionHistoryAppIconKey,
+  AgentSessionHistoryAppId,
   NotificationCenterAppIconKey,
   NotificationCenterAppId,
   ImageViewerAppIconKey,
   ImageViewerAppId,
-  ResourceMonitorAppIconKey,
-  ResourceMonitorAppId,
   WorkbenchAppId,
   WorkspaceAppIconKey,
   WorkspaceAppRef

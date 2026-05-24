@@ -38,7 +38,6 @@ export const createFileEditorState = (
   message: undefined,
   lastSavedAt: undefined,
   lspVersion: 1,
-  diagnostics: [],
   ...overrides
 });
 

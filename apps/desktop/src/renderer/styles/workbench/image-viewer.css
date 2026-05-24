@@ -16,11 +16,11 @@
   justify-content: space-between;
   gap: var(--lyra-unit-8);
   padding: var(--lyra-unit-8) var(--lyra-unit-12);
-  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
 }
 
 .lyra-image-viewer-status {
-  border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
   border-bottom: 0;
   font-size: var(--lyra-unit-12);
   color: var(--lyra-text-muted);
@@ -58,7 +58,7 @@
 
 .lyra-image-viewer-icon-button,
 .lyra-image-viewer-button {
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
   background: var(--lyra-bg-surface-elevated);
   color: var(--lyra-text-primary);
   display: inline-flex;
@@ -76,7 +76,7 @@
 
 .lyra-image-viewer-icon-button:hover:not(:disabled),
 .lyra-image-viewer-button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 38%, var(--lyra-text-secondary) 48%);
   color: var(--lyra-text-primary);
 }
 
@@ -188,7 +188,7 @@
     linear-gradient(
       90deg,
       transparent,
-      color-mix(in srgb, var(--lyra-line-default) 58%, transparent),
+      color-mix(in srgb, var(--lyra-line-default) 40%, transparent),
       color-mix(in srgb, var(--lyra-text-muted) 36%, transparent),
       transparent
     );
@@ -220,7 +220,7 @@
   gap: var(--lyra-unit-6);
   justify-items: center;
   padding: var(--lyra-unit-14) var(--lyra-unit-18);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 62%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 42%, transparent);
   border-radius: var(--lyra-radius-8);
   background: color-mix(in srgb, var(--lyra-bg-editor) 84%, transparent);
   box-shadow: var(--lyra-shadow-elevated-md);

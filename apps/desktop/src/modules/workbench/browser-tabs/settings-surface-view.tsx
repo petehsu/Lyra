@@ -359,13 +359,15 @@ const SettingsStatusList = ({
         </div>
       ))}
     </div>
-    <button
-      className="lyra-settings-ai-action"
-      type="button"
-      onClick={control.onAction}
-    >
-      {control.actionLabel}
-    </button>
+    {control.actionLabel !== undefined && control.onAction !== undefined ? (
+      <button
+        className="lyra-settings-ai-action"
+        type="button"
+        onClick={control.onAction}
+      >
+        {control.actionLabel}
+      </button>
+    ) : null}
   </div>
 );
 

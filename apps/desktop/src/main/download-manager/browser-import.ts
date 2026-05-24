@@ -94,8 +94,6 @@ export const parseExternalBrowserProbeResult = (
 const downloadManagerPythonEnv = (): NodeJS.ProcessEnv => ({
   ...process.env,
   DO_NOT_TRACK: "1",
-  DISABLE_TELEMETRY: "1",
-  ANONYMIZED_TELEMETRY: "false",
   PYTHONNOUSERSITE: "1",
   PYTHONDONTWRITEBYTECODE: "1"
 });

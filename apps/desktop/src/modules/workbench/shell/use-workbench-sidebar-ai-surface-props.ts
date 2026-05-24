@@ -22,6 +22,17 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   readonly onRequestProjectBind: (
     currentPath?: string
   ) => Promise<string | null>;
+  readonly onOpenProjectTree: (request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+  }) => Promise<void> | void;
+  readonly onOpenSelfDevLab: (request: {
+    readonly parentSessionId: string | null;
+  }) => Promise<void> | void;
+  readonly onOpenOvernightLab: (request: {
+    readonly parentSessionId: string | null;
+  }) => Promise<void> | void;
+  readonly onOpenModelSettings: () => Promise<void> | void;
   readonly t: (key: I18nKey) => string;
 };
 
@@ -31,6 +42,11 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   settingsAiModel,
   aiPanelSide,
   onToggleAiPanelSide,
+  onRequestProjectBind,
+  onOpenProjectTree,
+  onOpenSelfDevLab,
+  onOpenOvernightLab,
+  onOpenModelSettings,
   t
 }: UseWorkbenchSidebarAiSurfacePropsParams): AiPanelSurfaceProps =>
   useMemo(
@@ -42,6 +58,11 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       title: t("ai.tabTitle"),
       aiPanelSide,
       onToggleAiPanelSide,
+      onRequestProjectBind,
+      onOpenProjectTree,
+      onOpenSelfDevLab,
+      onOpenOvernightLab,
+      onOpenModelSettings,
       movePanelToLeftLabel: t("ai.movePanelToLeft"),
       movePanelToRightLabel: t("ai.movePanelToRight"),
       emptyThreadLabel: t("ai.startBySending"),
@@ -51,6 +72,11 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       desktopApi,
       settingsAiModel,
       onToggleAiPanelSide,
+      onRequestProjectBind,
+      onOpenProjectTree,
+      onOpenSelfDevLab,
+      onOpenOvernightLab,
+      onOpenModelSettings,
       preferences.locale,
       t,
     ]

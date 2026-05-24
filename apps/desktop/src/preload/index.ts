@@ -3,16 +3,71 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   LYRA_CHANNELS,
   type AgentDecisionSubmitRequest,
+  type AgentGitDiffRequest,
+  type AgentGitDiffResponse,
+  type AgentGitFileRequest,
+  type AgentGitMutationResponse,
+  type AgentGitStatusRequest,
+  type AgentGitStatusSnapshot,
   type AgentPermissionRespondRequest,
+  type AgentRollbackPreviewResponse,
+  type AgentRollbackRequest,
+  type AgentRollbackRestoreResponse,
   type AgentRuntimeEvent,
+  type AgentSelfDevStartRequest,
+  type AgentSelfDevStartResponse,
+  type AgentSelfDevStatusRequest,
+  type AgentSelfDevStatusResponse,
+  type AgentSessionArchiveRequest,
+  type AgentSessionBindProjectRequest,
   type AgentSessionCreateRequest,
+  type AgentSessionDeleteRequest,
+  type AgentSessionDeleteResponse,
   type AgentSessionReadRequest,
+  type AgentSessionRenameRequest,
+  type AgentSessionSaveRequest,
   type AgentSessionSnapshot,
   type AgentTurnCancelRequest,
   type AgentTurnCancelResponse,
   type AgentTurnSendRequest,
   type AgentTurnSendResponse,
   type AppMetaPayload,
+  type JcodeAccountLoginRequest,
+  type JcodeAccountRequest,
+  type JcodeAccountsResponse,
+  type JcodeAutomationUpdateRequest,
+  type JcodeAutomationUpdateResponse,
+  type JcodeBtwRunRequest,
+  type JcodeCompactResponse,
+  type JcodeCommandsListResponse,
+  type JcodeConfigSnapshot,
+  type JcodeConfigUpdateRequest,
+  type JcodeAgentActionRunRequest,
+  type JcodeAgentRolesUpdateRequest,
+  type JcodeFeedbackRunRequest,
+  type JcodeGoalsRequest,
+  type JcodeGoalsResponse,
+  type JcodeModelRefreshRequest,
+  type JcodeModelsListRequest,
+  type JcodeModelsListResponse,
+  type JcodeModelSwitchRequest,
+  type JcodeOvernightListResponse,
+  type JcodeOvernightRunRequest,
+  type JcodeOvernightRunResponse,
+  type JcodeOvernightStartRequest,
+  type JcodeOvernightStartResponse,
+  type JcodeProviderOptionsUpdateRequest,
+  type JcodeProviderProfileSaveRequest,
+  type JcodePokeRequest,
+  type JcodePokeResponse,
+  type JcodeSessionActionRequest,
+  type JcodeSessionForkResponse,
+  type JcodeSessionSummary,
+  type JcodeSessionsListRequest,
+  type JcodeSessionsListResponse,
+  type JcodeSidePanelActionResponse,
+  type JcodeSubagentRunRequest,
+  type JcodeSubagentRunResponse,
   type DownloadManagerBatchRequest,
   type DownloadManagerEnqueueRequest,
   type DownloadManagerEvent,
@@ -24,7 +79,6 @@ import {
   type DownloadManagerTask,
   type DownloadManagerTaskRequest,
   type DownloadManagerUpdateSettingsRequest,
-  type LinuxCompatExportResponse,
   type LinuxCompatReadConfigResponse,
   type LinuxCompatReadStatusResponse,
   type LinuxCompatRestartRequest,
@@ -76,13 +130,6 @@ import {
   type SystemNotificationShowRequest,
   type SystemNotificationShowResult,
   type SystemNotificationStatus,
-  type LyraResourceEvent,
-  type LyraSystemActivityActionRequest,
-  type LyraSystemActivityActionResult,
-  type LyraSystemSnapshot,
-  type LyraResourceLifecycleRequest,
-  type LyraResourceRegisterRequest,
-  type LyraResourceSnapshot,
   type ImageViewerCloseSessionRequest,
   type ImageViewerEvent,
   type ImageViewerOpenRequest,
@@ -195,8 +242,6 @@ const systemNotificationActivationListeners = new Set<(
   event: SystemNotificationActivation
 ) => void>();
 let systemNotificationActivationBridgeReady = false;
-const resourceEventListeners = new Set<(event: LyraResourceEvent) => void>();
-let resourceEventBridgeReady = false;
 const imageViewerEventListeners = new Set<(event: ImageViewerEvent) => void>();
 let imageViewerEventBridgeReady = false;
 const directoryPatchListeners = new Set<(patch: FileManagerDirectoryPatch) => void>();
@@ -281,25 +326,6 @@ const ensureWorkbenchBrowserEventBridge = (): void => {
         return;
       }
       for (const listener of workbenchBrowserEventListeners) {
-        listener(payload);
-      }
-    }
-  );
-};
-
-const ensureResourceEventBridge = (): void => {
-  if (resourceEventBridgeReady) {
-    return;
-  }
-  resourceEventBridgeReady = true;
-
-  ipcRenderer.on(
-    LYRA_CHANNELS.resourcesEvent,
-    (_event: Electron.IpcRendererEvent, payload: LyraResourceEvent): void => {
-      if (payload === null || typeof payload !== "object" || typeof payload.kind !== "string") {
-        return;
-      }
-      for (const listener of resourceEventListeners) {
         listener(payload);
       }
     }
@@ -559,11 +585,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(
         LYRA_CHANNELS.linuxCompatRestart,
         request
-      ) as Promise<LinuxCompatRestartResponse>,
-    exportDiagnostics: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.linuxCompatExportDiagnostics
-      ) as Promise<LinuxCompatExportResponse>
+      ) as Promise<LinuxCompatRestartResponse>
   },
   search: {
     aggregate: (request: SearchAggregateRequest) =>
@@ -772,40 +794,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       };
     }
   },
-  resources: {
-    readSnapshot: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.resourcesReadSnapshot
-      ) as Promise<LyraResourceSnapshot>,
-    readSystemSnapshot: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.resourcesReadSystemSnapshot
-      ) as Promise<LyraSystemSnapshot>,
-    registerOrUpdate: (request: LyraResourceRegisterRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.resourcesRegisterOrUpdate,
-        request
-      ) as Promise<void>,
-    remove: (resourceId: string) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.resourcesRemove, resourceId) as Promise<void>,
-    requestLifecycle: (request: LyraResourceLifecycleRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.resourcesRequestLifecycle,
-        request
-      ) as Promise<void>,
-    requestActivityAction: (request: LyraSystemActivityActionRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.resourcesRequestActivityAction,
-        request
-      ) as Promise<LyraSystemActivityActionResult>,
-    onEvent: (listener: (event: LyraResourceEvent) => void) => {
-      ensureResourceEventBridge();
-      resourceEventListeners.add(listener);
-      return () => {
-        resourceEventListeners.delete(listener);
-      };
-    }
-  },
   lsp: {
     openDocument: (request: LspDocumentRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.lspOpenDocument, request) as Promise<void>,
@@ -875,6 +863,85 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentSessionRead,
         request ?? {}
       ) as Promise<AgentSessionSnapshot>,
+    listSessions: (request?: JcodeSessionsListRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSessionList,
+        request ?? {}
+      ) as Promise<JcodeSessionsListResponse>,
+    saveSession: (request: AgentSessionSaveRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSessionSave,
+        request
+      ) as Promise<JcodeSessionSummary>,
+    unsaveSession: (request: AgentSessionDeleteRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSessionUnsave,
+        request
+      ) as Promise<JcodeSessionSummary>,
+    renameSession: (request: AgentSessionRenameRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSessionRename,
+        request
+      ) as Promise<JcodeSessionSummary>,
+    archiveSession: (request: AgentSessionArchiveRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSessionArchive,
+        request
+      ) as Promise<JcodeSessionSummary>,
+    deleteSession: (request: AgentSessionDeleteRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSessionDelete,
+        request
+      ) as Promise<AgentSessionDeleteResponse>,
+    bindProject: (request: AgentSessionBindProjectRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSessionBindProject,
+        request
+      ) as Promise<AgentSessionSnapshot>,
+    startSelfDev: (request?: AgentSelfDevStartRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSelfDevStart,
+        request ?? {}
+      ) as Promise<AgentSelfDevStartResponse>,
+    readSelfDevStatus: (request?: AgentSelfDevStatusRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSelfDevStatus,
+        request ?? {}
+      ) as Promise<AgentSelfDevStatusResponse>,
+    sendSelfDevTurn: (request: AgentTurnSendRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSelfDevSendTurn,
+        request
+      ) as Promise<AgentTurnSendResponse>,
+    startOvernight: (request: JcodeOvernightStartRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeOvernightStart,
+        request
+      ) as Promise<JcodeOvernightStartResponse>,
+    listOvernightRuns: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeOvernightList
+      ) as Promise<JcodeOvernightListResponse>,
+    readOvernightStatus: (request?: JcodeOvernightRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeOvernightStatus,
+        request ?? {}
+      ) as Promise<JcodeOvernightRunResponse>,
+    readOvernightLog: (request?: JcodeOvernightRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeOvernightLog,
+        request ?? {}
+      ) as Promise<JcodeOvernightRunResponse>,
+    readOvernightReview: (request?: JcodeOvernightRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeOvernightReview,
+        request ?? {}
+      ) as Promise<JcodeOvernightRunResponse>,
+    cancelOvernight: (request?: JcodeOvernightRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeOvernightCancel,
+        request ?? {}
+      ) as Promise<JcodeOvernightRunResponse>,
     sendTurn: (request: AgentTurnSendRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentTurnSend,
@@ -885,10 +952,178 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentTurnCancel,
         request
       ) as Promise<AgentTurnCancelResponse>,
+    previewRollback: (request: AgentRollbackRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentRollbackPreview,
+        request
+      ) as Promise<AgentRollbackPreviewResponse>,
+    restoreRollback: (request: AgentRollbackRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentRollbackRestore,
+        request
+      ) as Promise<AgentRollbackRestoreResponse>,
+    readGitStatus: (request: AgentGitStatusRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentGitStatus,
+        request
+      ) as Promise<AgentGitStatusSnapshot>,
+    readGitDiff: (request: AgentGitDiffRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentGitDiff,
+        request
+      ) as Promise<AgentGitDiffResponse>,
+    stageGitFile: (request: AgentGitFileRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentGitStage,
+        request
+      ) as Promise<AgentGitMutationResponse>,
+    unstageGitFile: (request: AgentGitFileRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentGitUnstage,
+        request
+      ) as Promise<AgentGitMutationResponse>,
+    discardGitFile: (request: AgentGitFileRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentGitDiscard,
+        request
+      ) as Promise<AgentGitMutationResponse>,
     submitDecision: (request: AgentDecisionSubmitRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentDecisionSubmit, request) as Promise<unknown>,
     respondPermission: (request: AgentPermissionRespondRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentPermissionRespond, request) as Promise<unknown>,
+    readJcodeConfig: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.jcodeConfigRead) as Promise<JcodeConfigSnapshot>,
+    updateJcodeConfig: (request: JcodeConfigUpdateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeConfigUpdate,
+        request
+      ) as Promise<JcodeConfigSnapshot>,
+    saveJcodeProviderProfile: (request: JcodeProviderProfileSaveRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeProviderProfileSave,
+        request
+      ) as Promise<JcodeConfigSnapshot>,
+    listJcodeCommands: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeCommandsList
+      ) as Promise<JcodeCommandsListResponse>,
+    listJcodeModels: (request?: JcodeModelsListRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeModelsList,
+        request ?? {}
+      ) as Promise<JcodeModelsListResponse>,
+    switchJcodeModel: (request: JcodeModelSwitchRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeModelSwitch,
+        request
+      ) as Promise<JcodeModelsListResponse>,
+    refreshJcodeModels: (request?: JcodeModelRefreshRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeModelRefresh,
+        request ?? {}
+      ) as Promise<JcodeModelsListResponse>,
+    updateJcodeProviderOptions: (request: JcodeProviderOptionsUpdateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeProviderOptionsUpdate,
+        request
+      ) as Promise<JcodeModelsListResponse>,
+    updateJcodeAgentRoles: (request: JcodeAgentRolesUpdateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeAgentRolesUpdate,
+        request
+      ) as Promise<JcodeConfigSnapshot>,
+    runImprove: (request?: JcodeAgentActionRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeImproveRun,
+        request ?? {}
+      ) as Promise<AgentTurnSendResponse>,
+    runRefactor: (request?: JcodeAgentActionRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeRefactorRun,
+        request ?? {}
+      ) as Promise<AgentTurnSendResponse>,
+    triggerPoke: (request?: JcodePokeRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodePokeTrigger,
+        request ?? {}
+      ) as Promise<JcodePokeResponse>,
+    runReview: (request?: JcodeFeedbackRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeReviewRun,
+        request ?? {}
+      ) as Promise<AgentTurnSendResponse>,
+    runJudge: (request?: JcodeFeedbackRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeJudgeRun,
+        request ?? {}
+      ) as Promise<AgentTurnSendResponse>,
+    runSubagent: (request: JcodeSubagentRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeSubagentRun,
+        request
+      ) as Promise<JcodeSubagentRunResponse>,
+    runBtw: (request: JcodeBtwRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeBtwRun,
+        request
+      ) as Promise<JcodeSidePanelActionResponse>,
+    splitSession: (request?: JcodeSessionActionRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeSessionSplit,
+        request ?? {}
+      ) as Promise<JcodeSessionForkResponse>,
+    transferSession: (request?: JcodeSessionActionRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeSessionTransfer,
+        request ?? {}
+      ) as Promise<JcodeSessionForkResponse>,
+    compactSession: (request?: JcodeSessionActionRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeSessionCompact,
+        request ?? {}
+      ) as Promise<JcodeCompactResponse>,
+    updateSessionAutomation: (request: JcodeAutomationUpdateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeSessionAutomationUpdate,
+        request
+      ) as Promise<JcodeAutomationUpdateResponse>,
+    listGoals: (request?: JcodeGoalsRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeGoalsList,
+        request ?? {}
+      ) as Promise<JcodeGoalsResponse>,
+    openGoals: (request?: JcodeGoalsRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeGoalsOpen,
+        request ?? {}
+      ) as Promise<JcodeGoalsResponse>,
+    resumeGoal: (request?: JcodeGoalsRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeGoalsResume,
+        request ?? {}
+      ) as Promise<JcodeGoalsResponse>,
+    showGoal: (request: JcodeGoalsRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeGoalsShow,
+        request
+      ) as Promise<JcodeGoalsResponse>,
+    listAccounts: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.jcodeAccountsList) as Promise<JcodeAccountsResponse>,
+    loginAccount: (request: JcodeAccountLoginRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeAccountsLogin,
+        request
+      ) as Promise<JcodeAccountsResponse>,
+    switchAccount: (request: JcodeAccountRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeAccountsSwitch,
+        request
+      ) as Promise<JcodeAccountsResponse>,
+    removeAccount: (request: JcodeAccountRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeAccountsRemove,
+        request
+      ) as Promise<JcodeAccountsResponse>,
     onEvent: (listener: (event: AgentRuntimeEvent) => void) => {
       ensureAgentEventBridge();
       agentEventListeners.add(listener);

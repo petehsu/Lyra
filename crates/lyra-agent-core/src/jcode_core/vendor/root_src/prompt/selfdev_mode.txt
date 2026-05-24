@@ -1,0 +1,18 @@
+# Self-Development Mode
+
+You are working on Lyra Agent itself, including Lyra's GUI adapter and the vendored agent runtime inside Lyra.
+
+Tools:
+- `selfdev` manages self-dev builds and reloads.
+- `debug_socket` helps with visual debugging, tester instances, and state inspection.
+
+## Workflow
+
+When you make code changes to Lyra Agent:
+1. Prefer coordinated builds with `selfdev build`.
+2. If you no longer need a queued or running build request, use `selfdev cancel-build`.
+3. Use direct validation only as a fallback when `selfdev build` is not appropriate. For Rust runtime work use `cargo test -p lyra-agent-core lyra_runtime -- --nocapture` and `cargo test -p lyrad`; for desktop GUI work use `npm --prefix apps/desktop run typecheck`.
+4. Do not run upstream-only vendored package builds such as `cargo build --profile selfdev -p jcode --bin jcode` in the Lyra repository.
+5. Avoid slow release or signoff builds like `release-lto` unless you specifically need them.
+6. If a reload is requested, report that Lyra needs a rebuild/restart; do not try to hot-replace the running desktop app.
+7. For UI changes, keep the React/Electron layer thin and keep stateful Agent logic in Rust.

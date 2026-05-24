@@ -12,13 +12,17 @@
 // shape. See `MockDataProvider.tsx` for the reference implementation.
 
 import { createContext, useContext, type ReactNode } from "react";
+import type { AgentRollbackPreviewResponse } from "../../../../../shared/agent";
 import type {
+  AgentAutomationSettings,
+  AgentSidePanel,
   ChatMessage,
+  ComposerModelControls,
   DecisionQuestion,
   DiffFileEntry,
   PermissionRequest,
   SessionMeta,
-  TodoItem,
+  TodoItem
 } from "../core/types";
 
 export interface DataProviderValue {
@@ -40,8 +44,85 @@ export interface DataProviderValue {
   /** Pending permission requests from the agent. */
   permissions: PermissionRequest[];
 
+  /** Lyra Agent-backed model and provider controls rendered in the composer toolbar. */
+  modelControls?: ComposerModelControls | null;
+
+  /** Open Lyra Agent model/provider settings. */
+  openModelSettings(): Promise<void>;
+
+  /** Lyra Agent side-panel pages such as `/btw` answers and goals. */
+  sidePanel?: AgentSidePanel | null;
+
   /** Send a new user message. Returns a promise that resolves when delivered. */
   sendMessage(text: string): Promise<void>;
+
+  /** Cancel the currently running turn when available. */
+  cancelTurn(): Promise<void>;
+
+  /** Preview what a user-message rollback would restore/remove. */
+  previewRollback(messageId: string): Promise<AgentRollbackPreviewResponse>;
+
+  /** Restore files and conversation to before a user message. */
+  rollbackMessage(messageId: string): Promise<void>;
+
+  /** Create a new Lyra Agent-backed session and make it active. */
+  createSession(): Promise<void>;
+
+  /** Bind the current Lyra Agent session to a real workspace directory. */
+  bindProject(): Promise<void>;
+
+  /** Open the current bound project in a workspace file tree. */
+  openProjectTree(): Promise<void>;
+
+  /** Open the Lyra Agent self-development workspace. */
+  openSelfDevLab(): Promise<void>;
+
+  /** Open the long-running supervised task workspace. */
+  openOvernightLab(): Promise<void>;
+
+  /** Start Lyra Agent improvement mode from the GUI. */
+  runImprove(options?: { planOnly?: boolean; focus?: string | null }): Promise<void>;
+
+  /** Start Lyra Agent refactor mode from the GUI. */
+  runRefactor(options?: { planOnly?: boolean; focus?: string | null }): Promise<void>;
+
+  /** Poke the model to continue unfinished Lyra Agent todos. */
+  pokeTodos(): Promise<void>;
+
+  /** Launch a one-shot Lyra Agent review session from the GUI. */
+  runReview(): Promise<void>;
+
+  /** Launch a one-shot Lyra Agent judge session from the GUI. */
+  runJudge(): Promise<void>;
+
+  /** Run a manual Lyra Agent subagent tool action. */
+  runSubagent(options: {
+    prompt: string;
+    subagentType?: string | null;
+    model?: string | null;
+    continueSessionId?: string | null;
+  }): Promise<void>;
+
+  /** Ask a side question and render the answer in the Lyra Agent side panel. */
+  askSideQuestion(question: string): Promise<void>;
+
+  /** Clone this session into a new session and make it active. */
+  splitSession(): Promise<void>;
+
+  /** Create a compacted handoff child session and make it active. */
+  transferSession(): Promise<void>;
+
+  /** Request manual Lyra Agent context compaction. */
+  compactContext(): Promise<void>;
+
+  /** Open Lyra Agent goals overview in the side panel. */
+  openGoals(): Promise<void>;
+
+  /** Resume the best current Lyra Agent goal in the side panel. */
+  resumeGoal(): Promise<void>;
+
+  /** Update current-session automation settings. */
+  updateAutomation(settings: AgentAutomationSettings): Promise<void>;
 
   /** Answer one or more decision questions. */
   submitDecisions(answers: Record<string, string>): Promise<void>;
@@ -54,6 +135,9 @@ export interface DataProviderValue {
 
   /** True if this provider is backed by mock data. */
   readonly isMock: boolean;
+
+  /** True while the agent turn is still running. */
+  readonly isTurnRunning: boolean;
 }
 
 const DataContext = createContext<DataProviderValue | null>(null);

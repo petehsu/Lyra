@@ -10,7 +10,6 @@ import {
 
 import { WORKBENCH_CONFIG } from "../config";
 import { ContextMenuHost, useContextMenuModel } from "../context-menu";
-import { useWorkbenchFeedbackModel } from "../feedback";
 import {
   GlobalDialogHost,
   useGlobalDialogModel
@@ -27,6 +26,7 @@ import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
 import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "./titlebar-context";
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "../browser-search";
+import type { BrowserSettingsCategoryFocusRequest } from "../browser-tabs/settings-surface";
 import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
@@ -49,15 +49,17 @@ import { useWorkbenchLinuxCompatNotice } from "./use-workbench-linux-compat-noti
 import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
 import { useWorkbenchObservationBridge } from "./use-workbench-observation-bridge";
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
-import { useWorkbenchResourceRegistration } from "./use-workbench-resource-registration";
 import { useWorkbenchSearchIndexStatus } from "./use-workbench-search-index-status";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
 import { useWorkbenchShellAdapterProps } from "./use-workbench-shell-adapter-props";
 import { useWorkbenchSettingsSurfaceProps } from "./use-workbench-settings-surface-props";
 import { useWorkbenchShellSlots } from "./use-workbench-shell-slots";
 import { useWorkbenchSidebarAiSurfaceProps } from "./use-workbench-sidebar-ai-surface-props";
+import { createAgentProjectTreeAppRequest } from "../agent-project-tree";
+import { createAgentGitAppRequest } from "../agent-git";
+import { createAgentSelfDevAppRequest } from "../agent-selfdev";
+import { createAgentOvernightAppRequest } from "../agent-overnight";
 import {
-  useWorkbenchFeedbackNotifications,
   useWorkbenchSystemNotificationActivation,
   useWorkbenchSystemNotificationPermissionGuard,
   useWorkbenchSystemNotificationPublisher
@@ -76,9 +78,12 @@ export const WorkbenchShell = () => {
   const desktopApi = getDesktopApi();
   const preferencesModel = useWorkbenchPreferencesModel(createInitialWorkbenchPreferences());
   const { jsReplEnabled, updateJsReplSetting } = useWorkbenchJsReplSetting(desktopApi);
+  const [settingsFocusRequest, setSettingsFocusRequest] =
+    useState<BrowserSettingsCategoryFocusRequest | null>(null);
 
   const [isMaximized, setIsMaximized] = useState(false);
   const [stackedBrowserTabs, setStackedBrowserTabs] = useState(false);
+  const [activeAgentSessionId, setActiveAgentSessionId] = useState<string | null>(null);
 
   const t = useMemo(
     () => createTranslator(preferencesModel.preferences.locale),
@@ -166,20 +171,16 @@ export const WorkbenchShell = () => {
     contextMenuModel,
     t
   });
-  const { fileManagerModel, fileEditorModel, imageViewerModel } = useWorkbenchFileAppModels({
+  const {
+    fileManagerModel,
+    fileEditorModel,
+    imageViewerModel,
+    agentProjectTreeModel
+  } = useWorkbenchFileAppModels({
     desktopApi,
     contextMenuModel,
     fileManagerLabels: labels.fileManager,
     tabsModel
-  });
-  useWorkbenchResourceRegistration({
-    desktopApi,
-    tabsModel,
-    visibleWorkspaceLayout,
-    fileManagerModel,
-    fileEditorModel,
-    imageViewerModel,
-    terminalModel
   });
   const workbenchActions = useWorkbenchActionApi({
     desktopApi,
@@ -189,7 +190,7 @@ export const WorkbenchShell = () => {
     onBeforePanelLayoutAnimation: beginBrowserLayoutAnimationSync,
     docsEntryAddress: WORKBENCH_CONFIG.browser.docsEntryAddress,
     docsTabTitle: t("docs.tabTitle"),
-    activityMonitorTitle: t("resources.activityMonitorTitle"),
+    agentSessionHistoryTitle: t("agentHistory.tabTitle"),
     locale: preferencesModel.preferences.locale,
     resolvedThemeId
   });
@@ -200,7 +201,6 @@ export const WorkbenchShell = () => {
     fileManagerModel,
     terminalModel
   });
-  const feedbackModel = useWorkbenchFeedbackModel();
   const notificationModel = useWorkbenchNotificationModel();
   const publishNotification = useWorkbenchSystemNotificationPublisher({
     desktopApi,
@@ -208,15 +208,32 @@ export const WorkbenchShell = () => {
     preferences: preferencesModel.preferences,
     t
   });
-  useWorkbenchFeedbackNotifications({
-    feedbackModel,
-    publishNotification
-  });
   useWorkbenchSystemNotificationPermissionGuard({
     desktopApi,
     preferencesModel
   });
-  const globalDialogModel = useGlobalDialogModel();
+  const globalDialogDefaults = useMemo(
+    () => ({
+      copyActionLabel: t("dialog.copyAction"),
+      copiedActionLabel: t("dialog.copiedAction")
+    }),
+    [t]
+  );
+  const globalDialogModel = useGlobalDialogModel(globalDialogDefaults);
+  const {
+    onOpenFileFromManager,
+    onRevealPathInFileManager,
+    openDirectoryFromNavigation
+  } = useWorkbenchFileActions({
+    activeTab,
+    tabsModel,
+    fileManagerModel,
+    fileEditorModel,
+    imageViewerModel
+  });
+  const onOpenJcodeConfigFile = useCallback((filePath: string): void => {
+    onOpenFileFromManager(filePath, undefined, { forceReloadIfOpen: true });
+  }, [onOpenFileFromManager]);
   const {
     activeFileManagerState,
     activeFileEditorState,
@@ -226,7 +243,8 @@ export const WorkbenchShell = () => {
     desktopApi,
     fileManagerModel,
     fileEditorModel,
-    labels
+    labels,
+    onOpenJcodeConfigFile
   });
   const settingsSurfaceProps = useWorkbenchSettingsSurfaceProps({
     labels,
@@ -236,6 +254,7 @@ export const WorkbenchShell = () => {
     jsReplEnabled,
     searchIndexStatus,
     searchRebuildIndexPending,
+    focusCategoryRequest: settingsFocusRequest,
     openDialog: globalDialogModel.openDialog,
     publishNotification,
     onJsReplChange: updateJsReplSetting,
@@ -253,17 +272,115 @@ export const WorkbenchShell = () => {
       tabsModel,
       confirmLabel: t("ai.bindProjectConfirm")
     });
-  const {
-    onOpenFileFromManager,
-    onRevealPathInFileManager,
-    openDirectoryFromNavigation
-  } = useWorkbenchFileActions({
-    activeTab,
-    tabsModel,
-    fileManagerModel,
-    fileEditorModel,
-    imageViewerModel
-  });
+  const onOpenAgentProjectTree = useCallback((request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+  }): void => {
+    const sessionId = request.sessionId.trim();
+    const workingDir = request.workingDir.trim();
+    if (sessionId.length === 0 || workingDir.length === 0) {
+      return;
+    }
+    const nextApp = createAgentProjectTreeAppRequest(sessionId, workingDir);
+    agentProjectTreeModel.ensureInstance(nextApp.appInstanceId, {
+      agentSessionId: sessionId,
+      rootPath: workingDir,
+      title: nextApp.title
+    });
+    const existingTab = tabsModel.tabs.find(
+      (tab) =>
+        tab.pageKind === "app" &&
+        tab.appId === nextApp.appId &&
+        tab.appInstanceId === nextApp.appInstanceId
+    );
+    if (existingTab !== undefined) {
+      tabsModel.updateAppTabMeta(nextApp);
+      tabsModel.setActiveTab(existingTab.id);
+      return;
+    }
+    tabsModel.openAppTab(nextApp);
+  }, [
+    agentProjectTreeModel,
+    tabsModel
+  ]);
+  const onOpenAgentGit = useCallback((request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+  }): void => {
+    const sessionId = request.sessionId.trim();
+    const workingDir = request.workingDir.trim();
+    if (sessionId.length === 0 || workingDir.length === 0) {
+      return;
+    }
+    const nextApp = createAgentGitAppRequest(sessionId, workingDir);
+    const existingTab = tabsModel.tabs.find(
+      (tab) =>
+        tab.pageKind === "app" &&
+        tab.appId === nextApp.appId &&
+        tab.appInstanceId === nextApp.appInstanceId
+    );
+    if (existingTab !== undefined) {
+      tabsModel.updateAppTabMeta(nextApp);
+      tabsModel.setActiveTab(existingTab.id);
+      return;
+    }
+    tabsModel.openAppTab(nextApp);
+  }, [tabsModel]);
+  const onOpenAgentSelfDevLab = useCallback((request: {
+    readonly parentSessionId: string | null;
+  }): void => {
+    const parentSessionId = request.parentSessionId?.trim() || null;
+    const nextApp = createAgentSelfDevAppRequest(
+      labels.agentSelfDev.title,
+      parentSessionId
+    );
+    const existingTab = tabsModel.tabs.find(
+      (tab) =>
+        tab.pageKind === "app" &&
+        tab.appId === nextApp.appId &&
+        tab.appInstanceId === nextApp.appInstanceId
+    );
+    if (existingTab !== undefined) {
+      tabsModel.updateAppTabMeta(nextApp);
+      tabsModel.setActiveTab(existingTab.id);
+      return;
+    }
+    tabsModel.openAppTab(nextApp);
+  }, [
+    labels.agentSelfDev.title,
+    tabsModel
+  ]);
+  const onOpenAgentOvernightLab = useCallback((request: {
+    readonly parentSessionId: string | null;
+  }): void => {
+    const parentSessionId = request.parentSessionId?.trim() || null;
+    const nextApp = createAgentOvernightAppRequest(
+      labels.agentOvernight.title,
+      parentSessionId
+    );
+    const existingTab = tabsModel.tabs.find(
+      (tab) =>
+        tab.pageKind === "app" &&
+        tab.appId === nextApp.appId &&
+        tab.appInstanceId === nextApp.appInstanceId
+    );
+    if (existingTab !== undefined) {
+      tabsModel.updateAppTabMeta(nextApp);
+      tabsModel.setActiveTab(existingTab.id);
+      return;
+    }
+    tabsModel.openAppTab(nextApp);
+  }, [
+    labels.agentOvernight.title,
+    tabsModel
+  ]);
+  const onOpenAgentModelSettings = useCallback((): void => {
+    setSettingsFocusRequest((current) => ({
+      categoryId: "ai",
+      requestId: (current?.requestId ?? 0) + 1
+    }));
+    tabsModel.openSettingsTab();
+  }, [tabsModel]);
   const sidebarAiSurfaceProps = useWorkbenchSidebarAiSurfaceProps({
     desktopApi,
     preferences: preferencesModel.preferences,
@@ -274,6 +391,10 @@ export const WorkbenchShell = () => {
       panelLayoutModel.toggleAiPanelSide();
     },
     onRequestProjectBind: requestProjectBind,
+    onOpenProjectTree: onOpenAgentProjectTree,
+    onOpenSelfDevLab: onOpenAgentSelfDevLab,
+    onOpenOvernightLab: onOpenAgentOvernightLab,
+    onOpenModelSettings: onOpenAgentModelSettings,
     t
   });
   useScrollbarVisibilityGuard(rootRef);
@@ -323,7 +444,8 @@ export const WorkbenchShell = () => {
     tabsModel,
     fileManagerModel,
     fileEditorModel,
-    imageViewerModel
+    imageViewerModel,
+    agentProjectTreeModel
   });
 
   const {
@@ -370,7 +492,11 @@ export const WorkbenchShell = () => {
 
   const aiLaunchProps = useWorkbenchAiLaunchProps(t);
 
-  const sidebarAiSurfacePropsWithFileOpen = sidebarAiSurfaceProps;
+  const sidebarAiSurfacePropsWithFileOpen = {
+    ...sidebarAiSurfaceProps,
+    activeSessionId: activeAgentSessionId,
+    onActiveSessionChange: setActiveAgentSessionId
+  };
   useWorkbenchEmptyAppTabGuards({
     tabsModel,
     notificationCount: notificationModel.notifications.length
@@ -397,6 +523,22 @@ export const WorkbenchShell = () => {
     onOpenNotificationSource
   });
 
+  const onOpenAgentSession = useCallback((sessionId: string): void => {
+    const trimmedSessionId = sessionId.trim();
+    if (trimmedSessionId.length === 0) {
+      return;
+    }
+    setActiveAgentSessionId(trimmedSessionId);
+    if (!panelLayoutModel.isLeftPanelVisible) {
+      beginBrowserLayoutAnimationSync();
+      panelLayoutModel.toggleLeftPanel();
+    }
+  }, [
+    beginBrowserLayoutAnimationSync,
+    panelLayoutModel.isLeftPanelVisible,
+    panelLayoutModel.toggleLeftPanel
+  ]);
+
   const workspaceSurfaceProps = useWorkspaceSurfaceRouterProps({
     activeTab,
     tabsModel,
@@ -411,6 +553,7 @@ export const WorkbenchShell = () => {
     resolveFileManagerChooser,
     fileEditorModel,
     imageViewerModel,
+    agentProjectTreeModel,
     activeEditorReviewIndex,
     editorReviewItems,
     resolveActiveEditorWorkItem,
@@ -427,7 +570,14 @@ export const WorkbenchShell = () => {
     onOpenFileFromManager,
     onRevealPathInFileManager,
     onOpenNotificationSource,
-    onRequestClearNotifications
+    onRequestClearNotifications,
+    onOpenAgentGit,
+    agentSessionHistory: {
+      labels: labels.agentSessionHistory,
+      activeSessionId: activeAgentSessionId,
+      onOpenSession: onOpenAgentSession,
+      locale: preferencesModel.preferences.locale
+    }
   });
 
   const rootClassName = cx(

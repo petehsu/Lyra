@@ -9,9 +9,13 @@ import { BrowserResultSurface, DeepSearchResultSurface } from "../browser-search
 import { FileEditorSurface } from "../file-editor";
 import { FileManagerSurface } from "../file-manager";
 import { ImageViewerSurface } from "../image-viewer";
+import { AgentProjectTreeSurface } from "../agent-project-tree";
+import { AgentGitSurface } from "../agent-git";
+import { AgentSelfDevSurface } from "../agent-selfdev";
+import { AgentOvernightSurface } from "../agent-overnight";
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
 import { NotificationCenterSurface } from "../notifications";
-import { ResourceMonitorSurface } from "../resource-monitor";
+import { AgentSessionHistorySurface } from "../agent-session-history";
 import { WorkbenchChrome } from "../shell/workbench-chrome";
 import { WorkspaceSurfaceRouter } from "../shell/workspace-surface-router";
 import { TerminalDock, TerminalWorkspaceSurface } from "../terminal-dock";
@@ -59,8 +63,12 @@ export const CLASSIC_WORKBENCH_UI_PACK = {
       fileManager: FileManagerSurface,
       fileEditor: FileEditorSurface,
       imageViewer: ImageViewerSurface,
-      resourceMonitor: ResourceMonitorSurface,
-      notificationCenter: NotificationCenterSurface
+      agentProjectTree: AgentProjectTreeSurface,
+      agentGit: AgentGitSurface,
+      agentSelfDev: AgentSelfDevSurface,
+      agentOvernight: AgentOvernightSurface,
+      notificationCenter: NotificationCenterSurface,
+      agentSessionHistory: AgentSessionHistorySurface
     }
   },
   interactions: CLASSIC_WORKBENCH_INTERACTION_POLICIES

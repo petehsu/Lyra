@@ -66,28 +66,6 @@ export const useWorkbenchLinuxCompatNotice = ({
             {
               id: "close",
               label: labels.settingsSurface.linuxCompatRestartDialogCancel
-            },
-            {
-              id: "export",
-              label: labels.settingsSurface.linuxCompatExportDiagnosticsLabel,
-              onSelect: () => {
-                void linuxCompat.exportDiagnostics()
-                  .then((response) => {
-                    publishNotification({
-                      title: labels.settingsSurface.linuxCompatExportDiagnosticsLabel,
-                      preview: response.ok
-                        ? labels.settingsSurface.linuxCompatDiagnosticsExported
-                        : response.error ?? labels.settingsSurface.linuxCompatDiagnosticsFailed,
-                      level: response.ok ? "success" : "error",
-                      source: {
-                        id: "linux-compat",
-                        title: labels.settingsSurface.linuxCategoryLabel,
-                        iconKey: "system"
-                      },
-                      target: { kind: "none" }
-                    });
-                  });
-              }
             }
           ]
         });

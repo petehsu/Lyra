@@ -7,39 +7,37 @@
  * new theme, duplicate the :root block inside a new selector (eg `[data-theme="light"]`).
  */
 
-:root {
+.lyra-ai-panel-agent-chat {
   /* -------- Color — surfaces -------- */
-  --color-bg: #1a1b1e;
-  --color-surface-0: rgba(255, 255, 255, 0.03);
-  --color-surface-1: rgba(255, 255, 255, 0.04);
-  --color-surface-2: rgba(255, 255, 255, 0.06);
-  --color-surface-3: rgba(255, 255, 255, 0.1);
-  --color-border-subtle: rgba(255, 255, 255, 0.08);
-  --color-border-default: rgba(255, 255, 255, 0.1);
-  --color-border-strong: rgba(255, 255, 255, 0.16);
+  --color-bg: var(--lyra-bg-surface);
+  --color-surface-0: color-mix(in srgb, var(--lyra-bg-surface-elevated) 86%, transparent);
+  --color-surface-1: color-mix(in srgb, var(--lyra-bg-surface-elevated) 92%, var(--lyra-bg-surface) 8%);
+  --color-surface-2: var(--lyra-bg-hover);
+  --color-surface-3: var(--lyra-bg-active);
+  --color-border-subtle: color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
+  --color-border-default: color-mix(in srgb, var(--lyra-line-default) 64%, transparent);
+  --color-border-strong: color-mix(in srgb, var(--lyra-line-focused) 58%, transparent);
 
   /* -------- Color — text -------- */
-  --color-text: #e6e7ea;
-  --color-text-dim: #9a9da6;
-  --color-text-dimmer: #6f7380;
+  --color-text: var(--lyra-text-primary);
+  --color-text-dim: var(--lyra-text-secondary);
+  --color-text-dimmer: var(--lyra-text-muted);
 
   /* -------- Color — accent & status -------- */
-  --color-accent: #7aa2ff;
-  --color-ok: #63d26b;
-  --color-err: #ff6b6b;
-  --color-warn: #f0b752;
+  --color-accent: var(--lyra-text-accent);
+  --color-ok: var(--lyra-status-success);
+  --color-err: var(--lyra-status-error);
+  --color-warn: var(--lyra-status-warning);
 
   /* -------- Diff colors -------- */
-  --color-diff-add-bg: rgba(78, 201, 108, 0.1);
-  --color-diff-del-bg: rgba(255, 107, 107, 0.1);
-  --color-diff-add-fg: #9be0a4;
-  --color-diff-del-fg: #ff9a9a;
+  --color-diff-add-bg: color-mix(in srgb, var(--lyra-status-success) 12%, transparent);
+  --color-diff-del-bg: color-mix(in srgb, var(--lyra-status-error) 12%, transparent);
+  --color-diff-add-fg: var(--lyra-status-success);
+  --color-diff-del-fg: var(--lyra-status-error);
 
   /* -------- Typography -------- */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-    "Liberation Mono", monospace;
+  --font-sans: var(--lyra-font-sans);
+  --font-mono: var(--lyra-font-mono);
 
   --fs-xs: 11px;
   --fs-sm: 12px;
@@ -75,11 +73,11 @@
   /* -------- Elevation — glass frosted chrome -------- */
   --blur-glass: blur(20px) saturate(1.4);
   --shadow-glass:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 4px 20px rgba(0, 0, 0, 0.35);
+    0 0 0 1px color-mix(in srgb, var(--lyra-line-default) 18%, transparent) inset,
+    0 4px 20px color-mix(in srgb, var(--lyra-text-primary) 8%, transparent);
   --shadow-panel:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 8px 32px rgba(0, 0, 0, 0.4);
+    0 0 0 1px color-mix(in srgb, var(--lyra-line-default) 18%, transparent) inset,
+    0 8px 32px color-mix(in srgb, var(--lyra-text-primary) 10%, transparent);
 
   /* -------- Motion -------- */
   --ease-standard: cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -100,7 +98,7 @@
 
 /* Reduced motion overrides */
 @media (prefers-reduced-motion: reduce) {
-  :root {
+  .lyra-ai-panel-agent-chat {
     --duration-instant: 0ms;
     --duration-fast: 0ms;
     --duration-medium: 0ms;

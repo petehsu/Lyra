@@ -31,7 +31,6 @@ import { createImageViewerIpcBridge } from "./image-viewer";
 import { createLspIpcBridge } from "./lsp";
 import { createLinuxCompatBridge } from "./linux-compat";
 import { resolveCurrentDesktopTarget } from "./platform-target";
-import { createResourceRuntimeService } from "./resources/service";
 import { createLyraRuntimeClient } from "./runtime-client";
 import { createSearchIpcBridge } from "./search";
 import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
@@ -56,7 +55,6 @@ import { createWorkbenchStateIpcBridge } from "./workbench-state";
 import {
   LYRA_CHANNELS,
   type AppMetaPayload,
-  type LinuxCompatExportResponse,
   type LinuxCompatReadConfigResponse,
   type LinuxCompatRestartRequest,
   type LinuxCompatRestartResponse,
@@ -99,7 +97,6 @@ let disposeDownloadManagerBridge: (() => void) | null = null;
 let disposeImageViewerBridge: (() => void) | null = null;
 let disposeLspBridge: (() => void) | null = null;
 let disposeWorkbenchBrowserBridge: (() => void) | null = null;
-let disposeResourceRuntimeService: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
 let disposeUiuxPacksBridge: (() => void) | null = null;
 let disposeRuntimeClient: (() => void) | null = null;
@@ -370,7 +367,7 @@ const registerLyraFileProtocol = (): void => {
   });
 };
 
-const attachDevelopmentDiagnostics = (window: BrowserWindow): void => {
+const attachDevelopmentLogging = (window: BrowserWindow): void => {
   if (!isDevelopmentMode()) {
     return;
   }
@@ -578,7 +575,7 @@ const createMainWindow = (): BrowserWindow => {
 
   let didFinishLoad = false;
   let recoveryRestartRequested = false;
-  attachDevelopmentDiagnostics(window);
+  attachDevelopmentLogging(window);
   window.webContents.once("did-finish-load", () => {
     didFinishLoad = true;
     linuxCompatBridge.markWindowReady();
@@ -656,12 +653,9 @@ const registerIpcHandlers = (): void => {
   const imageViewerBridge = createImageViewerIpcBridge(storageRoots.modules.imageViewer);
   console.info(`[lyra-image-viewer] native loaded: ${imageViewerBridge.loadResult.loadedFrom}`);
   disposeImageViewerBridge = imageViewerBridge.dispose;
-  const resourceRuntimeService = createResourceRuntimeService();
-  console.info(`[lyra-resources] native loaded: ${resourceRuntimeService.loadResult.loadedFrom}`);
-  disposeResourceRuntimeService = resourceRuntimeService.dispose;
-
   const runtimeClient = createLyraRuntimeClient({
-    storageRoot: storageRoots.modules.runtime
+    storageRoot: storageRoots.modules.runtime,
+    agentStorageRoot: storageRoots.modules.agent
   });
   disposeRuntimeClient = runtimeClient.dispose;
   const downloadManagerBridge = createDownloadManagerIpcBridge({
@@ -691,13 +685,13 @@ const registerIpcHandlers = (): void => {
 
   const agentBridge = createAgentIpcBridge({
     runtimeClient,
-    getWindow: () => mainWindow
+    getWindow: () => mainWindow,
+    getBrowserBridge: () => workbenchBrowserBridge
   });
   disposeAgentBridge = agentBridge.dispose;
 
   workbenchBrowserBridge = createWorkbenchBrowserIpcBridge({
     getWindow: () => mainWindow,
-    resourceRuntime: resourceRuntimeService,
     downloadManager: downloadManagerBridge
   });
   disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
@@ -813,12 +807,6 @@ const registerIpcHandlers = (): void => {
       linuxCompatBridge.requestRestart(app, request)
   );
 
-  ipcMain.handle(
-    LYRA_CHANNELS.linuxCompatExportDiagnostics,
-    (): LinuxCompatExportResponse =>
-      linuxCompatBridge.exportDiagnosticsSnapshot(storageRoots.modules.linuxCompat)
-  );
-
 };
 
 app.setName(LYRA_APP_NAME);
@@ -891,10 +879,6 @@ app.on("before-quit", () => {
   if (disposeWorkbenchBrowserBridge !== null) {
     disposeWorkbenchBrowserBridge();
     disposeWorkbenchBrowserBridge = null;
-  }
-  if (disposeResourceRuntimeService !== null) {
-    disposeResourceRuntimeService();
-    disposeResourceRuntimeService = null;
   }
   if (disposeWorkbenchObservationRendererClient !== null) {
     disposeWorkbenchObservationRendererClient();

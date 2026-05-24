@@ -85,8 +85,8 @@ export type SettingsStatusListControlDescriptor = {
     readonly label: string;
     readonly value: string;
   }[];
-  readonly actionLabel: string;
-  readonly onAction: () => void;
+  readonly actionLabel?: string;
+  readonly onAction?: () => void;
 };
 
 export type SettingsControlDescriptor =
@@ -492,9 +492,7 @@ const createSectionControl = (
           {
             kind: "status-list",
             label: props.linuxCompatStatusLabel,
-            rows: formatLinuxCompatStatusRows(props),
-            actionLabel: props.linuxCompatExportDiagnosticsLabel,
-            onAction: props.onLinuxCompatExportDiagnostics
+            rows: formatLinuxCompatStatusRows(props)
           }
         ]
       });

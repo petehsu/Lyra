@@ -2,6 +2,10 @@ import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { ContextMenuModel } from "../context-menu";
 import { useFileEditorModel, type FileEditorModel } from "../file-editor";
 import {
+  useAgentProjectTreeModel,
+  type AgentProjectTreeModel
+} from "../agent-project-tree";
+import {
   useFileManagerModel,
   type FileManagerModel,
   type FileManagerSurfaceLabels
@@ -13,6 +17,7 @@ type WorkbenchFileAppModels = {
   readonly fileManagerModel: FileManagerModel;
   readonly fileEditorModel: FileEditorModel;
   readonly imageViewerModel: ImageViewerModel;
+  readonly agentProjectTreeModel: AgentProjectTreeModel;
 };
 
 type UseWorkbenchFileAppModelsOptions = {
@@ -38,10 +43,19 @@ export const useWorkbenchFileAppModels = ({
     desktopApi,
     onMetaChange: tabsModel.updateAppTabMeta
   });
+  const agentProjectTreeModel = useAgentProjectTreeModel({
+    fileEditorModel,
+    onMetaChange: tabsModel.updateAppTabMeta
+  });
   const imageViewerModel = useImageViewerModel({
     desktopApi,
     onMetaChange: tabsModel.updateAppTabMeta
   });
 
-  return { fileManagerModel, fileEditorModel, imageViewerModel };
+  return {
+    fileManagerModel,
+    fileEditorModel,
+    imageViewerModel,
+    agentProjectTreeModel
+  };
 };

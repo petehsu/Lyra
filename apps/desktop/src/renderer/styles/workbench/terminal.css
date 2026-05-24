@@ -7,7 +7,7 @@
 .lyra-terminal-dock {
   --lyra-terminal-stage-bg: color-mix(in srgb, var(--lyra-bg-editor) 74%, var(--lyra-terminal-bg) 26%);
   --lyra-terminal-tabstrip-bg: color-mix(in srgb, var(--lyra-bg-surface) 82%, var(--lyra-terminal-bg) 18%);
-  --lyra-terminal-tabstrip-line: color-mix(in srgb, var(--lyra-line-default) 72%, transparent);
+  --lyra-terminal-tabstrip-line: color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
   --lyra-terminal-tabstrip-hover-bg: color-mix(in srgb, var(--lyra-bg-surface) 70%, var(--lyra-terminal-bg) 30%);
   min-height: 0;
   height: 100%;
@@ -22,7 +22,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-default) 38%, var(--lyra-text-secondary) 48%);
   background: color-mix(in srgb, var(--lyra-bg-hover) 16%, transparent);
   box-shadow: none;
 }

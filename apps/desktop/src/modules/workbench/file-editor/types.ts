@@ -1,6 +1,5 @@
 import type {
   LspCompletionResult,
-  LspDiagnostic,
   LspLanguageId,
   LyraDesktopApi
 } from "../../../shared/desktop-bridge";
@@ -51,7 +50,6 @@ export type FileEditorAppState = {
   readonly message: string | undefined;
   readonly lastSavedAt: string | undefined;
   readonly lspVersion: number;
-  readonly diagnostics: readonly LspDiagnostic[];
   readonly pendingRevealLocation?: FileEditorRevealLocation | undefined;
 };
 

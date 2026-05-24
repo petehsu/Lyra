@@ -1,7 +1,7 @@
 /* Browser tab strip and tab item styles */
 .lyra-browser-tabs {
   --lyra-tabstrip-bg: color-mix(in srgb, var(--lyra-bg-surface) 78%, var(--lyra-bg-editor) 22%);
-  --lyra-tabstrip-line: color-mix(in srgb, var(--lyra-line-default) 78%, transparent);
+  --lyra-tabstrip-line: color-mix(in srgb, var(--lyra-line-default) 50%, transparent);
   --lyra-tabstrip-active-bg: var(--lyra-bg-editor);
   --lyra-tabstrip-hover-bg: color-mix(in srgb, var(--lyra-bg-surface) 68%, var(--lyra-bg-editor) 32%);
   --lyra-tab-shape-fill: var(--lyra-tabstrip-hover-bg);
@@ -56,7 +56,7 @@
   top: 0;
   bottom: 0;
   pointer-events: none;
-  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-default) 38%, var(--lyra-text-secondary) 48%);
   background: color-mix(in srgb, var(--lyra-bg-hover) 18%, transparent);
   box-shadow: none;
   z-index: 0;
@@ -70,7 +70,7 @@
   top: 0;
   bottom: 0;
   pointer-events: none;
-  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border: var(--lyra-unit-0-5) dashed color-mix(in srgb, var(--lyra-line-default) 38%, var(--lyra-text-secondary) 48%);
   background: color-mix(in srgb, var(--lyra-bg-hover) 14%, transparent);
   z-index: 0;
 }
@@ -464,7 +464,7 @@
   --lyra-tab-shape-fill: color-mix(in srgb, var(--lyra-bg-editor) 94%, var(--lyra-bg-surface) 6%);
   box-shadow:
     0 var(--lyra-unit-10) var(--lyra-unit-26) color-mix(in srgb, var(--lyra-text-primary) 24%, transparent),
-    0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-default) 52%, transparent);
+    0 0 0 var(--lyra-unit-1) color-mix(in srgb, var(--lyra-line-default) 38%, transparent);
 }
 
 .lyra-browser-tab-right-drag-preview-tab .lyra-chrome-tab-background {
@@ -504,7 +504,7 @@
   position: absolute;
   inset: var(--lyra-unit-2);
   border-radius: var(--lyra-unit-6);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 38%, var(--lyra-text-secondary) 48%);
   background: color-mix(in srgb, var(--lyra-bg-hover) 14%, transparent);
   pointer-events: none;
   z-index: 3;

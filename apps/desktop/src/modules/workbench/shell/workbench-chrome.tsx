@@ -5,7 +5,17 @@ import type {
   ReactNode,
   RefObject
 } from "react";
-import { Activity, BookText, Folder, Minus, PanelBottom, PanelTop, Settings2, Square, X } from "lucide-react";
+import {
+  BookText,
+  Folder,
+  History,
+  Minus,
+  PanelBottom,
+  PanelTop,
+  Settings2,
+  Square,
+  X
+} from "lucide-react";
 
 import { WorkbenchNotificationTopbar } from "../notifications";
 import type { WorkbenchUiRuntime } from "../ui-platform";
@@ -79,6 +89,13 @@ const WorkbenchTitlebarActions = ({
     <WorkbenchNotificationTopbar {...notificationTopbar} />
     <ChromeIconButton
       className="lyra-window-button"
+      aria-label={labels.openAgentSessionHistory}
+      onClick={actions.openAgentSessionHistory}
+    >
+      <History size={14} />
+    </ChromeIconButton>
+    <ChromeIconButton
+      className="lyra-window-button"
       aria-label={labels.toggleTerminalPanel}
       onClick={actions.toggleTerminalPanel}
     >
@@ -101,13 +118,6 @@ const WorkbenchTitlebarActions = ({
       onClick={actions.openFileManager}
     >
       <Folder size={14} />
-    </ChromeIconButton>
-    <ChromeIconButton
-      className="lyra-window-button"
-      aria-label={labels.openActivityMonitor}
-      onClick={actions.openActivityMonitor}
-    >
-      <Activity size={14} />
     </ChromeIconButton>
     <ChromeIconButton
       className="lyra-window-button"

@@ -44,7 +44,7 @@
   gap: var(--lyra-unit-4);
   padding: 0 var(--lyra-unit-8);
   border-radius: var(--lyra-unit-999);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
   background: color-mix(in srgb, var(--lyra-bg-hover) 34%, transparent);
   font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
   font-size: var(--lyra-unit-11);
@@ -139,7 +139,7 @@
   align-items: center;
   gap: var(--lyra-unit-4);
   padding: 0 var(--lyra-unit-8);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
   border-radius: var(--lyra-unit-999);
   color: var(--lyra-text-secondary);
   background: color-mix(in srgb, var(--lyra-bg-hover) 34%, transparent);
@@ -148,7 +148,7 @@
 
 .lyra-file-editor-chip-warning {
   color: var(--lyra-text-primary);
-  border-color: color-mix(in srgb, var(--lyra-line-default) 58%, var(--lyra-text-secondary) 42%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 40%, var(--lyra-text-secondary) 42%);
   background: color-mix(in srgb, var(--lyra-bg-hover) 28%, transparent);
 }
 
@@ -203,13 +203,13 @@
   height: var(--lyra-unit-24);
   padding: 0 var(--lyra-unit-10);
   border-radius: var(--lyra-unit-999);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
   font-size: var(--lyra-unit-12);
 }
 
 .lyra-file-editor-retry-button:hover {
   color: var(--lyra-text-primary);
-  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 38%, var(--lyra-text-secondary) 48%);
 }
 
 .lyra-file-editor-body {

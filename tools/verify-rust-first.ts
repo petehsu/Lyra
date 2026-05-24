@@ -148,41 +148,6 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
     ]
   },
   {
-    name: "resources",
-    dirName: "resources",
-    crateDir: "crates/lyra-resource-napi",
-    cratePackageName: "lyra-resource-napi",
-    servicePath: "apps/desktop/src/main/resources/service.ts",
-    loaderPath: "apps/desktop/src/main/resources/native-loader.ts",
-    typesPath: "apps/desktop/src/main/resources/types.ts",
-    indexPath: "apps/desktop/src/main/resources/index.ts",
-    mainBridgeFactoryName: "createResourceRuntimeService",
-    requiredServiceRules: [
-      {
-        pattern: /from\s+["']\.\/native-loader["']/,
-        message: "Resources service must import its native loader."
-      },
-      {
-        pattern: /\bloadResourcesNativeBindings\b/,
-        message: "Resources service must load native bindings explicitly."
-      }
-    ],
-    forbiddenServiceRules: [
-      {
-        pattern: /from\s+["']node:child_process["']/,
-        message: "Resources core behavior must not fall back to child_process orchestration in TypeScript."
-      },
-      {
-        pattern: /safeStorage/,
-        message: "Resources service must not grow TypeScript secret handling."
-      },
-      {
-        pattern: /Fall through to the existing TypeScript implementation/,
-        message: "Resources service must not keep TypeScript fallback implementation notes or branches."
-      }
-    ]
-  },
-  {
     name: "image-viewer",
     dirName: "image-viewer",
     crateDir: "crates/lyra-image-napi",

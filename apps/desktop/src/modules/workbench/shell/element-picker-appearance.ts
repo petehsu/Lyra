@@ -4,7 +4,7 @@ const FALLBACK_APPEARANCE: WorkbenchBrowserElementPickerAppearance = {
   fontFamily: '"IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Segoe UI", sans-serif',
   surfaceBackground:
     "linear-gradient(180deg, color-mix(in srgb, #ebebec 92%, transparent) 0%, color-mix(in srgb, #fafafa 88%, transparent) 100%)",
-  surfaceBorder: "color-mix(in srgb, #c9c9ca 74%, transparent)",
+  surfaceBorder: "color-mix(in srgb, #d8d8da 42%, transparent)",
   surfaceShadow: "0 7px 22px color-mix(in srgb, #dcdcdd 18%, transparent)",
   surfaceBackdropFilter: "blur(10px) saturate(1.08)",
   accentColor: "#7e8086",
@@ -63,7 +63,7 @@ export const readElementPickerAppearance = (): WorkbenchBrowserElementPickerAppe
     ),
     surfaceBackground:
       `linear-gradient(180deg, color-mix(in srgb, ${bgSurface} 92%, transparent) 0%, color-mix(in srgb, ${bgEditor} 88%, transparent) 100%)`,
-    surfaceBorder: `color-mix(in srgb, ${lineDefault} 74%, transparent)`,
+    surfaceBorder: `color-mix(in srgb, ${lineDefault} 42%, transparent)`,
     surfaceShadow: `0 7px 22px color-mix(in srgb, ${bgApp} 18%, transparent)`,
     surfaceBackdropFilter: readVar(
       styles,

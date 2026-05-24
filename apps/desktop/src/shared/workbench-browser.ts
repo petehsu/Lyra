@@ -76,12 +76,19 @@ export type WorkbenchBrowserLayoutSnapshot = {
   readonly layouts: readonly WorkbenchBrowserPageLayout[];
 };
 
+export type WorkbenchBrowserPageLifecycleState =
+  | "foreground"
+  | "visible"
+  | "hot-hidden"
+  | "tombstoned"
+  | "restoring";
+
 export type WorkbenchBrowserPageRuntimeState = {
   readonly tabId: string;
   readonly address: string;
   readonly title: string;
   readonly faviconUrl?: string;
-  readonly lifecycleState?: import("./resource-runtime").LyraResourceLifecycleState;
+  readonly lifecycleState?: WorkbenchBrowserPageLifecycleState;
   readonly coreKey?: string;
   readonly stateKey?: string;
   readonly isTombstoned?: boolean;

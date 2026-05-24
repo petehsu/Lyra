@@ -282,7 +282,7 @@ describe("workbench document service", () => {
     expect(result.matches[0]?.excerpt.toLowerCase()).toContain("beta");
   });
 
-  test("returns structured diagnostics when the resolved document url yields html instead of pdf bytes", async () => {
+  test("returns a plain document error when the resolved document url yields html instead of pdf bytes", async () => {
     const browserBridge = createBrowserBridge({
       pageStateAddress: "https://zenodo.org/records/17826516?_wv=1",
       frames: [
@@ -316,15 +316,7 @@ describe("workbench document service", () => {
 
     await expect(service.readDocument({})).rejects.toMatchObject({
       code: "document_unsupported_format",
-      details: {
-        domain: "workbench.document",
-        stage: "parse",
-        fetch: {
-          finalUrl: "https://zenodo.org/records/17826516/preview/LyraLife_Paper.pdf?include_deleted=0",
-          contentSignature: "html_doctype",
-          likelyCause: "resolved_document_url_returned_html_wrapper_instead_of_pdf_bytes"
-        }
-      }
+      message: "document format is unsupported"
     });
   });
 });

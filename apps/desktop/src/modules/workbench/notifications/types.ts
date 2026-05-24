@@ -34,7 +34,11 @@ export type WorkbenchNotificationTarget =
         | "file-manager"
         | "file-editor"
         | "image-viewer"
-        | "resource-monitor"
+        | "agent-project-tree"
+        | "agent-git"
+        | "agent-selfdev"
+        | "agent-overnight"
+        | "agent-session-history"
         | NotificationCenterAppId;
       readonly appInstanceId: string;
       readonly title?: string;

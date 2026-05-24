@@ -7,9 +7,7 @@ import {
   AUTO_SAVE_DELAY_MS,
   buildMonacoTheme,
   COMPLETION_TRIGGER_CHARACTERS,
-  LSP_MARKER_OWNER,
   mapCompletionKind,
-  mapDiagnosticSeverity,
   MONACO_FONT_SIZE,
   MONACO_LINE_HEIGHT,
   MONACO_PADDING,
@@ -373,41 +371,6 @@ export const useFileEditorRuntime = ({
       applyingStateRef.current = false;
     }
   }, [state?.content, state?.instanceId, state?.languageId, touchInstance]);
-
-  useEffect(() => {
-    const stateEntry = state;
-    const monaco = monacoRef.current;
-    const textModel = textModelRef.current;
-    if (stateEntry === null || monaco === null || textModel === null) {
-      return;
-    }
-
-    const markers = stateEntry.diagnostics.map((diagnostic) => {
-      const marker: Monaco.editor.IMarkerData = {
-        startLineNumber: Math.max(1, diagnostic.startLine + 1),
-        startColumn: Math.max(1, diagnostic.startCharacter + 1),
-        endLineNumber: Math.max(1, diagnostic.endLine + 1),
-        endColumn: Math.max(1, diagnostic.endCharacter + 1),
-        severity: mapDiagnosticSeverity(monaco, diagnostic.severity),
-        message: diagnostic.message
-      };
-
-      if (diagnostic.source !== undefined) {
-        marker.source = diagnostic.source;
-      }
-      if (diagnostic.code !== undefined) {
-        marker.code = diagnostic.code;
-      }
-
-      return marker;
-    });
-
-    monaco.editor.setModelMarkers(textModel, LSP_MARKER_OWNER, markers);
-
-    return () => {
-      monaco.editor.setModelMarkers(textModel, LSP_MARKER_OWNER, []);
-    };
-  }, [state, state?.diagnostics]);
 
   useEffect(() => {
     if (state === null) {

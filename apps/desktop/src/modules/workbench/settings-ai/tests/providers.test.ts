@@ -62,7 +62,7 @@ describe("settings-ai provider presets", () => {
     expect(embeddedPresets.every((preset) => preset.runtimeSupported === false)).toBe(true);
   });
 
-  test("exposes jcode provider routes while marking unwired backends explicitly", () => {
+  test("exposes Lyra Agent provider routes while marking unwired backends explicitly", () => {
     expect(AI_PROVIDER_PRESETS.map((preset) => preset.providerId)).toEqual(expect.arrayContaining([
       "openrouter",
       "copilot",

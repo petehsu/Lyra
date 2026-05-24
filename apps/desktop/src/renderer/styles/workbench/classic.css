@@ -8,8 +8,12 @@
 @import "./global-dialog.css";
 @import "./file-manager.css";
 @import "./image-viewer.css";
-@import "./resource-monitor.css";
 @import "./ai-panel.css";
+@import "./agent-session-history.css";
+@import "./agent-project-tree.css";
+@import "./agent-git.css";
+@import "./agent-selfdev.css";
+@import "./agent-overnight.css";
 @import "./notification-center.css";
 @import "./terminal.css";
 @import "./file-editor.css";

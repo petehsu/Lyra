@@ -78,6 +78,60 @@ export interface ChatMessage {
   author: "user" | "agent";
   blocks: MessageBlock[];
   time?: string;
+  rollback?: {
+    available: boolean;
+    anchorId?: string | null;
+    checkpointAt?: string | null;
+    unavailableReason?: string | null;
+  } | null;
+}
+
+export interface ModelOption {
+  id: string;
+  label: string;
+  model: string;
+  provider?: string | null;
+  detail?: string | null;
+  available: boolean;
+}
+
+export interface ProviderOptionControl {
+  current?: string | null;
+  options: string[];
+  supported: boolean;
+}
+
+export interface ComposerModelControls {
+  currentModel: string;
+  currentProvider: string;
+  models: ModelOption[];
+  reasoningEffort: ProviderOptionControl;
+  serviceTier: ProviderOptionControl;
+  isRefreshing: boolean;
+  isSwitching: boolean;
+  switchModel(modelId: string): Promise<void>;
+  refreshModels(): Promise<void>;
+  openModelSettings(): Promise<void>;
+  updateReasoningEffort(value: string): Promise<void>;
+  updateServiceTier(value: string): Promise<void>;
+}
+
+export interface AgentSidePanelPage {
+  id: string;
+  title: string;
+  content: string;
+  updatedAtMs: number;
+}
+
+export interface AgentSidePanel {
+  focusedPageId?: string | null;
+  pages: AgentSidePanelPage[];
+}
+
+export interface AgentAutomationSettings {
+  subagentModel?: string | null;
+  autoreviewEnabled?: boolean | null;
+  autojudgeEnabled?: boolean | null;
 }
 
 // Session-level state surfaced through the data provider ------------------
@@ -110,6 +164,9 @@ export interface PermissionRequest {
 export interface SessionMeta {
   title: string;
   project: string;
+  workingDir: string | null;
+  projectBound: boolean;
+  automation?: AgentAutomationSettings | null;
   totalAdditions: number;
   totalDeletions: number;
 }

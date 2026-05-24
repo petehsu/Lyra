@@ -85,7 +85,6 @@ export const createBrowserSettingsSurfaceProps = (
   linuxCompatGpuLabel: "GPU",
   linuxCompatSwitchesLabel: "Switches",
   linuxCompatWarningsLabel: "Warnings",
-  linuxCompatExportDiagnosticsLabel: "Export Diagnostics",
   linuxCompatRestartLabel: "Restart Lyra",
   linuxCompatRestartDescription: "Restart to apply Linux startup changes.",
   linuxCompatRestartNowLabel: "Restart Now",
@@ -94,8 +93,7 @@ export const createBrowserSettingsSurfaceProps = (
   linuxCompatRestartDialogCancel: "Later",
   linuxCompatRecoveryTitle: "Linux startup recovered",
   linuxCompatRecoveryDescription: "Lyra switched to a safer launch strategy.",
-  linuxCompatDiagnosticsExported: "Linux diagnostics exported.",
-  linuxCompatDiagnosticsFailed: "Linux diagnostics failed.",
+  linuxCompatRequestFailed: "Linux compatibility request failed.",
   localeValue: "en-US",
   themeValue: "lyra-light",
   uiStyleValue: "classic",
@@ -228,7 +226,6 @@ export const createBrowserSettingsSurfaceProps = (
   onSystemNotificationClickBehaviorChange: noop,
   onSystemNotificationActionsChange: noop,
   onLinuxCompatProfileChange: noop,
-  onLinuxCompatExportDiagnostics: noop,
   onLinuxCompatRestart: noop,
   ...overrides
 });

@@ -6,16 +6,87 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+agentgrep = { git = "https://github.com/1jehuang/agentgrep.git", tag = "v0.1.2" }
 async-stream.workspace = true
 async-trait.workspace = true
+aws-config = "1.8.16"
+aws-credential-types = "1.2.14"
+aws-sdk-bedrock = "1.141.0"
+aws-sdk-bedrockruntime = "1.130.0"
+aws-sdk-sts = "1.103.0"
+aws-smithy-types = "1.4.7"
+aws-types = "1.3.15"
+base64.workspace = true
 bytes.workspace = true
 chrono = { workspace = true, features = ["clock", "serde"] }
+clap = { workspace = true, features = ["derive"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
+dirs.workspace = true
+flate2 = "1"
 futures = { workspace = true, features = ["executor"] }
+glob.workspace = true
+global-hotkey = "0.7"
+hex = "0.4"
+ignore.workspace = true
+jcode-agent-runtime = { path = "src/jcode_core/vendor/crates/jcode-agent-runtime" }
+jcode-ambient-types = { path = "src/jcode_core/vendor/crates/jcode-ambient-types" }
+jcode-auth-types = { path = "src/jcode_core/vendor/crates/jcode-auth-types" }
+jcode-azure-auth = { path = "src/jcode_core/vendor/crates/jcode-azure-auth" }
+jcode-background-types = { path = "src/jcode_core/vendor/crates/jcode-background-types" }
+jcode-batch-types = { path = "src/jcode_core/vendor/crates/jcode-batch-types" }
+jcode-build-support = { path = "src/jcode_core/vendor/crates/jcode-build-support" }
+jcode-compaction-core = { path = "src/jcode_core/vendor/crates/jcode-compaction-core" }
+jcode-config-types = { path = "src/jcode_core/vendor/crates/jcode-config-types" }
+jcode-core = { path = "src/jcode_core/vendor/crates/jcode-core" }
+jcode-gateway-types = { path = "src/jcode_core/vendor/crates/jcode-gateway-types" }
+jcode-import-core = { path = "src/jcode_core/vendor/crates/jcode-import-core" }
+jcode-memory-types = { path = "src/jcode_core/vendor/crates/jcode-memory-types" }
+jcode-message-types = { path = "src/jcode_core/vendor/crates/jcode-message-types" }
+jcode-notify-email = { path = "src/jcode_core/vendor/crates/jcode-notify-email" }
+jcode-overnight-core = { path = "src/jcode_core/vendor/crates/jcode-overnight-core" }
+jcode-plan = { path = "src/jcode_core/vendor/crates/jcode-plan" }
+jcode-provider-core = { path = "src/jcode_core/vendor/crates/jcode-provider-core" }
+jcode-provider-gemini = { path = "src/jcode_core/vendor/crates/jcode-provider-gemini" }
+jcode-provider-metadata = { path = "src/jcode_core/vendor/crates/jcode-provider-metadata" }
+jcode-provider-openai = { path = "src/jcode_core/vendor/crates/jcode-provider-openai" }
+jcode-provider-openrouter = { path = "src/jcode_core/vendor/crates/jcode-provider-openrouter" }
+jcode-protocol = { path = "src/jcode_core/vendor/crates/jcode-protocol" }
+jcode-selfdev-types = { path = "src/jcode_core/vendor/crates/jcode-selfdev-types" }
+jcode-session-types = { path = "src/jcode_core/vendor/crates/jcode-session-types" }
+jcode-side-panel-types = { path = "src/jcode_core/vendor/crates/jcode-side-panel-types" }
+jcode-storage = { path = "src/jcode_core/vendor/crates/jcode-storage" }
+jcode-swarm-core = { path = "src/jcode_core/vendor/crates/jcode-swarm-core" }
+jcode-task-types = { path = "src/jcode_core/vendor/crates/jcode-task-types" }
+jcode-terminal-launch = { path = "src/jcode_core/vendor/crates/jcode-terminal-launch" }
+jcode-tool-core = { path = "src/jcode_core/vendor/crates/jcode-tool-core" }
+jcode-tool-types = { path = "src/jcode_core/vendor/crates/jcode-tool-types" }
+jcode-update-core = { path = "src/jcode_core/vendor/crates/jcode-update-core" }
+jcode-usage-types = { path = "src/jcode_core/vendor/crates/jcode-usage-types" }
+libc.workspace = true
 once_cell.workspace = true
-reqwest = { workspace = true, features = ["json", "stream", "rustls-tls"] }
+open = "5"
+qrcode = { version = "0.14.1", default-features = false }
+rand.workspace = true
+regex.workspace = true
+reqwest = { workspace = true, features = ["json", "stream", "blocking", "rustls-tls"] }
 schemars.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+serde_yaml.workspace = true
+sha2.workspace = true
+similar.workspace = true
+tar = "0.4"
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt", "sync"] }
-uuid = { workspace = true, features = ["v4", "serde"] }
+tokio = { workspace = true, features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream.workspace = true
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+toml = "0.8"
+unicode-width.workspace = true
+url.workspace = true
+urlencoding.workspace = true
+uuid = { workspace = true, features = ["v4", "v5", "serde"] }
+walkdir.workspace = true
+
+[dev-dependencies]
+image = { workspace = true }
+tempfile = { workspace = true }

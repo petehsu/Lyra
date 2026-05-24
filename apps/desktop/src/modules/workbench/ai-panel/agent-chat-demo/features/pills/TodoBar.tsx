@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from "react";
-import { ListChecks } from "lucide-react";
+import { ListChecks, Play } from "lucide-react";
+import { t } from "../../core/i18n";
 
 export interface TodoItem {
   id: string;
@@ -12,7 +13,15 @@ export interface TodoItem {
  * Collapsed: icon + "3/12" + current task name (shimmer).
  * Expanded: same pill morphs taller to show the full scrollable list.
  */
-export function TodoBar({ tasks }: { tasks: TodoItem[] }) {
+export function TodoBar({
+  tasks,
+  onPoke,
+  disabled = false,
+}: {
+  tasks: TodoItem[];
+  onPoke?: () => void;
+  disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   if (tasks.length === 0) return null;
@@ -25,21 +34,34 @@ export function TodoBar({ tasks }: { tasks: TodoItem[] }) {
       ? tasks[currentIndex]
       : tasks.find((t) => t.status !== "done") ?? tasks[tasks.length - 1];
   if (currentTask === undefined) return null;
+  const hasIncomplete = tasks.some((task) => task.status !== "done");
 
   return (
     <div className={`todo-pill ${open ? "open" : ""}`}>
-      <button
-        type="button"
-        className="todo-pill-head"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <ListChecks size={14} strokeWidth={2} />
-        <span className="todo-pill-progress">
-          {doneCount}/{total}
-        </span>
-        <span className="todo-pill-current shimmer">{currentTask.title}</span>
-      </button>
+      <div className="todo-pill-head">
+        <button
+          type="button"
+          className="todo-pill-toggle"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          <ListChecks size={14} strokeWidth={2} />
+          <span className="todo-pill-progress">
+            {doneCount}/{total}
+          </span>
+          <span className="todo-pill-current shimmer">{currentTask.title}</span>
+        </button>
+        <button
+          type="button"
+          className="todo-pill-poke"
+          disabled={disabled || !hasIncomplete || onPoke === undefined}
+          title={t("composer.poke")}
+          aria-label={t("composer.poke")}
+          onClick={() => onPoke?.()}
+        >
+          <Play size={12} strokeWidth={2.2} />
+        </button>
+      </div>
 
       <div className="todo-pill-collapse" data-open={open}>
         <div className="todo-pill-collapse-inner">

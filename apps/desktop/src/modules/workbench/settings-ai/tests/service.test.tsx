@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
+import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import { useSettingsAiModel } from "../service";
 import type { SettingsAiLabels } from "../types";
 
@@ -41,6 +42,41 @@ const labels: SettingsAiLabels = {
   selectProviderLabel: "Select provider",
   deleteProfileConfirmTitle: "Delete profile",
   deleteProfileConfirmDescription: "Delete this profile?",
+  configFileTitle: "Lyra Agent config file",
+  configFileDescription: "Open the real Lyra Agent config.",
+  openConfigFile: "Open Config",
+  refreshJcode: "Refresh",
+  jcodeConfigAriaLabel: "Lyra Agent config",
+  providerAutoFallback: "auto",
+  defaultModelFallback: "Lyra Agent default model",
+  customProviderFallback: "custom provider",
+  accountsTitle: "Lyra Agent Accounts",
+  accountsAriaLabel: "Lyra Agent accounts",
+  noDefaultProvider: "No default provider",
+  noDefaultModel: "No default model",
+  accountsEmptyTitle: "No Lyra Agent accounts configured",
+  accountsEmptyDescription: "Use the provider profile editor below to add an API key.",
+  accountConfigured: "configured",
+  accountNotConfigured: "not configured",
+  removeAccount: "Remove account",
+  providerProfileTitle: "Lyra Agent Provider Profile",
+  authHeaderLabel: "Auth Header",
+  roleModelsTitle: "Agent Role Models",
+  roleSwarmSubagentLabel: "Swarm / subagent",
+  roleReviewLabel: "Review",
+  roleJudgeLabel: "Judge",
+  roleMemoryLabel: "Memory",
+  roleAmbientLabel: "Ambient",
+  roleProviderDefaultPlaceholder: "provider default",
+  roleMemoryDefaultPlaceholder: "sidecar auto-select",
+  saveRoleModels: "Save role models",
+  commandsAriaLabel: "Lyra Agent commands",
+  runtimeUnavailable: "Lyra Agent runtime bridge is unavailable.",
+  fileEditorUnavailable: "Workbench file editor is unavailable.",
+  configPathUnavailable: "Lyra Agent config path is unavailable.",
+  sectionJcode: "Lyra Agent",
+  sectionSessions: "Sessions",
+  sectionCommands: "Commands",
   memoryConfigTitle: "Memory",
   memoryConfigDescription: "Memory configuration",
   memoryConfigPlaceholder: "{}",
@@ -52,233 +88,267 @@ const labels: SettingsAiLabels = {
   memoryConfigStatusInvalidJson: "Invalid JSON"
 };
 
-const renderModel = () =>
-  renderHook(() => useSettingsAiModel({ desktopApi: null, labels }));
+const jcodeConfigSnapshot = {
+  jcodeHome: "/Users/petehsu/.lyra/modules/agent",
+  configPath: "/Users/petehsu/.lyra/modules/agent/config.toml",
+  config: {
+    provider: {
+      default_provider: "mimo-token-plan",
+      default_model: "mimo-v2.5-pro",
+    },
+    providers: {
+      "mimo-token-plan": {
+        base_url: "https://token-plan-cn.xiaomimimo.com/v1",
+        default_model: "mimo-v2.5-pro",
+        models: [
+          { id: "mimo-v2.5-pro" },
+          { id: "mimo-v2.5-pro-plus" },
+        ],
+      },
+      "openai-compatible": {
+        base_url: "https://api.example.com/v1",
+        default_model: "gpt-5",
+        models: [{ id: "gpt-5" }],
+      },
+    },
+    agents: {
+      swarm_model: "gpt-5",
+      memory_model: "mimo-v2.5-pro",
+    },
+    autoreview: {
+      model: "gpt-5-mini",
+    },
+    autojudge: {
+      model: "gpt-5",
+    },
+    ambient: {
+      model: "mimo-v2.5-pro",
+    },
+  },
+  commands: [
+    {
+      name: "/account",
+      help: "Manage accounts",
+      autocomplete: true,
+      remoteOnly: false,
+    },
+  ],
+};
+
+const jcodeSessions = {
+  sessionsDir: "/Users/petehsu/.lyra/modules/agent/sessions",
+  sessions: [
+    {
+      id: "session-1",
+      title: "Saved Lyra Agent session",
+      customTitle: null,
+      shortName: "saved",
+      status: "saved",
+      providerKey: "mimo-token-plan",
+      model: "mimo-v2.5-pro",
+      messageCount: 4,
+      createdAt: "2026-05-15T00:00:00Z",
+      updatedAt: "2026-05-15T00:05:00Z",
+      lastActiveAt: "2026-05-15T00:05:00Z",
+      saved: true,
+      saveLabel: "saved",
+      archived: false,
+      workingDir: "/Users/petehsu/Documents/Lyra",
+    },
+  ],
+};
+
+const createDesktopApi = () => {
+  const readJcodeConfig = vi.fn(async () => jcodeConfigSnapshot);
+  const listSessions = vi.fn(async () => jcodeSessions);
+  const updateJcodeConfig = vi.fn(async () => jcodeConfigSnapshot);
+  const saveJcodeProviderProfile = vi.fn(async () => jcodeConfigSnapshot);
+  const updateJcodeAgentRoles = vi.fn(async () => jcodeConfigSnapshot);
+
+  return {
+    api: {
+      agent: {
+        readJcodeConfig,
+        listSessions,
+        updateJcodeConfig,
+        saveJcodeProviderProfile,
+        updateJcodeAgentRoles,
+      },
+    } as unknown as LyraDesktopApi,
+    readJcodeConfig,
+    listSessions,
+    updateJcodeConfig,
+    saveJcodeProviderProfile,
+    updateJcodeAgentRoles,
+  };
+};
+
+const renderModel = (
+  desktopApi: LyraDesktopApi | null,
+  onOpenJcodeConfigFile?: (filePath: string) => void | Promise<void>
+) =>
+  renderHook(() => useSettingsAiModel({
+    desktopApi,
+    labels,
+    onOpenJcodeConfigFile
+  }));
 
 describe("useSettingsAiModel", () => {
-  test("starts as a local-only settings model without runtime state", () => {
-    const { result } = renderModel();
+  test("reports an unavailable bridge instead of creating local profiles", async () => {
+    const { result } = renderModel(null);
 
+    await waitFor(() => {
+      expect(result.current.errorMessage).toBe("Lyra Agent runtime bridge is unavailable.");
+    });
     expect(result.current.profiles).toEqual([]);
-    expect(result.current.selectedProfileId).toBeNull();
-    expect(result.current.errorMessage).toBeNull();
+    expect(result.current.jcodeConfig).toBeNull();
     expect(result.current.availableModels).toEqual([]);
-    expect(result.current.presetSections.length).toBeGreaterThan(0);
   });
 
-  test("saves custom models into local memory only", async () => {
-    const { result } = renderModel();
-
-    act(() => {
-      result.current.updateDraftName("Local test profile");
-      result.current.updateDraftModelSelectionMode("custom");
-      result.current.updateDraftModelsText("user-model-a\nuser-model-b");
-    });
-    await act(async () => {
-      await result.current.saveProfile();
-    });
+  test("loads Lyra Agent config, commands, and derived provider rows", async () => {
+    const { api, readJcodeConfig, listSessions } = createDesktopApi();
+    const { result } = renderModel(api);
 
     await waitFor(() => {
-      expect(result.current.profiles).toHaveLength(1);
+      expect(result.current.profiles).toHaveLength(2);
     });
+
+    expect(readJcodeConfig).toHaveBeenCalledTimes(1);
+    expect(listSessions).not.toHaveBeenCalled();
+    expect(result.current.selectedProfileId).toBe("mimo-token-plan");
+    expect(result.current.defaultProfileId).toBe("mimo-token-plan");
+    expect(result.current.defaultModelNames).toEqual(["mimo-v2.5-pro"]);
     expect(result.current.profiles[0]).toMatchObject({
-      name: "Local test profile",
-      model: "user-model-a",
+      id: "mimo-token-plan",
+      name: "mimo-token-plan",
+      runtimeProviderId: "mimo-token-plan",
       runtimeSupported: true,
-      isDefault: true,
-      discoveryState: {
-        status: "idle",
-        models: []
-      }
-    });
-    expect(result.current.profiles[0]?.customModels.map((entry) => entry.id)).toEqual(["user-model-b"]);
-    expect(result.current.selectedProfileId).toBe(result.current.profiles[0]?.id);
-  });
-
-  test("saves a different preset as a separate local profile", async () => {
-    const { result } = renderModel();
-
-    await act(async () => {
-      await result.current.saveProfile();
-    });
-    await waitFor(() => {
-      expect(result.current.profiles).toHaveLength(1);
-    });
-    const firstProfileId = result.current.profiles[0]?.id;
-
-    act(() => {
-      result.current.applyPreset("mimo_api");
-      result.current.updateDraftModelSelectionMode("custom");
-      result.current.updateDraftModelsText("mimo-model");
-    });
-    await act(async () => {
-      await result.current.saveProfile();
-    });
-
-    await waitFor(() => {
-      expect(result.current.profiles).toHaveLength(2);
-    });
-    expect(result.current.profiles.map((profile) => profile.id)).toContain(firstProfileId);
-    expect(result.current.profiles.find((profile) => profile.providerId === "mimo")).toMatchObject({
-      protocolId: "mimo_openai_chat_completions",
-      model: "mimo-model"
-    });
-  });
-
-  test("normalizes Xiaomi MiMo model ids before saving", async () => {
-    const { result } = renderModel();
-
-    act(() => {
-      result.current.applyPreset("mimo_token_plan");
-      result.current.updateDraftModelSelectionMode("custom");
-      result.current.updateDraftModelsText("MiMo-V2.5-Pro\nMIMO-V2.5-PRO\nmimo-v2.5-pro-plus");
-    });
-    await act(async () => {
-      await result.current.saveProfile();
-    });
-
-    await waitFor(() => {
-      expect(result.current.profiles).toHaveLength(1);
-    });
-    expect(result.current.profiles[0]).toMatchObject({
-      providerId: "mimo",
       model: "mimo-v2.5-pro",
-      customModels: [
-        expect.objectContaining({
-          id: "mimo-v2.5-pro-plus"
-        })
-      ]
+      isDefault: true,
+    });
+    expect(result.current.profiles[0]?.customModels.map((entry) => entry.id)).toEqual([
+      "mimo-v2.5-pro-plus",
+    ]);
+    expect(result.current.jcodeCommands?.map((command) => command.name)).toEqual([
+      "/account",
+    ]);
+  });
+
+  test("saves provider profiles through the Lyra Agent runtime bridge", async () => {
+    const { api, saveJcodeProviderProfile } = createDesktopApi();
+    const { result } = renderModel(api);
+
+    await waitFor(() => {
+      expect(result.current.jcodeConfig).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.saveJcodeProviderProfile?.({
+        profileName: "xiaomi-mimo-api",
+        baseUrl: "https://api.xiaomimimo.com/v1",
+        apiKey: "sk-secret",
+        defaultModel: "mimo-v2.5-pro",
+        auth: "header",
+        authHeader: "api-key",
+        setDefault: true,
+        models: [{ id: "mimo-v2.5-pro" }],
+      });
+    });
+
+    expect(saveJcodeProviderProfile).toHaveBeenCalledWith({
+      profileName: "xiaomi-mimo-api",
+      baseUrl: "https://api.xiaomimimo.com/v1",
+      apiKey: "sk-secret",
+      defaultModel: "mimo-v2.5-pro",
+      auth: "header",
+      authHeader: "api-key",
+      setDefault: true,
+      models: [{ id: "mimo-v2.5-pro" }],
     });
   });
 
-  test("updates a selected local profile in memory", async () => {
-    const { result } = renderModel();
+  test("sets the Lyra Agent default provider through config update", async () => {
+    const { api, updateJcodeConfig } = createDesktopApi();
+    const { result } = renderModel(api);
 
-    act(() => {
-      result.current.updateDraftModelSelectionMode("custom");
-      result.current.updateDraftModelsText("model-a\nmodel-b");
-    });
-    await act(async () => {
-      await result.current.saveProfile();
-    });
-    await waitFor(() => {
-      expect(result.current.profiles).toHaveLength(1);
-    });
-    const profileId = result.current.profiles[0]?.id ?? "";
-
-    act(() => {
-      result.current.selectProfile(profileId);
-      result.current.updateDraftModelsText("model-c\nmodel-d");
-    });
-    await act(async () => {
-      await result.current.saveProfile();
-    });
-
-    await waitFor(() => {
-      expect(result.current.profiles).toHaveLength(1);
-    });
-    expect(result.current.profiles[0]).toMatchObject({
-      id: profileId,
-      model: "model-c"
-    });
-    expect(result.current.profiles[0]?.customModels.map((entry) => entry.id)).toEqual(["model-d"]);
-  });
-
-  test("deletes provider profiles from local memory", async () => {
-    const { result } = renderModel();
-
-    await act(async () => {
-      await result.current.saveProfile();
-    });
-    act(() => {
-      result.current.applyPreset("anthropic");
-      result.current.updateDraftModelSelectionMode("custom");
-      result.current.updateDraftModelsText("claude-test");
-    });
-    await act(async () => {
-      await result.current.saveProfile();
-    });
     await waitFor(() => {
       expect(result.current.profiles).toHaveLength(2);
     });
 
     await act(async () => {
-      await result.current.deleteProviderModels("lmstudio");
+      await result.current.setDefaultProfile("openai-compatible");
     });
 
-    await waitFor(() => {
-      expect(result.current.profiles).toHaveLength(1);
+    expect(updateJcodeConfig).toHaveBeenCalledWith({
+      defaultProvider: "openai-compatible",
+      defaultModel: "gpt-5",
     });
-    expect(result.current.profiles[0]?.providerId).toBe("anthropic");
   });
 
-  test("removes configured models and deletes the profile when none remain", async () => {
-    const { result } = renderModel();
-
-    act(() => {
-      result.current.updateDraftModelSelectionMode("custom");
-      result.current.updateDraftModelsText("model-a\nmodel-b\nmodel-c");
-    });
-    await act(async () => {
-      await result.current.saveProfile();
-    });
-    await waitFor(() => {
-      expect(result.current.profiles).toHaveLength(1);
-    });
-    const profileId = result.current.profiles[0]?.id ?? "";
-
-    await act(async () => {
-      await result.current.deleteConfiguredModel(profileId, "model-b");
-    });
-
-    expect(result.current.profiles[0]).toMatchObject({
-      model: "model-a"
-    });
-    expect(result.current.profiles[0]?.customModels.map((entry) => entry.id)).toEqual(["model-c"]);
-
-    await act(async () => {
-      await result.current.deleteConfiguredModel(profileId, "model-a");
-    });
-    expect(result.current.profiles[0]).toMatchObject({
-      model: "model-c"
-    });
-    expect(result.current.profiles[0]?.customModels).toEqual([]);
-
-    await act(async () => {
-      await result.current.deleteConfiguredModel(profileId, "model-c");
-    });
+  test("saves agent role model overrides through the Lyra Agent bridge", async () => {
+    const { api, updateJcodeAgentRoles } = createDesktopApi();
+    const { result } = renderModel(api);
 
     await waitFor(() => {
-      expect(result.current.profiles).toEqual([]);
+      expect(result.current.jcodeConfig).not.toBeNull();
     });
-    expect(result.current.selectedProfileId).toBeNull();
+
+    await act(async () => {
+      await result.current.updateJcodeAgentRoles?.({
+        swarmModel: "gpt-5",
+        reviewModel: "gpt-5-mini",
+        judgeModel: "gpt-5",
+        memoryModel: "mimo-v2.5-pro",
+        ambientModel: "mimo-v2.5-pro",
+      });
+    });
+
+    expect(updateJcodeAgentRoles).toHaveBeenCalledWith({
+      swarmModel: "gpt-5",
+      reviewModel: "gpt-5-mini",
+      judgeModel: "gpt-5",
+      memoryModel: "mimo-v2.5-pro",
+      ambientModel: "mimo-v2.5-pro",
+    });
   });
 
-  test("sets the default profile locally", async () => {
-    const { result } = renderModel();
+  test("opens the persisted Lyra Agent config file through the workspace file editor", async () => {
+    const { api } = createDesktopApi();
+    const onOpenJcodeConfigFile = vi.fn();
+    const { result } = renderModel(api, onOpenJcodeConfigFile);
 
-    await act(async () => {
-      await result.current.saveProfile();
-    });
-    act(() => {
-      result.current.applyPreset("openai");
-      result.current.updateDraftModelSelectionMode("custom");
-      result.current.updateDraftModelsText("gpt-test");
-    });
-    await act(async () => {
-      await result.current.saveProfile();
-    });
     await waitFor(() => {
-      expect(result.current.profiles).toHaveLength(2);
+      expect(result.current.jcodeConfig).not.toBeNull();
     });
-    const openAiProfileId = result.current.profiles.find((profile) => profile.providerId === "openai")?.id ?? "";
 
     await act(async () => {
-      await result.current.setDefaultProfile(openAiProfileId);
+      await result.current.openJcodeConfigFile?.();
     });
 
-    expect(result.current.defaultProfileId).toBe(openAiProfileId);
-    expect(result.current.defaultProviderId).toBe("openai");
-    expect(result.current.defaultModelNames).toEqual(["gpt-test"]);
+    expect(onOpenJcodeConfigFile).toHaveBeenCalledWith("/Users/petehsu/.lyra/modules/agent/config.toml");
+  });
+
+  test("keeps draft field edits local until explicit Lyra Agent save", async () => {
+    const { api, saveJcodeProviderProfile } = createDesktopApi();
+    const { result } = renderModel(api);
+
+    await waitFor(() => {
+      expect(result.current.jcodeConfig).not.toBeNull();
+    });
+
+    act(() => {
+      result.current.updateDraftName("Local edit only");
+      result.current.updateDraftField("connection", "baseUrl", "https://local.example/v1");
+      result.current.updateDraftModelSelectionMode("custom");
+      result.current.updateDraftModelsText("custom-model");
+    });
+
+    expect(result.current.draft.name).toBe("Local edit only");
+    expect(result.current.draft.connectionConfig).toEqual({
+      baseUrl: "https://local.example/v1",
+    });
+    expect(result.current.modelSelectionMode).toBe("custom");
+    expect(result.current.draft.modelsText).toBe("custom-model");
+    expect(saveJcodeProviderProfile).not.toHaveBeenCalled();
   });
 });

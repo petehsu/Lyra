@@ -172,7 +172,7 @@
   justify-self: end;
   padding: var(--lyra-unit-5) var(--lyra-unit-10);
   border-radius: var(--lyra-unit-999);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
   background: color-mix(in srgb, var(--lyra-bg-surface) 84%, var(--lyra-bg-editor) 16%);
   color: var(--lyra-text-primary);
   font-size: var(--lyra-unit-11);
@@ -299,7 +299,7 @@
 }
 
 .lyra-browser-search-mode-picker .lyra-list-picker-surface {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 58%, transparent);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 40%, transparent);
   background:
     linear-gradient(
       180deg,
@@ -337,7 +337,7 @@
 }
 
 .lyra-browser-search-mode-picker:hover .lyra-list-picker-surface {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 68%, transparent);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
 }
 
 .lyra-browser-search-mode-picker .lyra-list-picker-trigger {
@@ -706,7 +706,7 @@
 
 .lyra-deep-search-filter-chip-active {
   color: var(--lyra-text-primary);
-  border-color: color-mix(in srgb, var(--lyra-line-default) 52%, var(--lyra-text-secondary) 48%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 38%, var(--lyra-text-secondary) 48%);
   background: color-mix(in srgb, var(--lyra-bg-surface) 85%, var(--lyra-bg-editor) 15%);
 }
 
@@ -790,7 +790,7 @@
 }
 
 .lyra-deep-search-node-selected {
-  border-color: color-mix(in srgb, var(--lyra-line-default) 46%, var(--lyra-text-secondary) 54%);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 34%, var(--lyra-text-secondary) 54%);
   box-shadow: 0 var(--lyra-unit-14) var(--lyra-unit-32) rgba(7, 10, 14, 0.16);
 }
 
@@ -892,7 +892,7 @@
   min-width: 0;
   padding: var(--lyra-unit-4) var(--lyra-unit-9);
   border-radius: var(--lyra-unit-999);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
   background: color-mix(in srgb, var(--lyra-bg-surface) 88%, var(--lyra-bg-editor) 12%);
   color: var(--lyra-text-primary);
   font-size: var(--lyra-unit-10);
@@ -924,7 +924,7 @@
   position: absolute;
   padding: var(--lyra-unit-4) var(--lyra-unit-8);
   border-radius: var(--lyra-unit-999);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
   background: color-mix(in srgb, var(--lyra-bg-surface) 88%, var(--lyra-bg-editor) 12%);
   color: var(--lyra-text-primary);
   font-size: var(--lyra-unit-10);
@@ -978,7 +978,7 @@
 
 .lyra-results-channel-tab:hover {
   color: var(--lyra-text-primary);
-  border-color: color-mix(in srgb, var(--lyra-line-default) 70%, transparent);
+  border-color: color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
 }
 
 .lyra-results-channel-tab-active {
@@ -1136,7 +1136,7 @@
   min-width: 0;
   padding: var(--lyra-unit-3) var(--lyra-unit-8);
   border-radius: var(--lyra-unit-999);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 74%, transparent);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
   background: color-mix(in srgb, var(--lyra-bg-surface) 90%, var(--lyra-bg-editor) 10%);
   color: var(--lyra-text-primary);
   font-size: var(--lyra-unit-10);
