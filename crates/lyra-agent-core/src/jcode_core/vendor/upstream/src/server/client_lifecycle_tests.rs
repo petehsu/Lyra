@@ -1,5 +1,5 @@
 use super::*;
-use crate::message::{Message, ToolDefinition};
+use crate::message::{Message, StreamEvent, ToolDefinition};
 use crate::provider::{EventStream, Provider};
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -76,6 +76,8 @@ struct PanicOnForkProvider {
     forked: Arc<AtomicBool>,
 }
 
+struct ImmediateProvider;
+
 #[async_trait]
 impl Provider for PanicOnForkProvider {
     async fn complete(
@@ -96,6 +98,265 @@ impl Provider for PanicOnForkProvider {
         self.forked.store(true, Ordering::SeqCst);
         panic!("fork should not run for lightweight control requests")
     }
+}
+
+#[async_trait]
+impl Provider for ImmediateProvider {
+    async fn complete(
+        &self,
+        _messages: &[Message],
+        _tools: &[ToolDefinition],
+        _system: &str,
+        _resume_session_id: Option<&str>,
+    ) -> Result<EventStream> {
+        Ok(Box::pin(tokio_stream::iter(vec![
+            Ok(StreamEvent::TextDelta("new task handled".to_string())),
+            Ok(StreamEvent::MessageEnd { stop_reason: None }),
+        ])))
+    }
+
+    fn name(&self) -> &str {
+        "immediate"
+    }
+
+    fn fork(&self) -> Arc<dyn Provider> {
+        Arc::new(Self)
+    }
+}
+
+#[tokio::test]
+async fn new_message_after_busy_state_cancels_old_processing_before_starting() {
+    let provider: Arc<dyn Provider> = Arc::new(ImmediateProvider);
+    let registry = Registry::new(Arc::clone(&provider)).await;
+    let mut session =
+        crate::session::Session::create_with_id("session_task_switch".to_string(), None, None);
+    session.model = Some("immediate".to_string());
+    let agent = Arc::new(Mutex::new(Agent::new_with_session(
+        provider, registry, session, None,
+    )));
+
+    let (client_event_tx, mut client_event_rx) = mpsc::unbounded_channel::<ServerEvent>();
+    let (processing_done_tx, mut processing_done_rx) = mpsc::unbounded_channel();
+    let mut client_is_processing = true;
+    let mut processing_message_id = Some(1);
+    let mut processing_session_id = Some("session_task_switch".to_string());
+    let mut processing_task = Some(tokio::spawn(async {
+        std::future::pending::<()>().await;
+    }));
+    let swarm_members = Arc::new(RwLock::new(HashMap::new()));
+    let swarms_by_id = Arc::new(RwLock::new(HashMap::new()));
+    let event_history = Arc::new(RwLock::new(std::collections::VecDeque::new()));
+    let event_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let (swarm_event_tx, _) = broadcast::channel(8);
+    let session_control = SessionControlHandle::new(
+        "session_task_switch",
+        Arc::new(std::sync::Mutex::new(Vec::new())),
+        InterruptSignal::new(),
+        InterruptSignal::new(),
+    );
+
+    cancel_processing_message(
+        &mut ProcessingState {
+            client_is_processing: &mut client_is_processing,
+            message_id: &mut processing_message_id,
+            session_id: &mut processing_session_id,
+            task: &mut processing_task,
+        },
+        &session_control,
+        &client_event_tx,
+        &SwarmStatusRefs {
+            members: &swarm_members,
+            swarms_by_id: &swarms_by_id,
+            event_history: &event_history,
+            event_counter: &event_counter,
+            event_tx: &swarm_event_tx,
+        },
+    )
+    .await;
+
+    assert!(!client_is_processing);
+    assert_eq!(processing_message_id, None);
+    assert_eq!(processing_session_id, None);
+    assert!(processing_task.is_none());
+
+    start_processing_message(
+        ProcessingMessage {
+            id: 2,
+            content: "new user request".to_string(),
+            images: Vec::new(),
+            system_reminder: None,
+        },
+        "session_task_switch",
+        &mut ProcessingState {
+            client_is_processing: &mut client_is_processing,
+            message_id: &mut processing_message_id,
+            session_id: &mut processing_session_id,
+            task: &mut processing_task,
+        },
+        &agent,
+        &client_event_tx,
+        &processing_done_tx,
+        &SwarmStatusRefs {
+            members: &swarm_members,
+            swarms_by_id: &swarms_by_id,
+            event_history: &event_history,
+            event_counter: &event_counter,
+            event_tx: &swarm_event_tx,
+        },
+    )
+    .await;
+
+    assert!(client_is_processing);
+    assert_eq!(processing_message_id, Some(2));
+    assert_eq!(
+        processing_session_id.as_deref(),
+        Some("session_task_switch")
+    );
+
+    let mut saw_interrupted = false;
+    let mut saw_old_done = false;
+    let mut saw_new_delta = false;
+    while let Ok(event) =
+        tokio::time::timeout(std::time::Duration::from_millis(250), client_event_rx.recv()).await
+    {
+        match event.expect("client event") {
+            ServerEvent::Interrupted => saw_interrupted = true,
+            ServerEvent::Done { id } if id == 1 => saw_old_done = true,
+            ServerEvent::TextDelta { text } if text.contains("new task handled") => {
+                saw_new_delta = true;
+            }
+            ServerEvent::Error { message, .. } if message.contains("Already processing") => {
+                panic!("new user request should not be rejected as already processing")
+            }
+            _ => {}
+        }
+        if saw_interrupted && saw_old_done && saw_new_delta {
+            break;
+        }
+    }
+
+    assert!(saw_interrupted);
+    assert!(saw_old_done);
+    assert!(saw_new_delta);
+
+    let (message_id, result, _) = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        processing_done_rx.recv(),
+    )
+    .await
+    .expect("new processing should finish")
+    .expect("processing result should be sent");
+    assert_eq!(message_id, 2);
+    result.expect("new processing should succeed");
+}
+
+#[tokio::test]
+async fn new_message_drains_completed_processing_before_starting() {
+    let provider: Arc<dyn Provider> = Arc::new(ImmediateProvider);
+    let registry = Registry::new(Arc::clone(&provider)).await;
+    let mut session =
+        crate::session::Session::create_with_id("session_done_race".to_string(), None, None);
+    session.model = Some("immediate".to_string());
+    let agent = Arc::new(Mutex::new(Agent::new_with_session(
+        provider, registry, session, None,
+    )));
+
+    let (client_event_tx, mut client_event_rx) = mpsc::unbounded_channel::<ServerEvent>();
+    let (processing_done_tx, mut processing_done_rx) = mpsc::unbounded_channel();
+    let mut client_is_processing = true;
+    let mut processing_message_id = Some(1);
+    let mut processing_session_id = Some("session_done_race".to_string());
+    let mut processing_task = Some(tokio::spawn(async {}));
+    let client_connections = Arc::new(RwLock::new(HashMap::new()));
+    let swarm_members = Arc::new(RwLock::new(HashMap::new()));
+    let swarms_by_id = Arc::new(RwLock::new(HashMap::new()));
+    let event_history = Arc::new(RwLock::new(std::collections::VecDeque::new()));
+    let event_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let (swarm_event_tx, _) = broadcast::channel(8);
+
+    processing_done_tx
+        .send((1, Ok(()), Some("old task finished".to_string())))
+        .expect("queue completed old message");
+
+    drain_finished_processing_messages(
+        &mut processing_done_rx,
+        &mut ProcessingState {
+            client_is_processing: &mut client_is_processing,
+            message_id: &mut processing_message_id,
+            session_id: &mut processing_session_id,
+            task: &mut processing_task,
+        },
+        &client_connections,
+        "conn_done_race",
+        &client_event_tx,
+        &SwarmStatusRefs {
+            members: &swarm_members,
+            swarms_by_id: &swarms_by_id,
+            event_history: &event_history,
+            event_counter: &event_counter,
+            event_tx: &swarm_event_tx,
+        },
+    )
+    .await;
+
+    assert!(!client_is_processing);
+    assert_eq!(processing_message_id, None);
+    assert_eq!(processing_session_id, None);
+    assert!(processing_task.is_none());
+
+    start_processing_message(
+        ProcessingMessage {
+            id: 2,
+            content: "new request after completed old turn".to_string(),
+            images: Vec::new(),
+            system_reminder: None,
+        },
+        "session_done_race",
+        &mut ProcessingState {
+            client_is_processing: &mut client_is_processing,
+            message_id: &mut processing_message_id,
+            session_id: &mut processing_session_id,
+            task: &mut processing_task,
+        },
+        &agent,
+        &client_event_tx,
+        &processing_done_tx,
+        &SwarmStatusRefs {
+            members: &swarm_members,
+            swarms_by_id: &swarms_by_id,
+            event_history: &event_history,
+            event_counter: &event_counter,
+            event_tx: &swarm_event_tx,
+        },
+    )
+    .await;
+
+    let mut saw_old_done = false;
+    let mut saw_new_delta = false;
+    while let Ok(event) = tokio::time::timeout(
+        std::time::Duration::from_millis(250),
+        client_event_rx.recv(),
+    )
+    .await
+    {
+        match event.expect("client event") {
+            ServerEvent::Done { id } if id == 1 => saw_old_done = true,
+            ServerEvent::TextDelta { text } if text.contains("new task handled") => {
+                saw_new_delta = true;
+            }
+            ServerEvent::Interrupted => panic!("completed old work should not be interrupted"),
+            ServerEvent::Error { message, .. } if message.contains("Already processing") => {
+                panic!("completed old work should be drained before starting the new request")
+            }
+            _ => {}
+        }
+        if saw_old_done && saw_new_delta {
+            break;
+        }
+    }
+
+    assert!(saw_old_done);
+    assert!(saw_new_delta);
 }
 
 #[test]

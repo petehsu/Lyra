@@ -306,6 +306,22 @@ describe("aggregated search service", () => {
           readPageState: vi.fn(async () => null),
           setElementPickerMode: vi.fn(async () => undefined),
           applyWebTheme: vi.fn(async () => undefined),
+          capturePage: vi.fn(async () => ({
+            tabId: "browser-tab-test",
+            mimeType: "image/png" as const,
+            imageBase64: "",
+            width: 1,
+            height: 1,
+            visibleOnly: true
+          })),
+          captureWindow: vi.fn(async () => ({
+            tabId: "lyra-window",
+            mimeType: "image/png" as const,
+            imageBase64: "",
+            width: 1,
+            height: 1,
+            visibleOnly: true
+          })),
           onEvent: vi.fn(() => () => undefined)
         },
         lsp: {

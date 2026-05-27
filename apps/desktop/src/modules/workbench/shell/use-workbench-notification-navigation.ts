@@ -43,6 +43,8 @@ const resolveNotificationAppIconKey = (
       return "agent-project-tree-default";
     case "agent-session-history":
       return "agent-session-history-default";
+    case "software-store":
+      return "software-store-default";
     case "agent-selfdev":
       return "agent-selfdev-default";
     case "agent-overnight":

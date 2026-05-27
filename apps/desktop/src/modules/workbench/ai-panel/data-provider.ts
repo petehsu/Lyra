@@ -1,5 +1,4 @@
 import type {
-  AgentDecisionSubmitRequest,
   AgentFollowState,
   AgentMessage,
   AgentPermissionRespondRequest,
@@ -32,9 +31,7 @@ export type DataProviderValue = {
   readonly error: string | null;
   readonly sendMessage: (text: string) => Promise<void>;
   readonly cancel: () => Promise<void>;
-  readonly submitDecisions: (
-    decision: Omit<AgentDecisionSubmitRequest, "sessionId">
-  ) => Promise<void>;
+  readonly submitDecisions: (answers: Record<string, string>) => Promise<void>;
   readonly approvePermission: (
     permission: Omit<AgentPermissionRespondRequest, "sessionId" | "allowed">
   ) => Promise<void>;

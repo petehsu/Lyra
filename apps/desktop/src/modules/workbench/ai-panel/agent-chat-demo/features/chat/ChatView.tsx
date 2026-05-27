@@ -27,6 +27,8 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
     decisions,
     permissions,
     sendMessage,
+    captureBrowserScreenshot,
+    captureWindowScreenshot,
     submitDecisions,
     approvePermission,
     denyPermission,
@@ -37,6 +39,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [panelProgress, setPanelProgress] = useState(1);
+  const hasPendingClarification = showDecisions && decisions.length > 0;
 
   const lastScrollTop = useRef(0);
   const rafId = useRef(0);
@@ -83,6 +86,12 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
       el.scrollTop = el.scrollHeight;
     }
   }, [messages, isAtBottom]);
+
+  useEffect(() => {
+    if (decisions.length > 0 || permissions.length > 0) {
+      setPanelProgress(1);
+    }
+  }, [decisions.length, permissions.length]);
 
   const scrollToBottom = () => {
     const el = scrollRef.current;
@@ -131,7 +140,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
           <DecisionPanel
             questions={decisions}
             onSubmit={submitDecisions}
-            onDismiss={() => submitDecisions({})}
+            onDismiss={() => undefined}
             progress={panelProgress}
             onTap={() => setPanelProgress(1)}
           />
@@ -139,8 +148,13 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
 
         <Composer
           onSend={sendMessage}
+          onCaptureBrowserScreenshot={captureBrowserScreenshot}
+          onCaptureWindowScreenshot={captureWindowScreenshot}
           modelControls={modelControls ?? null}
           onOpenModelSettings={openModelSettings}
+          disabledReason={
+            hasPendingClarification ? t("composer.answerClarificationFirst") : undefined
+          }
         />
       </div>
     </>

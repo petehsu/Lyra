@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 
 import type { WorkbenchSurfaceAdapters } from "../ui-platform/surface-types";
 import type { WorkspaceSurfaceRouterProps } from "./workspace-surface-router";
+import type { SoftwareStoreSurfaceProps } from "../software-store";
 
 export type WorkspaceSurfaceRenderContext = Omit<
   WorkspaceSurfaceRouterProps,
@@ -24,6 +25,7 @@ export type SurfacePropsByKind = {
   readonly agentOvernight: ComponentProps<WorkbenchSurfaceAdapters["agentOvernight"]>;
   readonly notificationCenter: ComponentProps<WorkbenchSurfaceAdapters["notificationCenter"]>;
   readonly agentSessionHistory: ComponentProps<WorkbenchSurfaceAdapters["agentSessionHistory"]>;
+  readonly softwareStore: SoftwareStoreSurfaceProps;
 };
 
 export type WorkspaceSurfaceRenderModel =

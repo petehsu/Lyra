@@ -50,6 +50,7 @@ import {
 } from "./uiux-packs";
 import { createWorkbenchObservationRendererClient } from "./workbench-observation/local-tabs";
 import { createWorkbenchObservationService } from "./workbench-observation/service";
+import type { WorkbenchObservationService } from "./workbench-observation/types";
 import { createWorkbenchDocumentsService } from "./workbench-documents/service";
 import { createWorkbenchStateIpcBridge } from "./workbench-state";
 import {
@@ -108,6 +109,7 @@ let disposePowerSaveBlocker: (() => void) | null = null;
 let disposeLyraDockIconThemeSync: (() => void) | null = null;
 let disposeSystemNotificationsBridge: (() => void) | null = null;
 let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
+let workbenchObservationService: WorkbenchObservationService | null = null;
 
 const storageRoots = resolveLyraStorageRoots();
 ensureLyraStorageRoots(storageRoots);
@@ -170,8 +172,6 @@ const createMacApplicationMenuTemplate = (): MenuItemConstructorOptions[] => [
     ? [{
         role: "viewMenu" as const,
         submenu: [
-          { role: "reload" as const },
-          { role: "forceReload" as const },
           { role: "toggleDevTools" as const }
         ]
       }]
@@ -246,6 +246,17 @@ const isDevToolsToggleInput = (input: Electron.Input): boolean => {
   );
 };
 
+const isReloadInput = (input: Electron.Input): boolean => {
+  const key = input.key.toLowerCase();
+  if (key === "f5") {
+    return true;
+  }
+  if (key !== "r") {
+    return false;
+  }
+  return (input.control || input.meta) && input.alt !== true;
+};
+
 const toggleDevToolsForContents = (contents: WebContents): void => {
   if (contents.isDevToolsOpened()) {
     contents.closeDevTools();
@@ -263,6 +274,15 @@ const toggleDevToolsForPreferredTarget = (contents: WebContents): void => {
   toggleDevToolsForContents(contents);
 };
 
+const reloadActiveWorkbenchPage = (ignoreCache: boolean): boolean => {
+  const tabId = workbenchBrowserBridge?.readActiveTabId() ?? null;
+  if (tabId === null) {
+    return false;
+  }
+  workbenchBrowserBridge?.reload(tabId, ignoreCache);
+  return true;
+};
+
 const exitWindowFullscreen = (window: BrowserWindow): void => {
   if (process.platform === "darwin" && window.isSimpleFullScreen()) {
     window.setSimpleFullScreen(false);
@@ -272,17 +292,18 @@ const exitWindowFullscreen = (window: BrowserWindow): void => {
   }
 };
 
-const registerDevelopmentShortcuts = (): void => {
+const registerWorkbenchInputShortcuts = (): void => {
   app.on("web-contents-created", (_event, contents: WebContents) => {
-    if (!isDevelopmentMode()) {
-      return;
-    }
     contents.on("before-input-event", (event, input) => {
-      if (!isDevToolsToggleInput(input)) {
+      if (isReloadInput(input)) {
+        event.preventDefault();
+        reloadActiveWorkbenchPage(input.shift === true);
         return;
       }
-      event.preventDefault();
-      toggleDevToolsForPreferredTarget(contents);
+      if (isDevelopmentMode() && isDevToolsToggleInput(input)) {
+        event.preventDefault();
+        toggleDevToolsForPreferredTarget(contents);
+      }
     });
   });
 };
@@ -685,8 +706,10 @@ const registerIpcHandlers = (): void => {
 
   const agentBridge = createAgentIpcBridge({
     runtimeClient,
+    storageRoot: storageRoots.modules.agent,
     getWindow: () => mainWindow,
-    getBrowserBridge: () => workbenchBrowserBridge
+    getBrowserBridge: () => workbenchBrowserBridge,
+    getWorkbenchObservationService: () => workbenchObservationService
   });
   disposeAgentBridge = agentBridge.dispose;
 
@@ -740,13 +763,16 @@ const registerIpcHandlers = (): void => {
     getWindow: () => mainWindow
   });
   disposeWorkbenchObservationRendererClient = workbenchObservationRendererClient.dispose;
-  const workbenchObservationService = createWorkbenchObservationService({
+  workbenchObservationService = createWorkbenchObservationService({
     browserBridge: workbenchBrowserBridge,
     documentsService: workbenchDocumentsService,
     rendererClient: workbenchObservationRendererClient,
     terminalBridge
   });
-  disposeWorkbenchObservationService = workbenchObservationService.dispose;
+  disposeWorkbenchObservationService = () => {
+    workbenchObservationService?.dispose();
+    workbenchObservationService = null;
+  };
 
   ipcMain.handle(LYRA_CHANNELS.minimizeWindow, () => {
     mainWindow?.minimize();
@@ -817,7 +843,7 @@ process.title = LYRA_APP_NAME;
 
 app.whenReady().then(() => {
   configureApplicationMenu();
-  registerDevelopmentShortcuts();
+  registerWorkbenchInputShortcuts();
   app.once("gpu-info-update", () => {
     void linuxCompatBridge.captureGpuSnapshot(app);
   });

@@ -4,6 +4,50 @@ fn truncated_stream_payload_context(data: &str) -> String {
     crate::util::truncate_str(&data.trim().replace('\n', "\\n"), 240).to_string()
 }
 
+pub(super) fn is_vision_unsupported_error(error: &str) -> bool {
+    let lower = error.to_lowercase();
+    lower.contains("does not support image")
+        || lower.contains("do not support image")
+        || lower.contains("unsupported image")
+        || lower.contains("image_url is not supported")
+        || lower.contains("support image input")
+        || lower.contains("endpoints found that support")
+        || lower.contains("unsupported content type")
+        || lower.contains("unsupported modality")
+        || lower.contains("invalid modality")
+}
+
+pub(super) fn strip_visual_inputs_from_chat_request(request: &mut Value) -> usize {
+    let Some(messages) = request.get_mut("messages").and_then(Value::as_array_mut) else {
+        return 0;
+    };
+    let mut removed_total = 0usize;
+
+    for message in messages {
+        let Some(parts) = message.get_mut("content").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        let before = parts.len();
+        parts.retain(|part| {
+            let kind = part.get("type").and_then(Value::as_str);
+            kind != Some("image_url") && kind != Some("input_image") && kind != Some("image")
+        });
+        let removed = before.saturating_sub(parts.len());
+        if removed > 0 {
+            removed_total += removed;
+            parts.push(serde_json::json!({
+                "type": "text",
+                "text": format!(
+                    "[{} image input(s) removed after the provider reported that this model/endpoint does not support image input.]",
+                    removed
+                )
+            }));
+        }
+    }
+
+    removed_total
+}
+
 // ============================================================================
 // SSE Stream Parser
 // ============================================================================
@@ -22,18 +66,25 @@ pub(super) async fn run_stream_with_retries(
     provider_pin: Arc<Mutex<Option<ProviderPin>>>,
     model: String,
 ) {
+    let mut request = request;
     let mut last_error = None;
+    let mut stripped_visual_inputs = false;
+    let mut skip_backoff_once = false;
 
     for attempt in 0..MAX_RETRIES {
         if attempt > 0 {
-            let delay = RETRY_BASE_DELAY_MS * (1 << (attempt - 1));
-            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-            crate::logging::info(&format!(
-                "Retrying API request using {} (attempt {}/{})",
-                auth.label(),
-                attempt + 1,
-                MAX_RETRIES
-            ));
+            if skip_backoff_once {
+                skip_backoff_once = false;
+            } else {
+                let delay = RETRY_BASE_DELAY_MS * (1 << (attempt - 1));
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                crate::logging::info(&format!(
+                    "Retrying API request using {} (attempt {}/{})",
+                    auth.label(),
+                    attempt + 1,
+                    MAX_RETRIES
+                ));
+            }
         }
 
         crate::logging::info(&format!(
@@ -60,6 +111,20 @@ pub(super) async fn run_stream_with_retries(
             Ok(()) => return,
             Err(e) => {
                 let error_str = e.to_string().to_lowercase();
+                if !stripped_visual_inputs && is_vision_unsupported_error(&error_str) {
+                    let removed = strip_visual_inputs_from_chat_request(&mut request);
+                    if removed > 0 && attempt + 1 < MAX_RETRIES {
+                        record_dynamic_vision_support(&api_base, &model, false);
+                        crate::logging::warn(&format!(
+                            "Provider endpoint rejected image input for model '{}'; stripped {} visual input(s) and retrying without image data.",
+                            model, removed
+                        ));
+                        stripped_visual_inputs = true;
+                        skip_backoff_once = true;
+                        continue;
+                    }
+                }
+
                 if is_retryable_error(&error_str) && attempt + 1 < MAX_RETRIES {
                     crate::logging::info(&format!("Transient API error, will retry: {}", e));
                     last_error = Some(e);

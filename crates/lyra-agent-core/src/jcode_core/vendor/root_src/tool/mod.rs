@@ -4,7 +4,7 @@ mod apply_patch;
 mod bash;
 mod batch;
 mod bg;
-mod browser;
+mod clarification;
 mod codesearch;
 mod communicate;
 mod conversation_search;
@@ -17,6 +17,9 @@ mod grep;
 mod invalid;
 mod ls;
 mod lsp;
+mod lyra_design;
+mod lyra_lumen;
+mod lyra_search;
 pub mod mcp;
 mod memory;
 mod multiedit;
@@ -27,10 +30,12 @@ pub mod selfdev;
 mod session_search;
 mod side_panel;
 mod skill;
+mod software;
 mod task;
 mod todo;
 mod webfetch;
 mod websearch;
+mod workbench;
 mod write;
 
 use crate::compaction::CompactionManager;
@@ -143,9 +148,44 @@ impl Registry {
             );
             Self::insert_tool_timed(&mut m, &mut timings, "glob", glob::GlobTool::new);
             Self::insert_tool_timed(&mut m, &mut timings, "grep", grep::GrepTool::new);
+            Self::insert_tool_timed(
+                &mut m,
+                &mut timings,
+                "lyra_search",
+                lyra_search::LyraSearchTool::new,
+            );
             Self::insert_tool_timed(&mut m, &mut timings, "ls", ls::LsTool::new);
+            Self::insert_tool_timed(
+                &mut m,
+                &mut timings,
+                "lyra_design",
+                lyra_design::LyraDesignTool::new,
+            );
             Self::insert_tool_timed(&mut m, &mut timings, "bash", bash::BashTool::new);
-            Self::insert_tool_timed(&mut m, &mut timings, "browser", browser::BrowserTool::new);
+            Self::insert_tool_timed(
+                &mut m,
+                &mut timings,
+                "lyra_lumen",
+                lyra_lumen::LyraLumenTool::new,
+            );
+            Self::insert_tool_timed(
+                &mut m,
+                &mut timings,
+                "ask_user",
+                clarification::AskUserTool::new,
+            );
+            Self::insert_tool_timed(
+                &mut m,
+                &mut timings,
+                "workbench",
+                workbench::WorkbenchTool::new,
+            );
+            Self::insert_tool_timed(
+                &mut m,
+                &mut timings,
+                "software",
+                software::SoftwareTool::new,
+            );
             Self::insert_tool_timed(&mut m, &mut timings, "open", open::OpenTool::new);
             Self::insert_tool_timed(
                 &mut m,

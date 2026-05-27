@@ -54,6 +54,8 @@ import type {
   WorkbenchBrowserElementPickerOwner,
   WorkbenchBrowserElementPickerPhase,
   WorkbenchBrowserElementPickerState,
+  WorkbenchBrowserAgentActivityEvent,
+  WorkbenchLumenActivityEvent,
   WorkbenchBrowserEvent,
   WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
@@ -67,7 +69,9 @@ import type {
 } from "./workbench-browser";
 import type {
   WorkbenchObservationQueryRequest,
-  WorkbenchObservationQueryResult
+  WorkbenchObservationQueryResult,
+  WorkbenchVisualCaptureRequest,
+  WorkbenchVisualCaptureResult
 } from "./workbench-observation";
 import type {
   InstalledUiuxPack,
@@ -81,11 +85,17 @@ import type {
   UiuxResolveRuntimeRequest,
   UiuxSetTrustStateRequest
 } from "./uiux-packs";
+import type {
+  SoftwareCapabilitiesQueryRequest,
+  SoftwareCapabilitiesQueryResult
+} from "./software-capabilities";
 import type { AgentApi } from "./agent";
 
 export type {
   AgentApi,
-  AgentDecisionSubmitRequest,
+  AgentBrowserFollowModeSnapshot,
+  AgentBrowserFollowModeUpdateRequest,
+  AgentClarificationRespondRequest,
   AgentFollowState,
   AgentGitChangedFile,
   AgentGitDiffRequest,
@@ -97,6 +107,9 @@ export type {
   AgentGitStatusRequest,
   AgentGitStatusSnapshot,
   AgentGitStatusSummary,
+  AgentImageAttachmentMaterializeRequest,
+  AgentImageAttachmentMaterializeResponse,
+  AgentImageInput,
   AgentMessage,
   AgentPermissionRespondRequest,
   AgentRollbackPreviewResponse,
@@ -121,6 +134,7 @@ export type {
   AgentSessionAutomationSnapshot,
   AgentSidePanelPageSnapshot,
   AgentSidePanelSnapshot,
+  AgentTodoItem,
   AgentToolActivity,
   AgentToolStatus,
   AgentTurnCancelRequest,
@@ -128,10 +142,13 @@ export type {
   AgentTurnSendRequest,
   AgentTurnSendResponse,
   AgentTurnStatus,
-  JcodeCommandsListResponse,
   JcodeConfigSnapshot,
   JcodeConfigUpdateRequest,
+  JcodeAccountLoginCompleteRequest,
+  JcodeAccountLoginCompleteResponse,
   JcodeAccountLoginRequest,
+  JcodeAccountLoginStartRequest,
+  JcodeAccountLoginStartResponse,
   JcodeAccountRequest,
   JcodeAccountSnapshot,
   JcodeAccountsResponse,
@@ -144,6 +161,8 @@ export type {
   JcodeFeedbackRunRequest,
   JcodeGoalsRequest,
   JcodeGoalsResponse,
+  JcodeLoginProviderSnapshot,
+  JcodeLoginProvidersResponse,
   JcodeModelEntry,
   JcodeModelRefreshRequest,
   JcodeModelRoute,
@@ -228,6 +247,8 @@ export type {
   WorkbenchBrowserElementPickerOwner,
   WorkbenchBrowserElementPickerPhase,
   WorkbenchBrowserElementPickerState,
+  WorkbenchBrowserAgentActivityEvent,
+  WorkbenchLumenActivityEvent,
   WorkbenchBrowserEvent,
   WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
@@ -247,6 +268,7 @@ export type {
   DeepSearchObservation,
   FileEditorObservation,
   FileManagerObservation,
+  ImageViewerObservation,
   SearchHomeObservation,
   SearchResultsObservation,
   TerminalObservation,
@@ -268,6 +290,22 @@ export type {
   WorkbenchWorkspaceReadRequest,
   WorkbenchWorkspaceSnapshot
 } from "./workbench-observation";
+export type {
+  LyraCapabilityRisk,
+  LyraSoftwareActionContext,
+  LyraSoftwareActionHandler,
+  LyraSoftwareActionManifest,
+  LyraSoftwareCapabilitiesContext,
+  LyraSoftwareManifest,
+  SoftwareCapabilitiesQueryRequest,
+  SoftwareCapabilitiesQueryResult,
+  SoftwareInspectCapabilityRequest,
+  SoftwareInspectCapabilityResponse,
+  SoftwareInvokeCapabilityRequest,
+  SoftwareInvokeCapabilityResponse,
+  SoftwareListCapabilitiesRequest,
+  SoftwareListCapabilitiesResponse
+} from "./software-capabilities";
 export type {
   BuiltinUiuxPackSummary,
   InstalledUiuxPack,
@@ -368,6 +406,8 @@ export const LYRA_CHANNELS = {
   workbenchBrowserReadPageState: "lyra:workbench-browser/read-page-state",
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
   workbenchBrowserApplyWebTheme: "lyra:workbench-browser/apply-web-theme",
+  workbenchBrowserCapturePage: "lyra:workbench-browser/capture-page",
+  workbenchBrowserCaptureWindow: "lyra:workbench-browser/capture-window",
   workbenchBrowserEvent: "lyra:workbench-browser/event",
   lspOpenDocument: "lyra:lsp/open-document",
   lspChangeDocument: "lyra:lsp/change-document",
@@ -392,6 +432,9 @@ export const LYRA_CHANNELS = {
   agentSessionArchive: "lyra:agent/session/archive",
   agentSessionDelete: "lyra:agent/session/delete",
   agentSessionBindProject: "lyra:agent/session/bind-project",
+  agentImageAttachmentMaterialize: "lyra:agent/image-attachment/materialize",
+  agentBrowserFollowRead: "lyra:agent/browser-follow/read",
+  agentBrowserFollowUpdate: "lyra:agent/browser-follow/update",
   agentSelfDevStart: "lyra:agent/selfdev/start",
   agentSelfDevStatus: "lyra:agent/selfdev/status",
   agentSelfDevSendTurn: "lyra:agent/selfdev/send-turn",
@@ -410,12 +453,11 @@ export const LYRA_CHANNELS = {
   agentGitStage: "lyra:agent/git/stage",
   agentGitUnstage: "lyra:agent/git/unstage",
   agentGitDiscard: "lyra:agent/git/discard",
-  agentDecisionSubmit: "lyra:agent/decision/submit",
+  agentClarificationRespond: "lyra:agent/clarification/respond",
   agentPermissionRespond: "lyra:agent/permission/respond",
   jcodeConfigRead: "lyra:jcode/config/read",
   jcodeConfigUpdate: "lyra:jcode/config/update",
   jcodeProviderProfileSave: "lyra:jcode/provider-profile/save",
-  jcodeCommandsList: "lyra:jcode/commands/list",
   jcodeSessionsList: "lyra:jcode/sessions/list",
   jcodeModelsList: "lyra:jcode/models/list",
   jcodeModelSwitch: "lyra:jcode/model/switch",
@@ -439,11 +481,16 @@ export const LYRA_CHANNELS = {
   jcodeGoalsShow: "lyra:jcode/goals/show",
   jcodeAccountsList: "lyra:jcode/accounts/list",
   jcodeAccountsLogin: "lyra:jcode/accounts/login",
+  jcodeAccountsLoginProviders: "lyra:jcode/accounts/login-providers",
+  jcodeAccountsLoginStart: "lyra:jcode/accounts/login-start",
+  jcodeAccountsLoginComplete: "lyra:jcode/accounts/login-complete",
   jcodeAccountsSwitch: "lyra:jcode/accounts/switch",
   jcodeAccountsRemove: "lyra:jcode/accounts/remove",
   agentEvent: "lyra:agent/event",
   workbenchObservationQuery: "lyra:workbench-observation/query",
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
+  softwareCapabilitiesQuery: "lyra:software-capabilities/query",
+  softwareCapabilitiesQueryResult: "lyra:software-capabilities/query-result",
   uiuxListPacks: "lyra:uiux/list-packs",
   uiuxInstallFromLocal: "lyra:uiux/install-from-local",
   uiuxInstallFromGit: "lyra:uiux/install-from-git",
@@ -1375,6 +1422,10 @@ export type WorkbenchBrowserApi = {
   readonly applyWebTheme: (
     snapshot: WorkbenchBrowserWebThemeSnapshot
   ) => Promise<void>;
+  readonly capturePage: (
+    request?: WorkbenchVisualCaptureRequest
+  ) => Promise<WorkbenchVisualCaptureResult>;
+  readonly captureWindow: () => Promise<WorkbenchVisualCaptureResult>;
   readonly onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => () => void;
 };
 
@@ -1422,6 +1473,14 @@ export type WorkbenchObservationBridgeApi = {
   ) => () => void;
 };
 
+export type SoftwareCapabilitiesBridgeApi = {
+  readonly registerHandler: (
+    handler: (
+      request: SoftwareCapabilitiesQueryRequest
+    ) => Promise<SoftwareCapabilitiesQueryResult> | SoftwareCapabilitiesQueryResult
+  ) => () => void;
+};
+
 export type UiuxPacksApi = {
   readonly listPacks: () => Promise<UiuxListPacksResponse>;
   readonly installFromLocal: (request: UiuxInstallFromLocalRequest) => Promise<InstalledUiuxPack>;
@@ -1450,6 +1509,7 @@ export type LyraDesktopApi = {
   readonly terminal: TerminalApi;
   readonly agent?: AgentApi;
   readonly workbenchObservation: WorkbenchObservationBridgeApi;
+  readonly softwareCapabilities?: SoftwareCapabilitiesBridgeApi;
   readonly uiux: UiuxPacksApi;
   readonly workbenchState: WorkbenchStateApi;
 };

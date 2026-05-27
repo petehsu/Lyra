@@ -119,6 +119,8 @@ const AUTO_ALLOWED: &[&str] = &[
     "conversation_search",
     "session_search",
     "codesearch",
+    "lyra_search",
+    "lyra_design",
 ];
 
 // ---------------------------------------------------------------------------
@@ -539,6 +541,8 @@ mod tests {
             assert_eq!(sys.classify("conversation_search"), ActionTier::AutoAllowed);
             assert_eq!(sys.classify("session_search"), ActionTier::AutoAllowed);
             assert_eq!(sys.classify("codesearch"), ActionTier::AutoAllowed);
+            assert_eq!(sys.classify("lyra_search"), ActionTier::AutoAllowed);
+            assert_eq!(sys.classify("lyra_design"), ActionTier::AutoAllowed);
         });
     }
 

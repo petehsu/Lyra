@@ -14,6 +14,7 @@ import { Header } from "./features/header";
 import { PillsRail } from "./features/pills";
 import { ChatView } from "./features/chat";
 import { DebugPanel } from "./features/debug";
+import { RichText } from "./features/rich-text";
 
 export interface AgentChatShellProps {
   showDebugPanel?: boolean;
@@ -61,20 +62,59 @@ export function AgentChatShell({
 
 function AgentSidePanelPreview() {
   const { sidePanel } = useData();
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (sidePanel === null || sidePanel === undefined || sidePanel.pages.length === 0) {
+      setSelectedPageId(null);
+      return;
+    }
+    const focusedId = sidePanel.focusedPageId ?? sidePanel.pages[0]?.id ?? null;
+    setSelectedPageId((current) => {
+      if (current !== null && sidePanel.pages.some((page) => page.id === current)) {
+        return current;
+      }
+      return focusedId;
+    });
+  }, [sidePanel]);
+
   if (sidePanel === null || sidePanel === undefined || sidePanel.pages.length === 0) {
     return null;
   }
   const focused =
-    sidePanel.pages.find((page) => page.id === sidePanel.focusedPageId) ?? sidePanel.pages[0];
+    sidePanel.pages.find((page) => page.id === selectedPageId)
+    ?? sidePanel.pages.find((page) => page.id === sidePanel.focusedPageId)
+    ?? sidePanel.pages[0];
   if (focused === undefined) {
     return null;
   }
+  const source = focused.filePath ?? focused.source ?? null;
   return (
     <aside className="agent-side-panel-preview" aria-label={t("sidePanel.aria")}>
       <div className="agent-side-panel-preview-head">
-        <span>{focused.title}</span>
+        <div className="agent-side-panel-tabs" role="tablist" aria-label={t("sidePanel.aria")}>
+          {sidePanel.pages.map((page) => (
+            <button
+              key={page.id}
+              type="button"
+              role="tab"
+              aria-selected={page.id === focused.id}
+              className={page.id === focused.id ? "agent-side-panel-tab active" : "agent-side-panel-tab"}
+              onClick={() => setSelectedPageId(page.id)}
+            >
+              {page.title}
+            </button>
+          ))}
+        </div>
+        {source !== null && source.trim().length > 0 ? (
+          <span className="agent-side-panel-source" title={source}>
+            {t("sidePanel.source")}: {source}
+          </span>
+        ) : null}
       </div>
-      <pre className="agent-side-panel-preview-body">{focused.content}</pre>
+      <div className="agent-side-panel-preview-body">
+        <RichText content={focused.content} />
+      </div>
     </aside>
   );
 }

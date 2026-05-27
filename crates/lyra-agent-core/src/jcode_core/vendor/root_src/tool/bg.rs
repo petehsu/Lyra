@@ -56,7 +56,7 @@ struct BgInput {
     /// Use the latest matching task when task_id is omitted
     #[serde(default)]
     latest: Option<bool>,
-    /// Restrict implicit selection/listing to this session. Defaults to false for list and true for implicit selection.
+    /// Restrict implicit selection/listing to this session. Defaults to true.
     #[serde(default)]
     session_only: Option<bool>,
     /// Status filter, either a string or array of strings: running/completed/failed/superseded/terminal/all
@@ -479,7 +479,7 @@ impl Tool for BgTool {
                 "task_id": { "type": "string", "description": "Task ID." },
                 "task_ids": { "type": "array", "items": {"type":"string"}, "description": "Task IDs for multi-task wait/status." },
                 "latest": { "type": "boolean", "description": "Use latest matching task when task_id is omitted." },
-                "session_only": { "type": "boolean", "description": "Restrict list/implicit selection to current session." },
+                "session_only": { "type": "boolean", "description": "Restrict list/implicit selection to current session. Defaults to true; pass false only when intentionally auditing other sessions." },
                 "status_filter": {
                     "anyOf": [
                         { "type": "string" },
@@ -509,7 +509,7 @@ impl Tool for BgTool {
 
         match action.as_str() {
             "list" => {
-                let tasks = filtered_tasks(manager, &ctx, &params, false).await;
+                let tasks = filtered_tasks(manager, &ctx, &params, true).await;
                 if tasks.is_empty() {
                     return Ok(ToolOutput::new("No matching background tasks found.")
                         .with_title("bg list"));
@@ -837,6 +837,60 @@ impl Tool for BgTool {
 mod tests {
     use super::*;
     use anyhow::{Result, anyhow};
+    use chrono::Utc;
+
+    fn test_context(session_id: &str) -> ToolContext {
+        ToolContext {
+            session_id: session_id.to_string(),
+            message_id: "message".to_string(),
+            tool_call_id: "tool".to_string(),
+            working_dir: None,
+            stdin_request_tx: None,
+            graceful_shutdown_signal: None,
+            execution_mode: crate::tool::ToolExecutionMode::Direct,
+        }
+    }
+
+    fn task_status(task_id: &str, session_id: &str) -> background::TaskStatusFile {
+        background::TaskStatusFile {
+            task_id: task_id.to_string(),
+            tool_name: "bash".to_string(),
+            display_name: Some(task_id.to_string()),
+            session_id: session_id.to_string(),
+            status: BackgroundTaskStatus::Running,
+            exit_code: None,
+            error: None,
+            started_at: Utc::now().to_rfc3339(),
+            completed_at: None,
+            duration_secs: None,
+            pid: None,
+            detached: false,
+            notify: true,
+            wake: false,
+            progress: None,
+            event_history: Vec::new(),
+        }
+    }
+
+    fn write_task_status(
+        manager: &background::BackgroundTaskManager,
+        task_id: &str,
+        session_id: &str,
+    ) -> Result<()> {
+        if let Some(parent) = manager.status_path_for(task_id).parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(
+            manager.status_path_for(task_id),
+            serde_json::to_string_pretty(&task_status(task_id, session_id))?,
+        )?;
+        Ok(())
+    }
+
+    fn cleanup_task_status(manager: &background::BackgroundTaskManager, task_id: &str) {
+        let _ = std::fs::remove_file(manager.status_path_for(task_id));
+        let _ = std::fs::remove_file(manager.output_path_for(task_id));
+    }
 
     #[test]
     fn status_filter_schema_any_of_branches_have_types() -> Result<()> {
@@ -873,6 +927,51 @@ mod tests {
             err.to_string().contains("Missing required bg action"),
             "err={err:?}"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn filtered_tasks_defaults_to_current_session_for_list_scope() -> Result<()> {
+        let manager = background::BackgroundTaskManager::new();
+        let suffix = Utc::now().timestamp_nanos_opt().unwrap_or_default();
+        let current_task = format!("task-current-{suffix}");
+        let other_task = format!("task-other-{suffix}");
+        let current_session = format!("session-current-{suffix}");
+        let other_session = format!("session-other-{suffix}");
+        write_task_status(&manager, &current_task, &current_session)?;
+        write_task_status(&manager, &other_task, &other_session)?;
+
+        let params: BgInput = serde_json::from_value(json!({ "action": "list" }))?;
+        let tasks = filtered_tasks(&manager, &test_context(&current_session), &params, true).await;
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].task_id, current_task);
+        cleanup_task_status(&manager, &current_task);
+        cleanup_task_status(&manager, &other_task);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn filtered_tasks_allows_explicit_global_list_scope() -> Result<()> {
+        let manager = background::BackgroundTaskManager::new();
+        let suffix = Utc::now().timestamp_nanos_opt().unwrap_or_default();
+        let current_task = format!("task-current-{suffix}");
+        let other_task = format!("task-other-{suffix}");
+        let current_session = format!("session-current-{suffix}");
+        let other_session = format!("session-other-{suffix}");
+        write_task_status(&manager, &current_task, &current_session)?;
+        write_task_status(&manager, &other_task, &other_session)?;
+
+        let params: BgInput = serde_json::from_value(json!({
+            "action": "list",
+            "session_only": false
+        }))?;
+        let tasks = filtered_tasks(&manager, &test_context(&current_session), &params, true).await;
+
+        assert!(tasks.iter().any(|task| task.task_id == current_task));
+        assert!(tasks.iter().any(|task| task.task_id == other_task));
+        cleanup_task_status(&manager, &current_task);
+        cleanup_task_status(&manager, &other_task);
         Ok(())
     }
 }

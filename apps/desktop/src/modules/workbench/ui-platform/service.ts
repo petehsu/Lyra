@@ -19,6 +19,7 @@ import {
   WORKBENCH_SURFACE_ADAPTER_KEYS
 } from "./surface-types";
 import type { LyraDesktopApi, UiuxPackRuntime } from "../../../shared/desktop-bridge";
+import type { LyraSoftwareCapabilitiesContext } from "../../../shared/software-capabilities";
 import type {
   WorkbenchUiPack,
   WorkbenchUiPackContext,
@@ -184,12 +185,19 @@ const isWorkbenchUiPackModule = (value: unknown): value is WorkbenchUiPackModule
     && candidate.manifest !== null;
 };
 
+const EMPTY_SOFTWARE_CAPABILITIES: LyraSoftwareCapabilitiesContext = {
+  software: [],
+  registerActionHandler: () => () => {}
+};
+
 export const createWorkbenchUiPackContext = (
-  desktopApi: LyraDesktopApi | null
+  desktopApi: LyraDesktopApi | null,
+  capabilities: LyraSoftwareCapabilitiesContext = EMPTY_SOFTWARE_CAPABILITIES
 ): WorkbenchUiPackContext => ({
   apiVersion: "1",
   React,
   desktopApi,
+  capabilities,
   adapters: CLASSIC_WORKBENCH_UI_PACK.adapters,
   style: CLASSIC_WORKBENCH_UI_PACK.style,
   interactions: CLASSIC_WORKBENCH_INTERACTION_POLICIES,
@@ -199,17 +207,21 @@ export const createWorkbenchUiPackContext = (
 export const loadExternalWorkbenchUiPack = async ({
   packId,
   runtime,
-  desktopApi
+  desktopApi,
+  capabilities
 }: {
   readonly packId: WorkbenchUiPackId;
   readonly runtime: UiuxPackRuntime;
   readonly desktopApi: LyraDesktopApi | null;
+  readonly capabilities?: LyraSoftwareCapabilitiesContext;
 }): Promise<WorkbenchUiPack> => {
   const importedModule = await import(/* @vite-ignore */ runtime.entryUrl) as unknown;
   if (!isWorkbenchUiPackModule(importedModule)) {
     throw new Error(`External UIUX pack entry did not export a WorkbenchUiPackModule: ${packId}`);
   }
-  const pack = await importedModule.createPack(createWorkbenchUiPackContext(desktopApi));
+  const pack = await importedModule.createPack(
+    createWorkbenchUiPackContext(desktopApi, capabilities)
+  );
   const trustedPack: WorkbenchUiPack = {
     ...pack,
     manifest: {

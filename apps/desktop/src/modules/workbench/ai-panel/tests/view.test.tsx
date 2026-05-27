@@ -17,6 +17,7 @@ const snapshot: AgentSessionSnapshot = {
   projectBound: false,
   messages: [],
   tools: [],
+  todos: [],
   automation: {
     subagentModel: null,
     autoreviewEnabled: null,
@@ -98,6 +99,7 @@ const createDesktopApi = () => {
   let readSnapshot = snapshot;
   let rollbackRestoreSnapshot = snapshot;
   let modelsResponse = jcodeModels;
+  let browserFollowModeEnabled = false;
   const createSession = vi.fn(async () => snapshot);
   const runImprove = vi.fn(async () => ({
     sessionId: "session-1",
@@ -147,6 +149,18 @@ const createDesktopApi = () => {
     workingDir: "/Users/petehsu/Documents/Lyra",
     projectBound: true
   }));
+  const materializeImageAttachment = vi.fn(async () => ({
+    path: "/Users/petehsu/.lyra/modules/agent/message-images/agent-output.png"
+  }));
+  const readBrowserFollowMode = vi.fn(async () => ({
+    enabled: browserFollowModeEnabled
+  }));
+  const updateBrowserFollowMode = vi.fn(async (request: { readonly enabled: boolean }) => {
+    browserFollowModeEnabled = request.enabled;
+    return {
+      enabled: browserFollowModeEnabled
+    };
+  });
   const api = {
     agent: {
       createSession,
@@ -160,7 +174,7 @@ const createDesktopApi = () => {
         sessionId: "session-1",
         status: "cancelling" as const
       })),
-      submitDecision: vi.fn(async () => undefined),
+      respondClarification: vi.fn(async () => undefined),
       respondPermission: vi.fn(async () => undefined),
       previewRollback,
       restoreRollback,
@@ -175,6 +189,9 @@ const createDesktopApi = () => {
       triggerPoke,
       runReview,
       runJudge,
+      readBrowserFollowMode,
+      updateBrowserFollowMode,
+      materializeImageAttachment,
       onEvent: vi.fn((next: (event: AgentRuntimeEvent) => void) => {
         listener = next;
         return () => {
@@ -192,6 +209,9 @@ const createDesktopApi = () => {
     runReview,
     runJudge,
     bindProject,
+    materializeImageAttachment,
+    readBrowserFollowMode,
+    updateBrowserFollowMode,
     emit: (event: AgentRuntimeEvent) => {
       listener?.(event);
     },
@@ -215,7 +235,15 @@ const renderPanel = (
     readonly workingDir: string;
   }) => Promise<void> | void,
   locale: "zh-CN" | "en-US" = "en-US",
-  onOpenModelSettings?: () => Promise<void> | void
+  onOpenModelSettings?: () => Promise<void> | void,
+  onOpenUrlInWorkbench?: (request: {
+    readonly url: string;
+    readonly title?: string;
+  }) => Promise<void> | void,
+  onOpenFile?: (
+    filePath: string,
+    location?: { readonly line: number; readonly endLine?: number }
+  ) => void
 ) =>
   render(
     <AiPanelSurface
@@ -224,6 +252,8 @@ const renderPanel = (
       {...(onRequestProjectBind === undefined ? {} : { onRequestProjectBind })}
       {...(onOpenProjectTree === undefined ? {} : { onOpenProjectTree })}
       {...(onOpenModelSettings === undefined ? {} : { onOpenModelSettings })}
+      {...(onOpenUrlInWorkbench === undefined ? {} : { onOpenUrlInWorkbench })}
+      {...(onOpenFile === undefined ? {} : { onOpenFile })}
       title="Agent"
       emptyThreadLabel="No messages"
       locale={locale}
@@ -266,6 +296,25 @@ describe("AiPanelSurface", () => {
     expect(screen.getByLabelText("更多")).toBeInTheDocument();
     expect(await screen.findByLabelText("模型控制")).toBeInTheDocument();
     expect(screen.queryByLabelText("刷新模型列表")).not.toBeInTheDocument();
+  });
+
+  test("toggles visible browser following from the Agent header", async () => {
+    const { api, readBrowserFollowMode, updateBrowserFollowMode } = createDesktopApi();
+    renderPanel(api);
+
+    const followButton = await screen.findByLabelText("Follow Agent");
+    expect(readBrowserFollowMode).toHaveBeenCalled();
+    expect(followButton).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(followButton);
+
+    await waitFor(() => {
+      expect(updateBrowserFollowMode).toHaveBeenCalledWith({ enabled: true });
+    });
+    expect(await screen.findByLabelText("Stop Following Agent")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
   });
 
   test("sends composer text through the Agent provider", async () => {
@@ -578,21 +627,12 @@ describe("AiPanelSurface", () => {
     const { api, runImprove, runRefactor, triggerPoke, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
       ...snapshot,
-      tools: [{
-        id: "todo-tool",
-        name: "todo",
-        label: "Todo",
-        status: "completed",
-        input: {
-          todos: [{
-            id: "todo-1",
-            content: "finish GUI poke",
-            status: "pending"
-          }]
-        },
-        output: null,
-        startedAt: "2026-05-13T00:00:02.000Z",
-        finishedAt: "2026-05-13T00:00:02.500Z"
+      todos: [{
+        id: "todo-1",
+        content: "finish GUI poke",
+        status: "pending",
+        priority: "high",
+        blockedBy: []
       }]
     });
     renderPanel(api);
@@ -614,6 +654,526 @@ describe("AiPanelSurface", () => {
     });
 
     expect((await screen.findAllByText("finish GUI poke")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByLabelText("Continue unfinished todos"));
+    expect(triggerPoke).toHaveBeenCalledWith({ sessionId: "session-1" });
+  });
+
+  test("does not derive todos from generic Lyra Lumen output", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "lyra-lumen-tool",
+        name: "lyra_lumen",
+        label: "Lyra Lumen",
+        status: "completed",
+        input: { action: "inspect" },
+        output: {
+          content: JSON.stringify({
+            items: [
+              { text: "请叫我徐总" },
+              { text: "视频生成" },
+              { text: "图像生成" }
+            ],
+            mainTextExcerpt: "快速 视频生成 图像生成 深入研究"
+          })
+        },
+        startedAt: "2026-05-13T00:00:02.000Z",
+        finishedAt: "2026-05-13T00:00:02.500Z"
+      }]
+    });
+    renderPanel(api);
+
+    await screen.findByText("Lyra Agent");
+    expect(screen.queryByText("请叫我徐总")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Continue unfinished todos")).not.toBeInTheDocument();
+  });
+
+  test("keeps Lyra Lumen evidence inside level-3 tool details", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "lyra-lumen-map",
+        name: "lyra_lumen",
+        label: "Ran",
+        status: "completed",
+        input: { action: "map", target: "isolated", strategy: "picker" },
+        output: {
+          content: [
+            "Observation obs-1 (picker) for Example - https://example.com",
+            "[1] button: \"Search\" [click] at (10,20) 80x24",
+            "[2] textbox: \"Email\" [type] at (10,60) 180x28"
+          ].join("\n"),
+          error: null
+        },
+        startedAt: "2026-05-13T00:00:02.000Z",
+        finishedAt: "2026-05-13T00:00:02.500Z"
+      }]
+    });
+    renderPanel(api);
+
+    const groupHead = (await screen.findByText("Agent activity")).closest(".tool-group-head");
+    if (groupHead === null) throw new Error("Expected tool group head");
+    expect(groupHead).not.toHaveTextContent("2 elements");
+    expect(groupHead).not.toHaveTextContent("example.com");
+    expect(groupHead).not.toHaveTextContent("1 button Search");
+
+    fireEvent.click(groupHead);
+
+    const callHead = (await screen.findByText("Mapped browser elements")).closest(".tool-call-head");
+    if (callHead === null) throw new Error("Expected tool call head");
+    expect(callHead).not.toHaveTextContent("2 elements");
+    expect(callHead).not.toHaveTextContent("example.com");
+    expect(callHead).not.toHaveTextContent("1 button Search");
+
+    const call = callHead.closest(".tool-call");
+    if (call === null) throw new Error("Expected tool call row");
+    const callCollapse = call.querySelector(".collapse");
+    expect(callCollapse).toHaveAttribute("data-open", "false");
+
+    fireEvent.click(callHead);
+
+    await waitFor(() => {
+      expect(call.querySelector(".collapse")).toHaveAttribute("data-open", "true");
+    });
+    expect(screen.getByText("2 elements").closest(".tool-call-body")).not.toBeNull();
+    expect(screen.getByText("example.com").closest(".tool-call-body")).not.toBeNull();
+    expect(screen.getByText(/1 button Search/u).closest(".tool-call-body")).not.toBeNull();
+  });
+
+  test("keeps Lyra Lumen typed text out of tool evidence", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "lyra-lumen-type",
+        name: "lyra_lumen",
+        label: "Ran",
+        status: "completed",
+        input: {
+          action: "type",
+          target: "isolated",
+          element_id: 9,
+          text: "secret-value"
+        },
+        output: {
+          content: "Typed into element 9 with Chromium virtual keyboard.",
+          error: null
+        },
+        startedAt: "2026-05-13T00:00:02.000Z",
+        finishedAt: "2026-05-13T00:00:02.500Z"
+      }]
+    });
+    renderPanel(api);
+
+    const groupHead = (await screen.findByText("Agent activity")).closest(".tool-group-head");
+    if (groupHead === null) throw new Error("Expected tool group head");
+    expect(groupHead).not.toHaveTextContent("12 chars");
+    expect(groupHead).not.toHaveTextContent("element 9");
+
+    fireEvent.click(groupHead);
+
+    const callHead = (await screen.findByText("Typed in browser")).closest(".tool-call-head");
+    if (callHead === null) throw new Error("Expected tool call head");
+    expect(callHead).not.toHaveTextContent("12 chars");
+    expect(callHead).not.toHaveTextContent("element 9");
+
+    const call = callHead.closest(".tool-call");
+    if (call === null) throw new Error("Expected tool call row");
+    expect(call.querySelector(".collapse")).toHaveAttribute("data-open", "false");
+
+    fireEvent.click(callHead);
+
+    await waitFor(() => {
+      expect(call.querySelector(".collapse")).toHaveAttribute("data-open", "true");
+    });
+    expect(screen.getByText("12 chars").closest(".tool-call-body")).not.toBeNull();
+    expect(screen.getByText("element 9").closest(".tool-call-body")).not.toBeNull();
+    expect(screen.queryByText("secret-value")).not.toBeInTheDocument();
+  });
+
+  test("renders web search results as clickable Workbench links", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const openUrlInWorkbench = vi.fn(async () => undefined);
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "tool-websearch",
+        name: "websearch",
+        label: "Web search",
+        status: "completed",
+        input: { query: "OpenAI latest new models 2025 2026" },
+        output: {
+          content: [
+            "Search results for: OpenAI latest new models 2025 2026",
+            "",
+            "1. **OpenAI Research | Release**",
+            "   https://openai.com/research/index/release/",
+            "   OpenAI introduces GPT-Rosalind, a frontier reasoning model built for scientific work.",
+            "",
+            "2. **OpenAI Models - 33 Releases & Benchmarks**",
+            "   https://aireleasetracker.com/company/openai",
+            "   Every AI model released by OpenAI, with release dates and benchmarks.",
+            ""
+          ].join("\n")
+        },
+        startedAt: "2026-05-13T00:00:02.000Z",
+        finishedAt: "2026-05-13T00:00:02.500Z"
+      }]
+    });
+    renderPanel(
+      api,
+      undefined,
+      undefined,
+      "en-US",
+      undefined,
+      openUrlInWorkbench
+    );
+
+    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await screen.findByText("Web search"));
+
+    expect(screen.getByText("OpenAI latest new models 2025 2026")).toBeInTheDocument();
+    expect(screen.getByText("openai.com")).toBeInTheDocument();
+    expect(screen.queryByText(/^Search results for:/u)).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "OpenAI Research | Release" }));
+
+    expect(openUrlInWorkbench).toHaveBeenCalledWith({
+      url: "https://openai.com/research/index/release/",
+      title: "OpenAI Research | Release"
+    });
+  });
+
+  test("renders fetched web pages as compact clickable Workbench links", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const openUrlInWorkbench = vi.fn(async () => undefined);
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "tool-webfetch",
+        name: "webfetch",
+        label: "Browsed",
+        status: "completed",
+        input: {
+          format: "markdown",
+          url: "https://www.cnbc.com/2026/04/23/openai-announces-latest-artificial-intelligence-model.html"
+        },
+        output: {
+          content: [
+            "Fetched https://www.cnbc.com/2026/04/23/openai-announces-latest-artificial-intelligence-model.html (9895 bytes)",
+            "",
+            "- OpenAI announces GPT-5.5, its latest artificial intelligence model",
+            "- [Skip Navigation](#MainContent)Markets",
+            "- [Pre-Markets](/pre-markets/)",
+            "- [U.S. Markets](/us-markets/)"
+          ].join("\n")
+        },
+        startedAt: "2026-05-13T00:00:02.000Z",
+        finishedAt: "2026-05-13T00:00:02.500Z"
+      }]
+    });
+    renderPanel(
+      api,
+      undefined,
+      undefined,
+      "en-US",
+      undefined,
+      openUrlInWorkbench
+    );
+
+    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await screen.findByText("Browsed"));
+
+    const urlButton = await screen.findByRole("button", {
+      name: /https:\/\/www\.cnbc\.com\/2026\/04\/23\/openai-announces/u
+    });
+    expect(screen.getByText("OpenAI announces GPT-5.5, its latest artificial intelligence model"))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/^Fetched https:/u)).not.toBeInTheDocument();
+
+    fireEvent.click(urlButton);
+
+    expect(openUrlInWorkbench).toHaveBeenCalledWith({
+      url: "https://www.cnbc.com/2026/04/23/openai-announces-latest-artificial-intelligence-model.html",
+      title: "OpenAI announces GPT-5.5, its latest artificial intelligence model"
+    });
+  });
+
+  test("renders Workbench tab tool output as structured clickable rows", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const openUrlInWorkbench = vi.fn(async () => undefined);
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "tool-workbench-tabs",
+        name: "workbench",
+        label: "Ran",
+        status: "completed",
+        input: { action: "list_tabs", scope: "visible" },
+        output: {
+          content: [
+            "- 豆包 - 字节跳动旗下 AI 智能助手 [browser-tab-10] page (page) flags=active,visible,focused | https://www.doubao.com/chat/2084714018988034",
+            "- Lyra Agent UI [browser-tab-11] page (page) flags=visible | http://localhost:5173/"
+          ].join("\n")
+        },
+        startedAt: "2026-05-13T00:00:02.000Z",
+        finishedAt: "2026-05-13T00:00:02.500Z"
+      }]
+    });
+    renderPanel(
+      api,
+      undefined,
+      undefined,
+      "en-US",
+      undefined,
+      openUrlInWorkbench
+    );
+
+    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await screen.findByRole("button", { name: "Workbench tabs" }));
+
+    expect(screen.getByText("browser-tab-10")).toBeInTheDocument();
+    expect(screen.getByText("doubao.com")).toBeInTheDocument();
+    expect(screen.getByText("active")).toBeInTheDocument();
+    expect(screen.queryByText(/flags=/u)).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: /豆包 - 字节跳动旗下 AI 智能助手/u
+    }));
+
+    expect(openUrlInWorkbench).toHaveBeenCalledWith({
+      url: "https://www.doubao.com/chat/2084714018988034",
+      title: "豆包 - 字节跳动旗下 AI 智能助手"
+    });
+  });
+
+  test("opens assistant output URLs and file paths in the Workbench", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const openUrlInWorkbench = vi.fn(async () => undefined);
+    const onOpenFile = vi.fn();
+    setReadSnapshot({
+      ...snapshot,
+      workingDir: "/Users/petehsu/Documents/Lyra",
+      projectBound: true,
+      messages: [{
+        id: "message-agent-links",
+        role: "assistant",
+        text: "Read https://example.com/docs and `apps/desktop/src/main/index.ts:12`.",
+        createdAt: "2026-05-13T00:00:02.000Z"
+      }]
+    });
+    renderPanel(
+      api,
+      undefined,
+      undefined,
+      "en-US",
+      undefined,
+      openUrlInWorkbench,
+      onOpenFile
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "https://example.com/docs" }));
+    expect(openUrlInWorkbench).toHaveBeenCalledWith({
+      url: "https://example.com/docs",
+      title: "https://example.com/docs"
+    });
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "apps/desktop/src/main/index.ts:12"
+    }));
+    expect(onOpenFile).toHaveBeenCalledWith(
+      "/Users/petehsu/Documents/Lyra/apps/desktop/src/main/index.ts",
+      expect.objectContaining({ line: 12 })
+    );
+  });
+
+  test("opens tool output file paths and materialized images in the Workbench", async () => {
+    const { api, setReadSnapshot, materializeImageAttachment } = createDesktopApi();
+    const onOpenFile = vi.fn();
+    setReadSnapshot({
+      ...snapshot,
+      workingDir: "/Users/petehsu/Documents/Lyra",
+      projectBound: true,
+      messages: [{
+        id: "message-agent-image",
+        role: "assistant",
+        text: "",
+        blocks: [{
+          type: "image",
+          id: "image-block-1",
+          mediaType: "image/png",
+          data: "iVBORw0KGgo=",
+          label: "agent output image",
+          source: "inline-data-url"
+        }],
+        createdAt: "2026-05-13T00:00:02.000Z"
+      }],
+      tools: [{
+        id: "tool-shell-paths",
+        name: "shell",
+        label: "Ran",
+        status: "completed",
+        input: { command: "cat apps/desktop/src/main/index.ts" },
+        output: { content: "See apps/desktop/src/main/index.ts:24 for startup." },
+        startedAt: "2026-05-13T00:00:03.000Z",
+        finishedAt: "2026-05-13T00:00:03.500Z"
+      }]
+    });
+    renderPanel(
+      api,
+      undefined,
+      undefined,
+      "en-US",
+      undefined,
+      undefined,
+      onOpenFile
+    );
+
+    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await screen.findByText("shell"));
+    fireEvent.click(await screen.findByRole("button", {
+      name: "apps/desktop/src/main/index.ts:24"
+    }));
+    expect(onOpenFile).toHaveBeenCalledWith(
+      "/Users/petehsu/Documents/Lyra/apps/desktop/src/main/index.ts",
+      expect.objectContaining({ line: 24 })
+    );
+
+    fireEvent.click(screen.getByTitle("Open image in Workbench"));
+    await waitFor(() => {
+      expect(materializeImageAttachment).toHaveBeenCalledWith({
+        id: "image-block-1",
+        mediaType: "image/png",
+        data: "iVBORw0KGgo=",
+        label: "agent output image"
+      });
+    });
+    expect(onOpenFile).toHaveBeenCalledWith(
+      "/Users/petehsu/.lyra/modules/agent/message-images/agent-output.png",
+      undefined
+    );
+  });
+
+  test("only shows image Workbench actions when an image has an open route", async () => {
+    const { api, setReadSnapshot, materializeImageAttachment } = createDesktopApi();
+    const onOpenFile = vi.fn();
+    setReadSnapshot({
+      ...snapshot,
+      messages: [{
+        id: "message-agent-unopenable-image",
+        role: "assistant",
+        text: "",
+        blocks: [{
+          type: "image",
+          id: "image-block-empty",
+          mediaType: "image/png",
+          data: "",
+          label: "empty inline image",
+          source: "inline-data-url"
+        }],
+        createdAt: "2026-05-13T00:00:02.000Z"
+      }]
+    });
+
+    renderPanel(
+      api,
+      undefined,
+      undefined,
+      "en-US",
+      undefined,
+      undefined,
+      onOpenFile
+    );
+
+    await screen.findByText("empty inline image");
+    expect(screen.queryByTitle("Open image in Workbench")).toBeNull();
+    expect(materializeImageAttachment).not.toHaveBeenCalled();
+  });
+
+  test("opens image attachments from local and remote sources without inline data", async () => {
+    const { api, setReadSnapshot, materializeImageAttachment } = createDesktopApi();
+    const openUrlInWorkbench = vi.fn(async () => undefined);
+    const onOpenFile = vi.fn();
+    setReadSnapshot({
+      ...snapshot,
+      workingDir: "/Users/petehsu/Documents/Lyra",
+      projectBound: true,
+      messages: [{
+        id: "message-agent-source-images",
+        role: "assistant",
+        text: "",
+        blocks: [
+          {
+            type: "image",
+            id: "image-block-local-source",
+            mediaType: "image/png",
+            data: "",
+            label: "local image source",
+            source: "apps/desktop/.tmp/agent-output.png"
+          },
+          {
+            type: "image",
+            id: "image-block-remote-source",
+            mediaType: "image/png",
+            data: "",
+            label: "remote image source",
+            source: "https://example.com/agent-output.png"
+          }
+        ],
+        createdAt: "2026-05-13T00:00:02.000Z"
+      }]
+    });
+
+    renderPanel(
+      api,
+      undefined,
+      undefined,
+      "en-US",
+      undefined,
+      openUrlInWorkbench,
+      onOpenFile
+    );
+
+    const openButtons = await screen.findAllByTitle("Open image in Workbench");
+    expect(openButtons).toHaveLength(2);
+
+    fireEvent.click(openButtons[0]!);
+    expect(onOpenFile).toHaveBeenCalledWith(
+      "/Users/petehsu/Documents/Lyra/apps/desktop/.tmp/agent-output.png",
+      undefined
+    );
+
+    fireEvent.click(openButtons[1]!);
+    expect(openUrlInWorkbench).toHaveBeenCalledWith({
+      url: "https://example.com/agent-output.png",
+      title: "remote image source"
+    });
+    expect(materializeImageAttachment).not.toHaveBeenCalled();
+  });
+
+  test("updates the todo panel from todoUpdated events", async () => {
+    const { api, emit, triggerPoke } = createDesktopApi();
+    renderPanel(api);
+
+    await screen.findByText("Lyra Agent");
+    act(() => {
+      emit({
+        kind: "todoUpdated",
+        sessionId: "session-1",
+        todos: [{
+          id: "todo-event-1",
+          content: "continue from core todo event",
+          status: "in_progress",
+          priority: "medium",
+          blockedBy: []
+        }]
+      });
+    });
+
+    expect((await screen.findAllByText("continue from core todo event")).length)
+      .toBeGreaterThan(0);
     fireEvent.click(screen.getByLabelText("Continue unfinished todos"));
     expect(triggerPoke).toHaveBeenCalledWith({ sessionId: "session-1" });
   });
@@ -720,6 +1280,110 @@ describe("AiPanelSurface", () => {
     expect(screen.getAllByText("Searching workspace").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByLabelText("Cancel turn"));
     expect(api.agent?.cancelTurn).toHaveBeenCalledWith({ sessionId: "session-1" });
+  });
+
+  test("renders structured clarification events as a blocking question panel", async () => {
+    const { api, emit } = createDesktopApi();
+    renderPanel(api);
+
+    await screen.findByText("Lyra Agent");
+    act(() => {
+      emit({
+        kind: "clarificationRequired",
+        sessionId: "session-1",
+        clarificationId: "clar-1",
+        question: "Which output style should I use?",
+        options: [
+          { label: "Detailed", description: "Include reasoning and implementation notes." },
+          { label: "Brief", description: "Only include the final answer." },
+          "Other"
+        ],
+        allowCustomAnswer: false,
+        detail: "Needed before generating the final document."
+      });
+      emit({
+        kind: "clarificationRequired",
+        sessionId: "session-1",
+        clarificationId: "clar-2",
+        question: "Which tone should I use?",
+        options: ["Direct", "Friendly"],
+        allowCustomAnswer: true,
+        detail: null
+      });
+    });
+
+    expect(await screen.findByText("Which output style should I use?")).toBeInTheDocument();
+    expect(screen.queryByText("Which tone should I use?")).not.toBeInTheDocument();
+    expect(screen.getByText("Needed before generating the final document.")).toBeInTheDocument();
+    expect(screen.getByText("Only include the final answer.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Other" })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Answer the question above first")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /Brief/u }));
+
+    await waitFor(() => {
+      expect(api.agent?.respondClarification).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        clarificationId: "clar-1",
+        answer: "Brief",
+        selectedOption: "Brief"
+      });
+    });
+    expect(screen.queryByText("Which output style should I use?")).not.toBeInTheDocument();
+    expect(await screen.findByText("Which tone should I use?")).toBeInTheDocument();
+  });
+
+  test("does not turn plain assistant questions into a blocking question panel", async () => {
+    const { api, emit } = createDesktopApi();
+    renderPanel(api);
+
+    await screen.findByText("Lyra Agent");
+    const text = "好的，制作一个公司/产品介绍官网！在开始之前，我需要了解几个关键信息：\n\n"
+      + "**1. 公司/产品名称是什么？**\n\n"
+      + "**2. 主要业务/产品是什么？**";
+    act(() => {
+      emit({
+        kind: "messageAppended",
+        sessionId: "session-1",
+        message: {
+          id: "assistant-plain-question",
+          role: "assistant",
+          text,
+          createdAt: "2026-05-13T00:00:03.000Z"
+        }
+      });
+    });
+
+    expect(await screen.findByText(/公司\/产品名称是什么/u)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Answer the question above first")).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Send a message to Agent")).not.toBeDisabled();
+    expect(api.agent?.respondClarification).not.toHaveBeenCalled();
+  });
+
+  test("renders permission events through the separate permission panel", async () => {
+    const { api, emit } = createDesktopApi();
+    renderPanel(api);
+
+    await screen.findByText("Lyra Agent");
+    act(() => {
+      emit({
+        kind: "permissionRequired",
+        sessionId: "session-1",
+        permissionId: "perm-1",
+        title: "Run shell command",
+        detail: "npm test"
+      });
+    });
+
+    expect(await screen.findByText("Run shell command")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Allow"));
+
+    await waitFor(() => {
+      expect(api.agent?.respondPermission).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        permissionId: "perm-1",
+        allowed: true
+      });
+    });
   });
 
   test("keeps failed turn details visible after the session snapshot refreshes", async () => {

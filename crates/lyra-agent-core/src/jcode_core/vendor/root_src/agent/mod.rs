@@ -45,7 +45,7 @@ use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc};
 
-use interrupts::{NoToolCallOutcome, PostToolInterruptOutcome};
+use interrupts::{EmptyToolResultRecovery, NoToolCallOutcome, PostToolInterruptOutcome};
 pub use jcode_agent_runtime::{
     BackgroundToolSignal, GracefulShutdownSignal, InterruptSignal, SoftInterruptMessage,
     SoftInterruptQueue, SoftInterruptSource, StreamError,

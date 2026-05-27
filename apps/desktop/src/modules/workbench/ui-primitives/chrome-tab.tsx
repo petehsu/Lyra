@@ -64,14 +64,34 @@ export const ChromeTabShape = ({
     <div className="lyra-chrome-tab-background">
       <svg
         className="lyra-chrome-tab-background-svg"
-        viewBox="0 0 428 36"
-        preserveAspectRatio="none"
         focusable="false"
       >
-        <path
-          className="lyra-chrome-tab-geometry"
-          d="M17 0h394c4.5 0 8 3.5 8 8v18c0 4.5 4.5 8 9 8v2H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z"
-        />
+        <svg
+          width="52%"
+          height="100%"
+          viewBox="0 0 214 36"
+          preserveAspectRatio="none"
+        >
+          <path
+            className="lyra-chrome-tab-geometry"
+            d="M17 0h197v36H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z"
+          />
+        </svg>
+        <g transform="scale(-1, 1)">
+          <svg
+            width="52%"
+            height="100%"
+            x="-100%"
+            y="0"
+            viewBox="0 0 214 36"
+            preserveAspectRatio="none"
+          >
+            <path
+              className="lyra-chrome-tab-geometry"
+              d="M17 0h197v36H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z"
+            />
+          </svg>
+        </g>
       </svg>
     </div>
   </div>

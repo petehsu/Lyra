@@ -34,10 +34,19 @@ pub(super) struct InjectedSoftInterrupt {
 pub(super) enum NoToolCallOutcome {
     Break,
     ContinueWithoutEvent,
+    FallbackAssistant {
+        text: String,
+    },
     ContinueWithSoftInterrupt {
         injected: Vec<InjectedSoftInterrupt>,
         point: &'static str,
     },
+}
+
+pub(super) enum EmptyToolResultRecovery {
+    NotNeeded,
+    Continue,
+    Fallback(String),
 }
 
 pub(super) enum PostToolInterruptOutcome {
@@ -353,9 +362,23 @@ impl Agent {
         &mut self,
         stop_reason: Option<&str>,
         incomplete_continuations: &mut u32,
+        response_had_visible_text: bool,
+        empty_tool_result_continuations: &mut u32,
     ) -> Result<NoToolCallOutcome> {
         if self.maybe_continue_incomplete_response(stop_reason, incomplete_continuations)? {
             return Ok(NoToolCallOutcome::ContinueWithoutEvent);
+        }
+        match self.recover_empty_tool_result_response(
+            response_had_visible_text,
+            empty_tool_result_continuations,
+        )? {
+            EmptyToolResultRecovery::NotNeeded => {}
+            EmptyToolResultRecovery::Continue => {
+                return Ok(NoToolCallOutcome::ContinueWithoutEvent);
+            }
+            EmptyToolResultRecovery::Fallback(text) => {
+                return Ok(NoToolCallOutcome::FallbackAssistant { text });
+            }
         }
         logging::info("Turn complete - no tool calls");
         let injected = self.inject_soft_interrupts();
@@ -366,6 +389,101 @@ impl Agent {
             });
         }
         Ok(NoToolCallOutcome::Break)
+    }
+
+    pub(super) fn recover_empty_tool_result_response(
+        &mut self,
+        response_had_visible_text: bool,
+        empty_tool_result_continuations: &mut u32,
+    ) -> Result<EmptyToolResultRecovery> {
+        if response_had_visible_text {
+            *empty_tool_result_continuations = 0;
+            return Ok(EmptyToolResultRecovery::NotNeeded);
+        }
+
+        if !self.last_message_has_tool_result() && *empty_tool_result_continuations == 0 {
+            return Ok(EmptyToolResultRecovery::NotNeeded);
+        }
+
+        const MAX_EMPTY_TOOL_RESULT_CONTINUATIONS: u32 = 2;
+        if *empty_tool_result_continuations >= MAX_EMPTY_TOOL_RESULT_CONTINUATIONS {
+            logging::warn(
+                "Model kept returning empty responses after tool results; ending with a fallback summary instead of surfacing a provider error",
+            );
+            let fallback = self.empty_tool_result_fallback_text();
+            self.add_message(
+                Role::Assistant,
+                vec![ContentBlock::Text {
+                    text: fallback.clone(),
+                    cache_control: None,
+                }],
+            );
+            self.push_embedding_snapshot_if_semantic(&fallback);
+            self.session.save()?;
+            *empty_tool_result_continuations = 0;
+            return Ok(EmptyToolResultRecovery::Fallback(fallback));
+        }
+
+        *empty_tool_result_continuations += 1;
+        logging::warn(&format!(
+            "Model returned an empty response after tool results; retrying with a continuation reminder ({}/{})",
+            *empty_tool_result_continuations, MAX_EMPTY_TOOL_RESULT_CONTINUATIONS
+        ));
+        self.add_message_with_display_role(
+            Role::User,
+            vec![ContentBlock::Text {
+                text: "<system-reminder>\nThe previous model response ended without any user-visible text after tool results. Use the tool results above to answer the user's request now. Do not call another tool unless it is necessary.\n</system-reminder>".to_string(),
+                cache_control: None,
+            }],
+            Some(StoredDisplayRole::System),
+        );
+        self.session.save()?;
+        Ok(EmptyToolResultRecovery::Continue)
+    }
+
+    pub(super) fn last_message_has_tool_result(&self) -> bool {
+        self.session.messages.last().is_some_and(|message| {
+            message
+                .content
+                .iter()
+                .any(|block| matches!(block, ContentBlock::ToolResult { .. }))
+        })
+    }
+
+    pub(super) fn empty_tool_result_fallback_text(&self) -> String {
+        let latest_tool_result = self.session.messages.iter().rev().find_map(|message| {
+            let snippets = message
+                .content
+                .iter()
+                .filter_map(|block| match block {
+                    ContentBlock::ToolResult { content, .. } => {
+                        let content = content.trim();
+                        (!content.is_empty()).then(|| content.to_string())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            (!snippets.is_empty()).then(|| snippets.join("\n\n"))
+        });
+
+        match latest_tool_result {
+            Some(tool_result) => {
+                let truncated = crate::util::truncate_str(&tool_result, 4000);
+                let suffix = if truncated.len() < tool_result.len() {
+                    "\n\n[Tool result truncated.]"
+                } else {
+                    ""
+                };
+                format!(
+                    "I have the tool result, but the model did not produce a user-visible answer after retrying. Here is the latest available result so the turn does not end silently:\n\n{}{}",
+                    truncated, suffix
+                )
+            }
+            None => {
+                "I received tool-result context, but the model did not produce a user-visible answer after retrying. I kept the turn state intact so you can continue from here.".to_string()
+            }
+        }
     }
 
     pub(super) fn take_post_tool_soft_interrupt(&mut self) -> PostToolInterruptOutcome {

@@ -5,6 +5,7 @@ use crate::provider::{EventStream, Provider};
 use crate::tool::Registry;
 use crate::tool::ToolOutput;
 use async_trait::async_trait;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -14,6 +15,14 @@ struct DelayedProvider {
 }
 
 struct NativeAutoCompactionProvider;
+
+struct ToolThenEmptyThenTextProvider {
+    calls: Arc<AtomicUsize>,
+}
+
+struct ToolThenAlwaysEmptyProvider {
+    calls: Arc<AtomicUsize>,
+}
 
 #[async_trait]
 impl Provider for DelayedProvider {
@@ -55,6 +64,23 @@ impl Provider for DelayedProvider {
     }
 }
 
+#[tokio::test]
+async fn split_prompt_includes_current_task_focus_reminder() {
+    let provider: Arc<dyn Provider> = Arc::new(NativeAutoCompactionProvider);
+    let registry = Registry::new(provider.clone()).await;
+    let agent = Agent::new(provider, registry);
+
+    let split = agent.build_system_prompt_split(None);
+
+    assert!(split.dynamic_part.contains("# Current Task Focus"));
+    assert!(
+        split
+            .dynamic_part
+            .contains("latest real user message is the active request")
+    );
+    assert!(split.dynamic_part.contains("Do not resume suspended work"));
+}
+
 #[async_trait]
 impl Provider for NativeAutoCompactionProvider {
     async fn complete(
@@ -93,6 +119,110 @@ impl Provider for NativeAutoCompactionProvider {
     }
 }
 
+#[async_trait]
+impl Provider for ToolThenEmptyThenTextProvider {
+    async fn complete(
+        &self,
+        _messages: &[Message],
+        _tools: &[ToolDefinition],
+        _system: &str,
+        _resume_session_id: Option<&str>,
+    ) -> Result<EventStream> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let (tx, rx) = tokio_mpsc::channel::<Result<StreamEvent>>(8);
+        tokio::spawn(async move {
+            match call {
+                0 => {
+                    let _ = tx
+                        .send(Ok(StreamEvent::ToolUseStart {
+                            id: "call_1".to_string(),
+                            name: "bash".to_string(),
+                        }))
+                        .await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::ToolInputDelta(
+                            r#"{"command":"printf tool-output","timeout":10000}"#.to_string(),
+                        )))
+                        .await;
+                    let _ = tx.send(Ok(StreamEvent::ToolUseEnd)).await;
+                }
+                1 => {}
+                _ => {
+                    let _ = tx
+                        .send(Ok(StreamEvent::TextDelta(
+                            "final answer after tool result".to_string(),
+                        )))
+                        .await;
+                }
+            }
+            let _ = tx
+                .send(Ok(StreamEvent::MessageEnd {
+                    stop_reason: Some("stop".to_string()),
+                }))
+                .await;
+        });
+
+        Ok(Box::pin(ReceiverStream::new(rx)))
+    }
+
+    fn name(&self) -> &str {
+        "tool-empty-text"
+    }
+
+    fn fork(&self) -> Arc<dyn Provider> {
+        Arc::new(Self {
+            calls: Arc::clone(&self.calls),
+        })
+    }
+}
+
+#[async_trait]
+impl Provider for ToolThenAlwaysEmptyProvider {
+    async fn complete(
+        &self,
+        _messages: &[Message],
+        _tools: &[ToolDefinition],
+        _system: &str,
+        _resume_session_id: Option<&str>,
+    ) -> Result<EventStream> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let (tx, rx) = tokio_mpsc::channel::<Result<StreamEvent>>(8);
+        tokio::spawn(async move {
+            if call == 0 {
+                let _ = tx
+                    .send(Ok(StreamEvent::ToolUseStart {
+                        id: "call_1".to_string(),
+                        name: "bash".to_string(),
+                    }))
+                    .await;
+                let _ = tx
+                    .send(Ok(StreamEvent::ToolInputDelta(
+                        r#"{"command":"printf tool-output","timeout":10000}"#.to_string(),
+                    )))
+                    .await;
+                let _ = tx.send(Ok(StreamEvent::ToolUseEnd)).await;
+            }
+            let _ = tx
+                .send(Ok(StreamEvent::MessageEnd {
+                    stop_reason: Some("stop".to_string()),
+                }))
+                .await;
+        });
+
+        Ok(Box::pin(ReceiverStream::new(rx)))
+    }
+
+    fn name(&self) -> &str {
+        "tool-always-empty"
+    }
+
+    fn fork(&self) -> Arc<dyn Provider> {
+        Arc::new(Self {
+            calls: Arc::clone(&self.calls),
+        })
+    }
+}
+
 #[test]
 fn tool_output_to_content_blocks_preserves_labeled_images() {
     let output = ToolOutput::new("Image ready").with_labeled_image(
@@ -101,7 +231,7 @@ fn tool_output_to_content_blocks_preserves_labeled_images() {
         "screenshots/example.png",
     );
 
-    let blocks = tool_output_to_content_blocks("call_1".to_string(), output);
+    let blocks = tool_output_to_content_blocks("call_1".to_string(), output, true);
     assert_eq!(blocks.len(), 3);
 
     match &blocks[0] {
@@ -131,6 +261,27 @@ fn tool_output_to_content_blocks_preserves_labeled_images() {
             assert!(text.contains("preceding tool result"));
         }
         other => panic!("expected trailing label text, got {other:?}"),
+    }
+}
+
+#[test]
+fn tool_output_to_content_blocks_omits_images_when_provider_lacks_vision() {
+    let output = ToolOutput::new("Image ready").with_labeled_image(
+        "image/png",
+        "ZmFrZQ==",
+        "browser screenshot",
+    );
+
+    let blocks = tool_output_to_content_blocks("call_1".to_string(), output, false);
+    assert_eq!(blocks.len(), 2);
+    assert!(matches!(blocks[0], ContentBlock::ToolResult { .. }));
+    match &blocks[1] {
+        ContentBlock::Text { text, .. } => {
+            assert!(text.contains("omitted"));
+            assert!(text.contains("browser screenshot"));
+            assert!(!text.contains("ZmFrZQ=="));
+        }
+        other => panic!("expected omission text, got {other:?}"),
     }
 }
 
@@ -203,6 +354,99 @@ async fn run_turn_streaming_mpsc_emits_keepalive_while_provider_is_quiet() {
 
     assert!(saw_text, "expected delayed provider text after keepalive");
     task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn run_turn_streaming_mpsc_retries_empty_response_after_tool_result() {
+    let _guard = crate::storage::lock_test_env();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let provider: Arc<dyn Provider> = Arc::new(ToolThenEmptyThenTextProvider {
+        calls: Arc::clone(&calls),
+    });
+    let registry = Registry::new(provider.clone()).await;
+    let mut agent = Agent::new(provider, registry);
+    agent.add_message(
+        Role::User,
+        vec![ContentBlock::Text {
+            text: "use a tool then answer".to_string(),
+            cache_control: None,
+        }],
+    );
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    agent.run_turn_streaming_mpsc(tx).await.unwrap();
+    while rx.recv().await.is_some() {}
+
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert!(
+        agent
+            .last_assistant_text()
+            .unwrap_or_default()
+            .contains("final answer after tool result")
+    );
+    let recovery_message = agent
+        .session
+        .messages
+        .iter()
+        .find(|message| {
+            message.content.iter().any(|block| match block {
+                ContentBlock::Text { text, .. } => text.contains(
+                    "previous model response ended without any user-visible text after tool results",
+                ),
+                _ => false,
+            })
+        })
+        .expect("recovery reminder should be persisted for model context");
+    assert_eq!(
+        recovery_message.display_role,
+        Some(crate::session::StoredDisplayRole::System)
+    );
+    assert!(recovery_message.content.iter().any(|block| match block {
+        ContentBlock::Text { text, .. } => text.trim_start().starts_with("<system-reminder>"),
+        _ => false,
+    }));
+}
+
+#[tokio::test]
+async fn run_turn_streaming_mpsc_falls_back_after_repeated_empty_tool_result_response() {
+    let _guard = crate::storage::lock_test_env();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let provider: Arc<dyn Provider> = Arc::new(ToolThenAlwaysEmptyProvider {
+        calls: Arc::clone(&calls),
+    });
+    let registry = Registry::new(provider.clone()).await;
+    let mut agent = Agent::new(provider, registry);
+    agent.add_message(
+        Role::User,
+        vec![ContentBlock::Text {
+            text: "use a tool then answer".to_string(),
+            cache_control: None,
+        }],
+    );
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    agent.run_turn_streaming_mpsc(tx).await.unwrap();
+
+    let mut streamed_text = String::new();
+    while let Some(event) = rx.recv().await {
+        match event {
+            ServerEvent::TextDelta { text } => streamed_text.push_str(&text),
+            ServerEvent::Error { message, .. } => {
+                panic!("fallback recovery should not emit an error event: {message}");
+            }
+            _ => {}
+        }
+    }
+
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert!(streamed_text.contains("latest available result"));
+    assert!(streamed_text.contains("tool-output"));
+    assert!(
+        agent
+            .last_assistant_text()
+            .unwrap_or_default()
+            .contains("latest available result")
+    );
 }
 
 #[tokio::test]

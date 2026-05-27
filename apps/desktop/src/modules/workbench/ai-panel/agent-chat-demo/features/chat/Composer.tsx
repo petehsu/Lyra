@@ -1,47 +1,123 @@
-import { useState, useRef, useEffect, type FormEvent } from "react";
-import { ArrowUp, CircleAlert, Plus } from "lucide-react";
+import { useState, useRef, useEffect, type ChangeEvent, type FormEvent } from "react";
+import { ArrowUp, Camera, CircleAlert, Image as ImageIcon, Monitor, Plus, X } from "lucide-react";
 import { LyraListPicker } from "../../../../list-picker";
 import { t } from "../../core/i18n";
-import type { ComposerModelControls } from "../../core/types";
+import type { AgentImageAttachment, ComposerModelControls } from "../../core/types";
 
 const MIN_HEIGHT = 64;
 const MAX_HEIGHT = 200;
 
+const attachmentId = (prefix: string): string => {
+  const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return prefix + "-" + randomId;
+};
+
+const readImageAttachment = async (file: File): Promise<AgentImageAttachment> => {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Image file could not be read."));
+      }
+    });
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Image file could not be read.")));
+    reader.readAsDataURL(file);
+  });
+  const [header, data = dataUrl] = dataUrl.split(",", 2);
+  const mediaType = /^data:([^;]+);base64$/u.exec(header ?? "")?.[1] ?? file.type ?? "image/png";
+  return {
+    id: attachmentId("local-image"),
+    mediaType,
+    data,
+    label: file.name,
+    source: "local-file"
+  };
+};
+
 export function Composer({
   onSend,
+  onCaptureBrowserScreenshot,
+  onCaptureWindowScreenshot,
   modelControls,
   onOpenModelSettings,
+  disabledReason,
 }: {
-  onSend: (text: string) => void;
+  onSend: (text: string, images?: readonly AgentImageAttachment[]) => Promise<void> | void;
+  onCaptureBrowserScreenshot?: () => Promise<AgentImageAttachment | null>;
+  onCaptureWindowScreenshot?: () => Promise<AgentImageAttachment | null>;
   modelControls?: ComposerModelControls | null;
   onOpenModelSettings?: () => Promise<void>;
+  disabledReason?: string | undefined;
 }) {
   const [value, setValue] = useState("");
+  const [attachments, setAttachments] = useState<AgentImageAttachment[]>([]);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const submit = async () => {
+    if (disabledReason !== undefined) return;
+    const trimmed = value.trim();
+    if (trimmed.length === 0 && attachments.length === 0) return;
+    await onSend(trimmed, attachments);
+    setValue("");
+    setAttachments([]);
+    setAttachmentMenuOpen(false);
+  };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
-    setValue("");
+    void submit();
+  };
+
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []).filter((file) => file.type.startsWith("image/"));
+    event.target.value = "";
+    if (files.length === 0) return;
+    setAttachmentBusy(true);
+    try {
+      const next = await Promise.all(files.map(readImageAttachment));
+      setAttachments((items) => [...items, ...next]);
+      setAttachmentMenuOpen(false);
+    } finally {
+      setAttachmentBusy(false);
+    }
+  };
+
+  const captureAttachment = async (
+    capture: (() => Promise<AgentImageAttachment | null>) | undefined
+  ) => {
+    if (capture === undefined) return;
+    setAttachmentBusy(true);
+    try {
+      const attachment = await capture();
+      if (attachment !== null) {
+        setAttachments((items) => [...items, attachment]);
+      }
+      setAttachmentMenuOpen(false);
+    } finally {
+      setAttachmentBusy(false);
+    }
   };
 
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = `${MIN_HEIGHT}px`;
+    el.style.height = MIN_HEIGHT + "px";
     el.style.overflowY = "hidden";
     const scrollH = el.scrollHeight;
     if (scrollH > MAX_HEIGHT) {
-      el.style.height = `${MAX_HEIGHT}px`;
+      el.style.height = MAX_HEIGHT + "px";
       el.style.overflowY = "auto";
     } else {
-      el.style.height = `${Math.max(MIN_HEIGHT, scrollH)}px`;
+      el.style.height = Math.max(MIN_HEIGHT, scrollH) + "px";
     }
   }, [value]);
 
-  const canSend = value.trim().length > 0;
+  const canSend = disabledReason === undefined && (value.trim().length > 0 || attachments.length > 0);
   const configuredModels = (modelControls?.models ?? []).filter((model) => model.available);
   const selectedModel =
     configuredModels.find((model) => model.id === modelControls?.currentModel)
@@ -59,21 +135,96 @@ export function Composer({
       <textarea
         ref={textareaRef}
         className="composer-input"
-        placeholder={t("composer.placeholder")}
+        placeholder={disabledReason ?? t("composer.placeholder")}
         value={value}
+        disabled={disabledReason !== undefined}
+        aria-disabled={disabledReason !== undefined}
         onChange={(e) => setValue(e.target.value)}
         rows={1}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            handleSubmit(e as unknown as FormEvent);
+            void submit();
           }
         }}
       />
+      {attachments.length > 0 ? (
+        <div className="composer-attachments">
+          {attachments.map((attachment) => (
+            <figure key={attachment.id} className="composer-attachment">
+              <img
+                src={"data:" + attachment.mediaType + ";base64," + attachment.data}
+                alt={attachment.label ?? t("msg.imageAttachment")}
+              />
+              <figcaption>{attachment.label ?? t("msg.imageAttachment")}</figcaption>
+              <button
+                type="button"
+                aria-label={t("composer.removeAttachment")}
+                onClick={() => setAttachments((items) => items.filter((item) => item.id !== attachment.id))}
+              >
+                <X size={12} strokeWidth={2} />
+              </button>
+            </figure>
+          ))}
+        </div>
+      ) : null}
+      <input
+        ref={fileInputRef}
+        className="composer-file-input"
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
+        tabIndex={-1}
+        onChange={(event) => {
+          void handleFileChange(event);
+        }}
+      />
       <div className="composer-bottom">
-        <button type="button" className="composer-action" aria-label={t("composer.attach")}>
-          <Plus size={16} strokeWidth={2} />
-        </button>
+        <div className="composer-attach-menu-wrap">
+          <button
+            type="button"
+            className="composer-action"
+            aria-label={t("composer.attach")}
+            aria-haspopup="menu"
+            aria-expanded={attachmentMenuOpen}
+            disabled={disabledReason !== undefined || attachmentBusy}
+            onClick={() => setAttachmentMenuOpen((open) => !open)}
+          >
+            <Plus size={16} strokeWidth={2} />
+          </button>
+          {attachmentMenuOpen ? (
+            <div className="composer-attach-menu" role="menu" aria-label={t("composer.attach")}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <ImageIcon size={14} strokeWidth={1.9} />
+                <span>{t("composer.attachImage")}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  void captureAttachment(onCaptureBrowserScreenshot);
+                }}
+              >
+                <Camera size={14} strokeWidth={1.9} />
+                <span>{t("composer.attachBrowserScreenshot")}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  void captureAttachment(onCaptureWindowScreenshot);
+                }}
+              >
+                <Monitor size={14} strokeWidth={1.9} />
+                <span>{t("composer.attachWindowScreenshot")}</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
         {modelControls !== null && modelControls !== undefined ? (
           <div className="composer-model-controls">
             {modelPickerOptions.length > 0 ? (

@@ -16,11 +16,25 @@ import type {
   UiuxPackSource,
   UiuxPackTrustState
 } from "../../shared/uiux-packs";
+import type {
+  LyraCapabilityRisk,
+  LyraSoftwareActionManifest,
+  LyraSoftwareManifest
+} from "../../shared/software-capabilities";
 
 const REGISTRY_FILE_NAME = "registry.v1.json";
 const PLUGIN_MANIFEST_PATH = path.join(".lyra-plugin", "plugin.json");
 const EXTERNAL_PACK_ID_PATTERN = /^[a-z0-9][a-z0-9._:-]{1,127}$/;
 const EXTERNAL_PACK_ID_PREFIX = "external:";
+const SOFTWARE_ID_PATTERN = /^[a-z0-9][a-z0-9._:-]{1,191}$/;
+const SOFTWARE_ACTION_ID_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,191}$/;
+const CAPABILITY_RISKS = new Set<LyraCapabilityRisk>([
+  "read",
+  "navigate",
+  "write",
+  "external",
+  "destructive"
+]);
 
 type UiuxRegistryDocument = {
   readonly version: 1;
@@ -39,8 +53,10 @@ type PluginJsonRecord = {
   readonly permissions?: unknown;
   readonly uiux?: unknown;
   readonly uiuxPack?: unknown;
+  readonly software?: unknown;
   readonly contributes?: {
     readonly uiuxPacks?: unknown;
+    readonly software?: unknown;
   };
 };
 
@@ -55,9 +71,30 @@ type UiuxDeclarationRecord = {
   readonly workbenchUiApi?: unknown;
   readonly apiVersion?: unknown;
   readonly permissions?: unknown;
+  readonly software?: unknown;
   readonly compatibility?: {
     readonly workbenchUiApi?: unknown;
   };
+};
+
+type SoftwareDeclarationRecord = {
+  readonly id?: unknown;
+  readonly title?: unknown;
+  readonly name?: unknown;
+  readonly description?: unknown;
+  readonly category?: unknown;
+  readonly version?: unknown;
+  readonly actions?: unknown;
+};
+
+type SoftwareActionDeclarationRecord = {
+  readonly id?: unknown;
+  readonly title?: unknown;
+  readonly name?: unknown;
+  readonly description?: unknown;
+  readonly risk?: unknown;
+  readonly inputSchema?: unknown;
+  readonly outputSchema?: unknown;
 };
 
 const nowIso = (): string => new Date().toISOString();
@@ -73,6 +110,11 @@ const asStringArray = (value: unknown): readonly string[] =>
     ? value
         .map((entry) => asString(entry))
         .filter((entry): entry is string => entry !== undefined)
+    : [];
+
+const asRecordArray = (value: unknown): readonly Record<string, unknown>[] =>
+  Array.isArray(value)
+    ? value.filter(isRecord)
     : [];
 
 const uniqueStrings = (values: readonly string[]): readonly string[] =>
@@ -133,6 +175,88 @@ const selectUiuxDeclaration = (pluginJson: PluginJsonRecord): UiuxDeclarationRec
   return {};
 };
 
+const normalizeExternalSoftwareId = (packId: string, value: unknown): string => {
+  const rawId = asString(value)?.toLowerCase();
+  if (rawId === undefined || SOFTWARE_ID_PATTERN.test(rawId) === false) {
+    throw new Error("Software id must match /^[a-z0-9][a-z0-9._:-]{1,191}$/");
+  }
+  return rawId.startsWith(`${packId}:`) ? rawId : `${packId}:${rawId}`;
+};
+
+const normalizeExternalActionId = (softwareId: string, value: unknown): string => {
+  const rawId = asString(value)?.toLowerCase();
+  if (rawId === undefined || SOFTWARE_ACTION_ID_PATTERN.test(rawId) === false) {
+    throw new Error("Software action id must match /^[a-z0-9][a-z0-9._:-]{0,191}$/");
+  }
+  return rawId.startsWith(`${softwareId}.`) ? rawId : `${softwareId}.${rawId}`;
+};
+
+const normalizeRisk = (value: unknown): LyraCapabilityRisk => {
+  const risk = asString(value) as LyraCapabilityRisk | undefined;
+  if (risk === undefined) {
+    return "read";
+  }
+  if (CAPABILITY_RISKS.has(risk) === false) {
+    throw new Error(`Unsupported software action risk: ${risk}`);
+  }
+  return risk;
+};
+
+const parseSoftwareActionDeclaration = (
+  softwareId: string,
+  value: SoftwareActionDeclarationRecord
+): LyraSoftwareActionManifest => {
+  const id = normalizeExternalActionId(softwareId, value.id);
+  return {
+    id,
+    title: asString(value.title) ?? asString(value.name) ?? id,
+    description: asString(value.description) ?? "External Lyra software action.",
+    risk: normalizeRisk(value.risk),
+    ...(value.inputSchema === undefined ? {} : { inputSchema: value.inputSchema }),
+    ...(value.outputSchema === undefined ? {} : { outputSchema: value.outputSchema })
+  };
+};
+
+const parseSoftwareDeclaration = (
+  packId: string,
+  value: SoftwareDeclarationRecord
+): LyraSoftwareManifest => {
+  const id = normalizeExternalSoftwareId(packId, value.id);
+  const category = asString(value.category);
+  const version = asString(value.version);
+  const actions = asRecordArray(value.actions).map((action) =>
+    parseSoftwareActionDeclaration(id, action)
+  );
+  if (actions.length === 0) {
+    throw new Error(`Software ${id} must declare at least one action`);
+  }
+  return {
+    id,
+    title: asString(value.title) ?? asString(value.name) ?? id,
+    description: asString(value.description) ?? "External Lyra software.",
+    ...(category === undefined ? {} : { category }),
+    ...(version === undefined ? {} : { version }),
+    source: "uiux",
+    sourceId: packId,
+    actions
+  };
+};
+
+const selectSoftwareDeclarations = (
+  pluginJson: PluginJsonRecord,
+  declaration: UiuxDeclarationRecord,
+  packId: string
+): readonly LyraSoftwareManifest[] =>
+  [
+    declaration.software,
+    pluginJson.software,
+    pluginJson.contributes?.software
+  ].flatMap((candidate) =>
+    asRecordArray(candidate).map((software) =>
+      parseSoftwareDeclaration(packId, software)
+    )
+  );
+
 export const createEmptyUiuxRegistryDocument = (): UiuxRegistryDocument => ({
   version: 1,
   installed: []
@@ -179,6 +303,7 @@ export const parseUiuxPackManifest = (packageRoot: string): UiuxPackManifest => 
   const manifestPath = path.join(packageRoot, PLUGIN_MANIFEST_PATH);
   const pluginJson = JSON.parse(readFileSync(manifestPath, "utf8")) as PluginJsonRecord;
   const declaration = selectUiuxDeclaration(pluginJson);
+  const id = normalizePackId(declaration.id ?? pluginJson.id);
   const entry = normalizeRelativePath(declaration.entry ?? pluginJson.entry, "entry");
   const css = asString(declaration.css);
   const workbenchUiApi =
@@ -192,13 +317,13 @@ export const parseUiuxPackManifest = (packageRoot: string): UiuxPackManifest => 
   }
 
   return {
-    id: normalizePackId(declaration.id ?? pluginJson.id),
+    id,
     name:
       asString(declaration.name)
       ?? asString(declaration.title)
       ?? asString(pluginJson.name)
       ?? asString(pluginJson.title)
-      ?? normalizePackId(declaration.id ?? pluginJson.id),
+      ?? id,
     version: asString(declaration.version) ?? asString(pluginJson.version) ?? "0.0.0",
     description:
       asString(declaration.description)
@@ -210,7 +335,8 @@ export const parseUiuxPackManifest = (packageRoot: string): UiuxPackManifest => 
     permissions: uniqueStrings([
       ...asStringArray(pluginJson.permissions),
       ...asStringArray(declaration.permissions)
-    ])
+    ]),
+    software: selectSoftwareDeclarations(pluginJson, declaration, id)
   };
 };
 

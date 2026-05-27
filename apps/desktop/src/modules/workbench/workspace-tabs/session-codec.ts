@@ -18,7 +18,8 @@ const VALID_WORKSPACE_APP_IDS = new Set([
   "agent-selfdev",
   "agent-overnight",
   "agent-session-history",
-  "notification-center"
+  "notification-center",
+  "software-store"
 ] as const);
 
 const isVirtualToolPath = (value: string): boolean =>

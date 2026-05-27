@@ -95,7 +95,8 @@ const createRuntimeForPack = (
   return {
     packId,
     entryUrl: createPackAssetUrl(packId, "entry.js"),
-    ...(pack.cssPath === undefined ? {} : { cssUrl: createPackAssetUrl(packId, "style.css") })
+    ...(pack.cssPath === undefined ? {} : { cssUrl: createPackAssetUrl(packId, "style.css") }),
+    software: pack.manifest.software
   };
 };
 

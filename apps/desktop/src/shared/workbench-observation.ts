@@ -34,6 +34,7 @@ export type WorkbenchObservationKind =
   | "deep-search-results"
   | "file-editor"
   | "file-manager"
+  | "image-viewer"
   | "terminal";
 
 export type WorkbenchObservedTabDescriptor = {
@@ -178,6 +179,52 @@ export type FileManagerObservation = {
   readonly truncated: boolean;
 };
 
+export type ImageViewerObservation = {
+  readonly kind: "image-viewer";
+  readonly filePath: string;
+  readonly title: string;
+  readonly status: string;
+  readonly sessionId?: string;
+  readonly message?: string;
+  readonly mimeType?: string;
+  readonly format?: string;
+  readonly width?: number;
+  readonly height?: number;
+  readonly frameCount?: number;
+  readonly hasAlpha?: boolean;
+  readonly orientation?: number;
+  readonly colorSpace?: string;
+  readonly sizeBytes?: number;
+  readonly sourceUrl?: string;
+  readonly renderMode?: string;
+  readonly cacheState?: string;
+  readonly cacheId?: string;
+  readonly generationId?: string;
+  readonly sampleFormat?: string;
+  readonly channelCount?: number;
+  readonly tileSize?: number;
+  readonly nativeTileSupported?: boolean;
+  readonly hasInternalTiles?: boolean;
+  readonly hasInternalMipmaps?: boolean;
+  readonly importProgress?: number;
+  readonly levels: readonly {
+    readonly level: number;
+    readonly width: number;
+    readonly height: number;
+    readonly scale: number;
+  }[];
+  readonly viewport: {
+    readonly zoom: number;
+    readonly offsetX: number;
+    readonly offsetY: number;
+    readonly rotation: number;
+    readonly background: string;
+  };
+  readonly siblingIndex: number;
+  readonly siblingCount: number;
+  readonly truncated: boolean;
+};
+
 export type TerminalObservation = {
   readonly kind: "terminal";
   readonly activePaneId: string;
@@ -247,6 +294,7 @@ export type WorkbenchTabObservation =
   | BrowserTabObservation
   | FileEditorObservation
   | FileManagerObservation
+  | ImageViewerObservation
   | TerminalObservation
   | SearchHomeObservation
   | SearchResultsObservation

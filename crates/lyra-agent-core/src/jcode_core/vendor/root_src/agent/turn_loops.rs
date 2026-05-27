@@ -12,6 +12,7 @@ impl Agent {
         let trace = trace_enabled();
         let mut context_limit_retries = 0u32;
         let mut incomplete_continuations = 0u32;
+        let mut empty_tool_result_continuations = 0u32;
 
         loop {
             let repaired = self.repair_missing_tool_outputs();
@@ -598,6 +599,20 @@ impl Agent {
                 )? {
                     continue;
                 }
+                match self.recover_empty_tool_result_response(
+                    !text_content.trim().is_empty(),
+                    &mut empty_tool_result_continuations,
+                )? {
+                    EmptyToolResultRecovery::NotNeeded => {}
+                    EmptyToolResultRecovery::Continue => continue,
+                    EmptyToolResultRecovery::Fallback(text) => {
+                        if print_output {
+                            print!("{}", text);
+                        }
+                        final_text = text;
+                        break;
+                    }
+                }
                 logging::info("Turn complete - no tool calls, returning");
                 if print_output {
                     println!();
@@ -610,6 +625,7 @@ impl Agent {
                 "Turn has {} tool calls to execute",
                 tool_calls.len()
             ));
+            empty_tool_result_continuations = 0;
 
             // If provider handles tools internally (like Claude Code CLI), only run native tools locally
             if self.provider.handles_tools_internally() {
@@ -794,7 +810,11 @@ impl Agent {
                             println!("{}", preview.lines().next().unwrap_or("(done)"));
                         }
 
-                        let blocks = tool_output_to_content_blocks(tc.id, output);
+                        let blocks = tool_output_to_content_blocks(
+                            tc.id,
+                            output,
+                            self.provider.supports_image_input(),
+                        );
                         self.add_message_with_duration(
                             Role::User,
                             blocks,

@@ -20,9 +20,9 @@ pub struct VendoredJcodeCoreInventory {
 }
 
 pub const VENDORED_INVENTORY: VendoredJcodeCoreInventory = VendoredJcodeCoreInventory {
-    root_rust_files: 643,
-    crate_rust_files: 136,
-    total_rust_files: 779,
+    root_rust_files: 626,
+    crate_rust_files: 134,
+    total_rust_files: 760,
 };
 
 #[cfg(test)]

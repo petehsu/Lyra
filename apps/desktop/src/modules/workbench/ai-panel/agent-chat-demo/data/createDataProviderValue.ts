@@ -1,5 +1,7 @@
 import type {
   AgentAutomationSettings,
+  AgentGoalItem,
+  AgentImageAttachment,
   AgentSidePanel,
   ChatMessage,
   ComposerModelControls,
@@ -22,8 +24,16 @@ export interface CreateDataProviderValueInput {
   permissions?: PermissionRequest[];
   modelControls?: ComposerModelControls | null;
   openModelSettings?: () => Promise<void>;
+  browserFollowModeEnabled?: boolean;
+  setBrowserFollowMode?: (enabled: boolean) => Promise<void>;
+  openUrlInWorkbench?: (url: string, title?: string) => Promise<void>;
+  openFileInWorkbench?: (filePath: string) => Promise<void>;
+  openImageInWorkbench?: (image: AgentImageAttachment) => Promise<void>;
+  canOpenImageInWorkbench?: (image: AgentImageAttachment) => boolean;
   sidePanel?: AgentSidePanel | null;
-  sendMessage?: (text: string) => Promise<void>;
+  sendMessage?: (text: string, images?: readonly AgentImageAttachment[]) => Promise<void>;
+  captureBrowserScreenshot?: () => Promise<AgentImageAttachment | null>;
+  captureWindowScreenshot?: () => Promise<AgentImageAttachment | null>;
   cancelTurn?: () => Promise<void>;
   previewRollback?: (messageId: string) => Promise<AgentRollbackPreviewResponse>;
   rollbackMessage?: (messageId: string) => Promise<void>;
@@ -48,6 +58,8 @@ export interface CreateDataProviderValueInput {
   transferSession?: () => Promise<void>;
   compactContext?: () => Promise<void>;
   openGoals?: () => Promise<void>;
+  listGoals?: () => Promise<readonly AgentGoalItem[]>;
+  showGoal?: (goalId: string) => Promise<void>;
   resumeGoal?: () => Promise<void>;
   updateAutomation?: (settings: AgentAutomationSettings) => Promise<void>;
   submitDecisions?: (answers: Record<string, string>) => Promise<void>;
@@ -68,8 +80,16 @@ export function createDataProviderValue({
   permissions = [],
   modelControls = null,
   openModelSettings = () => resolved,
+  browserFollowModeEnabled = false,
+  setBrowserFollowMode = () => resolved,
+  openUrlInWorkbench = () => resolved,
+  openFileInWorkbench = () => resolved,
+  openImageInWorkbench = () => resolved,
+  canOpenImageInWorkbench = () => false,
   sidePanel = null,
   sendMessage = () => resolved,
+  captureBrowserScreenshot = () => Promise.resolve(null),
+  captureWindowScreenshot = () => Promise.resolve(null),
   cancelTurn = () => resolved,
   previewRollback = () => Promise.resolve({
     sessionId: "",
@@ -96,6 +116,8 @@ export function createDataProviderValue({
   transferSession = () => resolved,
   compactContext = () => resolved,
   openGoals = () => resolved,
+  listGoals = () => Promise.resolve([]),
+  showGoal = () => resolved,
   resumeGoal = () => resolved,
   updateAutomation = () => resolved,
   submitDecisions = () => resolved,
@@ -113,8 +135,16 @@ export function createDataProviderValue({
     permissions,
     modelControls,
     openModelSettings,
+    browserFollowModeEnabled,
+    setBrowserFollowMode,
+    openUrlInWorkbench,
+    openFileInWorkbench,
+    openImageInWorkbench,
+    canOpenImageInWorkbench,
     sidePanel,
     sendMessage,
+    captureBrowserScreenshot,
+    captureWindowScreenshot,
     cancelTurn,
     previewRollback,
     rollbackMessage,
@@ -134,6 +164,8 @@ export function createDataProviderValue({
     transferSession,
     compactContext,
     openGoals,
+    listGoals,
+    showGoal,
     resumeGoal,
     updateAutomation,
     submitDecisions,

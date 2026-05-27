@@ -47,6 +47,7 @@ const snapshot: AgentSessionSnapshot = {
     }
   ],
   tools: [],
+  todos: [],
   automation: {
     subagentModel: null,
     autoreviewEnabled: null,

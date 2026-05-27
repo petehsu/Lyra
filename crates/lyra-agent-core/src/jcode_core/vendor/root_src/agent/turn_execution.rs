@@ -95,10 +95,24 @@ impl Agent {
         self.current_turn_system_reminder =
             system_reminder.filter(|value| !value.trim().is_empty());
 
-        let mut blocks: Vec<ContentBlock> = images
-            .into_iter()
-            .map(|(media_type, data)| ContentBlock::Image { media_type, data })
-            .collect();
+        let include_images = self.provider.supports_image_input();
+        let image_count = images.len();
+        let mut blocks: Vec<ContentBlock> = if include_images {
+            images
+                .into_iter()
+                .map(|(media_type, data)| ContentBlock::Image { media_type, data })
+                .collect()
+        } else if image_count > 0 {
+            vec![ContentBlock::Text {
+                text: format!(
+                    "[{} user image attachment(s) omitted because the active model/provider does not currently support image input.]",
+                    image_count
+                ),
+                cache_control: None,
+            }]
+        } else {
+            Vec::new()
+        };
         blocks.push(ContentBlock::Text {
             text: user_message.to_string(),
             cache_control: None,
@@ -106,8 +120,7 @@ impl Agent {
 
         if blocks.len() > 1 {
             crate::logging::info(&format!(
-                "Agent received message with {} image(s)",
-                blocks.len() - 1
+                "Agent received message with {image_count} image(s)"
             ));
         }
 
@@ -354,7 +367,11 @@ impl Agent {
         output: crate::tool::ToolOutput,
         duration_ms: u64,
     ) -> Result<()> {
-        let blocks = tool_output_to_content_blocks(tool_call_id, output);
+        let blocks = tool_output_to_content_blocks(
+            tool_call_id,
+            output,
+            self.provider.supports_image_input(),
+        );
         self.add_message_with_duration(Role::User, blocks, Some(duration_ms));
         self.session.save()?;
         Ok(())

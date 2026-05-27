@@ -119,6 +119,27 @@ pub(super) async fn stream_response(
 
         let body = crate::util::http_error_body(response, "HTTP error").await;
 
+        // Check if error is due to unsupported vision modality
+        if (status == StatusCode::BAD_REQUEST || status == StatusCode::NOT_FOUND)
+            && is_vision_unsupported_error(&body)
+        {
+            let model_name = request
+                .get("model")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
+            if !model_name.is_empty() {
+                if let Ok(mut cache) = DYNAMIC_VISION_SUPPORT_CACHE.write() {
+                    cache.insert(model_name.clone(), false);
+                }
+                crate::logging::warn(&format!(
+                    "Dynamically recorded OpenAI model '{}' as not supporting vision/image inputs due to API 400/404 error.",
+                    model_name
+                ));
+            }
+            return Err(OpenAIStreamFailure::VisionUnsupported(model_name));
+        }
+
         if let Some(reason) = classify_unavailable_model_error(status, &body)
             && let Some(model_name) = request.get("model").and_then(|m| m.as_str())
         {
@@ -170,12 +191,27 @@ pub(super) async fn stream_response(
                     saw_message_end = true;
                 }
                 if let StreamEvent::Error { message, .. } = &event {
+                    let message_lower = message.to_lowercase();
+                    if is_vision_unsupported_error(&message_lower) {
+                        if let Some(model_name) = request.get("model").and_then(|m| m.as_str()) {
+                            if let Ok(mut cache) = DYNAMIC_VISION_SUPPORT_CACHE.write() {
+                                cache.insert(model_name.to_string(), false);
+                            }
+                            crate::logging::warn(&format!(
+                                "Dynamically recorded OpenAI model '{}' as not supporting vision/image inputs due to streaming error.",
+                                model_name
+                            ));
+                            return Err(OpenAIStreamFailure::VisionUnsupported(
+                                model_name.to_string(),
+                            ));
+                        }
+                    }
                     if let Some(model_name) = request.get("model").and_then(|m| m.as_str()) {
                         maybe_record_runtime_model_unavailable_from_stream_error(
                             model_name, message,
                         );
                     }
-                    if is_retryable_error(&message.to_lowercase()) {
+                    if is_retryable_error(&message_lower) {
                         return Err(OpenAIStreamFailure::Other(anyhow::anyhow!(
                             "Stream error: {}",
                             message
@@ -1142,4 +1178,25 @@ pub(super) fn is_retryable_error(error_str: &str) -> bool {
         || error_str.contains("internal server error")
         || error_str.contains("an error occurred while processing your request")
         || error_str.contains("please include the request id")
+        // Rate limiting and transient proxy queue limitations (e.g. cluster queue limitations)
+        || error_str.contains("rate limit")
+        || error_str.contains("rate_limit")
+        || error_str.contains("too many requests")
+        || error_str.contains("429")
+        || error_str.contains("router_queue_limitation")
+        || error_str.contains("cluster rate limit exceeded")
+        || error_str.contains("queued but not admitted")
+}
+
+pub(super) fn is_vision_unsupported_error(error_body: &str) -> bool {
+    let lower = error_body.to_lowercase();
+    lower.contains("does not support image")
+        || lower.contains("do not support image")
+        || lower.contains("unsupported image")
+        || lower.contains("image_url is not supported")
+        || lower.contains("modality")
+        || lower.contains("invalid modality")
+        || lower.contains("unsupported content type")
+        || lower.contains("support image input")
+        || lower.contains("endpoints found that support")
 }

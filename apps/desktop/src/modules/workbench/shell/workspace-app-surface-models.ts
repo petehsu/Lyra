@@ -7,7 +7,8 @@ import {
   isAgentSelfDevAppId,
   isAgentOvernightAppId,
   isAgentSessionHistoryAppId,
-  isNotificationCenterAppId
+  isNotificationCenterAppId,
+  isSoftwareStoreAppId
 } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type {
@@ -234,6 +235,13 @@ export const createAppSurfaceRenderModel = (
           ? {}
           : { locale: context.agentSessionHistory.locale })
       }
+    };
+  }
+
+  if (isSoftwareStoreAppId(tab.appId)) {
+    return {
+      kind: "softwareStore",
+      props: context.softwareStore
     };
   }
 

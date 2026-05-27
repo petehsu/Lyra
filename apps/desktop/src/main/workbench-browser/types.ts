@@ -122,6 +122,132 @@ export type WorkbenchBrowserDebuggerSession = {
   readonly close: () => Promise<void>;
 };
 
+export type WorkbenchBrowserAgentObserveStrategy =
+  | "picker"
+  | "focus"
+  | "hybrid"
+  | "domFallback"
+  | "visionFallback";
+
+export type WorkbenchBrowserAgentTargetMode =
+  | "isolated"
+  | "live";
+
+export const WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID = "lyra-lumen-isolated";
+
+export type WorkbenchBrowserAgentElementBounds = {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+};
+
+export type WorkbenchBrowserAgentElement = {
+  readonly id: number;
+  readonly frameTreeNodeId: number;
+  readonly tagName: string;
+  readonly role: string;
+  readonly label: string;
+  readonly actionHint?: string;
+  readonly stateHint?: string;
+  readonly tooltipText?: string;
+  readonly textSnippet?: string;
+  readonly selectorPreview: string;
+  readonly bounds: WorkbenchBrowserAgentElementBounds;
+  readonly focusable: boolean;
+  readonly tabIndex?: number;
+  readonly disabled: boolean;
+  readonly editable: boolean;
+  readonly href?: string;
+  readonly inputType?: string;
+  readonly frameUrl?: string;
+};
+
+export type WorkbenchBrowserAgentObservation = {
+  readonly ok: true;
+  readonly kind: "lyraLumenMap";
+  readonly tabId: string;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly observationId: string;
+  readonly strategy: WorkbenchBrowserAgentObserveStrategy;
+  readonly url: string;
+  readonly title: string;
+  readonly elements: readonly WorkbenchBrowserAgentElement[];
+  readonly activeElementId: number | null;
+  readonly focusOrder: readonly number[];
+  readonly warnings?: readonly string[];
+  readonly nextRecommendedAction?: string;
+};
+
+export type WorkbenchBrowserAgentInteraction =
+  | "hover"
+  | "click"
+  | "doubleClick"
+  | "rightClick";
+
+export type WorkbenchBrowserAgentPoint = {
+  readonly x: number;
+  readonly y: number;
+  readonly reason?: string;
+};
+
+export type WorkbenchBrowserAgentFocusDirection =
+  | "next"
+  | "previous"
+  | "scan";
+
+export type WorkbenchBrowserAgentFocusTrailEntry = {
+  readonly step: number;
+  readonly elementId: number | null;
+  readonly role?: string;
+  readonly label?: string;
+};
+
+export type WorkbenchBrowserAgentFocusResult = {
+  readonly ok: boolean;
+  readonly kind: "lyraLumenFocusResult";
+  readonly tabId: string;
+  readonly inputMode: "chromium";
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly direction: WorkbenchBrowserAgentFocusDirection;
+  readonly steps: number;
+  readonly activeElementId: number | null;
+  readonly focusedElement?: WorkbenchBrowserAgentElement;
+  readonly focusTrail?: readonly WorkbenchBrowserAgentFocusTrailEntry[];
+  readonly beforeObservationId?: string;
+  readonly afterObservationId?: string;
+  readonly restored?: boolean;
+  readonly message?: string;
+  readonly nextRecommendedAction?: string;
+  readonly error?: {
+    readonly kind: string;
+    readonly message: string;
+  };
+};
+
+export type WorkbenchBrowserAgentActionResult = {
+  readonly ok: boolean;
+  readonly kind: "lyraLumenActionResult";
+  readonly tabId: string;
+  readonly inputMode: "chromium";
+  readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+  readonly elementId?: number;
+  readonly x?: number;
+  readonly y?: number;
+  readonly beforeObservationId?: string;
+  readonly afterObservationId?: string;
+  readonly pageChanged?: boolean;
+  readonly focusChanged?: boolean;
+  readonly navigationStarted?: boolean;
+  readonly staleElement?: boolean;
+  readonly message?: string;
+  readonly nextRecommendedAction?: string;
+  readonly error?: {
+    readonly kind: string;
+    readonly message: string;
+  };
+};
+
 export type WorkbenchBrowserViewManager = {
   readonly dispose: () => void;
   readonly syncTopology: (snapshot: WorkbenchBrowserTopologySnapshot) => void;
@@ -182,6 +308,92 @@ export type WorkbenchBrowserViewManager = {
   ) => Promise<WorkbenchBrowserFrameGlobalBounds | null>;
   readonly reapplyLayout: () => void;
   readonly toggleDevToolsForActivePage: () => boolean;
+  readonly observeAgentPage: (
+    tabId: string,
+    request?: {
+      readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentObservation>;
+  readonly actOnAgentElement: (
+    tabId: string,
+    request: {
+      readonly elementId: number;
+      readonly interaction: WorkbenchBrowserAgentInteraction;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly actOnAgentPoint: (
+    tabId: string,
+    request: {
+      readonly point: WorkbenchBrowserAgentPoint;
+      readonly interaction: WorkbenchBrowserAgentInteraction;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly focusAgentPage: (
+    tabId: string,
+    request: {
+      readonly direction: WorkbenchBrowserAgentFocusDirection;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly steps?: number;
+      readonly restoreFocus?: boolean;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentFocusResult>;
+  readonly typeIntoAgentElement: (
+    tabId: string,
+    request: {
+      readonly elementId?: number;
+      readonly text: string;
+      readonly clear?: boolean;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly pressAgentKey: (
+    tabId: string,
+    request: {
+      readonly key: string;
+      readonly elementId?: number;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly navigateAgentPage: (
+    tabId: string,
+    request: {
+      readonly url: string;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserNavigateResult & { readonly targetMode: WorkbenchBrowserAgentTargetMode }>;
+  readonly readAgentPage: (
+    tabId: string,
+    request: {
+      readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly maxChars?: number;
+    }
+  ) => Promise<
+    | (WorkbenchTabExtractTextResult & {
+        readonly targetMode: WorkbenchBrowserAgentTargetMode;
+        readonly content: string;
+      })
+    | (WorkbenchObservationBrowserDomSummary & {
+        readonly targetMode: WorkbenchBrowserAgentTargetMode;
+        readonly content: string;
+      })
+  >;
+  readonly captureAgentPage: (
+    tabId: string,
+    request?: {
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+    }
+  ) => Promise<WorkbenchVisualCaptureResult & { readonly targetMode: WorkbenchBrowserAgentTargetMode }>;
 };
 
 export type WorkbenchBrowserElementPickerController = {

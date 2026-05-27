@@ -25,6 +25,7 @@ import type {
 import type { AgentGitLabels } from "../agent-git";
 import type { AgentSelfDevLabels } from "../agent-selfdev";
 import type { AgentOvernightLabels } from "../agent-overnight";
+import { SoftwareStoreSurface, type SoftwareStoreSurfaceProps } from "../software-store";
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchSplitThreePaneLayout } from "../preferences";
 import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/types";
@@ -203,6 +204,7 @@ export type WorkspaceSurfaceRouterProps = {
     readonly onOpenSession: AgentSessionHistorySurfaceProps["onOpenSession"];
     readonly locale?: AgentSessionHistorySurfaceProps["locale"];
   };
+  readonly softwareStore: SoftwareStoreSurfaceProps;
 };
 
 const renderSurfaceModel = (
@@ -270,6 +272,8 @@ const renderSurfaceModel = (
       const Adapter = surfaceAdapters.agentSessionHistory;
       return <Adapter {...model.props} />;
     }
+    case "softwareStore":
+      return <SoftwareStoreSurface {...model.props} />;
     case "empty":
       return null;
     default:

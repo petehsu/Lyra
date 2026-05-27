@@ -56,9 +56,13 @@ impl JcodeGuiEvent {
 pub fn live_tool_label(name: &str) -> String {
     match name {
         "read" | "open" | "ls" => "Reading".to_string(),
-        "grep" | "glob" | "codesearch" | "agentgrep" | "session_search" | "conversation_search" => {
-            "Searching".to_string()
-        }
+        "grep"
+        | "glob"
+        | "codesearch"
+        | "agentgrep"
+        | "lyra_search"
+        | "session_search"
+        | "conversation_search" => "Searching".to_string(),
         "bash" | "patch" | "apply_patch" | "edit" | "multiedit" | "write" => "Running".to_string(),
         "webfetch" | "websearch" => "Browsing".to_string(),
         other => format!("Running {other}"),
@@ -68,9 +72,13 @@ pub fn live_tool_label(name: &str) -> String {
 pub fn finished_tool_label(name: &str, failed: bool) -> String {
     let verb = match name {
         "read" | "open" | "ls" => "Read",
-        "grep" | "glob" | "codesearch" | "agentgrep" | "session_search" | "conversation_search" => {
-            "Searched"
-        }
+        "grep"
+        | "glob"
+        | "codesearch"
+        | "agentgrep"
+        | "lyra_search"
+        | "session_search"
+        | "conversation_search" => "Searched",
         "webfetch" | "websearch" => "Browsed",
         _ => "Ran",
     };

@@ -594,9 +594,34 @@ struct EndpointRefreshTracker {
 }
 
 static GLOBAL_ENDPOINT_REFRESH: OnceLock<Mutex<EndpointRefreshTracker>> = OnceLock::new();
+static DYNAMIC_VISION_SUPPORT: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 
 fn global_endpoint_refresh() -> &'static Mutex<EndpointRefreshTracker> {
     GLOBAL_ENDPOINT_REFRESH.get_or_init(|| Mutex::new(EndpointRefreshTracker::default()))
+}
+
+fn dynamic_vision_support() -> &'static Mutex<HashMap<String, bool>> {
+    DYNAMIC_VISION_SUPPORT.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn vision_support_key(api_base: &str, model: &str) -> String {
+    format!("{}::{}", api_base.trim_end_matches('/'), model.trim())
+}
+
+pub(super) fn record_dynamic_vision_support(api_base: &str, model: &str, supported: bool) {
+    if model.trim().is_empty() {
+        return;
+    }
+    if let Ok(mut cache) = dynamic_vision_support().lock() {
+        cache.insert(vision_support_key(api_base, model), supported);
+    }
+}
+
+fn cached_dynamic_vision_support(api_base: &str, model: &str) -> Option<bool> {
+    dynamic_vision_support()
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(&vision_support_key(api_base, model)).copied())
 }
 
 pub struct OpenRouterProvider {

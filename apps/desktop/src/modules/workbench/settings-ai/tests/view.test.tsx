@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { SettingsAiView } from "../view";
@@ -61,6 +61,23 @@ const labels: SettingsAiLabels = {
   accountsEmptyDescription: "Use the provider profile editor below to add an API key.",
   accountConfigured: "configured",
   accountNotConfigured: "not configured",
+  accountDefault: "default",
+  loginProvidersTitle: "Provider Login",
+  loginProvidersDescription: "Sign in with provider accounts.",
+  startLogin: "Start login",
+  completeLogin: "Complete login",
+  callbackInputLabel: "Callback URL or code",
+  callbackInputPlaceholder: "Paste callback",
+  loginCallbackDescription: "Paste the callback from the browser.",
+  gmailLoginTitle: "Google/Gmail Tool Access",
+  gmailLoginDescription: "Configure Gmail tool access.",
+  gmailClientIdLabel: "Google OAuth Client ID",
+  gmailClientSecretLabel: "Google OAuth Client Secret",
+  gmailAccessTierLabel: "Gmail Access",
+  gmailAccessReadOnly: "Read and draft",
+  gmailAccessFull: "Full Gmail access",
+  apiKeyProviderTitle: "Add API Key Provider",
+  apiKeyProviderDescription: "Save an API key provider.",
   removeAccount: "Remove account",
   providerProfileTitle: "Lyra Agent Provider Profile",
   authHeaderLabel: "Auth Header",
@@ -73,13 +90,35 @@ const labels: SettingsAiLabels = {
   roleProviderDefaultPlaceholder: "provider default",
   roleMemoryDefaultPlaceholder: "sidecar auto-select",
   saveRoleModels: "Save role models",
-  commandsAriaLabel: "Lyra Agent commands",
+  notificationsTitle: "Notifications",
+  notificationsDescription: "Configure notifications.",
+  desktopNotificationsLabel: "Desktop notifications",
+  ntfyTopicLabel: "ntfy topic",
+  ntfyServerLabel: "ntfy server",
+  emailNotificationsLabel: "Email notifications",
+  emailToLabel: "Email recipient",
+  emailSmtpHostLabel: "SMTP host",
+  emailSmtpPortLabel: "SMTP port",
+  emailFromLabel: "Sender email",
+  emailPasswordLabel: "SMTP password",
+  emailImapHostLabel: "IMAP host",
+  emailImapPortLabel: "IMAP port",
+  emailReplyLabel: "Email replies control Agent",
+  telegramNotificationsLabel: "Telegram notifications",
+  telegramBotTokenLabel: "Telegram bot token",
+  telegramChatIdLabel: "Telegram chat ID",
+  telegramReplyLabel: "Telegram replies control Agent",
+  discordNotificationsLabel: "Discord notifications",
+  discordBotTokenLabel: "Discord bot token",
+  discordChannelIdLabel: "Discord channel ID",
+  discordBotUserIdLabel: "Discord bot user ID",
+  discordReplyLabel: "Discord replies control Agent",
+  saveNotifications: "Save notifications",
   runtimeUnavailable: "Lyra Agent runtime bridge is unavailable.",
   fileEditorUnavailable: "Workbench file editor is unavailable.",
   configPathUnavailable: "Lyra Agent config path is unavailable.",
   sectionJcode: "Lyra Agent",
   sectionSessions: "Sessions",
-  sectionCommands: "Commands",
   memoryConfigTitle: "Memory",
   memoryConfigDescription: "Memory configuration",
   memoryConfigPlaceholder: "{}",
@@ -157,6 +196,16 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
       ambient: {
         model: "mimo-v2.5-pro",
       },
+      safety: {
+        desktop_notifications: true,
+        ntfy_topic: "lyra-alerts",
+        ntfy_server: "https://ntfy.sh",
+        email_enabled: false,
+        email_smtp_port: 587,
+        email_imap_port: 993,
+        telegram_enabled: false,
+        discord_enabled: false,
+      },
     },
     commands: [
       {
@@ -173,14 +222,47 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
       },
     ],
   },
-  jcodeCommands: [
-    {
-      name: "/account",
-      help: "Manage accounts",
-      autocomplete: true,
-      remoteOnly: false,
-    },
-  ],
+  jcodeLoginProviders: {
+    authStatus: {},
+    providers: [
+      {
+        id: "claude",
+        displayName: "Anthropic/Claude",
+        authKind: "OAuth",
+        statusMethod: "OAuth",
+        detail: "Claude login",
+        recommended: true,
+        configured: false,
+        state: "notConfigured",
+        requiresCallback: true,
+        requiresApiKey: false,
+      },
+      {
+        id: "google",
+        displayName: "Google/Gmail",
+        authKind: "OAuth",
+        statusMethod: "OAuth",
+        detail: "Gmail tool access",
+        recommended: false,
+        configured: false,
+        state: "notConfigured",
+        requiresCallback: true,
+        requiresApiKey: false,
+      },
+      {
+        id: "openai-compatible",
+        displayName: "OpenAI-compatible",
+        authKind: "API key",
+        statusMethod: "API key",
+        detail: "custom endpoint",
+        recommended: false,
+        configured: false,
+        state: "notConfigured",
+        requiresCallback: false,
+        requiresApiKey: true,
+      },
+    ],
+  },
   draft,
   modelSelectionMode: draft.modelSelectionMode,
   availableModels: [],
@@ -200,12 +282,14 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
   openJcodeConfigFile: vi.fn(),
   updateJcodeConfig: vi.fn(),
   saveJcodeProviderProfile: vi.fn(),
+  startJcodeAccountLogin: vi.fn(),
+  completeJcodeAccountLogin: vi.fn(),
   updateJcodeAgentRoles: vi.fn(),
   ...overrides,
 });
 
 describe("SettingsAiView", () => {
-  test("renders Lyra Agent-owned config and commands without session history", () => {
+  test("renders Lyra Agent-owned config and account login without session history", () => {
     const model = createModel();
 
     render(<SettingsAiView labels={labels} model={model} />);
@@ -221,17 +305,19 @@ describe("SettingsAiView", () => {
     expect(screen.getByText("/Users/petehsu/.lyra/modules/agent")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Config" })).toBeInTheDocument();
     expect(screen.queryByText("/resume")).not.toBeInTheDocument();
-    expect(screen.getByText("/account")).toBeInTheDocument();
+    expect(screen.queryByText("/account")).not.toBeInTheDocument();
     expect(screen.queryByText("/model")).not.toBeInTheDocument();
+    expect(screen.getByText("Provider Login")).toBeInTheDocument();
+    expect(screen.getByText("Add API Key Provider")).toBeInTheDocument();
     expect(screen.getByText("Agent Role Models")).toBeInTheDocument();
     expect(screen.queryByText("Fix agent storage")).not.toBeInTheDocument();
     expect(screen.queryByText("No AI profile yet")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add profile" })).not.toBeInTheDocument();
   });
 
-  test("saves a provider profile through the Lyra Agent bridge", () => {
-    const saveJcodeProviderProfile = vi.fn();
-    const model = createModel({ saveJcodeProviderProfile });
+  test("saves an API key provider through the Lyra Agent login bridge", () => {
+    const completeJcodeAccountLogin = vi.fn();
+    const model = createModel({ completeJcodeAccountLogin });
 
     render(<SettingsAiView labels={labels} model={model} />);
 
@@ -252,15 +338,14 @@ describe("SettingsAiView", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Save profile/ }));
 
-    expect(saveJcodeProviderProfile).toHaveBeenCalledWith({
+    expect(completeJcodeAccountLogin).toHaveBeenCalledWith({
+      provider: "openai-compatible",
       profileName: "xiaomi-mimo-api",
       baseUrl: "https://api.xiaomimimo.com/v1",
       apiKey: "sk-secret-value",
       defaultModel: "mimo-v2.5-pro",
-      auth: "header",
       authHeader: "api-key",
       setDefault: true,
-      models: [{ id: "mimo-v2.5-pro" }],
     });
   });
 
@@ -282,7 +367,6 @@ describe("SettingsAiView", () => {
         },
         commands: [],
       },
-      jcodeCommands: [],
     });
 
     const { container } = render(<SettingsAiView labels={labels} model={model} />);
@@ -347,6 +431,105 @@ describe("SettingsAiView", () => {
       memoryModel: "mimo-v2.5-pro",
       ambientModel: "gpt-5-ambient",
     });
+  });
+
+  test("starts Google Gmail login with OAuth credentials and access tier", async () => {
+    const startJcodeAccountLogin = vi.fn(async () => ({
+      provider: "google",
+      label: "gmail",
+      flowId: "flow-google",
+      authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      callbackHint: "Paste callback",
+      authKind: "OAuth",
+      instructions: "Open Google",
+      requiresCallback: true,
+      requiresApiKey: false,
+    }));
+    const model = createModel({ startJcodeAccountLogin });
+
+    render(<SettingsAiView labels={labels} model={model} />);
+
+    fireEvent.change(screen.getByLabelText("Google OAuth Client ID"), {
+      target: { value: "client-id.apps.googleusercontent.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Google OAuth Client Secret"), {
+      target: { value: "client-secret" },
+    });
+    fireEvent.change(screen.getByLabelText("Gmail Access"), {
+      target: { value: "full" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Start login/ }));
+    });
+
+    expect(startJcodeAccountLogin).toHaveBeenCalledWith({
+      provider: "google",
+      googleClientId: "client-id.apps.googleusercontent.com",
+      googleClientSecret: "client-secret",
+      gmailAccessTier: "full",
+    });
+  });
+
+  test("saves notification config through the Lyra Agent config bridge", () => {
+    const updateJcodeConfig = vi.fn();
+    const model = createModel({ updateJcodeConfig });
+
+    render(<SettingsAiView labels={labels} model={model} />);
+
+    fireEvent.change(screen.getByLabelText("ntfy topic"), {
+      target: { value: "agent-topic" },
+    });
+    fireEvent.click(screen.getByLabelText("Email notifications"));
+    fireEvent.change(screen.getByLabelText("Email recipient"), {
+      target: { value: "ops@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("SMTP host"), {
+      target: { value: "smtp.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("SMTP password"), {
+      target: { value: "smtp-secret" },
+    });
+    fireEvent.click(screen.getByLabelText("Telegram notifications"));
+    fireEvent.change(screen.getByLabelText("Telegram chat ID"), {
+      target: { value: "12345" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save notifications/ }));
+
+    expect(updateJcodeConfig).toHaveBeenCalledWith(expect.objectContaining({
+      ntfyTopic: "agent-topic",
+      emailEnabled: true,
+      emailTo: "ops@example.com",
+      emailSmtpHost: "smtp.example.com",
+      emailPassword: "smtp-secret",
+      telegramEnabled: true,
+      telegramChatId: "12345",
+    }));
+  });
+
+  test("does not render stored notification secrets as visible text", () => {
+    const model = createModel({
+      jcodeConfig: {
+        jcodeHome: "/Users/petehsu/.lyra/modules/agent",
+        configPath: "/Users/petehsu/.lyra/modules/agent/config.toml",
+        config: {
+          safety: {
+            email_password: "smtp-secret-value",
+            telegram_bot_token: "telegram-secret-value",
+            discord_bot_token: "discord-secret-value",
+          },
+        },
+        commands: [],
+      },
+    });
+
+    const { container } = render(<SettingsAiView labels={labels} model={model} />);
+
+    expect(screen.getByLabelText("SMTP password")).toHaveValue("");
+    expect(screen.getByLabelText("Telegram bot token")).toHaveValue("");
+    expect(screen.getByLabelText("Discord bot token")).toHaveValue("");
+    expect(container).not.toHaveTextContent("smtp-secret-value");
+    expect(container).not.toHaveTextContent("telegram-secret-value");
+    expect(container).not.toHaveTextContent("discord-secret-value");
   });
 
   test("shows Lyra Agent bridge errors inline", () => {

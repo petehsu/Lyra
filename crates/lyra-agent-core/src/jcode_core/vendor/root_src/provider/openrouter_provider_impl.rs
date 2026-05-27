@@ -670,7 +670,8 @@ impl Provider for OpenRouterProvider {
     }
 
     fn supports_image_input(&self) -> bool {
-        false
+        let model = self.model();
+        cached_dynamic_vision_support(&self.api_base, &model).unwrap_or(true)
     }
 
     fn set_model(&self, model: &str) -> Result<()> {

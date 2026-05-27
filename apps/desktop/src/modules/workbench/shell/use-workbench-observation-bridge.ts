@@ -9,6 +9,7 @@ export const useWorkbenchObservationBridge = ({
   tabsModel,
   fileEditorModel,
   fileManagerModel,
+  imageViewerModel,
   terminalModel
 }: WorkbenchObservationBridgeParams): void => {
   useEffect(() => {
@@ -17,7 +18,8 @@ export const useWorkbenchObservationBridge = ({
       tabsModel,
       fileEditorModel,
       fileManagerModel,
+      imageViewerModel,
       terminalModel
     });
-  }, [desktopApi, fileEditorModel, fileManagerModel, tabsModel, terminalModel]);
+  }, [desktopApi, fileEditorModel, fileManagerModel, imageViewerModel, tabsModel, terminalModel]);
 };

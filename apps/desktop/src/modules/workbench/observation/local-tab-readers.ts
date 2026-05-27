@@ -111,6 +111,64 @@ const summarizeEntries = (
   ...(entry.modifiedAt === undefined ? {} : { modifiedAt: entry.modifiedAt })
 }));
 
+const summarizeImageViewer = (
+  state: ReturnType<WorkbenchObservationDependencies["imageViewerModel"]["getState"]>,
+  maxEntries: number
+) => {
+  if (state === null) return null;
+  const openResult = state.openResult;
+  const levels = openResult?.levels ?? [];
+  return {
+    kind: "image-viewer" as const,
+    filePath: openResult?.path ?? state.filePath,
+    title: openResult?.title ?? state.title,
+    status: state.status,
+    ...(state.sessionId === undefined ? {} : { sessionId: state.sessionId }),
+    ...(state.message === undefined ? {} : { message: state.message }),
+    ...(openResult === null
+      ? {}
+      : {
+          mimeType: openResult.mimeType,
+          format: openResult.format,
+          width: openResult.width,
+          height: openResult.height,
+          frameCount: openResult.frameCount,
+          hasAlpha: openResult.hasAlpha,
+          orientation: openResult.orientation,
+          colorSpace: openResult.colorSpace,
+          sizeBytes: openResult.sizeBytes,
+          sourceUrl: openResult.sourceUrl,
+          renderMode: openResult.renderMode,
+          cacheState: openResult.cacheState,
+          cacheId: openResult.cacheId,
+          generationId: openResult.generationId,
+          sampleFormat: openResult.sampleFormat,
+          channelCount: openResult.channelCount,
+          tileSize: openResult.tileSize,
+          nativeTileSupported: openResult.nativeTileSupported,
+          hasInternalTiles: openResult.hasInternalTiles,
+          hasInternalMipmaps: openResult.hasInternalMipmaps,
+          importProgress: state.importProgress ?? openResult.importProgress
+        }),
+    levels: levels.slice(0, maxEntries).map((level) => ({
+      level: level.level,
+      width: level.width,
+      height: level.height,
+      scale: level.scale
+    })),
+    viewport: {
+      zoom: state.view.zoom,
+      offsetX: state.view.offsetX,
+      offsetY: state.view.offsetY,
+      rotation: state.view.rotation,
+      background: state.view.background
+    },
+    siblingIndex: state.siblingIndex,
+    siblingCount: state.siblingPaths.length,
+    truncated: levels.length > maxEntries
+  };
+};
+
 export const listObservedTabs = (
   request: WorkbenchTabsListRequest,
   dependencies: WorkbenchObservationDependencies
@@ -149,8 +207,10 @@ export const listObservedTabs = (
               ? "terminal"
               : tab.pageKind === "app" && tab.appId === "file-editor"
                 ? "file-editor"
-                : tab.pageKind === "app" && tab.appId === "file-manager"
-                  ? "file-manager"
+              : tab.pageKind === "app" && tab.appId === "file-manager"
+                ? "file-manager"
+                : tab.pageKind === "app" && tab.appId === "image-viewer"
+                  ? "image-viewer"
                   : undefined;
     const observable = observationKind !== undefined;
     if (!observable && !includeUnsupported) {
@@ -247,6 +307,20 @@ export const readObservedLocalTab = (
         entries: summarizeEntries(state.entries, maxEntries),
         truncated: state.entries.length > maxEntries
       }
+    };
+  }
+
+  if (descriptor.observationKind === "image-viewer" && tab.appInstanceId !== undefined) {
+    const observation = summarizeImageViewer(
+      dependencies.imageViewerModel.getState(tab.appInstanceId),
+      maxEntries
+    );
+    if (observation === null) {
+      return toError("tab_not_found", `Image viewer state unavailable: ${request.tabId}`);
+    }
+    return {
+      tab: descriptor,
+      observation
     };
   }
 

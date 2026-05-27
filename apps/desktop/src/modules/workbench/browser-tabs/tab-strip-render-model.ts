@@ -4,6 +4,8 @@ import { cx } from "../ui-primitives";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type { RightDragPreview } from "./tab-strip-types";
 
+export type BrowserTabStripDensity = "regular" | "small" | "smaller" | "mini";
+
 export type BrowserTabStripTabModel = {
   readonly tab: WorkspaceTab;
   readonly isCollapsed: boolean;
@@ -42,6 +44,8 @@ type CreateBrowserTabStripRenderModelInput = {
   readonly splitDropTargetTabId: string | null;
   readonly workspaceDragTabId: string | null;
   readonly rightDragPreview: RightDragPreview | null;
+  readonly density?: BrowserTabStripDensity;
+  readonly closeLockedTabWidth?: number | null;
 };
 
 export const createBrowserTabStripRenderModel = ({
@@ -56,7 +60,9 @@ export const createBrowserTabStripRenderModel = ({
   isSplitDropActive,
   splitDropTargetTabId,
   workspaceDragTabId,
-  rightDragPreview
+  rightDragPreview,
+  density = "regular",
+  closeLockedTabWidth = null
 }: CreateBrowserTabStripRenderModelInput): BrowserTabStripRenderModel => {
   const splitGroupLookup = new Set(splitGroupTabIds);
   const isSplitGroupActive = splitGroupLookup.has(activeTabId);
@@ -91,6 +97,7 @@ export const createBrowserTabStripRenderModel = ({
           && "lyra-browser-tab-item-split-group-active",
         isCurrentTabInSplit && isNextTabInSplit
           && "lyra-browser-tab-item-split-joined-next",
+        workspaceDragTabId === tab.id && "lyra-browser-tab-item-dragging",
         isTabInDraggingSplitGroup && "lyra-browser-tab-item-split-group-dragging"
       ),
       tabMainClassName: cx(
@@ -122,6 +129,15 @@ export const createBrowserTabStripRenderModel = ({
         isCollapsed: rightDragPreview.isCollapsed
       };
 
+  const navStyle = {
+    ...(dropIndicatorX === null
+      ? {}
+      : { "--lyra-browser-drop-indicator-x": `${dropIndicatorX}px` }),
+    ...(closeLockedTabWidth === null
+      ? {}
+      : { "--lyra-browser-tab-close-lock-w": `${Math.round(closeLockedTabWidth)}px` })
+  } as CSSProperties;
+
   return {
     navClassName: cx(
       "lyra-browser-tabs",
@@ -129,12 +145,12 @@ export const createBrowserTabStripRenderModel = ({
       dropIndicatorX !== null && "lyra-browser-tabs-reorder-active",
       isSplitDropActive && "lyra-browser-tabs-split-drop-active"
     ),
-    navStyle: dropIndicatorX === null
-      ? undefined
-      : { "--lyra-browser-drop-indicator-x": `${dropIndicatorX}px` } as CSSProperties,
+    navStyle: Object.keys(navStyle).length === 0 ? undefined : navStyle,
     stripClassName: cx(
       "lyra-browser-tab-strip",
-      stackedMode && "lyra-browser-tab-strip-stacked"
+      stackedMode && "lyra-browser-tab-strip-stacked",
+      density !== "regular" && `lyra-browser-tab-strip-density-${density}`,
+      closeLockedTabWidth !== null && "lyra-browser-tab-strip-close-lock"
     ),
     tabs: tabModels,
     preview

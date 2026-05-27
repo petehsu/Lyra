@@ -12,6 +12,8 @@ export const AiPanelSurface = ({
   onOpenSelfDevLab,
   onOpenOvernightLab,
   onOpenModelSettings,
+  onOpenUrlInWorkbench,
+  onOpenFile,
   locale,
   title
 }: AiPanelSurfaceProps) => {
@@ -25,6 +27,8 @@ export const AiPanelSurface = ({
     onOpenSelfDevLab,
     onOpenOvernightLab,
     onOpenModelSettings,
+    onOpenUrlInWorkbench,
+    onOpenFile,
     locale
   );
 

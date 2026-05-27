@@ -15,6 +15,7 @@ const labels: WorkbenchChromeLabels = {
   moveTerminalToTop: "Move terminal top",
   moveTerminalToBottom: "Move terminal bottom",
   openSettings: "Open settings",
+  openSoftwareStore: "Open Software Store",
   openFiles: "Open files",
   openAgentSessionHistory: "Open Agent History",
   openDocs: "Open docs",
@@ -26,6 +27,7 @@ const labels: WorkbenchChromeLabels = {
 const createActions = (): WorkbenchActionApi => ({
   openNewTab: vi.fn(),
   openSettings: vi.fn(),
+  openSoftwareStore: vi.fn(),
   openFileManager: vi.fn(),
   openAgentSessionHistory: vi.fn(),
   openDocs: vi.fn(),
@@ -108,5 +110,8 @@ describe("WorkbenchChrome", () => {
 
     fireEvent.click(historyButton);
     expect(actions.openAgentSessionHistory).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Software Store" }));
+    expect(actions.openSoftwareStore).toHaveBeenCalledTimes(1);
   });
 });

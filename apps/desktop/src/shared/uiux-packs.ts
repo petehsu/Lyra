@@ -1,3 +1,5 @@
+import type { LyraSoftwareManifest } from "./software-capabilities";
+
 export type UiuxPackTrustState = "untrusted" | "trusted" | "revoked";
 
 export type UiuxPackSource =
@@ -27,6 +29,7 @@ export type UiuxPackManifest = {
   readonly css?: string;
   readonly workbenchUiApi: "1";
   readonly permissions: readonly string[];
+  readonly software: readonly LyraSoftwareManifest[];
 };
 
 export type InstalledUiuxPack = {
@@ -53,6 +56,7 @@ export type UiuxPackRuntime = {
   readonly packId: string;
   readonly entryUrl: string;
   readonly cssUrl?: string;
+  readonly software: readonly LyraSoftwareManifest[];
 };
 
 export type UiuxListPacksResponse = {

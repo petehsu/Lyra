@@ -12,8 +12,8 @@ impl Provider for OpenAIProvider {
         system: &str,
         _resume_session_id: Option<&str>,
     ) -> Result<EventStream> {
-        let input = build_responses_input(messages);
-        let input_item_count = input.len();
+        let mut input = build_responses_input(messages);
+        let mut input_item_count = input.len();
         let api_tools = build_tools(tools);
         let model_id = self.model_id().await;
         let (instructions, is_chatgpt_mode) = {
@@ -38,7 +38,7 @@ impl Provider for OpenAIProvider {
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
         let native_compaction_threshold =
             self.native_compaction_threshold_for_context_window(self.context_window());
-        let request = Self::build_response_request(
+        let mut request = Self::build_response_request(
             &model_id,
             instructions,
             &input,
@@ -290,6 +290,33 @@ impl Provider for OpenAIProvider {
                             }
                             return;
                         }
+                        Err(OpenAIStreamFailure::VisionUnsupported(model_name)) => {
+                            crate::logging::warn(&format!(
+                                "Vision is not supported by model '{}'. Automatically stripping visual inputs and retrying immediately...",
+                                model_name
+                            ));
+
+                            // Strip images from input and request payload
+                            strip_images_from_input(&mut input);
+                            if let Some(obj) = request.as_object_mut() {
+                                obj.insert("input".to_string(), serde_json::json!(input));
+                            }
+
+                            // Update input_item_count so that WebSocket/HTTPS logs reflect the correct length
+                            input_item_count = input.len();
+
+                            // Bypass standard retry backoff and force immediate HTTPS retry
+                            skip_backoff_once = true;
+                            force_https_for_request = true;
+
+                            // Clear persistent WebSocket state on change
+                            {
+                                let mut guard = persistent_ws.lock().await;
+                                *guard = None;
+                            }
+
+                            continue;
+                        }
                         Err(OpenAIStreamFailure::FallbackToHttps(error)) => {
                             let elapsed_ms = attempt_started.elapsed().as_millis();
                             let reason = summarize_websocket_fallback_reason(&error.to_string());
@@ -395,6 +422,13 @@ impl Provider for OpenAIProvider {
     }
 
     fn supports_image_input(&self) -> bool {
+        let model = self.model();
+        if let Ok(cache) = DYNAMIC_VISION_SUPPORT_CACHE.read() {
+            if let Some(&supported) = cache.get(&model) {
+                return supported;
+            }
+        }
+
         true
     }
 
@@ -675,5 +709,31 @@ impl Provider for OpenAIProvider {
         }
 
         self.clear_persistent_ws("credentials invalidated").await;
+    }
+}
+
+pub(super) fn strip_images_from_input(input: &mut [Value]) {
+    for item in input.iter_mut() {
+        if let Some(obj) = item.as_object_mut() {
+            if obj.get("type").and_then(|v| v.as_str()) == Some("message") {
+                if let Some(content) = obj.get_mut("content").and_then(|v| v.as_array_mut()) {
+                    let mut text_to_inject = None;
+                    content.retain_mut(|part| {
+                        if part.get("type").and_then(|v| v.as_str()) == Some("input_image") {
+                            text_to_inject = Some("[Screenshot image automatically removed to adapt to visionless model]");
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    if let Some(txt) = text_to_inject {
+                        content.push(serde_json::json!({
+                            "type": "input_text",
+                            "text": txt
+                        }));
+                    }
+                }
+            }
+        }
     }
 }

@@ -58,6 +58,23 @@ const labels: SettingsAiLabels = {
   accountsEmptyDescription: "Use the provider profile editor below to add an API key.",
   accountConfigured: "configured",
   accountNotConfigured: "not configured",
+  accountDefault: "default",
+  loginProvidersTitle: "Provider Login",
+  loginProvidersDescription: "Sign in with provider accounts.",
+  startLogin: "Start login",
+  completeLogin: "Complete login",
+  callbackInputLabel: "Callback URL or code",
+  callbackInputPlaceholder: "Paste callback",
+  loginCallbackDescription: "Paste the callback from the browser.",
+  gmailLoginTitle: "Google/Gmail Tool Access",
+  gmailLoginDescription: "Configure Gmail tool access.",
+  gmailClientIdLabel: "Google OAuth Client ID",
+  gmailClientSecretLabel: "Google OAuth Client Secret",
+  gmailAccessTierLabel: "Gmail Access",
+  gmailAccessReadOnly: "Read and draft",
+  gmailAccessFull: "Full Gmail access",
+  apiKeyProviderTitle: "Add API Key Provider",
+  apiKeyProviderDescription: "Save an API key provider.",
   removeAccount: "Remove account",
   providerProfileTitle: "Lyra Agent Provider Profile",
   authHeaderLabel: "Auth Header",
@@ -70,13 +87,35 @@ const labels: SettingsAiLabels = {
   roleProviderDefaultPlaceholder: "provider default",
   roleMemoryDefaultPlaceholder: "sidecar auto-select",
   saveRoleModels: "Save role models",
-  commandsAriaLabel: "Lyra Agent commands",
+  notificationsTitle: "Notifications",
+  notificationsDescription: "Configure notifications.",
+  desktopNotificationsLabel: "Desktop notifications",
+  ntfyTopicLabel: "ntfy topic",
+  ntfyServerLabel: "ntfy server",
+  emailNotificationsLabel: "Email notifications",
+  emailToLabel: "Email recipient",
+  emailSmtpHostLabel: "SMTP host",
+  emailSmtpPortLabel: "SMTP port",
+  emailFromLabel: "Sender email",
+  emailPasswordLabel: "SMTP password",
+  emailImapHostLabel: "IMAP host",
+  emailImapPortLabel: "IMAP port",
+  emailReplyLabel: "Email replies control Agent",
+  telegramNotificationsLabel: "Telegram notifications",
+  telegramBotTokenLabel: "Telegram bot token",
+  telegramChatIdLabel: "Telegram chat ID",
+  telegramReplyLabel: "Telegram replies control Agent",
+  discordNotificationsLabel: "Discord notifications",
+  discordBotTokenLabel: "Discord bot token",
+  discordChannelIdLabel: "Discord channel ID",
+  discordBotUserIdLabel: "Discord bot user ID",
+  discordReplyLabel: "Discord replies control Agent",
+  saveNotifications: "Save notifications",
   runtimeUnavailable: "Lyra Agent runtime bridge is unavailable.",
   fileEditorUnavailable: "Workbench file editor is unavailable.",
   configPathUnavailable: "Lyra Agent config path is unavailable.",
   sectionJcode: "Lyra Agent",
   sectionSessions: "Sessions",
-  sectionCommands: "Commands",
   memoryConfigTitle: "Memory",
   memoryConfigDescription: "Memory configuration",
   memoryConfigPlaceholder: "{}",
@@ -124,6 +163,16 @@ const jcodeConfigSnapshot = {
     ambient: {
       model: "mimo-v2.5-pro",
     },
+    safety: {
+      desktop_notifications: true,
+      ntfy_topic: "lyra-alerts",
+      ntfy_server: "https://ntfy.sh",
+      email_enabled: false,
+      email_smtp_port: 587,
+      email_imap_port: 993,
+      telegram_enabled: false,
+      discord_enabled: false,
+    },
   },
   commands: [
     {
@@ -158,18 +207,90 @@ const jcodeSessions = {
   ],
 };
 
+const jcodeAccounts = {
+  defaultProvider: "mimo-token-plan",
+  defaultModel: "mimo-v2.5-pro",
+  authStatus: {},
+  accounts: [],
+};
+
+const jcodeLoginProviders = {
+  authStatus: {},
+  providers: [
+    {
+      id: "claude",
+      displayName: "Anthropic/Claude",
+      authKind: "OAuth",
+      statusMethod: "OAuth",
+      detail: "Claude login",
+      recommended: true,
+      configured: false,
+      state: "notConfigured",
+      requiresCallback: true,
+      requiresApiKey: false,
+    },
+    {
+      id: "google",
+      displayName: "Google/Gmail",
+      authKind: "OAuth",
+      statusMethod: "OAuth",
+      detail: "Gmail tool access",
+      recommended: false,
+      configured: false,
+      state: "notConfigured",
+      requiresCallback: true,
+      requiresApiKey: false,
+    },
+    {
+      id: "openai-compatible",
+      displayName: "OpenAI-compatible",
+      authKind: "API key",
+      statusMethod: "API key",
+      detail: "Custom endpoint",
+      recommended: false,
+      configured: false,
+      state: "notConfigured",
+      requiresCallback: false,
+      requiresApiKey: true,
+    },
+  ],
+};
+
 const createDesktopApi = () => {
   const readJcodeConfig = vi.fn(async () => jcodeConfigSnapshot);
   const listSessions = vi.fn(async () => jcodeSessions);
+  const listAccounts = vi.fn(async () => jcodeAccounts);
+  const listLoginProviders = vi.fn(async () => jcodeLoginProviders);
+  const startAccountLogin = vi.fn(async () => ({
+    provider: "claude",
+    label: "claude-1",
+    flowId: "flow",
+    authUrl: "https://example.com/oauth",
+    callbackHint: "Paste callback",
+    authKind: "OAuth",
+    instructions: "Open browser",
+    requiresCallback: true,
+    requiresApiKey: false,
+  }));
+  const completeAccountLogin = vi.fn(async () => ({
+    accounts: jcodeAccounts,
+    message: "ok",
+  }));
   const updateJcodeConfig = vi.fn(async () => jcodeConfigSnapshot);
   const saveJcodeProviderProfile = vi.fn(async () => jcodeConfigSnapshot);
   const updateJcodeAgentRoles = vi.fn(async () => jcodeConfigSnapshot);
+  const openExternal = vi.fn(async () => true);
 
   return {
     api: {
+      openExternal,
       agent: {
         readJcodeConfig,
         listSessions,
+        listAccounts,
+        listLoginProviders,
+        startAccountLogin,
+        completeAccountLogin,
         updateJcodeConfig,
         saveJcodeProviderProfile,
         updateJcodeAgentRoles,
@@ -177,6 +298,11 @@ const createDesktopApi = () => {
     } as unknown as LyraDesktopApi,
     readJcodeConfig,
     listSessions,
+    listAccounts,
+    listLoginProviders,
+    startAccountLogin,
+    completeAccountLogin,
+    openExternal,
     updateJcodeConfig,
     saveJcodeProviderProfile,
     updateJcodeAgentRoles,
@@ -229,9 +355,6 @@ describe("useSettingsAiModel", () => {
     expect(result.current.profiles[0]?.customModels.map((entry) => entry.id)).toEqual([
       "mimo-v2.5-pro-plus",
     ]);
-    expect(result.current.jcodeCommands?.map((command) => command.name)).toEqual([
-      "/account",
-    ]);
   });
 
   test("saves provider profiles through the Lyra Agent runtime bridge", async () => {
@@ -267,6 +390,38 @@ describe("useSettingsAiModel", () => {
     });
   });
 
+  test("starts and completes provider login through the Lyra Agent runtime bridge", async () => {
+    const { api, startAccountLogin, completeAccountLogin, openExternal } = createDesktopApi();
+    const { result } = renderModel(api);
+
+    await waitFor(() => {
+      expect(result.current.jcodeLoginProviders?.providers).toHaveLength(3);
+    });
+
+    await act(async () => {
+      await result.current.startJcodeAccountLogin?.({ provider: "claude" });
+    });
+
+    expect(startAccountLogin).toHaveBeenCalledWith({ provider: "claude" });
+    expect(openExternal).toHaveBeenCalledWith("https://example.com/oauth");
+
+    await act(async () => {
+      await result.current.completeJcodeAccountLogin?.({
+        provider: "claude",
+        flowId: "flow",
+        callbackInput: "https://callback.example/?code=abc",
+        setDefault: true,
+      });
+    });
+
+    expect(completeAccountLogin).toHaveBeenCalledWith({
+      provider: "claude",
+      flowId: "flow",
+      callbackInput: "https://callback.example/?code=abc",
+      setDefault: true,
+    });
+  });
+
   test("sets the Lyra Agent default provider through config update", async () => {
     const { api, updateJcodeConfig } = createDesktopApi();
     const { result } = renderModel(api);
@@ -282,6 +437,35 @@ describe("useSettingsAiModel", () => {
     expect(updateJcodeConfig).toHaveBeenCalledWith({
       defaultProvider: "openai-compatible",
       defaultModel: "gpt-5",
+    });
+  });
+
+  test("saves notification config through the Lyra Agent runtime bridge", async () => {
+    const { api, updateJcodeConfig } = createDesktopApi();
+    const { result } = renderModel(api);
+
+    await waitFor(() => {
+      expect(result.current.jcodeConfig).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.updateJcodeConfig?.({
+        desktopNotifications: false,
+        ntfyTopic: "agent-topic",
+        emailEnabled: true,
+        emailTo: "ops@example.com",
+        telegramEnabled: true,
+        telegramChatId: "12345",
+      });
+    });
+
+    expect(updateJcodeConfig).toHaveBeenCalledWith({
+      desktopNotifications: false,
+      ntfyTopic: "agent-topic",
+      emailEnabled: true,
+      emailTo: "ops@example.com",
+      telegramEnabled: true,
+      telegramChatId: "12345",
     });
   });
 

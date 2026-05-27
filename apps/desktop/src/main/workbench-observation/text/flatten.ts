@@ -2,6 +2,7 @@ import type {
   DeepSearchObservation,
   FileEditorObservation,
   FileManagerObservation,
+  ImageViewerObservation,
   SearchHomeObservation,
   SearchResultsObservation,
   TerminalObservation,
@@ -55,6 +56,28 @@ const flattenFileManager = (observation: FileManagerObservation): string => {
     return details.join(" | ");
   });
   return [...header, "", "Entries:", ...entries].join("\n");
+};
+
+const flattenImageViewer = (observation: ImageViewerObservation): string => {
+  const lines = [
+    `Image: ${observation.filePath}`,
+    `Title: ${observation.title}`,
+    `Status: ${observation.status}`,
+    ...(observation.mimeType === undefined ? [] : [`MIME: ${observation.mimeType}`]),
+    ...(observation.format === undefined ? [] : [`Format: ${observation.format}`]),
+    ...(observation.width === undefined || observation.height === undefined
+      ? []
+      : [`Dimensions: ${observation.width}x${observation.height}`]),
+    ...(observation.sizeBytes === undefined ? [] : [`Size bytes: ${observation.sizeBytes}`]),
+    ...(observation.sourceUrl === undefined ? [] : [`Source URL: ${observation.sourceUrl}`]),
+    ...(observation.cacheState === undefined ? [] : [`Cache: ${observation.cacheState}`]),
+    `Viewport: zoom=${observation.viewport.zoom} rotation=${observation.viewport.rotation} background=${observation.viewport.background}`,
+    `Siblings: ${observation.siblingIndex + 1}/${observation.siblingCount}`
+  ];
+  if (observation.message !== undefined) {
+    lines.push(`Message: ${observation.message}`);
+  }
+  return lines.join("\n");
 };
 
 const flattenTerminal = (observation: TerminalObservation): string => {
@@ -133,6 +156,8 @@ const flattenObservation = (observation: WorkbenchTabObservation): string => {
       return flattenFileEditor(observation);
     case "file-manager":
       return flattenFileManager(observation);
+    case "image-viewer":
+      return flattenImageViewer(observation);
     case "terminal":
       return flattenTerminal(observation);
     case "search-home":

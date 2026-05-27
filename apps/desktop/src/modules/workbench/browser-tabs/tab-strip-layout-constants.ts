@@ -1,0 +1,6 @@
+export const BROWSER_TAB_CONTENT_MARGIN_PX = 9;
+export const BROWSER_TAB_OVERLAP_PX = 14;
+export const BROWSER_TAB_RESTORED_WIDTH_PX = 180;
+export const BROWSER_TAB_SIZE_SMALL_PX = 84;
+export const BROWSER_TAB_SIZE_SMALLER_PX = 60;
+export const BROWSER_TAB_SIZE_MINI_PX = 48;

@@ -27,6 +27,7 @@ import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "../browser-search";
 import type { BrowserSettingsCategoryFocusRequest } from "../browser-tabs/settings-surface";
+import { AgentBrowserActivityOverlay } from "./agent-browser-activity-overlay";
 import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
@@ -59,6 +60,7 @@ import { createAgentProjectTreeAppRequest } from "../agent-project-tree";
 import { createAgentGitAppRequest } from "../agent-git";
 import { createAgentSelfDevAppRequest } from "../agent-selfdev";
 import { createAgentOvernightAppRequest } from "../agent-overnight";
+import { useSoftwareCapabilitiesRegistry } from "../software-capabilities";
 import {
   useWorkbenchSystemNotificationActivation,
   useWorkbenchSystemNotificationPermissionGuard,
@@ -104,10 +106,6 @@ export const WorkbenchShell = () => {
   const terminalModel = useTerminalDockModel();
   const contextMenuModel = useContextMenuModel();
   const panelLayoutModel = usePanelLayoutModel();
-  const uiRuntime = useWorkbenchUiRuntime(
-    preferencesModel.preferences.uiPackId,
-    desktopApi
-  );
   const {
     themeVars,
     resolvedThemeId,
@@ -123,6 +121,7 @@ export const WorkbenchShell = () => {
   );
   const {
     activePageRuntimeState,
+    browserAgentVisualState,
     pageNavigationState,
     registerPageHost,
     scheduleBrowserLayoutSync,
@@ -182,6 +181,26 @@ export const WorkbenchShell = () => {
     fileManagerLabels: labels.fileManager,
     tabsModel
   });
+  const openSettingsSectionFromCapability = useCallback((categoryId: BrowserSettingsCategoryFocusRequest["categoryId"]): void => {
+    setSettingsFocusRequest((current) => ({
+      categoryId,
+      requestId: (current?.requestId ?? 0) + 1
+    }));
+    tabsModel.openSettingsTab();
+  }, [tabsModel]);
+  const softwareCapabilities = useSoftwareCapabilitiesRegistry({
+    desktopApi,
+    labels: labels.softwareStore,
+    activeUiPackId: preferencesModel.preferences.uiPackId,
+    tabsModel,
+    fileManagerModel,
+    onOpenSettingsSection: openSettingsSectionFromCapability
+  });
+  const uiRuntime = useWorkbenchUiRuntime(
+    preferencesModel.preferences.uiPackId,
+    desktopApi,
+    softwareCapabilities.createUiPackCapabilities
+  );
   const workbenchActions = useWorkbenchActionApi({
     desktopApi,
     tabsModel,
@@ -191,6 +210,7 @@ export const WorkbenchShell = () => {
     docsEntryAddress: WORKBENCH_CONFIG.browser.docsEntryAddress,
     docsTabTitle: t("docs.tabTitle"),
     agentSessionHistoryTitle: t("agentHistory.tabTitle"),
+    softwareStoreTitle: t("softwareStore.tabTitle"),
     locale: preferencesModel.preferences.locale,
     resolvedThemeId
   });
@@ -199,6 +219,7 @@ export const WorkbenchShell = () => {
     tabsModel,
     fileEditorModel,
     fileManagerModel,
+    imageViewerModel,
     terminalModel
   });
   const notificationModel = useWorkbenchNotificationModel();
@@ -381,6 +402,12 @@ export const WorkbenchShell = () => {
     }));
     tabsModel.openSettingsTab();
   }, [tabsModel]);
+  const onOpenAgentUrlInWorkbench = useCallback((request: {
+    readonly url: string;
+    readonly title?: string;
+  }): void => {
+    tabsModel.openPageInNewTab(request.url, request.title ?? request.url);
+  }, [tabsModel]);
   const sidebarAiSurfaceProps = useWorkbenchSidebarAiSurfaceProps({
     desktopApi,
     preferences: preferencesModel.preferences,
@@ -395,6 +422,8 @@ export const WorkbenchShell = () => {
     onOpenSelfDevLab: onOpenAgentSelfDevLab,
     onOpenOvernightLab: onOpenAgentOvernightLab,
     onOpenModelSettings: onOpenAgentModelSettings,
+    onOpenUrlInWorkbench: onOpenAgentUrlInWorkbench,
+    onOpenFile: onOpenFileFromManager,
     t
   });
   useScrollbarVisibilityGuard(rootRef);
@@ -567,6 +596,7 @@ export const WorkbenchShell = () => {
     settings: settingsSurfaceProps,
     notificationModel,
     labels,
+    softwareCapabilities,
     onOpenFileFromManager,
     onRevealPathInFileManager,
     onOpenNotificationSource,
@@ -652,19 +682,23 @@ export const WorkbenchShell = () => {
   );
   const workbenchChromeSlots = useWorkbenchShellSlots({
     titlebarNavigation: null,
-    titlebarContext: <WorkbenchTitlebarContextSlot />,
+    titlebarContext: null,
     leftPanel: sidebarAiSurfacePropsWithFileOpen === null ? null : (
       <AiPanelAdapter {...sidebarAiSurfacePropsWithFileOpen} />
     ),
     workspace: (
-      <WorkspaceSurfaceAdapter
-        {...workspaceSurfaceProps}
-        surfaceAdapters={uiRuntime.adapters.surfaces}
-      />
+      <>
+        <WorkspaceSurfaceAdapter
+          {...workspaceSurfaceProps}
+          surfaceAdapters={uiRuntime.adapters.surfaces}
+        />
+        <AgentBrowserActivityOverlay state={browserAgentVisualState} />
+      </>
     ),
     browserTabs: (
       <WorkspaceTabsAdapter
         {...workspaceTabsProps}
+        toolbarContextControl={<WorkbenchTitlebarContextSlot />}
         navigationControl={
           <TitlebarNavigation
             {...titlebarNavigation}

@@ -39,6 +39,7 @@ export type WorkbenchNotificationTarget =
         | "agent-selfdev"
         | "agent-overnight"
         | "agent-session-history"
+        | "software-store"
         | NotificationCenterAppId;
       readonly appInstanceId: string;
       readonly title?: string;

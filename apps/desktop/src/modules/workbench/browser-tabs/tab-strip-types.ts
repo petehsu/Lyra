@@ -22,6 +22,7 @@ export type BrowserTabStripProps = {
   readonly openNewTabLabel: string;
   readonly closeTabLabel: string;
   readonly navigationControl?: ReactNode;
+  readonly toolbarContextControl?: ReactNode;
   readonly splitTriggerMode: WorkbenchSplitTriggerMode;
   readonly interactionPolicy?: WorkspaceTabsInteractionPolicy;
   readonly isTabInSplit?: (tabId: string) => boolean;

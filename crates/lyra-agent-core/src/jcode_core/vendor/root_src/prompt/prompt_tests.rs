@@ -40,6 +40,23 @@ fn test_skill_prompt_integration() {
 }
 
 #[test]
+fn test_default_system_prompt_requires_lyra_design_research() {
+    let prompt = DEFAULT_SYSTEM_PROMPT;
+    assert!(prompt.contains("No Design Without Reference"));
+    assert!(prompt.contains("lyra_design"));
+    assert!(prompt.contains("Design Research Summary"));
+    assert!(prompt.contains("Token Integrity"));
+}
+
+#[test]
+fn test_default_system_prompt_prioritizes_latest_user_request() {
+    let prompt = DEFAULT_SYSTEM_PROMPT;
+    assert!(prompt.contains("latest real user message is the active request"));
+    assert!(prompt.contains("Do not resume suspended work"));
+    assert!(prompt.contains("Treat background task notices"));
+}
+
+#[test]
 fn test_load_agents_md_files_uses_sandboxed_global_files() {
     let _guard = crate::storage::lock_test_env();
     let prev_home = std::env::var_os("LYRA_AGENT_HOME");

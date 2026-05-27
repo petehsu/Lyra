@@ -56,7 +56,7 @@ struct BgInput {
     /// Use the latest matching task when task_id is omitted
     #[serde(default)]
     latest: Option<bool>,
-    /// Restrict implicit selection/listing to this session. Defaults to false for list and true for implicit selection.
+    /// Restrict implicit selection/listing to this session. Defaults to true.
     #[serde(default)]
     session_only: Option<bool>,
     /// Status filter, either a string or array of strings: running/completed/failed/superseded/terminal/all
@@ -479,7 +479,7 @@ impl Tool for BgTool {
                 "task_id": { "type": "string", "description": "Task ID." },
                 "task_ids": { "type": "array", "items": {"type":"string"}, "description": "Task IDs for multi-task wait/status." },
                 "latest": { "type": "boolean", "description": "Use latest matching task when task_id is omitted." },
-                "session_only": { "type": "boolean", "description": "Restrict list/implicit selection to current session." },
+                "session_only": { "type": "boolean", "description": "Restrict list/implicit selection to current session. Defaults to true; pass false only when intentionally auditing other sessions." },
                 "status_filter": {
                     "anyOf": [
                         { "type": "string" },
@@ -509,7 +509,7 @@ impl Tool for BgTool {
 
         match action.as_str() {
             "list" => {
-                let tasks = filtered_tasks(manager, &ctx, &params, false).await;
+                let tasks = filtered_tasks(manager, &ctx, &params, true).await;
                 if tasks.is_empty() {
                     return Ok(ToolOutput::new("No matching background tasks found.")
                         .with_title("bg list"));

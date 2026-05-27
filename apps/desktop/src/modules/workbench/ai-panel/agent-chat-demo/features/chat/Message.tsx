@@ -5,6 +5,7 @@ import type { ChatMessage } from "../../core/types";
 import { useData } from "../../data/DataProvider";
 import { ToolGroupBlock } from "../tools/ToolGroup";
 import { BrailleSpinner } from "../../components/BrailleSpinner";
+import { ClickableImage, imagePreviewSource } from "../rich-text/ActionTargets";
 import { StreamingText } from "../rich-text/StreamingText";
 import { formatMessage, t } from "../../core/i18n";
 
@@ -80,13 +81,31 @@ export function Message({ message }: { message: ChatMessage }) {
       <div className="msg msg-user">
         <div className="msg-content-user">
           <div className="msg-bubble">
-            {message.blocks.map((b) =>
-              b.type === "text" ? (
-                <p key={b.id} className="msg-text">
-                  {b.body}
-                </p>
-              ) : null
-            )}
+            {message.blocks.map((b) => {
+              if (b.type === "text") {
+                return (
+                  <p key={b.id} className="msg-text">
+                    {b.body}
+                  </p>
+                );
+              }
+              if (b.type === "image") {
+                const src = imagePreviewSource(b.image);
+                return (
+                  <figure key={b.id} className="msg-image">
+                    <ClickableImage
+                      src={src}
+                      image={b.image}
+                      alt={b.image.label ?? t("msg.imageAttachment")}
+                    />
+                    {b.image.label !== undefined && b.image.label !== null ? (
+                      <figcaption>{b.image.label}</figcaption>
+                    ) : null}
+                  </figure>
+                );
+              }
+              return null;
+            })}
           </div>
           {message.time && (
             <span className="msg-time msg-time-user">
@@ -166,6 +185,8 @@ export function Message({ message }: { message: ChatMessage }) {
   const isEmptyPendingAgent =
     message.blocks.length > 0 &&
     message.blocks.every((b) => b.type === "text" && b.body.trim().length === 0);
+  const hasTextBlocks = textBlocks.some((b) => b.body.trim().length > 0);
+  const hasImages = message.blocks.some((b) => b.type === "image");
 
   return (
     <div className="msg msg-agent">
@@ -186,6 +207,21 @@ export function Message({ message }: { message: ChatMessage }) {
                 </div>
               );
             }
+            if (b.type === "image") {
+              const src = imagePreviewSource(b.image);
+              return (
+                <figure key={b.id} className="msg-image msg-image-agent">
+                  <ClickableImage
+                    src={src}
+                    image={b.image}
+                    alt={b.image.label ?? t("msg.imageAttachment")}
+                  />
+                  {b.image.label !== undefined && b.image.label !== null ? (
+                    <figcaption>{b.image.label}</figcaption>
+                  ) : null}
+                </figure>
+              );
+            }
             return <ToolGroupBlock key={b.id} group={b.group} />;
           })
         )}
@@ -193,7 +229,7 @@ export function Message({ message }: { message: ChatMessage }) {
           <span className="msg-time msg-time-agent">
             <BrailleSpinner />
           </span>
-        ) : message.time ? (
+        ) : (message.time && (hasTextBlocks || hasImages)) ? (
           <span className="msg-time msg-time-agent">
             <span className="time-text">{message.time}</span>
             <span className="time-copy" onClick={handleCopy} role="button" aria-label={t("msg.copy")}>

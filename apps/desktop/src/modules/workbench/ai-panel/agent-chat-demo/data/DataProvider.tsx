@@ -15,6 +15,8 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { AgentRollbackPreviewResponse } from "../../../../../shared/agent";
 import type {
   AgentAutomationSettings,
+  AgentGoalItem,
+  AgentImageAttachment,
   AgentSidePanel,
   ChatMessage,
   ComposerModelControls,
@@ -50,11 +52,35 @@ export interface DataProviderValue {
   /** Open Lyra Agent model/provider settings. */
   openModelSettings(): Promise<void>;
 
+  /** True when Agent browser actions should follow the visible Workbench page. */
+  readonly browserFollowModeEnabled: boolean;
+
+  /** Toggle visible Workbench browser following for Agent browser actions. */
+  setBrowserFollowMode(enabled: boolean): Promise<void>;
+
+  /** Open a web URL in the center Workbench browser area. */
+  openUrlInWorkbench(url: string, title?: string): Promise<void>;
+
+  /** Open a local file path in the center Workbench area. */
+  openFileInWorkbench(filePath: string): Promise<void>;
+
+  /** Open an inline or attached image in the center Workbench image viewer. */
+  openImageInWorkbench(image: AgentImageAttachment): Promise<void>;
+
+  /** Whether an inline or attached image has a working route into the Workbench. */
+  canOpenImageInWorkbench(image: AgentImageAttachment): boolean;
+
   /** Lyra Agent side-panel pages such as `/btw` answers and goals. */
   sidePanel?: AgentSidePanel | null;
 
   /** Send a new user message. Returns a promise that resolves when delivered. */
-  sendMessage(text: string): Promise<void>;
+  sendMessage(text: string, images?: readonly AgentImageAttachment[]): Promise<void>;
+
+  /** Capture the active Workbench browser page as an image attachment. */
+  captureBrowserScreenshot(): Promise<AgentImageAttachment | null>;
+
+  /** Capture the current Lyra window as an image attachment. */
+  captureWindowScreenshot(): Promise<AgentImageAttachment | null>;
 
   /** Cancel the currently running turn when available. */
   cancelTurn(): Promise<void>;
@@ -117,6 +143,12 @@ export interface DataProviderValue {
 
   /** Open Lyra Agent goals overview in the side panel. */
   openGoals(): Promise<void>;
+
+  /** Read selectable Lyra Agent goals. */
+  listGoals(): Promise<readonly AgentGoalItem[]>;
+
+  /** Open one Lyra Agent goal in the side panel. */
+  showGoal(goalId: string): Promise<void>;
 
   /** Resume the best current Lyra Agent goal in the side panel. */
   resumeGoal(): Promise<void>;

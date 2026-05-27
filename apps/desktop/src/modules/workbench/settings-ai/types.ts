@@ -7,10 +7,14 @@ import type {
   JcodeConfigSnapshot,
   JcodeConfigUpdateRequest,
   JcodeAgentRolesUpdateRequest,
+  JcodeAccountLoginCompleteRequest,
+  JcodeAccountLoginCompleteResponse,
+  JcodeAccountLoginStartRequest,
+  JcodeAccountLoginStartResponse,
   JcodeAccountsResponse,
   JcodeAccountRequest,
+  JcodeLoginProvidersResponse,
   JcodeProviderProfileSaveRequest,
-  JcodeRegisteredCommand,
 } from "../../../shared/desktop-bridge";
 
 export type SettingsAiLabels = {
@@ -66,6 +70,23 @@ export type SettingsAiLabels = {
   readonly accountsEmptyDescription: string;
   readonly accountConfigured: string;
   readonly accountNotConfigured: string;
+  readonly accountDefault: string;
+  readonly loginProvidersTitle: string;
+  readonly loginProvidersDescription: string;
+  readonly startLogin: string;
+  readonly completeLogin: string;
+  readonly callbackInputLabel: string;
+  readonly callbackInputPlaceholder: string;
+  readonly loginCallbackDescription: string;
+  readonly gmailLoginTitle: string;
+  readonly gmailLoginDescription: string;
+  readonly gmailClientIdLabel: string;
+  readonly gmailClientSecretLabel: string;
+  readonly gmailAccessTierLabel: string;
+  readonly gmailAccessReadOnly: string;
+  readonly gmailAccessFull: string;
+  readonly apiKeyProviderTitle: string;
+  readonly apiKeyProviderDescription: string;
   readonly removeAccount: string;
   readonly providerProfileTitle: string;
   readonly authHeaderLabel: string;
@@ -78,13 +99,35 @@ export type SettingsAiLabels = {
   readonly roleProviderDefaultPlaceholder: string;
   readonly roleMemoryDefaultPlaceholder: string;
   readonly saveRoleModels: string;
-  readonly commandsAriaLabel: string;
+  readonly notificationsTitle: string;
+  readonly notificationsDescription: string;
+  readonly desktopNotificationsLabel: string;
+  readonly ntfyTopicLabel: string;
+  readonly ntfyServerLabel: string;
+  readonly emailNotificationsLabel: string;
+  readonly emailToLabel: string;
+  readonly emailSmtpHostLabel: string;
+  readonly emailSmtpPortLabel: string;
+  readonly emailFromLabel: string;
+  readonly emailPasswordLabel: string;
+  readonly emailImapHostLabel: string;
+  readonly emailImapPortLabel: string;
+  readonly emailReplyLabel: string;
+  readonly telegramNotificationsLabel: string;
+  readonly telegramBotTokenLabel: string;
+  readonly telegramChatIdLabel: string;
+  readonly telegramReplyLabel: string;
+  readonly discordNotificationsLabel: string;
+  readonly discordBotTokenLabel: string;
+  readonly discordChannelIdLabel: string;
+  readonly discordBotUserIdLabel: string;
+  readonly discordReplyLabel: string;
+  readonly saveNotifications: string;
   readonly runtimeUnavailable: string;
   readonly fileEditorUnavailable: string;
   readonly configPathUnavailable: string;
   readonly sectionJcode: string;
   readonly sectionSessions: string;
-  readonly sectionCommands: string;
   readonly memoryConfigTitle: string;
   readonly memoryConfigDescription: string;
   readonly memoryConfigPlaceholder: string;
@@ -133,7 +176,7 @@ export type SettingsAiModel = {
   readonly selectedPreset: AiProviderPreset | null;
   readonly jcodeConfig?: JcodeConfigSnapshot | null;
   readonly jcodeAccounts?: JcodeAccountsResponse | null;
-  readonly jcodeCommands?: readonly JcodeRegisteredCommand[];
+  readonly jcodeLoginProviders?: JcodeLoginProvidersResponse | null;
   readonly draft: SettingsAiDraft;
   readonly modelSelectionMode: SettingsAiModelSelectionMode;
   readonly availableModels: readonly AiProviderModelEntry[];
@@ -159,6 +202,12 @@ export type SettingsAiModel = {
   readonly saveJcodeProviderProfile?: (
     request: JcodeProviderProfileSaveRequest
   ) => Promise<void>;
+  readonly startJcodeAccountLogin?: (
+    request: JcodeAccountLoginStartRequest
+  ) => Promise<JcodeAccountLoginStartResponse | null>;
+  readonly completeJcodeAccountLogin?: (
+    request: JcodeAccountLoginCompleteRequest
+  ) => Promise<JcodeAccountLoginCompleteResponse | null>;
   readonly updateJcodeAgentRoles?: (
     request: JcodeAgentRolesUpdateRequest
   ) => Promise<void>;

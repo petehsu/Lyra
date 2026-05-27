@@ -8,15 +8,18 @@
     "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -p lyra-lsp-core -p lyra-files-napi -p lyra-image-napi -p lyra-docs-napi -p lyra-download-core -p lyra-download-napi && npm run native:stage",
     "native:build:release": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --release --clean",
     "native:stage": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --stage-only",
+    "electron:ensure": "node --import tsx ../../scripts/desktop/ensure-electron.ts",
+    "lyra-design:bundle-playwright": "node --import tsx ../../scripts/desktop/install-lyra-design-playwright.ts",
     "downloads:build-aria2-bundles": "node --import tsx ../../tools/download-manager/build-aria2-bundles.ts",
     "downloads:verify-aria2-bundles": "node --import tsx ../../tools/download-manager/verify-aria2-bundles.ts",
     "lsp:bundle:rust-analyzer": "node --import tsx ../../tools/lsp/install-rust-analyzer.ts",
     "lsp:preflight": "node --import tsx ../../tools/lsp/preflight-lsp.ts",
     "release:preflight": "npm run typecheck && npm run test && npm run downloads:verify-aria2-bundles -- --all-targets && node --import tsx ../../tools/lsp/preflight-lsp.ts --all-targets",
-    "dev:electron-vite": "node --input-type=module -e \"import { spawn } from 'node:child_process'; import { join } from 'node:path'; const env = { ...process.env, ELECTRON_RUN_AS_NODE: '' }; const isLinuxWayland = process.platform === 'linux' && (((env.XDG_SESSION_TYPE ?? '').toLowerCase() === 'wayland') || (typeof env.WAYLAND_DISPLAY === 'string' && env.WAYLAND_DISPLAY.length > 0)); if (isLinuxWayland) { env.ELECTRON_OZONE_PLATFORM_HINT = 'wayland'; env.DISPLAY = ''; } const bin = join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'electron-vite.cmd' : 'electron-vite'); const child = spawn(bin, ['dev'], { stdio: 'inherit', env }); child.on('exit', (code, signal) => { if (signal) { process.kill(process.pid, signal); return; } process.exit(code ?? 0); });\"",
+    "dev:electron-vite": "npm run electron:ensure && npm run dev:electron-vite:raw",
+    "dev:electron-vite:raw": "node --input-type=module -e \"import { spawn } from 'node:child_process'; import { join } from 'node:path'; const env = { ...process.env, ELECTRON_RUN_AS_NODE: '' }; const isLinuxWayland = process.platform === 'linux' && (((env.XDG_SESSION_TYPE ?? '').toLowerCase() === 'wayland') || (typeof env.WAYLAND_DISPLAY === 'string' && env.WAYLAND_DISPLAY.length > 0)); if (isLinuxWayland) { env.ELECTRON_OZONE_PLATFORM_HINT = 'wayland'; env.DISPLAY = ''; } const bin = join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'electron-vite.cmd' : 'electron-vite'); const child = spawn(bin, ['dev'], { stdio: 'inherit', env }); child.on('exit', (code, signal) => { if (signal) { process.kill(process.pid, signal); return; } process.exit(code ?? 0); });\"",
     "dev": "npm run native:build && npm run dev:electron-vite",
     "dev:fast": "npm run dev:electron-vite",
-    "build": "npm run native:build && electron-vite build",
+    "build": "npm run lyra-design:bundle-playwright && npm run native:build && electron-vite build",
     "dist:linux": "npm run build && electron-builder --linux AppImage deb rpm tar.gz",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -81,6 +84,13 @@
         ]
       },
       {
+        "from": "resources/playwright-browsers",
+        "to": "playwright-browsers",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "resources/lsp",
         "to": "lsp",
         "filter": [
@@ -102,6 +112,7 @@
     "mermaid": "^11.13.0",
     "monaco-editor": "^0.52.2",
     "pinyin-pro": "^3.27.0",
+    "playwright": "1.60.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",

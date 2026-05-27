@@ -2,6 +2,13 @@ use super::Agent;
 use crate::logging;
 use crate::message::{Message, ToolDefinition};
 
+const TURN_FOCUS_SYSTEM_REMINDER: &str = "\
+# Current Task Focus
+
+The latest real user message is the active request for this turn. If it changes topic or asks a side task, suspend earlier work immediately.
+Do not resume suspended work unless the user explicitly asks to continue, resume, finish, or return to it.
+Treat background task notices, old tool results, memory, previous todos, and prior plans as context only.";
+
 impl Agent {
     pub(super) fn log_prompt_prefix_accounting(
         &self,
@@ -47,6 +54,21 @@ impl Agent {
         pending
     }
 
+    fn append_dynamic_system_reminder(
+        split: &mut crate::prompt::SplitSystemPrompt,
+        reminder: &str,
+    ) {
+        let reminder = reminder.trim();
+        if reminder.is_empty() {
+            return;
+        }
+
+        if !split.dynamic_part.is_empty() {
+            split.dynamic_part.push_str("\n\n");
+        }
+        split.dynamic_part.push_str(reminder);
+    }
+
     fn append_current_turn_system_reminder(&self, split: &mut crate::prompt::SplitSystemPrompt) {
         let Some(reminder) = self
             .current_turn_system_reminder
@@ -57,11 +79,7 @@ impl Agent {
             return;
         };
 
-        if !split.dynamic_part.is_empty() {
-            split.dynamic_part.push_str("\n\n");
-        }
-        split.dynamic_part.push_str("# System Reminder\n\n");
-        split.dynamic_part.push_str(reminder);
+        Self::append_dynamic_system_reminder(split, &format!("# System Reminder\n\n{reminder}"));
     }
 
     /// Build split system prompt for better caching
@@ -107,6 +125,7 @@ impl Agent {
             working_dir.as_deref(),
         );
 
+        Self::append_dynamic_system_reminder(&mut split, TURN_FOCUS_SYSTEM_REMINDER);
         self.append_current_turn_system_reminder(&mut split);
 
         split

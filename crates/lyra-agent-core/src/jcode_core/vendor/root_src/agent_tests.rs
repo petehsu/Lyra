@@ -101,7 +101,7 @@ fn tool_output_to_content_blocks_preserves_labeled_images() {
         "screenshots/example.png",
     );
 
-    let blocks = tool_output_to_content_blocks("call_1".to_string(), output);
+    let blocks = tool_output_to_content_blocks("call_1".to_string(), output, true);
     assert_eq!(blocks.len(), 3);
 
     match &blocks[0] {

@@ -411,6 +411,10 @@ async fn test_request_permission_is_ambient_only() {
 
     let defs = registry.definitions(None).await;
     assert!(
+        defs.iter().any(|d| d.name == "ask_user"),
+        "ask_user should be available in normal sessions for structured clarification"
+    );
+    assert!(
         !defs.iter().any(|d| d.name == "request_permission"),
         "request_permission should not be available in normal sessions"
     );

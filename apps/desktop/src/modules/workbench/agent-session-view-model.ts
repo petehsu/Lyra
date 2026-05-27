@@ -15,7 +15,10 @@ import type {
   TodoItem,
   ToolCall,
   ToolDetails,
-  ToolGroup
+  ToolGroup,
+  ToolPeek,
+  WebResult,
+  WorkbenchTabSummary
 } from "./ai-panel/agent-chat-demo/core/types";
 import { formatMessage, t } from "./ai-panel/agent-chat-demo/core/i18n";
 
@@ -166,6 +169,14 @@ export const applyAgentRuntimeEventToSnapshot = (
     };
   }
 
+  if (event.kind === "todoUpdated") {
+    return {
+      ...session,
+      todos: event.todos,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
   if (event.kind === "followStateChanged") {
     return {
       ...session,
@@ -199,28 +210,53 @@ export const applyAgentRuntimeEventToSnapshot = (
 };
 
 const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
+  const toolName = tool.name.toLowerCase();
+  const input = toolInputRecord(tool);
+  const action = stringField(input, "action");
   if (
-    tool.name === "ls" ||
-    tool.name.includes("read") ||
-    tool.name.includes("open")
+    toolName === "workbench" ||
+    toolName.startsWith("workbench.") ||
+    toolName.startsWith("workbench_") ||
+    action === "list_tabs" ||
+    action === "read_tab" ||
+    action === "read_workspace" ||
+    action === "extract_tab_text"
+  ) return "workbench";
+  if (
+    toolName === "websearch" ||
+    toolName === "webfetch" ||
+    toolName === "web_search" ||
+    toolName === "web_fetch" ||
+    toolName.startsWith("web.") ||
+    toolName.startsWith("web_") ||
+    toolName.startsWith("web-") ||
+    toolName.includes("websearch") ||
+    toolName.includes("webfetch") ||
+    toolName.includes("web_search") ||
+    toolName.includes("web_fetch")
+  ) return "web";
+  if (toolName === "lyra_lumen") return "web";
+  if (
+    toolName === "ls" ||
+    toolName.includes("read") ||
+    toolName.includes("open")
   ) return "read";
   if (
-    tool.name.includes("search") ||
-    tool.name.includes("grep") ||
-    tool.name.includes("glob")
+    toolName.includes("search") ||
+    toolName.includes("grep") ||
+    toolName.includes("glob")
   ) return "search";
   if (
-    tool.name.includes("bash") ||
-    tool.name.includes("shell") ||
-    tool.name.includes("command")
+    toolName.includes("bash") ||
+    toolName.includes("shell") ||
+    toolName.includes("command")
   ) return "shell";
   if (
-    tool.name.includes("patch") ||
-    tool.name.includes("edit") ||
-    tool.name.includes("write")
+    toolName.includes("patch") ||
+    toolName.includes("edit") ||
+    toolName.includes("write")
   ) return "edit";
-  if (tool.name.includes("web")) return "web";
-  if (tool.name.includes("todo")) return "task";
+  if (toolName.includes("todo")) return "task";
   return "thought";
 };
 
@@ -240,18 +276,22 @@ const stringField = (
   return undefined;
 };
 
-const asArray = (value: unknown): readonly unknown[] =>
-  Array.isArray(value) ? value : [];
-
-const parseJsonMaybe = (value: unknown): unknown => {
-  if (typeof value !== "string") return value;
-  const trimmed = value.trim();
-  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return value;
+const parseJsonRecord = (value: string): Record<string, unknown> | null => {
   try {
-    return JSON.parse(trimmed) as unknown;
+    const parsed = JSON.parse(value) as unknown;
+    return asRecord(parsed);
   } catch {
-    return value;
+    return null;
   }
+};
+
+const toolInputRecord = (tool: AgentToolActivity): Record<string, unknown> => {
+  const input = asRecord(tool.input);
+  const delta = stringField(input, "delta");
+  if (delta !== undefined) {
+    return parseJsonRecord(delta) ?? input;
+  }
+  return input;
 };
 
 const toolOutputText = (tool: AgentToolActivity): string => {
@@ -262,12 +302,491 @@ const toolOutputText = (tool: AgentToolActivity): string => {
   return JSON.stringify(tool.input, null, 2);
 };
 
+type ParsedWebSearchOutput = {
+  readonly query: string;
+  readonly results: WebResult[];
+};
+
+type ParsedWebFetchOutput = {
+  readonly url: string;
+  readonly fetchedBytes: number;
+  readonly title?: string;
+  readonly preview?: string;
+};
+
+type ParsedWorkbenchDetails = Extract<ToolDetails, { type: "workbench" }>;
+type ParsedLumenDetails = Extract<ToolDetails, { type: "lumen" }>;
+
+type ParsedLumenElement = {
+  readonly id: string;
+  readonly role: string;
+  readonly label: string;
+};
+
+const WEB_SEARCH_HEADER = "Search results for:";
+const WEB_SEARCH_RESULT_HEADING = /^\s*\d+\.\s+\*\*(.+?)\*\*\s*$/u;
+const WEB_FETCH_HEADER = /^Fetched\s+(https?:\/\/\S+)\s+\((\d+)\s+bytes\)\n\n([\s\S]*)$/u;
+const LUMEN_ACTIONS = new Set([
+  "map",
+  "focus_scan",
+  "act",
+  "type",
+  "press",
+  "submit",
+  "navigate",
+  "read",
+  "see",
+  "wait"
+]);
+const LUMEN_OBSERVATION_HEADER =
+  /^Observation\s+(\S+)\s+\(([^)]+)\)\s+for\s+(.+?)(?:\s+-\s+(https?:\/\/\S+))?$/u;
+const LUMEN_ELEMENT_ROW =
+  /^\[(.+?)\]\s+([^:]+):\s+"([^"]*)"(?:\s+\[[^\]]+\])?\s+at\s+\(([-\d]+),([-\d]+)\)\s+(\d+)x(\d+)$/u;
+const LUMEN_FOCUS_LINE = /^Focus\s+([^;]+);\s+active element:\s+(.+)$/u;
+const LUMEN_FOCUSED_LINE = /^Focused\s+([^:]+):\s+"([^"]*)"$/u;
+const LUMEN_TRAIL_LINE = /^\s+\d+\.\s+\[(.+?)\]\s+(.+)$/u;
+
+const isHttpUrl = (value: string): boolean =>
+  value.startsWith("https://") || value.startsWith("http://");
+
+const isLyraLumenTool = (tool: AgentToolActivity): boolean =>
+  tool.name.toLowerCase() === "lyra_lumen";
+
+const compactText = (value: string): string =>
+  value.replace(/\s+/gu, " ").trim();
+
+const truncateText = (value: string, maxLength: number): string => {
+  const compact = compactText(value);
+  if (compact.length <= maxLength) return compact;
+  return `${compact.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+};
+
+const urlHost = (url: string | undefined): string | undefined => {
+  if (url === undefined) return undefined;
+  try {
+    return new URL(url).host;
+  } catch {
+    return undefined;
+  }
+};
+
+const normalizeLumenAction = (value: string | undefined): string => {
+  if (value === undefined) return "browser";
+  const normalized = value.trim();
+  if (normalized === "focusScan") return "focus_scan";
+  return normalized.length === 0 ? "browser" : normalized;
+};
+
+const lumenTargetMode = (input: Record<string, unknown>): string =>
+  stringField(input, "target", "targetMode") === "live" ? "live" : "isolated";
+
+const lumenElementLabel = (input: Record<string, unknown>): string | undefined => {
+  const elementId = input.element_id ?? input.elementId;
+  if (typeof elementId === "string" && elementId.trim().length > 0) {
+    return `element ${elementId.trim()}`;
+  }
+  if (typeof elementId === "number" && Number.isFinite(elementId)) {
+    return `element ${Math.round(elementId)}`;
+  }
+  return undefined;
+};
+
+const lumenPointLabel = (input: Record<string, unknown>): string | undefined => {
+  const point = asRecord(input.point);
+  const x = typeof point.x === "number" ? point.x : Number.NaN;
+  const y = typeof point.y === "number" ? point.y : Number.NaN;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined;
+  return `point ${Math.round(x)},${Math.round(y)}`;
+};
+
+const parseLumenMapOutput = (output: string): {
+  readonly observationId?: string;
+  readonly strategy?: string;
+  readonly title?: string;
+  readonly url?: string;
+  readonly elements: readonly ParsedLumenElement[];
+} => {
+  const [firstLine = "", ...rest] = output.trim().split(/\r?\n/u);
+  const match = firstLine.match(LUMEN_OBSERVATION_HEADER);
+  const elements = rest
+    .map((line) => line.match(LUMEN_ELEMENT_ROW))
+    .filter((item): item is RegExpMatchArray => item !== null)
+    .map((item) => ({
+      id: item[1] ?? "?",
+      role: (item[2] ?? "element").trim(),
+      label: (item[3] ?? "").trim()
+    }));
+
+  return {
+    ...(match?.[1] === undefined ? {} : { observationId: match[1] }),
+    ...(match?.[2] === undefined ? {} : { strategy: match[2] }),
+    ...(match?.[3] === undefined ? {} : { title: match[3] }),
+    ...(match?.[4] === undefined ? {} : { url: match[4] }),
+    elements
+  };
+};
+
+const parseLumenFocusOutput = (output: string): {
+  readonly direction?: string;
+  readonly activeElementId?: string;
+  readonly focused?: string;
+  readonly trail: readonly string[];
+} => {
+  const lines = output.trim().split(/\r?\n/u);
+  const focusMatch = (lines[0] ?? "").match(LUMEN_FOCUS_LINE);
+  const focusedMatch = lines
+    .map((line) => line.match(LUMEN_FOCUSED_LINE))
+    .find((item): item is RegExpMatchArray => item !== null);
+  const trail = lines
+    .map((line) => line.match(LUMEN_TRAIL_LINE))
+    .filter((item): item is RegExpMatchArray => item !== null)
+    .map((item) => item[2]?.trim() ?? "")
+    .filter((label) => label.length > 0);
+
+  return {
+    ...(focusMatch?.[1] === undefined ? {} : { direction: focusMatch[1] }),
+    ...(focusMatch?.[2] === undefined ? {} : { activeElementId: focusMatch[2] }),
+    ...(focusedMatch === undefined
+      ? {}
+      : { focused: `${focusedMatch[1] ?? "element"}: ${focusedMatch[2] ?? ""}` }),
+    trail
+  };
+};
+
+const lumenTitle = (tool: AgentToolActivity): string => {
+  const input = toolInputRecord(tool);
+  const action = normalizeLumenAction(stringField(input, "action"));
+  switch (action) {
+    case "map":
+      return "Mapped browser elements";
+    case "focus_scan":
+      return "Scanned browser focus";
+    case "act": {
+      const interaction = stringField(input, "interaction") ?? "click";
+      return `${interaction.replace(/_/gu, " ")} browser element`;
+    }
+    case "type":
+      return "Typed in browser";
+    case "press":
+      return "Pressed browser key";
+    case "submit":
+      return "Submitted browser control";
+    case "navigate":
+      return "Navigated browser";
+    case "read":
+      return "Read browser text";
+    case "see":
+      return "Captured browser snapshot";
+    case "wait":
+      return "Waited in browser";
+    default:
+      return "Lyra Lumen";
+  }
+};
+
+const toLumenDetails = (
+  tool: AgentToolActivity,
+  output: string,
+  screenshot: string | undefined
+): ParsedLumenDetails => {
+  const input = toolInputRecord(tool);
+  const action = normalizeLumenAction(stringField(input, "action"));
+  const targetMode = lumenTargetMode(input);
+  const chips = [targetMode];
+  let excerpt: string | undefined;
+
+  if (action === "map") {
+    const parsed = parseLumenMapOutput(output);
+    if (parsed.strategy !== undefined) chips.push(parsed.strategy);
+    chips.push(`${parsed.elements.length} elements`);
+    const host = urlHost(parsed.url);
+    if (host !== undefined) chips.push(host);
+    const labels = parsed.elements
+      .map((element) => `${element.id} ${element.role} ${element.label}`)
+      .filter((label) => label.trim().length > 0)
+      .slice(0, 2);
+    excerpt = labels.length > 0
+      ? truncateText(labels.join(" / "), 120)
+      : truncateText(parsed.title ?? output, 120);
+  } else if (action === "focus_scan") {
+    const parsed = parseLumenFocusOutput(output);
+    chips.push(`${parsed.trail.length} tab stops`);
+    if (parsed.activeElementId !== undefined) chips.push(`active ${parsed.activeElementId}`);
+    excerpt = truncateText(parsed.focused ?? parsed.trail.slice(0, 2).join(" / ") ?? output, 120);
+  } else if (action === "read") {
+    const strategy = stringField(input, "strategy") ?? "focus";
+    chips.push(strategy === "domFallback" ? "dom fallback" : "focus read");
+    if (output.trim().length > 0) chips.push(`${output.length} chars`);
+    excerpt = output.trim().length === 0 ? undefined : truncateText(output, 140);
+  } else if (action === "see") {
+    chips.push("visual fallback");
+    excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
+  } else if (action === "type") {
+    const text = stringField(input, "text") ?? "";
+    chips.push(`${text.length} chars`);
+    chips.push(lumenElementLabel(input) ?? "focused element");
+    chips.push("chromium keyboard");
+    excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
+  } else if (action === "act") {
+    chips.push((stringField(input, "interaction") ?? "click").replace(/_/gu, " "));
+    const target = lumenElementLabel(input) ?? lumenPointLabel(input);
+    if (target !== undefined) chips.push(target);
+    chips.push("chromium mouse");
+    excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
+  } else if (action === "press" || action === "submit") {
+    chips.push(stringField(input, "key") ?? (action === "submit" ? "Enter" : "key"));
+    chips.push(lumenElementLabel(input) ?? "focused element");
+    chips.push("chromium keyboard");
+    excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
+  } else if (action === "navigate") {
+    const url = stringField(input, "url");
+    const host = urlHost(url);
+    if (host !== undefined) chips.push(host);
+    excerpt = truncateText(url ?? output, 120);
+  } else if (action === "wait") {
+    const timeout = input.timeout_ms ?? input.timeoutMs;
+    if (typeof timeout === "number" && Number.isFinite(timeout)) {
+      chips.push(`${Math.round(timeout)}ms`);
+    }
+    excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
+  } else if (LUMEN_ACTIONS.has(action)) {
+    excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
+  }
+
+  const peek: ToolPeek = {
+    chips: [...new Set(chips.filter((chip) => chip.trim().length > 0))],
+    ...(excerpt === undefined ? {} : { excerpt }),
+    ...(screenshot === undefined
+      ? {}
+      : { thumbnail: { src: screenshot, alt: "Lyra Lumen snapshot" } })
+  };
+
+  return {
+    type: "lumen",
+    action,
+    targetMode,
+    peek,
+    ...(output.trim().length === 0 ? {} : { text: output }),
+    ...(screenshot === undefined ? {} : { screenshot })
+  };
+};
+
+const parseWebSearchOutput = (output: string): ParsedWebSearchOutput | null => {
+  const text = output.trim();
+  if (!text.startsWith(WEB_SEARCH_HEADER)) return null;
+
+  const lines = text.replace(/\r\n?/gu, "\n").split("\n");
+  const query = lines[0]?.slice(WEB_SEARCH_HEADER.length).trim() ?? "";
+  if (query.length === 0) return null;
+
+  const results: WebResult[] = [];
+  let index = 1;
+
+  while (index < lines.length) {
+    const heading = lines[index]?.trim() ?? "";
+    const headingMatch = heading.match(WEB_SEARCH_RESULT_HEADING);
+    if (headingMatch === null) {
+      index += 1;
+      continue;
+    }
+
+    const title = headingMatch[1]?.trim() ?? "";
+    index += 1;
+    while (index < lines.length && (lines[index]?.trim() ?? "").length === 0) {
+      index += 1;
+    }
+
+    const url = lines[index]?.trim() ?? "";
+    if (title.length === 0 || !isHttpUrl(url)) {
+      continue;
+    }
+    index += 1;
+
+    const snippetLines: string[] = [];
+    while (index < lines.length) {
+      const line = lines[index]?.trim() ?? "";
+      if (line.match(WEB_SEARCH_RESULT_HEADING) !== null) break;
+      if (line.length > 0) snippetLines.push(line);
+      index += 1;
+    }
+
+    const snippet = snippetLines.join(" ").trim();
+    results.push({
+      title,
+      url,
+      ...(snippet.length === 0 ? {} : { snippet })
+    });
+  }
+
+  return results.length === 0 ? null : { query, results };
+};
+
+const cleanFetchedContentLine = (line: string): string => {
+  const trimmed = line.trim();
+  return trimmed
+    .replace(/^[-*]\s*/u, "")
+    .replace(/^#{1,6}\s*/u, "")
+    .trim();
+};
+
+const parseWebFetchOutput = (output: string): ParsedWebFetchOutput | null => {
+  const match = output.trim().match(WEB_FETCH_HEADER);
+  if (match === null) return null;
+
+  const url = match[1] ?? "";
+  const bytes = Number.parseInt(match[2] ?? "0", 10);
+  const body = match[3] ?? "";
+  const previewLines = body
+    .split(/\r?\n/u)
+    .map(cleanFetchedContentLine)
+    .filter((line) => line.length > 0)
+    .slice(0, 4);
+
+  const title = previewLines[0];
+  const preview = previewLines.slice(1).join("\n");
+
+  return {
+    url,
+    fetchedBytes: Number.isFinite(bytes) ? bytes : 0,
+    ...(title === undefined ? {} : { title }),
+    ...(preview.length === 0 ? {} : { preview })
+  };
+};
+
+const WORKBENCH_LIST_ROW =
+  /^-\s+(.+?)\s+\[([^\]]+)\]\s+(.+?)\s+\(([^)]+)\)\s+flags=([^|]*?)(?:\s+\|\s*(.*))?$/u;
+const WORKBENCH_TAB_HEADER = /^(.+?)\s+\[([^\]]+)\]\s+\(([^)]+)\)$/u;
+
+const normalizeWorkbenchFlags = (flags: string | undefined): string[] => {
+  if (flags === undefined) return [];
+  return flags
+    .split(",")
+    .map((flag) => flag.trim())
+    .filter((flag) => flag.length > 0 && flag !== "none");
+};
+
+const workbenchActionLabel = (action: string): string => {
+  switch (action) {
+    case "list_tabs":
+      return "Workbench tabs";
+    case "read_tab":
+      return "Workbench tab";
+    case "read_workspace":
+      return "Workbench workspace";
+    case "extract_tab_text":
+      return "Workbench text";
+    default:
+      return "Workbench";
+  }
+};
+
+const parseWorkbenchListOutput = (output: string): WorkbenchTabSummary[] | null => {
+  const tabs = output
+    .trim()
+    .split(/\r?\n/u)
+    .map((line) => line.match(WORKBENCH_LIST_ROW))
+    .filter((match): match is RegExpMatchArray => match !== null)
+    .map((match) => {
+      const url = (match[6] ?? "").trim();
+      return {
+        title: (match[1] ?? "Untitled").trim(),
+        tabId: (match[2] ?? "-").trim(),
+        kind: (match[3] ?? "tab").trim(),
+        observationKind: (match[4] ?? "tab").trim(),
+        flags: normalizeWorkbenchFlags(match[5]),
+        ...(isHttpUrl(url) ? { url } : {})
+      };
+    });
+
+  return tabs.length === 0 ? null : tabs;
+};
+
+const parseWorkbenchTabOutput = (output: string): WorkbenchTabSummary | null => {
+  const normalized = output.trim();
+  const [firstLine = "", ...restLines] = normalized.split(/\r?\n/u);
+  const match = firstLine.match(WORKBENCH_TAB_HEADER);
+  if (match === null) return null;
+  const excerpt = restLines.join("\n").trim();
+  return {
+    title: (match[1] ?? "Untitled").trim(),
+    tabId: (match[2] ?? "-").trim(),
+    kind: (match[3] ?? "tab").trim(),
+    flags: [],
+    ...(excerpt.length === 0 ? {} : { excerpt })
+  };
+};
+
+const parseWorkbenchWorkspaceOutput = (output: string): WorkbenchTabSummary[] | null => {
+  const tabs = output
+    .split(/\n\n---\n\n/u)
+    .map(parseWorkbenchTabOutput)
+    .filter((tab): tab is WorkbenchTabSummary => tab !== null);
+  return tabs.length === 0 ? null : tabs;
+};
+
+const toWorkbenchDetails = (tool: AgentToolActivity, output: string): ParsedWorkbenchDetails => {
+  const input = asRecord(tool.input);
+  const action = stringField(input, "action") ?? "workbench";
+  const label = workbenchActionLabel(action);
+
+  if (action === "list_tabs") {
+    const tabs = parseWorkbenchListOutput(output);
+    return {
+      type: "workbench",
+      action,
+      label,
+      ...(tabs === null ? { text: output } : { tabs })
+    };
+  }
+
+  if (action === "read_workspace") {
+    const tabs = parseWorkbenchWorkspaceOutput(output);
+    return {
+      type: "workbench",
+      action,
+      label,
+      ...(tabs === null ? { text: output } : { tabs })
+    };
+  }
+
+  if (action === "read_tab") {
+    const tab = parseWorkbenchTabOutput(output);
+    return {
+      type: "workbench",
+      action,
+      label,
+      ...(tab === null
+        ? { text: output }
+        : {
+            tab,
+            ...(tab.excerpt === undefined ? {} : { excerpt: tab.excerpt })
+          })
+    };
+  }
+
+  return {
+    type: "workbench",
+    action,
+    label,
+    ...(output.trim().length === 0 ? {} : { text: output })
+  };
+};
+
 const toToolDetails = (
   tool: AgentToolActivity,
   kind: ToolCall["kind"]
 ): ToolDetails => {
   const input = asRecord(tool.input);
   const output = toolOutputText(tool);
+  const outputRecord = asRecord(tool.output);
+  const screenshotObj = asRecord(outputRecord.screenshot);
+  const screenshot = typeof screenshotObj.data === "string"
+    ? `data:${screenshotObj.mediaType || "image/png"};base64,${screenshotObj.data}`
+    : undefined;
+
+  if (isLyraLumenTool(tool)) {
+    return toLumenDetails(tool, output, screenshot);
+  }
   if (kind === "read") {
     return {
       type: "read",
@@ -286,11 +805,25 @@ const toToolDetails = (
     };
   }
   if (kind === "web") {
+    const webSearch = parseWebSearchOutput(output);
+    const webFetch = webSearch === null ? parseWebFetchOutput(output) : null;
     return {
       type: "web",
-      url: stringField(input, "url", "href") ?? tool.name,
-      ...(output.trim().length === 0 ? {} : { summary: output })
+      url: stringField(input, "url", "href") ?? webSearch?.results[0]?.url ?? webFetch?.url ?? tool.name,
+      ...(webSearch === null
+        ? (webFetch === null
+            ? (output.trim().length === 0 ? {} : { summary: output })
+            : {
+                fetchedBytes: webFetch.fetchedBytes,
+                ...(webFetch.title === undefined ? {} : { title: webFetch.title }),
+                ...(webFetch.preview === undefined ? {} : { summary: webFetch.preview })
+              })
+        : { query: webSearch.query, results: webSearch.results }),
+      screenshot
     };
+  }
+  if (kind === "workbench") {
+    return toWorkbenchDetails(tool, output);
   }
   return {
     type: "text",
@@ -306,12 +839,18 @@ const toolStatus = (tool: AgentToolActivity): ToolCall["status"] => {
 
 const toToolCall = (tool: AgentToolActivity): ToolCall => {
   const kind = toolKind(tool);
+  const details = toToolDetails(tool, kind);
+  const title = isLyraLumenTool(tool)
+    ? lumenTitle(tool)
+    : kind === "workbench"
+      ? workbenchActionLabel(stringField(toolInputRecord(tool), "action") ?? "workbench")
+      : tool.label === "Ran" || tool.label.trim().length === 0 ? tool.name : tool.label;
   return {
     id: tool.id,
     kind,
-    title: tool.label,
+    title,
     status: toolStatus(tool),
-    details: toToolDetails(tool, kind)
+    details
   };
 };
 
@@ -320,16 +859,20 @@ const toToolGroup = (
   id = "lyra-agent-tools"
 ): ToolGroup | null => {
   if (tools.length === 0) return null;
+  const calls = tools.map(toToolCall);
   const running = tools.find((tool) => tool.status === "running");
+  const runningCall = running === undefined
+    ? undefined
+    : calls.find((call) => call.id === running.id);
   return {
     id,
     status: running === undefined ? "done" : "running",
-    label: running?.label ?? t("tool.agentActivity"),
+    label: runningCall?.title ?? running?.label ?? t("tool.agentActivity"),
     hint: running === undefined
       ? formatMessage("tool.events", { count: tools.length })
       : t("tool.running"),
     ...(running === undefined ? {} : { currentCallId: running.id }),
-    calls: tools.map(toToolCall)
+    calls
   };
 };
 
@@ -345,12 +888,25 @@ export const formatAgentMessageTime = (value: string | undefined): string | unde
   }).format(date);
 };
 
+export const cleanSyntheticImageText = (text: string): string => {
+  return text
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (trimmed === "[image]") return false;
+      if (trimmed.startsWith("[Attached image associated with the preceding tool result:")) return false;
+      return true;
+    })
+    .join("\n")
+    .trim();
+};
+
 const messageBody = (
   session: AgentSessionSnapshot,
   message: AgentSessionSnapshot["messages"][number],
   index: number
 ): string => {
-  if (message.text.length > 0) return message.text;
+  if (message.text.length > 0) return cleanSyntheticImageText(message.text);
   const isLastAssistant = message.role === "assistant" && index === session.messages.length - 1;
   return isLastAssistant && session.turnStatus === "running" ? "" : t("msg.noResponseText");
 };
@@ -410,11 +966,12 @@ const chatBlocksForAgentMessage = (
     ) {
       return [];
     }
+    const body = messageBody(session, message, index);
     return [
       {
         type: "text",
         id: `${message.id}-text`,
-        body: messageBody(session, message, index)
+        body
       }
     ];
   }
@@ -437,13 +994,32 @@ const chatBlocksForAgentMessage = (
   for (const block of sourceBlocks) {
     if (block.type === "text") {
       flushTools();
-      if (block.text.trim().length > 0) {
+      const cleaned = cleanSyntheticImageText(block.text);
+      if (cleaned.length > 0) {
         chatBlocks.push({
           type: "text",
           id: `${message.id}-${block.id}`,
-          body: block.text
+          body: cleaned
         });
       }
+      continue;
+    }
+
+    if (block.type === "image") {
+      flushTools();
+      chatBlocks.push({
+        type: "image",
+        id: `${message.id}-${block.id}`,
+        image: {
+          id: block.id,
+          mediaType: block.mediaType,
+          data: block.data,
+          label: block.label ?? null,
+          source: block.source ?? null,
+          width: block.width ?? null,
+          height: block.height ?? null
+        }
+      });
       continue;
     }
 
@@ -464,11 +1040,15 @@ const chatBlocksForAgentMessage = (
   ) {
     return [];
   }
+  const body = messageBody(session, message, index);
+  if (body.trim().length === 0) {
+    return [];
+  }
   return [
     {
       type: "text",
       id: `${message.id}-text`,
-      body: messageBody(session, message, index)
+      body
     }
   ];
 };
@@ -478,13 +1058,18 @@ export const agentSessionToChatMessages = (
   options: { readonly failedTurnMessage?: string | null } = {}
 ): ChatMessage[] => {
   if (session === null) return [];
+
   const toolsById = new Map(session.tools.map((tool) => [tool.id, tool]));
   const referencedToolIds = new Set<string>();
+
+  // 1. Map raw AgentMessages to ChatMessages
   const messages: ChatMessage[] = session.messages.map<ChatMessage>((message, index) => {
     const formattedTime = formatAgentMessageTime(message.createdAt);
+    const hasToolBlock = message.blocks?.some((b) => b.type === "tool") ?? false;
+    const author = (message.role === "user" && !hasToolBlock) ? "user" : "agent";
     return {
       id: message.id,
-      author: message.role === "user" ? "user" : "agent",
+      author,
       ...(formattedTime === undefined ? {} : { time: formattedTime }),
       ...(message.rollback === undefined || message.rollback === null
         ? {}
@@ -499,6 +1084,7 @@ export const agentSessionToChatMessages = (
       )
     };
   }).filter((message) => message.blocks.length > 0);
+
   const lastMessage = session.messages.at(-1);
   if (session.turnStatus === "failed" && lastMessage?.role === "user") {
     const errorDetail = options.failedTurnMessage?.trim();
@@ -518,6 +1104,7 @@ export const agentSessionToChatMessages = (
       ]
     });
   }
+
   const orphanTools = session.tools.filter((tool) => !referencedToolIds.has(tool.id));
   const group = toToolGroup(orphanTools);
   if (group !== null) {
@@ -533,6 +1120,7 @@ export const agentSessionToChatMessages = (
       ]
     });
   }
+
   if (
     session.follow.running &&
     (lastMessage === undefined || lastMessage.role !== "assistant")
@@ -549,7 +1137,52 @@ export const agentSessionToChatMessages = (
       ]
     });
   }
-  return messages;
+
+  // 2. Merge pass on ChatMessages to combine consecutive agent messages and unify tool groups
+  const finalMessages: ChatMessage[] = [];
+  for (const msg of messages) {
+    if (finalMessages.length > 0) {
+      const prev = finalMessages[finalMessages.length - 1];
+      if (prev !== undefined && prev.author === msg.author && prev.author === "agent") {
+        // Merge blocks and combine consecutive tool groups
+        const nextBlocks = [...prev.blocks];
+        for (const block of msg.blocks) {
+          const lastBlock = nextBlocks[nextBlocks.length - 1];
+          if (lastBlock?.type === "tools" && block.type === "tools") {
+            const combinedCalls = [...lastBlock.group.calls, ...block.group.calls];
+            const running = combinedCalls.find((c) => c.status === "running");
+            nextBlocks[nextBlocks.length - 1] = {
+              ...lastBlock,
+              group: {
+                ...lastBlock.group,
+                status: running === undefined ? "done" : "running",
+                label: running?.title ?? lastBlock.group.label,
+                hint: running === undefined
+                  ? formatMessage("tool.events", { count: combinedCalls.length })
+                  : t("tool.running"),
+                ...(running === undefined ? {} : { currentCallId: running.id }),
+                calls: combinedCalls
+              }
+            };
+          } else {
+            nextBlocks.push(block);
+          }
+        }
+
+        const prevRollback = prev.rollback ?? undefined;
+        const nextRollback = msg.rollback ?? prevRollback;
+        finalMessages[finalMessages.length - 1] = {
+          ...prev,
+          blocks: nextBlocks,
+          ...(nextRollback === undefined ? {} : { rollback: nextRollback })
+        };
+        continue;
+      }
+    }
+    finalMessages.push(msg);
+  }
+
+  return finalMessages;
 };
 
 export const agentSessionToSessionMeta = (
@@ -585,7 +1218,10 @@ const sidePanelSnapshotToViewModel = (
     id: page.id,
     title: page.title,
     content: page.content,
-    updatedAtMs: page.updatedAtMs
+    updatedAtMs: page.updatedAtMs,
+    filePath: page.filePath,
+    format: page.format,
+    source: page.source
   }))
 });
 
@@ -603,64 +1239,24 @@ const projectNameFromWorkingDir = (workingDir: string | null): string => {
 const todoStatus = (raw: unknown): TodoItem["status"] => {
   if (typeof raw !== "string") return "pending";
   const value = raw.trim().toLowerCase();
-  if (["completed", "complete", "done", "success", "succeeded"].includes(value)) return "done";
+  if (["completed", "complete", "done", "success", "succeeded", "cancelled", "canceled"].includes(value)) return "done";
   if (["in_progress", "running", "active", "current", "working"].includes(value)) return "running";
   return "pending";
-};
-
-const todoTitle = (value: Record<string, unknown>, fallback: string): string =>
-  stringField(value, "title", "text", "task", "content", "description", "label") ?? fallback;
-
-const extractTodosFromUnknown = (value: unknown, sourceId: string): TodoItem[] => {
-  const parsed = parseJsonMaybe(value);
-  if (Array.isArray(parsed)) {
-    return parsed
-      .map((item, index) => {
-        const record = asRecord(item);
-        const title = todoTitle(record, formatMessage("todo.fallback", { index: index + 1 }));
-        return {
-          id: stringField(record, "id") ?? `${sourceId}-${index}`,
-          title,
-          status: todoStatus(record.status ?? record.state)
-        };
-      })
-      .filter((todo) => todo.title.trim().length > 0);
-  }
-
-  const record = asRecord(parsed);
-  for (const key of ["todos", "tasks", "items", "plan"]) {
-    const nested = record[key];
-    if (Array.isArray(nested)) {
-      return extractTodosFromUnknown(nested, sourceId);
-    }
-  }
-  const content = record.content;
-  if (typeof content === "string" && content !== value) {
-    return extractTodosFromUnknown(content, sourceId);
-  }
-  return [];
 };
 
 export const agentSessionToTodos = (
   session: AgentSessionSnapshot | null
 ): TodoItem[] => {
   if (session === null) return [];
-  const todos = new Map<string, TodoItem>();
-  for (const tool of session.tools) {
-    if (!tool.name.toLowerCase().includes("todo") && !tool.label.toLowerCase().includes("todo")) {
-      const outputRecord = asRecord(tool.output);
-      const content = outputRecord.content;
-      const inputCandidates = asArray(asRecord(tool.input).todos);
-      if (inputCandidates.length === 0 && typeof content !== "string") continue;
-    }
-    for (const todo of [
-      ...extractTodosFromUnknown(tool.input, `${tool.id}-input`),
-      ...extractTodosFromUnknown(tool.output, `${tool.id}-output`)
-    ]) {
-      todos.set(todo.id, todo);
-    }
-  }
-  return [...todos.values()];
+  return session.todos
+    .map((todo, index) => ({
+      id: todo.id,
+      title: todo.content.trim().length > 0
+        ? todo.content
+        : formatMessage("todo.fallback", { index: index + 1 }),
+      status: todoStatus(todo.status)
+    }))
+    .filter((todo) => todo.title.trim().length > 0);
 };
 
 export const jcodeModelsToModelOptions = (

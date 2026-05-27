@@ -611,6 +611,55 @@ fn make_custom_compatible_provider() -> OpenRouterProvider {
     }
 }
 
+#[test]
+fn openai_compatible_provider_keeps_vision_enabled_until_endpoint_rejects_it() {
+    let provider = OpenRouterProvider {
+        api_base: "https://vision-cache.example.test/v1".to_string(),
+        model: Arc::new(RwLock::new("unknown-vision-capable-model".to_string())),
+        ..make_custom_compatible_provider()
+    };
+
+    assert!(
+        provider.supports_image_input(),
+        "unknown OpenAI-compatible chat models should keep image input enabled until a live endpoint proves otherwise"
+    );
+
+    record_dynamic_vision_support(
+        "https://vision-cache.example.test/v1",
+        "unknown-vision-capable-model",
+        false,
+    );
+    assert!(!provider.supports_image_input());
+}
+
+#[test]
+fn strip_visual_inputs_from_chat_request_preserves_text_fallback() {
+    let mut request = serde_json::json!({
+        "model": "mimo-v2.5-pro",
+        "messages": [{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": "Inspect this page." },
+                { "type": "image_url", "image_url": { "url": "data:image/png;base64,ZmFrZQ==" } }
+            ]
+        }]
+    });
+
+    let removed = super::openrouter_sse_stream::strip_visual_inputs_from_chat_request(&mut request);
+    assert_eq!(removed, 1);
+    let parts = request["messages"][0]["content"]
+        .as_array()
+        .expect("content parts");
+    assert_eq!(parts.len(), 2);
+    assert!(parts.iter().all(|part| part["type"] != "image_url"));
+    assert!(parts.iter().any(|part| {
+        part["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("removed")
+    }));
+}
+
 fn spawn_single_response_models_server(body: &'static str) -> (String, mpsc::Receiver<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake provider server");
     let addr = listener.local_addr().expect("fake provider addr");

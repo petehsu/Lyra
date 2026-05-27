@@ -118,6 +118,44 @@ const ensureSocketParent = (socketPath: string): void => {
 const resolveJcodeRuntimeDir = (agentStorageRoot: string): string =>
   path.join(agentStorageRoot, "runtime");
 
+const maybeResourcesPath = (): string | undefined => {
+  const electronProcess = process as NodeJS.Process & { readonly resourcesPath?: unknown };
+  return typeof electronProcess.resourcesPath === "string" && electronProcess.resourcesPath.length > 0
+    ? electronProcess.resourcesPath
+    : undefined;
+};
+
+const uniqueNonEmpty = (values: readonly string[]): readonly string[] =>
+  Array.from(new Set(values.filter((value) => value.trim().length > 0)));
+
+const resolveLyraDesignPlaywrightBrowsersPath = (
+  cwd: string,
+  resourcesPath = maybeResourcesPath()
+): string => {
+  const fallbackPath = path.join(cwd, "apps", "desktop", "resources", "playwright-browsers");
+  const candidates = uniqueNonEmpty([
+    resourcesPath === undefined ? "" : path.join(resourcesPath, "playwright-browsers"),
+    resourcesPath === undefined ? "" : path.join(resourcesPath, "resources", "playwright-browsers"),
+    path.join(cwd, "resources", "playwright-browsers"),
+    fallbackPath,
+  ]);
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? fallbackPath;
+};
+
+const resolveLyraDesignNodePathEntries = (
+  cwd: string,
+  resourcesPath = maybeResourcesPath()
+): readonly string[] =>
+  uniqueNonEmpty([
+    path.join(cwd, "node_modules"),
+    path.join(cwd, "apps", "desktop", "node_modules"),
+    path.resolve(__dirname, "node_modules"),
+    path.resolve(__dirname, "..", "node_modules"),
+    path.resolve(__dirname, "..", "..", "node_modules"),
+    resourcesPath === undefined ? "" : path.join(resourcesPath, "app.asar", "node_modules"),
+    resourcesPath === undefined ? "" : path.join(resourcesPath, "app", "node_modules"),
+  ]);
+
 const ensureAgentStoragePaths = (options: LyraRuntimeClientOptions): void => {
   fs.mkdirSync(options.agentStorageRoot, { recursive: true });
   fs.mkdirSync(resolveJcodeRuntimeDir(options.agentStorageRoot), { recursive: true });
@@ -127,16 +165,32 @@ const buildRuntimeDaemonEnv = (
   baseEnv: NodeJS.ProcessEnv,
   options: LyraRuntimeClientOptions,
   nodePath: string
-): NodeJS.ProcessEnv => ({
-  ...baseEnv,
-  ELECTRON_RUN_AS_NODE: "",
-  LYRA_AGENT_HOME: options.agentStorageRoot,
-  LYRA_AGENT_RUNTIME_DIR: resolveJcodeRuntimeDir(options.agentStorageRoot),
-  JCODE_HOME: options.agentStorageRoot,
-  JCODE_RUNTIME_DIR: resolveJcodeRuntimeDir(options.agentStorageRoot),
-  LYRA_JS_REPL_NODE_PATH: nodePath,
-  LYRA_JS_REPL_NODE_RUN_AS_NODE: "1"
-});
+): NodeJS.ProcessEnv => {
+  const cwd = process.cwd();
+  const lyraDesignNodePaths = resolveLyraDesignNodePathEntries(cwd);
+  const inheritedNodePath = typeof baseEnv.NODE_PATH === "string" ? baseEnv.NODE_PATH : "";
+  return {
+    ...baseEnv,
+    ELECTRON_RUN_AS_NODE: "",
+    LYRA_AGENT_HOME: options.agentStorageRoot,
+    LYRA_AGENT_RUNTIME_DIR: resolveJcodeRuntimeDir(options.agentStorageRoot),
+    JCODE_HOME: options.agentStorageRoot,
+    JCODE_RUNTIME_DIR: resolveJcodeRuntimeDir(options.agentStorageRoot),
+    LYRA_JS_REPL_NODE_PATH: nodePath,
+    LYRA_JS_REPL_NODE_RUN_AS_NODE: "1",
+    LYRA_DESIGN_NODE_PATH: nodePath,
+    LYRA_DESIGN_NODE_RUN_AS_NODE: "1",
+    LYRA_DESIGN_NODE_PATHS: uniqueNonEmpty([
+      ...lyraDesignNodePaths,
+      ...inheritedNodePath.split(path.delimiter),
+    ]).join(path.delimiter),
+    PLAYWRIGHT_BROWSERS_PATH:
+      typeof baseEnv.PLAYWRIGHT_BROWSERS_PATH === "string"
+        && baseEnv.PLAYWRIGHT_BROWSERS_PATH.trim().length > 0
+        ? baseEnv.PLAYWRIGHT_BROWSERS_PATH
+        : resolveLyraDesignPlaywrightBrowsersPath(cwd),
+  };
+};
 
 const createRequestId = (): string =>
   `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -421,6 +475,8 @@ export const createLyraRuntimeClient = (
 
 export const runtimeClientInternalsForTests = {
   buildRuntimeDaemonEnv,
+  resolveLyraDesignNodePathEntries,
+  resolveLyraDesignPlaywrightBrowsersPath,
   resolveJcodeRuntimeDir,
   resolveSocketPath
 };

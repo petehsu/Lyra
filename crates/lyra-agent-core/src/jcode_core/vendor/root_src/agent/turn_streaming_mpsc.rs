@@ -9,6 +9,7 @@ impl Agent {
         let trace = trace_enabled();
         let mut context_limit_retries = 0u32;
         let mut incomplete_continuations = 0u32;
+        let mut empty_tool_result_continuations = 0u32;
 
         loop {
             let repaired = self.repair_missing_tool_outputs();
@@ -648,9 +649,15 @@ impl Agent {
                 match self.handle_streaming_no_tool_calls(
                     stop_reason.as_deref(),
                     &mut incomplete_continuations,
+                    !text_content.trim().is_empty(),
+                    &mut empty_tool_result_continuations,
                 )? {
                     NoToolCallOutcome::Break => break,
                     NoToolCallOutcome::ContinueWithoutEvent => continue,
+                    NoToolCallOutcome::FallbackAssistant { text } => {
+                        let _ = event_tx.send(ServerEvent::TextDelta { text });
+                        break;
+                    }
                     NoToolCallOutcome::ContinueWithSoftInterrupt { injected, point } => {
                         for event in Self::build_soft_interrupt_events(injected, point, None) {
                             let _ = event_tx.send(event);
@@ -686,6 +693,7 @@ impl Agent {
                 "Turn has {} tool calls to execute",
                 tool_calls.len()
             ));
+            empty_tool_result_continuations = 0;
 
             if self.provider.handles_tools_internally() {
                 tool_calls.retain(|tc| JCODE_NATIVE_TOOLS.contains(&tc.name.as_str()));
@@ -883,7 +891,11 @@ impl Agent {
                                 error: None,
                             });
 
-                            let blocks = tool_output_to_content_blocks(tc.id.clone(), output);
+                            let blocks = tool_output_to_content_blocks(
+                                tc.id.clone(),
+                                output,
+                                self.provider.supports_image_input(),
+                            );
                             self.add_message_with_duration(
                                 Role::User,
                                 blocks,

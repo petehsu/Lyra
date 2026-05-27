@@ -33,6 +33,14 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
     readonly parentSessionId: string | null;
   }) => Promise<void> | void;
   readonly onOpenModelSettings: () => Promise<void> | void;
+  readonly onOpenUrlInWorkbench: (request: {
+    readonly url: string;
+    readonly title?: string;
+  }) => Promise<void> | void;
+  readonly onOpenFile?: ((
+    filePath: string,
+    location?: { readonly line: number; readonly endLine?: number }
+  ) => void) | undefined;
   readonly t: (key: I18nKey) => string;
 };
 
@@ -47,6 +55,8 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   onOpenSelfDevLab,
   onOpenOvernightLab,
   onOpenModelSettings,
+  onOpenUrlInWorkbench,
+  onOpenFile,
   t
 }: UseWorkbenchSidebarAiSurfacePropsParams): AiPanelSurfaceProps =>
   useMemo(
@@ -63,6 +73,8 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenSelfDevLab,
       onOpenOvernightLab,
       onOpenModelSettings,
+      onOpenUrlInWorkbench,
+      onOpenFile,
       movePanelToLeftLabel: t("ai.movePanelToLeft"),
       movePanelToRightLabel: t("ai.movePanelToRight"),
       emptyThreadLabel: t("ai.startBySending"),
@@ -77,6 +89,8 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenSelfDevLab,
       onOpenOvernightLab,
       onOpenModelSettings,
+      onOpenUrlInWorkbench,
+      onOpenFile,
       preferences.locale,
       t,
     ]

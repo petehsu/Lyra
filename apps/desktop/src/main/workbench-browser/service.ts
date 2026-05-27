@@ -24,6 +24,14 @@ import type { DownloadManagerIpcBridge } from "../download-manager";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import { createWorkbenchBrowserViewManager } from "./view-manager";
 import type {
+  WorkbenchBrowserAgentActionResult,
+  WorkbenchBrowserAgentFocusDirection,
+  WorkbenchBrowserAgentFocusResult,
+  WorkbenchBrowserAgentInteraction,
+  WorkbenchBrowserAgentObservation,
+  WorkbenchBrowserAgentObserveStrategy,
+  WorkbenchBrowserAgentPoint,
+  WorkbenchBrowserAgentTargetMode,
   WorkbenchBrowserDebuggerSession,
   WorkbenchBrowserFrameDescriptor,
   WorkbenchBrowserFrameDomProbeResult,
@@ -105,6 +113,64 @@ export type WorkbenchBrowserIpcBridge = {
   ) => Promise<WorkbenchBrowserFrameGlobalBounds | null>;
   readonly reapplyLayout: () => void;
   readonly toggleDevToolsForActivePage: () => boolean;
+  readonly observeAgentPage: (
+    tabId: string,
+    request?: {
+      readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentObservation>;
+  readonly actOnAgentElement: (
+    tabId: string,
+    request: {
+      readonly elementId: number;
+      readonly interaction: WorkbenchBrowserAgentInteraction;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly actOnAgentPoint: (
+    tabId: string,
+    request: {
+      readonly point: WorkbenchBrowserAgentPoint;
+      readonly interaction: WorkbenchBrowserAgentInteraction;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly focusAgentPage: (
+    tabId: string,
+    request: {
+      readonly direction: WorkbenchBrowserAgentFocusDirection;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly steps?: number;
+      readonly restoreFocus?: boolean;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentFocusResult>;
+  readonly typeIntoAgentElement: (
+    tabId: string,
+    request: {
+      readonly elementId?: number;
+      readonly text: string;
+      readonly clear?: boolean;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly pressAgentKey: (
+    tabId: string,
+    request: {
+      readonly key: string;
+      readonly elementId?: number;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly navigateAgentPage: WorkbenchBrowserViewManager["navigateAgentPage"];
+  readonly readAgentPage: WorkbenchBrowserViewManager["readAgentPage"];
+  readonly captureAgentPage: WorkbenchBrowserViewManager["captureAgentPage"];
 };
 
 export const createWorkbenchBrowserIpcBridge = ({
@@ -169,6 +235,32 @@ export const createWorkbenchBrowserIpcBridge = ({
       await manager.applyWebTheme(request as WorkbenchBrowserWebThemeSnapshot);
     }
   );
+  ipcMain.handle(
+    LYRA_CHANNELS.workbenchBrowserCapturePage,
+    async (_event, request: { readonly tabId?: unknown } | undefined) => {
+      const tabId = typeof request?.tabId === "string" ? request.tabId : manager.readActiveTabId();
+      if (tabId === null) {
+        throw new Error("tab_not_found");
+      }
+      return await manager.capturePage(tabId);
+    }
+  );
+  ipcMain.handle(LYRA_CHANNELS.workbenchBrowserCaptureWindow, async () => {
+    const window = getWindow();
+    if (window === null || window.isDestroyed()) {
+      throw new Error("renderer_bridge_unavailable");
+    }
+    const image = await window.webContents.capturePage();
+    const size = image.getSize();
+    return {
+      tabId: "lyra-window",
+      mimeType: "image/png",
+      imageBase64: image.toPNG().toString("base64"),
+      width: size.width,
+      height: size.height,
+      visibleOnly: true
+    } satisfies WorkbenchVisualCaptureResult;
+  });
 
   return {
     dispose: () => {
@@ -182,6 +274,8 @@ export const createWorkbenchBrowserIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserReadPageState);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetElementPickerMode);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserApplyWebTheme);
+      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserCapturePage);
+      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserCaptureWindow);
       manager.dispose();
     },
     syncTopology: manager.syncTopology,
@@ -206,6 +300,15 @@ export const createWorkbenchBrowserIpcBridge = ({
     capturePage: manager.capturePage,
     resolveFrameGlobalBounds: manager.resolveFrameGlobalBounds,
     reapplyLayout: manager.reapplyLayout,
-    toggleDevToolsForActivePage: manager.toggleDevToolsForActivePage
+    toggleDevToolsForActivePage: manager.toggleDevToolsForActivePage,
+    observeAgentPage: manager.observeAgentPage,
+    actOnAgentElement: manager.actOnAgentElement,
+    actOnAgentPoint: manager.actOnAgentPoint,
+    focusAgentPage: manager.focusAgentPage,
+    typeIntoAgentElement: manager.typeIntoAgentElement,
+    pressAgentKey: manager.pressAgentKey,
+    navigateAgentPage: manager.navigateAgentPage,
+    readAgentPage: manager.readAgentPage,
+    captureAgentPage: manager.captureAgentPage
   };
 };

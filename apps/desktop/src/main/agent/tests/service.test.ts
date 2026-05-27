@@ -22,6 +22,8 @@ vi.mock("electron", () => ({
 
 import { LYRA_CHANNELS } from "../../../shared/desktop-bridge";
 import type { LyraRuntimeClient } from "../../runtime-client";
+import { WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID } from "../../workbench-browser/types";
+import type { WorkbenchObservationService } from "../../workbench-observation/types";
 import { createAgentIpcBridge } from "../service";
 
 type RuntimeListener = (event: string, payload: unknown) => void;
@@ -38,9 +40,14 @@ describe("Agent IPC bridge", () => {
     const bridge = createAgentIpcBridge({
       runtimeClient: {
         request,
-        subscribe: vi.fn(() => vi.fn())
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn(),
+        unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
-      getWindow: () => null
+      storageRoot: "/tmp/lyra-agent-test",
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => null
     });
 
     await expect(
@@ -261,6 +268,22 @@ describe("Agent IPC bridge", () => {
         runId: "overnight-1"
       }
     });
+    await expect(
+      electronMock.handlers.get(LYRA_CHANNELS.agentClarificationRespond)?.({}, {
+        sessionId: "session-1",
+        clarificationId: "clar-1",
+        answer: "Use the compact version",
+        selectedOption: "Compact"
+      })
+    ).resolves.toEqual({
+      method: "agent.clarification.respond",
+      payload: {
+        sessionId: "session-1",
+        clarificationId: "clar-1",
+        answer: "Use the compact version",
+        selectedOption: "Compact"
+      }
+    });
 
     bridge.dispose();
     expect(electronMock.ipcMain.removeHandler).toHaveBeenCalledWith(LYRA_CHANNELS.agentSessionCreate);
@@ -278,15 +301,20 @@ describe("Agent IPC bridge", () => {
         subscribe: vi.fn((listener) => {
           runtimeListener = listener;
           return unsubscribe;
-        })
+        }),
+        registerRequestHandler: vi.fn(),
+        unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
       getWindow: () => ({
         isDestroyed: () => false,
         webContents: {
           isDestroyed: () => false,
           send
         }
-      }) as never
+      }) as never,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => null
     });
 
     expect(runtimeListener).not.toBeNull();
@@ -304,5 +332,708 @@ describe("Agent IPC bridge", () => {
 
     bridge.dispose();
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  test("registers Workbench observation host capability handlers", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const tabs = {
+      activeTabId: "settings-1",
+      visibleTabIds: ["settings-1"],
+      tabs: [
+        {
+          tabId: "settings-1",
+          title: "Settings",
+          pageKind: "settings",
+          active: true,
+          visible: true,
+          focusedPane: true,
+          observable: false
+        }
+      ]
+    };
+    const observationService = {
+      dispose: vi.fn(),
+      listTabs: vi.fn(async () => tabs),
+      readTab: vi.fn(async () => ({
+        tab: tabs.tabs[0],
+        observation: {
+          kind: "tab-summary",
+          title: "Settings",
+          pageKind: "settings",
+          active: true,
+          visible: true,
+          focusedPane: true,
+          observable: false,
+          reason: "Observation is unsupported for settings."
+        }
+      })),
+      readWorkspace: vi.fn(async () => ({
+        layoutMode: "single",
+        activeTabId: "settings-1",
+        focusedTabId: "settings-1",
+        visibleTabs: []
+      })),
+      extractTabText: vi.fn(async () => ({
+        tabId: "settings-1",
+        scope: "main",
+        text: "settings",
+        truncated: false,
+        startChar: 0,
+        endChar: 8,
+        totalChars: 8,
+        hasMore: false,
+        extractionMethod: "test"
+      })),
+      captureVisual: vi.fn()
+    } as unknown as WorkbenchObservationService;
+
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => observationService
+    });
+
+    await expect(registered.get("workbench.listTabs")?.({ scope: "visible" })).resolves.toBe(tabs);
+    expect(observationService.listTabs).toHaveBeenLastCalledWith({
+      scope: "visible",
+      includeUnsupported: true
+    });
+    await expect(registered.get("workbench.readTab")?.({ tabId: "settings-1" })).resolves.toEqual({
+      tab: tabs.tabs[0],
+      observation: expect.objectContaining({ kind: "tab-summary" })
+    });
+    await expect(registered.get("workbench.readWorkspace")?.({ detail: "summary" })).resolves.toEqual({
+      layoutMode: "single",
+      activeTabId: "settings-1",
+      focusedTabId: "settings-1",
+      visibleTabs: []
+    });
+    await expect(registered.get("workbench.extractTabText")?.({ tabId: "settings-1" })).resolves.toEqual(
+      expect.objectContaining({ text: "settings" })
+    );
+
+    bridge.dispose();
+  });
+
+  test("normalizes short Workbench tab ids before reading renderer tabs", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const imageTab = {
+      tabId: "browser-tab-35",
+      title: "ChatGPT Image 2026年5月10日 00_10_01.png",
+      pageKind: "app",
+      appId: "image-viewer",
+      active: true,
+      visible: true,
+      focusedPane: true,
+      observable: true,
+      observationKind: "image-viewer"
+    };
+    const tabs = {
+      activeTabId: "browser-tab-35",
+      visibleTabIds: ["browser-tab-35"],
+      tabs: [imageTab]
+    };
+    const observationService = {
+      dispose: vi.fn(),
+      listTabs: vi.fn(async () => tabs),
+      readTab: vi.fn(async (request: { readonly tabId: string }) => ({
+        tab: imageTab,
+        observation: {
+          kind: "image-viewer",
+          filePath: "/Users/petehsu/Pictures/ChatGPT Image 2026年5月10日 00_10_01.png",
+          title: imageTab.title,
+          status: "ready",
+          levels: [],
+          viewport: {
+            zoom: 1,
+            offsetX: 0,
+            offsetY: 0,
+            rotation: 0,
+            background: "checkerboard"
+          },
+          siblingIndex: 0,
+          siblingCount: 1,
+          truncated: false,
+          request
+        }
+      })),
+      readWorkspace: vi.fn(),
+      extractTabText: vi.fn(async (request: { readonly tabId: string }) => ({
+        tabId: request.tabId,
+        scope: "main",
+        text: "image metadata",
+        truncated: false,
+        startChar: 0,
+        endChar: 14,
+        totalChars: 14,
+        hasMore: false,
+        extractionMethod: "structured:image-viewer"
+      })),
+      captureVisual: vi.fn()
+    } as unknown as WorkbenchObservationService;
+
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => observationService
+    });
+
+    await expect(registered.get("workbench.readTab")?.({ tabId: "35" })).resolves.toEqual(
+      expect.objectContaining({ tab: imageTab })
+    );
+    expect(observationService.readTab).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tabId: "browser-tab-35" })
+    );
+
+    await expect(registered.get("workbench.extractTabText")?.({ tabId: "35" })).resolves.toEqual(
+      expect.objectContaining({ tabId: "browser-tab-35" })
+    );
+    expect(observationService.extractTabText).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tabId: "browser-tab-35" })
+    );
+
+    bridge.dispose();
+  });
+
+  test("lyraLumen map uses page tabs and legacy browser handlers are not registered", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const tabs = {
+      activeTabId: "page-1",
+      visibleTabIds: ["page-1"],
+      tabs: [
+        {
+          tabId: "page-1",
+          title: "Example",
+          pageKind: "page",
+          active: true,
+          visible: true,
+          focusedPane: true,
+          observable: true,
+          observationKind: "page"
+        }
+      ]
+    };
+    const observationService = {
+      dispose: vi.fn(),
+      listTabs: vi.fn(async () => tabs),
+      readWorkspace: vi.fn(),
+      extractTabText: vi.fn(),
+      readTab: vi.fn(),
+      captureVisual: vi.fn()
+    } as unknown as WorkbenchObservationService;
+    const browserBridge = {
+      readActiveTabId: vi.fn(() => "page-1"),
+      observeAgentPage: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenMap",
+        tabId: "page-1",
+        targetMode: "isolated",
+        observationId: "obs-1",
+        strategy: "picker",
+        url: "https://example.com",
+        title: "Example",
+        elements: [],
+        activeElementId: null,
+        focusOrder: []
+      })),
+      actOnAgentElement: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenActionResult",
+        tabId: "page-1",
+        inputMode: "chromium",
+        targetMode: "isolated",
+        elementId: 3,
+        x: 40,
+        y: 50
+      })),
+      actOnAgentPoint: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenActionResult",
+        tabId: "page-1",
+        inputMode: "chromium",
+        targetMode: "isolated",
+        x: 12,
+        y: 34
+      })),
+      focusAgentPage: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenFocusResult",
+        tabId: "page-1",
+        inputMode: "chromium",
+        targetMode: "isolated",
+        direction: "scan",
+        steps: 3,
+        activeElementId: 2,
+        focusTrail: [
+          { step: 1, elementId: 1, label: "Search" },
+          { step: 2, elementId: 2, label: "Submit" }
+        ]
+      })),
+      typeIntoAgentElement: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenActionResult",
+        tabId: "page-1",
+        inputMode: "chromium",
+        targetMode: "isolated",
+        message: "Typed into the focused element with Chromium virtual keyboard."
+      })),
+      pressAgentKey: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenActionResult",
+        tabId: "page-1",
+        inputMode: "chromium",
+        targetMode: "isolated",
+        message: "Pressed Enter with Chromium virtual keyboard."
+      })),
+      readAgentPage: vi.fn(async () => ({
+        tabId: "page-1",
+        targetMode: "isolated",
+        scope: "main",
+        text: "recent page tail",
+        content: "recent page tail",
+        truncated: false,
+        startChar: 0,
+        endChar: 16,
+        totalChars: 16,
+        hasMore: false,
+        extractionMethod: "lumen:recent-text-tail"
+      })),
+      navigate: vi.fn(async () => ({
+        address: "https://example.com/docs",
+        tabId: null,
+        title: "Docs"
+      })),
+      navigateAgentPage: vi.fn(async () => ({
+        address: "https://example.com/docs",
+        tabId: "page-1",
+        title: "Docs",
+        targetMode: "isolated"
+      }))
+    };
+
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      getWindow: () => null,
+      getBrowserBridge: () => browserBridge as never,
+      getWorkbenchObservationService: () => observationService
+    });
+
+    expect(registered.has("browser.listTabs")).toBe(false);
+    expect(registered.has("browser.click")).toBe(false);
+    expect(registered.has("browserAgent.observe")).toBe(false);
+    expect(registered.has("lyraLumen.map")).toBe(true);
+
+    await expect(registered.get("lyraLumen.map")?.({})).resolves.toMatchObject({
+      kind: "lyraLumenMap",
+      tabId: "page-1",
+      observationId: "obs-1"
+    });
+    expect(observationService.listTabs).toHaveBeenLastCalledWith({
+      scope: "all",
+      includeUnsupported: true
+    });
+    expect(browserBridge.observeAgentPage).toHaveBeenCalledWith("page-1", {
+      strategy: "picker",
+      targetMode: "isolated"
+    });
+
+    expect(
+      electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowRead)?.({})
+    ).toEqual({
+      enabled: false
+    });
+    expect(
+      electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: true })
+    ).toEqual({
+      enabled: true
+    });
+    browserBridge.observeAgentPage.mockClear();
+    await expect(registered.get("lyraLumen.map")?.({})).resolves.toMatchObject({
+      kind: "lyraLumenMap"
+    });
+    expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
+      strategy: "picker",
+      targetMode: "live"
+    });
+    browserBridge.observeAgentPage.mockClear();
+    await expect(registered.get("lyraLumen.map")?.({ target: "isolated" })).resolves.toMatchObject({
+      kind: "lyraLumenMap"
+    });
+    expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
+      strategy: "picker",
+      targetMode: "live"
+    });
+    browserBridge.actOnAgentElement.mockClear();
+    await expect(
+      registered.get("lyraLumen.act")?.({
+        elementId: 3,
+        interaction: "hover",
+        target: "isolated"
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenActionResult",
+      inputMode: "chromium",
+      elementId: 3
+    });
+    expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
+      elementId: 3,
+      interaction: "hover",
+      targetMode: "live"
+    });
+    expect(
+      electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: false })
+    ).toEqual({
+      enabled: false
+    });
+
+    await expect(
+      registered.get("lyraLumen.act")?.({ elementId: 3, interaction: "hover" })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenActionResult",
+      inputMode: "chromium",
+      elementId: 3
+    });
+    expect(browserBridge.actOnAgentElement).toHaveBeenCalledWith("page-1", {
+      elementId: 3,
+      interaction: "hover",
+      targetMode: "isolated"
+    });
+
+    await expect(
+      registered.get("lyraLumen.act")?.({
+        point: { x: 12, y: 34, reason: "vision fallback" },
+        interaction: "click"
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenActionResult",
+      inputMode: "chromium",
+      x: 12,
+      y: 34
+    });
+    expect(browserBridge.actOnAgentPoint).toHaveBeenCalledWith("page-1", {
+      point: { x: 12, y: 34, reason: "vision fallback" },
+      interaction: "click",
+      targetMode: "isolated"
+    });
+
+    await expect(
+      registered.get("lyraLumen.type")?.({ text: "hello focused editor" })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenActionResult",
+      inputMode: "chromium",
+      message: "Typed into the focused element with Chromium virtual keyboard."
+    });
+    expect(browserBridge.typeIntoAgentElement).toHaveBeenCalledWith("page-1", {
+      text: "hello focused editor",
+      clear: false,
+      targetMode: "isolated"
+    });
+
+    await expect(
+      registered.get("lyraLumen.submit")?.({})
+    ).resolves.toMatchObject({
+      kind: "lyraLumenActionResult",
+      submitted: true,
+      nextRecommendedAction: "lyra_lumen.wait"
+    });
+    expect(browserBridge.pressAgentKey).toHaveBeenCalledWith("page-1", {
+      key: "Enter",
+      targetMode: "isolated"
+    });
+
+    await expect(
+      registered.get("lyraLumen.read")?.({})
+    ).resolves.toMatchObject({
+      kind: "lyraLumenRead",
+      strategy: "focus",
+      content: "recent page tail"
+    });
+    expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
+      strategy: "focus",
+      targetMode: "isolated"
+    });
+
+    await expect(
+      registered.get("lyraLumen.focusScan")?.({
+        direction: "scan",
+        steps: 3,
+        restoreFocus: true
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenFocusResult",
+      inputMode: "chromium",
+      direction: "scan",
+      steps: 3
+    });
+    expect(browserBridge.focusAgentPage).toHaveBeenCalledWith("page-1", {
+      direction: "scan",
+      targetMode: "isolated",
+      steps: 3,
+      restoreFocus: true
+    });
+
+    await expect(
+      registered.get("lyraLumen.navigate")?.({
+        url: "https://example.com/docs",
+        newTab: true
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenNavigate",
+      url: "https://example.com/docs"
+    });
+    expect(browserBridge.navigateAgentPage).toHaveBeenCalledWith("page-1", {
+      url: "https://example.com/docs",
+      targetMode: "isolated"
+    });
+
+    await expect(
+      registered.get("lyraLumen.navigate")?.({
+        url: "https://example.com/docs",
+        newTab: true,
+        target: "live"
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenNavigate",
+      targetMode: "live",
+      url: "https://example.com/docs"
+    });
+    expect(browserBridge.navigate).toHaveBeenCalledWith({
+      address: "https://example.com/docs",
+      newTab: true
+    });
+
+    bridge.dispose();
+  });
+
+  test("lyraLumen isolated actions use a hidden standalone page when the active tab is not a browser page", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const tabs = {
+      activeTabId: "terminal-1",
+      visibleTabIds: ["terminal-1"],
+      tabs: [
+        {
+          tabId: "terminal-1",
+          title: "Terminal",
+          pageKind: "terminal",
+          active: true,
+          visible: true,
+          focusedPane: true,
+          observable: true,
+          observationKind: "terminal"
+        }
+      ]
+    };
+    const observationService = {
+      dispose: vi.fn(),
+      listTabs: vi.fn(async () => tabs),
+      readWorkspace: vi.fn(),
+      extractTabText: vi.fn(),
+      readTab: vi.fn(async () => ({
+        tab: tabs.tabs[0],
+        observation: {
+          kind: "terminal",
+          title: "Terminal",
+          text: "ready"
+        }
+      })),
+      captureVisual: vi.fn()
+    } as unknown as WorkbenchObservationService;
+    const browserBridge = {
+      readActiveTabId: vi.fn(() => "page-1"),
+      readPageState: vi.fn(),
+      observeAgentPage: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenMap",
+        tabId: WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID,
+        targetMode: "isolated",
+        observationId: "obs-standalone",
+        strategy: "picker",
+        url: "about:blank",
+        title: "Lyra Lumen",
+        elements: [],
+        activeElementId: null,
+        focusOrder: []
+      }))
+    };
+
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      getWindow: () => null,
+      getBrowserBridge: () => browserBridge as never,
+      getWorkbenchObservationService: () => observationService
+    });
+
+    await expect(registered.get("lyraLumen.map")?.({})).resolves.toMatchObject({
+      ok: true,
+      kind: "lyraLumenMap",
+      tabId: WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID,
+      targetMode: "isolated"
+    });
+    expect(browserBridge.observeAgentPage).toHaveBeenCalledWith(
+      WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID,
+      {
+        strategy: "picker",
+        targetMode: "isolated"
+      }
+    );
+
+    bridge.dispose();
+  });
+
+  test("lyraLumen live actions return structured notApplicable for active non-page tabs", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const tabs = {
+      activeTabId: "terminal-1",
+      visibleTabIds: ["terminal-1"],
+      tabs: [
+        {
+          tabId: "terminal-1",
+          title: "Terminal",
+          pageKind: "terminal",
+          active: true,
+          visible: true,
+          focusedPane: true,
+          observable: true,
+          observationKind: "terminal"
+        }
+      ]
+    };
+    const observationService = {
+      dispose: vi.fn(),
+      listTabs: vi.fn(async () => tabs),
+      readWorkspace: vi.fn(),
+      extractTabText: vi.fn(),
+      readTab: vi.fn(async () => ({
+        tab: tabs.tabs[0],
+        observation: {
+          kind: "terminal",
+          title: "Terminal",
+          text: "ready"
+        }
+      })),
+      captureVisual: vi.fn()
+    } as unknown as WorkbenchObservationService;
+    const browserBridge = {
+      readActiveTabId: vi.fn(() => "page-1"),
+      readPageState: vi.fn(),
+      observeAgentPage: vi.fn()
+    };
+
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      getWindow: () => null,
+      getBrowserBridge: () => browserBridge as never,
+      getWorkbenchObservationService: () => observationService
+    });
+
+    await expect(registered.get("lyraLumen.map")?.({ target: "live" })).resolves.toMatchObject({
+      ok: false,
+      kind: "lyraLumenResult",
+      notApplicable: true,
+      requestedMethod: "lyraLumen.map",
+      recommendedTool: "workbench.readTab",
+      tab: {
+        tabId: "terminal-1",
+        observationKind: "terminal"
+      },
+      observation: {
+        observation: {
+          kind: "terminal",
+          text: "ready"
+        }
+      }
+    });
+    expect(observationService.readTab).toHaveBeenCalledWith({
+      tabId: "terminal-1",
+      detail: "full"
+    });
+    expect(browserBridge.observeAgentPage).not.toHaveBeenCalled();
+
+    bridge.dispose();
+  });
+
+  test("software host handlers query the renderer capability bridge", async () => {
+    const registered = new Map<string, (payload: unknown) => Promise<unknown>>();
+    const send = vi.fn();
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler as (payload: unknown) => Promise<unknown>);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      getWindow: () => ({
+        isDestroyed: () => false,
+        webContents: {
+          isDestroyed: () => false,
+          send
+        }
+      }) as never,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => null
+    });
+
+    const pending = registered.get("software.listCapabilities")?.({ includeSchemas: true });
+    expect(send).toHaveBeenCalledWith(
+      LYRA_CHANNELS.softwareCapabilitiesQuery,
+      expect.objectContaining({
+        method: "software.listCapabilities",
+        payload: { includeSchemas: true }
+      })
+    );
+    const query = send.mock.calls[0]?.[1] as { readonly requestId: string };
+    await electronMock.handlers.get(LYRA_CHANNELS.softwareCapabilitiesQueryResult)?.({}, {
+      requestId: query.requestId,
+      ok: true,
+      result: { software: [] }
+    });
+
+    await expect(pending).resolves.toEqual({ software: [] });
+    bridge.dispose();
   });
 });

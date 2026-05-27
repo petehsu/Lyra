@@ -268,6 +268,12 @@ fn test_openai_retryable_error_patterns() {
     assert!(is_retryable_error(
         "OpenAI HTTPS stream ended before message completion marker"
     ));
+    assert!(is_retryable_error(
+        "Cluster rate limit exceeded, request queued but not admitted"
+    ));
+    assert!(is_retryable_error(
+        "router_queue_limitation"
+    ));
 }
 
 #[test]
@@ -391,4 +397,60 @@ fn test_openai_cache_ttl_is_model_aware() {
         crate::tui::cache_ttl_for_provider_model("openai", Some("gpt-4o")),
         Some(300)
     );
+}
+
+#[test]
+fn test_strip_images_from_input_removes_visual_context() {
+    let mut input = vec![serde_json::json!({
+        "type": "message",
+        "role": "user",
+        "content": [
+            {
+                "type": "input_text",
+                "text": "analyze this"
+            },
+            {
+                "type": "input_image",
+                "image_url": "data:image/png;base64,ZmFrZQ=="
+            }
+        ]
+    })];
+
+    super::openai_provider_impl::strip_images_from_input(&mut input);
+
+    let content = input[0]["content"].as_array().unwrap();
+    assert_eq!(content.len(), 2);
+    assert_eq!(content[0]["type"], serde_json::json!("input_text"));
+    assert_eq!(content[0]["text"], serde_json::json!("analyze this"));
+    assert_eq!(content[1]["type"], serde_json::json!("input_text"));
+    assert!(content[1]["text"].as_str().unwrap().contains("removed"));
+}
+
+#[test]
+fn test_dynamic_vision_cache_resolution() {
+    let model = "mimo-v2.5-pro-custom";
+
+    // First, it is not in the cache
+    assert!(!super::DYNAMIC_VISION_SUPPORT_CACHE.read().unwrap().contains_key(model));
+
+    // Insert supporting state
+    super::DYNAMIC_VISION_SUPPORT_CACHE.write().unwrap().insert(model.to_string(), true);
+
+    // Read back state from cache
+    assert_eq!(
+        super::DYNAMIC_VISION_SUPPORT_CACHE.read().unwrap().get(model),
+        Some(&true)
+    );
+
+    // Clean up
+    super::DYNAMIC_VISION_SUPPORT_CACHE.write().unwrap().remove(model);
+}
+
+#[test]
+fn test_custom_gateway_vision_unsupported_error_matching() {
+    let error_body = r#"{"error":{"code":"404","message":"No endpoints found that support image input","param":"","type":""}}"#;
+    assert!(super::openai_stream_runtime::is_vision_unsupported_error(error_body));
+
+    let error_body_2 = "No endpoints found that support image input";
+    assert!(super::openai_stream_runtime::is_vision_unsupported_error(error_body_2));
 }

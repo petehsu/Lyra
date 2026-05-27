@@ -23,6 +23,10 @@ import type {
   AgentOvernightAppIconKey,
   AgentOvernightAppId
 } from "../agent-overnight";
+import type {
+  SoftwareStoreAppIconKey,
+  SoftwareStoreAppId
+} from "../software-store";
 
 export type {
   AgentSessionHistoryAppIconKey,
@@ -44,6 +48,10 @@ export type {
   AgentOvernightAppIconKey,
   AgentOvernightAppId
 } from "../agent-overnight";
+export type {
+  SoftwareStoreAppIconKey,
+  SoftwareStoreAppId
+} from "../software-store";
 
 export type {
   ImageViewerAppIconKey,
@@ -62,7 +70,8 @@ export type WorkbenchAppId =
   | AgentSelfDevAppId
   | AgentOvernightAppId
   | AgentSessionHistoryAppId
-  | NotificationCenterAppId;
+  | NotificationCenterAppId
+  | SoftwareStoreAppId;
 
 export type WorkspaceAppRef = {
   readonly appId: WorkbenchAppId;
@@ -78,6 +87,7 @@ export type WorkspaceAppIconKey =
   | AgentSelfDevAppIconKey
   | AgentOvernightAppIconKey
   | AgentSessionHistoryAppIconKey
-  | NotificationCenterAppIconKey;
+  | NotificationCenterAppIconKey
+  | SoftwareStoreAppIconKey;
 
 export type WorkspaceAppIconRenderer = (iconKey: WorkspaceAppIconKey) => ReactNode;

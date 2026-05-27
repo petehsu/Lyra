@@ -8,6 +8,8 @@
 3. 打开 `http://localhost:5174/docs`
 4. 质量检查：`npm run types:check && npm run build`
 
+根目录 `npm run dev:desktop` 会随桌面开发环境一起启动文档站；只启动桌面端可用 `npm run dev:desktop:app`。
+
 ## 目录规范
 1. 文档内容：`content/docs`
 2. 多语言文件命名：`<slug>.<locale>.mdx`

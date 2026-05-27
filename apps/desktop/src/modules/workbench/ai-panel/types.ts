@@ -23,6 +23,14 @@ export type AiPanelSurfaceProps = {
     readonly parentSessionId: string | null;
   }) => Promise<void> | void;
   readonly onOpenModelSettings?: () => Promise<void> | void;
+  readonly onOpenUrlInWorkbench?: (request: {
+    readonly url: string;
+    readonly title?: string;
+  }) => Promise<void> | void;
+  readonly onOpenFile?: ((
+    filePath: string,
+    location?: { readonly line: number; readonly endLine?: number }
+  ) => void) | undefined;
   readonly locale?: WorkbenchLocale;
   readonly title: string;
   readonly emptyThreadLabel: string;

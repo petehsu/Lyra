@@ -37,7 +37,18 @@ import { createWorkbenchBrowserSharedDebuggerSession } from "./debugger";
 import { createWorkbenchBrowserElementPickerController } from "./element-picker/controller";
 import { extractTextFromPage } from "./page-text-extractor";
 import { createWebThemeInjector } from "./web-theme";
+import { WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID } from "./types";
 import type {
+  WorkbenchBrowserAgentActionResult,
+  WorkbenchBrowserAgentElement,
+  WorkbenchBrowserAgentFocusDirection,
+  WorkbenchBrowserAgentFocusResult,
+  WorkbenchBrowserAgentFocusTrailEntry,
+  WorkbenchBrowserAgentInteraction,
+  WorkbenchBrowserAgentObservation,
+  WorkbenchBrowserAgentObserveStrategy,
+  WorkbenchBrowserAgentPoint,
+  WorkbenchBrowserAgentTargetMode,
   WorkbenchBrowserDebuggerSession,
   WorkbenchBrowserElementPickerController,
   WorkbenchBrowserFrameGlobalBounds,
@@ -58,6 +69,22 @@ type BrowserPageEntry = {
   layout: WorkbenchBrowserPageLayout | null;
   runtime: WorkbenchBrowserPageRuntimeState;
   readonly disposeListeners: () => void;
+};
+
+type BrowserAgentPageTarget = {
+  readonly tabId: string;
+  readonly webContents: WebContents;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly liveEntry?: BrowserPageEntry;
+  address: string;
+  title: string;
+  isLoading: boolean;
+};
+
+type BrowserAgentShadowEntry = BrowserAgentPageTarget & {
+  readonly window: BrowserWindow;
+  readonly sourceTabId: string;
+  detached: boolean;
 };
 
 type BrowserPageTombstone = {
@@ -87,13 +114,20 @@ const normalizeNumber = (value: unknown, fallback = 0): number => {
 };
 
 const normalizeAddress = (value: unknown): string | null => {
-  const next = normalizeString(value);
+  let next = normalizeString(value);
   if (next === null) {
     return null;
   }
+  if (next === "about:blank") {
+    return "about:blank";
+  }
+  // Automatically prepend "http://" if a protocol/scheme is missing
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(next)) {
+    next = "http://" + next;
+  }
   try {
     const parsed = new URL(next);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:" && parsed.protocol !== "file:") {
       return null;
     }
     return parsed.toString();
@@ -325,6 +359,16 @@ export const createWorkbenchBrowserViewManager = ({
   readonly onWebContentsCreated?: (tabId: string, webContents: WebContents) => () => void;
 }): WorkbenchBrowserViewManager => {
   const entries = new Map<string, BrowserPageEntry>();
+  const browserAgentShadows = new Map<string, BrowserAgentShadowEntry>();
+  const browserAgentCache = new Map<
+    string,
+    {
+      readonly observationId: string;
+      readonly elements: readonly WorkbenchBrowserAgentElement[];
+      readonly url: string;
+      readonly title: string;
+    }
+  >();
   const tombstones = new Map<string, BrowserPageTombstone>();
   const tombstoneTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const debuggerSessions = new Map<
@@ -577,7 +621,6 @@ export const createWorkbenchBrowserViewManager = ({
         }
         return leftOrder - rightOrder;
       });
-    const visibleIds = new Set(visibleEntries.map(({ entry }) => entry.tabId));
     if (visibleEntries.length > 0) {
       if (!overlayAttached) {
         rootView.addChildView(overlayView);
@@ -644,22 +687,6 @@ export const createWorkbenchBrowserViewManager = ({
         entry.attached = true;
       }
     }
-
-    const focusTargetId = getActiveOrFocusedTabId();
-    if (
-      focusTargetId !== null
-      && visibleIds.has(focusTargetId)
-      && window.isFocused()
-    ) {
-      const focusTarget = entries.get(focusTargetId);
-      if (
-        focusTarget !== undefined
-        && focusTarget.isDestroyed === false
-        && focusTarget.webContents.isFocused() === false
-      ) {
-        focusTarget.webContents.focus();
-      }
-    }
   };
 
   const destroyEntry = (entry: BrowserPageEntry, emitClosedEvent: boolean): void => {
@@ -668,6 +695,7 @@ export const createWorkbenchBrowserViewManager = ({
     }
     cancelTombstoneTimer(entry.tabId);
     entry.isDestroyed = true;
+    destroyBrowserAgentShadow(entry.tabId);
     void debuggerSessions.get(entry.tabId)?.dispose().catch(() => undefined);
     debuggerSessions.delete(entry.tabId);
     webThemeInjector.detach(entry.tabId);
@@ -713,6 +741,260 @@ export const createWorkbenchBrowserViewManager = ({
       console.error(`[lyra-browser] loadURL failed tab=${entry.tabId} url=${target} error=${String(error)}`);
       updateRuntimeState(entry, { isLoading: false });
     });
+  };
+
+  const agentTargetAddress = (target: BrowserAgentPageTarget): string =>
+    target.liveEntry?.runtime.address ?? target.address;
+
+  const agentTargetTitle = (target: BrowserAgentPageTarget): string =>
+    target.liveEntry?.runtime.title ?? target.title;
+
+  const agentTargetIsLoading = (target: BrowserAgentPageTarget): boolean =>
+    target.liveEntry?.runtime.isLoading ?? target.isLoading;
+
+  const liveAgentTarget = (entry: BrowserPageEntry): BrowserAgentPageTarget => ({
+    tabId: entry.tabId,
+    webContents: entry.webContents,
+    targetMode: "live",
+    liveEntry: entry,
+    address: entry.runtime.address,
+    title: entry.runtime.title,
+    isLoading: entry.runtime.isLoading
+  });
+
+  const publishBrowserAgentActivity = ({
+    tabId,
+    targetMode,
+    action,
+    inputActive = false,
+    durationMs = inputActive ? 1_800 : 1_250,
+    cursor
+  }: {
+    readonly tabId: string;
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly action: "observe" | "read" | "capture" | "wait" | "navigate" | "focus" | "act" | "type" | "press";
+    readonly inputActive?: boolean;
+    readonly durationMs?: number;
+    readonly cursor?: { readonly x: number; readonly y: number };
+  }): void => {
+    publishEvent({
+      kind: "lumen-browser-activity",
+      source: "lyra_lumen",
+      tabId,
+      targetMode,
+      action,
+      inputActive,
+      durationMs,
+      ...(cursor === undefined ? {} : { cursor })
+    });
+  };
+
+  const waitForAgentPageLoad = async (
+    webContents: WebContents,
+    url: string,
+    timeoutMs: number
+  ): Promise<void> => {
+    if (webContents.isDestroyed()) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const finish = (): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer !== null) {
+          clearTimeout(timer);
+        }
+        webContents.off("did-stop-loading", finish);
+        webContents.off("did-fail-load", finish);
+        resolve();
+      };
+      timer = setTimeout(finish, timeoutMs);
+      webContents.once("did-stop-loading", finish);
+      webContents.once("did-fail-load", finish);
+      void webContents.loadURL(url).catch(finish);
+    });
+  };
+
+  const destroyBrowserAgentShadow = (tabId: string): void => {
+    const shadow = browserAgentShadows.get(tabId);
+    if (shadow === undefined) {
+      return;
+    }
+    browserAgentShadows.delete(tabId);
+    if (shadow.webContents.isDestroyed() === false) {
+      shadow.webContents.close({ waitForBeforeUnload: false });
+    }
+    if (shadow.window.isDestroyed() === false) {
+      shadow.window.destroy();
+    }
+  };
+
+  const createBrowserAgentShadow = (source: BrowserPageEntry): BrowserAgentShadowEntry => {
+    const width = Math.max(480, Math.round(source.layout?.width ?? 1366));
+    const height = Math.max(360, Math.round(source.layout?.height ?? 900));
+    const window = new BrowserWindow({
+      show: false,
+      skipTaskbar: true,
+      paintWhenInitiallyHidden: true,
+      width,
+      height,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        offscreen: true,
+        sandbox: true,
+        spellcheck: true
+      }
+    });
+    window.setMenuBarVisibility(false);
+    const { webContents } = window;
+    const shadow: BrowserAgentShadowEntry = {
+      tabId: source.tabId,
+      sourceTabId: source.tabId,
+      window,
+      webContents,
+      targetMode: "isolated",
+      address: "about:blank",
+      title: "Lyra Lumen",
+      isLoading: false,
+      detached: false
+    };
+    webContents.setWindowOpenHandler(({ url }) => {
+      if (isSupportedWebUrl(url)) {
+        void waitForAgentPageLoad(webContents, url, 8_000).then(() => {
+          shadow.address = normalizeAddress(webContents.getURL()) ?? url;
+          shadow.detached = true;
+        });
+      } else {
+        void shell.openExternal(url).catch(() => undefined);
+      }
+      return { action: "deny" };
+    });
+    webContents.on("page-title-updated", (_event, title) => {
+      shadow.title = normalizeString(title) ?? shadow.address;
+    });
+    webContents.on("did-start-loading", () => {
+      shadow.isLoading = true;
+    });
+    webContents.on("did-stop-loading", () => {
+      shadow.isLoading = false;
+      shadow.address = normalizeAddress(webContents.getURL()) ?? shadow.address;
+      shadow.title = normalizeString(webContents.getTitle()) ?? shadow.title;
+    });
+    webContents.on("did-navigate", (_event, url) => {
+      shadow.address = normalizeAddress(url) ?? shadow.address;
+    });
+    webContents.on("did-navigate-in-page", (_event, url) => {
+      shadow.address = normalizeAddress(url) ?? shadow.address;
+    });
+    window.on("closed", () => {
+      browserAgentShadows.delete(shadow.tabId);
+    });
+    browserAgentShadows.set(source.tabId, shadow);
+    return shadow;
+  };
+
+  const createStandaloneBrowserAgentShadow = (tabId: string): BrowserAgentShadowEntry => {
+    const windowBounds = getWindow()?.getContentBounds();
+    const width = Math.max(480, Math.round(windowBounds?.width ?? 1366));
+    const height = Math.max(360, Math.round(windowBounds?.height ?? 900));
+    const window = new BrowserWindow({
+      show: false,
+      skipTaskbar: true,
+      paintWhenInitiallyHidden: true,
+      width,
+      height,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        offscreen: true,
+        sandbox: true,
+        spellcheck: true
+      }
+    });
+    window.setMenuBarVisibility(false);
+    const { webContents } = window;
+    const shadow: BrowserAgentShadowEntry = {
+      tabId,
+      sourceTabId: tabId,
+      window,
+      webContents,
+      targetMode: "isolated",
+      address: "about:blank",
+      title: "Lyra Lumen",
+      isLoading: false,
+      detached: true
+    };
+    webContents.setWindowOpenHandler(({ url }) => {
+      if (isSupportedWebUrl(url)) {
+        void waitForAgentPageLoad(webContents, url, 8_000).then(() => {
+          shadow.address = normalizeAddress(webContents.getURL()) ?? url;
+          shadow.title = normalizeString(webContents.getTitle()) ?? shadow.address;
+        });
+      } else {
+        void shell.openExternal(url).catch(() => undefined);
+      }
+      return { action: "deny" };
+    });
+    webContents.on("page-title-updated", (_event, title) => {
+      shadow.title = normalizeString(title) ?? shadow.address;
+    });
+    webContents.on("did-start-loading", () => {
+      shadow.isLoading = true;
+    });
+    webContents.on("did-stop-loading", () => {
+      shadow.isLoading = false;
+      shadow.address = normalizeAddress(webContents.getURL()) ?? shadow.address;
+      shadow.title = normalizeString(webContents.getTitle()) ?? shadow.title;
+    });
+    webContents.on("did-navigate", (_event, url) => {
+      shadow.address = normalizeAddress(url) ?? shadow.address;
+    });
+    webContents.on("did-navigate-in-page", (_event, url) => {
+      shadow.address = normalizeAddress(url) ?? shadow.address;
+    });
+    window.on("closed", () => {
+      browserAgentShadows.delete(shadow.tabId);
+    });
+    browserAgentShadows.set(tabId, shadow);
+    return shadow;
+  };
+
+  const ensureBrowserAgentShadow = async (
+    source: BrowserPageEntry,
+    timeoutMs: number | undefined
+  ): Promise<BrowserAgentShadowEntry> => {
+    const shadow = browserAgentShadows.get(source.tabId) ?? createBrowserAgentShadow(source);
+    const sourceAddress = normalizeAddress(source.webContents.getURL()) ?? source.runtime.address;
+    const shouldSyncFromSource =
+      shadow.detached === false
+      && normalizeAddress(shadow.webContents.getURL()) !== sourceAddress;
+    if (shouldSyncFromSource) {
+      await waitForAgentPageLoad(shadow.webContents, sourceAddress, timeoutMs ?? 8_000);
+      shadow.address = normalizeAddress(shadow.webContents.getURL()) ?? sourceAddress;
+      shadow.title = normalizeString(shadow.webContents.getTitle()) ?? source.runtime.title;
+    }
+    return shadow;
+  };
+
+  const resolveBrowserAgentTarget = async (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode | undefined,
+    timeoutMs: number | undefined
+  ): Promise<BrowserAgentPageTarget> => {
+    if (targetMode === "live") {
+      return liveAgentTarget(requireEntry(tabId));
+    }
+    const entry = entries.get(tabId);
+    if (entry !== undefined && entry.isDestroyed === false) {
+      return await ensureBrowserAgentShadow(entry, timeoutMs);
+    }
+    return browserAgentShadows.get(tabId)
+      ?? createStandaloneBrowserAgentShadow(tabId || WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID);
   };
 
   const createEntry = (
@@ -1205,6 +1487,1210 @@ export const createWorkbenchBrowserViewManager = ({
     };
   };
 
+  const normalizeAgentObserveStrategy = (
+    strategy: WorkbenchBrowserAgentObserveStrategy | undefined
+  ): WorkbenchBrowserAgentObserveStrategy => {
+    if (
+      strategy === "picker"
+      || strategy === "focus"
+      || strategy === "hybrid"
+      || strategy === "domFallback"
+      || strategy === "visionFallback"
+    ) {
+      return strategy;
+    }
+    return "hybrid";
+  };
+
+  const createBrowserAgentObservationId = (tabId: string): string =>
+    `lyra-lumen-${tabId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const browserAgentCacheKey = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): string => `${targetMode}:${tabId}`;
+
+  const buildBrowserAgentObservationScript = ({
+    frameTreeNodeId,
+    strategy
+  }: {
+    readonly frameTreeNodeId: number;
+    readonly strategy: WorkbenchBrowserAgentObserveStrategy;
+  }): string => `
+    (() => {
+      const FRAME_TREE_NODE_ID = ${JSON.stringify(frameTreeNodeId)};
+      const STRATEGY = ${JSON.stringify(strategy)};
+      const warnings = [];
+
+      const normalizeText = (value, maxLength = 160) => {
+        if (typeof value !== "string") return "";
+        const normalized = value.replace(/\\s+/g, " ").trim();
+        return normalized.length <= maxLength ? normalized : normalized.slice(0, maxLength - 3) + "...";
+      };
+
+      const isDisabled = (element) =>
+        element.disabled === true
+        || element.getAttribute?.("disabled") !== null
+        || element.getAttribute?.("aria-disabled") === "true";
+
+      const isVisible = (element, win = window) => {
+        if (!(element instanceof Element) || !element.isConnected) return false;
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        const style = win.getComputedStyle(element);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+        if (Number.parseFloat(style.opacity || "1") <= 0) return false;
+        return true;
+      };
+
+      const associatedLabel = (element, doc = document) => {
+        if (element.id) {
+          const label = doc.querySelector("label[for=" + JSON.stringify(element.id) + "]");
+          if (label) return label.innerText || label.textContent || "";
+        }
+        let parent = element.parentElement;
+        while (parent) {
+          if (parent.tagName === "LABEL") return parent.innerText || parent.textContent || "";
+          parent = parent.parentElement;
+        }
+        return "";
+      };
+
+      const describedByText = (element, doc = document) => String(element.getAttribute?.("aria-describedby") || "")
+        .split(/\\s+/)
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((id) => doc.getElementById(id))
+        .filter((entry) => entry instanceof HTMLElement)
+        .map((entry) => normalizeText(entry.innerText || entry.textContent || "", 80))
+        .find(Boolean) || "";
+
+      const selectorPreview = (element) => {
+        const tagName = String(element.tagName || "div").toLowerCase();
+        const parts = [tagName];
+        const id = normalizeText(element.id || "", 40);
+        if (id) parts.push("#" + id);
+        const classes = Array.from(element.classList || [])
+          .map((item) => normalizeText(String(item), 24))
+          .filter((item) => item.length > 0 && !item.startsWith("__lyra"))
+          .slice(0, 2);
+        if (classes.length > 0) parts.push(classes.map((item) => "." + item).join(""));
+        const name = normalizeText(element.getAttribute?.("name") || "", 24);
+        if (name) parts.push("[name=\\"" + name + "\\"]");
+        const testId = normalizeText(
+          element.getAttribute?.("data-testid") || element.getAttribute?.("data-test-id") || "",
+          24
+        );
+        if (testId) parts.push("[data-testid=\\"" + testId + "\\"]");
+        const type = normalizeText(element.getAttribute?.("type") || "", 20);
+        if (type) parts.push("[type=\\"" + type + "\\"]");
+        const preview = parts.join("");
+        return preview.length <= 120 ? preview : preview.slice(0, 117) + "...";
+      };
+
+      const stateHint = (element) => {
+        const expanded = element.getAttribute?.("aria-expanded");
+        if (expanded === "true") return "expanded";
+        if (expanded === "false") return "collapsed";
+        const selected = element.getAttribute?.("aria-selected");
+        if (selected === "true") return "selected";
+        if (selected === "false") return "unselected";
+        const pressed = element.getAttribute?.("aria-pressed");
+        if (pressed === "true") return "pressed";
+        if (pressed === "false") return "unpressed";
+        return normalizeText(element.getAttribute?.("data-state") || "", 32);
+      };
+
+      const isEditable = (element) =>
+        element instanceof HTMLInputElement
+        || element instanceof HTMLTextAreaElement
+        || element instanceof HTMLSelectElement
+        || (element instanceof HTMLElement && element.isContentEditable)
+        || element.getAttribute?.("role") === "textbox"
+        || element.getAttribute?.("role") === "searchbox";
+
+      const isFocusable = (element) => {
+        if (isDisabled(element)) return false;
+        if (element.getAttribute?.("tabindex") === "-1") return false;
+        if (element instanceof HTMLElement && element.tabIndex >= 0) return true;
+        if (element instanceof HTMLAnchorElement && element.href) return true;
+        if (element instanceof HTMLButtonElement) return true;
+        if (isEditable(element)) return true;
+        const role = element.getAttribute?.("role");
+        return role === "button" || role === "link" || role === "checkbox" || role === "menuitem";
+      };
+
+      const actionHint = (element, cursor) => {
+        if (element instanceof HTMLSelectElement) return "select";
+        if (isEditable(element)) return "type";
+        const role = normalizeText(element.getAttribute?.("role") || "", 32);
+        const popup = normalizeText(element.getAttribute?.("aria-haspopup") || "", 32);
+        if (popup) return "open " + popup;
+        if (element instanceof HTMLAnchorElement && element.href) return "open";
+        if (role === "button" || role === "link" || cursor === "pointer") return "click";
+        return "";
+      };
+
+      const labelFor = (element, doc = document) => {
+        const label = normalizeText(
+          element.getAttribute?.("aria-label")
+            || element.getAttribute?.("placeholder")
+            || element.getAttribute?.("title")
+            || element.getAttribute?.("alt")
+            || associatedLabel(element, doc)
+            || element.innerText
+            || element.textContent
+            || element.value
+            || "",
+          120
+        );
+        return label || "(no label)";
+      };
+
+      const items = [];
+      const seen = new Set();
+      let activeElementId = null;
+
+      const crawl = (doc, win, offsetX = 0, offsetY = 0, frameUrl = "") => {
+        const selector = [
+          "a[href]",
+          "button",
+          "input",
+          "select",
+          "textarea",
+          "summary",
+          "[contenteditable='true']",
+          "[tabindex]",
+          "[role='button']",
+          "[role='link']",
+          "[role='checkbox']",
+          "[role='textbox']",
+          "[role='searchbox']",
+          "[role='menuitem']"
+        ].join(",");
+        const candidates = Array.from(doc.querySelectorAll(selector));
+
+        for (const element of candidates) {
+          if (!(element instanceof Element) || seen.has(element)) continue;
+          seen.add(element);
+          if (!isVisible(element, win) || isDisabled(element)) continue;
+          if (element instanceof HTMLInputElement && element.type === "hidden") continue;
+          const focusable = isFocusable(element);
+          if (STRATEGY === "focus" && !focusable) continue;
+          const rect = element.getBoundingClientRect();
+          const style = win.getComputedStyle(element);
+          const cursor = normalizeText(style.cursor || "", 32);
+          const editable = isEditable(element);
+          const tabIndex = element instanceof HTMLElement ? element.tabIndex : -1;
+          const id = items.length + 1;
+          if (element === doc.activeElement) activeElementId = id;
+          items.push({
+            id,
+            frameTreeNodeId: FRAME_TREE_NODE_ID,
+            tagName: String(element.tagName || "div").toLowerCase(),
+            role: normalizeText(element.getAttribute?.("role") || String(element.tagName || "element").toLowerCase(), 40),
+            label: labelFor(element, doc),
+            actionHint: actionHint(element, cursor),
+            stateHint: stateHint(element),
+            tooltipText: normalizeText(element.getAttribute?.("title") || describedByText(element, doc), 80),
+            textSnippet: normalizeText(
+              element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+                ? element.value || ""
+                : element.innerText || element.textContent || "",
+              80
+            ),
+            selectorPreview: selectorPreview(element),
+            bounds: {
+              x: Math.round(rect.left + offsetX),
+              y: Math.round(rect.top + offsetY),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height)
+            },
+            focusable,
+            tabIndex,
+            disabled: isDisabled(element),
+            editable,
+            href: element instanceof HTMLAnchorElement ? element.href : "",
+            inputType: element instanceof HTMLInputElement ? normalizeText(element.type || "", 32) : "",
+            frameUrl
+          });
+        }
+
+        for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
+          try {
+            if (!isVisible(frame, win)) continue;
+            const childDoc = frame.contentDocument || frame.contentWindow?.document;
+            const childWin = frame.contentWindow;
+            if (!childDoc || !childWin) continue;
+            const frameRect = frame.getBoundingClientRect();
+            crawl(
+              childDoc,
+              childWin,
+              offsetX + frameRect.left,
+              offsetY + frameRect.top,
+              normalizeText(String(childWin.location?.href || ""), 400)
+            );
+          } catch (_error) {
+            warnings.push("cross_origin_frame_skipped");
+          }
+        }
+      };
+
+      crawl(document, window, 0, 0, normalizeText(String(window.location.href || ""), 400));
+
+      const focusOrder = items
+        .filter((item) => item.focusable)
+        .slice()
+        .sort((a, b) => {
+          const aTab = a.tabIndex > 0 ? a.tabIndex : Number.MAX_SAFE_INTEGER;
+          const bTab = b.tabIndex > 0 ? b.tabIndex : Number.MAX_SAFE_INTEGER;
+          if (aTab !== bTab) return aTab - bTab;
+          return a.id - b.id;
+        })
+        .map((item) => item.id);
+
+      return {
+        title: normalizeText(document.title || "", 200),
+        url: normalizeText(String(window.location.href || ""), 600),
+        elements: items,
+        focusOrder,
+        activeElementId,
+        warnings
+      };
+    })()
+  `;
+
+  const observeAgentPage = async (
+    tabId: string,
+    request?: {
+      readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+      readonly suppressActivity?: boolean;
+    }
+  ): Promise<WorkbenchBrowserAgentObservation> => {
+    const target = await resolveBrowserAgentTarget(tabId, request?.targetMode, request?.timeoutMs);
+    const strategy = normalizeAgentObserveStrategy(request?.strategy);
+    const timeoutMs = normalizeExecuteScriptTimeoutMs(request?.timeoutMs, 8_000);
+    if (request?.suppressActivity !== true) {
+      publishBrowserAgentActivity({
+        tabId,
+        targetMode: target.targetMode,
+        action: "observe",
+        durationMs: Math.max(1_250, Math.min(3_200, timeoutMs))
+      });
+    }
+    const raw = await runFrameScriptWithTimeout(
+      () => target.webContents.executeJavaScript(
+        buildBrowserAgentObservationScript({
+          frameTreeNodeId: target.webContents.mainFrame.frameTreeNodeId,
+          strategy
+        }),
+        true
+      ),
+      timeoutMs
+    ) as Record<string, unknown>;
+
+    const rawElements = Array.isArray(raw.elements) ? raw.elements : [];
+    const elements = rawElements
+      .map((item): WorkbenchBrowserAgentElement | null => {
+        if (item === null || typeof item !== "object") {
+          return null;
+        }
+        const record = item as Record<string, unknown>;
+        const bounds = record.bounds !== null && typeof record.bounds === "object"
+          ? record.bounds as Record<string, unknown>
+          : {};
+        const id = Number(record.id);
+        const x = Number(bounds.x);
+        const y = Number(bounds.y);
+        const width = Number(bounds.width);
+        const height = Number(bounds.height);
+        if (
+          Number.isFinite(id) === false
+          || Number.isFinite(x) === false
+          || Number.isFinite(y) === false
+          || Number.isFinite(width) === false
+          || Number.isFinite(height) === false
+          || width <= 0
+          || height <= 0
+        ) {
+          return null;
+        }
+        const element: WorkbenchBrowserAgentElement = {
+          id: Math.round(id),
+          frameTreeNodeId: Number.isFinite(Number(record.frameTreeNodeId))
+            ? Math.round(Number(record.frameTreeNodeId))
+            : target.webContents.mainFrame.frameTreeNodeId,
+          tagName: typeof record.tagName === "string" ? record.tagName : "element",
+          role: typeof record.role === "string" ? record.role : "element",
+          label: typeof record.label === "string" && record.label.length > 0
+            ? record.label
+            : "(no label)",
+          selectorPreview: typeof record.selectorPreview === "string" ? record.selectorPreview : "",
+          bounds: {
+            x: Math.round(x),
+            y: Math.round(y),
+            width: Math.round(width),
+            height: Math.round(height)
+          },
+          focusable: record.focusable === true,
+          disabled: record.disabled === true,
+          editable: record.editable === true,
+          ...(typeof record.actionHint === "string" && record.actionHint.length > 0
+            ? { actionHint: record.actionHint }
+            : {}),
+          ...(typeof record.stateHint === "string" && record.stateHint.length > 0
+            ? { stateHint: record.stateHint }
+            : {}),
+          ...(typeof record.tooltipText === "string" && record.tooltipText.length > 0
+            ? { tooltipText: record.tooltipText }
+            : {}),
+          ...(typeof record.textSnippet === "string" && record.textSnippet.length > 0
+            ? { textSnippet: record.textSnippet }
+            : {}),
+          ...(Number.isFinite(Number(record.tabIndex))
+            ? { tabIndex: Math.round(Number(record.tabIndex)) }
+            : {}),
+          ...(typeof record.href === "string" && record.href.length > 0
+            ? { href: record.href }
+            : {}),
+          ...(typeof record.inputType === "string" && record.inputType.length > 0
+            ? { inputType: record.inputType }
+            : {}),
+          ...(typeof record.frameUrl === "string" && record.frameUrl.length > 0
+            ? { frameUrl: record.frameUrl }
+            : {})
+        };
+        return element;
+      })
+      .filter((item): item is WorkbenchBrowserAgentElement => item !== null);
+
+    const focusOrder = Array.isArray(raw.focusOrder)
+      ? raw.focusOrder
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value))
+          .map((value) => Math.round(value))
+      : elements.filter((element) => element.focusable).map((element) => element.id);
+    const activeElementId = Number.isFinite(Number(raw.activeElementId))
+      ? Math.round(Number(raw.activeElementId))
+      : null;
+    const warnings = Array.isArray(raw.warnings)
+      ? [...new Set(raw.warnings.filter((value): value is string => typeof value === "string"))]
+      : [];
+    const observation: WorkbenchBrowserAgentObservation = {
+      ok: true,
+      kind: "lyraLumenMap",
+      tabId,
+      targetMode: target.targetMode,
+      observationId: createBrowserAgentObservationId(tabId),
+      strategy,
+      url: typeof raw.url === "string" ? raw.url : agentTargetAddress(target),
+      title: typeof raw.title === "string" && raw.title.length > 0 ? raw.title : agentTargetTitle(target),
+      elements,
+      activeElementId,
+      focusOrder,
+      ...(warnings.length > 0 ? { warnings } : {}),
+      nextRecommendedAction: elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
+    };
+    browserAgentCache.set(browserAgentCacheKey(tabId, target.targetMode), {
+      observationId: observation.observationId,
+      elements: observation.elements,
+      url: observation.url,
+      title: observation.title
+    });
+    return observation;
+  };
+
+  const findAgentElement = async (
+    tabId: string,
+    elementId: number,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    timeoutMs: number | undefined
+  ): Promise<{
+    readonly element: WorkbenchBrowserAgentElement | null;
+    readonly observationId?: string;
+  }> => {
+    const cached = browserAgentCache.get(browserAgentCacheKey(tabId, targetMode));
+    const cachedElement = cached?.elements.find((element) => element.id === elementId) ?? null;
+    if (cached !== undefined && cachedElement !== null) {
+      return { element: cachedElement, observationId: cached.observationId };
+    }
+    const observed = await observeAgentPage(tabId, {
+      strategy: "hybrid",
+      targetMode,
+      suppressActivity: true,
+      ...(timeoutMs === undefined ? {} : { timeoutMs })
+    });
+    return {
+      element: observed.elements.find((element) => element.id === elementId) ?? null,
+      observationId: observed.observationId
+    };
+  };
+
+  const readFocusedElementSignature = async (target: BrowserAgentPageTarget): Promise<string> => {
+    try {
+      const value = await target.webContents.executeJavaScript(`
+        (() => {
+          const element = document.activeElement;
+          if (!element) return "";
+          return [
+            element.tagName || "",
+            element.id || "",
+            element.getAttribute?.("name") || "",
+            element.getAttribute?.("aria-label") || "",
+            element.getAttribute?.("role") || ""
+          ].join("|");
+        })()
+      `, true);
+      return typeof value === "string" ? value : "";
+    } catch {
+      return "";
+    }
+  };
+
+  const centerOfAgentElement = (element: WorkbenchBrowserAgentElement): { x: number; y: number } => ({
+    x: element.bounds.x + Math.round(element.bounds.width / 2),
+    y: element.bounds.y + Math.round(element.bounds.height / 2)
+  });
+
+  const staleElementResult = (
+    tabId: string,
+    elementId: number,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    observationId?: string
+  ): WorkbenchBrowserAgentActionResult => ({
+    ok: false,
+    kind: "lyraLumenActionResult",
+    tabId,
+    inputMode: "chromium",
+    targetMode,
+    elementId,
+    ...(observationId === undefined ? {} : { beforeObservationId: observationId }),
+    staleElement: true,
+    nextRecommendedAction: "lyra_lumen.map",
+    error: {
+      kind: "staleElement",
+      message: `Element ${elementId} is not present in the latest Lyra Lumen map.`
+    }
+  });
+
+  const observeAfterAgentInput = async (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    timeoutMs: number | undefined
+  ): Promise<WorkbenchBrowserAgentObservation | null> => {
+    try {
+      const normalizedTimeoutMs = timeoutMs === undefined
+        ? undefined
+        : Math.max(250, Math.min(timeoutMs, 8_000));
+      return await observeAgentPage(tabId, {
+        strategy: "hybrid",
+        targetMode,
+        suppressActivity: true,
+        ...(normalizedTimeoutMs === undefined ? {} : { timeoutMs: normalizedTimeoutMs })
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  const normalizeAgentFocusDirection = (
+    direction: WorkbenchBrowserAgentFocusDirection | undefined
+  ): WorkbenchBrowserAgentFocusDirection => {
+    if (direction === "previous" || direction === "scan") {
+      return direction;
+    }
+    return "next";
+  };
+
+  const normalizeAgentFocusSteps = (
+    direction: WorkbenchBrowserAgentFocusDirection,
+    steps: number | undefined
+  ): number => {
+    const defaultSteps = direction === "scan" ? 12 : 1;
+    const maxSteps = direction === "scan" ? 40 : 10;
+    const value = Number.isFinite(Number(steps)) ? Math.round(Number(steps)) : defaultSteps;
+    return Math.max(1, Math.min(value, maxSteps));
+  };
+
+  const markAgentFocusAnchor = async (target: BrowserAgentPageTarget): Promise<string | null> => {
+    const token = `lyra-agent-focus-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    try {
+      const marked = await target.webContents.executeJavaScript(`
+        (() => {
+          const active = document.activeElement;
+          if (!(active instanceof HTMLElement)) return false;
+          active.setAttribute("data-lyra-agent-focus-anchor", ${JSON.stringify(token)});
+          return true;
+        })()
+      `, true);
+      return marked === true ? token : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const restoreAgentFocusAnchor = async (
+    target: BrowserAgentPageTarget,
+    token: string | null
+  ): Promise<boolean> => {
+    if (token === null) {
+      return false;
+    }
+    try {
+      const restored = await target.webContents.executeJavaScript(`
+        (() => {
+          const selector = ${JSON.stringify(`[data-lyra-agent-focus-anchor="${token}"]`)};
+          const target = document.querySelector(selector);
+          if (!(target instanceof HTMLElement)) return false;
+          target.focus({ preventScroll: true });
+          target.removeAttribute("data-lyra-agent-focus-anchor");
+          return true;
+        })()
+      `, true);
+      return restored === true;
+    } catch {
+      return false;
+    }
+  };
+
+  const sendAgentTabKey = async (
+    target: BrowserAgentPageTarget,
+    backwards: boolean
+  ): Promise<void> => {
+    target.webContents.focus();
+    if (backwards) {
+      target.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab", modifiers: ["shift"] });
+    } else {
+      target.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab" });
+    }
+    await delay(12);
+    if (backwards) {
+      target.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab", modifiers: ["shift"] });
+    } else {
+      target.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });
+    }
+    await delay(60);
+  };
+
+  const focusedElementFromObservation = (
+    observation: WorkbenchBrowserAgentObservation
+  ): WorkbenchBrowserAgentElement | undefined => {
+    if (observation.activeElementId === null) {
+      return undefined;
+    }
+    return observation.elements.find((element) => element.id === observation.activeElementId);
+  };
+
+  const focusTrailEntryFromObservation = (
+    step: number,
+    observation: WorkbenchBrowserAgentObservation
+  ): WorkbenchBrowserAgentFocusTrailEntry => {
+    const element = focusedElementFromObservation(observation);
+    return {
+      step,
+      elementId: observation.activeElementId,
+      ...(element === undefined ? {} : { role: element.role, label: element.label })
+    };
+  };
+
+  const focusAgentPage = async (
+    tabId: string,
+    request: {
+      readonly direction: WorkbenchBrowserAgentFocusDirection;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly steps?: number;
+      readonly restoreFocus?: boolean;
+      readonly timeoutMs?: number;
+    }
+  ): Promise<WorkbenchBrowserAgentFocusResult> => {
+    const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.timeoutMs);
+    const direction = normalizeAgentFocusDirection(request.direction);
+    const steps = normalizeAgentFocusSteps(direction, request.steps);
+    const restoreFocus = request.restoreFocus ?? direction === "scan";
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "focus",
+      inputActive: true,
+      durationMs: Math.max(1_400, Math.min(4_000, 950 + steps * 160))
+    });
+    const before = await observeAgentPage(tabId, {
+      strategy: "focus",
+      targetMode: target.targetMode,
+      suppressActivity: true,
+      ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+    });
+    const anchor = restoreFocus ? await markAgentFocusAnchor(target) : null;
+    const trail: WorkbenchBrowserAgentFocusTrailEntry[] = [];
+    let current = before;
+    const backwards = direction === "previous";
+
+    for (let index = 0; index < steps; index += 1) {
+      await sendAgentTabKey(target, backwards);
+      current = await observeAgentPage(tabId, {
+        strategy: "focus",
+        targetMode: target.targetMode,
+        suppressActivity: true,
+        ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+      });
+      trail.push(focusTrailEntryFromObservation(index + 1, current));
+    }
+
+    const restored = restoreFocus ? await restoreAgentFocusAnchor(target, anchor) : false;
+    if (restored) {
+      current = await observeAgentPage(tabId, {
+        strategy: "focus",
+        targetMode: target.targetMode,
+        suppressActivity: true,
+        ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+      });
+    }
+    const focusedElement = focusedElementFromObservation(current);
+
+    return {
+      ok: true,
+      kind: "lyraLumenFocusResult",
+      tabId,
+      inputMode: "chromium",
+      targetMode: target.targetMode,
+      direction,
+      steps,
+      activeElementId: current.activeElementId,
+      ...(focusedElement === undefined ? {} : { focusedElement }),
+      focusTrail: trail,
+      beforeObservationId: before.observationId,
+      afterObservationId: current.observationId,
+      restored,
+      message: restored
+        ? `Scanned ${steps} focus stop${steps === 1 ? "" : "s"} and restored the previous focus.`
+        : `Moved focus ${direction} by ${steps} step${steps === 1 ? "" : "s"}.`,
+      nextRecommendedAction: current.activeElementId === null ? "lyra_lumen.map" : "lyra_lumen.act"
+    };
+  };
+
+  const actOnAgentElement = async (
+    tabId: string,
+    request: {
+      readonly elementId: number;
+      readonly interaction: WorkbenchBrowserAgentInteraction;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ): Promise<WorkbenchBrowserAgentActionResult> => {
+    const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.timeoutMs);
+    const { element, observationId } = await findAgentElement(
+      tabId,
+      request.elementId,
+      target.targetMode,
+      request.timeoutMs
+    );
+    if (element === null) {
+      return staleElementResult(tabId, request.elementId, target.targetMode, observationId);
+    }
+
+    const beforeUrl = agentTargetAddress(target);
+    const beforeFocus = await readFocusedElementSignature(target);
+    const { x, y } = centerOfAgentElement(element);
+    const interaction = request.interaction;
+    const button = interaction === "rightClick" ? "right" : "left";
+    const clickCount = interaction === "doubleClick" ? 2 : 1;
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "act",
+      inputActive: true,
+      cursor: { x, y },
+      durationMs: interaction === "hover" ? 1_550 : 1_900
+    });
+
+    target.webContents.focus();
+    target.webContents.sendInputEvent({ type: "mouseMove", x, y, button: "left", clickCount: 1 });
+    await delay(50);
+    if (interaction !== "hover") {
+      target.webContents.sendInputEvent({ type: "mouseDown", x, y, button, clickCount });
+      await delay(12);
+      target.webContents.sendInputEvent({ type: "mouseUp", x, y, button, clickCount });
+    }
+    await delay(interaction === "hover" ? 80 : 120);
+
+    const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
+    const afterFocus = await readFocusedElementSignature(target);
+    return {
+      ok: true,
+      kind: "lyraLumenActionResult",
+      tabId,
+      inputMode: "chromium",
+      targetMode: target.targetMode,
+      elementId: element.id,
+      x,
+      y,
+      ...(observationId === undefined ? {} : { beforeObservationId: observationId }),
+      ...(after === null ? {} : { afterObservationId: after.observationId }),
+      pageChanged: beforeUrl !== agentTargetAddress(target),
+      focusChanged: beforeFocus !== afterFocus,
+      navigationStarted: agentTargetIsLoading(target),
+      message: `${interaction} sent to element ${element.id} with Chromium virtual input.`,
+      nextRecommendedAction: "lyra_lumen.map"
+    };
+  };
+
+  const actOnAgentPoint = async (
+    tabId: string,
+    request: {
+      readonly point: WorkbenchBrowserAgentPoint;
+      readonly interaction: WorkbenchBrowserAgentInteraction;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ): Promise<WorkbenchBrowserAgentActionResult> => {
+    const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.timeoutMs);
+    const beforeUrl = agentTargetAddress(target);
+    const beforeFocus = await readFocusedElementSignature(target);
+    const x = Math.max(0, Math.round(request.point.x));
+    const y = Math.max(0, Math.round(request.point.y));
+    const interaction = request.interaction;
+    const button = interaction === "rightClick" ? "right" : "left";
+    const clickCount = interaction === "doubleClick" ? 2 : 1;
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "act",
+      inputActive: true,
+      cursor: { x, y },
+      durationMs: interaction === "hover" ? 1_550 : 1_900
+    });
+
+    target.webContents.focus();
+    target.webContents.sendInputEvent({ type: "mouseMove", x, y, button: "left", clickCount: 1 });
+    await delay(50);
+    if (interaction !== "hover") {
+      target.webContents.sendInputEvent({ type: "mouseDown", x, y, button, clickCount });
+      await delay(12);
+      target.webContents.sendInputEvent({ type: "mouseUp", x, y, button, clickCount });
+    }
+    await delay(interaction === "hover" ? 80 : 120);
+
+    const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
+    const afterFocus = await readFocusedElementSignature(target);
+    return {
+      ok: true,
+      kind: "lyraLumenActionResult",
+      tabId,
+      inputMode: "chromium",
+      targetMode: target.targetMode,
+      x,
+      y,
+      ...(after === null ? {} : { afterObservationId: after.observationId }),
+      pageChanged: beforeUrl !== agentTargetAddress(target),
+      focusChanged: beforeFocus !== afterFocus,
+      navigationStarted: agentTargetIsLoading(target),
+      message:
+        `${interaction} sent to visual fallback point (${x}, ${y})` +
+        (request.point.reason === undefined ? "." : `: ${request.point.reason}`),
+      nextRecommendedAction: "lyra_lumen.map"
+    };
+  };
+
+  const typeIntoAgentElement = async (
+    tabId: string,
+    request: {
+      readonly elementId?: number;
+      readonly text: string;
+      readonly clear?: boolean;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ): Promise<WorkbenchBrowserAgentActionResult> => {
+    const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.timeoutMs);
+    let beforeObservationId = browserAgentCache.get(browserAgentCacheKey(tabId, target.targetMode))?.observationId;
+    let elementId = request.elementId;
+    let x: number | undefined;
+    let y: number | undefined;
+    let focusedChanged = false;
+    if (elementId !== undefined) {
+      const focused = await actOnAgentElement(tabId, {
+        elementId,
+        interaction: "click",
+        targetMode: target.targetMode,
+        ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+      });
+      if (focused.ok === false) {
+        return focused;
+      }
+      beforeObservationId = focused.beforeObservationId ?? beforeObservationId;
+      x = focused.x;
+      y = focused.y;
+      focusedChanged = focused.focusChanged === true;
+    }
+
+    const beforeUrl = agentTargetAddress(target);
+    const beforeFocus = await readFocusedElementSignature(target);
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "type",
+      inputActive: true,
+      ...(x === undefined || y === undefined ? {} : { cursor: { x, y } }),
+      durationMs: Math.max(1_700, Math.min(5_000, 950 + request.text.length * 24))
+    });
+    target.webContents.focus();
+    if (request.clear === true) {
+      const modifier = process.platform === "darwin" ? "meta" : "control";
+      target.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: [modifier] });
+      target.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: [modifier] });
+      await delay(10);
+      target.webContents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
+      target.webContents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
+      await delay(10);
+    }
+    for (const char of request.text) {
+      target.webContents.sendInputEvent({ type: "char", keyCode: char });
+      await delay(4);
+    }
+    await delay(80);
+    const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
+    const afterFocus = await readFocusedElementSignature(target);
+    return {
+      ok: true,
+      kind: "lyraLumenActionResult",
+      tabId,
+      inputMode: "chromium",
+      targetMode: target.targetMode,
+      ...(elementId === undefined ? {} : { elementId }),
+      ...(x === undefined ? {} : { x }),
+      ...(y === undefined ? {} : { y }),
+      ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+      ...(after === null ? {} : { afterObservationId: after.observationId }),
+      pageChanged: beforeUrl !== agentTargetAddress(target),
+      focusChanged: focusedChanged || beforeFocus !== afterFocus,
+      navigationStarted: agentTargetIsLoading(target),
+      message:
+        elementId === undefined
+          ? "Typed into the focused element with Chromium virtual keyboard."
+          : `Typed into element ${elementId} with Chromium virtual keyboard.`,
+      nextRecommendedAction: "lyra_lumen.map"
+    };
+  };
+
+  const pressAgentKey = async (
+    tabId: string,
+    request: {
+      readonly key: string;
+      readonly elementId?: number;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ): Promise<WorkbenchBrowserAgentActionResult> => {
+    const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.timeoutMs);
+    let beforeObservationId = browserAgentCache.get(browserAgentCacheKey(tabId, target.targetMode))?.observationId;
+    let elementId = request.elementId;
+    let x: number | undefined;
+    let y: number | undefined;
+    if (elementId !== undefined) {
+      const focused = await actOnAgentElement(tabId, {
+        elementId,
+        interaction: "click",
+        targetMode: target.targetMode,
+        ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+      });
+      if (focused.ok === false) {
+        return focused;
+      }
+      beforeObservationId = focused.beforeObservationId;
+      x = focused.x;
+      y = focused.y;
+    }
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "press",
+      inputActive: true,
+      ...(x === undefined || y === undefined ? {} : { cursor: { x, y } }),
+      durationMs: 1_550
+    });
+    const beforeUrl = agentTargetAddress(target);
+    const beforeFocus = await readFocusedElementSignature(target);
+    target.webContents.focus();
+    target.webContents.sendInputEvent({ type: "keyDown", keyCode: request.key });
+    if (request.key.length === 1) {
+      target.webContents.sendInputEvent({ type: "char", keyCode: request.key });
+    }
+    target.webContents.sendInputEvent({ type: "keyUp", keyCode: request.key });
+    await delay(80);
+    const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
+    const afterFocus = await readFocusedElementSignature(target);
+    return {
+      ok: true,
+      kind: "lyraLumenActionResult",
+      tabId,
+      inputMode: "chromium",
+      targetMode: target.targetMode,
+      ...(elementId === undefined ? {} : { elementId }),
+      ...(x === undefined ? {} : { x }),
+      ...(y === undefined ? {} : { y }),
+      ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+      ...(after === null ? {} : { afterObservationId: after.observationId }),
+      pageChanged: beforeUrl !== agentTargetAddress(target),
+      focusChanged: beforeFocus !== afterFocus,
+      navigationStarted: agentTargetIsLoading(target),
+      message: `Pressed ${request.key} with Chromium virtual keyboard.`,
+      nextRecommendedAction: "lyra_lumen.map"
+    };
+  };
+
+  const readAgentDomSummaryFromTarget = async (
+    target: BrowserAgentPageTarget,
+    maxChars: number | undefined
+  ): Promise<WorkbenchObservationBrowserDomSummary & {
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly content: string;
+  }> => {
+    const limit = Math.max(256, Math.min(24_000, Math.round(maxChars ?? 12_000)));
+    try {
+      const raw = await target.webContents.executeJavaScript(`
+        (() => {
+          const normalizeText = (value) =>
+            typeof value === "string" ? value.replace(/\\s+/g, " ").trim() : "";
+          const bodyText = normalizeText(document.body?.innerText ?? "");
+          const headings = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"))
+            .map((element) => normalizeText(element.textContent ?? ""))
+            .filter(Boolean)
+            .slice(0, 40);
+          const links = Array.from(document.querySelectorAll("a[href]"))
+            .map((element) => ({
+              text: normalizeText(element.textContent ?? ""),
+              href: typeof element.href === "string" ? element.href : ""
+            }))
+            .filter((entry) => entry.href.length > 0)
+            .slice(0, 50);
+          return {
+            domTitle: normalizeText(document.title ?? ""),
+            documentLanguage: normalizeText(document.documentElement?.lang ?? ""),
+            selectionText: normalizeText(String(window.getSelection?.() ?? "")),
+            headings,
+            links,
+            forms: [],
+            mainTextExcerpt: bodyText.slice(0, ${limit}),
+            truncated: bodyText.length > ${limit}
+          };
+        })()
+      `, true) as Record<string, unknown>;
+      const headings = Array.isArray(raw.headings)
+        ? raw.headings.filter((value): value is string => typeof value === "string")
+        : [];
+      const links = Array.isArray(raw.links)
+        ? raw.links
+            .map((value) => {
+              if (value === null || typeof value !== "object") {
+                return null;
+              }
+              const record = value as Record<string, unknown>;
+              return typeof record.href === "string"
+                ? { text: typeof record.text === "string" ? record.text : "", href: record.href }
+                : null;
+            })
+            .filter((value): value is { text: string; href: string } => value !== null)
+        : [];
+      const content = typeof raw.mainTextExcerpt === "string" ? raw.mainTextExcerpt : "";
+      return {
+        targetMode: target.targetMode,
+        content,
+        ...(typeof raw.domTitle === "string" && raw.domTitle.length > 0 ? { domTitle: raw.domTitle } : {}),
+        ...(typeof raw.documentLanguage === "string" && raw.documentLanguage.length > 0
+          ? { documentLanguage: raw.documentLanguage }
+          : {}),
+        ...(typeof raw.selectionText === "string" && raw.selectionText.length > 0
+          ? { selectionText: raw.selectionText }
+          : {}),
+        headings,
+        mainTextExcerpt: content,
+        links,
+        forms: [],
+        truncated: raw.truncated === true
+      };
+    } catch {
+      return {
+        targetMode: target.targetMode,
+        content: "",
+        headings: [],
+        mainTextExcerpt: "",
+        links: [],
+        forms: [],
+        truncated: false
+      };
+    }
+  };
+
+  const readAgentRecentTextFromTarget = async (
+    target: BrowserAgentPageTarget,
+    maxChars: number | undefined
+  ): Promise<WorkbenchTabExtractTextResult & {
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly content: string;
+  }> => {
+    const limit = Math.max(512, Math.min(6_000, Math.round(maxChars ?? 4_000)));
+    try {
+      const raw = await target.webContents.executeJavaScript(`
+        (() => {
+          const normalizeText = (value) => {
+            if (typeof value !== "string") return "";
+            return value
+              .replace(/\\u00a0/g, " ")
+              .replace(/\\r/g, "")
+              .replace(/[ \\t]+\\n/g, "\\n")
+              .replace(/\\n[ \\t]+/g, "\\n")
+              .replace(/\\n{3,}/g, "\\n\\n")
+              .trim();
+          };
+          const text = normalizeText(document.body?.innerText ?? document.body?.textContent ?? "");
+          const totalChars = text.length;
+          const startChar = Math.max(0, totalChars - ${limit});
+          const slice = text.slice(startChar);
+          return {
+            text: slice,
+            startChar,
+            endChar: totalChars,
+            totalChars,
+            truncated: startChar > 0,
+            hasMore: startChar > 0
+          };
+        })()
+      `, true) as Record<string, unknown>;
+      const text = typeof raw.text === "string" ? raw.text : "";
+      const startChar = typeof raw.startChar === "number" && Number.isFinite(raw.startChar)
+        ? Math.max(0, Math.round(raw.startChar))
+        : 0;
+      const endChar = typeof raw.endChar === "number" && Number.isFinite(raw.endChar)
+        ? Math.max(startChar, Math.round(raw.endChar))
+        : startChar + text.length;
+      const totalChars = typeof raw.totalChars === "number" && Number.isFinite(raw.totalChars)
+        ? Math.max(endChar, Math.round(raw.totalChars))
+        : endChar;
+      return {
+        tabId: target.tabId,
+        targetMode: target.targetMode,
+        scope: "main",
+        text,
+        content: text,
+        startChar,
+        endChar,
+        totalChars,
+        truncated: raw.truncated === true,
+        hasMore: raw.hasMore === true,
+        extractionMethod: "lumen:recent-text-tail"
+      };
+    } catch {
+      return {
+        tabId: target.tabId,
+        targetMode: target.targetMode,
+        scope: "main",
+        text: "",
+        content: "",
+        startChar: 0,
+        endChar: 0,
+        totalChars: 0,
+        truncated: false,
+        hasMore: false,
+        extractionMethod: "lumen:recent-text-tail-error"
+      };
+    }
+  };
+
+  const navigateAgentPage = async (
+    tabId: string,
+    request: {
+      readonly url: string;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ): Promise<WorkbenchBrowserNavigateResult & { readonly targetMode: WorkbenchBrowserAgentTargetMode }> => {
+    const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.timeoutMs);
+    const address = normalizeAddress(request.url);
+    if (address === null) {
+      throw new Error("url is required");
+    }
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "navigate",
+      inputActive: true,
+      durationMs: Math.max(1_800, Math.min(5_000, request.timeoutMs ?? 2_400))
+    });
+    if (target.targetMode === "live") {
+      return {
+        ...(await navigateInEntry(requireEntry(tabId), { address })),
+        targetMode: "live"
+      };
+    }
+    const shadow = target as BrowserAgentShadowEntry;
+    shadow.detached = true;
+    await waitForAgentPageLoad(shadow.webContents, address, request.timeoutMs ?? 8_000);
+    shadow.address = normalizeAddress(shadow.webContents.getURL()) ?? address;
+    shadow.title = normalizeString(shadow.webContents.getTitle()) ?? shadow.address;
+    browserAgentCache.delete(browserAgentCacheKey(tabId, shadow.targetMode));
+    return {
+      address: shadow.address,
+      tabId,
+      title: shadow.title,
+      targetMode: shadow.targetMode
+    };
+  };
+
+  const readAgentPage = async (
+    tabId: string,
+    request: {
+      readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly maxChars?: number;
+    }
+  ) => {
+    const target = await resolveBrowserAgentTarget(tabId, request.targetMode, undefined);
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "read",
+      durationMs: 1_500
+    });
+    if (request.strategy === "domFallback") {
+      return await readAgentDomSummaryFromTarget(target, request.maxChars);
+    }
+    return await readAgentRecentTextFromTarget(target, request.maxChars);
+  };
+
+  const captureAgentPage = async (
+    tabId: string,
+    request?: {
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+    }
+  ): Promise<WorkbenchVisualCaptureResult & { readonly targetMode: WorkbenchBrowserAgentTargetMode }> => {
+    const target = await resolveBrowserAgentTarget(tabId, request?.targetMode, undefined);
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "capture",
+      durationMs: 1_500
+    });
+    if (target.targetMode === "live") {
+      return {
+        ...(await capturePage(tabId)),
+        targetMode: "live"
+      };
+    }
+    const image = await target.webContents.capturePage();
+    const size = image.getSize();
+    return {
+      tabId,
+      targetMode: target.targetMode,
+      mimeType: "image/png",
+      imageBase64: image.toPNG().toString("base64"),
+      width: size.width,
+      height: size.height,
+      visibleOnly: false
+    };
+  };
+
   return {
     dispose: () => {
       void elementPickerController.dispose();
@@ -1219,6 +2705,9 @@ export const createWorkbenchBrowserViewManager = ({
       tombstoneTimers.clear();
       for (const entry of entries.values()) {
         destroyEntry(entry, false);
+      }
+      for (const tabId of [...browserAgentShadows.keys()]) {
+        destroyBrowserAgentShadow(tabId);
       }
       entries.clear();
       tombstones.clear();
@@ -1245,10 +2734,12 @@ export const createWorkbenchBrowserViewManager = ({
         return await navigateInEntry(requestedEntry, request);
       }
 
-      const targetTabId = getActiveOrFocusedTabId();
-      const targetEntry = targetTabId === null ? null : entries.get(targetTabId) ?? null;
-      if (targetEntry !== null) {
-        return await navigateInEntry(targetEntry, request);
+      if (request.newTab !== true) {
+        const targetTabId = getActiveOrFocusedTabId();
+        const targetEntry = targetTabId === null ? null : entries.get(targetTabId) ?? null;
+        if (targetEntry !== null) {
+          return await navigateInEntry(targetEntry, request);
+        }
       }
 
       publishEvent({
@@ -1567,6 +3058,15 @@ export const createWorkbenchBrowserViewManager = ({
         entry.webContents.openDevTools({ mode: "detach" });
       }
       return true;
-    }
+    },
+    observeAgentPage,
+    actOnAgentElement,
+    actOnAgentPoint,
+    focusAgentPage,
+    typeIntoAgentElement,
+    pressAgentKey,
+    navigateAgentPage,
+    readAgentPage,
+    captureAgentPage
   };
 };

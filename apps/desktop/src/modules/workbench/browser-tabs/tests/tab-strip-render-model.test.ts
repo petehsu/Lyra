@@ -69,6 +69,53 @@ describe("browser tab strip render model", () => {
     expect(model.tabs[2]?.tabClassName).toContain("lyra-browser-tab-item-split-group-active");
   });
 
+  test("marks responsive density on the strip", () => {
+    const model = createBrowserTabStripRenderModel({
+      tabs: [
+        createTab("a", "A"),
+        createTab("b", "B")
+      ],
+      activeTabId: "a",
+      splitGroupTabIds: [],
+      stackedMode: false,
+      closeTabLabel: "Close",
+      isTerminalDropActive: false,
+      dropIndicatorX: null,
+      isSplitDropActive: false,
+      splitDropTargetTabId: null,
+      workspaceDragTabId: null,
+      rightDragPreview: null,
+      density: "smaller"
+    });
+
+    expect(model.stripClassName).toContain("lyra-browser-tab-strip-density-smaller");
+  });
+
+  test("marks close lock width on the strip", () => {
+    const model = createBrowserTabStripRenderModel({
+      tabs: [
+        createTab("a", "A"),
+        createTab("b", "B")
+      ],
+      activeTabId: "a",
+      splitGroupTabIds: [],
+      stackedMode: false,
+      closeTabLabel: "Close",
+      isTerminalDropActive: false,
+      dropIndicatorX: null,
+      isSplitDropActive: false,
+      splitDropTargetTabId: null,
+      workspaceDragTabId: null,
+      rightDragPreview: null,
+      closeLockedTabWidth: 88.4
+    });
+
+    expect(model.stripClassName).toContain("lyra-browser-tab-strip-close-lock");
+    expect(model.navStyle).toEqual({
+      "--lyra-browser-tab-close-lock-w": "88px"
+    });
+  });
+
   test("models drop and right-drag preview presentation", () => {
     const model = createBrowserTabStripRenderModel({
       tabs: [
@@ -99,6 +146,7 @@ describe("browser tab strip render model", () => {
     expect(model.navClassName).toContain("lyra-browser-tabs-reorder-active");
     expect(model.navClassName).toContain("lyra-browser-tabs-split-drop-active");
     expect(model.navStyle).toEqual({ "--lyra-browser-drop-indicator-x": "42px" });
+    expect(model.tabs[0]?.tabClassName).toContain("lyra-browser-tab-item-dragging");
     expect(model.tabs[0]?.tabClassName).toContain("lyra-browser-tab-item-split-group-dragging");
     expect(model.tabs[1]?.tabClassName).toContain("lyra-browser-tab-item-split-target");
     expect(model.preview).toMatchObject({

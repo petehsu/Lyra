@@ -734,8 +734,10 @@ fn walker_worker(
         .threads(inner.threads)
         // Allow hidden entries.
         .hidden(false)
-        // Follow symlinks to search their contents.
-        .follow_links(true)
+        // Do not follow symlinks during broad fallback walks; indexed search also
+        // avoids links, and following them can turn home-directory scans into
+        // unbounded traversals through mirrored app containers.
+        .follow_links(false)
         // Keep ignore behavior aligned with git repositories: only apply
         // gitignore rules when a git context exists.
         .require_git(true);

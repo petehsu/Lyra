@@ -14,6 +14,7 @@ import {
   PanelTop,
   Settings2,
   Square,
+  Store,
   X
 } from "lucide-react";
 
@@ -111,6 +112,13 @@ const WorkbenchTitlebarActions = ({
       onClick={actions.openSettings}
     >
       <Settings2 size={14} />
+    </ChromeIconButton>
+    <ChromeIconButton
+      className="lyra-window-button"
+      aria-label={labels.openSoftwareStore}
+      onClick={actions.openSoftwareStore}
+    >
+      <Store size={14} />
     </ChromeIconButton>
     <ChromeIconButton
       className="lyra-window-button"

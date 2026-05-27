@@ -6,6 +6,7 @@ import type {
 import type { WorkspaceTab, WorkspaceVisibleLayout } from "../../workspace-tabs";
 import {
   arePageRuntimeStatesEquivalentForTests,
+  resolveBrowserAgentCursorViewportPoint,
   resolveVisibleBrowserPageDescriptors
 } from "../use-workbench-browser-runtime";
 
@@ -92,5 +93,25 @@ describe("arePageRuntimeStatesEquivalentForTests", () => {
         createRuntimeState({ canGoBack: true })
       )
     ).toBe(false);
+  });
+});
+
+describe("resolveBrowserAgentCursorViewportPoint", () => {
+  test("maps page-relative Agent cursor points into viewport coordinates", () => {
+    expect(
+      resolveBrowserAgentCursorViewportPoint(
+        { left: 120, top: 80, width: 640, height: 360 },
+        { x: 32, y: 44 }
+      )
+    ).toEqual({ x: 152, y: 124 });
+  });
+
+  test("does not render a cursor when the page host is unavailable", () => {
+    expect(
+      resolveBrowserAgentCursorViewportPoint(
+        { left: 120, top: 80, width: 0, height: 360 },
+        { x: 32, y: 44 }
+      )
+    ).toBeNull();
   });
 });

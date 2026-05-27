@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
+  JcodeAccountLoginCompleteRequest,
+  JcodeAccountLoginCompleteResponse,
+  JcodeAccountLoginStartRequest,
+  JcodeAccountLoginStartResponse,
   JcodeAccountRequest,
   JcodeAccountsResponse,
   JcodeConfigSnapshot,
   JcodeConfigUpdateRequest,
   JcodeAgentRolesUpdateRequest,
+  JcodeLoginProvidersResponse,
   JcodeProviderProfileSaveRequest,
 } from "../../../shared/desktop-bridge";
 import type { AiProviderModelEntry, AiProviderProfile } from "../../../shared/ai";
@@ -45,7 +50,7 @@ const emptyDraft = (): SettingsAiDraft => ({
 const emptySections = (labels: SettingsAiLabels): readonly SettingsAiPresetSection[] => [
   { id: "mainstream", label: labels.sectionJcode, presets: [] },
   { id: "local", label: labels.sectionSessions, presets: [] },
-  { id: "custom", label: labels.sectionCommands, presets: [] },
+  { id: "custom", label: labels.customSection, presets: [] },
 ];
 
 const profilesFromJcodeConfig = (
@@ -108,6 +113,8 @@ export const useSettingsAiModel = ({
 }: UseSettingsAiModelOptions): SettingsAiModel => {
   const [jcodeConfig, setJcodeConfig] = useState<JcodeConfigSnapshot | null>(null);
   const [jcodeAccounts, setJcodeAccounts] = useState<JcodeAccountsResponse | null>(null);
+  const [jcodeLoginProviders, setJcodeLoginProviders] =
+    useState<JcodeLoginProvidersResponse | null>(null);
   const [draft, setDraft] = useState<SettingsAiDraft>(() => emptyDraft());
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -122,6 +129,10 @@ export const useSettingsAiModel = ({
     const listAccounts = desktopApi.agent.listAccounts;
     if (typeof listAccounts === "function") {
       setJcodeAccounts(await listAccounts());
+    }
+    const listLoginProviders = desktopApi.agent.listLoginProviders;
+    if (typeof listLoginProviders === "function") {
+      setJcodeLoginProviders(await listLoginProviders());
     }
     setErrorMessage(null);
   }, [desktopApi, labels.runtimeUnavailable]);
@@ -156,6 +167,45 @@ export const useSettingsAiModel = ({
       await refreshJcode();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi, refreshJcode]);
+
+  const startJcodeAccountLogin = useCallback(async (
+    request: JcodeAccountLoginStartRequest
+  ): Promise<JcodeAccountLoginStartResponse | null> => {
+    if (desktopApi?.agent === undefined) return null;
+    setIsSaving(true);
+    try {
+      const response = await desktopApi.agent.startAccountLogin(request);
+      if (response.authUrl !== undefined && response.authUrl !== null && response.authUrl.length > 0) {
+        await desktopApi.openExternal(response.authUrl);
+      }
+      setErrorMessage(null);
+      return response;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const completeJcodeAccountLogin = useCallback(async (
+    request: JcodeAccountLoginCompleteRequest
+  ): Promise<JcodeAccountLoginCompleteResponse | null> => {
+    if (desktopApi?.agent === undefined) return null;
+    setIsSaving(true);
+    try {
+      const response = await desktopApi.agent.completeAccountLogin(request);
+      setJcodeAccounts(response.accounts);
+      await refreshJcode();
+      setErrorMessage(null);
+      return response;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+      return null;
     } finally {
       setIsSaving(false);
     }
@@ -255,7 +305,7 @@ export const useSettingsAiModel = ({
     selectedPreset: null,
     jcodeConfig,
     jcodeAccounts,
-    jcodeCommands: jcodeConfig?.commands ?? [],
+    jcodeLoginProviders,
     draft,
     modelSelectionMode: draft.modelSelectionMode,
     availableModels: [],
@@ -305,6 +355,8 @@ export const useSettingsAiModel = ({
     openJcodeConfigFile,
     updateJcodeConfig,
     saveJcodeProviderProfile,
+    startJcodeAccountLogin,
+    completeJcodeAccountLogin,
     updateJcodeAgentRoles,
     switchJcodeAccount,
     removeJcodeAccount,

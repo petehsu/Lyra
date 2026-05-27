@@ -9,11 +9,19 @@ import {
 } from "./service";
 import type { WorkbenchUiPackId } from "./ids";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type {
+  LyraSoftwareCapabilitiesContext,
+  LyraSoftwareManifest
+} from "../../../shared/software-capabilities";
 import type { WorkbenchUiPack, WorkbenchUiRuntime } from "./types";
 
 export const useWorkbenchUiRuntime = (
   packId: WorkbenchUiPackId,
-  desktopApi: LyraDesktopApi | null = null
+  desktopApi: LyraDesktopApi | null = null,
+  createCapabilities?: (
+    packId: string,
+    software: readonly LyraSoftwareManifest[]
+  ) => LyraSoftwareCapabilitiesContext
 ): WorkbenchUiRuntime => {
   const builtinPack = useMemo(
     () => resolveWorkbenchUiPack(packId),
@@ -45,7 +53,10 @@ export const useWorkbenchUiRuntime = (
         const loadedPack = await loadExternalWorkbenchUiPack({
           packId,
           runtime,
-          desktopApi
+          desktopApi,
+          ...(createCapabilities === undefined
+            ? {}
+            : { capabilities: createCapabilities(packId, runtime.software) })
         });
         if (cancelled) {
           return;
@@ -65,7 +76,7 @@ export const useWorkbenchUiRuntime = (
     return () => {
       cancelled = true;
     };
-  }, [desktopApi, packId]);
+  }, [createCapabilities, desktopApi, packId]);
 
   const pack = isBuiltinWorkbenchUiPackId(packId)
     ? builtinPack

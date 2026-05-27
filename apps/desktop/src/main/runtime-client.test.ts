@@ -35,5 +35,26 @@ describe("Lyra runtime client", () => {
       "/Applications/Lyra.app/Contents/MacOS/Lyra"
     );
     expect(env.LYRA_JS_REPL_NODE_RUN_AS_NODE).toBe("1");
+    expect(env.LYRA_DESIGN_NODE_PATH).toBe(
+      "/Applications/Lyra.app/Contents/MacOS/Lyra"
+    );
+    expect(env.LYRA_DESIGN_NODE_RUN_AS_NODE).toBe("1");
+    expect(env.LYRA_DESIGN_NODE_PATHS).toContain("node_modules");
+    expect(env.PLAYWRIGHT_BROWSERS_PATH).toContain("playwright-browsers");
+  });
+
+  test("preserves explicit Playwright browser bundle override", () => {
+    const env = runtimeClientInternalsForTests.buildRuntimeDaemonEnv(
+      {
+        PLAYWRIGHT_BROWSERS_PATH: "/custom/ms-playwright"
+      },
+      {
+        storageRoot: "/Users/tester/.lyra/modules/runtime",
+        agentStorageRoot: "/Users/tester/.lyra/modules/agent"
+      },
+      "/Applications/Lyra.app/Contents/MacOS/Lyra"
+    );
+
+    expect(env.PLAYWRIGHT_BROWSERS_PATH).toBe("/custom/ms-playwright");
   });
 });

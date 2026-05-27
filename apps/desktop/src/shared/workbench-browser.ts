@@ -1,6 +1,7 @@
 export type WorkbenchBrowserNavigateRequest = {
   readonly address: string;
   readonly tabId?: string;
+  readonly newTab?: boolean;
   readonly title?: string;
 };
 
@@ -178,6 +179,44 @@ export type WorkbenchBrowserHoveredElementInfo = {
   readonly crossOriginBoundary?: boolean;
 };
 
+export type WorkbenchLumenActivityAction =
+  | "observe"
+  | "read"
+  | "capture"
+  | "wait"
+  | "navigate"
+  | "focus"
+  | "act"
+  | "type"
+  | "press";
+
+export type WorkbenchLumenActivityEvent = {
+  readonly kind: "lumen-browser-activity";
+  readonly source: "lyra_lumen";
+  readonly tabId: string;
+  readonly targetMode: "isolated" | "live";
+  readonly action: WorkbenchLumenActivityAction;
+  readonly inputActive: boolean;
+  readonly durationMs: number;
+  readonly sessionId?: string;
+  readonly cursor?: {
+    readonly x: number;
+    readonly y: number;
+  };
+};
+
+export type WorkbenchBrowserAgentActivityAction = WorkbenchLumenActivityAction;
+
+export type WorkbenchLegacyBrowserAgentActivityEvent =
+  Omit<WorkbenchLumenActivityEvent, "kind" | "source"> & {
+    readonly kind: "agent-browser-activity";
+    readonly source?: "lyra_lumen";
+  };
+
+export type WorkbenchBrowserAgentActivityEvent =
+  | WorkbenchLumenActivityEvent
+  | WorkbenchLegacyBrowserAgentActivityEvent;
+
 export type WorkbenchBrowserEvent =
   | {
       readonly kind: "page-runtime-state";
@@ -199,4 +238,6 @@ export type WorkbenchBrowserEvent =
   | {
       readonly kind: "element-picker-hover";
       readonly hover: WorkbenchBrowserHoveredElementInfo;
-    };
+    }
+  | WorkbenchLumenActivityEvent
+  | WorkbenchLegacyBrowserAgentActivityEvent;

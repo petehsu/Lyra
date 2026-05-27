@@ -246,7 +246,75 @@ fn expand_home(path: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(path))
 }
 
+async fn try_open_internal_browser(target: &ResolvedTarget) -> Result<OpenOutcome> {
+    let url_to_open = match target {
+        ResolvedTarget::Url(url) => url.clone(),
+        ResolvedTarget::Local {
+            path,
+            kind: LocalTargetKind::File,
+        } => {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if ext == "html" || ext == "htm" {
+                let path_str = path.to_string_lossy();
+                if path_str.starts_with('/') {
+                    format!("file://{}", path_str)
+                } else {
+                    format!("file:///{}", path_str.replace('\\', "/"))
+                }
+            } else {
+                anyhow::bail!("Not an HTML file");
+            }
+        }
+        _ => anyhow::bail!("Not openable in internal browser"),
+    };
+
+    let _res = crate::lyra_runtime::call_host_capability(
+        "browserAgent.navigate",
+        json!({ "url": url_to_open, "newTab": true, "target": "live" }),
+    )
+    .map_err(|e| anyhow::anyhow!("Host capability error: {}", e))?;
+
+    let backend = "lyra_browser".to_string();
+    let (message, metadata) = match target {
+        ResolvedTarget::Url(url) => (
+            format!("Opened {} in the Lyra internal browser.", url),
+            json!({
+                "action": "open",
+                "target_kind": "url",
+                "target": url,
+                "backend": backend,
+            }),
+        ),
+        ResolvedTarget::Local { path, kind } => (
+            format!(
+                "Opened file {} in the Lyra internal browser.",
+                path.display(),
+            ),
+            json!({
+                "action": "open",
+                "target_kind": kind.as_str(),
+                "target": path.to_string_lossy(),
+                "backend": backend,
+            }),
+        ),
+    };
+
+    Ok(OpenOutcome {
+        _backend: backend,
+        message,
+        metadata,
+    })
+}
+
 async fn perform_open(target: &ResolvedTarget) -> Result<OpenOutcome> {
+    if let Ok(outcome) = try_open_internal_browser(target).await {
+        return Ok(outcome);
+    }
+
     let backend = open_target(target).await?;
     let (message, metadata) = match target {
         ResolvedTarget::Url(url) => (

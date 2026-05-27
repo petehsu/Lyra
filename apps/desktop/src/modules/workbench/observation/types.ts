@@ -6,6 +6,7 @@ import type {
   SearchResultsObservation,
   DeepSearchObservation,
   TerminalObservation,
+  ImageViewerObservation,
   WorkbenchObservedTabDescriptor,
   WorkbenchObservationError,
   WorkbenchTabReadRequest,
@@ -16,6 +17,7 @@ import type {
 } from "../../../shared/workbench-observation";
 import type { FileEditorModel } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
+import type { ImageViewerModel } from "../image-viewer";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel } from "../workspace-tabs/types";
 
@@ -25,6 +27,7 @@ export type RendererTabObservation =
   | SearchHomeObservation
   | SearchResultsObservation
   | DeepSearchObservation
+  | ImageViewerObservation
   | TerminalObservation;
 
 export type RendererTabObservationResult = {
@@ -37,6 +40,7 @@ export type WorkbenchObservationDependencies = {
   readonly tabsModel: WorkspaceTabsModel;
   readonly fileEditorModel: FileEditorModel;
   readonly fileManagerModel: FileManagerModel;
+  readonly imageViewerModel: ImageViewerModel;
   readonly terminalModel: TerminalDockModel;
 };
 

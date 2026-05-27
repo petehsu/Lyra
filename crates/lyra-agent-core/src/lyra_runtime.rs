@@ -6,7 +6,8 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -42,8 +43,16 @@ static EVENT_CALLBACK: OnceCell<Mutex<Option<Arc<EventCallback>>>> = OnceCell::n
 static HOST_CAPABILITY_DISPATCHER: OnceCell<Mutex<Option<Arc<HostCapabilityDispatcher>>>> =
     OnceCell::new();
 static RUNTIME: Lazy<Mutex<AgentRuntime>> = Lazy::new(|| Mutex::new(AgentRuntime::default()));
+const STALLED_TURN_TIMEOUT_SECS: i64 = 120;
 static PENDING_PERMISSIONS: Lazy<Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+static PENDING_CLARIFICATIONS: Lazy<Mutex<HashMap<String, PendingClarification>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+struct PendingClarification {
+    session_id: String,
+    tx: tokio::sync::oneshot::Sender<ClarificationAnswer>,
+}
 
 #[derive(Debug, Error)]
 pub enum AgentError {
@@ -99,11 +108,40 @@ pub enum AgentMessageBlock {
         id: String,
         text: String,
     },
+    Image {
+        id: String,
+        #[serde(rename = "mediaType", alias = "media_type")]
+        media_type: String,
+        data: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        width: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        height: Option<u32>,
+    },
     Tool {
         id: String,
         #[serde(rename = "toolId", alias = "tool_id")]
         tool_id: String,
     },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentImageInput {
+    pub media_type: String,
+    pub data: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -140,6 +178,31 @@ pub enum ToolActivityStatus {
     Cancelled,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTodoItem {
+    pub id: String,
+    pub content: String,
+    pub status: String,
+    pub priority: String,
+    pub blocked_by: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_to: Option<String>,
+}
+
+impl From<crate::todo::TodoItem> for AgentTodoItem {
+    fn from(todo: crate::todo::TodoItem) -> Self {
+        Self {
+            id: todo.id,
+            content: todo.content,
+            status: todo.status,
+            priority: todo.priority,
+            blocked_by: todo.blocked_by,
+            assigned_to: todo.assigned_to,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionSnapshot {
@@ -150,6 +213,7 @@ pub struct AgentSessionSnapshot {
     pub project_bound: bool,
     pub messages: Vec<AgentMessage>,
     pub tools: Vec<ToolActivity>,
+    pub todos: Vec<AgentTodoItem>,
     pub automation: AgentSessionAutomationSnapshot,
     pub side_panel: AgentSidePanelSnapshot,
     pub turn_status: TurnStatus,
@@ -282,6 +346,8 @@ struct BindProjectRequest {
 struct SendTurnRequest {
     session_id: Option<String>,
     text: String,
+    #[serde(default)]
+    images: Vec<AgentImageInput>,
     /// Compatibility-only: old Lyra renderer builds used to pass a private
     /// provider profile. Lyra Agent owns provider selection now, so this is ignored.
     provider_profile_id: Option<String>,
@@ -349,6 +415,43 @@ struct JcodeAccountLoginRequest {
     api_key: Option<String>,
     default_model: Option<String>,
     set_default: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JcodeAccountLoginStartRequest {
+    provider: String,
+    label: Option<String>,
+    google_client_id: Option<String>,
+    google_client_secret: Option<String>,
+    gmail_access_tier: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JcodeAccountLoginCompleteRequest {
+    provider: String,
+    flow_id: Option<String>,
+    label: Option<String>,
+    callback_input: Option<String>,
+    api_key: Option<String>,
+    profile_name: Option<String>,
+    base_url: Option<String>,
+    default_model: Option<String>,
+    auth_header: Option<String>,
+    set_default: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JcodeAccountLoginFlow {
+    provider: String,
+    label: Option<String>,
+    verifier: Option<String>,
+    state: Option<String>,
+    redirect_uri: Option<String>,
+    auth_kind: String,
+    gmail_access_tier: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -514,6 +617,49 @@ struct JcodeAccountsResponse {
     accounts: Vec<JcodeAccountSnapshot>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JcodeLoginProviderSnapshot {
+    id: String,
+    display_name: String,
+    auth_kind: String,
+    status_method: String,
+    detail: String,
+    recommended: bool,
+    configured: bool,
+    state: String,
+    requires_callback: bool,
+    requires_api_key: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JcodeLoginProvidersResponse {
+    providers: Vec<JcodeLoginProviderSnapshot>,
+    auth_status: Value,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JcodeAccountLoginStartResponse {
+    provider: String,
+    label: Option<String>,
+    flow_id: String,
+    auth_url: Option<String>,
+    callback_hint: Option<String>,
+    auth_kind: String,
+    instructions: String,
+    requires_callback: bool,
+    requires_api_key: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JcodeAccountLoginCompleteResponse {
+    accounts: JcodeAccountsResponse,
+    message: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CancelTurnRequest {
@@ -554,18 +700,35 @@ pub struct RollbackRestoreResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DecisionSubmitRequest {
-    session_id: String,
-    decision_id: String,
-    accepted: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct PermissionRespondRequest {
     session_id: String,
     permission_id: String,
     allowed: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClarificationRespondRequest {
+    session_id: String,
+    clarification_id: String,
+    answer: String,
+    selected_option: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClarificationOption {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClarificationAnswer {
+    pub answer: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_option: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -885,16 +1048,72 @@ pub fn read_session_json(payload: String) -> Result<String, AgentError> {
             .or_else(|| runtime.active_session_id.clone())
             .ok_or_else(|| AgentError::SessionNotFound("active".to_string()))?
     };
-    let snapshot = {
-        let runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
-        runtime
-            .sessions
-            .get(&session_id)
-            .map(|session| session.snapshot.clone())
+    let (snapshot, recovered_turn_id) = {
+        let mut runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
+        runtime.sessions.get_mut(&session_id).map(|session| {
+            let recovered_turn_id = recover_stalled_turn_if_needed(session);
+            session.snapshot.todos = agent_todos_for_session(&session_id);
+            (session.snapshot.clone(), recovered_turn_id)
+        })
     }
-    .or_else(|| persisted_snapshot(&session_id, TurnStatus::Idle, None, None).ok())
+    .or_else(|| {
+        persisted_snapshot(&session_id, TurnStatus::Idle, None, None)
+            .ok()
+            .map(|snapshot| (snapshot, None))
+    })
     .ok_or_else(|| AgentError::SessionNotFound(session_id.clone()))?;
+    if let Some(turn_id) = recovered_turn_id {
+        emit_event(AgentRuntimeEvent::SessionSnapshot {
+            snapshot: snapshot.clone(),
+        });
+        emit_event(AgentRuntimeEvent::TurnFinished {
+            session_id: session_id.clone(),
+            turn_id,
+            status: TurnStatus::Cancelled,
+        });
+        emit_event(AgentRuntimeEvent::FollowStateChanged {
+            session_id: session_id.clone(),
+            follow: snapshot.follow.clone(),
+        });
+    }
     encode(&snapshot)
+}
+
+fn recover_stalled_turn_if_needed(session: &mut AgentSession) -> Option<String> {
+    if session.snapshot.turn_status != TurnStatus::Running {
+        return None;
+    }
+    let stale_after = ChronoDuration::seconds(STALLED_TURN_TIMEOUT_SECS);
+    if Utc::now().signed_duration_since(session.snapshot.updated_at) <= stale_after {
+        return None;
+    }
+
+    if let Some(signal) = session.shutdown_signal.take() {
+        signal.fire();
+    }
+
+    let now = Utc::now();
+    let turn_id = session.snapshot.active_turn_id.take();
+    for tool in &mut session.snapshot.tools {
+        if tool.status == ToolActivityStatus::Running {
+            tool.status = ToolActivityStatus::Failed;
+            tool.label = finished_tool_label(&tool.name, true);
+            tool.finished_at = Some(now);
+            if tool.output.is_none() {
+                tool.output = Some(json!({
+                    "content": "Lyra recovered this tool after the agent turn stopped producing runtime events.",
+                    "error": "stalled turn recovered"
+                }));
+            }
+        }
+    }
+    session.snapshot.turn_status = TurnStatus::Cancelled;
+    session.snapshot.follow = AgentFollowState {
+        running: false,
+        activity: None,
+    };
+    session.snapshot.updated_at = now;
+    turn_id
 }
 
 pub fn save_session_json(payload: String) -> Result<String, AgentError> {
@@ -981,6 +1200,7 @@ pub fn delete_session_json(payload: String) -> Result<String, AgentError> {
             runtime.active_session_id = None;
         }
     }
+    cancel_pending_clarifications_for_session(&session_id);
 
     encode(&json!({
         "sessionId": session_id,
@@ -992,7 +1212,7 @@ pub fn send_turn_json(payload: String) -> Result<String, AgentError> {
     let request: SendTurnRequest = parse_request(&payload)?;
     let _compat_profile_id = request.provider_profile_id.as_deref();
     let _compat_profile = request.provider_profile.as_ref();
-    let response = start_jcode_turn(request.session_id, request.text)?;
+    let response = start_jcode_turn(request.session_id, request.text, request.images)?;
     encode(&response)
 }
 
@@ -1080,6 +1300,7 @@ pub fn start_selfdev_session_json(payload: String) -> Result<String, AgentError>
         Some(start_jcode_turn_scoped(
             Some(snapshot.id.clone()),
             prompt,
+            Vec::new(),
             None,
             false,
         )?)
@@ -1226,7 +1447,8 @@ pub fn send_selfdev_turn_json(payload: String) -> Result<String, AgentError> {
             "session is not a self-dev session: {session_id}"
         )));
     }
-    let response = start_jcode_turn_scoped(Some(session_id), request.text, None, false)?;
+    let response =
+        start_jcode_turn_scoped(Some(session_id), request.text, request.images, None, false)?;
     encode(&response)
 }
 
@@ -1240,7 +1462,7 @@ pub fn run_improve_session_json(payload: String) -> Result<String, AgentError> {
         session_improve_mode_for(JcodeGuiActionKind::Improve, plan_only),
     )?;
     let prompt = build_improve_prompt(plan_only, request.focus.as_deref());
-    let response = start_jcode_turn(Some(session_id), prompt)?;
+    let response = start_jcode_turn(Some(session_id), prompt, Vec::new())?;
     encode(&response)
 }
 
@@ -1254,7 +1476,7 @@ pub fn refactor_session_json(payload: String) -> Result<String, AgentError> {
         session_improve_mode_for(JcodeGuiActionKind::Refactor, plan_only),
     )?;
     let prompt = build_refactor_prompt(plan_only, request.focus.as_deref());
-    let response = start_jcode_turn(Some(session_id), prompt)?;
+    let response = start_jcode_turn(Some(session_id), prompt, Vec::new())?;
     encode(&response)
 }
 
@@ -1277,7 +1499,7 @@ pub fn trigger_poke_session_json(payload: String) -> Result<String, AgentError> 
     }
     let incomplete_todo_count = incomplete.len();
     let prompt = build_poke_message(&incomplete);
-    let response = start_jcode_turn(Some(session_id), prompt)?;
+    let response = start_jcode_turn(Some(session_id), prompt, Vec::new())?;
     encode(&JcodePokeResponse {
         session_id: response.session_id,
         turn_id: response.turn_id,
@@ -1353,6 +1575,7 @@ pub fn run_jcode_btw_json(payload: String) -> Result<String, AgentError> {
     let response = start_jcode_turn_with_system_reminder(
         Some(session_id.clone()),
         question.clone(),
+        Vec::new(),
         Some(build_btw_system_reminder(&question)),
     )?;
     encode(&JcodeSidePanelActionResponse {
@@ -1558,6 +1781,425 @@ pub fn list_jcode_accounts_json(_payload: String) -> Result<String, AgentError> 
     encode(&jcode_accounts_response())
 }
 
+pub fn list_jcode_login_providers_json(_payload: String) -> Result<String, AgentError> {
+    let status = crate::auth::AuthStatus::check_fast();
+    let providers = gui_login_providers()
+        .into_iter()
+        .map(|provider| {
+            let state = status.state_for_provider(provider);
+            JcodeLoginProviderSnapshot {
+                id: provider.id.to_string(),
+                display_name: provider.display_name.to_string(),
+                auth_kind: provider.auth_kind.label().to_string(),
+                status_method: provider.auth_status_method.to_string(),
+                detail: provider.menu_detail.to_string(),
+                recommended: provider.recommended,
+                configured: state != crate::auth::AuthState::NotConfigured,
+                state: auth_state_string(state).to_string(),
+                requires_callback: login_provider_requires_callback(provider),
+                requires_api_key: login_provider_requires_api_key(provider),
+            }
+        })
+        .collect();
+    encode(&JcodeLoginProvidersResponse {
+        providers,
+        auth_status: auth_status_snapshot_value(),
+    })
+}
+
+pub fn start_jcode_account_login_json(payload: String) -> Result<String, AgentError> {
+    let request: JcodeAccountLoginStartRequest = parse_request(&payload)?;
+    let provider = resolve_gui_login_provider(&request.provider)?;
+    let label = request
+        .label
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+
+    let response = match provider.target {
+        crate::provider_catalog::LoginProviderTarget::Claude => {
+            let (verifier, challenge) = crate::auth::oauth::generate_pkce_public();
+            let account_label = crate::auth::claude::login_target_label(label.as_deref())
+                .unwrap_or_else(|_| crate::auth::claude::primary_account_label());
+            let redirect_uri = crate::auth::oauth::claude::REDIRECT_URI.to_string();
+            let auth_url =
+                crate::auth::oauth::claude_auth_url(&redirect_uri, &challenge, &verifier);
+            login_start_response(
+                provider.id,
+                Some(account_label.clone()),
+                JcodeAccountLoginFlow {
+                    provider: provider.id.to_string(),
+                    label: Some(account_label),
+                    verifier: Some(verifier),
+                    state: None,
+                    redirect_uri: Some(redirect_uri),
+                    auth_kind: provider.auth_kind.label().to_string(),
+                    gmail_access_tier: None,
+                },
+                Some(auth_url),
+                Some("Paste the Claude callback URL or authorization code.".to_string()),
+                "Open Claude OAuth in the browser, then paste the callback URL or code here.",
+                true,
+                false,
+            )?
+        }
+        crate::provider_catalog::LoginProviderTarget::OpenAi => {
+            let (verifier, challenge) = crate::auth::oauth::generate_pkce_public();
+            let state = crate::auth::oauth::generate_state_public();
+            let account_label = crate::auth::codex::login_target_label(label.as_deref())
+                .unwrap_or_else(|_| "openai-1".to_string());
+            let redirect_uri =
+                crate::auth::oauth::openai::redirect_uri(crate::auth::oauth::openai::DEFAULT_PORT);
+            let auth_url = crate::auth::oauth::openai_auth_url_with_prompt(
+                &redirect_uri,
+                &challenge,
+                &state,
+                Some("login"),
+            );
+            login_start_response(
+                provider.id,
+                Some(account_label.clone()),
+                JcodeAccountLoginFlow {
+                    provider: provider.id.to_string(),
+                    label: Some(account_label),
+                    verifier: Some(verifier),
+                    state: Some(state),
+                    redirect_uri: Some(redirect_uri),
+                    auth_kind: provider.auth_kind.label().to_string(),
+                    gmail_access_tier: None,
+                },
+                Some(auth_url),
+                Some(
+                    "Paste the full OpenAI callback URL so Lyra Agent can verify state."
+                        .to_string(),
+                ),
+                "Open OpenAI OAuth in the browser, then paste the full callback URL.",
+                true,
+                false,
+            )?
+        }
+        crate::provider_catalog::LoginProviderTarget::Gemini => {
+            let (verifier, challenge) = crate::auth::oauth::generate_pkce_public();
+            let state = crate::auth::oauth::generate_state_public();
+            let redirect_uri = "https://codeassist.google.com/authcode".to_string();
+            let auth_url =
+                crate::auth::gemini::build_manual_auth_url(&redirect_uri, &challenge, &state)
+                    .map_err(|error| AgentError::Provider(error.to_string()))?;
+            login_start_response(
+                provider.id,
+                Some(label.unwrap_or_else(|| "gemini".to_string())),
+                JcodeAccountLoginFlow {
+                    provider: provider.id.to_string(),
+                    label: Some("gemini".to_string()),
+                    verifier: Some(verifier),
+                    state: Some(state),
+                    redirect_uri: Some(redirect_uri),
+                    auth_kind: provider.auth_kind.label().to_string(),
+                    gmail_access_tier: None,
+                },
+                Some(auth_url),
+                Some("Paste the Gemini authorization code.".to_string()),
+                "Open Google Gemini authorization, then paste the authorization code.",
+                true,
+                false,
+            )?
+        }
+        crate::provider_catalog::LoginProviderTarget::Antigravity => {
+            let (verifier, challenge) = crate::auth::oauth::generate_pkce_public();
+            let state = crate::auth::oauth::generate_state_public();
+            let redirect_uri =
+                crate::auth::antigravity::redirect_uri(crate::auth::antigravity::DEFAULT_PORT);
+            let auth_url =
+                crate::auth::antigravity::build_auth_url(&redirect_uri, &challenge, &state)
+                    .map_err(|error| AgentError::Provider(error.to_string()))?;
+            login_start_response(
+                provider.id,
+                Some(label.unwrap_or_else(|| "antigravity".to_string())),
+                JcodeAccountLoginFlow {
+                    provider: provider.id.to_string(),
+                    label: Some("antigravity".to_string()),
+                    verifier: Some(verifier),
+                    state: Some(state),
+                    redirect_uri: Some(redirect_uri),
+                    auth_kind: provider.auth_kind.label().to_string(),
+                    gmail_access_tier: None,
+                },
+                Some(auth_url),
+                Some("Paste the full Antigravity callback URL.".to_string()),
+                "Open Antigravity OAuth in the browser, then paste the full callback URL.",
+                true,
+                false,
+            )?
+        }
+        crate::provider_catalog::LoginProviderTarget::Google => {
+            let tier = parse_gmail_access_tier(request.gmail_access_tier.as_deref())?;
+            let creds = google_credentials_for_login(
+                request.google_client_id.as_deref(),
+                request.google_client_secret.as_deref(),
+            )?;
+            let (verifier, challenge) = crate::auth::oauth::generate_pkce_public();
+            let state = crate::auth::oauth::generate_state_public();
+            let redirect_uri = format!("http://127.0.0.1:{}", crate::auth::google::DEFAULT_PORT);
+            let auth_url = crate::auth::google::build_auth_url(
+                &creds,
+                tier,
+                &redirect_uri,
+                &challenge,
+                &state,
+            );
+            let account_label = label.unwrap_or_else(|| "gmail".to_string());
+            login_start_response(
+                provider.id,
+                Some(account_label.clone()),
+                JcodeAccountLoginFlow {
+                    provider: provider.id.to_string(),
+                    label: Some(account_label),
+                    verifier: Some(verifier),
+                    state: Some(state),
+                    redirect_uri: Some(redirect_uri),
+                    auth_kind: provider.auth_kind.label().to_string(),
+                    gmail_access_tier: Some(gmail_access_tier_id(tier).to_string()),
+                },
+                Some(auth_url),
+                Some("Paste the full Google/Gmail callback URL.".to_string()),
+                "Open Google/Gmail authorization, then paste the full callback URL.",
+                true,
+                false,
+            )?
+        }
+        target if login_target_is_api_key(target) => {
+            let flow = JcodeAccountLoginFlow {
+                provider: provider.id.to_string(),
+                label,
+                verifier: None,
+                state: None,
+                redirect_uri: None,
+                auth_kind: provider.auth_kind.label().to_string(),
+                gmail_access_tier: None,
+            };
+            login_start_response(
+                provider.id,
+                flow.label.clone(),
+                flow,
+                None,
+                Some("Enter an API key and model details below.".to_string()),
+                "Enter the provider API key and save it to Lyra Agent config.",
+                false,
+                true,
+            )?
+        }
+        _ => {
+            return Err(AgentError::BadRequest(format!(
+                "{} login is not available in Lyra Agent settings yet",
+                provider.display_name
+            )));
+        }
+    };
+
+    encode(&response)
+}
+
+pub fn complete_jcode_account_login_json(payload: String) -> Result<String, AgentError> {
+    let request: JcodeAccountLoginCompleteRequest = parse_request(&payload)?;
+    let provider = resolve_gui_login_provider(&request.provider)?;
+
+    let message = match provider.target {
+        crate::provider_catalog::LoginProviderTarget::Claude => {
+            let flow = decode_login_flow(request.flow_id.as_deref())?;
+            ensure_flow_provider(&flow, provider.id)?;
+            let verifier = required_trimmed(flow.verifier.as_deref(), "flow verifier")?;
+            let redirect_uri = required_trimmed(flow.redirect_uri.as_deref(), "redirect URI")?;
+            let input = required_trimmed(request.callback_input.as_deref(), "callback input")?;
+            let selected_redirect_uri =
+                crate::auth::oauth::claude_redirect_uri_for_input(&input, &redirect_uri);
+            let tokens = block_on(crate::auth::oauth::exchange_claude_code(
+                &verifier,
+                &input,
+                &selected_redirect_uri,
+            ))?
+            .map_err(|error| AgentError::Provider(error.to_string()))?;
+            let label = request
+                .label
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .or(flow.label)
+                .unwrap_or_else(|| crate::auth::claude::primary_account_label());
+            crate::auth::oauth::save_claude_tokens_for_account(&tokens, &label)
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+            crate::config::Config::set_default_model(None, Some("anthropic"))
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+            format!("Signed in to Claude as {label}.")
+        }
+        crate::provider_catalog::LoginProviderTarget::OpenAi => {
+            let flow = decode_login_flow(request.flow_id.as_deref())?;
+            ensure_flow_provider(&flow, provider.id)?;
+            let verifier = required_trimmed(flow.verifier.as_deref(), "flow verifier")?;
+            let state = required_trimmed(flow.state.as_deref(), "OAuth state")?;
+            let redirect_uri = required_trimmed(flow.redirect_uri.as_deref(), "redirect URI")?;
+            let input = required_trimmed(request.callback_input.as_deref(), "callback input")?;
+            let tokens = block_on(crate::auth::oauth::exchange_openai_callback_input(
+                &verifier,
+                &input,
+                &state,
+                &redirect_uri,
+            ))?
+            .map_err(|error| AgentError::Provider(error.to_string()))?;
+            let label = request
+                .label
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .or(flow.label)
+                .unwrap_or_else(|| "openai-1".to_string());
+            crate::auth::oauth::save_openai_tokens_for_account(&tokens, &label)
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+            crate::config::Config::set_default_model(None, Some("openai"))
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+            format!("Signed in to OpenAI as {label}.")
+        }
+        crate::provider_catalog::LoginProviderTarget::Gemini => {
+            let flow = decode_login_flow(request.flow_id.as_deref())?;
+            ensure_flow_provider(&flow, provider.id)?;
+            let verifier = required_trimmed(flow.verifier.as_deref(), "flow verifier")?;
+            let state = required_trimmed(flow.state.as_deref(), "OAuth state")?;
+            let redirect_uri = required_trimmed(flow.redirect_uri.as_deref(), "redirect URI")?;
+            let input = required_trimmed(request.callback_input.as_deref(), "callback input")?;
+            let tokens = block_on(crate::auth::gemini::exchange_callback_input(
+                &verifier,
+                &input,
+                Some(&state),
+                &redirect_uri,
+            ))?
+            .map_err(|error| AgentError::Provider(error.to_string()))?;
+            if request.set_default.unwrap_or(true) {
+                crate::config::Config::set_default_model(None, Some("gemini"))
+                    .map_err(|error| AgentError::Provider(error.to_string()))?;
+            }
+            format!(
+                "Signed in to Gemini{}.",
+                tokens
+                    .email
+                    .as_deref()
+                    .map(|email| format!(" as {email}"))
+                    .unwrap_or_default()
+            )
+        }
+        crate::provider_catalog::LoginProviderTarget::Antigravity => {
+            let flow = decode_login_flow(request.flow_id.as_deref())?;
+            ensure_flow_provider(&flow, provider.id)?;
+            let verifier = required_trimmed(flow.verifier.as_deref(), "flow verifier")?;
+            let state = required_trimmed(flow.state.as_deref(), "OAuth state")?;
+            let redirect_uri = required_trimmed(flow.redirect_uri.as_deref(), "redirect URI")?;
+            let input = required_trimmed(request.callback_input.as_deref(), "callback input")?;
+            let tokens = block_on(crate::auth::antigravity::exchange_callback_input(
+                &verifier,
+                &input,
+                Some(&state),
+                &redirect_uri,
+            ))?
+            .map_err(|error| AgentError::Provider(error.to_string()))?;
+            if request.set_default.unwrap_or(true) {
+                crate::config::Config::set_default_model(None, Some("antigravity"))
+                    .map_err(|error| AgentError::Provider(error.to_string()))?;
+            }
+            format!(
+                "Signed in to Antigravity{}.",
+                tokens
+                    .email
+                    .as_deref()
+                    .map(|email| format!(" as {email}"))
+                    .unwrap_or_default()
+            )
+        }
+        crate::provider_catalog::LoginProviderTarget::Google => {
+            let flow = decode_login_flow(request.flow_id.as_deref())?;
+            ensure_flow_provider(&flow, provider.id)?;
+            let verifier = required_trimmed(flow.verifier.as_deref(), "flow verifier")?;
+            let state = required_trimmed(flow.state.as_deref(), "OAuth state")?;
+            let redirect_uri = required_trimmed(flow.redirect_uri.as_deref(), "redirect URI")?;
+            let input = required_trimmed(request.callback_input.as_deref(), "callback input")?;
+            let tier = parse_gmail_access_tier(flow.gmail_access_tier.as_deref())?;
+            let creds = crate::auth::google::load_credentials()
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+            let tokens = block_on(crate::auth::google::exchange_callback_input(
+                &creds,
+                &verifier,
+                &input,
+                &state,
+                &redirect_uri,
+                tier,
+            ))?
+            .map_err(|error| AgentError::Provider(error.to_string()))?;
+            format!(
+                "Signed in to Google/Gmail{} with {}.",
+                tokens
+                    .email
+                    .as_deref()
+                    .map(|email| format!(" as {email}"))
+                    .unwrap_or_default(),
+                tokens.tier.label()
+            )
+        }
+        target if login_target_is_api_key(target) => {
+            let api_key = required_trimmed(request.api_key.as_deref(), "API key")?;
+            let (profile_name, base_url, default_model, provider_type) =
+                api_key_profile_defaults(provider, &request)?;
+            let custom_auth_header = request
+                .auth_header
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+            let save_request = JcodeProviderProfileSaveRequest {
+                profile_name: profile_name.clone(),
+                base_url,
+                default_model: default_model.clone(),
+                api_key: Some(api_key),
+                api_key_env: None,
+                env_file: None,
+                auth: Some(if custom_auth_header.is_some() {
+                    "header".to_string()
+                } else {
+                    "bearer".to_string()
+                }),
+                auth_header: custom_auth_header,
+                provider_type: Some(provider_type),
+                set_default: Some(request.set_default.unwrap_or(true)),
+                models: default_model.as_ref().map(|id| {
+                    vec![JcodeProviderProfileModelRequest {
+                        id: id.clone(),
+                        context_window: None,
+                    }]
+                }),
+            };
+            save_jcode_provider_profile_json(
+                serde_json::to_string(&save_request)
+                    .map_err(|error| AgentError::Serialization(error.to_string()))?,
+            )?;
+            format!("Saved API key provider {profile_name}.")
+        }
+        _ => {
+            return Err(AgentError::BadRequest(format!(
+                "{} login cannot be completed from Lyra Agent settings yet",
+                provider.display_name
+            )));
+        }
+    };
+
+    crate::auth::AuthStatus::invalidate_cache();
+    apply_default_provider_runtime_env(&crate::config::Config::load());
+    refresh_runtime_agents_after_provider_config_change();
+
+    encode(&JcodeAccountLoginCompleteResponse {
+        accounts: jcode_accounts_response(),
+        message,
+    })
+}
+
 pub fn login_jcode_account_json(payload: String) -> Result<String, AgentError> {
     let request: JcodeAccountLoginRequest = parse_request(&payload)?;
     let provider = request
@@ -1610,6 +2252,25 @@ pub fn switch_jcode_account_json(payload: String) -> Result<String, AgentError> 
             crate::config::Config::set_default_model(None, Some("anthropic"))
                 .map_err(|error| AgentError::Provider(error.to_string()))?;
         }
+        "gemini" => {
+            if crate::auth::gemini::load_tokens().is_err() {
+                return Err(AgentError::SessionNotFound(label));
+            }
+            crate::config::Config::set_default_model(None, Some("gemini"))
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+        }
+        "antigravity" => {
+            if crate::auth::antigravity::load_tokens().is_err() {
+                return Err(AgentError::SessionNotFound(label));
+            }
+            crate::config::Config::set_default_model(None, Some("antigravity"))
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+        }
+        "google" => {
+            if crate::auth::google::load_tokens().is_err() {
+                return Err(AgentError::SessionNotFound(label));
+            }
+        }
         _ => {
             let mut config = crate::config::Config::load();
             if !config.providers.contains_key(&label) {
@@ -1622,6 +2283,8 @@ pub fn switch_jcode_account_json(payload: String) -> Result<String, AgentError> 
         }
     }
     crate::auth::AuthStatus::invalidate_cache();
+    apply_default_provider_runtime_env(&crate::config::Config::load());
+    refresh_runtime_agents_after_provider_config_change();
     list_jcode_accounts_json("{}".to_string())
 }
 
@@ -1634,6 +2297,40 @@ pub fn remove_jcode_account_json(payload: String) -> Result<String, AgentError> 
             .map_err(|error| AgentError::Provider(error.to_string()))?,
         "anthropic" | "claude" => crate::auth::claude::remove_account(&label)
             .map_err(|error| AgentError::Provider(error.to_string()))?,
+        "gemini" => {
+            crate::auth::gemini::clear_tokens()
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+            let mut config = crate::config::Config::load();
+            if config.provider.default_provider.as_deref() == Some("gemini") {
+                config.provider.default_provider = None;
+                config
+                    .save()
+                    .map_err(|error| AgentError::Provider(error.to_string()))?;
+            }
+        }
+        "antigravity" => {
+            let path = crate::auth::antigravity::tokens_path()
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+            if path.exists() {
+                std::fs::remove_file(&path)
+                    .map_err(|error| AgentError::Provider(error.to_string()))?;
+            }
+            let mut config = crate::config::Config::load();
+            if config.provider.default_provider.as_deref() == Some("antigravity") {
+                config.provider.default_provider = None;
+                config
+                    .save()
+                    .map_err(|error| AgentError::Provider(error.to_string()))?;
+            }
+        }
+        "google" => {
+            let path = crate::auth::google::tokens_path()
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+            if path.exists() {
+                std::fs::remove_file(&path)
+                    .map_err(|error| AgentError::Provider(error.to_string()))?;
+            }
+        }
         _ => {
             let mut config = crate::config::Config::load();
             if config.providers.remove(&label).is_none() {
@@ -1648,6 +2345,8 @@ pub fn remove_jcode_account_json(payload: String) -> Result<String, AgentError> 
         }
     }
     crate::auth::AuthStatus::invalidate_cache();
+    apply_default_provider_runtime_env(&crate::config::Config::load());
+    refresh_runtime_agents_after_provider_config_change();
     list_jcode_accounts_json("{}".to_string())
 }
 
@@ -1671,28 +2370,31 @@ fn start_feedback_session_json(
         JcodeFeedbackActionKind::Review => build_review_startup_message(&parent_session_id),
         JcodeFeedbackActionKind::Judge => build_judge_startup_message(&parent_session_id),
     };
-    let response = start_jcode_turn(Some(child_session_id), prompt)?;
+    let response = start_jcode_turn(Some(child_session_id), prompt, Vec::new())?;
     encode(&response)
 }
 
 fn start_jcode_turn(
     request_session_id: Option<String>,
     text: String,
+    images: Vec<AgentImageInput>,
 ) -> Result<AgentTurnStartResponse, AgentError> {
-    start_jcode_turn_scoped(request_session_id, text, None, true)
+    start_jcode_turn_scoped(request_session_id, text, images, None, true)
 }
 
 fn start_jcode_turn_with_system_reminder(
     request_session_id: Option<String>,
     text: String,
+    images: Vec<AgentImageInput>,
     system_reminder: Option<String>,
 ) -> Result<AgentTurnStartResponse, AgentError> {
-    start_jcode_turn_scoped(request_session_id, text, system_reminder, true)
+    start_jcode_turn_scoped(request_session_id, text, images, system_reminder, true)
 }
 
 fn start_jcode_turn_scoped(
     request_session_id: Option<String>,
     text: String,
+    images: Vec<AgentImageInput>,
     system_reminder: Option<String>,
     make_active: bool,
 ) -> Result<AgentTurnStartResponse, AgentError> {
@@ -1704,17 +2406,39 @@ fn start_jcode_turn_scoped(
         }
     };
     ensure_loaded_session_with_activation(&session_id, make_active)?;
+    cancel_running_turn_for_task_switch(&session_id)?;
     let current_agent = build_agent_for_session_id(&session_id)?;
 
     let turn_id = Uuid::new_v4().to_string();
+    let user_text = text.trim().to_string();
+    let mut user_blocks: Vec<AgentMessageBlock> = images
+        .iter()
+        .enumerate()
+        .map(|(index, image)| AgentMessageBlock::Image {
+            id: format!("image-{index}"),
+            media_type: image.media_type.clone(),
+            data: image.data.clone(),
+            label: image.label.clone(),
+            source: image.source.clone(),
+            width: image.width,
+            height: image.height,
+        })
+        .collect();
+    if !user_text.is_empty() || user_blocks.is_empty() {
+        user_blocks.push(AgentMessageBlock::Text {
+            id: "text-0".to_string(),
+            text: user_text.clone(),
+        });
+    }
+    let jcode_images: Vec<(String, String)> = images
+        .iter()
+        .map(|image| (image.media_type.clone(), image.data.clone()))
+        .collect();
     let user_message = AgentMessage {
         id: Uuid::new_v4().to_string(),
         role: AgentRole::User,
-        text: text.trim().to_string(),
-        blocks: vec![AgentMessageBlock::Text {
-            id: "text-0".to_string(),
-            text: text.trim().to_string(),
-        }],
+        text: user_text.clone(),
+        blocks: user_blocks,
         created_at: Utc::now(),
         rollback: None,
     };
@@ -1776,6 +2500,7 @@ fn start_jcode_turn_scoped(
             session_id,
             turn_id,
             text,
+            jcode_images,
             system_reminder,
             agent,
             shutdown_signal,
@@ -1811,6 +2536,7 @@ pub fn cancel_turn_json(payload: String) -> Result<String, AgentError> {
     session.shutdown_signal = None;
     let snapshot = session.snapshot.clone();
     drop(runtime);
+    cancel_pending_clarifications_for_session(&snapshot.id);
     emit_event(AgentRuntimeEvent::SessionSnapshot {
         snapshot: snapshot.clone(),
     });
@@ -1826,6 +2552,72 @@ pub fn cancel_turn_json(payload: String) -> Result<String, AgentError> {
         follow: snapshot.follow.clone(),
     });
     encode(&json!({ "sessionId": snapshot.id, "status": "cancelled" }))
+}
+
+fn cancel_running_turn_for_task_switch(session_id: &str) -> Result<bool, AgentError> {
+    let cancellation = {
+        let mut runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
+        let session = runtime
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+        if session.snapshot.turn_status != TurnStatus::Running
+            && session.snapshot.active_turn_id.is_none()
+            && session.shutdown_signal.is_none()
+        {
+            return Ok(false);
+        }
+
+        if let Some(signal) = session.shutdown_signal.take() {
+            signal.fire();
+        }
+
+        let now = Utc::now();
+        let turn_id = session.snapshot.active_turn_id.take();
+        for tool in &mut session.snapshot.tools {
+            if tool.status == ToolActivityStatus::Running {
+                tool.status = ToolActivityStatus::Failed;
+                tool.label = finished_tool_label(&tool.name, true);
+                tool.finished_at = Some(now);
+                if tool.output.is_none() {
+                    tool.output = Some(json!({
+                        "content": "Interrupted by a newer user request.",
+                        "error": "interrupted by new user request"
+                    }));
+                }
+            }
+        }
+        session.snapshot.turn_status = TurnStatus::Cancelled;
+        session.snapshot.active_turn_id = None;
+        session.snapshot.follow = AgentFollowState {
+            running: false,
+            activity: None,
+        };
+        session.snapshot.updated_at = now;
+        Some((turn_id, session.snapshot.clone()))
+    };
+
+    let Some((turn_id, snapshot)) = cancellation else {
+        return Ok(false);
+    };
+
+    cancel_pending_clarifications_for_session(&snapshot.id);
+    emit_event(AgentRuntimeEvent::SessionSnapshot {
+        snapshot: snapshot.clone(),
+    });
+    if let Some(turn_id) = turn_id {
+        emit_event(AgentRuntimeEvent::TurnFinished {
+            session_id: snapshot.id.clone(),
+            turn_id,
+            status: TurnStatus::Cancelled,
+        });
+    }
+    emit_event(AgentRuntimeEvent::FollowStateChanged {
+        session_id: snapshot.id,
+        follow: snapshot.follow,
+    });
+
+    Ok(true)
 }
 
 pub fn preview_rollback_json(payload: String) -> Result<String, AgentError> {
@@ -1944,15 +2736,6 @@ pub fn restore_rollback_json(payload: String) -> Result<String, AgentError> {
     }
 }
 
-pub fn submit_decision_json(payload: String) -> Result<String, AgentError> {
-    let request: DecisionSubmitRequest = parse_request(&payload)?;
-    encode(&json!({
-        "sessionId": request.session_id,
-        "decisionId": request.decision_id,
-        "accepted": request.accepted
-    }))
-}
-
 pub fn respond_permission_json(payload: String) -> Result<String, AgentError> {
     let request: PermissionRespondRequest = parse_request(&payload)?;
     if let Ok(mut pending) = PENDING_PERMISSIONS.lock() {
@@ -1964,6 +2747,43 @@ pub fn respond_permission_json(payload: String) -> Result<String, AgentError> {
         "sessionId": request.session_id,
         "permissionId": request.permission_id,
         "allowed": request.allowed
+    }))
+}
+
+pub fn respond_clarification_json(payload: String) -> Result<String, AgentError> {
+    let request: ClarificationRespondRequest = parse_request(&payload)?;
+    let answer = required_trimmed(Some(&request.answer), "answer")?;
+    let selected_option = normalize_optional_owned(request.selected_option);
+    let pending = {
+        let mut pending = PENDING_CLARIFICATIONS
+            .lock()
+            .map_err(|_| AgentError::RuntimeLock)?;
+        let Some(existing) = pending.get(&request.clarification_id) else {
+            return Err(AgentError::BadRequest(format!(
+                "clarification request is no longer pending: {}",
+                request.clarification_id
+            )));
+        };
+        if existing.session_id != request.session_id {
+            return Err(AgentError::BadRequest(format!(
+                "clarification {} belongs to session {}, not {}",
+                request.clarification_id, existing.session_id, request.session_id
+            )));
+        }
+        pending
+            .remove(&request.clarification_id)
+            .expect("pending clarification checked before removal")
+    };
+    let response = ClarificationAnswer {
+        answer: answer.clone(),
+        selected_option: selected_option.clone(),
+    };
+    let _ = pending.tx.send(response);
+    encode(&json!({
+        "sessionId": request.session_id,
+        "clarificationId": request.clarification_id,
+        "answer": answer,
+        "selectedOption": selected_option
     }))
 }
 
@@ -1986,6 +2806,231 @@ pub fn ask_user_permission(session_id: &str, action: &str, description: &str) ->
         Ok(allowed) => allowed,
         Err(_) => false,
     }
+}
+
+pub fn ask_user_clarification(
+    session_id: &str,
+    question: &str,
+    options: Vec<ClarificationOption>,
+    allow_custom_answer: bool,
+    detail: Option<String>,
+) -> Result<ClarificationAnswer, AgentError> {
+    let session_id = required_trimmed(Some(session_id), "sessionId")?;
+    let question = required_trimmed(Some(question), "question")?;
+    ensure_loaded_session_with_activation(&session_id, false)?;
+    let normalized = normalize_clarification_request(
+        question,
+        options,
+        allow_custom_answer,
+        detail.and_then(|value| normalize_optional_owned(Some(value))),
+    );
+    let clarification_id = format!("clar-{}", Uuid::new_v4());
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    {
+        let mut pending = PENDING_CLARIFICATIONS
+            .lock()
+            .map_err(|_| AgentError::RuntimeLock)?;
+        pending.insert(
+            clarification_id.clone(),
+            PendingClarification {
+                session_id: session_id.clone(),
+                tx,
+            },
+        );
+    }
+
+    emit_event(AgentRuntimeEvent::ClarificationRequired {
+        session_id: session_id.clone(),
+        clarification_id: clarification_id.clone(),
+        question: normalized.question,
+        options: normalized.options,
+        allow_custom_answer: normalized.allow_custom_answer,
+        detail: normalized.detail,
+    });
+
+    match futures::executor::block_on(rx) {
+        Ok(answer) => Ok(answer),
+        Err(_) => Err(AgentError::BadRequest(format!(
+            "clarification request was cancelled: {clarification_id}"
+        ))),
+    }
+}
+
+fn cancel_pending_clarifications_for_session(session_id: &str) {
+    if let Ok(mut pending) = PENDING_CLARIFICATIONS.lock() {
+        pending.retain(|_, request| request.session_id != session_id);
+    }
+}
+
+#[derive(Debug)]
+struct NormalizedClarificationRequest {
+    question: String,
+    options: Vec<ClarificationOption>,
+    allow_custom_answer: bool,
+    detail: Option<String>,
+}
+
+fn normalize_clarification_request(
+    question: String,
+    options: Vec<ClarificationOption>,
+    allow_custom_answer: bool,
+    detail: Option<String>,
+) -> NormalizedClarificationRequest {
+    let original_question = clean_clarification_text(&question);
+    let mut options = normalize_clarification_options(options);
+    let numbered_question = first_numbered_item_question(&original_question);
+    let mut normalized_question = preferred_clarification_question(&original_question);
+
+    if numbered_question.is_none()
+        && options.is_empty()
+        && let Some(extracted) = extract_inline_clarification_options(&original_question)
+    {
+        normalized_question = extracted.question;
+        options = extracted.options;
+    }
+
+    let normalized_question = if normalized_question.is_empty() {
+        original_question
+    } else {
+        normalized_question
+    };
+
+    NormalizedClarificationRequest {
+        question: normalized_question,
+        allow_custom_answer: allow_custom_answer || options.is_empty(),
+        options,
+        detail,
+    }
+}
+
+#[derive(Debug)]
+struct ExtractedClarificationOptions {
+    question: String,
+    options: Vec<ClarificationOption>,
+}
+
+fn preferred_clarification_question(text: &str) -> String {
+    if let Some(question) = first_numbered_item_question(text) {
+        return question;
+    }
+    if let Some(question) = first_question_sentence(text) {
+        return question;
+    }
+    first_numbered_item(text)
+        .map(clean_clarification_text)
+        .unwrap_or_else(|| clean_clarification_text(text))
+}
+
+fn first_question_sentence(text: &str) -> Option<String> {
+    let mut best: Option<(usize, usize)> = None;
+    for marker in ['？', '?'] {
+        if let Some(index) = text.find(marker) {
+            let end = index + marker.len_utf8();
+            best = Some(best.map_or((index, end), |current| {
+                if index < current.0 {
+                    (index, end)
+                } else {
+                    current
+                }
+            }));
+        }
+    }
+    let (_, end) = best?;
+    let sentence = clean_clarification_text(&text[..end]);
+    (sentence.chars().count() >= 4).then_some(sentence)
+}
+
+fn extract_inline_clarification_options(text: &str) -> Option<ExtractedClarificationOptions> {
+    let question = first_question_sentence(text)?;
+    let first_item = first_numbered_item(text)?;
+    let choices = choices_from_inline_choice_text(first_item);
+    if choices.len() < 2 {
+        return None;
+    }
+    Some(ExtractedClarificationOptions {
+        question,
+        options: choices
+            .into_iter()
+            .take(4)
+            .map(|label| ClarificationOption {
+                label,
+                description: None,
+            })
+            .collect(),
+    })
+}
+
+fn choices_from_inline_choice_text(text: &str) -> Vec<String> {
+    if has_explanatory_separator(text) {
+        return Vec::new();
+    }
+    let cleaned = clean_clarification_text(text);
+    cleaned
+        .split(['/', '／', '|', '、'])
+        .filter_map(|part| {
+            let label = clean_option_label(part);
+            (!label.is_empty()).then_some(label)
+        })
+        .fold(Vec::<String>::new(), |mut acc, label| {
+            if !acc.iter().any(|existing| existing == &label) {
+                acc.push(label);
+            }
+            acc
+        })
+}
+
+fn has_explanatory_separator(text: &str) -> bool {
+    [" -- ", "--", " - ", "——", "：", ":"]
+        .iter()
+        .any(|separator| text.contains(separator))
+}
+
+fn clean_option_label(raw: &str) -> String {
+    raw.replace("**", "")
+        .trim_matches(|ch: char| {
+            ch.is_whitespace()
+                || ch == '?'
+                || ch == '？'
+                || ch == '.'
+                || ch == '。'
+                || ch == '-'
+                || ch == ':'
+                || ch == '：'
+        })
+        .trim()
+        .to_string()
+}
+
+fn normalize_clarification_options(options: Vec<ClarificationOption>) -> Vec<ClarificationOption> {
+    let mut normalized: Vec<ClarificationOption> = Vec::new();
+    for option in options {
+        let label = option.label.trim();
+        let description = option
+            .description
+            .and_then(|value| normalize_optional_owned(Some(value)));
+        if label.is_empty()
+            || is_custom_clarification_option_label(label)
+            || normalized
+                .iter()
+                .any(|existing| existing.label.as_str() == label)
+        {
+            continue;
+        }
+        normalized.push(ClarificationOption {
+            label: label.to_string(),
+            description,
+        });
+    }
+    normalized
+}
+
+fn is_custom_clarification_option_label(label: &str) -> bool {
+    let label = label.trim();
+    matches!(
+        label.to_ascii_lowercase().as_str(),
+        "other" | "custom" | "something else"
+    ) || matches!(label, "其他" | "其它" | "自定义")
 }
 
 fn ensure_jcode_config_file() -> Result<(), AgentError> {
@@ -2028,6 +3073,70 @@ pub fn update_jcode_config_json(payload: String) -> Result<String, AgentError> {
     if let Some(value) = patch.get("openaiServiceTier") {
         config.provider.openai_service_tier = optional_string(value);
     }
+    if let Some(value) = patch.get("ntfyServer") {
+        config.safety.ntfy_server = optional_string(value)
+            .unwrap_or_else(|| crate::config::SafetyConfig::default().ntfy_server);
+    }
+    patch_optional_string(&mut config.safety.ntfy_topic, &patch, "ntfyTopic");
+    patch_bool(
+        &mut config.safety.desktop_notifications,
+        &patch,
+        "desktopNotifications",
+    )?;
+    patch_bool(&mut config.safety.email_enabled, &patch, "emailEnabled")?;
+    patch_optional_string(&mut config.safety.email_to, &patch, "emailTo");
+    patch_optional_string(&mut config.safety.email_smtp_host, &patch, "emailSmtpHost");
+    patch_u16(&mut config.safety.email_smtp_port, &patch, "emailSmtpPort")?;
+    patch_optional_string(&mut config.safety.email_from, &patch, "emailFrom");
+    patch_optional_string(&mut config.safety.email_password, &patch, "emailPassword");
+    patch_optional_string(&mut config.safety.email_imap_host, &patch, "emailImapHost");
+    patch_u16(&mut config.safety.email_imap_port, &patch, "emailImapPort")?;
+    patch_bool(
+        &mut config.safety.email_reply_enabled,
+        &patch,
+        "emailReplyEnabled",
+    )?;
+    patch_bool(
+        &mut config.safety.telegram_enabled,
+        &patch,
+        "telegramEnabled",
+    )?;
+    patch_optional_string(
+        &mut config.safety.telegram_bot_token,
+        &patch,
+        "telegramBotToken",
+    );
+    patch_optional_string(
+        &mut config.safety.telegram_chat_id,
+        &patch,
+        "telegramChatId",
+    );
+    patch_bool(
+        &mut config.safety.telegram_reply_enabled,
+        &patch,
+        "telegramReplyEnabled",
+    )?;
+    patch_bool(&mut config.safety.discord_enabled, &patch, "discordEnabled")?;
+    patch_optional_string(
+        &mut config.safety.discord_bot_token,
+        &patch,
+        "discordBotToken",
+    );
+    patch_optional_string(
+        &mut config.safety.discord_channel_id,
+        &patch,
+        "discordChannelId",
+    );
+    patch_optional_string(
+        &mut config.safety.discord_bot_user_id,
+        &patch,
+        "discordBotUserId",
+    );
+    patch_bool(
+        &mut config.safety.discord_reply_enabled,
+        &patch,
+        "discordReplyEnabled",
+    )?;
     config
         .save()
         .map_err(|error| AgentError::Provider(error.to_string()))?;
@@ -2120,10 +3229,6 @@ pub fn save_jcode_provider_profile_json(payload: String) -> Result<String, Agent
         refresh_runtime_agents_after_provider_config_change();
     }
     read_jcode_config_json("{}".to_string())
-}
-
-pub fn list_jcode_commands_json(_payload: String) -> Result<String, AgentError> {
-    encode(&json!({ "commands": gui_visible_jcode_commands() }))
 }
 
 pub fn list_jcode_models_json(payload: String) -> Result<String, AgentError> {
@@ -2541,12 +3646,318 @@ fn bool_from_value(value: &Value) -> Result<bool, AgentError> {
         .ok_or_else(|| AgentError::BadRequest("expected boolean value".to_string()))
 }
 
+fn u16_from_value(value: &Value, name: &str) -> Result<u16, AgentError> {
+    let number = value.as_u64().ok_or_else(|| {
+        AgentError::BadRequest(format!("{name} must be an integer between 0 and 65535"))
+    })?;
+    u16::try_from(number).map_err(|_| {
+        AgentError::BadRequest(format!("{name} must be an integer between 0 and 65535"))
+    })
+}
+
+fn patch_optional_string(target: &mut Option<String>, patch: &Value, key: &str) {
+    if let Some(value) = patch.get(key) {
+        *target = optional_string(value);
+    }
+}
+
+fn patch_bool(target: &mut bool, patch: &Value, key: &str) -> Result<(), AgentError> {
+    if let Some(value) = patch.get(key) {
+        *target = bool_from_value(value)?;
+    }
+    Ok(())
+}
+
+fn patch_u16(target: &mut u16, patch: &Value, key: &str) -> Result<(), AgentError> {
+    if let Some(value) = patch.get(key) {
+        *target = u16_from_value(value, key)?;
+    }
+    Ok(())
+}
+
 fn required_trimmed(value: Option<&str>, name: &str) -> Result<String, AgentError> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .ok_or_else(|| AgentError::BadRequest(format!("{name} is required")))
+}
+
+fn parse_gmail_access_tier(
+    raw: Option<&str>,
+) -> Result<crate::auth::google::GmailAccessTier, AgentError> {
+    match raw
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("readonly")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "readonly" | "read-only" | "read_only" => {
+            Ok(crate::auth::google::GmailAccessTier::ReadOnly)
+        }
+        "full" | "full-access" | "full_access" => Ok(crate::auth::google::GmailAccessTier::Full),
+        value => Err(AgentError::BadRequest(format!(
+            "unsupported Gmail access tier: {value}"
+        ))),
+    }
+}
+
+fn gmail_access_tier_id(tier: crate::auth::google::GmailAccessTier) -> &'static str {
+    match tier {
+        crate::auth::google::GmailAccessTier::Full => "full",
+        crate::auth::google::GmailAccessTier::ReadOnly => "readonly",
+    }
+}
+
+fn google_credentials_for_login(
+    client_id: Option<&str>,
+    client_secret: Option<&str>,
+) -> Result<crate::auth::google::GoogleCredentials, AgentError> {
+    let client_id = client_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let client_secret = client_secret
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+
+    match (client_id, client_secret) {
+        (Some(client_id), Some(client_secret)) => {
+            let creds = crate::auth::google::GoogleCredentials {
+                client_id,
+                client_secret,
+            };
+            crate::auth::google::save_credentials(&creds)
+                .map_err(|error| AgentError::Provider(error.to_string()))?;
+            Ok(creds)
+        }
+        (None, None) => crate::auth::google::load_credentials().map_err(|_| {
+            AgentError::BadRequest(
+                "Google OAuth client ID and client secret are required before Gmail login"
+                    .to_string(),
+            )
+        }),
+        _ => Err(AgentError::BadRequest(
+            "Google OAuth client ID and client secret must be saved together".to_string(),
+        )),
+    }
+}
+
+fn gui_login_providers() -> Vec<crate::provider_catalog::LoginProviderDescriptor> {
+    crate::provider_catalog::login_providers()
+        .iter()
+        .copied()
+        .filter(|provider| match provider.target {
+            crate::provider_catalog::LoginProviderTarget::Claude
+            | crate::provider_catalog::LoginProviderTarget::OpenAi
+            | crate::provider_catalog::LoginProviderTarget::Gemini
+            | crate::provider_catalog::LoginProviderTarget::Antigravity
+            | crate::provider_catalog::LoginProviderTarget::Google
+            | crate::provider_catalog::LoginProviderTarget::OpenAiApiKey
+            | crate::provider_catalog::LoginProviderTarget::OpenRouter
+            | crate::provider_catalog::LoginProviderTarget::OpenAiCompatible(_) => true,
+            _ => false,
+        })
+        .collect()
+}
+
+fn resolve_gui_login_provider(
+    provider: &str,
+) -> Result<crate::provider_catalog::LoginProviderDescriptor, AgentError> {
+    let resolved = crate::provider_catalog::resolve_login_provider(provider).ok_or_else(|| {
+        AgentError::BadRequest(format!("unknown Lyra Agent login provider: {provider}"))
+    })?;
+    gui_login_providers()
+        .into_iter()
+        .find(|entry| entry.id == resolved.id)
+        .ok_or_else(|| {
+            AgentError::BadRequest(format!(
+                "{} login is not available in Lyra Agent settings",
+                resolved.display_name
+            ))
+        })
+}
+
+fn login_provider_requires_callback(
+    provider: crate::provider_catalog::LoginProviderDescriptor,
+) -> bool {
+    matches!(
+        provider.target,
+        crate::provider_catalog::LoginProviderTarget::Claude
+            | crate::provider_catalog::LoginProviderTarget::OpenAi
+            | crate::provider_catalog::LoginProviderTarget::Gemini
+            | crate::provider_catalog::LoginProviderTarget::Antigravity
+            | crate::provider_catalog::LoginProviderTarget::Google
+    )
+}
+
+fn login_provider_requires_api_key(
+    provider: crate::provider_catalog::LoginProviderDescriptor,
+) -> bool {
+    login_target_is_api_key(provider.target)
+}
+
+fn login_target_is_api_key(target: crate::provider_catalog::LoginProviderTarget) -> bool {
+    matches!(
+        target,
+        crate::provider_catalog::LoginProviderTarget::OpenAiApiKey
+            | crate::provider_catalog::LoginProviderTarget::OpenRouter
+            | crate::provider_catalog::LoginProviderTarget::OpenAiCompatible(_)
+    )
+}
+
+fn auth_state_string(state: crate::auth::AuthState) -> &'static str {
+    match state {
+        crate::auth::AuthState::Available => "available",
+        crate::auth::AuthState::Expired => "expired",
+        crate::auth::AuthState::NotConfigured => "notConfigured",
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn login_start_response(
+    provider: &str,
+    label: Option<String>,
+    flow: JcodeAccountLoginFlow,
+    auth_url: Option<String>,
+    callback_hint: Option<String>,
+    instructions: &str,
+    requires_callback: bool,
+    requires_api_key: bool,
+) -> Result<JcodeAccountLoginStartResponse, AgentError> {
+    let flow_id = encode_login_flow(&flow)?;
+    Ok(JcodeAccountLoginStartResponse {
+        provider: provider.to_string(),
+        label,
+        flow_id,
+        auth_url,
+        callback_hint,
+        auth_kind: flow.auth_kind,
+        instructions: instructions.to_string(),
+        requires_callback,
+        requires_api_key,
+    })
+}
+
+fn encode_login_flow(flow: &JcodeAccountLoginFlow) -> Result<String, AgentError> {
+    let bytes =
+        serde_json::to_vec(flow).map_err(|error| AgentError::Serialization(error.to_string()))?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
+}
+
+fn decode_login_flow(flow_id: Option<&str>) -> Result<JcodeAccountLoginFlow, AgentError> {
+    let encoded = required_trimmed(flow_id, "login flow")?;
+    let bytes = URL_SAFE_NO_PAD
+        .decode(encoded.as_bytes())
+        .map_err(|_| AgentError::BadRequest("invalid login flow".to_string()))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|_| AgentError::BadRequest("invalid login flow".to_string()))
+}
+
+fn ensure_flow_provider(flow: &JcodeAccountLoginFlow, provider: &str) -> Result<(), AgentError> {
+    if flow.provider == provider {
+        Ok(())
+    } else {
+        Err(AgentError::BadRequest(
+            "login flow provider mismatch; start login again".to_string(),
+        ))
+    }
+}
+
+fn api_key_profile_defaults(
+    provider: crate::provider_catalog::LoginProviderDescriptor,
+    request: &JcodeAccountLoginCompleteRequest,
+) -> Result<(String, String, Option<String>, String), AgentError> {
+    match provider.target {
+        crate::provider_catalog::LoginProviderTarget::OpenAiApiKey => {
+            let profile_name = request
+                .profile_name
+                .as_deref()
+                .or(request.label.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("openai-api")
+                .to_string();
+            Ok((
+                sanitize_profile_name(&profile_name)?,
+                request
+                    .base_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("https://api.openai.com/v1")
+                    .to_string(),
+                request
+                    .default_model
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned),
+                "openai-compatible".to_string(),
+            ))
+        }
+        crate::provider_catalog::LoginProviderTarget::OpenRouter => {
+            let profile_name = request
+                .profile_name
+                .as_deref()
+                .or(request.label.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("openrouter")
+                .to_string();
+            Ok((
+                sanitize_profile_name(&profile_name)?,
+                request
+                    .base_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("https://openrouter.ai/api/v1")
+                    .to_string(),
+                request
+                    .default_model
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned),
+                "openrouter".to_string(),
+            ))
+        }
+        crate::provider_catalog::LoginProviderTarget::OpenAiCompatible(profile) => {
+            let resolved = crate::provider_catalog::resolve_openai_compatible_profile(profile);
+            let profile_name = request
+                .profile_name
+                .as_deref()
+                .or(request.label.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(resolved.id.as_str())
+                .to_string();
+            Ok((
+                sanitize_profile_name(&profile_name)?,
+                request
+                    .base_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(resolved.api_base.as_str())
+                    .to_string(),
+                request
+                    .default_model
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+                    .or(resolved.default_model),
+                "openai-compatible".to_string(),
+            ))
+        }
+        _ => Err(AgentError::BadRequest(
+            "provider does not support API key login".to_string(),
+        )),
+    }
 }
 
 fn jcode_accounts_response() -> JcodeAccountsResponse {
@@ -2581,6 +3992,40 @@ fn jcode_accounts_response() -> JcodeAccountsResponse {
         }
     }
 
+    if let Ok(tokens) = crate::auth::gemini::load_tokens() {
+        accounts.push(JcodeAccountSnapshot {
+            provider: "gemini".to_string(),
+            label: tokens.email.unwrap_or_else(|| "gemini".to_string()),
+            kind: "oauth".to_string(),
+            active: config.provider.default_provider.as_deref() == Some("gemini"),
+            configured: true,
+            detail: Some(auth_state_string(configure_token_state(tokens.expires_at)).to_string()),
+        });
+    }
+
+    if let Ok(tokens) = crate::auth::antigravity::load_tokens() {
+        accounts.push(JcodeAccountSnapshot {
+            provider: "antigravity".to_string(),
+            label: tokens.email.unwrap_or_else(|| "antigravity".to_string()),
+            kind: "oauth".to_string(),
+            active: config.provider.default_provider.as_deref() == Some("antigravity"),
+            configured: true,
+            detail: tokens.project_id,
+        });
+    }
+
+    if let Ok(tokens) = crate::auth::google::load_tokens() {
+        let state = auth_state_string(configure_token_state(tokens.expires_at));
+        accounts.push(JcodeAccountSnapshot {
+            provider: "google".to_string(),
+            label: tokens.email.unwrap_or_else(|| "gmail".to_string()),
+            kind: "oauth".to_string(),
+            active: false,
+            configured: true,
+            detail: Some(format!("{} · {}", tokens.tier.label(), state)),
+        });
+    }
+
     for (label, profile) in &config.providers {
         accounts.push(JcodeAccountSnapshot {
             provider: match &profile.provider_type {
@@ -2602,6 +4047,14 @@ fn jcode_accounts_response() -> JcodeAccountsResponse {
         default_model: config.provider.default_model,
         auth_status: auth_status_snapshot_value(),
         accounts,
+    }
+}
+
+fn configure_token_state(expires_at: i64) -> crate::auth::AuthState {
+    if expires_at <= chrono::Utc::now().timestamp_millis() {
+        crate::auth::AuthState::Expired
+    } else {
+        crate::auth::AuthState::Available
     }
 }
 
@@ -3090,7 +4543,11 @@ pub fn list_jcode_sessions_json(payload: String) -> Result<String, AgentError> {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum AgentRuntimeEvent {
     SessionSnapshot {
         snapshot: AgentSessionSnapshot,
@@ -3118,11 +4575,19 @@ pub enum AgentRuntimeEvent {
         session_id: String,
         tool: ToolActivity,
     },
-    DecisionRequired {
+    TodoUpdated {
         session_id: String,
-        decision_id: String,
-        title: String,
-        detail: String,
+        todos: Vec<AgentTodoItem>,
+    },
+    ClarificationRequired {
+        session_id: String,
+        clarification_id: String,
+        question: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        options: Vec<ClarificationOption>,
+        allow_custom_answer: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
     },
     PermissionRequired {
         session_id: String,
@@ -3165,6 +4630,7 @@ fn run_jcode_turn(
     session_id: String,
     turn_id: String,
     text: String,
+    images: Vec<(String, String)>,
     system_reminder: Option<String>,
     agent: Arc<tokio::sync::Mutex<Agent>>,
     shutdown_signal: InterruptSignal,
@@ -3180,7 +4646,7 @@ fn run_jcode_turn(
         let run_result = {
             let mut guard = agent.lock().await;
             guard
-                .run_once_streaming_mpsc(&text, Vec::new(), system_reminder, event_tx)
+                .run_once_streaming_mpsc(&text, images, system_reminder, event_tx)
                 .await
         };
         let _ = event_task.await;
@@ -3191,7 +4657,9 @@ fn run_jcode_turn(
         Ok(()) if shutdown_signal.is_set() => {
             finish_turn(&session_id, &turn_id, TurnStatus::Cancelled)
         }
-        Ok(()) => finish_turn(&session_id, &turn_id, TurnStatus::Finished),
+        Ok(()) => {
+            finish_turn(&session_id, &turn_id, TurnStatus::Finished);
+        }
         Err(error) if shutdown_signal.is_set() => {
             finish_turn(&session_id, &turn_id, TurnStatus::Cancelled);
             emit_event(AgentRuntimeEvent::TurnFailed {
@@ -3206,11 +4674,14 @@ fn run_jcode_turn(
 
 async fn consume_jcode_events(
     session_id: String,
-    _turn_id: String,
+    turn_id: String,
     mut event_rx: mpsc::UnboundedReceiver<ServerEvent>,
 ) {
     let mut assistant_id: Option<String> = None;
     while let Some(event) = event_rx.recv().await {
+        if !turn_is_active(&session_id, &turn_id) {
+            continue;
+        }
         match event {
             ServerEvent::TextDelta { text } => {
                 let message_id = ensure_assistant_message(&session_id, &mut assistant_id);
@@ -3276,6 +4747,9 @@ async fn consume_jcode_events(
                     session_id: session_id.clone(),
                     tool,
                 });
+                if !failed && name == "todo" {
+                    emit_todo_updated(&session_id);
+                }
             }
             ServerEvent::ConnectionPhase { phase } => {
                 set_follow_activity(&session_id, &phase);
@@ -3293,6 +4767,23 @@ async fn consume_jcode_events(
             _ => {}
         }
     }
+}
+
+fn turn_is_active(session_id: &str, turn_id: &str) -> bool {
+    RUNTIME
+        .lock()
+        .ok()
+        .and_then(|runtime| {
+            runtime.sessions.get(session_id).and_then(|session| {
+                session
+                    .snapshot
+                    .active_turn_id
+                    .as_deref()
+                    .map(str::to_owned)
+            })
+        })
+        .as_deref()
+        == Some(turn_id)
 }
 
 fn ensure_assistant_message(session_id: &str, assistant_id: &mut Option<String>) -> Option<String> {
@@ -3491,6 +4982,7 @@ fn finish_turn(session_id: &str, turn_id: &str, status: TurnStatus) {
     if !should_emit {
         return;
     }
+    cancel_pending_clarifications_for_session(session_id);
     if let Ok(snapshot) = snapshot {
         emit_event(AgentRuntimeEvent::SessionSnapshot { snapshot });
     }
@@ -3506,6 +4998,43 @@ fn finish_turn(session_id: &str, turn_id: &str, status: TurnStatus) {
             activity: None,
         },
     });
+}
+
+fn first_numbered_item(text: &str) -> Option<&str> {
+    first_numbered_item_with_start(text).map(|(_, item)| item)
+}
+
+fn first_numbered_item_with_start(text: &str) -> Option<(usize, &str)> {
+    let marker_start = ["1.", "1、"]
+        .iter()
+        .filter_map(|marker| text.find(marker).map(|index| (index, marker.len())))
+        .min_by_key(|(index, _)| *index)?;
+    let start = marker_start.0 + marker_start.1;
+    let rest = &text[start..];
+    let end = ["\n2.", "\n2、", " 2.", " 2、"]
+        .iter()
+        .filter_map(|marker| rest.find(marker))
+        .min()
+        .unwrap_or(rest.len());
+    Some((marker_start.0, &rest[..end]))
+}
+
+fn first_numbered_item_question(text: &str) -> Option<String> {
+    let (numbered_start, numbered) = first_numbered_item_with_start(text)?;
+    let first_question_end = ['？', '?']
+        .iter()
+        .filter_map(|marker| text.find(*marker))
+        .min()?;
+    (numbered_start < first_question_end).then(|| clean_clarification_text(numbered))
+}
+
+fn clean_clarification_text(raw: &str) -> String {
+    raw.replace("**", "")
+        .replace("——", "-")
+        .replace("--", "-")
+        .trim_matches(|ch: char| ch.is_whitespace() || ch == '-' || ch == ':' || ch == '：')
+        .trim()
+        .to_string()
 }
 
 fn fail_turn(session_id: &str, turn_id: &str, message: String) {
@@ -3539,6 +5068,7 @@ fn fail_turn(session_id: &str, turn_id: &str, message: String) {
     if !should_emit {
         return;
     }
+    cancel_pending_clarifications_for_session(session_id);
     if let Ok(snapshot) = snapshot {
         emit_event(AgentRuntimeEvent::SessionSnapshot { snapshot });
     }
@@ -3596,6 +5126,7 @@ fn snapshot_from_jcode_session(
             .map(|message| agent_message_from_jcode_message(&session.id, message))
             .collect(),
         tools: tools_from_jcode_session(session, live_tools),
+        todos: agent_todos_for_session(&session.id),
         automation: AgentSessionAutomationSnapshot {
             subagent_model: session.subagent_model.clone(),
             autoreview_enabled: session.autoreview_enabled,
@@ -3607,6 +5138,27 @@ fn snapshot_from_jcode_session(
         follow,
         updated_at: session.updated_at,
     }
+}
+
+fn agent_todos_for_session(session_id: &str) -> Vec<AgentTodoItem> {
+    crate::todo::load_todos(session_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(AgentTodoItem::from)
+        .collect()
+}
+
+fn emit_todo_updated(session_id: &str) {
+    let todos = agent_todos_for_session(session_id);
+    if let Ok(mut runtime) = RUNTIME.lock() {
+        if let Some(session) = runtime.sessions.get_mut(session_id) {
+            session.snapshot.todos = todos.clone();
+        }
+    }
+    emit_event(AgentRuntimeEvent::TodoUpdated {
+        session_id: session_id.to_string(),
+        todos,
+    });
 }
 
 fn agent_message_from_jcode_message(
@@ -3645,10 +5197,15 @@ fn message_blocks_from_jcode_message(
                 });
                 text_index += 1;
             }
-            ContentBlock::Image { .. } => {
-                blocks.push(AgentMessageBlock::Text {
-                    id: format!("text-{text_index}"),
-                    text: "[image]".to_string(),
+            ContentBlock::Image { media_type, data } => {
+                blocks.push(AgentMessageBlock::Image {
+                    id: format!("image-{text_index}"),
+                    media_type: media_type.clone(),
+                    data: data.clone(),
+                    label: None,
+                    source: None,
+                    width: None,
+                    height: None,
                 });
                 text_index += 1;
             }
@@ -3694,10 +5251,7 @@ fn rollback_info_for_message(
 }
 
 fn is_internal_system_message(message: &crate::session::StoredMessage) -> bool {
-    message.content.iter().any(|block| match block {
-        ContentBlock::Text { text, .. } => text.trim_start().starts_with("<system-reminder>"),
-        _ => false,
-    })
+    message.display_role.is_some()
 }
 
 fn is_visible_chat_message(message: &crate::session::StoredMessage) -> bool {
@@ -3766,6 +5320,18 @@ fn tools_from_jcode_session(session: &Session, live_tools: Vec<ToolActivity>) ->
                         order.push(tool_use_id.clone());
                     }
                     let failed = is_error.unwrap_or(false);
+
+                    let mut screenshot = None;
+                    for other_block in &message.content {
+                        if let ContentBlock::Image { media_type, data } = other_block {
+                            screenshot = Some(json!({
+                                "mediaType": media_type,
+                                "data": data,
+                            }));
+                            break;
+                        }
+                    }
+
                     let tool =
                         tools_by_id
                             .entry(tool_use_id.clone())
@@ -3792,6 +5358,7 @@ fn tools_from_jcode_session(session: &Session, live_tools: Vec<ToolActivity>) ->
                     tool.output = Some(json!({
                         "content": content,
                         "error": if failed { Value::String(content.clone()) } else { Value::Null },
+                        "screenshot": screenshot,
                     }));
                     tool.finished_at = Some(timestamp);
                 }
@@ -4663,6 +6230,12 @@ mod tests {
         if let Ok(mut runtime) = RUNTIME.lock() {
             *runtime = AgentRuntime::default();
         }
+        if let Ok(mut pending) = PENDING_CLARIFICATIONS.lock() {
+            pending.clear();
+        }
+        if let Ok(mut pending) = PENDING_PERMISSIONS.lock() {
+            pending.clear();
+        }
         crate::config::Config::invalidate_cache();
     }
 
@@ -4694,8 +6267,150 @@ mod tests {
                 assert_eq!(id, "tool-call-legacy");
                 assert_eq!(tool_id, "call_legacy");
             }
-            AgentMessageBlock::Text { .. } => panic!("expected tool block"),
+            AgentMessageBlock::Text { .. } | AgentMessageBlock::Image { .. } => {
+                panic!("expected tool block")
+            }
         }
+    }
+
+    #[test]
+    fn clarification_normalization_collapses_to_first_question() {
+        let text = "你想做一个什么类型的官网？请告诉我以下信息：\n\
+1. **网站主题/公司名称** -- 这个官网是给什么产品做的？\n\
+2. **主要内容板块** -- 需要哪些页面或模块？\n\
+3. **风格偏好** -- 有没有喜欢的设计风格？";
+
+        let clarification =
+            normalize_clarification_request(text.to_string(), Vec::new(), true, None);
+
+        assert_eq!(clarification.question, "你想做一个什么类型的官网？");
+        assert!(clarification.options.is_empty());
+        assert!(clarification.detail.is_none());
+    }
+
+    #[test]
+    fn clarification_normalization_keeps_explicit_inline_choices() {
+        let text = "你想做什么类型的官网？请提供一些信息，比如：\n\
+1. 企业官网/个人作品集/产品官网/博客？\n\
+2. 主要功能或页面？\n\
+3. 设计风格偏好？";
+
+        let clarification =
+            normalize_clarification_request(text.to_string(), Vec::new(), true, None);
+
+        assert_eq!(clarification.question, "你想做什么类型的官网？");
+        let labels = clarification
+            .options
+            .iter()
+            .map(|option| option.label.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(labels, vec!["企业官网", "个人作品集", "产品官网", "博客"]);
+    }
+
+    #[test]
+    fn clarification_normalization_prefers_first_numbered_question_after_intro() {
+        let text = "好的，制作一个公司/产品介绍官网！在开始之前，我需要了解几个关键信息：\n\n\
+**1. 公司/产品名称是什么？**\n\n\
+**2. 主要业务/产品是什么？**\n\n\
+**3. 有什么特别想要展示的内容？**\n\n\
+**4. 有偏好的颜色风格或设计参考吗？**";
+
+        let clarification =
+            normalize_clarification_request(text.to_string(), Vec::new(), true, None);
+
+        assert_eq!(clarification.question, "公司/产品名称是什么？");
+        assert!(clarification.options.is_empty());
+    }
+
+    #[test]
+    fn clarification_normalization_does_not_invent_keyword_options() {
+        let normalized = normalize_clarification_request(
+            "你想做什么类型的官网？".to_string(),
+            Vec::new(),
+            true,
+            None,
+        );
+
+        assert_eq!(normalized.question, "你想做什么类型的官网？");
+        assert!(normalized.options.is_empty());
+    }
+
+    #[test]
+    fn clarification_normalization_keeps_single_followup_question() {
+        let normalized = normalize_clarification_request(
+            "我已经完成了初稿。你要我继续吗？".to_string(),
+            Vec::new(),
+            true,
+            None,
+        );
+        assert_eq!(normalized.question, "我已经完成了初稿。你要我继续吗？");
+    }
+
+    #[test]
+    fn assistant_plain_text_multi_question_remains_message_after_turn_finish() {
+        let _env = RuntimeTestEnv::new();
+        let created =
+            create_session_json(r#"{"title":"Plain Clarification"}"#.to_string()).expect("create");
+        let snapshot: AgentSessionSnapshot = serde_json::from_str(&created).expect("snapshot");
+        let text = "好的，制作一个公司/产品介绍官网！在开始之前，我需要了解几个关键信息：\n\n\
+**1. 公司/产品名称是什么？**\n\n\
+**2. 主要业务/产品是什么？**";
+
+        let mut persisted = Session::load(&snapshot.id).expect("load session");
+        let message_id = persisted.add_message(
+            Role::Assistant,
+            vec![ContentBlock::Text {
+                text: text.to_string(),
+                cache_control: None,
+            }],
+        );
+        persisted.save().expect("save assistant message");
+        let turn_id = "turn-plain-question";
+        {
+            let mut runtime = RUNTIME.lock().expect("runtime lock");
+            let session = runtime
+                .sessions
+                .get_mut(&snapshot.id)
+                .expect("runtime session");
+            session.snapshot.turn_status = TurnStatus::Running;
+            session.snapshot.active_turn_id = Some(turn_id.to_string());
+        }
+
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let events_for_callback = Arc::clone(&events);
+        register_rust_event_callback(Arc::new(move |event| {
+            events_for_callback.lock().expect("events").push(event);
+        }));
+
+        finish_turn(&snapshot.id, turn_id, TurnStatus::Finished);
+
+        let runtime_snapshot =
+            with_session_snapshot(&snapshot.id, |session| session.snapshot.clone())
+                .expect("runtime snapshot");
+        let assistant_message = runtime_snapshot
+            .messages
+            .iter()
+            .find(|message| message.id == message_id)
+            .expect("assistant question remains visible");
+        assert_eq!(assistant_message.text, text);
+
+        let captured = events.lock().expect("events").clone();
+        assert!(
+            captured
+                .iter()
+                .any(|event| event.contains(r#""kind":"sessionSnapshot""#))
+        );
+        assert!(
+            !captured.iter().any(|event| {
+                serde_json::from_str::<Value>(event)
+                    .ok()
+                    .is_some_and(|value| value["kind"] == "clarificationRequired")
+            }),
+            "assistant text must not synthesize a clarificationRequired event"
+        );
+        let pending = PENDING_CLARIFICATIONS.lock().expect("pending");
+        assert!(!pending.values().any(|item| item.session_id == snapshot.id));
+        clear_rust_event_callback();
     }
 
     #[test]
@@ -4710,6 +6425,122 @@ mod tests {
     }
 
     #[test]
+    fn task_switch_cancels_previous_running_turn() {
+        let _env = RuntimeTestEnv::new();
+        let created =
+            create_session_json(r#"{"title":"Task Switch"}"#.to_string()).expect("create");
+        let snapshot: AgentSessionSnapshot = serde_json::from_str(&created).expect("snapshot");
+        let old_turn_id = "turn-old-task";
+        let signal = InterruptSignal::new();
+        {
+            let mut runtime = RUNTIME.lock().expect("runtime lock");
+            let session = runtime
+                .sessions
+                .get_mut(&snapshot.id)
+                .expect("runtime session");
+            session.snapshot.turn_status = TurnStatus::Running;
+            session.snapshot.active_turn_id = Some(old_turn_id.to_string());
+            session.snapshot.follow = AgentFollowState {
+                running: true,
+                activity: Some("Editing webpage".to_string()),
+            };
+            session.snapshot.tools.push(ToolActivity {
+                id: "tool-old".to_string(),
+                name: "bash".to_string(),
+                label: live_tool_label("bash"),
+                status: ToolActivityStatus::Running,
+                input: json!({ "command": "long old task" }),
+                output: None,
+                started_at: Utc::now(),
+                finished_at: None,
+            });
+            session.shutdown_signal = Some(signal.clone());
+        }
+
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let events_for_callback = Arc::clone(&events);
+        register_rust_event_callback(Arc::new(move |event| {
+            events_for_callback.lock().expect("events").push(event);
+        }));
+
+        assert!(cancel_running_turn_for_task_switch(&snapshot.id).expect("cancel old turn"));
+        assert!(signal.is_set());
+
+        let runtime_snapshot =
+            with_session_snapshot(&snapshot.id, |session| session.snapshot.clone())
+                .expect("runtime snapshot");
+        assert_eq!(runtime_snapshot.turn_status, TurnStatus::Cancelled);
+        assert_eq!(runtime_snapshot.active_turn_id, None);
+        assert!(!runtime_snapshot.follow.running);
+        assert_eq!(runtime_snapshot.tools[0].status, ToolActivityStatus::Failed);
+        assert_eq!(
+            runtime_snapshot.tools[0]
+                .output
+                .as_ref()
+                .and_then(|value| value.get("error")),
+            Some(&json!("interrupted by new user request"))
+        );
+        {
+            let runtime = RUNTIME.lock().expect("runtime lock");
+            let session = runtime.sessions.get(&snapshot.id).expect("runtime session");
+            assert!(session.shutdown_signal.is_none());
+        }
+
+        let captured = events.lock().expect("events").clone();
+        assert!(captured.iter().any(|event| {
+            serde_json::from_str::<Value>(event)
+                .ok()
+                .is_some_and(|value| {
+                    value["kind"] == "turnFinished"
+                        && value["turnId"] == old_turn_id
+                        && value["status"] == "cancelled"
+                })
+        }));
+        clear_rust_event_callback();
+    }
+
+    #[test]
+    fn stale_turn_events_do_not_append_after_task_switch() {
+        let _env = RuntimeTestEnv::new();
+        let created = create_session_json(r#"{"title":"Event Gate"}"#.to_string()).expect("create");
+        let snapshot: AgentSessionSnapshot = serde_json::from_str(&created).expect("snapshot");
+        {
+            let mut runtime = RUNTIME.lock().expect("runtime lock");
+            let session = runtime
+                .sessions
+                .get_mut(&snapshot.id)
+                .expect("runtime session");
+            session.snapshot.turn_status = TurnStatus::Running;
+            session.snapshot.active_turn_id = Some("turn-new-task".to_string());
+            session.snapshot.follow = AgentFollowState {
+                running: true,
+                activity: Some("New task".to_string()),
+            };
+        }
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        tx.send(ServerEvent::TextDelta {
+            text: "old webpage task output".to_string(),
+        })
+        .expect("send stale event");
+        drop(tx);
+
+        block_on(consume_jcode_events(
+            snapshot.id.clone(),
+            "turn-old-task".to_string(),
+            rx,
+        ))
+        .expect("consume stale events");
+
+        let runtime_snapshot =
+            with_session_snapshot(&snapshot.id, |session| session.snapshot.clone())
+                .expect("runtime snapshot");
+        assert!(!runtime_snapshot.messages.iter().any(|message| {
+            message.role == AgentRole::Assistant && message.text.contains("old webpage task")
+        }));
+    }
+
+    #[test]
     fn session_create_and_read_roundtrip() {
         let _env = RuntimeTestEnv::new();
         let created =
@@ -4718,6 +6549,7 @@ mod tests {
         assert_eq!(snapshot.title, "Test Agent");
         assert_eq!(snapshot.working_dir, default_unbound_working_dir());
         assert!(!snapshot.project_bound);
+        assert!(snapshot.todos.is_empty());
         let cwd = std::env::current_dir()
             .expect("current dir")
             .canonicalize()
@@ -4734,6 +6566,122 @@ mod tests {
             serde_json::from_str(&read).expect("read snapshot");
         assert_eq!(read_snapshot.id, snapshot.id);
         assert_eq!(read_snapshot.working_dir, default_unbound_working_dir());
+    }
+
+    #[test]
+    fn read_session_recovers_stalled_running_turn() {
+        let _env = RuntimeTestEnv::new();
+        let created =
+            create_session_json(r#"{"title":"Stall Guard"}"#.to_string()).expect("create session");
+        let snapshot: AgentSessionSnapshot = serde_json::from_str(&created).expect("snapshot");
+        let turn_id = "turn-stalled";
+        {
+            let mut runtime = RUNTIME.lock().expect("runtime lock");
+            let session = runtime
+                .sessions
+                .get_mut(&snapshot.id)
+                .expect("runtime session");
+            let stale_at = Utc::now() - ChronoDuration::seconds(STALLED_TURN_TIMEOUT_SECS + 1);
+            session.snapshot.turn_status = TurnStatus::Running;
+            session.snapshot.active_turn_id = Some(turn_id.to_string());
+            session.snapshot.follow = AgentFollowState {
+                running: true,
+                activity: Some("Running tool".to_string()),
+            };
+            session.snapshot.updated_at = stale_at;
+            session.snapshot.tools.push(ToolActivity {
+                id: "tool-1".to_string(),
+                name: "lyra_search".to_string(),
+                label: live_tool_label("lyra_search"),
+                status: ToolActivityStatus::Running,
+                input: json!({ "query": "ChatGPT Image" }),
+                output: None,
+                started_at: stale_at,
+                finished_at: None,
+            });
+        }
+
+        let read = read_session_json(format!(r#"{{"sessionId":"{}"}}"#, snapshot.id))
+            .expect("read session");
+        let recovered: AgentSessionSnapshot = serde_json::from_str(&read).expect("snapshot");
+
+        assert_eq!(recovered.turn_status, TurnStatus::Cancelled);
+        assert_eq!(recovered.active_turn_id, None);
+        assert!(!recovered.follow.running);
+        assert_eq!(recovered.tools[0].status, ToolActivityStatus::Failed);
+        assert_eq!(
+            recovered.tools[0]
+                .output
+                .as_ref()
+                .and_then(|value| value.get("error")),
+            Some(&json!("stalled turn recovered"))
+        );
+    }
+
+    #[test]
+    fn session_snapshot_reads_core_todo_storage() {
+        let _env = RuntimeTestEnv::new();
+        let created =
+            create_session_json(r#"{"title":"Todo Snapshot"}"#.to_string()).expect("create");
+        let snapshot: AgentSessionSnapshot = serde_json::from_str(&created).expect("snapshot");
+        crate::todo::save_todos(
+            &snapshot.id,
+            &[crate::todo::TodoItem {
+                content: "finish core todo bridge".to_string(),
+                status: "completed".to_string(),
+                priority: "high".to_string(),
+                id: "todo-core-1".to_string(),
+                blocked_by: vec!["todo-core-0".to_string()],
+                assigned_to: Some("lyra-agent".to_string()),
+            }],
+        )
+        .expect("save todos");
+
+        let read = read_session_json(format!(r#"{{"sessionId":"{}"}}"#, snapshot.id))
+            .expect("read session");
+        let read_snapshot: AgentSessionSnapshot =
+            serde_json::from_str(&read).expect("read snapshot");
+
+        assert_eq!(read_snapshot.todos.len(), 1);
+        let todo = &read_snapshot.todos[0];
+        assert_eq!(todo.id, "todo-core-1");
+        assert_eq!(todo.content, "finish core todo bridge");
+        assert_eq!(todo.status, "completed");
+        assert_eq!(todo.priority, "high");
+        assert_eq!(todo.blocked_by, vec!["todo-core-0".to_string()]);
+        assert_eq!(todo.assigned_to.as_deref(), Some("lyra-agent"));
+    }
+
+    #[test]
+    fn todo_updated_runtime_event_serializes_camel_case() {
+        let event = AgentRuntimeEvent::TodoUpdated {
+            session_id: "session-1".to_string(),
+            todos: vec![AgentTodoItem {
+                id: "todo-1".to_string(),
+                content: "update panel".to_string(),
+                status: "pending".to_string(),
+                priority: "medium".to_string(),
+                blocked_by: vec!["todo-0".to_string()],
+                assigned_to: Some("agent".to_string()),
+            }],
+        };
+        let value = serde_json::to_value(event).expect("serialize event");
+
+        assert_eq!(
+            value,
+            json!({
+                "kind": "todoUpdated",
+                "sessionId": "session-1",
+                "todos": [{
+                    "id": "todo-1",
+                    "content": "update panel",
+                    "status": "pending",
+                    "priority": "medium",
+                    "blockedBy": ["todo-0"],
+                    "assignedTo": "agent"
+                }]
+            })
+        );
     }
 
     #[test]
@@ -5360,6 +7308,88 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_hides_internal_tool_result_recovery_reminder() {
+        let _env = RuntimeTestEnv::new();
+        let timestamp = Utc::now();
+        let mut session = Session::create(None, Some("Internal Reminder".to_string()));
+        session.messages = vec![
+            crate::session::StoredMessage {
+                id: "user-1".to_string(),
+                role: Role::User,
+                content: vec![ContentBlock::Text {
+                    text: "use the tool".to_string(),
+                    cache_control: None,
+                }],
+                display_role: None,
+                timestamp: Some(timestamp),
+                tool_duration_ms: None,
+                token_usage: None,
+            },
+            crate::session::StoredMessage {
+                id: "literal-user-text".to_string(),
+                role: Role::User,
+                content: vec![ContentBlock::Text {
+                    text: "<system-reminder>\nThis is literal user text, not an internal message.\n</system-reminder>\n[System note: user wrote this literally]".to_string(),
+                    cache_control: None,
+                }],
+                display_role: None,
+                timestamp: Some(timestamp),
+                tool_duration_ms: None,
+                token_usage: None,
+            },
+            crate::session::StoredMessage {
+                id: "recovery-reminder".to_string(),
+                role: Role::User,
+                content: vec![ContentBlock::Text {
+                    text: "<system-reminder>\nThe previous model response ended without any user-visible text after tool results.\n</system-reminder>".to_string(),
+                    cache_control: None,
+                }],
+                display_role: Some(crate::session::StoredDisplayRole::System),
+                timestamp: Some(timestamp),
+                tool_duration_ms: None,
+                token_usage: None,
+            },
+            crate::session::StoredMessage {
+                id: "assistant-1".to_string(),
+                role: Role::Assistant,
+                content: vec![ContentBlock::Text {
+                    text: "Done.".to_string(),
+                    cache_control: None,
+                }],
+                display_role: None,
+                timestamp: Some(timestamp),
+                tool_duration_ms: None,
+                token_usage: None,
+            },
+        ];
+
+        let snapshot = snapshot_from_jcode_session(
+            &session,
+            TurnStatus::Finished,
+            None,
+            AgentFollowState {
+                running: false,
+                activity: None,
+            },
+            Vec::new(),
+        );
+
+        assert_eq!(snapshot.messages.len(), 3);
+        assert_eq!(snapshot.messages[0].text, "use the tool");
+        assert!(snapshot.messages[1].text.contains("literal user text"));
+        assert!(
+            snapshot.messages[1]
+                .text
+                .contains("[System note: user wrote this literally]")
+        );
+        assert_eq!(snapshot.messages[2].text, "Done.");
+        assert!(snapshot.messages.iter().all(|message| {
+            !message.text.contains("previous model response ended")
+                && !message.text.contains("answer the user's request now")
+        }));
+    }
+
+    #[test]
     fn jcode_turn_emits_events_and_can_cancel() {
         let _env = RuntimeTestEnv::new();
         let events = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -5393,6 +7423,148 @@ mod tests {
         assert!(captured.contains("messageAppended"));
         assert!(captured.contains("followStateChanged"));
         assert!(captured.contains("turnFinished") || captured.contains("turnFailed"));
+        clear_rust_event_callback();
+    }
+
+    #[test]
+    fn clarification_request_emits_event_and_waits_for_response() {
+        let _env = RuntimeTestEnv::new();
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let events_for_callback = events.clone();
+        register_rust_event_callback(Arc::new(move |event| {
+            if let Ok(mut events) = events_for_callback.lock() {
+                events.push(event);
+            }
+        }));
+
+        let created =
+            create_session_json(r#"{"title":"Clarification Test"}"#.to_string()).expect("create");
+        let snapshot: AgentSessionSnapshot = serde_json::from_str(&created).expect("snapshot");
+        let session_id = snapshot.id.clone();
+        let worker = thread::spawn(move || {
+            ask_user_clarification(
+                &session_id,
+                "Which direction should I take?",
+                vec![
+                    ClarificationOption {
+                        label: "A".to_string(),
+                        description: Some("Use the first path".to_string()),
+                    },
+                    ClarificationOption {
+                        label: "B".to_string(),
+                        description: None,
+                    },
+                ],
+                true,
+                Some("Needed before changing files".to_string()),
+            )
+            .expect("clarification answer")
+        });
+
+        let mut clarification_id = None;
+        for _ in 0..50 {
+            thread::sleep(Duration::from_millis(20));
+            let captured = events.lock().expect("events").clone();
+            for event in captured {
+                let value: Value = serde_json::from_str(&event).expect("event json");
+                if value["kind"] == "clarificationRequired" {
+                    clarification_id = value["clarificationId"].as_str().map(ToOwned::to_owned);
+                    assert_eq!(value["sessionId"], snapshot.id);
+                    assert_eq!(value["question"], "Which direction should I take?");
+                    assert_eq!(
+                        value["options"],
+                        json!([
+                            { "label": "A", "description": "Use the first path" },
+                            { "label": "B" }
+                        ])
+                    );
+                    assert_eq!(value["allowCustomAnswer"], true);
+                    assert_eq!(value["detail"], "Needed before changing files");
+                    break;
+                }
+            }
+            if clarification_id.is_some() {
+                break;
+            }
+        }
+
+        let clarification_id = clarification_id.expect("clarification event");
+        let response = respond_clarification_json(
+            json!({
+                "sessionId": snapshot.id,
+                "clarificationId": clarification_id,
+                "answer": "A",
+                "selectedOption": "A"
+            })
+            .to_string(),
+        )
+        .expect("respond clarification");
+        let response: Value = serde_json::from_str(&response).expect("response json");
+        assert_eq!(response["answer"], "A");
+        assert_eq!(response["selectedOption"], "A");
+
+        let answer = worker.join().expect("worker join");
+        assert_eq!(answer.answer, "A");
+        assert_eq!(answer.selected_option.as_deref(), Some("A"));
+        clear_rust_event_callback();
+    }
+
+    #[test]
+    fn clarification_cancel_drops_pending_request() {
+        let _env = RuntimeTestEnv::new();
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let events_for_callback = events.clone();
+        register_rust_event_callback(Arc::new(move |event| {
+            if let Ok(mut events) = events_for_callback.lock() {
+                events.push(event);
+            }
+        }));
+
+        let created =
+            create_session_json(r#"{"title":"Clarification Cancel"}"#.to_string()).expect("create");
+        let snapshot: AgentSessionSnapshot = serde_json::from_str(&created).expect("snapshot");
+        let session_id = snapshot.id.clone();
+        let worker = thread::spawn(move || {
+            ask_user_clarification(&session_id, "Need input?", Vec::new(), true, None)
+        });
+
+        let mut clarification_id = None;
+        for _ in 0..50 {
+            thread::sleep(Duration::from_millis(20));
+            let captured = events.lock().expect("events").clone();
+            clarification_id = captured.iter().find_map(|event| {
+                let value: Value = serde_json::from_str(event).ok()?;
+                (value["kind"] == "clarificationRequired")
+                    .then(|| value["clarificationId"].as_str().map(ToOwned::to_owned))
+                    .flatten()
+            });
+            if clarification_id.is_some() {
+                break;
+            }
+        }
+
+        let clarification_id = clarification_id.expect("clarification event");
+        cancel_pending_clarifications_for_session(&snapshot.id);
+        let error = worker
+            .join()
+            .expect("worker join")
+            .expect_err("clarification should be cancelled");
+        assert!(
+            error
+                .to_string()
+                .contains("clarification request was cancelled")
+        );
+
+        let duplicate = respond_clarification_json(
+            json!({
+                "sessionId": snapshot.id,
+                "clarificationId": clarification_id,
+                "answer": "Too late"
+            })
+            .to_string(),
+        )
+        .expect_err("cancelled clarification should not accept answers");
+        assert!(duplicate.to_string().contains("no longer pending"));
         clear_rust_event_callback();
     }
 
@@ -5523,6 +7695,64 @@ mod tests {
         let config_text = std::fs::read_to_string(config_path).expect("read config");
         assert!(!config_text.contains("memory ="));
         assert!(!config_text.contains("swarm ="));
+    }
+
+    #[test]
+    fn jcode_config_update_persists_notification_fields() {
+        let _env = RuntimeTestEnv::new();
+        update_jcode_config_json(
+            r#"{
+                "desktopNotifications":false,
+                "ntfyTopic":"agent-topic",
+                "ntfyServer":"https://ntfy.example.com",
+                "emailEnabled":true,
+                "emailTo":"ops@example.com",
+                "emailSmtpHost":"smtp.example.com",
+                "emailSmtpPort":2525,
+                "emailFrom":"agent@example.com",
+                "emailPassword":"smtp-secret",
+                "emailImapHost":"imap.example.com",
+                "emailImapPort":1993,
+                "emailReplyEnabled":true,
+                "telegramEnabled":true,
+                "telegramBotToken":"telegram-secret",
+                "telegramChatId":"12345",
+                "telegramReplyEnabled":true,
+                "discordEnabled":true,
+                "discordBotToken":"discord-secret",
+                "discordChannelId":"67890",
+                "discordBotUserId":"24680",
+                "discordReplyEnabled":true
+            }"#
+            .to_string(),
+        )
+        .expect("update config");
+
+        let safety = crate::config::Config::load().safety;
+        assert!(!safety.desktop_notifications);
+        assert_eq!(safety.ntfy_topic.as_deref(), Some("agent-topic"));
+        assert_eq!(safety.ntfy_server, "https://ntfy.example.com");
+        assert!(safety.email_enabled);
+        assert_eq!(safety.email_to.as_deref(), Some("ops@example.com"));
+        assert_eq!(safety.email_smtp_host.as_deref(), Some("smtp.example.com"));
+        assert_eq!(safety.email_smtp_port, 2525);
+        assert_eq!(safety.email_from.as_deref(), Some("agent@example.com"));
+        assert_eq!(safety.email_password.as_deref(), Some("smtp-secret"));
+        assert_eq!(safety.email_imap_host.as_deref(), Some("imap.example.com"));
+        assert_eq!(safety.email_imap_port, 1993);
+        assert!(safety.email_reply_enabled);
+        assert!(safety.telegram_enabled);
+        assert_eq!(
+            safety.telegram_bot_token.as_deref(),
+            Some("telegram-secret")
+        );
+        assert_eq!(safety.telegram_chat_id.as_deref(), Some("12345"));
+        assert!(safety.telegram_reply_enabled);
+        assert!(safety.discord_enabled);
+        assert_eq!(safety.discord_bot_token.as_deref(), Some("discord-secret"));
+        assert_eq!(safety.discord_channel_id.as_deref(), Some("67890"));
+        assert_eq!(safety.discord_bot_user_id.as_deref(), Some("24680"));
+        assert!(safety.discord_reply_enabled);
     }
 
     #[test]
@@ -5673,6 +7903,142 @@ mod tests {
             .expect("list models");
         let listed: Value = serde_json::from_str(&listed).expect("models json");
         assert_eq!(listed["models"].as_array().map(Vec::len), Some(0));
+    }
+
+    #[test]
+    fn jcode_account_login_providers_include_oauth_and_api_key_entries() {
+        let _env = RuntimeTestEnv::new();
+        let response = list_jcode_login_providers_json("{}".to_string()).expect("providers");
+        let response: Value = serde_json::from_str(&response).expect("providers json");
+        let providers = response["providers"].as_array().expect("providers array");
+        let ids = providers
+            .iter()
+            .filter_map(|provider| provider["id"].as_str())
+            .collect::<Vec<_>>();
+        assert!(ids.contains(&"claude"));
+        assert!(ids.contains(&"openai"));
+        assert!(ids.contains(&"gemini"));
+        assert!(ids.contains(&"antigravity"));
+        assert!(ids.contains(&"google"));
+        assert!(ids.contains(&"openai-compatible"));
+        assert!(providers.iter().any(|provider| {
+            provider["id"] == "claude" && provider["requiresCallback"] == true
+        }));
+        assert!(providers.iter().any(|provider| {
+            provider["id"] == "google" && provider["requiresCallback"] == true
+        }));
+        assert!(providers.iter().any(|provider| {
+            provider["id"] == "openai-compatible" && provider["requiresApiKey"] == true
+        }));
+    }
+
+    #[test]
+    fn jcode_account_login_start_returns_stateless_oauth_flow() {
+        let _env = RuntimeTestEnv::new();
+        let response = start_jcode_account_login_json(r#"{"provider":"openai"}"#.to_string())
+            .expect("start login");
+        let response: Value = serde_json::from_str(&response).expect("start json");
+        assert_eq!(response["provider"], "openai");
+        assert_eq!(response["requiresCallback"], true);
+        assert!(
+            response["authUrl"]
+                .as_str()
+                .expect("auth url")
+                .contains("https://auth.openai.com/oauth/authorize")
+        );
+        assert!(response["flowId"].as_str().unwrap_or_default().len() > 32);
+    }
+
+    #[test]
+    fn jcode_google_login_start_saves_credentials_and_returns_oauth_flow() {
+        let _env = RuntimeTestEnv::new();
+        let response = start_jcode_account_login_json(
+            r#"{
+                "provider":"google",
+                "googleClientId":"client-id.apps.googleusercontent.com",
+                "googleClientSecret":"client-secret",
+                "gmailAccessTier":"full"
+            }"#
+            .to_string(),
+        )
+        .expect("start google login");
+        let response: Value = serde_json::from_str(&response).expect("start json");
+        assert_eq!(response["provider"], "google");
+        assert_eq!(response["requiresCallback"], true);
+        assert!(
+            response["authUrl"]
+                .as_str()
+                .expect("auth url")
+                .contains("https://accounts.google.com/o/oauth2/v2/auth")
+        );
+        let flow = decode_login_flow(response["flowId"].as_str()).expect("flow");
+        assert_eq!(flow.provider, "google");
+        assert_eq!(flow.gmail_access_tier.as_deref(), Some("full"));
+        let creds = crate::auth::google::load_credentials().expect("google credentials");
+        assert_eq!(creds.client_id, "client-id.apps.googleusercontent.com");
+        assert_eq!(creds.client_secret, "client-secret");
+    }
+
+    #[test]
+    fn jcode_accounts_include_google_gmail_tokens() {
+        let _env = RuntimeTestEnv::new();
+        crate::auth::google::save_tokens(&crate::auth::google::GoogleTokens {
+            access_token: "access".to_string(),
+            refresh_token: "refresh".to_string(),
+            expires_at: chrono::Utc::now().timestamp_millis() + 60_000,
+            tier: crate::auth::google::GmailAccessTier::Full,
+            email: Some("agent@example.com".to_string()),
+        })
+        .expect("save google tokens");
+
+        let accounts = list_jcode_accounts_json("{}".to_string()).expect("list accounts");
+        let accounts: Value = serde_json::from_str(&accounts).expect("accounts json");
+        assert!(
+            accounts["accounts"]
+                .as_array()
+                .expect("accounts array")
+                .iter()
+                .any(|account| {
+                    account["provider"] == "google"
+                        && account["label"] == "agent@example.com"
+                        && account["kind"] == "oauth"
+                        && account["configured"] == true
+                })
+        );
+    }
+
+    #[test]
+    fn jcode_account_login_complete_saves_api_key_provider_profile() {
+        let _env = RuntimeTestEnv::new();
+        let response = complete_jcode_account_login_json(
+            r#"{
+                "provider":"openai-compatible",
+                "profileName":"team-api",
+                "baseUrl":"https://api.example.com/v1",
+                "apiKey":"sk-test",
+                "defaultModel":"model-a",
+                "setDefault":true
+            }"#
+            .to_string(),
+        )
+        .expect("complete api key login");
+        let response: Value = serde_json::from_str(&response).expect("complete json");
+        assert_eq!(response["accounts"]["defaultProvider"], "team-api");
+        assert!(
+            response["accounts"]["accounts"]
+                .as_array()
+                .expect("accounts array")
+                .iter()
+                .any(|account| {
+                    account["label"] == "team-api"
+                        && account["kind"] == "api-key"
+                        && account["configured"] == true
+                })
+        );
+        let config = crate::config::Config::load();
+        let profile = config.providers.get("team-api").expect("profile");
+        assert_eq!(profile.base_url, "https://api.example.com/v1");
+        assert_eq!(profile.default_model.as_deref(), Some("model-a"));
     }
 
     #[test]

@@ -2,13 +2,17 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import {
   LYRA_CHANNELS,
-  type AgentDecisionSubmitRequest,
+  type AgentBrowserFollowModeSnapshot,
+  type AgentBrowserFollowModeUpdateRequest,
+  type AgentClarificationRespondRequest,
   type AgentGitDiffRequest,
   type AgentGitDiffResponse,
   type AgentGitFileRequest,
   type AgentGitMutationResponse,
   type AgentGitStatusRequest,
   type AgentGitStatusSnapshot,
+  type AgentImageAttachmentMaterializeRequest,
+  type AgentImageAttachmentMaterializeResponse,
   type AgentPermissionRespondRequest,
   type AgentRollbackPreviewResponse,
   type AgentRollbackRequest,
@@ -32,14 +36,17 @@ import {
   type AgentTurnSendRequest,
   type AgentTurnSendResponse,
   type AppMetaPayload,
+  type JcodeAccountLoginCompleteRequest,
+  type JcodeAccountLoginCompleteResponse,
   type JcodeAccountLoginRequest,
+  type JcodeAccountLoginStartRequest,
+  type JcodeAccountLoginStartResponse,
   type JcodeAccountRequest,
   type JcodeAccountsResponse,
   type JcodeAutomationUpdateRequest,
   type JcodeAutomationUpdateResponse,
   type JcodeBtwRunRequest,
   type JcodeCompactResponse,
-  type JcodeCommandsListResponse,
   type JcodeConfigSnapshot,
   type JcodeConfigUpdateRequest,
   type JcodeAgentActionRunRequest,
@@ -47,6 +54,7 @@ import {
   type JcodeFeedbackRunRequest,
   type JcodeGoalsRequest,
   type JcodeGoalsResponse,
+  type JcodeLoginProvidersResponse,
   type JcodeModelRefreshRequest,
   type JcodeModelsListRequest,
   type JcodeModelsListResponse,
@@ -145,6 +153,8 @@ import {
   type UiuxRequestActivationResponse,
   type UiuxResolveRuntimeRequest,
   type UiuxSetTrustStateRequest,
+  type SoftwareCapabilitiesQueryRequest,
+  type SoftwareCapabilitiesQueryResult,
   type InstalledUiuxPack,
   type WorkbenchBrowserEvent,
   type WorkbenchBrowserSetElementPickerModeRequest,
@@ -154,6 +164,8 @@ import {
   type WorkbenchBrowserNavigateResult,
   type WorkbenchObservationQueryRequest,
   type WorkbenchObservationQueryResult,
+  type WorkbenchVisualCaptureRequest,
+  type WorkbenchVisualCaptureResult,
   type WorkbenchBrowserPageRuntimeState,
   type WorkbenchBrowserReadPageStateRequest,
   type WorkbenchBrowserTopologySnapshot,
@@ -258,6 +270,12 @@ let workbenchObservationHandler:
     ) => Promise<WorkbenchObservationQueryResult> | WorkbenchObservationQueryResult)
   | null = null;
 let workbenchObservationBridgeReady = false;
+let softwareCapabilitiesHandler:
+  | ((
+      request: SoftwareCapabilitiesQueryRequest
+    ) => Promise<SoftwareCapabilitiesQueryResult> | SoftwareCapabilitiesQueryResult)
+  | null = null;
+let softwareCapabilitiesBridgeReady = false;
 
 const ensureTerminalEventBridge = (): void => {
   if (terminalEventBridgeReady) {
@@ -467,6 +485,44 @@ const ensureWorkbenchObservationBridge = (): void => {
         }))
         .then((result) =>
           ipcRenderer.invoke(LYRA_CHANNELS.workbenchObservationQueryResult, result)
+        );
+    }
+  );
+};
+
+const ensureSoftwareCapabilitiesBridge = (): void => {
+  if (softwareCapabilitiesBridgeReady) {
+    return;
+  }
+  softwareCapabilitiesBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.softwareCapabilitiesQuery,
+    (_event: Electron.IpcRendererEvent, payload: SoftwareCapabilitiesQueryRequest): void => {
+      const handler = softwareCapabilitiesHandler;
+      if (handler === null) {
+        void ipcRenderer.invoke(LYRA_CHANNELS.softwareCapabilitiesQueryResult, {
+          requestId: payload.requestId,
+          ok: false,
+          error: {
+            code: "renderer_bridge_unavailable",
+            message: "Renderer software capability handler is not registered."
+          }
+        } satisfies SoftwareCapabilitiesQueryResult);
+        return;
+      }
+
+      void Promise.resolve(handler(payload))
+        .catch((error: unknown): SoftwareCapabilitiesQueryResult => ({
+          requestId: payload.requestId,
+          ok: false,
+          error: {
+            code: "renderer_bridge_unavailable",
+            message: error instanceof Error ? error.message : String(error)
+          }
+        }))
+        .then((result) =>
+          ipcRenderer.invoke(LYRA_CHANNELS.softwareCapabilitiesQueryResult, result)
         );
     }
   );
@@ -786,6 +842,15 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.workbenchBrowserApplyWebTheme,
         snapshot
       ) as Promise<void>,
+    capturePage: (request?: WorkbenchVisualCaptureRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserCapturePage,
+        request ?? {}
+      ) as Promise<WorkbenchVisualCaptureResult>,
+    captureWindow: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserCaptureWindow
+      ) as Promise<WorkbenchVisualCaptureResult>,
     onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => {
       ensureWorkbenchBrowserEventBridge();
       workbenchBrowserEventListeners.add(listener);
@@ -987,8 +1052,8 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentGitDiscard,
         request
       ) as Promise<AgentGitMutationResponse>,
-    submitDecision: (request: AgentDecisionSubmitRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentDecisionSubmit, request) as Promise<unknown>,
+    respondClarification: (request: AgentClarificationRespondRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentClarificationRespond, request) as Promise<unknown>,
     respondPermission: (request: AgentPermissionRespondRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentPermissionRespond, request) as Promise<unknown>,
     readJcodeConfig: () =>
@@ -1003,10 +1068,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.jcodeProviderProfileSave,
         request
       ) as Promise<JcodeConfigSnapshot>,
-    listJcodeCommands: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeCommandsList
-      ) as Promise<JcodeCommandsListResponse>,
     listJcodeModels: (request?: JcodeModelsListRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.jcodeModelsList,
@@ -1114,6 +1175,20 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.jcodeAccountsLogin,
         request
       ) as Promise<JcodeAccountsResponse>,
+    listLoginProviders: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeAccountsLoginProviders
+      ) as Promise<JcodeLoginProvidersResponse>,
+    startAccountLogin: (request: JcodeAccountLoginStartRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeAccountsLoginStart,
+        request
+      ) as Promise<JcodeAccountLoginStartResponse>,
+    completeAccountLogin: (request: JcodeAccountLoginCompleteRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.jcodeAccountsLoginComplete,
+        request
+      ) as Promise<JcodeAccountLoginCompleteResponse>,
     switchAccount: (request: JcodeAccountRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.jcodeAccountsSwitch,
@@ -1124,6 +1199,20 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.jcodeAccountsRemove,
         request
       ) as Promise<JcodeAccountsResponse>,
+    readBrowserFollowMode: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentBrowserFollowRead
+      ) as Promise<AgentBrowserFollowModeSnapshot>,
+    updateBrowserFollowMode: (request: AgentBrowserFollowModeUpdateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentBrowserFollowUpdate,
+        request
+      ) as Promise<AgentBrowserFollowModeSnapshot>,
+    materializeImageAttachment: (request: AgentImageAttachmentMaterializeRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentImageAttachmentMaterialize,
+        request
+      ) as Promise<AgentImageAttachmentMaterializeResponse>,
     onEvent: (listener: (event: AgentRuntimeEvent) => void) => {
       ensureAgentEventBridge();
       agentEventListeners.add(listener);
@@ -1139,6 +1228,17 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       return () => {
         if (workbenchObservationHandler === handler) {
           workbenchObservationHandler = null;
+        }
+      };
+    }
+  },
+  softwareCapabilities: {
+    registerHandler: (handler) => {
+      ensureSoftwareCapabilitiesBridge();
+      softwareCapabilitiesHandler = handler;
+      return () => {
+        if (softwareCapabilitiesHandler === handler) {
+          softwareCapabilitiesHandler = null;
         }
       };
     }

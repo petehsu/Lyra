@@ -9,6 +9,7 @@ import {
   CheckCircle,
   CircleStop,
   CopyPlus,
+  Crosshair,
   FlaskConical,
   Folder,
   Hammer,
@@ -24,12 +25,15 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../core/i18n";
+import type { AgentGoalItem } from "../../core/types";
 
 export function Header() {
   const {
     session,
     messages,
     isTurnRunning,
+    browserFollowModeEnabled,
+    setBrowserFollowMode,
     cancelTurn,
     createSession,
     bindProject,
@@ -46,13 +50,16 @@ export function Header() {
     transferSession,
     compactContext,
     openGoals,
+    listGoals,
+    showGoal,
     resumeGoal,
     updateAutomation
   } = useData();
   const [creating, setCreating] = useState(false);
   const [bindingProject, setBindingProject] = useState(false);
+  const [followModeBusy, setFollowModeBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [dialog, setDialog] = useState<"subagent" | "btw" | "automation" | null>(null);
+  const [dialog, setDialog] = useState<"subagent" | "btw" | "goals" | "automation" | null>(null);
   const [actionBusy, setActionBusy] = useState<
     | "improve"
     | "refactor"
@@ -75,6 +82,8 @@ export function Header() {
   const [subagentModel, setSubagentModel] = useState("");
   const [subagentContinue, setSubagentContinue] = useState("");
   const [btwQuestion, setBtwQuestion] = useState("");
+  const [goalItems, setGoalItems] = useState<readonly AgentGoalItem[]>([]);
+  const [goalsLoading, setGoalsLoading] = useState(false);
   const [automationModel, setAutomationModel] = useState("");
   const [automationReview, setAutomationReview] = useState(false);
   const [automationJudge, setAutomationJudge] = useState(false);
@@ -161,6 +170,44 @@ export function Header() {
     setDialog(target);
   };
 
+  const refreshGoals = async () => {
+    if (goalsLoading) return;
+    setGoalsLoading(true);
+    try {
+      setGoalItems(await listGoals());
+    } finally {
+      setGoalsLoading(false);
+    }
+  };
+
+  const openGoalsDialog = () => {
+    if (actionBusy !== null) return;
+    setMenuOpen(false);
+    setDialog("goals");
+    void refreshGoals();
+  };
+
+  const openGoalOverview = async () => {
+    if (actionBusy !== null) return;
+    setActionBusy("goals");
+    try {
+      await openGoals();
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const selectGoal = async (goalId: string) => {
+    if (actionBusy !== null) return;
+    setActionBusy("goals");
+    try {
+      await showGoal(goalId);
+      setDialog(null);
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   const submitSubagent = async () => {
     const prompt = subagentPrompt.trim();
     if (prompt.length === 0 || actionBusy !== null) return;
@@ -223,7 +270,20 @@ export function Header() {
     }
   };
 
+  const onToggleBrowserFollowMode = async () => {
+    if (followModeBusy) return;
+    setFollowModeBusy(true);
+    try {
+      await setBrowserFollowMode(!browserFollowModeEnabled);
+    } finally {
+      setFollowModeBusy(false);
+    }
+  };
+
   const actionDisabled = isTurnRunning || actionBusy !== null;
+  const followLabel = browserFollowModeEnabled
+    ? t("header.stopFollowingAgent")
+    : t("header.followAgent");
 
   return (
     <header className="app-header">
@@ -244,6 +304,18 @@ export function Header() {
             ) : null}
           </button>
         </div>
+        <button
+          className="app-header-action app-header-follow-agent"
+          type="button"
+          aria-label={followLabel}
+          aria-pressed={browserFollowModeEnabled}
+          title={followLabel}
+          data-active={browserFollowModeEnabled ? "true" : "false"}
+          disabled={followModeBusy}
+          onClick={() => void onToggleBrowserFollowMode()}
+        >
+          <Crosshair aria-hidden="true" size={14} strokeWidth={1.8} />
+        </button>
         {isTurnRunning ? (
           <button
             className="app-header-action app-header-cancel"
@@ -376,7 +448,7 @@ export function Header() {
                 type="button"
                 role="menuitem"
                 disabled={actionBusy !== null}
-                onClick={() => void runImmediateAction("goals", openGoals)}
+                onClick={openGoalsDialog}
               >
                 <Target aria-hidden="true" size={14} strokeWidth={1.8} />
                 <span>{t("header.goals")}</span>
@@ -505,6 +577,46 @@ export function Header() {
                 </button>
               </div>
             </form>
+          ) : null}
+          {dialog === "goals" ? (
+            <div className="app-header-dialog-card">
+              <div className="app-header-dialog-title">{t("header.goals")}</div>
+              <div className="app-header-goals-list">
+                {goalsLoading ? (
+                  <span className="app-header-goals-empty">{t("working")}</span>
+                ) : goalItems.length === 0 ? (
+                  <span className="app-header-goals-empty">{t("header.noGoals")}</span>
+                ) : (
+                  goalItems.map((goal) => (
+                    <button
+                      key={goal.id}
+                      type="button"
+                      className="app-header-goal-item"
+                      disabled={actionBusy !== null}
+                      onClick={() => {
+                        void selectGoal(goal.id);
+                      }}
+                    >
+                      <span>{goal.title}</span>
+                      {goal.status !== undefined && goal.status !== null ? (
+                        <small>{goal.status}</small>
+                      ) : null}
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="app-header-dialog-actions">
+                <button type="button" onClick={() => setDialog(null)} disabled={actionBusy !== null}>
+                  {t("header.cancel")}
+                </button>
+                <button type="button" onClick={() => void refreshGoals()} disabled={actionBusy !== null || goalsLoading}>
+                  {t("header.refreshGoals")}
+                </button>
+                <button type="button" onClick={() => void openGoalOverview()} disabled={actionBusy !== null}>
+                  {t("header.openGoalsOverview")}
+                </button>
+              </div>
+            </div>
           ) : null}
           {dialog === "automation" ? (
             <form

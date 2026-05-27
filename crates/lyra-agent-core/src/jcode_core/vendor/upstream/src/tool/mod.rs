@@ -5,6 +5,7 @@ mod bash;
 mod batch;
 mod bg;
 mod browser;
+mod clarification;
 mod codesearch;
 mod communicate;
 mod conversation_search;
@@ -31,6 +32,7 @@ mod task;
 mod todo;
 mod webfetch;
 mod websearch;
+mod workbench;
 mod write;
 
 use crate::compaction::CompactionManager;
@@ -146,6 +148,18 @@ impl Registry {
             Self::insert_tool_timed(&mut m, &mut timings, "ls", ls::LsTool::new);
             Self::insert_tool_timed(&mut m, &mut timings, "bash", bash::BashTool::new);
             Self::insert_tool_timed(&mut m, &mut timings, "browser", browser::BrowserTool::new);
+            Self::insert_tool_timed(
+                &mut m,
+                &mut timings,
+                "ask_user",
+                clarification::AskUserTool::new,
+            );
+            Self::insert_tool_timed(
+                &mut m,
+                &mut timings,
+                "workbench",
+                workbench::WorkbenchTool::new,
+            );
             Self::insert_tool_timed(&mut m, &mut timings, "open", open::OpenTool::new);
             Self::insert_tool_timed(
                 &mut m,

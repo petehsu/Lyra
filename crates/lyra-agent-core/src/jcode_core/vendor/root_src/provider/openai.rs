@@ -105,9 +105,13 @@ impl OpenAITransportMode {
     }
 }
 
+pub(super) static DYNAMIC_VISION_SUPPORT_CACHE: LazyLock<StdRwLock<HashMap<String, bool>>> =
+    LazyLock::new(|| StdRwLock::new(HashMap::new()));
+
 #[derive(Debug)]
 enum OpenAIStreamFailure {
     FallbackToHttps(anyhow::Error),
+    VisionUnsupported(String), // holds the model name
     Other(anyhow::Error),
 }
 

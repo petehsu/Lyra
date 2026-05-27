@@ -2,6 +2,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import { MermaidBlock } from "./Mermaid";
+import {
+  ActionTargetButton,
+  ClickableImage,
+  classifyActionTarget
+} from "./ActionTargets";
 
 /**
  * Renders markdown content with:
@@ -39,8 +44,21 @@ const components: Components = {
 
     // Inline code (no language class, no newlines)
     if (!className && !String(children).includes("\n")) {
+      const text = String(children).trim();
+      const target = classifyActionTarget(text);
+
+      if (target !== null) {
+        return (
+          <ActionTargetButton target={target} className="md-inline-code md-clickable-path">
+            {children}
+          </ActionTargetButton>
+        );
+      }
       return (
-        <code className="md-inline-code" {...props}>
+        <code
+          className="md-inline-code"
+          {...props}
+        >
           {children}
         </code>
       );
@@ -67,12 +85,25 @@ const components: Components = {
     );
   },
   a({ href, children }) {
+    const target = href === undefined ? null : classifyActionTarget(href);
+
+    if (target !== null) {
+      return (
+        <ActionTargetButton target={target} className="md-link">
+          {children}
+        </ActionTargetButton>
+      );
+    }
+
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="md-link">
+      <a href={href} className="md-link">
         {children}
       </a>
     );
   },
+  img({ src, alt }) {
+    return <ClickableImage src={src} alt={alt} className="md-image-container" />;
+  }
 };
 
 /**

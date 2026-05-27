@@ -3276,6 +3276,7 @@ dependencies = [
  "jcode-update-core",
  "jcode-usage-types",
  "libc",
+ "lyra-local-search",
  "once_cell",
  "open",
  "qrcode",

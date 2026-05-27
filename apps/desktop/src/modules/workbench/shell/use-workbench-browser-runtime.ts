@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   LyraDesktopApi,
+  WorkbenchBrowserAgentActivityEvent,
   WorkbenchBrowserPageRuntimeState
 } from "../../../shared/desktop-bridge";
 import {
@@ -27,6 +28,18 @@ type BrowserPageHostDescriptor = {
   readonly isFocusedPane: boolean;
 };
 
+export type BrowserAgentVisualState = {
+  readonly active: boolean;
+  readonly inputActive: boolean;
+  readonly action: WorkbenchBrowserAgentActivityEvent["action"] | null;
+  readonly tabId: string | null;
+  readonly targetMode: WorkbenchBrowserAgentActivityEvent["targetMode"] | null;
+  readonly cursor: {
+    readonly x: number;
+    readonly y: number;
+  } | null;
+};
+
 type UseWorkbenchBrowserRuntimeParams = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly tabsModel: WorkspaceTabsModel;
@@ -39,6 +52,7 @@ type UseWorkbenchBrowserRuntimeParams = {
 
 type WorkbenchBrowserRuntimeModel = {
   readonly activePageRuntimeState: WorkbenchBrowserPageRuntimeState | null;
+  readonly browserAgentVisualState: BrowserAgentVisualState;
   readonly pageNavigationState: PageNavigationState;
   readonly registerPageHost: (tabId: string, element: HTMLElement | null) => void;
   readonly scheduleBrowserLayoutSync: (
@@ -59,6 +73,15 @@ const DEFAULT_PAGE_NAVIGATION_STATE: PageNavigationState = {
   canGoForward: false
 };
 
+const IDLE_BROWSER_AGENT_VISUAL_STATE: BrowserAgentVisualState = {
+  active: false,
+  inputActive: false,
+  action: null,
+  tabId: null,
+  targetMode: null,
+  cursor: null
+};
+
 const arePageRuntimeStatesEquivalent = (
   first: WorkbenchBrowserPageRuntimeState,
   second: WorkbenchBrowserPageRuntimeState
@@ -77,6 +100,19 @@ const arePageRuntimeStatesEquivalent = (
   && first.canGoBack === second.canGoBack
   && first.canGoForward === second.canGoForward
   && first.isHtmlFullscreen === second.isHtmlFullscreen;
+
+export const resolveBrowserAgentCursorViewportPoint = (
+  hostRect: Pick<DOMRectReadOnly, "left" | "top" | "width" | "height">,
+  cursor: WorkbenchBrowserAgentActivityEvent["cursor"]
+): BrowserAgentVisualState["cursor"] => {
+  if (cursor === undefined || hostRect.width <= 0 || hostRect.height <= 0) {
+    return null;
+  }
+  return {
+    x: hostRect.left + cursor.x,
+    y: hostRect.top + cursor.y
+  };
+};
 
 export const resolveVisibleBrowserPageDescriptors = (
   tabs: WorkspaceTabsModel["tabs"],
@@ -113,6 +149,10 @@ export const useWorkbenchBrowserRuntime = ({
   const [pageRuntimeStateByTabId, setPageRuntimeStateByTabId] = useState<
     Readonly<Record<string, WorkbenchBrowserPageRuntimeState>>
   >({});
+  const [browserAgentVisualState, setBrowserAgentVisualState] =
+    useState<BrowserAgentVisualState>(IDLE_BROWSER_AGENT_VISUAL_STATE);
+  const pageHostByTabIdRef = useRef(new Map<string, HTMLElement>());
+  const browserAgentVisualTimerRef = useRef<number | null>(null);
 
   const activePageRuntimeState =
     activeBrowserTabId === null
@@ -124,11 +164,26 @@ export const useWorkbenchBrowserRuntime = ({
     [tabsModel.tabs, visibleWorkspaceLayout]
   );
 
-  const { registerPageHost, scheduleBrowserLayoutSync } =
+  const {
+    registerPageHost: registerPageHostForLayout,
+    scheduleBrowserLayoutSync
+  } =
     useWorkbenchBrowserLayoutSync({
       desktopApi,
       descriptors: visibleBrowserPageDescriptors
     });
+
+  const registerPageHost = useCallback(
+    (tabId: string, element: HTMLElement | null) => {
+      if (element === null) {
+        pageHostByTabIdRef.current.delete(tabId);
+      } else {
+        pageHostByTabIdRef.current.set(tabId, element);
+      }
+      registerPageHostForLayout(tabId, element);
+    },
+    [registerPageHostForLayout]
+  );
 
   useEffect(() => {
     if (desktopApi === null) {
@@ -174,6 +229,33 @@ export const useWorkbenchBrowserRuntime = ({
     }
 
     return desktopApi.workbenchBrowser.onEvent((event) => {
+      if (event.kind === "lumen-browser-activity" || event.kind === "agent-browser-activity") {
+        const host = pageHostByTabIdRef.current.get(event.tabId) ?? null;
+        const cursor = host === null
+          ? null
+          : resolveBrowserAgentCursorViewportPoint(
+              host.getBoundingClientRect(),
+              event.cursor
+            );
+        if (browserAgentVisualTimerRef.current !== null) {
+          window.clearTimeout(browserAgentVisualTimerRef.current);
+        }
+        setBrowserAgentVisualState({
+          active: true,
+          inputActive: event.inputActive,
+          action: event.action,
+          tabId: event.tabId,
+          targetMode: event.targetMode,
+          cursor
+        });
+        const durationMs = Math.max(500, Math.min(8_000, Math.round(event.durationMs)));
+        browserAgentVisualTimerRef.current = window.setTimeout(() => {
+          browserAgentVisualTimerRef.current = null;
+          setBrowserAgentVisualState(IDLE_BROWSER_AGENT_VISUAL_STATE);
+        }, durationMs);
+        return;
+      }
+
       if (event.kind === "page-runtime-state") {
         setPageRuntimeStateByTabId((current) => {
           const existing = current[event.page.tabId];
@@ -223,6 +305,16 @@ export const useWorkbenchBrowserRuntime = ({
       }
     });
   }, [desktopApi, tabsModel]);
+
+  useEffect(
+    () => () => {
+      if (browserAgentVisualTimerRef.current !== null) {
+        window.clearTimeout(browserAgentVisualTimerRef.current);
+        browserAgentVisualTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (activePageTabId.length === 0) {
@@ -280,6 +372,7 @@ export const useWorkbenchBrowserRuntime = ({
 
   return {
     activePageRuntimeState,
+    browserAgentVisualState,
     pageNavigationState,
     registerPageHost,
     scheduleBrowserLayoutSync,

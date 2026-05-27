@@ -15,6 +15,7 @@ use crate::tool::Registry;
 use crate::tool::selfdev::ReloadContext;
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::{Duration as ChronoDuration, Utc};
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -311,6 +312,123 @@ async fn background_task_wake_runs_live_session_immediately_when_idle() {
                 .content_preview()
                 .contains("**Background task** `bgwake`")
     }));
+}
+
+#[tokio::test]
+async fn background_task_wake_is_suppressed_after_newer_user_request() {
+    let provider = Arc::new(StreamingMockProvider::default());
+    provider.queue_response(vec![
+        StreamEvent::TextDelta("Old task resumed.".to_string()),
+        StreamEvent::MessageEnd { stop_reason: None },
+    ]);
+    let provider_dyn: Arc<dyn Provider> = provider.clone();
+    let agent = test_agent(provider_dyn).await;
+    let session_id = agent.lock().await.session_id().to_string();
+    {
+        let mut guard = agent.lock().await;
+        guard.add_message(
+            Role::User,
+            vec![crate::message::ContentBlock::Text {
+                text: "你和豆包聊几句".to_string(),
+                cache_control: None,
+            }],
+        );
+    }
+
+    let task_id = format!(
+        "bg-suppress-{}",
+        Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    );
+    let started_at = (Utc::now() - ChronoDuration::minutes(5)).to_rfc3339();
+    let manager = crate::background::global();
+    std::fs::create_dir_all(
+        manager
+            .status_path_for(&task_id)
+            .parent()
+            .expect("background status dir"),
+    )
+    .expect("create background status dir");
+    std::fs::write(
+        manager.status_path_for(&task_id),
+        serde_json::to_string_pretty(&crate::background::TaskStatusFile {
+            task_id: task_id.clone(),
+            tool_name: "bash".to_string(),
+            display_name: None,
+            session_id: session_id.clone(),
+            status: BackgroundTaskStatus::Completed,
+            exit_code: Some(0),
+            error: None,
+            started_at,
+            completed_at: Some(Utc::now().to_rfc3339()),
+            duration_secs: Some(1.0),
+            pid: None,
+            detached: false,
+            notify: true,
+            wake: true,
+            progress: None,
+            event_history: Vec::new(),
+        })
+        .expect("serialize background status"),
+    )
+    .expect("write background status");
+
+    let sessions = Arc::new(RwLock::new(HashMap::from([(
+        session_id.clone(),
+        agent.clone(),
+    )])));
+    let soft_interrupt_queues: SessionInterruptQueues = Arc::new(RwLock::new(HashMap::new()));
+    let (member_event_tx, mut member_event_rx) = mpsc::unbounded_channel();
+    let swarm_members = Arc::new(RwLock::new(HashMap::from([(
+        session_id.clone(),
+        attached_swarm_member(&session_id, member_event_tx),
+    )])));
+    let task = BackgroundTaskCompleted {
+        task_id: task_id.clone(),
+        tool_name: "bash".to_string(),
+        display_name: None,
+        session_id: session_id.clone(),
+        status: BackgroundTaskStatus::Completed,
+        exit_code: Some(0),
+        output_preview: "done\n".to_string(),
+        output_file: manager.output_path_for(&task_id),
+        duration_secs: 1.0,
+        notify: true,
+        wake: true,
+    };
+
+    dispatch_background_task_completion(&task, &sessions, &soft_interrupt_queues, &swarm_members)
+        .await;
+
+    let notification = timeout(Duration::from_secs(2), member_event_rx.recv())
+        .await
+        .expect("background task notification should arrive promptly")
+        .expect("member stream should stay open");
+    match notification {
+        ServerEvent::Notification { message, .. } => {
+            assert!(message.contains(&format!("**Background task** `{task_id}`")));
+        }
+        other => panic!("expected notification, got {other:?}"),
+    }
+
+    let old_task_streamed = timeout(Duration::from_millis(200), async {
+        loop {
+            match member_event_rx.recv().await {
+                Some(ServerEvent::TextDelta { text }) if text.contains("Old task resumed.") => {
+                    return true;
+                }
+                Some(_) => continue,
+                None => return false,
+            }
+        }
+    })
+    .await;
+    assert!(
+        old_task_streamed.is_err(),
+        "background wake should not auto-run after a newer user request"
+    );
+
+    let _ = std::fs::remove_file(manager.status_path_for(&task_id));
+    let _ = std::fs::remove_file(manager.output_path_for(&task_id));
 }
 
 #[tokio::test]

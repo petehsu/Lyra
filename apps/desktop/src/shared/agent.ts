@@ -19,10 +19,40 @@ export type AgentMessageBlock =
       readonly text: string;
     }
   | {
+      readonly type: "image";
+      readonly id: string;
+      readonly mediaType: string;
+      readonly data: string;
+      readonly label?: string | null;
+      readonly source?: string | null;
+      readonly width?: number | null;
+      readonly height?: number | null;
+    }
+  | {
       readonly type: "tool";
       readonly id: string;
       readonly toolId: string;
     };
+
+export type AgentImageInput = {
+  readonly mediaType: string;
+  readonly data: string;
+  readonly label?: string | null;
+  readonly source?: string | null;
+  readonly width?: number | null;
+  readonly height?: number | null;
+};
+
+export type AgentImageAttachmentMaterializeRequest = {
+  readonly id?: string | null;
+  readonly mediaType: string;
+  readonly data: string;
+  readonly label?: string | null;
+};
+
+export type AgentImageAttachmentMaterializeResponse = {
+  readonly path: string;
+};
 
 export type AgentMessageRollback = {
   readonly available: boolean;
@@ -42,9 +72,26 @@ export type AgentToolActivity = {
   readonly finishedAt?: string;
 };
 
+export type AgentTodoItem = {
+  readonly id: string;
+  readonly content: string;
+  readonly status: string;
+  readonly priority: string;
+  readonly blockedBy?: readonly string[];
+  readonly assignedTo?: string | null;
+};
+
 export type AgentFollowState = {
   readonly running: boolean;
   readonly activity?: string | null;
+};
+
+export type AgentBrowserFollowModeSnapshot = {
+  readonly enabled: boolean;
+};
+
+export type AgentBrowserFollowModeUpdateRequest = {
+  readonly enabled: boolean;
 };
 
 export type AgentSessionAutomationSnapshot = {
@@ -76,6 +123,7 @@ export type AgentSessionSnapshot = {
   readonly projectBound: boolean;
   readonly messages: readonly AgentMessage[];
   readonly tools: readonly AgentToolActivity[];
+  readonly todos: readonly AgentTodoItem[];
   readonly automation: AgentSessionAutomationSnapshot;
   readonly sidePanel: AgentSidePanelSnapshot;
   readonly turnStatus: AgentTurnStatus;
@@ -101,6 +149,7 @@ export type AgentSessionBindProjectRequest = {
 export type AgentTurnSendRequest = {
   readonly sessionId?: string | null;
   readonly text: string;
+  readonly images?: readonly AgentImageInput[];
   /**
    * Deprecated compatibility fields. Provider/account/model selection is owned
    * by Lyra Agent config now; new UI must use the Agent config/profile APIs below.
@@ -321,6 +370,62 @@ export type JcodeAccountLoginRequest = {
   readonly setDefault?: boolean;
 };
 
+export type JcodeLoginProviderSnapshot = {
+  readonly id: string;
+  readonly displayName: string;
+  readonly authKind: string;
+  readonly statusMethod: string;
+  readonly detail: string;
+  readonly recommended: boolean;
+  readonly configured: boolean;
+  readonly state: string;
+  readonly requiresCallback: boolean;
+  readonly requiresApiKey: boolean;
+};
+
+export type JcodeLoginProvidersResponse = {
+  readonly providers: readonly JcodeLoginProviderSnapshot[];
+  readonly authStatus: unknown;
+};
+
+export type JcodeAccountLoginStartRequest = {
+  readonly provider: string;
+  readonly label?: string | null;
+  readonly googleClientId?: string | null;
+  readonly googleClientSecret?: string | null;
+  readonly gmailAccessTier?: "readonly" | "full" | string | null;
+};
+
+export type JcodeAccountLoginStartResponse = {
+  readonly provider: string;
+  readonly label?: string | null;
+  readonly flowId: string;
+  readonly authUrl?: string | null;
+  readonly callbackHint?: string | null;
+  readonly authKind: string;
+  readonly instructions: string;
+  readonly requiresCallback: boolean;
+  readonly requiresApiKey: boolean;
+};
+
+export type JcodeAccountLoginCompleteRequest = {
+  readonly provider: string;
+  readonly flowId?: string | null;
+  readonly label?: string | null;
+  readonly callbackInput?: string | null;
+  readonly apiKey?: string | null;
+  readonly profileName?: string | null;
+  readonly baseUrl?: string | null;
+  readonly defaultModel?: string | null;
+  readonly authHeader?: string | null;
+  readonly setDefault?: boolean;
+};
+
+export type JcodeAccountLoginCompleteResponse = {
+  readonly accounts: JcodeAccountsResponse;
+  readonly message: string;
+};
+
 export type JcodePokeResponse = {
   readonly sessionId: string;
   readonly turnId?: string | null;
@@ -430,11 +535,19 @@ export type AgentGitMutationResponse = {
   readonly snapshot: AgentGitStatusSnapshot;
 };
 
-export type AgentDecisionSubmitRequest = {
+export type AgentClarificationRespondRequest = {
   readonly sessionId: string;
-  readonly decisionId: string;
-  readonly accepted: boolean;
+  readonly clarificationId: string;
+  readonly answer: string;
+  readonly selectedOption?: string | null;
 };
+
+export type AgentClarificationOption =
+  | string
+  | {
+      readonly label: string;
+      readonly description?: string | null;
+    };
 
 export type AgentPermissionRespondRequest = {
   readonly sessionId: string;
@@ -467,11 +580,18 @@ export type AgentRuntimeEvent =
       readonly tool: AgentToolActivity;
     }
   | {
-      readonly kind: "decisionRequired";
+      readonly kind: "todoUpdated";
       readonly sessionId: string;
-      readonly decisionId: string;
-      readonly title: string;
-      readonly detail: string;
+      readonly todos: readonly AgentTodoItem[];
+    }
+  | {
+      readonly kind: "clarificationRequired";
+      readonly sessionId: string;
+      readonly clarificationId: string;
+      readonly question: string;
+      readonly options?: readonly AgentClarificationOption[];
+      readonly allowCustomAnswer: boolean;
+      readonly detail?: string | null;
     }
   | {
       readonly kind: "permissionRequired";
@@ -535,6 +655,27 @@ export type JcodeConfigUpdateRequest = {
   readonly defaultProvider?: string | null;
   readonly openaiReasoningEffort?: string | null;
   readonly openaiServiceTier?: string | null;
+  readonly ntfyTopic?: string | null;
+  readonly ntfyServer?: string | null;
+  readonly desktopNotifications?: boolean;
+  readonly emailEnabled?: boolean;
+  readonly emailTo?: string | null;
+  readonly emailSmtpHost?: string | null;
+  readonly emailSmtpPort?: number;
+  readonly emailFrom?: string | null;
+  readonly emailPassword?: string | null;
+  readonly emailImapHost?: string | null;
+  readonly emailImapPort?: number;
+  readonly emailReplyEnabled?: boolean;
+  readonly telegramEnabled?: boolean;
+  readonly telegramBotToken?: string | null;
+  readonly telegramChatId?: string | null;
+  readonly telegramReplyEnabled?: boolean;
+  readonly discordEnabled?: boolean;
+  readonly discordBotToken?: string | null;
+  readonly discordChannelId?: string | null;
+  readonly discordBotUserId?: string | null;
+  readonly discordReplyEnabled?: boolean;
 };
 
 export type JcodeProviderProfileModelRequest = {
@@ -556,9 +697,6 @@ export type JcodeProviderProfileSaveRequest = {
   readonly models?: readonly JcodeProviderProfileModelRequest[];
 };
 
-export type JcodeCommandsListResponse = {
-  readonly commands: readonly JcodeRegisteredCommand[];
-};
 
 export type JcodeSessionSummary = {
   readonly id: string;
@@ -738,7 +876,9 @@ export type AgentApi = {
   readonly discardGitFile: (
     request: AgentGitFileRequest
   ) => Promise<AgentGitMutationResponse>;
-  readonly submitDecision: (request: AgentDecisionSubmitRequest) => Promise<unknown>;
+  readonly respondClarification: (
+    request: AgentClarificationRespondRequest
+  ) => Promise<unknown>;
   readonly respondPermission: (request: AgentPermissionRespondRequest) => Promise<unknown>;
   readonly readJcodeConfig: () => Promise<JcodeConfigSnapshot>;
   readonly updateJcodeConfig: (
@@ -747,7 +887,6 @@ export type AgentApi = {
   readonly saveJcodeProviderProfile: (
     request: JcodeProviderProfileSaveRequest
   ) => Promise<JcodeConfigSnapshot>;
-  readonly listJcodeCommands: () => Promise<JcodeCommandsListResponse>;
   readonly listJcodeModels: (
     request?: JcodeModelsListRequest
   ) => Promise<JcodeModelsListResponse>;
@@ -798,7 +937,21 @@ export type AgentApi = {
   readonly showGoal: (request: JcodeGoalsRequest) => Promise<JcodeGoalsResponse>;
   readonly listAccounts: () => Promise<JcodeAccountsResponse>;
   readonly loginAccount: (request: JcodeAccountLoginRequest) => Promise<JcodeAccountsResponse>;
+  readonly listLoginProviders: () => Promise<JcodeLoginProvidersResponse>;
+  readonly startAccountLogin: (
+    request: JcodeAccountLoginStartRequest
+  ) => Promise<JcodeAccountLoginStartResponse>;
+  readonly completeAccountLogin: (
+    request: JcodeAccountLoginCompleteRequest
+  ) => Promise<JcodeAccountLoginCompleteResponse>;
   readonly switchAccount: (request: JcodeAccountRequest) => Promise<JcodeAccountsResponse>;
   readonly removeAccount: (request: JcodeAccountRequest) => Promise<JcodeAccountsResponse>;
+  readonly readBrowserFollowMode: () => Promise<AgentBrowserFollowModeSnapshot>;
+  readonly updateBrowserFollowMode: (
+    request: AgentBrowserFollowModeUpdateRequest
+  ) => Promise<AgentBrowserFollowModeSnapshot>;
+  readonly materializeImageAttachment: (
+    request: AgentImageAttachmentMaterializeRequest
+  ) => Promise<AgentImageAttachmentMaterializeResponse>;
   readonly onEvent: (listener: (event: AgentRuntimeEvent) => void) => () => void;
 };

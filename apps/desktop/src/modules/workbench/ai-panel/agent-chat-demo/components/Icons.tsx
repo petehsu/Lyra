@@ -5,6 +5,7 @@ import {
   Search,
   Terminal,
   Globe,
+  AppWindow,
   Clock,
   ListChecks,
   FilePlus,
@@ -43,6 +44,8 @@ export const ToolIcon = ({ kind }: { kind: ToolCall["kind"] }) => {
       return <Terminal {...props} />;
     case "web":
       return <Globe {...props} />;
+    case "workbench":
+      return <AppWindow {...props} />;
     case "thought":
       return <Clock {...props} />;
     case "task":

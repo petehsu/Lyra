@@ -55,6 +55,40 @@ async fn test_tool_definitions_are_sorted() {
     );
 }
 
+#[tokio::test]
+async fn registry_definitions_include_lyra_search() {
+    let provider: Arc<dyn Provider> = Arc::new(MockProvider);
+    let registry = Registry::new(provider).await;
+
+    let defs = registry.definitions(None).await;
+    let def = defs
+        .iter()
+        .find(|def| def.name == "lyra_search")
+        .expect("lyra_search tool definition should be registered");
+
+    assert!(def.description.contains("Lyra"));
+    assert_eq!(def.input_schema["properties"]["intent"]["type"], "string");
+}
+
+#[tokio::test]
+async fn registry_definitions_include_lyra_design() {
+    let provider: Arc<dyn Provider> = Arc::new(MockProvider);
+    let registry = Registry::new(provider).await;
+
+    let defs = registry.definitions(None).await;
+    let def = defs
+        .iter()
+        .find(|def| def.name == "lyra_design")
+        .expect("lyra_design tool definition should be registered");
+
+    assert!(def.description.contains("Lyra Design References"));
+    assert_eq!(def.input_schema["properties"]["intent"]["type"], "string");
+    assert_eq!(
+        def.input_schema["properties"]["action"]["enum"][0],
+        "search_references"
+    );
+}
+
 #[test]
 fn test_resolve_skill_aliases_to_skill_manage() {
     assert_eq!(Registry::resolve_tool_name("skill"), "skill_manage");
@@ -411,6 +445,10 @@ async fn test_request_permission_is_ambient_only() {
     let registry = Registry::new(provider).await;
 
     let defs = registry.definitions(None).await;
+    assert!(
+        defs.iter().any(|d| d.name == "ask_user"),
+        "ask_user should be available in normal sessions for structured clarification"
+    );
     assert!(
         !defs.iter().any(|d| d.name == "request_permission"),
         "request_permission should not be available in normal sessions"

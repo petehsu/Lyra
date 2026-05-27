@@ -9,12 +9,14 @@ import {
   AGENT_SESSION_HISTORY_INSTANCE_ID,
   createAgentSessionHistoryAppRequest
 } from "../agent-session-history";
+import { createSoftwareStoreAppRequest } from "../software-store";
 import { resolveDocsEntryUrl } from "./service";
 import type { PanelLayoutModel } from "./use-panel-layout";
 
 export type WorkbenchActionApi = {
   readonly openNewTab: () => void;
   readonly openSettings: () => void;
+  readonly openSoftwareStore: () => void;
   readonly openFileManager: () => void;
   readonly openAgentSessionHistory: () => void;
   readonly openDocs: () => void;
@@ -40,6 +42,7 @@ export type WorkbenchChromeLabels = {
   readonly moveTerminalToTop: string;
   readonly moveTerminalToBottom: string;
   readonly openSettings: string;
+  readonly openSoftwareStore: string;
   readonly openFiles: string;
   readonly openAgentSessionHistory: string;
   readonly openDocs: string;
@@ -57,6 +60,7 @@ type UseWorkbenchActionApiParams = {
   readonly docsEntryAddress: string;
   readonly docsTabTitle: string;
   readonly agentSessionHistoryTitle: string;
+  readonly softwareStoreTitle: string;
   readonly locale: WorkbenchLocale;
   readonly resolvedThemeId: WorkbenchResolvedThemeId;
 };
@@ -70,6 +74,7 @@ export const useWorkbenchActionApi = ({
   docsEntryAddress,
   docsTabTitle,
   agentSessionHistoryTitle,
+  softwareStoreTitle,
   locale,
   resolvedThemeId
 }: UseWorkbenchActionApiParams): WorkbenchActionApi =>
@@ -89,6 +94,9 @@ export const useWorkbenchActionApi = ({
     return {
       openNewTab: tabsModel.openNewTab,
       openSettings: tabsModel.openSettingsTab,
+      openSoftwareStore: () => {
+        tabsModel.openAppTab(createSoftwareStoreAppRequest(softwareStoreTitle));
+      },
       openFileManager: () => {
         const nextApp = fileManagerModel.createInstance();
         tabsModel.openAppTab(nextApp);
@@ -140,6 +148,7 @@ export const useWorkbenchActionApi = ({
     docsEntryAddress,
     docsTabTitle,
     agentSessionHistoryTitle,
+    softwareStoreTitle,
     fileManagerModel,
     locale,
     onBeforePanelLayoutAnimation,
@@ -158,6 +167,7 @@ export const createWorkbenchChromeLabels = (
   moveTerminalToTop: t("panel.moveTerminalToTop"),
   moveTerminalToBottom: t("panel.moveTerminalToBottom"),
   openSettings: t("settings.open"),
+  openSoftwareStore: t("softwareStore.open"),
   openFiles: t("files.open"),
   openAgentSessionHistory: t("agentHistory.open"),
   openDocs: t("docs.open"),

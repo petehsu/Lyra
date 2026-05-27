@@ -9,6 +9,7 @@ import type { WorkspaceSurfaceRouterProps } from "../shell/workspace-surface-rou
 import type * as WorkbenchUiPrimitives from "../ui-primitives";
 import type { WorkbenchUiStylePack } from "../ui-style";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { LyraSoftwareCapabilitiesContext } from "../../../shared/software-capabilities";
 import type { WorkbenchUiPackId } from "./ids";
 import type { WorkbenchPanelAdapters, WorkbenchSurfaceAdapters } from "./surface-types";
 
@@ -68,6 +69,7 @@ export type WorkbenchUiPackContext = {
   readonly apiVersion: WorkbenchUiPackCompatibility["workbenchUiApi"];
   readonly React: typeof ReactRuntime;
   readonly desktopApi: LyraDesktopApi | null;
+  readonly capabilities: LyraSoftwareCapabilitiesContext;
   readonly adapters: WorkbenchUiPackAdapters;
   readonly style: WorkbenchUiStylePack;
   readonly interactions: WorkbenchInteractionPolicies;

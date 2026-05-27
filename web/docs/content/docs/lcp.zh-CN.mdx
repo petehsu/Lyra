@@ -1,0 +1,85 @@
+---
+title: Lyra Capability Protocol
+description: LCP V1 软件能力协议、UIUX manifest 声明和 Agent 入口
+---
+
+## 定位
+
+Lyra Capability Protocol（LCP）是 Lyra 软件向 Agent 暴露能力的公开 SDK 契约。
+
+V1 保持一个稳定 Agent 入口：`software` tool。Agent 先 `list`，再 `inspect`，最后 `invoke` 单个能力，避免把每个软件、每个动作都直接膨胀成模型工具 schema。
+
+## Manifest
+
+UIUX 包可以在 `.lyra-plugin/plugin.json` 中声明软件能力：
+
+```json
+{
+  "id": "acme.tools",
+  "uiux": {
+    "entry": "dist/index.js",
+    "workbenchUiApi": "1"
+  },
+  "contributes": {
+    "software": [
+      {
+        "id": "mail",
+        "title": "Mail",
+        "description": "Mail workspace actions",
+        "actions": [
+          {
+            "id": "open",
+            "title": "Open mailbox",
+            "description": "Open the mailbox surface",
+            "risk": "navigate",
+            "inputSchema": {
+              "type": "object"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+安装后，Lyra 会把外部软件 id 规范化为 `external:acme.tools:mail`，动作 id 规范化为 `external:acme.tools:mail.open`。
+
+## Runtime
+
+受信 UIUX 包在 `createPack(context)` 中注册动作处理器：
+
+```ts
+export const createPack = (context) => {
+  const action = context.capabilities.software[0].actions[0];
+  context.capabilities.registerActionHandler(action.id, async (input, request) => {
+    return { opened: true, actionId: request.actionId };
+  });
+  return pack;
+};
+```
+
+注册时只能注册 manifest 已声明的 action id。未声明的 action 会被拒绝。
+
+## Risk
+
+动作风险分为：
+
+1. `read`
+2. `navigate`
+3. `write`
+4. `external`
+5. `destructive`
+
+Agent 调用 `write`、`external`、`destructive` 动作前，`software` tool 会走现有权限请求流程。`read` 和 `navigate` 默认可执行。
+
+## Built-ins
+
+V1 已接入的内置能力：
+
+1. `browser-search.openUrl`
+2. `browser-search.search`
+3. `file-manager.openHome`
+4. `file-manager.openPath`
+5. `settings.openSection`
+6. `software-store.open`

@@ -7,9 +7,14 @@ import type {
 import type { ImageViewerModel } from "../image-viewer";
 import type { FileManagerChooserMode, FileManagerModel } from "../file-manager";
 import type { WorkbenchNotificationModel } from "../notifications";
-import type { AgentSessionHistorySurfaceProps } from "../agent-session-history";
+import {
+  createAgentSessionHistoryAppRequest,
+  type AgentSessionHistorySurfaceProps
+} from "../agent-session-history";
 import type { AgentProjectTreeModel } from "../agent-project-tree";
 import type { WorkbenchPreferencesModel } from "../preferences";
+import { createSoftwareStoreAppRequest } from "../software-store";
+import type { SoftwareCapabilitiesRegistryModel } from "../software-capabilities";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel, WorkspaceTab } from "../workspace-tabs/types";
 import { LOGO_URL } from "./service";
@@ -50,6 +55,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly settings: WorkspaceSurfaceRouterProps["settings"];
   readonly notificationModel: WorkbenchNotificationModel;
   readonly labels: WorkbenchLabels;
+  readonly softwareCapabilities: SoftwareCapabilitiesRegistryModel;
   readonly onOpenFileFromManager: (filePath: string) => void;
   readonly onRevealPathInFileManager: (filePath: string) => void;
   readonly onOpenNotificationSource: (notificationId: string) => void;
@@ -94,6 +100,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   settings,
   notificationModel,
   labels,
+  softwareCapabilities,
   onOpenFileFromManager,
   onRevealPathInFileManager,
   onOpenNotificationSource,
@@ -167,6 +174,36 @@ export const useWorkspaceSurfaceRouterProps = ({
       onOpenNotificationSource,
       onRequestClearAll: onRequestClearNotifications
     },
-    agentSessionHistory
+    agentSessionHistory,
+    softwareStore: {
+      desktopApi,
+      labels: labels.softwareStore,
+      softwareCapabilities,
+      activeUiPackId: preferences.uiPackId,
+      onUiPackIdChange: preferencesModel.setUiPackId,
+      onOpenBuiltinApp: (appId) => {
+        if (appId === "browser-search") {
+          tabsModel.openNewTab();
+          return;
+        }
+        if (appId === "settings") {
+          tabsModel.openSettingsTab();
+          return;
+        }
+        if (appId === "file-manager") {
+          const nextApp = fileManagerModel.createInstance();
+          tabsModel.openAppTab(nextApp);
+          void fileManagerModel.openHome(nextApp.appInstanceId);
+          return;
+        }
+        if (appId === "agent-history") {
+          tabsModel.openAppTab(createAgentSessionHistoryAppRequest(labels.agentSessionHistory.title));
+          return;
+        }
+        if (appId === "software-store") {
+          tabsModel.openAppTab(createSoftwareStoreAppRequest(labels.softwareStore.tabTitle));
+        }
+      }
+    }
   };
 };

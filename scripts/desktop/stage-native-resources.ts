@@ -11,6 +11,7 @@ import {
 
 type CliOptions = {
   readonly target: DesktopTarget;
+  readonly targetExplicit: boolean;
   readonly profile: "debug" | "release";
   readonly build: boolean;
   readonly clean: boolean;
@@ -68,6 +69,7 @@ const parseTarget = (value: string): DesktopTarget => {
 
 const parseArgs = (): CliOptions => {
   let target = resolveCurrentDesktopTarget();
+  let targetExplicit = false;
   let profile: "debug" | "release" = "debug";
   let build = true;
   let clean = false;
@@ -91,12 +93,13 @@ const parseArgs = (): CliOptions => {
     }
     if (arg.startsWith("--target=")) {
       target = parseTarget(arg.slice("--target=".length).trim());
+      targetExplicit = true;
       continue;
     }
     throw new Error(`unknown argument: ${arg}`);
   }
 
-  return { target, profile, build, clean };
+  return { target, targetExplicit, profile, build, clean };
 };
 
 const run = async (command: string, args: readonly string[]): Promise<void> => {
@@ -138,12 +141,16 @@ const buildArtifacts = async (options: CliOptions): Promise<void> => {
 };
 
 const artifactDirs = (options: CliOptions): readonly string[] => {
-  const dirs = [
-    ...(options.target.rustTargetTriple === null
-      ? []
-      : [path.join(repoRoot, "target", options.target.rustTargetTriple, options.profile)]),
-    path.join(repoRoot, "target", options.profile),
-  ];
+  const profileDir = path.join(repoRoot, "target", options.profile);
+  const targetDir = options.target.rustTargetTriple === null
+    ? null
+    : path.join(repoRoot, "target", options.target.rustTargetTriple, options.profile);
+  if (targetDir === null) {
+    return [profileDir];
+  }
+  const dirs = options.build || options.targetExplicit
+    ? [targetDir, profileDir]
+    : [profileDir, targetDir];
   return Array.from(new Set(dirs));
 };
 

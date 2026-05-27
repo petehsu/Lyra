@@ -55,6 +55,7 @@ const APP_IDS = new Set<WorkbenchAppId>([
   "agent-selfdev",
   "agent-overnight",
   "agent-session-history",
+  "software-store",
   "notification-center"
 ]);
 
@@ -72,6 +73,7 @@ const APP_ICON_KEYS = new Set<WorkspaceAppIconKey>([
   "agent-selfdev-default",
   "agent-overnight-default",
   "agent-session-history-default",
+  "software-store-default",
   "notification-center-default"
 ]);
 

@@ -3,13 +3,81 @@ use super::{
     queue_soft_interrupt_for_session, session_event_fanout_sender,
 };
 use crate::message::{
-    format_background_task_notification_markdown, format_background_task_progress_markdown,
+    ContentBlock, Role, format_background_task_notification_markdown,
+    format_background_task_progress_markdown,
 };
 use crate::protocol::{NotificationType, ServerEvent};
+use crate::session::{Session, StoredMessage};
+use chrono::{DateTime, Utc};
 use jcode_agent_runtime::SoftInterruptSource;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+fn is_real_user_request(message: &StoredMessage) -> bool {
+    if message.role != Role::User || message.display_role.is_some() {
+        return false;
+    }
+
+    let mut saw_text = false;
+    for block in &message.content {
+        match block {
+            ContentBlock::Text { text, .. } => {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with("<system-reminder>") {
+                    saw_text = true;
+                }
+            }
+            ContentBlock::Image { .. } => {}
+            _ => return false,
+        }
+    }
+
+    saw_text
+}
+
+fn has_real_user_request_after(messages: &[StoredMessage], started_at: DateTime<Utc>) -> bool {
+    messages.iter().any(|message| {
+        is_real_user_request(message)
+            && message
+                .timestamp
+                .map(|timestamp| timestamp > started_at)
+                .unwrap_or(false)
+    })
+}
+
+fn parse_started_at(started_at: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(started_at)
+        .ok()
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+}
+
+async fn background_wake_would_resume_suspended_work(
+    task: &crate::bus::BackgroundTaskCompleted,
+    sessions: &SessionAgents,
+) -> bool {
+    let Some(status) = crate::background::global().status(&task.task_id).await else {
+        return false;
+    };
+    let Some(started_at) = parse_started_at(&status.started_at) else {
+        return false;
+    };
+
+    let agent = {
+        let guard = sessions.read().await;
+        guard.get(&task.session_id).cloned()
+    };
+
+    if let Some(agent) = agent
+        && let Ok(agent_guard) = agent.try_lock()
+    {
+        return has_real_user_request_after(agent_guard.messages(), started_at);
+    }
+
+    Session::load(&task.session_id)
+        .map(|session| has_real_user_request_after(&session.messages, started_at))
+        .unwrap_or(false)
+}
 
 async fn run_background_task_message_in_live_session_if_idle(
     session_id: &str,
@@ -57,7 +125,7 @@ async fn run_background_task_message_in_live_session_if_idle(
             &message,
             vec![],
             Some(
-                "A background task for this session just finished. Review the completion message and continue if useful."
+                "A background task for this session just finished. Treat it as context for the current task. Do not resume older suspended work unless the latest real user message explicitly asks for it."
                     .to_string(),
             ),
             event_tx,
@@ -103,6 +171,14 @@ pub(super) async fn dispatch_background_task_completion(
             "Failed to notify attached clients for background task completion on session {}",
             task.session_id
         ));
+    }
+
+    if task.wake && background_wake_would_resume_suspended_work(task, sessions).await {
+        crate::logging::info(&format!(
+            "Suppressed background task wake for {} in session {} because a newer user request exists",
+            task.task_id, task.session_id
+        ));
+        return;
     }
 
     if task.wake

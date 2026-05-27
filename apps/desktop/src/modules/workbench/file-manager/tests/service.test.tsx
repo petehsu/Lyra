@@ -538,6 +538,22 @@ const createDesktopApi = (): {
       readPageState: async () => null,
       setElementPickerMode: async () => undefined,
       applyWebTheme: async () => undefined,
+      capturePage: async () => ({
+        tabId: "browser-tab-test",
+        mimeType: "image/png" as const,
+        imageBase64: "",
+        width: 1,
+        height: 1,
+        visibleOnly: true
+      }),
+      captureWindow: async () => ({
+        tabId: "lyra-window",
+        mimeType: "image/png" as const,
+        imageBase64: "",
+        width: 1,
+        height: 1,
+        visibleOnly: true
+      }),
       onEvent: () => () => undefined
     },
     files: {

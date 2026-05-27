@@ -1067,77 +1067,28 @@ pub(super) async fn handle_client(
             }
             done = processing_done_rx.recv() => {
                 if let Some((done_id, result, completion_report)) = done {
-                    if Some(done_id) != processing_message_id {
-                        crate::logging::warn(&format!(
-                            "Done event id={} doesn't match processing_message_id={:?}, dropping",
-                            done_id, processing_message_id
-                        ));
-                        continue;
-                    }
-                    crate::logging::info(&format!(
-                        "Processing done for message id={}, result={}",
+                    finish_processing_message(
                         done_id,
-                        if result.is_ok() { "ok" } else { "err" }
-                    ));
-                    processing_message_id = None;
-                    processing_task = None;
-                    client_is_processing = false;
-                    {
-                        let mut connections = client_connections.write().await;
-                        if let Some(info) = connections.get_mut(&client_connection_id) {
-                            info.is_processing = false;
-                            info.current_tool_name = None;
-                        }
-                    }
-
-                    let done_session = processing_session_id.take();
-                    match result {
-                        Ok(()) => {
-                            if let Some(session_id) = done_session.as_deref() {
-                                update_member_status_with_report(
-                                    session_id,
-                                    "ready",
-                                    None,
-                                    completion_report,
-                                    &swarm_members,
-                                    &swarms_by_id,
-                                    Some(&event_history),
-                                    Some(&event_counter),
-                                    Some(&swarm_event_tx),
-                                )
-                                .await;
-                            }
-                            let _ = client_event_tx.send(ServerEvent::Done { id: done_id });
-                        }
-                        Err(e) => {
-                            if let Some(session_id) = done_session.as_deref() {
-                                update_member_status(
-                                    session_id,
-                                    "failed",
-                                    Some(truncate_detail(&e.to_string(), 120)),
-                                    &swarm_members,
-                                    &swarms_by_id,
-                                    Some(&event_history),
-                                    Some(&event_counter),
-                                    Some(&swarm_event_tx),
-                                )
-                                .await;
-                            }
-                            let retry_after_secs = e.downcast_ref::<StreamError>().and_then(|se| se.retry_after_secs);
-                            if retry_after_secs.is_some() {
-                            } else {
-                                let msg = e.to_string().to_lowercase();
-                                if msg.contains("timeout") {
-                                } else if msg.contains("auth") || msg.contains("unauthorized") || msg.contains("forbidden") {
-                                }
-                            }
-                            let _ = client_event_tx.send(ServerEvent::Error {
-                                id: done_id,
-                                message: crate::util::format_error_chain(&e),
-                                retry_after_secs,
-                            });
-                        }
-                    }
+                        result,
+                        completion_report,
+                        &mut ProcessingState {
+                            client_is_processing: &mut client_is_processing,
+                            message_id: &mut processing_message_id,
+                            session_id: &mut processing_session_id,
+                            task: &mut processing_task,
+                        },
+                        &client_connections,
+                        &client_connection_id,
+                        &client_event_tx,
+                        &SwarmStatusRefs {
+                            members: &swarm_members,
+                            swarms_by_id: &swarms_by_id,
+                            event_history: &event_history,
+                            event_counter: &event_counter,
+                            event_tx: &swarm_event_tx,
+                        },
+                    )
+                    .await;
                 } else {
                     break;
                 }
@@ -1259,6 +1210,46 @@ pub(super) async fn handle_client(
                 images,
                 system_reminder,
             } => {
+                drain_finished_processing_messages(
+                    &mut processing_done_rx,
+                    &mut ProcessingState {
+                        client_is_processing: &mut client_is_processing,
+                        message_id: &mut processing_message_id,
+                        session_id: &mut processing_session_id,
+                        task: &mut processing_task,
+                    },
+                    &client_connections,
+                    &client_connection_id,
+                    &client_event_tx,
+                    &SwarmStatusRefs {
+                        members: &swarm_members,
+                        swarms_by_id: &swarms_by_id,
+                        event_history: &event_history,
+                        event_counter: &event_counter,
+                        event_tx: &swarm_event_tx,
+                    },
+                )
+                .await;
+                if client_is_processing {
+                    cancel_processing_message(
+                        &mut ProcessingState {
+                            client_is_processing: &mut client_is_processing,
+                            message_id: &mut processing_message_id,
+                            session_id: &mut processing_session_id,
+                            task: &mut processing_task,
+                        },
+                        &session_control,
+                        &client_event_tx,
+                        &SwarmStatusRefs {
+                            members: &swarm_members,
+                            swarms_by_id: &swarms_by_id,
+                            event_history: &event_history,
+                            event_counter: &event_counter,
+                            event_tx: &swarm_event_tx,
+                        },
+                    )
+                    .await;
+                }
                 if !client_is_processing {
                     let mut connections = client_connections.write().await;
                     if let Some(info) = connections.get_mut(&client_connection_id) {
@@ -2573,6 +2564,118 @@ pub(super) async fn handle_client(
     )
     .await?;
     Ok(())
+}
+
+async fn finish_processing_message(
+    done_id: u64,
+    result: Result<()>,
+    completion_report: Option<String>,
+    state: &mut ProcessingState<'_>,
+    client_connections: &Arc<RwLock<HashMap<String, ClientConnectionInfo>>>,
+    client_connection_id: &str,
+    client_event_tx: &mpsc::UnboundedSender<ServerEvent>,
+    swarm: &SwarmStatusRefs<'_>,
+) {
+    if Some(done_id) != *state.message_id {
+        crate::logging::warn(&format!(
+            "Done event id={} doesn't match processing_message_id={:?}, dropping",
+            done_id, state.message_id
+        ));
+        return;
+    }
+
+    crate::logging::info(&format!(
+        "Processing done for message id={}, result={}",
+        done_id,
+        if result.is_ok() { "ok" } else { "err" }
+    ));
+    *state.message_id = None;
+    *state.task = None;
+    *state.client_is_processing = false;
+    {
+        let mut connections = client_connections.write().await;
+        if let Some(info) = connections.get_mut(client_connection_id) {
+            info.is_processing = false;
+            info.current_tool_name = None;
+        }
+    }
+
+    let done_session = state.session_id.take();
+    match result {
+        Ok(()) => {
+            if let Some(session_id) = done_session.as_deref() {
+                update_member_status_with_report(
+                    session_id,
+                    "ready",
+                    None,
+                    completion_report,
+                    swarm.members,
+                    swarm.swarms_by_id,
+                    Some(swarm.event_history),
+                    Some(swarm.event_counter),
+                    Some(swarm.event_tx),
+                )
+                .await;
+            }
+            let _ = client_event_tx.send(ServerEvent::Done { id: done_id });
+        }
+        Err(e) => {
+            if let Some(session_id) = done_session.as_deref() {
+                update_member_status(
+                    session_id,
+                    "failed",
+                    Some(truncate_detail(&e.to_string(), 120)),
+                    swarm.members,
+                    swarm.swarms_by_id,
+                    Some(swarm.event_history),
+                    Some(swarm.event_counter),
+                    Some(swarm.event_tx),
+                )
+                .await;
+            }
+            let retry_after_secs = e
+                .downcast_ref::<StreamError>()
+                .and_then(|se| se.retry_after_secs);
+            if retry_after_secs.is_some() {
+            } else {
+                let msg = e.to_string().to_lowercase();
+                if msg.contains("timeout") {
+                } else if msg.contains("auth")
+                    || msg.contains("unauthorized")
+                    || msg.contains("forbidden")
+                {
+                }
+            }
+            let _ = client_event_tx.send(ServerEvent::Error {
+                id: done_id,
+                message: crate::util::format_error_chain(&e),
+                retry_after_secs,
+            });
+        }
+    }
+}
+
+async fn drain_finished_processing_messages(
+    processing_done_rx: &mut mpsc::UnboundedReceiver<(u64, Result<()>, Option<String>)>,
+    state: &mut ProcessingState<'_>,
+    client_connections: &Arc<RwLock<HashMap<String, ClientConnectionInfo>>>,
+    client_connection_id: &str,
+    client_event_tx: &mpsc::UnboundedSender<ServerEvent>,
+    swarm: &SwarmStatusRefs<'_>,
+) {
+    while let Ok((done_id, result, completion_report)) = processing_done_rx.try_recv() {
+        finish_processing_message(
+            done_id,
+            result,
+            completion_report,
+            state,
+            client_connections,
+            client_connection_id,
+            client_event_tx,
+            swarm,
+        )
+        .await;
+    }
 }
 
 async fn start_processing_message(
