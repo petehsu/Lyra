@@ -352,17 +352,17 @@ export type AgentTurnCancelResponse = {
   readonly status: "cancelling";
 };
 
-export type JcodeAgentActionRunRequest = {
+export type AgentActionRunRequest = {
   readonly sessionId?: string | null;
   readonly planOnly?: boolean;
   readonly focus?: string | null;
 };
 
-export type JcodePokeRequest = {
+export type AgentPokeRequest = {
   readonly sessionId?: string | null;
 };
 
-export type JcodeFeedbackRunRequest = {
+export type AgentFeedbackRunRequest = {
   readonly sessionId?: string | null;
 };
 
@@ -395,18 +395,18 @@ export type AgentSelfDevStatusResponse = {
   readonly metadata?: unknown;
 };
 
-export type JcodeOvernightStartRequest = {
+export type AgentOvernightStartRequest = {
   readonly sessionId?: string | null;
   readonly durationMinutes: number;
   readonly mission?: string | null;
   readonly inheritContext?: boolean;
 };
 
-export type JcodeOvernightRunRequest = {
+export type AgentOvernightRunRequest = {
   readonly runId?: string | null;
 };
 
-export type JcodeOvernightRunSnapshot = {
+export type AgentOvernightRunSnapshot = {
   readonly runId: string;
   readonly parentSessionId: string;
   readonly coordinatorSessionId: string;
@@ -436,21 +436,21 @@ export type JcodeOvernightRunSnapshot = {
   readonly coordinatorSnapshot?: AgentSessionSnapshot | null;
 };
 
-export type JcodeOvernightStartResponse = {
-  readonly run: JcodeOvernightRunSnapshot;
+export type AgentOvernightStartResponse = {
+  readonly run: AgentOvernightRunSnapshot;
   readonly inheritedContext: boolean;
 };
 
-export type JcodeOvernightListResponse = {
-  readonly runs: readonly JcodeOvernightRunSnapshot[];
+export type AgentOvernightListResponse = {
+  readonly runs: readonly AgentOvernightRunSnapshot[];
   readonly latestRunId?: string | null;
 };
 
-export type JcodeOvernightRunResponse = {
-  readonly run?: JcodeOvernightRunSnapshot | null;
+export type AgentOvernightRunResponse = {
+  readonly run?: AgentOvernightRunSnapshot | null;
 };
 
-export type JcodeSubagentRunRequest = {
+export type AgentSubagentRunRequest = {
   readonly sessionId?: string | null;
   readonly prompt: string;
   readonly subagentType?: string | null;
@@ -458,67 +458,67 @@ export type JcodeSubagentRunRequest = {
   readonly continueSessionId?: string | null;
 };
 
-export type JcodeSubagentRunResponse = {
+export type AgentSubagentRunResponse = {
   readonly sessionId: string;
   readonly toolId: string;
   readonly snapshot: AgentSessionSnapshot;
 };
 
-export type JcodeBtwRunRequest = {
+export type AgentBtwRunRequest = {
   readonly sessionId?: string | null;
   readonly question: string;
 };
 
-export type JcodeSidePanelActionResponse = {
+export type AgentSidePanelActionResponse = {
   readonly sessionId: string;
   readonly turnId?: string | null;
   readonly status: "idle" | "running";
   readonly sidePanel: AgentSidePanelSnapshot;
 };
 
-export type JcodeSessionActionRequest = {
+export type AgentSessionActionRequest = {
   readonly sessionId?: string | null;
 };
 
-export type JcodeSessionForkResponse = {
+export type AgentSessionForkResponse = {
   readonly sessionId: string;
   readonly parentSessionId: string;
   readonly snapshot: AgentSessionSnapshot;
 };
 
-export type JcodeCompactResponse = {
+export type AgentCompactResponse = {
   readonly sessionId: string;
   readonly message: string;
   readonly success: boolean;
   readonly snapshot: AgentSessionSnapshot;
 };
 
-export type JcodeAutomationUpdateRequest = {
+export type AgentAutomationUpdateRequest = {
   readonly sessionId?: string | null;
   readonly subagentModel?: string | null;
   readonly autoreviewEnabled?: boolean | null;
   readonly autojudgeEnabled?: boolean | null;
 };
 
-export type JcodeAutomationUpdateResponse = {
+export type AgentAutomationUpdateResponse = {
   readonly sessionId: string;
   readonly automation: AgentSessionAutomationSnapshot;
   readonly snapshot: AgentSessionSnapshot;
 };
 
-export type JcodeGoalsRequest = {
+export type AgentGoalsRequest = {
   readonly sessionId?: string | null;
   readonly goalId?: string | null;
 };
 
-export type JcodeGoalsResponse = {
+export type AgentGoalsResponse = {
   readonly sessionId: string;
   readonly goals: readonly unknown[];
   readonly focusedGoal?: unknown;
   readonly sidePanel: AgentSidePanelSnapshot;
 };
 
-export type JcodeAccountSnapshot = {
+export type AgentAccountSnapshot = {
   readonly provider: string;
   readonly label: string;
   readonly kind: string;
@@ -527,19 +527,19 @@ export type JcodeAccountSnapshot = {
   readonly detail?: string | null;
 };
 
-export type JcodeAccountsResponse = {
+export type AgentAccountsSnapshot = {
   readonly defaultProvider?: string | null;
   readonly defaultModel?: string | null;
   readonly authStatus: unknown;
-  readonly accounts: readonly JcodeAccountSnapshot[];
+  readonly accounts: readonly AgentAccountSnapshot[];
 };
 
-export type JcodeAccountRequest = {
+export type AgentAccountRequest = {
   readonly provider?: string | null;
   readonly label?: string | null;
 };
 
-export type JcodeAccountLoginRequest = {
+export type AgentAccountLoginRequest = {
   readonly provider?: string | null;
   readonly profileName?: string | null;
   readonly label?: string | null;
@@ -549,7 +549,7 @@ export type JcodeAccountLoginRequest = {
   readonly setDefault?: boolean;
 };
 
-export type JcodeLoginProviderSnapshot = {
+export type AgentLoginProviderSnapshot = {
   readonly id: string;
   readonly displayName: string;
   readonly authKind: string;
@@ -562,12 +562,12 @@ export type JcodeLoginProviderSnapshot = {
   readonly requiresApiKey: boolean;
 };
 
-export type JcodeLoginProvidersResponse = {
-  readonly providers: readonly JcodeLoginProviderSnapshot[];
+export type AgentLoginProviderCatalogSnapshot = {
+  readonly providers: readonly AgentLoginProviderSnapshot[];
   readonly authStatus: unknown;
 };
 
-export type JcodeAccountLoginStartRequest = {
+export type AgentAccountLoginStartRequest = {
   readonly provider: string;
   readonly label?: string | null;
   readonly googleClientId?: string | null;
@@ -575,7 +575,7 @@ export type JcodeAccountLoginStartRequest = {
   readonly gmailAccessTier?: "readonly" | "full" | string | null;
 };
 
-export type JcodeAccountLoginStartResponse = {
+export type AgentAccountLoginStartResponse = {
   readonly provider: string;
   readonly label?: string | null;
   readonly flowId: string;
@@ -587,7 +587,7 @@ export type JcodeAccountLoginStartResponse = {
   readonly requiresApiKey: boolean;
 };
 
-export type JcodeAccountLoginCompleteRequest = {
+export type AgentAccountLoginCompleteRequest = {
   readonly provider: string;
   readonly flowId?: string | null;
   readonly label?: string | null;
@@ -600,12 +600,12 @@ export type JcodeAccountLoginCompleteRequest = {
   readonly setDefault?: boolean;
 };
 
-export type JcodeAccountLoginCompleteResponse = {
-  readonly accounts: JcodeAccountsResponse;
+export type AgentAccountLoginCompleteResponse = {
+  readonly accounts: AgentAccountsSnapshot;
   readonly message: string;
 };
 
-export type JcodePokeResponse = {
+export type AgentPokeResponse = {
   readonly sessionId: string;
   readonly turnId?: string | null;
   readonly status: "idle" | "running";
@@ -740,7 +740,7 @@ export type AgentRuntimeEvent =
       readonly snapshot: AgentSessionSnapshot;
     }
   | {
-      readonly kind: "messageAppended";
+      readonly kind: "messageCommitted";
       readonly sessionId: string;
       readonly message: AgentMessage;
     }
@@ -759,7 +759,7 @@ export type AgentRuntimeEvent =
       readonly tool: AgentToolActivity;
     }
   | {
-      readonly kind: "memorySnapshot";
+      readonly kind: "memoryUpdated";
       readonly sessionId: string;
       readonly snapshot: AgentMemorySnapshot;
     }
@@ -797,7 +797,7 @@ export type AgentRuntimeEvent =
       readonly todos: readonly AgentTodoItem[];
     }
   | {
-      readonly kind: "clarificationRequired";
+      readonly kind: "clarificationRequested";
       readonly sessionId: string;
       readonly clarificationId: string;
       readonly question: string;
@@ -811,13 +811,13 @@ export type AgentRuntimeEvent =
       readonly clarificationId: string;
     }
   | {
-      readonly kind: "browserTargetUpdated";
+      readonly kind: "browserActivityChanged";
       readonly sessionId: string;
       readonly turnId: string;
       readonly target: unknown;
     }
   | {
-      readonly kind: "permissionRequired";
+      readonly kind: "permissionRequested";
       readonly sessionId: string;
       readonly permissionId: string;
       readonly title: string;
@@ -859,21 +859,21 @@ export type AgentRuntimeEvent =
       readonly message: string;
     };
 
-export type JcodeRegisteredCommand = {
+export type AgentRegisteredCommand = {
   readonly name: string;
   readonly help: string;
   readonly autocomplete: boolean;
   readonly remoteOnly: boolean;
 };
 
-export type JcodeConfigSnapshot = {
-  readonly jcodeHome?: string | null;
+export type AgentConfigSnapshot = {
+  readonly agentHome?: string | null;
   readonly configPath?: string | null;
   readonly config: unknown;
-  readonly commands: readonly JcodeRegisteredCommand[];
+  readonly commands: readonly AgentRegisteredCommand[];
 };
 
-export type JcodeConfigUpdateRequest = {
+export type AgentConfigUpdateRequest = {
   readonly defaultModel?: string | null;
   readonly defaultProvider?: string | null;
   readonly openaiReasoningEffort?: string | null;
@@ -901,12 +901,12 @@ export type JcodeConfigUpdateRequest = {
   readonly discordReplyEnabled?: boolean;
 };
 
-export type JcodeProviderProfileModelRequest = {
+export type AgentProviderProfileModelRequest = {
   readonly id: string;
   readonly contextWindow?: number | null;
 };
 
-export type JcodeProviderProfileSaveRequest = {
+export type AgentProviderProfileSaveRequest = {
   readonly profileName: string;
   readonly baseUrl: string;
   readonly defaultModel?: string | null;
@@ -917,11 +917,11 @@ export type JcodeProviderProfileSaveRequest = {
   readonly authHeader?: string | null;
   readonly providerType?: "openai-compatible" | "openrouter";
   readonly setDefault?: boolean;
-  readonly models?: readonly JcodeProviderProfileModelRequest[];
+  readonly models?: readonly AgentProviderProfileModelRequest[];
 };
 
 
-export type JcodeSessionSummary = {
+export type AgentSessionSummary = {
   readonly id: string;
   readonly title: string;
   readonly shortName?: string | null;
@@ -939,13 +939,13 @@ export type JcodeSessionSummary = {
   readonly workingDir?: string | null;
 };
 
-export type JcodeSessionsListRequest = {
+export type AgentSessionListRequest = {
   readonly limit?: number;
 };
 
-export type JcodeSessionsListResponse = {
+export type AgentSessionListResponse = {
   readonly sessionsDir: string;
-  readonly sessions: readonly JcodeSessionSummary[];
+  readonly sessions: readonly AgentSessionSummary[];
 };
 
 export type AgentSessionSaveRequest = {
@@ -972,7 +972,7 @@ export type AgentSessionDeleteResponse = {
   readonly deleted: true;
 };
 
-export type JcodeModelRoute = {
+export type AgentModelRoute = {
   readonly model: string;
   readonly provider: string;
   readonly apiMethod: string;
@@ -980,7 +980,7 @@ export type JcodeModelRoute = {
   readonly detail: string;
 };
 
-export type JcodeModelEntry = {
+export type AgentModelEntry = {
   readonly id: string;
   readonly label: string;
   readonly model: string;
@@ -991,45 +991,45 @@ export type JcodeModelEntry = {
   readonly available: boolean;
 };
 
-export type JcodeProviderOptionState = {
+export type AgentProviderOptionState = {
   readonly current?: string | null;
   readonly options: readonly string[];
   readonly supported: boolean;
 };
 
-export type JcodeModelsListRequest = {
+export type AgentModelCatalogRequest = {
   readonly sessionId?: string | null;
 };
 
-export type JcodeModelsListResponse = {
+export type AgentModelCatalogSnapshot = {
   readonly sessionId?: string | null;
   readonly currentModel: string;
   readonly currentProvider: string;
   readonly defaultModel?: string | null;
   readonly defaultProvider?: string | null;
-  readonly models: readonly JcodeModelEntry[];
-  readonly routes: readonly JcodeModelRoute[];
-  readonly reasoningEffort: JcodeProviderOptionState;
-  readonly serviceTier: JcodeProviderOptionState;
+  readonly models: readonly AgentModelEntry[];
+  readonly routes: readonly AgentModelRoute[];
+  readonly reasoningEffort: AgentProviderOptionState;
+  readonly serviceTier: AgentProviderOptionState;
 };
 
-export type JcodeModelSwitchRequest = {
+export type AgentModelSwitchRequest = {
   readonly sessionId?: string | null;
   readonly model: string;
   readonly provider?: string | null;
 };
 
-export type JcodeModelRefreshRequest = {
+export type AgentModelRefreshRequest = {
   readonly sessionId?: string | null;
 };
 
-export type JcodeProviderOptionsUpdateRequest = {
+export type AgentProviderOptionsUpdateRequest = {
   readonly sessionId?: string | null;
   readonly reasoningEffort?: string | null;
   readonly serviceTier?: string | null;
 };
 
-export type JcodeAgentRolesUpdateRequest = {
+export type AgentRolesUpdateRequest = {
   readonly swarmModel?: string | null;
   readonly reviewModel?: string | null;
   readonly judgeModel?: string | null;
@@ -1041,12 +1041,12 @@ export type AgentApi = {
   readonly createSession: (request?: AgentSessionCreateRequest) => Promise<AgentSessionSnapshot>;
   readonly readSession: (request?: AgentSessionReadRequest) => Promise<AgentSessionSnapshot>;
   readonly listSessions: (
-    request?: JcodeSessionsListRequest
-  ) => Promise<JcodeSessionsListResponse>;
-  readonly saveSession: (request: AgentSessionSaveRequest) => Promise<JcodeSessionSummary>;
-  readonly unsaveSession: (request: AgentSessionDeleteRequest) => Promise<JcodeSessionSummary>;
-  readonly renameSession: (request: AgentSessionRenameRequest) => Promise<JcodeSessionSummary>;
-  readonly archiveSession: (request: AgentSessionArchiveRequest) => Promise<JcodeSessionSummary>;
+    request?: AgentSessionListRequest
+  ) => Promise<AgentSessionListResponse>;
+  readonly saveSession: (request: AgentSessionSaveRequest) => Promise<AgentSessionSummary>;
+  readonly unsaveSession: (request: AgentSessionDeleteRequest) => Promise<AgentSessionSummary>;
+  readonly renameSession: (request: AgentSessionRenameRequest) => Promise<AgentSessionSummary>;
+  readonly archiveSession: (request: AgentSessionArchiveRequest) => Promise<AgentSessionSummary>;
   readonly deleteSession: (
     request: AgentSessionDeleteRequest
   ) => Promise<AgentSessionDeleteResponse>;
@@ -1061,21 +1061,21 @@ export type AgentApi = {
     request: AgentTurnSendRequest
   ) => Promise<AgentTurnSendResponse>;
   readonly startOvernight: (
-    request: JcodeOvernightStartRequest
-  ) => Promise<JcodeOvernightStartResponse>;
-  readonly listOvernightRuns: () => Promise<JcodeOvernightListResponse>;
+    request: AgentOvernightStartRequest
+  ) => Promise<AgentOvernightStartResponse>;
+  readonly listOvernightRuns: () => Promise<AgentOvernightListResponse>;
   readonly readOvernightStatus: (
-    request?: JcodeOvernightRunRequest
-  ) => Promise<JcodeOvernightRunResponse>;
+    request?: AgentOvernightRunRequest
+  ) => Promise<AgentOvernightRunResponse>;
   readonly readOvernightLog: (
-    request?: JcodeOvernightRunRequest
-  ) => Promise<JcodeOvernightRunResponse>;
+    request?: AgentOvernightRunRequest
+  ) => Promise<AgentOvernightRunResponse>;
   readonly readOvernightReview: (
-    request?: JcodeOvernightRunRequest
-  ) => Promise<JcodeOvernightRunResponse>;
+    request?: AgentOvernightRunRequest
+  ) => Promise<AgentOvernightRunResponse>;
   readonly cancelOvernight: (
-    request?: JcodeOvernightRunRequest
-  ) => Promise<JcodeOvernightRunResponse>;
+    request?: AgentOvernightRunRequest
+  ) => Promise<AgentOvernightRunResponse>;
   readonly startTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly sendTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly resumeTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
@@ -1114,72 +1114,72 @@ export type AgentApi = {
     request: AgentClarificationRespondRequest
   ) => Promise<unknown>;
   readonly respondPermission: (request: AgentPermissionRespondRequest) => Promise<unknown>;
-  readonly readJcodeConfig: () => Promise<JcodeConfigSnapshot>;
-  readonly updateJcodeConfig: (
-    request: JcodeConfigUpdateRequest
-  ) => Promise<JcodeConfigSnapshot>;
-  readonly saveJcodeProviderProfile: (
-    request: JcodeProviderProfileSaveRequest
-  ) => Promise<JcodeConfigSnapshot>;
-  readonly listJcodeModels: (
-    request?: JcodeModelsListRequest
-  ) => Promise<JcodeModelsListResponse>;
-  readonly switchJcodeModel: (
-    request: JcodeModelSwitchRequest
-  ) => Promise<JcodeModelsListResponse>;
-  readonly refreshJcodeModels: (
-    request?: JcodeModelRefreshRequest
-  ) => Promise<JcodeModelsListResponse>;
-  readonly updateJcodeProviderOptions: (
-    request: JcodeProviderOptionsUpdateRequest
-  ) => Promise<JcodeModelsListResponse>;
-  readonly updateJcodeAgentRoles: (
-    request: JcodeAgentRolesUpdateRequest
-  ) => Promise<JcodeConfigSnapshot>;
+  readonly readAgentConfig: () => Promise<AgentConfigSnapshot>;
+  readonly updateAgentConfig: (
+    request: AgentConfigUpdateRequest
+  ) => Promise<AgentConfigSnapshot>;
+  readonly saveAgentProviderProfile: (
+    request: AgentProviderProfileSaveRequest
+  ) => Promise<AgentConfigSnapshot>;
+  readonly listAgentModels: (
+    request?: AgentModelCatalogRequest
+  ) => Promise<AgentModelCatalogSnapshot>;
+  readonly switchAgentModel: (
+    request: AgentModelSwitchRequest
+  ) => Promise<AgentModelCatalogSnapshot>;
+  readonly refreshAgentModels: (
+    request?: AgentModelRefreshRequest
+  ) => Promise<AgentModelCatalogSnapshot>;
+  readonly updateAgentProviderOptions: (
+    request: AgentProviderOptionsUpdateRequest
+  ) => Promise<AgentModelCatalogSnapshot>;
+  readonly updateAgentRoles: (
+    request: AgentRolesUpdateRequest
+  ) => Promise<AgentConfigSnapshot>;
   readonly runImprove: (
-    request?: JcodeAgentActionRunRequest
+    request?: AgentActionRunRequest
   ) => Promise<AgentTurnSendResponse>;
   readonly runRefactor: (
-    request?: JcodeAgentActionRunRequest
+    request?: AgentActionRunRequest
   ) => Promise<AgentTurnSendResponse>;
-  readonly triggerPoke: (request?: JcodePokeRequest) => Promise<JcodePokeResponse>;
+  readonly triggerPoke: (request?: AgentPokeRequest) => Promise<AgentPokeResponse>;
   readonly runReview: (
-    request?: JcodeFeedbackRunRequest
+    request?: AgentFeedbackRunRequest
   ) => Promise<AgentTurnSendResponse>;
   readonly runJudge: (
-    request?: JcodeFeedbackRunRequest
+    request?: AgentFeedbackRunRequest
   ) => Promise<AgentTurnSendResponse>;
   readonly runSubagent: (
-    request: JcodeSubagentRunRequest
-  ) => Promise<JcodeSubagentRunResponse>;
-  readonly runBtw: (request: JcodeBtwRunRequest) => Promise<JcodeSidePanelActionResponse>;
+    request: AgentSubagentRunRequest
+  ) => Promise<AgentSubagentRunResponse>;
+  readonly runBtw: (request: AgentBtwRunRequest) => Promise<AgentSidePanelActionResponse>;
   readonly splitSession: (
-    request?: JcodeSessionActionRequest
-  ) => Promise<JcodeSessionForkResponse>;
+    request?: AgentSessionActionRequest
+  ) => Promise<AgentSessionForkResponse>;
   readonly transferSession: (
-    request?: JcodeSessionActionRequest
-  ) => Promise<JcodeSessionForkResponse>;
+    request?: AgentSessionActionRequest
+  ) => Promise<AgentSessionForkResponse>;
   readonly compactSession: (
-    request?: JcodeSessionActionRequest
-  ) => Promise<JcodeCompactResponse>;
+    request?: AgentSessionActionRequest
+  ) => Promise<AgentCompactResponse>;
   readonly updateSessionAutomation: (
-    request: JcodeAutomationUpdateRequest
-  ) => Promise<JcodeAutomationUpdateResponse>;
-  readonly listGoals: (request?: JcodeGoalsRequest) => Promise<JcodeGoalsResponse>;
-  readonly openGoals: (request?: JcodeGoalsRequest) => Promise<JcodeGoalsResponse>;
-  readonly resumeGoal: (request?: JcodeGoalsRequest) => Promise<JcodeGoalsResponse>;
-  readonly showGoal: (request: JcodeGoalsRequest) => Promise<JcodeGoalsResponse>;
-  readonly listAccounts: () => Promise<JcodeAccountsResponse>;
-  readonly loginAccount: (request: JcodeAccountLoginRequest) => Promise<JcodeAccountsResponse>;
-  readonly listLoginProviders: () => Promise<JcodeLoginProvidersResponse>;
+    request: AgentAutomationUpdateRequest
+  ) => Promise<AgentAutomationUpdateResponse>;
+  readonly listGoals: (request?: AgentGoalsRequest) => Promise<AgentGoalsResponse>;
+  readonly openGoals: (request?: AgentGoalsRequest) => Promise<AgentGoalsResponse>;
+  readonly resumeGoal: (request?: AgentGoalsRequest) => Promise<AgentGoalsResponse>;
+  readonly showGoal: (request: AgentGoalsRequest) => Promise<AgentGoalsResponse>;
+  readonly listAccounts: () => Promise<AgentAccountsSnapshot>;
+  readonly loginAccount: (request: AgentAccountLoginRequest) => Promise<AgentAccountsSnapshot>;
+  readonly listLoginProviders: () => Promise<AgentLoginProviderCatalogSnapshot>;
   readonly startAccountLogin: (
-    request: JcodeAccountLoginStartRequest
-  ) => Promise<JcodeAccountLoginStartResponse>;
+    request: AgentAccountLoginStartRequest
+  ) => Promise<AgentAccountLoginStartResponse>;
   readonly completeAccountLogin: (
-    request: JcodeAccountLoginCompleteRequest
-  ) => Promise<JcodeAccountLoginCompleteResponse>;
-  readonly switchAccount: (request: JcodeAccountRequest) => Promise<JcodeAccountsResponse>;
-  readonly removeAccount: (request: JcodeAccountRequest) => Promise<JcodeAccountsResponse>;
+    request: AgentAccountLoginCompleteRequest
+  ) => Promise<AgentAccountLoginCompleteResponse>;
+  readonly switchAccount: (request: AgentAccountRequest) => Promise<AgentAccountsSnapshot>;
+  readonly removeAccount: (request: AgentAccountRequest) => Promise<AgentAccountsSnapshot>;
   readonly readBrowserFollowMode: () => Promise<AgentBrowserFollowModeSnapshot>;
   readonly updateBrowserFollowMode: (
     request: AgentBrowserFollowModeUpdateRequest

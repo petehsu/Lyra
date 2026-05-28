@@ -1,5 +1,5 @@
 import type {
-  JcodeOvernightRunSnapshot,
+  AgentOvernightRunSnapshot,
   LyraDesktopApi
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
@@ -56,8 +56,8 @@ export type AgentOvernightSurfaceProps = {
 };
 
 export type AgentOvernightState = {
-  readonly runs: readonly JcodeOvernightRunSnapshot[];
-  readonly selectedRun: JcodeOvernightRunSnapshot | null;
+  readonly runs: readonly AgentOvernightRunSnapshot[];
+  readonly selectedRun: AgentOvernightRunSnapshot | null;
   readonly loading: boolean;
   readonly error: string | null;
 };

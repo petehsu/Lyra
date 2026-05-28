@@ -45,8 +45,8 @@ const labels: SettingsAiLabels = {
   configFileTitle: "Lyra Agent config file",
   configFileDescription: "Open the real Lyra Agent config.",
   openConfigFile: "Open Config",
-  refreshJcode: "Refresh",
-  jcodeConfigAriaLabel: "Lyra Agent config",
+  refreshAgent: "Refresh",
+  agentConfigAriaLabel: "Lyra Agent config",
   providerAutoFallback: "auto",
   defaultModelFallback: "Lyra Agent default model",
   customProviderFallback: "custom provider",
@@ -114,7 +114,7 @@ const labels: SettingsAiLabels = {
   runtimeUnavailable: "Lyra Agent runtime bridge is unavailable.",
   fileEditorUnavailable: "Workbench file editor is unavailable.",
   configPathUnavailable: "Lyra Agent config path is unavailable.",
-  sectionJcode: "Lyra Agent",
+  sectionAgent: "Lyra Agent",
   sectionSessions: "Sessions",
   memoryConfigTitle: "Memory",
   memoryConfigDescription: "Memory configuration",
@@ -127,8 +127,8 @@ const labels: SettingsAiLabels = {
   memoryConfigStatusInvalidJson: "Invalid JSON"
 };
 
-const jcodeConfigSnapshot = {
-  jcodeHome: "/Users/petehsu/.lyra/modules/agent",
+const agentConfigSnapshot = {
+  agentHome: "/Users/petehsu/.lyra/modules/agent",
   configPath: "/Users/petehsu/.lyra/modules/agent/config.toml",
   config: {
     provider: {
@@ -184,7 +184,7 @@ const jcodeConfigSnapshot = {
   ],
 };
 
-const jcodeSessions = {
+const agentSessions = {
   sessionsDir: "/Users/petehsu/.lyra/modules/agent/sessions",
   sessions: [
     {
@@ -207,14 +207,14 @@ const jcodeSessions = {
   ],
 };
 
-const jcodeAccounts = {
+const agentAccounts = {
   defaultProvider: "mimo-token-plan",
   defaultModel: "mimo-v2.5-pro",
   authStatus: {},
   accounts: [],
 };
 
-const jcodeLoginProviders = {
+const agentLoginProviders = {
   authStatus: {},
   providers: [
     {
@@ -257,10 +257,10 @@ const jcodeLoginProviders = {
 };
 
 const createDesktopApi = () => {
-  const readJcodeConfig = vi.fn(async () => jcodeConfigSnapshot);
-  const listSessions = vi.fn(async () => jcodeSessions);
-  const listAccounts = vi.fn(async () => jcodeAccounts);
-  const listLoginProviders = vi.fn(async () => jcodeLoginProviders);
+  const readAgentConfig = vi.fn(async () => agentConfigSnapshot);
+  const listSessions = vi.fn(async () => agentSessions);
+  const listAccounts = vi.fn(async () => agentAccounts);
+  const listLoginProviders = vi.fn(async () => agentLoginProviders);
   const startAccountLogin = vi.fn(async () => ({
     provider: "claude",
     label: "claude-1",
@@ -273,50 +273,50 @@ const createDesktopApi = () => {
     requiresApiKey: false,
   }));
   const completeAccountLogin = vi.fn(async () => ({
-    accounts: jcodeAccounts,
+    accounts: agentAccounts,
     message: "ok",
   }));
-  const updateJcodeConfig = vi.fn(async () => jcodeConfigSnapshot);
-  const saveJcodeProviderProfile = vi.fn(async () => jcodeConfigSnapshot);
-  const updateJcodeAgentRoles = vi.fn(async () => jcodeConfigSnapshot);
+  const updateAgentConfig = vi.fn(async () => agentConfigSnapshot);
+  const saveAgentProviderProfile = vi.fn(async () => agentConfigSnapshot);
+  const updateAgentRoles = vi.fn(async () => agentConfigSnapshot);
   const openExternal = vi.fn(async () => true);
 
   return {
     api: {
       openExternal,
       agent: {
-        readJcodeConfig,
+        readAgentConfig,
         listSessions,
         listAccounts,
         listLoginProviders,
         startAccountLogin,
         completeAccountLogin,
-        updateJcodeConfig,
-        saveJcodeProviderProfile,
-        updateJcodeAgentRoles,
+        updateAgentConfig,
+        saveAgentProviderProfile,
+        updateAgentRoles,
       },
     } as unknown as LyraDesktopApi,
-    readJcodeConfig,
+    readAgentConfig,
     listSessions,
     listAccounts,
     listLoginProviders,
     startAccountLogin,
     completeAccountLogin,
     openExternal,
-    updateJcodeConfig,
-    saveJcodeProviderProfile,
-    updateJcodeAgentRoles,
+    updateAgentConfig,
+    saveAgentProviderProfile,
+    updateAgentRoles,
   };
 };
 
 const renderModel = (
   desktopApi: LyraDesktopApi | null,
-  onOpenJcodeConfigFile?: (filePath: string) => void | Promise<void>
+  onOpenAgentConfigFile?: (filePath: string) => void | Promise<void>
 ) =>
   renderHook(() => useSettingsAiModel({
     desktopApi,
     labels,
-    onOpenJcodeConfigFile
+    onOpenAgentConfigFile
   }));
 
 describe("useSettingsAiModel", () => {
@@ -327,19 +327,19 @@ describe("useSettingsAiModel", () => {
       expect(result.current.errorMessage).toBe("Lyra Agent runtime bridge is unavailable.");
     });
     expect(result.current.profiles).toEqual([]);
-    expect(result.current.jcodeConfig).toBeNull();
+    expect(result.current.agentConfig).toBeNull();
     expect(result.current.availableModels).toEqual([]);
   });
 
   test("loads Lyra Agent config, commands, and derived provider rows", async () => {
-    const { api, readJcodeConfig, listSessions } = createDesktopApi();
+    const { api, readAgentConfig, listSessions } = createDesktopApi();
     const { result } = renderModel(api);
 
     await waitFor(() => {
       expect(result.current.profiles).toHaveLength(2);
     });
 
-    expect(readJcodeConfig).toHaveBeenCalledTimes(1);
+    expect(readAgentConfig).toHaveBeenCalledTimes(1);
     expect(listSessions).not.toHaveBeenCalled();
     expect(result.current.selectedProfileId).toBe("mimo-token-plan");
     expect(result.current.defaultProfileId).toBe("mimo-token-plan");
@@ -358,15 +358,15 @@ describe("useSettingsAiModel", () => {
   });
 
   test("saves provider profiles through the Lyra Agent runtime bridge", async () => {
-    const { api, saveJcodeProviderProfile } = createDesktopApi();
+    const { api, saveAgentProviderProfile } = createDesktopApi();
     const { result } = renderModel(api);
 
     await waitFor(() => {
-      expect(result.current.jcodeConfig).not.toBeNull();
+      expect(result.current.agentConfig).not.toBeNull();
     });
 
     await act(async () => {
-      await result.current.saveJcodeProviderProfile?.({
+      await result.current.saveAgentProviderProfile?.({
         profileName: "xiaomi-mimo-api",
         baseUrl: "https://api.xiaomimimo.com/v1",
         apiKey: "sk-secret",
@@ -378,7 +378,7 @@ describe("useSettingsAiModel", () => {
       });
     });
 
-    expect(saveJcodeProviderProfile).toHaveBeenCalledWith({
+    expect(saveAgentProviderProfile).toHaveBeenCalledWith({
       profileName: "xiaomi-mimo-api",
       baseUrl: "https://api.xiaomimimo.com/v1",
       apiKey: "sk-secret",
@@ -395,18 +395,18 @@ describe("useSettingsAiModel", () => {
     const { result } = renderModel(api);
 
     await waitFor(() => {
-      expect(result.current.jcodeLoginProviders?.providers).toHaveLength(3);
+      expect(result.current.agentLoginProviders?.providers).toHaveLength(3);
     });
 
     await act(async () => {
-      await result.current.startJcodeAccountLogin?.({ provider: "claude" });
+      await result.current.startAgentAccountLogin?.({ provider: "claude" });
     });
 
     expect(startAccountLogin).toHaveBeenCalledWith({ provider: "claude" });
     expect(openExternal).toHaveBeenCalledWith("https://example.com/oauth");
 
     await act(async () => {
-      await result.current.completeJcodeAccountLogin?.({
+      await result.current.completeAgentAccountLogin?.({
         provider: "claude",
         flowId: "flow",
         callbackInput: "https://callback.example/?code=abc",
@@ -423,7 +423,7 @@ describe("useSettingsAiModel", () => {
   });
 
   test("sets the Lyra Agent default provider through config update", async () => {
-    const { api, updateJcodeConfig } = createDesktopApi();
+    const { api, updateAgentConfig } = createDesktopApi();
     const { result } = renderModel(api);
 
     await waitFor(() => {
@@ -434,22 +434,22 @@ describe("useSettingsAiModel", () => {
       await result.current.setDefaultProfile("openai-compatible");
     });
 
-    expect(updateJcodeConfig).toHaveBeenCalledWith({
+    expect(updateAgentConfig).toHaveBeenCalledWith({
       defaultProvider: "openai-compatible",
       defaultModel: "gpt-5",
     });
   });
 
   test("saves notification config through the Lyra Agent runtime bridge", async () => {
-    const { api, updateJcodeConfig } = createDesktopApi();
+    const { api, updateAgentConfig } = createDesktopApi();
     const { result } = renderModel(api);
 
     await waitFor(() => {
-      expect(result.current.jcodeConfig).not.toBeNull();
+      expect(result.current.agentConfig).not.toBeNull();
     });
 
     await act(async () => {
-      await result.current.updateJcodeConfig?.({
+      await result.current.updateAgentConfig?.({
         desktopNotifications: false,
         ntfyTopic: "agent-topic",
         emailEnabled: true,
@@ -459,7 +459,7 @@ describe("useSettingsAiModel", () => {
       });
     });
 
-    expect(updateJcodeConfig).toHaveBeenCalledWith({
+    expect(updateAgentConfig).toHaveBeenCalledWith({
       desktopNotifications: false,
       ntfyTopic: "agent-topic",
       emailEnabled: true,
@@ -470,15 +470,15 @@ describe("useSettingsAiModel", () => {
   });
 
   test("saves agent role model overrides through the Lyra Agent bridge", async () => {
-    const { api, updateJcodeAgentRoles } = createDesktopApi();
+    const { api, updateAgentRoles } = createDesktopApi();
     const { result } = renderModel(api);
 
     await waitFor(() => {
-      expect(result.current.jcodeConfig).not.toBeNull();
+      expect(result.current.agentConfig).not.toBeNull();
     });
 
     await act(async () => {
-      await result.current.updateJcodeAgentRoles?.({
+      await result.current.updateAgentRoles?.({
         swarmModel: "gpt-5",
         reviewModel: "gpt-5-mini",
         judgeModel: "gpt-5",
@@ -487,7 +487,7 @@ describe("useSettingsAiModel", () => {
       });
     });
 
-    expect(updateJcodeAgentRoles).toHaveBeenCalledWith({
+    expect(updateAgentRoles).toHaveBeenCalledWith({
       swarmModel: "gpt-5",
       reviewModel: "gpt-5-mini",
       judgeModel: "gpt-5",
@@ -498,26 +498,26 @@ describe("useSettingsAiModel", () => {
 
   test("opens the persisted Lyra Agent config file through the workspace file editor", async () => {
     const { api } = createDesktopApi();
-    const onOpenJcodeConfigFile = vi.fn();
-    const { result } = renderModel(api, onOpenJcodeConfigFile);
+    const onOpenAgentConfigFile = vi.fn();
+    const { result } = renderModel(api, onOpenAgentConfigFile);
 
     await waitFor(() => {
-      expect(result.current.jcodeConfig).not.toBeNull();
+      expect(result.current.agentConfig).not.toBeNull();
     });
 
     await act(async () => {
-      await result.current.openJcodeConfigFile?.();
+      await result.current.openAgentConfigFile?.();
     });
 
-    expect(onOpenJcodeConfigFile).toHaveBeenCalledWith("/Users/petehsu/.lyra/modules/agent/config.toml");
+    expect(onOpenAgentConfigFile).toHaveBeenCalledWith("/Users/petehsu/.lyra/modules/agent/config.toml");
   });
 
   test("keeps draft field edits local until explicit Lyra Agent save", async () => {
-    const { api, saveJcodeProviderProfile } = createDesktopApi();
+    const { api, saveAgentProviderProfile } = createDesktopApi();
     const { result } = renderModel(api);
 
     await waitFor(() => {
-      expect(result.current.jcodeConfig).not.toBeNull();
+      expect(result.current.agentConfig).not.toBeNull();
     });
 
     act(() => {
@@ -533,6 +533,6 @@ describe("useSettingsAiModel", () => {
     });
     expect(result.current.modelSelectionMode).toBe("custom");
     expect(result.current.draft.modelsText).toBe("custom-model");
-    expect(saveJcodeProviderProfile).not.toHaveBeenCalled();
+    expect(saveAgentProviderProfile).not.toHaveBeenCalled();
   });
 });

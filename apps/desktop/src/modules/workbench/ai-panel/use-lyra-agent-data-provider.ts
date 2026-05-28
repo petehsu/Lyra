@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import type {
-  JcodeModelsListResponse,
+  AgentModelCatalogSnapshot,
   AgentRuntimeEvent,
   AgentSessionSnapshot
 } from "../../../shared/agent";
@@ -27,7 +27,7 @@ import {
   agentSessionToSessionMeta,
   agentSessionToTodos,
   applyAgentRuntimeEventToSnapshot,
-  jcodeModelsToModelOptions
+  agentModelsToModelOptions
 } from "../agent-session-view-model";
 
 type FileRevealLocation = {
@@ -289,7 +289,7 @@ export const useLyraAgentDataProvider = (
   }
 
   const [state, dispatch] = useReducer(reducer, initialState);
-  const [modelState, setModelState] = useState<JcodeModelsListResponse | null>(null);
+  const [modelState, setModelState] = useState<AgentModelCatalogSnapshot | null>(null);
   const [modelBusy, setModelBusy] = useState<"refresh" | "switch" | null>(null);
   const [browserFollowModeEnabled, setBrowserFollowModeEnabled] = useState(false);
   const [pendingClarifications, setPendingClarifications] = useState<DecisionQuestion[]>([]);
@@ -298,17 +298,17 @@ export const useLyraAgentDataProvider = (
   const previousSessionIdRef = useRef<string | null>(lastAgentSessionId);
   const materializedImagePathsRef = useRef<Map<string, string>>(new Map());
   const modelConfigSignature = useMemo(() => {
-    const config = settingsAiModel?.jcodeConfig?.config as {
+    const config = settingsAiModel?.agentConfig?.config as {
       provider?: unknown;
       providers?: unknown;
     } | undefined;
     return JSON.stringify({
       provider: config?.provider ?? null,
       providers: config?.providers ?? null,
-      accountsDefaultProvider: settingsAiModel?.jcodeAccounts?.defaultProvider ?? null,
-      accountsDefaultModel: settingsAiModel?.jcodeAccounts?.defaultModel ?? null
+      accountsDefaultProvider: settingsAiModel?.agentAccounts?.defaultProvider ?? null,
+      accountsDefaultModel: settingsAiModel?.agentAccounts?.defaultModel ?? null
     });
-  }, [settingsAiModel?.jcodeAccounts, settingsAiModel?.jcodeConfig]);
+  }, [settingsAiModel?.agentAccounts, settingsAiModel?.agentConfig]);
 
   useEffect(() => {
     currentSessionIdRef.current = state.session?.id ?? null;
@@ -338,7 +338,7 @@ export const useLyraAgentDataProvider = (
       if (eventSessionId !== null && currentSessionIdRef.current !== eventSessionId) {
         return;
       }
-      if (event.kind === "clarificationRequired") {
+      if (event.kind === "clarificationRequested") {
         setPendingClarifications((items) =>
           upsertById(items, {
             id: event.clarificationId,
@@ -348,7 +348,7 @@ export const useLyraAgentDataProvider = (
             detail: event.detail ?? null
           })
         );
-      } else if (event.kind === "permissionRequired") {
+      } else if (event.kind === "permissionRequested") {
         setPendingPermissions((items) =>
           upsertById(items, {
             id: event.permissionId,
@@ -412,7 +412,7 @@ export const useLyraAgentDataProvider = (
   useEffect(() => {
     if (desktopApi?.agent === undefined || state.session === null) return;
     let disposed = false;
-    void desktopApi.agent.listJcodeModels({ sessionId: state.session.id })
+    void desktopApi.agent.listAgentModels({ sessionId: state.session.id })
       .then((response) => {
         if (!disposed) setModelState(response);
       })
@@ -662,7 +662,7 @@ export const useLyraAgentDataProvider = (
     if (trimmed.length === 0) return;
     setModelBusy("switch");
     try {
-      setModelState(await desktopApi.agent.switchJcodeModel({
+      setModelState(await desktopApi.agent.switchAgentModel({
         sessionId: currentSessionId,
         model: trimmed
       }));
@@ -675,7 +675,7 @@ export const useLyraAgentDataProvider = (
     if (desktopApi?.agent === undefined) return;
     setModelBusy("refresh");
     try {
-      setModelState(await desktopApi.agent.refreshJcodeModels({ sessionId: currentSessionId }));
+      setModelState(await desktopApi.agent.refreshAgentModels({ sessionId: currentSessionId }));
     } finally {
       setModelBusy(null);
     }
@@ -790,7 +790,7 @@ export const useLyraAgentDataProvider = (
     if (desktopApi?.agent === undefined) return;
     setModelBusy("switch");
     try {
-      setModelState(await desktopApi.agent.updateJcodeProviderOptions({
+      setModelState(await desktopApi.agent.updateAgentProviderOptions({
         sessionId: currentSessionId,
         reasoningEffort: value
       }));
@@ -803,7 +803,7 @@ export const useLyraAgentDataProvider = (
     if (desktopApi?.agent === undefined) return;
     setModelBusy("switch");
     try {
-      setModelState(await desktopApi.agent.updateJcodeProviderOptions({
+      setModelState(await desktopApi.agent.updateAgentProviderOptions({
         sessionId: currentSessionId,
         serviceTier: value
       }));
@@ -949,7 +949,7 @@ export const useLyraAgentDataProvider = (
     const modelControls: ComposerModelControls | null = modelState === null ? null : {
       currentModel: modelState.currentModel,
       currentProvider: modelState.currentProvider,
-      models: jcodeModelsToModelOptions(modelState),
+      models: agentModelsToModelOptions(modelState),
       reasoningEffort: {
         current: modelState.reasoningEffort.current ?? null,
         options: [...modelState.reasoningEffort.options],

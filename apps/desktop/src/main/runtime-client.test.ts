@@ -11,7 +11,7 @@ describe("Lyra runtime client", () => {
         PATH: "/bin",
         LYRA_AGENT_HOME: "/legacy/.lyra-agent",
         LYRA_AGENT_RUNTIME_DIR: "/legacy/lyra-agent-runtime",
-        JCODE_HOME: "/legacy/.jcode",
+        JCODE_HOME: "/legacy/.agent",
         JCODE_RUNTIME_DIR: "/legacy/runtime"
       },
       {

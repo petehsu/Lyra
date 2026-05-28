@@ -115,7 +115,7 @@ const ensureSocketParent = (socketPath: string): void => {
   fs.mkdirSync(path.dirname(socketPath), { recursive: true });
 };
 
-const resolveJcodeRuntimeDir = (agentStorageRoot: string): string =>
+const resolveAgentRuntimeDir = (agentStorageRoot: string): string =>
   path.join(agentStorageRoot, "runtime");
 
 const maybeResourcesPath = (): string | undefined => {
@@ -158,7 +158,7 @@ const resolveLyraDesignNodePathEntries = (
 
 const ensureAgentStoragePaths = (options: LyraRuntimeClientOptions): void => {
   fs.mkdirSync(options.agentStorageRoot, { recursive: true });
-  fs.mkdirSync(resolveJcodeRuntimeDir(options.agentStorageRoot), { recursive: true });
+  fs.mkdirSync(resolveAgentRuntimeDir(options.agentStorageRoot), { recursive: true });
 };
 
 const buildRuntimeDaemonEnv = (
@@ -173,9 +173,9 @@ const buildRuntimeDaemonEnv = (
     ...baseEnv,
     ELECTRON_RUN_AS_NODE: "",
     LYRA_AGENT_HOME: options.agentStorageRoot,
-    LYRA_AGENT_RUNTIME_DIR: resolveJcodeRuntimeDir(options.agentStorageRoot),
+    LYRA_AGENT_RUNTIME_DIR: resolveAgentRuntimeDir(options.agentStorageRoot),
     JCODE_HOME: options.agentStorageRoot,
-    JCODE_RUNTIME_DIR: resolveJcodeRuntimeDir(options.agentStorageRoot),
+    JCODE_RUNTIME_DIR: resolveAgentRuntimeDir(options.agentStorageRoot),
     LYRA_JS_REPL_NODE_PATH: nodePath,
     LYRA_JS_REPL_NODE_RUN_AS_NODE: "1",
     LYRA_DESIGN_NODE_PATH: nodePath,
@@ -477,6 +477,6 @@ export const runtimeClientInternalsForTests = {
   buildRuntimeDaemonEnv,
   resolveLyraDesignNodePathEntries,
   resolveLyraDesignPlaywrightBrowsersPath,
-  resolveJcodeRuntimeDir,
+  resolveAgentRuntimeDir,
   resolveSocketPath
 };

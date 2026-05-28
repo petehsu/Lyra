@@ -48,8 +48,8 @@ const labels: SettingsAiLabels = {
   configFileTitle: "Lyra Agent config file",
   configFileDescription: "Open the real Lyra Agent config.",
   openConfigFile: "Open Config",
-  refreshJcode: "Refresh",
-  jcodeConfigAriaLabel: "Lyra Agent config",
+  refreshAgent: "Refresh",
+  agentConfigAriaLabel: "Lyra Agent config",
   providerAutoFallback: "auto",
   defaultModelFallback: "Lyra Agent default model",
   customProviderFallback: "custom provider",
@@ -117,7 +117,7 @@ const labels: SettingsAiLabels = {
   runtimeUnavailable: "Lyra Agent runtime bridge is unavailable.",
   fileEditorUnavailable: "Workbench file editor is unavailable.",
   configPathUnavailable: "Lyra Agent config path is unavailable.",
-  sectionJcode: "Lyra Agent",
+  sectionAgent: "Lyra Agent",
   sectionSessions: "Sessions",
   memoryConfigTitle: "Memory",
   memoryConfigDescription: "Memory configuration",
@@ -133,7 +133,7 @@ const labels: SettingsAiLabels = {
 const draft: SettingsAiDraft = {
   id: null,
   name: "lyra-agent-provider",
-  providerId: "jcode",
+  providerId: "agent",
   protocolId: "openai_chat_completions",
   presetId: null,
   connectionConfig: {},
@@ -157,8 +157,8 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
   defaultModelNames: [],
   selectedPresetId: null,
   selectedPreset: null,
-  jcodeConfig: {
-    jcodeHome: "/Users/petehsu/.lyra/modules/agent",
+  agentConfig: {
+    agentHome: "/Users/petehsu/.lyra/modules/agent",
     configPath: "/Users/petehsu/.lyra/modules/agent/config.toml",
     config: {
       provider: {
@@ -222,7 +222,7 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
       },
     ],
   },
-  jcodeLoginProviders: {
+  agentLoginProviders: {
     authStatus: {},
     providers: [
       {
@@ -278,13 +278,13 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
   deleteProviderModels: vi.fn(),
   deleteConfiguredModel: vi.fn(),
   setDefaultProfile: vi.fn(),
-  refreshJcode: vi.fn(),
-  openJcodeConfigFile: vi.fn(),
-  updateJcodeConfig: vi.fn(),
-  saveJcodeProviderProfile: vi.fn(),
-  startJcodeAccountLogin: vi.fn(),
-  completeJcodeAccountLogin: vi.fn(),
-  updateJcodeAgentRoles: vi.fn(),
+  refreshAgent: vi.fn(),
+  openAgentConfigFile: vi.fn(),
+  updateAgentConfig: vi.fn(),
+  saveAgentProviderProfile: vi.fn(),
+  startAgentAccountLogin: vi.fn(),
+  completeAgentAccountLogin: vi.fn(),
+  updateAgentRoles: vi.fn(),
   ...overrides,
 });
 
@@ -316,8 +316,8 @@ describe("SettingsAiView", () => {
   });
 
   test("saves an API key provider through the Lyra Agent login bridge", () => {
-    const completeJcodeAccountLogin = vi.fn();
-    const model = createModel({ completeJcodeAccountLogin });
+    const completeAgentAccountLogin = vi.fn();
+    const model = createModel({ completeAgentAccountLogin });
 
     render(<SettingsAiView labels={labels} model={model} />);
 
@@ -338,7 +338,7 @@ describe("SettingsAiView", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Save profile/ }));
 
-    expect(completeJcodeAccountLogin).toHaveBeenCalledWith({
+    expect(completeAgentAccountLogin).toHaveBeenCalledWith({
       provider: "openai-compatible",
       profileName: "xiaomi-mimo-api",
       baseUrl: "https://api.xiaomimimo.com/v1",
@@ -351,8 +351,8 @@ describe("SettingsAiView", () => {
 
   test("does not render stored provider secrets as visible text", () => {
     const model = createModel({
-      jcodeConfig: {
-        jcodeHome: "/Users/petehsu/.lyra/modules/agent",
+      agentConfig: {
+        agentHome: "/Users/petehsu/.lyra/modules/agent",
         configPath: "/Users/petehsu/.lyra/modules/agent/config.toml",
         config: {
           providers: {
@@ -377,33 +377,33 @@ describe("SettingsAiView", () => {
   });
 
   test("updates the Lyra Agent default provider when a provider card is selected", () => {
-    const updateJcodeConfig = vi.fn();
-    const model = createModel({ updateJcodeConfig });
+    const updateAgentConfig = vi.fn();
+    const model = createModel({ updateAgentConfig });
 
     render(<SettingsAiView labels={labels} model={model} />);
 
     fireEvent.click(screen.getByRole("button", { name: /openai-compatible gpt-5/ }));
 
-    expect(updateJcodeConfig).toHaveBeenCalledWith({
+    expect(updateAgentConfig).toHaveBeenCalledWith({
       defaultProvider: "openai-compatible",
       defaultModel: "gpt-5",
     });
   });
 
   test("opens the Lyra Agent config file from the settings surface", () => {
-    const openJcodeConfigFile = vi.fn();
-    const model = createModel({ openJcodeConfigFile });
+    const openAgentConfigFile = vi.fn();
+    const model = createModel({ openAgentConfigFile });
 
     render(<SettingsAiView labels={labels} model={model} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open Config" }));
 
-    expect(openJcodeConfigFile).toHaveBeenCalledTimes(1);
+    expect(openAgentConfigFile).toHaveBeenCalledTimes(1);
   });
 
   test("saves agent role model overrides", () => {
-    const updateJcodeAgentRoles = vi.fn();
-    const model = createModel({ updateJcodeAgentRoles });
+    const updateAgentRoles = vi.fn();
+    const model = createModel({ updateAgentRoles });
 
     render(<SettingsAiView labels={labels} model={model} />);
 
@@ -424,7 +424,7 @@ describe("SettingsAiView", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Save role models/ }));
 
-    expect(updateJcodeAgentRoles).toHaveBeenCalledWith({
+    expect(updateAgentRoles).toHaveBeenCalledWith({
       swarmModel: "claude-opus-4-6",
       reviewModel: "gpt-5-review",
       judgeModel: "gpt-5-judge",
@@ -434,7 +434,7 @@ describe("SettingsAiView", () => {
   });
 
   test("starts Google Gmail login with OAuth credentials and access tier", async () => {
-    const startJcodeAccountLogin = vi.fn(async () => ({
+    const startAgentAccountLogin = vi.fn(async () => ({
       provider: "google",
       label: "gmail",
       flowId: "flow-google",
@@ -445,7 +445,7 @@ describe("SettingsAiView", () => {
       requiresCallback: true,
       requiresApiKey: false,
     }));
-    const model = createModel({ startJcodeAccountLogin });
+    const model = createModel({ startAgentAccountLogin });
 
     render(<SettingsAiView labels={labels} model={model} />);
 
@@ -462,7 +462,7 @@ describe("SettingsAiView", () => {
       fireEvent.click(screen.getByRole("button", { name: /Start login/ }));
     });
 
-    expect(startJcodeAccountLogin).toHaveBeenCalledWith({
+    expect(startAgentAccountLogin).toHaveBeenCalledWith({
       provider: "google",
       googleClientId: "client-id.apps.googleusercontent.com",
       googleClientSecret: "client-secret",
@@ -471,8 +471,8 @@ describe("SettingsAiView", () => {
   });
 
   test("saves notification config through the Lyra Agent config bridge", () => {
-    const updateJcodeConfig = vi.fn();
-    const model = createModel({ updateJcodeConfig });
+    const updateAgentConfig = vi.fn();
+    const model = createModel({ updateAgentConfig });
 
     render(<SettingsAiView labels={labels} model={model} />);
 
@@ -495,7 +495,7 @@ describe("SettingsAiView", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Save notifications/ }));
 
-    expect(updateJcodeConfig).toHaveBeenCalledWith(expect.objectContaining({
+    expect(updateAgentConfig).toHaveBeenCalledWith(expect.objectContaining({
       ntfyTopic: "agent-topic",
       emailEnabled: true,
       emailTo: "ops@example.com",
@@ -508,8 +508,8 @@ describe("SettingsAiView", () => {
 
   test("does not render stored notification secrets as visible text", () => {
     const model = createModel({
-      jcodeConfig: {
-        jcodeHome: "/Users/petehsu/.lyra/modules/agent",
+      agentConfig: {
+        agentHome: "/Users/petehsu/.lyra/modules/agent",
         configPath: "/Users/petehsu/.lyra/modules/agent/config.toml",
         config: {
           safety: {

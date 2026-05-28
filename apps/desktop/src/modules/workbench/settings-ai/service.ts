@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
-  JcodeAccountLoginCompleteRequest,
-  JcodeAccountLoginCompleteResponse,
-  JcodeAccountLoginStartRequest,
-  JcodeAccountLoginStartResponse,
-  JcodeAccountRequest,
-  JcodeAccountsResponse,
-  JcodeConfigSnapshot,
-  JcodeConfigUpdateRequest,
-  JcodeAgentRolesUpdateRequest,
-  JcodeLoginProvidersResponse,
-  JcodeProviderProfileSaveRequest,
+  AgentAccountLoginCompleteRequest,
+  AgentAccountLoginCompleteResponse,
+  AgentAccountLoginStartRequest,
+  AgentAccountLoginStartResponse,
+  AgentAccountRequest,
+  AgentAccountsSnapshot,
+  AgentConfigSnapshot,
+  AgentConfigUpdateRequest,
+  AgentRolesUpdateRequest,
+  AgentLoginProviderCatalogSnapshot,
+  AgentProviderProfileSaveRequest,
 } from "../../../shared/desktop-bridge";
 import type { AiProviderModelEntry, AiProviderProfile } from "../../../shared/ai";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
@@ -26,7 +26,7 @@ import type {
 type UseSettingsAiModelOptions = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: SettingsAiLabels;
-  readonly onOpenJcodeConfigFile?:
+  readonly onOpenAgentConfigFile?:
     | ((filePath: string) => void | Promise<void>)
     | undefined;
 };
@@ -34,7 +34,7 @@ type UseSettingsAiModelOptions = {
 const emptyDraft = (): SettingsAiDraft => ({
   id: null,
   name: "lyra-agent-provider",
-  providerId: "jcode",
+  providerId: "agent",
   protocolId: "openai_chat_completions",
   presetId: null,
   connectionConfig: {},
@@ -48,13 +48,13 @@ const emptyDraft = (): SettingsAiDraft => ({
 });
 
 const emptySections = (labels: SettingsAiLabels): readonly SettingsAiPresetSection[] => [
-  { id: "mainstream", label: labels.sectionJcode, presets: [] },
+  { id: "mainstream", label: labels.sectionAgent, presets: [] },
   { id: "local", label: labels.sectionSessions, presets: [] },
   { id: "custom", label: labels.customSection, presets: [] },
 ];
 
-const profilesFromJcodeConfig = (
-  snapshot: JcodeConfigSnapshot | null
+const profilesFromAgentConfig = (
+  snapshot: AgentConfigSnapshot | null
 ): readonly AiProviderProfile[] => {
   const config = snapshot?.config as {
     provider?: {
@@ -109,45 +109,45 @@ const profilesFromJcodeConfig = (
 export const useSettingsAiModel = ({
   desktopApi,
   labels,
-  onOpenJcodeConfigFile,
+  onOpenAgentConfigFile,
 }: UseSettingsAiModelOptions): SettingsAiModel => {
-  const [jcodeConfig, setJcodeConfig] = useState<JcodeConfigSnapshot | null>(null);
-  const [jcodeAccounts, setJcodeAccounts] = useState<JcodeAccountsResponse | null>(null);
-  const [jcodeLoginProviders, setJcodeLoginProviders] =
-    useState<JcodeLoginProvidersResponse | null>(null);
+  const [agentConfig, setAgentConfig] = useState<AgentConfigSnapshot | null>(null);
+  const [agentAccounts, setAgentAccounts] = useState<AgentAccountsSnapshot | null>(null);
+  const [agentLoginProviders, setAgentLoginProviders] =
+    useState<AgentLoginProviderCatalogSnapshot | null>(null);
   const [draft, setDraft] = useState<SettingsAiDraft>(() => emptyDraft());
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const refreshJcode = useCallback(async (): Promise<void> => {
+  const refreshAgent = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) {
       setErrorMessage(labels.runtimeUnavailable);
       return;
     }
-    const config = await desktopApi.agent.readJcodeConfig();
-    setJcodeConfig(config);
+    const config = await desktopApi.agent.readAgentConfig();
+    setAgentConfig(config);
     const listAccounts = desktopApi.agent.listAccounts;
     if (typeof listAccounts === "function") {
-      setJcodeAccounts(await listAccounts());
+      setAgentAccounts(await listAccounts());
     }
     const listLoginProviders = desktopApi.agent.listLoginProviders;
     if (typeof listLoginProviders === "function") {
-      setJcodeLoginProviders(await listLoginProviders());
+      setAgentLoginProviders(await listLoginProviders());
     }
     setErrorMessage(null);
   }, [desktopApi, labels.runtimeUnavailable]);
 
   useEffect(() => {
-    void refreshJcode().catch((error: unknown) => {
+    void refreshAgent().catch((error: unknown) => {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     });
-  }, [refreshJcode]);
+  }, [refreshAgent]);
 
-  const updateJcodeConfig = useCallback(async (request: JcodeConfigUpdateRequest) => {
+  const updateAgentConfig = useCallback(async (request: AgentConfigUpdateRequest) => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
     try {
-      setJcodeConfig(await desktopApi.agent.updateJcodeConfig(request));
+      setAgentConfig(await desktopApi.agent.updateAgentConfig(request));
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
@@ -156,25 +156,25 @@ export const useSettingsAiModel = ({
     }
   }, [desktopApi]);
 
-  const saveJcodeProviderProfile = useCallback(async (
-    request: JcodeProviderProfileSaveRequest
+  const saveAgentProviderProfile = useCallback(async (
+    request: AgentProviderProfileSaveRequest
   ) => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
     try {
-      setJcodeConfig(await desktopApi.agent.saveJcodeProviderProfile(request));
+      setAgentConfig(await desktopApi.agent.saveAgentProviderProfile(request));
       setErrorMessage(null);
-      await refreshJcode();
+      await refreshAgent();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSaving(false);
     }
-  }, [desktopApi, refreshJcode]);
+  }, [desktopApi, refreshAgent]);
 
-  const startJcodeAccountLogin = useCallback(async (
-    request: JcodeAccountLoginStartRequest
-  ): Promise<JcodeAccountLoginStartResponse | null> => {
+  const startAgentAccountLogin = useCallback(async (
+    request: AgentAccountLoginStartRequest
+  ): Promise<AgentAccountLoginStartResponse | null> => {
     if (desktopApi?.agent === undefined) return null;
     setIsSaving(true);
     try {
@@ -192,15 +192,15 @@ export const useSettingsAiModel = ({
     }
   }, [desktopApi]);
 
-  const completeJcodeAccountLogin = useCallback(async (
-    request: JcodeAccountLoginCompleteRequest
-  ): Promise<JcodeAccountLoginCompleteResponse | null> => {
+  const completeAgentAccountLogin = useCallback(async (
+    request: AgentAccountLoginCompleteRequest
+  ): Promise<AgentAccountLoginCompleteResponse | null> => {
     if (desktopApi?.agent === undefined) return null;
     setIsSaving(true);
     try {
       const response = await desktopApi.agent.completeAccountLogin(request);
-      setJcodeAccounts(response.accounts);
-      await refreshJcode();
+      setAgentAccounts(response.accounts);
+      await refreshAgent();
       setErrorMessage(null);
       return response;
     } catch (error) {
@@ -209,84 +209,84 @@ export const useSettingsAiModel = ({
     } finally {
       setIsSaving(false);
     }
-  }, [desktopApi, refreshJcode]);
+  }, [desktopApi, refreshAgent]);
 
-  const updateJcodeAgentRoles = useCallback(async (
-    request: JcodeAgentRolesUpdateRequest
+  const updateAgentRoles = useCallback(async (
+    request: AgentRolesUpdateRequest
   ) => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
     try {
-      setJcodeConfig(await desktopApi.agent.updateJcodeAgentRoles(request));
+      setAgentConfig(await desktopApi.agent.updateAgentRoles(request));
       setErrorMessage(null);
-      await refreshJcode();
+      await refreshAgent();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSaving(false);
     }
-  }, [desktopApi, refreshJcode]);
+  }, [desktopApi, refreshAgent]);
 
-  const switchJcodeAccount = useCallback(async (request: JcodeAccountRequest) => {
+  const switchAgentAccount = useCallback(async (request: AgentAccountRequest) => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
     try {
-      setJcodeAccounts(await desktopApi.agent.switchAccount(request));
-      await refreshJcode();
+      setAgentAccounts(await desktopApi.agent.switchAccount(request));
+      await refreshAgent();
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSaving(false);
     }
-  }, [desktopApi, refreshJcode]);
+  }, [desktopApi, refreshAgent]);
 
-  const removeJcodeAccount = useCallback(async (request: JcodeAccountRequest) => {
+  const removeAgentAccount = useCallback(async (request: AgentAccountRequest) => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
     try {
-      setJcodeAccounts(await desktopApi.agent.removeAccount(request));
-      await refreshJcode();
+      setAgentAccounts(await desktopApi.agent.removeAccount(request));
+      await refreshAgent();
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSaving(false);
     }
-  }, [desktopApi, refreshJcode]);
+  }, [desktopApi, refreshAgent]);
 
-  const openJcodeConfigFile = useCallback(async (): Promise<void> => {
+  const openAgentConfigFile = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) {
       setErrorMessage(labels.runtimeUnavailable);
       return;
     }
-    if (onOpenJcodeConfigFile === undefined) {
+    if (onOpenAgentConfigFile === undefined) {
       setErrorMessage(labels.fileEditorUnavailable);
       return;
     }
     try {
-      const snapshot = jcodeConfig ?? await desktopApi.agent.readJcodeConfig();
-      setJcodeConfig(snapshot);
+      const snapshot = agentConfig ?? await desktopApi.agent.readAgentConfig();
+      setAgentConfig(snapshot);
       const configPath = snapshot.configPath?.trim() ?? "";
       if (configPath.length === 0) {
         setErrorMessage(labels.configPathUnavailable);
         return;
       }
-      await onOpenJcodeConfigFile(configPath);
+      await onOpenAgentConfigFile(configPath);
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     }
   }, [
     desktopApi,
-    jcodeConfig,
+    agentConfig,
     labels.configPathUnavailable,
     labels.fileEditorUnavailable,
     labels.runtimeUnavailable,
-    onOpenJcodeConfigFile
+    onOpenAgentConfigFile
   ]);
 
-  const profiles = useMemo(() => profilesFromJcodeConfig(jcodeConfig), [jcodeConfig]);
+  const profiles = useMemo(() => profilesFromAgentConfig(agentConfig), [agentConfig]);
   const defaultProfile = profiles.find((profile) => profile.isDefault) ?? null;
 
   const noopAsync = useCallback(async (): Promise<void> => undefined, []);
@@ -303,9 +303,9 @@ export const useSettingsAiModel = ({
     defaultModelNames: defaultProfile?.model ? [defaultProfile.model] : [],
     selectedPresetId: null,
     selectedPreset: null,
-    jcodeConfig,
-    jcodeAccounts,
-    jcodeLoginProviders,
+    agentConfig,
+    agentAccounts,
+    agentLoginProviders,
     draft,
     modelSelectionMode: draft.modelSelectionMode,
     availableModels: [],
@@ -346,19 +346,19 @@ export const useSettingsAiModel = ({
     deleteConfiguredModel: noopAsync,
     setDefaultProfile: async (profileId: string) => {
       const profile = profiles.find((entry) => entry.id === profileId);
-      await updateJcodeConfig({
+      await updateAgentConfig({
         defaultProvider: profileId,
         defaultModel: profile?.model ?? null,
       });
     },
-    refreshJcode,
-    openJcodeConfigFile,
-    updateJcodeConfig,
-    saveJcodeProviderProfile,
-    startJcodeAccountLogin,
-    completeJcodeAccountLogin,
-    updateJcodeAgentRoles,
-    switchJcodeAccount,
-    removeJcodeAccount,
+    refreshAgent,
+    openAgentConfigFile,
+    updateAgentConfig,
+    saveAgentProviderProfile,
+    startAgentAccountLogin,
+    completeAgentAccountLogin,
+    updateAgentRoles,
+    switchAgentAccount,
+    removeAgentAccount,
   };
 };

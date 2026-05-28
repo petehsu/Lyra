@@ -41,46 +41,46 @@ import {
   type AgentTurnSendRequest,
   type AgentTurnSendResponse,
   type AppMetaPayload,
-  type JcodeAccountLoginCompleteRequest,
-  type JcodeAccountLoginCompleteResponse,
-  type JcodeAccountLoginRequest,
-  type JcodeAccountLoginStartRequest,
-  type JcodeAccountLoginStartResponse,
-  type JcodeAccountRequest,
-  type JcodeAccountsResponse,
-  type JcodeAutomationUpdateRequest,
-  type JcodeAutomationUpdateResponse,
-  type JcodeBtwRunRequest,
-  type JcodeCompactResponse,
-  type JcodeConfigSnapshot,
-  type JcodeConfigUpdateRequest,
-  type JcodeAgentActionRunRequest,
-  type JcodeAgentRolesUpdateRequest,
-  type JcodeFeedbackRunRequest,
-  type JcodeGoalsRequest,
-  type JcodeGoalsResponse,
-  type JcodeLoginProvidersResponse,
-  type JcodeModelRefreshRequest,
-  type JcodeModelsListRequest,
-  type JcodeModelsListResponse,
-  type JcodeModelSwitchRequest,
-  type JcodeOvernightListResponse,
-  type JcodeOvernightRunRequest,
-  type JcodeOvernightRunResponse,
-  type JcodeOvernightStartRequest,
-  type JcodeOvernightStartResponse,
-  type JcodeProviderOptionsUpdateRequest,
-  type JcodeProviderProfileSaveRequest,
-  type JcodePokeRequest,
-  type JcodePokeResponse,
-  type JcodeSessionActionRequest,
-  type JcodeSessionForkResponse,
-  type JcodeSessionSummary,
-  type JcodeSessionsListRequest,
-  type JcodeSessionsListResponse,
-  type JcodeSidePanelActionResponse,
-  type JcodeSubagentRunRequest,
-  type JcodeSubagentRunResponse,
+  type AgentAccountLoginCompleteRequest,
+  type AgentAccountLoginCompleteResponse,
+  type AgentAccountLoginRequest,
+  type AgentAccountLoginStartRequest,
+  type AgentAccountLoginStartResponse,
+  type AgentAccountRequest,
+  type AgentAccountsSnapshot,
+  type AgentAutomationUpdateRequest,
+  type AgentAutomationUpdateResponse,
+  type AgentBtwRunRequest,
+  type AgentCompactResponse,
+  type AgentConfigSnapshot,
+  type AgentConfigUpdateRequest,
+  type AgentActionRunRequest,
+  type AgentRolesUpdateRequest,
+  type AgentFeedbackRunRequest,
+  type AgentGoalsRequest,
+  type AgentGoalsResponse,
+  type AgentLoginProviderCatalogSnapshot,
+  type AgentModelRefreshRequest,
+  type AgentModelCatalogRequest,
+  type AgentModelCatalogSnapshot,
+  type AgentModelSwitchRequest,
+  type AgentOvernightListResponse,
+  type AgentOvernightRunRequest,
+  type AgentOvernightRunResponse,
+  type AgentOvernightStartRequest,
+  type AgentOvernightStartResponse,
+  type AgentProviderOptionsUpdateRequest,
+  type AgentProviderProfileSaveRequest,
+  type AgentPokeRequest,
+  type AgentPokeResponse,
+  type AgentSessionActionRequest,
+  type AgentSessionForkResponse,
+  type AgentSessionSummary,
+  type AgentSessionListRequest,
+  type AgentSessionListResponse,
+  type AgentSidePanelActionResponse,
+  type AgentSubagentRunRequest,
+  type AgentSubagentRunResponse,
   type DownloadManagerBatchRequest,
   type DownloadManagerEnqueueRequest,
   type DownloadManagerEvent,
@@ -933,31 +933,31 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentSessionRead,
         request ?? {}
       ) as Promise<AgentSessionSnapshot>,
-    listSessions: (request?: JcodeSessionsListRequest) =>
+    listSessions: (request?: AgentSessionListRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentSessionList,
         request ?? {}
-      ) as Promise<JcodeSessionsListResponse>,
+      ) as Promise<AgentSessionListResponse>,
     saveSession: (request: AgentSessionSaveRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentSessionSave,
         request
-      ) as Promise<JcodeSessionSummary>,
+      ) as Promise<AgentSessionSummary>,
     unsaveSession: (request: AgentSessionDeleteRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentSessionUnsave,
         request
-      ) as Promise<JcodeSessionSummary>,
+      ) as Promise<AgentSessionSummary>,
     renameSession: (request: AgentSessionRenameRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentSessionRename,
         request
-      ) as Promise<JcodeSessionSummary>,
+      ) as Promise<AgentSessionSummary>,
     archiveSession: (request: AgentSessionArchiveRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentSessionArchive,
         request
-      ) as Promise<JcodeSessionSummary>,
+      ) as Promise<AgentSessionSummary>,
     deleteSession: (request: AgentSessionDeleteRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentSessionDelete,
@@ -983,35 +983,35 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentSelfDevSendTurn,
         request
       ) as Promise<AgentTurnSendResponse>,
-    startOvernight: (request: JcodeOvernightStartRequest) =>
+    startOvernight: (request: AgentOvernightStartRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeOvernightStart,
+        LYRA_CHANNELS.agentOvernightStart,
         request
-      ) as Promise<JcodeOvernightStartResponse>,
+      ) as Promise<AgentOvernightStartResponse>,
     listOvernightRuns: () =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeOvernightList
-      ) as Promise<JcodeOvernightListResponse>,
-    readOvernightStatus: (request?: JcodeOvernightRunRequest) =>
+        LYRA_CHANNELS.agentOvernightList
+      ) as Promise<AgentOvernightListResponse>,
+    readOvernightStatus: (request?: AgentOvernightRunRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeOvernightStatus,
+        LYRA_CHANNELS.agentOvernightStatus,
         request ?? {}
-      ) as Promise<JcodeOvernightRunResponse>,
-    readOvernightLog: (request?: JcodeOvernightRunRequest) =>
+      ) as Promise<AgentOvernightRunResponse>,
+    readOvernightLog: (request?: AgentOvernightRunRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeOvernightLog,
+        LYRA_CHANNELS.agentOvernightLog,
         request ?? {}
-      ) as Promise<JcodeOvernightRunResponse>,
-    readOvernightReview: (request?: JcodeOvernightRunRequest) =>
+      ) as Promise<AgentOvernightRunResponse>,
+    readOvernightReview: (request?: AgentOvernightRunRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeOvernightReview,
+        LYRA_CHANNELS.agentOvernightReview,
         request ?? {}
-      ) as Promise<JcodeOvernightRunResponse>,
-    cancelOvernight: (request?: JcodeOvernightRunRequest) =>
+      ) as Promise<AgentOvernightRunResponse>,
+    cancelOvernight: (request?: AgentOvernightRunRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeOvernightCancel,
+        LYRA_CHANNELS.agentOvernightCancel,
         request ?? {}
-      ) as Promise<JcodeOvernightRunResponse>,
+      ) as Promise<AgentOvernightRunResponse>,
     startTurn: (request: AgentTurnSendRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentTurnStart,
@@ -1106,149 +1106,149 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.agentClarificationRespond, request) as Promise<unknown>,
     respondPermission: (request: AgentPermissionRespondRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentPermissionRespond, request) as Promise<unknown>,
-    readJcodeConfig: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.jcodeConfigRead) as Promise<JcodeConfigSnapshot>,
-    updateJcodeConfig: (request: JcodeConfigUpdateRequest) =>
+    readAgentConfig: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentConfigRead) as Promise<AgentConfigSnapshot>,
+    updateAgentConfig: (request: AgentConfigUpdateRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeConfigUpdate,
+        LYRA_CHANNELS.agentConfigUpdate,
         request
-      ) as Promise<JcodeConfigSnapshot>,
-    saveJcodeProviderProfile: (request: JcodeProviderProfileSaveRequest) =>
+      ) as Promise<AgentConfigSnapshot>,
+    saveAgentProviderProfile: (request: AgentProviderProfileSaveRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeProviderProfileSave,
+        LYRA_CHANNELS.agentProviderProfileSave,
         request
-      ) as Promise<JcodeConfigSnapshot>,
-    listJcodeModels: (request?: JcodeModelsListRequest) =>
+      ) as Promise<AgentConfigSnapshot>,
+    listAgentModels: (request?: AgentModelCatalogRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeModelsList,
+        LYRA_CHANNELS.agentModelsList,
         request ?? {}
-      ) as Promise<JcodeModelsListResponse>,
-    switchJcodeModel: (request: JcodeModelSwitchRequest) =>
+      ) as Promise<AgentModelCatalogSnapshot>,
+    switchAgentModel: (request: AgentModelSwitchRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeModelSwitch,
+        LYRA_CHANNELS.agentModelSwitch,
         request
-      ) as Promise<JcodeModelsListResponse>,
-    refreshJcodeModels: (request?: JcodeModelRefreshRequest) =>
+      ) as Promise<AgentModelCatalogSnapshot>,
+    refreshAgentModels: (request?: AgentModelRefreshRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeModelRefresh,
+        LYRA_CHANNELS.agentModelRefresh,
         request ?? {}
-      ) as Promise<JcodeModelsListResponse>,
-    updateJcodeProviderOptions: (request: JcodeProviderOptionsUpdateRequest) =>
+      ) as Promise<AgentModelCatalogSnapshot>,
+    updateAgentProviderOptions: (request: AgentProviderOptionsUpdateRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeProviderOptionsUpdate,
+        LYRA_CHANNELS.agentProviderOptionsUpdate,
         request
-      ) as Promise<JcodeModelsListResponse>,
-    updateJcodeAgentRoles: (request: JcodeAgentRolesUpdateRequest) =>
+      ) as Promise<AgentModelCatalogSnapshot>,
+    updateAgentRoles: (request: AgentRolesUpdateRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeAgentRolesUpdate,
+        LYRA_CHANNELS.agentRolesUpdate,
         request
-      ) as Promise<JcodeConfigSnapshot>,
-    runImprove: (request?: JcodeAgentActionRunRequest) =>
+      ) as Promise<AgentConfigSnapshot>,
+    runImprove: (request?: AgentActionRunRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeImproveRun,
+        LYRA_CHANNELS.agentImproveRun,
         request ?? {}
       ) as Promise<AgentTurnSendResponse>,
-    runRefactor: (request?: JcodeAgentActionRunRequest) =>
+    runRefactor: (request?: AgentActionRunRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeRefactorRun,
+        LYRA_CHANNELS.agentRefactorRun,
         request ?? {}
       ) as Promise<AgentTurnSendResponse>,
-    triggerPoke: (request?: JcodePokeRequest) =>
+    triggerPoke: (request?: AgentPokeRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodePokeTrigger,
+        LYRA_CHANNELS.agentPokeTrigger,
         request ?? {}
-      ) as Promise<JcodePokeResponse>,
-    runReview: (request?: JcodeFeedbackRunRequest) =>
+      ) as Promise<AgentPokeResponse>,
+    runReview: (request?: AgentFeedbackRunRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeReviewRun,
-        request ?? {}
-      ) as Promise<AgentTurnSendResponse>,
-    runJudge: (request?: JcodeFeedbackRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeJudgeRun,
+        LYRA_CHANNELS.agentReviewRun,
         request ?? {}
       ) as Promise<AgentTurnSendResponse>,
-    runSubagent: (request: JcodeSubagentRunRequest) =>
+    runJudge: (request?: AgentFeedbackRunRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeSubagentRun,
+        LYRA_CHANNELS.agentJudgeRun,
+        request ?? {}
+      ) as Promise<AgentTurnSendResponse>,
+    runSubagent: (request: AgentSubagentRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSubagentRun,
         request
-      ) as Promise<JcodeSubagentRunResponse>,
-    runBtw: (request: JcodeBtwRunRequest) =>
+      ) as Promise<AgentSubagentRunResponse>,
+    runBtw: (request: AgentBtwRunRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeBtwRun,
+        LYRA_CHANNELS.agentBtwRun,
         request
-      ) as Promise<JcodeSidePanelActionResponse>,
-    splitSession: (request?: JcodeSessionActionRequest) =>
+      ) as Promise<AgentSidePanelActionResponse>,
+    splitSession: (request?: AgentSessionActionRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeSessionSplit,
+        LYRA_CHANNELS.agentSessionSplit,
         request ?? {}
-      ) as Promise<JcodeSessionForkResponse>,
-    transferSession: (request?: JcodeSessionActionRequest) =>
+      ) as Promise<AgentSessionForkResponse>,
+    transferSession: (request?: AgentSessionActionRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeSessionTransfer,
+        LYRA_CHANNELS.agentSessionTransfer,
         request ?? {}
-      ) as Promise<JcodeSessionForkResponse>,
-    compactSession: (request?: JcodeSessionActionRequest) =>
+      ) as Promise<AgentSessionForkResponse>,
+    compactSession: (request?: AgentSessionActionRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeSessionCompact,
+        LYRA_CHANNELS.agentSessionCompact,
         request ?? {}
-      ) as Promise<JcodeCompactResponse>,
-    updateSessionAutomation: (request: JcodeAutomationUpdateRequest) =>
+      ) as Promise<AgentCompactResponse>,
+    updateSessionAutomation: (request: AgentAutomationUpdateRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeSessionAutomationUpdate,
+        LYRA_CHANNELS.agentSessionAutomationUpdate,
         request
-      ) as Promise<JcodeAutomationUpdateResponse>,
-    listGoals: (request?: JcodeGoalsRequest) =>
+      ) as Promise<AgentAutomationUpdateResponse>,
+    listGoals: (request?: AgentGoalsRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeGoalsList,
+        LYRA_CHANNELS.agentGoalsList,
         request ?? {}
-      ) as Promise<JcodeGoalsResponse>,
-    openGoals: (request?: JcodeGoalsRequest) =>
+      ) as Promise<AgentGoalsResponse>,
+    openGoals: (request?: AgentGoalsRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeGoalsOpen,
+        LYRA_CHANNELS.agentGoalsOpen,
         request ?? {}
-      ) as Promise<JcodeGoalsResponse>,
-    resumeGoal: (request?: JcodeGoalsRequest) =>
+      ) as Promise<AgentGoalsResponse>,
+    resumeGoal: (request?: AgentGoalsRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeGoalsResume,
+        LYRA_CHANNELS.agentGoalsResume,
         request ?? {}
-      ) as Promise<JcodeGoalsResponse>,
-    showGoal: (request: JcodeGoalsRequest) =>
+      ) as Promise<AgentGoalsResponse>,
+    showGoal: (request: AgentGoalsRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeGoalsShow,
+        LYRA_CHANNELS.agentGoalsShow,
         request
-      ) as Promise<JcodeGoalsResponse>,
+      ) as Promise<AgentGoalsResponse>,
     listAccounts: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.jcodeAccountsList) as Promise<JcodeAccountsResponse>,
-    loginAccount: (request: JcodeAccountLoginRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentAccountsList) as Promise<AgentAccountsSnapshot>,
+    loginAccount: (request: AgentAccountLoginRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeAccountsLogin,
+        LYRA_CHANNELS.agentAccountsLogin,
         request
-      ) as Promise<JcodeAccountsResponse>,
+      ) as Promise<AgentAccountsSnapshot>,
     listLoginProviders: () =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeAccountsLoginProviders
-      ) as Promise<JcodeLoginProvidersResponse>,
-    startAccountLogin: (request: JcodeAccountLoginStartRequest) =>
+        LYRA_CHANNELS.agentAccountsLoginProviders
+      ) as Promise<AgentLoginProviderCatalogSnapshot>,
+    startAccountLogin: (request: AgentAccountLoginStartRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeAccountsLoginStart,
+        LYRA_CHANNELS.agentAccountsLoginStart,
         request
-      ) as Promise<JcodeAccountLoginStartResponse>,
-    completeAccountLogin: (request: JcodeAccountLoginCompleteRequest) =>
+      ) as Promise<AgentAccountLoginStartResponse>,
+    completeAccountLogin: (request: AgentAccountLoginCompleteRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeAccountsLoginComplete,
+        LYRA_CHANNELS.agentAccountsLoginComplete,
         request
-      ) as Promise<JcodeAccountLoginCompleteResponse>,
-    switchAccount: (request: JcodeAccountRequest) =>
+      ) as Promise<AgentAccountLoginCompleteResponse>,
+    switchAccount: (request: AgentAccountRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeAccountsSwitch,
+        LYRA_CHANNELS.agentAccountsSwitch,
         request
-      ) as Promise<JcodeAccountsResponse>,
-    removeAccount: (request: JcodeAccountRequest) =>
+      ) as Promise<AgentAccountsSnapshot>,
+    removeAccount: (request: AgentAccountRequest) =>
       ipcRenderer.invoke(
-        LYRA_CHANNELS.jcodeAccountsRemove,
+        LYRA_CHANNELS.agentAccountsRemove,
         request
-      ) as Promise<JcodeAccountsResponse>,
+      ) as Promise<AgentAccountsSnapshot>,
     readBrowserFollowMode: () =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentBrowserFollowRead

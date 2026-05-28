@@ -43,7 +43,7 @@ const snapshotWithConversation: AgentSessionSnapshot = {
   }]
 };
 
-const memorySnapshot = (
+const memoryUpdated = (
   timelineProjection: NonNullable<AgentSessionSnapshot["memory"]>["timelineProjection"] = []
 ): NonNullable<AgentSessionSnapshot["memory"]> => ({
   session: {
@@ -69,7 +69,7 @@ const memorySnapshot = (
   modelLabel: null
 });
 
-const jcodeModels = {
+const agentModels = {
   sessionId: "session-1",
   currentModel: "mimo-v2.5-pro",
   currentProvider: "mimo-token-plan",
@@ -124,7 +124,7 @@ const createDesktopApi = () => {
   let listener: ((event: AgentRuntimeEvent) => void) | null = null;
   let readSnapshot = snapshot;
   let rollbackRestoreSnapshot = snapshot;
-  let modelsResponse = jcodeModels;
+  let modelsResponse = agentModels;
   let browserFollowModeEnabled = false;
   const createSession = vi.fn(async () => snapshot);
   const runImprove = vi.fn(async () => ({
@@ -205,11 +205,11 @@ const createDesktopApi = () => {
       previewRollback,
       restoreRollback,
       bindProject,
-      listJcodeModels: vi.fn(async () => modelsResponse),
-      switchJcodeModel: vi.fn(async () => modelsResponse),
-      refreshJcodeModels: vi.fn(async () => modelsResponse),
-      updateJcodeProviderOptions: vi.fn(async () => modelsResponse),
-      updateJcodeAgentRoles: vi.fn(async () => ({ config: {}, commands: [] })),
+      listAgentModels: vi.fn(async () => modelsResponse),
+      switchAgentModel: vi.fn(async () => modelsResponse),
+      refreshAgentModels: vi.fn(async () => modelsResponse),
+      updateAgentProviderOptions: vi.fn(async () => modelsResponse),
+      updateAgentRoles: vi.fn(async () => ({ config: {}, commands: [] })),
       runImprove,
       runRefactor,
       triggerPoke,
@@ -247,7 +247,7 @@ const createDesktopApi = () => {
     setRollbackRestoreSnapshot: (nextSnapshot: AgentSessionSnapshot) => {
       rollbackRestoreSnapshot = nextSnapshot;
     },
-    setModelsResponse: (nextModels: typeof jcodeModels) => {
+    setModelsResponse: (nextModels: typeof agentModels) => {
       modelsResponse = nextModels;
     }
   };
@@ -289,7 +289,7 @@ const renderPanel = (
 const settingsAiModel = {
   profiles: [],
   defaultProfileId: null,
-  jcodeConfig: {
+  agentConfig: {
     config: {
       provider: {
         default_provider: "mimo-token-plan",
@@ -373,7 +373,7 @@ describe("AiPanelSurface", () => {
         text: "First request",
         createdAt: "2026-05-13T00:00:01.000Z"
       }],
-      memory: memorySnapshot([{
+      memory: memoryUpdated([{
         eventId: "message-old-user",
         runtimeTurnId: "turn-old",
         kind: "user_message",
@@ -389,7 +389,7 @@ describe("AiPanelSurface", () => {
 
     act(() => {
       emit({
-        kind: "messageAppended",
+        kind: "messageCommitted",
         sessionId: "session-1",
         message: {
           id: "message-new-user",
@@ -574,7 +574,7 @@ describe("AiPanelSurface", () => {
     fireEvent.click(screen.getByRole("option", { name: "gpt-5 · OpenAI" }));
 
     await waitFor(() => {
-      expect(api.agent?.switchJcodeModel).toHaveBeenCalledWith({
+      expect(api.agent?.switchAgentModel).toHaveBeenCalledWith({
         sessionId: "session-1",
         model: "gpt-5"
       });
@@ -585,7 +585,7 @@ describe("AiPanelSurface", () => {
     const { api, setModelsResponse } = createDesktopApi();
     const openModelSettings = vi.fn();
     setModelsResponse({
-      ...jcodeModels,
+      ...agentModels,
       currentModel: "claude-sonnet-4-6",
       currentProvider: "Anthropic",
       defaultModel: "",
@@ -605,7 +605,7 @@ describe("AiPanelSurface", () => {
     const { api, setModelsResponse } = createDesktopApi();
     const openModelSettings = vi.fn();
     setModelsResponse({
-      ...jcodeModels,
+      ...agentModels,
       currentModel: "claude-sonnet-4-6",
       currentProvider: "Anthropic",
       defaultModel: "",
@@ -614,7 +614,7 @@ describe("AiPanelSurface", () => {
     });
     const initialSettings = {
       ...settingsAiModel,
-      jcodeConfig: {
+      agentConfig: {
         config: {
           provider: {
             default_provider: null,
@@ -627,7 +627,7 @@ describe("AiPanelSurface", () => {
     } as unknown as SettingsAiModel;
     const configuredSettings = {
       ...settingsAiModel,
-      jcodeConfig: {
+      agentConfig: {
         config: {
           provider: {
             default_provider: "mimo-token-plan",
@@ -643,7 +643,7 @@ describe("AiPanelSurface", () => {
         },
         commands: []
       },
-      jcodeAccounts: {
+      agentAccounts: {
         defaultProvider: "mimo-token-plan",
         defaultModel: "mimo-v2.5-pro",
         authStatus: {},
@@ -664,7 +664,7 @@ describe("AiPanelSurface", () => {
     );
 
     expect(await screen.findByRole("button", { name: "Configure model" })).toBeInTheDocument();
-    setModelsResponse(jcodeModels);
+    setModelsResponse(agentModels);
     rerender(
       <AiPanelSurface
         variant="sidebar"
@@ -678,7 +678,7 @@ describe("AiPanelSurface", () => {
     );
 
     await waitFor(() => {
-      expect(api.agent?.listJcodeModels).toHaveBeenCalledTimes(2);
+      expect(api.agent?.listAgentModels).toHaveBeenCalledTimes(2);
     });
     expect(await screen.findByLabelText("Model controls")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Configure model" })).not.toBeInTheDocument();
@@ -1420,7 +1420,7 @@ describe("AiPanelSurface", () => {
     });
     act(() => {
       emit({
-        kind: "messageAppended",
+        kind: "messageCommitted",
         sessionId: "session-1",
         message: {
           id: "message-1",
@@ -1470,7 +1470,7 @@ describe("AiPanelSurface", () => {
     await screen.findByText("Lyra Agent");
     act(() => {
       emit({
-        kind: "clarificationRequired",
+        kind: "clarificationRequested",
         sessionId: "session-1",
         clarificationId: "clar-1",
         question: "Which output style should I use?",
@@ -1483,7 +1483,7 @@ describe("AiPanelSurface", () => {
         detail: "Needed before generating the final document."
       });
       emit({
-        kind: "clarificationRequired",
+        kind: "clarificationRequested",
         sessionId: "session-1",
         clarificationId: "clar-2",
         question: "Which tone should I use?",
@@ -1523,7 +1523,7 @@ describe("AiPanelSurface", () => {
       + "**2. 主要业务/产品是什么？**";
     act(() => {
       emit({
-        kind: "messageAppended",
+        kind: "messageCommitted",
         sessionId: "session-1",
         message: {
           id: "assistant-plain-question",
@@ -1547,7 +1547,7 @@ describe("AiPanelSurface", () => {
     await screen.findByText("Lyra Agent");
     act(() => {
       emit({
-        kind: "permissionRequired",
+        kind: "permissionRequested",
         sessionId: "session-1",
         permissionId: "perm-1",
         title: "Run shell command",
@@ -1921,7 +1921,7 @@ describe("AiPanelSurface", () => {
     });
     act(() => {
       emit({
-        kind: "messageAppended",
+        kind: "messageCommitted",
         sessionId: "session-1",
         message: {
           id: "message-empty",
@@ -1953,7 +1953,7 @@ describe("AiPanelSurface", () => {
     });
     act(() => {
       emit({
-        kind: "messageAppended",
+        kind: "messageCommitted",
         sessionId: "session-1",
         message: {
           id: "message-refresh",

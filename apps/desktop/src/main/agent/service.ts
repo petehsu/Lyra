@@ -47,46 +47,46 @@ import type {
   AgentTurnSendResponse,
   AgentBrowserFollowModeSnapshot,
   AgentBrowserFollowModeUpdateRequest,
-  JcodeAgentActionRunRequest,
-  JcodeAccountLoginCompleteRequest,
-  JcodeAccountLoginCompleteResponse,
-  JcodeAccountLoginRequest,
-  JcodeAccountLoginStartRequest,
-  JcodeAccountLoginStartResponse,
-  JcodeAccountRequest,
-  JcodeAccountsResponse,
-  JcodeAutomationUpdateRequest,
-  JcodeAutomationUpdateResponse,
-  JcodeBtwRunRequest,
-  JcodeCompactResponse,
-  JcodeFeedbackRunRequest,
-  JcodeConfigSnapshot,
-  JcodeConfigUpdateRequest,
-  JcodeAgentRolesUpdateRequest,
-  JcodeGoalsRequest,
-  JcodeGoalsResponse,
-  JcodeLoginProvidersResponse,
-  JcodeModelRefreshRequest,
-  JcodeModelsListRequest,
-  JcodeModelsListResponse,
-  JcodeModelSwitchRequest,
-  JcodeOvernightListResponse,
-  JcodeOvernightRunRequest,
-  JcodeOvernightRunResponse,
-  JcodeOvernightStartRequest,
-  JcodeOvernightStartResponse,
-  JcodeProviderOptionsUpdateRequest,
-  JcodeProviderProfileSaveRequest,
-  JcodePokeRequest,
-  JcodePokeResponse,
-  JcodeSessionActionRequest,
-  JcodeSessionForkResponse,
-  JcodeSessionSummary,
-  JcodeSessionsListRequest,
-  JcodeSessionsListResponse,
-  JcodeSidePanelActionResponse,
-  JcodeSubagentRunRequest,
-  JcodeSubagentRunResponse
+  AgentActionRunRequest,
+  AgentAccountLoginCompleteRequest,
+  AgentAccountLoginCompleteResponse,
+  AgentAccountLoginRequest,
+  AgentAccountLoginStartRequest,
+  AgentAccountLoginStartResponse,
+  AgentAccountRequest,
+  AgentAccountsSnapshot,
+  AgentAutomationUpdateRequest,
+  AgentAutomationUpdateResponse,
+  AgentBtwRunRequest,
+  AgentCompactResponse,
+  AgentFeedbackRunRequest,
+  AgentConfigSnapshot,
+  AgentConfigUpdateRequest,
+  AgentRolesUpdateRequest,
+  AgentGoalsRequest,
+  AgentGoalsResponse,
+  AgentLoginProviderCatalogSnapshot,
+  AgentModelRefreshRequest,
+  AgentModelCatalogRequest,
+  AgentModelCatalogSnapshot,
+  AgentModelSwitchRequest,
+  AgentOvernightListResponse,
+  AgentOvernightRunRequest,
+  AgentOvernightRunResponse,
+  AgentOvernightStartRequest,
+  AgentOvernightStartResponse,
+  AgentProviderOptionsUpdateRequest,
+  AgentProviderProfileSaveRequest,
+  AgentPokeRequest,
+  AgentPokeResponse,
+  AgentSessionActionRequest,
+  AgentSessionForkResponse,
+  AgentSessionSummary,
+  AgentSessionListRequest,
+  AgentSessionListResponse,
+  AgentSidePanelActionResponse,
+  AgentSubagentRunRequest,
+  AgentSubagentRunResponse
 } from "../../shared/agent";
 import type { LyraRuntimeClient } from "../runtime-client";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
@@ -1101,15 +1101,15 @@ export const createAgentIpcBridge = ({
     [
       LYRA_CHANNELS.agentSessionList,
       (_event, payload) =>
-        requestRuntime<JcodeSessionsListResponse>(
+        requestRuntime<AgentSessionListResponse>(
           "agent.session.list",
-          (payload as JcodeSessionsListRequest | undefined) ?? {}
+          (payload as AgentSessionListRequest | undefined) ?? {}
         )
     ],
     [
       LYRA_CHANNELS.agentSessionSave,
       (_event, payload) =>
-        requestRuntime<JcodeSessionSummary>(
+        requestRuntime<AgentSessionSummary>(
           "agent.session.save",
           payload as AgentSessionSaveRequest
         )
@@ -1117,7 +1117,7 @@ export const createAgentIpcBridge = ({
     [
       LYRA_CHANNELS.agentSessionUnsave,
       (_event, payload) =>
-        requestRuntime<JcodeSessionSummary>(
+        requestRuntime<AgentSessionSummary>(
           "agent.session.unsave",
           payload as AgentSessionDeleteRequest
         )
@@ -1125,7 +1125,7 @@ export const createAgentIpcBridge = ({
     [
       LYRA_CHANNELS.agentSessionRename,
       (_event, payload) =>
-        requestRuntime<JcodeSessionSummary>(
+        requestRuntime<AgentSessionSummary>(
           "agent.session.rename",
           payload as AgentSessionRenameRequest
         )
@@ -1133,7 +1133,7 @@ export const createAgentIpcBridge = ({
     [
       LYRA_CHANNELS.agentSessionArchive,
       (_event, payload) =>
-        requestRuntime<JcodeSessionSummary>(
+        requestRuntime<AgentSessionSummary>(
           "agent.session.archive",
           payload as AgentSessionArchiveRequest
         )
@@ -1363,283 +1363,275 @@ export const createAgentIpcBridge = ({
         )
     ],
     [
-      LYRA_CHANNELS.jcodeConfigRead,
-      () => requestRuntime<JcodeConfigSnapshot>("jcode.config.read")
+      LYRA_CHANNELS.agentConfigRead,
+      () => requestRuntime<AgentConfigSnapshot>("agent.config.read")
     ],
     [
-      LYRA_CHANNELS.jcodeConfigUpdate,
+      LYRA_CHANNELS.agentConfigUpdate,
       (_event, payload) =>
-        requestRuntime<JcodeConfigSnapshot>(
-          "jcode.config.update",
-          (payload as JcodeConfigUpdateRequest | undefined) ?? {}
+        requestRuntime<AgentConfigSnapshot>(
+          "agent.config.update",
+          (payload as AgentConfigUpdateRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeProviderProfileSave,
+      LYRA_CHANNELS.agentProviderProfileSave,
       (_event, payload) =>
-        requestRuntime<JcodeConfigSnapshot>(
-          "jcode.provider.profile.save",
-          payload as JcodeProviderProfileSaveRequest
+        requestRuntime<AgentConfigSnapshot>(
+          "agent.provider.profile.save",
+          payload as AgentProviderProfileSaveRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeSessionsList,
+      LYRA_CHANNELS.agentModelsList,
       (_event, payload) =>
-        requestRuntime<JcodeSessionsListResponse>(
-          "jcode.sessions.list",
-          (payload as JcodeSessionsListRequest | undefined) ?? {}
+        requestRuntime<AgentModelCatalogSnapshot>(
+          "agent.models.list",
+          (payload as AgentModelCatalogRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeModelsList,
+      LYRA_CHANNELS.agentModelSwitch,
       (_event, payload) =>
-        requestRuntime<JcodeModelsListResponse>(
-          "jcode.models.list",
-          (payload as JcodeModelsListRequest | undefined) ?? {}
+        requestRuntime<AgentModelCatalogSnapshot>(
+          "agent.models.switch",
+          payload as AgentModelSwitchRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeModelSwitch,
+      LYRA_CHANNELS.agentModelRefresh,
       (_event, payload) =>
-        requestRuntime<JcodeModelsListResponse>(
-          "jcode.model.switch",
-          payload as JcodeModelSwitchRequest
+        requestRuntime<AgentModelCatalogSnapshot>(
+          "agent.models.refresh",
+          (payload as AgentModelRefreshRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeModelRefresh,
+      LYRA_CHANNELS.agentProviderOptionsUpdate,
       (_event, payload) =>
-        requestRuntime<JcodeModelsListResponse>(
-          "jcode.model.refresh",
-          (payload as JcodeModelRefreshRequest | undefined) ?? {}
+        requestRuntime<AgentModelCatalogSnapshot>(
+          "agent.provider.options.update",
+          payload as AgentProviderOptionsUpdateRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeProviderOptionsUpdate,
+      LYRA_CHANNELS.agentRolesUpdate,
       (_event, payload) =>
-        requestRuntime<JcodeModelsListResponse>(
-          "jcode.provider.options.update",
-          payload as JcodeProviderOptionsUpdateRequest
+        requestRuntime<AgentConfigSnapshot>(
+          "agent.roles.update",
+          payload as AgentRolesUpdateRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeAgentRolesUpdate,
-      (_event, payload) =>
-        requestRuntime<JcodeConfigSnapshot>(
-          "jcode.agent-roles.update",
-          payload as JcodeAgentRolesUpdateRequest
-        )
-    ],
-    [
-      LYRA_CHANNELS.jcodeImproveRun,
+      LYRA_CHANNELS.agentImproveRun,
       (_event, payload) =>
         requestRuntime<AgentTurnSendResponse>(
-          "jcode.improve.run",
-          (payload as JcodeAgentActionRunRequest | undefined) ?? {}
+          "agent.action.improve",
+          (payload as AgentActionRunRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeRefactorRun,
+      LYRA_CHANNELS.agentRefactorRun,
       (_event, payload) =>
         requestRuntime<AgentTurnSendResponse>(
-          "jcode.refactor.run",
-          (payload as JcodeAgentActionRunRequest | undefined) ?? {}
+          "agent.action.refactor",
+          (payload as AgentActionRunRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodePokeTrigger,
+      LYRA_CHANNELS.agentPokeTrigger,
       (_event, payload) =>
-        requestRuntime<JcodePokeResponse>(
-          "jcode.poke.trigger",
-          (payload as JcodePokeRequest | undefined) ?? {}
+        requestRuntime<AgentPokeResponse>(
+          "agent.action.poke",
+          (payload as AgentPokeRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeReviewRun,
-      (_event, payload) =>
-        requestRuntime<AgentTurnSendResponse>(
-          "jcode.review.run",
-          (payload as JcodeFeedbackRunRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.jcodeJudgeRun,
+      LYRA_CHANNELS.agentReviewRun,
       (_event, payload) =>
         requestRuntime<AgentTurnSendResponse>(
-          "jcode.judge.run",
-          (payload as JcodeFeedbackRunRequest | undefined) ?? {}
+          "agent.action.review",
+          (payload as AgentFeedbackRunRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeSubagentRun,
+      LYRA_CHANNELS.agentJudgeRun,
       (_event, payload) =>
-        requestRuntime<JcodeSubagentRunResponse>(
-          "jcode.subagent.run",
-          payload as JcodeSubagentRunRequest
+        requestRuntime<AgentTurnSendResponse>(
+          "agent.action.judge",
+          (payload as AgentFeedbackRunRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeBtwRun,
+      LYRA_CHANNELS.agentSubagentRun,
       (_event, payload) =>
-        requestRuntime<JcodeSidePanelActionResponse>(
-          "jcode.btw.run",
-          payload as JcodeBtwRunRequest
+        requestRuntime<AgentSubagentRunResponse>(
+          "agent.subagent.run",
+          payload as AgentSubagentRunRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeSessionSplit,
+      LYRA_CHANNELS.agentBtwRun,
       (_event, payload) =>
-        requestRuntime<JcodeSessionForkResponse>(
-          "jcode.session.split",
-          (payload as JcodeSessionActionRequest | undefined) ?? {}
+        requestRuntime<AgentSidePanelActionResponse>(
+          "agent.btw.run",
+          payload as AgentBtwRunRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeSessionTransfer,
+      LYRA_CHANNELS.agentSessionSplit,
       (_event, payload) =>
-        requestRuntime<JcodeSessionForkResponse>(
-          "jcode.session.transfer",
-          (payload as JcodeSessionActionRequest | undefined) ?? {}
+        requestRuntime<AgentSessionForkResponse>(
+          "agent.session.split",
+          (payload as AgentSessionActionRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeSessionCompact,
+      LYRA_CHANNELS.agentSessionTransfer,
       (_event, payload) =>
-        requestRuntime<JcodeCompactResponse>(
-          "jcode.session.compact",
-          (payload as JcodeSessionActionRequest | undefined) ?? {}
+        requestRuntime<AgentSessionForkResponse>(
+          "agent.session.transfer",
+          (payload as AgentSessionActionRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeSessionAutomationUpdate,
+      LYRA_CHANNELS.agentSessionCompact,
       (_event, payload) =>
-        requestRuntime<JcodeAutomationUpdateResponse>(
-          "jcode.session.automation.update",
-          payload as JcodeAutomationUpdateRequest
+        requestRuntime<AgentCompactResponse>(
+          "agent.session.compact",
+          (payload as AgentSessionActionRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeGoalsList,
+      LYRA_CHANNELS.agentSessionAutomationUpdate,
       (_event, payload) =>
-        requestRuntime<JcodeGoalsResponse>(
-          "jcode.goals.list",
-          (payload as JcodeGoalsRequest | undefined) ?? {}
+        requestRuntime<AgentAutomationUpdateResponse>(
+          "agent.session.automation.update",
+          payload as AgentAutomationUpdateRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeGoalsOpen,
+      LYRA_CHANNELS.agentGoalsList,
       (_event, payload) =>
-        requestRuntime<JcodeGoalsResponse>(
-          "jcode.goals.open",
-          (payload as JcodeGoalsRequest | undefined) ?? {}
+        requestRuntime<AgentGoalsResponse>(
+          "agent.goals.list",
+          (payload as AgentGoalsRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeGoalsResume,
+      LYRA_CHANNELS.agentGoalsOpen,
       (_event, payload) =>
-        requestRuntime<JcodeGoalsResponse>(
-          "jcode.goals.resume",
-          (payload as JcodeGoalsRequest | undefined) ?? {}
+        requestRuntime<AgentGoalsResponse>(
+          "agent.goals.open",
+          (payload as AgentGoalsRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeGoalsShow,
+      LYRA_CHANNELS.agentGoalsResume,
       (_event, payload) =>
-        requestRuntime<JcodeGoalsResponse>(
-          "jcode.goals.show",
-          payload as JcodeGoalsRequest
+        requestRuntime<AgentGoalsResponse>(
+          "agent.goals.resume",
+          (payload as AgentGoalsRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeAccountsList,
-      () => requestRuntime<JcodeAccountsResponse>("jcode.accounts.list")
-    ],
-    [
-      LYRA_CHANNELS.jcodeAccountsLogin,
+      LYRA_CHANNELS.agentGoalsShow,
       (_event, payload) =>
-        requestRuntime<JcodeAccountsResponse>(
-          "jcode.accounts.login",
-          payload as JcodeAccountLoginRequest
+        requestRuntime<AgentGoalsResponse>(
+          "agent.goals.show",
+          payload as AgentGoalsRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeAccountsLoginProviders,
-      () => requestRuntime<JcodeLoginProvidersResponse>("jcode.accounts.loginProviders")
+      LYRA_CHANNELS.agentAccountsList,
+      () => requestRuntime<AgentAccountsSnapshot>("agent.accounts.list")
     ],
     [
-      LYRA_CHANNELS.jcodeAccountsLoginStart,
+      LYRA_CHANNELS.agentAccountsLogin,
       (_event, payload) =>
-        requestRuntime<JcodeAccountLoginStartResponse>(
-          "jcode.accounts.loginStart",
-          payload as JcodeAccountLoginStartRequest
+        requestRuntime<AgentAccountsSnapshot>(
+          "agent.accounts.login",
+          payload as AgentAccountLoginRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeAccountsLoginComplete,
+      LYRA_CHANNELS.agentAccountsLoginProviders,
+      () => requestRuntime<AgentLoginProviderCatalogSnapshot>("agent.accounts.loginProviders")
+    ],
+    [
+      LYRA_CHANNELS.agentAccountsLoginStart,
       (_event, payload) =>
-        requestRuntime<JcodeAccountLoginCompleteResponse>(
-          "jcode.accounts.loginComplete",
-          payload as JcodeAccountLoginCompleteRequest
+        requestRuntime<AgentAccountLoginStartResponse>(
+          "agent.accounts.loginStart",
+          payload as AgentAccountLoginStartRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeAccountsSwitch,
+      LYRA_CHANNELS.agentAccountsLoginComplete,
       (_event, payload) =>
-        requestRuntime<JcodeAccountsResponse>(
-          "jcode.accounts.switch",
-          payload as JcodeAccountRequest
+        requestRuntime<AgentAccountLoginCompleteResponse>(
+          "agent.accounts.loginComplete",
+          payload as AgentAccountLoginCompleteRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeAccountsRemove,
+      LYRA_CHANNELS.agentAccountsSwitch,
       (_event, payload) =>
-        requestRuntime<JcodeAccountsResponse>(
-          "jcode.accounts.remove",
-          payload as JcodeAccountRequest
+        requestRuntime<AgentAccountsSnapshot>(
+          "agent.accounts.switch",
+          payload as AgentAccountRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeOvernightStart,
+      LYRA_CHANNELS.agentAccountsRemove,
       (_event, payload) =>
-        requestRuntime<JcodeOvernightStartResponse>(
-          "jcode.overnight.start",
-          payload as JcodeOvernightStartRequest
+        requestRuntime<AgentAccountsSnapshot>(
+          "agent.accounts.remove",
+          payload as AgentAccountRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeOvernightList,
-      () => requestRuntime<JcodeOvernightListResponse>("jcode.overnight.list")
-    ],
-    [
-      LYRA_CHANNELS.jcodeOvernightStatus,
+      LYRA_CHANNELS.agentOvernightStart,
       (_event, payload) =>
-        requestRuntime<JcodeOvernightRunResponse>(
-          "jcode.overnight.status",
-          (payload as JcodeOvernightRunRequest | undefined) ?? {}
+        requestRuntime<AgentOvernightStartResponse>(
+          "agent.overnight.start",
+          payload as AgentOvernightStartRequest
         )
     ],
     [
-      LYRA_CHANNELS.jcodeOvernightLog,
+      LYRA_CHANNELS.agentOvernightList,
+      () => requestRuntime<AgentOvernightListResponse>("agent.overnight.list")
+    ],
+    [
+      LYRA_CHANNELS.agentOvernightStatus,
       (_event, payload) =>
-        requestRuntime<JcodeOvernightRunResponse>(
-          "jcode.overnight.log",
-          (payload as JcodeOvernightRunRequest | undefined) ?? {}
+        requestRuntime<AgentOvernightRunResponse>(
+          "agent.overnight.status",
+          (payload as AgentOvernightRunRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeOvernightReview,
+      LYRA_CHANNELS.agentOvernightLog,
       (_event, payload) =>
-        requestRuntime<JcodeOvernightRunResponse>(
-          "jcode.overnight.review",
-          (payload as JcodeOvernightRunRequest | undefined) ?? {}
+        requestRuntime<AgentOvernightRunResponse>(
+          "agent.overnight.log",
+          (payload as AgentOvernightRunRequest | undefined) ?? {}
         )
     ],
     [
-      LYRA_CHANNELS.jcodeOvernightCancel,
+      LYRA_CHANNELS.agentOvernightReview,
       (_event, payload) =>
-        requestRuntime<JcodeOvernightRunResponse>(
-          "jcode.overnight.cancel",
-          (payload as JcodeOvernightRunRequest | undefined) ?? {}
+        requestRuntime<AgentOvernightRunResponse>(
+          "agent.overnight.review",
+          (payload as AgentOvernightRunRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentOvernightCancel,
+      (_event, payload) =>
+        requestRuntime<AgentOvernightRunResponse>(
+          "agent.overnight.cancel",
+          (payload as AgentOvernightRunRequest | undefined) ?? {}
         )
     ]
   ];

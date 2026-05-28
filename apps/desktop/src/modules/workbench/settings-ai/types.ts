@@ -4,17 +4,17 @@ import type {
   AiProviderProfile,
 } from "../../../shared/ai";
 import type {
-  JcodeConfigSnapshot,
-  JcodeConfigUpdateRequest,
-  JcodeAgentRolesUpdateRequest,
-  JcodeAccountLoginCompleteRequest,
-  JcodeAccountLoginCompleteResponse,
-  JcodeAccountLoginStartRequest,
-  JcodeAccountLoginStartResponse,
-  JcodeAccountsResponse,
-  JcodeAccountRequest,
-  JcodeLoginProvidersResponse,
-  JcodeProviderProfileSaveRequest,
+  AgentConfigSnapshot,
+  AgentConfigUpdateRequest,
+  AgentRolesUpdateRequest,
+  AgentAccountLoginCompleteRequest,
+  AgentAccountLoginCompleteResponse,
+  AgentAccountLoginStartRequest,
+  AgentAccountLoginStartResponse,
+  AgentAccountsSnapshot,
+  AgentAccountRequest,
+  AgentLoginProviderCatalogSnapshot,
+  AgentProviderProfileSaveRequest,
 } from "../../../shared/desktop-bridge";
 
 export type SettingsAiLabels = {
@@ -57,8 +57,8 @@ export type SettingsAiLabels = {
   readonly configFileTitle: string;
   readonly configFileDescription: string;
   readonly openConfigFile: string;
-  readonly refreshJcode: string;
-  readonly jcodeConfigAriaLabel: string;
+  readonly refreshAgent: string;
+  readonly agentConfigAriaLabel: string;
   readonly providerAutoFallback: string;
   readonly defaultModelFallback: string;
   readonly customProviderFallback: string;
@@ -126,7 +126,7 @@ export type SettingsAiLabels = {
   readonly runtimeUnavailable: string;
   readonly fileEditorUnavailable: string;
   readonly configPathUnavailable: string;
-  readonly sectionJcode: string;
+  readonly sectionAgent: string;
   readonly sectionSessions: string;
   readonly memoryConfigTitle: string;
   readonly memoryConfigDescription: string;
@@ -174,9 +174,9 @@ export type SettingsAiModel = {
   readonly defaultModelNames: readonly string[];
   readonly selectedPresetId: string | null;
   readonly selectedPreset: AiProviderPreset | null;
-  readonly jcodeConfig?: JcodeConfigSnapshot | null;
-  readonly jcodeAccounts?: JcodeAccountsResponse | null;
-  readonly jcodeLoginProviders?: JcodeLoginProvidersResponse | null;
+  readonly agentConfig?: AgentConfigSnapshot | null;
+  readonly agentAccounts?: AgentAccountsSnapshot | null;
+  readonly agentLoginProviders?: AgentLoginProviderCatalogSnapshot | null;
   readonly draft: SettingsAiDraft;
   readonly modelSelectionMode: SettingsAiModelSelectionMode;
   readonly availableModels: readonly AiProviderModelEntry[];
@@ -196,21 +196,21 @@ export type SettingsAiModel = {
   readonly deleteProviderModels: (providerId: string) => Promise<void>;
   readonly deleteConfiguredModel: (profileId: string, modelId: string) => Promise<void>;
   readonly setDefaultProfile: (profileId: string) => Promise<void>;
-  readonly refreshJcode?: () => Promise<void>;
-  readonly openJcodeConfigFile?: () => Promise<void>;
-  readonly updateJcodeConfig?: (request: JcodeConfigUpdateRequest) => Promise<void>;
-  readonly saveJcodeProviderProfile?: (
-    request: JcodeProviderProfileSaveRequest
+  readonly refreshAgent?: () => Promise<void>;
+  readonly openAgentConfigFile?: () => Promise<void>;
+  readonly updateAgentConfig?: (request: AgentConfigUpdateRequest) => Promise<void>;
+  readonly saveAgentProviderProfile?: (
+    request: AgentProviderProfileSaveRequest
   ) => Promise<void>;
-  readonly startJcodeAccountLogin?: (
-    request: JcodeAccountLoginStartRequest
-  ) => Promise<JcodeAccountLoginStartResponse | null>;
-  readonly completeJcodeAccountLogin?: (
-    request: JcodeAccountLoginCompleteRequest
-  ) => Promise<JcodeAccountLoginCompleteResponse | null>;
-  readonly updateJcodeAgentRoles?: (
-    request: JcodeAgentRolesUpdateRequest
+  readonly startAgentAccountLogin?: (
+    request: AgentAccountLoginStartRequest
+  ) => Promise<AgentAccountLoginStartResponse | null>;
+  readonly completeAgentAccountLogin?: (
+    request: AgentAccountLoginCompleteRequest
+  ) => Promise<AgentAccountLoginCompleteResponse | null>;
+  readonly updateAgentRoles?: (
+    request: AgentRolesUpdateRequest
   ) => Promise<void>;
-  readonly switchJcodeAccount?: (request: JcodeAccountRequest) => Promise<void>;
-  readonly removeJcodeAccount?: (request: JcodeAccountRequest) => Promise<void>;
+  readonly switchAgentAccount?: (request: AgentAccountRequest) => Promise<void>;
+  readonly removeAgentAccount?: (request: AgentAccountRequest) => Promise<void>;
 };

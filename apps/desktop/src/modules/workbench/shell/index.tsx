@@ -253,7 +253,7 @@ export const WorkbenchShell = () => {
     fileEditorModel,
     imageViewerModel
   });
-  const onOpenJcodeConfigFile = useCallback((filePath: string): void => {
+  const onOpenAgentConfigFile = useCallback((filePath: string): void => {
     onOpenFileFromManager(filePath, undefined, { forceReloadIfOpen: true });
   }, [onOpenFileFromManager]);
   const {
@@ -266,7 +266,7 @@ export const WorkbenchShell = () => {
     fileManagerModel,
     fileEditorModel,
     labels,
-    onOpenJcodeConfigFile
+    onOpenAgentConfigFile
   });
   const settingsSurfaceProps = useWorkbenchSettingsSurfaceProps({
     labels,

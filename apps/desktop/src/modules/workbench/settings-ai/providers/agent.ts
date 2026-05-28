@@ -10,7 +10,7 @@ const regionField = () => ({
   required: true
 });
 
-export const jcodePresets: readonly AiProviderPreset[] = [
+export const agentPresets: readonly AiProviderPreset[] = [
   {
     id: "openrouter",
     providerId: "openrouter",

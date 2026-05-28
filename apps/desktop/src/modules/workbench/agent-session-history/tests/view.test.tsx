@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import type {
   AgentRuntimeEvent,
-  JcodeSessionSummary,
+  AgentSessionSummary,
   LyraDesktopApi
 } from "../../../../shared/desktop-bridge";
 import { AgentSessionHistorySurface } from "../view";
@@ -47,7 +47,7 @@ const labels: AgentSessionHistoryLabels = {
   runtimeUnavailable: "Agent runtime bridge is unavailable."
 };
 
-const baseSessions: JcodeSessionSummary[] = [
+const baseSessions: AgentSessionSummary[] = [
   {
     id: "session-1",
     title: "Fix agent storage",
@@ -148,13 +148,13 @@ const createDesktopApi = () => {
     sessions = sessions.map((session) =>
       session.id === sessionId ? { ...session, saved: true } : session
     );
-    return sessions.find((session) => session.id === sessionId) as JcodeSessionSummary;
+    return sessions.find((session) => session.id === sessionId) as AgentSessionSummary;
   });
   const unsaveSession = vi.fn(async ({ sessionId }: { readonly sessionId: string }) => {
     sessions = sessions.map((session) =>
       session.id === sessionId ? { ...session, saved: false, saveLabel: null } : session
     );
-    return sessions.find((session) => session.id === sessionId) as JcodeSessionSummary;
+    return sessions.find((session) => session.id === sessionId) as AgentSessionSummary;
   });
   const renameSession = vi.fn(async (
     { sessionId, title }: { readonly sessionId: string; readonly title?: string | null }
@@ -164,7 +164,7 @@ const createDesktopApi = () => {
         ? { ...session, title: title ?? "Generated title", customTitle: title ?? null }
         : session
     );
-    return sessions.find((session) => session.id === sessionId) as JcodeSessionSummary;
+    return sessions.find((session) => session.id === sessionId) as AgentSessionSummary;
   });
   const archiveSession = vi.fn(async (
     { sessionId, archived }: { readonly sessionId: string; readonly archived: boolean }
@@ -172,7 +172,7 @@ const createDesktopApi = () => {
     sessions = sessions.map((session) =>
       session.id === sessionId ? { ...session, archived } : session
     );
-    return sessions.find((session) => session.id === sessionId) as JcodeSessionSummary;
+    return sessions.find((session) => session.id === sessionId) as AgentSessionSummary;
   });
   const deleteSession = vi.fn(async ({ sessionId }: { readonly sessionId: string }) => {
     sessions = sessions.filter((session) => session.id !== sessionId);

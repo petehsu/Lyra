@@ -5,7 +5,7 @@ import type {
   AgentRuntimeEvent,
   AgentSessionSnapshot,
   AgentToolActivity,
-  JcodeModelsListResponse
+  AgentModelCatalogSnapshot
 } from "../../shared/agent";
 import type {
   ChatMessage,
@@ -111,7 +111,7 @@ export const applyAgentRuntimeEventToSnapshot = (
     return session;
   }
 
-  if (event.kind === "messageAppended") {
+  if (event.kind === "messageCommitted") {
     return {
       ...session,
       messages: [
@@ -170,7 +170,7 @@ export const applyAgentRuntimeEventToSnapshot = (
     };
   }
 
-  if (event.kind === "memorySnapshot") {
+  if (event.kind === "memoryUpdated") {
     return {
       ...session,
       memory: event.snapshot,
@@ -254,7 +254,7 @@ export const applyAgentRuntimeEventToSnapshot = (
     };
   }
 
-  if (event.kind === "browserTargetUpdated") {
+  if (event.kind === "browserActivityChanged") {
     const currentMemory = session.memory ?? null;
     const nextTarget = asRecord(event.target);
     return {
@@ -1535,8 +1535,8 @@ export const agentSessionToTodos = (
     .filter((todo) => todo.title.trim().length > 0);
 };
 
-export const jcodeModelsToModelOptions = (
-  state: JcodeModelsListResponse | null
+export const agentModelsToModelOptions = (
+  state: AgentModelCatalogSnapshot | null
 ): ModelOption[] =>
   (state?.models ?? [])
     .filter((model) =>

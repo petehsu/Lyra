@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import type {
-  JcodeOvernightRunSnapshot,
+  AgentOvernightRunSnapshot,
   LyraDesktopApi
 } from "../../../../shared/desktop-bridge";
 import type { AgentOvernightLabels } from "../types";
@@ -49,7 +49,7 @@ const labels: AgentOvernightLabels = {
   unavailable: "Agent runtime bridge is unavailable."
 };
 
-const run: JcodeOvernightRunSnapshot = {
+const run: AgentOvernightRunSnapshot = {
   runId: "overnight-1",
   parentSessionId: "parent-1",
   coordinatorSessionId: "coord-1",

@@ -8,7 +8,7 @@ type SettingsAiViewProps = {
   readonly model: SettingsAiModel;
 };
 
-type JcodeConfigShape = {
+type AgentConfigShape = {
   readonly provider?: {
     readonly default_model?: string | null;
     readonly default_provider?: string | null;
@@ -62,8 +62,8 @@ type JcodeConfigShape = {
   };
 };
 
-const asJcodeConfig = (value: unknown): JcodeConfigShape =>
-  (value ?? {}) as JcodeConfigShape;
+const asAgentConfig = (value: unknown): AgentConfigShape =>
+  (value ?? {}) as AgentConfigShape;
 
 const nullableTrimmed = (value: string): string | null => {
   const trimmed = value.trim();
@@ -83,13 +83,13 @@ const optionalPort = (value: string): number | undefined => {
 };
 
 export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
-  const config = asJcodeConfig(model.jcodeConfig?.config);
+  const config = asAgentConfig(model.agentConfig?.config);
   const providers = useMemo(
     () => Object.entries(config.providers ?? {}),
     [config.providers]
   );
-  const accounts = model.jcodeAccounts?.accounts ?? [];
-  const loginProviders = model.jcodeLoginProviders?.providers ?? [];
+  const accounts = model.agentAccounts?.accounts ?? [];
+  const loginProviders = model.agentLoginProviders?.providers ?? [];
   const googleLoginProvider = loginProviders.find((provider) => provider.id === "google");
   const oauthLoginProviders = loginProviders.filter((provider) =>
     provider.requiresCallback && provider.id !== "google"
@@ -227,7 +227,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
           type="button"
           className="lyra-settings-ai-action"
           onClick={() => {
-            void model.openJcodeConfigFile?.();
+            void model.openAgentConfigFile?.();
           }}
         >
           <FilePenLine size={14} aria-hidden="true" />
@@ -237,16 +237,16 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
           type="button"
           className="lyra-settings-ai-action"
           onClick={() => {
-            void model.refreshJcode?.();
+            void model.refreshAgent?.();
           }}
         >
           <RefreshCw size={14} aria-hidden="true" />
-          {labels.refreshJcode}
+          {labels.refreshAgent}
         </button>
       </header>
 
       <div className="lyra-settings-ai-profile-grid">
-        <div className="lyra-settings-ai-provider-list" aria-label={labels.jcodeConfigAriaLabel}>
+        <div className="lyra-settings-ai-provider-list" aria-label={labels.agentConfigAriaLabel}>
           <div className="lyra-settings-ai-provider-row">
             <button type="button" className="lyra-settings-ai-provider-tab lyra-settings-ai-provider-tab-active">
               <span>
@@ -263,15 +263,15 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
               type="button"
               className="lyra-settings-ai-model-card lyra-settings-ai-model-card-active"
               onClick={() => {
-                void model.openJcodeConfigFile?.();
+                void model.openAgentConfigFile?.();
               }}
             >
               <small>{labels.configFileTitle}</small>
-              <strong title={model.jcodeConfig?.configPath ?? undefined}>
-                {model.jcodeConfig?.configPath ?? "~/.lyra/modules/agent/config.toml"}
+              <strong title={model.agentConfig?.configPath ?? undefined}>
+                {model.agentConfig?.configPath ?? "~/.lyra/modules/agent/config.toml"}
               </strong>
-              <small title={model.jcodeConfig?.jcodeHome ?? undefined}>
-                {model.jcodeConfig?.jcodeHome ?? labels.configFileDescription}
+              <small title={model.agentConfig?.agentHome ?? undefined}>
+                {model.agentConfig?.agentHome ?? labels.configFileDescription}
               </small>
             </button>
           </div>
@@ -281,7 +281,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                 type="button"
                 className="lyra-settings-ai-model-card"
                 onClick={() => {
-                  void model.updateJcodeConfig?.({
+                  void model.updateAgentConfig?.({
                     defaultProvider: name,
                     defaultModel: provider.default_model ?? null,
                   });
@@ -300,8 +300,8 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
           <span className="lyra-settings-ai-inline-editor-title-copy">
             <h3>{labels.accountsTitle}</h3>
             <small>
-              {model.jcodeAccounts?.defaultProvider ?? labels.noDefaultProvider} ·{" "}
-              {model.jcodeAccounts?.defaultModel ?? labels.noDefaultModel}
+              {model.agentAccounts?.defaultProvider ?? labels.noDefaultProvider} ·{" "}
+              {model.agentAccounts?.defaultModel ?? labels.noDefaultModel}
             </small>
           </span>
         </header>
@@ -323,7 +323,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                   ].filter(Boolean).join(" ")}
                   disabled={model.isSaving || account.active || account.provider === "google"}
                   onClick={() => {
-                    void model.switchJcodeAccount?.({
+                    void model.switchAgentAccount?.({
                       provider: account.provider,
                       label: account.label,
                     });
@@ -345,7 +345,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                   aria-label={`${labels.removeAccount}: ${account.label}`}
                   disabled={model.isSaving}
                   onClick={() => {
-                    void model.removeJcodeAccount?.({
+                    void model.removeAgentAccount?.({
                       provider: account.provider,
                       label: account.label,
                     });
@@ -378,7 +378,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
               ].filter(Boolean).join(" ")}
               disabled={model.isSaving}
               onClick={() => {
-                void model.startJcodeAccountLogin?.({ provider: provider.id }).then((response) => {
+                void model.startAgentAccountLogin?.({ provider: provider.id }).then((response) => {
                   if (response === null) return;
                   setPendingLogin({
                     provider: response.provider,
@@ -453,7 +453,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                   className="lyra-settings-ai-action lyra-settings-ai-action-primary"
                   disabled={model.isSaving}
                   onClick={() => {
-                    void model.startJcodeAccountLogin?.({
+                    void model.startAgentAccountLogin?.({
                       provider: "google",
                       googleClientId: nullableTrimmed(googleClientId),
                       googleClientSecret: nullableTrimmed(googleClientSecret),
@@ -514,7 +514,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                   className="lyra-settings-ai-action lyra-settings-ai-action-primary"
                   disabled={model.isSaving || callbackInput.trim().length === 0}
                   onClick={() => {
-                    void model.completeJcodeAccountLogin?.({
+                    void model.completeAgentAccountLogin?.({
                       provider: pendingLogin.provider,
                       flowId: pendingLogin.flowId,
                       label: pendingLogin.label ?? null,
@@ -634,7 +634,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
               className="lyra-settings-ai-action lyra-settings-ai-action-primary"
               disabled={model.isSaving || selectedApiKeyProvider.length === 0}
               onClick={() => {
-                void model.completeJcodeAccountLogin?.({
+                void model.completeAgentAccountLogin?.({
                   provider: selectedApiKeyProvider,
                   profileName,
                   baseUrl: baseUrl.trim().length === 0 ? null : baseUrl,
@@ -719,7 +719,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
               className="lyra-settings-ai-action lyra-settings-ai-action-primary"
               disabled={model.isSaving}
               onClick={() => {
-                void model.updateJcodeAgentRoles?.({
+                void model.updateAgentRoles?.({
                   swarmModel,
                   reviewModel,
                   judgeModel,
@@ -883,7 +883,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                 const smtpPassword = optionalSecret(emailPassword);
                 const telegramToken = optionalSecret(telegramBotToken);
                 const discordToken = optionalSecret(discordBotToken);
-                void model.updateJcodeConfig?.({
+                void model.updateAgentConfig?.({
                   desktopNotifications,
                   ntfyTopic: nullableTrimmed(ntfyTopic),
                   ntfyServer: nullableTrimmed(ntfyServer),

@@ -13,7 +13,7 @@ import "../ai-panel/agent-chat-demo/App.css";
 import "../ai-panel/agent-chat-demo/styles/tokens.css";
 import type {
   AgentSessionSnapshot,
-  JcodeOvernightRunSnapshot
+  AgentOvernightRunSnapshot
 } from "../../../shared/desktop-bridge";
 import { setLocale, type Locale } from "../ai-panel/agent-chat-demo/core/i18n";
 import { DataContextProvider } from "../ai-panel/agent-chat-demo/data/DataProvider";
@@ -128,10 +128,10 @@ const RunList = ({
   labels,
   onSelect
 }: {
-  readonly runs: readonly JcodeOvernightRunSnapshot[];
+  readonly runs: readonly AgentOvernightRunSnapshot[];
   readonly selectedRunId: string | null;
   readonly labels: AgentOvernightLabels;
-  readonly onSelect: (run: JcodeOvernightRunSnapshot) => void;
+  readonly onSelect: (run: AgentOvernightRunSnapshot) => void;
 }) => (
   <section className="lyra-agent-overnight-runs">
     <h2>{labels.latestRuns}</h2>
@@ -170,7 +170,7 @@ const Dashboard = ({
   onReview,
   onCancel
 }: {
-  readonly run: JcodeOvernightRunSnapshot | null;
+  readonly run: AgentOvernightRunSnapshot | null;
   readonly labels: AgentOvernightLabels;
   readonly refreshing: boolean;
   readonly cancelling: boolean;

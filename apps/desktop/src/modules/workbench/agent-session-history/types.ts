@@ -1,6 +1,6 @@
 import type {
   AgentSessionSnapshot,
-  JcodeSessionSummary,
+  AgentSessionSummary,
   LyraDesktopApi
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
@@ -56,7 +56,7 @@ export type AgentSessionHistorySurfaceProps = {
 
 export type AgentSessionHistoryState = {
   readonly sessionsDir: string | null;
-  readonly sessions: readonly JcodeSessionSummary[];
+  readonly sessions: readonly AgentSessionSummary[];
 };
 
 export type AgentSessionHistoryPreviewState = {

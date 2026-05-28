@@ -30,7 +30,7 @@ import {
 } from "../agent-session-view-model";
 import type {
   AgentSessionSnapshot,
-  JcodeSessionSummary
+  AgentSessionSummary
 } from "../../../shared/desktop-bridge";
 import type {
   AgentSessionHistoryPreviewState,
@@ -67,7 +67,7 @@ const formatSessionTime = (value?: string | null): string => {
   }).format(parsed);
 };
 
-const sessionSearchText = (session: JcodeSessionSummary): string =>
+const sessionSearchText = (session: AgentSessionSummary): string =>
   normalize([
     session.title,
     session.customTitle,
@@ -80,9 +80,9 @@ const sessionSearchText = (session: JcodeSessionSummary): string =>
   ].filter(Boolean).join(" "));
 
 const filterSessions = (
-  sessions: readonly JcodeSessionSummary[],
+  sessions: readonly AgentSessionSummary[],
   query: string
-): readonly JcodeSessionSummary[] => {
+): readonly AgentSessionSummary[] => {
   const normalizedQuery = normalize(query);
   if (normalizedQuery.length === 0) {
     return sessions;
@@ -91,12 +91,12 @@ const filterSessions = (
 };
 
 type SessionGroups = {
-  readonly saved: readonly JcodeSessionSummary[];
-  readonly recent: readonly JcodeSessionSummary[];
-  readonly archived: readonly JcodeSessionSummary[];
+  readonly saved: readonly AgentSessionSummary[];
+  readonly recent: readonly AgentSessionSummary[];
+  readonly archived: readonly AgentSessionSummary[];
 };
 
-const groupSessions = (sessions: readonly JcodeSessionSummary[]): SessionGroups => ({
+const groupSessions = (sessions: readonly AgentSessionSummary[]): SessionGroups => ({
   saved: sessions.filter((session) => session.saved && !session.archived),
   recent: sessions.filter((session) => !session.saved && !session.archived),
   archived: sessions.filter((session) => session.archived)
@@ -116,7 +116,7 @@ const SessionRow = ({
   onRename,
   onDelete
 }: {
-  readonly session: JcodeSessionSummary;
+  readonly session: AgentSessionSummary;
   readonly labels: AgentSessionHistorySurfaceProps["labels"];
   readonly active: boolean;
   readonly selected: boolean;
@@ -124,10 +124,10 @@ const SessionRow = ({
   readonly busy: boolean;
   readonly onPreview: (sessionId: string) => void;
   readonly onOpenInAiPanel: (sessionId: string) => void;
-  readonly onToggleSaved: (session: JcodeSessionSummary) => void;
-  readonly onToggleArchived: (session: JcodeSessionSummary) => void;
-  readonly onRename: (session: JcodeSessionSummary) => void;
-  readonly onDelete: (session: JcodeSessionSummary) => void;
+  readonly onToggleSaved: (session: AgentSessionSummary) => void;
+  readonly onToggleArchived: (session: AgentSessionSummary) => void;
+  readonly onRename: (session: AgentSessionSummary) => void;
+  readonly onDelete: (session: AgentSessionSummary) => void;
 }) => {
   const updatedAt = formatSessionTime(session.lastActiveAt ?? session.updatedAt);
   const modelLabel = session.model ?? labels.modelFallback;
@@ -249,7 +249,7 @@ const AgentSessionPreviewPane = ({
   loading
 }: {
   readonly snapshot: AgentSessionSnapshot | null;
-  readonly summary: JcodeSessionSummary | null;
+  readonly summary: AgentSessionSummary | null;
   readonly labels: AgentSessionHistorySurfaceProps["labels"];
   readonly loading: boolean;
 }) => {
@@ -354,9 +354,9 @@ export const AgentSessionHistorySurface = ({
   const [openingSessionId, setOpeningSessionId] = useState<string | null>(null);
   const [preview, setPreview] = useState<AgentSessionHistoryPreviewState>(EMPTY_PREVIEW_STATE);
   const [operationSessionId, setOperationSessionId] = useState<string | null>(null);
-  const [renameTarget, setRenameTarget] = useState<JcodeSessionSummary | null>(null);
+  const [renameTarget, setRenameTarget] = useState<AgentSessionSummary | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<JcodeSessionSummary | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AgentSessionSummary | null>(null);
 
   const loadSessions = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) {
@@ -467,7 +467,7 @@ export const AgentSessionHistorySurface = ({
     }
   }, [refreshAfterMutation]);
 
-  const toggleSaved = useCallback((session: JcodeSessionSummary): void => {
+  const toggleSaved = useCallback((session: AgentSessionSummary): void => {
     const agentApi = desktopApi?.agent;
     if (agentApi === undefined) {
       setErrorMessage(labels.runtimeUnavailable);
@@ -482,7 +482,7 @@ export const AgentSessionHistorySurface = ({
     });
   }, [desktopApi, labels.runtimeUnavailable, runSessionAction]);
 
-  const toggleArchived = useCallback((session: JcodeSessionSummary): void => {
+  const toggleArchived = useCallback((session: AgentSessionSummary): void => {
     const agentApi = desktopApi?.agent;
     if (agentApi === undefined) {
       setErrorMessage(labels.runtimeUnavailable);
@@ -496,7 +496,7 @@ export const AgentSessionHistorySurface = ({
     });
   }, [desktopApi, labels.runtimeUnavailable, runSessionAction]);
 
-  const openRenameDialog = useCallback((session: JcodeSessionSummary): void => {
+  const openRenameDialog = useCallback((session: AgentSessionSummary): void => {
     setRenameTarget(session);
     setRenameValue(session.customTitle ?? session.title);
   }, []);
@@ -545,7 +545,7 @@ export const AgentSessionHistorySurface = ({
   const renderGroup = (
     id: keyof SessionGroups,
     title: string,
-    sessions: readonly JcodeSessionSummary[]
+    sessions: readonly AgentSessionSummary[]
   ) => {
     if (sessions.length === 0) return null;
     return (

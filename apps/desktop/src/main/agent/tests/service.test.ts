@@ -159,98 +159,98 @@ describe("Agent IPC bridge", () => {
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.jcodeModelsList)?.({}, { sessionId: "session-1" })
+      electronMock.handlers.get(LYRA_CHANNELS.agentModelsList)?.({}, { sessionId: "session-1" })
     ).resolves.toEqual({
-      method: "jcode.models.list",
+      method: "agent.models.list",
       payload: { sessionId: "session-1" }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.jcodeModelSwitch)?.({}, {
+      electronMock.handlers.get(LYRA_CHANNELS.agentModelSwitch)?.({}, {
         sessionId: "session-1",
         model: "gpt-5"
       })
     ).resolves.toEqual({
-      method: "jcode.model.switch",
+      method: "agent.models.switch",
       payload: {
         sessionId: "session-1",
         model: "gpt-5"
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.jcodeProviderOptionsUpdate)?.({}, {
+      electronMock.handlers.get(LYRA_CHANNELS.agentProviderOptionsUpdate)?.({}, {
         sessionId: "session-1",
         reasoningEffort: "high"
       })
     ).resolves.toEqual({
-      method: "jcode.provider.options.update",
+      method: "agent.provider.options.update",
       payload: {
         sessionId: "session-1",
         reasoningEffort: "high"
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.jcodeImproveRun)?.({}, {
+      electronMock.handlers.get(LYRA_CHANNELS.agentImproveRun)?.({}, {
         sessionId: "session-1",
         planOnly: false
       })
     ).resolves.toEqual({
-      method: "jcode.improve.run",
+      method: "agent.action.improve",
       payload: {
         sessionId: "session-1",
         planOnly: false
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.jcodeRefactorRun)?.({}, {
+      electronMock.handlers.get(LYRA_CHANNELS.agentRefactorRun)?.({}, {
         sessionId: "session-1",
         planOnly: true
       })
     ).resolves.toEqual({
-      method: "jcode.refactor.run",
+      method: "agent.action.refactor",
       payload: {
         sessionId: "session-1",
         planOnly: true
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.jcodePokeTrigger)?.({}, {
+      electronMock.handlers.get(LYRA_CHANNELS.agentPokeTrigger)?.({}, {
         sessionId: "session-1"
       })
     ).resolves.toEqual({
-      method: "jcode.poke.trigger",
+      method: "agent.action.poke",
       payload: {
         sessionId: "session-1"
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.jcodeReviewRun)?.({}, {
+      electronMock.handlers.get(LYRA_CHANNELS.agentReviewRun)?.({}, {
         sessionId: "session-1"
       })
     ).resolves.toEqual({
-      method: "jcode.review.run",
+      method: "agent.action.review",
       payload: {
         sessionId: "session-1"
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.jcodeJudgeRun)?.({}, {
+      electronMock.handlers.get(LYRA_CHANNELS.agentJudgeRun)?.({}, {
         sessionId: "session-1"
       })
     ).resolves.toEqual({
-      method: "jcode.judge.run",
+      method: "agent.action.judge",
       payload: {
         sessionId: "session-1"
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.jcodeOvernightStart)?.({}, {
+      electronMock.handlers.get(LYRA_CHANNELS.agentOvernightStart)?.({}, {
         sessionId: "session-1",
         durationMinutes: 240,
         mission: "Stabilize tests",
         inheritContext: true
       })
     ).resolves.toEqual({
-      method: "jcode.overnight.start",
+      method: "agent.overnight.start",
       payload: {
         sessionId: "session-1",
         durationMinutes: 240,
@@ -259,11 +259,11 @@ describe("Agent IPC bridge", () => {
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.jcodeOvernightStatus)?.({}, {
+      electronMock.handlers.get(LYRA_CHANNELS.agentOvernightStatus)?.({}, {
         runId: "overnight-1"
       })
     ).resolves.toEqual({
-      method: "jcode.overnight.status",
+      method: "agent.overnight.status",
       payload: {
         runId: "overnight-1"
       }

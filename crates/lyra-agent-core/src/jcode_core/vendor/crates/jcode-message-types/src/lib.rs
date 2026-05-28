@@ -363,12 +363,12 @@ fn is_fresh_user_text_message(message: &Message) -> bool {
     let mut saw_user_text = false;
     for block in &message.content {
         match block {
-                ContentBlock::Text { text, .. } => {
-                    let trimmed = text.trim();
-                    if !trimmed.is_empty() {
-                        saw_user_text = true;
-                    }
+            ContentBlock::Text { text, .. } => {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    saw_user_text = true;
                 }
+            }
             ContentBlock::Image { .. } => {}
             _ => return false,
         }

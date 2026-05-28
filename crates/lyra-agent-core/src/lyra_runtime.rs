@@ -5506,6 +5506,7 @@ pub enum AgentRuntimeEvent {
     SessionSnapshot {
         snapshot: AgentSessionSnapshot,
     },
+    #[serde(rename = "messageCommitted")]
     MessageAppended {
         session_id: String,
         message: AgentMessage,
@@ -5529,6 +5530,7 @@ pub enum AgentRuntimeEvent {
         session_id: String,
         tool: ToolActivity,
     },
+    #[serde(rename = "memoryUpdated")]
     MemorySnapshot {
         session_id: String,
         snapshot: AgentMemorySnapshot,
@@ -5565,6 +5567,7 @@ pub enum AgentRuntimeEvent {
         session_id: String,
         todos: Vec<AgentTodoItem>,
     },
+    #[serde(rename = "clarificationRequested")]
     ClarificationRequired {
         session_id: String,
         clarification_id: String,
@@ -5579,11 +5582,13 @@ pub enum AgentRuntimeEvent {
         session_id: String,
         clarification_id: String,
     },
+    #[serde(rename = "browserActivityChanged")]
     BrowserTargetUpdated {
         session_id: String,
         turn_id: String,
         target: Value,
     },
+    #[serde(rename = "permissionRequested")]
     PermissionRequired {
         session_id: String,
         permission_id: String,
@@ -7695,9 +7700,9 @@ mod tests {
             !captured.iter().any(|event| {
                 serde_json::from_str::<Value>(event)
                     .ok()
-                    .is_some_and(|value| value["kind"] == "clarificationRequired")
+                    .is_some_and(|value| value["kind"] == "clarificationRequested")
             }),
-            "assistant text must not synthesize a clarificationRequired event"
+            "assistant text must not synthesize a clarificationRequested event"
         );
         let pending = PENDING_CLARIFICATIONS.lock().expect("pending");
         assert!(!pending.values().any(|item| item.session_id == snapshot.id));
@@ -8725,7 +8730,7 @@ mod tests {
                 break;
             }
         }
-        assert!(captured.contains("messageAppended"));
+        assert!(captured.contains("messageCommitted"));
         assert!(captured.contains("followStateChanged"));
         assert!(captured.contains("turnFinished") || captured.contains("turnFailed"));
         clear_rust_event_callback();
@@ -8772,7 +8777,7 @@ mod tests {
             let captured = events.lock().expect("events").clone();
             for event in captured {
                 let value: Value = serde_json::from_str(&event).expect("event json");
-                if value["kind"] == "clarificationRequired" {
+                if value["kind"] == "clarificationRequested" {
                     clarification_id = value["clarificationId"].as_str().map(ToOwned::to_owned);
                     assert_eq!(value["sessionId"], snapshot.id);
                     assert_eq!(value["question"], "Which direction should I take?");
@@ -8839,7 +8844,7 @@ mod tests {
             let captured = events.lock().expect("events").clone();
             clarification_id = captured.iter().find_map(|event| {
                 let value: Value = serde_json::from_str(event).ok()?;
-                (value["kind"] == "clarificationRequired")
+                (value["kind"] == "clarificationRequested")
                     .then(|| value["clarificationId"].as_str().map(ToOwned::to_owned))
                     .flatten()
             });
