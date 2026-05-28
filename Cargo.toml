@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/lyra-agent-api",
   "crates/lyra-code-intel-core",
   "crates/lyrad",
   "crates/lyra-runtime-protocol",
@@ -34,6 +35,7 @@ lyra-download-core = { path = "crates/lyra-download-core" }
 lyra-files-core = { path = "crates/lyra-files-core" }
 lyra-image-core = { path = "crates/lyra-image-core" }
 lyra-agent-core = { path = "crates/lyra-agent-core" }
+lyra-agent-api = { path = "crates/lyra-agent-api" }
 lyra-local-search = { path = "crates/lyra-local-search" }
 
 # External
