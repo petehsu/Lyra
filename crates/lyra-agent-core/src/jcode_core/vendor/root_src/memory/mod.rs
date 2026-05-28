@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 mod activity;
+pub mod agent_runtime;
 mod cache;
 mod pending;
 #[path = "../memory_prompt.rs"]

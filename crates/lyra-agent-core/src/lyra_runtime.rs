@@ -15,7 +15,7 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::agent::Agent;
+use crate::agent::{Agent, AssembledProviderContext};
 use crate::jcode_core::bridge::{
     JcodeRegisteredCommand, finished_tool_label, live_tool_label,
     registered_commands_from_vendored_tui,
@@ -26,12 +26,20 @@ use crate::jcode_gui_actions::{
     build_poke_message, build_refactor_prompt, build_review_startup_message,
     build_selfdev_start_prompt, incomplete_poke_todos, session_improve_mode_for,
 };
+use crate::memory::agent_runtime::{
+    AgentMemorySnapshot, AgentMemoryStore, CreateSessionInput, EventRole as MemoryEventRole,
+    ModelContextPolicy, NewSessionEvent, RuntimeTurnState, SessionRecord as MemorySessionRecord,
+    SessionStatus as MemorySessionStatus, SharedMemoryStatus, TimelineProjectionItem,
+    ToolResultStatus, UiPolicy, Visibility,
+};
 use crate::message::{ContentBlock, Message as JcodeMessage, Role};
 use crate::protocol::ServerEvent;
 use crate::provider::{MultiProvider, Provider};
 use crate::rollback;
 use crate::runtime::InterruptSignal;
-use crate::session::{Session, session_journal_path, session_path};
+use crate::session::Session;
+#[cfg(test)]
+use crate::session::{session_journal_path, session_path};
 use crate::tool::{Registry, ToolContext, ToolExecutionMode};
 
 type EventCallback = dyn Fn(String) + Send + Sync + 'static;
@@ -220,6 +228,8 @@ pub struct AgentSessionSnapshot {
     pub active_turn_id: Option<String>,
     pub follow: AgentFollowState,
     pub updated_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<AgentMemorySnapshot>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -927,27 +937,693 @@ pub fn call_host_capability(method: &str, payload: Value) -> Result<Value, Strin
     Ok(result_val)
 }
 
+fn agent_memory_store() -> Result<AgentMemoryStore, AgentError> {
+    AgentMemoryStore::new_default()
+        .map_err(|error| AgentError::Provider(format!("agent memory store failed: {error}")))
+}
+
+fn agent_memory_input_from_jcode_session(session: &Session) -> CreateSessionInput {
+    CreateSessionInput {
+        title: Some(session.display_title_or_name().to_string()),
+        working_dir: Some(session_working_dir(session)),
+        provider_key: session.provider_key.clone(),
+        model: session.model.clone(),
+    }
+}
+
+fn ensure_agent_memory_session_from_jcode(
+    session: &Session,
+) -> Result<MemorySessionRecord, AgentError> {
+    agent_memory_store()?
+        .ensure_session_with_id(&session.id, agent_memory_input_from_jcode_session(session))
+        .map_err(|error| AgentError::Provider(format!("agent memory session failed: {error}")))
+}
+
+fn sync_agent_memory_session_metadata(session: &Session) -> Result<(), AgentError> {
+    let store = agent_memory_store()?;
+    store
+        .ensure_session_with_id(&session.id, agent_memory_input_from_jcode_session(session))
+        .map_err(|error| AgentError::Provider(format!("agent memory session failed: {error}")))?;
+    store
+        .update_session_title(&session.id, session.display_title_or_name())
+        .and_then(|()| {
+            store.update_session_model_snapshot(
+                &session.id,
+                Some(session_working_dir(session).as_str()),
+                session.provider_key.as_deref(),
+                session.model.as_deref(),
+            )
+        })
+        .and_then(|()| {
+            let status = if session.archived {
+                MemorySessionStatus::Archived
+            } else {
+                MemorySessionStatus::Idle
+            };
+            store.update_session_status(&session.id, status)
+        })
+        .map_err(|error| AgentError::Provider(format!("agent memory metadata failed: {error}")))
+}
+
+fn memory_turn_state_for_turn_status(status: &TurnStatus) -> RuntimeTurnState {
+    match status {
+        TurnStatus::Idle | TurnStatus::Finished => RuntimeTurnState::Completed,
+        TurnStatus::Running => RuntimeTurnState::StreamingModel,
+        TurnStatus::Cancelled => RuntimeTurnState::CancelledByUser,
+        TurnStatus::Failed => RuntimeTurnState::FailedRecoverable,
+    }
+}
+
+fn memory_session_status_for_turn_status(status: &TurnStatus) -> MemorySessionStatus {
+    match status {
+        TurnStatus::Idle | TurnStatus::Finished => MemorySessionStatus::Idle,
+        TurnStatus::Running => MemorySessionStatus::Running,
+        TurnStatus::Cancelled => MemorySessionStatus::Interrupted,
+        TurnStatus::Failed => MemorySessionStatus::Failed,
+    }
+}
+
+fn memory_snapshot_for_session(session_id: &str) -> Option<AgentMemorySnapshot> {
+    agent_memory_store().ok()?.snapshot(session_id).ok()
+}
+
+fn active_memory_turn_id(snapshot: &AgentMemorySnapshot) -> Option<String> {
+    snapshot
+        .runtime_turns
+        .iter()
+        .rev()
+        .find(|turn| !turn.state.is_terminal())
+        .map(|turn| turn.runtime_turn_id.clone())
+}
+
+fn turn_status_from_memory_snapshot(snapshot: &AgentMemorySnapshot) -> TurnStatus {
+    if let Some(turn) = snapshot
+        .runtime_turns
+        .iter()
+        .rev()
+        .find(|turn| !turn.state.is_terminal())
+    {
+        return match turn.state {
+            RuntimeTurnState::FailedRecoverable | RuntimeTurnState::FailedTerminal => {
+                TurnStatus::Failed
+            }
+            RuntimeTurnState::CancelledByUser | RuntimeTurnState::Interrupted => {
+                TurnStatus::Cancelled
+            }
+            RuntimeTurnState::Completed => TurnStatus::Finished,
+            _ => TurnStatus::Running,
+        };
+    }
+    match snapshot.session.as_ref().map(|session| &session.status) {
+        Some(MemorySessionStatus::Running) => TurnStatus::Running,
+        Some(MemorySessionStatus::Failed) => TurnStatus::Failed,
+        Some(MemorySessionStatus::Interrupted) => TurnStatus::Cancelled,
+        _ => TurnStatus::Idle,
+    }
+}
+
+fn parse_memory_time(value: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now())
+}
+
+fn memory_payload_text(item: &TimelineProjectionItem) -> String {
+    item.payload_json
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn agent_role_from_memory(role: MemoryEventRole) -> Option<AgentRole> {
+    match role {
+        MemoryEventRole::User => Some(AgentRole::User),
+        MemoryEventRole::Assistant => Some(AgentRole::Assistant),
+        MemoryEventRole::System => Some(AgentRole::System),
+        MemoryEventRole::Tool | MemoryEventRole::Runtime => None,
+    }
+}
+
+fn agent_message_from_memory_item(item: &TimelineProjectionItem) -> Option<AgentMessage> {
+    let role = agent_role_from_memory(item.role)?;
+    let text = memory_payload_text(item);
+    let blocks = if text.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![AgentMessageBlock::Text {
+            id: format!("{}-text", item.event_id),
+            text: text.clone(),
+        }]
+    };
+    Some(AgentMessage {
+        id: item.event_id.clone(),
+        role,
+        text,
+        blocks,
+        created_at: parse_memory_time(&item.created_at_iso),
+        rollback: None,
+    })
+}
+
+fn tool_activity_from_memory_item(item: &TimelineProjectionItem) -> Option<ToolActivity> {
+    if item.kind != "tool_result" {
+        return None;
+    }
+    let payload = &item.payload_json;
+    let name = payload
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("tool")
+        .to_string();
+    let status = match payload.get("status").and_then(Value::as_str) {
+        Some("failed_retryable" | "failed_terminal" | "timed_out_partial") => {
+            ToolActivityStatus::Failed
+        }
+        Some("cancelled") => ToolActivityStatus::Cancelled,
+        Some("running") => ToolActivityStatus::Running,
+        _ => ToolActivityStatus::Completed,
+    };
+    let failed = status == ToolActivityStatus::Failed;
+    Some(ToolActivity {
+        id: payload
+            .get("toolCallId")
+            .and_then(Value::as_str)
+            .unwrap_or(item.event_id.as_str())
+            .to_string(),
+        name: name.clone(),
+        label: finished_tool_label(&name, failed),
+        status,
+        input: Value::Object(serde_json::Map::new()),
+        output: payload.get("output").cloned(),
+        started_at: parse_memory_time(&item.created_at_iso),
+        finished_at: Some(parse_memory_time(&item.created_at_iso)),
+    })
+}
+
+fn provider_message_from_memory_item(item: &TimelineProjectionItem) -> Option<JcodeMessage> {
+    match item.kind.as_str() {
+        "user_message" if item.role == MemoryEventRole::User => Some(JcodeMessage {
+            role: Role::User,
+            content: vec![ContentBlock::Text {
+                text: memory_payload_text(item),
+                cache_control: None,
+            }],
+            timestamp: Some(parse_memory_time(&item.created_at_iso)),
+            tool_duration_ms: None,
+        }),
+        "user_context_message" if item.role == MemoryEventRole::User => {
+            let content = item
+                .payload_json
+                .get("contentBlocks")
+                .cloned()
+                .and_then(|value| serde_json::from_value::<Vec<ContentBlock>>(value).ok())?;
+            Some(JcodeMessage {
+                role: Role::User,
+                content,
+                timestamp: Some(parse_memory_time(&item.created_at_iso)),
+                tool_duration_ms: None,
+            })
+        }
+        "assistant_message" if item.role == MemoryEventRole::Assistant => {
+            let mut content = Vec::new();
+            let text = memory_payload_text(item);
+            if !text.trim().is_empty() {
+                content.push(ContentBlock::Text {
+                    text,
+                    cache_control: None,
+                });
+            }
+            if let Some(tool_calls) = item.payload_json.get("toolCalls").and_then(Value::as_array) {
+                for tool in tool_calls {
+                    let Some(id) = tool.get("id").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    let Some(name) = tool.get("name").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    content.push(ContentBlock::ToolUse {
+                        id: id.to_string(),
+                        name: name.to_string(),
+                        input: tool.get("input").cloned().unwrap_or(Value::Null),
+                    });
+                }
+            }
+            if content.is_empty() {
+                return None;
+            }
+            Some(JcodeMessage {
+                role: Role::Assistant,
+                content,
+                timestamp: Some(parse_memory_time(&item.created_at_iso)),
+                tool_duration_ms: None,
+            })
+        }
+        "tool_result" => {
+            let payload = &item.payload_json;
+            let tool_call_id = payload
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .unwrap_or(item.event_id.as_str())
+                .to_string();
+            let content = payload
+                .get("output")
+                .map(|output| {
+                    output
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| output.to_string())
+                })
+                .unwrap_or_default();
+            Some(JcodeMessage {
+                role: Role::User,
+                content: vec![ContentBlock::ToolResult {
+                    tool_use_id: tool_call_id,
+                    content,
+                    is_error: payload
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| status.contains("failed"))
+                        .then_some(true),
+                }],
+                timestamp: Some(parse_memory_time(&item.created_at_iso)),
+                tool_duration_ms: None,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn current_user_provider_message(text: &str, images: &[(String, String)]) -> JcodeMessage {
+    let mut content = images
+        .iter()
+        .map(|(media_type, data)| ContentBlock::Image {
+            media_type: media_type.clone(),
+            data: data.clone(),
+        })
+        .collect::<Vec<_>>();
+    if !text.trim().is_empty() || content.is_empty() {
+        content.push(ContentBlock::Text {
+            text: text.to_string(),
+            cache_control: None,
+        });
+    }
+    JcodeMessage {
+        role: Role::User,
+        content,
+        timestamp: Some(Utc::now()),
+        tool_duration_ms: None,
+    }
+}
+
+fn assembled_provider_context_from_snapshot(
+    snapshot: &crate::memory::agent_runtime::ContextSnapshot,
+    text: &str,
+    images: &[(String, String)],
+) -> AssembledProviderContext {
+    let latest_user_event_id = snapshot
+        .layers
+        .iter()
+        .find(|layer| {
+            matches!(
+                layer.kind,
+                crate::memory::agent_runtime::ContextLayerKind::LatestUserIntent
+            )
+        })
+        .and_then(|layer| layer.payload_json.get("event"))
+        .and_then(|event| event.get("eventId"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let current_user = current_user_provider_message(text, images);
+    let mut inserted_current_user = false;
+    let mut messages = snapshot
+        .layers
+        .iter()
+        .find(|layer| {
+            matches!(
+                layer.kind,
+                crate::memory::agent_runtime::ContextLayerKind::Tail
+            )
+        })
+        .and_then(|layer| layer.payload_json.get("timeline"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| serde_json::from_value::<TimelineProjectionItem>(value.clone()).ok())
+        .filter_map(|item| {
+            if latest_user_event_id.as_deref() == Some(item.event_id.as_str()) {
+                inserted_current_user = true;
+                Some(current_user.clone())
+            } else {
+                provider_message_from_memory_item(&item)
+            }
+        })
+        .collect::<Vec<_>>();
+    if !inserted_current_user {
+        messages.push(current_user);
+    }
+    let dynamic_layers = snapshot
+        .layers
+        .iter()
+        .filter(|layer| {
+            !matches!(
+                layer.kind,
+                crate::memory::agent_runtime::ContextLayerKind::Tail
+                    | crate::memory::agent_runtime::ContextLayerKind::LatestUserIntent
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let dynamic_system_context = serde_json::to_string(&json!({
+        "lyraContextSnapshotId": snapshot.context_snapshot_id,
+        "runtimeTurnId": snapshot.runtime_turn_id,
+        "layers": dynamic_layers
+    }))
+    .ok();
+    AssembledProviderContext {
+        session_id: snapshot.session_id.clone(),
+        runtime_turn_id: snapshot.runtime_turn_id.clone(),
+        context_snapshot_id: snapshot.context_snapshot_id.clone(),
+        messages,
+        dynamic_system_context,
+    }
+}
+
+fn todo_item_from_memory_value(value: &Value, index: usize) -> Option<AgentTodoItem> {
+    let object = value.as_object()?;
+    let id = object
+        .get("id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("todo-{index}"));
+    let content = object
+        .get("content")
+        .or_else(|| object.get("title"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if content.trim().is_empty() {
+        return None;
+    }
+    Some(AgentTodoItem {
+        id,
+        content,
+        status: object
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("pending")
+            .to_string(),
+        priority: object
+            .get("priority")
+            .and_then(Value::as_str)
+            .unwrap_or("normal")
+            .to_string(),
+        blocked_by: object
+            .get("blockedBy")
+            .or_else(|| object.get("blocked_by"))
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        assigned_to: object
+            .get("assignedTo")
+            .or_else(|| object.get("assigned_to"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+    })
+}
+
+fn snapshot_from_agent_memory_snapshot(snapshot: AgentMemorySnapshot) -> AgentSessionSnapshot {
+    let session = snapshot.session.clone();
+    let working_dir = session
+        .as_ref()
+        .and_then(|session| session.working_dir.clone())
+        .unwrap_or_else(default_unbound_working_dir);
+    let messages = snapshot
+        .timeline_projection
+        .iter()
+        .filter_map(agent_message_from_memory_item)
+        .collect::<Vec<_>>();
+    let tools = snapshot
+        .timeline_projection
+        .iter()
+        .filter_map(tool_activity_from_memory_item)
+        .collect::<Vec<_>>();
+    let todos = snapshot
+        .active_todos
+        .iter()
+        .enumerate()
+        .filter_map(|(index, value)| todo_item_from_memory_value(value, index))
+        .collect::<Vec<_>>();
+    let turn_status = turn_status_from_memory_snapshot(&snapshot);
+    let active_turn_id = active_memory_turn_id(&snapshot);
+    let updated_at = session
+        .as_ref()
+        .map(|session| parse_memory_time(&session.updated_at_iso))
+        .unwrap_or_else(Utc::now);
+    let running = matches!(turn_status, TurnStatus::Running);
+    AgentSessionSnapshot {
+        id: session
+            .as_ref()
+            .map(|session| session.session_id.clone())
+            .unwrap_or_default(),
+        title: session
+            .as_ref()
+            .map(|session| session.title.clone())
+            .unwrap_or_else(|| "Lyra Agent".to_string()),
+        session_kind: AgentSessionKind::Normal,
+        project_bound: is_project_bound(&working_dir),
+        working_dir,
+        messages,
+        tools,
+        todos,
+        automation: AgentSessionAutomationSnapshot {
+            subagent_model: None,
+            autoreview_enabled: None,
+            autojudge_enabled: None,
+        },
+        side_panel: AgentSidePanelSnapshot::default(),
+        turn_status,
+        active_turn_id,
+        follow: AgentFollowState {
+            running,
+            activity: running.then(|| "Running via structured Agent memory".to_string()),
+        },
+        updated_at,
+        memory: Some(snapshot),
+    }
+}
+
+fn summary_from_agent_memory_session(session: &MemorySessionRecord) -> JcodeSessionSummary {
+    JcodeSessionSummary {
+        id: session.session_id.clone(),
+        title: session.title.clone(),
+        session_kind: AgentSessionKind::Normal,
+        custom_title: Some(session.title.clone()),
+        short_name: None,
+        status: session.status.as_storage_str().to_string(),
+        provider_key: session.provider_key.clone(),
+        model: session.model.clone(),
+        message_count: 0,
+        created_at: parse_memory_time(&session.created_at_iso),
+        updated_at: parse_memory_time(&session.updated_at_iso),
+        last_active_at: Some(parse_memory_time(&session.updated_at_iso)),
+        saved: false,
+        save_label: None,
+        archived: matches!(session.status, MemorySessionStatus::Archived),
+        working_dir: session.working_dir.clone(),
+    }
+}
+
+fn jcode_session_from_agent_memory(
+    record: &MemorySessionRecord,
+    snapshot: Option<&AgentMemorySnapshot>,
+) -> Session {
+    let mut session =
+        Session::create_with_id(record.session_id.clone(), None, Some(record.title.clone()));
+    session.working_dir = record.working_dir.clone();
+    session.provider_key = record.provider_key.clone();
+    session.model = record.model.clone();
+    session.created_at = parse_memory_time(&record.created_at_iso);
+    session.updated_at = parse_memory_time(&record.updated_at_iso);
+    session.archived = matches!(record.status, MemorySessionStatus::Archived);
+    if let Some(snapshot) = snapshot {
+        for item in &snapshot.timeline_projection {
+            if let Some(message) = provider_message_from_memory_item(item) {
+                session.add_message(message.role, message.content);
+            }
+        }
+    }
+    session
+}
+
+fn read_memory_session_record(session_id: &str) -> Result<MemorySessionRecord, AgentError> {
+    agent_memory_store()?
+        .read_session(session_id)
+        .map_err(|error| {
+            AgentError::Provider(format!("agent memory session read failed: {error}"))
+        })?
+        .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))
+}
+
+fn jcode_session_for_memory_session(session_id: &str) -> Result<Session, AgentError> {
+    let store = agent_memory_store()?;
+    let memory_snapshot = store
+        .snapshot(session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory snapshot failed: {error}")))?;
+    let record = memory_snapshot
+        .session
+        .as_ref()
+        .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+    Ok(jcode_session_from_agent_memory(
+        record,
+        Some(&memory_snapshot),
+    ))
+}
+
+fn stored_message_text(message: &crate::session::StoredMessage) -> String {
+    message
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .filter(|text| !text.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn stored_message_to_memory_event(
+    message: &crate::session::StoredMessage,
+) -> Option<NewSessionEvent> {
+    if let Some(tool_result) = message.content.iter().find_map(|block| match block {
+        ContentBlock::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } => Some((tool_use_id, content, is_error)),
+        _ => None,
+    }) {
+        return Some(NewSessionEvent {
+            kind: "tool_result".to_string(),
+            role: MemoryEventRole::Tool,
+            payload: json!({
+                "toolCallId": tool_result.0,
+                "output": { "content": tool_result.1 },
+                "status": if tool_result.2.unwrap_or(false) { "failed_terminal" } else { "completed" },
+            }),
+            visibility: Visibility::UserVisible,
+            model_context_policy: ModelContextPolicy::Include,
+            ui_policy: UiPolicy::ShowInTimeline,
+            runtime_turn_id: None,
+            lineage_json: json!({ "sourceStoredMessageId": message.id }),
+        });
+    }
+
+    let text = stored_message_text(message);
+    if text.trim().is_empty() {
+        return None;
+    }
+    match message.role {
+        Role::User => Some(NewSessionEvent::user_message(text)),
+        Role::Assistant => Some(NewSessionEvent::assistant_message(text, None)),
+    }
+}
+
+fn todo_items_for_session(session_id: &str) -> Result<Vec<crate::todo::TodoItem>, AgentError> {
+    Ok(agent_memory_store()?
+        .active_todos_for_session(session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory todos read failed: {error}")))?
+        .into_iter()
+        .filter_map(|value| serde_json::from_value::<crate::todo::TodoItem>(value).ok())
+        .collect())
+}
+
+fn copy_active_todos(parent_session_id: &str, child_session_id: &str) -> Result<(), AgentError> {
+    let store = agent_memory_store()?;
+    let todos = store
+        .active_todos_for_session(parent_session_id)
+        .map_err(|error| {
+            AgentError::Provider(format!("agent memory todos read failed: {error}"))
+        })?;
+    store
+        .record_active_todos_for_session(child_session_id, None, &todos)
+        .map_err(|error| AgentError::Provider(format!("agent memory todos copy failed: {error}")))
+}
+
+fn persist_jcode_session_adapter(session: &Session) -> Result<(), AgentError> {
+    let store = agent_memory_store()?;
+    store
+        .ensure_session_with_id(&session.id, agent_memory_input_from_jcode_session(session))
+        .and_then(|_| store.update_session_title(&session.id, session.display_title_or_name()))
+        .and_then(|_| {
+            store.update_session_model_snapshot(
+                &session.id,
+                session.working_dir.as_deref(),
+                session.provider_key.as_deref(),
+                session.model.as_deref(),
+            )
+        })
+        .and_then(|_| {
+            store.update_session_status(
+                &session.id,
+                if session.archived {
+                    MemorySessionStatus::Archived
+                } else {
+                    MemorySessionStatus::Idle
+                },
+            )
+        })
+        .map_err(|error| {
+            AgentError::Provider(format!("agent memory session persist failed: {error}"))
+        })?;
+
+    if store
+        .read_events_by_session(&session.id)
+        .map_err(|error| AgentError::Provider(format!("agent memory events read failed: {error}")))?
+        .is_empty()
+    {
+        for message in &session.messages {
+            if let Some(event) = stored_message_to_memory_event(message) {
+                store.append_event(&session.id, event).map_err(|error| {
+                    AgentError::Provider(format!("agent memory event clone failed: {error}"))
+                })?;
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn create_session_json(payload: String) -> Result<String, AgentError> {
     let request: CreateSessionRequest = parse_request(&payload)?;
     let title = request.title.unwrap_or_else(|| "Lyra Agent".to_string());
     let working_dir = resolve_create_working_dir(request.working_dir.as_deref())?;
-    let mut session = Session::create(None, Some(title));
-    apply_session_working_dir(&mut session, &working_dir);
-    session.mark_active();
-    session
-        .save()
-        .map_err(|error| AgentError::Provider(error.to_string()))?;
-    let snapshot = snapshot_from_jcode_session(
-        &session,
-        TurnStatus::Idle,
-        None,
-        AgentFollowState {
-            running: false,
-            activity: None,
-        },
-        Vec::new(),
-    );
-    let agent = build_agent_blocking(session)?;
+    let store = agent_memory_store()?;
+    let record = store
+        .create_session(CreateSessionInput {
+            title: Some(title),
+            working_dir: Some(working_dir),
+            provider_key: None,
+            model: None,
+        })
+        .map_err(|error| {
+            AgentError::Provider(format!("agent memory session create failed: {error}"))
+        })?;
+    let memory_snapshot = store
+        .snapshot(&record.session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory snapshot failed: {error}")))?;
+    let snapshot = snapshot_from_agent_memory_snapshot(memory_snapshot.clone());
+    let agent = build_agent_blocking(jcode_session_from_agent_memory(
+        &record,
+        Some(&memory_snapshot),
+    ))?;
 
     let mut runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
     runtime.active_session_id = Some(snapshot.id.clone());
@@ -977,9 +1653,17 @@ pub fn bind_project_session_json(payload: String) -> Result<String, AgentError> 
     }
     let working_dir = normalize_working_dir(request.working_dir.as_deref())?;
 
-    let mut session =
-        Session::load(&session_id).map_err(|_| AgentError::SessionNotFound(session_id.clone()))?;
-    let current_working_dir = session_working_dir(&session);
+    let store = agent_memory_store()?;
+    let session_record = store
+        .read_session(&session_id)
+        .map_err(|error| {
+            AgentError::Provider(format!("agent memory session read failed: {error}"))
+        })?
+        .ok_or_else(|| AgentError::SessionNotFound(session_id.clone()))?;
+    let current_working_dir = session_record
+        .working_dir
+        .clone()
+        .unwrap_or_else(default_unbound_working_dir);
     if is_project_bound(&current_working_dir)
         && Path::new(&current_working_dir) != Path::new(&working_dir)
     {
@@ -987,10 +1671,14 @@ pub fn bind_project_session_json(payload: String) -> Result<String, AgentError> 
             "cannot change project binding after a project is already bound".to_string(),
         ));
     }
-    apply_session_working_dir(&mut session, &working_dir);
-    session
-        .save()
-        .map_err(|error| AgentError::Provider(error.to_string()))?;
+    store
+        .update_session_model_snapshot(
+            &session_id,
+            Some(&working_dir),
+            session_record.provider_key.as_deref(),
+            session_record.model.as_deref(),
+        )
+        .map_err(|error| AgentError::Provider(format!("agent memory bind failed: {error}")))?;
 
     let loaded_agent = {
         let runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
@@ -1010,26 +1698,16 @@ pub fn bind_project_session_json(payload: String) -> Result<String, AgentError> 
         let mut runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
         runtime.active_session_id = Some(session_id.clone());
         if let Some(loaded) = runtime.sessions.get_mut(&session_id) {
-            let snapshot = snapshot_from_jcode_session(
-                &session,
-                loaded.snapshot.turn_status.clone(),
-                loaded.snapshot.active_turn_id.clone(),
-                loaded.snapshot.follow.clone(),
-                loaded.snapshot.tools.clone(),
-            );
+            loaded.snapshot.working_dir = working_dir.clone();
+            loaded.snapshot.project_bound = is_project_bound(&working_dir);
+            loaded.snapshot.updated_at = Utc::now();
+            let snapshot = loaded.snapshot.clone();
             loaded.snapshot = snapshot.clone();
             snapshot
         } else {
-            snapshot_from_jcode_session(
-                &session,
-                TurnStatus::Idle,
-                None,
-                AgentFollowState {
-                    running: false,
-                    activity: None,
-                },
-                Vec::new(),
-            )
+            snapshot_from_agent_memory_snapshot(store.snapshot(&session_id).map_err(|error| {
+                AgentError::Provider(format!("agent memory snapshot failed: {error}"))
+            })?)
         }
     };
 
@@ -1057,12 +1735,20 @@ pub fn read_session_json(payload: String) -> Result<String, AgentError> {
         })
     }
     .or_else(|| {
-        persisted_snapshot(&session_id, TurnStatus::Idle, None, None)
+        agent_memory_store()
             .ok()
+            .and_then(|store| store.snapshot(&session_id).ok())
+            .map(snapshot_from_agent_memory_snapshot)
             .map(|snapshot| (snapshot, None))
     })
     .ok_or_else(|| AgentError::SessionNotFound(session_id.clone()))?;
     if let Some(turn_id) = recovered_turn_id {
+        transition_memory_turn(
+            &session_id,
+            &turn_id,
+            RuntimeTurnState::Interrupted,
+            "stalled_turn_recovered",
+        );
         emit_event(AgentRuntimeEvent::SessionSnapshot {
             snapshot: snapshot.clone(),
         });
@@ -1077,6 +1763,141 @@ pub fn read_session_json(payload: String) -> Result<String, AgentError> {
         });
     }
     encode(&snapshot)
+}
+
+fn resolve_memory_session_id(requested: Option<String>) -> Result<String, AgentError> {
+    if let Some(session_id) = requested
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+    {
+        return Ok(session_id);
+    }
+    let runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
+    runtime
+        .active_session_id
+        .clone()
+        .ok_or_else(|| AgentError::SessionNotFound("active".to_string()))
+}
+
+pub fn agent_memory_snapshot_json(payload: String) -> Result<String, AgentError> {
+    let request: SessionRequest = parse_request(&payload)?;
+    let session_id = resolve_memory_session_id(request.session_id)?;
+    let snapshot = agent_memory_store()?
+        .snapshot(&session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory snapshot failed: {error}")))?;
+    encode(&snapshot)
+}
+
+pub fn agent_memory_audit_json(payload: String) -> Result<String, AgentError> {
+    let request: SessionRequest = parse_request(&payload)?;
+    let session_id = resolve_memory_session_id(request.session_id)?;
+    let store = agent_memory_store()?;
+    let events = store
+        .read_events_by_session(&session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory audit failed: {error}")))?;
+    let runtime_turns = store
+        .read_runtime_turns(&session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory audit failed: {error}")))?;
+    encode(&json!({
+        "sessionId": session_id,
+        "events": events,
+        "runtimeTurns": runtime_turns,
+    }))
+}
+
+pub fn agent_memory_trim_run_json(payload: String) -> Result<String, AgentError> {
+    let request: Value = parse_request(&payload)?;
+    let session_id = resolve_memory_session_id(
+        request
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+    )?;
+    let token_budget = request.get("tokenBudget").and_then(Value::as_i64);
+    let char_budget = request.get("charBudget").and_then(Value::as_i64);
+    let decision = agent_memory_store()?
+        .run_adaptive_trim(&session_id, token_budget, char_budget)
+        .map_err(|error| AgentError::Provider(format!("agent memory trim failed: {error}")))?;
+    emit_event(AgentRuntimeEvent::ContextTrimmed {
+        session_id,
+        detail: serde_json::to_value(&decision).unwrap_or_else(|_| json!({})),
+    });
+    encode(&decision)
+}
+
+pub fn agent_memory_recover_run_json(payload: String) -> Result<String, AgentError> {
+    let request: SessionRequest = parse_request(&payload)?;
+    let session_id = resolve_memory_session_id(request.session_id)?;
+    let recovered = agent_memory_store()?
+        .recover_interrupted_turns_after_reload(&session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory recover failed: {error}")))?;
+    for turn_id in &recovered {
+        emit_event(AgentRuntimeEvent::TurnRecovered {
+            session_id: session_id.clone(),
+            turn_id: turn_id.clone(),
+        });
+    }
+    encode(&json!({
+        "sessionId": session_id,
+        "recoveredTurnIds": recovered,
+    }))
+}
+
+pub fn agent_memory_shared_search_json(payload: String) -> Result<String, AgentError> {
+    let request: Value = parse_request(&payload)?;
+    let query = request.get("query").and_then(Value::as_str);
+    let records = agent_memory_store()?
+        .search_shared_memory(query)
+        .map_err(|error| {
+            AgentError::Provider(format!("agent memory shared search failed: {error}"))
+        })?;
+    encode(&json!({ "records": records }))
+}
+
+pub fn agent_memory_shared_update_json(payload: String) -> Result<String, AgentError> {
+    let request: Value = parse_request(&payload)?;
+    let scope = request
+        .get("scope")
+        .and_then(Value::as_str)
+        .unwrap_or("global");
+    let content = request.get("content").cloned().unwrap_or_else(|| json!({}));
+    let evidence_refs = request
+        .get("evidenceRefs")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let negative = request
+        .get("negative")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let store = agent_memory_store()?;
+    let status = match request.get("status").and_then(Value::as_str) {
+        Some("active") => SharedMemoryStatus::Active,
+        Some("delayed_promotion") => SharedMemoryStatus::DelayedPromotion,
+        Some("conflict_candidate") => SharedMemoryStatus::ConflictCandidate,
+        Some("deprecated") => SharedMemoryStatus::Deprecated,
+        Some("rejected") => SharedMemoryStatus::Rejected,
+        Some(_) => SharedMemoryStatus::Candidate,
+        None => store
+            .infer_shared_memory_status(scope, &content, &evidence_refs, negative)
+            .map_err(|error| {
+                AgentError::Provider(format!("agent memory shared scoring failed: {error}"))
+            })?,
+    };
+    let record = store
+        .update_shared_memory(scope, content, evidence_refs, status, negative)
+        .map_err(|error| {
+            AgentError::Provider(format!("agent memory shared update failed: {error}"))
+        })?;
+    encode(&record)
 }
 
 fn recover_stalled_turn_if_needed(session: &mut AgentSession) -> Option<String> {
@@ -1180,18 +2001,17 @@ pub fn delete_session_json(payload: String) -> Result<String, AgentError> {
         }
     }
 
-    let path =
-        session_path(&session_id).map_err(|error| AgentError::Provider(error.to_string()))?;
-    if !path.exists() {
+    let store = agent_memory_store()?;
+    let existed_in_memory = store
+        .read_session(&session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory read failed: {error}")))?
+        .is_some();
+    if !existed_in_memory {
         return Err(AgentError::SessionNotFound(session_id));
     }
-    let journal_path = session_journal_path(&session_id)
-        .map_err(|error| AgentError::Provider(error.to_string()))?;
-    if journal_path.exists() {
-        std::fs::remove_file(&journal_path)
-            .map_err(|error| AgentError::Provider(error.to_string()))?;
-    }
-    std::fs::remove_file(&path).map_err(|error| AgentError::Provider(error.to_string()))?;
+    store
+        .delete_session(&session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory delete failed: {error}")))?;
 
     {
         let mut runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
@@ -1229,7 +2049,7 @@ pub fn start_selfdev_session_json(payload: String) -> Result<String, AgentError>
     let mut inherited_context = false;
     let mut session = if inherit_context {
         if let Some(parent_id) = parent_session_id.as_deref() {
-            match Session::load(parent_id) {
+            match jcode_session_for_memory_session(parent_id) {
                 Ok(parent) => {
                     let mut child = Session::create(
                         Some(parent_id.to_string()),
@@ -1259,9 +2079,7 @@ pub fn start_selfdev_session_json(payload: String) -> Result<String, AgentError>
     session.set_canary("self-dev");
     apply_session_working_dir(&mut session, repo_dir.to_string_lossy().as_ref());
     session.mark_active();
-    session
-        .save()
-        .map_err(|error| AgentError::Provider(error.to_string()))?;
+    persist_jcode_session_adapter(&session)?;
 
     let snapshot = snapshot_from_jcode_session(
         &session,
@@ -1349,8 +2167,7 @@ pub fn start_jcode_overnight_json(payload: String) -> Result<String, AgentError>
         .map_err(AgentError::BadRequest)?;
     let parent_session_id = resolve_existing_session_id(request.session_id)?;
     reject_loaded_running_action(&parent_session_id, "overnight")?;
-    let parent = Session::load(&parent_session_id)
-        .map_err(|_| AgentError::SessionNotFound(parent_session_id.clone()))?;
+    let parent = jcode_session_for_memory_session(&parent_session_id)?;
     let inherit_context = request.inherit_context.unwrap_or(true);
     let mut parent_for_launch = parent.clone();
     if !inherit_context {
@@ -1440,8 +2257,7 @@ pub fn send_selfdev_turn_json(payload: String) -> Result<String, AgentError> {
         .session_id
         .clone()
         .ok_or_else(|| AgentError::BadRequest("selfdev sessionId is required".to_string()))?;
-    let session =
-        Session::load(&session_id).map_err(|_| AgentError::SessionNotFound(session_id.clone()))?;
+    let session = jcode_session_for_memory_session(&session_id)?;
     if session_kind(&session) != AgentSessionKind::Selfdev {
         return Err(AgentError::BadRequest(format!(
             "session is not a self-dev session: {session_id}"
@@ -1484,10 +2300,7 @@ pub fn trigger_poke_session_json(payload: String) -> Result<String, AgentError> 
     let request: JcodePokeRequest = parse_request(&payload)?;
     let session_id = resolve_agent_session_id(request.session_id)?;
     reject_running_action(&session_id, "poke")?;
-    let incomplete = incomplete_poke_todos(
-        crate::todo::load_todos(&session_id)
-            .map_err(|error| AgentError::Provider(error.to_string()))?,
-    );
+    let incomplete = incomplete_poke_todos(todo_items_for_session(&session_id)?);
     if incomplete.is_empty() {
         return encode(&JcodePokeResponse {
             session_id,
@@ -1598,8 +2411,7 @@ pub fn transfer_jcode_session_json(payload: String) -> Result<String, AgentError
     let request: JcodeSessionActionRequest = parse_request(&payload)?;
     let parent_session_id = resolve_agent_session_id(request.session_id)?;
     reject_running_action(&parent_session_id, "transfer")?;
-    let parent = Session::load(&parent_session_id)
-        .map_err(|_| AgentError::SessionNotFound(parent_session_id.clone()))?;
+    let parent = jcode_session_for_memory_session(&parent_session_id)?;
     let provider = {
         let agent = agent_for_session(&parent_session_id)?;
         block_on(async move {
@@ -1697,9 +2509,7 @@ pub fn list_jcode_goals_json(payload: String) -> Result<String, AgentError> {
 pub fn open_jcode_goals_json(payload: String) -> Result<String, AgentError> {
     let request: JcodeGoalsActionRequest = parse_request(&payload)?;
     let session_id = resolve_agent_session_id(request.session_id)?;
-    let working_dir = session_working_dir(
-        &Session::load(&session_id).map_err(|_| AgentError::SessionNotFound(session_id.clone()))?,
-    );
+    let working_dir = session_working_dir(&jcode_session_for_memory_session(&session_id)?);
     let snapshot = crate::goal::open_goals_overview_for_session(
         &session_id,
         Some(Path::new(&working_dir)),
@@ -1719,9 +2529,7 @@ pub fn open_jcode_goals_json(payload: String) -> Result<String, AgentError> {
 pub fn resume_jcode_goal_json(payload: String) -> Result<String, AgentError> {
     let request: JcodeGoalsActionRequest = parse_request(&payload)?;
     let session_id = resolve_agent_session_id(request.session_id)?;
-    let working_dir = session_working_dir(
-        &Session::load(&session_id).map_err(|_| AgentError::SessionNotFound(session_id.clone()))?,
-    );
+    let working_dir = session_working_dir(&jcode_session_for_memory_session(&session_id)?);
     let result =
         crate::goal::resume_goal_for_session(&session_id, Some(Path::new(&working_dir)), true)
             .map_err(|error| AgentError::Provider(error.to_string()))?;
@@ -1753,9 +2561,7 @@ pub fn show_jcode_goal_json(payload: String) -> Result<String, AgentError> {
         .filter(|value| !value.is_empty())
         .ok_or_else(|| AgentError::BadRequest("goalId is required".to_string()))?;
     let session_id = resolve_agent_session_id(request.session_id)?;
-    let working_dir = session_working_dir(
-        &Session::load(&session_id).map_err(|_| AgentError::SessionNotFound(session_id.clone()))?,
-    );
+    let working_dir = session_working_dir(&jcode_session_for_memory_session(&session_id)?);
     let result = crate::goal::open_goal_for_session(
         &session_id,
         Some(Path::new(&working_dir)),
@@ -2442,10 +3248,37 @@ fn start_jcode_turn_scoped(
         created_at: Utc::now(),
         rollback: None,
     };
-    let rollback_anchor =
-        rollback::create_anchor_for_user_message(&session_id, &user_message.id, &user_message.text)
-            .ok();
     let mut user_message = user_message;
+    let visible_user_message = !user_text.is_empty() || !images.is_empty();
+    let store = agent_memory_store()?;
+    let memory_user_event_id = if visible_user_message {
+        let mut event = NewSessionEvent::user_message(user_text.clone());
+        event.runtime_turn_id = Some(turn_id.clone());
+        event.payload = json!({
+            "text": user_text,
+            "imageCount": images.len(),
+            "messageId": user_message.id.clone(),
+        });
+        Some(
+            store
+                .append_event(&session_id, event)
+                .map_err(|error| {
+                    AgentError::Provider(format!("agent memory user event failed: {error}"))
+                })?
+                .event_id,
+        )
+    } else {
+        None
+    };
+    if let Some(event_id) = memory_user_event_id.as_ref() {
+        user_message.id = event_id.clone();
+    }
+    let rollback_anchor = if visible_user_message {
+        rollback::create_anchor_for_user_message(&session_id, &user_message.id, &user_message.text)
+            .ok()
+    } else {
+        None
+    };
     if let Some(anchor) = rollback_anchor.as_ref() {
         user_message.rollback = Some(AgentMessageRollback {
             available: true,
@@ -2454,7 +3287,40 @@ fn start_jcode_turn_scoped(
             unavailable_reason: None,
         });
     }
-
+    store
+        .start_runtime_turn_with_id(
+            &session_id,
+            turn_id.clone(),
+            memory_user_event_id.as_deref(),
+            None,
+        )
+        .map_err(|error| AgentError::Provider(format!("agent memory turn failed: {error}")))?;
+    let context_snapshot = store
+        .build_context(&session_id, &turn_id, 128_000)
+        .map_err(|error| AgentError::Provider(format!("agent memory context failed: {error}")))?;
+    let assembled_provider_context =
+        assembled_provider_context_from_snapshot(&context_snapshot, &user_text, &jcode_images);
+    store
+        .transition_runtime_turn(
+            &session_id,
+            &turn_id,
+            RuntimeTurnState::CallingModel,
+            "provider_request",
+        )
+        .and_then(|()| store.update_session_status(&session_id, MemorySessionStatus::Running))
+        .map_err(|error| {
+            AgentError::Provider(format!("agent memory turn start failed: {error}"))
+        })?;
+    emit_event(AgentRuntimeEvent::TurnStarted {
+        session_id: session_id.clone(),
+        turn_id: turn_id.clone(),
+        state: RuntimeTurnState::CallingModel,
+    });
+    block_on(async {
+        let mut guard = current_agent.lock().await;
+        guard.set_assembled_provider_context(assembled_provider_context);
+        Ok::<_, AgentError>(())
+    })??;
     let (agent, shutdown_signal, snapshot) = {
         let mut runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
         let session = runtime
@@ -2462,7 +3328,9 @@ fn start_jcode_turn_scoped(
             .get_mut(&session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.clone()))?;
         session.agent = current_agent;
-        session.snapshot.messages.push(user_message.clone());
+        if visible_user_message {
+            session.snapshot.messages.push(user_message.clone());
+        }
         session.snapshot.turn_status = TurnStatus::Running;
         session.snapshot.active_turn_id = Some(turn_id.clone());
         session.snapshot.follow = AgentFollowState {
@@ -2486,10 +3354,12 @@ fn start_jcode_turn_scoped(
     emit_event(AgentRuntimeEvent::SessionSnapshot {
         snapshot: snapshot.clone(),
     });
-    emit_event(AgentRuntimeEvent::MessageAppended {
-        session_id: session_id.clone(),
-        message: user_message,
-    });
+    if visible_user_message {
+        emit_event(AgentRuntimeEvent::MessageAppended {
+            session_id: session_id.clone(),
+            message: user_message,
+        });
+    }
     emit_event(AgentRuntimeEvent::FollowStateChanged {
         session_id: session_id.clone(),
         follow: snapshot.follow.clone(),
@@ -2537,6 +3407,17 @@ pub fn cancel_turn_json(payload: String) -> Result<String, AgentError> {
     let snapshot = session.snapshot.clone();
     drop(runtime);
     cancel_pending_clarifications_for_session(&snapshot.id);
+    if let Some(turn_id) = turn_id.as_deref() {
+        transition_memory_turn(
+            &snapshot.id,
+            turn_id,
+            RuntimeTurnState::CancelledByUser,
+            "user_cancelled",
+        );
+        if let Ok(store) = agent_memory_store() {
+            let _ = store.update_session_status(&snapshot.id, MemorySessionStatus::Interrupted);
+        }
+    }
     emit_event(AgentRuntimeEvent::SessionSnapshot {
         snapshot: snapshot.clone(),
     });
@@ -2606,6 +3487,12 @@ fn cancel_running_turn_for_task_switch(session_id: &str) -> Result<bool, AgentEr
         snapshot: snapshot.clone(),
     });
     if let Some(turn_id) = turn_id {
+        transition_memory_turn(
+            &snapshot.id,
+            &turn_id,
+            RuntimeTurnState::CancelledByUser,
+            "task_switch_cancelled",
+        );
         emit_event(AgentRuntimeEvent::TurnFinished {
             session_id: snapshot.id.clone(),
             turn_id,
@@ -2779,6 +3666,36 @@ pub fn respond_clarification_json(payload: String) -> Result<String, AgentError>
         selected_option: selected_option.clone(),
     };
     let _ = pending.tx.send(response);
+    let active_turn_id = RUNTIME.lock().ok().and_then(|runtime| {
+        runtime
+            .sessions
+            .get(&request.session_id)
+            .and_then(|session| session.snapshot.active_turn_id.clone())
+    });
+    if let Some(turn_id) = active_turn_id.as_deref() {
+        transition_memory_turn(
+            &request.session_id,
+            turn_id,
+            RuntimeTurnState::StreamingModel,
+            "clarification_resolved",
+        );
+        if let Ok(store) = agent_memory_store() {
+            let _ = store.resolve_clarification(
+                &request.session_id,
+                turn_id,
+                &request.clarification_id,
+                json!({
+                    "clarificationId": request.clarification_id.clone(),
+                    "answer": answer.clone(),
+                    "selectedOption": selected_option.clone(),
+                }),
+            );
+        }
+    }
+    emit_event(AgentRuntimeEvent::ClarificationResolved {
+        session_id: request.session_id.clone(),
+        clarification_id: request.clarification_id.clone(),
+    });
     encode(&json!({
         "sessionId": request.session_id,
         "clarificationId": request.clarification_id,
@@ -2840,13 +3757,42 @@ pub fn ask_user_clarification(
         );
     }
 
+    let active_turn_id = RUNTIME.lock().ok().and_then(|runtime| {
+        runtime
+            .sessions
+            .get(&session_id)
+            .and_then(|session| session.snapshot.active_turn_id.clone())
+    });
+    if let Some(turn_id) = active_turn_id.as_deref() {
+        transition_memory_turn(
+            &session_id,
+            turn_id,
+            RuntimeTurnState::WaitingForUser,
+            "clarification_required",
+        );
+        if let Ok(store) = agent_memory_store() {
+            let _ = store.record_clarification_request(
+                &session_id,
+                turn_id,
+                &clarification_id,
+                json!({
+                    "clarificationId": clarification_id.clone(),
+                    "question": normalized.question.clone(),
+                    "options": normalized.options.clone(),
+                    "allowCustomAnswer": normalized.allow_custom_answer,
+                    "detail": normalized.detail.clone(),
+                }),
+            );
+        }
+    }
+
     emit_event(AgentRuntimeEvent::ClarificationRequired {
         session_id: session_id.clone(),
         clarification_id: clarification_id.clone(),
-        question: normalized.question,
-        options: normalized.options,
+        question: normalized.question.clone(),
+        options: normalized.options.clone(),
         allow_custom_answer: normalized.allow_custom_answer,
-        detail: normalized.detail,
+        detail: normalized.detail.clone(),
     });
 
     match futures::executor::block_on(rx) {
@@ -3503,9 +4449,7 @@ fn refresh_runtime_snapshot_for_session(
 }
 
 fn clone_split_session_for_gui(parent_session_id: &str) -> Result<Session, AgentError> {
-    let parent = Session::load(parent_session_id)
-        .map_err(|_| AgentError::SessionNotFound(parent_session_id.to_string()))?;
-    let todos = crate::todo::load_todos(parent_session_id).unwrap_or_default();
+    let parent = jcode_session_for_memory_session(parent_session_id)?;
     let mut child = Session::create(Some(parent_session_id.to_string()), None);
     child.replace_messages(parent.messages.clone());
     child.compaction = parent.compaction.clone();
@@ -3520,11 +4464,8 @@ fn clone_split_session_for_gui(parent_session_id: &str) -> Result<Session, Agent
     child.testing_build = parent.testing_build.clone();
     child.status = crate::session::SessionStatus::Closed;
     child.provider_session_id = None;
-    child
-        .save()
-        .map_err(|error| AgentError::Provider(error.to_string()))?;
-    crate::todo::save_todos(&child.id, &todos)
-        .map_err(|error| AgentError::Provider(error.to_string()))?;
+    persist_jcode_session_adapter(&child)?;
+    copy_active_todos(parent_session_id, &child.id)?;
     Ok(child)
 }
 
@@ -3545,7 +4486,6 @@ fn create_transfer_child_session_for_gui(
     parent: &Session,
     compaction: Option<crate::session::StoredCompactionState>,
 ) -> Result<Session, AgentError> {
-    let todos = crate::todo::load_todos(parent_session_id).unwrap_or_default();
     let mut child = Session::create(Some(parent_session_id.to_string()), None);
     child.messages.clear();
     child.compaction = compaction;
@@ -3560,11 +4500,8 @@ fn create_transfer_child_session_for_gui(
     child.testing_build = parent.testing_build.clone();
     child.status = crate::session::SessionStatus::Closed;
     child.provider_session_id = None;
-    child
-        .save()
-        .map_err(|error| AgentError::Provider(error.to_string()))?;
-    crate::todo::save_todos(&child.id, &todos)
-        .map_err(|error| AgentError::Provider(error.to_string()))?;
+    persist_jcode_session_adapter(&child)?;
+    copy_active_todos(parent_session_id, &child.id)?;
     Ok(child)
 }
 
@@ -3603,8 +4540,7 @@ fn activate_child_session(parent_session_id: String, child: Session) -> Result<S
 }
 
 fn goals_for_session(session_id: &str) -> Result<Vec<Value>, AgentError> {
-    let session = Session::load(session_id)
-        .map_err(|_| AgentError::SessionNotFound(session_id.to_string()))?;
+    let session = jcode_session_for_memory_session(session_id)?;
     let working_dir = session_working_dir(&session);
     crate::goal::list_relevant_goals(Some(Path::new(&working_dir)))
         .map_err(|error| AgentError::Provider(error.to_string()))?
@@ -4302,7 +5238,7 @@ fn is_overnight_coordinator_session(session_id: &str) -> bool {
 
 fn resolve_existing_session_id(session_id: Option<String>) -> Result<String, AgentError> {
     if let Some(session_id) = normalized_nonempty(session_id.as_deref()) {
-        Session::load(&session_id).map_err(|_| AgentError::SessionNotFound(session_id.clone()))?;
+        read_memory_session_record(&session_id)?;
         return Ok(session_id);
     }
     let runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
@@ -4418,25 +5354,24 @@ fn overnight_run_snapshot(
     } else {
         None
     };
-    let coordinator_snapshot =
-        Session::load(&manifest.coordinator_session_id)
-            .ok()
-            .map(|session| {
-                snapshot_from_jcode_session(
-                    &session,
-                    TurnStatus::Idle,
-                    None,
-                    AgentFollowState {
-                        running: matches!(
-                            manifest.status,
-                            crate::overnight::OvernightRunStatus::Running
-                                | crate::overnight::OvernightRunStatus::CancelRequested
-                        ),
-                        activity: Some(manifest.status.label().to_string()),
-                    },
-                    Vec::new(),
-                )
-            });
+    let coordinator_snapshot = jcode_session_for_memory_session(&manifest.coordinator_session_id)
+        .ok()
+        .map(|session| {
+            snapshot_from_jcode_session(
+                &session,
+                TurnStatus::Idle,
+                None,
+                AgentFollowState {
+                    running: matches!(
+                        manifest.status,
+                        crate::overnight::OvernightRunStatus::Running
+                            | crate::overnight::OvernightRunStatus::CancelRequested
+                    ),
+                    activity: Some(manifest.status.label().to_string()),
+                },
+                Vec::new(),
+            )
+        });
 
     Ok(JcodeOvernightRunSnapshot {
         run_id: manifest.run_id.clone(),
@@ -4489,22 +5424,48 @@ fn mutate_session_metadata(
         })?;
         mutation_result.map_err(|error| AgentError::Provider(error.to_string()))?;
     } else {
-        let mut session = Session::load(session_id)
-            .map_err(|_| AgentError::SessionNotFound(session_id.to_string()))?;
+        let store = agent_memory_store()?;
+        let memory_snapshot = store.snapshot(session_id).map_err(|error| {
+            AgentError::Provider(format!("agent memory snapshot failed: {error}"))
+        })?;
+        let record = memory_snapshot
+            .session
+            .as_ref()
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+        let mut session = jcode_session_from_agent_memory(record, Some(&memory_snapshot));
         mutate_persisted(&mut session);
-        session
-            .save()
-            .map_err(|error| AgentError::Provider(error.to_string()))?;
+        store
+            .update_session_title(&session.id, session.display_title_or_name())
+            .and_then(|()| {
+                store.update_session_model_snapshot(
+                    &session.id,
+                    session.working_dir.as_deref(),
+                    session.provider_key.as_deref(),
+                    session.model.as_deref(),
+                )
+            })
+            .and_then(|()| {
+                store.update_session_status(
+                    &session.id,
+                    if session.archived {
+                        MemorySessionStatus::Archived
+                    } else {
+                        MemorySessionStatus::Idle
+                    },
+                )
+            })
+            .map_err(|error| {
+                AgentError::Provider(format!("agent memory metadata failed: {error}"))
+            })?;
     }
 
-    let session = Session::load(session_id)
-        .map_err(|_| AgentError::SessionNotFound(session_id.to_string()))?;
-    let summary = summary_from_jcode_session(&session);
+    let record = read_memory_session_record(session_id)?;
+    let summary = summary_from_agent_memory_session(&record);
     if let Ok(mut runtime) = RUNTIME.lock()
         && let Some(loaded) = runtime.sessions.get_mut(session_id)
     {
-        loaded.snapshot.title = session.display_title_or_name().to_string();
-        loaded.snapshot.updated_at = session.updated_at;
+        loaded.snapshot.title = record.title.clone();
+        loaded.snapshot.updated_at = parse_memory_time(&record.updated_at_iso);
         emit_event(AgentRuntimeEvent::SessionSnapshot {
             snapshot: loaded.snapshot.clone(),
         });
@@ -4519,21 +5480,14 @@ pub fn list_jcode_sessions_json(payload: String) -> Result<String, AgentError> {
         .and_then(Value::as_u64)
         .unwrap_or(100)
         .min(500) as usize;
-    let sessions_dir = crate::storage::jcode_dir()
-        .map_err(|error| AgentError::Provider(error.to_string()))?
-        .join("sessions");
-    let mut sessions = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&sessions_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-            if let Ok(session) = Session::load_from_path(&path) {
-                sessions.push(summary_from_jcode_session(&session));
-            }
-        }
-    }
+    let store = agent_memory_store()?;
+    let sessions_dir = store.root().join("sessions");
+    let mut sessions = store
+        .list_sessions()
+        .map_err(|error| AgentError::Provider(format!("agent memory list failed: {error}")))?
+        .into_iter()
+        .map(|session| summary_from_agent_memory_session(&session))
+        .collect::<Vec<_>>();
     sessions.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
     sessions.truncate(limit);
     encode(&json!({
@@ -4575,6 +5529,38 @@ pub enum AgentRuntimeEvent {
         session_id: String,
         tool: ToolActivity,
     },
+    MemorySnapshot {
+        session_id: String,
+        snapshot: AgentMemorySnapshot,
+    },
+    TurnStarted {
+        session_id: String,
+        turn_id: String,
+        state: RuntimeTurnState,
+    },
+    TurnStateChanged {
+        session_id: String,
+        turn_id: String,
+        state: RuntimeTurnState,
+        reason: String,
+    },
+    ToolUpdated {
+        session_id: String,
+        turn_id: String,
+        tool: ToolActivity,
+    },
+    ContextTrimmed {
+        session_id: String,
+        detail: Value,
+    },
+    TurnRecovered {
+        session_id: String,
+        turn_id: String,
+    },
+    TurnCompleted {
+        session_id: String,
+        turn_id: String,
+    },
     TodoUpdated {
         session_id: String,
         todos: Vec<AgentTodoItem>,
@@ -4588,6 +5574,15 @@ pub enum AgentRuntimeEvent {
         allow_custom_answer: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
+    },
+    ClarificationResolved {
+        session_id: String,
+        clarification_id: String,
+    },
+    BrowserTargetUpdated {
+        session_id: String,
+        turn_id: String,
+        target: Value,
     },
     PermissionRequired {
         session_id: String,
@@ -4645,9 +5640,26 @@ fn run_jcode_turn(
 
         let run_result = {
             let mut guard = agent.lock().await;
-            guard
-                .run_once_streaming_mpsc(&text, images, system_reminder, event_tx)
-                .await
+            let recovery_reminder = system_reminder
+                .as_ref()
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            if text.trim().is_empty() && images.is_empty() {
+                if let Some(reminder) = recovery_reminder {
+                    guard
+                        .continue_streaming_mpsc_with_system_reminder(reminder, event_tx)
+                        .await
+                } else {
+                    guard
+                        .run_once_streaming_mpsc(&text, images, system_reminder, event_tx)
+                        .await
+                }
+            } else {
+                guard
+                    .run_once_streaming_mpsc(&text, images, system_reminder, event_tx)
+                    .await
+            }
         };
         let _ = event_task.await;
         run_result.map_err(|error| AgentError::Provider(error.to_string()))
@@ -4684,18 +5696,36 @@ async fn consume_jcode_events(
         }
         match event {
             ServerEvent::TextDelta { text } => {
+                transition_memory_turn(
+                    &session_id,
+                    &turn_id,
+                    RuntimeTurnState::StreamingModel,
+                    "text_delta",
+                );
                 let message_id = ensure_assistant_message(&session_id, &mut assistant_id);
                 if let Some(message_id) = message_id {
                     let _ = append_message_delta(&session_id, &message_id, &text);
                 }
             }
             ServerEvent::TextReplace { text } => {
+                transition_memory_turn(
+                    &session_id,
+                    &turn_id,
+                    RuntimeTurnState::StreamingModel,
+                    "text_replace",
+                );
                 let message_id = ensure_assistant_message(&session_id, &mut assistant_id);
                 if let Some(message_id) = message_id {
                     let _ = replace_message_text(&session_id, &message_id, text);
                 }
             }
             ServerEvent::ToolStart { id, name } | ServerEvent::ToolExec { id, name } => {
+                transition_memory_turn(
+                    &session_id,
+                    &turn_id,
+                    RuntimeTurnState::WaitingForTool,
+                    "tool_started",
+                );
                 let message_id = ensure_assistant_message(&session_id, &mut assistant_id);
                 let tool = ToolActivity {
                     id: id.clone(),
@@ -4728,8 +5758,9 @@ async fn consume_jcode_events(
                 error,
             } => {
                 let failed = error.is_some();
+                let input = current_tool_input(&session_id, &id);
                 let tool = ToolActivity {
-                    id,
+                    id: id.clone(),
                     name: name.clone(),
                     label: finished_tool_label(&name, failed),
                     status: if failed {
@@ -4737,14 +5768,36 @@ async fn consume_jcode_events(
                     } else {
                         ToolActivityStatus::Completed
                     },
-                    input: Value::Object(serde_json::Map::new()),
-                    output: Some(json!({ "content": output, "error": error })),
+                    input: input.clone(),
+                    output: Some(json!({ "content": output.clone(), "error": error.clone() })),
                     started_at: Utc::now(),
                     finished_at: Some(Utc::now()),
                 };
                 let _ = upsert_tool(&session_id, tool.clone());
+                if let Ok(store) = agent_memory_store() {
+                    if let Some(target) = record_browser_memory_for_tool(
+                        &store,
+                        &session_id,
+                        &turn_id,
+                        &id,
+                        &name,
+                        &input,
+                        tool.output.as_ref().cloned().unwrap_or_else(|| json!({})),
+                    ) {
+                        emit_event(AgentRuntimeEvent::BrowserTargetUpdated {
+                            session_id: session_id.clone(),
+                            turn_id: turn_id.clone(),
+                            target,
+                        });
+                    }
+                }
                 emit_event(AgentRuntimeEvent::ToolFinished {
                     session_id: session_id.clone(),
+                    tool: tool.clone(),
+                });
+                emit_event(AgentRuntimeEvent::ToolUpdated {
+                    session_id: session_id.clone(),
+                    turn_id: turn_id.clone(),
                     tool,
                 });
                 if !failed && name == "todo" {
@@ -4757,9 +5810,18 @@ async fn consume_jcode_events(
             ServerEvent::StatusDetail { detail } => {
                 set_follow_activity(&session_id, &detail);
             }
+            ServerEvent::Pong { .. } => {
+                emit_follow_heartbeat(&session_id);
+            }
             ServerEvent::MessageEnd => {}
             ServerEvent::Interrupted => {
                 set_follow_activity(&session_id, "Interrupted");
+                transition_memory_turn(
+                    &session_id,
+                    &turn_id,
+                    RuntimeTurnState::Interrupted,
+                    "server_interrupted",
+                );
             }
             ServerEvent::Error { message, .. } => {
                 set_follow_activity(&session_id, &message);
@@ -4767,6 +5829,112 @@ async fn consume_jcode_events(
             _ => {}
         }
     }
+}
+
+fn current_tool_input(session_id: &str, tool_id: &str) -> Value {
+    let raw = RUNTIME
+        .lock()
+        .ok()
+        .and_then(|runtime| {
+            runtime.sessions.get(session_id).and_then(|session| {
+                session
+                    .snapshot
+                    .tools
+                    .iter()
+                    .rev()
+                    .find(|tool| tool.id == tool_id)
+                    .map(|tool| tool.input.clone())
+            })
+        })
+        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+    normalize_tool_input(raw)
+}
+
+fn normalize_tool_input(input: Value) -> Value {
+    let Some(delta) = input.get("delta").and_then(Value::as_str) else {
+        return input;
+    };
+    serde_json::from_str(delta).unwrap_or(input)
+}
+
+fn string_field(value: &Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(text) = value.get(*key).and_then(Value::as_str) {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        if let Some(number) = value.get(*key).and_then(Value::as_i64) {
+            return Some(number.to_string());
+        }
+    }
+    None
+}
+
+fn typed_tool_result_status(
+    name: &str,
+    input: &Value,
+    output: &str,
+    error: Option<&str>,
+) -> ToolResultStatus {
+    if error == Some("runtime_reload_interrupted") {
+        return ToolResultStatus::UnknownAfterRecovery;
+    }
+    if is_lumen_load_idle_timeout(name, input, output) {
+        return ToolResultStatus::TimedOutPartial;
+    }
+    if error.is_some() {
+        return ToolResultStatus::FailedRetryable;
+    }
+    ToolResultStatus::Success
+}
+
+fn is_lumen_load_idle_timeout(name: &str, input: &Value, output: &str) -> bool {
+    if name != "lyra_lumen" {
+        return false;
+    }
+    let action = string_field(input, &["action"]);
+    let until = string_field(input, &["until"]);
+    action.as_deref() == Some("wait")
+        && until.as_deref() == Some("loadIdle")
+        && output.to_ascii_lowercase().contains("timed out")
+}
+
+fn record_browser_memory_for_tool(
+    store: &AgentMemoryStore,
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    name: &str,
+    input: &Value,
+    output: Value,
+) -> Option<Value> {
+    if name != "lyra_lumen" {
+        return None;
+    }
+    let action = string_field(input, &["action"]).unwrap_or_else(|| "browser".to_string());
+    let workbench_tab_id = string_field(input, &["tabId", "tab_id"]);
+    let lumen_target_id = string_field(input, &["elementId", "element_id"]);
+    let payload = json!({
+        "toolCallId": tool_call_id,
+        "action": action.clone(),
+        "workbenchTabId": workbench_tab_id.clone(),
+        "lumenTargetId": lumen_target_id.clone(),
+        "input": input,
+        "output": output
+    });
+    store
+        .record_browser_action(
+            session_id,
+            turn_id,
+            workbench_tab_id.as_deref(),
+            lumen_target_id.as_deref(),
+            &action,
+            payload.clone(),
+        )
+        .ok()?;
+    Some(payload)
 }
 
 fn turn_is_active(session_id: &str, turn_id: &str) -> bool {
@@ -4784,6 +5952,21 @@ fn turn_is_active(session_id: &str, turn_id: &str) -> bool {
         })
         .as_deref()
         == Some(turn_id)
+}
+
+fn transition_memory_turn(session_id: &str, turn_id: &str, state: RuntimeTurnState, reason: &str) {
+    if let Ok(store) = agent_memory_store()
+        && store
+            .transition_runtime_turn(session_id, turn_id, state.clone(), reason)
+            .is_ok()
+    {
+        emit_event(AgentRuntimeEvent::TurnStateChanged {
+            session_id: session_id.to_string(),
+            turn_id: turn_id.to_string(),
+            state,
+            reason: reason.to_string(),
+        });
+    }
 }
 
 fn ensure_assistant_message(session_id: &str, assistant_id: &mut Option<String>) -> Option<String> {
@@ -4951,13 +6134,34 @@ fn set_follow_activity(session_id: &str, activity: &str) {
     }
 }
 
+fn emit_follow_heartbeat(session_id: &str) {
+    if let Ok(follow) = with_session_snapshot(session_id, |session| session.snapshot.follow.clone())
+    {
+        if follow.running {
+            emit_event(AgentRuntimeEvent::FollowStateChanged {
+                session_id: session_id.to_string(),
+                follow,
+            });
+        }
+    }
+}
+
 fn finish_turn(session_id: &str, turn_id: &str, status: TurnStatus) {
     let mut should_emit = false;
+    let mut final_assistant_text: Option<String> = None;
     let snapshot = with_session_snapshot(session_id, |session| {
         if session.snapshot.active_turn_id.as_deref() != Some(turn_id) {
             return session.snapshot.clone();
         }
         should_emit = true;
+        final_assistant_text = session
+            .snapshot
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == AgentRole::Assistant)
+            .map(|message| message.text.clone())
+            .filter(|text| !text.trim().is_empty());
         let tools = session.snapshot.tools.clone();
         bind_pending_rollback_anchors(session_id);
         let mut snapshot = persisted_snapshot(session_id, status.clone(), None, Some(tools))
@@ -4982,6 +6186,28 @@ fn finish_turn(session_id: &str, turn_id: &str, status: TurnStatus) {
     if !should_emit {
         return;
     }
+    if let Ok(store) = agent_memory_store() {
+        if let Some(text) = final_assistant_text {
+            let has_assistant_event = store
+                .read_events_by_runtime_turn(session_id, turn_id)
+                .map(|events| events.iter().any(|event| event.kind == "assistant_message"))
+                .unwrap_or(false);
+            if !has_assistant_event {
+                let _ = store.append_event(
+                    session_id,
+                    NewSessionEvent::assistant_message(text, Some(turn_id.to_string())),
+                );
+            }
+        }
+        let _ =
+            store.update_session_status(session_id, memory_session_status_for_turn_status(&status));
+    }
+    transition_memory_turn(
+        session_id,
+        turn_id,
+        memory_turn_state_for_turn_status(&status),
+        "turn_finished",
+    );
     cancel_pending_clarifications_for_session(session_id);
     if let Ok(snapshot) = snapshot {
         emit_event(AgentRuntimeEvent::SessionSnapshot { snapshot });
@@ -4989,8 +6215,14 @@ fn finish_turn(session_id: &str, turn_id: &str, status: TurnStatus) {
     emit_event(AgentRuntimeEvent::TurnFinished {
         session_id: session_id.to_string(),
         turn_id: turn_id.to_string(),
-        status,
+        status: status.clone(),
     });
+    if status == TurnStatus::Finished {
+        emit_event(AgentRuntimeEvent::TurnCompleted {
+            session_id: session_id.to_string(),
+            turn_id: turn_id.to_string(),
+        });
+    }
     emit_event(AgentRuntimeEvent::FollowStateChanged {
         session_id: session_id.to_string(),
         follow: AgentFollowState {
@@ -5068,6 +6300,23 @@ fn fail_turn(session_id: &str, turn_id: &str, message: String) {
     if !should_emit {
         return;
     }
+    if let Ok(store) = agent_memory_store() {
+        let _ = store.update_session_status(session_id, MemorySessionStatus::Failed);
+        let _ = store.append_event(
+            session_id,
+            NewSessionEvent::runtime_event(
+                "turn_failed",
+                Some(turn_id.to_string()),
+                json!({ "message": message.clone() }),
+            ),
+        );
+    }
+    transition_memory_turn(
+        session_id,
+        turn_id,
+        RuntimeTurnState::FailedRecoverable,
+        "turn_failed",
+    );
     cancel_pending_clarifications_for_session(session_id);
     if let Ok(snapshot) = snapshot {
         emit_event(AgentRuntimeEvent::SessionSnapshot { snapshot });
@@ -5085,8 +6334,7 @@ fn persisted_snapshot(
     active_turn_id: Option<String>,
     tools: Option<Vec<ToolActivity>>,
 ) -> Result<AgentSessionSnapshot, AgentError> {
-    let session = Session::load(session_id)
-        .map_err(|_| AgentError::SessionNotFound(session_id.to_string()))?;
+    let session = jcode_session_for_memory_session(session_id)?;
     Ok(snapshot_from_jcode_session(
         &session,
         turn_status,
@@ -5100,7 +6348,7 @@ fn persisted_snapshot(
 }
 
 fn bind_pending_rollback_anchors(session_id: &str) {
-    if let Ok(session) = Session::load(session_id) {
+    if let Ok(session) = jcode_session_for_memory_session(session_id) {
         let _ = rollback::bind_pending_anchors(&session);
     }
 }
@@ -5137,11 +6385,12 @@ fn snapshot_from_jcode_session(
         active_turn_id,
         follow,
         updated_at: session.updated_at,
+        memory: memory_snapshot_for_session(&session.id),
     }
 }
 
 fn agent_todos_for_session(session_id: &str) -> Vec<AgentTodoItem> {
-    crate::todo::load_todos(session_id)
+    todo_items_for_session(session_id)
         .unwrap_or_default()
         .into_iter()
         .map(AgentTodoItem::from)
@@ -5150,10 +6399,25 @@ fn agent_todos_for_session(session_id: &str) -> Vec<AgentTodoItem> {
 
 fn emit_todo_updated(session_id: &str) {
     let todos = agent_todos_for_session(session_id);
+    let active_turn_id = RUNTIME.lock().ok().and_then(|runtime| {
+        runtime
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.snapshot.active_turn_id.clone())
+    });
     if let Ok(mut runtime) = RUNTIME.lock() {
         if let Some(session) = runtime.sessions.get_mut(session_id) {
             session.snapshot.todos = todos.clone();
         }
+    }
+    if let Some(turn_id) = active_turn_id.as_deref()
+        && let Ok(store) = agent_memory_store()
+    {
+        let values = todos
+            .iter()
+            .filter_map(|todo| serde_json::to_value(todo).ok())
+            .collect::<Vec<_>>();
+        let _ = store.record_active_todos(session_id, turn_id, &values);
     }
     emit_event(AgentRuntimeEvent::TodoUpdated {
         session_id: session_id.to_string(),
@@ -5481,7 +6745,7 @@ fn resolve_feedback_target_session_id(session_id: &str) -> String {
     let mut current_id = session_id.to_string();
 
     for _ in 0..16 {
-        let Ok(session) = Session::load(&current_id) else {
+        let Ok(session) = jcode_session_for_memory_session(&current_id) else {
             break;
         };
 
@@ -5511,8 +6775,7 @@ fn create_feedback_child_session(
     parent_session_id: &str,
     kind: JcodeFeedbackActionKind,
 ) -> Result<String, AgentError> {
-    let parent = Session::load(parent_session_id)
-        .map_err(|_| AgentError::SessionNotFound(parent_session_id.to_string()))?;
+    let parent = jcode_session_for_memory_session(parent_session_id)?;
     let title = match kind {
         JcodeFeedbackActionKind::Review => "review",
         JcodeFeedbackActionKind::Judge => "judge",
@@ -5526,9 +6789,7 @@ fn create_feedback_child_session(
     child.subagent_model = parent.subagent_model.clone();
     child.autoreview_enabled = Some(false);
     child.autojudge_enabled = Some(false);
-    child
-        .save()
-        .map_err(|error| AgentError::Provider(error.to_string()))?;
+    persist_jcode_session_adapter(&child)?;
     Ok(child.id)
 }
 
@@ -5553,12 +6814,18 @@ fn persist_session_improve_mode(
     session_id: &str,
     mode: crate::session::SessionImproveMode,
 ) -> Result<(), AgentError> {
-    let mut session = Session::load(session_id)
-        .map_err(|_| AgentError::SessionNotFound(session_id.to_string()))?;
-    session.improve_mode = Some(mode);
-    session
-        .save()
-        .map_err(|error| AgentError::Provider(error.to_string()))
+    let store = agent_memory_store()?;
+    let mode_value =
+        serde_json::to_value(mode).map_err(|error| AgentError::Serialization(error.to_string()))?;
+    store
+        .record_pinned_state(
+            session_id,
+            "session_improve_mode",
+            json!({ "improveMode": mode_value }),
+            None,
+            Vec::new(),
+        )
+        .map_err(|error| AgentError::Provider(format!("agent memory improve mode failed: {error}")))
 }
 
 fn agent_for_session(session_id: &str) -> Result<Arc<tokio::sync::Mutex<Agent>>, AgentError> {
@@ -5780,20 +7047,37 @@ fn persist_session_provider_state(
     provider_key: Option<&str>,
     reasoning_effort: Option<&str>,
 ) -> Result<(), AgentError> {
-    let mut session = Session::load(session_id)
-        .map_err(|_| AgentError::SessionNotFound(session_id.to_string()))?;
-    if let Some(model) = model {
-        session.model = Some(model.to_string());
-    }
-    if let Some(provider_key) = provider_key {
-        session.provider_key = Some(provider_key.to_string());
-    }
+    let store = agent_memory_store()?;
+    let record = store
+        .read_session(session_id)
+        .map_err(|error| {
+            AgentError::Provider(format!("agent memory session read failed: {error}"))
+        })?
+        .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+    store
+        .update_session_model_snapshot(
+            session_id,
+            record.working_dir.as_deref(),
+            provider_key.or(record.provider_key.as_deref()),
+            model.or(record.model.as_deref()),
+        )
+        .map_err(|error| {
+            AgentError::Provider(format!("agent memory provider state failed: {error}"))
+        })?;
     if let Some(reasoning_effort) = reasoning_effort {
-        session.reasoning_effort = provider_option_config_value(reasoning_effort);
+        store
+            .record_pinned_state(
+                session_id,
+                "provider_options",
+                json!({ "reasoningEffort": provider_option_config_value(reasoning_effort) }),
+                None,
+                Vec::new(),
+            )
+            .map_err(|error| {
+                AgentError::Provider(format!("agent memory provider options failed: {error}"))
+            })?;
     }
-    session
-        .save()
-        .map_err(|error| AgentError::Provider(error.to_string()))
+    Ok(())
 }
 
 fn persist_default_model(model: &str, provider: Option<&str>) -> Result<(), AgentError> {
@@ -5993,9 +7277,7 @@ fn ensure_session(runtime: &mut AgentRuntime) -> Result<String, AgentError> {
     let working_dir = default_unbound_working_dir();
     apply_session_working_dir(&mut session, &working_dir);
     session.mark_active();
-    session
-        .save()
-        .map_err(|error| AgentError::Provider(error.to_string()))?;
+    persist_jcode_session_adapter(&session)?;
     let snapshot = snapshot_from_jcode_session(
         &session,
         TurnStatus::Idle,
@@ -6034,19 +7316,19 @@ fn ensure_loaded_session_with_activation(
             return Ok(());
         }
     }
-    let session = Session::load(session_id)
-        .map_err(|_| AgentError::SessionNotFound(session_id.to_string()))?;
-    let snapshot = snapshot_from_jcode_session(
-        &session,
-        TurnStatus::Idle,
-        None,
-        AgentFollowState {
-            running: false,
-            activity: None,
-        },
-        Vec::new(),
-    );
-    let agent = build_agent_blocking(session)?;
+    let store = agent_memory_store()?;
+    let memory_snapshot = store
+        .snapshot(session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory snapshot failed: {error}")))?;
+    let record = memory_snapshot
+        .session
+        .as_ref()
+        .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+    let snapshot = snapshot_from_agent_memory_snapshot(memory_snapshot.clone());
+    let agent = build_agent_blocking(jcode_session_from_agent_memory(
+        record,
+        Some(&memory_snapshot),
+    ))?;
     let mut runtime = RUNTIME.lock().map_err(|_| AgentError::RuntimeLock)?;
     if make_active {
         runtime.active_session_id = Some(session_id.to_string());
@@ -6079,9 +7361,18 @@ fn build_agent_blocking(session: Session) -> Result<Arc<tokio::sync::Mutex<Agent
 fn build_agent_for_session_id(
     session_id: &str,
 ) -> Result<Arc<tokio::sync::Mutex<Agent>>, AgentError> {
-    let session = Session::load(session_id)
-        .map_err(|_| AgentError::SessionNotFound(session_id.to_string()))?;
-    build_agent_blocking(session)
+    let store = agent_memory_store()?;
+    let memory_snapshot = store
+        .snapshot(session_id)
+        .map_err(|error| AgentError::Provider(format!("agent memory snapshot failed: {error}")))?;
+    let record = memory_snapshot
+        .session
+        .as_ref()
+        .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+    build_agent_blocking(jcode_session_from_agent_memory(
+        record,
+        Some(&memory_snapshot),
+    ))
 }
 
 fn refresh_runtime_agents_after_provider_config_change() {
@@ -7308,7 +8599,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_hides_internal_tool_result_recovery_reminder() {
+    fn snapshot_uses_display_role_not_text_to_hide_internal_messages() {
         let _env = RuntimeTestEnv::new();
         let timestamp = Utc::now();
         let mut session = Session::create(None, Some("Internal Reminder".to_string()));
@@ -7329,7 +8620,7 @@ mod tests {
                 id: "literal-user-text".to_string(),
                 role: Role::User,
                 content: vec![ContentBlock::Text {
-                    text: "<system-reminder>\nThis is literal user text, not an internal message.\n</system-reminder>\n[System note: user wrote this literally]".to_string(),
+                    text: "# Session Context\nThis is literal user text, not an internal message.\n[System note: user wrote this literally]".to_string(),
                     cache_control: None,
                 }],
                 display_role: None,
@@ -7338,10 +8629,10 @@ mod tests {
                 token_usage: None,
             },
             crate::session::StoredMessage {
-                id: "recovery-reminder".to_string(),
+                id: "internal-runtime-note".to_string(),
                 role: Role::User,
                 content: vec![ContentBlock::Text {
-                    text: "<system-reminder>\nThe previous model response ended without any user-visible text after tool results.\n</system-reminder>".to_string(),
+                    text: "Internal runtime state is stored structurally, not as a visible chat message.".to_string(),
                     cache_control: None,
                 }],
                 display_role: Some(crate::session::StoredDisplayRole::System),
@@ -7384,9 +8675,23 @@ mod tests {
         );
         assert_eq!(snapshot.messages[2].text, "Done.");
         assert!(snapshot.messages.iter().all(|message| {
-            !message.text.contains("previous model response ended")
-                && !message.text.contains("answer the user's request now")
+            !message
+                .text
+                .contains("Internal runtime state is stored structurally")
         }));
+    }
+
+    #[test]
+    fn lyra_lumen_load_idle_timeout_is_typed_partial() {
+        assert_eq!(
+            typed_tool_result_status(
+                "lyra_lumen",
+                &json!({ "action": "wait", "until": "loadIdle" }),
+                "Wait condition 'loadIdle' timed out after 30000ms.",
+                None,
+            ),
+            ToolResultStatus::TimedOutPartial
+        );
     }
 
     #[test]

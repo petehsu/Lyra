@@ -49,7 +49,19 @@ impl Agent {
     }
 
     pub fn provider_messages(&mut self) -> Vec<Message> {
-        self.session.messages_for_provider()
+        #[cfg(not(test))]
+        {
+            let (messages, _) = self.provider_messages_from_context_assembler();
+            return messages;
+        }
+        #[cfg(test)]
+        {
+            let supports_image_input = self.provider.supports_image_input();
+            filter_messages_for_provider_context(
+                self.session.messages_for_provider(),
+                supports_image_input,
+            )
+        }
     }
 
     pub fn set_model(&mut self, model: &str) -> Result<()> {

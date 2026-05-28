@@ -227,13 +227,7 @@ impl Message {
     }
 
     pub fn is_internal_system_reminder(&self) -> bool {
-        self.content
-            .iter()
-            .find_map(|block| match block {
-                ContentBlock::Text { text, .. } => Some(text.trim_start()),
-                _ => None,
-            })
-            .is_some_and(|text| text.starts_with("<system-reminder>"))
+        false
     }
 
     fn should_skip_timestamp_injection(&self) -> bool {
@@ -343,7 +337,7 @@ pub fn ends_with_fresh_user_turn(messages: &[Message]) -> bool {
             match block {
                 ContentBlock::Text { text, .. } => {
                     let trimmed = text.trim();
-                    if !trimmed.is_empty() && !trimmed.starts_with("<system-reminder>") {
+                    if !trimmed.is_empty() {
                         saw_user_text = true;
                     }
                 }
@@ -353,10 +347,6 @@ pub fn ends_with_fresh_user_turn(messages: &[Message]) -> bool {
 
         if saw_user_text {
             return true;
-        }
-
-        if msg.is_internal_system_reminder() {
-            continue;
         }
 
         return false;
@@ -373,12 +363,12 @@ fn is_fresh_user_text_message(message: &Message) -> bool {
     let mut saw_user_text = false;
     for block in &message.content {
         match block {
-            ContentBlock::Text { text, .. } => {
-                let trimmed = text.trim();
-                if !trimmed.is_empty() && !trimmed.starts_with("<system-reminder>") {
-                    saw_user_text = true;
+                ContentBlock::Text { text, .. } => {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        saw_user_text = true;
+                    }
                 }
-            }
             ContentBlock::Image { .. } => {}
             _ => return false,
         }
@@ -388,14 +378,8 @@ fn is_fresh_user_text_message(message: &Message) -> bool {
 }
 
 fn dynamic_system_context_message(system_dynamic: &str) -> Option<Message> {
-    let trimmed = system_dynamic.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    Some(Message::user(&format!(
-        "<system-reminder>\n{}\n</system-reminder>",
-        trimmed
-    )))
+    let _ = system_dynamic;
+    None
 }
 
 /// Insert dynamic system context after the latest fresh user prompt without
@@ -404,18 +388,8 @@ pub fn messages_with_dynamic_system_context(
     messages: &[Message],
     system_dynamic: &str,
 ) -> Vec<Message> {
-    let Some(dynamic_message) = dynamic_system_context_message(system_dynamic) else {
-        return messages.to_vec();
-    };
-
-    let mut out = messages.to_vec();
-    let insert_at = out
-        .iter()
-        .rposition(is_fresh_user_text_message)
-        .map(|idx| idx + 1)
-        .unwrap_or(out.len());
-    out.insert(insert_at, dynamic_message);
-    out
+    let _ = system_dynamic;
+    messages.to_vec()
 }
 
 /// Sanitize a tool ID so it matches the pattern `^[a-zA-Z0-9_-]+$`.
@@ -643,11 +617,10 @@ mod tests {
         let out =
             messages_with_dynamic_system_context(&messages, "# Environment\nTime: 10:00:00 UTC");
 
-        assert_eq!(out.len(), 4);
+        assert_eq!(out.len(), 3);
         assert_eq!(text_of(&out[0]), "first user");
         assert_eq!(text_of(&out[1]), "assistant");
         assert_eq!(text_of(&out[2]), "current user");
-        assert!(text_of(&out[3]).starts_with("<system-reminder>\n# Environment"));
     }
 
     #[test]
@@ -667,7 +640,8 @@ mod tests {
         assert_role_text(&out_b[1], Role::Assistant, "stable cached assistant");
         assert_role_text(&out_a[2], Role::User, "latest prompt");
         assert_role_text(&out_b[2], Role::User, "latest prompt");
-        assert_ne!(text_of(&out_a[3]), text_of(&out_b[3]));
+        assert_eq!(out_a.len(), 3);
+        assert_eq!(out_b.len(), 3);
     }
 
     #[test]
@@ -687,13 +661,12 @@ mod tests {
 
         let out = messages_with_dynamic_system_context(&messages, "Time: 10:00:00 UTC");
 
-        assert_eq!(out.len(), 3);
+        assert_eq!(out.len(), 2);
         assert_role_text(&out[0], Role::Assistant, "assistant");
         assert_role_text(
             &out[1],
             Role::User,
             "<system-reminder>\ninternal\n</system-reminder>",
         );
-        assert!(text_of(&out[2]).contains("Time: 10:00:00 UTC"));
     }
 }

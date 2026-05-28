@@ -1,32 +1,29 @@
-use super::{Session, SessionStatus, active_pids_dir, session_exists};
+use super::{Session, SessionStatus, session_exists};
 use crate::id::extract_session_name;
 use crate::message::{ContentBlock, Role};
-use crate::storage;
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use std::collections::HashSet;
 
+fn load_memory_sessions() -> Result<Vec<Session>> {
+    let store = crate::memory::agent_runtime::AgentMemoryStore::new_default()?;
+    let mut sessions = Vec::new();
+    for record in store.list_sessions()? {
+        if let Ok(session) = Session::load(&record.session_id) {
+            sessions.push(session);
+        }
+    }
+    Ok(sessions)
+}
+
 /// Recover crashed sessions from the most recent crash window (text-only).
 /// Returns new recovery session IDs (most recent first).
 pub fn recover_crashed_sessions() -> Result<Vec<String>> {
-    let sessions_dir = storage::jcode_dir()?.join("sessions");
-    if !sessions_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut sessions: Vec<Session> = Vec::new();
-    for entry in std::fs::read_dir(&sessions_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().map(|e| e == "json").unwrap_or(false)
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-            && let Ok(mut session) = Session::load(stem)
-        {
-            if session.detect_crash() {
-                let _ = session.save();
-            }
-            sessions.push(session);
+    let mut sessions = load_memory_sessions()?;
+    for session in &mut sessions {
+        if session.detect_crash() {
+            let _ = session.save();
         }
     }
 
@@ -130,23 +127,10 @@ pub struct CrashedSessionsInfo {
 /// Returns info about crashed sessions within the crash window (60 seconds),
 /// excluding any that have already been recovered.
 pub fn detect_crashed_sessions() -> Result<Option<CrashedSessionsInfo>> {
-    let sessions_dir = storage::jcode_dir()?.join("sessions");
-    if !sessions_dir.exists() {
-        return Ok(None);
-    }
-
-    let mut sessions: Vec<Session> = Vec::new();
-    for entry in std::fs::read_dir(&sessions_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().map(|e| e == "json").unwrap_or(false)
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-            && let Ok(mut session) = Session::load(stem)
-        {
-            if session.detect_crash() {
-                let _ = session.save();
-            }
-            sessions.push(session);
+    let mut sessions = load_memory_sessions()?;
+    for session in &mut sessions {
+        if session.detect_crash() {
+            let _ = session.save();
         }
     }
 
@@ -237,163 +221,31 @@ impl SessionHeader {
 }
 
 /// Find recent crashed sessions for showing resume hints.
-///
-/// Uses a fast O(n) scan of `~/.jcode/active_pids/` (typically 0-5 files)
-/// instead of scanning the full sessions directory (tens of thousands).
-/// Each file in active_pids/ contains a PID; if that PID is dead, the
-/// session crashed. We then load only those specific session files.
-///
-/// Falls back to the legacy directory scan if active_pids/ doesn't exist
-/// (first run after upgrade).
 pub fn find_recent_crashed_sessions() -> Vec<(String, String)> {
-    if let Some(results) = find_crashed_via_pid_files() {
-        return results;
-    }
     find_crashed_legacy_scan()
 }
 
-/// Fast path: check active_pids/ directory for dead PIDs.
 fn find_crashed_via_pid_files() -> Option<Vec<(String, String)>> {
-    let dir = active_pids_dir()?;
-    if !dir.exists() {
-        return None;
-    }
-
-    let entries = std::fs::read_dir(&dir).ok()?;
-    let cutoff = Utc::now() - Duration::hours(24);
-    let mut crashed: Vec<(String, String, DateTime<Utc>)> = Vec::new();
-
-    for entry in entries.flatten() {
-        let session_id = match entry.file_name().to_str() {
-            Some(s) => s.to_string(),
-            None => continue,
-        };
-
-        let pid_str = match std::fs::read_to_string(entry.path()) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let pid: u32 = match pid_str.trim().parse() {
-            Ok(p) => p,
-            Err(_) => {
-                let _ = std::fs::remove_file(entry.path());
-                continue;
-            }
-        };
-
-        if is_pid_running(pid) {
-            continue;
-        }
-
-        match Session::load(&session_id) {
-            Ok(mut session) => {
-                session.mark_crashed(Some(format!(
-                    "Process {} exited unexpectedly (no shutdown signal captured)",
-                    pid
-                )));
-                let _ = session.save();
-                let ts = session.last_active_at.unwrap_or(session.updated_at);
-                if ts <= cutoff {
-                    continue;
-                }
-                let name = extract_session_name(&session_id)
-                    .unwrap_or(&session_id)
-                    .to_string();
-                crashed.push((session_id, name, ts));
-            }
-            Err(_) => {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
-    }
-
-    crashed.sort_by(|a, b| b.2.cmp(&a.2));
-    Some(
-        crashed
-            .into_iter()
-            .map(|(id, name, _)| (id, name))
-            .collect(),
-    )
+    None
 }
 
-/// Legacy fallback: scan the full sessions directory.
-/// Used only on the first launch after upgrading to the active_pids system.
 fn find_crashed_legacy_scan() -> Vec<(String, String)> {
-    let sessions_dir = match storage::jcode_dir() {
-        Ok(d) => d.join("sessions"),
-        Err(_) => return Vec::new(),
-    };
-    if !sessions_dir.exists() {
-        return Vec::new();
-    }
-
     let cutoff = Utc::now() - Duration::hours(24);
-    let cutoff_system = std::time::SystemTime::now()
-        .checked_sub(std::time::Duration::from_secs(24 * 3600))
-        .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-    let filename_cutoff_ms: u64 = (chrono::Utc::now() - Duration::hours(48))
-        .timestamp_millis()
-        .max(0) as u64;
-
     let mut recovered_parents: HashSet<String> = HashSet::new();
-    let mut candidates: Vec<SessionHeader> = Vec::new();
-
-    let entries = match std::fs::read_dir(&sessions_dir) {
-        Ok(e) => e,
+    let sessions = match load_memory_sessions() {
+        Ok(sessions) => sessions,
         Err(_) => return Vec::new(),
     };
 
-    for entry in entries.flatten() {
-        if let Some(fname) = entry.file_name().to_str()
-            && let Some(ts) = extract_timestamp_from_filename(fname)
-            && ts < filename_cutoff_ms
+    for session in &sessions {
+        if session.id.starts_with("session_recovery_")
+            && let Some(parent) = session.parent_id.as_ref()
         {
-            continue;
-        }
-
-        let path = entry.path();
-        if !path.extension().map(|e| e == "json").unwrap_or(false) {
-            continue;
-        }
-
-        let meta = match entry.metadata() {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-        if let Ok(mtime) = meta.modified()
-            && mtime < cutoff_system
-        {
-            continue;
-        }
-        if meta.len() == 0 {
-            continue;
-        }
-
-        let content = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        let has_crashed = content.contains("\"Crashed\"");
-        let is_recovery = content.contains("\"session_recovery_\"");
-
-        if !has_crashed && !is_recovery {
-            continue;
-        }
-
-        if let Ok(header) = serde_json::from_str::<SessionHeader>(&content) {
-            if header.id.starts_with("session_recovery_")
-                && let Some(parent) = header.parent_id.as_ref()
-            {
-                recovered_parents.insert(parent.clone());
-            }
-            if has_crashed {
-                candidates.push(header);
-            }
+            recovered_parents.insert(parent.clone());
         }
     }
 
-    let mut crashed: Vec<SessionHeader> = candidates
+    let mut crashed: Vec<Session> = sessions
         .into_iter()
         .filter(|s| matches!(s.status, SessionStatus::Crashed { .. }))
         .filter(|s| !recovered_parents.contains(&s.id))
@@ -483,43 +335,20 @@ pub fn find_session_by_name_or_id(name_or_id: &str) -> Result<String> {
         }
     }
 
-    // Otherwise, search for a session with matching short name or title.
-    let sessions_dir = storage::jcode_dir()?.join("sessions");
-    if !sessions_dir.exists() {
-        anyhow::bail!("No sessions found");
-    }
-
     let normalized_query = normalize_resume_lookup_text(name_or_id);
     let mut exact_matches: Vec<(String, chrono::DateTime<chrono::Utc>)> = Vec::new();
     let mut title_matches: Vec<(String, chrono::DateTime<chrono::Utc>)> = Vec::new();
 
-    for entry in std::fs::read_dir(&sessions_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.extension().map(|e| e == "json").unwrap_or(false) {
+    for session in load_memory_sessions()? {
+        let session_id = session.id.as_str();
+        if extract_session_name(session_id).is_some_and(|short| short == name_or_id) {
+            exact_matches.push((session.id.clone(), session.updated_at));
             continue;
         }
-
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-
-        let short_name_matches =
-            extract_session_name(stem).is_some_and(|short| short == name_or_id);
-        if short_name_matches {
-            if let Ok(session) = Session::load_startup_stub(stem).or_else(|_| Session::load(stem)) {
-                exact_matches.push((stem.to_string(), session.updated_at));
-            }
-            continue;
-        }
-
-        let Ok(session) = Session::load_startup_stub(stem).or_else(|_| Session::load(stem)) else {
-            continue;
-        };
         if session.short_name.as_deref() == Some(name_or_id) {
-            exact_matches.push((stem.to_string(), session.updated_at));
+            exact_matches.push((session.id.clone(), session.updated_at));
         } else if session_matches_resume_title(&session, &normalized_query) {
-            title_matches.push((stem.to_string(), session.updated_at));
+            title_matches.push((session.id.clone(), session.updated_at));
         }
     }
 

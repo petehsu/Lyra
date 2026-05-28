@@ -5,6 +5,7 @@ use crate::provider::{EventStream, Provider};
 use crate::tool::Registry;
 use crate::tool::ToolOutput;
 use async_trait::async_trait;
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -22,6 +23,11 @@ struct ToolThenEmptyThenTextProvider {
 
 struct ToolThenAlwaysEmptyProvider {
     calls: Arc<AtomicUsize>,
+}
+
+struct CaptureProvider {
+    messages: Arc<StdMutex<Vec<Vec<Message>>>>,
+    systems: Arc<StdMutex<Vec<String>>>,
 }
 
 #[async_trait]
@@ -223,6 +229,262 @@ impl Provider for ToolThenAlwaysEmptyProvider {
     }
 }
 
+#[async_trait]
+impl Provider for CaptureProvider {
+    async fn complete(
+        &self,
+        messages: &[Message],
+        _tools: &[ToolDefinition],
+        system: &str,
+        _resume_session_id: Option<&str>,
+    ) -> Result<EventStream> {
+        self.messages.lock().unwrap().push(messages.to_vec());
+        self.systems.lock().unwrap().push(system.to_string());
+        let (tx, rx) = tokio_mpsc::channel::<Result<StreamEvent>>(8);
+        tokio::spawn(async move {
+            let _ = tx
+                .send(Ok(StreamEvent::TextDelta("resumed answer".to_string())))
+                .await;
+            let _ = tx
+                .send(Ok(StreamEvent::MessageEnd {
+                    stop_reason: Some("end_turn".to_string()),
+                }))
+                .await;
+        });
+        Ok(Box::pin(ReceiverStream::new(rx)))
+    }
+
+    fn name(&self) -> &str {
+        "capture"
+    }
+
+    fn fork(&self) -> Arc<dyn Provider> {
+        Arc::new(Self {
+            messages: Arc::clone(&self.messages),
+            systems: Arc::clone(&self.systems),
+        })
+    }
+}
+
+#[tokio::test]
+async fn continue_streaming_with_system_reminder_does_not_append_empty_user_message() {
+    let _guard = crate::storage::lock_test_env();
+    let messages = Arc::new(StdMutex::new(Vec::new()));
+    let systems = Arc::new(StdMutex::new(Vec::new()));
+    let provider: Arc<dyn Provider> = Arc::new(CaptureProvider {
+        messages: Arc::clone(&messages),
+        systems: Arc::clone(&systems),
+    });
+    let registry = Registry::new(provider.clone()).await;
+    let mut agent = Agent::new(provider, registry);
+    agent.add_message(
+        Role::User,
+        vec![ContentBlock::Text {
+            text: "original request".to_string(),
+            cache_control: None,
+        }],
+    );
+    agent.session.save().expect("save original request");
+    let store =
+        crate::memory::agent_runtime::AgentMemoryStore::new_default().expect("agent memory store");
+    store
+        .ensure_session_with_id(
+            &agent.session.id,
+            crate::memory::agent_runtime::CreateSessionInput {
+                title: Some("resume test".to_string()),
+                working_dir: None,
+                provider_key: None,
+                model: None,
+            },
+        )
+        .expect("ensure memory session");
+    let user_event = store
+        .append_event(
+            &agent.session.id,
+            crate::memory::agent_runtime::NewSessionEvent::user_message("original request"),
+        )
+        .expect("append memory user event");
+    let runtime_turn_id = "runtime_turn_resume_test";
+    store
+        .start_runtime_turn_with_id(
+            &agent.session.id,
+            runtime_turn_id,
+            Some(user_event.event_id.as_str()),
+            None,
+        )
+        .expect("start memory runtime turn");
+    let context_snapshot = store
+        .build_context(&agent.session.id, runtime_turn_id, 128_000)
+        .expect("build memory context");
+    agent.set_assembled_provider_context(AssembledProviderContext {
+        session_id: agent.session.id.clone(),
+        runtime_turn_id: runtime_turn_id.to_string(),
+        context_snapshot_id: context_snapshot.context_snapshot_id,
+        messages: vec![Message {
+            role: Role::User,
+            content: vec![ContentBlock::Text {
+                text: "original request".to_string(),
+                cache_control: None,
+            }],
+            timestamp: None,
+            tool_duration_ms: None,
+        }],
+        dynamic_system_context: None,
+    });
+
+    let (event_tx, _event_rx) = tokio_mpsc::unbounded_channel();
+    agent
+        .continue_streaming_mpsc_with_system_reminder("resume after reload".to_string(), event_tx)
+        .await
+        .expect("resume existing transcript");
+
+    assert!(
+        agent
+            .session
+            .messages
+            .iter()
+            .filter(|message| message.role == Role::User)
+            .all(|message| message.content.iter().any(|block| match block {
+                ContentBlock::Text { text, .. } => !text.trim().is_empty(),
+                _ => true,
+            })),
+        "resume should not persist a blank user turn"
+    );
+    assert!(
+        agent
+            .session
+            .messages
+            .iter()
+            .any(|message| message.role == Role::Assistant
+                && message.content.iter().any(|block| matches!(
+                    block,
+                    ContentBlock::Text { text, .. } if text == "resumed answer"
+                )))
+    );
+    let provider_messages = messages.lock().unwrap();
+    assert!(
+        provider_messages[0].len() >= 1,
+        "resume should preserve existing provider context"
+    );
+    let captured_systems = systems.lock().unwrap();
+    assert!(
+        captured_systems
+            .first()
+            .is_some_and(|system| system.contains("resume after reload")),
+        "recovery reminder belongs in dynamic system context, not as a pseudo user message"
+    );
+    assert!(!provider_messages[0].iter().any(|message| {
+        matches!(message.role, Role::User)
+            && message.content.iter().any(|block| {
+                matches!(block, ContentBlock::Text { text, .. } if text.contains("resume after reload"))
+            })
+    }));
+    assert!(
+        provider_messages[0].iter().all(|message| {
+            message.content.iter().any(|block| match block {
+                ContentBlock::Text { text, .. } => !text.trim().is_empty(),
+                _ => true,
+            })
+        }),
+        "provider context should not include a blank user turn"
+    );
+}
+
+#[tokio::test]
+async fn provider_input_comes_from_context_snapshot_not_old_transcript() {
+    let _guard = crate::storage::lock_test_env();
+    let messages = Arc::new(StdMutex::new(Vec::new()));
+    let systems = Arc::new(StdMutex::new(Vec::new()));
+    let provider: Arc<dyn Provider> = Arc::new(CaptureProvider {
+        messages: Arc::clone(&messages),
+        systems: Arc::clone(&systems),
+    });
+    let registry = Registry::new(provider.clone()).await;
+    let mut agent = Agent::new(provider, registry);
+    agent.add_message(
+        Role::User,
+        vec![ContentBlock::Text {
+            text: "old transcript must not reach provider".to_string(),
+            cache_control: None,
+        }],
+    );
+
+    let store =
+        crate::memory::agent_runtime::AgentMemoryStore::new_default().expect("agent memory store");
+    store
+        .ensure_session_with_id(
+            &agent.session.id,
+            crate::memory::agent_runtime::CreateSessionInput {
+                title: Some("context provider smoke".to_string()),
+                working_dir: None,
+                provider_key: None,
+                model: None,
+            },
+        )
+        .expect("ensure memory session");
+    let user_event = store
+        .append_event(
+            &agent.session.id,
+            crate::memory::agent_runtime::NewSessionEvent::user_message("context snapshot request"),
+        )
+        .expect("append memory user event");
+    let runtime_turn_id = "runtime_turn_context_provider_smoke";
+    store
+        .start_runtime_turn_with_id(
+            &agent.session.id,
+            runtime_turn_id,
+            Some(user_event.event_id.as_str()),
+            None,
+        )
+        .expect("start memory runtime turn");
+    let context_snapshot = store
+        .build_context(&agent.session.id, runtime_turn_id, 128_000)
+        .expect("build memory context");
+    agent.set_assembled_provider_context(AssembledProviderContext {
+        session_id: agent.session.id.clone(),
+        runtime_turn_id: runtime_turn_id.to_string(),
+        context_snapshot_id: context_snapshot.context_snapshot_id,
+        messages: vec![Message {
+            role: Role::User,
+            content: vec![ContentBlock::Text {
+                text: "context snapshot request".to_string(),
+                cache_control: None,
+            }],
+            timestamp: None,
+            tool_duration_ms: None,
+        }],
+        dynamic_system_context: None,
+    });
+
+    let (event_tx, _event_rx) = tokio_mpsc::unbounded_channel();
+    agent
+        .run_turn_streaming_mpsc(event_tx)
+        .await
+        .expect("run context-backed provider turn");
+
+    let provider_messages = messages.lock().unwrap();
+    assert_eq!(provider_messages.len(), 1);
+    let provider_text = provider_messages[0]
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .filter_map(|block| match block {
+            ContentBlock::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(provider_text.contains("context snapshot request"));
+    assert!(!provider_text.contains("old transcript must not reach provider"));
+    assert!(!provider_text.contains("<system-reminder>"));
+
+    let turn = store
+        .read_runtime_turn(&agent.session.id, runtime_turn_id)
+        .expect("read runtime turn")
+        .expect("runtime turn");
+    assert!(turn.context_snapshot_ref.is_some());
+    assert!(turn.provider_request_ref.is_some());
+}
+
 #[test]
 fn tool_output_to_content_blocks_preserves_labeled_images() {
     let output = ToolOutput::new("Image ready").with_labeled_image(
@@ -265,7 +527,7 @@ fn tool_output_to_content_blocks_preserves_labeled_images() {
 }
 
 #[test]
-fn tool_output_to_content_blocks_omits_images_when_provider_lacks_vision() {
+fn tool_output_to_content_blocks_preserves_images_when_provider_lacks_vision() {
     let output = ToolOutput::new("Image ready").with_labeled_image(
         "image/png",
         "ZmFrZQ==",
@@ -273,16 +535,115 @@ fn tool_output_to_content_blocks_omits_images_when_provider_lacks_vision() {
     );
 
     let blocks = tool_output_to_content_blocks("call_1".to_string(), output, false);
-    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks.len(), 3);
     assert!(matches!(blocks[0], ContentBlock::ToolResult { .. }));
     match &blocks[1] {
-        ContentBlock::Text { text, .. } => {
-            assert!(text.contains("omitted"));
-            assert!(text.contains("browser screenshot"));
-            assert!(!text.contains("ZmFrZQ=="));
+        ContentBlock::Image { media_type, data } => {
+            assert_eq!(media_type, "image/png");
+            assert_eq!(data, "ZmFrZQ==");
         }
-        other => panic!("expected omission text, got {other:?}"),
+        other => panic!("expected image block, got {other:?}"),
     }
+    match &blocks[2] {
+        ContentBlock::Text { text, .. } => {
+            assert!(text.contains("browser screenshot"));
+        }
+        other => panic!("expected trailing label text, got {other:?}"),
+    }
+}
+
+#[test]
+fn tool_output_to_content_blocks_preserves_large_lumen_visual_fallback_images() {
+    let output = ToolOutput::new("Captured Lyra Lumen visual fallback evidence.")
+        .with_labeled_image(
+            "image/png",
+            "a".repeat((48 * 1024) + 1),
+            "lyra lumen visual fallback",
+        );
+
+    let blocks = tool_output_to_content_blocks("call_1".to_string(), output, true);
+    assert_eq!(blocks.len(), 3);
+    assert!(matches!(blocks[0], ContentBlock::ToolResult { .. }));
+    match &blocks[1] {
+        ContentBlock::Image { media_type, data } => {
+            assert_eq!(media_type, "image/png");
+            assert_eq!(data.len(), (48 * 1024) + 1);
+        }
+        other => panic!("expected image block, got {other:?}"),
+    }
+    match &blocks[2] {
+        ContentBlock::Text { text, .. } => {
+            assert!(text.contains("lyra lumen visual fallback"));
+        }
+        other => panic!("expected trailing label text, got {other:?}"),
+    }
+}
+
+#[test]
+fn provider_context_filters_images_without_removing_session_blocks() {
+    let blocks = tool_output_to_content_blocks(
+        "call_1".to_string(),
+        ToolOutput::new("Captured Lyra Lumen visual fallback evidence.").with_labeled_image(
+            "image/png",
+            "a".repeat((48 * 1024) + 1),
+            "lyra lumen visual fallback",
+        ),
+        true,
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| matches!(block, ContentBlock::Image { .. })),
+        "session/UI blocks should retain the real image"
+    );
+
+    let messages = vec![Message {
+        role: Role::User,
+        content: blocks.clone(),
+        timestamp: None,
+        tool_duration_ms: None,
+    }];
+    let filtered = filter_messages_for_provider_context(messages, true);
+    assert!(
+        filtered[0]
+            .content
+            .iter()
+            .all(|block| !matches!(block, ContentBlock::Image { .. })),
+        "provider context should omit oversized Lumen fallback image"
+    );
+    assert!(
+        filtered[0].content.iter().any(|block| matches!(
+            block,
+            ContentBlock::Text { text, .. }
+                if text.contains("available in Lyra UI")
+                    && !text.contains("Image attachment omitted from model context")
+        )),
+        "provider-only context should explain the omitted image without reusing the UI-visible failure text"
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| matches!(block, ContentBlock::Image { .. })),
+        "filtering must not mutate the session/UI blocks"
+    );
+
+    let nonvision_messages = vec![Message {
+        role: Role::User,
+        content: blocks,
+        timestamp: None,
+        tool_duration_ms: None,
+    }];
+    let nonvision_filtered = filter_messages_for_provider_context(nonvision_messages, false);
+    assert!(
+        nonvision_filtered[0]
+            .content
+            .iter()
+            .all(|block| !matches!(block, ContentBlock::Image { .. }))
+    );
+    assert!(nonvision_filtered[0].content.iter().any(|block| matches!(
+        block,
+        ContentBlock::Text { text, .. } if text.contains("does not currently support image input")
+    )));
 }
 
 #[tokio::test]
@@ -359,6 +720,9 @@ async fn run_turn_streaming_mpsc_emits_keepalive_while_provider_is_quiet() {
 #[tokio::test]
 async fn run_turn_streaming_mpsc_retries_empty_response_after_tool_result() {
     let _guard = crate::storage::lock_test_env();
+    let prev_memory_home = std::env::var_os("LYRA_AGENT_MEMORY_HOME");
+    let memory_home = tempfile::TempDir::new().expect("memory home");
+    crate::env::set_var("LYRA_AGENT_MEMORY_HOME", memory_home.path());
     let calls = Arc::new(AtomicUsize::new(0));
     let provider: Arc<dyn Provider> = Arc::new(ToolThenEmptyThenTextProvider {
         calls: Arc::clone(&calls),
@@ -384,27 +748,26 @@ async fn run_turn_streaming_mpsc_retries_empty_response_after_tool_result() {
             .unwrap_or_default()
             .contains("final answer after tool result")
     );
-    let recovery_message = agent
-        .session
-        .messages
-        .iter()
-        .find(|message| {
-            message.content.iter().any(|block| match block {
-                ContentBlock::Text { text, .. } => text.contains(
-                    "previous model response ended without any user-visible text after tool results",
-                ),
-                _ => false,
-            })
+    assert!(agent.session.messages.iter().all(|message| {
+        message.content.iter().all(|block| match block {
+            ContentBlock::Text { text, .. } => !text.contains("empty_tool_result_recovery"),
+            _ => true,
         })
-        .expect("recovery reminder should be persisted for model context");
-    assert_eq!(
-        recovery_message.display_role,
-        Some(crate::session::StoredDisplayRole::System)
-    );
-    assert!(recovery_message.content.iter().any(|block| match block {
-        ContentBlock::Text { text, .. } => text.trim_start().starts_with("<system-reminder>"),
-        _ => false,
     }));
+    let memory_events = crate::memory::agent_runtime::AgentMemoryStore::new_default()
+        .expect("memory store")
+        .read_events_by_session(agent.session_id())
+        .expect("memory events");
+    assert!(
+        memory_events
+            .iter()
+            .any(|event| event.kind == "empty_tool_result_recovery")
+    );
+    if let Some(prev) = prev_memory_home {
+        crate::env::set_var("LYRA_AGENT_MEMORY_HOME", prev);
+    } else {
+        crate::env::remove_var("LYRA_AGENT_MEMORY_HOME");
+    }
 }
 
 #[tokio::test]
@@ -939,7 +1302,9 @@ async fn env_snapshot_detail_is_minimal_for_empty_sessions_and_full_after_histor
     let mut agent = Agent::new(provider, registry);
 
     assert_eq!(agent.env_snapshot_detail(), EnvSnapshotDetail::Minimal);
+    agent.session.provider_key = Some("mimo-token-plan".to_string());
     let minimal = agent.build_env_snapshot("create", agent.env_snapshot_detail());
+    assert_eq!(minimal.provider, "mimo-token-plan");
     assert!(minimal.jcode_git_hash.is_none());
     assert!(minimal.jcode_git_dirty.is_none());
     assert!(minimal.working_git.is_none());

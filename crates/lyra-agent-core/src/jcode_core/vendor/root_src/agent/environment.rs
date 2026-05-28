@@ -80,7 +80,16 @@ impl Agent {
             reason: reason.to_string(),
             session_id: self.session.id.clone(),
             working_dir,
-            provider: self.provider.name().to_string(),
+            provider: self
+                .session
+                .provider_key
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(|| {
+                    crate::provider_catalog::runtime_provider_display_name(self.provider.name())
+                }),
             model: self.provider.model().to_string(),
             jcode_version: env!("JCODE_VERSION").to_string(),
             jcode_git_hash,

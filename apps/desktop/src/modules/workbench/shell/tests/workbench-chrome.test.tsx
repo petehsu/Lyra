@@ -21,7 +21,8 @@ const labels: WorkbenchChromeLabels = {
   openDocs: "Open docs",
   minimizeWindow: "Minimize",
   toggleMaximizeWindow: "Maximize",
-  closeWindow: "Close"
+  closeWindow: "Close",
+  openLoginManager: "Login Manager"
 };
 
 const createActions = (): WorkbenchActionApi => ({
@@ -36,7 +37,8 @@ const createActions = (): WorkbenchActionApi => ({
   toggleTerminalPanelSide: vi.fn(),
   minimizeWindow: vi.fn(),
   toggleMaximizeWindow: vi.fn(),
-  closeWindow: vi.fn()
+  closeWindow: vi.fn(),
+  openLoginManager: vi.fn()
 });
 
 const presentationState: WorkbenchPresentationState = {

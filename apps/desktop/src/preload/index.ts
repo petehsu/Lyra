@@ -13,6 +13,11 @@ import {
   type AgentGitStatusSnapshot,
   type AgentImageAttachmentMaterializeRequest,
   type AgentImageAttachmentMaterializeResponse,
+  type AgentMemoryAuditResponse,
+  type AgentMemorySharedSearchRequest,
+  type AgentMemorySharedUpdateRequest,
+  type AgentMemorySnapshot,
+  type AgentMemoryTrimRunRequest,
   type AgentPermissionRespondRequest,
   type AgentRollbackPreviewResponse,
   type AgentRollbackRequest,
@@ -1007,9 +1012,19 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.jcodeOvernightCancel,
         request ?? {}
       ) as Promise<JcodeOvernightRunResponse>,
+    startTurn: (request: AgentTurnSendRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentTurnStart,
+        request
+      ) as Promise<AgentTurnSendResponse>,
     sendTurn: (request: AgentTurnSendRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentTurnSend,
+        request
+      ) as Promise<AgentTurnSendResponse>,
+    resumeTurn: (request: AgentTurnSendRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentTurnResume,
         request
       ) as Promise<AgentTurnSendResponse>,
     cancelTurn: (request: AgentTurnCancelRequest) =>
@@ -1017,6 +1032,41 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentTurnCancel,
         request
       ) as Promise<AgentTurnCancelResponse>,
+    retryTurn: (request: AgentTurnSendRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentTurnRetry,
+        request
+      ) as Promise<AgentTurnSendResponse>,
+    readMemorySnapshot: (request?: AgentSessionReadRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMemorySnapshot,
+        request ?? {}
+      ) as Promise<AgentMemorySnapshot>,
+    readMemoryAudit: (request?: AgentSessionReadRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMemoryAudit,
+        request ?? {}
+      ) as Promise<AgentMemoryAuditResponse>,
+    runMemoryTrim: (request?: AgentMemoryTrimRunRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMemoryTrimRun,
+        request ?? {}
+      ) as Promise<unknown>,
+    runMemoryRecovery: (request?: AgentSessionReadRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMemoryRecoverRun,
+        request ?? {}
+      ) as Promise<unknown>,
+    searchSharedMemory: (request?: AgentMemorySharedSearchRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMemorySharedSearch,
+        request ?? {}
+      ) as Promise<{ readonly records: readonly unknown[] }>,
+    updateSharedMemory: (request: AgentMemorySharedUpdateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMemorySharedUpdate,
+        request
+      ) as Promise<unknown>,
     previewRollback: (request: AgentRollbackRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentRollbackPreview,

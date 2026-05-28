@@ -125,9 +125,31 @@ impl Agent {
         }
 
         self.add_message(Role::User, blocks);
+        self.freeze_assembled_provider_context_message_floor();
         self.session.save()?;
         let result = self.run_turn_streaming_mpsc(event_tx).await;
         self.current_turn_system_reminder = None;
+        self.clear_assembled_provider_context();
+        result
+    }
+
+    /// Continue the existing transcript without appending a new user message.
+    ///
+    /// This is used when Lyra is resuming a provider/tool loop that was
+    /// interrupted by a development-server reload after tool activity. The
+    /// latest provider-visible message is already a tool result, so adding an
+    /// empty user turn would pollute both the transcript and provider context.
+    pub async fn continue_streaming_mpsc_with_system_reminder(
+        &mut self,
+        system_reminder: String,
+        event_tx: mpsc::UnboundedSender<ServerEvent>,
+    ) -> Result<()> {
+        self.current_turn_system_reminder =
+            Some(system_reminder).filter(|value| !value.trim().is_empty());
+        self.freeze_assembled_provider_context_message_floor();
+        let result = self.run_turn_streaming_mpsc(event_tx).await;
+        self.current_turn_system_reminder = None;
+        self.clear_assembled_provider_context();
         result
     }
 

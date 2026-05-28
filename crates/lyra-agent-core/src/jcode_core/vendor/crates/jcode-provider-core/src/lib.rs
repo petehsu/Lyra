@@ -33,9 +33,7 @@ pub use selection::{
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::Stream;
-use jcode_message_types::{
-    ContentBlock, Message, Role, StreamEvent, ToolDefinition, messages_with_dynamic_system_context,
-};
+use jcode_message_types::{ContentBlock, Message, Role, StreamEvent, ToolDefinition};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -66,9 +64,19 @@ pub trait Provider: Send + Sync {
         system_dynamic: &str,
         resume_session_id: Option<&str>,
     ) -> Result<EventStream> {
-        let dynamic_messages = messages_with_dynamic_system_context(messages, system_dynamic);
-        self.complete(&dynamic_messages, tools, system_static, resume_session_id)
-            .await
+        let dynamic = system_dynamic.trim();
+        if dynamic.is_empty() {
+            self.complete(messages, tools, system_static, resume_session_id)
+                .await
+        } else {
+            let merged_system = if system_static.trim().is_empty() {
+                dynamic.to_string()
+            } else {
+                format!("{}\n\n{}", system_static.trim_end(), dynamic)
+            };
+            self.complete(messages, tools, &merged_system, resume_session_id)
+                .await
+        }
     }
 
     /// Get the provider name.

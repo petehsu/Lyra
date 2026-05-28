@@ -133,6 +133,32 @@ describe("BrowserTabStrip", () => {
     );
   });
 
+  test("falls back to the default icon when a favicon fails to load", () => {
+    render(
+      <BrowserTabStrip
+        {...createProps({
+          tabs: [
+            createTab("home", "Home", "search"),
+            {
+              ...createTab("docs", "Docs"),
+              faviconUrl: "https://example.invalid/favicon.ico"
+            }
+          ]
+        })}
+      />
+    );
+
+    const docsButton = screen.getByRole("button", { name: "Docs" });
+    const iconSlot = docsButton.querySelector(".lyra-browser-tab-icon");
+    const favicon = iconSlot?.querySelector(".lyra-browser-tab-favicon");
+    expect(favicon).not.toBeNull();
+
+    fireEvent.error(favicon as HTMLImageElement);
+
+    expect(favicon).toHaveAttribute("data-failed", "true");
+    expect(iconSlot?.querySelector(".lyra-browser-tab-favicon-fallback")).not.toBeNull();
+  });
+
   test("marks newly inserted tabs for the short entry animation", () => {
     vi.useFakeTimers();
     const { rerender } = render(

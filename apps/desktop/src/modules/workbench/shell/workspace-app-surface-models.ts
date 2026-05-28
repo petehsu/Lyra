@@ -8,7 +8,8 @@ import {
   isAgentOvernightAppId,
   isAgentSessionHistoryAppId,
   isNotificationCenterAppId,
-  isSoftwareStoreAppId
+  isSoftwareStoreAppId,
+  isLoginManagerAppId
 } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type {
@@ -242,6 +243,15 @@ export const createAppSurfaceRenderModel = (
     return {
       kind: "softwareStore",
       props: context.softwareStore
+    };
+  }
+
+  if (isLoginManagerAppId(tab.appId)) {
+    return {
+      kind: "loginManager",
+      props: {
+        desktopApi: context.desktopApi
+      }
     };
   }
 

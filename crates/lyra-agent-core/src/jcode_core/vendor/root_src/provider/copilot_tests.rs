@@ -393,7 +393,7 @@ fn is_user_initiated_assistant_last_is_user_initiated() {
 }
 
 #[test]
-fn is_user_initiated_tool_result_with_memory_injection() {
+fn is_user_initiated_tool_result_with_literal_system_reminder_text() {
     let messages = vec![
         make_msg(
             Role::User,
@@ -426,7 +426,7 @@ fn is_user_initiated_tool_result_with_memory_injection() {
             }],
         ),
     ];
-    assert!(!CopilotApiProvider::is_user_initiated_raw(&messages));
+    assert!(CopilotApiProvider::is_user_initiated_raw(&messages));
 }
 
 #[test]
@@ -467,7 +467,7 @@ fn is_user_initiated_user_text_after_tool_result_without_system_reminder() {
 }
 
 #[test]
-fn is_user_initiated_multiple_memory_injections_after_tool_result() {
+fn is_user_initiated_multiple_literal_system_reminder_texts_after_tool_result() {
     let messages = vec![
         make_msg(
             Role::Assistant,
@@ -500,7 +500,7 @@ fn is_user_initiated_multiple_memory_injections_after_tool_result() {
             }],
         ),
     ];
-    assert!(!CopilotApiProvider::is_user_initiated_raw(&messages));
+    assert!(CopilotApiProvider::is_user_initiated_raw(&messages));
 }
 
 #[test]

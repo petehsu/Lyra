@@ -3,13 +3,12 @@
 //! The tool is optimized for agent recall rather than raw grep output:
 //! - current session, system reminders, and tool-only messages are hidden by default
 //! - session metadata is searchable and returned as first-class results
-//! - snapshot + journal persistence is searched so recent messages are visible
+//! - Lyra sessions are searched from the structured AgentMemoryStore runtime truth
 //! - results are grouped by session by default to avoid duplicate floods
 
 use super::{Tool, ToolContext, ToolOutput};
 use crate::message::ContentBlock;
-use crate::session::{Session, StoredMessage, session_journal_path_from_snapshot};
-use crate::storage;
+use crate::session::{Session, StoredMessage};
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
@@ -27,8 +26,6 @@ use jcode_session_types::{
     session_search_datetime_matches as session_datetime_matches,
     session_search_field_filter_matches as field_filter_matches,
     session_search_format_datetime as format_datetime,
-    session_search_path_matches_query as path_matches_query,
-    session_search_raw_matches_query as raw_matches_query,
     session_search_truncate_title_text as truncate_title_text,
     session_search_working_dir_matches as working_dir_matches,
 };
@@ -36,13 +33,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
-/// Max session snapshots/journals to deserialize after raw pre-filtering.
+/// Max structured Lyra sessions to hydrate after metadata filtering.
 const MAX_DESERIALIZE: usize = 500;
-
-/// Number of parallel threads for file scanning/loading.
-const SCAN_THREADS: usize = 8;
 
 const DEFAULT_LIMIT: usize = 10;
 const MAX_LIMIT: usize = 50;
@@ -196,26 +189,6 @@ impl RoleFilter {
             _ => None,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-struct SessionFileCandidate {
-    snapshot_path: PathBuf,
-    journal_path: PathBuf,
-    session_id_hint: String,
-    mtime: SystemTime,
-}
-
-#[derive(Default)]
-struct RawFilterOutcome {
-    candidates: Vec<SessionFileCandidate>,
-    read_errors: usize,
-}
-
-#[derive(Default)]
-struct SearchWorkerOutcome {
-    results: Vec<SearchResult>,
-    parse_errors: usize,
 }
 
 #[async_trait]
@@ -406,8 +379,6 @@ impl Tool for SessionSearchTool {
             .with_title("session_search"));
         }
 
-        let sessions_dir = storage::jcode_dir()?.join("sessions");
-
         let options = SearchOptions {
             current_session_id: ctx.session_id.clone(),
             working_dir_filter: params.working_dir.clone(),
@@ -435,7 +406,7 @@ impl Tool for SessionSearchTool {
             let session_id = ctx.session_id.clone();
             let query = query.clone();
             let options = options.clone();
-            move || search_sessions_blocking(&sessions_dir, &query, &options, &session_id)
+            move || search_sessions_blocking(&query, &options, &session_id)
         })
         .await??;
 
@@ -520,10 +491,8 @@ fn parse_datetime_filter(
     ))
 }
 
-/// Synchronous search across session files with parallel raw pre-filtering and
-/// journal-aware session loading.
+/// Synchronous search across structured AgentMemoryStore sessions.
 fn search_sessions_blocking(
-    sessions_dir: &Path,
     query: &QueryProfile,
     options: &SearchOptions,
     log_session_id: &str,
@@ -534,46 +503,20 @@ fn search_sessions_blocking(
     }
 
     if source_matches_filter("jcode", options) {
-        let mut files = collect_session_files(sessions_dir)?;
-        if !files.is_empty() {
-            files.sort_unstable_by(|a, b| b.mtime.cmp(&a.mtime));
-            if files.len() > options.max_scan_sessions {
-                files.truncate(options.max_scan_sessions);
-                report.truncated = true;
+        match search_jcode_memory_sessions(query, options) {
+            Ok(outcome) => {
+                report.scanned_jcode_sessions = outcome.scanned;
+                report.candidate_jcode_sessions = outcome.candidates;
+                report.parse_errors += outcome.parse_errors;
+                report.truncated |= outcome.truncated;
+                report.results.extend(outcome.results);
             }
-            report.scanned_jcode_sessions = files.len();
-
-            if !options.include_current {
-                files.retain(|candidate| candidate.session_id_hint != options.current_session_id);
-            }
-
-            if !files.is_empty() {
-                let raw_filter_outcomes = filter_candidates_parallel(&files, query);
-                report.read_errors += raw_filter_outcomes
-                    .iter()
-                    .map(|outcome| outcome.read_errors)
-                    .sum::<usize>();
-                let mut candidates: Vec<SessionFileCandidate> = raw_filter_outcomes
-                    .into_iter()
-                    .flat_map(|outcome| outcome.candidates)
-                    .collect();
-                candidates.sort_unstable_by(|a, b| b.mtime.cmp(&a.mtime));
-                report.candidate_jcode_sessions = candidates.len();
-                if candidates.len() > MAX_DESERIALIZE {
-                    candidates.truncate(MAX_DESERIALIZE);
-                    report.truncated = true;
-                }
-
-                let search_outcomes = score_candidates_parallel(&candidates, query, options);
-                report.parse_errors += search_outcomes
-                    .iter()
-                    .map(|outcome| outcome.parse_errors)
-                    .sum::<usize>();
-                report.results.extend(
-                    search_outcomes
-                        .into_iter()
-                        .flat_map(|outcome| outcome.results),
-                );
+            Err(err) => {
+                report.read_errors += 1;
+                crate::logging::warn(&format!(
+                    "[tool:session_search] failed to search structured AgentMemoryStore in session {}: {}",
+                    log_session_id, err
+                ));
             }
         }
     }
@@ -592,7 +535,7 @@ fn search_sessions_blocking(
 
     if report.read_errors > 0 || report.parse_errors > 0 {
         crate::logging::warn(&format!(
-            "[tool:session_search] skipped unreadable or invalid session files in session {} (read_errors={} parse_errors={})",
+            "[tool:session_search] skipped unreadable or invalid session records in session {} (read_errors={} parse_errors={})",
             log_session_id, report.read_errors, report.parse_errors
         ));
     }
@@ -602,151 +545,59 @@ fn search_sessions_blocking(
     Ok(report)
 }
 
-fn collect_session_files(sessions_dir: &Path) -> Result<Vec<SessionFileCandidate>> {
-    let mut files = Vec::new();
-    if !sessions_dir.exists() {
-        return Ok(files);
-    }
-    for entry in std::fs::read_dir(sessions_dir)?.flatten() {
-        let path = entry.path();
-        if path.extension().is_none_or(|extension| extension != "json") {
-            continue;
-        }
-        let Some(stem) = path
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().to_string())
-        else {
-            continue;
-        };
-        let journal_path = session_journal_path_from_snapshot(&path);
-        let snapshot_mtime = modified_time_or_epoch(&path);
-        let journal_mtime = modified_time_or_epoch(&journal_path);
-        files.push(SessionFileCandidate {
-            snapshot_path: path,
-            journal_path,
-            session_id_hint: stem,
-            mtime: snapshot_mtime.max(journal_mtime),
-        });
-    }
-    Ok(files)
+struct JcodeMemorySearchOutcome {
+    results: Vec<SearchResult>,
+    scanned: usize,
+    candidates: usize,
+    parse_errors: usize,
+    truncated: bool,
 }
 
-fn modified_time_or_epoch(path: &Path) -> SystemTime {
-    std::fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .unwrap_or(SystemTime::UNIX_EPOCH)
-}
-
-fn filter_candidates_parallel(
-    files: &[SessionFileCandidate],
-    query: &QueryProfile,
-) -> Vec<RawFilterOutcome> {
-    if files.is_empty() {
-        return Vec::new();
-    }
-    let thread_count = SCAN_THREADS.min(files.len());
-    let chunk_size = files.len().div_ceil(thread_count);
-
-    std::thread::scope(|scope| {
-        let mut handles = Vec::new();
-        for chunk in files.chunks(chunk_size) {
-            handles.push(scope.spawn(move || {
-                let mut outcome = RawFilterOutcome::default();
-                for candidate in chunk {
-                    if path_matches_query(&candidate.session_id_hint, query) {
-                        outcome.candidates.push(candidate.clone());
-                        continue;
-                    }
-
-                    let Some(raw) = read_candidate_raw(candidate, &mut outcome.read_errors) else {
-                        continue;
-                    };
-                    if raw_matches_query(&raw, query) {
-                        outcome.candidates.push(candidate.clone());
-                    }
-                }
-                outcome
-            }));
-        }
-        handles
-            .into_iter()
-            .map(|handle| match handle.join() {
-                Ok(outcome) => outcome,
-                Err(_) => {
-                    crate::logging::warn(
-                        "session_search raw pre-filter worker panicked; skipping that worker's candidates",
-                    );
-                    RawFilterOutcome::default()
-                }
-            })
-            .collect()
-    })
-}
-
-fn read_candidate_raw(
-    candidate: &SessionFileCandidate,
-    read_errors: &mut usize,
-) -> Option<Vec<u8>> {
-    let mut raw = match std::fs::read(&candidate.snapshot_path) {
-        Ok(data) => data,
-        Err(_) => {
-            *read_errors += 1;
-            return None;
-        }
-    };
-
-    if candidate.journal_path.exists() {
-        match std::fs::read(&candidate.journal_path) {
-            Ok(journal) => {
-                raw.push(b'\n');
-                raw.extend_from_slice(&journal);
-            }
-            Err(_) => *read_errors += 1,
-        }
-    }
-
-    Some(raw)
-}
-
-fn score_candidates_parallel(
-    candidates: &[SessionFileCandidate],
+fn search_jcode_memory_sessions(
     query: &QueryProfile,
     options: &SearchOptions,
-) -> Vec<SearchWorkerOutcome> {
-    if candidates.is_empty() {
-        return Vec::new();
-    }
-    let thread_count = SCAN_THREADS.min(candidates.len());
-    let chunk_size = candidates.len().div_ceil(thread_count);
+) -> Result<JcodeMemorySearchOutcome> {
+    let store = crate::memory::agent_runtime::AgentMemoryStore::new_default()?;
+    let mut records = store.list_sessions()?;
+    let mut truncated = false;
 
-    std::thread::scope(|scope| {
-        let mut handles = Vec::new();
-        for chunk in candidates.chunks(chunk_size) {
-            handles.push(scope.spawn(move || {
-                let mut outcome = SearchWorkerOutcome::default();
-                for candidate in chunk {
-                    match Session::load_from_path(&candidate.snapshot_path) {
-                        Ok(session) => {
-                            append_session_results(&mut outcome.results, &session, query, options)
-                        }
-                        Err(_) => outcome.parse_errors += 1,
-                    }
+    if records.len() > options.max_scan_sessions {
+        records.truncate(options.max_scan_sessions);
+        truncated = true;
+    }
+
+    let scanned = records.len();
+    records.retain(|record| {
+        options.include_current || record.session_id != options.current_session_id
+    });
+    if records.len() > MAX_DESERIALIZE {
+        records.truncate(MAX_DESERIALIZE);
+        truncated = true;
+    }
+
+    let mut candidates = 0usize;
+    let mut parse_errors = 0usize;
+    let mut results = Vec::new();
+
+    for record in records {
+        match Session::load(&record.session_id) {
+            Ok(session) => {
+                let before = results.len();
+                append_session_results(&mut results, &session, query, options);
+                if results.len() > before {
+                    candidates += 1;
                 }
-                outcome
-            }));
+            }
+            Err(_) => parse_errors += 1,
         }
-        handles
-            .into_iter()
-            .map(|handle| match handle.join() {
-                Ok(outcome) => outcome,
-                Err(_) => {
-                    crate::logging::warn(
-                        "session_search scoring worker panicked; skipping that worker's results",
-                    );
-                    SearchWorkerOutcome::default()
-                }
-            })
-            .collect()
+    }
+
+    Ok(JcodeMemorySearchOutcome {
+        results,
+        scanned,
+        candidates,
+        parse_errors,
+        truncated,
     })
 }
 
@@ -1307,14 +1158,6 @@ fn searchable_message_text(msg: &StoredMessage, include_tools: bool) -> String {
 
 fn is_system_like_message(msg: &StoredMessage) -> bool {
     msg.display_role.is_some()
-        || msg
-            .content
-            .iter()
-            .find_map(|block| match block {
-                ContentBlock::Text { text, .. } => Some(text.trim_start()),
-                _ => None,
-            })
-            .is_some_and(|text| text.starts_with("<system-reminder>"))
 }
 
 fn is_tool_only_message(msg: &StoredMessage) -> bool {

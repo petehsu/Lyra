@@ -675,6 +675,18 @@
   display: block;
 }
 
+.lyra-browser-tab-favicon-fallback {
+  display: none;
+}
+
+.lyra-browser-tab-favicon[data-failed="true"] {
+  display: none;
+}
+
+.lyra-browser-tab-favicon[data-failed="true"] + .lyra-browser-tab-favicon-fallback {
+  display: inline-flex;
+}
+
 .lyra-browser-tab-title {
   min-width: 0;
   white-space: nowrap;

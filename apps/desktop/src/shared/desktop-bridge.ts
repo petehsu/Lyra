@@ -110,6 +110,11 @@ export type {
   AgentImageAttachmentMaterializeRequest,
   AgentImageAttachmentMaterializeResponse,
   AgentImageInput,
+  AgentMemoryAuditResponse,
+  AgentMemorySharedSearchRequest,
+  AgentMemorySharedUpdateRequest,
+  AgentMemorySnapshot,
+  AgentMemoryTrimRunRequest,
   AgentMessage,
   AgentPermissionRespondRequest,
   AgentRollbackPreviewResponse,
@@ -444,8 +449,17 @@ export const LYRA_CHANNELS = {
   jcodeOvernightLog: "lyra:jcode/overnight/log",
   jcodeOvernightReview: "lyra:jcode/overnight/review",
   jcodeOvernightCancel: "lyra:jcode/overnight/cancel",
+  agentTurnStart: "lyra:agent/turn/start",
   agentTurnSend: "lyra:agent/turn/send",
+  agentTurnResume: "lyra:agent/turn/resume",
   agentTurnCancel: "lyra:agent/turn/cancel",
+  agentTurnRetry: "lyra:agent/turn/retry",
+  agentMemorySnapshot: "lyra:agent/memory/snapshot",
+  agentMemoryAudit: "lyra:agent/memory/audit",
+  agentMemoryTrimRun: "lyra:agent/memory/trim/run",
+  agentMemoryRecoverRun: "lyra:agent/memory/recover/run",
+  agentMemorySharedSearch: "lyra:agent/memory/shared/search",
+  agentMemorySharedUpdate: "lyra:agent/memory/shared/update",
   agentRollbackPreview: "lyra:agent/rollback/preview",
   agentRollbackRestore: "lyra:agent/rollback/restore",
   agentGitStatus: "lyra:agent/git/status",
@@ -1457,7 +1471,8 @@ export type WorkbenchStateKey =
   | "ai-panel-tabs"
   | "terminal-dock"
   | "notifications"
-  | "layout";
+  | "layout"
+  | "login-manager";
 
 export type WorkbenchStateApi = {
   readonly readSync: (key: WorkbenchStateKey) => string | null;

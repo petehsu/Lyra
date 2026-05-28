@@ -2,7 +2,7 @@ use super::ClientConnectionInfo;
 use super::server_has_newer_binary;
 use crate::agent::Agent;
 use crate::bus::Bus;
-use crate::message::{ContentBlock, Role};
+use crate::message::Role;
 use crate::protocol::{HistoryMessage, ServerEvent, SessionActivitySnapshot, encode_event};
 use crate::provider::Provider;
 use crate::session::{Session, SessionStatus};
@@ -264,24 +264,21 @@ fn history_reload_recovery_snapshot(
 }
 
 fn persisted_session_has_reload_interruption_marker(session: &Session) -> bool {
-    let Some(last) = session.messages.last() else {
+    let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() else {
         return false;
     };
-
-    last.content.iter().any(|block| match block {
-        ContentBlock::Text { text, .. } => {
-            text.ends_with("[generation interrupted - server reloading]")
-        }
-        ContentBlock::ToolResult {
-            content, is_error, ..
-        } => {
-            content == "Reload initiated. Process restarting..."
-                || (is_error.unwrap_or(false)
-                    && (content.contains("interrupted by server reload")
-                        || content.contains("Skipped - server reloading")))
-        }
-        _ => false,
-    })
+    store
+        .read_runtime_turns(&session.id)
+        .map(|turns| {
+            turns.iter().any(|turn| {
+                matches!(
+                    turn.state,
+                    crate::memory::agent_runtime::RuntimeTurnState::Interrupted
+                        | crate::memory::agent_runtime::RuntimeTurnState::RecoveringAfterReload
+                )
+            })
+        })
+        .unwrap_or(false)
 }
 
 fn infer_persisted_session_interrupted_by_reload(session_id: &str) -> bool {

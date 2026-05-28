@@ -18,8 +18,6 @@
   border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
   background: transparent;
   box-shadow: none;
-  -webkit-backdrop-filter: blur(var(--lyra-unit-16)) saturate(1.08);
-  backdrop-filter: blur(var(--lyra-unit-16)) saturate(1.08);
 }
 
 .lyra-context-menu::before {
@@ -107,4 +105,3 @@
 .lyra-context-menu-item-danger .lyra-context-menu-item-icon {
   color: inherit;
 }
-

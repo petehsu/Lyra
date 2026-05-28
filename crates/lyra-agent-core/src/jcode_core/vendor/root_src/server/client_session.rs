@@ -11,7 +11,6 @@ use super::{
     update_member_status,
 };
 use crate::agent::Agent;
-use crate::message::ContentBlock;
 use crate::protocol::{NotificationType, ServerEvent};
 use crate::provider::Provider;
 use crate::tool::Registry;
@@ -29,25 +28,21 @@ type ChannelSubscriptions = Arc<RwLock<HashMap<String, HashMap<String, HashSet<S
 const RELOAD_RESTORE_MARKER_MAX_AGE: Duration = Duration::from_secs(60);
 
 pub(super) fn session_was_interrupted_by_reload(agent: &Agent) -> bool {
-    let messages = agent.messages();
-    let Some(last) = messages.last() else {
+    let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() else {
         return false;
     };
-
-    last.content.iter().any(|block| match block {
-        ContentBlock::Text { text, .. } => {
-            text.ends_with("[generation interrupted - server reloading]")
-        }
-        ContentBlock::ToolResult {
-            content, is_error, ..
-        } => {
-            content == "Reload initiated. Process restarting..."
-                || (is_error.unwrap_or(false)
-                    && (content.contains("interrupted by server reload")
-                        || content.contains("Skipped - server reloading")))
-        }
-        _ => false,
-    })
+    store
+        .read_runtime_turns(agent.session_id())
+        .map(|turns| {
+            turns.iter().any(|turn| {
+                matches!(
+                    turn.state,
+                    crate::memory::agent_runtime::RuntimeTurnState::Interrupted
+                        | crate::memory::agent_runtime::RuntimeTurnState::RecoveringAfterReload
+                )
+            })
+        })
+        .unwrap_or(false)
 }
 
 pub(super) fn restored_session_was_interrupted(
@@ -75,7 +70,7 @@ pub(super) fn restored_session_was_interrupted(
 
     if last_is_reload_interrupted {
         crate::logging::info(&format!(
-            "Session {} contains reload interruption markers - will auto-resume",
+            "Session {} contains typed reload interruption state - will auto-resume",
             session_id
         ));
     }

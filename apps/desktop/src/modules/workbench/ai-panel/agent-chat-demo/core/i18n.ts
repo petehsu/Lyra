@@ -10,6 +10,9 @@ const ZH_MESSAGES = {
 
   "composer.placeholder": "给 Agent 发送消息",
   "composer.send": "发送",
+  "composer.pause": "暂停",
+  "composer.followAgent": "跟随 Agent",
+  "composer.stopFollowingAgent": "停止跟随 Agent",
   "composer.attach": "附件",
   "composer.poke": "继续未完成事项",
   "composer.modelControls": "模型控制",
@@ -132,6 +135,9 @@ const EN_MESSAGES: Messages = {
 
   "composer.placeholder": "Send a message to Agent",
   "composer.send": "Send",
+  "composer.pause": "Pause",
+  "composer.followAgent": "Follow Agent",
+  "composer.stopFollowingAgent": "Stop Following Agent",
   "composer.attach": "Attach",
   "composer.poke": "Continue unfinished todos",
   "composer.modelControls": "Model controls",

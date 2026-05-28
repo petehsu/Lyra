@@ -713,16 +713,9 @@ impl crate::tui::TuiState for App {
                 for block in &msg.content {
                     match block {
                         ContentBlock::Text { text, .. } => {
-                            if msg.role == Role::User
-                                && text.starts_with("<system-reminder>\n# Session Context")
-                            {
-                                info.session_context_chars += text.len();
-                                user_count = user_count.saturating_sub(1);
-                            } else {
-                                match msg.role {
-                                    Role::User => user_chars += text.len(),
-                                    Role::Assistant => asst_chars += text.len(),
-                                }
+                            match msg.role {
+                                Role::User => user_chars += text.len(),
+                                Role::Assistant => asst_chars += text.len(),
                             }
                         }
                         ContentBlock::ToolUse { name, input, .. } => {

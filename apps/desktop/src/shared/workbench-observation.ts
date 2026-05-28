@@ -62,6 +62,15 @@ export type WorkbenchTabsListResult = {
   readonly tabs: readonly WorkbenchObservedTabDescriptor[];
 };
 
+export type WorkbenchTabActivateRequest = {
+  readonly tabId: string;
+};
+
+export type WorkbenchTabActivateResult = {
+  readonly tabId: string;
+  readonly activeTabId: string;
+};
+
 export type WorkbenchWorkspaceReadRequest = {
   readonly detail?: WorkbenchObservationDetail;
   readonly includeVisual?: boolean;
@@ -328,6 +337,11 @@ export type WorkbenchObservationQueryRequest =
       readonly requestId: string;
       readonly method: "workbench.tab.read_local";
       readonly payload: WorkbenchTabReadRequest;
+    }
+  | {
+      readonly requestId: string;
+      readonly method: "workbench.tab.activate_local";
+      readonly payload: WorkbenchTabActivateRequest;
     };
 
 export type WorkbenchObservationQueryResult = {

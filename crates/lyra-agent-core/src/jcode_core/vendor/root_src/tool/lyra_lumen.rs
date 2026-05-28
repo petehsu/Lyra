@@ -48,7 +48,11 @@ struct LyraLumenInput {
     #[serde(default)]
     timeout_ms: Option<u64>,
     #[serde(default)]
+    idle_ms: Option<u64>,
+    #[serde(default)]
     max_chars: Option<u64>,
+    #[serde(default)]
+    until: Option<String>,
     #[serde(default)]
     clear: Option<bool>,
     #[serde(default)]
@@ -72,8 +76,8 @@ impl Tool for LyraLumenTool {
             "action".into(),
             json!({
                 "type": "string",
-                "enum": ["map", "focus_scan", "act", "type", "press", "submit", "navigate", "read", "see", "wait"],
-                "description": "Lyra Lumen action. Start with map or focus_scan, then operate a returned element_id. Use submit after typing into chat/form controls. Use see only when picker/focus/read signals are insufficient."
+                "enum": ["map", "focus_scan", "act", "reveal", "type", "press", "submit", "navigate", "read", "see", "wait"],
+                "description": "Lyra Lumen action. Start with map or focus_scan, then operate a returned element_id. Use reveal for hover-only menus. Use submit after typing into chat/form controls. Use wait after submit/navigation instead of shell sleep. Use see only when picker/focus/read signals are insufficient."
             }),
         );
         properties.insert(
@@ -149,7 +153,16 @@ impl Tool for LyraLumenTool {
             ("steps", json!({"type": "integer"})),
             ("restore_focus", json!({"type": "boolean"})),
             ("timeout_ms", json!({"type": "integer"})),
+            ("idle_ms", json!({"type": "integer"})),
             ("max_chars", json!({"type": "integer"})),
+            (
+                "until",
+                json!({
+                    "type": "string",
+                    "enum": ["loadIdle", "textChanged", "textStable", "textContains"],
+                    "description": "Wait condition for action='wait'. Use textStable after submitting to a chat page."
+                }),
+            ),
             ("clear", json!({"type": "boolean"})),
             ("new_tab", json!({"type": "boolean"})),
         ] {
@@ -183,6 +196,7 @@ fn lyra_lumen_request(input: &LyraLumenInput) -> Result<(String, Value, String)>
     let method_suffix = match action {
         "map" => "map",
         "act" => "act",
+        "reveal" => "reveal",
         "type" => "type",
         "press" => "press",
         "submit" => "submit",
@@ -210,6 +224,19 @@ fn lyra_lumen_request(input: &LyraLumenInput) -> Result<(String, Value, String)>
         }
         "act" => {
             if let Some(element_id) = &input.element_id {
+                if let Some(tab_id) = workbench_tab_id_from_value(element_id)
+                    && matches!(
+                        input.interaction.as_deref().unwrap_or("click"),
+                        "click" | "double_click" | "doubleClick"
+                    )
+                {
+                    payload.insert("tabId".into(), json!(tab_id));
+                    return Ok((
+                        "workbench.activateTab".to_string(),
+                        Value::Object(payload),
+                        "lyra_lumen activate tab".to_string(),
+                    ));
+                }
                 payload.insert(
                     "elementId".into(),
                     normalize_id_value(element_id, "element_id")?,
@@ -225,6 +252,25 @@ fn lyra_lumen_request(input: &LyraLumenInput) -> Result<(String, Value, String)>
             );
             if let Some(vision) = input.vision.as_deref() {
                 payload.insert("vision".into(), json!(vision));
+            }
+        }
+        "reveal" => {
+            if let Some(element_id) = &input.element_id {
+                payload.insert(
+                    "elementId".into(),
+                    normalize_id_value(element_id, "element_id")?,
+                );
+            } else if let Some(point) = &input.point {
+                payload.insert("point".into(), normalize_point_value(point)?);
+            } else {
+                anyhow::bail!("element_id or point is required for lyra_lumen action 'reveal'");
+            }
+            payload.insert(
+                "interaction".into(),
+                json!(input.interaction.as_deref().unwrap_or("hover")),
+            );
+            if let Some(idle_ms) = input.idle_ms {
+                payload.insert("idleMs".into(), json!(idle_ms));
             }
         }
         "type" => {
@@ -304,6 +350,16 @@ fn lyra_lumen_request(input: &LyraLumenInput) -> Result<(String, Value, String)>
         }
         "wait" => {
             payload.insert("timeoutMs".into(), json!(input.timeout_ms.unwrap_or(1_000)));
+            payload.insert(
+                "until".into(),
+                json!(input.until.as_deref().unwrap_or("textStable")),
+            );
+            if let Some(text) = input.text.as_deref() {
+                payload.insert("text".into(), json!(text));
+            }
+            if let Some(idle_ms) = input.idle_ms {
+                payload.insert("idleMs".into(), json!(idle_ms));
+            }
         }
         _ => {}
     }
@@ -329,6 +385,15 @@ fn apply_common_payload(params: &mut Map<String, Value>, input: &LyraLumenInput)
         params.insert("maxChars".into(), json!(max_chars));
     }
     Ok(())
+}
+
+fn workbench_tab_id_from_value(value: &Value) -> Option<String> {
+    let raw = value.as_str()?.trim();
+    if raw.starts_with("browser-tab-") {
+        Some(raw.to_string())
+    } else {
+        None
+    }
 }
 
 fn normalize_id_value(value: &Value, field_name: &str) -> Result<Value> {
@@ -375,7 +440,9 @@ fn render_lyra_lumen_output(action: &str, title: String, result: Value) -> ToolO
         "map" => format_observation_result(&result),
         "read" => format_read_result(&result),
         "focus_scan" => format_focus_result(&result),
-        "act" | "type" | "press" | "submit" | "navigate" | "wait" => format_action_result(&result),
+        "act" | "reveal" | "type" | "press" | "submit" | "navigate" | "wait" => {
+            format_action_result(&result)
+        }
         "see" => {
             if image_base64.is_some() {
                 "Captured Lyra Lumen visual fallback evidence.".to_string()

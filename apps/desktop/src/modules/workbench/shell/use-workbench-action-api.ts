@@ -10,6 +10,10 @@ import {
   createAgentSessionHistoryAppRequest
 } from "../agent-session-history";
 import { createSoftwareStoreAppRequest } from "../software-store";
+import {
+  LOGIN_MANAGER_INSTANCE_ID,
+  createLoginManagerAppRequest
+} from "../login-manager";
 import { resolveDocsEntryUrl } from "./service";
 import type { PanelLayoutModel } from "./use-panel-layout";
 
@@ -26,6 +30,7 @@ export type WorkbenchActionApi = {
   readonly minimizeWindow: () => void;
   readonly toggleMaximizeWindow: () => void;
   readonly closeWindow: () => void;
+  readonly openLoginManager: () => void;
 };
 
 export type WorkbenchPresentationState = {
@@ -49,6 +54,7 @@ export type WorkbenchChromeLabels = {
   readonly minimizeWindow: string;
   readonly toggleMaximizeWindow: string;
   readonly closeWindow: string;
+  readonly openLoginManager: string;
 };
 
 type UseWorkbenchActionApiParams = {
@@ -61,6 +67,7 @@ type UseWorkbenchActionApiParams = {
   readonly docsTabTitle: string;
   readonly agentSessionHistoryTitle: string;
   readonly softwareStoreTitle: string;
+  readonly loginManagerTitle: string;
   readonly locale: WorkbenchLocale;
   readonly resolvedThemeId: WorkbenchResolvedThemeId;
 };
@@ -75,6 +82,7 @@ export const useWorkbenchActionApi = ({
   docsTabTitle,
   agentSessionHistoryTitle,
   softwareStoreTitle,
+  loginManagerTitle,
   locale,
   resolvedThemeId
 }: UseWorkbenchActionApiParams): WorkbenchActionApi =>
@@ -141,6 +149,19 @@ export const useWorkbenchActionApi = ({
       },
       closeWindow: () => {
         void desktopApi?.windowControls.close();
+      },
+      openLoginManager: () => {
+        const existingTab = tabsModel.tabs.find(
+          (tab) =>
+            tab.pageKind === "app" &&
+            tab.appId === "login-manager" &&
+            tab.appInstanceId === LOGIN_MANAGER_INSTANCE_ID
+        );
+        if (existingTab !== undefined) {
+          tabsModel.setActiveTab(existingTab.id);
+          return;
+        }
+        tabsModel.openAppTab(createLoginManagerAppRequest(loginManagerTitle));
       }
     };
   }, [
@@ -149,6 +170,7 @@ export const useWorkbenchActionApi = ({
     docsTabTitle,
     agentSessionHistoryTitle,
     softwareStoreTitle,
+    loginManagerTitle,
     fileManagerModel,
     locale,
     onBeforePanelLayoutAnimation,
@@ -173,5 +195,6 @@ export const createWorkbenchChromeLabels = (
   openDocs: t("docs.open"),
   minimizeWindow: t("window.minimize"),
   toggleMaximizeWindow: t("window.toggleMaximize"),
-  closeWindow: t("window.close")
+  closeWindow: t("window.close"),
+  openLoginManager: t("loginManager.open" as I18nKey) || "登录账户管理"
 });

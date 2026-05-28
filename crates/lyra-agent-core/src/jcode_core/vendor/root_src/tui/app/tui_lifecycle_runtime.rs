@@ -397,37 +397,22 @@ impl App {
         }
     }
 
-    /// Check if the current session was interrupted by a server reload.
-    /// Detects two patterns:
-    /// 1. Last message is a User ToolResult containing reload interruption text,
-    ///    including the non-error self-dev reload handoff marker
-    /// 2. Last assistant message ends with "[generation interrupted - server reloading]"
     pub(super) fn was_interrupted_by_reload(&self) -> bool {
-        use crate::message::{ContentBlock, Role};
-        let messages = &self.session.messages;
-        if messages.is_empty() {
+        let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() else {
             return false;
-        }
-        let last = &messages[messages.len() - 1];
-        match last.role {
-            Role::User => last.content.iter().any(|block| match block {
-                ContentBlock::ToolResult {
-                    content, is_error, ..
-                } => {
-                    content == "Reload initiated. Process restarting..."
-                        || (is_error.unwrap_or(false)
-                            && (content.contains("interrupted by server reload")
-                                || content.contains("Skipped - server reloading")))
-                }
-                _ => false,
-            }),
-            Role::Assistant => last.content.iter().any(|block| match block {
-                ContentBlock::Text { text, .. } => {
-                    text.ends_with("[generation interrupted - server reloading]")
-                }
-                _ => false,
-            }),
-        }
+        };
+        store
+            .read_runtime_turns(&self.session.id)
+            .map(|turns| {
+                turns.iter().any(|turn| {
+                    matches!(
+                        turn.state,
+                        crate::memory::agent_runtime::RuntimeTurnState::Interrupted
+                            | crate::memory::agent_runtime::RuntimeTurnState::RecoveringAfterReload
+                    )
+                })
+            })
+            .unwrap_or(false)
     }
 }
 

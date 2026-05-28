@@ -27,8 +27,10 @@ fn server_logging_enabled_defaults_on_and_respects_falsey_env() {
 #[test]
 fn append_server_sample_writes_jsonl_under_memory_logs_dir() {
     let _guard = crate::storage::lock_test_env();
+    let prev_lyra_home = std::env::var_os("LYRA_AGENT_HOME");
     let prev_home = std::env::var_os("JCODE_HOME");
     let temp = tempfile::TempDir::new().expect("create temp dir");
+    crate::env::set_var("LYRA_AGENT_HOME", temp.path());
     crate::env::set_var("JCODE_HOME", temp.path());
 
     let sample = ServerRuntimeMemorySample {
@@ -73,6 +75,11 @@ fn append_server_sample_writes_jsonl_under_memory_logs_dir() {
     assert_eq!(parsed["server"]["id"], "server_test");
     assert_eq!(parsed["kind"], "process");
 
+    if let Some(prev) = prev_lyra_home {
+        crate::env::set_var("LYRA_AGENT_HOME", prev);
+    } else {
+        crate::env::remove_var("LYRA_AGENT_HOME");
+    }
     if let Some(prev) = prev_home {
         crate::env::set_var("JCODE_HOME", prev);
     } else {
@@ -83,8 +90,10 @@ fn append_server_sample_writes_jsonl_under_memory_logs_dir() {
 #[test]
 fn append_client_sample_writes_jsonl_under_memory_logs_dir() {
     let _guard = crate::storage::lock_test_env();
+    let prev_lyra_home = std::env::var_os("LYRA_AGENT_HOME");
     let prev_home = std::env::var_os("JCODE_HOME");
     let temp = tempfile::TempDir::new().expect("create temp dir");
+    crate::env::set_var("LYRA_AGENT_HOME", temp.path());
     crate::env::set_var("JCODE_HOME", temp.path());
 
     let sample = ClientRuntimeMemorySample {
@@ -128,6 +137,11 @@ fn append_client_sample_writes_jsonl_under_memory_logs_dir() {
     assert!(contents.contains("\"client_test\""));
     assert!(contents.contains("\"session_test\""));
 
+    if let Some(prev) = prev_lyra_home {
+        crate::env::set_var("LYRA_AGENT_HOME", prev);
+    } else {
+        crate::env::remove_var("LYRA_AGENT_HOME");
+    }
     if let Some(prev) = prev_home {
         crate::env::set_var("JCODE_HOME", prev);
     } else {

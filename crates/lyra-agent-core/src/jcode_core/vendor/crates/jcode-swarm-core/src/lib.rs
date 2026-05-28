@@ -281,7 +281,6 @@ pub fn append_swarm_completion_report_instructions(message: &str) -> String {
     if !out.is_empty() {
         out.push_str("\n\n");
     }
-    out.push_str("<system-reminder>\n");
     out.push_str(SWARM_COMPLETION_REPORT_MARKER);
     out.push_str(
         "\nBefore finishing, call the swarm tool with action=\"report\" to submit your completion report. \
@@ -290,7 +289,6 @@ After the report tool succeeds, also write a brief final assistant response. \
 Do not finish with only tool output, a lifecycle status change, or no final response. \
 Do not send a separate DM for the final report unless you need interactive coordination before finishing.\n",
     );
-    out.push_str("</system-reminder>");
     out
 }
 

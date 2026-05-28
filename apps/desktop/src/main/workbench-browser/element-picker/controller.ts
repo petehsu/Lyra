@@ -20,7 +20,7 @@ const DEFAULT_APPEARANCE: WorkbenchBrowserElementPickerAppearance = {
     "linear-gradient(180deg, color-mix(in srgb, #ebebec 92%, transparent) 0%, color-mix(in srgb, #fafafa 88%, transparent) 100%)",
   surfaceBorder: "color-mix(in srgb, #d8d8da 42%, transparent)",
   surfaceShadow: "0 7px 22px color-mix(in srgb, #dcdcdd 18%, transparent)",
-  surfaceBackdropFilter: "blur(10px) saturate(1.08)",
+  surfaceBackdropFilter: "none",
   accentColor: "#7e8086",
   accentFill: "color-mix(in srgb, #7e8086 14%, transparent)",
   tagBackground: "color-mix(in srgb, #7e8086 12%, transparent)",
@@ -40,8 +40,7 @@ const normalizeAppearance = (
   surfaceBackground: appearance?.surfaceBackground?.trim() || DEFAULT_APPEARANCE.surfaceBackground,
   surfaceBorder: appearance?.surfaceBorder?.trim() || DEFAULT_APPEARANCE.surfaceBorder,
   surfaceShadow: appearance?.surfaceShadow?.trim() || DEFAULT_APPEARANCE.surfaceShadow,
-  surfaceBackdropFilter:
-    appearance?.surfaceBackdropFilter?.trim() || DEFAULT_APPEARANCE.surfaceBackdropFilter,
+  surfaceBackdropFilter: DEFAULT_APPEARANCE.surfaceBackdropFilter,
   accentColor: appearance?.accentColor?.trim() || DEFAULT_APPEARANCE.accentColor,
   accentFill: appearance?.accentFill?.trim() || DEFAULT_APPEARANCE.accentFill,
   tagBackground: appearance?.tagBackground?.trim() || DEFAULT_APPEARANCE.tagBackground,

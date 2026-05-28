@@ -7,6 +7,8 @@ import {
 } from "../../shared/desktop-bridge";
 import type {
   WorkbenchTabObservationResult,
+  WorkbenchTabActivateRequest,
+  WorkbenchTabActivateResult,
   WorkbenchTabReadRequest,
   WorkbenchTabsListRequest,
   WorkbenchTabsListResult,
@@ -73,7 +75,9 @@ export const createWorkbenchObservationRendererClient = ({
         ? { requestId, method, payload: payload as WorkbenchTabsListRequest }
         : method === "workbench.workspace.read_local"
           ? { requestId, method, payload: payload as WorkbenchWorkspaceReadRequest }
-          : { requestId, method, payload: payload as WorkbenchTabReadRequest };
+          : method === "workbench.tab.activate_local"
+            ? { requestId, method, payload: payload as WorkbenchTabActivateRequest }
+            : { requestId, method, payload: payload as WorkbenchTabReadRequest };
 
     const promise = new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -100,6 +104,8 @@ export const createWorkbenchObservationRendererClient = ({
       await sendQuery<WorkbenchTabsListResult>("workbench.tabs.list_local", request ?? {}),
     readLocalTab: async (request: WorkbenchTabReadRequest) =>
       await sendQuery<WorkbenchTabObservationResult>("workbench.tab.read_local", request),
+    activateLocalTab: async (request: WorkbenchTabActivateRequest) =>
+      await sendQuery<WorkbenchTabActivateResult>("workbench.tab.activate_local", request),
     readLocalWorkspace: async (request?: WorkbenchWorkspaceReadRequest) =>
       await sendQuery<WorkbenchWorkspaceSnapshot>(
         "workbench.workspace.read_local",

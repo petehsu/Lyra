@@ -30,6 +30,10 @@ import type {
 } from "../workbench-observation/browser/types";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import {
+  buildAgentCursorOverlayScript,
+  type BrowserAgentCursorOverlayAction
+} from "./agent-cursor-overlay";
+import {
   buildFrameDomProbeScript,
   normalizeFrameDomProbeResult
 } from "./frame-probe";
@@ -772,11 +776,28 @@ export const createWorkbenchBrowserViewManager = ({
   }: {
     readonly tabId: string;
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
-    readonly action: "observe" | "read" | "capture" | "wait" | "navigate" | "focus" | "act" | "type" | "press";
+    readonly action: BrowserAgentCursorOverlayAction;
     readonly inputActive?: boolean;
     readonly durationMs?: number;
     readonly cursor?: { readonly x: number; readonly y: number };
   }): void => {
+    if (inputActive && targetMode === "live") {
+      const entry = entries.get(tabId);
+      if (entry !== undefined && entry.webContents.isDestroyed() === false) {
+        void entry.webContents.executeJavaScript(
+          buildAgentCursorOverlayScript({
+            action,
+            durationMs,
+            ...(cursor === undefined ? {} : { cursor })
+          }),
+          true
+        ).catch((error: unknown) => {
+          console.warn(
+            `[lyra-browser] agent cursor overlay failed tab=${tabId} action=${action} error=${String(error)}`
+          );
+        });
+      }
+    }
     publishEvent({
       kind: "lumen-browser-activity",
       source: "lyra_lumen",

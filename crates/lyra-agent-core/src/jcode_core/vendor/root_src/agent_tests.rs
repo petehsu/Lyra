@@ -695,7 +695,9 @@ async fn env_snapshot_detail_is_minimal_for_empty_sessions_and_full_after_histor
     let mut agent = Agent::new(provider, registry);
 
     assert_eq!(agent.env_snapshot_detail(), EnvSnapshotDetail::Minimal);
+    agent.session.provider_key = Some("mimo-token-plan".to_string());
     let minimal = agent.build_env_snapshot("create", agent.env_snapshot_detail());
+    assert_eq!(minimal.provider, "mimo-token-plan");
     assert!(minimal.jcode_git_hash.is_none());
     assert!(minimal.jcode_git_dirty.is_none());
     assert!(minimal.working_git.is_none());

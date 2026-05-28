@@ -7,10 +7,11 @@ use std::process::Command;
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::message::{ContentBlock, Role};
-use crate::session::Session;
+use crate::session::{Session, StoredMessage};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,15 +56,14 @@ pub fn create_anchor_for_user_message(
     message_id: &str,
     user_text: &str,
 ) -> Result<RollbackAnchor> {
-    let session = Session::load(session_id)?;
-    let working_dir = session_working_dir(&session)?;
+    let working_dir = session_working_dir_for_id(session_id)?;
     validate_working_dir(&working_dir)?;
     let checkpoint_hash = create_checkpoint(&working_dir)?;
     let anchor = RollbackAnchor {
         id: format!("rollback-{}", uuid::Uuid::new_v4()),
         session_id: session_id.to_string(),
         message_id: message_id.to_string(),
-        pending: true,
+        pending: false,
         user_text: user_text.to_string(),
         checkpoint_hash,
         checkpoint_at: Utc::now(),
@@ -118,8 +118,7 @@ pub fn preview_rollback(session_id: &str, message_id: &str) -> Result<RollbackPr
             unavailable_reason: Some("No rollback checkpoint exists for this message.".to_string()),
         });
     };
-    let session = Session::load(session_id)?;
-    let removed_message_count = visible_removed_count_from_message(&session, message_id)
+    let removed_message_count = visible_removed_count_from_memory(session_id, message_id)
         .ok_or_else(|| anyhow!("message not found in session: {message_id}"))?;
     let changed_files = changed_files_since_checkpoint(&anchor)?
         .into_iter()
@@ -153,18 +152,12 @@ pub fn truncate_session_before_message(
     session_id: &str,
     message_id: &str,
 ) -> Result<(Session, usize)> {
-    let mut session = Session::load(session_id)?;
-    let Some((stored_index, visible_index, visible_count)) =
-        locate_visible_message(&session, message_id)
-    else {
-        bail!("message not found in session: {message_id}");
-    };
-    let removed = visible_count.saturating_sub(visible_index);
-    session.truncate_messages(stored_index);
+    let store = memory_store()?;
+    let removed = store.truncate_timeline_before_message(session_id, message_id)?;
+    let mut session = session_from_memory(session_id)?;
     session.provider_session_id = None;
     session.compaction = None;
     session.updated_at = Utc::now();
-    session.save()?;
     prune_anchors_to_session(&session)?;
     Ok((session, removed))
 }
@@ -346,43 +339,45 @@ fn checkpoint_repo_dir(working_dir: &Path) -> Result<PathBuf> {
     let mut hasher = Sha256::new();
     hasher.update(working_dir.to_string_lossy().as_bytes());
     let hash = hex::encode(hasher.finalize());
-    Ok(crate::storage::jcode_dir()?
+    Ok(memory_store()?
+        .root()
         .join("rollback")
         .join("worktrees")
         .join(&hash[..24]))
 }
 
-fn anchor_store_path(session_id: &str) -> Result<PathBuf> {
-    Ok(crate::storage::jcode_dir()?
-        .join("rollback")
-        .join("anchors")
-        .join(format!("{session_id}.json")))
+fn memory_store() -> Result<crate::memory::agent_runtime::AgentMemoryStore> {
+    crate::memory::agent_runtime::AgentMemoryStore::new_default().map_err(Into::into)
 }
 
 fn load_store(session_id: &str) -> Result<RollbackAnchorStore> {
-    let path = anchor_store_path(session_id)?;
-    if !path.exists() {
-        return Ok(RollbackAnchorStore::default());
-    }
-    let text = fs::read_to_string(&path)?;
-    Ok(serde_json::from_str(&text)?)
+    let anchors = memory_store()?
+        .rollback_markers(session_id)?
+        .into_iter()
+        .filter_map(|value| serde_json::from_value::<RollbackAnchor>(value).ok())
+        .collect();
+    Ok(RollbackAnchorStore { anchors })
 }
 
 fn save_store(session_id: &str, store: &RollbackAnchorStore) -> Result<()> {
-    let path = anchor_store_path(session_id)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, serde_json::to_vec_pretty(store)?)?;
+    let values = store
+        .anchors
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    memory_store()?.replace_rollback_markers_for_session(session_id, &values)?;
     Ok(())
 }
 
 fn upsert_anchor(anchor: RollbackAnchor) -> Result<()> {
-    let session_id = anchor.session_id.clone();
-    let mut store = load_store(&session_id)?;
-    store.anchors.retain(|existing| existing.id != anchor.id);
-    store.anchors.push(anchor);
-    save_store(&session_id, &store)
+    let payload = serde_json::to_value(&anchor)?;
+    memory_store()?.record_rollback_marker_for_message(
+        &anchor.session_id,
+        None,
+        &anchor.message_id,
+        payload,
+    )?;
+    Ok(())
 }
 
 fn prune_anchors_to_session(session: &Session) -> Result<()> {
@@ -428,6 +423,26 @@ fn visible_removed_count_from_message(session: &Session, message_id: &str) -> Op
         .map(|(_, visible_index, visible_count)| visible_count.saturating_sub(visible_index))
 }
 
+fn visible_removed_count_from_memory(session_id: &str, message_id: &str) -> Option<usize> {
+    let timeline = memory_store()
+        .ok()?
+        .snapshot(session_id)
+        .ok()?
+        .timeline_projection;
+    let visible_count = timeline.len();
+    timeline
+        .iter()
+        .position(|event| {
+            event.event_id == message_id
+                || event
+                    .payload_json
+                    .get("messageId")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| value == message_id)
+        })
+        .map(|index| visible_count.saturating_sub(index))
+}
+
 fn locate_visible_message(session: &Session, message_id: &str) -> Option<(usize, usize, usize)> {
     let visible_count = session
         .messages
@@ -466,6 +481,111 @@ fn message_text(message: &crate::session::StoredMessage) -> String {
 
 fn is_visible_message(message: &crate::session::StoredMessage) -> bool {
     message.display_role.is_none() && !message_text(message).trim().is_empty()
+}
+
+fn session_from_memory(session_id: &str) -> Result<Session> {
+    let store = memory_store()?;
+    let record = store
+        .read_session(session_id)?
+        .ok_or_else(|| anyhow!("session not found: {session_id}"))?;
+    let mut session = Session::create_with_id(record.session_id.clone(), None, Some(record.title));
+    session.working_dir = record.working_dir;
+    session.provider_key = record.provider_key;
+    session.model = record.model;
+    session.created_at = parse_memory_time(&record.created_at_iso);
+    session.updated_at = parse_memory_time(&record.updated_at_iso);
+    session.replace_messages(
+        store
+            .read_events_by_session(session_id)?
+            .into_iter()
+            .filter_map(memory_event_to_stored_message)
+            .collect(),
+    );
+    Ok(session)
+}
+
+fn parse_memory_time(value: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now())
+}
+
+fn memory_event_to_stored_message(
+    event: crate::memory::agent_runtime::SessionEventRecord,
+) -> Option<StoredMessage> {
+    let (role, content) = match event.kind.as_str() {
+        "user_message" => (
+            Role::User,
+            vec![ContentBlock::Text {
+                text: event
+                    .payload_json
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                cache_control: None,
+            }],
+        ),
+        "assistant_message" => (
+            Role::Assistant,
+            vec![ContentBlock::Text {
+                text: event
+                    .payload_json
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                cache_control: None,
+            }],
+        ),
+        "tool_result" => {
+            let tool_call_id = event
+                .payload_json
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .unwrap_or("tool_call")
+                .to_string();
+            let content = event
+                .payload_json
+                .get("output")
+                .map(|value| {
+                    value
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| value.to_string())
+                })
+                .unwrap_or_default();
+            (
+                Role::User,
+                vec![ContentBlock::ToolResult {
+                    tool_use_id: tool_call_id,
+                    content,
+                    is_error: None,
+                }],
+            )
+        }
+        _ => return None,
+    };
+    Some(StoredMessage {
+        id: event.event_id,
+        role,
+        content,
+        display_role: None,
+        timestamp: Some(parse_memory_time(&event.created_at_iso)),
+        tool_duration_ms: None,
+        token_usage: None,
+    })
+}
+
+fn session_working_dir_for_id(session_id: &str) -> Result<PathBuf> {
+    let record = memory_store()?
+        .read_session(session_id)?
+        .ok_or_else(|| anyhow!("session not found: {session_id}"))?;
+    Ok(record
+        .working_dir
+        .map(PathBuf::from)
+        .unwrap_or(std::env::current_dir()?))
 }
 
 fn session_working_dir(session: &Session) -> Result<PathBuf> {

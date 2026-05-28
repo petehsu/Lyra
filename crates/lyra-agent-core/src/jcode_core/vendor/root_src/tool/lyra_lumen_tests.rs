@@ -41,7 +41,9 @@ fn base_input(action: &str) -> LyraLumenInput {
         steps: None,
         restore_focus: None,
         timeout_ms: None,
+        idle_ms: None,
         max_chars: None,
+        until: None,
         clear: None,
         new_tab: None,
     }
@@ -58,6 +60,7 @@ fn schema_exposes_lyra_lumen_actions_and_removes_legacy_browser_actions() {
             "map",
             "focus_scan",
             "act",
+            "reveal",
             "type",
             "press",
             "submit",
@@ -93,6 +96,8 @@ fn schema_exposes_lyra_lumen_actions_and_removes_legacy_browser_actions() {
     }
 
     let props = schema["properties"].as_object().expect("properties");
+    assert!(props.contains_key("until"));
+    assert!(props.contains_key("idle_ms"));
     for legacy_field in [
         "selector",
         "script",
@@ -139,6 +144,35 @@ fn act_maps_element_id_and_interaction() {
     assert_eq!(method, "lyraLumen.act");
     assert_eq!(payload["elementId"], 7);
     assert_eq!(payload["interaction"], "hover");
+}
+
+#[test]
+fn act_with_workbench_tab_id_activates_tab_instead_of_using_lumen_element_id() {
+    let input = LyraLumenInput {
+        element_id: Some(json!("browser-tab-75")),
+        interaction: Some("click".into()),
+        ..base_input("act")
+    };
+
+    let (method, payload, title) = lyra_lumen_request(&input).unwrap();
+    assert_eq!(method, "workbench.activateTab");
+    assert_eq!(title, "lyra_lumen activate tab");
+    assert_eq!(payload["tabId"], "browser-tab-75");
+}
+
+#[test]
+fn reveal_defaults_to_hover_and_preserves_idle_ms() {
+    let input = LyraLumenInput {
+        element_id: Some(json!(9)),
+        idle_ms: Some(650),
+        ..base_input("reveal")
+    };
+
+    let (method, payload, _) = lyra_lumen_request(&input).unwrap();
+    assert_eq!(method, "lyraLumen.reveal");
+    assert_eq!(payload["elementId"], 9);
+    assert_eq!(payload["interaction"], "hover");
+    assert_eq!(payload["idleMs"], 650);
 }
 
 #[test]
@@ -218,6 +252,26 @@ fn read_defaults_to_lightweight_focus_strategy() {
     assert_eq!(method, "lyraLumen.read");
     assert_eq!(payload["strategy"], "focus");
     assert_eq!(payload["maxChars"], 4_000);
+}
+
+#[test]
+fn wait_maps_browser_condition_without_shell_sleep() {
+    let input = LyraLumenInput {
+        timeout_ms: Some(5_000),
+        idle_ms: Some(700),
+        until: Some("textContains".into()),
+        text: Some("完成".into()),
+        max_chars: Some(2_000),
+        ..base_input("wait")
+    };
+
+    let (method, payload, _) = lyra_lumen_request(&input).unwrap();
+    assert_eq!(method, "lyraLumen.wait");
+    assert_eq!(payload["timeoutMs"], 5_000);
+    assert_eq!(payload["idleMs"], 700);
+    assert_eq!(payload["until"], "textContains");
+    assert_eq!(payload["text"], "完成");
+    assert_eq!(payload["maxChars"], 2_000);
 }
 
 #[test]

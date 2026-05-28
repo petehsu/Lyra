@@ -169,25 +169,17 @@ fn test_debug_memory_profile_reports_messages_and_provider_cache() {
 }
 
 #[test]
-fn initial_session_context_is_persisted_once_and_not_overwritten() {
+fn initial_session_context_insertion_is_disabled() {
     let mut session = Session::create_with_id(
         "session_context_test".to_string(),
         None,
         Some("Session context".to_string()),
     );
 
-    assert!(session.ensure_initial_session_context_message());
-    assert_eq!(session.messages.len(), 1);
-    let first = session.messages[0].content_preview();
-    assert!(first.contains("# Session Context"));
-    assert!(first.contains("OS:"));
-    assert_eq!(
-        session.messages[0].display_role,
-        Some(StoredDisplayRole::System)
-    );
-
     assert!(!session.ensure_initial_session_context_message());
-    assert_eq!(session.messages.len(), 1);
+    assert!(session.messages.is_empty());
+    assert!(!session.ensure_initial_session_context_message());
+    assert!(session.messages.is_empty());
 
     session.add_message(
         Role::User,
@@ -197,153 +189,58 @@ fn initial_session_context_is_persisted_once_and_not_overwritten() {
         }],
     );
     assert!(!session.ensure_initial_session_context_message());
-    assert_eq!(session.messages.len(), 2);
+    assert_eq!(session.messages.len(), 1);
 }
 
 #[test]
-#[allow(clippy::redundant_closure_call)]
-fn initial_session_context_uses_current_cwd_when_inserted() -> Result<()> {
-    let _env_lock = lock_env();
-    let original_cwd = std::env::current_dir().map_err(|e| anyhow!(e))?;
-    let first_dir = tempfile::Builder::new()
-        .prefix("jcode-session-context-first-")
-        .tempdir()
-        .map_err(|e| anyhow!(e))?;
-    let second_dir = tempfile::Builder::new()
-        .prefix("jcode-session-context-second-")
-        .tempdir()
-        .map_err(|e| anyhow!(e))?;
-
-    std::env::set_current_dir(first_dir.path()).map_err(|e| anyhow!(e))?;
+fn initial_session_context_does_not_mutate_cwd_or_messages() {
     let mut session = Session::create_with_id(
         "session_context_cwd_refresh_test".to_string(),
         None,
         Some("Session context cwd refresh".to_string()),
     );
-    assert_eq!(
-        session.working_dir.as_deref(),
-        Some(first_dir.path().to_str().unwrap())
+    let original_working_dir = session.working_dir.clone();
+
+    assert!(!session.ensure_initial_session_context_message());
+    assert!(session.messages.is_empty());
+    assert_eq!(session.working_dir, original_working_dir);
+}
+
+#[test]
+fn initial_session_context_refresh_is_disabled_before_real_conversation() {
+    let mut session = Session::create_with_id(
+        "session_context_remote_cwd_refresh_test".to_string(),
+        None,
+        Some("Remote cwd refresh".to_string()),
+    );
+    assert!(!session.ensure_initial_session_context_message());
+    assert!(session.messages.is_empty());
+
+    session.working_dir = Some("/tmp/new-working-dir".to_string());
+    assert!(!session.refresh_initial_session_context_message());
+    assert!(session.messages.is_empty());
+}
+
+#[test]
+fn initial_session_context_refresh_is_disabled_after_real_conversation() {
+    let mut session = Session::create_with_id(
+        "session_context_late_cwd_refresh_test".to_string(),
+        None,
+        Some("Late cwd refresh".to_string()),
+    );
+    assert!(!session.ensure_initial_session_context_message());
+    session.add_message(
+        Role::User,
+        vec![ContentBlock::Text {
+            text: "hello".to_string(),
+            cache_control: None,
+        }],
     );
 
-    std::env::set_current_dir(second_dir.path()).map_err(|e| anyhow!(e))?;
-    let result: std::result::Result<(), anyhow::Error> = (|| {
-        assert!(session.ensure_initial_session_context_message());
-        let first = session.messages[0].content_preview();
-        assert!(
-            first.contains(&format!(
-                "Working directory: {}",
-                second_dir.path().display()
-            )),
-            "session context should use cwd at insertion time, got: {first}"
-        );
-        assert_eq!(
-            session.working_dir.as_deref(),
-            Some(second_dir.path().to_str().unwrap())
-        );
-        Ok(())
-    })();
-    std::env::set_current_dir(original_cwd).map_err(|e| anyhow!(e))?;
-    result?;
-
-    Ok(())
-}
-
-#[test]
-#[allow(clippy::redundant_closure_call)]
-fn initial_session_context_can_refresh_before_real_conversation() -> Result<()> {
-    let _env_lock = lock_env();
-    let original_cwd = std::env::current_dir().map_err(|e| anyhow!(e))?;
-    let first_dir = tempfile::Builder::new()
-        .prefix("jcode-session-context-stale-")
-        .tempdir()
-        .map_err(|e| anyhow!(e))?;
-    let second_dir = tempfile::Builder::new()
-        .prefix("jcode-session-context-real-")
-        .tempdir()
-        .map_err(|e| anyhow!(e))?;
-
-    std::env::set_current_dir(first_dir.path()).map_err(|e| anyhow!(e))?;
-    let result: std::result::Result<(), anyhow::Error> = (|| {
-        let mut session = Session::create_with_id(
-            "session_context_remote_cwd_refresh_test".to_string(),
-            None,
-            Some("Remote cwd refresh".to_string()),
-        );
-        assert!(session.ensure_initial_session_context_message());
-        assert!(session.messages[0].content_preview().contains(&format!(
-            "Working directory: {}",
-            first_dir.path().display()
-        )));
-
-        session.working_dir = Some(second_dir.path().display().to_string());
-        assert!(session.refresh_initial_session_context_message());
-        let refreshed = session.messages[0].content_preview();
-        assert!(
-            refreshed.contains(&format!(
-                "Working directory: {}",
-                second_dir.path().display()
-            )),
-            "session context should refresh to subscribed cwd, got: {refreshed}"
-        );
-        assert!(!refreshed.contains(&format!(
-            "Working directory: {}",
-            first_dir.path().display()
-        )));
-        Ok(())
-    })();
-    std::env::set_current_dir(original_cwd).map_err(|e| anyhow!(e))?;
-    result?;
-
-    Ok(())
-}
-
-#[test]
-#[allow(clippy::redundant_closure_call)]
-fn initial_session_context_does_not_refresh_after_real_conversation() -> Result<()> {
-    let _env_lock = lock_env();
-    let original_cwd = std::env::current_dir().map_err(|e| anyhow!(e))?;
-    let first_dir = tempfile::Builder::new()
-        .prefix("jcode-session-context-original-")
-        .tempdir()
-        .map_err(|e| anyhow!(e))?;
-    let second_dir = tempfile::Builder::new()
-        .prefix("jcode-session-context-late-")
-        .tempdir()
-        .map_err(|e| anyhow!(e))?;
-
-    std::env::set_current_dir(first_dir.path()).map_err(|e| anyhow!(e))?;
-    let result: std::result::Result<(), anyhow::Error> = (|| {
-        let mut session = Session::create_with_id(
-            "session_context_late_cwd_refresh_test".to_string(),
-            None,
-            Some("Late cwd refresh".to_string()),
-        );
-        assert!(session.ensure_initial_session_context_message());
-        session.add_message(
-            Role::User,
-            vec![ContentBlock::Text {
-                text: "hello".to_string(),
-                cache_control: None,
-            }],
-        );
-
-        session.working_dir = Some(second_dir.path().display().to_string());
-        assert!(!session.refresh_initial_session_context_message());
-        let original = session.messages[0].content_preview();
-        assert!(original.contains(&format!(
-            "Working directory: {}",
-            first_dir.path().display()
-        )));
-        assert!(!original.contains(&format!(
-            "Working directory: {}",
-            second_dir.path().display()
-        )));
-        Ok(())
-    })();
-    std::env::set_current_dir(original_cwd).map_err(|e| anyhow!(e))?;
-    result?;
-
-    Ok(())
+    session.working_dir = Some("/tmp/late-working-dir".to_string());
+    assert!(!session.refresh_initial_session_context_message());
+    assert_eq!(session.messages.len(), 1);
+    assert_eq!(session.messages[0].content_preview(), "hello");
 }
 
 #[test]
@@ -994,18 +891,17 @@ fn test_render_messages_honors_background_task_display_role_override() {
 }
 
 #[test]
-fn test_render_messages_hides_internal_system_reminders() {
+fn test_render_messages_preserves_literal_system_reminder_user_text() {
     let mut session = Session::create_with_id(
         "session_hidden_system_reminder_test".to_string(),
         None,
         Some("hidden reminder test".to_string()),
     );
 
-    assert!(session.ensure_initial_session_context_message());
     session.add_message(
         Role::User,
         vec![ContentBlock::Text {
-            text: "visible prompt".to_string(),
+            text: "<system-reminder>\nvisible literal text\n</system-reminder>".to_string(),
             cache_control: None,
         }],
     );
@@ -1013,7 +909,10 @@ fn test_render_messages_hides_internal_system_reminders() {
     let rendered = render_messages(&session);
     assert_eq!(rendered.len(), 1);
     assert_eq!(rendered[0].role, "user");
-    assert_eq!(rendered[0].content, "visible prompt");
+    assert_eq!(
+        rendered[0].content,
+        "<system-reminder>\nvisible literal text\n</system-reminder>"
+    );
 }
 
 #[test]

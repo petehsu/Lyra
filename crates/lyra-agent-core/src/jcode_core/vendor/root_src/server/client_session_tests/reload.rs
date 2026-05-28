@@ -1,32 +1,90 @@
 use super::*;
 use anyhow::{Result, anyhow};
+use std::ffi::OsString;
+use std::sync::MutexGuard;
+
+struct AgentMemoryTestEnv {
+    _guard: MutexGuard<'static, ()>,
+    _dir: tempfile::TempDir,
+    previous_memory_home: Option<OsString>,
+}
+
+impl Drop for AgentMemoryTestEnv {
+    fn drop(&mut self) {
+        if let Some(previous) = self.previous_memory_home.clone() {
+            crate::env::set_var("LYRA_AGENT_MEMORY_HOME", previous);
+        } else {
+            crate::env::remove_var("LYRA_AGENT_MEMORY_HOME");
+        }
+    }
+}
+
+fn clean_agent_memory_env() -> AgentMemoryTestEnv {
+    let guard = crate::storage::lock_test_env();
+    let dir = tempfile::TempDir::new().expect("agent memory temp dir");
+    let previous_memory_home = std::env::var_os("LYRA_AGENT_MEMORY_HOME");
+    crate::env::set_var("LYRA_AGENT_MEMORY_HOME", dir.path().join("agent-memory"));
+    AgentMemoryTestEnv {
+        _guard: guard,
+        _dir: dir,
+        previous_memory_home,
+    }
+}
+
+fn seed_runtime_turn_state(
+    state: crate::memory::agent_runtime::RuntimeTurnState,
+) -> AgentMemoryTestEnv {
+    let env = clean_agent_memory_env();
+    let store =
+        crate::memory::agent_runtime::AgentMemoryStore::new_default().expect("agent memory store");
+    let session = store
+        .ensure_session_with_id(
+            "session_test_reload",
+            crate::memory::agent_runtime::CreateSessionInput::default(),
+        )
+        .expect("memory session");
+    let user_event = store
+        .append_event(
+            &session.session_id,
+            crate::memory::agent_runtime::NewSessionEvent::user_message("continue after reload"),
+        )
+        .expect("user event");
+    let turn = store
+        .start_runtime_turn(&session.session_id, Some(&user_event.event_id), None)
+        .expect("runtime turn");
+    store
+        .transition_runtime_turn(&session.session_id, &turn.runtime_turn_id, state, "test")
+        .expect("runtime turn transition");
+    env
+}
 
 #[test]
-fn detects_reload_interrupted_generation_text() {
-    let agent = test_agent(vec![crate::session::StoredMessage {
-        id: "msg_1".to_string(),
-        role: crate::message::Role::Assistant,
-        content: vec![ContentBlock::Text {
-            text: "partial\n\n[generation interrupted - server reloading]".to_string(),
-            cache_control: None,
-        }],
-        display_role: None,
-        timestamp: None,
-        tool_duration_ms: None,
-        token_usage: None,
-    }]);
+fn detects_typed_reload_interrupted_turn() {
+    let _env = seed_runtime_turn_state(crate::memory::agent_runtime::RuntimeTurnState::Interrupted);
+    let agent = test_agent(Vec::new());
 
     assert!(session_was_interrupted_by_reload(&agent));
 }
 
 #[test]
-fn detects_reload_interrupted_tool_result() {
+fn detects_typed_reload_recovering_turn() {
+    let _env = seed_runtime_turn_state(
+        crate::memory::agent_runtime::RuntimeTurnState::RecoveringAfterReload,
+    );
+    let agent = test_agent(Vec::new());
+
+    assert!(session_was_interrupted_by_reload(&agent));
+}
+
+#[test]
+fn ignores_legacy_reload_text_without_typed_state() {
+    let _env = clean_agent_memory_env();
     let agent = test_agent(vec![crate::session::StoredMessage {
-        id: "msg_2".to_string(),
+        id: "msg_legacy_reload_text".to_string(),
         role: crate::message::Role::User,
         content: vec![ContentBlock::ToolResult {
-            tool_use_id: "tool_1".to_string(),
-            content: "[Tool 'bash' interrupted by server reload after 0.2s]".to_string(),
+            tool_use_id: "tool_legacy".to_string(),
+            content: "legacy reload text from an old transcript".to_string(),
             is_error: Some(true),
         }],
         display_role: None,
@@ -35,49 +93,12 @@ fn detects_reload_interrupted_tool_result() {
         token_usage: None,
     }]);
 
-    assert!(session_was_interrupted_by_reload(&agent));
-}
-
-#[test]
-fn detects_reload_skipped_tool_result() {
-    let agent = test_agent(vec![crate::session::StoredMessage {
-        id: "msg_3".to_string(),
-        role: crate::message::Role::User,
-        content: vec![ContentBlock::ToolResult {
-            tool_use_id: "tool_2".to_string(),
-            content: "[Skipped - server reloading]".to_string(),
-            is_error: Some(true),
-        }],
-        display_role: None,
-        timestamp: None,
-        tool_duration_ms: None,
-        token_usage: None,
-    }]);
-
-    assert!(session_was_interrupted_by_reload(&agent));
-}
-
-#[test]
-fn detects_selfdev_reload_tool_result_even_when_not_marked_error() {
-    let agent = test_agent(vec![crate::session::StoredMessage {
-        id: "msg_3b".to_string(),
-        role: crate::message::Role::User,
-        content: vec![ContentBlock::ToolResult {
-            tool_use_id: "tool_2b".to_string(),
-            content: "Reload initiated. Process restarting...".to_string(),
-            is_error: Some(false),
-        }],
-        display_role: None,
-        timestamp: None,
-        tool_duration_ms: None,
-        token_usage: None,
-    }]);
-
-    assert!(session_was_interrupted_by_reload(&agent));
+    assert!(!session_was_interrupted_by_reload(&agent));
 }
 
 #[test]
 fn ignores_normal_tool_errors() {
+    let _env = clean_agent_memory_env();
     let agent = test_agent(vec![crate::session::StoredMessage {
         id: "msg_4".to_string(),
         role: crate::message::Role::User,
@@ -96,19 +117,9 @@ fn ignores_normal_tool_errors() {
 }
 
 #[test]
-fn restored_closed_session_with_reload_marker_still_counts_as_interrupted() {
-    let agent = test_agent(vec![crate::session::StoredMessage {
-        id: "msg_5".to_string(),
-        role: crate::message::Role::Assistant,
-        content: vec![ContentBlock::Text {
-            text: "partial\n\n[generation interrupted - server reloading]".to_string(),
-            cache_control: None,
-        }],
-        display_role: None,
-        timestamp: None,
-        tool_duration_ms: None,
-        token_usage: None,
-    }]);
+fn restored_closed_session_with_typed_reload_state_still_counts_as_interrupted() {
+    let _env = seed_runtime_turn_state(crate::memory::agent_runtime::RuntimeTurnState::Interrupted);
+    let agent = test_agent(Vec::new());
 
     assert!(restored_session_was_interrupted(
         "session_test_reload",
@@ -249,6 +260,7 @@ fn restored_closed_session_with_pending_user_message_without_reload_marker_is_no
 
 #[test]
 fn restored_closed_session_without_reload_marker_is_not_interrupted() {
+    let _env = clean_agent_memory_env();
     let agent = test_agent(vec![crate::session::StoredMessage {
         id: "msg_6".to_string(),
         role: crate::message::Role::Assistant,

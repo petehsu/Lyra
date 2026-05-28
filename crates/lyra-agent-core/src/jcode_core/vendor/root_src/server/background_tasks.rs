@@ -24,7 +24,7 @@ fn is_real_user_request(message: &StoredMessage) -> bool {
         match block {
             ContentBlock::Text { text, .. } => {
                 let trimmed = text.trim();
-                if !trimmed.is_empty() && !trimmed.starts_with("<system-reminder>") {
+                if !trimmed.is_empty() {
                     saw_text = true;
                 }
             }

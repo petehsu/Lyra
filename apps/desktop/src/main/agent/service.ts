@@ -18,6 +18,11 @@ import type {
   AgentGitStatusSnapshot,
   AgentImageAttachmentMaterializeRequest,
   AgentImageAttachmentMaterializeResponse,
+  AgentMemoryAuditResponse,
+  AgentMemorySharedSearchRequest,
+  AgentMemorySharedUpdateRequest,
+  AgentMemorySnapshot,
+  AgentMemoryTrimRunRequest,
   AgentPermissionRespondRequest,
   AgentRollbackPreviewResponse,
   AgentRollbackRequest,
@@ -465,6 +470,18 @@ export const createAgentIpcBridge = ({
       });
     },
     "workbench.readTab": readWorkbenchTabWithSummaryFallback,
+    "workbench.activateTab": async (payload) => {
+      const service = getWorkbenchObservationService();
+      if (service === null) {
+        throw new Error("Workbench observation capability is not available");
+      }
+      const request = await normalizeWorkbenchTabPayload(payload, service);
+      const tabId = readTabId(request);
+      if (tabId === null) {
+        throw new Error("tabId must be a non-empty string");
+      }
+      return await service.activateTab({ tabId });
+    },
     "workbench.readWorkspace": async (payload) => {
       const service = getWorkbenchObservationService();
       if (service === null) {
@@ -552,6 +569,16 @@ export const createAgentIpcBridge = ({
     return value === "next" || value === "previous" ? value : "scan";
   };
 
+  const readLumenWaitUntil = (payload: Record<string, unknown>) => {
+    const value = payload.until;
+    return value === "loadIdle"
+      || value === "textChanged"
+      || value === "textStable"
+      || value === "textContains"
+      ? value
+      : "textStable";
+  };
+
   const readLumenTargetMode = (payload: Record<string, unknown>) => {
     if (browserFollowModeEnabled) {
       return "live";
@@ -634,6 +661,94 @@ export const createAgentIpcBridge = ({
     }
   };
 
+  const waitForLumenPage = async (
+    browser: NonNullable<ReturnType<typeof getBrowserBridge>>,
+    tabId: string,
+    request: {
+      readonly targetMode: "isolated" | "live";
+      readonly until: "loadIdle" | "textChanged" | "textStable" | "textContains";
+      readonly timeoutMs: number;
+      readonly idleMs: number;
+      readonly maxChars?: number;
+      readonly text?: string;
+    }
+  ) => {
+    const startedAt = Date.now();
+    const deadline = startedAt + request.timeoutMs;
+    const pollDelayMs = Math.max(20, Math.min(250, request.idleMs));
+    let firstContent: string | null = null;
+    let previousContent: string | null = null;
+    let stableSince = Date.now();
+    let lastContent = "";
+
+    while (Date.now() <= deadline) {
+      const content = await browser.readAgentPage(tabId, {
+        strategy: "focus",
+        targetMode: request.targetMode,
+        ...(request.maxChars === undefined ? {} : { maxChars: request.maxChars })
+      });
+      lastContent = content.content;
+      if (firstContent === null) {
+        firstContent = lastContent;
+      }
+
+      if (
+        request.until === "textContains"
+        && request.text !== undefined
+        && lastContent.includes(request.text)
+      ) {
+        return { content, matched: true, elapsedMs: Date.now() - startedAt };
+      }
+      if (request.until === "textChanged" && firstContent !== lastContent) {
+        return { content, matched: true, elapsedMs: Date.now() - startedAt };
+      }
+
+      if (previousContent !== lastContent) {
+        previousContent = lastContent;
+        stableSince = Date.now();
+      } else if (
+        (request.until === "textStable" || request.until === "loadIdle")
+        && Date.now() - stableSince >= request.idleMs
+      ) {
+        return { content, matched: true, elapsedMs: Date.now() - startedAt };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
+    }
+
+    const content = await browser.readAgentPage(tabId, {
+      strategy: "focus",
+      targetMode: request.targetMode,
+      ...(request.maxChars === undefined ? {} : { maxChars: request.maxChars })
+    });
+    return {
+      content,
+      matched: false,
+      elapsedMs: Date.now() - startedAt,
+      lastContent
+    };
+  };
+
+  const elementRevealKey = (element: unknown): string => {
+    if (!isRecord(element)) return "";
+    const bounds = isRecord(element.bounds) ? element.bounds : {};
+    return [
+      element.role,
+      element.label,
+      element.selectorPreview,
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height
+    ].join("|");
+  };
+
+  const pauseForLumenIdle = async (idleMs: number): Promise<void> => {
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(0, Math.min(2_000, idleMs)))
+    );
+  };
+
   const lyraLumenHandlers: Record<string, (payload: unknown) => Promise<unknown>> = {
     "lyraLumen.map": withLyraLumenResult("lyraLumen.map", async (payload) => {
       const browser = getBrowserBridge();
@@ -675,6 +790,73 @@ export const createAgentIpcBridge = ({
         ...result,
         kind: "lyraLumenActionResult",
         nextRecommendedAction: "lyra_lumen.map"
+      };
+    }),
+    "lyraLumen.reveal": withLyraLumenResult("lyraLumen.reveal", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode(payload);
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const idleMs = Math.max(
+        80,
+        Math.min(2_000, readOptionalNumberField(payload, "idleMs") ?? 500)
+      );
+      const interactionPayload = {
+        ...payload,
+        interaction: payload.interaction ?? "hover"
+      };
+      const before = await browser.observeAgentPage(tabId, {
+        strategy: "hybrid",
+        targetMode,
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      });
+      const actionResult = payload.elementId === undefined
+        ? await browser.actOnAgentPoint(tabId, {
+            point: readLumenPoint(payload),
+            interaction: readLumenInteraction(interactionPayload),
+            targetMode,
+            ...(timeoutMs === undefined ? {} : { timeoutMs })
+          })
+        : await browser.actOnAgentElement(tabId, {
+            elementId: readNumberField(payload, "elementId"),
+            interaction: readLumenInteraction(interactionPayload),
+            targetMode,
+            ...(timeoutMs === undefined ? {} : { timeoutMs })
+          });
+      if (actionResult.ok === false) {
+        return {
+          ...actionResult,
+          kind: "lyraLumenActionResult",
+          nextRecommendedAction: "lyra_lumen.map"
+        };
+      }
+      await pauseForLumenIdle(idleMs);
+      const after = await browser.observeAgentPage(tabId, {
+        strategy: "hybrid",
+        targetMode,
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      });
+      const beforeKeys = new Set(before.elements.map(elementRevealKey));
+      const revealedElements = after.elements.filter(
+        (element) => !beforeKeys.has(elementRevealKey(element))
+      );
+      return {
+        ...actionResult,
+        kind: "lyraLumenActionResult",
+        tabId,
+        targetMode,
+        revealed: true,
+        idleMs,
+        beforeObservationId: before.observationId,
+        afterObservationId: after.observationId,
+        revealedElements,
+        message:
+          revealedElements.length === 0
+            ? "Hover reveal completed, but no new actionable elements appeared."
+            : `Hover reveal exposed ${revealedElements.length} new actionable element${revealedElements.length === 1 ? "" : "s"}.`,
+        nextRecommendedAction:
+          revealedElements.length === 0 ? "lyra_lumen.map" : "lyra_lumen.act"
       };
     }),
     "lyraLumen.type": withLyraLumenResult("lyraLumen.type", async (payload) => {
@@ -841,14 +1023,44 @@ export const createAgentIpcBridge = ({
       };
     }),
     "lyraLumen.wait": withLyraLumenResult("lyraLumen.wait", async (payload) => {
-      const timeoutMs = Math.max(0, Math.min(30_000, readOptionalNumberField(payload, "timeoutMs") ?? 1_000));
-      await new Promise((resolve) => setTimeout(resolve, timeoutMs));
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode(payload);
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const timeoutMs = Math.max(
+        250,
+        Math.min(30_000, readOptionalNumberField(payload, "timeoutMs") ?? 10_000)
+      );
+      const idleMs = Math.max(
+        20,
+        Math.min(5_000, readOptionalNumberField(payload, "idleMs") ?? 800)
+      );
+      const until = readLumenWaitUntil(payload);
+      const text = readOptionalStringField(payload, "text");
+      const maxChars = readOptionalNumberField(payload, "maxChars");
+      const result = await waitForLumenPage(browser, tabId, {
+        targetMode,
+        until,
+        timeoutMs,
+        idleMs,
+        ...(maxChars === undefined ? {} : { maxChars }),
+        ...(text === undefined ? {} : { text })
+      });
       return {
         ok: true,
-        kind: "lyraLumenActionResult",
-        inputMode: "chromium",
-        tabId: readTabId(payload) ?? "",
-        message: `Waited ${timeoutMs}ms.`,
+        kind: "lyraLumenWait",
+        tabId,
+        targetMode,
+        until,
+        timeoutMs,
+        idleMs,
+        matched: result.matched,
+        elapsedMs: result.elapsedMs,
+        content: result.content.content,
+        truncated: "truncated" in result.content ? result.content.truncated : false,
+        message: result.matched
+          ? `Wait condition '${until}' was met after ${result.elapsedMs}ms.`
+          : `Wait condition '${until}' timed out after ${result.elapsedMs}ms.`,
         nextRecommendedAction: "lyra_lumen.map"
       };
     })
@@ -991,10 +1203,26 @@ export const createAgentIpcBridge = ({
         )
     ],
     [
+      LYRA_CHANNELS.agentTurnStart,
+      (_event, payload) =>
+        requestRuntime<AgentTurnSendResponse>(
+          "agent.turn.start",
+          payload as AgentTurnSendRequest
+        )
+    ],
+    [
       LYRA_CHANNELS.agentTurnSend,
       (_event, payload) =>
         requestRuntime<AgentTurnSendResponse>(
           "agent.turn.send",
+          payload as AgentTurnSendRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentTurnResume,
+      (_event, payload) =>
+        requestRuntime<AgentTurnSendResponse>(
+          "agent.turn.resume",
           payload as AgentTurnSendRequest
         )
     ],
@@ -1004,6 +1232,62 @@ export const createAgentIpcBridge = ({
         requestRuntime<AgentTurnCancelResponse>(
           "agent.turn.cancel",
           payload as AgentTurnCancelRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentTurnRetry,
+      (_event, payload) =>
+        requestRuntime<AgentTurnSendResponse>(
+          "agent.turn.retry",
+          payload as AgentTurnSendRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMemorySnapshot,
+      (_event, payload) =>
+        requestRuntime<AgentMemorySnapshot>(
+          "agent.memory.snapshot",
+          (payload as AgentSessionReadRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMemoryAudit,
+      (_event, payload) =>
+        requestRuntime<AgentMemoryAuditResponse>(
+          "agent.memory.audit",
+          (payload as AgentSessionReadRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMemoryTrimRun,
+      (_event, payload) =>
+        requestRuntime<unknown>(
+          "agent.memory.trim.run",
+          (payload as AgentMemoryTrimRunRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMemoryRecoverRun,
+      (_event, payload) =>
+        requestRuntime<unknown>(
+          "agent.memory.recover.run",
+          (payload as AgentSessionReadRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMemorySharedSearch,
+      (_event, payload) =>
+        requestRuntime<{ readonly records: readonly unknown[] }>(
+          "agent.memory.shared.search",
+          (payload as AgentMemorySharedSearchRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMemorySharedUpdate,
+      (_event, payload) =>
+        requestRuntime<unknown>(
+          "agent.memory.shared.update",
+          payload as AgentMemorySharedUpdateRequest
         )
     ],
     [

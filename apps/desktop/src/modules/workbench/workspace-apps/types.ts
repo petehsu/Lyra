@@ -61,6 +61,9 @@ export type {
 export type NotificationCenterAppId = "notification-center";
 export type NotificationCenterAppIconKey = "notification-center-default";
 
+export type LoginManagerAppId = "login-manager";
+export type LoginManagerAppIconKey = "login-manager-default";
+
 export type WorkbenchAppId =
   | FileManagerAppId
   | FileEditorAppId
@@ -71,7 +74,8 @@ export type WorkbenchAppId =
   | AgentOvernightAppId
   | AgentSessionHistoryAppId
   | NotificationCenterAppId
-  | SoftwareStoreAppId;
+  | SoftwareStoreAppId
+  | LoginManagerAppId;
 
 export type WorkspaceAppRef = {
   readonly appId: WorkbenchAppId;
@@ -88,6 +92,7 @@ export type WorkspaceAppIconKey =
   | AgentOvernightAppIconKey
   | AgentSessionHistoryAppIconKey
   | NotificationCenterAppIconKey
-  | SoftwareStoreAppIconKey;
+  | SoftwareStoreAppIconKey
+  | LoginManagerAppIconKey;
 
 export type WorkspaceAppIconRenderer = (iconKey: WorkspaceAppIconKey) => ReactNode;

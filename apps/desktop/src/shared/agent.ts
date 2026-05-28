@@ -130,6 +130,185 @@ export type AgentSessionSnapshot = {
   readonly activeTurnId?: string | null;
   readonly follow: AgentFollowState;
   readonly updatedAt: string;
+  readonly memory?: AgentMemorySnapshot | null;
+};
+
+export type AgentMemoryVisibility =
+  | "user_visible"
+  | "model_context_only"
+  | "audit_only"
+  | "internal"
+  | "debug_only";
+
+export type AgentMemoryModelContextPolicy =
+  | "include"
+  | "include_summarized"
+  | "exclude"
+  | "include_as_runtime_state";
+
+export type AgentMemoryUiPolicy =
+  | "show_in_timeline"
+  | "show_as_status"
+  | "show_in_details_only"
+  | "hide_from_user";
+
+export type AgentMemoryEventRole = "user" | "assistant" | "tool" | "runtime" | "system";
+
+export type AgentRuntimeTurnState =
+  | "queued"
+  | "assembling_context"
+  | "calling_model"
+  | "streaming_model"
+  | "waiting_for_tool"
+  | "waiting_for_user"
+  | "recovering_after_reload"
+  | "recovering_after_crash"
+  | "interrupted"
+  | "completed"
+  | "failed_recoverable"
+  | "failed_terminal"
+  | "cancelled_by_user";
+
+export type AgentMemorySessionRecord = {
+  readonly sessionId: string;
+  readonly title: string;
+  readonly workingDir?: string | null;
+  readonly providerKey?: string | null;
+  readonly model?: string | null;
+  readonly status: string;
+  readonly schemaVersion: number;
+  readonly createdAtMs: number;
+  readonly createdAtIso: string;
+  readonly updatedAtMs: number;
+  readonly updatedAtIso: string;
+};
+
+export type AgentRuntimeTurn = {
+  readonly runtimeTurnId: string;
+  readonly sessionId: string;
+  readonly parentRuntimeTurnId?: string | null;
+  readonly userMessageId?: string | null;
+  readonly state: AgentRuntimeTurnState;
+  readonly startedAtMs: number;
+  readonly startedAtIso: string;
+  readonly updatedAtMs: number;
+  readonly updatedAtIso: string;
+  readonly completedAtMs?: number | null;
+  readonly completedAtIso?: string | null;
+  readonly failureKind?: string | null;
+  readonly failureDetailRef?: string | null;
+  readonly latestUserIntentRef?: string | null;
+  readonly activeTaskRef?: string | null;
+  readonly providerRequestRef?: string | null;
+  readonly contextSnapshotRef?: string | null;
+  readonly completionAuditRef?: string | null;
+};
+
+export type AgentTimelineProjectionItem = {
+  readonly eventId: string;
+  readonly runtimeTurnId?: string | null;
+  readonly kind: string;
+  readonly role: AgentMemoryEventRole;
+  readonly payloadJson?: unknown;
+  readonly createdAtMs: number;
+  readonly createdAtIso: string;
+};
+
+export type AgentContextLayerKind =
+  | "system_contract"
+  | "runtime_state"
+  | "latest_user_intent"
+  | "pinned"
+  | "tail"
+  | "tool_capability_snapshot"
+  | "middle_anchors"
+  | "head"
+  | "retrieved_archives"
+  | "shared_frozen_memory";
+
+export type AgentContextLayer = {
+  readonly kind: AgentContextLayerKind;
+  readonly priority: number;
+  readonly tokenBudget: number;
+  readonly payloadJson?: unknown;
+  readonly sourceRefs: readonly string[];
+};
+
+export type AgentContextSnapshot = {
+  readonly contextSnapshotId: string;
+  readonly sessionId: string;
+  readonly runtimeTurnId: string;
+  readonly modelContextWindow: number;
+  readonly createdAtMs: number;
+  readonly createdAtIso: string;
+  readonly layers: readonly AgentContextLayer[];
+};
+
+export type AgentTypedToolStatus =
+  | "running"
+  | "success"
+  | "success_partial"
+  | "failed_retryable"
+  | "failed_terminal"
+  | "timed_out_partial"
+  | "cancelled"
+  | "unknown_after_recovery";
+
+export type AgentTypedToolResult = {
+  readonly toolCallId: string;
+  readonly toolResultId?: string | null;
+  readonly runtimeTurnId?: string | null;
+  readonly name: string;
+  readonly status: AgentTypedToolStatus;
+  readonly input?: unknown;
+  readonly output?: unknown;
+  readonly recommendedNextActions?: readonly string[];
+};
+
+export type AgentBrowserTargetProjection = Readonly<Record<string, unknown>>;
+
+export type AgentClarificationProjection = {
+  readonly clarificationId?: string | null;
+  readonly question?: string | null;
+  readonly options?: readonly AgentClarificationOption[];
+  readonly allowCustomAnswer?: boolean | null;
+  readonly detail?: string | null;
+};
+
+export type AgentMemorySnapshot = {
+  readonly session?: AgentMemorySessionRecord | null;
+  readonly runtimeTurns: readonly AgentRuntimeTurn[];
+  readonly timelineProjection: readonly AgentTimelineProjectionItem[];
+  readonly activeTodos: readonly unknown[];
+  readonly activeBrowserTargets: readonly AgentBrowserTargetProjection[];
+  readonly activeClarification?: AgentClarificationProjection | null;
+  readonly status: string;
+  readonly providerLabel?: string | null;
+  readonly modelLabel?: string | null;
+};
+
+export type AgentMemoryAuditResponse = {
+  readonly sessionId: string;
+  readonly events: readonly unknown[];
+  readonly runtimeTurns: readonly AgentRuntimeTurn[];
+};
+
+export type AgentMemoryTrimRunRequest = {
+  readonly sessionId?: string | null;
+  readonly tokenBudget?: number | null;
+  readonly charBudget?: number | null;
+};
+
+export type AgentMemorySharedSearchRequest = {
+  readonly query?: string | null;
+};
+
+export type AgentMemorySharedUpdateRequest = {
+  readonly scope?: string | null;
+  readonly content: unknown;
+  readonly evidenceRefs?: readonly string[];
+  readonly status?: string | null;
+  readonly negative?: boolean;
 };
 
 export type AgentSessionCreateRequest = {
@@ -580,6 +759,39 @@ export type AgentRuntimeEvent =
       readonly tool: AgentToolActivity;
     }
   | {
+      readonly kind: "memorySnapshot";
+      readonly sessionId: string;
+      readonly snapshot: AgentMemorySnapshot;
+    }
+  | {
+      readonly kind: "turnStarted" | "turnStateChanged";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly state: AgentRuntimeTurnState;
+      readonly reason?: string;
+    }
+  | {
+      readonly kind: "toolUpdated";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly tool: AgentToolActivity;
+    }
+  | {
+      readonly kind: "contextTrimmed";
+      readonly sessionId: string;
+      readonly detail: unknown;
+    }
+  | {
+      readonly kind: "turnRecovered";
+      readonly sessionId: string;
+      readonly turnId: string;
+    }
+  | {
+      readonly kind: "turnCompleted";
+      readonly sessionId: string;
+      readonly turnId: string;
+    }
+  | {
       readonly kind: "todoUpdated";
       readonly sessionId: string;
       readonly todos: readonly AgentTodoItem[];
@@ -592,6 +804,17 @@ export type AgentRuntimeEvent =
       readonly options?: readonly AgentClarificationOption[];
       readonly allowCustomAnswer: boolean;
       readonly detail?: string | null;
+    }
+  | {
+      readonly kind: "clarificationResolved";
+      readonly sessionId: string;
+      readonly clarificationId: string;
+    }
+  | {
+      readonly kind: "browserTargetUpdated";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly target: unknown;
     }
   | {
       readonly kind: "permissionRequired";
@@ -853,8 +1076,19 @@ export type AgentApi = {
   readonly cancelOvernight: (
     request?: JcodeOvernightRunRequest
   ) => Promise<JcodeOvernightRunResponse>;
+  readonly startTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly sendTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
+  readonly resumeTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly cancelTurn: (request: AgentTurnCancelRequest) => Promise<AgentTurnCancelResponse>;
+  readonly retryTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
+  readonly readMemorySnapshot: (request?: AgentSessionReadRequest) => Promise<AgentMemorySnapshot>;
+  readonly readMemoryAudit: (request?: AgentSessionReadRequest) => Promise<AgentMemoryAuditResponse>;
+  readonly runMemoryTrim: (request?: AgentMemoryTrimRunRequest) => Promise<unknown>;
+  readonly runMemoryRecovery: (request?: AgentSessionReadRequest) => Promise<unknown>;
+  readonly searchSharedMemory: (
+    request?: AgentMemorySharedSearchRequest
+  ) => Promise<{ readonly records: readonly unknown[] }>;
+  readonly updateSharedMemory: (request: AgentMemorySharedUpdateRequest) => Promise<unknown>;
   readonly previewRollback: (
     request: AgentRollbackRequest
   ) => Promise<AgentRollbackPreviewResponse>;

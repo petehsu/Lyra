@@ -18,8 +18,6 @@
   box-shadow:
     inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-editor) 76%, transparent),
     0 var(--lyra-unit-16) var(--lyra-unit-40) color-mix(in srgb, var(--lyra-bg-app) 18%, transparent);
-  -webkit-backdrop-filter: var(--lyra-backdrop-blur-md);
-  backdrop-filter: var(--lyra-backdrop-blur-md);
 }
 
 .lyra-browser-pill:hover {
@@ -309,8 +307,6 @@
   box-shadow:
     inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-editor) 72%, transparent),
     0 var(--lyra-unit-16) var(--lyra-unit-40) color-mix(in srgb, var(--lyra-bg-app) 16%, transparent);
-  -webkit-backdrop-filter: var(--lyra-backdrop-blur-md);
-  backdrop-filter: var(--lyra-backdrop-blur-md);
 }
 
 .lyra-browser-search-mode-picker.lyra-list-picker-open .lyra-list-picker-surface {
@@ -320,8 +316,6 @@
       color-mix(in srgb, var(--lyra-bg-editor) 64%, transparent),
       color-mix(in srgb, var(--lyra-bg-surface) 48%, transparent)
     );
-  -webkit-backdrop-filter: var(--lyra-backdrop-blur-lg);
-  backdrop-filter: var(--lyra-backdrop-blur-lg);
 }
 
 .lyra-browser-search-mode-picker .lyra-list-picker-option {
@@ -786,7 +780,6 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--lyra-bg-surface) 86%, transparent), color-mix(in srgb, var(--lyra-bg-editor) 95%, var(--lyra-bg-surface) 5%));
   box-shadow: 0 var(--lyra-unit-12) var(--lyra-unit-24) rgba(7, 10, 14, 0.14);
-  backdrop-filter: blur(var(--lyra-unit-8));
 }
 
 .lyra-deep-search-node-selected {

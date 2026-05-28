@@ -52,6 +52,9 @@ pub use jcode_agent_runtime::{
 };
 
 const JCODE_NATIVE_TOOLS: &[&str] = &["selfdev", "communicate"];
+const MAX_INLINE_LUMEN_IMAGE_BASE64_CHARS: usize = 48 * 1024;
+const LUMEN_VISUAL_FALLBACK_LABEL: &str = "lyra lumen visual fallback";
+const TOOL_IMAGE_LABEL_PREFIX: &str = "[Attached image associated with the preceding tool result:";
 static RECOVERED_TEXT_WRAPPED_TOOL_CALLS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 static JCODE_REPO_SOURCE_STATE: LazyLock<(Option<String>, Option<bool>)> = LazyLock::new(|| {
@@ -87,6 +90,469 @@ fn stable_json_len<T: serde::Serialize + ?Sized>(value: &T) -> usize {
 
 fn message_hashes(messages: &[Message]) -> Vec<u64> {
     messages.iter().map(stable_hash_json).collect()
+}
+
+fn usage_json(
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    cache_read_input_tokens: Option<u64>,
+    cache_creation_input_tokens: Option<u64>,
+) -> Option<serde_json::Value> {
+    if input_tokens.is_none()
+        && output_tokens.is_none()
+        && cache_read_input_tokens.is_none()
+        && cache_creation_input_tokens.is_none()
+    {
+        return None;
+    }
+    Some(serde_json::json!({
+        "inputTokens": input_tokens.unwrap_or(0),
+        "outputTokens": output_tokens.unwrap_or(0),
+        "cacheReadInputTokens": cache_read_input_tokens,
+        "cacheCreationInputTokens": cache_creation_input_tokens
+    }))
+}
+
+fn assembled_context_dynamic_system_context(
+    snapshot: &crate::memory::agent_runtime::ContextSnapshot,
+) -> Option<String> {
+    let dynamic_layers = snapshot
+        .layers
+        .iter()
+        .filter(|layer| {
+            !matches!(
+                layer.kind,
+                crate::memory::agent_runtime::ContextLayerKind::Tail
+                    | crate::memory::agent_runtime::ContextLayerKind::LatestUserIntent
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    serde_json::to_string(&serde_json::json!({
+        "lyraContextSnapshotId": snapshot.context_snapshot_id,
+        "runtimeTurnId": snapshot.runtime_turn_id,
+        "layers": dynamic_layers
+    }))
+    .ok()
+}
+
+fn non_tool_user_message(message: &Message) -> bool {
+    matches!(message.role, Role::User)
+        && message
+            .content
+            .iter()
+            .any(|block| !matches!(block, ContentBlock::ToolResult { .. }))
+}
+
+fn replacement_latest_user_message(context: &AssembledProviderContext) -> Option<Message> {
+    context
+        .messages
+        .iter()
+        .rev()
+        .find(|message| non_tool_user_message(message))
+        .cloned()
+}
+
+fn text_from_memory_payload(item: &crate::memory::agent_runtime::TimelineProjectionItem) -> String {
+    item.payload_json
+        .get("text")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn tool_call_blocks_from_memory_payload(payload: &serde_json::Value) -> Vec<ContentBlock> {
+    payload
+        .get("toolCalls")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|tool| {
+            let id = tool.get("id").and_then(serde_json::Value::as_str)?;
+            let name = tool.get("name").and_then(serde_json::Value::as_str)?;
+            let input = tool
+                .get("input")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            Some(ContentBlock::ToolUse {
+                id: id.to_string(),
+                name: name.to_string(),
+                input,
+            })
+        })
+        .collect()
+}
+
+fn content_blocks_from_memory_payload(payload: &serde_json::Value) -> Option<Vec<ContentBlock>> {
+    payload
+        .get("contentBlocks")
+        .cloned()
+        .and_then(|value| serde_json::from_value::<Vec<ContentBlock>>(value).ok())
+}
+
+fn provider_message_from_memory_timeline_item(
+    item: &crate::memory::agent_runtime::TimelineProjectionItem,
+    latest_user_event_id: Option<&str>,
+    latest_user_replacement: Option<&Message>,
+) -> Option<Message> {
+    use crate::memory::agent_runtime::EventRole as MemoryEventRole;
+
+    match item.kind.as_str() {
+        "user_message" if item.role == MemoryEventRole::User => {
+            if latest_user_event_id == Some(item.event_id.as_str())
+                && let Some(message) = latest_user_replacement
+            {
+                return Some(message.clone());
+            }
+            Some(Message {
+                role: Role::User,
+                content: vec![ContentBlock::Text {
+                    text: text_from_memory_payload(item),
+                    cache_control: None,
+                }],
+                timestamp: None,
+                tool_duration_ms: None,
+            })
+        }
+        "user_context_message" if item.role == MemoryEventRole::User => {
+            let content = content_blocks_from_memory_payload(&item.payload_json)?;
+            Some(Message {
+                role: Role::User,
+                content,
+                timestamp: None,
+                tool_duration_ms: None,
+            })
+        }
+        "assistant_message" if item.role == MemoryEventRole::Assistant => {
+            let mut content = Vec::new();
+            let text = text_from_memory_payload(item);
+            if !text.trim().is_empty() {
+                content.push(ContentBlock::Text {
+                    text,
+                    cache_control: None,
+                });
+            }
+            content.extend(tool_call_blocks_from_memory_payload(&item.payload_json));
+            if content.is_empty() {
+                return None;
+            }
+            Some(Message {
+                role: Role::Assistant,
+                content,
+                timestamp: None,
+                tool_duration_ms: None,
+            })
+        }
+        "tool_result" => {
+            let payload = &item.payload_json;
+            let tool_call_id = payload
+                .get("toolCallId")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(item.event_id.as_str())
+                .to_string();
+            let content = payload
+                .get("output")
+                .map(|output| {
+                    output
+                        .get("content")
+                        .and_then(serde_json::Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| output.to_string())
+                })
+                .unwrap_or_default();
+            let is_error = payload
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|status| status != "success" && status != "success_partial")
+                .then_some(true);
+            Some(Message {
+                role: Role::User,
+                content: vec![ContentBlock::ToolResult {
+                    tool_use_id: tool_call_id,
+                    content,
+                    is_error,
+                }],
+                timestamp: None,
+                tool_duration_ms: None,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn messages_from_context_snapshot(
+    snapshot: &crate::memory::agent_runtime::ContextSnapshot,
+    latest_user_replacement: Option<&Message>,
+) -> Vec<Message> {
+    let latest_user_event_id = snapshot
+        .layers
+        .iter()
+        .find(|layer| {
+            matches!(
+                layer.kind,
+                crate::memory::agent_runtime::ContextLayerKind::LatestUserIntent
+            )
+        })
+        .and_then(|layer| layer.payload_json.get("event"))
+        .and_then(|event| event.get("eventId"))
+        .and_then(serde_json::Value::as_str);
+
+    snapshot
+        .layers
+        .iter()
+        .find(|layer| {
+            matches!(
+                layer.kind,
+                crate::memory::agent_runtime::ContextLayerKind::Tail
+            )
+        })
+        .and_then(|layer| layer.payload_json.get("timeline"))
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| {
+            serde_json::from_value::<crate::memory::agent_runtime::TimelineProjectionItem>(
+                value.clone(),
+            )
+            .ok()
+        })
+        .filter_map(|item| {
+            provider_message_from_memory_timeline_item(
+                &item,
+                latest_user_event_id,
+                latest_user_replacement,
+            )
+        })
+        .collect()
+}
+
+fn stored_message_bootstrap_source_id(
+    event: &crate::memory::agent_runtime::SessionEventRecord,
+) -> Option<String> {
+    event
+        .lineage_json
+        .get("sourceStoredMessageId")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            event
+                .payload_json
+                .get("messageId")
+                .and_then(serde_json::Value::as_str)
+        })
+        .map(ToOwned::to_owned)
+}
+
+fn content_text_for_memory_payload(content: &[ContentBlock]) -> String {
+    content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text { text, .. } | ContentBlock::Reasoning { text } => {
+                Some(text.clone())
+            }
+            ContentBlock::Image { .. } => Some("[image]".to_string()),
+            ContentBlock::ToolUse { .. }
+            | ContentBlock::ToolResult { .. }
+            | ContentBlock::OpenAICompaction { .. } => None,
+        })
+        .filter(|text| !text.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn tool_calls_for_memory_payload(content: &[ContentBlock]) -> Vec<serde_json::Value> {
+    content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::ToolUse { id, name, input } => Some(serde_json::json!({
+                "id": id,
+                "name": name,
+                "input": input
+            })),
+            _ => None,
+        })
+        .collect()
+}
+
+fn bootstrap_events_from_stored_message(
+    message: &StoredMessage,
+    runtime_turn_id: &str,
+) -> Vec<crate::memory::agent_runtime::NewSessionEvent> {
+    use crate::memory::agent_runtime::{
+        EventRole as MemoryEventRole, ModelContextPolicy as MemoryModelContextPolicy,
+        NewSessionEvent, UiPolicy as MemoryUiPolicy, Visibility as MemoryVisibility,
+    };
+
+    if message.display_role.is_some() {
+        return Vec::new();
+    }
+
+    let source_lineage = serde_json::json!({ "sourceStoredMessageId": message.id });
+    match message.role {
+        Role::User => {
+            let mut events = Vec::new();
+            let context_blocks = message
+                .content
+                .iter()
+                .filter(|block| !matches!(block, ContentBlock::ToolResult { .. }))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !context_blocks.is_empty() {
+                events.push(NewSessionEvent {
+                    kind: "user_context_message".to_string(),
+                    role: MemoryEventRole::User,
+                    payload: serde_json::json!({
+                        "contentBlocks": context_blocks,
+                        "text": content_text_for_memory_payload(&message.content),
+                        "messageId": message.id
+                    }),
+                    visibility: MemoryVisibility::UserVisible,
+                    model_context_policy: MemoryModelContextPolicy::Include,
+                    ui_policy: MemoryUiPolicy::ShowInTimeline,
+                    runtime_turn_id: Some(runtime_turn_id.to_string()),
+                    lineage_json: source_lineage.clone(),
+                });
+            }
+            for block in &message.content {
+                if let ContentBlock::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                } = block
+                {
+                    events.push(NewSessionEvent {
+                        kind: "tool_result".to_string(),
+                        role: MemoryEventRole::Tool,
+                        payload: serde_json::json!({
+                            "toolCallId": tool_use_id,
+                            "status": if is_error.unwrap_or(false) { "failed_retryable" } else { "success" },
+                            "output": { "content": content },
+                            "recommendedNextActions": []
+                        }),
+                        visibility: MemoryVisibility::UserVisible,
+                        model_context_policy: MemoryModelContextPolicy::IncludeAsRuntimeState,
+                        ui_policy: MemoryUiPolicy::ShowInTimeline,
+                        runtime_turn_id: Some(runtime_turn_id.to_string()),
+                        lineage_json: source_lineage.clone(),
+                    });
+                }
+            }
+            events
+        }
+        Role::Assistant => {
+            let text = content_text_for_memory_payload(&message.content);
+            let tool_calls = tool_calls_for_memory_payload(&message.content);
+            if text.trim().is_empty() && tool_calls.is_empty() {
+                return Vec::new();
+            }
+            vec![NewSessionEvent {
+                kind: "assistant_message".to_string(),
+                role: MemoryEventRole::Assistant,
+                payload: serde_json::json!({
+                    "text": text,
+                    "toolCalls": tool_calls,
+                    "messageId": message.id
+                }),
+                visibility: MemoryVisibility::UserVisible,
+                model_context_policy: MemoryModelContextPolicy::Include,
+                ui_policy: MemoryUiPolicy::ShowInTimeline,
+                runtime_turn_id: Some(runtime_turn_id.to_string()),
+                lineage_json: source_lineage,
+            }]
+        }
+    }
+}
+
+fn attached_tool_image_label(block: Option<&ContentBlock>) -> Option<&str> {
+    let ContentBlock::Text { text, .. } = block? else {
+        return None;
+    };
+    let trimmed = text.trim();
+    let label = trimmed
+        .strip_prefix(TOOL_IMAGE_LABEL_PREFIX)?
+        .strip_suffix(']')?
+        .trim();
+    if label.is_empty() { None } else { Some(label) }
+}
+
+fn is_large_lumen_visual_fallback(label: Option<&str>, data: &str) -> bool {
+    label
+        .map(|value| value.eq_ignore_ascii_case(LUMEN_VISUAL_FALLBACK_LABEL))
+        .unwrap_or(false)
+        && data.len() > MAX_INLINE_LUMEN_IMAGE_BASE64_CHARS
+}
+
+fn provider_nonvision_image_omission_text(label: Option<&str>) -> String {
+    match label {
+        Some(label) if !label.trim().is_empty() => format!(
+            "[1 image attachment omitted because the active model/provider does not currently support image input: {}]",
+            label.trim()
+        ),
+        _ => {
+            "[1 image attachment omitted because the active model/provider does not currently support image input.]"
+                .to_string()
+        }
+    }
+}
+
+fn provider_lumen_visual_fallback_omission_text() -> String {
+    "[Lyra Lumen visual fallback image is available in Lyra UI; it was not re-sent inline to the model because it exceeds the provider-context size limit. Prefer lyra_lumen.map/read/focus_scan; call lyra_lumen.see only when fresh visual evidence is required.]"
+        .to_string()
+}
+
+fn filter_content_for_provider_context(
+    content: Vec<ContentBlock>,
+    supports_image_input: bool,
+) -> Vec<ContentBlock> {
+    let mut filtered = Vec::with_capacity(content.len());
+    let mut index = 0usize;
+
+    while index < content.len() {
+        match &content[index] {
+            ContentBlock::Image { data, .. } => {
+                let next_label = attached_tool_image_label(content.get(index + 1));
+                if !supports_image_input {
+                    filtered.push(ContentBlock::Text {
+                        text: provider_nonvision_image_omission_text(next_label),
+                        cache_control: None,
+                    });
+                    index += if next_label.is_some() { 2 } else { 1 };
+                    continue;
+                }
+
+                if is_large_lumen_visual_fallback(next_label, data) {
+                    filtered.push(ContentBlock::Text {
+                        text: provider_lumen_visual_fallback_omission_text(),
+                        cache_control: None,
+                    });
+                    index += 2;
+                    continue;
+                }
+
+                filtered.push(content[index].clone());
+                index += 1;
+            }
+            _ => {
+                filtered.push(content[index].clone());
+                index += 1;
+            }
+        }
+    }
+
+    filtered
+}
+
+fn filter_messages_for_provider_context(
+    messages: Vec<Message>,
+    supports_image_input: bool,
+) -> Vec<Message> {
+    messages
+        .into_iter()
+        .map(|mut message| {
+            message.content =
+                filter_content_for_provider_context(message.content, supports_image_input);
+            message
+        })
+        .collect()
 }
 
 fn kv_cache_request_event(
@@ -131,6 +597,15 @@ struct RewindUndoSnapshot {
     provider_session_id: Option<String>,
     session_provider_session_id: Option<String>,
     visible_message_count: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssembledProviderContext {
+    pub session_id: String,
+    pub runtime_turn_id: String,
+    pub context_snapshot_id: String,
+    pub messages: Vec<Message>,
+    pub dynamic_system_context: Option<String>,
 }
 
 pub struct Agent {
@@ -184,6 +659,8 @@ pub struct Agent {
     stdin_request_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::tool::StdinInputRequest>>,
     /// Canonical reducer-backed view of runtime provider/model selection.
     provider_runtime_state: ProviderRuntimeState,
+    assembled_provider_context: Option<AssembledProviderContext>,
+    assembled_provider_context_message_floor: Option<usize>,
 }
 
 impl Agent {
@@ -232,6 +709,8 @@ impl Agent {
             rewind_undo_snapshot: None,
             stdin_request_tx: None,
             provider_runtime_state: ProviderRuntimeState::observed(initial_provider_model),
+            assembled_provider_context: None,
+            assembled_provider_context_message_floor: None,
         }
     }
 
@@ -398,6 +877,7 @@ impl Agent {
         self.last_usage = TokenUsage::default();
         self.locked_tools = None;
         self.rewind_undo_snapshot = None;
+        self.clear_assembled_provider_context();
     }
 
     fn sync_session_compaction_state_from_manager(
@@ -470,7 +950,9 @@ impl Agent {
         Ok(())
     }
 
+    #[cfg(test)]
     fn messages_for_provider(&mut self) -> (Vec<Message>, Option<CompactionEvent>) {
+        let supports_image_input = self.provider.supports_image_input();
         if self.provider.supports_compaction() || self.session.compaction.is_some() {
             let compaction = self.registry.compaction();
             match compaction.try_write() {
@@ -479,9 +961,15 @@ impl Agent {
                         manager.discard_oversized_openai_native_compaction();
                     let messages = {
                         let all_messages = self.session.provider_messages();
+                        let provider_context_messages = filter_messages_for_provider_context(
+                            all_messages.to_vec(),
+                            supports_image_input,
+                        );
                         if self.provider.uses_jcode_compaction() {
-                            let action =
-                                manager.ensure_context_fits(all_messages, self.provider.clone());
+                            let action = manager.ensure_context_fits(
+                                &provider_context_messages,
+                                self.provider.clone(),
+                            );
                             match action {
                                 crate::compaction::CompactionAction::BackgroundStarted {
                                     trigger,
@@ -500,7 +988,7 @@ impl Agent {
                                 crate::compaction::CompactionAction::None => {}
                             }
                         }
-                        manager.messages_for_api_with(all_messages)
+                        manager.messages_for_api_with(&provider_context_messages)
                     };
                     let event = manager.take_compaction_event();
                     if event.is_some() || discarded_oversized_native {
@@ -530,7 +1018,8 @@ impl Agent {
         }
 
         let all_messages = self.session.provider_messages();
-        let messages = all_messages.to_vec();
+        let messages =
+            filter_messages_for_provider_context(all_messages.to_vec(), supports_image_input);
         let user_count = messages
             .iter()
             .filter(|message| matches!(message.role, Role::User))
@@ -543,6 +1032,380 @@ impl Agent {
             assistant_count,
         ));
         (messages, None)
+    }
+
+    fn bootstrap_assembled_provider_context_from_session(&mut self) {
+        if self.assembled_provider_context.is_some() {
+            return;
+        }
+        let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() else {
+            return;
+        };
+        if let Err(err) = store.ensure_session_with_id(
+            &self.session.id,
+            crate::memory::agent_runtime::CreateSessionInput {
+                title: Some(self.session.display_title_or_name().to_string()),
+                working_dir: self.session.working_dir.clone(),
+                provider_key: self.session.provider_key.clone(),
+                model: self
+                    .session
+                    .model
+                    .clone()
+                    .or_else(|| Some(self.provider.model())),
+            },
+        ) {
+            logging::warn(&format!(
+                "Failed to ensure memory session before provider context assembly: {}",
+                err
+            ));
+            return;
+        }
+
+        let runtime_turn_id = crate::id::new_id("runtime-turn");
+        let existing_events = match store.read_events_by_session(&self.session.id) {
+            Ok(events) => events,
+            Err(err) => {
+                logging::warn(&format!(
+                    "Failed to read memory events before provider context assembly: {}",
+                    err
+                ));
+                Vec::new()
+            }
+        };
+        let existing_source_ids = existing_events
+            .iter()
+            .filter_map(stored_message_bootstrap_source_id)
+            .collect::<HashSet<_>>();
+        let mut latest_user_event_id = existing_events
+            .iter()
+            .rev()
+            .find(|event| {
+                event.role == crate::memory::agent_runtime::EventRole::User
+                    && event.visibility == crate::memory::agent_runtime::Visibility::UserVisible
+            })
+            .map(|event| event.event_id.clone());
+
+        for message in &self.session.messages {
+            if existing_source_ids.contains(&message.id) {
+                continue;
+            }
+            for event in bootstrap_events_from_stored_message(message, &runtime_turn_id) {
+                match store.append_event(&self.session.id, event) {
+                    Ok(record) => {
+                        if record.role == crate::memory::agent_runtime::EventRole::User
+                            && record.visibility
+                                == crate::memory::agent_runtime::Visibility::UserVisible
+                        {
+                            latest_user_event_id = Some(record.event_id);
+                        }
+                    }
+                    Err(err) => logging::warn(&format!(
+                        "Failed to bootstrap stored message {} into memory context: {}",
+                        message.id, err
+                    )),
+                }
+            }
+        }
+
+        if let Err(err) = store.start_runtime_turn_with_id(
+            &self.session.id,
+            runtime_turn_id.clone(),
+            latest_user_event_id.as_deref(),
+            None,
+        ) {
+            logging::warn(&format!(
+                "Failed to start memory runtime turn before provider context assembly: {}",
+                err
+            ));
+            return;
+        }
+        let snapshot = match store.build_context(
+            &self.session.id,
+            &runtime_turn_id,
+            self.provider.context_window() as i64,
+        ) {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                logging::warn(&format!(
+                    "Failed to build provider context from memory snapshot: {}",
+                    err
+                ));
+                return;
+            }
+        };
+        let messages = messages_from_context_snapshot(&snapshot, None);
+        self.assembled_provider_context = Some(AssembledProviderContext {
+            session_id: snapshot.session_id.clone(),
+            runtime_turn_id: snapshot.runtime_turn_id.clone(),
+            context_snapshot_id: snapshot.context_snapshot_id.clone(),
+            messages,
+            dynamic_system_context: assembled_context_dynamic_system_context(&snapshot),
+        });
+        self.assembled_provider_context_message_floor = None;
+    }
+
+    fn refresh_assembled_provider_context_from_memory(&mut self) {
+        let Some(existing) = self.assembled_provider_context.clone() else {
+            return;
+        };
+        let latest_user_replacement = replacement_latest_user_message(&existing);
+        let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() else {
+            return;
+        };
+        let Ok(snapshot) = store.build_context(
+            &existing.session_id,
+            &existing.runtime_turn_id,
+            self.provider.context_window() as i64,
+        ) else {
+            return;
+        };
+        let messages = messages_from_context_snapshot(&snapshot, latest_user_replacement.as_ref());
+        self.assembled_provider_context = Some(AssembledProviderContext {
+            session_id: snapshot.session_id.clone(),
+            runtime_turn_id: snapshot.runtime_turn_id.clone(),
+            context_snapshot_id: snapshot.context_snapshot_id.clone(),
+            messages,
+            dynamic_system_context: assembled_context_dynamic_system_context(&snapshot),
+        });
+        self.assembled_provider_context_message_floor = None;
+    }
+
+    fn provider_messages_from_context_assembler(
+        &mut self,
+    ) -> (Vec<Message>, Option<CompactionEvent>) {
+        self.bootstrap_assembled_provider_context_from_session();
+        self.refresh_assembled_provider_context_from_memory();
+        let Some(context) = self.assembled_provider_context.clone() else {
+            logging::error(
+                "provider_messages_from_context_assembler: missing context snapshot; refusing old transcript provider input",
+            );
+            return (Vec::new(), None);
+        };
+
+        let supports_image_input = self.provider.supports_image_input();
+        let messages = filter_messages_for_provider_context(context.messages, supports_image_input);
+        let user_count = messages
+            .iter()
+            .filter(|message| matches!(message.role, Role::User))
+            .count();
+        let assistant_count = messages.len().saturating_sub(user_count);
+        logging::info(&format!(
+            "provider_messages_from_context_assembler: context_snapshot={} messages={} user={} assistant={}",
+            context.context_snapshot_id,
+            messages.len(),
+            user_count,
+            assistant_count,
+        ));
+        (messages, None)
+    }
+
+    fn provider_messages_for_context_management(&mut self) -> Vec<Message> {
+        #[cfg(not(test))]
+        {
+            let (messages, _) = self.provider_messages_from_context_assembler();
+            messages
+        }
+        #[cfg(test)]
+        {
+            self.session.messages_for_provider()
+        }
+    }
+
+    fn record_assistant_provider_event(&self, text: &str, tool_calls: &[ToolCall]) {
+        let Some(context) = self.assembled_provider_context.as_ref() else {
+            return;
+        };
+        if text.trim().is_empty() && tool_calls.is_empty() {
+            return;
+        }
+        let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() else {
+            return;
+        };
+        let tool_calls_json = tool_calls
+            .iter()
+            .map(|tool| {
+                serde_json::json!({
+                    "id": tool.id,
+                    "name": tool.name,
+                    "input": tool.input
+                })
+            })
+            .collect::<Vec<_>>();
+        let event = crate::memory::agent_runtime::NewSessionEvent {
+            kind: "assistant_message".to_string(),
+            role: crate::memory::agent_runtime::EventRole::Assistant,
+            payload: serde_json::json!({
+                "text": text,
+                "toolCalls": tool_calls_json
+            }),
+            visibility: crate::memory::agent_runtime::Visibility::UserVisible,
+            model_context_policy: crate::memory::agent_runtime::ModelContextPolicy::Include,
+            ui_policy: crate::memory::agent_runtime::UiPolicy::ShowInTimeline,
+            runtime_turn_id: Some(context.runtime_turn_id.clone()),
+            lineage_json: serde_json::json!({ "provider": self.provider.name() }),
+        };
+        if let Err(error) = store.append_event(&context.session_id, event) {
+            logging::warn(&format!(
+                "Failed to record assistant provider event for runtime turn {}: {}",
+                context.runtime_turn_id, error
+            ));
+        }
+        for tool in tool_calls {
+            if let Err(error) = store.record_tool_call_started(
+                &context.session_id,
+                &context.runtime_turn_id,
+                &tool.id,
+                &tool.name,
+                tool.input.clone(),
+            ) {
+                logging::warn(&format!(
+                    "Failed to record tool call {} for runtime turn {}: {}",
+                    tool.id, context.runtime_turn_id, error
+                ));
+            }
+        }
+    }
+
+    fn record_user_context_provider_event(&self, content: &[ContentBlock]) {
+        let Some(context) = self.assembled_provider_context.as_ref() else {
+            return;
+        };
+        if content.is_empty() {
+            return;
+        }
+        let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() else {
+            return;
+        };
+        let event = crate::memory::agent_runtime::NewSessionEvent {
+            kind: "user_context_message".to_string(),
+            role: crate::memory::agent_runtime::EventRole::User,
+            payload: serde_json::json!({ "contentBlocks": content }),
+            visibility: crate::memory::agent_runtime::Visibility::UserVisible,
+            model_context_policy: crate::memory::agent_runtime::ModelContextPolicy::Include,
+            ui_policy: crate::memory::agent_runtime::UiPolicy::ShowInTimeline,
+            runtime_turn_id: Some(context.runtime_turn_id.clone()),
+            lineage_json: serde_json::json!({ "source": "provider_context_attachment" }),
+        };
+        if let Err(error) = store.append_event(&context.session_id, event) {
+            logging::warn(&format!(
+                "Failed to record user context provider event for runtime turn {}: {}",
+                context.runtime_turn_id, error
+            ));
+        }
+    }
+
+    fn record_tool_result_provider_event(
+        &self,
+        tool: &ToolCall,
+        status: crate::memory::agent_runtime::ToolResultStatus,
+        content: String,
+        error: Option<String>,
+    ) {
+        let Some(context) = self.assembled_provider_context.as_ref() else {
+            return;
+        };
+        let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() else {
+            return;
+        };
+        let recommended_next_actions = if error.is_some() {
+            vec!["inspect_runtime_state_before_retry".to_string()]
+        } else {
+            Vec::new()
+        };
+        if let Err(err) = store.append_tool_result_for_call(
+            &context.session_id,
+            &context.runtime_turn_id,
+            &tool.id,
+            &tool.name,
+            status,
+            tool.input.clone(),
+            serde_json::json!({ "content": content, "error": error }),
+            recommended_next_actions,
+        ) {
+            logging::warn(&format!(
+                "Failed to record tool result {} for runtime turn {}: {}",
+                tool.id, context.runtime_turn_id, err
+            ));
+        }
+    }
+
+    fn context_assembler_dynamic_system_context(&self) -> Option<&str> {
+        self.assembled_provider_context
+            .as_ref()
+            .and_then(|context| context.dynamic_system_context.as_deref())
+    }
+
+    fn record_provider_request_started(
+        &self,
+        tools: &[ToolDefinition],
+        messages: &[Message],
+        system_static: &str,
+        system_dynamic: &str,
+        resume_session_id: Option<&str>,
+    ) -> Option<String> {
+        let context = self.assembled_provider_context.as_ref()?;
+        let store = crate::memory::agent_runtime::AgentMemoryStore::new_default().ok()?;
+        let request_json = serde_json::json!({
+            "messageCount": messages.len(),
+            "messageHashes": message_hashes(messages),
+            "systemStaticHash": stable_hash_str(system_static),
+            "systemDynamicHash": stable_hash_str(system_dynamic),
+            "resumeSessionId": resume_session_id,
+        });
+        let provider_model = self
+            .session
+            .model
+            .clone()
+            .unwrap_or_else(|| self.provider.model());
+        match store.record_provider_request_started(
+            &context.session_id,
+            &context.runtime_turn_id,
+            &context.context_snapshot_id,
+            serde_json::to_value(tools).unwrap_or_else(|_| serde_json::json!([])),
+            self.session.provider_key.as_deref(),
+            Some(provider_model.as_str()),
+            request_json,
+        ) {
+            Ok(provider_request_id) => Some(provider_request_id),
+            Err(error) => {
+                logging::warn(&format!(
+                    "Failed to record provider request for context {}: {}",
+                    context.context_snapshot_id, error
+                ));
+                None
+            }
+        }
+    }
+
+    fn record_provider_request_finished(
+        &self,
+        provider_request_id: Option<&str>,
+        status: &str,
+        usage: Option<serde_json::Value>,
+        error: Option<serde_json::Value>,
+    ) {
+        let (Some(context), Some(provider_request_id)) = (
+            self.assembled_provider_context.as_ref(),
+            provider_request_id,
+        ) else {
+            return;
+        };
+        let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() else {
+            return;
+        };
+        if let Err(err) = store.record_provider_request_finished(
+            &context.session_id,
+            &context.runtime_turn_id,
+            provider_request_id,
+            status,
+            usage,
+            error,
+        ) {
+            logging::warn(&format!(
+                "Failed to finish provider request {}: {}",
+                provider_request_id, err
+            ));
+        }
     }
 
     fn record_client_cache_request(&mut self, messages: &[Message]) {
@@ -689,6 +1552,26 @@ impl Agent {
 
     pub fn session_id(&self) -> &str {
         &self.session.id
+    }
+
+    pub fn set_assembled_provider_context(&mut self, context: AssembledProviderContext) {
+        self.assembled_provider_context = Some(context);
+        self.assembled_provider_context_message_floor = None;
+        self.cache_tracker.reset();
+        self.locked_tools = None;
+    }
+
+    pub fn clear_assembled_provider_context(&mut self) {
+        self.assembled_provider_context = None;
+        self.assembled_provider_context_message_floor = None;
+    }
+
+    fn freeze_assembled_provider_context_message_floor(&mut self) {
+        if let Some(context) = self.assembled_provider_context.as_ref()
+            && self.assembled_provider_context_message_floor.is_none()
+        {
+            self.assembled_provider_context_message_floor = Some(context.messages.len());
+        }
     }
 
     pub(crate) fn set_working_dir_for_pending_context(&mut self, working_dir: Option<String>) {

@@ -3,6 +3,8 @@ import type {
   TerminalObservation,
   WorkbenchTabExtractTextRequest,
   WorkbenchTabExtractTextResult,
+  WorkbenchTabActivateRequest,
+  WorkbenchTabActivateResult,
   WorkbenchObservedTabDescriptor,
   WorkbenchTabObservationResult,
   WorkbenchTabReadRequest,
@@ -401,6 +403,21 @@ export const createWorkbenchObservationService = ({
     },
     listTabs: async (request?: WorkbenchTabsListRequest): Promise<WorkbenchTabsListResult> =>
       await registry.list(request),
+    activateTab: async (
+      request: WorkbenchTabActivateRequest
+    ): Promise<WorkbenchTabActivateResult> => {
+      const tab = await registry.get(request.tabId);
+      if (tab === null) {
+        throw createObservationError("tab_not_found", `Unknown tab: ${request.tabId}`);
+      }
+      const result = await rendererClient.activateLocalTab({ tabId: tab.tabId }).catch((error: unknown) => {
+        throw mapRendererError(error);
+      });
+      registry.clear();
+      readCache.clear();
+      extractCache.clear();
+      return result;
+    },
     readWorkspace: async (
       request?: WorkbenchWorkspaceReadRequest
     ): Promise<WorkbenchWorkspaceSnapshot> => await readVisibleTabs(service, request),

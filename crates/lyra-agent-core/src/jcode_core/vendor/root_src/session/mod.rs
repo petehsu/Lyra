@@ -35,25 +35,22 @@ pub use render::{
     has_rendered_images, render_images, render_messages, render_messages_and_images,
     render_messages_and_images_with_compacted_history, summarize_tool_calls,
 };
+pub use storage_paths::session_exists;
+#[cfg(any(test, feature = "legacy-session-json"))]
 pub(crate) use storage_paths::session_journal_path_from_snapshot;
 #[cfg(test)]
 pub(crate) use storage_paths::session_path_in_dir;
 use storage_paths::{estimate_json_bytes, persist_vector_mode_label};
-pub use storage_paths::{session_exists, session_journal_path, session_path};
+#[cfg(any(test, feature = "legacy-session-json"))]
+pub use storage_paths::{session_journal_path, session_path};
 
 fn stored_messages_to_messages(messages: &[StoredMessage]) -> Vec<Message> {
     messages.iter().map(StoredMessage::to_message).collect()
 }
 
 fn is_internal_system_reminder_message(message: &StoredMessage) -> bool {
-    message
-        .content
-        .iter()
-        .find_map(|block| match block {
-            ContentBlock::Text { text, .. } => Some(text.trim_start()),
-            _ => None,
-        })
-        .is_some_and(|text| text.starts_with("<system-reminder>"))
+    let _ = message;
+    false
 }
 
 fn is_visible_conversation_message(message: &StoredMessage) -> bool {
@@ -844,31 +841,7 @@ impl Session {
     /// transcript item for new sessions. Existing non-empty sessions are left
     /// untouched so their historical context is never rewritten with newer state.
     pub fn ensure_initial_session_context_message(&mut self) -> bool {
-        if !self.messages.is_empty() || self.has_session_context_message() {
-            return false;
-        }
-
-        // Capture the cwd at the moment the immutable session-context message is
-        // first inserted. A Session may be constructed before CLI startup, TUI
-        // launch, or tests finish changing the process cwd; using the older
-        // constructor snapshot here can produce a stale "Working directory" and
-        // git status in the model-visible context.
-        if let Some(current_dir) = current_working_dir_string() {
-            self.working_dir = Some(current_dir);
-        }
-
-        let context =
-            crate::prompt::build_session_context(self.working_dir.as_deref().map(Path::new));
-        let wrapped = format!("<system-reminder>\n{}\n</system-reminder>", context.trim());
-        self.add_message_with_display_role(
-            Role::User,
-            vec![ContentBlock::Text {
-                text: wrapped,
-                cache_control: None,
-            }],
-            Some(StoredDisplayRole::System),
-        );
-        true
+        false
     }
 
     /// Refresh the initial immutable session-context message if the session has
@@ -876,36 +849,6 @@ impl Session {
     /// startup where the server creates an Agent before the subscribing client
     /// sends the terminal working directory that tools will use.
     pub fn refresh_initial_session_context_message(&mut self) -> bool {
-        if self.messages.iter().any(is_visible_conversation_message) {
-            return false;
-        }
-
-        let Some(message) = self.messages.iter_mut().find(|message| {
-            message.content.iter().any(|block| match block {
-                ContentBlock::Text { text, .. } => text.starts_with(SESSION_CONTEXT_PREFIX),
-                _ => false,
-            })
-        }) else {
-            return false;
-        };
-
-        let context =
-            crate::prompt::build_session_context(self.working_dir.as_deref().map(Path::new));
-        let wrapped = format!("<system-reminder>\n{}\n</system-reminder>", context.trim());
-        for block in &mut message.content {
-            if let ContentBlock::Text { text, .. } = block
-                && text.starts_with(SESSION_CONTEXT_PREFIX)
-            {
-                if *text == wrapped {
-                    return false;
-                }
-                *text = wrapped;
-                self.mark_memory_profile_dirty();
-                self.mark_messages_full_dirty();
-                return true;
-            }
-        }
-
         false
     }
 

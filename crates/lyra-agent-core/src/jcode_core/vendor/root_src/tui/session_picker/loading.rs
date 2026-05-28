@@ -618,10 +618,8 @@ fn value_first_text(value: &serde_json::Value) -> Option<&str> {
 
 #[cfg(test)]
 fn message_value_is_internal_system_reminder(message: &serde_json::Value) -> bool {
-    message
-        .get("content")
-        .and_then(value_first_text)
-        .is_some_and(|text| text.trim_start().starts_with("<system-reminder>"))
+    let _ = message;
+    false
 }
 
 #[cfg(test)]
@@ -1066,17 +1064,13 @@ fn summary_message_is_visible_conversation(message: &SessionMessageSummary) -> b
 }
 
 fn raw_content_starts_with_system_reminder(raw: &RawValue) -> bool {
-    let raw = raw.get().trim_start();
-    json_string_raw_starts_with_system_reminder(raw)
-        || first_text_field_raw_starts_with_system_reminder(raw)
+    let _ = raw;
+    false
 }
 
 fn json_string_raw_starts_with_system_reminder(raw: &str) -> bool {
-    let Some(rest) = raw.strip_prefix('"') else {
-        return false;
-    };
-
-    rest.trim_start().starts_with("<system-reminder>")
+    let _ = raw;
+    false
 }
 
 fn first_text_field_raw_starts_with_system_reminder(raw: &str) -> bool {
@@ -1270,6 +1264,234 @@ pub(super) fn crashed_sessions_from_all_sessions(
     })
 }
 
+fn parse_memory_timestamp(value: &str) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|timestamp| timestamp.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|_| chrono::Utc::now())
+}
+
+fn memory_status_to_picker_status(
+    status: &crate::memory::agent_runtime::SessionStatus,
+) -> SessionStatus {
+    match status {
+        crate::memory::agent_runtime::SessionStatus::Running
+        | crate::memory::agent_runtime::SessionStatus::AwaitingUser
+        | crate::memory::agent_runtime::SessionStatus::Recovering => SessionStatus::Active,
+        crate::memory::agent_runtime::SessionStatus::Interrupted => SessionStatus::Crashed {
+            message: Some("runtime turn interrupted".to_string()),
+        },
+        crate::memory::agent_runtime::SessionStatus::Failed => SessionStatus::Error {
+            message: "runtime turn failed".to_string(),
+        },
+        crate::memory::agent_runtime::SessionStatus::Archived
+        | crate::memory::agent_runtime::SessionStatus::DeletedByUser
+        | crate::memory::agent_runtime::SessionStatus::Idle => SessionStatus::Closed,
+        crate::memory::agent_runtime::SessionStatus::Active => SessionStatus::Active,
+    }
+}
+
+fn preview_message_from_memory_item(
+    item: &crate::memory::agent_runtime::TimelineProjectionItem,
+) -> Option<PreviewMessage> {
+    let text = item
+        .payload_json
+        .get("text")
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            item.payload_json
+                .get("output")
+                .map(|output| {
+                    output
+                        .get("content")
+                        .and_then(serde_json::Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| output.to_string())
+                })
+        })?;
+    let role = match item.role {
+        crate::memory::agent_runtime::EventRole::User => "user",
+        crate::memory::agent_runtime::EventRole::Assistant => "assistant",
+        crate::memory::agent_runtime::EventRole::Tool => "tool",
+        crate::memory::agent_runtime::EventRole::Runtime => "runtime",
+        crate::memory::agent_runtime::EventRole::System => "system",
+    };
+    Some(PreviewMessage {
+        role: role.to_string(),
+        content: text,
+        tool_calls: Vec::new(),
+        tool_data: None,
+        timestamp: Some(parse_memory_timestamp(&item.created_at_iso)),
+    })
+}
+
+fn load_memory_jcode_sessions(scan_limit: usize) -> Result<Vec<SessionInfo>> {
+    let store = crate::memory::agent_runtime::AgentMemoryStore::new_default()?;
+    let mut sessions = Vec::new();
+    for record in store.list_sessions()?.into_iter().take(scan_limit) {
+        let snapshot = store.snapshot(&record.session_id).ok();
+        let messages_preview = snapshot
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .timeline_projection
+                    .iter()
+                    .filter_map(preview_message_from_memory_item)
+                    .rev()
+                    .take(20)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let message_count = snapshot
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .timeline_projection
+                    .iter()
+                    .filter(|item| {
+                        matches!(
+                            item.role,
+                            crate::memory::agent_runtime::EventRole::User
+                                | crate::memory::agent_runtime::EventRole::Assistant
+                        )
+                    })
+                    .count()
+            })
+            .unwrap_or(messages_preview.len());
+        let user_message_count = snapshot
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .timeline_projection
+                    .iter()
+                    .filter(|item| item.role == crate::memory::agent_runtime::EventRole::User)
+                    .count()
+            })
+            .unwrap_or_default();
+        let assistant_message_count = snapshot
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .timeline_projection
+                    .iter()
+                    .filter(|item| {
+                        item.role == crate::memory::agent_runtime::EventRole::Assistant
+                    })
+                    .count()
+            })
+            .unwrap_or_default();
+        let short_name = record
+            .working_dir
+            .as_deref()
+            .and_then(|dir| Path::new(dir).file_name())
+            .and_then(|name| name.to_str())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| {
+                extract_session_name(&record.session_id)
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| record.session_id.clone())
+            });
+        let title = if record.title.trim().is_empty() {
+            short_name.clone()
+        } else {
+            record.title.clone()
+        };
+        let search_index = build_search_index(
+            &record.session_id,
+            &short_name,
+            &title,
+            record.working_dir.as_deref(),
+            None,
+            &messages_preview,
+        );
+        let source = classify_session_source(
+            &record.session_id,
+            record.provider_key.as_deref(),
+            record.model.as_deref(),
+        );
+        sessions.push(SessionInfo {
+            id: record.session_id.clone(),
+            parent_id: None,
+            short_name: short_name.clone(),
+            icon: session_icon(&short_name).to_string(),
+            title,
+            message_count,
+            user_message_count,
+            assistant_message_count,
+            created_at: parse_memory_timestamp(&record.created_at_iso),
+            last_message_time: parse_memory_timestamp(&record.updated_at_iso),
+            last_active_at: Some(parse_memory_timestamp(&record.updated_at_iso)),
+            working_dir: record.working_dir,
+            model: record.model,
+            provider_key: record.provider_key,
+            is_canary: false,
+            is_debug: false,
+            saved: false,
+            save_label: None,
+            status: memory_status_to_picker_status(&record.status),
+            estimated_tokens: 0,
+            messages_preview,
+            search_index,
+            server_name: None,
+            server_icon: None,
+            source,
+            resume_target: ResumeTarget::JcodeSession {
+                session_id: record.session_id,
+            },
+            external_path: None,
+        });
+    }
+    Ok(sessions)
+}
+
+#[cfg(not(any(test, feature = "legacy-session-json")))]
+pub fn load_sessions() -> Result<Vec<SessionInfo>> {
+    let store = crate::memory::agent_runtime::AgentMemoryStore::new_default()?;
+    let sessions_root = store.root().join("sessions");
+    let scan_limit = session_scan_limit();
+
+    if let Ok(cache) = session_list_cache().lock()
+        && let Some(entry) = cache.as_ref()
+        && entry.sessions_dir == sessions_root
+        && entry.scan_limit == scan_limit
+        && entry.loaded_at.elapsed() <= SESSION_LIST_CACHE_TTL
+    {
+        return Ok(entry.sessions.clone());
+    }
+
+    let mut sessions = load_memory_jcode_sessions(scan_limit)?;
+    let external_sessions = std::thread::scope(|scope| {
+        let claude_handle = scope.spawn(|| load_external_claude_code_sessions(scan_limit));
+        let codex_handle = scope.spawn(|| load_external_codex_sessions(scan_limit));
+        let pi_handle = scope.spawn(|| load_external_pi_sessions(scan_limit));
+        let opencode_handle = scope.spawn(|| load_external_opencode_sessions(scan_limit));
+
+        let mut external = Vec::new();
+        external.extend(claude_handle.join().unwrap_or_default());
+        external.extend(codex_handle.join().unwrap_or_default());
+        external.extend(pi_handle.join().unwrap_or_default());
+        external.extend(opencode_handle.join().unwrap_or_default());
+        external
+    });
+    sessions.extend(external_sessions);
+    sessions.sort_by(|a, b| b.last_message_time.cmp(&a.last_message_time));
+
+    if let Ok(mut cache) = session_list_cache().lock() {
+        *cache = Some(SessionListCacheEntry {
+            loaded_at: Instant::now(),
+            sessions_dir: sessions_root,
+            scan_limit,
+            sessions: sessions.clone(),
+        });
+    }
+
+    Ok(sessions)
+}
+
+#[cfg(any(test, feature = "legacy-session-json"))]
 pub fn load_sessions() -> Result<Vec<SessionInfo>> {
     let sessions_dir = storage::jcode_dir()?.join("sessions");
     let scan_limit = session_scan_limit();

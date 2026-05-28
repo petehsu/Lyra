@@ -43,6 +43,32 @@ const snapshotWithConversation: AgentSessionSnapshot = {
   }]
 };
 
+const memorySnapshot = (
+  timelineProjection: NonNullable<AgentSessionSnapshot["memory"]>["timelineProjection"] = []
+): NonNullable<AgentSessionSnapshot["memory"]> => ({
+  session: {
+    sessionId: "session-1",
+    title: "Lyra Agent",
+    workingDir: "/",
+    providerKey: null,
+    model: null,
+    status: "idle",
+    schemaVersion: 1,
+    createdAtMs: 1_747_094_400_000,
+    createdAtIso: "2026-05-13T00:00:00.000Z",
+    updatedAtMs: 1_747_094_400_000,
+    updatedAtIso: "2026-05-13T00:00:00.000Z"
+  },
+  runtimeTurns: [],
+  timelineProjection,
+  activeTodos: [],
+  activeBrowserTargets: [],
+  activeClarification: null,
+  status: "idle",
+  providerLabel: null,
+  modelLabel: null
+});
+
 const jcodeModels = {
   sessionId: "session-1",
   currentModel: "mimo-v2.5-pro",
@@ -298,7 +324,7 @@ describe("AiPanelSurface", () => {
     expect(screen.queryByLabelText("刷新模型列表")).not.toBeInTheDocument();
   });
 
-  test("toggles visible browser following from the Agent header", async () => {
+  test("toggles visible browser following from the composer actions", async () => {
     const { api, readBrowserFollowMode, updateBrowserFollowMode } = createDesktopApi();
     renderPanel(api);
 
@@ -333,6 +359,159 @@ describe("AiPanelSurface", () => {
       expect(api.agent?.sendTurn).toHaveBeenCalledWith({
         sessionId: "session-1",
         text: "Build the slice"
+      });
+    });
+  });
+
+  test("keeps newly appended user messages visible when memory projection is stale", async () => {
+    const { api, emit, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      messages: [{
+        id: "message-old-user",
+        role: "user",
+        text: "First request",
+        createdAt: "2026-05-13T00:00:01.000Z"
+      }],
+      memory: memorySnapshot([{
+        eventId: "message-old-user",
+        runtimeTurnId: "turn-old",
+        kind: "user_message",
+        role: "user",
+        payloadJson: { text: "First request" },
+        createdAtMs: 1_747_094_401_000,
+        createdAtIso: "2026-05-13T00:00:01.000Z"
+      }])
+    });
+    renderPanel(api);
+
+    expect(await screen.findByText("First request")).toBeInTheDocument();
+
+    act(() => {
+      emit({
+        kind: "messageAppended",
+        sessionId: "session-1",
+        message: {
+          id: "message-new-user",
+          role: "user",
+          text: "Second request",
+          createdAt: "2026-05-13T00:00:05.000Z"
+        }
+      });
+    });
+
+    expect(await screen.findByText("Second request")).toBeInTheDocument();
+  });
+
+  test("renders orphan tool records in chronological position instead of at the end", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      messages: [
+        {
+          id: "message-user-1",
+          role: "user",
+          text: "Find the file",
+          createdAt: "2026-05-13T00:00:01.000Z"
+        },
+        {
+          id: "message-agent-1",
+          role: "assistant",
+          text: "I found it.",
+          createdAt: "2026-05-13T00:00:04.000Z"
+        },
+        {
+          id: "message-user-2",
+          role: "user",
+          text: "Open it next",
+          createdAt: "2026-05-13T00:00:05.000Z"
+        }
+      ],
+      tools: [
+        {
+          id: "tool-search",
+          name: "search.files",
+          label: "Searching workspace",
+          status: "running",
+          input: { query: "target.png" },
+          startedAt: "2026-05-13T00:00:02.000Z"
+        },
+        {
+          id: "tool-search",
+          name: "search.files",
+          label: "Searched workspace",
+          status: "completed",
+          input: { query: "target.png" },
+          output: { content: "target.png" },
+          startedAt: "2026-05-13T00:00:02.000Z",
+          finishedAt: "2026-05-13T00:00:03.000Z"
+        }
+      ]
+    });
+    renderPanel(api);
+
+    const tool = await screen.findByText("Searched workspace");
+    const agentText = screen.getByText("I found it.");
+    const nextUserText = screen.getByText("Open it next");
+
+    expect(tool.compareDocumentPosition(agentText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(agentText.compareDocumentPosition(nextUserText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText("Running...")).not.toBeInTheDocument();
+  });
+
+  test("keeps an Agent responding indicator visible while the turn is cancellable", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      messages: [{
+        id: "message-agent-1",
+        role: "assistant",
+        text: "I am checking the page.",
+        blocks: [{
+          type: "text",
+          id: "text-0",
+          text: "I am checking the page."
+        }],
+        createdAt: "2026-05-13T00:00:01.000Z"
+      }],
+      turnStatus: "running",
+      activeTurnId: "turn-1",
+      follow: { running: true, activity: "calling_model" }
+    });
+    renderPanel(api);
+
+    expect(await screen.findByText("I am checking the page.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Pause")).toBeInTheDocument();
+    expect(screen.getByLabelText("Agent is responding")).toBeInTheDocument();
+  });
+
+  test("uses the composer primary button for pause only while running with no draft", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      follow: { running: true, activity: "Streaming" },
+      turnStatus: "running"
+    });
+    renderPanel(api);
+
+    await waitFor(() => {
+      expect(api.agent?.readSession).toHaveBeenCalled();
+    });
+    fireEvent.click(await screen.findByLabelText("Pause"));
+    await waitFor(() => {
+      expect(api.agent?.cancelTurn).toHaveBeenCalledWith({ sessionId: "session-1" });
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Send a message to Agent"), {
+      target: { value: "Queue this while running" }
+    });
+    expect(screen.queryByLabelText("Pause")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Send"));
+
+    await waitFor(() => {
+      expect(api.agent?.sendTurn).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        text: "Queue this while running"
       });
     });
   });
@@ -1232,7 +1411,7 @@ describe("AiPanelSurface", () => {
     expect(screen.queryByLabelText("New session")).not.toBeInTheDocument();
   });
 
-  test("renders streaming messages, tool activity, and cancel", async () => {
+  test("renders streaming messages, tool activity, and pause", async () => {
     const { api, emit } = createDesktopApi();
     renderPanel(api);
 
@@ -1278,8 +1457,10 @@ describe("AiPanelSurface", () => {
     expect(await screen.findByText("Streaming response")).toBeInTheDocument();
     expect(screen.queryByText("2026-05-13T00:00:01.000Z")).not.toBeInTheDocument();
     expect(screen.getAllByText("Searching workspace").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByLabelText("Cancel turn"));
-    expect(api.agent?.cancelTurn).toHaveBeenCalledWith({ sessionId: "session-1" });
+    fireEvent.click(screen.getByLabelText("Pause"));
+    await waitFor(() => {
+      expect(api.agent?.cancelTurn).toHaveBeenCalledWith({ sessionId: "session-1" });
+    });
   });
 
   test("renders structured clarification events as a blocking question panel", async () => {
@@ -1550,7 +1731,7 @@ describe("AiPanelSurface", () => {
       .toBe(true);
   });
 
-  test("renders assistant text and tools in the captured event order", async () => {
+  test("renders assistant text before and after tools while hiding only placeholders", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
       ...snapshot,
@@ -1601,13 +1782,57 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    const intro = await screen.findByText("Let me inspect your desktop.");
-    const tool = screen.getByText("Read");
+    const tool = await screen.findByText("Read");
+    const intro = screen.getByText("Let me inspect your desktop.");
     const outro = screen.getByText("I found a few folders.");
     expect(Boolean(intro.compareDocumentPosition(tool) & Node.DOCUMENT_POSITION_FOLLOWING))
       .toBe(true);
     expect(Boolean(tool.compareDocumentPosition(outro) & Node.DOCUMENT_POSITION_FOLLOWING))
       .toBe(true);
+  });
+
+  test("does not expose assistant ellipsis text when it only leads into a tool call", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      messages: [
+        {
+          id: "assistant-tool-step",
+          role: "assistant",
+          text: "...",
+          blocks: [
+            {
+              type: "text",
+              id: "text-0",
+              text: "..."
+            },
+            {
+              type: "tool",
+              id: "tool-tool-1",
+              toolId: "tool-1"
+            }
+          ],
+          createdAt: "2026-05-13T00:00:03.000Z"
+        }
+      ],
+      tools: [
+        {
+          id: "tool-1",
+          name: "lyra_lumen",
+          label: "Map page",
+          status: "completed",
+          input: { action: "map" },
+          output: { content: "Observation", error: null },
+          startedAt: "2026-05-13T00:00:03.000Z",
+          finishedAt: "2026-05-13T00:00:03.500Z"
+        }
+      ],
+      turnStatus: "finished"
+    });
+    renderPanel(api);
+
+    expect(await screen.findByText("Agent activity")).toBeInTheDocument();
+    expect(screen.queryByText("...")).not.toBeInTheDocument();
   });
 
   test("rolls back files and conversation from the user message undo action", async () => {

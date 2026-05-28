@@ -384,6 +384,10 @@ describe("Agent IPC bridge", () => {
         hasMore: false,
         extractionMethod: "test"
       })),
+      activateTab: vi.fn(async () => ({
+        tabId: "settings-1",
+        activeTabId: "settings-1"
+      })),
       captureVisual: vi.fn()
     } as unknown as WorkbenchObservationService;
 
@@ -420,6 +424,10 @@ describe("Agent IPC bridge", () => {
     await expect(registered.get("workbench.extractTabText")?.({ tabId: "settings-1" })).resolves.toEqual(
       expect.objectContaining({ text: "settings" })
     );
+    await expect(registered.get("workbench.activateTab")?.({ tabId: "settings-1" })).resolves.toEqual({
+      tabId: "settings-1",
+      activeTabId: "settings-1"
+    });
 
     bridge.dispose();
   });
@@ -550,9 +558,9 @@ describe("Agent IPC bridge", () => {
         strategy: "picker",
         url: "https://example.com",
         title: "Example",
-        elements: [],
+        elements: [] as Array<Record<string, unknown>>,
         activeElementId: null,
-        focusOrder: []
+        focusOrder: [] as number[]
       })),
       actOnAgentElement: vi.fn(async () => ({
         ok: true,
@@ -742,6 +750,94 @@ describe("Agent IPC bridge", () => {
       targetMode: "isolated"
     });
 
+    browserBridge.observeAgentPage.mockResolvedValueOnce({
+      ok: true,
+      kind: "lyraLumenMap",
+      tabId: "page-1",
+      targetMode: "isolated",
+      observationId: "obs-before-reveal",
+      strategy: "hybrid",
+      url: "https://example.com",
+      title: "Example",
+      elements: [
+        {
+          id: 3,
+          frameTreeNodeId: 1,
+          tagName: "button",
+          role: "button",
+          label: "More",
+          selectorPreview: "button.more",
+          bounds: { x: 20, y: 20, width: 30, height: 30 },
+          focusable: true,
+          disabled: false,
+          editable: false
+        }
+      ],
+      activeElementId: null,
+      focusOrder: [3]
+    });
+    browserBridge.observeAgentPage.mockResolvedValueOnce({
+      ok: true,
+      kind: "lyraLumenMap",
+      tabId: "page-1",
+      targetMode: "isolated",
+      observationId: "obs-after-reveal",
+      strategy: "hybrid",
+      url: "https://example.com",
+      title: "Example",
+      elements: [
+        {
+          id: 3,
+          frameTreeNodeId: 1,
+          tagName: "button",
+          role: "button",
+          label: "More",
+          selectorPreview: "button.more",
+          bounds: { x: 20, y: 20, width: 30, height: 30 },
+          focusable: true,
+          disabled: false,
+          editable: false
+        },
+        {
+          id: 8,
+          frameTreeNodeId: 1,
+          tagName: "button",
+          role: "menuitem",
+          label: "Delete",
+          selectorPreview: "[role=menuitem]",
+          bounds: { x: 24, y: 58, width: 80, height: 32 },
+          focusable: true,
+          disabled: false,
+          editable: false
+        }
+      ],
+      activeElementId: null,
+      focusOrder: [3, 8]
+    });
+    await expect(
+      registered.get("lyraLumen.reveal")?.({
+        elementId: 3,
+        idleMs: 80
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenActionResult",
+      revealed: true,
+      beforeObservationId: "obs-before-reveal",
+      afterObservationId: "obs-after-reveal",
+      revealedElements: [
+        expect.objectContaining({
+          id: 8,
+          label: "Delete"
+        })
+      ],
+      nextRecommendedAction: "lyra_lumen.act"
+    });
+    expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
+      elementId: 3,
+      interaction: "hover",
+      targetMode: "isolated"
+    });
+
     await expect(
       registered.get("lyraLumen.type")?.({ text: "hello focused editor" })
     ).resolves.toMatchObject({
@@ -773,6 +869,41 @@ describe("Agent IPC bridge", () => {
       kind: "lyraLumenRead",
       strategy: "focus",
       content: "recent page tail"
+    });
+    expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
+      strategy: "focus",
+      targetMode: "isolated"
+    });
+
+    browserBridge.readAgentPage.mockClear();
+    browserBridge.readAgentPage.mockResolvedValueOnce({
+      tabId: "page-1",
+      targetMode: "isolated",
+      scope: "main",
+      text: "Doubao reply complete",
+      content: "Doubao reply complete",
+      truncated: false,
+      startChar: 0,
+      endChar: 21,
+      totalChars: 21,
+      hasMore: false,
+      extractionMethod: "lumen:recent-text-tail"
+    });
+    await expect(
+      registered.get("lyraLumen.wait")?.({
+        until: "textContains",
+        text: "reply",
+        timeoutMs: 250,
+        idleMs: 20
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenWait",
+      tabId: "page-1",
+      targetMode: "isolated",
+      until: "textContains",
+      matched: true,
+      content: "Doubao reply complete",
+      nextRecommendedAction: "lyra_lumen.map"
     });
     expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "focus",
@@ -876,9 +1007,9 @@ describe("Agent IPC bridge", () => {
         strategy: "picker",
         url: "about:blank",
         title: "Lyra Lumen",
-        elements: [],
+        elements: [] as Array<Record<string, unknown>>,
         activeElementId: null,
-        focusOrder: []
+        focusOrder: [] as number[]
       }))
     };
 

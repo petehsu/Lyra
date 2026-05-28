@@ -207,9 +207,9 @@ export const WORKBENCH_FOUNDATION_TOKENS = {
   "--lyra-shadow-elevated-lg": "0 12px 34px rgba(18, 22, 32, 0.26)",
   "--lyra-shadow-elevated": "var(--lyra-shadow-elevated-sm)",
 
-  "--lyra-backdrop-blur-sm": "blur(10px) saturate(1.08)",
-  "--lyra-backdrop-blur-md": "blur(14px) saturate(1.06)",
-  "--lyra-backdrop-blur-lg": "blur(22px) saturate(1.2) contrast(1.02)",
+  "--lyra-backdrop-blur-sm": "none",
+  "--lyra-backdrop-blur-md": "none",
+  "--lyra-backdrop-blur-lg": "none",
 
   "--lyra-motion-fast": "120ms ease",
   "--lyra-motion-standard": "190ms cubic-bezier(0.22, 0.82, 0.24, 1)",

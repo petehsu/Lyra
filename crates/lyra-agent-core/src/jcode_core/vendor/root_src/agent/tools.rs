@@ -4,46 +4,21 @@ use crate::tool::ToolOutput;
 pub(super) fn tool_output_to_content_blocks(
     tool_use_id: String,
     output: ToolOutput,
-    include_images: bool,
+    _include_images: bool,
 ) -> Vec<ContentBlock> {
     let mut blocks = vec![ContentBlock::ToolResult {
         tool_use_id,
         content: output.output,
         is_error: None,
     }];
-    let image_count = output.images.len();
-    if !include_images && image_count > 0 {
-        let labels = output
-            .images
-            .iter()
-            .filter_map(|image| image.label.as_deref())
-            .filter(|label| !label.trim().is_empty())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let detail = if labels.is_empty() {
-            format!(
-                "[{} image attachment(s) omitted because the active model/provider does not currently support image input.]",
-                image_count
-            )
-        } else {
-            format!(
-                "[{} image attachment(s) omitted because the active model/provider does not currently support image input: {}]",
-                image_count, labels
-            )
-        };
-        blocks.push(ContentBlock::Text {
-            text: detail,
-            cache_control: None,
-        });
-        return blocks;
-    }
 
     for img in output.images {
+        let label = img.label.filter(|label| !label.trim().is_empty());
         blocks.push(ContentBlock::Image {
             media_type: img.media_type,
             data: img.data,
         });
-        if let Some(label) = img.label.filter(|label| !label.trim().is_empty()) {
+        if let Some(label) = label {
             blocks.push(ContentBlock::Text {
                 text: format!(
                     "[Attached image associated with the preceding tool result: {}]",

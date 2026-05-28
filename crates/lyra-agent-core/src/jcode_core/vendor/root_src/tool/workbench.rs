@@ -13,7 +13,7 @@ impl WorkbenchTool {
 }
 
 fn workbench_tool_description_text() -> &'static str {
-    "Inspect Lyra Workbench tabs. Use list_tabs first to see all open workspace tabs, then read_tab or extract_tab_text only for the specific tab whose details are needed. This includes browser pages, file editors, file managers, terminals, search results, settings, and other workspace apps."
+    "Inspect and activate Lyra Workbench tabs. Use list_tabs first to see all open workspace tabs, activate_tab to switch to a tab by tab_id, then read_tab or extract_tab_text only for the specific tab whose details are needed. This includes browser pages, file editors, file managers, terminals, search results, settings, and other workspace apps."
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,12 +61,12 @@ impl Tool for WorkbenchTool {
                     "intent": super::intent_schema_property(),
                     "action": {
                         "type": "string",
-                        "enum": ["list_tabs", "read_tab", "read_workspace", "extract_tab_text"],
-                        "description": "Use list_tabs first. Use read_tab for one tab summary/full details. Use read_workspace for currently visible tabs. Use extract_tab_text for paginated long text."
+                        "enum": ["list_tabs", "activate_tab", "read_tab", "read_workspace", "extract_tab_text"],
+                        "description": "Use list_tabs first. Use activate_tab with a tab_id to switch Workbench tabs. Use read_tab for one tab summary/full details. Use read_workspace for currently visible tabs. Use extract_tab_text for paginated long text."
                     },
                     "tab_id": {
                         "type": "string",
-                        "description": "Workspace tab id for read_tab or extract_tab_text."
+                        "description": "Workspace tab id for activate_tab, read_tab, or extract_tab_text. These ids are not Lyra Lumen element ids."
                     },
                     "scope": {
                         "type": "string",
@@ -137,6 +137,10 @@ fn workbench_request(input: &WorkbenchInput) -> Result<(&'static str, Value)> {
             params.insert("tabId".into(), json!(required_tab_id(input)?));
             apply_read_options(&mut params, input);
             Ok(("workbench.readTab", Value::Object(params)))
+        }
+        "activate_tab" => {
+            params.insert("tabId".into(), json!(required_tab_id(input)?));
+            Ok(("workbench.activateTab", Value::Object(params)))
         }
         "read_workspace" => {
             apply_workspace_options(&mut params, input);
@@ -213,6 +217,7 @@ fn apply_size_options(params: &mut Map<String, Value>, input: &WorkbenchInput) {
 fn render_workbench_output(action: &str, result: Value) -> ToolOutput {
     let body = match action {
         "list_tabs" => format_tab_list(&result),
+        "activate_tab" => format_tab_activation(&result),
         "extract_tab_text" => format_extracted_text(&result),
         "read_workspace" => format_workspace_snapshot(&result),
         "read_tab" => format_tab_observation(&result),
@@ -222,6 +227,15 @@ fn render_workbench_output(action: &str, result: Value) -> ToolOutput {
     ToolOutput::new(body)
         .with_title(format!("workbench {}", action))
         .with_metadata(result)
+}
+
+fn format_tab_activation(result: &Value) -> String {
+    let tab_id = result.get("tabId").and_then(Value::as_str).unwrap_or("-");
+    let active_tab_id = result
+        .get("activeTabId")
+        .and_then(Value::as_str)
+        .unwrap_or(tab_id);
+    format!("Activated Lyra Workbench tab {active_tab_id}.")
 }
 
 fn format_tab_list(result: &Value) -> String {
@@ -265,7 +279,7 @@ fn format_tab_list(result: &Value) -> String {
             .map(|value| format!(" | {}", value))
             .unwrap_or_default();
         lines.push(format!(
-            "- {} [{}] {} ({}) flags={}{}",
+            "- {} [tab_id: {}] {} ({}) flags={}{}",
             title,
             id,
             kind,
@@ -416,9 +430,30 @@ mod tests {
             .as_array()
             .expect("action enum");
         assert!(actions.contains(&json!("list_tabs")));
+        assert!(actions.contains(&json!("activate_tab")));
         assert!(actions.contains(&json!("read_tab")));
         assert!(actions.contains(&json!("read_workspace")));
         assert!(actions.contains(&json!("extract_tab_text")));
+    }
+
+    #[test]
+    fn activate_tab_maps_tab_id() {
+        let input = WorkbenchInput {
+            action: "activate_tab".to_string(),
+            tab_id: Some("browser-tab-75".to_string()),
+            scope: None,
+            detail: None,
+            include_visual: None,
+            include_unsupported: None,
+            max_chars: None,
+            max_entries: None,
+            max_bytes: None,
+            cursor: None,
+            pane_id: None,
+        };
+        let (method, payload) = workbench_request(&input).expect("request");
+        assert_eq!(method, "workbench.activateTab");
+        assert_eq!(payload["tabId"], "browser-tab-75");
     }
 
     #[test]

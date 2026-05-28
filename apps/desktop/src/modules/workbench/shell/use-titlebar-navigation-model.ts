@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
 
 import type { LyraDesktopApi, WorkbenchBrowserPageRuntimeState } from "../../../shared/desktop-bridge";
 import type { FileEditorAppState } from "../file-editor";
@@ -7,6 +7,39 @@ import type { WorkbenchOmniboxNonBrowserSubmitTarget } from "../preferences";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs";
 import { resolveWorkbenchNavigationInput } from "./navigation-input";
 import type { TitlebarNavigationPrimaryActionKind } from "./titlebar-navigation";
+
+export type OmniboxSuggestion = {
+  readonly value: string;
+  readonly type: "preset" | "search" | "history";
+  readonly label?: string;
+};
+
+const DEVELOPER_PRESETS: readonly OmniboxSuggestion[] = [
+  { value: "github.com", type: "preset", label: "GitHub" },
+  { value: "google.com", type: "preset", label: "Google" },
+  { value: "vercel.com", type: "preset", label: "Vercel" },
+  { value: "npmjs.com", type: "preset", label: "NPM Registry" },
+  { value: "aws.amazon.com", type: "preset", label: "AWS Console" },
+  { value: "claude.ai", type: "preset", label: "Anthropic Claude" },
+  { value: "chatgpt.com", type: "preset", label: "OpenAI ChatGPT" },
+  { value: "gemini.google.com", type: "preset", label: "Google Gemini" },
+  { value: "stackoverflow.com", type: "preset", label: "Stack Overflow" }
+];
+
+const fetchSearchSuggestions = async (query: string): Promise<string[]> => {
+  if (query.trim().length === 0) return [];
+  try {
+    const res = await fetch(`https://suggestqueries.google.com/complete/search?client=chrome&q=${encodeURIComponent(query)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (Array.isArray(data) && data.length >= 2 && Array.isArray(data[1])) {
+      return data[1].map(s => String(s));
+    }
+  } catch (err) {
+    console.error("Failed to fetch suggestions:", err);
+  }
+  return [];
+};
 
 type UseTitlebarNavigationModelOptions = {
   readonly desktopApi: LyraDesktopApi | null;
@@ -40,6 +73,13 @@ type TitlebarNavigationModel = {
   readonly onSubmit: () => Promise<void>;
   readonly onFocus: () => void;
   readonly onBlur: () => void;
+
+  // New autocomplete additions:
+  readonly suggestions: readonly OmniboxSuggestion[];
+  readonly selectedIndex: number;
+  readonly showSuggestions: boolean;
+  readonly onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  readonly onSuggestionClick: (suggestion: OmniboxSuggestion) => void;
 };
 
 const isBrowserLikeTab = (tab: WorkspaceTab | undefined): tab is WorkspaceTab =>
@@ -97,6 +137,12 @@ export const useTitlebarNavigationModel = ({
 }: UseTitlebarNavigationModelOptions): TitlebarNavigationModel => {
   const [draftByTabId, setDraftByTabId] = useState<Readonly<Record<string, string>>>({});
 
+  // Autocomplete states
+  const [suggestions, setSuggestions] = useState<readonly OmniboxSuggestion[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+  const [sessionHistory, setSessionHistory] = useState<readonly string[]>([]);
+
   const contextualValue = useMemo(
     () =>
       getContextualValue({
@@ -127,6 +173,47 @@ export const useTitlebarNavigationModel = ({
     isBrowserLikeTab(activeTab) === false &&
     currentDraft === undefined &&
     contextualValue.trim().length > 0;
+
+  // Search Autocomplete Suggestion Fetching & Debouncing
+  useEffect(() => {
+    if (value.trim().length === 0) {
+      setSuggestions([]);
+      setSelectedIndex(-1);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      const searchSuggs = await fetchSearchSuggestions(value);
+
+      const matchedPresets = DEVELOPER_PRESETS.filter(
+        p => p.value.toLowerCase().includes(value.toLowerCase()) ||
+          (p.label && p.label.toLowerCase().includes(value.toLowerCase()))
+      );
+
+      const matchedHistory = sessionHistory
+        .filter(h => h.toLowerCase().includes(value.toLowerCase()))
+        .map(h => ({ value: h, type: "history" as const }));
+
+      const formattedSearchSuggs = searchSuggs.map(s => ({
+        value: s,
+        type: "search" as const
+      }));
+
+      const combined = [...matchedPresets, ...matchedHistory, ...formattedSearchSuggs];
+
+      const seen = new Set<string>();
+      const unique = combined.filter(item => {
+        if (seen.has(item.value)) return false;
+        seen.add(item.value);
+        return true;
+      }).slice(0, 7);
+
+      setSuggestions(unique);
+      setSelectedIndex(-1);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [value, sessionHistory]);
 
   const clearDraft = useCallback((tabId: string): void => {
     setDraftByTabId((current) => {
@@ -160,17 +247,11 @@ export const useTitlebarNavigationModel = ({
     });
   }, [activeTab, activeTabId, tabsModel]);
 
-  const onSubmit = useCallback(async (): Promise<void> => {
+  const executeResolution = useCallback(async (resolution: any) => {
     if (activeTab === undefined || activeTabId === null) {
       return;
     }
 
-    if (primaryActionKind === "reload") {
-      onReload();
-      return;
-    }
-
-    const resolution = await resolveWorkbenchNavigationInput(value, desktopApi);
     if (isBrowserLikeTab(activeTab)) {
       switch (resolution.kind) {
         case "empty":
@@ -181,6 +262,7 @@ export const useTitlebarNavigationModel = ({
             { kind: "page", address: resolution.address },
             { target: "active-tab" }
           );
+          setSessionHistory(curr => [...new Set([...curr, resolution.address])]);
           return;
         case "search":
           tabsModel.navigateResolvedInput(
@@ -211,6 +293,7 @@ export const useTitlebarNavigationModel = ({
                 : "new-tab"
           }
         );
+        setSessionHistory(curr => [...new Set([...curr, resolution.address])]);
         clearDraft(activeTabId);
         return;
       case "search":
@@ -238,17 +321,78 @@ export const useTitlebarNavigationModel = ({
     activeTab,
     activeTabId,
     clearDraft,
-    desktopApi,
     omniboxNonBrowserSubmitTarget,
     onOpenDirectoryPath,
     onOpenFilePath,
-    onReload,
+    tabsModel
+  ]);
+
+  const onSubmit = useCallback(async (): Promise<void> => {
+    if (activeTab === undefined || activeTabId === null) {
+      return;
+    }
+
+    if (primaryActionKind === "reload") {
+      onReload();
+      return;
+    }
+
+    setShowSuggestions(false);
+    const resolution = await resolveWorkbenchNavigationInput(value, desktopApi);
+    await executeResolution(resolution);
+  }, [
+    activeTab,
+    activeTabId,
+    desktopApi,
+    executeResolution,
     primaryActionKind,
-    tabsModel,
+    onReload,
     value
   ]);
 
+  const onSuggestionClick = useCallback(async (sug: OmniboxSuggestion) => {
+    onChange(sug.value);
+    setShowSuggestions(false);
+    const resolution = await resolveWorkbenchNavigationInput(sug.value, desktopApi);
+    await executeResolution(resolution);
+  }, [onChange, desktopApi, executeResolution]);
+
+  const onKeyDown = useCallback(
+    async (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!showSuggestions || suggestions.length === 0) {
+        return;
+      }
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSelectedIndex((curr) => (curr + 1 < suggestions.length ? curr + 1 : curr));
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSelectedIndex((curr) => (curr - 1 >= -1 ? curr - 1 : curr));
+      } else if (event.key === "Escape") {
+        setShowSuggestions(false);
+      } else if (event.key === "Enter") {
+        if (selectedIndex >= 0 && selectedIndex < suggestions.length) {
+          event.preventDefault();
+          const selected = suggestions[selectedIndex];
+          if (selected !== undefined) {
+            onChange(selected.value);
+            setShowSuggestions(false);
+            const resolution = await resolveWorkbenchNavigationInput(selected.value, desktopApi);
+            await executeResolution(resolution);
+          }
+        }
+      }
+    },
+    [showSuggestions, suggestions, selectedIndex, onChange, executeResolution, desktopApi]
+  );
+
   const onBlur = useCallback((): void => {
+    // Delay blur slightly to let suggestion click register first
+    setTimeout(() => {
+      setShowSuggestions(false);
+    }, 150);
+
     if (activeTab === undefined || activeTabId === null || isBrowserLikeTab(activeTab)) {
       return;
     }
@@ -267,7 +411,14 @@ export const useTitlebarNavigationModel = ({
     isContextualAddress,
     onChange,
     onSubmit,
-    onFocus: () => undefined,
-    onBlur
+    onFocus: () => setShowSuggestions(true),
+    onBlur,
+
+    // Autocomplete predictions integration
+    suggestions,
+    selectedIndex,
+    showSuggestions,
+    onKeyDown,
+    onSuggestionClick
   };
 };

@@ -6,7 +6,7 @@ const FALLBACK_APPEARANCE: WorkbenchBrowserElementPickerAppearance = {
     "linear-gradient(180deg, color-mix(in srgb, #ebebec 92%, transparent) 0%, color-mix(in srgb, #fafafa 88%, transparent) 100%)",
   surfaceBorder: "color-mix(in srgb, #d8d8da 42%, transparent)",
   surfaceShadow: "0 7px 22px color-mix(in srgb, #dcdcdd 18%, transparent)",
-  surfaceBackdropFilter: "blur(10px) saturate(1.08)",
+  surfaceBackdropFilter: "none",
   accentColor: "#7e8086",
   accentFill: "color-mix(in srgb, #7e8086 14%, transparent)",
   tagBackground: "color-mix(in srgb, #7e8086 12%, transparent)",
@@ -65,11 +65,7 @@ export const readElementPickerAppearance = (): WorkbenchBrowserElementPickerAppe
       `linear-gradient(180deg, color-mix(in srgb, ${bgSurface} 92%, transparent) 0%, color-mix(in srgb, ${bgEditor} 88%, transparent) 100%)`,
     surfaceBorder: `color-mix(in srgb, ${lineDefault} 42%, transparent)`,
     surfaceShadow: `0 7px 22px color-mix(in srgb, ${bgApp} 18%, transparent)`,
-    surfaceBackdropFilter: readVar(
-      styles,
-      "--lyra-backdrop-blur-sm",
-      FALLBACK_APPEARANCE.surfaceBackdropFilter
-    ),
+    surfaceBackdropFilter: "none",
     accentColor: textSecondary,
     accentFill: `color-mix(in srgb, ${textSecondary} 12%, transparent)`,
     tagBackground: `color-mix(in srgb, ${textSecondary} 10%, transparent)`,

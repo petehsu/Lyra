@@ -1,11 +1,23 @@
 import { useState, useRef, useEffect, type ChangeEvent, type FormEvent } from "react";
-import { ArrowUp, Camera, CircleAlert, Image as ImageIcon, Monitor, Plus, X } from "lucide-react";
+import {
+  ArrowUp,
+  Camera,
+  CircleAlert,
+  Crosshair,
+  Image as ImageIcon,
+  Monitor,
+  Pause,
+  Plus,
+  X
+} from "lucide-react";
 import { LyraListPicker } from "../../../../list-picker";
 import { t } from "../../core/i18n";
 import type { AgentImageAttachment, ComposerModelControls } from "../../core/types";
 
 const MIN_HEIGHT = 64;
 const MAX_HEIGHT = 200;
+const TOOLBAR_ICON_SIZE = 14;
+const TOOLBAR_ICON_STROKE_WIDTH = 2.1;
 
 const attachmentId = (prefix: string): string => {
   const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -43,6 +55,10 @@ export function Composer({
   modelControls,
   onOpenModelSettings,
   disabledReason,
+  isTurnRunning,
+  browserFollowModeEnabled,
+  onToggleBrowserFollowMode,
+  onCancelTurn,
 }: {
   onSend: (text: string, images?: readonly AgentImageAttachment[]) => Promise<void> | void;
   onCaptureBrowserScreenshot?: () => Promise<AgentImageAttachment | null>;
@@ -50,11 +66,17 @@ export function Composer({
   modelControls?: ComposerModelControls | null;
   onOpenModelSettings?: () => Promise<void>;
   disabledReason?: string | undefined;
+  isTurnRunning: boolean;
+  browserFollowModeEnabled: boolean;
+  onToggleBrowserFollowMode: (enabled: boolean) => Promise<void> | void;
+  onCancelTurn: () => Promise<void> | void;
 }) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<AgentImageAttachment[]>([]);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -118,6 +140,12 @@ export function Composer({
   }, [value]);
 
   const canSend = disabledReason === undefined && (value.trim().length > 0 || attachments.length > 0);
+  const hasDraft = value.trim().length > 0 || attachments.length > 0;
+  const showPauseButton = isTurnRunning && !hasDraft;
+  const primaryActionLabel = showPauseButton ? t("composer.pause") : t("composer.send");
+  const followLabel = browserFollowModeEnabled
+    ? t("composer.stopFollowingAgent")
+    : t("composer.followAgent");
   const configuredModels = (modelControls?.models ?? []).filter((model) => model.available);
   const selectedModel =
     configuredModels.find((model) => model.id === modelControls?.currentModel)
@@ -190,7 +218,7 @@ export function Composer({
             disabled={disabledReason !== undefined || attachmentBusy}
             onClick={() => setAttachmentMenuOpen((open) => !open)}
           >
-            <Plus size={16} strokeWidth={2} />
+            <Plus size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
           </button>
           {attachmentMenuOpen ? (
             <div className="composer-attach-menu" role="menu" aria-label={t("composer.attach")}>
@@ -199,7 +227,7 @@ export function Composer({
                 role="menuitem"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <ImageIcon size={14} strokeWidth={1.9} />
+                <ImageIcon size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
                 <span>{t("composer.attachImage")}</span>
               </button>
               <button
@@ -209,7 +237,7 @@ export function Composer({
                   void captureAttachment(onCaptureBrowserScreenshot);
                 }}
               >
-                <Camera size={14} strokeWidth={1.9} />
+                <Camera size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
                 <span>{t("composer.attachBrowserScreenshot")}</span>
               </button>
               <button
@@ -219,7 +247,7 @@ export function Composer({
                   void captureAttachment(onCaptureWindowScreenshot);
                 }}
               >
-                <Monitor size={14} strokeWidth={1.9} />
+                <Monitor size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
                 <span>{t("composer.attachWindowScreenshot")}</span>
               </button>
             </div>
@@ -253,7 +281,7 @@ export function Composer({
                   void (modelControls.openModelSettings?.() ?? onOpenModelSettings?.());
                 }}
               >
-                <CircleAlert size={13} strokeWidth={2} />
+                <CircleAlert size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
                 <span>{t("composer.configureModel")}</span>
               </button>
             )}
@@ -296,14 +324,46 @@ export function Composer({
             ) : null}
           </div>
         ) : null}
-        <button
-          type="submit"
-          className="composer-send"
-          disabled={!canSend}
-          aria-label={t("composer.send")}
-        >
-          <ArrowUp size={14} strokeWidth={2.4} />
-        </button>
+        <div className="composer-primary-actions">
+          <button
+            type="button"
+            className="composer-follow"
+            aria-label={followLabel}
+            aria-pressed={browserFollowModeEnabled}
+            title={followLabel}
+            data-active={browserFollowModeEnabled ? "true" : "false"}
+            disabled={followBusy}
+            onClick={() => {
+              if (followBusy) return;
+              setFollowBusy(true);
+              void Promise.resolve(onToggleBrowserFollowMode(!browserFollowModeEnabled))
+                .finally(() => setFollowBusy(false));
+            }}
+          >
+            <Crosshair size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
+          </button>
+          <button
+            type={showPauseButton ? "button" : "submit"}
+            className="composer-send"
+            data-mode={showPauseButton ? "pause" : "send"}
+            disabled={showPauseButton ? cancelBusy : !canSend}
+            aria-label={primaryActionLabel}
+            title={primaryActionLabel}
+            onClick={showPauseButton
+              ? () => {
+                  if (cancelBusy) return;
+                  setCancelBusy(true);
+                  void Promise.resolve(onCancelTurn()).finally(() => setCancelBusy(false));
+                }
+              : undefined}
+          >
+            {showPauseButton ? (
+              <Pause size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
+            ) : (
+              <ArrowUp size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
+            )}
+          </button>
+        </div>
       </div>
     </form>
   );

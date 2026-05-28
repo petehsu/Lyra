@@ -38,4 +38,4 @@ pub enum StoredReplayEventKind {
     },
 }
 
-pub(super) const SESSION_CONTEXT_PREFIX: &str = "<system-reminder>\n# Session Context";
+pub(super) const SESSION_CONTEXT_PREFIX: &str = "# Session Context";

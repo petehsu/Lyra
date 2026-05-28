@@ -19,9 +19,7 @@ fn sanitize_tool_id_alphanumeric_passthrough() {
 fn generated_image_visual_context_blocks_attach_safe_image() {
     let dir = tempfile::tempdir().expect("temp dir");
     let image_path = dir.path().join("generated.png");
-    ::image::RgbaImage::from_pixel(2, 1, ::image::Rgba([0, 255, 0, 255]))
-        .save(&image_path)
-        .expect("write png");
+    std::fs::write(&image_path, b"synthetic image bytes").expect("write image");
 
     let blocks = generated_image_visual_context_blocks(
         image_path.to_str().expect("utf8 path"),
@@ -34,8 +32,8 @@ fn generated_image_visual_context_blocks_attach_safe_image() {
     assert_eq!(blocks.len(), 2);
     match &blocks[0] {
         ContentBlock::Text { text, .. } => {
-            assert!(text.starts_with("<system-reminder>"));
-            assert!(text.contains("attached the image pixels as visual context"));
+            assert!(!text.contains("<system-reminder>"));
+            assert!(text.contains("attached the image pixels as structured visual context"));
             assert!(text.contains("a small green generated image"));
         }
         other => panic!("expected text reminder, got {other:?}"),

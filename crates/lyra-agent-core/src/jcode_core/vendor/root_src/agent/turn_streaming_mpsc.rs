@@ -19,7 +19,7 @@ impl Agent {
                     repaired
                 ));
             }
-            let (messages, compaction_event) = self.messages_for_provider();
+            let (messages, compaction_event) = self.provider_messages_from_context_assembler();
             if let Some(event) = compaction_event {
                 // Reset cache tracker and tool lock on compaction since the message history changes
                 self.cache_tracker.reset();
@@ -57,8 +57,13 @@ impl Agent {
                     }
                 })),
             );
-            // Use split prompt for better caching - static content cached, dynamic not
-            let split_prompt = self.build_system_prompt_split(None);
+            // Use split prompt for better caching - static content cached, dynamic not.
+            // Cross-session memory is dynamic runtime context, not a provider-visible
+            // synthetic user message.
+            let dynamic_memory_context = self
+                .context_assembler_dynamic_system_context()
+                .or_else(|| memory_pending.as_ref().map(|p| p.prompt.as_str()));
+            let split_prompt = self.build_system_prompt_split(dynamic_memory_context);
             self.log_prompt_prefix_accounting(&split_prompt, &tools);
 
             // Check for client-side cache violations before memory injection.
@@ -71,10 +76,6 @@ impl Agent {
             } else {
                 messages.iter().cloned().collect()
             };
-            let mut ephemeral_signature_messages = Vec::new();
-
-            // Inject memory as a user message at the end (preserves cache prefix)
-            let mut messages_with_memory: Vec<Message> = messages.iter().cloned().collect();
             if let Some(memory) = memory_pending.as_ref() {
                 let memory_count = memory.count.max(1);
                 let computed_age_ms = memory.computed_at.elapsed().as_millis() as u64;
@@ -91,27 +92,21 @@ impl Agent {
                     prompt_chars: memory.prompt.chars().count(),
                     computed_age_ms,
                 });
-                let memory_msg = Message::user(&format!(
-                    "<system-reminder>\n{}\n</system-reminder>",
-                    memory.prompt
-                ));
-                ephemeral_signature_messages.push(memory_msg.clone());
-                messages_with_memory.push(memory_msg);
             }
 
             logging::info(&format!(
                 "API call starting: {} messages, {} tools",
-                messages_with_memory.len(),
+                messages.len(),
                 tools.len()
             ));
             let api_start = Instant::now();
 
             let stamped;
             let send_messages: &[Message] = if crate::config::config().features.message_timestamps {
-                stamped = Message::with_timestamps(&messages_with_memory);
+                stamped = Message::with_timestamps(&messages);
                 &stamped
             } else {
-                &messages_with_memory
+                &messages
             };
             let provider = Arc::clone(&self.provider);
             let resume_session_id = self.provider_session_id.clone();
@@ -120,8 +115,15 @@ impl Agent {
                 &cache_signature_messages,
                 &tools,
                 &split_prompt.static_part,
-                &ephemeral_signature_messages,
+                &[],
             ));
+            let provider_request_id = self.record_provider_request_started(
+                &tools,
+                send_messages,
+                &split_prompt.static_part,
+                &split_prompt.dynamic_part,
+                resume_session_id.as_deref(),
+            );
             let mut keepalive = stream_keepalive_ticker();
             let mut stream = {
                 let mut complete_future = std::pin::pin!(provider.complete_split(
@@ -164,6 +166,12 @@ impl Agent {
                                         });
                                         continue;
                                     }
+                                    self.record_provider_request_finished(
+                                        provider_request_id.as_deref(),
+                                        "failed",
+                                        None,
+                                        Some(serde_json::json!({ "message": e.to_string() })),
+                                    );
                                     return Err(e);
                                 }
                             }
@@ -283,13 +291,9 @@ impl Agent {
                         }
                         if self.is_graceful_shutdown() {
                             logging::info(
-                                "Graceful shutdown during streaming - checkpointing partial response",
+                                "Graceful shutdown during streaming - recording typed interruption",
                             );
-                            let _ = event_tx.send(ServerEvent::TextDelta {
-                                text: "\n\n[generation interrupted - server reloading]".to_string(),
-                            });
-                            text_content
-                                .push_str("\n\n[generation interrupted - server reloading]");
+                            let _ = event_tx.send(ServerEvent::Interrupted);
                             break;
                         }
                     }
@@ -510,6 +514,15 @@ impl Agent {
                             });
                             break;
                         }
+                        self.record_provider_request_finished(
+                            provider_request_id.as_deref(),
+                            "failed",
+                            None,
+                            Some(serde_json::json!({
+                                "message": message,
+                                "retryAfterSecs": retry_after_secs
+                            })),
+                        );
                         return Err(StreamError::new(message, retry_after_secs).into());
                     }
                 }
@@ -555,6 +568,17 @@ impl Agent {
                 cache_read_input_tokens: usage_cache_read,
                 cache_creation_input_tokens: usage_cache_creation,
             };
+            self.record_provider_request_finished(
+                provider_request_id.as_deref(),
+                "success",
+                Some(serde_json::json!({
+                    "inputTokens": self.last_usage.input_tokens,
+                    "outputTokens": self.last_usage.output_tokens,
+                    "cacheReadInputTokens": self.last_usage.cache_read_input_tokens,
+                    "cacheCreationInputTokens": self.last_usage.cache_creation_input_tokens
+                })),
+                None,
+            );
 
             let had_tool_calls_before = !tool_calls.is_empty();
             self.recover_text_wrapped_tool_call(&mut text_content, &mut tool_calls);
@@ -629,9 +653,11 @@ impl Agent {
                 &mut tool_calls,
                 assistant_message_id.as_ref(),
             );
+            self.record_assistant_provider_event(&text_content, &tool_calls);
 
             if tool_calls.is_empty() && !generated_image_contexts.is_empty() {
                 for blocks in generated_image_contexts.drain(..) {
+                    self.record_user_context_provider_event(&blocks);
                     self.add_message(Role::User, blocks);
                 }
                 self.session.save()?;
@@ -676,11 +702,17 @@ impl Agent {
                     tool_calls.len()
                 ));
                 for tc in &tool_calls {
+                    self.record_tool_result_provider_event(
+                        tc,
+                        crate::memory::agent_runtime::ToolResultStatus::UnknownAfterRecovery,
+                        "Tool result unavailable because the runtime turn was interrupted by a server reload.".to_string(),
+                        Some("runtime_reload_interrupted".to_string()),
+                    );
                     self.add_message(
                         Role::User,
                         vec![ContentBlock::ToolResult {
                             tool_use_id: tc.id.clone(),
-                            content: "[Skipped - server reloading]".to_string(),
+                            content: "Tool result unavailable because the runtime turn was interrupted by a server reload.".to_string(),
                             is_error: Some(true),
                         }],
                     );
@@ -719,6 +751,12 @@ impl Agent {
                 if tool_index > 0 && self.has_urgent_interrupt() {
                     // Add tool_results for all remaining skipped tools to maintain valid history
                     for skipped_tc in &tool_calls[tool_index..] {
+                        self.record_tool_result_provider_event(
+                            skipped_tc,
+                            crate::memory::agent_runtime::ToolResultStatus::Cancelled,
+                            "[Skipped: user interrupted]".to_string(),
+                            Some("user_interrupted".to_string()),
+                        );
                         self.add_message(
                             Role::User,
                             vec![ContentBlock::ToolResult {
@@ -765,6 +803,12 @@ impl Agent {
                         output: error_msg.clone(),
                         error: Some(error_msg.clone()),
                     });
+                    self.record_tool_result_provider_event(
+                        tc,
+                        crate::memory::agent_runtime::ToolResultStatus::FailedRetryable,
+                        error_msg.clone(),
+                        Some(error_msg.clone()),
+                    );
                     self.add_message(
                         Role::User,
                         vec![ContentBlock::ToolResult {
@@ -784,6 +828,16 @@ impl Agent {
                 if let Some((sdk_content, sdk_is_error)) = sdk_tool_results.remove(&tc.id) {
                     // For native tools, ignore SDK errors and execute locally
                     if !(is_native_tool && sdk_is_error) {
+                        self.record_tool_result_provider_event(
+                            tc,
+                            if sdk_is_error {
+                                crate::memory::agent_runtime::ToolResultStatus::FailedRetryable
+                            } else {
+                                crate::memory::agent_runtime::ToolResultStatus::Success
+                            },
+                            sdk_content.clone(),
+                            sdk_is_error.then(|| "Tool error".to_string()),
+                        );
                         self.add_message(
                             Role::User,
                             vec![ContentBlock::ToolResult {
@@ -891,6 +945,12 @@ impl Agent {
                                 error: None,
                             });
 
+                            self.record_tool_result_provider_event(
+                                tc,
+                                crate::memory::agent_runtime::ToolResultStatus::Success,
+                                output.output.clone(),
+                                None,
+                            );
                             let blocks = tool_output_to_content_blocks(
                                 tc.id.clone(),
                                 output,
@@ -912,6 +972,12 @@ impl Agent {
                                 error: Some(error_msg.clone()),
                             });
 
+                            self.record_tool_result_provider_event(
+                                tc,
+                                crate::memory::agent_runtime::ToolResultStatus::FailedRetryable,
+                                error_msg.clone(),
+                                Some(error_msg.clone()),
+                            );
                             self.add_message_with_duration(
                                 Role::User,
                                 vec![ContentBlock::ToolResult {
@@ -938,10 +1004,10 @@ impl Agent {
                     // Use a non-error message so the conversation history is clean.
                     let is_selfdev_reload = tc.name == "selfdev";
                     let interrupted_msg = if is_selfdev_reload {
-                        "Reload initiated. Process restarting...".to_string()
+                        "Reload initiated; runtime turn state recorded for recovery.".to_string()
                     } else {
                         format!(
-                            "[Tool '{}' interrupted by server reload after {:.1}s]",
+                            "Tool '{}' interrupted by runtime reload after {:.1}s; recovery state recorded.",
                             tc.name,
                             tool_elapsed.as_secs_f64()
                         )
@@ -954,10 +1020,20 @@ impl Agent {
                         error: if is_selfdev_reload {
                             None
                         } else {
-                            Some("interrupted by reload".to_string())
+                            Some("runtime_reload_interrupted".to_string())
                         },
                     });
 
+                    self.record_tool_result_provider_event(
+                        tc,
+                        if is_selfdev_reload {
+                            crate::memory::agent_runtime::ToolResultStatus::SuccessPartial
+                        } else {
+                            crate::memory::agent_runtime::ToolResultStatus::UnknownAfterRecovery
+                        },
+                        interrupted_msg.clone(),
+                        (!is_selfdev_reload).then(|| "runtime_reload_interrupted".to_string()),
+                    );
                     self.add_message_with_duration(
                         Role::User,
                         vec![ContentBlock::ToolResult {
@@ -971,11 +1047,17 @@ impl Agent {
 
                     // Add results for any remaining tools too
                     for remaining_tc in &tool_calls[(tool_index + 1)..] {
+                        self.record_tool_result_provider_event(
+                            remaining_tc,
+                            crate::memory::agent_runtime::ToolResultStatus::UnknownAfterRecovery,
+                            "Tool result unavailable because the runtime turn was interrupted by a server reload.".to_string(),
+                            Some("runtime_reload_interrupted".to_string()),
+                        );
                         self.add_message(
                             Role::User,
                             vec![ContentBlock::ToolResult {
                                 tool_use_id: remaining_tc.id.clone(),
-                                content: "[Skipped - server reloading]".to_string(),
+                                content: "Tool result unavailable because the runtime turn was interrupted by a server reload.".to_string(),
                                 is_error: Some(true),
                             }],
                         );
@@ -1008,6 +1090,12 @@ impl Agent {
                         error: None,
                     });
 
+                    self.record_tool_result_provider_event(
+                        tc,
+                        crate::memory::agent_runtime::ToolResultStatus::SuccessPartial,
+                        bg_msg.clone(),
+                        None,
+                    );
                     self.add_message_with_duration(
                         Role::User,
                         vec![ContentBlock::ToolResult {
@@ -1033,6 +1121,7 @@ impl Agent {
 
             if !generated_image_contexts.is_empty() {
                 for blocks in generated_image_contexts.drain(..) {
+                    self.record_user_context_provider_event(&blocks);
                     self.add_message(Role::User, blocks);
                 }
                 self.session.save()?;

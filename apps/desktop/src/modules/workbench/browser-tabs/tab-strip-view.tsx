@@ -10,7 +10,10 @@ import {
   SquareTerminal,
   X
 } from "lucide-react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import {
+  type SyntheticEvent,
+  type MouseEvent as ReactMouseEvent
+} from "react";
 
 import {
   ChromeIconButton,
@@ -65,7 +68,21 @@ type BrowserTabStripControlsProps = Pick<
   | "onToggleStackedMode"
 >;
 
-const renderTabIcon = (tab: WorkspaceTab) => {
+const BrowserTabDefaultIcon = () => (
+  <Globe size={14} className="lyra-browser-tab-icon-svg" />
+);
+
+const handleFaviconLoad = (event: SyntheticEvent<HTMLImageElement>) => {
+  delete event.currentTarget.dataset.failed;
+};
+
+const handleFaviconError = (event: SyntheticEvent<HTMLImageElement>) => {
+  event.currentTarget.dataset.failed = "true";
+};
+
+const BrowserTabIcon = ({ tab }: { readonly tab: WorkspaceTab }) => {
+  const faviconUrl = tab.faviconUrl?.trim();
+
   if (tab.pageKind === "settings") {
     return <Settings2 size={14} className="lyra-browser-tab-icon-svg" />;
   }
@@ -86,19 +103,26 @@ const renderTabIcon = (tab: WorkspaceTab) => {
     return renderWorkspaceAppIcon(tab.appId, tab.appIconKey);
   }
 
-  if (tab.faviconUrl !== undefined && tab.faviconUrl.length > 0) {
+  if (faviconUrl !== undefined && faviconUrl.length > 0) {
     return (
-      <img
-        src={tab.faviconUrl}
-        alt=""
-        className="lyra-browser-tab-favicon"
-        loading="eager"
-        decoding="async"
-      />
+      <>
+        <img
+          src={faviconUrl}
+          alt=""
+          className="lyra-browser-tab-favicon"
+          loading="eager"
+          decoding="async"
+          onLoad={handleFaviconLoad}
+          onError={handleFaviconError}
+        />
+        <span className="lyra-browser-tab-favicon-fallback">
+          <BrowserTabDefaultIcon />
+        </span>
+      </>
     );
   }
 
-  return <Globe size={14} className="lyra-browser-tab-icon-svg" />;
+  return <BrowserTabDefaultIcon />;
 };
 
 const BrowserTabStripControls = ({
@@ -257,7 +281,7 @@ export const BrowserTabStripView = ({
                 }}
               >
                 <span className="lyra-browser-tab-icon" aria-hidden="true">
-                  {renderTabIcon(tabModel.tab)}
+                  <BrowserTabIcon tab={tabModel.tab} />
                 </span>
                 {!tabModel.isCollapsed ? (
                   <span className="lyra-browser-tab-title">{tabModel.tab.title}</span>
@@ -299,7 +323,7 @@ export const BrowserTabStripView = ({
             <ChromeTabShape />
             <span className={renderModel.preview.mainClassName}>
               <span className="lyra-browser-tab-icon" aria-hidden="true">
-                {renderTabIcon(renderModel.preview.tab)}
+                <BrowserTabIcon tab={renderModel.preview.tab} />
               </span>
               <span className="lyra-browser-tab-title">{renderModel.preview.tab.title}</span>
             </span>

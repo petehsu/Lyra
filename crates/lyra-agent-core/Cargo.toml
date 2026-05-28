@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2024"
 license.workspace = true
 
+[features]
+jemalloc = []
+jemalloc-prof = []
+legacy-session-json = []
+pdf = []
+
 [dependencies]
 anyhow.workspace = true
 agentgrep = { git = "https://github.com/1jehuang/agentgrep.git", tag = "v0.1.2" }
@@ -70,6 +76,7 @@ qrcode = { version = "0.14.1", default-features = false }
 rand.workspace = true
 regex.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "blocking", "rustls-tls"] }
+rusqlite.workspace = true
 schemars.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

@@ -1,4 +1,5 @@
 import type {
+  AgentMemorySnapshot,
   AgentMessageBlock,
   AgentSidePanelSnapshot,
   AgentRuntimeEvent,
@@ -169,6 +170,43 @@ export const applyAgentRuntimeEventToSnapshot = (
     };
   }
 
+  if (event.kind === "memorySnapshot") {
+    return {
+      ...session,
+      memory: event.snapshot,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  if (event.kind === "turnStarted" || event.kind === "turnStateChanged") {
+    return {
+      ...session,
+      turnStatus: ["completed"].includes(event.state)
+        ? "finished"
+        : ["failed_recoverable", "failed_terminal"].includes(event.state)
+          ? "failed"
+          : ["cancelled_by_user", "interrupted"].includes(event.state)
+            ? "cancelled"
+            : "running",
+      activeTurnId: ["completed", "failed_terminal", "cancelled_by_user"].includes(event.state)
+        ? null
+        : event.turnId,
+      follow: {
+        running: !["completed", "failed_terminal", "cancelled_by_user"].includes(event.state),
+        activity: event.state
+      },
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  if (event.kind === "toolUpdated") {
+    return {
+      ...session,
+      tools: upsertTool(session.tools, event.tool),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
   if (event.kind === "todoUpdated") {
     return {
       ...session,
@@ -196,12 +234,61 @@ export const applyAgentRuntimeEventToSnapshot = (
     };
   }
 
+  if (event.kind === "turnCompleted") {
+    return {
+      ...session,
+      turnStatus: "finished",
+      activeTurnId: null,
+      follow: { running: false, activity: null },
+      updatedAt: new Date().toISOString()
+    };
+  }
+
   if (event.kind === "turnFailed") {
     return {
       ...session,
       turnStatus: "failed",
       activeTurnId: null,
       follow: { running: false, activity: null },
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  if (event.kind === "browserTargetUpdated") {
+    const currentMemory = session.memory ?? null;
+    const nextTarget = asRecord(event.target);
+    return {
+      ...session,
+      memory: currentMemory === null
+        ? currentMemory
+        : {
+            ...currentMemory,
+            activeBrowserTargets: [
+              ...currentMemory.activeBrowserTargets.filter((target) => {
+                const record = asRecord(target);
+                return record.browserTargetId !== nextTarget.browserTargetId;
+              }),
+              nextTarget
+            ]
+          },
+      follow: {
+        running: true,
+        activity: "browser"
+      },
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  if (event.kind === "clarificationResolved") {
+    const currentMemory = session.memory ?? null;
+    return {
+      ...session,
+      memory: currentMemory === null
+        ? currentMemory
+        : {
+            ...currentMemory,
+            activeClarification: null
+          },
       updatedAt: new Date().toISOString()
     };
   }
@@ -901,6 +988,11 @@ export const cleanSyntheticImageText = (text: string): string => {
     .trim();
 };
 
+const isAssistantToolPlaceholderText = (text: string): boolean => {
+  const cleaned = cleanSyntheticImageText(text).trim();
+  return cleaned === "..." || cleaned === "…";
+};
+
 const messageBody = (
   session: AgentSessionSnapshot,
   message: AgentSessionSnapshot["messages"][number],
@@ -919,6 +1011,31 @@ const sameMessageInstant = (left: string | undefined, right: string | undefined)
   return leftTime === rightTime;
 };
 
+const timelineTimeMs = (value: string | undefined, fallback: number): number => {
+  if (value === undefined) return fallback;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? fallback : parsed;
+};
+
+const latestToolActivities = (
+  tools: readonly AgentToolActivity[]
+): AgentToolActivity[] => {
+  const seen = new Set<string>();
+  const latest: AgentToolActivity[] = [];
+  for (let index = tools.length - 1; index >= 0; index -= 1) {
+    const tool = tools[index];
+    if (tool === undefined || seen.has(tool.id)) continue;
+    seen.add(tool.id);
+    latest.push(tool);
+  }
+  return latest.reverse();
+};
+
+const isPendingAgentMessage = (message: ChatMessage): boolean =>
+  message.author === "agent" &&
+  message.blocks.length > 0 &&
+  message.blocks.every((block) => block.type === "text" && block.body.trim().length === 0);
+
 type LegacyAgentToolBlock = Extract<AgentMessageBlock, { type: "tool" }> & {
   readonly tool_id?: string;
 };
@@ -926,6 +1043,124 @@ type LegacyAgentToolBlock = Extract<AgentMessageBlock, { type: "tool" }> & {
 const toolIdForBlock = (block: AgentMessageBlock): string | null => {
   if (block.type !== "tool") return null;
   return block.toolId ?? (block as LegacyAgentToolBlock).tool_id ?? null;
+};
+
+const timelinePayload = (
+  item: AgentMemorySnapshot["timelineProjection"][number]
+): Record<string, unknown> => asRecord(item.payloadJson);
+
+const textFromTimelinePayload = (
+  item: AgentMemorySnapshot["timelineProjection"][number]
+): string => {
+  const text = timelinePayload(item).text;
+  return typeof text === "string" ? text : "";
+};
+
+const turnStatusFromMemory = (memory: AgentMemorySnapshot): AgentSessionSnapshot["turnStatus"] => {
+  const active = [...memory.runtimeTurns].reverse().find((turn) =>
+    !["completed", "failed_terminal", "cancelled_by_user"].includes(turn.state)
+  );
+  if (active === undefined) return memory.status === "failed" ? "failed" : "idle";
+  if (active.state === "interrupted") return "cancelled";
+  if (active.state === "failed_recoverable" || active.state === "failed_terminal") return "failed";
+  return "running";
+};
+
+const toolFromTimelineItem = (
+  item: AgentMemorySnapshot["timelineProjection"][number]
+): AgentToolActivity | null => {
+  if (item.kind !== "tool_result" && item.kind !== "tool_call") return null;
+  const payload = timelinePayload(item);
+  const name = typeof payload.name === "string" ? payload.name : "tool";
+  const statusRaw = typeof payload.status === "string" ? payload.status : "success";
+  const status: AgentToolActivity["status"] =
+    statusRaw === "running"
+      ? "running"
+      : statusRaw === "cancelled"
+        ? "cancelled"
+        : statusRaw.startsWith("failed") || statusRaw === "timed_out_partial"
+          ? "failed"
+          : "completed";
+  const toolCallId = typeof payload.toolCallId === "string" ? payload.toolCallId : item.eventId;
+  return {
+    id: toolCallId,
+    name,
+    label: typeof payload.label === "string" ? payload.label : name,
+    status,
+    input: asRecord(payload.input),
+    output: payload.output,
+    startedAt: item.createdAtIso,
+    ...(status === "running" ? {} : { finishedAt: item.createdAtIso })
+  };
+};
+
+const messageFromTimelineItem = (
+  item: AgentMemorySnapshot["timelineProjection"][number]
+): AgentSessionSnapshot["messages"][number] | null => {
+  if (item.role !== "user" && item.role !== "assistant") return null;
+  const text = textFromTimelinePayload(item);
+  return {
+    id: item.eventId,
+    role: item.role,
+    text,
+    blocks: text.trim().length === 0
+      ? []
+      : [{
+          type: "text",
+          id: `${item.eventId}-text`,
+          text
+        }],
+    createdAt: item.createdAtIso,
+    rollback: null
+  };
+};
+
+const todoFromMemoryValue = (value: unknown, index: number): AgentSessionSnapshot["todos"][number] | null => {
+  const record = asRecord(value);
+  const content = stringField(record, "content", "title") ?? "";
+  if (content.trim().length === 0) return null;
+  return {
+    id: stringField(record, "id") ?? `todo-${index}`,
+    content,
+    status: stringField(record, "status") ?? "pending",
+    priority: stringField(record, "priority") ?? "normal",
+    blockedBy: Array.isArray(record.blockedBy)
+      ? record.blockedBy.filter((item): item is string => typeof item === "string")
+      : []
+  };
+};
+
+const sessionWithMemoryProjection = (
+  session: AgentSessionSnapshot
+): AgentSessionSnapshot => {
+  const memory = session.memory;
+  if (memory === undefined || memory === null || memory.timelineProjection.length === 0) {
+    return session;
+  }
+  const messages = memory.timelineProjection
+    .map(messageFromTimelineItem)
+    .filter((message): message is AgentSessionSnapshot["messages"][number] => message !== null);
+  const tools = memory.timelineProjection
+    .map(toolFromTimelineItem)
+    .filter((tool): tool is AgentToolActivity => tool !== null);
+  const todos = memory.activeTodos
+    .map(todoFromMemoryValue)
+    .filter((todo): todo is AgentSessionSnapshot["todos"][number] => todo !== null);
+  const activeTurn = [...memory.runtimeTurns].reverse().find((turn) =>
+    !["completed", "failed_terminal", "cancelled_by_user"].includes(turn.state)
+  );
+  return {
+    ...session,
+    messages,
+    tools: tools.length === 0 ? session.tools : tools,
+    todos,
+    turnStatus: turnStatusFromMemory(memory),
+    activeTurnId: activeTurn?.runtimeTurnId ?? null,
+    follow: {
+      running: activeTurn !== undefined,
+      activity: activeTurn?.state ?? null
+    }
+  };
 };
 
 const chatBlocksForAgentMessage = (
@@ -977,6 +1212,8 @@ const chatBlocksForAgentMessage = (
   }
 
   const chatBlocks: MessageBlock[] = [];
+  const hasAssistantToolBlock =
+    message.role === "assistant" && sourceBlocks.some((block) => block.type === "tool");
   let pendingTools: AgentToolActivity[] = [];
   const flushTools = () => {
     if (pendingTools.length === 0) return;
@@ -993,6 +1230,12 @@ const chatBlocksForAgentMessage = (
 
   for (const block of sourceBlocks) {
     if (block.type === "text") {
+      if (
+        hasAssistantToolBlock &&
+        isAssistantToolPlaceholderText(block.text)
+      ) {
+        continue;
+      }
       flushTools();
       const cleaned = cleanSyntheticImageText(block.text);
       if (cleaned.length > 0) {
@@ -1059,71 +1302,97 @@ export const agentSessionToChatMessages = (
 ): ChatMessage[] => {
   if (session === null) return [];
 
-  const toolsById = new Map(session.tools.map((tool) => [tool.id, tool]));
+  const sessionTools = latestToolActivities(session.tools);
+  const toolsById = new Map(sessionTools.map((tool) => [tool.id, tool]));
   const referencedToolIds = new Set<string>();
 
   // 1. Map raw AgentMessages to ChatMessages
-  const messages: ChatMessage[] = session.messages.map<ChatMessage>((message, index) => {
-    const formattedTime = formatAgentMessageTime(message.createdAt);
-    const hasToolBlock = message.blocks?.some((b) => b.type === "tool") ?? false;
-    const author = (message.role === "user" && !hasToolBlock) ? "user" : "agent";
-    return {
-      id: message.id,
-      author,
-      ...(formattedTime === undefined ? {} : { time: formattedTime }),
-      ...(message.rollback === undefined || message.rollback === null
-        ? {}
-        : { rollback: message.rollback }),
-      blocks: chatBlocksForAgentMessage(
-        session,
-        message,
-        index,
-        session.tools,
-        toolsById,
-        referencedToolIds
-      )
-    };
-  }).filter((message) => message.blocks.length > 0);
+  const timedMessages = session.messages
+    .map((message, index) => {
+      const formattedTime = formatAgentMessageTime(message.createdAt);
+      const hasToolBlock = message.blocks?.some((b) => b.type === "tool") ?? false;
+      const author = (message.role === "user" && !hasToolBlock) ? "user" : "agent";
+      const chatMessage: ChatMessage = {
+        id: message.id,
+        author,
+        ...(formattedTime === undefined ? {} : { time: formattedTime }),
+        ...(message.rollback === undefined || message.rollback === null
+          ? {}
+          : { rollback: message.rollback }),
+        blocks: chatBlocksForAgentMessage(
+          session,
+          message,
+          index,
+          sessionTools,
+          toolsById,
+          referencedToolIds
+        )
+      };
+      return {
+        message: chatMessage,
+        atMs: timelineTimeMs(message.createdAt, index),
+        sequence: index
+      };
+    })
+    .filter((item) => item.message.blocks.length > 0);
 
   const lastMessage = session.messages.at(-1);
   if (session.turnStatus === "failed" && lastMessage?.role === "user") {
     const errorDetail = options.failedTurnMessage?.trim();
     const formattedTime = formatAgentMessageTime(session.updatedAt);
-    messages.push({
-      id: `${session.id}-turn-failed`,
-      author: "agent",
-      ...(formattedTime === undefined ? {} : { time: formattedTime }),
-      blocks: [
-        {
-          type: "text",
-          id: `${session.id}-turn-failed-text`,
-          body: errorDetail === undefined || errorDetail.length === 0
-            ? t("msg.turnFailedNoResponse")
-            : formatMessage("msg.turnFailedWithReason", { message: errorDetail })
-        }
-      ]
+    timedMessages.push({
+      message: {
+        id: `${session.id}-turn-failed`,
+        author: "agent",
+        ...(formattedTime === undefined ? {} : { time: formattedTime }),
+        blocks: [
+          {
+            type: "text",
+            id: `${session.id}-turn-failed-text`,
+            body: errorDetail === undefined || errorDetail.length === 0
+              ? t("msg.turnFailedNoResponse")
+              : formatMessage("msg.turnFailedWithReason", { message: errorDetail })
+          }
+        ]
+      },
+      atMs: timelineTimeMs(session.updatedAt, session.messages.length),
+      sequence: session.messages.length
     });
   }
 
-  const orphanTools = session.tools.filter((tool) => !referencedToolIds.has(tool.id));
-  const group = toToolGroup(orphanTools);
-  if (group !== null) {
-    messages.push({
-      id: "lyra-agent-tool-message",
-      author: "agent",
-      blocks: [
-        {
-          type: "tools",
-          id: "lyra-agent-tools-block",
-          group
-        }
-      ]
+  const orphanTools = sessionTools.filter((tool) => !referencedToolIds.has(tool.id));
+  orphanTools.forEach((tool, index) => {
+    const group = toToolGroup([tool], `lyra-agent-tools-${tool.id}`);
+    if (group === null) return;
+    const formattedTime = formatAgentMessageTime(tool.startedAt);
+    timedMessages.push({
+      message: {
+        id: `lyra-agent-tool-message-${tool.id}`,
+        author: "agent",
+        ...(formattedTime === undefined ? {} : { time: formattedTime }),
+        blocks: [
+          {
+            type: "tools",
+            id: `${group.id}-block`,
+            group
+          }
+        ]
+      },
+      atMs: timelineTimeMs(tool.startedAt, session.messages.length + index),
+      sequence: session.messages.length + index
     });
-  }
+  });
+
+  timedMessages.sort((left, right) => {
+    if (left.atMs !== right.atMs) return left.atMs - right.atMs;
+    return left.sequence - right.sequence;
+  });
+
+  const messages = timedMessages.map((item) => item.message);
 
   if (
     session.follow.running &&
-    (lastMessage === undefined || lastMessage.role !== "assistant")
+    !messages.some((message) => isPendingAgentMessage(message))
   ) {
     messages.push({
       id: "lyra-agent-loading",
@@ -1143,7 +1412,13 @@ export const agentSessionToChatMessages = (
   for (const msg of messages) {
     if (finalMessages.length > 0) {
       const prev = finalMessages[finalMessages.length - 1];
-      if (prev !== undefined && prev.author === msg.author && prev.author === "agent") {
+      if (
+        prev !== undefined &&
+        prev.author === msg.author &&
+        prev.author === "agent" &&
+        !isPendingAgentMessage(prev) &&
+        !isPendingAgentMessage(msg)
+      ) {
         // Merge blocks and combine consecutive tool groups
         const nextBlocks = [...prev.blocks];
         for (const block of msg.blocks) {
@@ -1248,6 +1523,7 @@ export const agentSessionToTodos = (
   session: AgentSessionSnapshot | null
 ): TodoItem[] => {
   if (session === null) return [];
+  session = sessionWithMemoryProjection(session);
   return session.todos
     .map((todo, index) => ({
       id: todo.id,

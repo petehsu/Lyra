@@ -49,6 +49,26 @@ export const attachWorkbenchObservationBridge = (
             result: readObservedWorkspace(request.payload, dependencies)
           };
         }
+        if (request.method === "workbench.tab.activate_local") {
+          const tabId = request.payload.tabId.trim();
+          const tabExists = dependencies.tabsModel.tabs.some((tab) => tab.id === tabId);
+          if (!tabExists) {
+            return toBridgeError(
+              requestId,
+              "tab_not_found",
+              `Workbench tab not found: ${tabId}`
+            );
+          }
+          dependencies.tabsModel.setActiveTab(tabId);
+          return {
+            requestId,
+            ok: true,
+            result: {
+              tabId,
+              activeTabId: tabId
+            }
+          };
+        }
         if (request.method === "workbench.tab.read_local") {
           const result = readObservedLocalTab(request.payload, dependencies);
           if ("code" in result) {

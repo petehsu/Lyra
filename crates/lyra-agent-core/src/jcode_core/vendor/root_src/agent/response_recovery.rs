@@ -118,7 +118,7 @@ impl Agent {
     }
     fn continuation_prompt_for_stop_reason(stop_reason: &str) -> String {
         format!(
-            "[System reminder: your previous response ended before completion (stop_reason: {}). Continue exactly where you left off, do not repeat completed content, and if the next step is a tool call, emit the tool call now.]",
+            "Your previous response ended before completion (stop_reason: {}). Continue exactly where you left off, do not repeat completed content, and if the next step is a tool call, emit the tool call now.",
             stop_reason.trim()
         )
     }
@@ -155,14 +155,8 @@ impl Agent {
             Self::MAX_INCOMPLETE_CONTINUATION_ATTEMPTS
         ));
 
-        self.add_message(
-            Role::User,
-            vec![ContentBlock::Text {
-                text: Self::continuation_prompt_for_stop_reason(stop_reason),
-                cache_control: None,
-            }],
-        );
-        self.session.save()?;
+        self.current_turn_system_reminder =
+            Some(Self::continuation_prompt_for_stop_reason(stop_reason));
         Ok(true)
     }
 

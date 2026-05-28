@@ -19,7 +19,7 @@ impl Agent {
                     repaired
                 ));
             }
-            let (messages, compaction_event) = self.messages_for_provider();
+            let (messages, compaction_event) = self.provider_messages_from_context_assembler();
             if let Some(event) = compaction_event {
                 // Reset cache tracker and tool lock on compaction since the message history changes
                 self.cache_tracker.reset();
@@ -56,8 +56,13 @@ impl Agent {
                     }
                 })),
             );
-            // Use split prompt for better caching - static content cached, dynamic not
-            let split_prompt = self.build_system_prompt_split(None);
+            // Use split prompt for better caching - static content cached, dynamic not.
+            // Cross-session memory is dynamic runtime context, not a provider-visible
+            // synthetic user message.
+            let dynamic_memory_context = self
+                .context_assembler_dynamic_system_context()
+                .or_else(|| memory_pending.as_ref().map(|p| p.prompt.as_str()));
+            let split_prompt = self.build_system_prompt_split(dynamic_memory_context);
             self.log_prompt_prefix_accounting(&split_prompt, &tools);
 
             // Check for client-side cache violations before memory injection.
@@ -77,10 +82,6 @@ impl Agent {
             } else {
                 messages.clone()
             };
-            let mut ephemeral_signature_messages = Vec::new();
-
-            // Inject memory as a user message at the end (preserves cache prefix)
-            let mut messages_with_memory = messages;
             if let Some(memory) = memory_pending.as_ref() {
                 let memory_count = memory.count.max(1);
                 let computed_age_ms = memory.computed_at.elapsed().as_millis() as u64;
@@ -97,27 +98,21 @@ impl Agent {
                     prompt_chars: memory.prompt.chars().count(),
                     computed_age_ms,
                 });
-                let memory_msg = Message::user(&format!(
-                    "<system-reminder>\n{}\n</system-reminder>",
-                    memory.prompt
-                ));
-                ephemeral_signature_messages.push(memory_msg.clone());
-                messages_with_memory.push(memory_msg);
             }
 
             logging::info(&format!(
                 "API call starting: {} messages, {} tools",
-                messages_with_memory.len(),
+                messages.len(),
                 tools.len()
             ));
             let api_start = Instant::now();
 
             let stamped;
             let send_messages: &[Message] = if crate::config::config().features.message_timestamps {
-                stamped = Message::with_timestamps(&messages_with_memory);
+                stamped = Message::with_timestamps(&messages);
                 &stamped
             } else {
-                &messages_with_memory
+                &messages
             };
             let provider = Arc::clone(&self.provider);
             let resume_session_id = self.provider_session_id.clone();
@@ -126,8 +121,15 @@ impl Agent {
                 &cache_signature_messages,
                 &tools,
                 &split_prompt.static_part,
-                &ephemeral_signature_messages,
+                &[],
             ));
+            let provider_request_id = self.record_provider_request_started(
+                &tools,
+                send_messages,
+                &split_prompt.static_part,
+                &split_prompt.dynamic_part,
+                resume_session_id.as_deref(),
+            );
             let mut keepalive = stream_keepalive_ticker();
             let mut stream = {
                 let mut complete_future = std::pin::pin!(provider.complete_split(
@@ -170,6 +172,12 @@ impl Agent {
                                         });
                                         continue;
                                     }
+                                    self.record_provider_request_finished(
+                                        provider_request_id.as_deref(),
+                                        "failed",
+                                        None,
+                                        Some(serde_json::json!({ "message": e.to_string() })),
+                                    );
                                     return Err(e);
                                 }
                             }
@@ -508,12 +516,32 @@ impl Agent {
                             });
                             break;
                         }
+                        self.record_provider_request_finished(
+                            provider_request_id.as_deref(),
+                            "failed",
+                            None,
+                            Some(serde_json::json!({
+                                "message": message,
+                                "retryAfterSecs": retry_after_secs
+                            })),
+                        );
                         return Err(StreamError::new(message, retry_after_secs).into());
                     }
                 }
             }
 
             if retry_after_compaction {
+                self.record_provider_request_finished(
+                    provider_request_id.as_deref(),
+                    "retrying_after_compaction",
+                    usage_json(
+                        usage_input,
+                        usage_output,
+                        usage_cache_read,
+                        usage_cache_creation,
+                    ),
+                    None,
+                );
                 continue;
             }
 
@@ -548,6 +576,17 @@ impl Agent {
                 cache_read_input_tokens: usage_cache_read,
                 cache_creation_input_tokens: usage_cache_creation,
             };
+            self.record_provider_request_finished(
+                provider_request_id.as_deref(),
+                "completed",
+                usage_json(
+                    usage_input,
+                    usage_output,
+                    usage_cache_read,
+                    usage_cache_creation,
+                ),
+                None,
+            );
 
             let had_tool_calls_before = !tool_calls.is_empty();
             self.recover_text_wrapped_tool_call(&mut text_content, &mut tool_calls);
@@ -622,9 +661,11 @@ impl Agent {
                 &mut tool_calls,
                 assistant_message_id.as_ref(),
             );
+            self.record_assistant_provider_event(&text_content, &tool_calls);
 
             if tool_calls.is_empty() && !generated_image_contexts.is_empty() {
                 for blocks in generated_image_contexts.drain(..) {
+                    self.record_user_context_provider_event(&blocks);
                     self.add_message(Role::User, blocks);
                 }
                 self.session.save()?;
@@ -691,6 +732,12 @@ impl Agent {
                 if tool_index > 0 && self.has_urgent_interrupt() {
                     // Add tool_results for all remaining skipped tools to maintain valid history
                     for skipped_tc in &tool_calls[tool_index..] {
+                        self.record_tool_result_provider_event(
+                            skipped_tc,
+                            crate::memory::agent_runtime::ToolResultStatus::Cancelled,
+                            "[Skipped: user interrupted]".to_string(),
+                            Some("user_interrupted".to_string()),
+                        );
                         self.add_message(
                             Role::User,
                             vec![ContentBlock::ToolResult {
@@ -737,6 +784,12 @@ impl Agent {
                         output: error_msg.clone(),
                         error: Some(error_msg.clone()),
                     });
+                    self.record_tool_result_provider_event(
+                        tc,
+                        crate::memory::agent_runtime::ToolResultStatus::FailedRetryable,
+                        error_msg.clone(),
+                        Some(error_msg.clone()),
+                    );
                     self.add_message(
                         Role::User,
                         vec![ContentBlock::ToolResult {
@@ -757,6 +810,16 @@ impl Agent {
                 if let Some((sdk_content, sdk_is_error)) = sdk_tool_results.remove(&tc.id) {
                     // For native tools, ignore SDK errors and execute locally
                     if !(is_native_tool && sdk_is_error) {
+                        self.record_tool_result_provider_event(
+                            tc,
+                            if sdk_is_error {
+                                crate::memory::agent_runtime::ToolResultStatus::FailedRetryable
+                            } else {
+                                crate::memory::agent_runtime::ToolResultStatus::Success
+                            },
+                            sdk_content.clone(),
+                            sdk_is_error.then(|| "Tool error".to_string()),
+                        );
                         self.add_message(
                             Role::User,
                             vec![ContentBlock::ToolResult {
@@ -803,6 +866,12 @@ impl Agent {
 
                 match result {
                     Ok(output) => {
+                        self.record_tool_result_provider_event(
+                            tc,
+                            crate::memory::agent_runtime::ToolResultStatus::Success,
+                            output.output.clone(),
+                            None,
+                        );
                         let _ = event_tx.send(ServerEvent::ToolDone {
                             id: tc.id.clone(),
                             name: tc.name.clone(),
@@ -824,6 +893,12 @@ impl Agent {
                     }
                     Err(e) => {
                         let error_msg = format!("Error: {}", e);
+                        self.record_tool_result_provider_event(
+                            tc,
+                            crate::memory::agent_runtime::ToolResultStatus::FailedRetryable,
+                            error_msg.clone(),
+                            Some(error_msg.clone()),
+                        );
                         let _ = event_tx.send(ServerEvent::ToolDone {
                             id: tc.id.clone(),
                             name: tc.name.clone(),
@@ -855,6 +930,7 @@ impl Agent {
 
             if !generated_image_contexts.is_empty() {
                 for blocks in generated_image_contexts.drain(..) {
+                    self.record_user_context_provider_event(&blocks);
                     self.add_message(Role::User, blocks);
                 }
                 self.session.save()?;

@@ -13,13 +13,8 @@ use std::collections::HashMap;
 pub const DEFAULT_VISIBLE_COMPACTED_HISTORY_MESSAGES: usize = 64;
 
 fn is_internal_system_reminder(msg: &super::StoredMessage) -> bool {
-    msg.content
-        .iter()
-        .find_map(|block| match block {
-            ContentBlock::Text { text, .. } => Some(text.trim_start()),
-            _ => None,
-        })
-        .is_some_and(|text| text.starts_with("<system-reminder>"))
+    let _ = msg;
+    false
 }
 
 fn image_source_for_message(role: Role, tool: Option<&ToolCall>) -> RenderedImageSource {

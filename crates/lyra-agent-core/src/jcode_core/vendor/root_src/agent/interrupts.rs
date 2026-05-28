@@ -429,15 +429,28 @@ impl Agent {
             "Model returned an empty response after tool results; retrying with a continuation reminder ({}/{})",
             *empty_tool_result_continuations, MAX_EMPTY_TOOL_RESULT_CONTINUATIONS
         ));
-        self.add_message_with_display_role(
-            Role::User,
-            vec![ContentBlock::Text {
-                text: "<system-reminder>\nThe previous model response ended without any user-visible text after tool results. Use the tool results above to answer the user's request now. Do not call another tool unless it is necessary.\n</system-reminder>".to_string(),
-                cache_control: None,
-            }],
-            Some(StoredDisplayRole::System),
-        );
-        self.session.save()?;
+        if let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() {
+            let _ = store.ensure_session_with_id(
+                self.session_id(),
+                crate::memory::agent_runtime::CreateSessionInput {
+                    title: Some(self.session.display_title_or_name().to_string()),
+                    working_dir: self.session.working_dir.clone(),
+                    provider_key: self.session.provider_key.clone(),
+                    model: self.session.model.clone(),
+                },
+            );
+            let _ = store.append_event(
+                self.session_id(),
+                crate::memory::agent_runtime::NewSessionEvent::runtime_event(
+                    "empty_tool_result_recovery",
+                    None,
+                    serde_json::json!({
+                        "attempt": *empty_tool_result_continuations,
+                        "maxAttempts": MAX_EMPTY_TOOL_RESULT_CONTINUATIONS
+                    }),
+                ),
+            );
+        }
         Ok(EmptyToolResultRecovery::Continue)
     }
 

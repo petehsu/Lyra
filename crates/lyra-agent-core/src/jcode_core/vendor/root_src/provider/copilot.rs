@@ -235,16 +235,6 @@ impl CopilotApiProvider {
             if !is_text_only || msg.content.is_empty() {
                 return true;
             }
-            let is_system_reminder = msg.content.iter().any(|block| {
-                if let ContentBlock::Text { text, .. } = block {
-                    text.contains("<system-reminder>")
-                } else {
-                    false
-                }
-            });
-            if is_system_reminder {
-                continue;
-            }
             return true;
         }
         true

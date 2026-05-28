@@ -3,6 +3,8 @@ import type { BrowserWindow } from "electron";
 import type {
   WorkbenchTabExtractTextRequest,
   WorkbenchTabExtractTextResult,
+  WorkbenchTabActivateRequest,
+  WorkbenchTabActivateResult,
   WorkbenchTabObservationResult,
   WorkbenchTabReadRequest,
   WorkbenchTabsListRequest,
@@ -34,6 +36,9 @@ export type WorkbenchObservationBrowserDomSummary = {
 export type WorkbenchObservationService = {
   readonly dispose: () => void;
   readonly listTabs: (request?: WorkbenchTabsListRequest) => Promise<WorkbenchTabsListResult>;
+  readonly activateTab: (
+    request: WorkbenchTabActivateRequest
+  ) => Promise<WorkbenchTabActivateResult>;
   readonly readWorkspace: (
     request?: WorkbenchWorkspaceReadRequest
   ) => Promise<WorkbenchWorkspaceSnapshot>;
@@ -54,6 +59,9 @@ export type WorkbenchObservationRendererClient = {
   readonly readLocalTab: (
     request: WorkbenchTabReadRequest
   ) => Promise<WorkbenchTabObservationResult>;
+  readonly activateLocalTab: (
+    request: WorkbenchTabActivateRequest
+  ) => Promise<WorkbenchTabActivateResult>;
   readonly readLocalWorkspace: (
     request?: WorkbenchWorkspaceReadRequest
   ) => Promise<WorkbenchWorkspaceSnapshot>;

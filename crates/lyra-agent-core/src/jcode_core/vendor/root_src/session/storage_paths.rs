@@ -1,10 +1,10 @@
-use anyhow::Result;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 use super::PersistVectorMode;
 use crate::storage;
 
+#[cfg(any(test, feature = "legacy-session-json"))]
 pub(crate) fn session_path_in_dir(base: &std::path::Path, session_id: &str) -> PathBuf {
     base.join("sessions").join(format!("{}.json", session_id))
 }
@@ -27,11 +27,13 @@ pub(super) fn persist_vector_mode_label(mode: PersistVectorMode) -> &'static str
     }
 }
 
-pub fn session_path(session_id: &str) -> Result<PathBuf> {
+#[cfg(any(test, feature = "legacy-session-json"))]
+pub fn session_path(session_id: &str) -> anyhow::Result<PathBuf> {
     let base = storage::jcode_dir()?;
     Ok(session_path_in_dir(&base, session_id))
 }
 
+#[cfg(any(test, feature = "legacy-session-json"))]
 pub(crate) fn session_journal_path_from_snapshot(path: &Path) -> PathBuf {
     let mut name = path
         .file_stem()
@@ -41,14 +43,24 @@ pub(crate) fn session_journal_path_from_snapshot(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-pub fn session_journal_path(session_id: &str) -> Result<PathBuf> {
+#[cfg(any(test, feature = "legacy-session-json"))]
+pub fn session_journal_path(session_id: &str) -> anyhow::Result<PathBuf> {
     Ok(session_journal_path_from_snapshot(&session_path(
         session_id,
     )?))
 }
 
+#[cfg(any(test, feature = "legacy-session-json"))]
 pub fn session_exists(session_id: &str) -> bool {
     session_path(session_id)
         .map(|path| path.exists())
         .unwrap_or(false)
+}
+
+#[cfg(not(any(test, feature = "legacy-session-json")))]
+pub fn session_exists(session_id: &str) -> bool {
+    crate::memory::agent_runtime::AgentMemoryStore::new_default()
+        .ok()
+        .and_then(|store| store.read_session(session_id).ok().flatten())
+        .is_some()
 }

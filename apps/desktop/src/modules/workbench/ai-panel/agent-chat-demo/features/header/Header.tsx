@@ -7,9 +7,7 @@ import {
   ArrowRightLeft,
   Bot,
   CheckCircle,
-  CircleStop,
   CopyPlus,
-  Crosshair,
   FlaskConical,
   Folder,
   Hammer,
@@ -32,9 +30,6 @@ export function Header() {
     session,
     messages,
     isTurnRunning,
-    browserFollowModeEnabled,
-    setBrowserFollowMode,
-    cancelTurn,
     createSession,
     bindProject,
     openProjectTree,
@@ -57,7 +52,6 @@ export function Header() {
   } = useData();
   const [creating, setCreating] = useState(false);
   const [bindingProject, setBindingProject] = useState(false);
-  const [followModeBusy, setFollowModeBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialog, setDialog] = useState<"subagent" | "btw" | "goals" | "automation" | null>(null);
   const [actionBusy, setActionBusy] = useState<
@@ -270,20 +264,7 @@ export function Header() {
     }
   };
 
-  const onToggleBrowserFollowMode = async () => {
-    if (followModeBusy) return;
-    setFollowModeBusy(true);
-    try {
-      await setBrowserFollowMode(!browserFollowModeEnabled);
-    } finally {
-      setFollowModeBusy(false);
-    }
-  };
-
   const actionDisabled = isTurnRunning || actionBusy !== null;
-  const followLabel = browserFollowModeEnabled
-    ? t("header.stopFollowingAgent")
-    : t("header.followAgent");
 
   return (
     <header className="app-header">
@@ -304,29 +285,6 @@ export function Header() {
             ) : null}
           </button>
         </div>
-        <button
-          className="app-header-action app-header-follow-agent"
-          type="button"
-          aria-label={followLabel}
-          aria-pressed={browserFollowModeEnabled}
-          title={followLabel}
-          data-active={browserFollowModeEnabled ? "true" : "false"}
-          disabled={followModeBusy}
-          onClick={() => void onToggleBrowserFollowMode()}
-        >
-          <Crosshair aria-hidden="true" size={14} strokeWidth={1.8} />
-        </button>
-        {isTurnRunning ? (
-          <button
-            className="app-header-action app-header-cancel"
-            type="button"
-            aria-label={t("header.cancelTurn")}
-            title={t("header.cancelTurn")}
-            onClick={() => void cancelTurn()}
-          >
-            <CircleStop aria-hidden="true" size={14} strokeWidth={1.8} />
-          </button>
-        ) : null}
         {showNewSessionButton ? (
           <button
             className="app-header-action app-header-new-session"

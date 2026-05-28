@@ -211,6 +211,7 @@ export const WorkbenchShell = () => {
     docsTabTitle: t("docs.tabTitle"),
     agentSessionHistoryTitle: t("agentHistory.tabTitle"),
     softwareStoreTitle: t("softwareStore.tabTitle"),
+    loginManagerTitle: t("loginManager.tabTitle" as any) || "登录账户管理",
     locale: preferencesModel.preferences.locale,
     resolvedThemeId
   });

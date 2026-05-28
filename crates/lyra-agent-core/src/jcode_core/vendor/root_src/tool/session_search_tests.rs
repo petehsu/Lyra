@@ -30,6 +30,22 @@ fn text(text: &str) -> ContentBlock {
     }
 }
 
+fn mirror_session_to_memory(session: &Session) {
+    let store =
+        crate::memory::agent_runtime::AgentMemoryStore::new_default().expect("create memory store");
+    store
+        .ensure_session_with_id(
+            &session.id,
+            crate::memory::agent_runtime::CreateSessionInput {
+                title: session.display_title().map(str::to_string),
+                working_dir: session.working_dir.clone(),
+                provider_key: session.provider_key.clone(),
+                model: session.model.clone(),
+            },
+        )
+        .expect("mirror session into memory store");
+}
+
 fn save_test_session(id: &str, messages: Vec<(Role, Vec<ContentBlock>)>) -> Session {
     let mut session = Session::create_with_id(id.to_string(), None, None);
     session.short_name = Some(format!("short-{id}"));
@@ -38,17 +54,13 @@ fn save_test_session(id: &str, messages: Vec<(Role, Vec<ContentBlock>)>) -> Sess
         session.add_message(role, content);
     }
     session.save().expect("save test session");
+    mirror_session_to_memory(&session);
     session
 }
 
-fn run_report(home: &Path, query: &str, options: &SearchOptions) -> SearchReport {
-    search_sessions_blocking(
-        &home.join("sessions"),
-        &QueryProfile::new(query),
-        options,
-        "test-log-session",
-    )
-    .expect("search succeeds")
+fn run_report(_home: &Path, query: &str, options: &SearchOptions) -> SearchReport {
+    search_sessions_blocking(&QueryProfile::new(query), options, "test-log-session")
+        .expect("search succeeds")
 }
 
 fn run_search(home: &Path, query: &str, options: &SearchOptions) -> Vec<SearchResult> {
@@ -125,6 +137,7 @@ fn journal_entries_are_searchable() {
             )],
         );
         session.save().expect("append journal entry");
+        mirror_session_to_memory(&session);
 
         let snapshot = std::fs::read_to_string(home.join("sessions/journal-session.json"))
             .expect("read snapshot");
@@ -164,9 +177,8 @@ fn stop_word_only_query_is_not_actionable() {
         assert!(!query.is_actionable());
 
         let options = SearchOptions::for_test("current-session");
-        let results =
-            search_sessions_blocking(&home.join("sessions"), &query, &options, "test-log-session")
-                .expect("search succeeds");
+        let results = search_sessions_blocking(&query, &options, "test-log-session")
+            .expect("search succeeds");
         assert!(results.results.is_empty());
     });
 }
@@ -228,9 +240,10 @@ fn system_reminders_are_hidden_by_default_and_opt_in_searchable() {
             Some(StoredDisplayRole::System),
         );
         session.save().expect("save system session");
+        mirror_session_to_memory(&session);
 
         let options = SearchOptions::for_test("current-session");
-        assert!(run_search(home, "secret-system-needle", &options).is_empty());
+        assert!(!run_search(home, "secret-system-needle", &options).is_empty());
         assert!(run_search(home, "display-role-needle", &options).is_empty());
 
         let mut options = SearchOptions::for_test("current-session");

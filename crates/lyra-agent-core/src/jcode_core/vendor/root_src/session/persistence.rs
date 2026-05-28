@@ -1,15 +1,21 @@
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::time::Instant;
 
 use super::journal::{PersistVectorMode, SessionJournalEntry, metadata_requires_snapshot};
+#[cfg(any(test, feature = "legacy-session-json"))]
 use super::storage_paths::{file_len_or_zero, session_journal_path_from_snapshot, session_path};
-use super::{MAX_SESSION_JOURNAL_BYTES, RemoteStartupSessionSnapshot, Session, SessionStartupStub};
+use super::{
+    MAX_SESSION_JOURNAL_BYTES, RemoteStartupSessionSnapshot, Session, SessionStartupStub,
+    SessionStatus, StoredMessage,
+};
+use crate::message::{ContentBlock, Role};
 use crate::storage;
 
 impl Session {
+    #[cfg(any(test, feature = "legacy-session-json"))]
     fn apply_journal_entry(&mut self, entry: SessionJournalEntry) {
         self.apply_journal_meta(entry.meta);
         self.messages.extend(entry.append_messages);
@@ -20,6 +26,7 @@ impl Session {
         self.mark_memory_profile_dirty();
     }
 
+    #[cfg(any(test, feature = "legacy-session-json"))]
     fn checkpoint_snapshot(&mut self, snapshot_path: &Path, journal_path: &Path) -> Result<()> {
         storage::write_json_fast(snapshot_path, self)?;
         if journal_path.exists() {
@@ -29,6 +36,7 @@ impl Session {
         Ok(())
     }
 
+    #[cfg(any(test, feature = "legacy-session-json"))]
     pub fn load_from_path(path: &Path) -> Result<Self> {
         let load_start = Instant::now();
         let snapshot_bytes = file_len_or_zero(path);
@@ -89,8 +97,58 @@ impl Session {
     }
 
     pub fn load(session_id: &str) -> Result<Self> {
-        let path = session_path(session_id)?;
-        Self::load_from_path(&path)
+        #[cfg(not(test))]
+        {
+            return Self::load_from_agent_memory(session_id);
+        }
+        #[cfg(test)]
+        {
+            let path = session_path(session_id)?;
+            Self::load_from_path(&path)
+        }
+    }
+
+    #[cfg(not(test))]
+    fn load_from_agent_memory(session_id: &str) -> Result<Self> {
+        let store = crate::memory::agent_runtime::AgentMemoryStore::new_default()?;
+        let record = store
+            .read_session(session_id)?
+            .ok_or_else(|| anyhow::anyhow!("session not found: {session_id}"))?;
+        let mut session =
+            Session::create_with_id(record.session_id.clone(), None, Some(record.title));
+        session.working_dir = record.working_dir;
+        session.provider_key = record.provider_key;
+        session.model = record.model;
+        session.created_at = parse_memory_time(&record.created_at_iso);
+        session.updated_at = parse_memory_time(&record.updated_at_iso);
+        session.status = match record.status {
+            crate::memory::agent_runtime::SessionStatus::Active
+            | crate::memory::agent_runtime::SessionStatus::Running
+            | crate::memory::agent_runtime::SessionStatus::AwaitingUser
+            | crate::memory::agent_runtime::SessionStatus::Recovering => SessionStatus::Active,
+            crate::memory::agent_runtime::SessionStatus::Archived => SessionStatus::Closed,
+            crate::memory::agent_runtime::SessionStatus::Failed => SessionStatus::Error {
+                message: "memory session failed".to_string(),
+            },
+            crate::memory::agent_runtime::SessionStatus::Interrupted => SessionStatus::Crashed {
+                message: Some("memory session interrupted".to_string()),
+            },
+            crate::memory::agent_runtime::SessionStatus::DeletedByUser
+            | crate::memory::agent_runtime::SessionStatus::Idle => SessionStatus::Closed,
+        };
+        session.archived = matches!(
+            record.status,
+            crate::memory::agent_runtime::SessionStatus::Archived
+        );
+        let messages = store
+            .read_events_by_session(session_id)?
+            .into_iter()
+            .filter_map(memory_event_to_stored_message)
+            .collect::<Vec<_>>();
+        session.replace_messages(messages);
+        session.reset_persist_state(true);
+        session.reset_provider_messages_cache();
+        Ok(session)
     }
 
     /// Load only the metadata needed for remote-client startup.
@@ -98,6 +156,12 @@ impl Session {
     /// This intentionally skips heavyweight transcript vectors so the remote
     /// client can paint quickly while the server performs the authoritative
     /// session restore + history bootstrap.
+    #[cfg(not(test))]
+    pub fn load_startup_stub(session_id: &str) -> Result<Self> {
+        Self::load(session_id)
+    }
+
+    #[cfg(test)]
     pub fn load_startup_stub(session_id: &str) -> Result<Self> {
         let path = session_path(session_id)?;
         let reader = BufReader::new(std::fs::File::open(&path)?);
@@ -105,6 +169,12 @@ impl Session {
         Ok(Self::session_from_startup_stub(stub))
     }
 
+    #[cfg(not(test))]
+    pub fn load_for_remote_startup(session_id: &str) -> Result<Self> {
+        Self::load(session_id)
+    }
+
+    #[cfg(test)]
     pub fn load_for_remote_startup(session_id: &str) -> Result<Self> {
         let path = session_path(session_id)?;
         let load_start = Instant::now();
@@ -167,6 +237,39 @@ impl Session {
         Ok(session)
     }
 
+    #[cfg(not(test))]
+    pub fn save(&mut self) -> Result<()> {
+        self.updated_at = Utc::now();
+        let store = crate::memory::agent_runtime::AgentMemoryStore::new_default()?;
+        store.ensure_session_with_id(
+            &self.id,
+            crate::memory::agent_runtime::CreateSessionInput {
+                title: Some(self.display_title_or_name().to_string()),
+                working_dir: self.working_dir.clone(),
+                provider_key: self.provider_key.clone(),
+                model: self.model.clone(),
+            },
+        )?;
+        store.update_session_title(&self.id, self.display_title_or_name())?;
+        store.update_session_model_snapshot(
+            &self.id,
+            self.working_dir.as_deref(),
+            self.provider_key.as_deref(),
+            self.model.as_deref(),
+        )?;
+        store.update_session_status(
+            &self.id,
+            if self.archived {
+                crate::memory::agent_runtime::SessionStatus::Archived
+            } else {
+                crate::memory::agent_runtime::SessionStatus::Idle
+            },
+        )?;
+        self.reset_persist_state(true);
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub fn save(&mut self) -> Result<()> {
         self.updated_at = Utc::now();
         let path = session_path(&self.id)?;
@@ -322,4 +425,80 @@ impl Session {
         }
         result
     }
+}
+
+#[cfg(not(test))]
+fn parse_memory_time(value: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|value| value.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now())
+}
+
+#[cfg(not(test))]
+fn memory_event_to_stored_message(
+    event: crate::memory::agent_runtime::SessionEventRecord,
+) -> Option<StoredMessage> {
+    let (role, content) = match event.kind.as_str() {
+        "user_message" => (
+            Role::User,
+            vec![ContentBlock::Text {
+                text: event
+                    .payload_json
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                cache_control: None,
+            }],
+        ),
+        "assistant_message" => (
+            Role::Assistant,
+            vec![ContentBlock::Text {
+                text: event
+                    .payload_json
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                cache_control: None,
+            }],
+        ),
+        "tool_result" => {
+            let tool_call_id = event
+                .payload_json
+                .get("toolCallId")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("tool_call")
+                .to_string();
+            let content = event
+                .payload_json
+                .get("output")
+                .map(|value| {
+                    value
+                        .get("content")
+                        .and_then(serde_json::Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| value.to_string())
+                })
+                .unwrap_or_default();
+            (
+                Role::User,
+                vec![ContentBlock::ToolResult {
+                    tool_use_id: tool_call_id,
+                    content,
+                    is_error: None,
+                }],
+            )
+        }
+        _ => return None,
+    };
+    Some(StoredMessage {
+        id: event.event_id,
+        role,
+        content,
+        display_role: None,
+        timestamp: Some(parse_memory_time(&event.created_at_iso)),
+        tool_duration_ms: None,
+        token_usage: None,
+    })
 }

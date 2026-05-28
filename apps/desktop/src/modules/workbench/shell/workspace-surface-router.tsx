@@ -26,6 +26,7 @@ import type { AgentGitLabels } from "../agent-git";
 import type { AgentSelfDevLabels } from "../agent-selfdev";
 import type { AgentOvernightLabels } from "../agent-overnight";
 import { SoftwareStoreSurface, type SoftwareStoreSurfaceProps } from "../software-store";
+import { LoginManagerSurface } from "../login-manager";
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchSplitThreePaneLayout } from "../preferences";
 import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/types";
@@ -274,6 +275,8 @@ const renderSurfaceModel = (
     }
     case "softwareStore":
       return <SoftwareStoreSurface {...model.props} />;
+    case "loginManager":
+      return <LoginManagerSurface {...model.props} />;
     case "empty":
       return null;
     default:

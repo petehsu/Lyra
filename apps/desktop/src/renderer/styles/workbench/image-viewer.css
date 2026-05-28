@@ -224,7 +224,6 @@
   border-radius: var(--lyra-radius-8);
   background: color-mix(in srgb, var(--lyra-bg-editor) 84%, transparent);
   box-shadow: var(--lyra-shadow-elevated-md);
-  backdrop-filter: var(--lyra-backdrop-blur-sm);
 }
 
 .lyra-image-viewer-loading-copy strong {

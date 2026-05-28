@@ -70,8 +70,8 @@
   --space-10: 20px;
   --space-12: 24px;
 
-  /* -------- Elevation — glass frosted chrome -------- */
-  --blur-glass: blur(20px) saturate(1.4);
+  /* -------- Elevation -------- */
+  --blur-glass: none;
   --shadow-glass:
     0 0 0 1px color-mix(in srgb, var(--lyra-line-default) 18%, transparent) inset,
     0 4px 20px color-mix(in srgb, var(--lyra-text-primary) 8%, transparent);

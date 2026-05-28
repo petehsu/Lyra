@@ -159,11 +159,8 @@ fn clear_headed_startup_message(session_id: &str) {
 
 fn cleanup_prepared_visible_spawn_session(session_id: &str) {
     clear_headed_startup_message(session_id);
-    if let Ok(path) = crate::session::session_path(session_id) {
-        let _ = std::fs::remove_file(path);
-    }
-    if let Ok(path) = crate::session::session_journal_path(session_id) {
-        let _ = std::fs::remove_file(path);
+    if let Ok(store) = crate::memory::agent_runtime::AgentMemoryStore::new_default() {
+        let _ = store.delete_session(session_id);
     }
 }
 

@@ -9,7 +9,7 @@ impl Agent {
     }
 
     pub fn poll_compaction_completion_event(&mut self) -> Option<CompactionEvent> {
-        let provider_messages = self.session.messages_for_provider();
+        let provider_messages = self.provider_messages_for_context_management();
         let compaction = self.registry.compaction();
         let event = match compaction.try_write() {
             Ok(mut manager) => {
@@ -39,7 +39,7 @@ impl Agent {
         }
 
         let provider = self.provider.fork();
-        let messages = self.session.messages_for_provider();
+        let messages = self.provider_messages_for_context_management();
         let compaction = self.registry.compaction();
 
         match compaction.try_write() {
@@ -126,10 +126,10 @@ impl Agent {
         let (dropped, usage_pct) = match compaction.try_write() {
             Ok(mut manager) => {
                 let (dropped, usage_pct) = {
-                    let all_messages = self.session.provider_messages();
+                    let all_messages = self.provider_messages_for_context_management();
                     manager.update_observed_input_tokens(context_limit);
-                    let usage_pct = manager.context_usage_with(all_messages) * 100.0;
-                    let dropped = match manager.hard_compact_with(all_messages) {
+                    let usage_pct = manager.context_usage_with(&all_messages) * 100.0;
+                    let dropped = match manager.hard_compact_with(&all_messages) {
                         Ok(dropped) => dropped,
                         Err(reason) => {
                             logging::warn(&format!(

@@ -114,7 +114,7 @@
   --lyra-menu-frost-top: rgba(88, 95, 110, 0.22);
   --lyra-menu-frost-bottom: rgba(52, 57, 68, 0.15);
   --lyra-menu-inner-line: rgba(164, 170, 184, 0.22);
-  --lyra-menu-backdrop-filter: blur(22px) saturate(1.2) contrast(1.02);
+  --lyra-menu-backdrop-filter: none;
   --lyra-menu-danger: var(--lyra-window-close-hover-bg);
   --lyra-radius-sm: var(--lyra-radius-4);
   --lyra-radius-md: var(--lyra-radius-6);
@@ -170,9 +170,9 @@
   --lyra-shadow-elevated-lg: 0 12px 34px rgba(18, 22, 32, 0.26);
   --lyra-shadow-elevated: var(--lyra-shadow-elevated-sm);
 
-  --lyra-backdrop-blur-sm: blur(10px) saturate(1.08);
-  --lyra-backdrop-blur-md: blur(14px) saturate(1.06);
-  --lyra-backdrop-blur-lg: blur(22px) saturate(1.2) contrast(1.02);
+  --lyra-backdrop-blur-sm: none;
+  --lyra-backdrop-blur-md: none;
+  --lyra-backdrop-blur-lg: none;
 
   --lyra-ease-fast: ease;
   --lyra-ease-standard: cubic-bezier(0.22, 0.82, 0.24, 1);

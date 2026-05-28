@@ -48,6 +48,11 @@ import {
   type SoftwareStoreAppIconKey,
   type SoftwareStoreAppId
 } from "../software-store";
+import {
+  renderLoginManagerAppIcon,
+  type LoginManagerAppIconKey,
+  type LoginManagerAppId
+} from "../login-manager";
 import type { WorkbenchAppId, WorkspaceAppIconKey } from "./types";
 
 const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactNode> = {
@@ -67,7 +72,9 @@ const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactN
   "notification-center": (iconKey) =>
     renderNotificationCenterAppIcon(iconKey as "notification-center-default"),
   "software-store": (iconKey) =>
-    renderSoftwareStoreAppIcon(iconKey as SoftwareStoreAppIconKey)
+    renderSoftwareStoreAppIcon(iconKey as SoftwareStoreAppIconKey),
+  "login-manager": (iconKey) =>
+    renderLoginManagerAppIcon(iconKey as LoginManagerAppIconKey)
 };
 
 const hasWorkspaceAppIconRenderer = (
@@ -123,3 +130,8 @@ export const isSoftwareStoreAppId = (
   value: WorkbenchAppId
 ): value is SoftwareStoreAppId =>
   value === "software-store";
+
+export const isLoginManagerAppId = (
+  value: WorkbenchAppId
+): value is LoginManagerAppId =>
+  value === "login-manager";

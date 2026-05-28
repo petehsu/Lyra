@@ -34,6 +34,10 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
     denyPermission,
     modelControls,
     openModelSettings,
+    isTurnRunning,
+    browserFollowModeEnabled,
+    setBrowserFollowMode,
+    cancelTurn,
   } = useData();
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -152,6 +156,10 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
           onCaptureWindowScreenshot={captureWindowScreenshot}
           modelControls={modelControls ?? null}
           onOpenModelSettings={openModelSettings}
+          isTurnRunning={isTurnRunning}
+          browserFollowModeEnabled={browserFollowModeEnabled}
+          onToggleBrowserFollowMode={setBrowserFollowMode}
+          onCancelTurn={cancelTurn}
           disabledReason={
             hasPendingClarification ? t("composer.answerClarificationFirst") : undefined
           }
