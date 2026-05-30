@@ -329,12 +329,6 @@ export type AgentTurnSendRequest = {
   readonly sessionId?: string | null;
   readonly text: string;
   readonly images?: readonly AgentImageInput[];
-  /**
-   * Deprecated compatibility fields. Provider/account/model selection is owned
-   * by Lyra Agent config now; new UI must use the Agent config/profile APIs below.
-   */
-  readonly providerProfileId?: string | null;
-  readonly providerProfile?: unknown;
 };
 
 export type AgentTurnSendResponse = {
@@ -836,6 +830,12 @@ export type AgentRuntimeEvent =
       readonly message: string;
     }
   | {
+      readonly kind: "turnInterrupted";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly reason: string;
+    }
+  | {
       readonly kind: "followStateChanged";
       readonly sessionId: string;
       readonly follow: AgentFollowState;
@@ -927,6 +927,7 @@ export type AgentSessionSummary = {
   readonly shortName?: string | null;
   readonly status: string;
   readonly providerKey?: string | null;
+  readonly providerLabel?: string | null;
   readonly model?: string | null;
   readonly messageCount: number;
   readonly createdAt: string;
@@ -985,9 +986,14 @@ export type AgentModelEntry = {
   readonly label: string;
   readonly model: string;
   readonly provider?: string | null;
+  readonly providerId?: string | null;
+  readonly providerLabel?: string | null;
   readonly providerKey?: string | null;
   readonly apiMethod?: string | null;
   readonly detail?: string | null;
+  readonly contextWindow?: number | null;
+  readonly supportsImageInput?: boolean;
+  readonly supportsToolCalling?: boolean;
   readonly available: boolean;
 };
 

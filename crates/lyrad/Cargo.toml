@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 lyra-code-intel-core = { path = "../lyra-code-intel-core" }
-lyra-agent-core = { path = "../lyra-agent-core" }
+lyra-agent-runtime = { path = "../lyra-agent-runtime" }
 lyra-download-core = { path = "../lyra-download-core" }
 lyra-lsp-core = { path = "../lyra-lsp-core", default-features = false }
 lyra-runtime-protocol = { path = "../lyra-runtime-protocol" }

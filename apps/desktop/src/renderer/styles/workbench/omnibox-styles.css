@@ -213,7 +213,7 @@
 @keyframes omnibox-slide-down {
   from {
     opacity: 0;
-    transform: translateY(var(--lyra-unit--4));
+    transform: translateY(calc(var(--lyra-unit-4) * -1));
   }
   to {
     opacity: 1;

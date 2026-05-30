@@ -41,6 +41,8 @@ refreshed from Lyra Agent settings.
 For OAuth providers, Lyra Agent opens the provider authorization page and waits
 for the local callback. If the browser callback fails, use the settings page's
 manual callback flow and paste the final callback URL or authorization code.
+OpenAI OAuth expects the local callback URI
+`http://localhost:1455/auth/callback`.
 
 For API-key providers, Lyra Agent saves keys into its private config directory.
 Provider names, model IDs, and route IDs stay provider-owned and are not

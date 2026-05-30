@@ -81,9 +81,13 @@ const agentModels = {
       label: "mimo-v2.5-pro · MiMo",
       model: "mimo-v2.5-pro",
       provider: "MiMo",
+      providerId: "mimo-token-plan",
+      providerLabel: "MiMo",
       providerKey: "mimo-token-plan",
       apiMethod: "openai-compatible",
       detail: "configured",
+      supportsImageInput: true,
+      supportsToolCalling: true,
       available: true
     },
     {
@@ -91,9 +95,13 @@ const agentModels = {
       label: "gpt-5 · OpenAI",
       model: "gpt-5",
       provider: "OpenAI",
+      providerId: "openai",
+      providerLabel: "OpenAI",
       providerKey: "openai",
       apiMethod: "openai",
       detail: "configured",
+      supportsImageInput: true,
+      supportsToolCalling: true,
       available: true
     },
     {
@@ -101,9 +109,13 @@ const agentModels = {
       label: "unconfigured-model · Missing",
       model: "unconfigured-model",
       provider: "Missing",
+      providerId: "missing",
+      providerLabel: "Missing",
       providerKey: "missing",
       apiMethod: "openai",
       detail: "not configured",
+      supportsImageInput: false,
+      supportsToolCalling: false,
       available: false
     }
   ],
@@ -837,34 +849,87 @@ describe("AiPanelSurface", () => {
     expect(triggerPoke).toHaveBeenCalledWith({ sessionId: "session-1" });
   });
 
-  test("does not derive todos from generic Lyra Lumen output", async () => {
+  test("does not derive todos from arbitrary tool output", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
       ...snapshot,
-      tools: [{
-        id: "lyra-lumen-tool",
-        name: "lyra_lumen",
-        label: "Lyra Lumen",
-        status: "completed",
-        input: { action: "inspect" },
-        output: {
-          content: JSON.stringify({
-            items: [
-              { text: "请叫我徐总" },
-              { text: "视频生成" },
-              { text: "图像生成" }
-            ],
-            mainTextExcerpt: "快速 视频生成 图像生成 深入研究"
-          })
+      tools: [
+        {
+          id: "lyra-lumen-tool",
+          name: "lyra_lumen",
+          label: "Lyra Lumen",
+          status: "completed",
+          input: { action: "inspect" },
+          output: {
+            content: JSON.stringify({
+              todos: [{ content: "fake todo from JSON output", status: "pending" }],
+              items: [
+                { text: "请叫我徐总" },
+                { text: "视频生成" },
+                { text: "图像生成" }
+              ],
+              mainTextExcerpt: "快速 视频生成 图像生成 深入研究"
+            })
+          },
+          startedAt: "2026-05-13T00:00:02.000Z",
+          finishedAt: "2026-05-13T00:00:02.500Z"
         },
-        startedAt: "2026-05-13T00:00:02.000Z",
-        finishedAt: "2026-05-13T00:00:02.500Z"
-      }]
+        {
+          id: "dom-tool",
+          name: "read_dom",
+          label: "Read DOM",
+          status: "completed",
+          input: {},
+          output: {
+            content: "<button>fake todo from DOM text</button>"
+          },
+          startedAt: "2026-05-13T00:00:03.000Z",
+          finishedAt: "2026-05-13T00:00:03.500Z"
+        },
+        {
+          id: "file-tool",
+          name: "read",
+          label: "Read",
+          status: "completed",
+          input: {},
+          output: {
+            content: "todo-output.json\nfake todo from file name"
+          },
+          startedAt: "2026-05-13T00:00:04.000Z",
+          finishedAt: "2026-05-13T00:00:04.500Z"
+        }
+      ]
     });
     renderPanel(api);
 
     await screen.findByText("Lyra Agent");
     expect(screen.queryByText("请叫我徐总")).not.toBeInTheDocument();
+    expect(screen.queryByText("fake todo from JSON output")).not.toBeInTheDocument();
+    expect(screen.queryByText("fake todo from DOM text")).not.toBeInTheDocument();
+    expect(screen.queryByText("fake todo from file name")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Continue unfinished todos")).not.toBeInTheDocument();
+  });
+
+  test("does not use memory activeTodos as the TodoBar source", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const memory = memoryUpdated();
+    setReadSnapshot({
+      ...snapshot,
+      memory: {
+        ...memory,
+        activeTodos: [{
+          id: "memory-todo",
+          content: "memory-only todo",
+          status: "pending",
+          priority: "normal"
+        }]
+      },
+      todos: []
+    });
+    renderPanel(api);
+
+    await screen.findByText("Lyra Agent");
+    expect(screen.queryByText("memory-only todo")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Continue unfinished todos")).not.toBeInTheDocument();
   });
 

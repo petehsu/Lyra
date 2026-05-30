@@ -84,6 +84,8 @@ pub struct AgentSessionSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     pub message_count: usize,
     pub created_at: String,
@@ -377,6 +379,186 @@ pub struct LyraSoftwareEvent {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRegisteredCommand {
+    pub name: String,
+    pub help: String,
+    pub autocomplete: bool,
+    pub remote_only: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentConfigSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_home: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_path: Option<String>,
+    pub config: Value,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commands: Vec<AgentRegisteredCommand>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProviderProfile {
+    pub id: String,
+    pub label: String,
+    pub provider_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    #[serde(default)]
+    pub supports_text: bool,
+    #[serde(default)]
+    pub supports_image_input: bool,
+    #[serde(default)]
+    pub supports_tool_calling: bool,
+    #[serde(default)]
+    pub supports_streaming: bool,
+    #[serde(default)]
+    pub supports_structured_output: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<usize>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProviderOptionState {
+    pub id: String,
+    pub value: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supported_values: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentModelEntry {
+    pub id: String,
+    pub label: String,
+    pub provider_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<usize>,
+    #[serde(default)]
+    pub supports_image_input: bool,
+    #[serde(default)]
+    pub supports_tool_calling: bool,
+    #[serde(default)]
+    pub selected: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentModelRoute {
+    pub route: String,
+    pub provider_id: String,
+    pub model_id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentModelCatalogSnapshot {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub providers: Vec<AgentProviderProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<AgentModelEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routes: Vec<AgentModelRoute>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<AgentProviderOptionState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<AgentProviderOptionState>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAccountSnapshot {
+    pub id: String,
+    pub provider_id: String,
+    pub label: String,
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentLoginProviderSnapshot {
+    pub id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_kind: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAccountsSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accounts: Vec<AgentAccountSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub login_providers: Vec<AgentLoginProviderSnapshot>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AgentGitFileStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+    Untracked,
+    Conflicted,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentGitChangedFile {
+    pub path: String,
+    pub status: AgentGitFileStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentGitStatusSnapshot {
+    pub branch: Option<String>,
+    pub clean: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_files: Vec<AgentGitChangedFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRollbackChangedFile {
+    pub path: String,
+    pub status: AgentGitFileStatus,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRollbackPreviewResponse {
+    pub session_id: AgentSessionId,
+    pub message_id: AgentMessageId,
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_files: Vec<AgentRollbackChangedFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRollbackRestoreResponse {
+    pub session_id: AgentSessionId,
+    pub message_id: AgentMessageId,
+    pub removed_message_count: usize,
+    pub restored_file_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
@@ -390,6 +572,12 @@ pub enum AgentRuntimeEvent {
         session_id: AgentSessionId,
         turn_id: AgentTurnId,
         state: AgentRuntimeTurnState,
+    },
+    TurnStateChanged {
+        session_id: AgentSessionId,
+        turn_id: AgentTurnId,
+        state: AgentRuntimeTurnState,
+        reason: String,
     },
     MessageDelta {
         session_id: AgentSessionId,
@@ -425,12 +613,20 @@ pub enum AgentRuntimeEvent {
     },
     MemoryUpdated {
         session_id: AgentSessionId,
-        projection: AgentMemoryProjection,
+        snapshot: AgentMemoryProjection,
     },
     BrowserActivityChanged {
         session_id: AgentSessionId,
         turn_id: AgentTurnId,
         target: Value,
+    },
+    ContextTrimmed {
+        session_id: AgentSessionId,
+        detail: Value,
+    },
+    TurnRecovered {
+        session_id: AgentSessionId,
+        turn_id: AgentTurnId,
     },
     PermissionRequested {
         session_id: AgentSessionId,
@@ -453,6 +649,10 @@ pub enum AgentRuntimeEvent {
         turn_id: AgentTurnId,
         status: AgentSessionStatus,
     },
+    TurnCompleted {
+        session_id: AgentSessionId,
+        turn_id: AgentTurnId,
+    },
     TurnFailed {
         session_id: AgentSessionId,
         turn_id: AgentTurnId,
@@ -462,6 +662,25 @@ pub enum AgentRuntimeEvent {
         session_id: AgentSessionId,
         turn_id: AgentTurnId,
         reason: String,
+    },
+    FollowStateChanged {
+        session_id: AgentSessionId,
+        follow: AgentFollowState,
+    },
+    RollbackStarted {
+        session_id: AgentSessionId,
+        message_id: AgentMessageId,
+    },
+    RollbackFinished {
+        session_id: AgentSessionId,
+        message_id: AgentMessageId,
+        removed_message_count: usize,
+        restored_file_count: usize,
+    },
+    RollbackFailed {
+        session_id: AgentSessionId,
+        message_id: AgentMessageId,
+        message: String,
     },
 }
 
@@ -529,6 +748,18 @@ mod tests {
         assert_eq!(value["kind"], "toolStarted");
         assert_eq!(value["sessionId"], "session-1");
         assert_eq!(value["tool"]["startedAt"], "2026-05-28T00:00:00Z");
+    }
+
+    #[test]
+    fn memory_event_matches_desktop_snapshot_field() {
+        let value = serde_json::to_value(AgentRuntimeEvent::MemoryUpdated {
+            session_id: "session-1".to_string(),
+            snapshot: AgentMemoryProjection::default(),
+        })
+        .expect("memory event json");
+        assert_eq!(value["kind"], "memoryUpdated");
+        assert!(value.get("snapshot").is_some());
+        assert!(value.get("projection").is_none());
     }
 
     #[test]

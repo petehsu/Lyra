@@ -1,0 +1,23 @@
+[package]
+name = "lyra-agent-runtime"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+chrono = { workspace = true, features = ["clock", "serde"] }
+dirs.workspace = true
+lyra-agent-api.workspace = true
+lyra-agent-kernel.workspace = true
+lyra-agent-plugins.workspace = true
+futures = { workspace = true, features = ["executor"] }
+reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,5 @@
+[env]
+# Legacy agent-core tests still share process-global runtime state such as
+# provider env vars, storage roots, and the global event bus. Keep the default
+# Cargo test invocation deterministic until those internals are fully isolated.
+RUST_TEST_THREADS = "1"

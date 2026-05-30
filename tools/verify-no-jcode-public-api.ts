@@ -15,12 +15,22 @@ function publicUseWithoutAliasedLegacy(line: string): string {
   return line.replace(/\b[A-Za-z0-9_]*jcode[A-Za-z0-9_]*\s+as\s+[A-Za-z0-9_]+/g, "");
 }
 
+let pendingLegacyPathAttr: { line: number; text: string } | null = null;
+
 lines(libPath).forEach((line, index) => {
-  if (/pub\s+mod\s+jcode|pub\s+mod\s+\w+;.*root_src/.test(line)) {
-    violations.push(`crates/lyra-agent-core/src/lib.rs:${index + 1} Public modules must not expose legacy jcode/root_src internals.`);
+  if (/^\s*#\[path\s*=\s*"[^"]*(?:root_src|kernel_legacy)[^"]*"\]/.test(line)) {
+    pendingLegacyPathAttr = { line: index + 1, text: line };
+    return;
   }
-  if (/^pub\s+mod\s+/.test(line) && /jcode_core\/vendor\/root_src/.test(line)) {
-    violations.push(`crates/lyra-agent-core/src/lib.rs:${index + 1} root_src modules must remain private.`);
+
+  if (/pub\s+mod\s+jcode|pub\s+mod\s+\w+;.*(?:root_src|kernel_legacy)/.test(line)) {
+    violations.push(`crates/lyra-agent-core/src/lib.rs:${index + 1} Public modules must not expose legacy jcode/root_src/kernel_legacy internals.`);
+  }
+  if (/^pub\s+mod\s+/.test(line) && pendingLegacyPathAttr !== null) {
+    violations.push(`crates/lyra-agent-core/src/lib.rs:${pendingLegacyPathAttr.line} legacy kernel path modules must remain private.`);
+  }
+  if (!/^\s*$/.test(line) && !/^\s*#/.test(line)) {
+    pendingLegacyPathAttr = null;
   }
   if (/^\s*(pub\s+use|[A-Za-z0-9_]+,)/.test(line)) {
     const visible = publicUseWithoutAliasedLegacy(line);

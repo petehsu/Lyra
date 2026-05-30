@@ -357,12 +357,20 @@ export const useLyraAgentDataProvider = (
             detail: event.detail
           })
         );
-      } else if (event.kind === "turnFinished" || event.kind === "turnFailed") {
+      } else if (
+        event.kind === "turnFinished" ||
+        event.kind === "turnFailed" ||
+        event.kind === "turnInterrupted"
+      ) {
         setPendingClarifications([]);
         setPendingPermissions([]);
       }
       dispatch({ type: "event", event });
-      if (event.kind === "turnFinished" || event.kind === "turnFailed") {
+      if (
+        event.kind === "turnFinished" ||
+        event.kind === "turnFailed" ||
+        event.kind === "turnInterrupted"
+      ) {
         void agentApi.readSession({ sessionId: event.sessionId })
           .then((snapshot) => {
             if (disposed || currentSessionIdRef.current !== snapshot.id) return;

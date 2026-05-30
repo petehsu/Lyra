@@ -4,10 +4,12 @@ This audit records the boundary that the agent-core refactor is enforcing.
 
 ## Current Findings
 
-- `crates/lyra-agent-core/src/lib.rs` used to expose many `jcode_core/vendor/root_src` modules as public modules. These modules are now private implementation modules.
+- `crates/lyra-agent-core/src/lib.rs` used to expose many imported jcode modules as public modules. Those modules are no longer present in the active workspace.
 - `lyrad` now exposes agent runtime methods under `agent.*` only. The old `jcode.*` router branch is removed.
 - Desktop shared contracts now use `Agent*` DTO names and `lyra:agent/...` IPC channels. `apps/desktop/src` and `crates/lyrad` no longer contain `Jcode`, `jcode.*`, or `lyra:jcode/...` public references.
-- `lyra-agent-core` still contains private legacy implementation names while the kernel is being internalized. Public exports use Lyra Agent names.
+- `lyra-agent-runtime` owns the native `LyraAgentBackend` main path and no longer depends on `lyra-agent-core`, `lyra-agent-legacy-*`, or any `jcode-*` crate.
+- `lyrad` and `lyra-cli` compose `LyraAgentBackend` directly.
+- `lyra-agent-core` is now a compatibility facade over `lyra-agent-runtime`. Public exports use Lyra Agent names.
 
 ## Public Boundary
 
@@ -17,14 +19,18 @@ This audit records the boundary that the agent-core refactor is enforcing.
 
 ## Forbidden Directions
 
-- Desktop must not import or reference `jcode_core`, `root_src`, or kernel implementation paths.
+- Desktop must not import or reference `jcode_core`, `root_src`, `kernel_legacy`, or kernel implementation paths.
 - `lyrad` must not expose `jcode.*` runtime methods or `lyra:jcode/...` channels.
-- Public `lyra-agent-core` exports must not expose root_src modules, jcode modules, jcode provider/message/tool/session types, or unaliased `jcode_*` functions.
+- Public `lyra-agent-core` exports must not expose `root_src`/`kernel_legacy` modules, jcode modules, jcode provider/message/tool/session types, or unaliased `jcode_*` functions.
 - Agent kernel code must not depend on Desktop or `lyrad`.
 - API contracts must not depend on runtime implementation crates.
+- `lyra-agent-runtime` must not depend on `lyra-agent-core`, `lyra-agent-legacy-*`, or `jcode-*` crates.
+- No workspace crate may depend on `lyra-agent-legacy-*` or `jcode-*` crates.
+- `crates/lyra-agent-legacy-adapter`, `crates/lyra-agent-legacy-kernel`, and `crates/lyra-agent-legacy-kernel-crates` must not return.
 
 ## Enforcement
 
 - `pnpm lint:agent-boundary` checks Desktop/daemon naming and legacy path leakage.
+- `pnpm lint:agent-boundary` also rejects `lyra-agent-core/src/kernel_legacy.rs`, `lyra-agent-core/src/kernel_legacy/`, removed legacy crate directories, workspace legacy/jcode dependencies, runtime dependencies on core/legacy/jcode crates, and direct legacy module access from the core compatibility facade.
 - `pnpm lint:no-jcode-public-api` checks the public `lyra-agent-core` and Desktop shared contract surfaces.
 - `pnpm check` runs both guards alongside the existing structure, Rust-first, and UI-style guards.

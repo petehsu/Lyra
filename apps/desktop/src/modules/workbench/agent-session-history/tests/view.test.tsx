@@ -55,6 +55,7 @@ const baseSessions: AgentSessionSummary[] = [
     shortName: "storage",
     status: "saved",
     providerKey: "mimo-token-plan",
+    providerLabel: "MiMo Token Plan",
     model: "mimo-v2.5-pro",
     messageCount: 4,
     createdAt: "2026-05-15T00:00:00Z",
@@ -72,6 +73,7 @@ const baseSessions: AgentSessionSummary[] = [
     shortName: "ui",
     status: "idle",
     providerKey: "openai",
+    providerLabel: "OpenAI",
     model: "gpt-5",
     messageCount: 9,
     createdAt: "2026-05-15T01:00:00Z",
@@ -89,6 +91,7 @@ const baseSessions: AgentSessionSummary[] = [
     shortName: "archive",
     status: "idle",
     providerKey: "openai",
+    providerLabel: "OpenAI",
     model: "gpt-5",
     messageCount: 2,
     createdAt: "2026-05-15T02:00:00Z",
@@ -101,8 +104,16 @@ const baseSessions: AgentSessionSummary[] = [
   }
 ];
 
-const createDesktopApi = () => {
-  let sessions = [...baseSessions];
+const sessionWithProviderIdOnly: AgentSessionSummary = {
+  ...baseSessions[0]!,
+  id: "session-provider-id-only",
+  title: "Provider id should not display",
+  providerKey: "mimo-token-plan",
+  providerLabel: null
+};
+
+const createDesktopApi = (initialSessions: readonly AgentSessionSummary[] = baseSessions) => {
+  let sessions = [...initialSessions];
   const listeners = new Set<(event: AgentRuntimeEvent) => void>();
   const readSession = vi.fn(async ({ sessionId }: { readonly sessionId: string }) => ({
     id: sessionId,
@@ -252,6 +263,25 @@ describe("AgentSessionHistorySurface", () => {
     expect(screen.queryByText("Fix agent storage")).not.toBeInTheDocument();
     expect(screen.getByText("Review UI polish")).toBeInTheDocument();
     expect(screen.getByText("Archived plan")).toBeInTheDocument();
+  });
+
+  test("uses providerLabel for display instead of providerKey", async () => {
+    const { api } = createDesktopApi([sessionWithProviderIdOnly]);
+
+    render(
+      <AgentSessionHistorySurface
+        desktopApi={api}
+        labels={labels}
+        activeSessionId={null}
+        onOpenSession={vi.fn()}
+      />
+    );
+
+    await screen.findByText("Provider id should not display");
+    expect(screen.getByText(`Default provider / ${sessionWithProviderIdOnly.model}`))
+      .toBeInTheDocument();
+    expect(screen.queryByText(`mimo-token-plan / ${sessionWithProviderIdOnly.model}`))
+      .not.toBeInTheDocument();
   });
 
   test("previews the selected session without opening the AI panel", async () => {

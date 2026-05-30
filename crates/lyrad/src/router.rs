@@ -10,28 +10,7 @@ use crate::modules::fs::{
 use crate::modules::web::{
     search_site_stream_cancel_json, search_site_stream_read_json, search_site_stream_start_json,
 };
-use lyra_agent_core::{
-    agent_memory_audit_json, agent_memory_recover_run_json, agent_memory_shared_search_json,
-    agent_memory_shared_update_json, agent_memory_snapshot_json, agent_memory_trim_run_json,
-    archive_session_json, bind_project_session_json, cancel_agent_overnight_json, cancel_turn_json,
-    compact_agent_session_json, complete_agent_account_login_json, create_session_json,
-    delete_session_json, git_diff_json, git_discard_json, git_stage_json, git_status_json,
-    git_unstage_json, list_agent_accounts_json, list_agent_goals_json,
-    list_agent_login_providers_json, list_agent_models_json, list_agent_overnight_json,
-    list_agent_sessions_json, log_agent_overnight_json, login_agent_account_json,
-    open_agent_goals_json, preview_rollback_json, read_agent_config_json, read_session_json,
-    refactor_session_json, refresh_agent_models_json, remove_agent_account_json,
-    rename_session_json, respond_clarification_json, respond_permission_json,
-    restore_rollback_json, resume_agent_goal_json, review_agent_overnight_json, run_agent_btw_json,
-    run_agent_subagent_json, run_improve_session_json, run_judge_session_json,
-    run_review_session_json, save_agent_provider_profile_json, save_session_json,
-    selfdev_status_json, send_selfdev_turn_json, send_turn_json, show_agent_goal_json,
-    split_agent_session_json, start_agent_account_login_json, start_agent_overnight_json,
-    start_selfdev_session_json, status_agent_overnight_json, switch_agent_account_json,
-    switch_agent_model_json, transfer_agent_session_json, trigger_poke_session_json,
-    unsave_session_json, update_agent_config_json, update_agent_provider_options_json,
-    update_agent_roles_json, update_agent_session_automation_json,
-};
+use lyra_agent_runtime::{AgentRuntimeError, AgentRuntimeServices};
 use lyra_download_core::{
     cancel_all_downloads_json, cancel_download_json, download_remote_status_json,
     enqueue_download_json, import_external_browser_downloads_json, list_downloads_json,
@@ -125,79 +104,14 @@ pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Val
 }
 
 fn handle_agent_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
-    match method {
-        "agent.session.create" => call_json(payload, create_session_json),
-        "agent.session.read" => call_json(payload, read_session_json),
-        "agent.session.list" => call_json(payload, list_agent_sessions_json),
-        "agent.session.save" => call_json(payload, save_session_json),
-        "agent.session.unsave" => call_json(payload, unsave_session_json),
-        "agent.session.rename" => call_json(payload, rename_session_json),
-        "agent.session.archive" => call_json(payload, archive_session_json),
-        "agent.session.delete" => call_json(payload, delete_session_json),
-        "agent.session.bindProject" => call_json(payload, bind_project_session_json),
-        "agent.session.split" => call_json(payload, split_agent_session_json),
-        "agent.session.transfer" => call_json(payload, transfer_agent_session_json),
-        "agent.session.compact" => call_json(payload, compact_agent_session_json),
-        "agent.session.automation.update" => {
-            call_json(payload, update_agent_session_automation_json)
-        }
-        "agent.selfdev.start" => call_json(payload, start_selfdev_session_json),
-        "agent.selfdev.status" => call_json(payload, selfdev_status_json),
-        "agent.selfdev.sendTurn" => call_json(payload, send_selfdev_turn_json),
-        "agent.turn.send" => call_json(payload, send_turn_json),
-        "agent.turn.start" => call_json(payload, send_turn_json),
-        "agent.turn.resume" => call_json(payload, send_turn_json),
-        "agent.turn.cancel" => call_json(payload, cancel_turn_json),
-        "agent.turn.retry" => call_json(payload, send_turn_json),
-        "agent.memory.snapshot" => call_json(payload, agent_memory_snapshot_json),
-        "agent.memory.audit" => call_json(payload, agent_memory_audit_json),
-        "agent.memory.trim.run" => call_json(payload, agent_memory_trim_run_json),
-        "agent.memory.recover.run" => call_json(payload, agent_memory_recover_run_json),
-        "agent.memory.shared.search" => call_json(payload, agent_memory_shared_search_json),
-        "agent.memory.shared.update" => call_json(payload, agent_memory_shared_update_json),
-        "agent.rollback.preview" => call_json(payload, preview_rollback_json),
-        "agent.rollback.restore" => call_json(payload, restore_rollback_json),
-        "agent.git.status" => call_json(payload, git_status_json),
-        "agent.git.diff" => call_json(payload, git_diff_json),
-        "agent.git.stage" => call_json(payload, git_stage_json),
-        "agent.git.unstage" => call_json(payload, git_unstage_json),
-        "agent.git.discard" => call_json(payload, git_discard_json),
-        "agent.permission.respond" => call_json(payload, respond_permission_json),
-        "agent.clarification.respond" => call_json(payload, respond_clarification_json),
-        "agent.config.read" => call_json(payload, read_agent_config_json),
-        "agent.config.update" => call_json(payload, update_agent_config_json),
-        "agent.provider.profile.save" => call_json(payload, save_agent_provider_profile_json),
-        "agent.provider.options.update" => call_json(payload, update_agent_provider_options_json),
-        "agent.models.list" => call_json(payload, list_agent_models_json),
-        "agent.models.switch" => call_json(payload, switch_agent_model_json),
-        "agent.models.refresh" => call_json(payload, refresh_agent_models_json),
-        "agent.roles.update" => call_json(payload, update_agent_roles_json),
-        "agent.action.improve" => call_json(payload, run_improve_session_json),
-        "agent.action.refactor" => call_json(payload, refactor_session_json),
-        "agent.action.poke" => call_json(payload, trigger_poke_session_json),
-        "agent.action.review" => call_json(payload, run_review_session_json),
-        "agent.action.judge" => call_json(payload, run_judge_session_json),
-        "agent.subagent.run" => call_json(payload, run_agent_subagent_json),
-        "agent.btw.run" => call_json(payload, run_agent_btw_json),
-        "agent.goals.list" => call_json(payload, list_agent_goals_json),
-        "agent.goals.open" => call_json(payload, open_agent_goals_json),
-        "agent.goals.resume" => call_json(payload, resume_agent_goal_json),
-        "agent.goals.show" => call_json(payload, show_agent_goal_json),
-        "agent.accounts.list" => call_json(payload, list_agent_accounts_json),
-        "agent.accounts.login" => call_json(payload, login_agent_account_json),
-        "agent.accounts.loginProviders" => call_json(payload, list_agent_login_providers_json),
-        "agent.accounts.loginStart" => call_json(payload, start_agent_account_login_json),
-        "agent.accounts.loginComplete" => call_json(payload, complete_agent_account_login_json),
-        "agent.accounts.switch" => call_json(payload, switch_agent_account_json),
-        "agent.accounts.remove" => call_json(payload, remove_agent_account_json),
-        "agent.overnight.start" => call_json(payload, start_agent_overnight_json),
-        "agent.overnight.list" => call_json(payload, list_agent_overnight_json),
-        "agent.overnight.status" => call_json(payload, status_agent_overnight_json),
-        "agent.overnight.log" => call_json(payload, log_agent_overnight_json),
-        "agent.overnight.review" => call_json(payload, review_agent_overnight_json),
-        "agent.overnight.cancel" => call_json(payload, cancel_agent_overnight_json),
-        _ => unknown_method("agent", method),
-    }
+    AgentRuntimeServices::default()
+        .handle_agent_request(method, payload)
+        .map_err(|error| match error {
+            AgentRuntimeError::UnknownMethod(_) => {
+                unknown_method("agent", method).expect_err("unknown_method always returns an error")
+            }
+            other => runtime_error("RUNTIME_ERROR", other.to_string()),
+        })
 }
 
 fn handle_download_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {

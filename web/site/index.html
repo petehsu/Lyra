@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Primary SEO Metadata -->
+    <title>Lyra | 本地优先的 AI Agent 智能工作区与浏览器</title>
+    <meta name="description" content="Lyra 是一款专为开发者设计的本地优先 AI Agent 智能工作区与浏览器。搭载 Rust 核心、结构化本地记忆、可视化浏览器跟随与细粒度安全沙箱，让 AI 协作安全、透明、极速。" />
+    <meta name="keywords" content="Lyra, AI Agent, AI 浏览器, Agent 工作区, Rust, 本地优先, 开发者工具" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <!-- Premium Header / Glassmorphism Navbar -->
+    <header class="main-header" id="navbar">
+      <div class="header-container">
+        <a href="#" class="logo">
+          <svg class="logo-icon" width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="2" width="28" height="28" rx="8" stroke="url(#logo-grad)" stroke-width="2.5" fill="none"/>
+            <path d="M8 20L13 10L19 22L24 12" stroke="url(#logo-grad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="logo-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="var(--c-accent)" />
+                <stop offset="50%" stop-color="var(--c-indigo)" />
+                <stop offset="100%" stop-color="var(--c-cyan)" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <span class="logo-text">Lyra</span>
+        </a>
+
+        <nav class="nav-links">
+          <a href="#features" class="nav-link">核心特性</a>
+          <a href="#architecture" class="nav-link">系统架构</a>
+          <a href="#security" class="nav-link">安全沙箱</a>
+          <a href="/docs" class="nav-link" target="_blank">开发者文档</a>
+        </nav>
+
+        <div class="header-actions">
+          <a href="https://github.com/petehsu/Lyra" class="btn-icon" target="_blank" aria-label="GitHub Repository">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+            </svg>
+          </a>
+          <a href="#download" class="btn btn-primary btn-glow">下载 Workbench</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Visual Container -->
+    <main>
+      <!-- Hero Section with Dynamic Glass Wave Background -->
+      <section class="hero-section">
+        <!-- Ultra-fine Grid Background Overlay -->
+        <div class="grid-overlay"></div>
+
+        <!-- Interactive 3D Fluted Glass / Ribbon Wave Container -->
+        <div class="glass-wave-canvas" id="glass-wave">
+          <!-- We dynamically generate flutes in JS -->
+          <div class="gradient-backdrop">
+            <div class="grad-blob grad-silver"></div>
+            <div class="grad-blob grad-indigo"></div>
+            <div class="grad-blob grad-blue"></div>
+            <div class="grad-blob grad-aurora"></div>
+          </div>
+          <div class="flutes-wrapper" id="flutes-container"></div>
+        </div>
+
+        <div class="hero-content">
+          <div class="badge animate-fade-up">本地优先 · 智能协作</div>
+          <h1 class="hero-title animate-fade-up" style="animation-delay: 0.1s;">
+            专为开发者打造的<br>
+            <span class="gradient-text">AI Agent 智能工作区</span>
+          </h1>
+          <p class="hero-subtitle animate-fade-up" style="animation-delay: 0.2s;">
+            Lyra 将高性能的 Rust Native 核心与安全的双轨浏览器有机结合，建立本地结构化记忆系统，让 AI 成为深度理解你代码库与工作流的“超级副驾驶”。
+          </p>
+          <div class="hero-actions animate-fade-up" style="animation-delay: 0.3s;">
+            <a href="#download" class="btn btn-primary btn-lg">立即下载</a>
+            <a href="/docs" class="btn btn-secondary btn-lg" target="_blank">阅读技术文档</a>
+          </div>
+
+          <!-- Interactive Theme Selector for the Glass Wave Background -->
+          <div class="theme-selector animate-fade-up" style="animation-delay: 0.4s;">
+            <span class="theme-label">切换流光维度：</span>
+            <button class="theme-btn active" data-theme="silver" style="--btn-color: var(--c-silver-1)">钛空流动</button>
+            <button class="theme-btn" data-theme="aurora" style="--btn-color: var(--c-cyan)">极光折射</button>
+            <button class="theme-btn" data-theme="indigo" style="--btn-color: var(--c-indigo)">幽邃星云</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features Grid Section -->
+      <section class="features-section" id="features">
+        <div class="section-container">
+          <div class="section-header">
+            <h2 class="section-title">重塑 Agent 的四个支柱维度</h2>
+            <p class="section-desc">我们拒绝拼凑与补丁，用 Rust 的安全和结构化的状态机重构 Agent 本地执行体验。</p>
+          </div>
+
+          <div class="features-grid">
+            <!-- Feature 1 -->
+            <div class="feature-card">
+              <div class="card-glow"></div>
+              <div class="card-icon" style="--icon-color: var(--c-accent)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                </svg>
+              </div>
+              <h3 class="card-title">结构化本地记忆 (`agent-memory`)</h3>
+              <p class="card-desc">全系采用本地 SQLite 存储，提炼核心 RuntimeTurn 状态机和 Pinned 上下文层。彻底杜绝摘要泄漏，保障长工具链及重载崩溃下的可靠恢复。</p>
+            </div>
+
+            <!-- Feature 2 -->
+            <div class="feature-card">
+              <div class="card-glow"></div>
+              <div class="card-icon" style="--icon-color: var(--c-cyan)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12h20M20 5c-1.5 2-3 3.5-5 5M4 19c1.5-2 3-3.5 5-5"/>
+                </svg>
+              </div>
+              <h3 class="card-title">可视化浏览器跟随 (Lumen Mode)</h3>
+              <p class="card-desc">内嵌的 Lumen 浏览器支持“跟随/隐式”双轨机制。前台工作区真实呈现 Agent 的点击、输入、焦点与等待，实现人机协同的完美同屏。</p>
+            </div>
+
+            <!-- Feature 3 -->
+            <div class="feature-card">
+              <div class="card-glow"></div>
+              <div class="card-icon" style="--icon-color: var(--c-indigo)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                  <polyline points="2 17 12 22 22 17"/>
+                  <polyline points="2 12 12 17 22 12"/>
+                </svg>
+              </div>
+              <h3 class="card-title">高性能 Rust Native 引擎</h3>
+              <p class="card-desc">主守护进程 `lyrad` 基于强安全、高并发 Rust 重构。剥离 JS 历史包袱，处理高频数据流投影与深度代码解析，前台响应如丝般顺滑。</p>
+            </div>
+
+            <!-- Feature 4 -->
+            <div class="feature-card">
+              <div class="card-glow"></div>
+              <div class="card-icon" style="--icon-color: var(--c-purple)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+              </div>
+              <h3 class="card-title">细粒度安全与隐身沙箱</h3>
+              <p class="card-desc">建立零信任安全网关。Agent 发起文件编辑、Shell 运行或公网数据请求时，均会触发本地高阻尼授权面板，给予用户绝对否决权。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Interactive System Architecture Section -->
+      <section class="architecture-section" id="architecture">
+        <div class="section-container">
+          <div class="section-header">
+            <h2 class="section-title">高精度的分层系统蓝图</h2>
+            <p class="section-desc">从 UI 投影到 Native 存储，Lyra 坚守清晰而严格的单向依赖与进程隔离原则。</p>
+          </div>
+
+          <div class="architecture-layout">
+            <div class="arch-schematic">
+              <!-- Visual Interactive Blocks -->
+              <div class="arch-block block-ui" data-arch="ui">
+                <span class="block-tag">Shell / UI Layer</span>
+                <h4>apps/desktop</h4>
+                <p>基于 Electron & React 的前台。完全只读消费 `Timeline Projection` 与结构化 DTO，坚决不参与任何底层状态修改。</p>
+              </div>
+              <div class="arch-arrow">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+              </div>
+
+              <div class="arch-block block-daemon" data-arch="daemon">
+                <span class="block-tag">Process & Routing</span>
+                <h4>crates/lyrad</h4>
+                <p>轻量进程与 IPC 管道。负责双向事件广播、状态推送、命令校验，彻底杜绝 jcode 内部命名向 UI 层暴露。</p>
+              </div>
+              <div class="arch-arrow">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+              </div>
+
+              <div class="arch-block block-runtime" data-arch="runtime">
+                <span class="block-tag">Orchestration & Rules</span>
+                <h4>crates/lyra-agent-runtime</h4>
+                <p>核心编排系统。通过 SQLite 强类型承载 Session，驱动 Context Assembler 构建模型输入，拒绝混淆 timelines。</p>
+              </div>
+              <div class="arch-arrow">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+              </div>
+
+              <div class="arch-block block-kernel" data-arch="kernel">
+                <span class="block-tag">Agent Primitives</span>
+                <h4>crates/lyra-agent-kernel</h4>
+                <p>内置 AI 内核实现。封装具体的 LLM 请求、工具集执行引擎与流程压缩，不反向依赖任何 UI 与上层视图模型。</p>
+              </div>
+            </div>
+
+            <!-- Detailed Explanation Card (Dynamic content changes based on click/scroll) -->
+            <div class="arch-details-card">
+              <h3 id="arch-detail-title">点击或滚动查看分层详情</h3>
+              <div class="arch-detail-divider"></div>
+              <p id="arch-detail-desc">Lyra 后端的物理切分与解耦是高成熟度架构的证明。将 API DTO 契约（API）、运行时编排（Runtime）、引擎内核（Kernel）物理拆分，保证了整个平台的可插拔扩展能力，并为 CLI 独立运行做足了准备。</p>
+
+              <div class="arch-indicators">
+                <div class="indicator-item active" data-target="ui">1. 极简桌面壳层</div>
+                <div class="indicator-item" data-target="daemon">2. 安全守护进程</div>
+                <div class="indicator-item" data-target="runtime">3. 强状态运行时</div>
+                <div class="indicator-item" data-target="kernel">4. 极客引擎内核</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Security / Sandbox Consent Simulator -->
+      <section class="security-section" id="security">
+        <div class="section-container">
+          <div class="section-header">
+            <h2 class="section-title">高透明度安全沙箱模拟</h2>
+            <p class="section-desc">体验 Lyra 的“细粒度授权授权”工作流。AI 的任何高风险敏感操作均会在后台被拦截，等待你的终审确认。</p>
+          </div>
+
+          <div class="simulator-layout">
+            <div class="simulator-sidebar">
+              <p class="sim-label">点击触发 AI 操作尝试：</p>
+              <button class="sim-trigger-btn active" data-action="file_edit">
+                <span>📝 修改敏感系统配置文件</span>
+                <small>路径: `/etc/hosts`</small>
+              </button>
+              <button class="sim-trigger-btn" data-action="command_run">
+                <span>💻 在终端运行任意 Shell 命令</span>
+                <small>命令: `rm -rf ./node_modules`</small>
+              </button>
+              <button class="sim-trigger-btn" data-action="network_fetch">
+                <span>🌐 尝试连接外部未受信任 URL</span>
+                <small>目标: `api.external-track.com`</small>
+              </button>
+            </div>
+
+            <div class="simulator-main">
+              <!-- Consent Dialog Window -->
+              <div class="consent-dialog animate-pulse" id="consent-dialog">
+                <div class="dialog-header">
+                  <div class="dialog-logo">
+                    <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+                      <rect x="2" y="2" width="28" height="28" rx="8" stroke="currentColor" stroke-width="2.5" fill="none"/>
+                      <path d="M8 20L13 10L19 22L24 12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                    </svg>
+                    <span>Lyra Sandbox Security</span>
+                  </div>
+                  <div class="dialog-badge" id="sim-badge">FILE ACCESS</div>
+                </div>
+
+                <div class="dialog-content">
+                  <h3 id="sim-dialog-title">检测到高风险 AI 文件修改申请</h3>
+                  <p class="dialog-info" id="sim-dialog-desc">Agent 正在申请修改您本地的工作空间敏感目录。该行为具有潜在的文件覆盖风险，需确认沙箱权限授权。</p>
+
+                  <div class="dialog-code-block">
+                    <code id="sim-dialog-code">Target: /Users/petehsu/Documents/Lyra/package.json
+Action: write_file
+Lines: + "gsap": "^3.12.5"</code>
+                  </div>
+
+                  <div class="dialog-warning-alert">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg>
+                    <span>重要提醒：此行为由 Agent 触发。授权后操作将由 Rust runtime 物理执行。</span>
+                  </div>
+                </div>
+
+                <div class="dialog-footer">
+                  <button class="dialog-btn btn-deny" id="sim-btn-deny">拒绝授权 (Deny)</button>
+                  <button class="dialog-btn btn-allow" id="sim-btn-allow">允许执行 (Allow)</button>
+                </div>
+              </div>
+
+              <!-- Simulator Execution Logs -->
+              <div class="sim-terminal">
+                <div class="terminal-header">
+                  <span>Lyra Runtime Audit Terminal</span>
+                  <div class="terminal-dots"><span></span><span></span><span></span></div>
+                </div>
+                <div class="terminal-body" id="sim-terminal-body">
+                  <p class="terminal-line text-dim">[2026-05-29T12:22:39+08:00] Lyra daemon started on local port 50051.</p>
+                  <p class="terminal-line text-dim">[2026-05-29T12:22:40+08:00] Native memory engine initialized: loaded 12 session databases.</p>
+                  <p class="terminal-line text-blue">[2026-05-29T12:22:42+08:00] RuntimeTurn created: turn_314c_package_gsap</p>
+                  <p class="terminal-line text-yellow">[2026-05-29T12:22:43+08:00] AWAITING_USER: Sandbox intercepted `write_file` request on /etc/hosts.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Download Section -->
+      <section class="download-section" id="download">
+        <div class="section-container">
+          <div class="download-card">
+            <h2 class="download-title">开启属于你的本地 Agent 时代</h2>
+            <p class="download-subtitle">完全本地优先、安全可控、无侵入性。快来体验下一代开发者 Agent 浏览器。</p>
+
+            <div class="download-actions">
+              <a href="#" class="btn btn-primary btn-lg btn-glow">下载 macOS (Apple Silicon)</a>
+              <a href="#" class="btn btn-secondary btn-lg">下载 Windows x64</a>
+            </div>
+
+            <p class="download-meta">当前版本: v0.1.0-alpha · 支持 macOS 14+ 及 Windows 11</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="main-footer">
+      <div class="footer-container">
+        <div class="footer-brand">
+          <div class="logo">
+            <svg class="logo-icon" width="22" height="22" viewBox="0 0 32 32" fill="none">
+              <rect x="2" y="2" width="28" height="28" rx="8" stroke="currentColor" stroke-width="2.5" fill="none"/>
+              <path d="M8 20L13 10L19 22L24 12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+            </svg>
+            <span class="logo-text">Lyra</span>
+          </div>
+          <p class="brand-desc">用极客与工程精神，重塑人与 AI 代理的协作界面。</p>
+        </div>
+
+        <div class="footer-links-group">
+          <div class="links-column">
+            <h4>产品</h4>
+            <a href="#features">核心功能</a>
+            <a href="#download">下载 Workbench</a>
+            <a href="/docs" target="_blank">文档中心</a>
+          </div>
+          <div class="links-column">
+            <h4>技术</h4>
+            <a href="#architecture">分层架构</a>
+            <a href="#security">安全沙箱</a>
+            <a href="https://github.com/petehsu/Lyra" target="_blank">GitHub 仓库</a>
+          </div>
+          <div class="links-column">
+            <h4>法律</h4>
+            <a href="/legal/privacy" target="_blank">隐私政策</a>
+            <a href="/legal/terms" target="_blank">服务条款</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>&copy; 2026 Lyra Team. Apache-2.0 License. Built for advanced agentic coding.</p>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

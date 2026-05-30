@@ -14,9 +14,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[cfg(unix)]
-use lyra_agent_core::{
-    clear_rust_event_callback as clear_agent_event_callback,
-    register_rust_event_callback as register_agent_event_callback,
+#[cfg(unix)]
+use lyra_agent_runtime::{
+    clear_host_capability_dispatcher as clear_agent_host_capability_dispatcher,
+    clear_runtime_event_callback as clear_agent_event_callback,
+    register_host_capability_dispatcher as register_agent_host_capability_dispatcher,
+    register_runtime_event_callback as register_agent_event_callback,
+    set_runtime_backend as set_agent_runtime_backend, LyraAgentBackend,
 };
 #[cfg(unix)]
 use lyra_download_core::{
@@ -243,6 +247,8 @@ fn forward_json_event(sessions: &DaemonSessionManager, event_name: &str, payload
 
 #[cfg(unix)]
 fn register_runtime_hooks(sessions: &DaemonSessionManager) {
+    set_agent_runtime_backend(Arc::new(LyraAgentBackend));
+
     let terminal_sessions = sessions.clone();
     register_terminal_event_callback(Arc::new(move |event_json| {
         forward_json_event(&terminal_sessions, TERMINAL_RUNTIME_EVENT_NAME, &event_json);
@@ -264,7 +270,7 @@ fn register_runtime_hooks(sessions: &DaemonSessionManager) {
     }));
 
     let host_sessions = sessions.clone();
-    lyra_agent_core::register_host_capability_dispatcher(Arc::new(move |method, payload_json| {
+    register_agent_host_capability_dispatcher(Arc::new(move |method, payload_json| {
         let payload = match serde_json::from_str::<Value>(&payload_json) {
             Ok(val) => val,
             Err(e) => return Err(format!("Failed to parse payload: {e}")),
@@ -285,7 +291,7 @@ fn shutdown_runtime_modules() {
     clear_lsp_event_callback();
     clear_download_event_callback();
     clear_agent_event_callback();
-    lyra_agent_core::clear_host_capability_dispatcher();
+    clear_agent_host_capability_dispatcher();
 }
 
 #[cfg(unix)]

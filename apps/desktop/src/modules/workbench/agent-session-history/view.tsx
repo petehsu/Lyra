@@ -74,6 +74,7 @@ const sessionSearchText = (session: AgentSessionSummary): string =>
     session.saveLabel,
     session.shortName,
     session.status,
+    session.providerLabel,
     session.providerKey,
     session.model,
     session.workingDir
@@ -131,7 +132,7 @@ const SessionRow = ({
 }) => {
   const updatedAt = formatSessionTime(session.lastActiveAt ?? session.updatedAt);
   const modelLabel = session.model ?? labels.modelFallback;
-  const providerLabel = session.providerKey ?? labels.statusFallback;
+  const providerLabel = session.providerLabel ?? labels.statusFallback;
   const workingDir = session.workingDir ?? "";
   const disabled = opening || busy;
 
@@ -275,7 +276,7 @@ const AgentSessionPreviewPane = ({
 
   const updatedAt = formatSessionTime(summary?.lastActiveAt ?? summary?.updatedAt ?? snapshot.updatedAt);
   const modelLabel = summary?.model ?? labels.modelFallback;
-  const providerLabel = summary?.providerKey ?? labels.statusFallback;
+  const providerLabel = summary?.providerLabel ?? labels.statusFallback;
   const workingDir = summary?.workingDir ?? "";
   const messages = agentSessionToChatMessages(snapshot);
   const previewData = createDataProviderValue({

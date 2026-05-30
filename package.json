@@ -18,6 +18,9 @@
     "dev:docs": "npm --prefix web/docs run dev",
     "build:docs": "npm --prefix web/docs run build",
     "preview:docs": "npm --prefix web/docs run preview",
+    "dev:site": "npm --prefix web/site run dev",
+    "build:site": "npm --prefix web/site run build",
+    "preview:site": "npm --prefix web/site run preview",
     "dev:control-plane": "pnpm --filter @lyra/control-plane dev",
     "dev:browser-automation": "pnpm --filter @lyra/browser-automation dev"
   },

@@ -2,6 +2,10 @@
 members = [
   "crates/lyra-agent-api",
   "crates/lyra-code-intel-core",
+  "crates/lyra-agent-kernel",
+  "crates/lyra-agent-plugins",
+  "crates/lyra-agent-runtime",
+  "crates/lyra-cli",
   "crates/lyrad",
   "crates/lyra-runtime-protocol",
   "crates/lyra-agent-core",
@@ -36,6 +40,9 @@ lyra-files-core = { path = "crates/lyra-files-core" }
 lyra-image-core = { path = "crates/lyra-image-core" }
 lyra-agent-core = { path = "crates/lyra-agent-core" }
 lyra-agent-api = { path = "crates/lyra-agent-api" }
+lyra-agent-kernel = { path = "crates/lyra-agent-kernel" }
+lyra-agent-plugins = { path = "crates/lyra-agent-plugins" }
+lyra-agent-runtime = { path = "crates/lyra-agent-runtime" }
 lyra-local-search = { path = "crates/lyra-local-search" }
 
 # External
