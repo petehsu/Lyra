@@ -61,13 +61,18 @@ describe("AnimatedMagicBorder", () => {
     });
   });
 
-  test("keeps the closed sweep running into the open state instead of snapping shut", () => {
+  test("keeps the closed sweep orbiting into the open state instead of snapping shut", () => {
     const { container, rerender } = render(<AnimatedMagicBorder isOpen={false} />);
     const sweep = container.querySelector(".lyra-magic-border-sweep") as HTMLDivElement;
 
     expect(sweep.style.webkitMaskImage).toContain("96deg");
-    runNextFrame(0);
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(1);
     const closedMask = sweep.style.webkitMaskImage;
+    const closedTransform = sweep.style.transform;
+
+    runNextFrame(0);
+
+    expect(sweep.style.transform).not.toBe(closedTransform);
 
     rerender(<AnimatedMagicBorder isOpen />);
     runNextFrame(100);
@@ -90,5 +95,18 @@ describe("AnimatedMagicBorder", () => {
     expect(sweep.style.webkitMaskImage).toContain("conic-gradient");
     expect(sweep.style.webkitMaskImage).not.toBe("none");
     expect(sweep.style.webkitMaskImage).not.toContain("black 72deg, black 96deg");
+  });
+
+  test("keeps requesting ambient frames once the close transition settles", () => {
+    const { rerender } = render(<AnimatedMagicBorder isOpen />);
+
+    runNextFrame(0);
+    rerender(<AnimatedMagicBorder isOpen={false} />);
+
+    for (let index = 0; index < 80 && frameCallbacks.size > 0; index += 1) {
+      runNextFrame(100 + index * 50);
+    }
+
+    expect(frameCallbacks.size).toBe(1);
   });
 });

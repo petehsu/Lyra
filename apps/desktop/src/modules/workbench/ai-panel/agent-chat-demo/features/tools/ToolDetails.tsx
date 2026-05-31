@@ -1,8 +1,10 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import type {
   ToolDetails as ToolDetailsType,
   ToolActionTarget,
+  RenderSurfaceColumn,
+  RenderSurfaceRow,
   WorkbenchTabSummary
 } from "../../core/types";
 import { ChevronIcon } from "../../components/Icons";
@@ -17,6 +19,7 @@ import {
   ClickableImage,
   isImageFileReference
 } from "../rich-text/ActionTargets";
+import { RichText } from "../rich-text";
 import { ToolPeekStrip } from "./ToolPeek";
 
 /**
@@ -41,6 +44,8 @@ export function ToolDetails({ details }: { details: ToolDetailsType }) {
       return <LumenCard details={details} />;
     case "software":
       return <SoftwareCard details={details} />;
+    case "render":
+      return <RenderSurfaceCard details={details} />;
     case "task":
       return <TaskCard details={details} />;
     case "text":
@@ -85,6 +90,219 @@ function LumenCard({
       )}
     </div>
   );
+}
+
+function RenderSurfaceCard({
+  details,
+}: {
+  details: Extract<ToolDetailsType, { type: "render" }>;
+}) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [lastEvent, setLastEvent] = useState<string | null>(null);
+  const srcDoc = useMemo(() => {
+    if (details.format === "svg") {
+      return renderSurfaceDocument(details, svgShell(details.content, details.title));
+    }
+    if (details.format === "html") {
+      return renderSurfaceDocument(details, details.content);
+    }
+    return "";
+  }, [details]);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const payload = event.data as unknown;
+      if (payload === null || typeof payload !== "object") return;
+      const record = payload as Record<string, unknown>;
+      if (record.type !== "lyra.surface.event") return;
+      setLastEvent(summarizeSurfaceEvent(record.payload));
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  return (
+    <div className="render-surface">
+      <div className="render-surface-header">
+        <div className="render-surface-title">
+          <span>{details.title}</span>
+          <span className="render-surface-format">{details.format}</span>
+        </div>
+        <div className="render-surface-meta">
+          <span>{details.operation}</span>
+          <span>{details.surfaceId}</span>
+        </div>
+      </div>
+      {details.summary ? (
+        <p className="render-surface-summary">
+          <ActionText text={details.summary} />
+        </p>
+      ) : null}
+      {details.format === "html" || details.format === "svg" ? (
+        <iframe
+          ref={iframeRef}
+          className="render-surface-frame"
+          sandbox="allow-forms allow-pointer-lock allow-popups allow-scripts"
+          referrerPolicy="no-referrer"
+          title={details.title}
+          srcDoc={srcDoc}
+          style={{ height: `${details.height}px` }}
+        />
+      ) : details.format === "markdown" ? (
+        <div className="render-surface-markdown">
+          <RichText content={details.content} />
+        </div>
+      ) : details.format === "table" ? (
+        <RenderSurfaceTable columns={details.columns} rows={details.rows} />
+      ) : details.format === "json" ? (
+        <pre className="render-surface-json">
+          {renderJsonSurface(details.data ?? details.content)}
+        </pre>
+      ) : (
+        <pre className="render-surface-text">
+          <ActionText text={details.content} />
+        </pre>
+      )}
+      <div className="render-surface-footer">
+        <span>{details.interactive ? "Interactive sandbox" : "Static surface"}</span>
+        {details.security?.node === false ? <span>No Node</span> : null}
+        {lastEvent ? <span className="render-surface-event">{lastEvent}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function RenderSurfaceTable({
+  columns,
+  rows,
+}: {
+  columns: readonly RenderSurfaceColumn[] | undefined;
+  rows: readonly RenderSurfaceRow[] | undefined;
+}) {
+  const safeRows = rows ?? [];
+  const safeColumns = columns ?? inferSurfaceColumns(safeRows);
+  if (safeColumns.length === 0 || safeRows.length === 0) {
+    return <div className="render-surface-empty">No table data</div>;
+  }
+  return (
+    <div className="render-surface-table-wrap">
+      <table className="render-surface-table">
+        <thead>
+          <tr>
+            {safeColumns.map((column) => (
+              <th key={column.key}>{column.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {safeRows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {safeColumns.map((column, columnIndex) => (
+                <td key={column.key}>
+                  {renderSurfaceCell(row, column.key, columnIndex)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function inferSurfaceColumns(rows: readonly RenderSurfaceRow[]): RenderSurfaceColumn[] {
+  const first = rows[0];
+  if (first === undefined) return [];
+  if (Array.isArray(first)) {
+    return first.map((_, index) => ({
+      key: String(index),
+      label: `Column ${index + 1}`,
+    }));
+  }
+  return Object.keys(first).map((key) => ({ key, label: key }));
+}
+
+function renderSurfaceCell(row: RenderSurfaceRow, key: string, index: number): string {
+  const value = Array.isArray(row) ? row[index] : (row as Record<string, unknown>)[key];
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
+
+function renderJsonSurface(value: unknown): string {
+  if (typeof value === "string") {
+    try {
+      return JSON.stringify(JSON.parse(value) as unknown, null, 2);
+    } catch {
+      return value;
+    }
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+function renderSurfaceDocument(
+  details: Extract<ToolDetailsType, { type: "render" }>,
+  body: string
+): string {
+  const colorScheme = details.theme === "light" ? "light" : details.theme === "dark" ? "dark" : "light dark";
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob: https:; media-src data: blob:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { color-scheme: ${escapeHtml(colorScheme)}; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+html, body { margin: 0; min-height: 100%; background: transparent; color: CanvasText; }
+body { padding: 14px; overflow: auto; }
+* { box-sizing: border-box; }
+a { color: #5da8ff; }
+button, input, select, textarea { font: inherit; }
+</style>
+<script>
+window.lyraSurface = {
+  emit: function(payload) {
+    window.parent.postMessage({ type: 'lyra.surface.event', payload: payload }, '*');
+  }
+};
+document.addEventListener('click', function(event) {
+  var target = event.target && event.target.closest ? event.target.closest('button,a,input,select,textarea,[data-lyra-action]') : null;
+  if (!target) return;
+  window.lyraSurface.emit({
+    kind: 'interaction',
+    tag: target.tagName,
+    text: (target.innerText || target.value || target.getAttribute('aria-label') || '').slice(0, 120),
+    action: target.getAttribute('data-lyra-action') || null
+  });
+}, true);
+</script>
+</head>
+<body data-lyra-surface-id="${escapeHtml(details.surfaceId)}">
+${body}
+</body>
+</html>`;
+}
+
+function svgShell(svg: string, title: string): string {
+  return `<main aria-label="${escapeHtml(title)}" style="min-height:100%;display:grid;place-items:center">${svg}</main>`;
+}
+
+function summarizeSurfaceEvent(value: unknown): string {
+  if (value === null || typeof value !== "object") return "Surface event";
+  const record = value as Record<string, unknown>;
+  const kind = typeof record.kind === "string" ? record.kind : "event";
+  const text = typeof record.text === "string" ? record.text.trim() : "";
+  return text.length === 0 ? kind : `${kind}: ${text}`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 const isImageActionTarget = (target: ToolActionTarget): boolean => {

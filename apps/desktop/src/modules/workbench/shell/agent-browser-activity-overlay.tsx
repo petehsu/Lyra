@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 
+import type { WorkbenchBrowserPageRuntimeState } from "../../../shared/desktop-bridge";
 import { AnimatedMagicBorder } from "./animated-magic-border";
 import type { BrowserAgentVisualState } from "./use-workbench-browser-runtime";
 
@@ -10,11 +11,17 @@ const BIBATA_CURSOR_SHAPE_URL = new URL(
 
 type AgentBrowserActivityOverlayProps = {
   readonly state: BrowserAgentVisualState;
+  readonly recoveryFailure?: WorkbenchBrowserPageRuntimeState["recoveryFailure"];
 };
 
 export const browserAgentVisualStateLabel = (
-  state: Pick<BrowserAgentVisualState, "action" | "interaction">
+  state: Pick<BrowserAgentVisualState, "action" | "interaction"> &
+    Partial<Pick<BrowserAgentVisualState, "sharedControlState">>
 ): string => {
+  if (state.sharedControlState === "awaiting_user_decision") return "Paused";
+  if (state.sharedControlState === "user_interrupted") return "Interrupted";
+  if (state.sharedControlState === "locked_input") return "Agent input";
+  if (state.sharedControlState === "resuming") return "Resuming";
   if (state.action === "act") {
     if (state.interaction === "hover") return "Hover";
     if (state.interaction === "doubleClick") return "Double click";
@@ -32,8 +39,18 @@ export const browserAgentVisualStateLabel = (
   return "Agent";
 };
 
+export const browserRecoveryFailureLabel = (
+  failure: NonNullable<WorkbenchBrowserPageRuntimeState["recoveryFailure"]>
+): string => {
+  if (failure.reason === "profile_missing") return "Profile unavailable";
+  if (failure.reason === "storage_unavailable") return "Storage unavailable";
+  if (failure.reason === "target_stale") return "Target changed";
+  return "Restore issue";
+};
+
 export const AgentBrowserActivityOverlay = ({
-  state
+  state,
+  recoveryFailure
 }: AgentBrowserActivityOverlayProps) => {
   const cursorStyle = state.cursor === null
     ? undefined
@@ -51,9 +68,11 @@ export const AgentBrowserActivityOverlay = ({
       data-input-active={state.inputActive ? "true" : "false"}
       data-cursor-visible={state.cursorVisible ? "true" : "false"}
       data-cursor-phase={state.cursorPhase}
+      data-control-state={state.sharedControlState}
       data-target-mode={state.targetMode ?? "none"}
       data-action={state.action ?? "idle"}
       data-interaction={state.interaction ?? "none"}
+      data-recovery-failure={recoveryFailure === undefined ? "false" : "true"}
       aria-hidden="true"
     >
       <AnimatedMagicBorder
@@ -67,6 +86,14 @@ export const AgentBrowserActivityOverlay = ({
           <span className="lyra-agent-browser-state-label">{stateLabel}</span>
         </span>
       ) : null}
+      {recoveryFailure === undefined ? null : (
+        <span className="lyra-agent-browser-recovery-cue">
+          <span className="lyra-agent-browser-recovery-dot" />
+          <span className="lyra-agent-browser-recovery-label">
+            {browserRecoveryFailureLabel(recoveryFailure)}
+          </span>
+        </span>
+      )}
       {state.cursorVisible && state.cursor !== null ? (
         <span
           className="lyra-agent-browser-cursor"

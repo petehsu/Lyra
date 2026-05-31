@@ -52,6 +52,8 @@ pub(crate) struct NativeSession {
     pub(crate) runtime_turns: Vec<Value>,
     #[serde(default)]
     pub(crate) rollback_checkpoints: Vec<RollbackCheckpoint>,
+    #[serde(default, skip)]
+    pub(crate) dirty: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

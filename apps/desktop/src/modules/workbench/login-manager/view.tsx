@@ -415,6 +415,7 @@ export const LoginManagerSurface = ({
     setBusyKey(`session:${session.id}`);
     try {
       await desktopApi.loginManager.clearSite({ sessionId: session.id });
+      await desktopApi.workbenchBrowser?.clearSiteData?.({ origin: session.origin }).catch(() => undefined);
       await refresh();
     } catch (clearError: unknown) {
       setError(clearError instanceof Error ? clearError.message : String(clearError));

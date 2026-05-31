@@ -35,6 +35,7 @@ pub(crate) fn host_tool_mapping(
         "lyra_lumen_reveal" => ("lyraLumen.reveal", "lyra_lumen", "reveal"),
         "lyra_lumen_focus_scan" => ("lyraLumen.focusScan", "lyra_lumen", "focus_scan"),
         "lyra_lumen_follow_audit" => ("lyraLumen.followAudit", "lyra_lumen", "follow_audit"),
+        "lyra_lumen_explain_target" => ("lyraLumen.explainTarget", "lyra_lumen", "explain_target"),
         "lyra_lumen_audit" => ("lyraLumen.audit", "lyra_lumen", "audit"),
         "lyra_lumen_elevate" => ("lyraLumen.elevate", "lyra_lumen", "elevate"),
         _ => return None,
@@ -59,8 +60,13 @@ pub(crate) fn resolved_tool_activity_input(mut input: Value, output: &Value) -> 
         ("browserTabId", "browserTabId"),
         ("elementId", "lumenElementId"),
         ("targetRef", "lumenTargetRef"),
+        ("lumenTargetRef", "lumenTargetRef"),
         ("observationId", "lumenObservationId"),
         ("afterObservationId", "lumenObservationId"),
+        ("sessionId", "followSessionId"),
+        ("followSessionId", "followSessionId"),
+        ("actionId", "followActionId"),
+        ("followActionId", "followActionId"),
     ] {
         if let Some(value) = output.get(source_key)
             && !value.is_null()
@@ -134,7 +140,7 @@ pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value,
                     "running": true,
                     "activity": tool.get("label").and_then(Value::as_str).unwrap_or("Using Lyra tool")
                 });
-                touch_snapshot(&mut session.snapshot);
+                touch_session(session);
                 let _ = state.save_state();
             }
             callback
@@ -272,6 +278,7 @@ pub(crate) fn tool_label(name: &str, action: &str) -> String {
         ("lsp", "query") => "Queried LSP",
         ("web", "search") => "Searched web",
         ("web", "fetch") => "Fetched web page",
+        ("render", "surface") => "Rendered surface",
         ("todo", "read") => "Read todos",
         ("todo", "write") => "Updated todos",
         ("clarification", "ask") => "Asked for clarification",
@@ -299,6 +306,7 @@ pub(crate) fn tool_label(name: &str, action: &str) -> String {
         ("lyra_lumen", "reveal") => "Revealed browser controls",
         ("lyra_lumen", "focus_scan") => "Scanned browser focus",
         ("lyra_lumen", "follow_audit") => "Read browser follow audit",
+        ("lyra_lumen", "explain_target") => "Explained browser target",
         ("lyra_lumen", "audit") => "Audited browser diagnostics",
         ("lyra_lumen", "elevate") => "Elevated browser to visible tab",
         _ => "Used Lyra tool",
@@ -789,13 +797,23 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
                         .or_else(|| element.get("text"))
                         .and_then(Value::as_str)
                         .unwrap_or("");
+                    let target_ref = element
+                        .get("targetRef")
+                        .or_else(|| element.pointer("/target/targetRef"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
                     let bounds = element.get("bounds").unwrap_or(&Value::Null);
                     let x = bounds.get("x").and_then(Value::as_i64).unwrap_or(0);
                     let y = bounds.get("y").and_then(Value::as_i64).unwrap_or(0);
                     let width = bounds.get("width").and_then(Value::as_i64).unwrap_or(0);
                     let height = bounds.get("height").and_then(Value::as_i64).unwrap_or(0);
+                    let id_note = if target_ref.is_empty() {
+                        format!("[{id} observation-local]")
+                    } else {
+                        format!("[{id} observation-local; targetRef={target_ref}]")
+                    };
                     lines.push(format!(
-                        "[{id}] {role}: \"{label}\" at ({x},{y}) {width}x{height}"
+                        "{id_note} {role}: \"{label}\" at ({x},{y}) {width}x{height}"
                     ));
                 }
             }
@@ -844,12 +862,98 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
                 )
             }
         }
+        "follow_audit" => value
+            .get("compactText")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| serde_json::to_string_pretty(value).unwrap_or_default()),
+        "explain_target" => {
+            let target_ref = value
+                .get("targetRef")
+                .and_then(Value::as_str)
+                .unwrap_or("target");
+            let available = value
+                .get("available")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if available {
+                format!("{target_ref} is available for the current Lyra Lumen registry.")
+            } else {
+                let reason = value
+                    .pointer("/staleTarget/reason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("notFound");
+                format!(
+                    "{target_ref} is stale or unavailable ({reason}). Call lyra_lumen_map before acting."
+                )
+            }
+        }
         "read_until" | "wait" => value
             .get("content")
             .and_then(Value::as_str)
             .or_else(|| value.get("message").and_then(Value::as_str))
             .map(str::to_string)
             .unwrap_or_else(|| serde_json::to_string_pretty(value).unwrap_or_default()),
+        "audit" => {
+            let summary = value.get("summary").unwrap_or(&Value::Null);
+            let errors = summary.get("errors").and_then(Value::as_i64).unwrap_or(0);
+            let warnings = summary.get("warnings").and_then(Value::as_i64).unwrap_or(0);
+            let network_failures = summary
+                .get("networkFailures")
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            let console_errors = summary
+                .get("consoleErrors")
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            let mut lines = vec![format!(
+                "Browser diagnostics: {errors} error(s), {warnings} warning(s), {network_failures} network failure(s), {console_errors} console error(s)."
+            )];
+            if value.get("available").and_then(Value::as_bool) == Some(false) {
+                let reason = value
+                    .get("unavailableReason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("CDP diagnostics are unavailable.");
+                lines.push(format!("CDP unavailable: {reason}"));
+            }
+            if let Some(entries) = value
+                .get("diagnostics")
+                .or_else(|| value.get("entries"))
+                .and_then(Value::as_array)
+            {
+                for entry in entries.iter().take(12) {
+                    let severity = entry
+                        .get("severity")
+                        .and_then(Value::as_str)
+                        .unwrap_or("info");
+                    let source = entry
+                        .get("source")
+                        .and_then(Value::as_str)
+                        .unwrap_or("diagnostic");
+                    let message = entry.get("message").and_then(Value::as_str).unwrap_or("");
+                    let status = entry
+                        .get("status")
+                        .and_then(Value::as_i64)
+                        .map(|status| format!(" HTTP {status}"))
+                        .unwrap_or_default();
+                    let location = entry
+                        .get("url")
+                        .and_then(Value::as_str)
+                        .filter(|url| !url.is_empty())
+                        .map(|url| format!(" - {url}"))
+                        .unwrap_or_default();
+                    lines.push(format!("[{severity}/{source}{status}] {message}{location}"));
+                }
+            }
+            if let Some(next) = value
+                .get("recommendedNextAction")
+                .and_then(Value::as_str)
+                .filter(|next| !next.is_empty())
+            {
+                lines.push(format!("Next: {next}"));
+            }
+            lines.join("\n")
+        }
         _ => value
             .get("content")
             .or_else(|| value.get("message"))
@@ -988,7 +1092,7 @@ pub(crate) fn emit_turn_state(session_id: &str, turn_id: &str, state_name: &str,
                 }
                 session.snapshot["follow"] = json!({ "running": true, "activity": state_name });
                 update_runtime_turn_state(session, turn_id, state_name, None);
-                touch_snapshot(&mut session.snapshot);
+                touch_session(session);
                 let _ = state.save_state();
             }
             callback

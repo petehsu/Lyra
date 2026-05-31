@@ -11,7 +11,7 @@ import { AiPanelSurface } from "../view";
 
 const snapshot: AgentSessionSnapshot = {
   id: "session-1",
-  title: "Lyra Agent",
+  title: "新会话",
   sessionKind: "normal",
   workingDir: "/",
   projectBound: false,
@@ -43,12 +43,22 @@ const snapshotWithConversation: AgentSessionSnapshot = {
   }]
 };
 
+const snapshotWithMessageCount = (count: number): AgentSessionSnapshot => ({
+  ...snapshot,
+  messages: Array.from({ length: count }, (_, index) => ({
+    id: `message-${index + 1}`,
+    role: "user" as const,
+    text: `Message ${index + 1}`,
+    createdAt: `2026-05-13T00:${String(index).padStart(2, "0")}:00.000Z`
+  }))
+});
+
 const memoryUpdated = (
   timelineProjection: NonNullable<AgentSessionSnapshot["memory"]>["timelineProjection"] = []
 ): NonNullable<AgentSessionSnapshot["memory"]> => ({
   session: {
     sessionId: "session-1",
-    title: "Lyra Agent",
+    title: "新会话",
     workingDir: "/",
     providerKey: null,
     model: null,
@@ -333,11 +343,22 @@ const renderPanelWithSettings = (desktopApi: LyraDesktopApi) =>
   );
 
 describe("AiPanelSurface", () => {
+  test("opens long sessions with only the recent message window rendered", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot(snapshotWithMessageCount(30));
+
+    renderPanel(api);
+
+    expect(await screen.findByText("Message 30")).toBeInTheDocument();
+    expect(screen.getByText("Message 19")).toBeInTheDocument();
+    expect(screen.queryByText("Message 18")).not.toBeInTheDocument();
+  });
+
   test("follows the selected Chinese locale for Agent chrome", async () => {
     const { api } = createDesktopApi();
     renderPanel(api, undefined, undefined, "zh-CN");
 
-    await screen.findByText("Lyra Agent");
+    await screen.findByText("新会话");
     expect(screen.getByPlaceholderText("给 Agent 发送消息")).toBeInTheDocument();
     expect(screen.getByLabelText("更多")).toBeInTheDocument();
     expect(await screen.findByLabelText("模型控制")).toBeInTheDocument();
@@ -755,7 +776,7 @@ describe("AiPanelSurface", () => {
     const requestProjectBind = vi.fn(async () => "/Users/petehsu/Documents/Lyra");
     renderPanel(api, requestProjectBind);
 
-    await screen.findByText("Lyra Agent");
+    await screen.findByText("新会话");
     fireEvent.click(screen.getByLabelText("Bind Project"));
 
     await waitFor(() => {
@@ -782,7 +803,7 @@ describe("AiPanelSurface", () => {
 
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({
-        title: "Lyra Agent",
+        title: "新会话",
         workingDir: "/Users/petehsu/Documents/Lyra"
       });
     });
@@ -965,7 +986,7 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    await screen.findByText("Lyra Agent");
+    await screen.findByText("新会话");
     expect(screen.queryByText("请叫我徐总")).not.toBeInTheDocument();
     expect(screen.queryByText("fake todo from JSON output")).not.toBeInTheDocument();
     expect(screen.queryByText("fake todo from DOM text")).not.toBeInTheDocument();
@@ -991,7 +1012,7 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    await screen.findByText("Lyra Agent");
+    await screen.findByText("新会话");
     expect(screen.queryByText("memory-only todo")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Continue unfinished todos")).not.toBeInTheDocument();
   });
@@ -1163,6 +1184,116 @@ describe("AiPanelSurface", () => {
       "/Users/petehsu/.lyra/lumen-evidence/lumen-see-1.png",
       undefined
     );
+  });
+
+  test("renders structured Render Surface tool output inline in the Agent timeline", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "render-surface-tool",
+        name: "render_surface",
+        label: "Ran",
+        status: "completed",
+        input: {
+          title: "Release Radar",
+          kind: "html"
+        },
+        output: {
+          content: "Rendered html surface \"Release Radar\" (release-radar).",
+          raw: {
+            kind: "render_surface",
+            surfaceId: "release-radar",
+            operation: "create",
+            title: "Release Radar",
+            format: "html",
+            summary: "Interactive release dashboard for this turn.",
+            content: "<main><h1>Release Radar</h1><button data-lyra-action=\"ship\">Ship</button></main>",
+            height: 240,
+            interactive: true,
+            theme: "auto",
+            security: {
+              runtime: "sandboxed_iframe_for_html_svg",
+              node: false,
+              sameOriginWithParent: false,
+              parentDomAccess: false,
+              network: "blocked_for_scripts_by_csp",
+              eventBridge: "postMessage_only"
+            }
+          },
+          error: null
+        },
+        startedAt: "2026-05-13T00:00:02.000Z",
+        finishedAt: "2026-05-13T00:00:02.500Z"
+      }]
+    });
+    const { container } = renderPanel(api);
+
+    fireEvent.click(await screen.findByText("Agent activity"));
+    expect(container.querySelector(".render-surface-frame")).toBeNull();
+    fireEvent.click((await screen.findAllByText("Release Radar"))[0]!);
+
+    expect(await screen.findByText("Interactive release dashboard for this turn.")).toBeInTheDocument();
+    expect(screen.getByText("html")).toBeInTheDocument();
+    expect(screen.getByText("release-radar")).toBeInTheDocument();
+    expect(screen.getByText("Interactive sandbox")).toBeInTheDocument();
+    expect(screen.getByText("No Node")).toBeInTheDocument();
+    const frame = container.querySelector<HTMLIFrameElement>(".render-surface-frame");
+    expect(frame).not.toBeNull();
+    expect(frame).toHaveAttribute("sandbox", expect.stringContaining("allow-scripts"));
+    expect(frame?.getAttribute("srcdoc")).toContain("window.lyraSurface");
+    expect(frame?.style.height).toBe("240px");
+  });
+
+  test("renders structured Render Surface tables without parsing tool text", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "render-table-tool",
+        name: "render_surface",
+        label: "Ran",
+        status: "completed",
+        input: {},
+        output: {
+          content: "Rendered table surface \"Decision Matrix\" (decision-matrix).",
+          raw: {
+            kind: "render_surface",
+            surfaceId: "decision-matrix",
+            operation: "create",
+            title: "Decision Matrix",
+            format: "table",
+            summary: "Comparison table generated by Agent.",
+            columns: [
+              { key: "option", label: "Option" },
+              { key: "risk", label: "Risk" }
+            ],
+            rows: [
+              { option: "Inline surface", risk: "Low" },
+              { option: "Local temp file", risk: "Medium" }
+            ],
+            height: 300,
+            interactive: false,
+            theme: "dark"
+          },
+          error: null
+        },
+        startedAt: "2026-05-13T00:00:03.000Z",
+        finishedAt: "2026-05-13T00:00:03.500Z"
+      }]
+    });
+    const { container } = renderPanel(api);
+
+    fireEvent.click(await screen.findByText("Agent activity"));
+    expect(container.querySelector(".render-surface-table")).toBeNull();
+    fireEvent.click((await screen.findAllByText("Decision Matrix"))[0]!);
+
+    expect(await screen.findByText("Comparison table generated by Agent.")).toBeInTheDocument();
+    expect(screen.getByText("Option")).toBeInTheDocument();
+    expect(screen.getByText("Risk")).toBeInTheDocument();
+    expect(screen.getByText("Inline surface")).toBeInTheDocument();
+    expect(screen.getByText("Medium")).toBeInTheDocument();
+    expect(screen.getByText("Static surface")).toBeInTheDocument();
   });
 
   test("renders software open targets only when tool output provides explicit targets", async () => {
@@ -1678,7 +1809,7 @@ describe("AiPanelSurface", () => {
     const { api, emit, triggerPoke } = createDesktopApi();
     renderPanel(api);
 
-    await screen.findByText("Lyra Agent");
+    await screen.findByText("新会话");
     act(() => {
       emit({
         kind: "todoUpdated",
@@ -1704,7 +1835,7 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     await waitFor(() => {
-      expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+      expect(screen.getByText("新会话")).toBeInTheDocument();
     });
     fireEvent.click(screen.getByLabelText("More"));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Code review" }));
@@ -1733,12 +1864,12 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     await waitFor(() => {
-      expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+      expect(screen.getByText("新会话")).toBeInTheDocument();
     });
     fireEvent.click(screen.getByLabelText("New session"));
 
     await waitFor(() => {
-      expect(createSession).toHaveBeenCalledWith({ title: "Lyra Agent" });
+      expect(createSession).toHaveBeenCalledWith({ title: "新会话" });
     });
     expect(await screen.findByText("Fresh Lyra Agent")).toBeInTheDocument();
   });
@@ -1748,7 +1879,7 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     await waitFor(() => {
-      expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+      expect(screen.getByText("新会话")).toBeInTheDocument();
     });
     expect(screen.queryByLabelText("New session")).not.toBeInTheDocument();
   });
@@ -1758,7 +1889,7 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     await waitFor(() => {
-      expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+      expect(screen.getByText("新会话")).toBeInTheDocument();
     });
     act(() => {
       emit({
@@ -1809,7 +1940,7 @@ describe("AiPanelSurface", () => {
     const { api, emit } = createDesktopApi();
     renderPanel(api);
 
-    await screen.findByText("Lyra Agent");
+    await screen.findByText("新会话");
     act(() => {
       emit({
         kind: "clarificationRequested",
@@ -1859,7 +1990,7 @@ describe("AiPanelSurface", () => {
     const { api, emit } = createDesktopApi();
     renderPanel(api);
 
-    await screen.findByText("Lyra Agent");
+    await screen.findByText("新会话");
     const text = "好的，制作一个公司/产品介绍官网！在开始之前，我需要了解几个关键信息：\n\n"
       + "**1. 公司/产品名称是什么？**\n\n"
       + "**2. 主要业务/产品是什么？**";
@@ -1886,7 +2017,7 @@ describe("AiPanelSurface", () => {
     const { api, emit } = createDesktopApi();
     renderPanel(api);
 
-    await screen.findByText("Lyra Agent");
+    await screen.findByText("新会话");
     act(() => {
       emit({
         kind: "permissionRequested",
@@ -2249,7 +2380,7 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     await waitFor(() => {
-      expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+      expect(screen.getByText("新会话")).toBeInTheDocument();
     });
     setReadSnapshot({
       ...snapshot,
@@ -2291,7 +2422,7 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     await waitFor(() => {
-      expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+      expect(screen.getByText("新会话")).toBeInTheDocument();
     });
     act(() => {
       emit({
@@ -2332,7 +2463,7 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     await waitFor(() => {
-      expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+      expect(screen.getByText("新会话")).toBeInTheDocument();
     });
     act(() => {
       emit({
@@ -2356,6 +2487,6 @@ describe("AiPanelSurface", () => {
       sessionId: "selfdev-session"
     });
     expect(screen.queryByText("Self-Dev Lab")).not.toBeInTheDocument();
-    expect(screen.getByText("Lyra Agent")).toBeInTheDocument();
+    expect(screen.getByText("新会话")).toBeInTheDocument();
   });
 });

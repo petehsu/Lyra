@@ -542,7 +542,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_act",
-                "Click, double-click, right-click, or hover an element or point on a Lyra browser page.",
+                "Click, double-click, right-click, or hover a Lyra Lumen targetRef or visual fallback point. Prefer targetRef; elementId is observation-local compatibility only.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({
@@ -564,7 +564,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_type",
-                "Type text into a browser editable element. Prefer passing elementId from lyra_lumen_map; if omitted, Lyra uses the current or last confirmed editable target.",
+                "Type text into a browser editable element. Prefer targetRef from lyra_lumen_map; elementId is observation-local compatibility only. If omitted, Lyra uses the current or last confirmed editable target.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({
@@ -580,7 +580,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_press",
-                "Press a keyboard key in the Lyra browser agent page.",
+                "Press a keyboard key in the Lyra browser agent page. Prefer targetRef when focusing a target first; elementId is observation-local compatibility only.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({
@@ -595,7 +595,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_submit",
-                "Submit the focused or selected Lyra browser control.",
+                "Submit the focused or selected Lyra browser control. Prefer targetRef when selecting a control; elementId is observation-local compatibility only.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({
@@ -653,7 +653,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_reveal",
-                "Hover or otherwise reveal hidden browser elements, then return newly exposed actions.",
+                "Hover or otherwise reveal hidden browser elements, then return newly exposed actions. Prefer targetRef; elementId is observation-local compatibility only.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({
@@ -687,8 +687,24 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 "read",
                 "hostCapability",
                 lumen_target_schema(json!({
-                    "maxActions": { "type": "number" }
+                    "sessionId": { "type": "string" },
+                    "turnId": { "type": "string" },
+                    "maxActions": { "type": "number" },
+                    "includeFrames": { "type": "boolean", "default": false }
                 })),
+                Some("browser.operate"),
+            ),
+            capability(
+                "lyra-browser",
+                "lyra_lumen_explain_target",
+                "Explain whether a Lyra Lumen targetRef is still available and return stale reason plus nearest candidates when it is not.",
+                "read",
+                "hostCapability",
+                lumen_target_schema(json!({
+                    "targetRef": { "type": "string" },
+                    "maxCandidates": { "type": "number" }
+                }))
+                .with_required(vec!["targetRef"]),
                 Some("browser.operate"),
             ),
             capability(
@@ -708,9 +724,12 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 "Promote an isolated browser task to a visible Lyra browser tab when user action is required.",
                 "hostCapability",
                 "runtimePolicy",
-                lumen_target_schema(json!({
-                    "reason": { "type": "string" }
-                })),
+                lumen_target_schema_with_default(
+                    json!({
+                        "reason": { "type": "string" }
+                    }),
+                    "isolated",
+                ),
                 Some("browser.operate"),
             ),
             capability(
@@ -1042,6 +1061,79 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 None,
             ),
             capability(
+                "lyra-render",
+                "render_surface",
+                "Create or update an inline Lyra Render Surface inside the AI timeline. Use this for temporary mini apps, dashboards, diagrams, interactive HTML/SVG, markdown reports, JSON inspectors, and tables without writing local files or opening an external browser.",
+                "state",
+                "always",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "surfaceId": {
+                            "type": "string",
+                            "description": "Stable id for later updates. Reuse it when replacing or appending to the same surface."
+                        },
+                        "operation": {
+                            "type": "string",
+                            "enum": ["create", "update", "replace", "append"],
+                            "default": "create"
+                        },
+                        "title": { "type": "string" },
+                        "kind": {
+                            "type": "string",
+                            "enum": ["html", "markdown", "svg", "json", "table", "text"],
+                            "default": "html"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "HTML, markdown, SVG, or text content. Keep it concise; large assets should be referenced or split."
+                        },
+                        "data": {
+                            "description": "Structured JSON data for json surfaces."
+                        },
+                        "columns": {
+                            "type": "array",
+                            "items": {
+                                "oneOf": [
+                                    { "type": "string" },
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "key": { "type": "string" },
+                                            "label": { "type": "string" }
+                                        },
+                                        "required": ["key"]
+                                    }
+                                ]
+                            }
+                        },
+                        "rows": {
+                            "type": "array",
+                            "items": {
+                                "oneOf": [
+                                    { "type": "array" },
+                                    { "type": "object" }
+                                ]
+                            }
+                        },
+                        "height": {
+                            "type": "number",
+                            "minimum": 140,
+                            "maximum": 720,
+                            "default": 320
+                        },
+                        "summary": {
+                            "type": "string",
+                            "description": "One-sentence model-visible description of what this surface shows."
+                        },
+                        "interactive": { "type": "boolean", "default": true },
+                        "theme": { "type": "string", "enum": ["auto", "light", "dark"], "default": "auto" }
+                    },
+                    "required": ["title", "kind"]
+                }),
+                None,
+            ),
+            capability(
                 "lyra-todo",
                 "todo_read",
                 "Read the current turn-bound Lyra todo projection.",
@@ -1152,9 +1244,24 @@ impl JsonSchemaRequired for Value {
 }
 
 fn lumen_target_schema(extra_properties: Value) -> Value {
+    lumen_target_schema_with_default(extra_properties, "live")
+}
+
+fn lumen_target_schema_with_default(extra_properties: Value, default_target_mode: &str) -> Value {
     let mut properties = json!({
         "tabId": { "type": "string" },
-        "targetMode": { "type": "string", "enum": ["isolated", "live"], "default": "isolated" }
+        "targetMode": { "type": "string", "enum": ["isolated", "live"], "default": default_target_mode },
+        "authState": {
+            "type": "string",
+            "enum": ["none", "borrowLiveLogin"],
+            "default": "none",
+            "description": "For targetMode=isolated only: request user-authorized borrowing of the current live Lyra browser login state for the hidden background page. This requires a permission prompt and never exposes cookie/password values to the model."
+        },
+        "useLiveLoginState": {
+            "type": "boolean",
+            "default": false,
+            "description": "Alias for authState=borrowLiveLogin. Use only when the task must operate a hidden isolated page with the user's current Lyra browser login state."
+        }
     });
     if let (Some(base), Some(extra)) = (properties.as_object_mut(), extra_properties.as_object()) {
         for (key, value) in extra {
@@ -1254,5 +1361,44 @@ mod tests {
         assert!(names.contains(&"web_fetch"));
         assert!(service.can_dispatch_model_tool("todo_write"));
         assert!(!service.can_dispatch_model_tool("missing_tool"));
+    }
+
+    #[test]
+    fn lumen_tools_default_to_live_target_mode_except_elevation() {
+        let service = ToolActivityService::default();
+        let descriptors = service.model_tool_descriptors();
+        for name in [
+            "lyra_lumen_map",
+            "lyra_lumen_read",
+            "lyra_lumen_see",
+            "lyra_lumen_act",
+            "lyra_lumen_type",
+            "lyra_lumen_press",
+            "lyra_lumen_submit",
+            "lyra_lumen_wait",
+            "lyra_lumen_read_until",
+            "lyra_lumen_navigate",
+            "lyra_lumen_reveal",
+            "lyra_lumen_focus_scan",
+        ] {
+            let descriptor = descriptors
+                .iter()
+                .find(|descriptor| descriptor.name == name)
+                .expect("lumen descriptor");
+            assert_eq!(
+                descriptor.schema["properties"]["targetMode"]["default"].as_str(),
+                Some("live"),
+                "{name} should inspect the user's visible browser by default"
+            );
+        }
+
+        let elevate = descriptors
+            .iter()
+            .find(|descriptor| descriptor.name == "lyra_lumen_elevate")
+            .expect("elevation descriptor");
+        assert_eq!(
+            elevate.schema["properties"]["targetMode"]["default"].as_str(),
+            Some("isolated")
+        );
     }
 }

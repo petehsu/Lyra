@@ -16,7 +16,30 @@ impl BrowserService {
                     "wait": ["wait", "readUntil"],
                     "visualFallback": true
                 }
-            ]
+            ],
+            "sessionPreservation": {
+                "schemaVersion": 1,
+                "snapshot": "BrowserSessionSnapshot",
+                "storageState": "BrowserStorageStateRef",
+                "recoveryAnchor": "BrowserRecoveryAnchor",
+                "hostCapability": "workbench.browser.readSessionSnapshot",
+                "profilePartitions": {
+                    "live": "persist:lyra-browser-live",
+                    "isolated": "persist:lyra-browser-isolated",
+                    "relationship": "shared-live-tabs-isolated-agent"
+                },
+                "chromiumStorage": {
+                    "persistence": "chromium-profile",
+                    "manifestOnly": true,
+                    "sensitiveValues": "metadata_only"
+                },
+                "recoveryFailureReasons": [
+                    "profile_missing",
+                    "storage_unavailable",
+                    "navigation_failed",
+                    "target_stale"
+                ]
+            }
         })
     }
 }
@@ -36,6 +59,14 @@ mod tests {
                 .as_array()
                 .expect("wait modes")
                 .contains(&"readUntil".into())
+        );
+        assert_eq!(
+            capabilities["sessionPreservation"]["hostCapability"],
+            "workbench.browser.readSessionSnapshot"
+        );
+        assert_eq!(
+            capabilities["sessionPreservation"]["chromiumStorage"]["sensitiveValues"],
+            "metadata_only"
         );
     }
 }

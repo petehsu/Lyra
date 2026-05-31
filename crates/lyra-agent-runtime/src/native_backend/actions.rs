@@ -81,7 +81,7 @@ pub(crate) fn run_btw(payload: Value) -> AgentRuntimeResult<Value> {
         "focusedPageId": page["id"],
         "pages": [page]
     });
-    touch_snapshot(&mut session.snapshot);
+    touch_session(session);
     let snapshot = session.snapshot.clone();
     let side_panel = session.snapshot["sidePanel"].clone();
     let callback = state.event_callback.clone();

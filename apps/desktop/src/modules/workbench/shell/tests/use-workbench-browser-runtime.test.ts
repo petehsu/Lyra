@@ -4,7 +4,10 @@ import type {
   WorkbenchBrowserPageRuntimeState
 } from "../../../../shared/desktop-bridge";
 import type { WorkspaceTab, WorkspaceVisibleLayout } from "../../workspace-tabs";
-import { browserAgentVisualStateLabel } from "../agent-browser-activity-overlay";
+import {
+  browserAgentVisualStateLabel,
+  browserRecoveryFailureLabel
+} from "../agent-browser-activity-overlay";
 import {
   arePageRuntimeStatesEquivalentForTests,
   resolveBrowserAgentCursorViewportPoint,
@@ -124,5 +127,31 @@ describe("browserAgentVisualStateLabel", () => {
     expect(browserAgentVisualStateLabel({ action: "type", interaction: null })).toBe("Typing");
     expect(browserAgentVisualStateLabel({ action: "focus", interaction: null })).toBe("Focus");
     expect(browserAgentVisualStateLabel({ action: "wait", interaction: null })).toBe("Wait");
+  });
+});
+
+describe("browserRecoveryFailureLabel", () => {
+  test("names structured browser recovery failures for the UI cue", () => {
+    expect(
+      browserRecoveryFailureLabel({
+        reason: "navigation_failed",
+        message: "load failed",
+        at: 100
+      })
+    ).toBe("Restore issue");
+    expect(
+      browserRecoveryFailureLabel({
+        reason: "target_stale",
+        message: "target changed",
+        at: 100
+      })
+    ).toBe("Target changed");
+    expect(
+      browserRecoveryFailureLabel({
+        reason: "storage_unavailable",
+        message: "storage unavailable",
+        at: 100
+      })
+    ).toBe("Storage unavailable");
   });
 });

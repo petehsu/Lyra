@@ -71,6 +71,8 @@ const ZH_MESSAGES = {
   "runtime.connecting": "正在连接",
 
   "scroll.toBottom": "回到底部",
+  "scroll.previousMessage": "上一条",
+  "scroll.jumpToPreviousMessage": "定位到上一条消息",
 
   "decision.submit": "提交",
   "decision.prev": "上一个",
@@ -197,6 +199,8 @@ const EN_MESSAGES: Messages = {
   "runtime.connecting": "Connecting",
 
   "scroll.toBottom": "Scroll to bottom",
+  "scroll.previousMessage": "Previous",
+  "scroll.jumpToPreviousMessage": "Jump to previous message",
 
   "decision.submit": "Submit",
   "decision.prev": "Previous",

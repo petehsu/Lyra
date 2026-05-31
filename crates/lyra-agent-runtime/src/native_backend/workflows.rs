@@ -265,7 +265,7 @@ pub(crate) fn goals(method: &str, payload: Value) -> AgentRuntimeResult<Value> {
     ) && let Some(session) = state.sessions.get_mut(&session_id)
     {
         session.snapshot["sidePanel"] = side_panel.clone();
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
     }
     let goals = state
         .goals

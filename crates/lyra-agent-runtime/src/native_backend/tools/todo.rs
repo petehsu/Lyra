@@ -56,7 +56,7 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
             )
         })?;
         session.snapshot["todos"] = Value::Array(todos.clone());
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
         let snapshot = session.snapshot.clone();
         let callback = state.event_callback.clone();
         state.save_state().map_err(|error| {

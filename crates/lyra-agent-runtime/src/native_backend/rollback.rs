@@ -89,7 +89,7 @@ pub(crate) fn rollback_restore(payload: Value) -> AgentRuntimeResult<Value> {
         session
             .rollback_checkpoints
             .retain(|item| item.id != checkpoint.id);
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
         let snapshot = session.snapshot.clone();
         let callback = state.event_callback.clone();
         state.save_state()?;

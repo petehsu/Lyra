@@ -46,7 +46,7 @@ pub(crate) fn session_summary(session: &NativeSession) -> Value {
     let title = snapshot
         .get("title")
         .and_then(Value::as_str)
-        .unwrap_or("Lyra Agent");
+        .unwrap_or(DEFAULT_SESSION_TITLE);
     let updated = snapshot
         .get("updatedAt")
         .and_then(Value::as_str)

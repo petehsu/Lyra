@@ -143,7 +143,7 @@ pub(crate) fn trim_memory(payload: Value) -> AgentRuntimeResult<Value> {
         let projection =
             memory_projection_for_session(session, &long_term_memory, active_clarification);
         session.snapshot["memory"] = projection.clone();
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
         let metrics = memory_projection_metrics(session, &projection);
         let snapshot = session.snapshot.clone();
         let callback = state.event_callback.clone();
@@ -226,7 +226,7 @@ pub(crate) fn recover_memory(payload: Value) -> AgentRuntimeResult<Value> {
             "reason": reason,
         });
         session.snapshot["memory"] = projection.clone();
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
         let snapshot = session.snapshot.clone();
         let callback = state.event_callback.clone();
         state.save_state()?;
@@ -359,7 +359,7 @@ pub(crate) fn memory_projection_for_session(
             "items": [
                 {
                     "kind": "session",
-                    "title": session.snapshot.get("title").cloned().unwrap_or_else(|| Value::String("Lyra Agent".to_string())),
+                    "title": session.snapshot.get("title").cloned().unwrap_or_else(|| Value::String(DEFAULT_SESSION_TITLE.to_string())),
                     "workingDir": session.snapshot.get("workingDir").cloned().unwrap_or(Value::Null),
                 }
             ]
@@ -481,6 +481,8 @@ fn is_high_value_tool(name: &str, action: &str) -> bool {
             | "todo"
             | "software"
             | "software_invoke_capability"
+            | "render"
+            | "render_surface"
             | "file_write"
             | "file_edit"
             | "file_multiedit"
@@ -507,6 +509,7 @@ fn is_transient_tool(name: &str, action: &str) -> bool {
             | ("lyra_lumen", "read_until")
             | ("lyra_lumen", "reveal")
             | ("lyra_lumen", "follow_audit")
+            | ("lyra_lumen", "explain_target")
             | ("lyra_lumen", "audit")
     ) || matches!(
         name,
@@ -635,7 +638,7 @@ pub(crate) fn memory_snapshot_for_session(session: &NativeSession, config: &Nati
     json!({
         "session": {
             "sessionId": session.id,
-            "title": snapshot.get("title").cloned().unwrap_or_else(|| Value::String("Lyra Agent".to_string())),
+            "title": snapshot.get("title").cloned().unwrap_or_else(|| Value::String(DEFAULT_SESSION_TITLE.to_string())),
             "workingDir": snapshot.get("workingDir").cloned().unwrap_or(Value::Null),
             "providerKey": config.default_provider,
             "model": config.default_model,

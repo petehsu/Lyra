@@ -54,6 +54,11 @@ pub(crate) fn touch_snapshot(snapshot: &mut Value) {
     snapshot["memory"] = memory;
 }
 
+pub(crate) fn touch_session(session: &mut NativeSession) {
+    touch_snapshot(&mut session.snapshot);
+    session.dirty = true;
+}
+
 pub(crate) fn is_deleted(snapshot: &Value) -> bool {
     snapshot.get("turnStatus").and_then(Value::as_str) == Some("deleted")
 }

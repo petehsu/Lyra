@@ -521,6 +521,89 @@ describe("Agent IPC bridge", () => {
     bridge.dispose();
   });
 
+  test("registers browser session recovery host capabilities", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const snapshot = {
+      schemaVersion: 1,
+      snapshotId: "browser-session-1",
+      activeTabId: "browser-tab-1",
+      capturedAt: 100,
+      tabs: [],
+      storageState: {
+        schemaVersion: 1,
+        profileId: "lyra-browser-live",
+        profileMode: "live",
+        profilePartition: "persist:lyra-browser-live",
+        persistence: "chromium-profile",
+        cookies: { availability: "available", manifestOnly: true, count: 2 }
+      },
+      recoveryAnchor: {
+        schemaVersion: 1,
+        tabId: "browser-tab-1",
+        address: "https://example.com/app",
+        title: "Example App",
+        targetRef: "lumen:stable-target",
+        storageStateRef: {
+          profilePartition: "persist:lyra-browser-live",
+          siteOrigin: "https://example.com"
+        },
+        authState: "possibly_logged_in",
+        capturedAt: 100
+      }
+    };
+    const storageState = {
+      schemaVersion: 1,
+      profileId: "lyra-browser-live",
+      profileMode: "live",
+      profilePartition: "persist:lyra-browser-live",
+      persistence: "chromium-profile"
+    };
+    const clearResult = {
+      ok: true,
+      origin: "https://example.com",
+      profilePartitions: ["persist:lyra-browser-live"],
+      cookiesRemoved: 2,
+      storageCleared: true,
+      snapshot
+    };
+    const browserBridge = {
+      readSessionSnapshot: vi.fn(() => snapshot),
+      readStorageState: vi.fn(async () => storageState),
+      clearSiteData: vi.fn(async () => clearResult)
+    };
+
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      getWindow: () => null,
+      getBrowserBridge: () => browserBridge as never,
+      getWorkbenchObservationService: () => null
+    });
+
+    expect(registered.get("workbench.browser.readSessionSnapshot")?.({})).toBe(snapshot);
+    await expect(
+      registered.get("workbench.browser.readStorageState")?.({ origin: "https://example.com" })
+    ).resolves.toBe(storageState);
+    expect(browserBridge.readStorageState).toHaveBeenLastCalledWith({
+      origin: "https://example.com"
+    });
+    await expect(
+      registered.get("workbench.browser.clearSiteData")?.({ origin: "https://example.com" })
+    ).resolves.toBe(clearResult);
+    expect(browserBridge.clearSiteData).toHaveBeenLastCalledWith({
+      origin: "https://example.com"
+    });
+
+    bridge.dispose();
+  });
+
   test("lyraLumen map uses page tabs and legacy browser handlers are not registered", async () => {
     const registered = new Map<string, (payload: unknown) => unknown>();
     const tabs = {
@@ -549,11 +632,14 @@ describe("Agent IPC bridge", () => {
     } as unknown as WorkbenchObservationService;
     const browserBridge = {
       readActiveTabId: vi.fn(() => "page-1"),
-      observeAgentPage: vi.fn(async () => ({
+      observeAgentPage: vi.fn(async (
+        _tabId: string,
+        request: { readonly targetMode?: "isolated" | "live" }
+      ) => ({
         ok: true,
         kind: "lyraLumenMap",
         tabId: "page-1",
-        targetMode: "isolated",
+        targetMode: request.targetMode ?? "live",
         observationId: "obs-1",
         strategy: "picker",
         url: "https://example.com",
@@ -564,33 +650,43 @@ describe("Agent IPC bridge", () => {
       })),
       actOnAgentElement: vi.fn(async (
         _tabId: string,
-        request: { readonly elementId?: number; readonly targetRef?: string }
+        request: {
+          readonly elementId?: number;
+          readonly targetRef?: string;
+          readonly targetMode?: "isolated" | "live";
+        }
       ) => ({
         ok: true,
         kind: "lyraLumenActionResult",
         tabId: "page-1",
         inputMode: "chromium",
-        targetMode: "isolated",
+        targetMode: request.targetMode ?? "live",
         ...(request.elementId === undefined ? {} : { elementId: request.elementId }),
         ...(request.targetRef === undefined ? {} : { targetRef: request.targetRef }),
         x: 40,
         y: 50
       })),
-      actOnAgentPoint: vi.fn(async () => ({
+      actOnAgentPoint: vi.fn(async (
+        _tabId: string,
+        request: { readonly targetMode?: "isolated" | "live" }
+      ) => ({
         ok: true,
         kind: "lyraLumenActionResult",
         tabId: "page-1",
         inputMode: "chromium",
-        targetMode: "isolated",
+        targetMode: request.targetMode ?? "live",
         x: 12,
         y: 34
       })),
-      focusAgentPage: vi.fn(async () => ({
+      focusAgentPage: vi.fn(async (
+        _tabId: string,
+        request: { readonly targetMode?: "isolated" | "live" }
+      ) => ({
         ok: true,
         kind: "lyraLumenFocusResult",
         tabId: "page-1",
         inputMode: "chromium",
-        targetMode: "isolated",
+        targetMode: request.targetMode ?? "live",
         direction: "scan",
         steps: 3,
         activeElementId: 2,
@@ -599,25 +695,34 @@ describe("Agent IPC bridge", () => {
           { step: 2, elementId: 2, label: "Submit" }
         ]
       })),
-      typeIntoAgentElement: vi.fn(async () => ({
+      typeIntoAgentElement: vi.fn(async (
+        _tabId: string,
+        request: { readonly targetMode?: "isolated" | "live" }
+      ) => ({
         ok: true,
         kind: "lyraLumenActionResult",
         tabId: "page-1",
         inputMode: "chromium",
-        targetMode: "isolated",
+        targetMode: request.targetMode ?? "live",
         message: "Typed into the focused element with Chromium virtual keyboard."
       })),
-      pressAgentKey: vi.fn(async () => ({
+      pressAgentKey: vi.fn(async (
+        _tabId: string,
+        request: { readonly targetMode?: "isolated" | "live" }
+      ) => ({
         ok: true,
         kind: "lyraLumenActionResult",
         tabId: "page-1",
         inputMode: "chromium",
-        targetMode: "isolated",
+        targetMode: request.targetMode ?? "live",
         message: "Pressed Enter with Chromium virtual keyboard."
       })),
-      readAgentPage: vi.fn(async () => ({
+      readAgentPage: vi.fn(async (
+        _tabId: string,
+        request: { readonly targetMode?: "isolated" | "live" }
+      ) => ({
         tabId: "page-1",
-        targetMode: "isolated",
+        targetMode: request.targetMode ?? "live",
         scope: "main",
         text: "recent page tail",
         content: "recent page tail",
@@ -628,9 +733,12 @@ describe("Agent IPC bridge", () => {
         hasMore: false,
         extractionMethod: "lumen:recent-text-tail"
       })),
-      captureAgentPage: vi.fn(async () => ({
+      captureAgentPage: vi.fn(async (
+        _tabId: string,
+        request: { readonly targetMode?: "isolated" | "live" }
+      ) => ({
         tabId: "page-1",
-        targetMode: "isolated",
+        targetMode: request.targetMode ?? "live",
         mimeType: "image/png",
         imageBase64: "aGVsbG8=",
         width: 320,
@@ -642,7 +750,7 @@ describe("Agent IPC bridge", () => {
         request: { readonly action: "wait"; readonly targetMode?: "isolated" | "live" }
       ) => ({
         tabId: "page-1",
-        targetMode: request.targetMode ?? "isolated",
+        targetMode: request.targetMode ?? "live",
         action: request.action
       })),
       navigate: vi.fn(async () => ({
@@ -650,11 +758,14 @@ describe("Agent IPC bridge", () => {
         tabId: null,
         title: "Docs"
       })),
-      navigateAgentPage: vi.fn(async () => ({
+      navigateAgentPage: vi.fn(async (
+        _tabId: string,
+        request: { readonly targetMode?: "isolated" | "live" }
+      ) => ({
         address: "https://example.com/docs",
         tabId: "page-1",
         title: "Docs",
-        targetMode: "isolated"
+        targetMode: request.targetMode ?? "live"
       })),
       readAgentFollowAudit: vi.fn(async () => ({
         ok: true,
@@ -662,8 +773,12 @@ describe("Agent IPC bridge", () => {
         tabId: "page-1",
         targetMode: "live",
         sessionId: "follow-1",
+        turnId: "turn-1",
         startedAt: 100,
+        endedAt: null,
         updatedAt: 200,
+        status: "running",
+        reason: null,
         totalActions: 2,
         actions: [],
         compactSummary: {
@@ -676,8 +791,22 @@ describe("Agent IPC bridge", () => {
           pointerCount: 1,
           typeCount: 0,
           keyCount: 0,
+          revealCount: 0,
+          elevateCount: 0,
           interruptedCount: 0
-        }
+        },
+        compactText: "observe -> act",
+        chunks: []
+      })),
+      explainAgentTargetRef: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenTargetExplanation",
+        tabId: "page-1",
+        targetMode: "live",
+        targetRef: "lumen:stable-target",
+        available: true,
+        lastSeenAt: 200,
+        recommendedAction: "lyra_lumen.act"
       })),
       auditAgentPageDiagnostics: vi.fn(async () => ({
         ok: true,
@@ -703,7 +832,24 @@ describe("Agent IPC bridge", () => {
         title: "Login",
         userActionRequired: true,
         message: "visible tab requested"
-      }))
+      })),
+      completeElevationSession: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenElevationCompletion",
+        tabId: "page-1",
+        targetMode: "isolated",
+        liveTabId: "browser-elevated-1",
+        address: "https://example.com/app",
+        title: "App",
+        verified: true,
+        message: "verified"
+      })),
+      resolveSharedControlDecision: vi.fn(async () => ({
+        ok: true,
+        tabId: "page-1",
+        decision: "continue_agent"
+      })),
+      finishAgentFollowSessions: vi.fn()
     };
 
     const bridge = createAgentIpcBridge({
@@ -737,7 +883,7 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.observeAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "picker",
-      targetMode: "isolated"
+      targetMode: "live"
     });
 
     expect(
@@ -756,7 +902,8 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
       strategy: "picker",
-      targetMode: "live"
+      targetMode: "live",
+      visibleFollow: true
     });
     browserBridge.observeAgentPage.mockClear();
     await expect(registered.get("lyraLumen.map")?.({ target: "isolated" })).resolves.toMatchObject({
@@ -764,7 +911,7 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
       strategy: "picker",
-      targetMode: "live"
+      targetMode: "isolated"
     });
     browserBridge.actOnAgentElement.mockClear();
     await expect(
@@ -781,12 +928,29 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
       elementId: 3,
       interaction: "hover",
-      targetMode: "live"
+      targetMode: "isolated"
     });
     expect(
       electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: false })
     ).toEqual({
       enabled: false
+    });
+
+    browserBridge.observeAgentPage.mockClear();
+    await expect(
+      registered.get("lyraLumen.map")?.({
+        targetMode: "isolated",
+        authState: "borrowLiveLogin"
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenMap",
+      targetMode: "isolated"
+    });
+    expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
+      strategy: "picker",
+      targetMode: "isolated",
+      authState: "borrowLiveLogin",
+      useLiveLoginState: true
     });
 
     await expect(
@@ -799,7 +963,7 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.actOnAgentElement).toHaveBeenCalledWith("page-1", {
       elementId: 3,
       interaction: "hover",
-      targetMode: "isolated"
+      targetMode: "live"
     });
 
     await expect(
@@ -814,7 +978,7 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
       targetRef: "lumen:stable-target",
       interaction: "click",
-      targetMode: "isolated"
+      targetMode: "live"
     });
 
     await expect(
@@ -849,7 +1013,7 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.actOnAgentPoint).toHaveBeenCalledWith("page-1", {
       point: { x: 12, y: 34, reason: "vision fallback" },
       interaction: "click",
-      targetMode: "isolated"
+      targetMode: "live"
     });
 
     browserBridge.observeAgentPage.mockResolvedValueOnce({
@@ -864,6 +1028,8 @@ describe("Agent IPC bridge", () => {
       elements: [
         {
           id: 3,
+          targetRef: "lumen:stable-target",
+          semanticNodeKey: "semantic:more-button",
           frameTreeNodeId: 1,
           tagName: "button",
           role: "button",
@@ -873,10 +1039,24 @@ describe("Agent IPC bridge", () => {
           focusable: true,
           disabled: false,
           editable: false
+        },
+        {
+          id: 7,
+          targetRef: "lumen:template-delete-target",
+          semanticNodeKey: "semantic:template-delete",
+          frameTreeNodeId: 1,
+          tagName: "button",
+          role: "menuitem",
+          label: "Delete",
+          selectorPreview: "[role=menuitem]",
+          bounds: { x: 24, y: 58, width: 80, height: 32 },
+          focusable: true,
+          disabled: false,
+          editable: false
         }
       ],
       activeElementId: null,
-      focusOrder: [3]
+      focusOrder: [3, 7]
     });
     browserBridge.observeAgentPage.mockResolvedValueOnce({
       ok: true,
@@ -890,6 +1070,8 @@ describe("Agent IPC bridge", () => {
       elements: [
         {
           id: 3,
+          targetRef: "lumen:stable-target",
+          semanticNodeKey: "semantic:more-button",
           frameTreeNodeId: 1,
           tagName: "button",
           role: "button",
@@ -901,7 +1083,23 @@ describe("Agent IPC bridge", () => {
           editable: false
         },
         {
+          id: 7,
+          targetRef: "lumen:template-delete-target",
+          semanticNodeKey: "semantic:template-delete",
+          frameTreeNodeId: 1,
+          tagName: "button",
+          role: "menuitem",
+          label: "Delete",
+          selectorPreview: "[role=menuitem]",
+          bounds: { x: 24, y: 58, width: 80, height: 32 },
+          focusable: true,
+          disabled: false,
+          editable: false
+        },
+        {
           id: 8,
+          targetRef: "lumen:delete-target",
+          semanticNodeKey: "semantic:portal-delete",
           frameTreeNodeId: 1,
           tagName: "button",
           role: "menuitem",
@@ -914,14 +1112,13 @@ describe("Agent IPC bridge", () => {
         }
       ],
       activeElementId: null,
-      focusOrder: [3, 8]
+      focusOrder: [3, 7, 8]
     });
-    await expect(
-      registered.get("lyraLumen.reveal")?.({
-        elementId: 3,
-        idleMs: 80
-      })
-    ).resolves.toMatchObject({
+    const revealResult = await registered.get("lyraLumen.reveal")?.({
+      targetRef: "lumen:stable-target",
+      idleMs: 80
+    });
+    expect(revealResult).toMatchObject({
       kind: "lyraLumenActionResult",
       revealed: true,
       beforeObservationId: "obs-before-reveal",
@@ -934,24 +1131,25 @@ describe("Agent IPC bridge", () => {
       ],
       nextRecommendedAction: "lyra_lumen.act"
     });
+    expect((revealResult as { revealedElements?: unknown[] }).revealedElements).toHaveLength(1);
     expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
-      elementId: 3,
+      targetRef: "lumen:stable-target",
       interaction: "hover",
-      targetMode: "isolated"
+      targetMode: "live"
     });
     await expect(
       registered.get("lyraLumen.act")?.({
-        elementId: 8,
+        targetRef: "lumen:delete-target",
         interaction: "click"
       })
     ).resolves.toMatchObject({
       kind: "lyraLumenActionResult",
-      elementId: 8
+      targetRef: "lumen:delete-target"
     });
     expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
-      elementId: 8,
+      targetRef: "lumen:delete-target",
       interaction: "click",
-      targetMode: "isolated"
+      targetMode: "live"
     });
 
     await expect(
@@ -964,7 +1162,7 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.typeIntoAgentElement).toHaveBeenCalledWith("page-1", {
       text: "hello focused editor",
       clear: false,
-      targetMode: "isolated"
+      targetMode: "live"
     });
 
     await expect(
@@ -976,7 +1174,7 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.pressAgentKey).toHaveBeenCalledWith("page-1", {
       key: "Enter",
-      targetMode: "isolated"
+      targetMode: "live"
     });
 
     await expect(
@@ -988,7 +1186,7 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "focus",
-      targetMode: "isolated"
+      targetMode: "live"
     });
 
     browserBridge.readAgentPage.mockClear();
@@ -1001,7 +1199,7 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "focus",
-      targetMode: "isolated",
+      targetMode: "live",
       maxChars: 2048,
       timeoutMs: 750
     });
@@ -1048,7 +1246,7 @@ describe("Agent IPC bridge", () => {
     browserBridge.readAgentPage.mockClear();
     browserBridge.readAgentPage.mockResolvedValueOnce({
       tabId: "page-1",
-      targetMode: "isolated",
+      targetMode: "live",
       scope: "main",
       text: "Doubao reply complete",
       content: "Doubao reply complete",
@@ -1069,7 +1267,7 @@ describe("Agent IPC bridge", () => {
     ).resolves.toMatchObject({
       kind: "lyraLumenWait",
       tabId: "page-1",
-      targetMode: "isolated",
+      targetMode: "live",
       until: "textContains",
       matched: true,
       content: "Doubao reply complete",
@@ -1077,12 +1275,12 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "focus",
-      targetMode: "isolated",
+      targetMode: "live",
       timeoutMs: expect.any(Number)
     });
     expect(browserBridge.showAgentActivity).toHaveBeenCalledWith("page-1", {
       action: "wait",
-      targetMode: "isolated",
+      targetMode: "live",
       durationMs: 900
     });
 
@@ -1100,7 +1298,7 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.focusAgentPage).toHaveBeenCalledWith("page-1", {
       direction: "scan",
-      targetMode: "isolated",
+      targetMode: "live",
       steps: 3,
       restoreFocus: true
     });
@@ -1114,9 +1312,9 @@ describe("Agent IPC bridge", () => {
       kind: "lyraLumenNavigate",
       url: "https://example.com/docs"
     });
-    expect(browserBridge.navigateAgentPage).toHaveBeenCalledWith("page-1", {
-      url: "https://example.com/docs",
-      targetMode: "isolated"
+    expect(browserBridge.navigate).toHaveBeenCalledWith({
+      address: "https://example.com/docs",
+      newTab: true
     });
 
     await expect(
@@ -1136,14 +1334,27 @@ describe("Agent IPC bridge", () => {
     });
 
     await expect(
-      registered.get("lyraLumen.followAudit")?.({ maxActions: 10 })
+      registered.get("lyraLumen.followAudit")?.({ maxActions: 10, includeFrames: true })
     ).resolves.toMatchObject({
       kind: "lyraLumenFollowAudit",
       sessionId: "follow-1"
     });
     expect(browserBridge.readAgentFollowAudit).toHaveBeenCalledWith("page-1", {
       targetMode: "live",
-      maxActions: 10
+      maxActions: 10,
+      includeFrames: true
+    });
+
+    await expect(
+      registered.get("lyraLumen.explainTarget")?.({ targetRef: "lumen:stable-target" })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenTargetExplanation",
+      targetRef: "lumen:stable-target",
+      available: true
+    });
+    expect(browserBridge.explainAgentTargetRef).toHaveBeenCalledWith("page-1", {
+      targetMode: "live",
+      targetRef: "lumen:stable-target"
     });
 
     await expect(
@@ -1172,7 +1383,7 @@ describe("Agent IPC bridge", () => {
     bridge.dispose();
   });
 
-  test("lyraLumen isolated actions use a hidden standalone page when the active tab is not a browser page", async () => {
+  test("lyraLumen explicit isolated actions use a hidden standalone page when the active tab is not a browser page", async () => {
     const registered = new Map<string, (payload: unknown) => unknown>();
     const tabs = {
       activeTabId: "terminal-1",
@@ -1238,7 +1449,7 @@ describe("Agent IPC bridge", () => {
       getWorkbenchObservationService: () => observationService
     });
 
-    await expect(registered.get("lyraLumen.map")?.({})).resolves.toMatchObject({
+    await expect(registered.get("lyraLumen.map")?.({ targetMode: "isolated" })).resolves.toMatchObject({
       ok: true,
       kind: "lyraLumenMap",
       tabId: WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID,

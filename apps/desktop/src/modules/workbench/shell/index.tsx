@@ -696,7 +696,10 @@ export const WorkbenchShell = () => {
           {...workspaceSurfaceProps}
           surfaceAdapters={uiRuntime.adapters.surfaces}
         />
-        <AgentBrowserActivityOverlay state={browserAgentVisualState} />
+        <AgentBrowserActivityOverlay
+          state={browserAgentVisualState}
+          recoveryFailure={activePageRuntimeState?.recoveryFailure}
+        />
       </>
     ),
     browserTabs: (

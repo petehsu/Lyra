@@ -37,6 +37,8 @@ const MAX_SEARCH_FILES: usize = 10_000;
 const DEFAULT_COMMAND_TIMEOUT_MS: u64 = 30_000;
 const MAX_COMMAND_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_COMMAND_OUTPUT_BYTES: usize = 20_000;
+pub(crate) const DEFAULT_SESSION_TITLE: &str = "新会话";
+pub(crate) const LEGACY_DEFAULT_SESSION_TITLE: &str = "Lyra Agent";
 pub(crate) const LYRA_TURN_FINISH_TOOL: &str = "lyra_turn_finish";
 
 pub struct LyraAgentBackend;

@@ -14,6 +14,7 @@ type SyncReply<T> =
 const WORKBENCH_STATE_FILENAMES: Readonly<Record<WorkbenchStateKey, string>> = {
   preferences: "preferences.v1.json",
   "workspace-tabs": "workspace-tabs.v1.json",
+  "browser-session": "browser-session.v1.json",
   "ai-panel-tabs": "ai-panel-tabs.v1.json",
   "terminal-dock": "terminal-dock.v1.json",
   notifications: "notifications.v1.json",
@@ -23,6 +24,7 @@ const WORKBENCH_STATE_FILENAMES: Readonly<Record<WorkbenchStateKey, string>> = {
 const isWorkbenchStateKey = (value: unknown): value is WorkbenchStateKey =>
   value === "preferences"
   || value === "workspace-tabs"
+  || value === "browser-session"
   || value === "ai-panel-tabs"
   || value === "terminal-dock"
   || value === "notifications"

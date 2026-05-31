@@ -2,7 +2,11 @@ import { ipcMain, type BrowserWindow } from "electron";
 
 import {
   LYRA_CHANNELS,
+  type BrowserSessionSnapshot,
+  type BrowserStorageStateRef,
   type WorkbenchBrowserChromePopoverRequest,
+  type WorkbenchBrowserClearSiteDataRequest,
+  type WorkbenchBrowserClearSiteDataResult,
   type WorkbenchBrowserEvent,
   type WorkbenchBrowserLayoutSnapshot,
   type WorkbenchBrowserNavigateRequest,
@@ -12,6 +16,7 @@ import {
   type WorkbenchBrowserSearchInPageRequest,
   type WorkbenchBrowserSearchInPageResult,
   type WorkbenchBrowserSetElementPickerModeRequest,
+  type WorkbenchBrowserStorageStateRequest,
   type WorkbenchBrowserTopologySnapshot,
   type WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/desktop-bridge";
@@ -25,6 +30,7 @@ import type {
 } from "../workbench-observation/browser/types";
 import type { DownloadManagerIpcBridge } from "../download-manager";
 import type { LoginManagerIpcBridge } from "../login-manager";
+import type { WorkbenchStateIpcBridge } from "../workbench-state";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import { createWorkbenchBrowserViewManager } from "./view-manager";
 import type {
@@ -71,6 +77,13 @@ export type WorkbenchBrowserIpcBridge = {
   readonly readPageState: (
     request?: WorkbenchBrowserReadPageStateRequest
   ) => WorkbenchBrowserPageRuntimeState | null;
+  readonly readSessionSnapshot: () => BrowserSessionSnapshot | null;
+  readonly readStorageState: (
+    request?: WorkbenchBrowserStorageStateRequest
+  ) => Promise<BrowserStorageStateRef>;
+  readonly clearSiteData: (
+    request: WorkbenchBrowserClearSiteDataRequest
+  ) => Promise<WorkbenchBrowserClearSiteDataResult>;
   readonly searchInPage: (
     request: WorkbenchBrowserSearchInPageRequest
   ) => Promise<WorkbenchBrowserSearchInPageResult>;
@@ -186,22 +199,29 @@ export type WorkbenchBrowserIpcBridge = {
   readonly captureAgentPage: WorkbenchBrowserViewManager["captureAgentPage"];
   readonly showAgentActivity: WorkbenchBrowserViewManager["showAgentActivity"];
   readonly readAgentFollowAudit: WorkbenchBrowserViewManager["readAgentFollowAudit"];
+  readonly finishAgentFollowSessions: WorkbenchBrowserViewManager["finishAgentFollowSessions"];
+  readonly explainAgentTargetRef: WorkbenchBrowserViewManager["explainAgentTargetRef"];
   readonly auditAgentPageDiagnostics: WorkbenchBrowserViewManager["auditAgentPageDiagnostics"];
   readonly elevateAgentPage: WorkbenchBrowserViewManager["elevateAgentPage"];
+  readonly completeElevationSession: WorkbenchBrowserViewManager["completeElevationSession"];
+  readonly resolveSharedControlDecision: WorkbenchBrowserViewManager["resolveSharedControlDecision"];
 };
 
 export const createWorkbenchBrowserIpcBridge = ({
   getWindow,
   downloadManager,
-  loginManager
+  loginManager,
+  workbenchState
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly downloadManager?: DownloadManagerIpcBridge;
   readonly loginManager?: Pick<LoginManagerIpcBridge, "attachWebContents">;
+  readonly workbenchState?: Pick<WorkbenchStateIpcBridge, "readState" | "writeState">;
 }): WorkbenchBrowserIpcBridge => {
   const manager: WorkbenchBrowserViewManager = createWorkbenchBrowserViewManager({
     getWindow,
     publishEvent: (event) => publishEvent(getWindow, event),
+    ...(workbenchState === undefined ? {} : { workbenchState }),
     ...(
       downloadManager === undefined && loginManager === undefined
         ? {}
@@ -255,6 +275,15 @@ export const createWorkbenchBrowserIpcBridge = ({
   });
   ipcMain.handle(LYRA_CHANNELS.workbenchBrowserReadPageState, (_event, request?: unknown) => {
     return manager.readPageState(request as WorkbenchBrowserReadPageStateRequest | undefined);
+  });
+  ipcMain.handle(LYRA_CHANNELS.workbenchBrowserReadSessionSnapshot, () => {
+    return manager.readSessionSnapshot();
+  });
+  ipcMain.handle(LYRA_CHANNELS.workbenchBrowserReadStorageState, async (_event, request?: unknown) => {
+    return await manager.readStorageState(request as WorkbenchBrowserStorageStateRequest | undefined);
+  });
+  ipcMain.handle(LYRA_CHANNELS.workbenchBrowserClearSiteData, async (_event, request: unknown) => {
+    return await manager.clearSiteData(request as WorkbenchBrowserClearSiteDataRequest);
   });
   ipcMain.handle(LYRA_CHANNELS.workbenchBrowserSearchInPage, async (_event, request: unknown) => {
     return await manager.searchInPage(request as WorkbenchBrowserSearchInPageRequest);
@@ -314,6 +343,9 @@ export const createWorkbenchBrowserIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserReload);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserStop);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserReadPageState);
+      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserReadSessionSnapshot);
+      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserReadStorageState);
+      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserClearSiteData);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSearchInPage);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetChromePopover);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetElementPickerMode);
@@ -330,6 +362,9 @@ export const createWorkbenchBrowserIpcBridge = ({
     reload: manager.reload,
     stop: manager.stop,
     readPageState: manager.readPageState,
+    readSessionSnapshot: manager.readSessionSnapshot,
+    readStorageState: manager.readStorageState,
+    clearSiteData: manager.clearSiteData,
     searchInPage: manager.searchInPage,
     setChromePopover: manager.setChromePopover,
     setElementPickerMode: manager.setElementPickerMode,
@@ -358,7 +393,11 @@ export const createWorkbenchBrowserIpcBridge = ({
     captureAgentPage: manager.captureAgentPage,
     showAgentActivity: manager.showAgentActivity,
     readAgentFollowAudit: manager.readAgentFollowAudit,
+    finishAgentFollowSessions: manager.finishAgentFollowSessions,
+    explainAgentTargetRef: manager.explainAgentTargetRef,
     auditAgentPageDiagnostics: manager.auditAgentPageDiagnostics,
-    elevateAgentPage: manager.elevateAgentPage
+    elevateAgentPage: manager.elevateAgentPage,
+    completeElevationSession: manager.completeElevationSession,
+    resolveSharedControlDecision: manager.resolveSharedControlDecision
   };
 };

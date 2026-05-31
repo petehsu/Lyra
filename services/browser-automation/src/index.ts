@@ -1,3 +1,3 @@
-export * from "./contracts/navigation";
-export * from "./modules/playwright_runner";
-export * from "./modules/cdp_inspector";
+export * from "./contracts/navigation.js";
+export * from "./modules/playwright_runner/index.js";
+export * from "./modules/cdp_inspector/index.js";

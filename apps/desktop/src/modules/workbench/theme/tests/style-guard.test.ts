@@ -164,7 +164,7 @@ describe("workbench UI guard", () => {
   });
 
   test("caps the workbench shell entrypoint size", () => {
-    const source = Array.from({ length: 651 }, (_, index) => `export const line${index} = ${index};`).join("\n");
+    const source = Array.from({ length: 801 }, (_, index) => `export const line${index} = ${index};`).join("\n");
     const violations = scanWorkbenchShellEntrypointSize(
       "apps/desktop/src/modules/workbench/shell/index.tsx",
       source

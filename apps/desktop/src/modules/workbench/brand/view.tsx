@@ -46,7 +46,7 @@ export const LyraBrandLogo = ({
   spinIntensity = "steady",
   spinDurationMs
 }: LyraBrandLogoProps) => {
-  const isRotating = motion !== "none";
+  const isRotating = motion === "active";
   const normalizedDurationMs = normalizeSpinDuration(motion, spinIntensity, spinDurationMs);
   const style = useMemo(
     () =>

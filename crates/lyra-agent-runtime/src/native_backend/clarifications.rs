@@ -21,7 +21,7 @@ pub(crate) fn wait_for_clarification(
             session.snapshot["turnStatus"] = Value::String("running".to_string());
             session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
             session.snapshot["follow"] = json!({ "running": true, "activity": "Waiting for user" });
-            touch_snapshot(&mut session.snapshot);
+            touch_session(session);
         }
         state
             .pending_clarifications
@@ -64,13 +64,15 @@ pub(crate) fn wait_for_clarification(
         if turn_was_cancelled(&session_id, &turn_id) {
             return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
         }
-        if let Some(request) = state().lock().ok().and_then(|state| {
-            state
+        if let Ok(mut state) = state().lock()
+            && let Some(request) = state
                 .pending_clarifications
                 .get(&request_id)
                 .filter(|request| request.answer.is_some())
                 .cloned()
-        }) {
+        {
+            state.pending_clarifications.remove(&request_id);
+            state.save_state()?;
             return Ok(request);
         }
         thread::sleep(Duration::from_millis(25));
@@ -117,7 +119,7 @@ pub(crate) fn respond_clarification(payload: Value) -> AgentRuntimeResult<Value>
             session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
             session.snapshot["follow"] =
                 json!({ "running": true, "activity": "Clarification answered" });
-            touch_snapshot(&mut session.snapshot);
+            touch_session(session);
         }
         let snapshot = state
             .sessions

@@ -106,6 +106,54 @@ const createDesktopApi = (snapshot = createSnapshot()) => {
     cookiesRemoved: 2,
     storageCleared: true
   }));
+  const clearSiteData = vi.fn(async () => ({
+    ok: true,
+    origin: "https://example.com",
+    profilePartitions: ["persist:lyra-browser-live"],
+    cookiesRemoved: 2,
+    storageCleared: true,
+    snapshot: {
+      schemaVersion: 1,
+      snapshotId: "browser-session-cleared",
+      capturedAt: 100,
+      activeTabId: "browser-tab-1",
+      layout: {
+        windowWidth: 0,
+        windowHeight: 0,
+        layouts: []
+      },
+      tabs: [
+        {
+          tabId: "browser-tab-1",
+          address: "https://example.com/login",
+          title: "Example",
+          isActive: true,
+          canGoBack: false,
+          canGoForward: false,
+          profilePartition: "persist:lyra-browser-live",
+          restoreState: {
+            capturedAt: 100,
+            storage: {
+              origin: "https://example.com",
+              cookieCount: 0,
+              localStorage: "unavailable",
+              sessionStorage: "unavailable",
+              indexedDB: "unavailable",
+              capturedAt: 100
+            }
+          }
+        }
+      ],
+      storageState: {
+        schemaVersion: 1,
+        profileId: "lyra-browser-live",
+        profileMode: "live",
+        profilePartition: "persist:lyra-browser-live",
+        persistence: "chromium-profile"
+      },
+      migrations: []
+    }
+  }));
   return {
     api: {
       loginManager: {
@@ -116,6 +164,9 @@ const createDesktopApi = (snapshot = createSnapshot()) => {
         fillCredential,
         clearSite,
         onEvent: vi.fn(() => vi.fn())
+      },
+      workbenchBrowser: {
+        clearSiteData
       }
     } as unknown as LyraDesktopApi,
     list,
@@ -123,7 +174,8 @@ const createDesktopApi = (snapshot = createSnapshot()) => {
     deleteCredential,
     revealCredential,
     fillCredential,
-    clearSite
+    clearSite,
+    clearSiteData
   };
 };
 
@@ -138,7 +190,7 @@ describe("LoginManagerSurface", () => {
   });
 
   test("lists sessions and lets users edit login method or clear a site", async () => {
-    const { api, updateSession, clearSite } = createDesktopApi();
+    const { api, updateSession, clearSite, clearSiteData } = createDesktopApi();
     const onOpenSite = vi.fn();
     render(
       <LoginManagerSurface
@@ -181,6 +233,11 @@ describe("LoginManagerSurface", () => {
     await waitFor(() => {
       expect(clearSite).toHaveBeenCalledWith({
         sessionId: "https://example.com"
+      });
+    });
+    await waitFor(() => {
+      expect(clearSiteData).toHaveBeenCalledWith({
+        origin: "https://example.com"
       });
     });
   });

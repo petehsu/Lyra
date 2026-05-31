@@ -20,6 +20,8 @@ import type {
   ToolGroup,
   ToolActionTarget,
   ToolPeek,
+  RenderSurfaceColumn,
+  RenderSurfaceRow,
   WebResult,
   WorkbenchTabSummary
 } from "./ai-panel/agent-chat-demo/core/types";
@@ -313,7 +315,17 @@ export const applyAgentRuntimeEventToSnapshot = (
 const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
   const toolName = tool.name.toLowerCase();
   const input = toolInputRecord(tool);
+  const output = asRecord(tool.output);
+  const raw = asRecord(output.raw);
   const action = stringField(input, "action");
+  if (
+    toolName === "render" ||
+    toolName === "render_surface" ||
+    toolName === "lyra-render" ||
+    toolName === "lyra_render" ||
+    action === "surface" ||
+    raw.kind === "render_surface"
+  ) return "render";
   if (
     toolName === "workbench" ||
     toolName.startsWith("workbench.") ||
@@ -570,6 +582,7 @@ type ParsedWebFetchOutput = {
 type ParsedWorkbenchDetails = Extract<ToolDetails, { type: "workbench" }>;
 type ParsedLumenDetails = Extract<ToolDetails, { type: "lumen" }>;
 type ParsedSoftwareDetails = Extract<ToolDetails, { type: "software" }>;
+type ParsedRenderDetails = Extract<ToolDetails, { type: "render" }>;
 
 type ParsedLumenElement = {
   readonly id: string;
@@ -587,11 +600,15 @@ const LUMEN_ACTIONS = new Set([
   "type",
   "press",
   "submit",
+  "reveal",
   "navigate",
   "read",
   "see",
   "wait",
-  "read_until"
+  "read_until",
+  "follow_audit",
+  "explain_target",
+  "elevate"
 ]);
 const LUMEN_OBSERVATION_HEADER =
   /^Observation\s+(\S+)\s+\(([^)]+)\)\s+for\s+(.+?)(?:\s+-\s+(https?:\/\/\S+))?$/u;
@@ -656,6 +673,11 @@ const lumenElementLabel = (input: Record<string, unknown>): string | undefined =
   return undefined;
 };
 
+const lumenTargetRefLabel = (input: Record<string, unknown>): string | undefined => {
+  const targetRef = stringField(input, "lumenTargetRef", "targetRef");
+  return targetRef === undefined ? undefined : `target ${targetRef}`;
+};
+
 const lumenPointLabel = (input: Record<string, unknown>): string | undefined => {
   const point = asRecord(input.point);
   const x = typeof point.x === "number" ? point.x : Number.NaN;
@@ -718,6 +740,104 @@ const parseLumenFocusOutput = (output: string): {
   };
 };
 
+const lumenElementFromRaw = (value: unknown): ParsedLumenElement | null => {
+  const element = asRecord(value);
+  if (Object.keys(element).length === 0) return null;
+  const id =
+    stringField(element, "id", "elementId")
+    ?? (numberField(element, "id", "elementId") === undefined
+      ? undefined
+      : `${numberField(element, "id", "elementId")}`);
+  const target = asRecord(element.target);
+  const targetRef = stringField(element, "targetRef") ?? stringField(target, "targetRef");
+  const role = stringField(element, "role", "tagName") ?? "element";
+  const label = stringField(element, "label", "text", "name", "accessibleName") ?? targetRef ?? "";
+  if (id === undefined && label.length === 0 && targetRef === undefined) return null;
+  return {
+    id: id ?? targetRef ?? "?",
+    role,
+    label
+  };
+};
+
+const parseStructuredLumenMap = (
+  raw: Record<string, unknown>
+): {
+  readonly observationId?: string;
+  readonly strategy?: string;
+  readonly title?: string;
+  readonly url?: string;
+  readonly elements: readonly ParsedLumenElement[];
+} | null => {
+  const rawElements = Array.isArray(raw.elements) ? raw.elements : undefined;
+  const isStructuredMap =
+    raw.kind === "lyraLumenMap"
+    || rawElements !== undefined
+    || Array.isArray(raw.targets)
+    || raw.semanticTree !== undefined
+    || raw.coverage !== undefined;
+  if (!isStructuredMap) return null;
+  const elements = (rawElements ?? [])
+    .map(lumenElementFromRaw)
+    .filter((element): element is ParsedLumenElement => element !== null);
+  const observationId = stringField(raw, "observationId");
+  const strategy = stringField(raw, "strategy");
+  const title = stringField(raw, "title");
+  const url = stringField(raw, "url");
+  return {
+    ...(observationId === undefined ? {} : { observationId }),
+    ...(strategy === undefined ? {} : { strategy }),
+    ...(title === undefined ? {} : { title }),
+    ...(url === undefined ? {} : { url }),
+    elements
+  };
+};
+
+const parseStructuredLumenFocus = (
+  raw: Record<string, unknown>
+): {
+  readonly direction?: string;
+  readonly activeElementId?: string;
+  readonly focused?: string;
+  readonly trail: readonly string[];
+} | null => {
+  const rawTrail = Array.isArray(raw.focusTrail) ? raw.focusTrail : undefined;
+  const focusedElement = lumenElementFromRaw(raw.focusedElement);
+  const activeElementId =
+    stringField(raw, "activeElementId")
+    ?? (numberField(raw, "activeElementId") === undefined
+      ? undefined
+      : `${numberField(raw, "activeElementId")}`);
+  const isStructuredFocus =
+    raw.kind === "lyraLumenFocusResult"
+    || rawTrail !== undefined
+    || focusedElement !== null
+    || activeElementId !== undefined;
+  if (!isStructuredFocus) return null;
+  const trail = (rawTrail ?? [])
+    .map((entry) => {
+      const record = asRecord(entry);
+      const role = stringField(record, "role") ?? "element";
+      const label = stringField(record, "label") ?? "";
+      const elementId =
+        stringField(record, "elementId")
+        ?? (numberField(record, "elementId") === undefined
+          ? undefined
+          : `${numberField(record, "elementId")}`);
+      return `${elementId === undefined ? "" : `[${elementId}] `}${role}${label.length === 0 ? "" : ` ${label}`}`.trim();
+    })
+    .filter((label) => label.length > 0);
+  const direction = stringField(raw, "direction");
+  return {
+    ...(direction === undefined ? {} : { direction }),
+    ...(activeElementId === undefined ? {} : { activeElementId }),
+    ...(focusedElement === null
+      ? {}
+      : { focused: `${focusedElement.role}: ${focusedElement.label}`.trim() }),
+    trail
+  };
+};
+
 const lumenTitle = (tool: AgentToolActivity): string => {
   const input = toolInputRecord(tool);
   const action = normalizeLumenAction(stringField(input, "action"));
@@ -736,6 +856,8 @@ const lumenTitle = (tool: AgentToolActivity): string => {
       return "Pressed browser key";
     case "submit":
       return "Submitted browser control";
+    case "reveal":
+      return "Revealed browser controls";
     case "navigate":
       return "Navigated browser";
     case "read":
@@ -746,6 +868,12 @@ const lumenTitle = (tool: AgentToolActivity): string => {
       return "Waited in browser";
     case "read_until":
       return "Read browser until condition";
+    case "follow_audit":
+      return "Read browser follow audit";
+    case "explain_target":
+      return "Explained browser target";
+    case "elevate":
+      return "Elevated browser";
     default:
       return "Lyra Lumen";
   }
@@ -754,6 +882,7 @@ const lumenTitle = (tool: AgentToolActivity): string => {
 const toLumenDetails = (
   tool: AgentToolActivity,
   output: string,
+  rawOutput: Record<string, unknown>,
   screenshot: string | undefined,
   screenshotImage: AgentImageAttachment | undefined,
   targets: readonly ToolActionTarget[]
@@ -762,10 +891,16 @@ const toLumenDetails = (
   const action = normalizeLumenAction(stringField(input, "action"));
   const targetMode = lumenTargetMode(input);
   const chips = [targetMode];
+  const structuredTarget = lumenTargetRefLabel(input);
+  const followSessionId = stringField(input, "followSessionId", "sessionId");
+  const followActionId = stringField(input, "followActionId", "actionId");
+  if (structuredTarget !== undefined) chips.push(structuredTarget);
+  if (followSessionId !== undefined) chips.push(`follow ${followSessionId}`);
+  if (followActionId !== undefined) chips.push(`action ${followActionId}`);
   let excerpt: string | undefined;
 
   if (action === "map") {
-    const parsed = parseLumenMapOutput(output);
+    const parsed = parseStructuredLumenMap(rawOutput) ?? parseLumenMapOutput(output);
     if (parsed.strategy !== undefined) chips.push(parsed.strategy);
     chips.push(`${parsed.elements.length} elements`);
     const host = urlHost(parsed.url);
@@ -778,7 +913,7 @@ const toLumenDetails = (
       ? truncateText(labels.join(" / "), 120)
       : truncateText(parsed.title ?? output, 120);
   } else if (action === "focus_scan") {
-    const parsed = parseLumenFocusOutput(output);
+    const parsed = parseStructuredLumenFocus(rawOutput) ?? parseLumenFocusOutput(output);
     chips.push(`${parsed.trail.length} tab stops`);
     if (parsed.activeElementId !== undefined) chips.push(`active ${parsed.activeElementId}`);
     excerpt = truncateText(parsed.focused ?? parsed.trail.slice(0, 2).join(" / ") ?? output, 120);
@@ -793,19 +928,31 @@ const toLumenDetails = (
   } else if (action === "type") {
     const text = stringField(input, "text") ?? "";
     chips.push(`${text.length} chars`);
-    chips.push(lumenElementLabel(input) ?? "focused element");
+    chips.push(structuredTarget ?? lumenElementLabel(input) ?? "focused element");
     chips.push("chromium keyboard");
     excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
   } else if (action === "act") {
     chips.push((stringField(input, "interaction") ?? "click").replace(/_/gu, " "));
-    const target = lumenElementLabel(input) ?? lumenPointLabel(input);
+    const target = structuredTarget ?? lumenElementLabel(input) ?? lumenPointLabel(input);
     if (target !== undefined) chips.push(target);
     chips.push("chromium mouse");
     excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
+  } else if (action === "reveal") {
+    chips.push((stringField(input, "interaction") ?? "hover").replace(/_/gu, " "));
+    const target = structuredTarget ?? lumenElementLabel(input) ?? lumenPointLabel(input);
+    if (target !== undefined) chips.push(target);
+    excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
   } else if (action === "press" || action === "submit") {
     chips.push(stringField(input, "key") ?? (action === "submit" ? "Enter" : "key"));
-    chips.push(lumenElementLabel(input) ?? "focused element");
+    chips.push(structuredTarget ?? lumenElementLabel(input) ?? "focused element");
     chips.push("chromium keyboard");
+    excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
+  } else if (action === "follow_audit") {
+    chips.push("compact");
+    if (input.includeFrames === true) chips.push("frames");
+    excerpt = output.trim().length === 0 ? undefined : truncateText(output, 140);
+  } else if (action === "explain_target") {
+    chips.push(structuredTarget ?? "target");
     excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
   } else if (action === "navigate") {
     const url = stringField(input, "url");
@@ -1078,6 +1225,132 @@ const toSoftwareDetails = (
   };
 };
 
+const renderSurfaceFormat = (value: string | undefined): ParsedRenderDetails["format"] => {
+  switch (value) {
+    case "html":
+    case "markdown":
+    case "svg":
+    case "json":
+    case "table":
+    case "text":
+      return value;
+    case "md":
+      return "markdown";
+    default:
+      return "html";
+  }
+};
+
+const renderSurfaceOperation = (value: string | undefined): ParsedRenderDetails["operation"] => {
+  switch (value) {
+    case "update":
+    case "replace":
+    case "append":
+      return value;
+    default:
+      return "create";
+  }
+};
+
+const renderSurfaceTheme = (value: string | undefined): ParsedRenderDetails["theme"] => {
+  switch (value) {
+    case "light":
+    case "dark":
+      return value;
+    default:
+      return "auto";
+  }
+};
+
+const renderSurfaceColumns = (value: unknown): RenderSurfaceColumn[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const columns = value
+    .map((column) => {
+      if (typeof column === "string" && column.trim().length > 0) {
+        return { key: column, label: column };
+      }
+      const record = asRecord(column);
+      const key = stringField(record, "key", "id", "name");
+      if (key === undefined) return null;
+      return {
+        key,
+        label: stringField(record, "label", "title") ?? key
+      };
+    })
+    .filter((column): column is RenderSurfaceColumn => column !== null);
+  return columns.length === 0 ? undefined : columns;
+};
+
+const renderSurfaceRows = (value: unknown): RenderSurfaceRow[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((row): row is RenderSurfaceRow => {
+    return Array.isArray(row) || (row !== null && typeof row === "object");
+  });
+};
+
+const toRenderDetails = (
+  tool: AgentToolActivity,
+  output: string,
+  raw: Record<string, unknown>
+): ParsedRenderDetails => {
+  const input = toolInputRecord(tool);
+  const format = renderSurfaceFormat(
+    stringField(raw, "format", "kind") ?? stringField(input, "kind", "format")
+  );
+  const surfaceId =
+    stringField(raw, "surfaceId", "id")
+    ?? stringField(input, "surfaceId", "id")
+    ?? tool.id;
+  const title =
+    stringField(raw, "title")
+    ?? stringField(input, "title")
+    ?? "Render Surface";
+  const content =
+    stringField(raw, "content")
+    ?? stringField(input, "content", format)
+    ?? (format === "table" ? "" : output);
+  const height = Math.max(
+    140,
+    Math.min(720, numberField(raw, "height") ?? numberField(input, "height") ?? 320)
+  );
+  const rawSecurity = asRecord(raw.security);
+  const details: ParsedRenderDetails = {
+    type: "render",
+    surfaceId,
+    title,
+    format,
+    operation: renderSurfaceOperation(
+      stringField(raw, "operation") ?? stringField(input, "operation")
+    ),
+    content,
+    height,
+    interactive: typeof raw.interactive === "boolean" ? raw.interactive : true,
+    theme: renderSurfaceTheme(stringField(raw, "theme") ?? stringField(input, "theme"))
+  };
+  const summary = stringField(raw, "summary");
+  if (summary !== undefined) details.summary = summary;
+  if (raw.data !== undefined && raw.data !== null) details.data = raw.data;
+  const columns = renderSurfaceColumns(raw.columns ?? input.columns);
+  if (columns !== undefined) details.columns = columns;
+  const rows = renderSurfaceRows(raw.rows ?? input.rows);
+  if (rows !== undefined) details.rows = rows;
+  if (Object.keys(rawSecurity).length > 0) {
+    details.security = {
+      ...(typeof rawSecurity.runtime === "string" ? { runtime: rawSecurity.runtime } : {}),
+      ...(typeof rawSecurity.node === "boolean" ? { node: rawSecurity.node } : {}),
+      ...(typeof rawSecurity.sameOriginWithParent === "boolean"
+        ? { sameOriginWithParent: rawSecurity.sameOriginWithParent }
+        : {}),
+      ...(typeof rawSecurity.parentDomAccess === "boolean"
+        ? { parentDomAccess: rawSecurity.parentDomAccess }
+        : {}),
+      ...(typeof rawSecurity.network === "string" ? { network: rawSecurity.network } : {}),
+      ...(typeof rawSecurity.eventBridge === "string" ? { eventBridge: rawSecurity.eventBridge } : {})
+    };
+  }
+  return details;
+};
+
 const toToolDetails = (
   tool: AgentToolActivity,
   kind: ToolCall["kind"]
@@ -1101,10 +1374,13 @@ const toToolDetails = (
     : imageArtifactPath;
 
   if (isLyraLumenTool(tool)) {
-    return toLumenDetails(tool, output, screenshot, screenshotImage, targets);
+    return toLumenDetails(tool, output, rawOutputRecord, screenshot, screenshotImage, targets);
   }
   if (isSoftwareTool(tool)) {
     return toSoftwareDetails(tool, output, rawOutputRecord, targets);
+  }
+  if (kind === "render") {
+    return toRenderDetails(tool, output, rawOutputRecord);
   }
   if (kind === "read") {
     return {
@@ -1163,6 +1439,8 @@ const toToolCall = (tool: AgentToolActivity): ToolCall => {
     ? lumenTitle(tool)
     : isSoftwareTool(tool)
       ? softwareTitle(tool)
+      : kind === "render"
+        ? stringField(asRecord(asRecord(tool.output).raw), "title") ?? "Rendered surface"
     : kind === "workbench"
       ? workbenchActionLabel(stringField(toolInputRecord(tool), "action") ?? "workbench")
       : tool.label === "Ran" || tool.label.trim().length === 0 ? tool.name : tool.label;
@@ -1384,17 +1662,31 @@ const chatBlocksForAgentMessage = (
 
 export const agentSessionToChatMessages = (
   session: AgentSessionSnapshot | null,
-  options: { readonly failedTurnMessage?: string | null } = {}
+  options: {
+    readonly failedTurnMessage?: string | null;
+    readonly messageLimitFromEnd?: number | null;
+  } = {}
 ): ChatMessage[] => {
   if (session === null) return [];
 
   const sessionTools = latestToolActivities(session.tools);
   const toolsById = new Map(sessionTools.map((tool) => [tool.id, tool]));
   const referencedToolIds = new Set<string>();
+  const messageLimit = typeof options.messageLimitFromEnd === "number" &&
+    Number.isFinite(options.messageLimitFromEnd)
+    ? Math.max(0, Math.floor(options.messageLimitFromEnd))
+    : null;
+  const sourceMessageStartIndex = messageLimit === null || messageLimit >= session.messages.length
+    ? 0
+    : Math.max(0, session.messages.length - messageLimit);
+  const sourceMessages = sourceMessageStartIndex === 0
+    ? session.messages
+    : session.messages.slice(sourceMessageStartIndex);
 
   // 1. Map raw AgentMessages to ChatMessages
-  const timedMessages = session.messages
+  const timedMessages = sourceMessages
     .map((message, index) => {
+      const originalIndex = sourceMessageStartIndex + index;
       const formattedTime = formatAgentMessageTime(message.createdAt);
       const hasToolBlock = message.blocks?.some((b) => b.type === "tool") ?? false;
       const author = (message.role === "user" && !hasToolBlock) ? "user" : "agent";
@@ -1408,15 +1700,15 @@ export const agentSessionToChatMessages = (
         blocks: chatBlocksForAgentMessage(
           session,
           message,
-          index,
+          originalIndex,
           toolsById,
           referencedToolIds
         )
       };
       return {
         message: chatMessage,
-        atMs: timelineTimeMs(message.createdAt, index),
-        sequence: index
+        atMs: timelineTimeMs(message.createdAt, originalIndex),
+        sequence: originalIndex
       };
     })
     .filter((item) => item.message.blocks.length > 0);
@@ -1445,7 +1737,17 @@ export const agentSessionToChatMessages = (
     });
   }
 
-  const orphanTools = sessionTools.filter((tool) => !referencedToolIds.has(tool.id));
+  const firstVisibleMessage = sourceMessages[0];
+  const firstVisibleAtMs = firstVisibleMessage === undefined
+    ? null
+    : timelineTimeMs(firstVisibleMessage.createdAt, sourceMessageStartIndex);
+  const orphanTools = sessionTools
+    .filter((tool) => !referencedToolIds.has(tool.id))
+    .filter((tool) => (
+      messageLimit === null ||
+      firstVisibleAtMs === null ||
+      timelineTimeMs(tool.startedAt, 0) >= firstVisibleAtMs
+    ));
   orphanTools.forEach((tool, index) => {
     const group = toToolGroup([tool], `lyra-agent-tools-${tool.id}`);
     if (group === null) return;

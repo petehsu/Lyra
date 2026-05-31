@@ -28,12 +28,26 @@ import type {
   TodoItem
 } from "../core/types";
 
+export interface MessageWindowState {
+  /** Number of source session messages represented by the current UI window. */
+  readonly visibleCount: number;
+  /** Number of source session messages still hidden above the current UI window. */
+  readonly hiddenBefore: number;
+  /** Total source session messages available in the current session. */
+  readonly totalCount: number;
+  /** True when the UI can request another older batch. */
+  readonly canLoadEarlier: boolean;
+}
+
 export interface DataProviderValue {
   /** Session-level metadata (title, project, total diff). */
   session: SessionMeta;
 
   /** Chat messages in chronological order. */
   messages: ChatMessage[];
+
+  /** Progressive UI window for long threads. Does not change runtime context. */
+  messageWindow: MessageWindowState;
 
   /** Global todo list aggregated from all task tool calls in the session. */
   todos: TodoItem[];
@@ -79,6 +93,9 @@ export interface DataProviderValue {
 
   /** Send a new user message. Returns a promise that resolves when delivered. */
   sendMessage(text: string, images?: readonly AgentImageAttachment[]): Promise<void>;
+
+  /** Expand the rendered chat window with older messages. */
+  loadEarlierMessages(): Promise<void>;
 
   /** Capture the active Workbench browser page as an image attachment. */
   captureBrowserScreenshot(): Promise<AgentImageAttachment | null>;

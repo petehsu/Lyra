@@ -105,7 +105,7 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
                 className="stagger-item"
                 style={{ "--stagger-index": i } as React.CSSProperties}
               >
-                <ToolCallRow call={call} />
+              <ToolCallRow call={call} groupOpen={open} />
               </div>
             ))}
           </div>
@@ -115,7 +115,7 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
   );
 }
 
-function ToolCallRow({ call }: { call: ToolCall }) {
+function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
@@ -178,7 +178,7 @@ function ToolCallRow({ call }: { call: ToolCall }) {
         <div className="collapse" data-open={open}>
           <div className="collapse-inner">
             <div className="tool-call-body">
-              <ToolDetails details={call.details!} />
+              {groupOpen && open ? <ToolDetails details={call.details!} /> : null}
             </div>
           </div>
         </div>

@@ -8,6 +8,7 @@ const DEFAULT_RENDERER_PORT = 5173;
 const sharedAliases = {
   "@renderer": resolve(projectRoot, "src/renderer"),
   "@workbench": resolve(projectRoot, "src/modules/workbench"),
+  "@lyra/browser-automation": resolve(projectRoot, "../../services/browser-automation/src/index.ts"),
   "@lyra/plugin-sdk": resolve(projectRoot, "../../packages/plugin-sdk/src/index.ts")
 };
 

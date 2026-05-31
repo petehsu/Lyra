@@ -21,10 +21,20 @@ export const APP_CONFIG = {
   scroll: {
     /** Distance (px) from bottom considered "at bottom". */
     atBottomThreshold: 8,
+    /** Distance (px) from top that triggers loading older messages. */
+    topLoadThreshold: 48,
     /** Scroll delta (px) → full decision panel open/close transition. */
     decisionPanelRange: 150,
     /** Min delta to consider a scroll event (ignores layout jitter). */
     ignoreDeltaBelow: 3,
+  },
+
+  /** Progressive message rendering. Runtime context remains complete; this only limits UI work. */
+  messageWindow: {
+    /** Number of latest messages rendered when a long thread is opened. */
+    initialCount: 12,
+    /** Number of older messages prepended each time the user reaches the top. */
+    batchCount: 16,
   },
 
   /** Streaming text playback speed. */

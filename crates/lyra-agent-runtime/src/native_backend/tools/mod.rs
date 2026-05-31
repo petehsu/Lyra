@@ -1,12 +1,13 @@
 use super::*;
 
 mod file;
+mod render;
 mod search;
 mod shell;
 mod todo;
 mod web;
 
-pub(crate) use self::{file::*, search::*, shell::*, todo::*, web::*};
+pub(crate) use self::{file::*, render::*, search::*, shell::*, todo::*, web::*};
 
 const MIN_TOOL_TIMEOUT_MS: u64 = 250;
 const DEFAULT_HOST_TOOL_TIMEOUT_MS: u64 = 15_000;
@@ -14,6 +15,367 @@ const DEFAULT_BROWSER_TOOL_TIMEOUT_MS: u64 = 8_000;
 const DEFAULT_BROWSER_WAIT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_SOFTWARE_TOOL_TIMEOUT_MS: u64 = 30_000;
 const MAX_TOOL_TIMEOUT_MS: u64 = 120_000;
+
+fn needs_user_action_object(value: &Value) -> Option<&serde_json::Map<String, Value>> {
+    value.get("needsUserAction").and_then(Value::as_object)
+}
+
+fn user_action_string<'a>(
+    action: &'a serde_json::Map<String, Value>,
+    key: &str,
+) -> Option<&'a str> {
+    action
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+}
+
+fn user_action_tab_id(
+    input: &Value,
+    value: &Value,
+    action: &serde_json::Map<String, Value>,
+) -> String {
+    user_action_string(action, "tabId")
+        .or_else(|| value.get("tabId").and_then(Value::as_str))
+        .or_else(|| input.get("tabId").and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn wait_for_automatic_user_action(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    question: &str,
+    options: Vec<Value>,
+    detail: Option<String>,
+) -> AgentRuntimeResult<ClarificationRequest> {
+    wait_for_clarification(ClarificationRequest {
+        id: format!("clarification-{}", Uuid::new_v4()),
+        session_id: session_id.to_string(),
+        turn_id: turn_id.to_string(),
+        tool_call_id: tool_call_id.to_string(),
+        question: question.to_string(),
+        options,
+        allow_custom_answer: false,
+        detail,
+        status: "pending".to_string(),
+        answer: None,
+        selected_option: None,
+        created_at: now(),
+        responded_at: None,
+    })
+}
+
+fn selected_answer_label(request: &ClarificationRequest) -> String {
+    request
+        .selected_option
+        .clone()
+        .or_else(|| request.answer.clone())
+        .unwrap_or_default()
+}
+
+fn shared_control_decision(label: &str) -> &'static str {
+    match label {
+        "Continue Agent" => "continue_agent",
+        "Use Isolated" => "use_isolated",
+        "Cancel Task" => "cancel_task",
+        _ => "user_takeover",
+    }
+}
+
+fn permission_for_automatic_elevation(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    tab_id: &str,
+    reason: &str,
+) -> Result<bool, String> {
+    let input = json!({
+        "tabId": tab_id,
+        "targetMode": "isolated",
+        "reason": reason,
+        "permissionRequired": true,
+        "permissionRisk": "dangerous",
+    });
+    let Some(permission) = permission_request_for_tool(
+        session_id,
+        turn_id,
+        tool_call_id,
+        "lyra_lumen",
+        "elevate",
+        &input,
+    ) else {
+        return Ok(true);
+    };
+    wait_for_permission(permission).map_err(|error| error.to_string())
+}
+
+fn invoke_optional_host(
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    method: &str,
+    payload: Value,
+) -> Value {
+    match dispatcher {
+        Some(dispatcher) => match invoke_host_capability(dispatcher, method, payload) {
+            Ok(value) => value,
+            Err(error) => json!({
+                "ok": false,
+                "error": {
+                    "code": "host_capability_failed",
+                    "message": error,
+                }
+            }),
+        },
+        None => json!({
+            "ok": false,
+            "error": {
+                "code": "host_capability_unavailable",
+                "message": "Lyra host capability bridge is not available.",
+            }
+        }),
+    }
+}
+
+fn resolve_shared_control_user_action(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    input: &Value,
+    value: &Value,
+    action: &serde_json::Map<String, Value>,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> Value {
+    let tab_id = user_action_tab_id(input, value, action);
+    let request = wait_for_automatic_user_action(
+        session_id,
+        turn_id,
+        tool_call_id,
+        "The user interrupted Lyra Agent control of the live browser tab. Who should control it now?",
+        vec![
+            json!({ "label": "Continue Agent", "description": "Resume Lyra Agent control from the latest browser recovery anchor." }),
+            json!({ "label": "Take Over", "description": "Leave the visible tab under user control until the user explicitly authorizes Agent again." }),
+            json!({ "label": "Use Isolated", "description": "Stop using the live tab and continue with isolated background browser state." }),
+            json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
+        ],
+        Some("ControlHandoffEvent was emitted by live browser input arbitration.".to_string()),
+    );
+    match request {
+        Ok(request) => {
+            let label = selected_answer_label(&request);
+            let decision = shared_control_decision(&label);
+            let control_resolution = invoke_optional_host(
+                dispatcher,
+                "lyraLumen.resolveControlHandoff",
+                json!({
+                    "tabId": tab_id,
+                    "targetMode": "live",
+                    "decision": decision,
+                }),
+            );
+            json!({
+                "kind": "shared_control_decision",
+                "clarificationId": request.id,
+                "answer": request.answer,
+                "selectedOption": request.selected_option,
+                "decision": decision,
+                "controlResolution": control_resolution,
+            })
+        }
+        Err(error) => json!({
+            "kind": "shared_control_decision_failed",
+            "error": {
+                "code": "clarification_failed",
+                "message": error.to_string(),
+            }
+        }),
+    }
+}
+
+fn resolve_auth_challenge_user_action(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    input: &Value,
+    value: &Value,
+    action: &serde_json::Map<String, Value>,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> Value {
+    let tab_id = user_action_tab_id(input, value, action);
+    let reason = user_action_string(action, "reason").unwrap_or("auth_challenge");
+    let request = wait_for_automatic_user_action(
+        session_id,
+        turn_id,
+        tool_call_id,
+        "The isolated browser hit an authentication or verification challenge that requires user action.",
+        vec![
+            json!({ "label": "Open Visible Tab", "description": "Elevate this isolated browser task to a visible tab so the user can complete the challenge." }),
+            json!({ "label": "Already Completed", "description": "The user already completed the challenge; verify and continue." }),
+            json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
+        ],
+        Some(format!("AuthChallengeSignal: {reason}")),
+    );
+    let request = match request {
+        Ok(request) => request,
+        Err(error) => {
+            return json!({
+                "kind": "auth_challenge_resolution_failed",
+                "error": {
+                    "code": "clarification_failed",
+                    "message": error.to_string(),
+                }
+            });
+        }
+    };
+    let label = selected_answer_label(&request);
+    if label == "Cancel Task" {
+        return json!({
+            "kind": "auth_challenge_resolution",
+            "clarificationId": request.id,
+            "answer": request.answer,
+            "selectedOption": request.selected_option,
+            "decision": "cancel_task",
+        });
+    }
+
+    let mut elevation = Value::Null;
+    if label == "Open Visible Tab" {
+        match permission_for_automatic_elevation(session_id, turn_id, tool_call_id, &tab_id, reason)
+        {
+            Ok(true) => {
+                elevation = invoke_optional_host(
+                    dispatcher,
+                    "lyraLumen.elevate",
+                    json!({
+                        "tabId": tab_id,
+                        "targetMode": "isolated",
+                        "reason": reason,
+                    }),
+                );
+            }
+            Ok(false) => {
+                return json!({
+                    "kind": "auth_challenge_resolution",
+                    "clarificationId": request.id,
+                    "answer": request.answer,
+                    "selectedOption": request.selected_option,
+                    "decision": "permission_denied",
+                });
+            }
+            Err(error) => {
+                return json!({
+                    "kind": "auth_challenge_resolution_failed",
+                    "clarificationId": request.id,
+                    "error": {
+                        "code": "permission_failed",
+                        "message": error,
+                    }
+                });
+            }
+        }
+        let completion_request = wait_for_automatic_user_action(
+            session_id,
+            turn_id,
+            tool_call_id,
+            "Complete the browser challenge in the visible tab, then confirm Lyra can verify and continue.",
+            vec![
+                json!({ "label": "Done", "description": "Verify that the challenge is gone and continue in isolated mode." }),
+                json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
+            ],
+            Some("Lyra will not solve CAPTCHA or MFA itself; it only resumes after user confirmation.".to_string()),
+        );
+        if let Ok(done) = completion_request {
+            if selected_answer_label(&done) == "Cancel Task" {
+                return json!({
+                    "kind": "auth_challenge_resolution",
+                    "clarificationId": done.id,
+                    "answer": done.answer,
+                    "selectedOption": done.selected_option,
+                    "decision": "cancel_task",
+                    "elevation": elevation,
+                });
+            }
+        }
+    }
+
+    let live_tab_id = elevation
+        .get("liveTabId")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let elevation_session_id = elevation
+        .pointer("/elevationSession/sessionId")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let verification = invoke_optional_host(
+        dispatcher,
+        "lyraLumen.completeElevation",
+        json!({
+            "tabId": tab_id,
+            "targetMode": "isolated",
+            "liveTabId": live_tab_id,
+            "elevationSessionId": elevation_session_id,
+        }),
+    );
+    json!({
+        "kind": "auth_challenge_resolution",
+        "clarificationId": request.id,
+        "answer": request.answer,
+        "selectedOption": request.selected_option,
+        "decision": if label == "Already Completed" { "verify" } else { "elevate_and_verify" },
+        "elevation": elevation,
+        "verification": verification,
+    })
+}
+
+fn resolve_host_needs_user_action(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    _display_name: &str,
+    _tool_action: &str,
+    input: &Value,
+    value: &Value,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> Option<Value> {
+    let action = needs_user_action_object(value)?;
+    let kind = user_action_string(action, "kind").unwrap_or("user_action");
+    Some(match kind {
+        "shared_control_interrupted" => resolve_shared_control_user_action(
+            session_id,
+            turn_id,
+            tool_call_id,
+            input,
+            value,
+            action,
+            dispatcher,
+        ),
+        "auth_challenge" => resolve_auth_challenge_user_action(
+            session_id,
+            turn_id,
+            tool_call_id,
+            input,
+            value,
+            action,
+            dispatcher,
+        ),
+        _ => json!({
+            "kind": "user_action_unhandled",
+            "needsUserActionKind": kind,
+        }),
+    })
+}
+
+fn format_user_action_resolution(resolution: &Value) -> String {
+    let kind = resolution
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("user_action_resolution");
+    let decision = resolution
+        .get("decision")
+        .and_then(Value::as_str)
+        .unwrap_or("recorded");
+    format!("User action resolution: {kind} ({decision}).")
+}
 
 pub(crate) fn execute_model_tool(
     session_id: &str,
@@ -242,7 +604,22 @@ pub(crate) fn execute_model_tool(
         });
     }
     let (status, output, finished_input) = match raw_result {
-        Ok(value) => {
+        Ok(mut value) => {
+            let user_action_resolution = resolve_host_needs_user_action(
+                session_id,
+                turn_id,
+                &call.id,
+                &display_name,
+                &action,
+                &input,
+                &value,
+                dispatcher.as_ref(),
+            );
+            if let Some(resolution) = user_action_resolution.as_ref()
+                && let Some(object) = value.as_object_mut()
+            {
+                object.insert("userActionResolution".to_string(), resolution.clone());
+            }
             let activity_input = resolved_tool_activity_input(input.clone(), &value);
             let raw = redacted_tool_raw_output(&display_name, &action, value.clone());
             let status = if value.get("ok").and_then(Value::as_bool) == Some(false)
@@ -252,10 +629,15 @@ pub(crate) fn execute_model_tool(
             } else {
                 "completed"
             };
+            let mut content = format_tool_output(&display_name, &action, &value);
+            if let Some(resolution) = user_action_resolution.as_ref() {
+                content.push_str("\n\n");
+                content.push_str(&format_user_action_resolution(resolution));
+            }
             (
                 status,
                 json!({
-                    "content": format_tool_output(&display_name, &action, &value),
+                    "content": content,
                     "raw": raw,
                 }),
                 activity_input,
@@ -816,6 +1198,7 @@ pub(crate) fn native_tool_mapping(name: &str) -> Option<(&'static str, &'static 
         "network_status" => Some(("network", "status")),
         "web_search" => Some(("web", "search")),
         "web_fetch" => Some(("web", "fetch")),
+        "render_surface" => Some(("render", "surface")),
         "todo_read" => Some(("todo", "read")),
         "todo_write" => Some(("todo", "write")),
         _ => None,
@@ -1169,6 +1552,7 @@ pub(crate) fn run_native_tool(
         "network_status" => tool_network_status(),
         "web_search" => tool_web_search(input),
         "web_fetch" => tool_web_fetch(turn_id, tool_call_id, input),
+        "render_surface" => tool_render_surface(turn_id, tool_call_id, input),
         "todo_read" => tool_todo_read(session_id),
         "todo_write" => tool_todo_write(session_id, turn_id, input),
         _ => Err(NativeToolFailure::new(

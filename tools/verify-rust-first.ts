@@ -237,7 +237,9 @@ const tsOwnedMainModules = new Map<string, string>([
     "TypeScript-owned shell module: renderer/browser observation aggregation and cache."
   ],
   ["search", "TypeScript-owned shell module: provider composition and lightweight search routing."],
+  ["login-manager", "TypeScript-owned shell module: Electron credential/session UX and safeStorage coordination."],
   ["linux-compat", "TypeScript-owned shell module: Electron/Linux startup environment integration."],
+  ["sensitive-values", "TypeScript-owned shell module: Electron-scoped sensitive value ownership and IPC gating."],
   ["storage", "TypeScript-owned shell module: unified storage root resolution and Electron path wiring."],
   [
     "system-notifications",

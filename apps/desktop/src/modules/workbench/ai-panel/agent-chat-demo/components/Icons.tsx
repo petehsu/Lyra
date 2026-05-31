@@ -13,6 +13,7 @@ import {
   XCircle,
   Loader2,
   File,
+  PanelsTopLeft,
 } from "lucide-react";
 import type { ToolCall } from "../types";
 
@@ -52,6 +53,8 @@ export const ToolIcon = ({ kind }: { kind: ToolCall["kind"] }) => {
       return <ListChecks {...props} />;
     case "create":
       return <FilePlus {...props} />;
+    case "render":
+      return <PanelsTopLeft {...props} />;
   }
 };
 

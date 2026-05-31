@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      "@lyra/browser-automation": resolve(__dirname, "../../services/browser-automation/src/index.ts"),
       "@renderer": resolve(__dirname, "src/renderer"),
       "@workbench": resolve(__dirname, "src/modules/workbench")
     }
@@ -15,6 +16,10 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: [resolve(__dirname, "src/renderer/test/setup.ts")],
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"]
+    include: [
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+      "../../services/browser-automation/src/**/*.test.ts"
+    ]
   }
 });

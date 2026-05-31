@@ -12,6 +12,7 @@
     "esModuleInterop": true,
     "baseUrl": ".",
     "paths": {
+      "@lyra/browser-automation": ["../../services/browser-automation/src/index.ts"],
       "@lyra/plugin-sdk": ["../../packages/plugin-sdk/src/index.ts"],
       "@renderer/*": ["src/renderer/*"],
       "@workbench/*": ["src/modules/workbench/*"]

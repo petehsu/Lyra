@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { ContextMenuModel } from "../../context-menu";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
+import { createBrowserStorageStateRef } from "../../../../shared/workbench-browser";
 import type {
   FileManagerDirectoryPatch,
   FileManagerReadDirectoryResponse,
@@ -536,6 +537,16 @@ const createDesktopApi = (): {
       reload: async () => undefined,
       stop: async () => undefined,
       readPageState: async () => null,
+      readSessionSnapshot: async () => null,
+      readStorageState: async () => createBrowserStorageStateRef(),
+      clearSiteData: async () => ({
+        ok: true as const,
+        origin: "https://example.test",
+        profilePartitions: [],
+        cookiesRemoved: 0,
+        storageCleared: false,
+        snapshot: null
+      }),
       searchInPage: async () => ({
         tabId: "browser-tab-test",
         address: "https://example.test/",

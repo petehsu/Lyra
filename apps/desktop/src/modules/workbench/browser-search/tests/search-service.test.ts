@@ -1,5 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
+import type { WorkbenchBrowserClearSiteDataResult } from "../../../../shared/desktop-bridge";
+import { createBrowserStorageStateRef } from "../../../../shared/workbench-browser";
 import { createEmptySearchPayload, fetchAggregatedSearchPayload } from "../service";
 
 const engines = [
@@ -304,6 +306,16 @@ describe("aggregated search service", () => {
           reload: vi.fn(async () => undefined),
           stop: vi.fn(async () => undefined),
           readPageState: vi.fn(async () => null),
+          readSessionSnapshot: vi.fn(async () => null),
+          readStorageState: vi.fn(async () => createBrowserStorageStateRef()),
+          clearSiteData: vi.fn(async () => ({
+            ok: true as const,
+            origin: "https://example.test",
+            profilePartitions: [],
+            cookiesRemoved: 0,
+            storageCleared: false,
+            snapshot: null
+          } satisfies WorkbenchBrowserClearSiteDataResult)),
           searchInPage: vi.fn(async () => ({
             tabId: "browser-tab-test",
             address: "https://example.test/",

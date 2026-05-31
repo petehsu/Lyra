@@ -176,7 +176,11 @@ import {
   type SoftwareCapabilitiesQueryResult,
   type InstalledUiuxPack,
   type WorkbenchBrowserEvent,
+  type BrowserSessionSnapshot,
+  type BrowserStorageStateRef,
   type WorkbenchBrowserChromePopoverRequest,
+  type WorkbenchBrowserClearSiteDataRequest,
+  type WorkbenchBrowserClearSiteDataResult,
   type WorkbenchBrowserSetElementPickerModeRequest,
   type WorkbenchBrowserLayoutSnapshot,
   type WorkbenchBrowserNavigateRequest,
@@ -190,6 +194,7 @@ import {
   type WorkbenchBrowserReadPageStateRequest,
   type WorkbenchBrowserSearchInPageRequest,
   type WorkbenchBrowserSearchInPageResult,
+  type WorkbenchBrowserStorageStateRequest,
   type WorkbenchBrowserTopologySnapshot,
   type WorkbenchStateKey,
   type LyraDesktopApi,
@@ -875,6 +880,20 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.workbenchBrowserReadPageState,
         request ?? {}
       ) as Promise<WorkbenchBrowserPageRuntimeState | null>,
+    readSessionSnapshot: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserReadSessionSnapshot
+      ) as Promise<BrowserSessionSnapshot | null>,
+    readStorageState: (request?: WorkbenchBrowserStorageStateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserReadStorageState,
+        request ?? {}
+      ) as Promise<BrowserStorageStateRef>,
+    clearSiteData: (request: WorkbenchBrowserClearSiteDataRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserClearSiteData,
+        request
+      ) as Promise<WorkbenchBrowserClearSiteDataResult>,
     searchInPage: (request: WorkbenchBrowserSearchInPageRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.workbenchBrowserSearchInPage,

@@ -134,7 +134,11 @@ export type WorkspaceTabsActions = {
   readonly openAppTab: (request: WorkspaceAppTabOpenRequest) => void;
   readonly updateAppTabMeta: (request: WorkspaceAppTabMetaRequest) => void;
   readonly closeTerminalTab: (terminalTabId: string) => void;
-  readonly openPageInNewTab: (address: string, title?: string) => void;
+  readonly openPageInNewTab: (
+    address: string,
+    title?: string,
+    options?: { readonly tabId?: string }
+  ) => string | null;
   readonly closeTab: (tabId: string) => void;
   readonly updatePageMeta: (tabId: string, meta: WorkspaceTabPageMeta) => void;
   readonly syncPageRuntimeState: (

@@ -14,9 +14,15 @@ pub(crate) fn permission_request_for_tool(
         "shell" => "Run shell command",
         "file" => "Modify workspace files",
         "network" => "Use network or browser action",
+        "sensitive" => "Use browser login state",
         _ => "Use high-risk Lyra capability",
     }
     .to_string();
+    let why = if risk == "sensitive" {
+        "The requested browser action would use the user's existing Lyra browser login state in an isolated background page."
+    } else {
+        "The requested tool can change external state or perform a high-risk action."
+    };
     Some(PermissionRequest {
         id: format!("permission-{}", Uuid::new_v4()),
         session_id: session_id.to_string(),
@@ -25,8 +31,7 @@ pub(crate) fn permission_request_for_tool(
         action: action.to_string(),
         risk,
         summary: summary.clone(),
-        why: "The requested tool can change external state or perform a high-risk action."
-            .to_string(),
+        why: why.to_string(),
         title,
         detail: summary,
         status: "pending".to_string(),
@@ -36,7 +41,35 @@ pub(crate) fn permission_request_for_tool(
     })
 }
 
+fn requests_live_login_state(input: &Value) -> bool {
+    input
+        .get("useLiveLoginState")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || input
+            .get("authState")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value == "borrowLiveLogin")
+}
+
 pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -> Option<String> {
+    if matches!(display_name, "lyra_lumen") && requests_live_login_state(input) {
+        return Some("sensitive".to_string());
+    }
+    if input
+        .get("permissionRequired")
+        .or_else(|| input.get("requiresPermission"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return Some(
+            input
+                .get("permissionRisk")
+                .and_then(Value::as_str)
+                .unwrap_or("dangerous")
+                .to_string(),
+        );
+    }
     if matches!(
         (display_name, action),
         ("file", "read")
@@ -62,23 +95,10 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
             | ("lyra_lumen", "reveal")
             | ("lyra_lumen", "focus_scan")
             | ("lyra_lumen", "follow_audit")
+            | ("lyra_lumen", "explain_target")
             | ("lyra_lumen", "audit")
     ) {
         return None;
-    }
-    if input
-        .get("permissionRequired")
-        .or_else(|| input.get("requiresPermission"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        return Some(
-            input
-                .get("permissionRisk")
-                .and_then(Value::as_str)
-                .unwrap_or("dangerous")
-                .to_string(),
-        );
     }
     let text = format!("{display_name} {action} {input}").to_lowercase();
     if text.contains("shell")
@@ -126,6 +146,8 @@ pub(crate) fn permission_summary(display_name: &str, action: &str, input: &Value
         "capabilityId",
         "actionId",
         "tabId",
+        "targetMode",
+        "authState",
     ] {
         if let Some(value) = input.get(key).and_then(Value::as_str)
             && !value.trim().is_empty()
@@ -156,7 +178,7 @@ pub(crate) fn wait_for_permission(request: PermissionRequest) -> AgentRuntimeRes
             session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
             session.snapshot["follow"] =
                 json!({ "running": true, "activity": "Waiting for permission" });
-            touch_snapshot(&mut session.snapshot);
+            touch_session(session);
         }
         state
             .pending_permissions
@@ -209,12 +231,14 @@ pub(crate) fn wait_for_permission_decision(
         if turn_was_cancelled(session_id, turn_id) {
             return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
         }
-        if let Some(allowed) = state().lock().ok().and_then(|state| {
-            state
+        if let Ok(mut state) = state().lock()
+            && let Some(allowed) = state
                 .pending_permissions
                 .get(request_id)
-                .and_then(|r| r.allowed)
-        }) {
+                .and_then(|request| request.allowed)
+        {
+            state.pending_permissions.remove(request_id);
+            state.save_state()?;
             return Ok(allowed);
         }
         thread::sleep(Duration::from_millis(25));
@@ -262,7 +286,7 @@ pub(crate) fn respond_permission(payload: Value) -> AgentRuntimeResult<Value> {
                 "running": true,
                 "activity": if allowed { "Permission approved" } else { "Permission denied" }
             });
-            touch_snapshot(&mut session.snapshot);
+            touch_session(session);
         }
         let snapshot = state
             .sessions

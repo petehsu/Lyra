@@ -187,7 +187,11 @@ export const SearchSilkBackground = () => {
   const theme = useSilkTheme();
 
   return (
-    <div aria-hidden="true" className="lyra-search-silk-background">
+    <div
+      aria-hidden="true"
+      className="lyra-search-silk-background"
+      data-animation-active={theme.animationEnabled ? "true" : "false"}
+    >
       {theme.animationEnabled ? (
         <div className="lyra-search-silk-canvas-layer">
           <Suspense fallback={null}>

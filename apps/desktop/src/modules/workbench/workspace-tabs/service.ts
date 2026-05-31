@@ -21,6 +21,7 @@ import { createVisibleWorkspaceLayout } from "./split-model";
 import {
   createAppTab,
   createPageTab,
+  createPageTabWithId,
   createSearchTab,
   createSettingsTab,
   createTerminalTab,
@@ -243,17 +244,28 @@ export const useWorkspaceTabsModel = (
   );
 
   const openPageInNewTab = useCallback(
-    (address: string, title?: string): void => {
+    (
+      address: string,
+      title?: string,
+      options?: { readonly tabId?: string }
+    ): string | null => {
       const normalizedAddress = toSafeAddress(address);
       if (normalizedAddress === null) {
-        return;
+        return null;
       }
 
-      const nextTab = createPageTab(allocateTabSerial(), normalizedAddress, title);
+      const explicitTabId =
+        typeof options?.tabId === "string" && options.tabId.trim().length > 0
+          ? options.tabId.trim()
+          : null;
+      const nextTab = explicitTabId === null
+        ? createPageTab(allocateTabSerial(), normalizedAddress, title)
+        : createPageTabWithId(explicitTabId, normalizedAddress, title);
       dispatchWorkspaceTabsAction({
         type: "open-page-in-new-tab",
         tab: nextTab
       });
+      return nextTab.id;
     },
     [allocateTabSerial, dispatchWorkspaceTabsAction]
   );

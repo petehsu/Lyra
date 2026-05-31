@@ -6,6 +6,7 @@ import type {
   WorkbenchBrowserAgentActivityEvent,
   WorkbenchBrowserPageRuntimeState
 } from "../../../shared/desktop-bridge";
+import { browserPageRestoreStateEquals } from "../../../shared/workbench-browser";
 import {
   areWebThemeSnapshotsEquivalent,
   buildWebThemeSnapshot,
@@ -34,6 +35,7 @@ export type BrowserAgentVisualState = {
   readonly inputActive: boolean;
   readonly cursorVisible: boolean;
   readonly cursorPhase: NonNullable<WorkbenchBrowserAgentActivityEvent["cursorPhase"]>;
+  readonly sharedControlState: NonNullable<WorkbenchBrowserAgentActivityEvent["sharedControlState"]>;
   readonly action: WorkbenchBrowserAgentActivityEvent["action"] | null;
   readonly interaction: WorkbenchBrowserAgentActivityEvent["interaction"] | null;
   readonly tabId: string | null;
@@ -82,6 +84,7 @@ const IDLE_BROWSER_AGENT_VISUAL_STATE: BrowserAgentVisualState = {
   inputActive: false,
   cursorVisible: false,
   cursorPhase: "idle",
+  sharedControlState: "idle",
   action: null,
   interaction: null,
   tabId: null,
@@ -107,9 +110,8 @@ const arePageRuntimeStatesEquivalent = (
   && first.canGoBack === second.canGoBack
   && first.canGoForward === second.canGoForward
   && first.isHtmlFullscreen === second.isHtmlFullscreen
-  && first.restoreState?.scrollX === second.restoreState?.scrollX
-  && first.restoreState?.scrollY === second.restoreState?.scrollY
-  && first.restoreState?.capturedAt === second.restoreState?.capturedAt;
+  && browserPageRestoreStateEquals(first.restoreState, second.restoreState)
+  && JSON.stringify(first.recoveryFailure ?? null) === JSON.stringify(second.recoveryFailure ?? null);
 
 export const resolveBrowserAgentCursorViewportPoint = (
   hostRect: Pick<DOMRectReadOnly, "left" | "top" | "width" | "height">,
@@ -298,6 +300,9 @@ export const useWorkbenchBrowserRuntime = ({
             inputActive: event.inputActive,
             cursorVisible: retainedCursor !== null,
             cursorPhase: event.cursorPhase ?? "idle",
+            sharedControlState: event.sharedControlState ?? (
+              event.inputActive ? "locked_input" : "agent_active"
+            ),
             action: event.action,
             interaction: event.interaction ?? null,
             tabId: event.tabId,
@@ -317,12 +322,46 @@ export const useWorkbenchBrowserRuntime = ({
               active: false,
               inputActive: false,
               cursorPhase: "idle",
+              sharedControlState:
+                current.sharedControlState === "awaiting_user_decision"
+                  || current.sharedControlState === "user_interrupted"
+                  ? current.sharedControlState
+                  : "idle",
               action: null,
               interaction: null,
               targetMode: null
             };
           });
         }, durationMs);
+        return;
+      }
+
+      if (event.kind === "browser-shared-control-state") {
+        setBrowserAgentVisualState((current) => ({
+          ...current,
+          active: event.state !== "idle",
+          inputActive: event.state === "locked_input",
+          cursorVisible: current.cursorVisible,
+          sharedControlState: event.state,
+          action: event.action ?? current.action,
+          interaction: event.interaction ?? current.interaction,
+          tabId: event.tabId,
+          targetMode: "live"
+        }));
+        return;
+      }
+
+      if (event.kind === "browser-shared-control-interrupted") {
+        setBrowserAgentVisualState((current) => ({
+          ...current,
+          active: true,
+          inputActive: false,
+          sharedControlState: event.sharedControlState,
+          action: event.action ?? current.action,
+          interaction: event.interaction ?? current.interaction,
+          tabId: event.tabId,
+          targetMode: "live"
+        }));
         return;
       }
 
@@ -348,13 +387,20 @@ export const useWorkbenchBrowserRuntime = ({
             currentTab.displayAddress !== event.page.address
             || currentTab.title !== event.page.title
             || currentTab.faviconUrl !== nextFaviconUrl
+            || browserPageRestoreStateEquals(
+              currentTab.browserRestoreState,
+              event.page.restoreState
+            ) === false
           ) {
             tabsModel.syncPageRuntimeState(event.page.tabId, {
               address: event.page.address,
               title: event.page.title,
               ...(nextFaviconUrl === undefined
                 ? {}
-                : { faviconUrl: nextFaviconUrl })
+                : { faviconUrl: nextFaviconUrl }),
+              ...(event.page.restoreState === undefined
+                ? {}
+                : { restoreState: event.page.restoreState })
             });
           }
         }
@@ -371,7 +417,11 @@ export const useWorkbenchBrowserRuntime = ({
       }
 
       if (event.kind === "request-open-tab") {
-        tabsModel.openPageInNewTab(event.address, event.title);
+        tabsModel.openPageInNewTab(
+          event.address,
+          event.title,
+          event.tabId === undefined ? undefined : { tabId: event.tabId }
+        );
       }
       return undefined;
     });

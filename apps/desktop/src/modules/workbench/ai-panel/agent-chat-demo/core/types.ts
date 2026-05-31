@@ -20,7 +20,8 @@ export type ToolKind =
   | "workbench"
   | "thought"
   | "task"
-  | "create";
+  | "create"
+  | "render";
 
 export interface ToolCall {
   id: string;
@@ -72,9 +73,39 @@ export type ToolDetails =
       text?: string;
       targets?: ToolActionTarget[];
     }
+  | {
+      type: "render";
+      surfaceId: string;
+      title: string;
+      format: "html" | "markdown" | "svg" | "json" | "table" | "text";
+      operation: "create" | "update" | "replace" | "append";
+      content: string;
+      summary?: string;
+      data?: unknown;
+      columns?: RenderSurfaceColumn[];
+      rows?: RenderSurfaceRow[];
+      height: number;
+      interactive: boolean;
+      theme: "auto" | "light" | "dark";
+      security?: {
+        runtime?: string;
+        node?: boolean;
+        sameOriginWithParent?: boolean;
+        parentDomAccess?: boolean;
+        network?: string;
+        eventBridge?: string;
+      };
+    }
   | { type: "task"; tasks: TodoTask[] }
   | { type: "text"; body: string }
   | { type: "ask"; question: string; answer: string };
+
+export interface RenderSurfaceColumn {
+  key: string;
+  label: string;
+}
+
+export type RenderSurfaceRow = Record<string, unknown> | readonly unknown[];
 
 export interface ToolPeek {
   chips: string[];

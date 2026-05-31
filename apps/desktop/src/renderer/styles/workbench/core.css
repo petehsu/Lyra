@@ -882,6 +882,10 @@
   opacity: 1;
 }
 
+.lyra-agent-browser-activity-overlay[data-recovery-failure="true"] {
+  opacity: 1;
+}
+
 .lyra-agent-browser-workspace-border {
   z-index: 1;
   opacity: 0.94;
@@ -962,11 +966,79 @@
   white-space: nowrap;
 }
 
+.lyra-agent-browser-recovery-cue {
+  position: absolute;
+  right: var(--lyra-unit-16);
+  top: calc(var(--lyra-unit-16) + var(--lyra-unit-36));
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-7);
+  max-width: min(42vw, var(--lyra-unit-260));
+  min-height: var(--lyra-unit-28);
+  padding: 0 var(--lyra-unit-10);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-status-warning) 74%, var(--lyra-line-focused) 26%);
+  border-radius: var(--lyra-unit-6);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--lyra-bg-editor) 88%, var(--lyra-status-warning) 12%) 0%,
+      color-mix(in srgb, var(--lyra-bg-surface) 82%, var(--lyra-status-warning) 18%) 100%
+    );
+  color: var(--lyra-text-primary);
+  box-shadow:
+    0 var(--lyra-unit-2) var(--lyra-unit-12) color-mix(in srgb, var(--lyra-bg-editor) 76%, transparent),
+    0 0 var(--lyra-unit-12) color-mix(in srgb, var(--lyra-status-warning) 16%, transparent);
+  font-size: var(--lyra-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0;
+  z-index: 4;
+}
+
+.lyra-agent-browser-recovery-dot {
+  width: var(--lyra-unit-8);
+  height: var(--lyra-unit-8);
+  flex: 0 0 auto;
+  border-radius: var(--lyra-unit-999);
+  background: var(--lyra-status-warning);
+  box-shadow:
+    0 0 var(--lyra-unit-6) color-mix(in srgb, var(--lyra-status-warning) 78%, transparent),
+    0 0 var(--lyra-unit-12) color-mix(in srgb, var(--lyra-status-warning) 34%, transparent);
+}
+
+.lyra-agent-browser-recovery-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .lyra-agent-browser-activity-overlay[data-action="wait"] .lyra-agent-browser-state-dot {
   background: var(--lyra-status-warning);
   box-shadow:
     0 0 var(--lyra-unit-6) color-mix(in srgb, var(--lyra-status-warning) 76%, transparent),
     0 0 var(--lyra-unit-12) color-mix(in srgb, var(--lyra-status-warning) 26%, transparent);
+}
+
+.lyra-agent-browser-activity-overlay[data-control-state="awaiting_user_decision"] .lyra-agent-browser-state-cue,
+.lyra-agent-browser-activity-overlay[data-control-state="user_interrupted"] .lyra-agent-browser-state-cue {
+  border-color: color-mix(in srgb, var(--lyra-status-warning) 72%, var(--lyra-line-focused) 28%);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--lyra-bg-editor) 88%, var(--lyra-status-warning) 12%) 0%,
+      color-mix(in srgb, var(--lyra-bg-surface) 82%, var(--lyra-status-warning) 18%) 100%
+    );
+}
+
+.lyra-agent-browser-activity-overlay[data-control-state="awaiting_user_decision"] .lyra-agent-browser-state-dot,
+.lyra-agent-browser-activity-overlay[data-control-state="user_interrupted"] .lyra-agent-browser-state-dot {
+  background: var(--lyra-status-warning);
+  box-shadow:
+    0 0 var(--lyra-unit-6) color-mix(in srgb, var(--lyra-status-warning) 78%, transparent),
+    0 0 var(--lyra-unit-12) color-mix(in srgb, var(--lyra-status-warning) 34%, transparent);
+}
+
+.lyra-agent-browser-activity-overlay[data-control-state="locked_input"] .lyra-agent-browser-state-cue {
+  border-color: color-mix(in srgb, var(--lyra-status-success) 66%, var(--lyra-line-focused) 34%);
 }
 
 .lyra-agent-browser-activity-overlay[data-action="focus"] .lyra-agent-browser-state-dot,
@@ -1022,8 +1094,14 @@
       color-mix(in srgb, var(--lyra-agent-browser-beam) 32%, transparent) 0%,
       color-mix(in srgb, var(--lyra-agent-browser-beam) 14%, transparent) 38%,
       transparent 72%
-    );
+  );
   filter: blur(var(--lyra-unit-1));
+  opacity: 0.42;
+  transform: scale(0.94);
+}
+
+.lyra-agent-browser-activity-overlay[data-active="true"] .lyra-agent-browser-cursor-aura,
+.lyra-agent-browser-activity-overlay[data-cursor-phase="down"] .lyra-agent-browser-cursor-aura {
   animation: lyra-agent-browser-cursor-aura 880ms ease-in-out infinite alternate;
 }
 

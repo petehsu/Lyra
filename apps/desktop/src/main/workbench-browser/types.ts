@@ -1,5 +1,7 @@
 import type {
   WorkbenchBrowserAgentElevationResult,
+  WorkbenchBrowserAgentElevationCompletionResult,
+  WorkbenchBrowserAuthChallengeSignal,
   WorkbenchBrowserChromePopoverRequest,
   WorkbenchBrowserElementPickerState,
   WorkbenchBrowserEvent,
@@ -7,12 +9,20 @@ import type {
   WorkbenchBrowserNavigateRequest,
   WorkbenchBrowserNavigateResult,
   WorkbenchBrowserPageDiagnosticsResult,
+  BrowserSessionSnapshot,
+  BrowserStorageStateRef,
+  WorkbenchBrowserClearSiteDataRequest,
+  WorkbenchBrowserClearSiteDataResult,
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserReadPageStateRequest,
   WorkbenchBrowserSearchInPageRequest,
   WorkbenchBrowserSearchInPageResult,
   WorkbenchBrowserSetElementPickerModeRequest,
+  WorkbenchBrowserStorageStateRequest,
   WorkbenchLumenFollowAudit,
+  WorkbenchLumenStaleTarget,
+  WorkbenchLumenTargetExplanation,
+  WorkbenchLumenTargetRef,
   WorkbenchBrowserTopologySnapshot,
   WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/desktop-bridge";
@@ -74,6 +84,119 @@ export type WorkbenchBrowserFrameGlobalBounds = {
   readonly y: number;
   readonly width: number;
   readonly height: number;
+};
+
+export type WorkbenchBrowserSemanticActionCapability =
+  | "click"
+  | "type"
+  | "select"
+  | "check"
+  | "expand"
+  | "open"
+  | "menuitem";
+
+export type WorkbenchBrowserSemanticTreeScope =
+  | "document"
+  | "shadow"
+  | "frame"
+  | "ax"
+  | "visual";
+
+export type WorkbenchBrowserSemanticFrame = {
+  readonly frameRef: string;
+  readonly frameTreeNodeId: number;
+  readonly parentFrameRef?: string;
+  readonly parentFrameTreeNodeId?: number;
+  readonly isMainFrame: boolean;
+  readonly url: string;
+  readonly origin: string;
+  readonly name: string;
+  readonly bounds?: WorkbenchBrowserFrameGlobalBounds;
+  readonly ownerSelectorPreview?: string;
+  readonly ownerFrameTreeNodeId?: number;
+  readonly domAccess: "direct" | "cdp" | "blocked" | "unknown";
+  readonly accessibilityStatus: "available" | "partial" | "blocked" | "unknown";
+  readonly blockedReason?: string;
+  readonly matchConfidence?: "high" | "medium" | "low";
+};
+
+export type WorkbenchBrowserSemanticNode = {
+  readonly nodeKey: string;
+  readonly targetRef: string;
+  readonly frameRef: string;
+  readonly frameTreeNodeId: number;
+  readonly elementId?: number;
+  readonly tagName?: string;
+  readonly role: string;
+  readonly name: string;
+  readonly label: string;
+  readonly selectorPreview?: string;
+  readonly bounds: WorkbenchBrowserAgentElementBounds;
+  readonly source: readonly ("dom" | "ax" | "visual")[];
+  readonly treeScope: WorkbenchBrowserSemanticTreeScope;
+  readonly hostChain?: readonly string[];
+  readonly hostChainFingerprint?: string;
+  readonly actionCapabilities: readonly WorkbenchBrowserSemanticActionCapability[];
+  readonly visibility: {
+    readonly visible: boolean;
+    readonly offscreen: boolean;
+    readonly covered: boolean;
+    readonly ariaHidden: boolean;
+  };
+  readonly state: {
+    readonly focusable: boolean;
+    readonly disabled: boolean;
+    readonly editable: boolean;
+    readonly checked?: boolean;
+    readonly expanded?: boolean;
+  };
+  readonly confidence: number;
+  readonly blockedReason?: string;
+  readonly risk?: {
+    readonly kind: "visualFallback";
+    readonly message: string;
+  };
+};
+
+export type WorkbenchBrowserSemanticEdge = {
+  readonly from: string;
+  readonly to: string;
+  readonly kind: "contains" | "owns" | "shadow-host" | "frame-owner" | "ax-controls";
+};
+
+export type WorkbenchBrowserSemanticBlockedRegion = {
+  readonly id: string;
+  readonly kind:
+    | "cross-origin"
+    | "closed-shadow"
+    | "captcha"
+    | "permission-prompt"
+    | "frame-unavailable"
+    | "visual-fallback";
+  readonly frameRef?: string;
+  readonly frameTreeNodeId?: number;
+  readonly bounds?: WorkbenchBrowserAgentElementBounds;
+  readonly reason: string;
+  readonly url?: string;
+  readonly fallback?: "ax" | "visual" | "elevate" | "user";
+  readonly confidence: "high" | "medium" | "low";
+};
+
+export type WorkbenchBrowserSemanticCoverage = {
+  readonly domCoverage: number;
+  readonly axCoverage: number;
+  readonly frameCoverage: number;
+  readonly shadowCoverage: number;
+  readonly visualCoverage: number;
+};
+
+export type WorkbenchBrowserSemanticTree = {
+  readonly nodes: readonly WorkbenchBrowserSemanticNode[];
+  readonly edges: readonly WorkbenchBrowserSemanticEdge[];
+  readonly frames: readonly WorkbenchBrowserSemanticFrame[];
+  readonly warnings: readonly string[];
+  readonly coverage: WorkbenchBrowserSemanticCoverage;
+  readonly blockedRegions: readonly WorkbenchBrowserSemanticBlockedRegion[];
 };
 
 export type WorkbenchBrowserSessionFetchResult = {
@@ -139,6 +262,47 @@ export type WorkbenchBrowserAgentTargetMode =
   | "isolated"
   | "live";
 
+export type WorkbenchBrowserAgentAuthStateRequest =
+  | "none"
+  | "borrowLiveLogin";
+
+export type WorkbenchBrowserAgentAuthStateStatus =
+  | "liveProfile"
+  | "isolatedProfile"
+  | "borrowedLiveLogin"
+  | "borrowLiveLoginUnavailable";
+
+export type WorkbenchBrowserAgentModeReason =
+  | "default_current_visible_browser"
+  | "explicit_live"
+  | "explicit_isolated"
+  | "follow_toggle_enabled"
+  | "user_authorized_live_login_state"
+  | "isolated_login_state_unavailable";
+
+export type WorkbenchBrowserAgentModeInfo = {
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly visibleFollow: boolean;
+  readonly authState: WorkbenchBrowserAgentAuthStateStatus;
+  readonly reason: WorkbenchBrowserAgentModeReason;
+  readonly profilePartition: string;
+  readonly liveLoginState?: {
+    readonly borrowed: boolean;
+    readonly sourceOrigin?: string;
+    readonly cookieCount?: number;
+    readonly localStorageItemCount?: number;
+    readonly coverage: readonly ("cookies" | "localStorage")[];
+    readonly unavailableReason?: string;
+  };
+};
+
+export type WorkbenchBrowserAgentModeRequest = {
+  readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+  readonly visibleFollow?: boolean;
+  readonly authState?: WorkbenchBrowserAgentAuthStateRequest;
+  readonly useLiveLoginState?: boolean;
+};
+
 export const WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID = "lyra-lumen-isolated";
 
 export type WorkbenchBrowserAgentElementBounds = {
@@ -152,24 +316,42 @@ export type WorkbenchBrowserAgentElement = {
   readonly id: number;
   readonly targetRef: string;
   readonly stableId: string;
+  readonly target: WorkbenchLumenTargetRef;
+  readonly frameRef: string;
+  readonly semanticNodeKey?: string;
+  readonly elementFingerprint: string;
   readonly frameTreeNodeId: number;
   readonly tagName: string;
   readonly role: string;
   readonly label: string;
   readonly actionHint?: string;
+  readonly actionCapabilities?: readonly WorkbenchBrowserSemanticActionCapability[];
   readonly stateHint?: string;
   readonly tooltipText?: string;
   readonly textSnippet?: string;
   readonly selectorPreview: string;
   readonly bounds: WorkbenchBrowserAgentElementBounds;
+  readonly localBounds?: WorkbenchBrowserAgentElementBounds;
+  readonly frameBounds?: WorkbenchBrowserAgentElementBounds;
   readonly focusable: boolean;
   readonly tabIndex?: number;
   readonly disabled: boolean;
   readonly editable: boolean;
+  readonly visibility?: {
+    readonly visible: boolean;
+    readonly offscreen: boolean;
+    readonly covered: boolean;
+    readonly ariaHidden: boolean;
+  };
+  readonly checked?: boolean;
+  readonly expanded?: boolean;
   readonly href?: string;
   readonly inputType?: string;
   readonly frameUrl?: string;
-  readonly discoveryScope?: "document" | "shadow" | "frame";
+  readonly discoveryScope?: WorkbenchBrowserSemanticTreeScope;
+  readonly hostChain?: readonly string[];
+  readonly hostChainFingerprint?: string;
+  readonly confidence?: number;
 };
 
 export type WorkbenchBrowserAgentObservation = {
@@ -177,25 +359,20 @@ export type WorkbenchBrowserAgentObservation = {
   readonly kind: "lyraLumenMap";
   readonly tabId: string;
   readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly browserMode?: WorkbenchBrowserAgentModeInfo;
   readonly observationId: string;
+  readonly mapEpoch: number;
   readonly strategy: WorkbenchBrowserAgentObserveStrategy;
   readonly url: string;
   readonly title: string;
+  readonly targets: readonly WorkbenchLumenTargetRef[];
   readonly elements: readonly WorkbenchBrowserAgentElement[];
+  readonly semanticTree?: WorkbenchBrowserSemanticTree;
+  readonly coverage?: WorkbenchBrowserSemanticCoverage;
+  readonly blockedRegions?: readonly WorkbenchBrowserSemanticBlockedRegion[];
   readonly activeElementId: number | null;
   readonly focusOrder: readonly number[];
-  readonly authChallengeSignals?: readonly {
-    readonly kind:
-      | "captcha"
-      | "mfa"
-      | "oauth_popup"
-      | "login_wall"
-      | "cross_origin_auth_frame";
-    readonly confidence: "high" | "medium" | "low";
-    readonly source: "dom" | "attribute" | "frame" | "browser";
-    readonly label?: string;
-    readonly url?: string;
-  }[];
+  readonly authChallengeSignals?: readonly WorkbenchBrowserAuthChallengeSignal[];
   readonly warnings?: readonly string[];
   readonly nextRecommendedAction?: string;
 };
@@ -230,6 +407,7 @@ export type WorkbenchBrowserAgentFocusResult = {
   readonly tabId: string;
   readonly inputMode: "chromium";
   readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly browserMode?: WorkbenchBrowserAgentModeInfo;
   readonly direction: WorkbenchBrowserAgentFocusDirection;
   readonly steps: number;
   readonly activeElementId: number | null;
@@ -252,6 +430,7 @@ export type WorkbenchBrowserAgentActionResult = {
   readonly tabId: string;
   readonly inputMode: "chromium";
   readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+  readonly browserMode?: WorkbenchBrowserAgentModeInfo;
   readonly elementId?: number;
   readonly targetRef?: string;
   readonly x?: number;
@@ -262,6 +441,8 @@ export type WorkbenchBrowserAgentActionResult = {
   readonly focusChanged?: boolean;
   readonly navigationStarted?: boolean;
   readonly staleElement?: boolean;
+  readonly staleTarget?: WorkbenchLumenStaleTarget;
+  readonly nearestCandidates?: readonly WorkbenchBrowserAgentElement[];
   readonly message?: string;
   readonly nextRecommendedAction?: string;
   readonly error?: {
@@ -284,6 +465,13 @@ export type WorkbenchBrowserViewManager = {
   readonly readPageState: (
     request?: WorkbenchBrowserReadPageStateRequest
   ) => WorkbenchBrowserPageRuntimeState | null;
+  readonly readSessionSnapshot: () => BrowserSessionSnapshot | null;
+  readonly readStorageState: (
+    request?: WorkbenchBrowserStorageStateRequest
+  ) => Promise<BrowserStorageStateRef>;
+  readonly clearSiteData: (
+    request: WorkbenchBrowserClearSiteDataRequest
+  ) => Promise<WorkbenchBrowserClearSiteDataResult>;
   readonly searchInPage: (
     request: WorkbenchBrowserSearchInPageRequest
   ) => Promise<WorkbenchBrowserSearchInPageResult>;
@@ -338,36 +526,32 @@ export type WorkbenchBrowserViewManager = {
   readonly toggleDevToolsForActivePage: () => boolean;
   readonly observeAgentPage: (
     tabId: string,
-    request?: {
+    request?: WorkbenchBrowserAgentModeRequest & {
       readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
     }
   ) => Promise<WorkbenchBrowserAgentObservation>;
   readonly actOnAgentElement: (
     tabId: string,
-    request: {
+    request: WorkbenchBrowserAgentModeRequest & {
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly interaction: WorkbenchBrowserAgentInteraction;
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly actOnAgentPoint: (
     tabId: string,
-    request: {
+    request: WorkbenchBrowserAgentModeRequest & {
       readonly point: WorkbenchBrowserAgentPoint;
       readonly interaction: WorkbenchBrowserAgentInteraction;
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly focusAgentPage: (
     tabId: string,
-    request: {
+    request: WorkbenchBrowserAgentModeRequest & {
       readonly direction: WorkbenchBrowserAgentFocusDirection;
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly steps?: number;
       readonly restoreFocus?: boolean;
       readonly timeoutMs?: number;
@@ -375,81 +559,111 @@ export type WorkbenchBrowserViewManager = {
   ) => Promise<WorkbenchBrowserAgentFocusResult>;
   readonly typeIntoAgentElement: (
     tabId: string,
-    request: {
+    request: WorkbenchBrowserAgentModeRequest & {
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly text: string;
       readonly clear?: boolean;
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly pressAgentKey: (
     tabId: string,
-    request: {
+    request: WorkbenchBrowserAgentModeRequest & {
       readonly key: string;
       readonly elementId?: number;
       readonly targetRef?: string;
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly navigateAgentPage: (
     tabId: string,
-    request: {
+    request: WorkbenchBrowserAgentModeRequest & {
       readonly url: string;
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
     }
-  ) => Promise<WorkbenchBrowserNavigateResult & { readonly targetMode: WorkbenchBrowserAgentTargetMode }>;
+  ) => Promise<WorkbenchBrowserNavigateResult & {
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+  }>;
   readonly readAgentPage: (
     tabId: string,
-    request: {
+    request: WorkbenchBrowserAgentModeRequest & {
       readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly maxChars?: number;
       readonly timeoutMs?: number;
     }
   ) => Promise<
     | (WorkbenchTabExtractTextResult & {
         readonly targetMode: WorkbenchBrowserAgentTargetMode;
+        readonly browserMode?: WorkbenchBrowserAgentModeInfo;
         readonly content: string;
       })
     | (WorkbenchObservationBrowserDomSummary & {
         readonly targetMode: WorkbenchBrowserAgentTargetMode;
+        readonly browserMode?: WorkbenchBrowserAgentModeInfo;
         readonly content: string;
       })
   >;
   readonly captureAgentPage: (
     tabId: string,
-    request?: {
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
-    }
-  ) => Promise<WorkbenchVisualCaptureResult & { readonly targetMode: WorkbenchBrowserAgentTargetMode }>;
+    request?: WorkbenchBrowserAgentModeRequest
+  ) => Promise<WorkbenchVisualCaptureResult & {
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+  }>;
   readonly showAgentActivity: (
     tabId: string,
-    request: {
+    request: WorkbenchBrowserAgentModeRequest & {
       readonly action: "wait";
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly durationMs?: number;
     }
   ) => Promise<{
     readonly tabId: string;
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly browserMode?: WorkbenchBrowserAgentModeInfo;
     readonly action: "wait";
   }>;
   readonly readAgentFollowAudit: (
     tabId: string,
     request?: {
+      readonly sessionId?: string;
+      readonly turnId?: string;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly maxActions?: number;
+      readonly includeFrames?: boolean;
     }
   ) => Promise<WorkbenchLumenFollowAudit>;
+  readonly finishAgentFollowSessions: (
+    request: {
+      readonly turnId?: string;
+      readonly status: "completed" | "cancelled" | "failed" | "interrupted";
+      readonly reason?: string;
+    }
+  ) => void;
+  readonly explainAgentTargetRef: (
+    tabId: string,
+    request: {
+      readonly targetRef: string;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly maxCandidates?: number;
+    }
+  ) => Promise<WorkbenchLumenTargetExplanation>;
   readonly auditAgentPageDiagnostics: (
     tabId: string,
-    request?: {
-      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+    request?: WorkbenchBrowserAgentModeRequest & {
+      readonly includeConsole?: boolean;
+      readonly includeNetwork?: boolean;
+      readonly includeRuntime?: boolean;
+      readonly severity?: "info" | "warning" | "error" | readonly ("info" | "warning" | "error")[];
+      readonly since?: string | number;
       readonly maxEntries?: number;
+      readonly domain?: string;
+      readonly path?: string;
+      readonly status?: number;
+      readonly method?: string;
+      readonly includeResponseBody?: boolean;
+      readonly responseBodyMaxBytes?: number;
     }
   ) => Promise<WorkbenchBrowserPageDiagnosticsResult>;
   readonly elevateAgentPage: (
@@ -459,6 +673,24 @@ export type WorkbenchBrowserViewManager = {
       readonly reason?: string;
     }
   ) => Promise<WorkbenchBrowserAgentElevationResult>;
+  readonly completeElevationSession: (
+    tabId: string,
+    request?: {
+      readonly liveTabId?: string;
+      readonly elevationSessionId?: string;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentElevationCompletionResult>;
+  readonly resolveSharedControlDecision: (
+    tabId: string,
+    request: {
+      readonly decision: "continue_agent" | "user_takeover" | "use_isolated" | "cancel_task";
+    }
+  ) => Promise<{
+    readonly ok: true;
+    readonly tabId: string;
+    readonly decision: "continue_agent" | "user_takeover" | "use_isolated" | "cancel_task";
+  }>;
 };
 
 export type WorkbenchBrowserElementPickerController = {

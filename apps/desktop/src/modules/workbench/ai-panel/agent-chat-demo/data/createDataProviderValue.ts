@@ -14,11 +14,12 @@ import type {
 import { t } from "../core/i18n";
 import type { AgentRollbackPreviewResponse } from "../../../../../shared/agent";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
-import type { DataProviderValue } from "./DataProvider";
+import type { DataProviderValue, MessageWindowState } from "./DataProvider";
 
 export interface CreateDataProviderValueInput {
   session: SessionMeta;
   messages: ChatMessage[];
+  messageWindow?: MessageWindowState;
   todos?: TodoItem[];
   diffFiles?: DiffFileEntry[];
   decisions?: DecisionQuestion[];
@@ -34,6 +35,7 @@ export interface CreateDataProviderValueInput {
   revealSensitiveValueToUser?: (ref: LyraSensitiveValueRef) => Promise<string>;
   sidePanel?: AgentSidePanel | null;
   sendMessage?: (text: string, images?: readonly AgentImageAttachment[]) => Promise<void>;
+  loadEarlierMessages?: () => Promise<void>;
   captureBrowserScreenshot?: () => Promise<AgentImageAttachment | null>;
   captureWindowScreenshot?: () => Promise<AgentImageAttachment | null>;
   cancelTurn?: () => Promise<void>;
@@ -76,6 +78,12 @@ const resolved = Promise.resolve();
 export function createDataProviderValue({
   session,
   messages,
+  messageWindow = {
+    visibleCount: messages.length,
+    hiddenBefore: 0,
+    totalCount: messages.length,
+    canLoadEarlier: false
+  },
   todos = [],
   diffFiles = [],
   decisions = [],
@@ -93,6 +101,7 @@ export function createDataProviderValue({
   },
   sidePanel = null,
   sendMessage = () => resolved,
+  loadEarlierMessages = () => resolved,
   captureBrowserScreenshot = () => Promise.resolve(null),
   captureWindowScreenshot = () => Promise.resolve(null),
   cancelTurn = () => resolved,
@@ -134,6 +143,7 @@ export function createDataProviderValue({
   return {
     session,
     messages,
+    messageWindow,
     todos,
     diffFiles,
     decisions,
@@ -149,6 +159,7 @@ export function createDataProviderValue({
     revealSensitiveValueToUser,
     sidePanel,
     sendMessage,
+    loadEarlierMessages,
     captureBrowserScreenshot,
     captureWindowScreenshot,
     cancelTurn,

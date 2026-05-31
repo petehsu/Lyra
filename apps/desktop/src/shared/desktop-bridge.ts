@@ -48,21 +48,37 @@ import type {
 } from "./image-viewer";
 import type { TerminalThemePresetId } from "./terminal-theme";
 import type {
+  BrowserSessionSnapshot,
+  BrowserStorageStateRef,
   WorkbenchBrowserChromePopoverRequest,
+  WorkbenchBrowserClearSiteDataRequest,
+  WorkbenchBrowserClearSiteDataResult,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
   WorkbenchBrowserElementPickerMode,
   WorkbenchBrowserElementPickerOwner,
   WorkbenchBrowserElementPickerPhase,
   WorkbenchBrowserElementPickerState,
+  WorkbenchBrowserAgentElevationCompletionResult,
   WorkbenchBrowserAgentElevationResult,
   WorkbenchBrowserAgentActivityEvent,
+  WorkbenchBrowserAuthChallengeSignal,
+  WorkbenchBrowserElevationSession,
   WorkbenchBrowserPageDiagnosticsResult,
   WorkbenchBrowserPageRestoreState,
   WorkbenchBrowserSharedControlEvent,
+  WorkbenchBrowserSharedControlStateEvent,
   WorkbenchLumenActivityEvent,
   WorkbenchLumenFollowAction,
   WorkbenchLumenFollowAudit,
+  WorkbenchLumenFollowFrame,
+  WorkbenchLumenFollowSessionStatus,
+  WorkbenchLumenStaleTarget,
+  WorkbenchLumenTargetCandidate,
+  WorkbenchLumenTargetExplanation,
+  WorkbenchLumenTargetKind,
+  WorkbenchLumenTargetRef,
+  WorkbenchLumenTargetStaleReason,
   WorkbenchBrowserEvent,
   WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
@@ -73,6 +89,7 @@ import type {
   WorkbenchBrowserSearchInPageRequest,
   WorkbenchBrowserSearchInPageResult,
   WorkbenchBrowserSetElementPickerModeRequest,
+  WorkbenchBrowserStorageStateRequest,
   WorkbenchBrowserTopologySnapshot,
   WorkbenchBrowserWebThemeSnapshot
 } from "./workbench-browser";
@@ -263,8 +280,26 @@ export type {
   DownloadManagerUpdateSettingsRequest
 } from "./download-manager";
 export type {
+  BrowserActiveElementRef,
+  BrowserElementBounds,
+  BrowserFormDraftFieldMetadata,
+  BrowserFormDraftMetadata,
+  BrowserNavigationHistory,
+  BrowserNavigationHistoryEntry,
+  BrowserPageLoadState,
+  BrowserRecoveryAnchor,
+  BrowserSessionSnapshot,
+  BrowserSessionTabSnapshot,
+  BrowserSiteStorageAvailability,
+  BrowserStorageAvailability,
+  BrowserStorageScopeManifest,
+  BrowserStorageStateRef,
+  BrowserTargetRegistryManifest,
+  BrowserViewportState,
   WorkbenchBrowserChromePopoverRequest,
   WorkbenchBrowserChromeSecurityPopoverPayload,
+  WorkbenchBrowserClearSiteDataRequest,
+  WorkbenchBrowserClearSiteDataResult,
   WorkbenchBrowserClientRect,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
@@ -272,15 +307,30 @@ export type {
   WorkbenchBrowserElementPickerOwner,
   WorkbenchBrowserElementPickerPhase,
   WorkbenchBrowserElementPickerState,
+  WorkbenchBrowserAgentElevationCompletionResult,
   WorkbenchBrowserAgentElevationResult,
+  WorkbenchBrowserAuthChallengeSignal,
+  WorkbenchBrowserElevationSession,
   WorkbenchBrowserAgentActivityEvent,
   WorkbenchBrowserPageDiagnosticEntry,
   WorkbenchBrowserPageDiagnosticsResult,
   WorkbenchBrowserPageRestoreState,
+  WorkbenchBrowserProfileMode,
+  WorkbenchBrowserRecoveryFailure,
+  WorkbenchBrowserRecoveryFailureReason,
   WorkbenchBrowserSharedControlEvent,
+  WorkbenchBrowserSharedControlStateEvent,
   WorkbenchLumenActivityEvent,
   WorkbenchLumenFollowAction,
   WorkbenchLumenFollowAudit,
+  WorkbenchLumenFollowFrame,
+  WorkbenchLumenFollowSessionStatus,
+  WorkbenchLumenStaleTarget,
+  WorkbenchLumenTargetCandidate,
+  WorkbenchLumenTargetExplanation,
+  WorkbenchLumenTargetKind,
+  WorkbenchLumenTargetRef,
+  WorkbenchLumenTargetStaleReason,
   WorkbenchBrowserEvent,
   WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
@@ -294,6 +344,7 @@ export type {
   WorkbenchBrowserSearchInPageRequest,
   WorkbenchBrowserSearchInPageResult,
   WorkbenchBrowserSetElementPickerModeRequest,
+  WorkbenchBrowserStorageStateRequest,
   WorkbenchBrowserTopologySnapshot,
   WorkbenchBrowserWebThemePalette,
   WorkbenchBrowserWebThemeSnapshot
@@ -475,6 +526,9 @@ export const LYRA_CHANNELS = {
   workbenchBrowserReload: "lyra:workbench-browser/reload",
   workbenchBrowserStop: "lyra:workbench-browser/stop",
   workbenchBrowserReadPageState: "lyra:workbench-browser/read-page-state",
+  workbenchBrowserReadSessionSnapshot: "lyra:workbench-browser/read-session-snapshot",
+  workbenchBrowserReadStorageState: "lyra:workbench-browser/read-storage-state",
+  workbenchBrowserClearSiteData: "lyra:workbench-browser/clear-site-data",
   workbenchBrowserSearchInPage: "lyra:workbench-browser/search-in-page",
   workbenchBrowserSetChromePopover: "lyra:workbench-browser/set-chrome-popover",
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
@@ -1506,6 +1560,13 @@ export type WorkbenchBrowserApi = {
   readonly readPageState: (
     request?: WorkbenchBrowserReadPageStateRequest
   ) => Promise<WorkbenchBrowserPageRuntimeState | null>;
+  readonly readSessionSnapshot: () => Promise<BrowserSessionSnapshot | null>;
+  readonly readStorageState: (
+    request?: WorkbenchBrowserStorageStateRequest
+  ) => Promise<BrowserStorageStateRef>;
+  readonly clearSiteData: (
+    request: WorkbenchBrowserClearSiteDataRequest
+  ) => Promise<WorkbenchBrowserClearSiteDataResult>;
   readonly searchInPage: (
     request: WorkbenchBrowserSearchInPageRequest
   ) => Promise<WorkbenchBrowserSearchInPageResult>;
@@ -1550,6 +1611,7 @@ export type LspApi = {
 export type WorkbenchStateKey =
   | "preferences"
   | "workspace-tabs"
+  | "browser-session"
   | "ai-panel-tabs"
   | "terminal-dock"
   | "notifications"

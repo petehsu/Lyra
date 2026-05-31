@@ -39,7 +39,15 @@ impl NativeRuntimeState {
             }
         }
 
-        let loaded = Self {
+        let pending_permissions = state_file
+            .as_ref()
+            .map(|state| state.pending_permissions.clone())
+            .unwrap_or_default();
+        let pending_clarifications = state_file
+            .as_ref()
+            .map(|state| state.pending_clarifications.clone())
+            .unwrap_or_default();
+        let mut loaded = Self {
             root,
             sessions,
             active_session_id: state_file
@@ -54,14 +62,8 @@ impl NativeRuntimeState {
                 .as_ref()
                 .map(|state| state.overnight_runs.clone())
                 .unwrap_or_default(),
-            pending_permissions: state_file
-                .as_ref()
-                .map(|state| state.pending_permissions.clone())
-                .unwrap_or_default(),
-            pending_clarifications: state_file
-                .as_ref()
-                .map(|state| state.pending_clarifications.clone())
-                .unwrap_or_default(),
+            pending_permissions,
+            pending_clarifications,
             goals: state_file
                 .as_ref()
                 .map(|state| state.goals.clone())
@@ -74,31 +76,68 @@ impl NativeRuntimeState {
             event_callback: None,
             host_dispatcher: None,
         };
-        if migrated_legacy_memory {
+        let pruned_pending = loaded.prune_non_live_pending();
+        if migrated_legacy_memory || pruned_pending {
             let _ = loaded.save_state();
         }
         loaded
     }
 
-    pub(crate) fn save_state(&self) -> AgentRuntimeResult<()> {
+    pub(crate) fn save_state(&mut self) -> AgentRuntimeResult<()> {
         fs::create_dir_all(self.root.join("sessions"))
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let pending_permissions = self
+            .pending_permissions
+            .iter()
+            .filter(|(_, request)| is_live_pending_permission(&self.sessions, request))
+            .map(|(id, request)| (id.clone(), request.clone()))
+            .collect();
+        let pending_clarifications = self
+            .pending_clarifications
+            .iter()
+            .filter(|(_, request)| is_live_pending_clarification(&self.sessions, request))
+            .map(|(id, request)| (id.clone(), request.clone()))
+            .collect();
         let state = NativeStateFile {
             active_session_id: self.active_session_id.clone(),
             config: self.config.clone(),
             legacy_shared_memory: Vec::new(),
             active_skills: self.active_skills.clone(),
             overnight_runs: self.overnight_runs.clone(),
-            pending_permissions: self.pending_permissions.clone(),
-            pending_clarifications: self.pending_clarifications.clone(),
+            pending_permissions,
+            pending_clarifications,
             goals: self.goals.clone(),
             focused_goal_id: self.focused_goal_id.clone(),
         };
         write_json(&self.root.join("state.json"), &state)?;
-        for session in self.sessions.values() {
-            write_json(&self.session_path(&session.id), session)?;
+        let sessions_root = self.root.join("sessions");
+        let session_ids = self
+            .sessions
+            .values()
+            .filter(|session| {
+                session.dirty || !sessions_root.join(format!("{}.json", session.id)).exists()
+            })
+            .map(|session| session.id.clone())
+            .collect::<Vec<_>>();
+        for session_id in session_ids {
+            let path = sessions_root.join(format!("{session_id}.json"));
+            if let Some(session) = self.sessions.get_mut(&session_id) {
+                write_json(&path, session)?;
+                session.dirty = false;
+            }
         }
         Ok(())
+    }
+
+    pub(crate) fn prune_non_live_pending(&mut self) -> bool {
+        let before_permissions = self.pending_permissions.len();
+        let before_clarifications = self.pending_clarifications.len();
+        self.pending_permissions
+            .retain(|_, request| is_live_pending_permission(&self.sessions, request));
+        self.pending_clarifications
+            .retain(|_, request| is_live_pending_clarification(&self.sessions, request));
+        before_permissions != self.pending_permissions.len()
+            || before_clarifications != self.pending_clarifications.len()
     }
 
     pub(crate) fn session_path(&self, session_id: &str) -> PathBuf {
@@ -137,6 +176,35 @@ impl NativeRuntimeState {
         self.save_state()?;
         Ok(id)
     }
+}
+
+fn is_live_pending_permission(
+    sessions: &HashMap<String, NativeSession>,
+    request: &PermissionRequest,
+) -> bool {
+    request.allowed.is_none()
+        && request.status == "pending"
+        && session_has_active_turn(sessions, &request.session_id, &request.turn_id)
+}
+
+fn is_live_pending_clarification(
+    sessions: &HashMap<String, NativeSession>,
+    request: &ClarificationRequest,
+) -> bool {
+    request.answer.is_none()
+        && request.status == "pending"
+        && session_has_active_turn(sessions, &request.session_id, &request.turn_id)
+}
+
+fn session_has_active_turn(
+    sessions: &HashMap<String, NativeSession>,
+    session_id: &str,
+    turn_id: &str,
+) -> bool {
+    sessions.get(session_id).is_some_and(|session| {
+        session.snapshot.get("turnStatus").and_then(Value::as_str) == Some("running")
+            && session.snapshot.get("activeTurnId").and_then(Value::as_str) == Some(turn_id)
+    })
 }
 
 pub(crate) fn default_true() -> bool {

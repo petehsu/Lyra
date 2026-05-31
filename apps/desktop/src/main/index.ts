@@ -726,16 +726,17 @@ const registerIpcHandlers = (): void => {
   });
   disposeAgentBridge = agentBridge.dispose;
 
-  workbenchBrowserBridge = createWorkbenchBrowserIpcBridge({
-    getWindow: () => mainWindow,
-    downloadManager: downloadManagerBridge,
-    loginManager: loginManagerBridge
-  });
-  disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
   const workbenchStateBridge = createWorkbenchStateIpcBridge(
     storageRoots.modules.workbenchState
   );
   disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
+  workbenchBrowserBridge = createWorkbenchBrowserIpcBridge({
+    getWindow: () => mainWindow,
+    downloadManager: downloadManagerBridge,
+    loginManager: loginManagerBridge,
+    workbenchState: workbenchStateBridge
+  });
+  disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
   const uiuxPacksBridge = createUiuxPacksIpcBridge({
     storageRoot: storageRoots.modules.uiuxPacks,
     workbenchStateBridge

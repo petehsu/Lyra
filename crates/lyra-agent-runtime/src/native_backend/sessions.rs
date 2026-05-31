@@ -30,7 +30,7 @@ pub(crate) fn new_session(
     let created_at = now();
     let title = title
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "Lyra Agent".to_string());
+        .unwrap_or_else(|| DEFAULT_SESSION_TITLE.to_string());
     let working_dir = working_dir.unwrap_or_default();
     let project_bound = !working_dir.trim().is_empty();
     let snapshot = json!({
@@ -65,6 +65,7 @@ pub(crate) fn new_session(
         short_name: None,
         runtime_turns: Vec::new(),
         rollback_checkpoints: Vec::new(),
+        dirty: true,
     }
 }
 
@@ -84,8 +85,9 @@ pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
         .sessions
         .get_mut(&id)
         .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
-    if reconcile_orphan_running_tools(session) {
-        touch_snapshot(&mut session.snapshot);
+    let reconciled = reconcile_orphan_running_tools(session);
+    if reconciled {
+        touch_session(session);
     }
     let snapshot = session.snapshot.clone();
     state.save_state()?;
@@ -145,18 +147,18 @@ pub(crate) fn set_saved(payload: Value, saved: bool) -> AgentRuntimeResult<Value
             None
         };
         session.archived = false;
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
         Ok(session_summary(session))
     })
 }
 
 pub(crate) fn rename_session(payload: Value) -> AgentRuntimeResult<Value> {
     let id = required_session_id(&payload)?;
-    let title = string_opt(&payload, "title").unwrap_or_else(|| "Lyra Agent".to_string());
+    let title = string_opt(&payload, "title").unwrap_or_else(|| DEFAULT_SESSION_TITLE.to_string());
     mutate_session(&id, |session| {
         session.custom_title = Some(title.clone());
         set_string(&mut session.snapshot, "title", title);
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
         Ok(session_summary(session))
     })
 }
@@ -169,7 +171,7 @@ pub(crate) fn archive_session(payload: Value) -> AgentRuntimeResult<Value> {
         .unwrap_or(true);
     mutate_session(&id, |session| {
         session.archived = archived;
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
         Ok(session_summary(session))
     })
 }
@@ -205,7 +207,7 @@ pub(crate) fn bind_project(payload: Value) -> AgentRuntimeResult<Value> {
         .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
     set_string(&mut session.snapshot, "workingDir", working_dir);
     set_bool(&mut session.snapshot, "projectBound", true);
-    touch_snapshot(&mut session.snapshot);
+    touch_session(session);
     let snapshot = session.snapshot.clone();
     state.save_state()?;
     Ok(snapshot)
@@ -229,7 +231,7 @@ pub(crate) fn fork_session(payload: Value, label: &str) -> AgentRuntimeResult<Va
                 .snapshot
                 .get("title")
                 .and_then(Value::as_str)
-                .unwrap_or("Lyra Agent")
+                .unwrap_or(DEFAULT_SESSION_TITLE)
         )),
         parent
             .snapshot
@@ -277,7 +279,7 @@ pub(crate) fn compact_session(payload: Value) -> AgentRuntimeResult<Value> {
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
         let projection = memory_projection_for_session(session, &long_term_memory, None);
         session.snapshot["memory"] = projection.clone();
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
         let metrics = memory_projection_metrics(session, &projection);
         let snapshot = session.snapshot.clone();
         let callback = state.event_callback.clone();
@@ -333,7 +335,7 @@ pub(crate) fn update_automation(payload: Value) -> AgentRuntimeResult<Value> {
             automation.insert(key.to_string(), value.clone());
         }
     }
-    touch_snapshot(&mut session.snapshot);
+    touch_session(session);
     let snapshot = session.snapshot.clone();
     let automation = snapshot
         .get("automation")

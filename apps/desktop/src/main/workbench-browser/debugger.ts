@@ -8,6 +8,7 @@ import type {
 type WorkbenchBrowserSharedDebuggerSession = {
   readonly acquire: () => Promise<WorkbenchBrowserDebuggerSession>;
   readonly dispose: () => Promise<void>;
+  readonly hasActiveClients: () => boolean;
 };
 
 const DEBUGGER_PROTOCOL_VERSION = "1.3";
@@ -155,5 +156,6 @@ export const createWorkbenchBrowserSharedDebuggerSession = ({
         // ignore cleanup failures
       }
     },
+    hasActiveClients: () => refCount > 0
   };
 };

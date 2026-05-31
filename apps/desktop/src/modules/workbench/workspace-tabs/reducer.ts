@@ -3,6 +3,7 @@ import {
   toNonEmptyTrimmed,
   toSafeAddress
 } from "./navigation";
+import { browserPageRestoreStateEquals } from "../../../shared/workbench-browser";
 import type { WorkspaceTabsRuntimeState } from "./runtime-state";
 import {
   resolveNextSerial,
@@ -523,9 +524,7 @@ export const reduceWorkspaceTabsState = (
             tab.displayAddress === nextAddress &&
             tab.inputValue === nextAddress &&
             tab.faviconUrl === nextFaviconValue &&
-            tab.browserRestoreState?.scrollX === nextRestoreState?.scrollX &&
-            tab.browserRestoreState?.scrollY === nextRestoreState?.scrollY &&
-            tab.browserRestoreState?.capturedAt === nextRestoreState?.capturedAt
+            browserPageRestoreStateEquals(tab.browserRestoreState, nextRestoreState)
           ) {
             return tab;
           }

@@ -7,6 +7,7 @@ import type {
 } from "../../../shared/agent";
 import type { LyraDesktopApi, LyraSensitiveValueRef } from "../../../shared/desktop-bridge";
 import type { SettingsAiModel } from "../settings-ai";
+import { APP_CONFIG } from "./agent-chat-demo/core/config";
 import type {
   AgentGoalItem,
   AgentImageAttachment,
@@ -294,8 +295,18 @@ export const useLyraAgentDataProvider = (
   const [browserFollowModeEnabled, setBrowserFollowModeEnabled] = useState(false);
   const [pendingClarifications, setPendingClarifications] = useState<DecisionQuestion[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
+  const [visibleMessageLimit, setVisibleMessageLimit] = useState<number>(
+    APP_CONFIG.messageWindow.initialCount
+  );
   const currentSessionIdRef = useRef<string | null>(lastAgentSessionId);
   const previousSessionIdRef = useRef<string | null>(lastAgentSessionId);
+  const previousMessageWindowRef = useRef<{
+    readonly sessionId: string | null;
+    readonly messageCount: number;
+  }>({
+    sessionId: null,
+    messageCount: 0
+  });
   const materializedImagePathsRef = useRef<Map<string, string>>(new Map());
   const modelConfigSignature = useMemo(() => {
     const config = settingsAiModel?.agentConfig?.config as {
@@ -322,6 +333,24 @@ export const useLyraAgentDataProvider = (
       previousSessionIdRef.current = nextSessionId;
     }
   }, [state.session?.id]);
+
+  useEffect(() => {
+    const sessionId = state.session?.id ?? null;
+    const messageCount = state.session?.messages.length ?? 0;
+    const previous = previousMessageWindowRef.current;
+
+    if (previous.sessionId !== sessionId || messageCount < previous.messageCount) {
+      setVisibleMessageLimit(APP_CONFIG.messageWindow.initialCount);
+    } else if (messageCount > previous.messageCount) {
+      const appendedCount = messageCount - previous.messageCount;
+      setVisibleMessageLimit((current) => Math.min(messageCount, current + appendedCount));
+    }
+
+    previousMessageWindowRef.current = {
+      sessionId,
+      messageCount
+    };
+  }, [state.session?.id, state.session?.messages.length]);
 
   useEffect(() => {
     if (desktopApi?.agent === undefined) {
@@ -381,7 +410,7 @@ export const useLyraAgentDataProvider = (
     });
 
     const initialSession = requestedSessionId === null
-      ? agentApi.createSession({ title: "Lyra Agent" })
+      ? agentApi.createSession({ title: "新会话" })
       : agentApi.readSession({ sessionId: requestedSessionId });
 
     void initialSession
@@ -561,8 +590,8 @@ export const useLyraAgentDataProvider = (
     try {
       const request =
         state.session?.projectBound === true && typeof state.session.workingDir === "string"
-          ? { title: "Lyra Agent", workingDir: state.session.workingDir }
-          : { title: "Lyra Agent" };
+          ? { title: "新会话", workingDir: state.session.workingDir }
+          : { title: "新会话" };
       const snapshot = await desktopApi.agent.createSession(request);
       dispatch({ type: "snapshot", snapshot });
     } catch (error: unknown) {
@@ -977,7 +1006,28 @@ export const useLyraAgentDataProvider = (
     dispatch({ type: "snapshot", snapshot: response.snapshot });
   }, [currentSessionId, desktopApi]);
 
+  const messageWindowSessionId = state.session?.id ?? null;
+  const visibleMessageLimitForSession =
+    previousMessageWindowRef.current.sessionId === messageWindowSessionId
+      ? visibleMessageLimit
+      : APP_CONFIG.messageWindow.initialCount;
+
+  const loadEarlierMessages = useCallback(async (): Promise<void> => {
+    const messageCount = state.session?.messages.length ?? 0;
+    const sessionId = state.session?.id ?? null;
+    const baseLimit = visibleMessageLimitForSession;
+    setVisibleMessageLimit((current) =>
+      Math.min(
+        messageCount,
+        (previousMessageWindowRef.current.sessionId === sessionId ? current : baseLimit)
+          + APP_CONFIG.messageWindow.batchCount
+      )
+    );
+  }, [state.session?.id, state.session?.messages.length, visibleMessageLimitForSession]);
+
   const data = useMemo(() => {
+    const totalMessageCount = state.session?.messages.length ?? 0;
+    const visibleMessageCount = Math.min(totalMessageCount, visibleMessageLimitForSession);
     const modelControls: ComposerModelControls | null = modelState === null ? null : {
       currentModel: modelState.currentModel,
       currentProvider: modelState.currentProvider,
@@ -1002,7 +1052,16 @@ export const useLyraAgentDataProvider = (
     };
     const input: CreateDataProviderValueInput = {
       session: agentSessionToSessionMeta(state.session),
-      messages: agentSessionToChatMessages(state.session, { failedTurnMessage: state.turnError }),
+      messages: agentSessionToChatMessages(state.session, {
+        failedTurnMessage: state.turnError,
+        messageLimitFromEnd: visibleMessageLimitForSession
+      }),
+      messageWindow: {
+        visibleCount: visibleMessageCount,
+        hiddenBefore: Math.max(0, totalMessageCount - visibleMessageCount),
+        totalCount: totalMessageCount,
+        canLoadEarlier: visibleMessageCount < totalMessageCount
+      },
       todos: agentSessionToTodos(state.session),
       diffFiles: [] satisfies DiffFileEntry[],
       decisions: pendingClarifications.slice(0, 1),
@@ -1018,6 +1077,7 @@ export const useLyraAgentDataProvider = (
       revealSensitiveValueToUser,
       sidePanel: agentSessionToSidePanel(state.session),
       sendMessage,
+      loadEarlierMessages,
       captureBrowserScreenshot,
       captureWindowScreenshot,
       cancelTurn: cancel,
@@ -1069,6 +1129,7 @@ export const useLyraAgentDataProvider = (
     openProjectTree,
     openSelfDevLab,
     openOvernightLab,
+    loadEarlierMessages,
     modelBusy,
     modelState,
     pendingClarifications,
@@ -1083,6 +1144,8 @@ export const useLyraAgentDataProvider = (
     sendMessage,
     state.session,
     state.loading,
+    state.turnError,
+    visibleMessageLimitForSession,
     runJudge,
     askSideQuestion,
     compactContext,

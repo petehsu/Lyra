@@ -6,7 +6,9 @@ import { join } from "node:path";
 import {
   LYRA_CHANNELS,
   type SoftwareCapabilitiesQueryRequest,
-  type SoftwareCapabilitiesQueryResult
+  type SoftwareCapabilitiesQueryResult,
+  type WorkbenchBrowserClearSiteDataRequest,
+  type WorkbenchBrowserStorageStateRequest
 } from "../../shared/desktop-bridge";
 import type {
   AgentClarificationRespondRequest,
@@ -90,7 +92,11 @@ import type {
 } from "../../shared/agent";
 import type { LyraRuntimeClient } from "../runtime-client";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
-import { WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID } from "../workbench-browser/types";
+import {
+  WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID,
+  type WorkbenchBrowserAgentModeRequest,
+  type WorkbenchBrowserAgentTargetMode
+} from "../workbench-browser/types";
 import type { WorkbenchObservationService } from "../workbench-observation/types";
 import type {
   WorkbenchObservedTabDescriptor,
@@ -318,11 +324,34 @@ export const createAgentIpcBridge = ({
     if (eventName !== AGENT_RUNTIME_EVENT_NAME) {
       return;
     }
+    const event = payload as AgentRuntimeEvent;
+    const browser = getBrowserBridge();
+    if (browser !== null) {
+      if (event.kind === "turnFinished") {
+        browser.finishAgentFollowSessions({
+          turnId: event.turnId,
+          status: event.status === "cancelled" ? "cancelled" : "completed",
+          reason: event.status
+        });
+      } else if (event.kind === "turnFailed") {
+        browser.finishAgentFollowSessions({
+          turnId: event.turnId,
+          status: "failed",
+          reason: event.message
+        });
+      } else if (event.kind === "turnInterrupted") {
+        browser.finishAgentFollowSessions({
+          turnId: event.turnId,
+          status: "interrupted",
+          reason: event.reason
+        });
+      }
+    }
     const window = getWindow();
     if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
       return;
     }
-    window.webContents.send(LYRA_CHANNELS.agentEvent, payload as AgentRuntimeEvent);
+    window.webContents.send(LYRA_CHANNELS.agentEvent, event);
   });
 
   const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -607,6 +636,93 @@ export const createAgentIpcBridge = ({
     return readStringField(payload, fieldName);
   };
 
+  const readLumenAuditSeverity = (
+    payload: Record<string, unknown>
+  ): "info" | "warning" | "error" | readonly ("info" | "warning" | "error")[] | undefined => {
+    const value = payload.severity;
+    const normalize = (item: unknown): "info" | "warning" | "error" | null =>
+      item === "info" || item === "warning" || item === "error" ? item : null;
+    if (value === undefined) {
+      return undefined;
+    }
+    if (Array.isArray(value)) {
+      const severities = value.map(normalize);
+      if (severities.some((item) => item === null)) {
+        throw new Error("severity must contain only info, warning, or error");
+      }
+      return severities as readonly ("info" | "warning" | "error")[];
+    }
+    const severity = normalize(value);
+    if (severity === null) {
+      throw new Error("severity must be info, warning, or error");
+    }
+    return severity;
+  };
+
+  const readLumenAuditRequest = (
+    payload: Record<string, unknown>,
+    targetMode: "isolated" | "live"
+  ) => {
+    const maxEntries = readOptionalNumberField(payload, "maxEntries");
+    const status = readOptionalNumberField(payload, "status");
+    const responseBodyMaxBytes = readOptionalNumberField(payload, "responseBodyMaxBytes");
+    const includeConsole = readOptionalBooleanField(payload, "includeConsole");
+    const includeNetwork = readOptionalBooleanField(payload, "includeNetwork");
+    const includeRuntime = readOptionalBooleanField(payload, "includeRuntime");
+    const includeResponseBody = readOptionalBooleanField(payload, "includeResponseBody");
+    const severity = readLumenAuditSeverity(payload);
+    const since =
+      typeof payload.since === "string" || typeof payload.since === "number"
+        ? payload.since
+        : undefined;
+    if (payload.since !== undefined && since === undefined) {
+      throw new Error("since must be an ISO timestamp string or epoch milliseconds");
+    }
+    const domain = readOptionalStringField(payload, "domain");
+    const path = readOptionalStringField(payload, "path");
+    const method = readOptionalStringField(payload, "method");
+    return {
+      targetMode,
+      ...(includeConsole === undefined ? {} : { includeConsole }),
+      ...(includeNetwork === undefined ? {} : { includeNetwork }),
+      ...(includeRuntime === undefined ? {} : { includeRuntime }),
+      ...(severity === undefined ? {} : { severity }),
+      ...(since === undefined ? {} : { since }),
+      ...(maxEntries === undefined ? {} : { maxEntries }),
+      ...(domain === undefined ? {} : { domain }),
+      ...(path === undefined ? {} : { path }),
+      ...(status === undefined ? {} : { status }),
+      ...(method === undefined ? {} : { method }),
+      ...(includeResponseBody === undefined ? {} : { includeResponseBody }),
+      ...(responseBodyMaxBytes === undefined ? {} : { responseBodyMaxBytes })
+    };
+  };
+
+  const readOptionalBooleanField = (
+    payload: Record<string, unknown>,
+    fieldName: string
+  ): boolean | undefined => {
+    if (payload[fieldName] === undefined) {
+      return undefined;
+    }
+    const value = payload[fieldName];
+    if (typeof value !== "boolean") {
+      throw new Error(`${fieldName} must be a boolean`);
+    }
+    return value;
+  };
+
+  const readRuntimeTurnId = (payload: Record<string, unknown>): string | undefined => {
+    const runtimeCancellation = payload.runtimeCancellation;
+    if (runtimeCancellation === null || typeof runtimeCancellation !== "object") {
+      return undefined;
+    }
+    const turnId = (runtimeCancellation as Record<string, unknown>).turnId;
+    return typeof turnId === "string" && turnId.trim().length > 0
+      ? turnId.trim()
+      : undefined;
+  };
+
   const readLumenStrategy = (
     payload: Record<string, unknown>,
     fallback: "picker" | "focus" | "hybrid" | "domFallback" = "picker"
@@ -642,15 +758,26 @@ export const createAgentIpcBridge = ({
       : "textStable";
   };
 
-  const readLumenTargetMode = (payload: Record<string, unknown>) => {
-    if (browserFollowModeEnabled) {
-      return "live";
-    }
+  const readLumenTargetMode = (payload: Record<string, unknown>): WorkbenchBrowserAgentTargetMode => {
     const value = payload.targetMode ?? payload.target;
     if (value === "live") return "live";
     if (value === "isolated") return "isolated";
-    return "isolated";
+    return "live";
   };
+
+  const readLumenModeRequest = (
+    payload: Record<string, unknown>,
+    targetMode = readLumenTargetMode(payload)
+  ): WorkbenchBrowserAgentModeRequest => ({
+    targetMode,
+    ...(browserFollowModeEnabled && targetMode === "live" ? { visibleFollow: true } : {}),
+    ...(payload.useLiveLoginState === true || payload.authState === "borrowLiveLogin"
+      ? {
+          useLiveLoginState: true,
+          authState: "borrowLiveLogin" as const
+        }
+      : {})
+  });
 
   const readOptionalLumenElementId = (
     payload: Record<string, unknown>,
@@ -762,13 +889,18 @@ export const createAgentIpcBridge = ({
       typeof result.targetRef === "string" && result.targetRef.length > 0
         ? result.targetRef
         : undefined;
+    const followSessionId =
+      typeof result.sessionId === "string" && result.sessionId.length > 0
+        ? result.sessionId
+        : undefined;
     return {
       ...result,
       workbenchTabId: tabId,
       browserTabId: tabId,
       ...(observationId === undefined ? {} : { lumenObservationId: observationId }),
       ...(resolvedElementId === undefined ? {} : { lumenElementId: resolvedElementId }),
-      ...(resolvedTargetRef === undefined ? {} : { lumenTargetRef: resolvedTargetRef })
+      ...(resolvedTargetRef === undefined ? {} : { lumenTargetRef: resolvedTargetRef }),
+      ...(followSessionId === undefined ? {} : { followSessionId })
     };
   };
 
@@ -779,6 +911,27 @@ export const createAgentIpcBridge = ({
     try {
       return await handler(normalizePayload(payload));
     } catch (error) {
+      const handoff = isRecord(error) && isRecord(error.handoff)
+        ? error.handoff
+        : null;
+      if (handoff !== null && handoff.kind === "browser-shared-control-interrupted") {
+        return {
+          ok: false,
+          kind: "lyraLumenControlHandoff",
+          requestedMethod,
+          tabId: typeof handoff.tabId === "string" ? handoff.tabId : undefined,
+          targetMode: "live",
+          controlHandoffEvent: handoff,
+          needsUserAction: {
+            kind: "shared_control_interrupted",
+            reason: "user_interrupted",
+            tabId: typeof handoff.tabId === "string" ? handoff.tabId : undefined,
+            targetMode: "live",
+            controlHandoffEvent: handoff
+          },
+          nextRecommendedAction: "ask_user"
+        };
+      }
       if (error instanceof NonBrowserWorkbenchTabError) {
         return await createLyraLumenNotApplicable(requestedMethod, error.tab);
       }
@@ -794,7 +947,7 @@ export const createAgentIpcBridge = ({
           },
           correction: {
             message:
-              "Workbench tab ids and Lumen element ids are separate. Call lyra_lumen_map for the target tab, then pass a numeric element id from that observation.",
+              "Workbench tab ids, browser tab ids, Lumen target refs, and observation-local element ids are separate. Call lyra_lumen_map for the target tab, then prefer targetRef; use numeric elementId only with the same observation.",
             recommendedTool: error.recommendedTool
           },
           nextRecommendedAction: error.recommendedTool
@@ -818,6 +971,9 @@ export const createAgentIpcBridge = ({
     tabId: string,
     request: {
       readonly targetMode: "isolated" | "live";
+      readonly visibleFollow?: boolean;
+      readonly authState?: "none" | "borrowLiveLogin";
+      readonly useLiveLoginState?: boolean;
       readonly until: "loadIdle" | "textChanged" | "textStable" | "textContains";
       readonly timeoutMs: number;
       readonly idleMs: number;
@@ -840,6 +996,9 @@ export const createAgentIpcBridge = ({
       const content = await browser.readAgentPage(tabId, {
         strategy: "focus",
         targetMode: request.targetMode,
+        ...(request.visibleFollow === undefined ? {} : { visibleFollow: request.visibleFollow }),
+        ...(request.authState === undefined ? {} : { authState: request.authState }),
+        ...(request.useLiveLoginState === undefined ? {} : { useLiveLoginState: request.useLiveLoginState }),
         timeoutMs: readTimeoutMs,
         ...(request.maxChars === undefined ? {} : { maxChars: request.maxChars })
       });
@@ -876,6 +1035,9 @@ export const createAgentIpcBridge = ({
     const content = lastReadContent ?? await browser.readAgentPage(tabId, {
       strategy: "focus",
       targetMode: request.targetMode,
+      ...(request.visibleFollow === undefined ? {} : { visibleFollow: request.visibleFollow }),
+      ...(request.authState === undefined ? {} : { authState: request.authState }),
+      ...(request.useLiveLoginState === undefined ? {} : { useLiveLoginState: request.useLiveLoginState }),
       timeoutMs: 250,
       ...(request.maxChars === undefined ? {} : { maxChars: request.maxChars })
     });
@@ -896,6 +1058,14 @@ export const createAgentIpcBridge = ({
 
   const elementRevealKey = (element: unknown): string => {
     if (!isRecord(element)) return "";
+    const semanticNodeKey = typeof element.semanticNodeKey === "string" ? element.semanticNodeKey : "";
+    if (semanticNodeKey.length > 0) {
+      return `semantic:${semanticNodeKey}`;
+    }
+    const targetRef = typeof element.targetRef === "string" ? element.targetRef : "";
+    if (targetRef.length > 0) {
+      return `target:${targetRef}`;
+    }
     const bounds = isRecord(element.bounds) ? element.bounds : {};
     return [
       element.role,
@@ -914,6 +1084,37 @@ export const createAgentIpcBridge = ({
     );
   };
 
+  const withLumenFailureDiagnostics = async <T extends Record<string, unknown>>(
+    browser: NonNullable<ReturnType<typeof getBrowserBridge>>,
+    tabId: string,
+    targetMode: "isolated" | "live",
+    result: T
+  ): Promise<T> => {
+    if (result.ok !== false) {
+      return result;
+    }
+    try {
+      const audit = await browser.auditAgentPageDiagnostics(tabId, {
+        targetMode,
+        severity: "error",
+        maxEntries: 20
+      });
+      const diagnostics = audit.diagnostics ?? audit.entries;
+      if (diagnostics.length === 0 && audit.available !== false) {
+        return result;
+      }
+      return {
+        ...result,
+        diagnostics,
+        diagnosticSummary: audit.summary,
+        ...(audit.evidenceRefs === undefined ? {} : { evidenceRefs: audit.evidenceRefs }),
+        nextRecommendedAction: "lyra_lumen_audit"
+      };
+    } catch {
+      return result;
+    }
+  };
+
   const lyraLumenHandlers: Record<string, (payload: unknown) => Promise<unknown>> = {
     "lyraLumen.map": withLyraLumenResult("lyraLumen.map", async (payload) => {
       const browser = getBrowserBridge();
@@ -923,13 +1124,30 @@ export const createAgentIpcBridge = ({
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const observation = await browser.observeAgentPage(tabId, {
         strategy: readLumenStrategy(payload, "picker"),
-        targetMode,
+        ...readLumenModeRequest(payload, targetMode),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
+      const highConfidenceAuthSignal = observation.authChallengeSignals
+        ?.find((signal) => signal.confidence === "high");
       return withLumenTargetIds({
         ...observation,
         kind: "lyraLumenMap",
-        nextRecommendedAction: observation.elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
+        ...(targetMode === "isolated" && highConfidenceAuthSignal !== undefined
+          ? {
+              needsUserAction: {
+                kind: "auth_challenge",
+                reason: highConfidenceAuthSignal.kind,
+                signal: highConfidenceAuthSignal,
+                tabId,
+                targetMode,
+                suggestedAction: "lyra_lumen_elevate"
+              }
+            }
+          : {}),
+        nextRecommendedAction:
+          highConfidenceAuthSignal !== undefined
+            ? "lyra_lumen_elevate"
+            : observation.elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
       }, tabId);
     }),
     "lyraLumen.act": withLyraLumenResult("lyraLumen.act", async (payload) => {
@@ -944,20 +1162,21 @@ export const createAgentIpcBridge = ({
         ? await browser.actOnAgentPoint(tabId, {
             point: readLumenPoint(payload),
             interaction: readLumenInteraction(payload),
-            targetMode,
+            ...readLumenModeRequest(payload, targetMode),
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           })
         : await browser.actOnAgentElement(tabId, {
             ...(elementId === undefined ? {} : { elementId }),
             ...(targetRef === undefined ? {} : { targetRef }),
             interaction: readLumenInteraction(payload),
-            targetMode,
+            ...readLumenModeRequest(payload, targetMode),
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           });
+      const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
       return withLumenTargetIds({
-        ...result,
+        ...enriched,
         kind: "lyraLumenActionResult",
-        nextRecommendedAction: "lyra_lumen.map"
+        nextRecommendedAction: enriched.ok === false ? "lyra_lumen_audit" : "lyra_lumen.map"
       }, tabId, elementId);
     }),
     "lyraLumen.reveal": withLyraLumenResult("lyraLumen.reveal", async (payload) => {
@@ -978,7 +1197,7 @@ export const createAgentIpcBridge = ({
       };
       const before = await browser.observeAgentPage(tabId, {
         strategy: "hybrid",
-        targetMode,
+        ...readLumenModeRequest(payload, targetMode),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
       const actionResult = elementId === undefined
@@ -986,27 +1205,28 @@ export const createAgentIpcBridge = ({
         ? await browser.actOnAgentPoint(tabId, {
             point: readLumenPoint(payload),
             interaction: readLumenInteraction(interactionPayload),
-            targetMode,
+            ...readLumenModeRequest(payload, targetMode),
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           })
         : await browser.actOnAgentElement(tabId, {
             ...(elementId === undefined ? {} : { elementId }),
             ...(targetRef === undefined ? {} : { targetRef }),
             interaction: readLumenInteraction(interactionPayload),
-            targetMode,
+            ...readLumenModeRequest(payload, targetMode),
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           });
       if (actionResult.ok === false) {
+        const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, actionResult);
         return withLumenTargetIds({
-          ...actionResult,
+          ...enriched,
           kind: "lyraLumenActionResult",
-          nextRecommendedAction: "lyra_lumen.map"
+          nextRecommendedAction: "lyra_lumen_audit"
         }, tabId, elementId);
       }
       await pauseForLumenIdle(idleMs);
       const after = await browser.observeAgentPage(tabId, {
         strategy: "hybrid",
-        targetMode,
+        ...readLumenModeRequest(payload, targetMode),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
       const beforeKeys = new Set(before.elements.map(elementRevealKey));
@@ -1044,13 +1264,14 @@ export const createAgentIpcBridge = ({
         ...(targetRef === undefined ? {} : { targetRef }),
         text: readStringField(payload, "text"),
         clear: payload.clear === true,
-        targetMode,
+        ...readLumenModeRequest(payload, targetMode),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
+      const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
       return withLumenTargetIds({
-        ...result,
+        ...enriched,
         kind: "lyraLumenActionResult",
-        nextRecommendedAction: "lyra_lumen.map"
+        nextRecommendedAction: enriched.ok === false ? "lyra_lumen_audit" : "lyra_lumen.map"
       }, tabId, elementId);
     }),
     "lyraLumen.press": withLyraLumenResult("lyraLumen.press", async (payload) => {
@@ -1065,13 +1286,14 @@ export const createAgentIpcBridge = ({
         key: readStringField(payload, "key"),
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
-        targetMode,
+        ...readLumenModeRequest(payload, targetMode),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
+      const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
       return withLumenTargetIds({
-        ...result,
+        ...enriched,
         kind: "lyraLumenActionResult",
-        nextRecommendedAction: "lyra_lumen.map"
+        nextRecommendedAction: enriched.ok === false ? "lyra_lumen_audit" : "lyra_lumen.map"
       }, tabId, elementId);
     }),
     "lyraLumen.submit": withLyraLumenResult("lyraLumen.submit", async (payload) => {
@@ -1086,18 +1308,19 @@ export const createAgentIpcBridge = ({
         key: readOptionalStringField(payload, "key") ?? "Enter",
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
-        targetMode,
+        ...readLumenModeRequest(payload, targetMode),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
+      const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
       return withLumenTargetIds({
-        ...result,
+        ...enriched,
         kind: "lyraLumenActionResult",
         submitted: true,
         message:
           elementId === undefined
             ? "Submitted the focused control with Chromium virtual keyboard."
             : `Submitted element ${elementId} with Chromium virtual keyboard.`,
-        nextRecommendedAction: "lyra_lumen.wait"
+        nextRecommendedAction: enriched.ok === false ? "lyra_lumen_audit" : "lyra_lumen.wait"
       }, tabId, elementId);
     }),
     "lyraLumen.focusScan": withLyraLumenResult("lyraLumen.focusScan", async (payload) => {
@@ -1109,7 +1332,7 @@ export const createAgentIpcBridge = ({
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const result = await browser.focusAgentPage(tabId, {
         direction: readLumenFocusDirection(payload),
-        targetMode,
+        ...readLumenModeRequest(payload, targetMode),
         ...(steps === undefined ? {} : { steps }),
         ...(typeof payload.restoreFocus === "boolean" ? { restoreFocus: payload.restoreFocus } : {}),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
@@ -1126,13 +1349,39 @@ export const createAgentIpcBridge = ({
       const targetMode = readLumenTargetMode({ ...payload, targetMode: payload.targetMode ?? "live" });
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
       const maxActions = readOptionalNumberField(payload, "maxActions");
+      const sessionId = readOptionalStringField(payload, "sessionId");
+      const turnId = readOptionalStringField(payload, "turnId") ?? readRuntimeTurnId(payload);
+      const includeFrames = readOptionalBooleanField(payload, "includeFrames");
       const result = await browser.readAgentFollowAudit(tabId, {
         targetMode,
-        ...(maxActions === undefined ? {} : { maxActions })
+        ...(maxActions === undefined ? {} : { maxActions }),
+        ...(sessionId === undefined ? {} : { sessionId }),
+        ...(turnId === undefined ? {} : { turnId }),
+        ...(includeFrames === undefined ? {} : { includeFrames })
       });
       return withLumenTargetIds({
         ...result,
         nextRecommendedAction: "lyra_lumen.map"
+      }, tabId);
+    }),
+    "lyraLumen.explainTarget": withLyraLumenResult("lyraLumen.explainTarget", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode({ ...payload, targetMode: payload.targetMode ?? "live" });
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const targetRef = readOptionalLumenTargetRef(payload);
+      if (targetRef === undefined) {
+        throw new Error("targetRef is required for lyra_lumen_explain_target");
+      }
+      const maxCandidates = readOptionalNumberField(payload, "maxCandidates");
+      const result = await browser.explainAgentTargetRef(tabId, {
+        targetMode,
+        targetRef,
+        ...(maxCandidates === undefined ? {} : { maxCandidates })
+      });
+      return withLumenTargetIds({
+        ...result,
+        nextRecommendedAction: result.available ? "lyra_lumen.act" : "lyra_lumen.map"
       }, tabId);
     }),
     "lyraLumen.audit": withLyraLumenResult("lyraLumen.audit", async (payload) => {
@@ -1140,11 +1389,13 @@ export const createAgentIpcBridge = ({
       if (!browser) throw new Error("Browser capability is not available");
       const targetMode = readLumenTargetMode({ ...payload, targetMode: payload.targetMode ?? "live" });
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
-      const maxEntries = readOptionalNumberField(payload, "maxEntries");
-      const result = await browser.auditAgentPageDiagnostics(tabId, {
-        targetMode,
-        ...(maxEntries === undefined ? {} : { maxEntries })
-      });
+      const result = await browser.auditAgentPageDiagnostics(
+        tabId,
+        {
+          ...readLumenAuditRequest(payload, targetMode),
+          ...readLumenModeRequest(payload, targetMode)
+        }
+      );
       return withLumenTargetIds({
         ...result,
         nextRecommendedAction: "lyra_lumen.map"
@@ -1156,12 +1407,47 @@ export const createAgentIpcBridge = ({
       const targetMode = readLumenTargetMode({ ...payload, targetMode: payload.targetMode ?? "isolated" });
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
       const result = await browser.elevateAgentPage(tabId, {
-        targetMode,
+        ...readLumenModeRequest(payload, targetMode),
         ...(typeof payload.reason === "string" ? { reason: payload.reason } : {})
       });
       return withLumenTargetIds({
         ...result,
         nextRecommendedAction: result.userActionRequired ? "ask_user" : "lyra_lumen.map"
+      }, tabId);
+    }),
+    "lyraLumen.completeElevation": withLyraLumenResult("lyraLumen.completeElevation", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const tabId = await resolveBrowserAgentTabId({ ...payload, targetMode: "isolated" }, "isolated");
+      const result = await browser.completeElevationSession(tabId, {
+        ...(typeof payload.liveTabId === "string" ? { liveTabId: payload.liveTabId } : {}),
+        ...(typeof payload.elevationSessionId === "string" ? { elevationSessionId: payload.elevationSessionId } : {}),
+        ...(typeof payload.timeoutMs === "number" ? { timeoutMs: payload.timeoutMs } : {})
+      });
+      return withLumenTargetIds({
+        ...result,
+        nextRecommendedAction: result.verified ? "lyra_lumen.map" : "ask_user"
+      }, tabId);
+    }),
+    "lyraLumen.resolveControlHandoff": withLyraLumenResult("lyraLumen.resolveControlHandoff", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const tabId = await resolveBrowserAgentTabId({ ...payload, targetMode: "live" }, "live");
+      const decision = typeof payload.decision === "string" ? payload.decision : "user_takeover";
+      if (
+        decision !== "continue_agent"
+        && decision !== "user_takeover"
+        && decision !== "use_isolated"
+        && decision !== "cancel_task"
+      ) {
+        throw new Error(`Unknown shared control decision: ${decision}`);
+      }
+      const result = await browser.resolveSharedControlDecision(tabId, { decision });
+      return withLumenTargetIds({
+        ...result,
+        ok: true,
+        kind: "lyraLumenControlDecision",
+        nextRecommendedAction: decision === "continue_agent" ? "lyra_lumen.follow_audit" : "lyra_lumen.map"
       }, tabId);
     }),
     "lyraLumen.navigate": withLyraLumenResult("lyraLumen.navigate", async (payload) => {
@@ -1182,7 +1468,7 @@ export const createAgentIpcBridge = ({
             resolvedTabId = await resolveBrowserAgentTabId(payload, targetMode);
             return await browser.navigateAgentPage(resolvedTabId, {
               url,
-              targetMode,
+              ...readLumenModeRequest(payload, targetMode),
               ...(timeoutMs === undefined ? {} : { timeoutMs })
             });
           })();
@@ -1193,6 +1479,7 @@ export const createAgentIpcBridge = ({
         url: res.address,
         title: res.title,
         targetMode,
+        ...("browserMode" in res && res.browserMode !== undefined ? { browserMode: res.browserMode } : {}),
         message: `Navigated Lyra Lumen to ${res.address}.`
       }, res.tabId ?? resolvedTabId);
     }),
@@ -1206,7 +1493,7 @@ export const createAgentIpcBridge = ({
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
       const content = await browser.readAgentPage(tabId, {
         strategy,
-        targetMode,
+        ...readLumenModeRequest(payload, targetMode),
         ...(maxChars === undefined ? {} : { maxChars }),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
@@ -1217,6 +1504,7 @@ export const createAgentIpcBridge = ({
           tabId,
           strategy,
           targetMode,
+          ...("browserMode" in content && content.browserMode !== undefined ? { browserMode: content.browserMode } : {}),
           content: content.content,
           summary: content,
           truncated: "truncated" in content ? content.truncated : false,
@@ -1229,6 +1517,7 @@ export const createAgentIpcBridge = ({
         tabId,
         strategy,
         targetMode,
+        ...("browserMode" in content && content.browserMode !== undefined ? { browserMode: content.browserMode } : {}),
         content: content.content,
         truncated: "truncated" in content ? content.truncated : false,
         ...("startChar" in content ? { startChar: content.startChar } : {}),
@@ -1242,14 +1531,17 @@ export const createAgentIpcBridge = ({
       if (!browser) throw new Error("Browser capability is not available");
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
-      const capture = await browser.captureAgentPage(tabId, { targetMode }).catch(async (error: unknown) => {
+      const capture = await browser.captureAgentPage(
+        tabId,
+        readLumenModeRequest(payload, targetMode)
+      ).catch(async (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes("background_visual_capture_unsupported") === false) {
           throw error;
         }
         const fallback = await browser.readAgentPage(tabId, {
           strategy: "focus",
-          targetMode,
+          ...readLumenModeRequest(payload, targetMode),
           timeoutMs: 4_000
         }).catch(() => null);
         return {
@@ -1261,6 +1553,9 @@ export const createAgentIpcBridge = ({
             ok: false,
             reason: "background_visual_capture_unsupported"
           },
+          ...(fallback !== null && "browserMode" in fallback && fallback.browserMode !== undefined
+            ? { browserMode: fallback.browserMode }
+            : {}),
           content: fallback?.content ?? "",
           truncated: fallback === null ? false : ("truncated" in fallback ? fallback.truncated : false),
           message:
@@ -1277,6 +1572,7 @@ export const createAgentIpcBridge = ({
         kind: "lyraLumenSee",
         tabId,
         targetMode,
+        ...("browserMode" in capture && capture.browserMode !== undefined ? { browserMode: capture.browserMode } : {}),
         mimeType: capture.mimeType,
         width: capture.width,
         height: capture.height,
@@ -1307,10 +1603,11 @@ export const createAgentIpcBridge = ({
       const maxChars = readOptionalNumberField(payload, "maxChars");
       await browser.showAgentActivity(tabId, {
         action: "wait",
-        targetMode,
+        ...readLumenModeRequest(payload, targetMode),
         durationMs: Math.max(900, Math.min(5_000, timeoutMs))
       });
       const result = await waitForLumenPage(browser, tabId, {
+        ...readLumenModeRequest(payload, targetMode),
         targetMode,
         until,
         timeoutMs: waitBudgetMs,
@@ -1323,6 +1620,9 @@ export const createAgentIpcBridge = ({
         kind: "lyraLumenWait",
         tabId,
         targetMode,
+        ...("browserMode" in result.content && result.content.browserMode !== undefined
+          ? { browserMode: result.content.browserMode }
+          : {}),
         until,
         timeoutMs,
         idleMs,
@@ -1358,6 +1658,25 @@ export const createAgentIpcBridge = ({
   const hostCapabilityHandlers = {
     ...workbenchHandlers,
     ...lyraLumenHandlers,
+    "workbench.browser.readSessionSnapshot": () => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser session recovery capability is not available");
+      return browser.readSessionSnapshot();
+    },
+    "workbench.browser.readStorageState": async (payload: unknown) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser storage state capability is not available");
+      return await browser.readStorageState(
+        normalizePayload(payload) as WorkbenchBrowserStorageStateRequest
+      );
+    },
+    "workbench.browser.clearSiteData": async (payload: unknown) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser storage clear capability is not available");
+      return await browser.clearSiteData(
+        normalizePayload(payload) as WorkbenchBrowserClearSiteDataRequest
+      );
+    },
     "software.listCapabilities": async (payload: unknown) =>
       await softwareCapabilitiesClient.listCapabilities(normalizePayload(payload)),
     "software.inspectCapability": async (payload: unknown) =>
@@ -1464,6 +1783,12 @@ export const createAgentIpcBridge = ({
       (_event, payload) => {
         const request = normalizePayload(payload) as AgentBrowserFollowModeUpdateRequest;
         browserFollowModeEnabled = request.enabled === true;
+        if (!browserFollowModeEnabled) {
+          getBrowserBridge()?.finishAgentFollowSessions({
+            status: "cancelled",
+            reason: "follow_disabled"
+          });
+        }
         return {
           enabled: browserFollowModeEnabled
         } satisfies AgentBrowserFollowModeSnapshot;

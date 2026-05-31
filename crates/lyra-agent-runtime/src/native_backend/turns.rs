@@ -83,11 +83,12 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             "unavailableReason": Value::Null
         });
         session.rollback_checkpoints.push(checkpoint);
+        maybe_title_session_from_first_user_message(session, &text);
         push_array(&mut session.snapshot, "messages", user_message.clone());
         session.snapshot["turnStatus"] = Value::String("running".to_string());
         session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
         session.snapshot["follow"] = json!({ "running": true, "activity": "Calling model" });
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
         session.runtime_turns.push(runtime_turn(
             &turn_id,
             &session_id,
@@ -374,6 +375,38 @@ pub(crate) fn latest_user_text(messages: &[Value]) -> String {
         .to_string()
 }
 
+pub(crate) fn maybe_title_session_from_first_user_message(session: &mut NativeSession, text: &str) {
+    if session.custom_title.is_some() {
+        return;
+    }
+    if first_user_message_exists(session) {
+        return;
+    }
+    let title = text.trim();
+    if title.is_empty() {
+        return;
+    }
+    let current_title = session.snapshot.get("title").and_then(Value::as_str);
+    if current_title == Some(DEFAULT_SESSION_TITLE)
+        || current_title == Some(LEGACY_DEFAULT_SESSION_TITLE)
+        || current_title.is_none()
+    {
+        session.snapshot["title"] = Value::String(title.to_string());
+    }
+}
+
+fn first_user_message_exists(session: &NativeSession) -> bool {
+    session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .is_some_and(|messages| {
+            messages
+                .iter()
+                .any(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        })
+}
+
 pub(crate) fn estimate_previous_turn_tool_count(tools: &[Value], messages: &[Value]) -> usize {
     let user_times = messages
         .iter()
@@ -429,7 +462,7 @@ pub(crate) fn emit_assistant_message_placeholder(
                 return None;
             }
             push_array(&mut session.snapshot, "messages", message.clone());
-            touch_snapshot(&mut session.snapshot);
+            touch_session(session);
             let _ = state.save_state();
             callback
         }
@@ -475,8 +508,7 @@ pub(crate) fn append_assistant_delta(
                     AgentRuntimeError::Core(format!("message not found: {message_id}"))
                 })?;
             append_text_to_message(message, delta);
-            touch_snapshot(&mut session.snapshot);
-            let _ = state.save_state();
+            touch_session(session);
             callback
         }
         Err(_) => {
@@ -575,7 +607,7 @@ pub(crate) fn finish_turn(
                         json!({ "running": false, "activity": Value::Null });
                     update_runtime_turn(session, turn_id, status);
                     let retention_metrics = prune_transient_tool_outputs(session);
-                    touch_snapshot(&mut session.snapshot);
+                    touch_session(session);
                     events.push(json!({
                         "kind": "sessionSnapshot",
                         "snapshot": session.snapshot
@@ -754,7 +786,7 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
             json!({ "content": "Lyra tool call was cancelled by the user." }),
         );
         update_runtime_turn(session, &turn_id, "cancelled");
-        touch_snapshot(&mut session.snapshot);
+        touch_session(session);
         let snapshot = session.snapshot.clone();
         let callback = state.event_callback.clone();
         state.save_state()?;

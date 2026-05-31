@@ -1,4 +1,5 @@
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
+import { sanitizeBrowserPageRestoreState } from "../../../shared/workbench-browser";
 import type { WorkspaceTabsRuntimeState } from "./runtime-state";
 import { createSearchTab } from "./tab-factory";
 import { resolveRuntimeState } from "./split-model";
@@ -108,24 +109,7 @@ export const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
       : rawFilePath;
   const fileSessionId = sanitizeOptionalString(value.fileSessionId);
   const isDirty = sanitizeOptionalBoolean(value.isDirty);
-  const browserRestoreRecord =
-    value.browserRestoreState !== null && typeof value.browserRestoreState === "object"
-      ? value.browserRestoreState as Record<string, unknown>
-      : null;
-  const browserRestoreCapturedAt = Number(browserRestoreRecord?.capturedAt);
-  const browserRestoreScrollX = Number(browserRestoreRecord?.scrollX);
-  const browserRestoreScrollY = Number(browserRestoreRecord?.scrollY);
-  const browserRestoreState = browserRestoreRecord !== null && Number.isFinite(browserRestoreCapturedAt)
-    ? {
-        ...(Number.isFinite(browserRestoreScrollX)
-          ? { scrollX: Math.max(0, Math.round(browserRestoreScrollX)) }
-          : {}),
-        ...(Number.isFinite(browserRestoreScrollY)
-          ? { scrollY: Math.max(0, Math.round(browserRestoreScrollY)) }
-          : {}),
-        capturedAt: Math.round(browserRestoreCapturedAt)
-      }
-    : undefined;
+  const browserRestoreState = sanitizeBrowserPageRestoreState(value.browserRestoreState);
 
   if (pageKind === "terminal" && terminalTabId === undefined) {
     return null;

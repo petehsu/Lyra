@@ -254,7 +254,7 @@
 .lyra-login-manager-detail-panel {
   display: grid;
   gap: var(--lyra-unit-14);
-  max-width: var(--lyra-unit-760);
+  max-width: calc(var(--lyra-unit-720) + var(--lyra-unit-40));
 }
 
 .lyra-login-manager-detail-head {
@@ -363,7 +363,7 @@
 }
 
 .lyra-login-manager-edit textarea {
-  min-height: var(--lyra-unit-82);
+  min-height: calc(var(--lyra-unit-80) + var(--lyra-unit-2));
   resize: vertical;
 }
 
