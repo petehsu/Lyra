@@ -661,6 +661,94 @@ describe("Agent IPC bridge", () => {
     bridge.dispose();
   });
 
+  test("terminal host tools prefer visible UI panes over remembered private ids when follow is on", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const privateSession = {
+      sessionId: "private-terminal-1",
+      title: "Agent Terminal",
+      shell: "/bin/zsh",
+      cols: 80,
+      rows: 24,
+      createdAt: "1000",
+      source: "user",
+      mode: "shell",
+      persist: false,
+      running: true,
+      exitCode: null
+    };
+    const uiDescriptor = {
+      terminalTabId: "terminal-tab-1",
+      paneId: "pane-1",
+      sessionId: "ui-terminal-1",
+      title: "Terminal",
+      placement: "dock" as const,
+      isActive: true
+    };
+    const readObservation = vi.fn(async (request: { readonly sessionId: string }) => ({
+      sessionId: request.sessionId,
+      cursor: "0",
+      output: "",
+      running: true,
+      exitCode: null,
+      truncated: false,
+      source: "user",
+      mode: "shell"
+    }));
+    const terminalBridge = createTerminalBridgeMock({
+      createSession: vi.fn(async () => privateSession),
+      write: vi.fn(async () => undefined),
+      readObservation
+    });
+    const observationService = {
+      listTerminalPanes: vi.fn(async () => ({ active: uiDescriptor, panes: [uiDescriptor] })),
+      focusTerminalPane: vi.fn(async () => uiDescriptor)
+    } as unknown as WorkbenchObservationService;
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => observationService
+    });
+
+    await expect(
+      registered.get("terminal.create")?.({
+        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1" }
+      })
+    ).resolves.toMatchObject({ target: { type: "private", sessionId: "private-terminal-1" } });
+
+    electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: true });
+
+    await expect(
+      registered.get("terminal.write")?.({
+        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1" },
+        sessionId: "private-terminal-1",
+        text: "echo visible",
+        appendNewline: true
+      })
+    ).resolves.toMatchObject({
+      target: {
+        type: "ui",
+        sessionId: "ui-terminal-1",
+        terminalTabId: "terminal-tab-1",
+        paneId: "pane-1"
+      }
+    });
+    expect(terminalBridge.write).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sessionId: "ui-terminal-1" })
+    );
+
+    bridge.dispose();
+  });
+
   test("terminal wait reports exit when no new output arrives", async () => {
     const registered = new Map<string, (payload: unknown) => unknown>();
     const createSession = vi.fn(async (request: { readonly sessionId?: string }) => ({

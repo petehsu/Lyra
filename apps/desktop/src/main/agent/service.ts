@@ -996,7 +996,8 @@ export const createAgentIpcBridge = ({
 
   const resolveUiTerminal = async (
     payload: Record<string, unknown>,
-    openIfMissing: boolean
+    openIfMissing: boolean,
+    options: { readonly fallbackToActiveWhenOnlySessionId?: boolean } = {}
   ): Promise<TerminalToolTarget> => {
     const service = getWorkbenchObservationService();
     if (service === null) {
@@ -1017,7 +1018,12 @@ export const createAgentIpcBridge = ({
         && (requestedPaneId === undefined || entry.paneId === requestedPaneId)
       ))
       ?? null;
-    if (pane === null && explicitTarget) {
+    const canFallbackToActive =
+      options.fallbackToActiveWhenOnlySessionId === true
+      && requestedSessionId !== undefined
+      && requestedTerminalTabId === undefined
+      && requestedPaneId === undefined;
+    if (pane === null && explicitTarget && !canFallbackToActive) {
       throw new Error("Requested UI terminal pane was not found.");
     }
     if (pane === null) {
@@ -1061,15 +1067,18 @@ export const createAgentIpcBridge = ({
     const hasUiRef =
       readOptionalTerminalId(payload, "terminalTabId") !== undefined
       || readOptionalTerminalId(payload, "paneId") !== undefined;
+    if (preference === "ui" || hasUiRef || (preference === "auto" && browserFollowModeEnabled)) {
+      return await resolveUiTerminal(payload, options.uiOpenIfMissing, {
+        fallbackToActiveWhenOnlySessionId:
+          preference === "auto" && browserFollowModeEnabled && !hasUiRef
+      });
+    }
     if (requestedSessionId !== undefined && preference !== "ui") {
       const privateEntry = findPrivateTerminalEntry(requestedSessionId, agentSessionId);
       if (privateEntry !== null) {
         privateEntry.lastUsedAt = new Date().toISOString();
         return targetFromPrivateEntry(privateEntry);
       }
-    }
-    if (preference === "ui" || hasUiRef || (preference === "auto" && browserFollowModeEnabled)) {
-      return await resolveUiTerminal(payload, options.uiOpenIfMissing);
     }
     return await resolvePrivateTerminal(
       agentSessionId,

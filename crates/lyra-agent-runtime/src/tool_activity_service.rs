@@ -564,7 +564,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_type",
-                "Type text into a browser editable element. Prefer targetRef from lyra_lumen_map; elementId is observation-local compatibility only. If omitted, Lyra uses the current or last confirmed editable target.",
+                "Type text into a browser editable element. Prefer targetRef from lyra_lumen_map; elementId is observation-local compatibility only. If omitted, Lyra uses the current or last confirmed editable target. For segmented verification-code inputs, call this once on the first field with the full code; Lyra splits the characters across fields.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({
@@ -580,7 +580,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_press",
-                "Press a keyboard key in the Lyra browser agent page. Prefer targetRef when focusing a target first; elementId is observation-local compatibility only.",
+                "Press a non-text keyboard key in the Lyra browser agent page, such as Enter, Tab, Escape, or Arrow keys. Prefer targetRef when focusing a target first; elementId is observation-local compatibility only. Do not use this for typing text or verification-code characters; call lyra_lumen_type once with the full text instead.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({

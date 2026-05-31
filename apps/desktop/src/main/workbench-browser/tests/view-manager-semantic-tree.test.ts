@@ -532,6 +532,88 @@ describe("Workbench browser semantic tree fixtures", () => {
     );
   });
 
+  test("splits full verification codes across segmented one-character inputs", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://github.com/login/device",
+      html: `
+        <!doctype html>
+        <title>Device Activation</title>
+        <form>
+          ${Array.from({ length: 8 }, (_, index) =>
+            `<input aria-label="User code ${index}" maxlength="1" inputmode="text" />`
+          ).join("")}
+          <button>Continue</button>
+        </form>
+      `
+    });
+    const inputs = Array.from(mainFrame.window.document.querySelectorAll("input"));
+    for (const [index, input] of inputs.entries()) {
+      setRect(input, { x: 40 + index * 36, y: 80, width: 28, height: 36 });
+    }
+    const button = mainFrame.window.document.querySelector("button");
+    expect(button).toBeInstanceOf(mainFrame.window.HTMLButtonElement);
+    setRect(button as Element, { x: 40, y: 132, width: 180, height: 36 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "hybrid"
+    });
+    const firstCodeInput = findByLabel(observation.elements, "User code 0");
+
+    await expect(
+      manager.typeIntoAgentElement("tab-1", {
+        targetMode: "live",
+        targetRef: firstCodeInput.targetRef,
+        text: "2514-091A",
+        clear: true
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      targetRef: firstCodeInput.targetRef
+    });
+    expect(inputs.map((input) => input.value)).toEqual(["2", "5", "1", "4", "0", "9", "1", "A"]);
+  });
+
+  test("keeps full verification codes in a single ordinary code input", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://example.com/login/device",
+      html: `
+        <!doctype html>
+        <title>Device Activation</title>
+        <label>
+          Verification code
+          <input aria-label="Verification code" inputmode="text" />
+        </label>
+      `
+    });
+    const input = mainFrame.window.document.querySelector("input");
+    expect(input).toBeInstanceOf(mainFrame.window.HTMLInputElement);
+    setRect(input as Element, { x: 40, y: 80, width: 220, height: 36 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "hybrid"
+    });
+    const codeInput = findByLabel(observation.elements, "Verification code");
+
+    await expect(
+      manager.typeIntoAgentElement("tab-1", {
+        targetMode: "live",
+        targetRef: codeInput.targetRef,
+        text: "2514-091A",
+        clear: true
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      targetRef: codeInput.targetRef
+    });
+    expect(input?.value).toBe("2514-091A");
+  });
+
   test("returns blocked regions and visual fallback target for cross-origin iframe", async () => {
     const mainFrame = createFrame({
       id: 1,

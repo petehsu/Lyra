@@ -5967,19 +5967,131 @@ export const createWorkbenchBrowserViewManager = ({
         return null;
       };
 
-      const dispatchTextEvents = (element) => {
+      const dispatchTextEvents = (element, data = TEXT) => {
         const win = element?.ownerDocument?.defaultView || window;
         try {
           element.dispatchEvent(new win.InputEvent("input", {
             bubbles: true,
             composed: true,
-            data: TEXT,
+            data,
             inputType: "insertText"
           }));
         } catch (_error) {
           element.dispatchEvent(new win.Event("input", { bubbles: true }));
         }
         element.dispatchEvent(new win.Event("change", { bubbles: true }));
+      };
+
+      const isTextLikeInput = (element) => {
+        const win = element?.ownerDocument?.defaultView || window;
+        if (!(element instanceof win.HTMLInputElement)) return false;
+        const type = String(element.getAttribute("type") || element.type || "text").toLowerCase();
+        return [
+          "",
+          "email",
+          "number",
+          "password",
+          "search",
+          "tel",
+          "text",
+          "url"
+        ].includes(type);
+      };
+
+      const hasSingleCharacterLimit = (element) =>
+        element.maxLength === 1 || element.getAttribute("maxlength") === "1";
+
+      const hasSegmentPositionHint = (element) => {
+        const label = [
+          element.getAttribute("aria-label"),
+          element.getAttribute("name"),
+          element.getAttribute("id"),
+          element.getAttribute("placeholder")
+        ].filter(Boolean).join(" ").toLowerCase();
+        return /\\b(?:code|digit|character|char)\\b.*\\b\\d+\\b/.test(label)
+          || /\\b\\d+\\b.*\\b(?:code|digit|character|char)\\b/.test(label)
+          || /\\b\\d+\\s*(?:of|\\/)\\s*\\d+\\b/.test(label);
+      };
+
+      const isSingleCharacterSegmentInput = (element) =>
+        isTextLikeInput(element)
+        && (hasSingleCharacterLimit(element) || hasSegmentPositionHint(element));
+
+      const inputCenterY = (element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      };
+
+      const sameSegmentGroup = (targetInput, candidate) => {
+        if (candidate.ownerDocument !== targetInput.ownerDocument) return false;
+        if (targetInput.form !== null || candidate.form !== null) {
+          return candidate.form === targetInput.form;
+        }
+        const targetRect = targetInput.getBoundingClientRect();
+        return Math.abs(inputCenterY(candidate) - inputCenterY(targetInput))
+          <= Math.max(36, targetRect.height * 1.75);
+      };
+
+      const maybeInsertSegmentedText = (targetInput) => {
+        const win = targetInput?.ownerDocument?.defaultView || window;
+        if (!(targetInput instanceof win.HTMLInputElement)) return null;
+        const segmentText = TEXT.replace(/[\\s-]+/g, "");
+        if (segmentText.length <= 1 || !isSingleCharacterSegmentInput(targetInput)) {
+          return null;
+        }
+
+        const seenInputs = new Set();
+        const candidates = [];
+        for (const item of collectCandidates()) {
+          const editable = editableNear(item.element);
+          if (
+            editable instanceof win.HTMLInputElement
+            && !seenInputs.has(editable)
+            && isSingleCharacterSegmentInput(editable)
+            && sameSegmentGroup(targetInput, editable)
+          ) {
+            seenInputs.add(editable);
+            candidates.push(editable);
+          }
+        }
+        const startIndex = candidates.indexOf(targetInput);
+        if (startIndex < 0) return null;
+        const segmentTargets = candidates.slice(startIndex, startIndex + segmentText.length);
+        if (segmentTargets.length < segmentText.length) {
+          if (!hasSingleCharacterLimit(targetInput)) {
+            return null;
+          }
+          return {
+            ok: false,
+            errorKind: "segmented_input_too_short",
+            message: "Only found " + segmentTargets.length
+              + " segmented input fields for " + segmentText.length + " characters."
+          };
+        }
+
+        const beforeValues = segmentTargets.map((input) => input.value);
+        for (let index = 0; index < segmentTargets.length; index += 1) {
+          const input = segmentTargets[index];
+          const char = segmentText[index];
+          input.focus({ preventScroll: true });
+          if (typeof input.setRangeText === "function") {
+            input.setRangeText(char, 0, input.value.length, "end");
+          } else {
+            input.value = char;
+          }
+          dispatchTextEvents(input, char);
+        }
+        segmentTargets.at(-1)?.focus({ preventScroll: true });
+        const afterValues = segmentTargets.map((input) => input.value);
+        return {
+          ok: afterValues.join("") === segmentText,
+          method: "segmentedInput",
+          tagName: "input",
+          role: normalizeText(targetInput.getAttribute?.("role") || "", 40),
+          textChanged: beforeValues.join("") !== afterValues.join(""),
+          textPreview: normalizeText(afterValues.join(""), 120),
+          segmentCount: segmentTargets.length
+        };
       };
 
       const byId = collectCandidates().find((item) => item.id === TARGET_ID)?.element ?? null;
@@ -5995,6 +6107,10 @@ export const createWorkbenchBrowserViewManager = ({
         : target.textContent || "";
       let method = "dom";
       try {
+        const segmented = maybeInsertSegmentedText(target);
+        if (segmented !== null) {
+          return segmented;
+        }
         if (target instanceof targetWindow.HTMLInputElement || target instanceof targetWindow.HTMLTextAreaElement) {
           target.focus({ preventScroll: true });
           const start = CLEAR ? 0 : (target.selectionStart ?? target.value.length);

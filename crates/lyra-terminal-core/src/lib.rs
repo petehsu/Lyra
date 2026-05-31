@@ -429,12 +429,10 @@ fn configure_command_mode(command: &mut CommandBuilder, shell: &str, raw_command
 }
 
 fn compose_write_payload(request: &TerminalWriteRequest) -> Result<String> {
-    if let Some(data) = request.data.as_deref() {
-        return Ok(data.to_string());
-    }
-
     let mut payload = String::new();
-    if let Some(text) = request.text.as_deref() {
+    if let Some(data) = request.data.as_deref() {
+        payload.push_str(data);
+    } else if let Some(text) = request.text.as_deref() {
         payload.push_str(text);
     }
     if request.append_newline.unwrap_or(false) {
@@ -817,6 +815,45 @@ mod tests {
         })
         .expect("read shell session");
         assert!(output.output.contains("ping"));
+        close_session(TerminalCloseRequest {
+            session_id: snapshot.session_id,
+        })
+        .expect("close shell session");
+    }
+
+    #[test]
+    fn shell_session_appends_newline_to_data_writes() {
+        let snapshot = create_session(TerminalCreateRequest {
+            session_id: None,
+            title: Some("shell".to_string()),
+            cwd: None,
+            shell: None,
+            cols: 80,
+            rows: 24,
+            source: Some("ai".to_string()),
+            mode: Some("shell".to_string()),
+            command: None,
+            persist: Some(false),
+        })
+        .expect("create shell session");
+        write_session(TerminalWriteRequest {
+            session_id: snapshot.session_id.clone(),
+            data: Some("printf 'newline-data'".to_string()),
+            text: None,
+            keys: None,
+            append_newline: Some(true),
+            source: Some("ai".to_string()),
+        })
+        .expect("write shell session");
+        thread::sleep(Duration::from_millis(200));
+        let output = read_session(TerminalReadRequest {
+            session_id: snapshot.session_id.clone(),
+            cursor: None,
+            max_bytes: None,
+            wait_ms: Some(1000),
+        })
+        .expect("read shell session");
+        assert!(output.output.contains("newline-data"));
         close_session(TerminalCloseRequest {
             session_id: snapshot.session_id,
         })
