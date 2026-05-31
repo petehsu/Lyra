@@ -9,6 +9,14 @@ import type {
   WorkbenchTabReadRequest,
   WorkbenchTabsListRequest,
   WorkbenchTabsListResult,
+  WorkbenchTerminalCloseRequest,
+  WorkbenchTerminalCloseResult,
+  WorkbenchTerminalFocusRequest,
+  WorkbenchTerminalFocusResult,
+  WorkbenchTerminalListRequest,
+  WorkbenchTerminalListResult,
+  WorkbenchTerminalOpenRequest,
+  WorkbenchTerminalOpenResult,
   WorkbenchVisualCaptureRequest,
   WorkbenchVisualCaptureResult,
   WorkbenchWorkspaceReadRequest,
@@ -51,6 +59,18 @@ export type WorkbenchObservationService = {
   readonly captureVisual: (
     request: WorkbenchVisualCaptureRequest
   ) => Promise<WorkbenchVisualCaptureResult>;
+  readonly listTerminalPanes: (
+    request?: WorkbenchTerminalListRequest
+  ) => Promise<WorkbenchTerminalListResult>;
+  readonly openTerminalPane: (
+    request?: WorkbenchTerminalOpenRequest
+  ) => Promise<WorkbenchTerminalOpenResult>;
+  readonly focusTerminalPane: (
+    request: WorkbenchTerminalFocusRequest
+  ) => Promise<WorkbenchTerminalFocusResult>;
+  readonly closeTerminalPane: (
+    request: WorkbenchTerminalCloseRequest
+  ) => Promise<WorkbenchTerminalCloseResult>;
 };
 
 export type WorkbenchObservationRendererClient = {
@@ -65,6 +85,18 @@ export type WorkbenchObservationRendererClient = {
   readonly readLocalWorkspace: (
     request?: WorkbenchWorkspaceReadRequest
   ) => Promise<WorkbenchWorkspaceSnapshot>;
+  readonly listLocalTerminalPanes: (
+    request?: WorkbenchTerminalListRequest
+  ) => Promise<WorkbenchTerminalListResult>;
+  readonly openLocalTerminalPane: (
+    request?: WorkbenchTerminalOpenRequest
+  ) => Promise<WorkbenchTerminalOpenResult>;
+  readonly focusLocalTerminalPane: (
+    request: WorkbenchTerminalFocusRequest
+  ) => Promise<WorkbenchTerminalFocusResult>;
+  readonly closeLocalTerminalPane: (
+    request: WorkbenchTerminalCloseRequest
+  ) => Promise<WorkbenchTerminalCloseResult>;
 };
 
 export type WorkbenchObservationWindowGetter = () => BrowserWindow | null;

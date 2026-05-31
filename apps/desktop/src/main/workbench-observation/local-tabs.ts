@@ -12,6 +12,14 @@ import type {
   WorkbenchTabReadRequest,
   WorkbenchTabsListRequest,
   WorkbenchTabsListResult,
+  WorkbenchTerminalCloseRequest,
+  WorkbenchTerminalCloseResult,
+  WorkbenchTerminalFocusRequest,
+  WorkbenchTerminalFocusResult,
+  WorkbenchTerminalListRequest,
+  WorkbenchTerminalListResult,
+  WorkbenchTerminalOpenRequest,
+  WorkbenchTerminalOpenResult,
   WorkbenchWorkspaceReadRequest,
   WorkbenchWorkspaceSnapshot
 } from "../../shared/workbench-observation";
@@ -70,14 +78,26 @@ export const createWorkbenchObservationRendererClient = ({
     }
 
     const requestId = createRequestId();
-    const query: WorkbenchObservationQueryRequest =
-      method === "workbench.tabs.list_local"
-        ? { requestId, method, payload: payload as WorkbenchTabsListRequest }
-        : method === "workbench.workspace.read_local"
-          ? { requestId, method, payload: payload as WorkbenchWorkspaceReadRequest }
-          : method === "workbench.tab.activate_local"
-            ? { requestId, method, payload: payload as WorkbenchTabActivateRequest }
-            : { requestId, method, payload: payload as WorkbenchTabReadRequest };
+    const query: WorkbenchObservationQueryRequest = (() => {
+      switch (method) {
+        case "workbench.tabs.list_local":
+          return { requestId, method, payload: payload as WorkbenchTabsListRequest };
+        case "workbench.workspace.read_local":
+          return { requestId, method, payload: payload as WorkbenchWorkspaceReadRequest };
+        case "workbench.tab.activate_local":
+          return { requestId, method, payload: payload as WorkbenchTabActivateRequest };
+        case "workbench.terminal.list_local":
+          return { requestId, method, payload: payload as WorkbenchTerminalListRequest };
+        case "workbench.terminal.open_local":
+          return { requestId, method, payload: payload as WorkbenchTerminalOpenRequest };
+        case "workbench.terminal.focus_local":
+          return { requestId, method, payload: payload as WorkbenchTerminalFocusRequest };
+        case "workbench.terminal.close_local":
+          return { requestId, method, payload: payload as WorkbenchTerminalCloseRequest };
+        default:
+          return { requestId, method, payload: payload as WorkbenchTabReadRequest };
+      }
+    })();
 
     const promise = new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -110,6 +130,26 @@ export const createWorkbenchObservationRendererClient = ({
       await sendQuery<WorkbenchWorkspaceSnapshot>(
         "workbench.workspace.read_local",
         request ?? {}
+      ),
+    listLocalTerminalPanes: async (request?: WorkbenchTerminalListRequest) =>
+      await sendQuery<WorkbenchTerminalListResult>(
+        "workbench.terminal.list_local",
+        request ?? {}
+      ),
+    openLocalTerminalPane: async (request?: WorkbenchTerminalOpenRequest) =>
+      await sendQuery<WorkbenchTerminalOpenResult>(
+        "workbench.terminal.open_local",
+        request ?? {}
+      ),
+    focusLocalTerminalPane: async (request: WorkbenchTerminalFocusRequest) =>
+      await sendQuery<WorkbenchTerminalFocusResult>(
+        "workbench.terminal.focus_local",
+        request
+      ),
+    closeLocalTerminalPane: async (request: WorkbenchTerminalCloseRequest) =>
+      await sendQuery<WorkbenchTerminalCloseResult>(
+        "workbench.terminal.close_local",
+        request
       )
   };
 };

@@ -644,6 +644,12 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         "file_multiedit",
         "apply_patch",
         "shell_run",
+        "terminal_list",
+        "terminal_create",
+        "terminal_read",
+        "terminal_wait",
+        "terminal_write",
+        "terminal_close",
         "project_search",
         "code_search_text",
         "code_search_symbol",
@@ -1482,6 +1488,35 @@ fn lumen_live_login_state_requires_permission_even_for_read_tools() {
     assert_eq!(
         permission_risk("lyra_lumen", "map", &json!({ "targetMode": "isolated" })),
         None
+    );
+}
+
+#[test]
+fn terminal_host_tools_apply_read_and_write_permission_policy() {
+    assert_eq!(permission_risk("terminal", "list", &json!({})), None);
+    assert_eq!(
+        permission_risk("terminal", "read", &json!({ "sessionId": "terminal-1" })),
+        None
+    );
+    assert_eq!(
+        permission_risk("terminal", "wait", &json!({ "sessionId": "terminal-1" })),
+        None
+    );
+    assert_eq!(
+        permission_risk("terminal", "create", &json!({ "mode": "shell" })),
+        None
+    );
+    assert_eq!(
+        permission_risk("terminal", "create", &json!({ "command": "npm test" })),
+        Some("shell".to_string())
+    );
+    assert_eq!(
+        permission_risk("terminal", "write", &json!({ "text": "npm test" })),
+        Some("shell".to_string())
+    );
+    assert_eq!(
+        permission_risk("terminal", "close", &json!({ "sessionId": "terminal-1" })),
+        Some("shell".to_string())
     );
 }
 

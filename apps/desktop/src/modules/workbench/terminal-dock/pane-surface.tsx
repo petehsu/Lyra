@@ -298,6 +298,8 @@ export const TerminalPaneSurface = ({
         sessionId: pane.sessionId,
         title: pane.title,
         ...(pane.cwd !== undefined ? { cwd: pane.cwd } : {}),
+        ...(pane.mode !== undefined ? { mode: pane.mode } : {}),
+        ...(pane.command !== undefined ? { command: pane.command } : {}),
         terminalThemePreset: initialThemePresetRef.current,
         uiThemeId,
         cols: terminal.cols,

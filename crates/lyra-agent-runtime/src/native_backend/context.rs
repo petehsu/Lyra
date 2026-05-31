@@ -519,6 +519,89 @@ pub(crate) fn model_tools(design_research_required: bool) -> Vec<Value> {
             }),
         ),
         function_tool(
+            "terminal_list",
+            "List Agent private and visible Workbench terminal sessions.",
+            json!({
+                "type": "object",
+                "properties": {}
+            }),
+        ),
+        function_tool(
+            "terminal_create",
+            "Create or attach to a persistent Agent terminal. In Follow mode this controls the current Workbench terminal pane; otherwise it creates a private Agent terminal.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                    "mode": { "type": "string", "enum": ["shell", "command"], "default": "shell" },
+                    "command": { "type": "string" },
+                    "cwd": { "type": "string" },
+                    "title": { "type": "string" },
+                    "cols": { "type": "number", "default": 80 },
+                    "rows": { "type": "number", "default": 24 },
+                    "maxBytes": { "type": "number", "default": 16000 }
+                }
+            }),
+        ),
+        function_tool(
+            "terminal_read",
+            "Read buffered terminal output without blocking.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "sessionId": { "type": "string" },
+                    "terminalTabId": { "type": "string" },
+                    "paneId": { "type": "string" },
+                    "cursor": { "type": "string" },
+                    "maxBytes": { "type": "number", "default": 16000 }
+                }
+            }),
+        ),
+        function_tool(
+            "terminal_wait",
+            "Wait until terminal output advances, the process exits, or the timeout expires.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "sessionId": { "type": "string" },
+                    "terminalTabId": { "type": "string" },
+                    "paneId": { "type": "string" },
+                    "cursor": { "type": "string" },
+                    "waitMs": { "type": "number", "default": 1000, "maximum": 30000 },
+                    "maxBytes": { "type": "number", "default": 16000 }
+                }
+            }),
+        ),
+        function_tool(
+            "terminal_write",
+            "Write text, raw data, or key presses to a terminal session.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "sessionId": { "type": "string" },
+                    "terminalTabId": { "type": "string" },
+                    "paneId": { "type": "string" },
+                    "text": { "type": "string" },
+                    "data": { "type": "string" },
+                    "keys": { "type": "array", "items": { "type": "string" } },
+                    "appendNewline": { "type": "boolean" },
+                    "maxBytes": { "type": "number", "default": 16000 }
+                }
+            }),
+        ),
+        function_tool(
+            "terminal_close",
+            "Close a terminal session or Workbench terminal pane.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "sessionId": { "type": "string" },
+                    "terminalTabId": { "type": "string" },
+                    "paneId": { "type": "string" }
+                }
+            }),
+        ),
+        function_tool(
             "software_list_capabilities",
             "List installed Lyra software adapters and their lightweight capabilities.",
             json!({
@@ -1129,6 +1212,12 @@ pub(crate) fn model_tool_names(design_research_required: bool) -> Vec<String> {
         "workbench_read_workspace",
         "workbench_read_tab",
         "workbench_activate_tab",
+        "terminal_list",
+        "terminal_create",
+        "terminal_read",
+        "terminal_wait",
+        "terminal_write",
+        "terminal_close",
         "software_list_capabilities",
         "software_inspect_capability",
         "software_read_state",

@@ -894,6 +894,8 @@ fn default_tool_timeout_ms(display_name: &str, action: &str) -> u64 {
         ("lyra_lumen", _) => DEFAULT_BROWSER_TOOL_TIMEOUT_MS,
         ("software", "invoke_capability" | "read_state") => DEFAULT_SOFTWARE_TOOL_TIMEOUT_MS,
         ("software", _) => DEFAULT_HOST_TOOL_TIMEOUT_MS,
+        ("terminal", "wait") => 35_000,
+        ("terminal", _) => DEFAULT_HOST_TOOL_TIMEOUT_MS,
         ("workbench", _) => 5_000,
         _ => DEFAULT_HOST_TOOL_TIMEOUT_MS,
     }

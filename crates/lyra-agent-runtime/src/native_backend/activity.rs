@@ -10,6 +10,12 @@ pub(crate) fn host_tool_mapping(
         "workbench_read_workspace" => ("workbench.readWorkspace", "workbench", "read_workspace"),
         "workbench_read_tab" => ("workbench.readTab", "workbench", "read_tab"),
         "workbench_activate_tab" => ("workbench.activateTab", "workbench", "activate_tab"),
+        "terminal_list" => ("terminal.list", "terminal", "list"),
+        "terminal_create" => ("terminal.create", "terminal", "create"),
+        "terminal_read" => ("terminal.read", "terminal", "read"),
+        "terminal_wait" => ("terminal.wait", "terminal", "wait"),
+        "terminal_write" => ("terminal.write", "terminal", "write"),
+        "terminal_close" => ("terminal.close", "terminal", "close"),
         "software_list_capabilities" => {
             ("software.listCapabilities", "software", "list_capabilities")
         }
@@ -260,6 +266,12 @@ pub(crate) fn tool_label(name: &str, action: &str) -> String {
         ("workbench", "read_workspace") => "Read Workbench workspace",
         ("workbench", "read_tab") => "Read Workbench tab",
         ("workbench", "activate_tab") => "Activated Workbench tab",
+        ("terminal", "list") => "Listed terminals",
+        ("terminal", "create") => "Opened terminal",
+        ("terminal", "read") => "Read terminal",
+        ("terminal", "wait") => "Waited for terminal",
+        ("terminal", "write") => "Wrote terminal input",
+        ("terminal", "close") => "Closed terminal",
         ("memory", "remember") => "Updated memory",
         ("memory", "search") => "Searched memory",
         ("artifact", "read") => "Read Lyra artifact",
@@ -314,9 +326,75 @@ pub(crate) fn tool_label(name: &str, action: &str) -> String {
     .to_string()
 }
 
+pub(crate) fn format_terminal_output(action: &str, value: &Value) -> String {
+    if action == "list" {
+        let terminals = value
+            .get("terminals")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if terminals.is_empty() {
+            return "No terminal sessions are available.".to_string();
+        }
+        return terminals
+            .iter()
+            .take(20)
+            .map(|terminal| {
+                let target_type = terminal
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("terminal");
+                let session_id = terminal
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown-session");
+                let title = terminal
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Terminal");
+                format!("- {target_type} {title} ({session_id})")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+
+    let target_type = value
+        .pointer("/target/type")
+        .and_then(Value::as_str)
+        .unwrap_or("terminal");
+    let session_id = value
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .or_else(|| value.pointer("/target/sessionId").and_then(Value::as_str))
+        .unwrap_or("unknown-session");
+    let running = value
+        .get("running")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let exit_code = value.get("exitCode").and_then(Value::as_i64);
+    let reason = value.get("reason").and_then(Value::as_str);
+    let output = value.get("output").and_then(Value::as_str).unwrap_or("");
+    let mut lines = vec![format!(
+        "{target_type} terminal {session_id}: running={running} exitCode={}",
+        exit_code
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "null".to_string())
+    )];
+    if let Some(reason) = reason {
+        lines.push(format!("reason={reason}"));
+    }
+    if !output.trim().is_empty() {
+        lines.push(output.to_string());
+    }
+    lines.join("\n")
+}
+
 pub(crate) fn format_tool_output(name: &str, action: &str, value: &Value) -> String {
     if name == "workbench" {
         return format_workbench_output(action, value);
+    }
+    if name == "terminal" {
+        return format_terminal_output(action, value);
     }
     if name == "lyra_lumen" {
         return format_lumen_output(action, value);

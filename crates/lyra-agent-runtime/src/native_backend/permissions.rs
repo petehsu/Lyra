@@ -70,6 +70,14 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
                 .to_string(),
         );
     }
+    if matches!((display_name, action), ("terminal", "create"))
+        && input
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+    {
+        return Some("shell".to_string());
+    }
     if matches!(
         (display_name, action),
         ("file", "read")
@@ -81,6 +89,10 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
             | ("code", "graph_expand")
             | ("lsp", "query")
             | ("todo", "read")
+            | ("terminal", "list")
+            | ("terminal", "read")
+            | ("terminal", "wait")
+            | ("terminal", "create")
             | ("workbench", "list_tabs")
             | ("workbench", "read_workspace")
             | ("workbench", "read_tab")
@@ -148,6 +160,11 @@ pub(crate) fn permission_summary(display_name: &str, action: &str, input: &Value
         "tabId",
         "targetMode",
         "authState",
+        "sessionId",
+        "terminalTabId",
+        "paneId",
+        "target",
+        "text",
     ] {
         if let Some(value) = input.get(key).and_then(Value::as_str)
             && !value.trim().is_empty()

@@ -36,6 +36,8 @@ export function ToolDetails({ details }: { details: ToolDetailsType }) {
       return <SearchCard details={details} />;
     case "shell":
       return <ShellCard details={details} />;
+    case "terminal":
+      return <TerminalCard details={details} />;
     case "web":
       return <WebCard details={details} />;
     case "workbench":
@@ -476,6 +478,42 @@ function ShellCard({
         <ActionText text={details.output} />
       </pre>
       <div className="info-dim shell-exit">exit {details.exitCode}</div>
+    </div>
+  );
+}
+
+function TerminalCard({
+  details,
+}: {
+  details: Extract<ToolDetailsType, { type: "terminal" }>;
+}) {
+  const targetLabel =
+    details.target === "ui" ? "ui terminal" : details.target === "list" ? "terminals" : "private terminal";
+  const summary = details.command ?? details.wrote ?? details.sessionId ?? details.action;
+  return (
+    <div className="info-block terminal-card">
+      <div className="info-line">
+        <span className="info-dim">target</span>
+        <span className="info-strong">{targetLabel}</span>
+        {details.reason ? <span className="info-dim">reason {details.reason}</span> : null}
+      </div>
+      {summary ? (
+        <div className="shell-command">
+          <span className="shell-prompt">$</span>
+          <span>
+            <ActionText text={summary} />
+          </span>
+        </div>
+      ) : null}
+      {details.output.trim().length > 0 ? (
+        <pre className="info-pre">
+          <ActionText text={details.output} />
+        </pre>
+      ) : null}
+      <div className="info-dim shell-exit">
+        running {details.running ? "true" : "false"} - exit {details.exitCode ?? "null"}
+        {details.truncated ? " - truncated" : ""}
+      </div>
     </div>
   );
 }

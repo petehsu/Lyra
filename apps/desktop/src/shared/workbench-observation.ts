@@ -20,7 +20,8 @@ export type WorkbenchObservationErrorCode =
   | "renderer_timeout"
   | "renderer_bridge_unavailable"
   | "browser_capture_unavailable"
-  | "background_visual_capture_unsupported";
+  | "background_visual_capture_unsupported"
+  | "terminal_unavailable";
 
 export type WorkbenchObservationError = {
   readonly code: WorkbenchObservationErrorCode;
@@ -60,6 +61,56 @@ export type WorkbenchTabsListResult = {
   readonly activeTabId: string | null;
   readonly visibleTabIds: readonly string[];
   readonly tabs: readonly WorkbenchObservedTabDescriptor[];
+};
+
+export type WorkbenchTerminalPlacement = "dock" | "workspace";
+
+export type WorkbenchTerminalPaneDescriptor = {
+  readonly terminalTabId: string;
+  readonly paneId: string;
+  readonly sessionId: string;
+  readonly title: string;
+  readonly placement: WorkbenchTerminalPlacement;
+  readonly isActive: boolean;
+  readonly cwd?: string;
+  readonly shell?: string;
+  readonly workspaceTabId?: string;
+};
+
+export type WorkbenchTerminalListRequest = Record<string, never>;
+
+export type WorkbenchTerminalListResult = {
+  readonly active: WorkbenchTerminalPaneDescriptor | null;
+  readonly panes: readonly WorkbenchTerminalPaneDescriptor[];
+};
+
+export type WorkbenchTerminalOpenRequest = {
+  readonly placement?: WorkbenchTerminalPlacement;
+  readonly title?: string;
+  readonly cwd?: string;
+};
+
+export type WorkbenchTerminalOpenResult = WorkbenchTerminalPaneDescriptor;
+
+export type WorkbenchTerminalFocusRequest = {
+  readonly terminalTabId?: string;
+  readonly paneId?: string;
+  readonly sessionId?: string;
+};
+
+export type WorkbenchTerminalFocusResult = WorkbenchTerminalPaneDescriptor;
+
+export type WorkbenchTerminalCloseRequest = {
+  readonly terminalTabId?: string;
+  readonly paneId?: string;
+  readonly sessionId?: string;
+};
+
+export type WorkbenchTerminalCloseResult = {
+  readonly closed: boolean;
+  readonly terminalTabId?: string;
+  readonly paneId?: string;
+  readonly sessionId?: string;
 };
 
 export type WorkbenchTabActivateRequest = {
@@ -342,6 +393,26 @@ export type WorkbenchObservationQueryRequest =
       readonly requestId: string;
       readonly method: "workbench.tab.activate_local";
       readonly payload: WorkbenchTabActivateRequest;
+    }
+  | {
+      readonly requestId: string;
+      readonly method: "workbench.terminal.list_local";
+      readonly payload: WorkbenchTerminalListRequest;
+    }
+  | {
+      readonly requestId: string;
+      readonly method: "workbench.terminal.open_local";
+      readonly payload: WorkbenchTerminalOpenRequest;
+    }
+  | {
+      readonly requestId: string;
+      readonly method: "workbench.terminal.focus_local";
+      readonly payload: WorkbenchTerminalFocusRequest;
+    }
+  | {
+      readonly requestId: string;
+      readonly method: "workbench.terminal.close_local";
+      readonly payload: WorkbenchTerminalCloseRequest;
     };
 
 export type WorkbenchObservationQueryResult = {

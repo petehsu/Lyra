@@ -10,6 +10,7 @@ import type {
   TerminalDockPane,
   TerminalDockState,
   TerminalDockTab,
+  TerminalTabPlacement,
   TerminalSplitDirection
 } from "./types";
 
@@ -24,30 +25,49 @@ const createId = (prefix: string): string => {
   return `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
 };
 
-const createPane = (index: number): TerminalDockPane => {
+type CreateTerminalTabOptions = {
+  readonly placement?: TerminalTabPlacement;
+  readonly title?: string;
+  readonly cwd?: string;
+};
+
+const normalizeTitle = (value: string | undefined, fallback: string): string => {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  return fallback;
+};
+
+const createPane = (index: number, options?: CreateTerminalTabOptions): TerminalDockPane => {
   const paneId = createId("pane");
+  const title = normalizeTitle(options?.title, `Terminal ${index}`);
   return {
     id: paneId,
     sessionId: `session-${paneId}`,
-    title: `Terminal ${index}`
+    title,
+    ...(options?.cwd !== undefined && options.cwd.trim().length > 0
+      ? { cwd: options.cwd.trim() }
+      : {})
   };
 };
 
 const createTab = (
-  index: number
+  index: number,
+  options?: CreateTerminalTabOptions
 ): {
   readonly tab: TerminalDockTab;
   readonly pane: TerminalDockPane;
 } => {
-  const pane = createPane(index);
+  const pane = createPane(index, options);
+  const title = normalizeTitle(options?.title, pane.title);
   return {
     tab: {
       id: createId("tab"),
-      title: `Terminal ${index}`,
+      title,
       orientation: "horizontal",
       paneIds: [pane.id],
       activePaneId: pane.id,
-      placement: "dock"
+      placement: options?.placement ?? "dock"
     },
     pane
   };
@@ -118,7 +138,11 @@ const sanitizePane = (value: unknown): TerminalDockPane | null => {
     id,
     sessionId,
     title,
-    ...(cwd !== undefined ? { cwd } : {})
+    ...(cwd !== undefined ? { cwd } : {}),
+    ...(raw.mode === "command" || raw.mode === "shell" ? { mode: raw.mode } : {}),
+    ...(typeof raw.command === "string" && raw.command.trim().length > 0
+      ? { command: raw.command.trim() }
+      : {})
   };
 };
 
@@ -247,6 +271,31 @@ export const openTerminalTabState = (state: TerminalDockState): TerminalDockStat
       [pane.id]: pane
     },
     activeTabId: tab.id
+  };
+};
+
+export const openTerminalTabWithPlacementState = (
+  state: TerminalDockState,
+  options?: CreateTerminalTabOptions
+): {
+  readonly state: TerminalDockState;
+  readonly tab: TerminalDockTab;
+  readonly pane: TerminalDockPane;
+} => {
+  const index = state.tabs.length + 1;
+  const { tab, pane } = createTab(index, options);
+  return {
+    tab,
+    pane,
+    state: {
+      ...state,
+      tabs: [...state.tabs, tab],
+      panes: {
+        ...state.panes,
+        [pane.id]: pane
+      },
+      activeTabId: tab.id
+    }
   };
 };
 
@@ -562,6 +611,15 @@ export const useTerminalDockModel = (): TerminalDockModel => {
     },
     openTab: () => {
       commit((current) => openTerminalTabState(current));
+    },
+    openTabWithPlacement: (request) => {
+      const result = openTerminalTabWithPlacementState(state, request);
+      persistState(result.state);
+      setState(result.state);
+      return {
+        tab: result.tab,
+        pane: result.pane
+      };
     },
     closeTab: (tabId: string) => {
       commit((current) => closeTerminalTabState(current, tabId));

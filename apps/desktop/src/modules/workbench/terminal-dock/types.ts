@@ -8,12 +8,14 @@ import type {
   TerminalDockPaneState as TerminalDockPane,
   TerminalDockState,
   TerminalDockTabState as TerminalDockTab,
+  TerminalTabPlacement,
   TerminalSplitDirection
 } from "../shell/types";
 export type {
   TerminalDockPaneState as TerminalDockPane,
   TerminalDockState,
   TerminalDockTabState as TerminalDockTab,
+  TerminalTabPlacement,
   TerminalSplitDirection
 } from "../shell/types";
 
@@ -41,6 +43,14 @@ export type TerminalDockModel = {
   readonly getTabPanes: (tabId: string) => readonly TerminalDockPane[];
   readonly setActiveTab: (tabId: string) => void;
   readonly openTab: () => void;
+  readonly openTabWithPlacement: (request?: {
+    readonly placement?: TerminalTabPlacement;
+    readonly title?: string;
+    readonly cwd?: string;
+  }) => {
+    readonly tab: TerminalDockTab;
+    readonly pane: TerminalDockPane;
+  };
   readonly closeTab: (tabId: string) => void;
   readonly moveTabToWorkspace: (tabId: string) => void;
   readonly moveTabToDock: (tabId: string) => void;

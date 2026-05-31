@@ -10,6 +10,14 @@ import type {
   WorkbenchTabReadRequest,
   WorkbenchTabsListRequest,
   WorkbenchTabsListResult,
+  WorkbenchTerminalCloseRequest,
+  WorkbenchTerminalCloseResult,
+  WorkbenchTerminalFocusRequest,
+  WorkbenchTerminalFocusResult,
+  WorkbenchTerminalListRequest,
+  WorkbenchTerminalListResult,
+  WorkbenchTerminalOpenRequest,
+  WorkbenchTerminalOpenResult,
   WorkbenchVisualCaptureRequest,
   WorkbenchVisualCaptureResult,
   WorkbenchWorkspaceReadRequest,
@@ -45,7 +53,8 @@ type ObservationErrorCode =
   | "renderer_bridge_unavailable"
   | "unsupported_tab_kind"
   | "browser_capture_unavailable"
-  | "background_visual_capture_unsupported";
+  | "background_visual_capture_unsupported"
+  | "terminal_unavailable";
 
 const createObservationError = (code: ObservationErrorCode, message: string): Error => {
   const error = new Error(message) as Error & { code: ObservationErrorCode };
@@ -445,6 +454,45 @@ export const createWorkbenchObservationService = ({
         }
         throw createObservationError("browser_capture_unavailable", message);
       }
+    },
+    listTerminalPanes: async (
+      request?: WorkbenchTerminalListRequest
+    ): Promise<WorkbenchTerminalListResult> =>
+      await rendererClient.listLocalTerminalPanes(request ?? {}).catch((error: unknown) => {
+        throw mapRendererError(error);
+      }),
+    openTerminalPane: async (
+      request?: WorkbenchTerminalOpenRequest
+    ): Promise<WorkbenchTerminalOpenResult> => {
+      const result = await rendererClient.openLocalTerminalPane(request ?? {}).catch((error: unknown) => {
+        throw mapRendererError(error);
+      });
+      registry.clear();
+      readCache.clear();
+      extractCache.clear();
+      return result;
+    },
+    focusTerminalPane: async (
+      request: WorkbenchTerminalFocusRequest
+    ): Promise<WorkbenchTerminalFocusResult> => {
+      const result = await rendererClient.focusLocalTerminalPane(request).catch((error: unknown) => {
+        throw mapRendererError(error);
+      });
+      registry.clear();
+      readCache.clear();
+      extractCache.clear();
+      return result;
+    },
+    closeTerminalPane: async (
+      request: WorkbenchTerminalCloseRequest
+    ): Promise<WorkbenchTerminalCloseResult> => {
+      const result = await rendererClient.closeLocalTerminalPane(request).catch((error: unknown) => {
+        throw mapRendererError(error);
+      });
+      registry.clear();
+      readCache.clear();
+      extractCache.clear();
+      return result;
     }
   };
 

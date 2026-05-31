@@ -28,6 +28,16 @@ import { createAgentIpcBridge } from "../service";
 
 type RuntimeListener = (event: string, payload: unknown) => void;
 
+const createTerminalBridgeMock = (overrides: Record<string, unknown> = {}) => ({
+  loadResult: { loadedFrom: "test" },
+  createSession: vi.fn(),
+  write: vi.fn(),
+  readObservation: vi.fn(),
+  closeSession: vi.fn(),
+  dispose: vi.fn(),
+  ...overrides
+});
+
 describe("Agent IPC bridge", () => {
   beforeEach(() => {
     electronMock.handlers.clear();
@@ -45,6 +55,7 @@ describe("Agent IPC bridge", () => {
         unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
       storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
       getWorkbenchObservationService: () => null
@@ -306,6 +317,7 @@ describe("Agent IPC bridge", () => {
         unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
       storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => ({
         isDestroyed: () => false,
         webContents: {
@@ -401,6 +413,7 @@ describe("Agent IPC bridge", () => {
         unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
       storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
       getWorkbenchObservationService: () => observationService
@@ -499,6 +512,7 @@ describe("Agent IPC bridge", () => {
         unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
       storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
       getWorkbenchObservationService: () => observationService
@@ -517,6 +531,208 @@ describe("Agent IPC bridge", () => {
     expect(observationService.extractTabText).toHaveBeenLastCalledWith(
       expect.objectContaining({ tabId: "browser-tab-35" })
     );
+
+    bridge.dispose();
+  });
+
+  test("terminal host tools create private sessions when follow is off", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const createSession = vi.fn(async (request: { readonly sessionId?: string }) => ({
+      sessionId: request.sessionId ?? "private-terminal-1",
+      title: "Agent Terminal",
+      shell: "/bin/zsh",
+      cols: 80,
+      rows: 24,
+      createdAt: "1000",
+      source: "user",
+      mode: "shell",
+      persist: false,
+      running: true,
+      exitCode: null
+    }));
+    const readObservation = vi.fn(async () => ({
+      sessionId: "private-terminal-1",
+      cursor: "12",
+      output: "ready",
+      running: true,
+      exitCode: null,
+      truncated: false,
+      source: "user",
+      mode: "shell"
+    }));
+    const terminalBridge = createTerminalBridgeMock({
+      createSession,
+      readObservation
+    });
+    const openTerminalPane = vi.fn();
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => ({
+        openTerminalPane
+      }) as unknown as WorkbenchObservationService
+    });
+
+    await expect(
+      registered.get("terminal.create")?.({
+        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1" }
+      })
+    ).resolves.toMatchObject({
+      target: { type: "private" },
+      output: "ready",
+      running: true
+    });
+    expect(createSession).toHaveBeenCalledOnce();
+    expect(openTerminalPane).not.toHaveBeenCalled();
+
+    bridge.dispose();
+  });
+
+  test("terminal host tools use visible UI panes when follow is on", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const descriptor = {
+      terminalTabId: "terminal-tab-1",
+      paneId: "pane-1",
+      sessionId: "ui-terminal-1",
+      title: "Terminal",
+      placement: "dock" as const,
+      isActive: true
+    };
+    const readObservation = vi.fn(async () => ({
+      sessionId: "ui-terminal-1",
+      cursor: "0",
+      output: "",
+      running: true,
+      exitCode: null,
+      truncated: false,
+      source: "user",
+      mode: "shell"
+    }));
+    const terminalBridge = createTerminalBridgeMock({
+      readObservation
+    });
+    const observationService = {
+      listTerminalPanes: vi.fn(async () => ({ active: null, panes: [] })),
+      openTerminalPane: vi.fn(async () => descriptor),
+      focusTerminalPane: vi.fn(async () => descriptor)
+    } as unknown as WorkbenchObservationService;
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => observationService
+    });
+
+    electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: true });
+    await expect(
+      registered.get("terminal.create")?.({
+        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1" }
+      })
+    ).resolves.toMatchObject({
+      target: {
+        type: "ui",
+        sessionId: "ui-terminal-1",
+        terminalTabId: "terminal-tab-1",
+        paneId: "pane-1"
+      }
+    });
+    expect(observationService.openTerminalPane).toHaveBeenCalledOnce();
+    expect(terminalBridge.createSession).not.toHaveBeenCalled();
+
+    bridge.dispose();
+  });
+
+  test("terminal wait reports exit when no new output arrives", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const createSession = vi.fn(async (request: { readonly sessionId?: string }) => ({
+      sessionId: request.sessionId ?? "private-terminal-1",
+      title: "Agent Terminal",
+      shell: "/bin/zsh",
+      cols: 80,
+      rows: 24,
+      createdAt: "1000",
+      source: "user",
+      mode: "shell",
+      persist: false,
+      running: true,
+      exitCode: null
+    }));
+    const readObservation = vi
+      .fn()
+      .mockResolvedValueOnce({
+        sessionId: "private-terminal-1",
+        cursor: "8",
+        output: "started",
+        running: true,
+        exitCode: null,
+        truncated: false,
+        source: "user",
+        mode: "shell"
+      })
+      .mockResolvedValueOnce({
+        sessionId: "private-terminal-1",
+        cursor: "8",
+        output: "",
+        running: false,
+        exitCode: 0,
+        truncated: false,
+        source: "user",
+        mode: "shell"
+      });
+    const terminalBridge = createTerminalBridgeMock({
+      createSession,
+      readObservation
+    });
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => null
+    });
+
+    const created = await registered.get("terminal.create")?.({
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1" }
+    }) as { readonly sessionId: string; readonly cursor: string };
+    await expect(
+      registered.get("terminal.wait")?.({
+        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1" },
+        sessionId: created.sessionId,
+        cursor: created.cursor,
+        waitMs: 250
+      })
+    ).resolves.toMatchObject({
+      reason: "exit",
+      running: false,
+      exitCode: 0
+    });
 
     bridge.dispose();
   });
@@ -582,6 +798,7 @@ describe("Agent IPC bridge", () => {
         unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
       storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => browserBridge as never,
       getWorkbenchObservationService: () => null
@@ -862,6 +1079,7 @@ describe("Agent IPC bridge", () => {
         unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
       storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => browserBridge as never,
       getWorkbenchObservationService: () => observationService
@@ -1444,6 +1662,7 @@ describe("Agent IPC bridge", () => {
         unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
       storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => browserBridge as never,
       getWorkbenchObservationService: () => observationService
@@ -1515,6 +1734,7 @@ describe("Agent IPC bridge", () => {
         unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
       storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => browserBridge as never,
       getWorkbenchObservationService: () => observationService
@@ -1559,6 +1779,7 @@ describe("Agent IPC bridge", () => {
         unregisterRequestHandler: vi.fn()
       } as unknown as LyraRuntimeClient,
       storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => ({
         isDestroyed: () => false,
         webContents: {

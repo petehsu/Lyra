@@ -335,6 +335,7 @@ const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
     action === "read_workspace" ||
     action === "extract_tab_text"
   ) return "workbench";
+  if (toolName === "terminal" || toolName.startsWith("terminal_")) return "terminal";
   if (
     toolName === "websearch" ||
     toolName === "webfetch" ||
@@ -583,6 +584,7 @@ type ParsedWorkbenchDetails = Extract<ToolDetails, { type: "workbench" }>;
 type ParsedLumenDetails = Extract<ToolDetails, { type: "lumen" }>;
 type ParsedSoftwareDetails = Extract<ToolDetails, { type: "software" }>;
 type ParsedRenderDetails = Extract<ToolDetails, { type: "render" }>;
+type ParsedTerminalDetails = Extract<ToolDetails, { type: "terminal" }>;
 
 type ParsedLumenElement = {
   readonly id: string;
@@ -632,6 +634,11 @@ const isSoftwareTool = (tool: AgentToolActivity): boolean => {
     || toolName === "software_read_state"
     || toolName === "software_list_capabilities"
     || toolName.startsWith("software.");
+};
+
+const isTerminalTool = (tool: AgentToolActivity): boolean => {
+  const toolName = tool.name.toLowerCase();
+  return toolName === "terminal" || toolName.startsWith("terminal_");
 };
 
 const compactText = (value: string): string =>
@@ -1225,6 +1232,57 @@ const toSoftwareDetails = (
   };
 };
 
+const normalizeTerminalTarget = (value: unknown): ParsedTerminalDetails["target"] => {
+  const record = asRecord(value);
+  const type = stringField(record, "type");
+  if (type === "private" || type === "ui" || type === "list") {
+    return type;
+  }
+  return "private";
+};
+
+const normalizeTerminalReason = (
+  value: string | undefined
+): ParsedTerminalDetails["reason"] | undefined => {
+  if (value === "output" || value === "exit" || value === "timeout") {
+    return value;
+  }
+  return undefined;
+};
+
+const toTerminalDetails = (
+  tool: AgentToolActivity,
+  output: string,
+  raw: Record<string, unknown>
+): ParsedTerminalDetails => {
+  const input = toolInputRecord(tool);
+  const target = asRecord(raw.target);
+  const action = stringField(input, "action") ?? "terminal";
+  const cursor = stringField(raw, "cursor");
+  const sessionId = stringField(raw, "sessionId");
+  const terminalTabId = stringField(raw, "terminalTabId") ?? stringField(target, "terminalTabId");
+  const paneId = stringField(raw, "paneId") ?? stringField(target, "paneId");
+  const command = stringField(raw, "command") ?? stringField(input, "command");
+  const wrote = stringField(raw, "wrote");
+  const reason = normalizeTerminalReason(stringField(raw, "reason"));
+  return {
+    type: "terminal",
+    action,
+    target: normalizeTerminalTarget(raw.target),
+    output: stringField(raw, "output") ?? output,
+    running: typeof raw.running === "boolean" ? raw.running : false,
+    exitCode: typeof raw.exitCode === "number" ? raw.exitCode : null,
+    truncated: typeof raw.truncated === "boolean" ? raw.truncated : false,
+    ...(cursor === undefined ? {} : { cursor }),
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(terminalTabId === undefined ? {} : { terminalTabId }),
+    ...(paneId === undefined ? {} : { paneId }),
+    ...(command === undefined ? {} : { command }),
+    ...(wrote === undefined ? {} : { wrote }),
+    ...(reason === undefined ? {} : { reason })
+  };
+};
+
 const renderSurfaceFormat = (value: string | undefined): ParsedRenderDetails["format"] => {
   switch (value) {
     case "html":
@@ -1379,6 +1437,9 @@ const toToolDetails = (
   if (isSoftwareTool(tool)) {
     return toSoftwareDetails(tool, output, rawOutputRecord, targets);
   }
+  if (isTerminalTool(tool)) {
+    return toTerminalDetails(tool, output, rawOutputRecord);
+  }
   if (kind === "render") {
     return toRenderDetails(tool, output, rawOutputRecord);
   }
@@ -1439,6 +1500,8 @@ const toToolCall = (tool: AgentToolActivity): ToolCall => {
     ? lumenTitle(tool)
     : isSoftwareTool(tool)
       ? softwareTitle(tool)
+      : isTerminalTool(tool)
+        ? tool.label
       : kind === "render"
         ? stringField(asRecord(asRecord(tool.output).raw), "title") ?? "Rendered surface"
     : kind === "workbench"

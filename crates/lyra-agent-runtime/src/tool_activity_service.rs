@@ -919,6 +919,113 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 None,
             ),
             capability(
+                "lyra-terminal",
+                "terminal_list",
+                "List Agent private and visible Workbench terminal sessions.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+                Some("terminal.list"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_create",
+                "Create or attach to a persistent Agent terminal. In Follow mode this controls the current Workbench terminal pane; otherwise it creates a private Agent terminal.",
+                "command",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "mode": { "type": "string", "enum": ["shell", "command"], "default": "shell" },
+                        "command": { "type": "string" },
+                        "cwd": { "type": "string" },
+                        "title": { "type": "string" },
+                        "cols": { "type": "number", "default": 80 },
+                        "rows": { "type": "number", "default": 24 },
+                        "maxBytes": { "type": "number", "default": 16000 }
+                    }
+                }),
+                Some("terminal.create"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_read",
+                "Read buffered terminal output without blocking.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "cursor": { "type": "string" },
+                        "maxBytes": { "type": "number", "default": 16000 }
+                    }
+                }),
+                Some("terminal.read"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_wait",
+                "Wait until terminal output advances, the process exits, or the timeout expires.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "cursor": { "type": "string" },
+                        "waitMs": { "type": "number", "default": 1000, "maximum": 30000 },
+                        "maxBytes": { "type": "number", "default": 16000 }
+                    }
+                }),
+                Some("terminal.wait"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_write",
+                "Write text, raw data, or key presses to a terminal session.",
+                "command",
+                "runtimePolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "text": { "type": "string" },
+                        "data": { "type": "string" },
+                        "keys": { "type": "array", "items": { "type": "string" } },
+                        "appendNewline": { "type": "boolean" },
+                        "maxBytes": { "type": "number", "default": 16000 }
+                    }
+                }),
+                Some("terminal.write"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_close",
+                "Close a terminal session or Workbench terminal pane.",
+                "command",
+                "runtimePolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" }
+                    }
+                }),
+                Some("terminal.close"),
+            ),
+            capability(
                 "lyra-search",
                 "project_search",
                 "Search workspace file names and text content.",
@@ -1345,6 +1452,7 @@ mod tests {
         assert!(names.contains(&"file_read"));
         assert!(names.contains(&"software_list_capabilities"));
         assert!(names.contains(&"lyra_lumen_map"));
+        assert!(names.contains(&"terminal_wait"));
     }
 
     #[test]
@@ -1358,6 +1466,7 @@ mod tests {
 
         assert!(names.contains(&"file_read"));
         assert!(names.contains(&"shell_run"));
+        assert!(names.contains(&"terminal_read"));
         assert!(names.contains(&"web_fetch"));
         assert!(service.can_dispatch_model_tool("todo_write"));
         assert!(!service.can_dispatch_model_tool("missing_tool"));

@@ -82,6 +82,21 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     getTabPanes: vi.fn(() => []),
     setActiveTab: vi.fn(),
     openTab: vi.fn(),
+    openTabWithPlacement: vi.fn(() => ({
+      tab: {
+        id: "tab-2",
+        title: "Terminal 2",
+        orientation: "horizontal" as const,
+        paneIds: ["pane-2"],
+        activePaneId: "pane-2",
+        placement: "dock" as const
+      },
+      pane: {
+        id: "pane-2",
+        sessionId: "session-2",
+        title: "Terminal 2"
+      }
+    })),
     closeTab: vi.fn(),
     moveTabToWorkspace: vi.fn(),
     moveTabToDock: vi.fn(),

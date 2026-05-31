@@ -29,6 +29,8 @@ export type TerminalDockPaneState = {
   readonly title: string;
   readonly cwd?: string;
   readonly shell?: string;
+  readonly mode?: "command" | "shell";
+  readonly command?: string;
 };
 
 export type TerminalDockTabState = {

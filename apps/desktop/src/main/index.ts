@@ -720,6 +720,7 @@ const registerIpcHandlers = (): void => {
   const agentBridge = createAgentIpcBridge({
     runtimeClient,
     storageRoot: storageRoots.modules.agent,
+    terminalBridge,
     getWindow: () => mainWindow,
     getBrowserBridge: () => workbenchBrowserBridge,
     getWorkbenchObservationService: () => workbenchObservationService

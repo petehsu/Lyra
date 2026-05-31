@@ -42,6 +42,7 @@ export const ToolIcon = ({ kind }: { kind: ToolCall["kind"] }) => {
     case "search":
       return <Search {...props} />;
     case "shell":
+    case "terminal":
       return <Terminal {...props} />;
     case "web":
       return <Globe {...props} />;

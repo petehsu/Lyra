@@ -281,6 +281,37 @@ export const createTerminalIpcBridge = (
     publishEvent(event);
   });
 
+  const createSession = async (
+    request: TerminalCreateRequest
+  ): Promise<TerminalSessionSnapshot> => {
+    const normalized = normalizeCreateRequest(request);
+    const snapshot = await requestRuntime<TerminalSessionSnapshot>(
+      "terminal.sessions.create",
+      normalized
+    );
+    sessionShellById.set(snapshot.sessionId, snapshot.shell);
+    sessionPromptModeById.set(snapshot.sessionId, "follow-app");
+    sessionPromptStreamById.set(snapshot.sessionId, createPromptStreamState());
+    return snapshot;
+  };
+
+  const writeSession = async (request: TerminalWriteRequest): Promise<void> => {
+    const normalized = normalizeWriteRequest(request);
+    notePromptUserInput(ensurePromptStreamState(normalized.sessionId));
+    await requestRuntime<void>("terminal.sessions.write", normalized);
+  };
+
+  const closeSession = async (request: TerminalCloseRequest): Promise<void> => {
+    try {
+      await requestRuntime<void>("terminal.sessions.close", request);
+    } finally {
+      sessionShellById.delete(request.sessionId);
+      sessionPromptModeById.delete(request.sessionId);
+      sessionPromptStreamById.delete(request.sessionId);
+      sessionPendingReloadById.delete(request.sessionId);
+    }
+  };
+
   const handlers: Array<
     readonly [string, (event: IpcMainInvokeEvent, payload: unknown) => unknown]
   > = [
@@ -288,13 +319,7 @@ export const createTerminalIpcBridge = (
       LYRA_CHANNELS.terminalCreateSession,
       async (_event, payload) => {
         const normalized = normalizeCreateRequest(payload as TerminalCreateRequest);
-        const snapshot = await requestRuntime<TerminalSessionSnapshot>(
-          "terminal.sessions.create",
-          normalized
-        );
-        sessionShellById.set(snapshot.sessionId, snapshot.shell);
-        sessionPromptModeById.set(snapshot.sessionId, "follow-app");
-        sessionPromptStreamById.set(snapshot.sessionId, createPromptStreamState());
+        const snapshot = await createSession(normalized);
         if (snapshot.mode !== "command") {
           try {
             await applyPromptToSession({
@@ -385,10 +410,8 @@ export const createTerminalIpcBridge = (
       LYRA_CHANNELS.terminalWriteSession,
       (_event, payload) =>
         (async () => {
-          const normalized = normalizeWriteRequest(payload as TerminalWriteRequest);
-          notePromptUserInput(ensurePromptStreamState(normalized.sessionId));
           try {
-            await requestRuntime<void>("terminal.sessions.write", normalized);
+            await writeSession(payload as TerminalWriteRequest);
           } catch (error) {
             if (error instanceof Error && /session not found/i.test(error.message)) {
               return;
@@ -428,7 +451,7 @@ export const createTerminalIpcBridge = (
         (async () => {
           const request = payload as TerminalCloseRequest;
           try {
-            await requestRuntime<void>("terminal.sessions.close", request);
+            await closeSession(request);
           } catch (error) {
             if (error instanceof Error && /session not found/i.test(error.message)) {
               sessionShellById.delete(request.sessionId);
@@ -439,10 +462,6 @@ export const createTerminalIpcBridge = (
             }
             throw error;
           }
-          sessionShellById.delete(request.sessionId);
-          sessionPromptModeById.delete(request.sessionId);
-          sessionPromptStreamById.delete(request.sessionId);
-          sessionPendingReloadById.delete(request.sessionId);
         })()
     ]
   ];
@@ -460,7 +479,10 @@ export const createTerminalIpcBridge = (
     loadResult: {
       loadedFrom: "lyrad"
     },
+    createSession,
+    write: writeSession,
     readObservation,
+    closeSession,
     dispose: () => {
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);

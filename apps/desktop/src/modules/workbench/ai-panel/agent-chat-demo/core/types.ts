@@ -16,6 +16,7 @@ export type ToolKind =
   | "edit"
   | "search"
   | "shell"
+  | "terminal"
   | "web"
   | "workbench"
   | "thought"
@@ -36,6 +37,22 @@ export type ToolDetails =
   | { type: "read"; file: string; range?: string; preview?: string }
   | { type: "search"; query: string; results: SearchResult[] }
   | { type: "shell"; command: string; output: string; exitCode: number }
+  | {
+      type: "terminal";
+      action: string;
+      target: "private" | "ui" | "list";
+      output: string;
+      cursor?: string;
+      sessionId?: string;
+      terminalTabId?: string;
+      paneId?: string;
+      command?: string;
+      wrote?: string;
+      reason?: "output" | "exit" | "timeout";
+      running: boolean;
+      exitCode: number | null;
+      truncated: boolean;
+    }
   | {
       type: "web";
       url: string;
