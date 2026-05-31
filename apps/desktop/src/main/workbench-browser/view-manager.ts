@@ -10,13 +10,18 @@ import {
 
 import type {
   WorkbenchBrowserEvent,
+  WorkbenchBrowserChromePopoverRequest,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
   WorkbenchBrowserNavigateResult,
+  WorkbenchBrowserPageDiagnosticEntry,
   WorkbenchBrowserPageLayout,
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserPageSpec,
   WorkbenchBrowserReadPageStateRequest,
+  WorkbenchBrowserSearchInPageMatch,
+  WorkbenchBrowserSearchInPageRequest,
+  WorkbenchBrowserSearchInPageResult,
   WorkbenchBrowserTopologySnapshot,
   WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/desktop-bridge";
@@ -31,8 +36,13 @@ import type {
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import {
   buildAgentCursorOverlayScript,
-  type BrowserAgentCursorOverlayAction
+  type BrowserAgentCursorOverlayAction,
+  type BrowserAgentCursorOverlayPhase
 } from "./agent-cursor-overlay";
+import {
+  buildBrowserChromePopoverDocument,
+  resolveBrowserChromePopoverHeight
+} from "./chrome-popover-overlay";
 import {
   buildFrameDomProbeScript,
   normalizeFrameDomProbeResult
@@ -99,8 +109,102 @@ type BrowserPageTombstone = {
   readonly tombstonedAt: number;
 };
 
+type BrowserAgentCacheEntry = {
+  readonly observationId: string;
+  readonly elements: readonly WorkbenchBrowserAgentElement[];
+  readonly elementsByTargetRef: ReadonlyMap<string, WorkbenchBrowserAgentElement>;
+  readonly url: string;
+  readonly title: string;
+};
+
+type BrowserAgentFollowSession = {
+  readonly sessionId: string;
+  readonly tabId: string;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly startedAt: number;
+  updatedAt: number;
+  totalActions: number;
+  interruptedCount: number;
+  readonly actions: Array<{
+    readonly id: string;
+    readonly at: number;
+    readonly tabId: string;
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly action: BrowserAgentCursorOverlayAction;
+    readonly interaction?: WorkbenchBrowserAgentInteraction;
+    readonly cursorPhase?: BrowserAgentCursorOverlayPhase;
+    readonly inputActive: boolean;
+    readonly cursor?: { readonly x: number; readonly y: number };
+  }>;
+};
+
 const DEFAULT_PAGE_TITLE = "New Tab";
 const HIDDEN_PAGE_TOMBSTONE_DELAY_MS = 45_000;
+const MAX_BROWSER_AGENT_FOLLOW_ACTIONS = 240;
+const MAX_BROWSER_PAGE_DIAGNOSTICS = 180;
+
+const hashStableString = (value: string): string => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+const browserAgentTargetFingerprint = (
+  pageUrl: string,
+  element: Pick<
+    WorkbenchBrowserAgentElement,
+    | "frameTreeNodeId"
+    | "tagName"
+    | "role"
+    | "label"
+    | "selectorPreview"
+    | "bounds"
+    | "href"
+    | "inputType"
+    | "frameUrl"
+    | "discoveryScope"
+  >
+): string => [
+  element.frameUrl ?? pageUrl,
+  element.frameTreeNodeId,
+  element.tagName,
+  element.role,
+  element.label,
+  element.selectorPreview,
+  element.href ?? "",
+  element.inputType ?? "",
+  element.discoveryScope ?? "document",
+  Math.round(element.bounds.x / 8),
+  Math.round(element.bounds.y / 8),
+  Math.round(element.bounds.width / 8),
+  Math.round(element.bounds.height / 8)
+].join("|");
+
+const createBrowserAgentTargetRef = (
+  pageUrl: string,
+  element: Pick<
+    WorkbenchBrowserAgentElement,
+    | "frameTreeNodeId"
+    | "tagName"
+    | "role"
+    | "label"
+    | "selectorPreview"
+    | "bounds"
+    | "href"
+    | "inputType"
+    | "frameUrl"
+    | "discoveryScope"
+  >
+): { readonly stableId: string; readonly targetRef: string } => {
+  const stableId = hashStableString(browserAgentTargetFingerprint(pageUrl, element));
+  return {
+    stableId,
+    targetRef: `lumen:${stableId}`
+  };
+};
 
 const normalizeString = (value: unknown): string | null => {
   if (typeof value !== "string") {
@@ -108,6 +212,61 @@ const normalizeString = (value: unknown): string | null => {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeSearchText = (value: string, caseSensitive: boolean): string =>
+  caseSensitive ? value : value.toLocaleLowerCase();
+
+const buildSearchSnippet = (
+  text: string,
+  startChar: number,
+  endChar: number
+): string => {
+  const snippetStart = Math.max(0, startChar - 90);
+  const snippetEnd = Math.min(text.length, endChar + 90);
+  const prefix = snippetStart > 0 ? "..." : "";
+  const suffix = snippetEnd < text.length ? "..." : "";
+  return `${prefix}${text.slice(snippetStart, snippetEnd)}${suffix}`
+    .replace(/\s+/gu, " ")
+    .trim();
+};
+
+const findSearchInPageMatches = (
+  text: string,
+  query: string,
+  request: Pick<WorkbenchBrowserSearchInPageRequest, "caseSensitive" | "maxMatches">
+): {
+  readonly matches: readonly WorkbenchBrowserSearchInPageMatch[];
+  readonly totalMatches: number;
+  readonly truncated: boolean;
+} => {
+  const caseSensitive = request.caseSensitive === true;
+  const maxMatches = Math.max(1, Math.min(100, Math.round(request.maxMatches ?? 20)));
+  const haystack = normalizeSearchText(text, caseSensitive);
+  const needle = normalizeSearchText(query, caseSensitive);
+  const matches: WorkbenchBrowserSearchInPageMatch[] = [];
+  let totalMatches = 0;
+  let cursor = 0;
+  while (needle.length > 0 && cursor <= haystack.length) {
+    const index = haystack.indexOf(needle, cursor);
+    if (index < 0) break;
+    totalMatches += 1;
+    const endChar = index + query.length;
+    if (matches.length < maxMatches) {
+      matches.push({
+        index: totalMatches,
+        startChar: index,
+        endChar,
+        snippet: buildSearchSnippet(text, index, endChar)
+      });
+    }
+    cursor = Math.max(index + needle.length, index + 1);
+  }
+  return {
+    matches,
+    totalMatches,
+    truncated: totalMatches > matches.length
+  };
 };
 
 const normalizeNumber = (value: unknown, fallback = 0): number => {
@@ -150,12 +309,26 @@ const normalizePageSpec = (value: unknown): WorkbenchBrowserPageSpec | null => {
   if (tabId === null || address === null) {
     return null;
   }
+  const restoreRecord = record.restoreState !== null && typeof record.restoreState === "object"
+    ? record.restoreState as Record<string, unknown>
+    : null;
+  const restoreCapturedAt = Number(restoreRecord?.capturedAt);
+  const scrollX = Number(restoreRecord?.scrollX);
+  const scrollY = Number(restoreRecord?.scrollY);
+  const restoreState = restoreRecord !== null && Number.isFinite(restoreCapturedAt)
+    ? {
+        ...(Number.isFinite(scrollX) ? { scrollX: Math.max(0, Math.round(scrollX)) } : {}),
+        ...(Number.isFinite(scrollY) ? { scrollY: Math.max(0, Math.round(scrollY)) } : {}),
+        capturedAt: Math.round(restoreCapturedAt)
+      }
+    : undefined;
   return {
     tabId,
     address,
     ...(normalizeString(record.titleHint) === null
       ? {}
       : { titleHint: normalizeString(record.titleHint)! }),
+    ...(restoreState === undefined ? {} : { restoreState }),
     isActive: record.isActive === true
   };
 };
@@ -251,6 +424,7 @@ const toInitialRuntimeState = (spec: WorkbenchBrowserPageSpec): WorkbenchBrowser
   canGoBack: false,
   canGoForward: false,
   isHtmlFullscreen: false,
+  ...(spec.restoreState === undefined ? {} : { restoreState: spec.restoreState }),
   updatedAt: Date.now()
 });
 
@@ -272,7 +446,10 @@ const runtimeStateEquals = (
   && left.isLoading === right.isLoading
   && left.canGoBack === right.canGoBack
   && left.canGoForward === right.canGoForward
-  && left.isHtmlFullscreen === right.isHtmlFullscreen;
+  && left.isHtmlFullscreen === right.isHtmlFullscreen
+  && left.restoreState?.scrollX === right.restoreState?.scrollX
+  && left.restoreState?.scrollY === right.restoreState?.scrollY
+  && left.restoreState?.capturedAt === right.restoreState?.capturedAt;
 
 const isSupportedWebUrl = (value: string): boolean => {
   try {
@@ -327,6 +504,11 @@ const runFrameScriptWithTimeout = async <T>(
   }
 };
 
+const isScriptExecutionTimeout = (error: unknown): boolean =>
+  error !== null
+  && typeof error === "object"
+  && (error as { readonly code?: unknown }).code === "script_execution_timeout";
+
 const toNativeInputEvent = (event: WorkbenchBrowserNativeInputEvent):
   | Electron.MouseInputEvent
   | Electron.MouseWheelInputEvent
@@ -364,16 +546,24 @@ export const createWorkbenchBrowserViewManager = ({
 }): WorkbenchBrowserViewManager => {
   const entries = new Map<string, BrowserPageEntry>();
   const browserAgentShadows = new Map<string, BrowserAgentShadowEntry>();
-  const browserAgentCache = new Map<
+  const browserAgentCache = new Map<string, BrowserAgentCacheEntry>();
+  const browserAgentInputTargets = new Map<
     string,
     {
-      readonly observationId: string;
-      readonly elements: readonly WorkbenchBrowserAgentElement[];
+      readonly observationId?: string;
+      readonly element: WorkbenchBrowserAgentElement;
       readonly url: string;
-      readonly title: string;
+      readonly updatedAt: number;
     }
   >();
   const tombstones = new Map<string, BrowserPageTombstone>();
+  const browserSessionSnapshots = new Map<string, WorkbenchBrowserPageRuntimeState["restoreState"]>();
+  const followSessions = new Map<string, BrowserAgentFollowSession>();
+  const agentControlLocks = new Map<string, number>();
+  const agentSyntheticInputUntil = new Map<string, number>();
+  const agentControlInterruptions = new Map<string, number>();
+  const pageDiagnostics = new Map<string, WorkbenchBrowserPageDiagnosticEntry[]>();
+  const activeChromePopovers = new Map<string, WorkbenchBrowserChromePopoverRequest>();
   const tombstoneTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const debuggerSessions = new Map<
     string,
@@ -399,6 +589,8 @@ export const createWorkbenchBrowserViewManager = ({
     windowHeight: 0,
     layouts: []
   };
+  let chromePopoverView: WebContentsView | null = null;
+  let chromePopoverViewAttached = false;
 
   const updateRuntimeState = (
     entry: BrowserPageEntry,
@@ -427,6 +619,60 @@ export const createWorkbenchBrowserViewManager = ({
       kind: "page-runtime-state",
       page: runtime
     });
+  };
+
+  const captureBrowserRestoreState = async (
+    entry: BrowserPageEntry
+  ): Promise<WorkbenchBrowserPageRuntimeState["restoreState"] | undefined> => {
+    if (entry.isDestroyed || entry.webContents.isDestroyed()) {
+      return entry.runtime.restoreState;
+    }
+    try {
+      const scroll = await entry.webContents.executeJavaScript(`
+        (() => ({
+          scrollX: Math.max(0, Math.round(window.scrollX || document.documentElement.scrollLeft || 0)),
+          scrollY: Math.max(0, Math.round(window.scrollY || document.documentElement.scrollTop || 0))
+        }))()
+      `, true) as { readonly scrollX?: unknown; readonly scrollY?: unknown };
+      const scrollX = Number(scroll.scrollX);
+      const scrollY = Number(scroll.scrollY);
+      const restoreState = {
+        ...(Number.isFinite(scrollX) ? { scrollX: Math.max(0, Math.round(scrollX)) } : {}),
+        ...(Number.isFinite(scrollY) ? { scrollY: Math.max(0, Math.round(scrollY)) } : {}),
+        capturedAt: Date.now()
+      };
+      browserSessionSnapshots.set(entry.tabId, restoreState);
+      updateRuntimeState(entry, { restoreState });
+      return restoreState;
+    } catch {
+      return entry.runtime.restoreState;
+    }
+  };
+
+  const applyBrowserRestoreState = async (
+    entry: BrowserPageEntry,
+    restoreState: WorkbenchBrowserPageRuntimeState["restoreState"] | undefined
+  ): Promise<void> => {
+    if (
+      restoreState === undefined
+      || entry.isDestroyed
+      || entry.webContents.isDestroyed()
+    ) {
+      return;
+    }
+    const scrollX = Number(restoreState.scrollX ?? 0);
+    const scrollY = Number(restoreState.scrollY ?? 0);
+    if (Number.isFinite(scrollX) === false || Number.isFinite(scrollY) === false) {
+      return;
+    }
+    try {
+      await entry.webContents.executeJavaScript(
+        `window.scrollTo(${Math.max(0, Math.round(scrollX))}, ${Math.max(0, Math.round(scrollY))});`,
+        true
+      );
+    } catch {
+      // Best-effort restoration should not block tab materialization.
+    }
   };
 
   const cancelTombstoneTimer = (tabId: string): void => {
@@ -495,17 +741,19 @@ export const createWorkbenchBrowserViewManager = ({
     }
   };
 
-  const tombstoneEntry = (entry: BrowserPageEntry): void => {
+  const tombstoneEntry = async (entry: BrowserPageEntry): Promise<void> => {
     if (entry.isDestroyed || entry.runtime.isVisible || entry.runtime.isActive) {
       return;
     }
     cancelTombstoneTimer(entry.tabId);
+    const restoreState = await captureBrowserRestoreState(entry);
     const runtime: WorkbenchBrowserPageRuntimeState = {
       ...entry.runtime,
       lifecycleState: "tombstoned",
       isTombstoned: true,
       isVisible: false,
       isLoading: false,
+      ...(restoreState === undefined ? {} : { restoreState }),
       updatedAt: Date.now()
     };
     tombstones.set(entry.tabId, {
@@ -533,7 +781,7 @@ export const createWorkbenchBrowserViewManager = ({
       tombstoneTimers.delete(entry.tabId);
       void readTombstoneSafety(entry).then((safe) => {
         if (safe) {
-          tombstoneEntry(entry);
+          void tombstoneEntry(entry);
         }
       });
     }, HIDDEN_PAGE_TOMBSTONE_DELAY_MS);
@@ -568,6 +816,174 @@ export const createWorkbenchBrowserViewManager = ({
       return topology.activeTabId;
     }
     return topology.pages[0]?.tabId ?? null;
+  };
+
+  const readChromePopoverAnchor = (
+    request: WorkbenchBrowserChromePopoverRequest
+  ): WorkbenchBrowserChromePopoverRequest["anchorRect"] | null => {
+    const rect = request.anchorRect;
+    if (rect === undefined) {
+      return null;
+    }
+    const values = [rect.left, rect.top, rect.right, rect.bottom, rect.width, rect.height];
+    if (values.every((value) => typeof value === "number" && Number.isFinite(value))) {
+      return rect;
+    }
+    return null;
+  };
+
+  const ensureChromePopoverView = (): WebContentsView => {
+    if (
+      chromePopoverView !== null
+      && chromePopoverView.webContents.isDestroyed() === false
+    ) {
+      return chromePopoverView;
+    }
+    chromePopoverView = new WebContentsView({
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        spellcheck: false
+      }
+    });
+    chromePopoverView.setVisible(false);
+    chromePopoverView.setBackgroundColor("#00000000");
+    chromePopoverView.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    return chromePopoverView;
+  };
+
+  const attachChromePopoverView = (view: WebContentsView): void => {
+    if (!chromePopoverViewAttached) {
+      overlayView.addChildView(view);
+      chromePopoverViewAttached = true;
+      return;
+    }
+    // Re-adding keeps the popover above page WebContentsViews after layout updates.
+    overlayView.removeChildView(view);
+    overlayView.addChildView(view);
+  };
+
+  const detachChromePopoverView = (): void => {
+    const view = chromePopoverView;
+    if (view === null) {
+      chromePopoverViewAttached = false;
+      return;
+    }
+    if (chromePopoverViewAttached) {
+      overlayView.removeChildView(view);
+      chromePopoverViewAttached = false;
+    }
+    if (view.webContents.isDestroyed() === false) {
+      view.setVisible(false);
+      void view.webContents.loadURL("about:blank").catch(() => undefined);
+    }
+  };
+
+  const hideChromePopover = (entry: BrowserPageEntry): void => {
+    const hadPopover = activeChromePopovers.delete(entry.tabId);
+    if (activeChromePopovers.size === 0) {
+      detachChromePopoverView();
+    }
+    if (hadPopover) {
+      publishEvent({
+        kind: "chrome-popover-state",
+        tabId: entry.tabId,
+        popoverKind: "security",
+        visible: false
+      });
+    }
+  };
+
+  const setChromePopover = async (
+    request: WorkbenchBrowserChromePopoverRequest
+  ): Promise<void> => {
+    const tabId = normalizeString(request.tabId) ?? getActiveOrFocusedTabId();
+    if (tabId === null) {
+      return;
+    }
+    const entry = requireEntry(tabId);
+    if (request.visible !== true) {
+      const hadPopover = activeChromePopovers.delete(tabId);
+      if (activeChromePopovers.size === 0) {
+        detachChromePopoverView();
+      }
+      if (hadPopover) {
+        publishEvent({
+          kind: "chrome-popover-state",
+          tabId,
+          popoverKind: "security",
+          visible: false
+        });
+      }
+      return;
+    }
+    if (request.kind !== "security" || request.security === undefined) {
+      throw new Error("chrome_popover_payload_required");
+    }
+    activeChromePopovers.clear();
+    const layout = entry.layout ?? findLayout(tabId);
+    const pageBounds =
+      layout === null
+        ? { x: 0, y: 0, width: 800, height: 600 }
+        : toBounds(layout);
+    const anchor = readChromePopoverAnchor(request);
+    const popoverWidth = 340;
+    const boundaryPadding = 8;
+    const maxPopoverHeight = Math.max(160, Math.min(520, pageBounds.height - boundaryPadding * 2));
+    const popoverHeight = resolveBrowserChromePopoverHeight({
+      level: request.security.level,
+      maxHeight: maxPopoverHeight
+    });
+    const anchorLeft = anchor?.left ?? pageBounds.x + boundaryPadding;
+    const anchorBottom = anchor?.bottom ?? pageBounds.y + boundaryPadding;
+    const anchorTop = anchor?.top ?? pageBounds.y + boundaryPadding;
+    const pageRelativeLeft = anchorLeft - pageBounds.x;
+    const pageRelativeBottom = anchorBottom - pageBounds.y;
+    const pageRelativeTop = anchorTop - pageBounds.y;
+    const x = Math.max(
+      boundaryPadding,
+      Math.min(
+        Math.round(pageRelativeLeft),
+        Math.max(boundaryPadding, pageBounds.width - popoverWidth - boundaryPadding)
+      )
+    );
+    const spaceBelow = pageBounds.height - pageRelativeBottom - boundaryPadding - 6;
+    const preferredY =
+      spaceBelow >= popoverHeight
+        ? pageRelativeBottom + 6
+        : pageRelativeTop - popoverHeight - 6;
+    const y = Math.max(
+      boundaryPadding,
+      Math.min(
+        Math.round(preferredY),
+        Math.max(boundaryPadding, pageBounds.height - popoverHeight - boundaryPadding)
+      )
+    );
+    const view = ensureChromePopoverView();
+    view.setBounds({
+      x: pageBounds.x + x,
+      y: pageBounds.y + y,
+      width: popoverWidth,
+      height: popoverHeight
+    });
+    attachChromePopoverView(view);
+    view.setVisible(true);
+    const html = buildBrowserChromePopoverDocument({
+      kind: request.kind,
+      width: popoverWidth,
+      height: popoverHeight,
+      security: request.security,
+      theme: webThemeInjector.readCurrentSnapshot()
+    });
+    await view.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    activeChromePopovers.set(tabId, request);
+    publishEvent({
+      kind: "chrome-popover-state",
+      tabId,
+      popoverKind: "security",
+      visible: true
+    });
   };
 
   const syncNavigationFlags = (entry: BrowserPageEntry): void => {
@@ -691,6 +1107,13 @@ export const createWorkbenchBrowserViewManager = ({
         entry.attached = true;
       }
     }
+    if (
+      chromePopoverView !== null
+      && chromePopoverViewAttached
+      && chromePopoverView.webContents.isDestroyed() === false
+    ) {
+      attachChromePopoverView(chromePopoverView);
+    }
   };
 
   const destroyEntry = (entry: BrowserPageEntry, emitClosedEvent: boolean): void => {
@@ -700,8 +1123,13 @@ export const createWorkbenchBrowserViewManager = ({
     cancelTombstoneTimer(entry.tabId);
     entry.isDestroyed = true;
     destroyBrowserAgentShadow(entry.tabId);
+    hideChromePopover(entry);
     void debuggerSessions.get(entry.tabId)?.dispose().catch(() => undefined);
     debuggerSessions.delete(entry.tabId);
+    browserAgentCache.delete(browserAgentCacheKey(entry.tabId, "live"));
+    browserAgentCache.delete(browserAgentCacheKey(entry.tabId, "isolated"));
+    browserAgentInputTargets.delete(browserAgentCacheKey(entry.tabId, "live"));
+    browserAgentInputTargets.delete(browserAgentCacheKey(entry.tabId, "isolated"));
     webThemeInjector.detach(entry.tabId);
     elementPickerController.handlePageClosed(entry.tabId);
     const window = getWindow();
@@ -766,10 +1194,147 @@ export const createWorkbenchBrowserViewManager = ({
     isLoading: entry.runtime.isLoading
   });
 
+  const diagnosticsForTab = (tabId: string): WorkbenchBrowserPageDiagnosticEntry[] => {
+    const existing = pageDiagnostics.get(tabId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const created: WorkbenchBrowserPageDiagnosticEntry[] = [];
+    pageDiagnostics.set(tabId, created);
+    return created;
+  };
+
+  const recordPageDiagnostic = (
+    tabId: string,
+    entry: Omit<WorkbenchBrowserPageDiagnosticEntry, "id" | "at">
+  ): void => {
+    const diagnostics = diagnosticsForTab(tabId);
+    diagnostics.push({
+      id: `diag-${tabId}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      at: Date.now(),
+      ...entry
+    });
+    if (diagnostics.length > MAX_BROWSER_PAGE_DIAGNOSTICS) {
+      diagnostics.splice(0, diagnostics.length - MAX_BROWSER_PAGE_DIAGNOSTICS);
+    }
+  };
+
+  const followSessionKey = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): string => browserAgentCacheKey(tabId, targetMode);
+
+  const ensureFollowSession = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): BrowserAgentFollowSession => {
+    const key = followSessionKey(tabId, targetMode);
+    const existing = followSessions.get(key);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const created: BrowserAgentFollowSession = {
+      sessionId: `follow-${tabId}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      tabId,
+      targetMode,
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      totalActions: 0,
+      interruptedCount: 0,
+      actions: []
+    };
+    followSessions.set(key, created);
+    return created;
+  };
+
+  const recordFollowAction = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    action: BrowserAgentCursorOverlayAction,
+    request: {
+      readonly interaction?: WorkbenchBrowserAgentInteraction;
+      readonly cursorPhase?: BrowserAgentCursorOverlayPhase;
+      readonly inputActive: boolean;
+      readonly cursor?: { readonly x: number; readonly y: number };
+    }
+  ): BrowserAgentFollowSession => {
+    const session = ensureFollowSession(tabId, targetMode);
+    const at = Date.now();
+    session.updatedAt = at;
+    session.totalActions += 1;
+    session.actions.push({
+      id: `follow-action-${session.totalActions}`,
+      at,
+      tabId,
+      targetMode,
+      action,
+      ...(request.interaction === undefined ? {} : { interaction: request.interaction }),
+      ...(request.cursorPhase === undefined ? {} : { cursorPhase: request.cursorPhase }),
+      inputActive: request.inputActive,
+      ...(request.cursor === undefined ? {} : { cursor: request.cursor })
+    });
+    if (session.actions.length > MAX_BROWSER_AGENT_FOLLOW_ACTIONS) {
+      session.actions.splice(0, session.actions.length - MAX_BROWSER_AGENT_FOLLOW_ACTIONS);
+    }
+    return session;
+  };
+
+  const markAgentControlLock = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    durationMs: number
+  ): void => {
+    if (targetMode !== "live") {
+      return;
+    }
+    agentControlLocks.set(tabId, Date.now() + Math.max(800, Math.min(6_000, durationMs)));
+  };
+
+  const markSyntheticInput = (tabId: string): void => {
+    agentSyntheticInputUntil.set(tabId, Date.now() + 350);
+  };
+
+  const isSyntheticInput = (tabId: string): boolean =>
+    (agentSyntheticInputUntil.get(tabId) ?? 0) >= Date.now();
+
+  const handleSharedControlInput = (
+    tabId: string,
+    inputType: "mouse" | "keyboard",
+    event?: { readonly preventDefault?: () => void }
+  ): void => {
+    const lockUntil = agentControlLocks.get(tabId) ?? 0;
+    if (lockUntil < Date.now() || isSyntheticInput(tabId)) {
+      return;
+    }
+    event?.preventDefault?.();
+    const session = ensureFollowSession(tabId, "live");
+    session.interruptedCount += 1;
+    session.updatedAt = Date.now();
+    agentControlInterruptions.set(tabId, (agentControlInterruptions.get(tabId) ?? 0) + 1);
+    publishEvent({
+      kind: "browser-shared-control-interrupted",
+      tabId,
+      targetMode: "live",
+      sessionId: session.sessionId,
+      inputType,
+      at: Date.now()
+    });
+  };
+
+  const sendAgentInputEvent = (
+    target: BrowserAgentPageTarget,
+    event: Parameters<WebContents["sendInputEvent"]>[0]
+  ): void => {
+    markSyntheticInput(target.tabId);
+    target.webContents.sendInputEvent(event);
+  };
+
   const publishBrowserAgentActivity = ({
     tabId,
     targetMode,
     action,
+    interaction,
+    cursorPhase = "idle",
     inputActive = false,
     durationMs = inputActive ? 1_800 : 1_250,
     cursor
@@ -777,16 +1342,26 @@ export const createWorkbenchBrowserViewManager = ({
     readonly tabId: string;
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly action: BrowserAgentCursorOverlayAction;
+    readonly interaction?: WorkbenchBrowserAgentInteraction;
+    readonly cursorPhase?: BrowserAgentCursorOverlayPhase;
     readonly inputActive?: boolean;
     readonly durationMs?: number;
     readonly cursor?: { readonly x: number; readonly y: number };
   }): void => {
+    const followSession = recordFollowAction(tabId, targetMode, action, {
+      ...(interaction === undefined ? {} : { interaction }),
+      cursorPhase,
+      inputActive,
+      ...(cursor === undefined ? {} : { cursor })
+    });
+    markAgentControlLock(tabId, targetMode, durationMs);
     if (inputActive && targetMode === "live") {
       const entry = entries.get(tabId);
       if (entry !== undefined && entry.webContents.isDestroyed() === false) {
         void entry.webContents.executeJavaScript(
           buildAgentCursorOverlayScript({
             action,
+            phase: cursorPhase,
             durationMs,
             ...(cursor === undefined ? {} : { cursor })
           }),
@@ -804,9 +1379,95 @@ export const createWorkbenchBrowserViewManager = ({
       tabId,
       targetMode,
       action,
+      ...(interaction === undefined ? {} : { interaction }),
+      sessionId: followSession.sessionId,
+      cursorPhase,
       inputActive,
       durationMs,
       ...(cursor === undefined ? {} : { cursor })
+    });
+  };
+
+  const performAgentPointerInteraction = async ({
+    tabId,
+    target,
+    x,
+    y,
+    interaction
+  }: {
+    readonly tabId: string;
+    readonly target: BrowserAgentPageTarget;
+    readonly x: number;
+    readonly y: number;
+    readonly interaction: WorkbenchBrowserAgentInteraction;
+  }): Promise<void> => {
+    const button = interaction === "rightClick" ? "right" : "left";
+    const clickCount = interaction === "doubleClick" ? 2 : 1;
+    const cursor = { x, y };
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "act",
+      interaction,
+      cursorPhase: "move",
+      inputActive: true,
+      cursor,
+      durationMs: interaction === "hover" ? 2_400 : 2_800
+    });
+    await delay(180);
+
+    target.webContents.focus();
+    sendAgentInputEvent(target, { type: "mouseMove", x, y, button: "left", clickCount: 1 });
+    if (interaction === "hover") {
+      publishBrowserAgentActivity({
+        tabId,
+        targetMode: target.targetMode,
+        action: "act",
+        interaction,
+        cursorPhase: "idle",
+        inputActive: true,
+        cursor,
+        durationMs: 2_400
+      });
+      await delay(90);
+      return;
+    }
+
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "act",
+      interaction,
+      cursorPhase: "down",
+      inputActive: true,
+      cursor,
+      durationMs: 2_400
+    });
+    sendAgentInputEvent(target, { type: "mouseDown", x, y, button, clickCount });
+    await delay(80);
+
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "act",
+      interaction,
+      cursorPhase: "up",
+      inputActive: true,
+      cursor,
+      durationMs: 2_400
+    });
+    sendAgentInputEvent(target, { type: "mouseUp", x, y, button, clickCount });
+    await delay(110);
+
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "act",
+      interaction,
+      cursorPhase: "idle",
+      inputActive: true,
+      cursor,
+      durationMs: 2_400
     });
   };
 
@@ -908,9 +1569,13 @@ export const createWorkbenchBrowserViewManager = ({
     });
     webContents.on("did-navigate", (_event, url) => {
       shadow.address = normalizeAddress(url) ?? shadow.address;
+      browserAgentCache.delete(browserAgentCacheKey(shadow.tabId, shadow.targetMode));
+      browserAgentInputTargets.delete(browserAgentCacheKey(shadow.tabId, shadow.targetMode));
     });
     webContents.on("did-navigate-in-page", (_event, url) => {
       shadow.address = normalizeAddress(url) ?? shadow.address;
+      browserAgentCache.delete(browserAgentCacheKey(shadow.tabId, shadow.targetMode));
+      browserAgentInputTargets.delete(browserAgentCacheKey(shadow.tabId, shadow.targetMode));
     });
     window.on("closed", () => {
       browserAgentShadows.delete(shadow.tabId);
@@ -1059,6 +1724,9 @@ export const createWorkbenchBrowserViewManager = ({
         webContents.removeAllListeners("did-navigate");
         webContents.removeAllListeners("did-navigate-in-page");
         webContents.removeAllListeners("console-message");
+        webContents.removeAllListeners("before-mouse-event");
+        webContents.removeAllListeners("before-input-event");
+        webContents.removeAllListeners("focus");
         webContents.removeAllListeners("enter-html-full-screen");
         webContents.removeAllListeners("leave-html-full-screen");
         webContents.removeAllListeners("render-process-gone");
@@ -1090,6 +1758,7 @@ export const createWorkbenchBrowserViewManager = ({
     });
 
     webContents.on("did-start-loading", () => {
+      hideChromePopover(entry);
       updateRuntimeState(entry, { isLoading: true });
       syncNavigationFlags(entry);
     });
@@ -1097,12 +1766,22 @@ export const createWorkbenchBrowserViewManager = ({
     webContents.on("did-stop-loading", () => {
       updateRuntimeState(entry, { isLoading: false });
       syncNavigationFlags(entry);
+      const restoreState = browserSessionSnapshots.get(entry.tabId) ?? entry.runtime.restoreState;
+      if (restoreState !== undefined) {
+        void applyBrowserRestoreState(entry, restoreState);
+      }
     });
 
-    webContents.on("did-fail-load", (_event, errorCode) => {
+    webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
       if (errorCode === -3) {
         return;
       }
+      recordPageDiagnostic(entry.tabId, {
+        source: "navigation",
+        severity: "error",
+        message: `${errorDescription || "Page load failed"} (${errorCode})`,
+        ...(typeof validatedUrl === "string" && validatedUrl.length > 0 ? { url: validatedUrl } : {})
+      });
       updateRuntimeState(entry, { isLoading: false });
     });
 
@@ -1116,17 +1795,49 @@ export const createWorkbenchBrowserViewManager = ({
     };
 
     webContents.on("did-navigate", (_event, url) => {
+      hideChromePopover(entry);
       elementPickerController.handlePageNavigated(entry.tabId);
+      browserAgentCache.delete(browserAgentCacheKey(entry.tabId, "live"));
+      browserAgentInputTargets.delete(browserAgentCacheKey(entry.tabId, "live"));
       syncAddress(url);
     });
 
     webContents.on("did-navigate-in-page", (_event, url) => {
+      hideChromePopover(entry);
       elementPickerController.handlePageNavigated(entry.tabId);
+      browserAgentCache.delete(browserAgentCacheKey(entry.tabId, "live"));
+      browserAgentInputTargets.delete(browserAgentCacheKey(entry.tabId, "live"));
       syncAddress(url);
     });
 
-    webContents.on("console-message", (_event, _level, message) => {
+    webContents.on("console-message", (_event, level, message, line, sourceId) => {
       elementPickerController.handleConsoleMessage(entry.tabId, message);
+      const severity = level >= 2 ? "error" : level === 1 ? "warning" : "info";
+      if (severity !== "info" || String(message).trim().length > 0) {
+        recordPageDiagnostic(entry.tabId, {
+          source: "console",
+          severity,
+          message:
+            String(message) +
+            (typeof line === "number" && line > 0 ? ` at ${line}` : ""),
+          ...(typeof sourceId === "string" && sourceId.length > 0 ? { url: sourceId } : {})
+        });
+      }
+    });
+
+    webContents.on("before-mouse-event", (event, mouse) => {
+      handleSharedControlInput(entry.tabId, "mouse", event);
+      if (mouse.type === "mouseDown") {
+        hideChromePopover(entry);
+      }
+    });
+
+    webContents.on("before-input-event", (event) => {
+      handleSharedControlInput(entry.tabId, "keyboard", event);
+    });
+
+    webContents.on("focus", () => {
+      hideChromePopover(entry);
     });
 
     webContents.on("enter-html-full-screen", () => {
@@ -1171,6 +1882,7 @@ export const createWorkbenchBrowserViewManager = ({
         coreKey: resolveBrowserCoreKey(spec.address),
         stateKey: `web-state:${spec.tabId}`,
         isTombstoned: false,
+        ...(spec.restoreState === undefined ? {} : { restoreState: spec.restoreState }),
         title:
           existing.runtime.title.length > 0
             ? existing.runtime.title
@@ -1209,8 +1921,18 @@ export const createWorkbenchBrowserViewManager = ({
   };
 
   const syncTopology = (snapshot: WorkbenchBrowserTopologySnapshot): void => {
+    const previousActiveTabId = topology.activeTabId;
     const nextTopology = normalizeTopology(snapshot);
     topology = nextTopology;
+    if (
+      previousActiveTabId !== null
+      && previousActiveTabId !== nextTopology.activeTabId
+    ) {
+      const previousEntry = entries.get(previousActiveTabId);
+      if (previousEntry !== undefined) {
+        hideChromePopover(previousEntry);
+      }
+    }
     elementPickerController.handleActiveTabChanged(nextTopology.activeTabId);
 
     const nextTabIds = new Set(nextTopology.pages.map((page) => page.tabId));
@@ -1218,6 +1940,7 @@ export const createWorkbenchBrowserViewManager = ({
       if (nextTabIds.has(tabId)) {
         continue;
       }
+      void captureBrowserRestoreState(entry);
       destroyEntry(entry, true);
       entries.delete(tabId);
     }
@@ -1283,13 +2006,18 @@ export const createWorkbenchBrowserViewManager = ({
     return entry;
   };
 
+  const findFrameInWebContents = (
+    webContents: WebContents,
+    frameTreeNodeId: number
+  ): WebFrameMain | null =>
+    webContents.mainFrame.framesInSubtree.find(
+      (frame) => frame.frameTreeNodeId === frameTreeNodeId && !frame.isDestroyed()
+    ) ?? null;
+
   const findFrame = (
     entry: BrowserPageEntry,
     frameTreeNodeId: number
-  ): WebFrameMain | null =>
-    entry.webContents.mainFrame.framesInSubtree.find(
-      (frame) => frame.frameTreeNodeId === frameTreeNodeId && !frame.isDestroyed()
-    ) ?? null;
+  ): WebFrameMain | null => findFrameInWebContents(entry.webContents, frameTreeNodeId);
 
   const elementPickerController: WorkbenchBrowserElementPickerController =
     createWorkbenchBrowserElementPickerController({
@@ -1508,6 +2236,56 @@ export const createWorkbenchBrowserViewManager = ({
     };
   };
 
+  const searchInPage = async (
+    request: WorkbenchBrowserSearchInPageRequest
+  ): Promise<WorkbenchBrowserSearchInPageResult> => {
+    const query = normalizeString(request.query);
+    if (query === null) {
+      throw new Error("query is required");
+    }
+    const tabId = normalizeString(request.tabId) ?? getActiveOrFocusedTabId();
+    if (tabId === null) {
+      throw new Error("tab_not_found");
+    }
+    const entry = requireEntry(tabId);
+    try {
+      entry.webContents.findInPage(query, {
+        forward: true,
+        findNext: false,
+        matchCase: request.caseSensitive === true
+      });
+    } catch {
+      // Text extraction below is the authoritative result; native page highlight is best effort.
+    }
+    const raw = await entry.webContents.executeJavaScript(`
+      (() => {
+        const normalizeText = (value) => {
+          if (typeof value !== "string") return "";
+          return value
+            .replace(/\\u00a0/g, " ")
+            .replace(/\\r/g, "")
+            .replace(/[ \\t]+\\n/g, "\\n")
+            .replace(/\\n[ \\t]+/g, "\\n")
+            .replace(/\\n{3,}/g, "\\n\\n")
+            .trim();
+        };
+        return {
+          title: normalizeText(document.title ?? ""),
+          text: normalizeText(document.body?.innerText ?? document.body?.textContent ?? "")
+        };
+      })()
+    `, true) as Record<string, unknown>;
+    const text = typeof raw.text === "string" ? raw.text : "";
+    const result = findSearchInPageMatches(text, query, request);
+    return {
+      tabId,
+      address: normalizeAddress(entry.webContents.getURL()) ?? entry.runtime.address,
+      title: normalizeString(raw.title) ?? entry.runtime.title,
+      query,
+      ...result
+    };
+  };
+
   const normalizeAgentObserveStrategy = (
     strategy: WorkbenchBrowserAgentObserveStrategy | undefined
   ): WorkbenchBrowserAgentObserveStrategy => {
@@ -1530,6 +2308,59 @@ export const createWorkbenchBrowserViewManager = ({
     tabId: string,
     targetMode: WorkbenchBrowserAgentTargetMode
   ): string => `${targetMode}:${tabId}`;
+
+  const isAgentEditableElement = (element: WorkbenchBrowserAgentElement): boolean =>
+    element.editable === true || element.actionHint === "type";
+
+  const cacheBrowserAgentInputTarget = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    element: WorkbenchBrowserAgentElement,
+    url: string,
+    observationId?: string
+  ): void => {
+    if (!isAgentEditableElement(element)) {
+      return;
+    }
+    browserAgentInputTargets.set(browserAgentCacheKey(tabId, targetMode), {
+      element,
+      url,
+      updatedAt: Date.now(),
+      ...(observationId === undefined ? {} : { observationId })
+    });
+  };
+
+  const readCachedBrowserAgentInputTarget = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    url: string
+  ): {
+    readonly observationId?: string;
+    readonly element: WorkbenchBrowserAgentElement;
+  } | null => {
+    const cached = browserAgentInputTargets.get(browserAgentCacheKey(tabId, targetMode));
+    if (cached === undefined) {
+      return null;
+    }
+    if (cached.url !== url || Date.now() - cached.updatedAt > 5 * 60_000) {
+      browserAgentInputTargets.delete(browserAgentCacheKey(tabId, targetMode));
+      return null;
+    }
+    return {
+      element: cached.element,
+      ...(cached.observationId === undefined ? {} : { observationId: cached.observationId })
+    };
+  };
+
+  const activeEditableElementFromObservation = (
+    observation: WorkbenchBrowserAgentObservation
+  ): WorkbenchBrowserAgentElement | null => {
+    if (observation.activeElementId === null) {
+      return null;
+    }
+    const element = observation.elements.find((candidate) => candidate.id === observation.activeElementId);
+    return element !== undefined && isAgentEditableElement(element) ? element : null;
+  };
 
   const buildBrowserAgentObservationScript = ({
     frameTreeNodeId,
@@ -1555,7 +2386,8 @@ export const createWorkbenchBrowserViewManager = ({
         || element.getAttribute?.("aria-disabled") === "true";
 
       const isVisible = (element, win = window) => {
-        if (!(element instanceof Element) || !element.isConnected) return false;
+        const ElementCtor = win.Element || Element;
+        if (!(element instanceof ElementCtor) || !element.isConnected) return false;
         const rect = element.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return false;
         const style = win.getComputedStyle(element);
@@ -1622,32 +2454,39 @@ export const createWorkbenchBrowserViewManager = ({
         return normalizeText(element.getAttribute?.("data-state") || "", 32);
       };
 
-      const isEditable = (element) =>
-        element instanceof HTMLInputElement
-        || element instanceof HTMLTextAreaElement
-        || element instanceof HTMLSelectElement
-        || (element instanceof HTMLElement && element.isContentEditable)
-        || element.getAttribute?.("role") === "textbox"
-        || element.getAttribute?.("role") === "searchbox";
+      const isEditable = (element) => {
+        const win = element?.ownerDocument?.defaultView || window;
+        const contentEditable = String(element.getAttribute?.("contenteditable") || "").toLowerCase();
+        const role = String(element.getAttribute?.("role") || "").toLowerCase();
+        return element instanceof win.HTMLInputElement
+          || element instanceof win.HTMLTextAreaElement
+          || element instanceof win.HTMLSelectElement
+          || (element instanceof win.HTMLElement && element.isContentEditable)
+          || (contentEditable.length > 0 && contentEditable !== "false")
+          || role === "textbox"
+          || role === "searchbox";
+      };
 
       const isFocusable = (element) => {
         if (isDisabled(element)) return false;
         if (element.getAttribute?.("tabindex") === "-1") return false;
-        if (element instanceof HTMLElement && element.tabIndex >= 0) return true;
-        if (element instanceof HTMLAnchorElement && element.href) return true;
-        if (element instanceof HTMLButtonElement) return true;
+        const win = element?.ownerDocument?.defaultView || window;
+        if (element instanceof win.HTMLElement && element.tabIndex >= 0) return true;
+        if (element instanceof win.HTMLAnchorElement && element.href) return true;
+        if (element instanceof win.HTMLButtonElement) return true;
         if (isEditable(element)) return true;
         const role = element.getAttribute?.("role");
         return role === "button" || role === "link" || role === "checkbox" || role === "menuitem";
       };
 
       const actionHint = (element, cursor) => {
-        if (element instanceof HTMLSelectElement) return "select";
+        const win = element?.ownerDocument?.defaultView || window;
+        if (element instanceof win.HTMLSelectElement) return "select";
         if (isEditable(element)) return "type";
         const role = normalizeText(element.getAttribute?.("role") || "", 32);
         const popup = normalizeText(element.getAttribute?.("aria-haspopup") || "", 32);
         if (popup) return "open " + popup;
-        if (element instanceof HTMLAnchorElement && element.href) return "open";
+        if (element instanceof win.HTMLAnchorElement && element.href) return "open";
         if (role === "button" || role === "link" || cursor === "pointer") return "click";
         return "";
       };
@@ -1668,8 +2507,71 @@ export const createWorkbenchBrowserViewManager = ({
         return label || "(no label)";
       };
 
+      const detectAuthChallengeSignals = (doc, win, frameUrl = "") => {
+        const signals = [];
+        const pushSignal = (signal) => {
+          if (!signals.some((entry) => entry.kind === signal.kind && entry.label === signal.label && entry.url === signal.url)) {
+            signals.push(signal);
+          }
+        };
+        const passwordFields = Array.from(doc.querySelectorAll("input[type='password']"))
+          .filter((element) => isVisible(element, win) && !isDisabled(element));
+        if (passwordFields.length > 0) {
+          pushSignal({
+            kind: "login_wall",
+            confidence: "medium",
+            source: "dom",
+            label: "visible password field",
+            url: frameUrl
+          });
+        }
+        const oneTimeCodeFields = Array.from(doc.querySelectorAll("input[autocomplete='one-time-code'], input[inputmode='numeric']"))
+          .filter((element) => {
+            if (!isVisible(element, win) || isDisabled(element)) return false;
+            const input = element;
+            const maxLength = Number(input.getAttribute?.("maxlength") || NaN);
+            return input.getAttribute?.("autocomplete") === "one-time-code"
+              || (Number.isFinite(maxLength) && maxLength >= 4 && maxLength <= 8);
+          });
+        if (oneTimeCodeFields.length > 0) {
+          pushSignal({
+            kind: "mfa",
+            confidence: "high",
+            source: "attribute",
+            label: "one-time-code input",
+            url: frameUrl
+          });
+        }
+        for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
+          const src = normalizeText(frame.getAttribute?.("src") || "", 600);
+          if (!src) continue;
+          let host = "";
+          try {
+            host = new URL(src, String(win.location.href || "https://invalid.local")).hostname.toLowerCase();
+          } catch (_error) {
+            host = src.toLowerCase();
+          }
+          if (
+            host.includes("recaptcha")
+            || host.includes("hcaptcha")
+            || host.includes("challenges.cloudflare")
+            || host.includes("turnstile")
+          ) {
+            pushSignal({
+              kind: "captcha",
+              confidence: "high",
+              source: "frame",
+              label: host,
+              url: src
+            });
+          }
+        }
+        return signals;
+      };
+
       const items = [];
       const seen = new Set();
+      const authChallengeSignals = [];
       let activeElementId = null;
 
       const crawl = (doc, win, offsetX = 0, offsetY = 0, frameUrl = "") => {
@@ -1680,7 +2582,7 @@ export const createWorkbenchBrowserViewManager = ({
           "select",
           "textarea",
           "summary",
-          "[contenteditable='true']",
+          "[contenteditable]",
           "[tabindex]",
           "[role='button']",
           "[role='link']",
@@ -1689,20 +2591,32 @@ export const createWorkbenchBrowserViewManager = ({
           "[role='searchbox']",
           "[role='menuitem']"
         ].join(",");
-        const candidates = Array.from(doc.querySelectorAll(selector));
+        const collectCandidates = (root, scope = "document") => {
+          const collected = Array.from(root.querySelectorAll(selector))
+            .map((element) => ({ element, scope }));
+          const descendants = Array.from(root.querySelectorAll("*"));
+          for (const element of descendants) {
+            if (element.shadowRoot) {
+              collected.push(...collectCandidates(element.shadowRoot, "shadow"));
+            }
+          }
+          return collected;
+        };
+        const candidates = collectCandidates(doc, "document");
 
-        for (const element of candidates) {
-          if (!(element instanceof Element) || seen.has(element)) continue;
+        for (const candidate of candidates) {
+          const { element, scope } = candidate;
+          if (!(element instanceof win.Element) || seen.has(element)) continue;
           seen.add(element);
           if (!isVisible(element, win) || isDisabled(element)) continue;
-          if (element instanceof HTMLInputElement && element.type === "hidden") continue;
+          if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
           const focusable = isFocusable(element);
           if (STRATEGY === "focus" && !focusable) continue;
           const rect = element.getBoundingClientRect();
           const style = win.getComputedStyle(element);
           const cursor = normalizeText(style.cursor || "", 32);
           const editable = isEditable(element);
-          const tabIndex = element instanceof HTMLElement ? element.tabIndex : -1;
+          const tabIndex = element instanceof win.HTMLElement ? element.tabIndex : -1;
           const id = items.length + 1;
           if (element === doc.activeElement) activeElementId = id;
           items.push({
@@ -1715,7 +2629,7 @@ export const createWorkbenchBrowserViewManager = ({
             stateHint: stateHint(element),
             tooltipText: normalizeText(element.getAttribute?.("title") || describedByText(element, doc), 80),
             textSnippet: normalizeText(
-              element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+              element instanceof win.HTMLInputElement || element instanceof win.HTMLTextAreaElement
                 ? element.value || ""
                 : element.innerText || element.textContent || "",
               80
@@ -1731,11 +2645,14 @@ export const createWorkbenchBrowserViewManager = ({
             tabIndex,
             disabled: isDisabled(element),
             editable,
-            href: element instanceof HTMLAnchorElement ? element.href : "",
-            inputType: element instanceof HTMLInputElement ? normalizeText(element.type || "", 32) : "",
-            frameUrl
+            href: element instanceof win.HTMLAnchorElement ? element.href : "",
+            inputType: element instanceof win.HTMLInputElement ? normalizeText(element.type || "", 32) : "",
+            frameUrl,
+            discoveryScope: scope
           });
         }
+
+        authChallengeSignals.push(...detectAuthChallengeSignals(doc, win, frameUrl));
 
         for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
           try {
@@ -1753,6 +2670,16 @@ export const createWorkbenchBrowserViewManager = ({
             );
           } catch (_error) {
             warnings.push("cross_origin_frame_skipped");
+            const src = normalizeText(frame.getAttribute?.("src") || "", 600);
+            if (src) {
+              authChallengeSignals.push({
+                kind: "cross_origin_auth_frame",
+                confidence: "low",
+                source: "frame",
+                label: "cross-origin frame",
+                url: src
+              });
+            }
           }
         }
       };
@@ -1776,6 +2703,7 @@ export const createWorkbenchBrowserViewManager = ({
         elements: items,
         focusOrder,
         activeElementId,
+        authChallengeSignals,
         warnings
       };
     })()
@@ -1812,6 +2740,7 @@ export const createWorkbenchBrowserViewManager = ({
       timeoutMs
     ) as Record<string, unknown>;
 
+    const rawUrl = typeof raw.url === "string" ? raw.url : agentTargetAddress(target);
     const rawElements = Array.isArray(raw.elements) ? raw.elements : [];
     const elements = rawElements
       .map((item): WorkbenchBrowserAgentElement | null => {
@@ -1838,7 +2767,11 @@ export const createWorkbenchBrowserViewManager = ({
         ) {
           return null;
         }
-        const element: WorkbenchBrowserAgentElement = {
+        const discoveryScope =
+          record.discoveryScope === "shadow" || record.discoveryScope === "frame"
+            ? record.discoveryScope
+            : "document";
+        const baseElement = {
           id: Math.round(id),
           frameTreeNodeId: Number.isFinite(Number(record.frameTreeNodeId))
             ? Math.round(Number(record.frameTreeNodeId))
@@ -1858,6 +2791,7 @@ export const createWorkbenchBrowserViewManager = ({
           focusable: record.focusable === true,
           disabled: record.disabled === true,
           editable: record.editable === true,
+          discoveryScope,
           ...(typeof record.actionHint === "string" && record.actionHint.length > 0
             ? { actionHint: record.actionHint }
             : {}),
@@ -1882,6 +2816,12 @@ export const createWorkbenchBrowserViewManager = ({
           ...(typeof record.frameUrl === "string" && record.frameUrl.length > 0
             ? { frameUrl: record.frameUrl }
             : {})
+        } satisfies Omit<WorkbenchBrowserAgentElement, "stableId" | "targetRef">;
+        const targetRef = createBrowserAgentTargetRef(rawUrl, baseElement);
+        const element: WorkbenchBrowserAgentElement = {
+          ...baseElement,
+          stableId: targetRef.stableId,
+          targetRef: targetRef.targetRef
         };
         return element;
       })
@@ -1899,6 +2839,33 @@ export const createWorkbenchBrowserViewManager = ({
     const warnings = Array.isArray(raw.warnings)
       ? [...new Set(raw.warnings.filter((value): value is string => typeof value === "string"))]
       : [];
+    const authChallengeSignals = Array.isArray(raw.authChallengeSignals)
+      ? raw.authChallengeSignals
+          .map((value): NonNullable<WorkbenchBrowserAgentObservation["authChallengeSignals"]>[number] | null => {
+            if (value === null || typeof value !== "object") {
+              return null;
+            }
+            const record = value as Record<string, unknown>;
+            const kind = record.kind;
+            const confidence = record.confidence;
+            const source = record.source;
+            if (
+              (kind !== "captcha" && kind !== "mfa" && kind !== "oauth_popup" && kind !== "login_wall" && kind !== "cross_origin_auth_frame")
+              || (confidence !== "high" && confidence !== "medium" && confidence !== "low")
+              || (source !== "dom" && source !== "attribute" && source !== "frame" && source !== "browser")
+            ) {
+              return null;
+            }
+            return {
+              kind,
+              confidence,
+              source,
+              ...(typeof record.label === "string" && record.label.length > 0 ? { label: record.label } : {}),
+              ...(typeof record.url === "string" && record.url.length > 0 ? { url: record.url } : {})
+            };
+          })
+          .filter((value): value is NonNullable<WorkbenchBrowserAgentObservation["authChallengeSignals"]>[number] => value !== null)
+      : [];
     const observation: WorkbenchBrowserAgentObservation = {
       ok: true,
       kind: "lyraLumenMap",
@@ -1906,26 +2873,44 @@ export const createWorkbenchBrowserViewManager = ({
       targetMode: target.targetMode,
       observationId: createBrowserAgentObservationId(tabId),
       strategy,
-      url: typeof raw.url === "string" ? raw.url : agentTargetAddress(target),
+      url: rawUrl,
       title: typeof raw.title === "string" && raw.title.length > 0 ? raw.title : agentTargetTitle(target),
       elements,
       activeElementId,
       focusOrder,
+      ...(authChallengeSignals.length > 0 ? { authChallengeSignals } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
-      nextRecommendedAction: elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
+      nextRecommendedAction:
+        authChallengeSignals.some((signal) => signal.confidence === "high")
+          ? "lyra_lumen_elevate"
+          : elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
     };
     browserAgentCache.set(browserAgentCacheKey(tabId, target.targetMode), {
       observationId: observation.observationId,
       elements: observation.elements,
+      elementsByTargetRef: new Map(observation.elements.map((element) => [element.targetRef, element])),
       url: observation.url,
       title: observation.title
     });
+    const activeEditableElement = activeEditableElementFromObservation(observation);
+    if (activeEditableElement !== null) {
+      cacheBrowserAgentInputTarget(
+        tabId,
+        target.targetMode,
+        activeEditableElement,
+        observation.url,
+        observation.observationId
+      );
+    }
     return observation;
   };
 
   const findAgentElement = async (
     tabId: string,
-    elementId: number,
+    request: {
+      readonly elementId?: number;
+      readonly targetRef?: string;
+    },
     targetMode: WorkbenchBrowserAgentTargetMode,
     timeoutMs: number | undefined
   ): Promise<{
@@ -1933,7 +2918,10 @@ export const createWorkbenchBrowserViewManager = ({
     readonly observationId?: string;
   }> => {
     const cached = browserAgentCache.get(browserAgentCacheKey(tabId, targetMode));
-    const cachedElement = cached?.elements.find((element) => element.id === elementId) ?? null;
+    const cachedElement =
+      request.targetRef === undefined
+        ? cached?.elements.find((element) => element.id === request.elementId) ?? null
+        : cached?.elementsByTargetRef.get(request.targetRef) ?? null;
     if (cached !== undefined && cachedElement !== null) {
       return { element: cachedElement, observationId: cached.observationId };
     }
@@ -1944,26 +2932,35 @@ export const createWorkbenchBrowserViewManager = ({
       ...(timeoutMs === undefined ? {} : { timeoutMs })
     });
     return {
-      element: observed.elements.find((element) => element.id === elementId) ?? null,
+      element:
+        request.targetRef === undefined
+          ? observed.elements.find((element) => element.id === request.elementId) ?? null
+          : observed.elements.find((element) => element.targetRef === request.targetRef) ?? null,
       observationId: observed.observationId
     };
   };
 
-  const readFocusedElementSignature = async (target: BrowserAgentPageTarget): Promise<string> => {
+  const readFocusedElementSignature = async (
+    target: BrowserAgentPageTarget,
+    timeoutMs: number | undefined
+  ): Promise<string> => {
     try {
-      const value = await target.webContents.executeJavaScript(`
-        (() => {
-          const element = document.activeElement;
-          if (!element) return "";
-          return [
-            element.tagName || "",
-            element.id || "",
-            element.getAttribute?.("name") || "",
-            element.getAttribute?.("aria-label") || "",
-            element.getAttribute?.("role") || ""
-          ].join("|");
-        })()
-      `, true);
+      const value = await runFrameScriptWithTimeout(
+        () => target.webContents.executeJavaScript(`
+          (() => {
+            const element = document.activeElement;
+            if (!element) return "";
+            return [
+              element.tagName || "",
+              element.id || "",
+              element.getAttribute?.("name") || "",
+              element.getAttribute?.("aria-label") || "",
+              element.getAttribute?.("role") || ""
+            ].join("|");
+          })()
+        `, true),
+        normalizeExecuteScriptTimeoutMs(timeoutMs, 1_500)
+      );
       return typeof value === "string" ? value : "";
     } catch {
       return "";
@@ -1977,7 +2974,8 @@ export const createWorkbenchBrowserViewManager = ({
 
   const staleElementResult = (
     tabId: string,
-    elementId: number,
+    elementId: number | undefined,
+    targetRef: string | undefined,
     targetMode: WorkbenchBrowserAgentTargetMode,
     observationId?: string
   ): WorkbenchBrowserAgentActionResult => ({
@@ -1986,15 +2984,291 @@ export const createWorkbenchBrowserViewManager = ({
     tabId,
     inputMode: "chromium",
     targetMode,
-    elementId,
+    ...(elementId === undefined ? {} : { elementId }),
+    ...(targetRef === undefined ? {} : { targetRef }),
     ...(observationId === undefined ? {} : { beforeObservationId: observationId }),
     staleElement: true,
     nextRecommendedAction: "lyra_lumen.map",
     error: {
       kind: "staleElement",
-      message: `Element ${elementId} is not present in the latest Lyra Lumen map.`
+      message:
+        targetRef === undefined
+          ? `Element ${elementId ?? "(unspecified)"} is not present in the latest Lyra Lumen map.`
+          : `Target ${targetRef} is not present in the latest Lyra Lumen map.`
     }
   });
+
+  const noEditableTargetResult = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    beforeObservationId?: string
+  ): WorkbenchBrowserAgentActionResult => ({
+    ok: false,
+    kind: "lyraLumenActionResult",
+    tabId,
+    inputMode: "chromium",
+    targetMode,
+    ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+    nextRecommendedAction: "lyra_lumen.map",
+    error: {
+      kind: "noEditableTarget",
+      message:
+        "No focused or previously selected editable browser element is available. Map the page and pass the editable elementId to lyra_lumen_type."
+    }
+  });
+
+  const buildBrowserAgentTextInsertionScript = ({
+    elementId,
+    x,
+    y,
+    text,
+    clear
+  }: {
+    readonly elementId: number;
+    readonly x: number;
+    readonly y: number;
+    readonly text: string;
+    readonly clear: boolean;
+  }): string => `
+    (() => {
+      const TARGET_ID = ${JSON.stringify(elementId)};
+      const POINT = ${JSON.stringify({ x, y })};
+      const TEXT = ${JSON.stringify(text)};
+      const CLEAR = ${JSON.stringify(clear)};
+
+      const normalizeText = (value, maxLength = 160) => {
+        if (typeof value !== "string") return "";
+        const normalized = value.replace(/\\s+/g, " ").trim();
+        return normalized.length <= maxLength ? normalized : normalized.slice(0, maxLength - 3) + "...";
+      };
+
+      const isDisabled = (element) =>
+        element.disabled === true
+        || element.getAttribute?.("disabled") !== null
+        || element.getAttribute?.("aria-disabled") === "true";
+
+      const isVisible = (element, win = window) => {
+        const ElementCtor = win.Element || Element;
+        if (!(element instanceof ElementCtor) || !element.isConnected) return false;
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        const style = win.getComputedStyle(element);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+        if (Number.parseFloat(style.opacity || "1") <= 0) return false;
+        return true;
+      };
+
+      const isEditable = (element) => {
+        const win = element?.ownerDocument?.defaultView || window;
+        const contentEditable = String(element.getAttribute?.("contenteditable") || "").toLowerCase();
+        const role = String(element.getAttribute?.("role") || "").toLowerCase();
+        return element instanceof win.HTMLInputElement
+          || element instanceof win.HTMLTextAreaElement
+          || element instanceof win.HTMLSelectElement
+          || (element instanceof win.HTMLElement && element.isContentEditable)
+          || (contentEditable.length > 0 && contentEditable !== "false")
+          || role === "textbox"
+          || role === "searchbox";
+      };
+
+      const selector = [
+        "a[href]",
+        "button",
+        "input",
+        "select",
+        "textarea",
+        "summary",
+        "[contenteditable]",
+        "[tabindex]",
+        "[role='button']",
+        "[role='link']",
+        "[role='checkbox']",
+        "[role='textbox']",
+        "[role='searchbox']",
+        "[role='menuitem']"
+      ].join(",");
+
+      const collectCandidates = () => {
+        const items = [];
+        const seen = new Set();
+        const crawl = (doc, win, offsetX = 0, offsetY = 0) => {
+          for (const element of Array.from(doc.querySelectorAll(selector))) {
+            if (!(element instanceof win.Element) || seen.has(element)) continue;
+            seen.add(element);
+            if (!isVisible(element, win) || isDisabled(element)) continue;
+            if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
+            const rect = element.getBoundingClientRect();
+            items.push({
+              id: items.length + 1,
+              element,
+              bounds: {
+                x: Math.round(rect.left + offsetX),
+                y: Math.round(rect.top + offsetY),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height)
+              }
+            });
+          }
+          for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
+            try {
+              if (!isVisible(frame, win)) continue;
+              const childDoc = frame.contentDocument || frame.contentWindow?.document;
+              const childWin = frame.contentWindow;
+              if (!childDoc || !childWin) continue;
+              const frameRect = frame.getBoundingClientRect();
+              crawl(childDoc, childWin, offsetX + frameRect.left, offsetY + frameRect.top);
+            } catch (_error) {
+              // Cross-origin frames cannot be edited through DOM injection here.
+            }
+          }
+        };
+        crawl(document, window);
+        return items;
+      };
+
+      const editableNear = (element) => {
+        const win = element?.ownerDocument?.defaultView || window;
+        if (!(element instanceof win.Element)) return null;
+        if (isEditable(element)) return element;
+        const descendant = element.querySelector?.(
+          "input:not([type='hidden']), textarea, select, [contenteditable], [role='textbox'], [role='searchbox']"
+        );
+        if (descendant instanceof win.Element && isEditable(descendant)) return descendant;
+        let parent = element.parentElement;
+        while (parent) {
+          if (isEditable(parent)) return parent;
+          parent = parent.parentElement;
+        }
+        return null;
+      };
+
+      const dispatchTextEvents = (element) => {
+        const win = element?.ownerDocument?.defaultView || window;
+        try {
+          element.dispatchEvent(new win.InputEvent("input", {
+            bubbles: true,
+            composed: true,
+            data: TEXT,
+            inputType: "insertText"
+          }));
+        } catch (_error) {
+          element.dispatchEvent(new win.Event("input", { bubbles: true }));
+        }
+        element.dispatchEvent(new win.Event("change", { bubbles: true }));
+      };
+
+      const byId = collectCandidates().find((item) => item.id === TARGET_ID)?.element ?? null;
+      const byPoint = document.elementFromPoint(POINT.x, POINT.y);
+      const target = editableNear(byId) ?? editableNear(byPoint);
+      const targetWindow = target?.ownerDocument?.defaultView || window;
+      if (!(target instanceof targetWindow.Element)) {
+        return { ok: false, errorKind: "editable_not_found" };
+      }
+
+      const before = target instanceof targetWindow.HTMLInputElement || target instanceof targetWindow.HTMLTextAreaElement
+        ? target.value
+        : target.textContent || "";
+      let method = "dom";
+      try {
+        if (target instanceof targetWindow.HTMLInputElement || target instanceof targetWindow.HTMLTextAreaElement) {
+          target.focus({ preventScroll: true });
+          const start = CLEAR ? 0 : (target.selectionStart ?? target.value.length);
+          const end = CLEAR ? target.value.length : (target.selectionEnd ?? target.value.length);
+          if (typeof target.setRangeText === "function") {
+            target.setRangeText(TEXT, start, end, "end");
+            method = "setRangeText";
+          } else {
+            target.value = target.value.slice(0, start) + TEXT + target.value.slice(end);
+            method = "value";
+          }
+          dispatchTextEvents(target);
+        } else if (target instanceof targetWindow.HTMLElement) {
+          target.focus({ preventScroll: true });
+          const ownerDocument = target.ownerDocument || document;
+          const selection = ownerDocument.getSelection?.();
+          if (selection) {
+            const range = ownerDocument.createRange();
+            range.selectNodeContents(target);
+            if (!CLEAR) {
+              range.collapse(false);
+            }
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+          const inserted = ownerDocument.execCommand?.("insertText", false, TEXT) === true;
+          method = inserted ? "execCommand.insertText" : "textNode";
+          if (!inserted) {
+            if (CLEAR) {
+              target.textContent = TEXT;
+            } else {
+              target.appendChild(ownerDocument.createTextNode(TEXT));
+            }
+          }
+          dispatchTextEvents(target);
+        }
+      } catch (error) {
+        return {
+          ok: false,
+          errorKind: "insert_failed",
+          message: String(error instanceof Error ? error.message : error)
+        };
+      }
+
+      const after = target instanceof targetWindow.HTMLInputElement || target instanceof targetWindow.HTMLTextAreaElement
+        ? target.value
+        : target.textContent || "";
+      return {
+        ok: after !== before || (CLEAR && after === TEXT) || TEXT.length === 0,
+        method,
+        tagName: String(target.tagName || "element").toLowerCase(),
+        role: normalizeText(target.getAttribute?.("role") || "", 40),
+        textChanged: after !== before,
+        textPreview: normalizeText(after, 120)
+      };
+    })()
+  `;
+
+  const insertTextIntoAgentElement = async (
+    target: BrowserAgentPageTarget,
+    element: WorkbenchBrowserAgentElement,
+    text: string,
+    clear: boolean,
+    timeoutMs: number | undefined
+  ): Promise<{
+    readonly ok: boolean;
+    readonly method?: string;
+    readonly textChanged?: boolean;
+    readonly errorKind?: string;
+    readonly message?: string;
+  }> => {
+    const frame = findFrameInWebContents(target.webContents, element.frameTreeNodeId)
+      ?? target.webContents.mainFrame;
+    const { x, y } = centerOfAgentElement(element);
+    const raw = await runFrameScriptWithTimeout(
+      () => frame.executeJavaScript(
+        buildBrowserAgentTextInsertionScript({
+          elementId: element.id,
+          x,
+          y,
+          text,
+          clear
+        }),
+        true
+      ),
+      normalizeExecuteScriptTimeoutMs(timeoutMs, 4_000)
+    );
+    if (raw === null || typeof raw !== "object") {
+      return { ok: false, errorKind: "invalid_insert_result" };
+    }
+    const record = raw as Record<string, unknown>;
+    return {
+      ok: record.ok === true,
+      ...(typeof record.method === "string" ? { method: record.method } : {}),
+      ...(typeof record.errorKind === "string" ? { errorKind: record.errorKind } : {}),
+      ...(typeof record.message === "string" ? { message: record.message } : {}),
+      ...(typeof record.textChanged === "boolean" ? { textChanged: record.textChanged } : {})
+    };
+  };
 
   const observeAfterAgentInput = async (
     tabId: string,
@@ -2082,15 +3356,15 @@ export const createWorkbenchBrowserViewManager = ({
   ): Promise<void> => {
     target.webContents.focus();
     if (backwards) {
-      target.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab", modifiers: ["shift"] });
+      sendAgentInputEvent(target, { type: "keyDown", keyCode: "Tab", modifiers: ["shift"] });
     } else {
-      target.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab" });
+      sendAgentInputEvent(target, { type: "keyDown", keyCode: "Tab" });
     }
     await delay(12);
     if (backwards) {
-      target.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab", modifiers: ["shift"] });
+      sendAgentInputEvent(target, { type: "keyUp", keyCode: "Tab", modifiers: ["shift"] });
     } else {
-      target.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });
+      sendAgentInputEvent(target, { type: "keyUp", keyCode: "Tab" });
     }
     await delay(60);
   };
@@ -2194,7 +3468,8 @@ export const createWorkbenchBrowserViewManager = ({
   const actOnAgentElement = async (
     tabId: string,
     request: {
-      readonly elementId: number;
+      readonly elementId?: number;
+      readonly targetRef?: string;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
@@ -2203,41 +3478,41 @@ export const createWorkbenchBrowserViewManager = ({
     const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.timeoutMs);
     const { element, observationId } = await findAgentElement(
       tabId,
-      request.elementId,
+      {
+        ...(request.elementId === undefined ? {} : { elementId: request.elementId }),
+        ...(request.targetRef === undefined ? {} : { targetRef: request.targetRef })
+      },
       target.targetMode,
       request.timeoutMs
     );
     if (element === null) {
-      return staleElementResult(tabId, request.elementId, target.targetMode, observationId);
+      return staleElementResult(tabId, request.elementId, request.targetRef, target.targetMode, observationId);
     }
 
     const beforeUrl = agentTargetAddress(target);
-    const beforeFocus = await readFocusedElementSignature(target);
+    const beforeFocus = await readFocusedElementSignature(target, request.timeoutMs);
     const { x, y } = centerOfAgentElement(element);
     const interaction = request.interaction;
-    const button = interaction === "rightClick" ? "right" : "left";
-    const clickCount = interaction === "doubleClick" ? 2 : 1;
-    publishBrowserAgentActivity({
+    await performAgentPointerInteraction({
       tabId,
-      targetMode: target.targetMode,
-      action: "act",
-      inputActive: true,
-      cursor: { x, y },
-      durationMs: interaction === "hover" ? 1_550 : 1_900
+      target,
+      x,
+      y,
+      interaction,
     });
-
-    target.webContents.focus();
-    target.webContents.sendInputEvent({ type: "mouseMove", x, y, button: "left", clickCount: 1 });
-    await delay(50);
-    if (interaction !== "hover") {
-      target.webContents.sendInputEvent({ type: "mouseDown", x, y, button, clickCount });
-      await delay(12);
-      target.webContents.sendInputEvent({ type: "mouseUp", x, y, button, clickCount });
-    }
     await delay(interaction === "hover" ? 80 : 120);
 
     const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
-    const afterFocus = await readFocusedElementSignature(target);
+    if (isAgentEditableElement(element)) {
+      cacheBrowserAgentInputTarget(
+        tabId,
+        target.targetMode,
+        element,
+        after?.url ?? agentTargetAddress(target),
+        after?.observationId ?? observationId
+      );
+    }
+    const afterFocus = await readFocusedElementSignature(target, request.timeoutMs);
     return {
       ok: true,
       kind: "lyraLumenActionResult",
@@ -2245,6 +3520,7 @@ export const createWorkbenchBrowserViewManager = ({
       inputMode: "chromium",
       targetMode: target.targetMode,
       elementId: element.id,
+      targetRef: element.targetRef,
       x,
       y,
       ...(observationId === undefined ? {} : { beforeObservationId: observationId }),
@@ -2252,7 +3528,7 @@ export const createWorkbenchBrowserViewManager = ({
       pageChanged: beforeUrl !== agentTargetAddress(target),
       focusChanged: beforeFocus !== afterFocus,
       navigationStarted: agentTargetIsLoading(target),
-      message: `${interaction} sent to element ${element.id} with Chromium virtual input.`,
+      message: `${interaction} sent to element ${element.id} (${element.targetRef}) with Chromium virtual input.`,
       nextRecommendedAction: "lyra_lumen.map"
     };
   };
@@ -2268,33 +3544,31 @@ export const createWorkbenchBrowserViewManager = ({
   ): Promise<WorkbenchBrowserAgentActionResult> => {
     const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.timeoutMs);
     const beforeUrl = agentTargetAddress(target);
-    const beforeFocus = await readFocusedElementSignature(target);
+    const beforeFocus = await readFocusedElementSignature(target, request.timeoutMs);
     const x = Math.max(0, Math.round(request.point.x));
     const y = Math.max(0, Math.round(request.point.y));
     const interaction = request.interaction;
-    const button = interaction === "rightClick" ? "right" : "left";
-    const clickCount = interaction === "doubleClick" ? 2 : 1;
-    publishBrowserAgentActivity({
+    await performAgentPointerInteraction({
       tabId,
-      targetMode: target.targetMode,
-      action: "act",
-      inputActive: true,
-      cursor: { x, y },
-      durationMs: interaction === "hover" ? 1_550 : 1_900
+      target,
+      x,
+      y,
+      interaction,
     });
-
-    target.webContents.focus();
-    target.webContents.sendInputEvent({ type: "mouseMove", x, y, button: "left", clickCount: 1 });
-    await delay(50);
-    if (interaction !== "hover") {
-      target.webContents.sendInputEvent({ type: "mouseDown", x, y, button, clickCount });
-      await delay(12);
-      target.webContents.sendInputEvent({ type: "mouseUp", x, y, button, clickCount });
-    }
     await delay(interaction === "hover" ? 80 : 120);
 
     const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
-    const afterFocus = await readFocusedElementSignature(target);
+    const activeEditableElement = after === null ? null : activeEditableElementFromObservation(after);
+    if (activeEditableElement !== null) {
+      cacheBrowserAgentInputTarget(
+        tabId,
+        target.targetMode,
+        activeEditableElement,
+        after?.url ?? agentTargetAddress(target),
+        after?.observationId
+      );
+    }
+    const afterFocus = await readFocusedElementSignature(target, request.timeoutMs);
     return {
       ok: true,
       kind: "lyraLumenActionResult",
@@ -2318,6 +3592,7 @@ export const createWorkbenchBrowserViewManager = ({
     tabId: string,
     request: {
       readonly elementId?: number;
+      readonly targetRef?: string;
       readonly text: string;
       readonly clear?: boolean;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
@@ -2325,72 +3600,137 @@ export const createWorkbenchBrowserViewManager = ({
     }
   ): Promise<WorkbenchBrowserAgentActionResult> => {
     const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.timeoutMs);
+    const currentUrl = agentTargetAddress(target);
     let beforeObservationId = browserAgentCache.get(browserAgentCacheKey(tabId, target.targetMode))?.observationId;
-    let elementId = request.elementId;
-    let x: number | undefined;
-    let y: number | undefined;
-    let focusedChanged = false;
-    if (elementId !== undefined) {
-      const focused = await actOnAgentElement(tabId, {
-        elementId,
-        interaction: "click",
+    let element: WorkbenchBrowserAgentElement | null = null;
+    if (request.elementId !== undefined || request.targetRef !== undefined) {
+      const found = await findAgentElement(
+        tabId,
+        {
+          ...(request.elementId === undefined ? {} : { elementId: request.elementId }),
+          ...(request.targetRef === undefined ? {} : { targetRef: request.targetRef })
+        },
+        target.targetMode,
+        request.timeoutMs
+      );
+      if (found.element === null) {
+        return staleElementResult(tabId, request.elementId, request.targetRef, target.targetMode, found.observationId);
+      }
+      beforeObservationId = found.observationId ?? beforeObservationId;
+      element = found.element;
+    } else {
+      const observed = await observeAgentPage(tabId, {
+        strategy: "hybrid",
         targetMode: target.targetMode,
+        suppressActivity: true,
         ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
       });
-      if (focused.ok === false) {
-        return focused;
+      beforeObservationId = observed.observationId;
+      element = activeEditableElementFromObservation(observed);
+      if (element === null) {
+        element = readCachedBrowserAgentInputTarget(tabId, target.targetMode, currentUrl)?.element ?? null;
       }
-      beforeObservationId = focused.beforeObservationId ?? beforeObservationId;
-      x = focused.x;
-      y = focused.y;
-      focusedChanged = focused.focusChanged === true;
     }
 
+    if (element === null) {
+      return noEditableTargetResult(tabId, target.targetMode, beforeObservationId);
+    }
+
+    const { x, y } = centerOfAgentElement(element);
     const beforeUrl = agentTargetAddress(target);
-    const beforeFocus = await readFocusedElementSignature(target);
+    const beforeFocus = await readFocusedElementSignature(target, request.timeoutMs);
+    await performAgentPointerInteraction({
+      tabId,
+      target,
+      x,
+      y,
+      interaction: "click"
+    });
     publishBrowserAgentActivity({
       tabId,
       targetMode: target.targetMode,
       action: "type",
       inputActive: true,
-      ...(x === undefined || y === undefined ? {} : { cursor: { x, y } }),
+      cursor: { x, y },
       durationMs: Math.max(1_700, Math.min(5_000, 950 + request.text.length * 24))
     });
-    target.webContents.focus();
-    if (request.clear === true) {
-      const modifier = process.platform === "darwin" ? "meta" : "control";
-      target.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: [modifier] });
-      target.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: [modifier] });
-      await delay(10);
-      target.webContents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
-      target.webContents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
-      await delay(10);
+
+    let insertion: Awaited<ReturnType<typeof insertTextIntoAgentElement>>;
+    try {
+      insertion = await insertTextIntoAgentElement(
+        target,
+        element,
+        request.text,
+        request.clear === true,
+        request.timeoutMs
+      );
+    } catch (error) {
+      return {
+        ok: false,
+        kind: "lyraLumenActionResult",
+        tabId,
+        inputMode: "chromium",
+        targetMode: target.targetMode,
+        elementId: element.id,
+        targetRef: element.targetRef,
+        x,
+        y,
+        ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+        nextRecommendedAction: "lyra_lumen.map",
+        error: {
+          kind: "insertFailed",
+          message: String(error instanceof Error ? error.message : error)
+        }
+      };
     }
-    for (const char of request.text) {
-      target.webContents.sendInputEvent({ type: "char", keyCode: char });
-      await delay(4);
+    if (insertion.ok !== true) {
+      return {
+        ok: false,
+        kind: "lyraLumenActionResult",
+        tabId,
+        inputMode: "chromium",
+        targetMode: target.targetMode,
+        elementId: element.id,
+        targetRef: element.targetRef,
+        x,
+        y,
+        ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+        nextRecommendedAction: "lyra_lumen.map",
+        error: {
+          kind: insertion.errorKind ?? "insertFailed",
+          message: insertion.message ?? `Unable to insert text into editable element ${element.id}.`
+        }
+      };
     }
+
     await delay(80);
     const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
-    const afterFocus = await readFocusedElementSignature(target);
+    cacheBrowserAgentInputTarget(
+      tabId,
+      target.targetMode,
+      element,
+      after?.url ?? agentTargetAddress(target),
+      after?.observationId ?? beforeObservationId
+    );
+    const afterFocus = await readFocusedElementSignature(target, request.timeoutMs);
     return {
       ok: true,
       kind: "lyraLumenActionResult",
       tabId,
       inputMode: "chromium",
       targetMode: target.targetMode,
-      ...(elementId === undefined ? {} : { elementId }),
-      ...(x === undefined ? {} : { x }),
-      ...(y === undefined ? {} : { y }),
+      elementId: element.id,
+      targetRef: element.targetRef,
+      x,
+      y,
       ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
       ...(after === null ? {} : { afterObservationId: after.observationId }),
       pageChanged: beforeUrl !== agentTargetAddress(target),
-      focusChanged: focusedChanged || beforeFocus !== afterFocus,
+      focusChanged: beforeFocus !== afterFocus,
       navigationStarted: agentTargetIsLoading(target),
       message:
-        elementId === undefined
-          ? "Typed into the focused element with Chromium virtual keyboard."
-          : `Typed into element ${elementId} with Chromium virtual keyboard.`,
+        `Typed into editable element ${element.id}` +
+        (insertion.method === undefined ? "." : ` via ${insertion.method}.`),
       nextRecommendedAction: "lyra_lumen.map"
     };
   };
@@ -2400,6 +3740,7 @@ export const createWorkbenchBrowserViewManager = ({
     request: {
       readonly key: string;
       readonly elementId?: number;
+      readonly targetRef?: string;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
     }
@@ -2407,11 +3748,13 @@ export const createWorkbenchBrowserViewManager = ({
     const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.timeoutMs);
     let beforeObservationId = browserAgentCache.get(browserAgentCacheKey(tabId, target.targetMode))?.observationId;
     let elementId = request.elementId;
+    let targetRef = request.targetRef;
     let x: number | undefined;
     let y: number | undefined;
-    if (elementId !== undefined) {
+    if (elementId !== undefined || targetRef !== undefined) {
       const focused = await actOnAgentElement(tabId, {
-        elementId,
+        ...(elementId === undefined ? {} : { elementId }),
+        ...(targetRef === undefined ? {} : { targetRef }),
         interaction: "click",
         targetMode: target.targetMode,
         ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
@@ -2420,6 +3763,8 @@ export const createWorkbenchBrowserViewManager = ({
         return focused;
       }
       beforeObservationId = focused.beforeObservationId;
+      elementId = focused.elementId;
+      targetRef = focused.targetRef;
       x = focused.x;
       y = focused.y;
     }
@@ -2432,16 +3777,16 @@ export const createWorkbenchBrowserViewManager = ({
       durationMs: 1_550
     });
     const beforeUrl = agentTargetAddress(target);
-    const beforeFocus = await readFocusedElementSignature(target);
+    const beforeFocus = await readFocusedElementSignature(target, request.timeoutMs);
     target.webContents.focus();
-    target.webContents.sendInputEvent({ type: "keyDown", keyCode: request.key });
+    sendAgentInputEvent(target, { type: "keyDown", keyCode: request.key });
     if (request.key.length === 1) {
-      target.webContents.sendInputEvent({ type: "char", keyCode: request.key });
+      sendAgentInputEvent(target, { type: "char", keyCode: request.key });
     }
-    target.webContents.sendInputEvent({ type: "keyUp", keyCode: request.key });
+    sendAgentInputEvent(target, { type: "keyUp", keyCode: request.key });
     await delay(80);
     const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
-    const afterFocus = await readFocusedElementSignature(target);
+    const afterFocus = await readFocusedElementSignature(target, request.timeoutMs);
     return {
       ok: true,
       kind: "lyraLumenActionResult",
@@ -2449,6 +3794,7 @@ export const createWorkbenchBrowserViewManager = ({
       inputMode: "chromium",
       targetMode: target.targetMode,
       ...(elementId === undefined ? {} : { elementId }),
+      ...(targetRef === undefined ? {} : { targetRef }),
       ...(x === undefined ? {} : { x }),
       ...(y === undefined ? {} : { y }),
       ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
@@ -2463,41 +3809,45 @@ export const createWorkbenchBrowserViewManager = ({
 
   const readAgentDomSummaryFromTarget = async (
     target: BrowserAgentPageTarget,
-    maxChars: number | undefined
+    maxChars: number | undefined,
+    timeoutMs: number
   ): Promise<WorkbenchObservationBrowserDomSummary & {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly content: string;
   }> => {
     const limit = Math.max(256, Math.min(24_000, Math.round(maxChars ?? 12_000)));
     try {
-      const raw = await target.webContents.executeJavaScript(`
-        (() => {
-          const normalizeText = (value) =>
-            typeof value === "string" ? value.replace(/\\s+/g, " ").trim() : "";
-          const bodyText = normalizeText(document.body?.innerText ?? "");
-          const headings = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"))
-            .map((element) => normalizeText(element.textContent ?? ""))
-            .filter(Boolean)
-            .slice(0, 40);
-          const links = Array.from(document.querySelectorAll("a[href]"))
-            .map((element) => ({
-              text: normalizeText(element.textContent ?? ""),
-              href: typeof element.href === "string" ? element.href : ""
-            }))
-            .filter((entry) => entry.href.length > 0)
-            .slice(0, 50);
-          return {
-            domTitle: normalizeText(document.title ?? ""),
-            documentLanguage: normalizeText(document.documentElement?.lang ?? ""),
-            selectionText: normalizeText(String(window.getSelection?.() ?? "")),
-            headings,
-            links,
-            forms: [],
-            mainTextExcerpt: bodyText.slice(0, ${limit}),
-            truncated: bodyText.length > ${limit}
-          };
-        })()
-      `, true) as Record<string, unknown>;
+      const raw = await runFrameScriptWithTimeout(
+        () => target.webContents.executeJavaScript(`
+          (() => {
+            const normalizeText = (value) =>
+              typeof value === "string" ? value.replace(/\\s+/g, " ").trim() : "";
+            const bodyText = normalizeText(document.body?.innerText ?? "");
+            const headings = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"))
+              .map((element) => normalizeText(element.textContent ?? ""))
+              .filter(Boolean)
+              .slice(0, 40);
+            const links = Array.from(document.querySelectorAll("a[href]"))
+              .map((element) => ({
+                text: normalizeText(element.textContent ?? ""),
+                href: typeof element.href === "string" ? element.href : ""
+              }))
+              .filter((entry) => entry.href.length > 0)
+              .slice(0, 50);
+            return {
+              domTitle: normalizeText(document.title ?? ""),
+              documentLanguage: normalizeText(document.documentElement?.lang ?? ""),
+              selectionText: normalizeText(String(window.getSelection?.() ?? "")),
+              headings,
+              links,
+              forms: [],
+              mainTextExcerpt: bodyText.slice(0, ${limit}),
+              truncated: bodyText.length > ${limit}
+            };
+          })()
+        `, true),
+        timeoutMs
+      ) as Record<string, unknown>;
       const headings = Array.isArray(raw.headings)
         ? raw.headings.filter((value): value is string => typeof value === "string")
         : [];
@@ -2531,7 +3881,10 @@ export const createWorkbenchBrowserViewManager = ({
         forms: [],
         truncated: raw.truncated === true
       };
-    } catch {
+    } catch (error) {
+      if (isScriptExecutionTimeout(error)) {
+        throw error;
+      }
       return {
         targetMode: target.targetMode,
         content: "",
@@ -2546,39 +3899,43 @@ export const createWorkbenchBrowserViewManager = ({
 
   const readAgentRecentTextFromTarget = async (
     target: BrowserAgentPageTarget,
-    maxChars: number | undefined
+    maxChars: number | undefined,
+    timeoutMs: number
   ): Promise<WorkbenchTabExtractTextResult & {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly content: string;
   }> => {
     const limit = Math.max(512, Math.min(6_000, Math.round(maxChars ?? 4_000)));
     try {
-      const raw = await target.webContents.executeJavaScript(`
-        (() => {
-          const normalizeText = (value) => {
-            if (typeof value !== "string") return "";
-            return value
-              .replace(/\\u00a0/g, " ")
-              .replace(/\\r/g, "")
-              .replace(/[ \\t]+\\n/g, "\\n")
-              .replace(/\\n[ \\t]+/g, "\\n")
-              .replace(/\\n{3,}/g, "\\n\\n")
-              .trim();
-          };
-          const text = normalizeText(document.body?.innerText ?? document.body?.textContent ?? "");
-          const totalChars = text.length;
-          const startChar = Math.max(0, totalChars - ${limit});
-          const slice = text.slice(startChar);
-          return {
-            text: slice,
-            startChar,
-            endChar: totalChars,
-            totalChars,
-            truncated: startChar > 0,
-            hasMore: startChar > 0
-          };
-        })()
-      `, true) as Record<string, unknown>;
+      const raw = await runFrameScriptWithTimeout(
+        () => target.webContents.executeJavaScript(`
+          (() => {
+            const normalizeText = (value) => {
+              if (typeof value !== "string") return "";
+              return value
+                .replace(/\\u00a0/g, " ")
+                .replace(/\\r/g, "")
+                .replace(/[ \\t]+\\n/g, "\\n")
+                .replace(/\\n[ \\t]+/g, "\\n")
+                .replace(/\\n{3,}/g, "\\n\\n")
+                .trim();
+            };
+            const text = normalizeText(document.body?.innerText ?? document.body?.textContent ?? "");
+            const totalChars = text.length;
+            const startChar = Math.max(0, totalChars - ${limit});
+            const slice = text.slice(startChar);
+            return {
+              text: slice,
+              startChar,
+              endChar: totalChars,
+              totalChars,
+              truncated: startChar > 0,
+              hasMore: startChar > 0
+            };
+          })()
+        `, true),
+        timeoutMs
+      ) as Record<string, unknown>;
       const text = typeof raw.text === "string" ? raw.text : "";
       const startChar = typeof raw.startChar === "number" && Number.isFinite(raw.startChar)
         ? Math.max(0, Math.round(raw.startChar))
@@ -2602,7 +3959,10 @@ export const createWorkbenchBrowserViewManager = ({
         hasMore: raw.hasMore === true,
         extractionMethod: "lumen:recent-text-tail"
       };
-    } catch {
+    } catch (error) {
+      if (isScriptExecutionTimeout(error)) {
+        throw error;
+      }
       return {
         tabId: target.tabId,
         targetMode: target.targetMode,
@@ -2651,6 +4011,7 @@ export const createWorkbenchBrowserViewManager = ({
     shadow.address = normalizeAddress(shadow.webContents.getURL()) ?? address;
     shadow.title = normalizeString(shadow.webContents.getTitle()) ?? shadow.address;
     browserAgentCache.delete(browserAgentCacheKey(tabId, shadow.targetMode));
+    browserAgentInputTargets.delete(browserAgentCacheKey(tabId, shadow.targetMode));
     return {
       address: shadow.address,
       tabId,
@@ -2665,19 +4026,21 @@ export const createWorkbenchBrowserViewManager = ({
       readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly maxChars?: number;
+      readonly timeoutMs?: number;
     }
   ) => {
-    const target = await resolveBrowserAgentTarget(tabId, request.targetMode, undefined);
+    const timeoutMs = normalizeExecuteScriptTimeoutMs(request.timeoutMs, 8_000);
+    const target = await resolveBrowserAgentTarget(tabId, request.targetMode, timeoutMs);
     publishBrowserAgentActivity({
       tabId,
       targetMode: target.targetMode,
       action: "read",
-      durationMs: 1_500
+      durationMs: Math.max(900, Math.min(3_200, timeoutMs))
     });
     if (request.strategy === "domFallback") {
-      return await readAgentDomSummaryFromTarget(target, request.maxChars);
+      return await readAgentDomSummaryFromTarget(target, request.maxChars, timeoutMs);
     }
-    return await readAgentRecentTextFromTarget(target, request.maxChars);
+    return await readAgentRecentTextFromTarget(target, request.maxChars, timeoutMs);
   };
 
   const captureAgentPage = async (
@@ -2712,6 +4075,161 @@ export const createWorkbenchBrowserViewManager = ({
     };
   };
 
+  const showAgentActivity: WorkbenchBrowserViewManager["showAgentActivity"] = async (
+    tabId,
+    request
+  ) => {
+    const target = await resolveBrowserAgentTarget(tabId, request.targetMode, request.durationMs);
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: request.action,
+      inputActive: true,
+      ...(request.durationMs === undefined ? {} : { durationMs: request.durationMs })
+    });
+    return {
+      tabId,
+      targetMode: target.targetMode,
+      action: request.action
+    };
+  };
+
+  const readAgentFollowAudit: WorkbenchBrowserViewManager["readAgentFollowAudit"] = async (
+    tabId,
+    request
+  ) => {
+    const targetMode = request?.targetMode ?? "live";
+    const session = followSessions.get(followSessionKey(tabId, targetMode)) ?? null;
+    const maxActions = Math.max(1, Math.min(400, Math.round(request?.maxActions ?? 80)));
+    const actions = session?.actions.slice(-maxActions) ?? [];
+    const countByAction = (action: BrowserAgentCursorOverlayAction): number =>
+      session?.actions.filter((entry) => entry.action === action).length ?? 0;
+    return {
+      ok: true,
+      kind: "lyraLumenFollowAudit",
+      tabId,
+      targetMode,
+      sessionId: session?.sessionId ?? null,
+      startedAt: session?.startedAt ?? null,
+      updatedAt: session?.updatedAt ?? null,
+      totalActions: session?.totalActions ?? 0,
+      actions,
+      compactSummary: {
+        observeCount: countByAction("observe"),
+        readCount: countByAction("read"),
+        captureCount: countByAction("capture"),
+        waitCount: countByAction("wait"),
+        navigationCount: countByAction("navigate"),
+        focusCount: countByAction("focus"),
+        pointerCount: countByAction("act"),
+        typeCount: countByAction("type"),
+        keyCount: countByAction("press"),
+        interruptedCount: session?.interruptedCount ?? 0
+      }
+    };
+  };
+
+  const auditAgentPageDiagnostics: WorkbenchBrowserViewManager["auditAgentPageDiagnostics"] = async (
+    tabId,
+    request
+  ) => {
+    const target = await resolveBrowserAgentTarget(tabId, request?.targetMode, undefined);
+    let runtimeDiagnostic: WorkbenchBrowserPageDiagnosticEntry | null = null;
+    try {
+      const raw = await target.webContents.executeJavaScript(`
+        (() => {
+          const entries = performance.getEntriesByType("resource");
+          return {
+            resourceCount: entries.length,
+            navigationType: performance.getEntriesByType("navigation")[0]?.type || "unknown"
+          };
+        })()
+      `, true) as { readonly resourceCount?: unknown; readonly navigationType?: unknown };
+      runtimeDiagnostic = {
+        id: `diag-runtime-${tabId}-${Date.now()}`,
+        at: Date.now(),
+        source: "runtime",
+        severity: "info",
+        message: `Runtime reachable; resources=${Number(raw.resourceCount ?? 0)}, navigation=${String(raw.navigationType ?? "unknown")}.`,
+        url: agentTargetAddress(target)
+      };
+    } catch (error) {
+      runtimeDiagnostic = {
+        id: `diag-runtime-${tabId}-${Date.now()}`,
+        at: Date.now(),
+        source: "runtime",
+        severity: "warning",
+        message: `Runtime diagnostics unavailable: ${String(error instanceof Error ? error.message : error)}`,
+        url: agentTargetAddress(target)
+      };
+    }
+    const maxEntries = Math.max(1, Math.min(300, Math.round(request?.maxEntries ?? 80)));
+    const buffered = [...(pageDiagnostics.get(tabId) ?? []), runtimeDiagnostic].filter(
+      (entry): entry is WorkbenchBrowserPageDiagnosticEntry => entry !== null
+    );
+    const entriesForResult = buffered.slice(-maxEntries);
+    return {
+      ok: true,
+      kind: "lyraLumenPageDiagnostics",
+      tabId,
+      targetMode: target.targetMode,
+      address: agentTargetAddress(target),
+      title: agentTargetTitle(target),
+      entries: entriesForResult,
+      summary: {
+        errors: entriesForResult.filter((entry) => entry.severity === "error").length,
+        warnings: entriesForResult.filter((entry) => entry.severity === "warning").length,
+        networkFailures: entriesForResult.filter((entry) => entry.source === "network" || entry.source === "navigation").length,
+        consoleErrors: entriesForResult.filter((entry) => entry.source === "console" && entry.severity === "error").length
+      }
+    };
+  };
+
+  const elevateAgentPage: WorkbenchBrowserViewManager["elevateAgentPage"] = async (
+    tabId,
+    request
+  ) => {
+    const target = await resolveBrowserAgentTarget(tabId, request?.targetMode ?? "isolated", undefined);
+    if (target.targetMode === "live") {
+      return {
+        ok: true,
+        kind: "lyraLumenElevation",
+        tabId,
+        targetMode: "live",
+        liveTabId: tabId,
+        address: agentTargetAddress(target),
+        title: agentTargetTitle(target),
+        userActionRequired: false,
+        message: "Lyra Lumen is already operating on a visible browser tab."
+      };
+    }
+    const address = normalizeAddress(target.webContents.getURL()) ?? agentTargetAddress(target);
+    const title = normalizeString(target.webContents.getTitle()) ?? agentTargetTitle(target);
+    publishEvent({
+      kind: "request-open-tab",
+      address,
+      title
+    });
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "navigate",
+      inputActive: true,
+      durationMs: 2_000
+    });
+    return {
+      ok: true,
+      kind: "lyraLumenElevation",
+      tabId,
+      targetMode: target.targetMode,
+      address,
+      title,
+      userActionRequired: true,
+      message:
+        "Lyra opened the isolated browser state in a visible tab so the user can complete CAPTCHA, OAuth, MFA, or another auth wall."
+    };
+  };
+
   return {
     dispose: () => {
       void elementPickerController.dispose();
@@ -2730,6 +4248,22 @@ export const createWorkbenchBrowserViewManager = ({
       for (const tabId of [...browserAgentShadows.keys()]) {
         destroyBrowserAgentShadow(tabId);
       }
+      browserAgentInputTargets.clear();
+      browserAgentCache.clear();
+      followSessions.clear();
+      pageDiagnostics.clear();
+      agentControlLocks.clear();
+      agentSyntheticInputUntil.clear();
+      agentControlInterruptions.clear();
+      activeChromePopovers.clear();
+      detachChromePopoverView();
+      if (
+        chromePopoverView !== null
+        && chromePopoverView.webContents.isDestroyed() === false
+      ) {
+        chromePopoverView.webContents.close({ waitForBeforeUnload: false });
+      }
+      chromePopoverView = null;
       entries.clear();
       tombstones.clear();
       const window = getWindow();
@@ -2741,6 +4275,13 @@ export const createWorkbenchBrowserViewManager = ({
     },
     applyWebTheme: async (snapshot: WorkbenchBrowserWebThemeSnapshot) => {
       await webThemeInjector.updateSnapshot(snapshot);
+      for (const [tabId, request] of [...activeChromePopovers.entries()]) {
+        if (entries.has(tabId)) {
+          await setChromePopover({ ...request, tabId, visible: true }).catch(() => {
+            activeChromePopovers.delete(tabId);
+          });
+        }
+      }
     },
     syncTopology,
     syncLayout,
@@ -2972,6 +4513,8 @@ export const createWorkbenchBrowserViewManager = ({
     readPageDomSummary,
     extractPageText,
     capturePage,
+    searchInPage,
+    setChromePopover,
     resolveFrameGlobalBounds: async (
       tabId: string,
       frameTreeNodeId: number
@@ -3088,6 +4631,10 @@ export const createWorkbenchBrowserViewManager = ({
     pressAgentKey,
     navigateAgentPage,
     readAgentPage,
-    captureAgentPage
+    captureAgentPage,
+    showAgentActivity,
+    readAgentFollowAudit,
+    auditAgentPageDiagnostics,
+    elevateAgentPage
   };
 };

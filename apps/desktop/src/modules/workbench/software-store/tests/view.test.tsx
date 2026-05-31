@@ -69,6 +69,10 @@ const createDesktopApi = (
   const listPacks = vi.fn(async () => response);
   const installFromLocal = vi.fn(async () => createInstalledPack("untrusted"));
   const setTrustState = vi.fn(async () => createInstalledPack("trusted"));
+  const uninstall = vi.fn(async ({ packId }: { readonly packId: string }) => ({
+    packId,
+    removed: true
+  }));
   const requestActivation = vi.fn(async ({ packId }: { readonly packId: string }) => ({
     packId,
     reloadRequired: packId !== "classic",
@@ -91,6 +95,7 @@ const createDesktopApi = (
         installFromGit: vi.fn(),
         installFromNpm: vi.fn(),
         setTrustState,
+        uninstall,
         requestActivation,
         resolveRuntime: vi.fn()
       }

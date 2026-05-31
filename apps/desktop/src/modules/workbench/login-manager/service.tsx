@@ -4,7 +4,7 @@ import type { WorkspaceAppTabOpenRequest } from "../workspace-tabs";
 import type { LoginManagerAppIconKey } from "./types";
 
 export const LOGIN_MANAGER_APP_ID = "login-manager" as const;
-export const LOGIN_MANAGER_INSTANCE_ID = "login-manager-default-instance" as const;
+export const LOGIN_MANAGER_INSTANCE_ID = "login-manager" as const;
 export const LOGIN_MANAGER_ICON_KEY = "login-manager-default" as const satisfies LoginManagerAppIconKey;
 
 export const createLoginManagerAppRequest = (

@@ -51,22 +51,53 @@
 
 /* SSL Certificate Details Popover Card */
 .lyra-omnibox-security-popover {
-  position: absolute;
-  top: calc(100% + var(--lyra-unit-6));
-  left: 0;
+  position: fixed;
+  box-sizing: border-box;
   width: var(--lyra-unit-300);
-  background: color-mix(in srgb, var(--lyra-bg-surface) 92%, black);
-  backdrop-filter: blur(16px);
+  background: var(--lyra-bg-surface-elevated, var(--lyra-bg-surface));
   border: var(--lyra-unit-1) solid var(--lyra-line-default);
   border-radius: var(--lyra-unit-10);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  z-index: 100;
+  color: var(--lyra-text-primary);
+  z-index: 1000;
   padding: var(--lyra-unit-14);
   display: flex;
   flex-direction: column;
   gap: var(--lyra-unit-12);
   text-align: left;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--lyra-scrollbar-thumb-idle) transparent;
   animation: omnibox-slide-down 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.lyra-omnibox-security-popover::-webkit-scrollbar,
+.lyra-omnibox-suggestions::-webkit-scrollbar {
+  width: var(--lyra-unit-10);
+  height: var(--lyra-unit-10);
+  background: transparent;
+}
+
+.lyra-omnibox-security-popover::-webkit-scrollbar-track,
+.lyra-omnibox-suggestions::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lyra-omnibox-security-popover::-webkit-scrollbar-thumb,
+.lyra-omnibox-suggestions::-webkit-scrollbar-thumb {
+  background-color: var(--lyra-scrollbar-thumb-idle);
+  border: var(--lyra-unit-2) solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--lyra-radius-pill);
+}
+
+.lyra-omnibox-security-popover::-webkit-scrollbar-thumb:hover,
+.lyra-omnibox-suggestions::-webkit-scrollbar-thumb:hover {
+  background-color: var(--lyra-scrollbar-thumb-hover);
+}
+
+.lyra-omnibox-security-popover[data-placement="top"] {
+  animation-name: omnibox-slide-up;
 }
 
 .lyra-security-popover-header {
@@ -133,23 +164,26 @@
 
 /* Floating Autocomplete Suggestions Panel */
 .lyra-omnibox-suggestions {
-  position: absolute;
-  top: calc(100% + var(--lyra-unit-4));
-  left: 0;
-  right: 0;
-  background: color-mix(in srgb, var(--lyra-bg-surface) 96%, black);
-  backdrop-filter: blur(14px);
+  position: fixed;
+  box-sizing: border-box;
+  background: var(--lyra-bg-surface-elevated, var(--lyra-bg-surface));
   border: var(--lyra-unit-1) solid var(--lyra-line-default);
   border-radius: var(--lyra-unit-10);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.32);
-  z-index: 99;
+  z-index: 999;
   max-height: var(--lyra-unit-280);
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--lyra-scrollbar-thumb-idle) transparent;
   padding: var(--lyra-unit-4) 0;
   list-style: none;
   margin: 0;
   text-align: left;
   animation: omnibox-slide-down 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.lyra-omnibox-suggestions[data-placement="top"] {
+  animation-name: omnibox-slide-up;
 }
 
 .lyra-suggestion-item {
@@ -214,6 +248,17 @@
   from {
     opacity: 0;
     transform: translateY(calc(var(--lyra-unit-4) * -1));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes omnibox-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(var(--lyra-unit-4));
   }
   to {
     opacity: 1;

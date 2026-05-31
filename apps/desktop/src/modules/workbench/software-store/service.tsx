@@ -7,6 +7,41 @@ export const SOFTWARE_STORE_APP_ID = "software-store" as const;
 export const SOFTWARE_STORE_INSTANCE_ID = "software-store" as const;
 export const SOFTWARE_STORE_ICON_KEY = "software-store-default" as const satisfies SoftwareStoreAppIconKey;
 
+export type SoftwareStoreDetailRequest =
+  | {
+      readonly kind: "software";
+      readonly id: string;
+    }
+  | {
+      readonly kind: "uiux";
+      readonly id: string;
+    };
+
+const detailRequestListeners = new Set<(request: SoftwareStoreDetailRequest) => void>();
+let pendingDetailRequest: SoftwareStoreDetailRequest | null = null;
+
+export const softwareStoreDetailKey = (request: SoftwareStoreDetailRequest): string =>
+  `${request.kind}:${request.id}`;
+
+export const requestSoftwareStoreDetail = (request: SoftwareStoreDetailRequest): void => {
+  pendingDetailRequest = request;
+  for (const listener of detailRequestListeners) {
+    listener(request);
+  }
+};
+
+export const subscribeSoftwareStoreDetailRequests = (
+  listener: (request: SoftwareStoreDetailRequest) => void
+): (() => void) => {
+  detailRequestListeners.add(listener);
+  if (pendingDetailRequest !== null) {
+    listener(pendingDetailRequest);
+  }
+  return () => {
+    detailRequestListeners.delete(listener);
+  };
+};
+
 export const createSoftwareStoreAppRequest = (
   title: string
 ): WorkspaceAppTabOpenRequest => ({

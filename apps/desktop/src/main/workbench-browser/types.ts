@@ -1,12 +1,18 @@
 import type {
+  WorkbenchBrowserAgentElevationResult,
+  WorkbenchBrowserChromePopoverRequest,
   WorkbenchBrowserElementPickerState,
   WorkbenchBrowserEvent,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
   WorkbenchBrowserNavigateResult,
+  WorkbenchBrowserPageDiagnosticsResult,
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserReadPageStateRequest,
+  WorkbenchBrowserSearchInPageRequest,
+  WorkbenchBrowserSearchInPageResult,
   WorkbenchBrowserSetElementPickerModeRequest,
+  WorkbenchLumenFollowAudit,
   WorkbenchBrowserTopologySnapshot,
   WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/desktop-bridge";
@@ -144,6 +150,8 @@ export type WorkbenchBrowserAgentElementBounds = {
 
 export type WorkbenchBrowserAgentElement = {
   readonly id: number;
+  readonly targetRef: string;
+  readonly stableId: string;
   readonly frameTreeNodeId: number;
   readonly tagName: string;
   readonly role: string;
@@ -161,6 +169,7 @@ export type WorkbenchBrowserAgentElement = {
   readonly href?: string;
   readonly inputType?: string;
   readonly frameUrl?: string;
+  readonly discoveryScope?: "document" | "shadow" | "frame";
 };
 
 export type WorkbenchBrowserAgentObservation = {
@@ -175,6 +184,18 @@ export type WorkbenchBrowserAgentObservation = {
   readonly elements: readonly WorkbenchBrowserAgentElement[];
   readonly activeElementId: number | null;
   readonly focusOrder: readonly number[];
+  readonly authChallengeSignals?: readonly {
+    readonly kind:
+      | "captcha"
+      | "mfa"
+      | "oauth_popup"
+      | "login_wall"
+      | "cross_origin_auth_frame";
+    readonly confidence: "high" | "medium" | "low";
+    readonly source: "dom" | "attribute" | "frame" | "browser";
+    readonly label?: string;
+    readonly url?: string;
+  }[];
   readonly warnings?: readonly string[];
   readonly nextRecommendedAction?: string;
 };
@@ -232,6 +253,7 @@ export type WorkbenchBrowserAgentActionResult = {
   readonly inputMode: "chromium";
   readonly targetMode?: WorkbenchBrowserAgentTargetMode;
   readonly elementId?: number;
+  readonly targetRef?: string;
   readonly x?: number;
   readonly y?: number;
   readonly beforeObservationId?: string;
@@ -262,6 +284,12 @@ export type WorkbenchBrowserViewManager = {
   readonly readPageState: (
     request?: WorkbenchBrowserReadPageStateRequest
   ) => WorkbenchBrowserPageRuntimeState | null;
+  readonly searchInPage: (
+    request: WorkbenchBrowserSearchInPageRequest
+  ) => Promise<WorkbenchBrowserSearchInPageResult>;
+  readonly setChromePopover: (
+    request: WorkbenchBrowserChromePopoverRequest
+  ) => Promise<void>;
   readonly setElementPickerMode: (
     request: WorkbenchBrowserSetElementPickerModeRequest
   ) => Promise<void>;
@@ -319,7 +347,8 @@ export type WorkbenchBrowserViewManager = {
   readonly actOnAgentElement: (
     tabId: string,
     request: {
-      readonly elementId: number;
+      readonly elementId?: number;
+      readonly targetRef?: string;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
@@ -348,6 +377,7 @@ export type WorkbenchBrowserViewManager = {
     tabId: string,
     request: {
       readonly elementId?: number;
+      readonly targetRef?: string;
       readonly text: string;
       readonly clear?: boolean;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
@@ -359,6 +389,7 @@ export type WorkbenchBrowserViewManager = {
     request: {
       readonly key: string;
       readonly elementId?: number;
+      readonly targetRef?: string;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
     }
@@ -377,6 +408,7 @@ export type WorkbenchBrowserViewManager = {
       readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly maxChars?: number;
+      readonly timeoutMs?: number;
     }
   ) => Promise<
     | (WorkbenchTabExtractTextResult & {
@@ -394,6 +426,39 @@ export type WorkbenchBrowserViewManager = {
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
     }
   ) => Promise<WorkbenchVisualCaptureResult & { readonly targetMode: WorkbenchBrowserAgentTargetMode }>;
+  readonly showAgentActivity: (
+    tabId: string,
+    request: {
+      readonly action: "wait";
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly durationMs?: number;
+    }
+  ) => Promise<{
+    readonly tabId: string;
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly action: "wait";
+  }>;
+  readonly readAgentFollowAudit: (
+    tabId: string,
+    request?: {
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly maxActions?: number;
+    }
+  ) => Promise<WorkbenchLumenFollowAudit>;
+  readonly auditAgentPageDiagnostics: (
+    tabId: string,
+    request?: {
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly maxEntries?: number;
+    }
+  ) => Promise<WorkbenchBrowserPageDiagnosticsResult>;
+  readonly elevateAgentPage: (
+    tabId: string,
+    request?: {
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly reason?: string;
+    }
+  ) => Promise<WorkbenchBrowserAgentElevationResult>;
 };
 
 export type WorkbenchBrowserElementPickerController = {

@@ -9,6 +9,7 @@ import {
   readTrustedUiuxPack,
   readUiuxRegistryDocument,
   requestUiuxPackActivationInRegistry,
+  uninstallUiuxPack,
   updateUiuxPackTrustState
 } from "../registry";
 
@@ -147,5 +148,38 @@ describe("uiux pack registry", () => {
       packId: installed.id
     });
     expect(readUiuxRegistryDocument(storageRoot).pendingExternalPackId).toBe(installed.id);
+  });
+
+  test("uninstalls UIUX packs and clears active activation state", () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), "lyra-uiux-test-"));
+    const storageRoot = path.join(tempRoot, "storage");
+    const packageRoot = path.join(tempRoot, "package");
+    createPackage(packageRoot);
+    const installed = installUiuxPackageFromRoot({
+      storageRoot,
+      sourceRoot: packageRoot,
+      source: {
+        kind: "local",
+        path: packageRoot
+      }
+    });
+    updateUiuxPackTrustState({
+      storageRoot,
+      packId: installed.id,
+      trustState: "trusted"
+    });
+    requestUiuxPackActivationInRegistry({
+      storageRoot,
+      packId: installed.id
+    });
+
+    expect(uninstallUiuxPack({ storageRoot, packId: installed.id })).toEqual({
+      packId: installed.id,
+      removed: true
+    });
+    const registry = readUiuxRegistryDocument(storageRoot);
+    expect(registry.installed).toEqual([]);
+    expect(registry.pendingExternalPackId).toBeUndefined();
+    expect(readTrustedUiuxPack(storageRoot, installed.id)).toBeNull();
   });
 });

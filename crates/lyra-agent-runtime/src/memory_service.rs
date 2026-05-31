@@ -89,4 +89,90 @@ impl MemoryService {
             serde_json::json!({ "scope": scope, "content": content }),
         )
     }
+
+    pub fn create_longterm(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.longterm.create", payload)
+    }
+
+    pub fn search_longterm(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.longterm.search", payload)
+    }
+
+    pub fn update_longterm(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.longterm.update", payload)
+    }
+
+    pub fn forget_longterm(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.longterm.forget", payload)
+    }
+
+    pub fn list_longterm(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.longterm.list", payload)
+    }
+
+    pub fn link_longterm(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.longterm.link", payload)
+    }
+
+    pub fn rebuild_longterm_index(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend
+            .call("agent.memory.longterm.rebuildIndex", payload)
+    }
+
+    pub fn cleanup_longterm_candidates(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend
+            .call("agent.memory.longterm.cleanupCandidates", payload)
+    }
+
+    pub fn review_candidates(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.candidates.review", payload)
+    }
+
+    pub fn apply_candidate(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.candidates.apply", payload)
+    }
+
+    pub fn reject_candidate(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.candidates.reject", payload)
+    }
+
+    pub fn explain_injection(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.explainInjection", payload)
+    }
 }

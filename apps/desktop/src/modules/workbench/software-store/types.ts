@@ -21,6 +21,7 @@ export type SoftwareStoreBuiltinAppId =
   | "agent-git"
   | "agent-selfdev"
   | "agent-overnight"
+  | "login-manager"
   | "software-store";
 
 export type SoftwareStoreAgentAccess = "notConnected" | "readOnly" | "controllable";

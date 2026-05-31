@@ -1,4 +1,4 @@
-import type { WorkspaceAppIconKey, LoginManagerAppId } from "../workspace-apps";
+import type { WorkspaceAppIconKey } from "../workspace-apps";
 
 export type NotificationCenterAppId = "notification-center";
 export type NotificationCenterAppIconKey = "notification-center-default";
@@ -39,9 +39,9 @@ export type WorkbenchNotificationTarget =
         | "agent-selfdev"
         | "agent-overnight"
         | "agent-session-history"
+        | "login-manager"
         | "software-store"
-        | NotificationCenterAppId
-        | LoginManagerAppId;
+        | NotificationCenterAppId;
       readonly appInstanceId: string;
       readonly title?: string;
       readonly iconKey?: WorkspaceAppIconKey;

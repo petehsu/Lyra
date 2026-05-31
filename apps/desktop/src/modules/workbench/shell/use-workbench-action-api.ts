@@ -10,10 +10,7 @@ import {
   createAgentSessionHistoryAppRequest
 } from "../agent-session-history";
 import { createSoftwareStoreAppRequest } from "../software-store";
-import {
-  LOGIN_MANAGER_INSTANCE_ID,
-  createLoginManagerAppRequest
-} from "../login-manager";
+import { createLoginManagerAppRequest } from "../login-manager";
 import { resolveDocsEntryUrl } from "./service";
 import type { PanelLayoutModel } from "./use-panel-layout";
 
@@ -21,6 +18,7 @@ export type WorkbenchActionApi = {
   readonly openNewTab: () => void;
   readonly openSettings: () => void;
   readonly openSoftwareStore: () => void;
+  readonly openLoginManager: () => void;
   readonly openFileManager: () => void;
   readonly openAgentSessionHistory: () => void;
   readonly openDocs: () => void;
@@ -30,7 +28,6 @@ export type WorkbenchActionApi = {
   readonly minimizeWindow: () => void;
   readonly toggleMaximizeWindow: () => void;
   readonly closeWindow: () => void;
-  readonly openLoginManager: () => void;
 };
 
 export type WorkbenchPresentationState = {
@@ -48,13 +45,13 @@ export type WorkbenchChromeLabels = {
   readonly moveTerminalToBottom: string;
   readonly openSettings: string;
   readonly openSoftwareStore: string;
+  readonly openLoginManager: string;
   readonly openFiles: string;
   readonly openAgentSessionHistory: string;
   readonly openDocs: string;
   readonly minimizeWindow: string;
   readonly toggleMaximizeWindow: string;
   readonly closeWindow: string;
-  readonly openLoginManager: string;
 };
 
 type UseWorkbenchActionApiParams = {
@@ -105,6 +102,9 @@ export const useWorkbenchActionApi = ({
       openSoftwareStore: () => {
         tabsModel.openAppTab(createSoftwareStoreAppRequest(softwareStoreTitle));
       },
+      openLoginManager: () => {
+        tabsModel.openAppTab(createLoginManagerAppRequest(loginManagerTitle));
+      },
       openFileManager: () => {
         const nextApp = fileManagerModel.createInstance();
         tabsModel.openAppTab(nextApp);
@@ -149,19 +149,6 @@ export const useWorkbenchActionApi = ({
       },
       closeWindow: () => {
         void desktopApi?.windowControls.close();
-      },
-      openLoginManager: () => {
-        const existingTab = tabsModel.tabs.find(
-          (tab) =>
-            tab.pageKind === "app" &&
-            tab.appId === "login-manager" &&
-            tab.appInstanceId === LOGIN_MANAGER_INSTANCE_ID
-        );
-        if (existingTab !== undefined) {
-          tabsModel.setActiveTab(existingTab.id);
-          return;
-        }
-        tabsModel.openAppTab(createLoginManagerAppRequest(loginManagerTitle));
       }
     };
   }, [
@@ -169,8 +156,8 @@ export const useWorkbenchActionApi = ({
     docsEntryAddress,
     docsTabTitle,
     agentSessionHistoryTitle,
-    softwareStoreTitle,
     loginManagerTitle,
+    softwareStoreTitle,
     fileManagerModel,
     locale,
     onBeforePanelLayoutAnimation,
@@ -190,11 +177,11 @@ export const createWorkbenchChromeLabels = (
   moveTerminalToBottom: t("panel.moveTerminalToBottom"),
   openSettings: t("settings.open"),
   openSoftwareStore: t("softwareStore.open"),
+  openLoginManager: t("loginManager.open"),
   openFiles: t("files.open"),
   openAgentSessionHistory: t("agentHistory.open"),
   openDocs: t("docs.open"),
   minimizeWindow: t("window.minimize"),
   toggleMaximizeWindow: t("window.toggleMaximize"),
-  closeWindow: t("window.close"),
-  openLoginManager: t("loginManager.open" as I18nKey) || "登录账户管理"
+  closeWindow: t("window.close")
 });

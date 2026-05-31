@@ -210,7 +210,13 @@ export const TitlebarAiLaunchPill = ({
       data-phase={phase}
     >
       <AnimatedMagicBorder isOpen={isOpen} />
-      <LyraBrandLogo logoUrl={logoUrl} className="lyra-titlebar-ai-launch-logo" />
+      <LyraBrandLogo
+        logoUrl={logoUrl}
+        className="lyra-titlebar-ai-launch-logo"
+        motion={isOpen ? "active" : "ambient"}
+        spinIntensity={isOpen ? "steady" : "subtle"}
+        spinDurationMs={isOpen ? 6400 : 18000}
+      />
       <span className="lyra-titlebar-ai-launch-text">
         <span className="lyra-titlebar-ai-launch-prefix">{prefix}</span>
         <span ref={rotatorRef} className="lyra-titlebar-ai-launch-rotator">

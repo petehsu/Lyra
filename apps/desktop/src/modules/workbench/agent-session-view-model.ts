@@ -9,6 +9,7 @@ import type {
 } from "../../shared/agent";
 import type {
   ChatMessage,
+  AgentImageAttachment,
   ModelOption,
   SessionMeta,
   AgentSidePanel,
@@ -17,11 +18,14 @@ import type {
   ToolCall,
   ToolDetails,
   ToolGroup,
+  ToolActionTarget,
   ToolPeek,
   WebResult,
   WorkbenchTabSummary
 } from "./ai-panel/agent-chat-demo/core/types";
 import { formatMessage, t } from "./ai-panel/agent-chat-demo/core/i18n";
+import { isLyraSensitiveValueRef } from "../../shared/sensitive-value";
+import type { LyraSensitiveValueRef } from "../../shared/desktop-bridge";
 
 const upsertTool = (
   tools: readonly AgentToolActivity[],
@@ -373,6 +377,158 @@ const stringField = (
   return undefined;
 };
 
+const numberField = (
+  value: Record<string, unknown>,
+  ...keys: readonly string[]
+): number | undefined => {
+  for (const key of keys) {
+    const field = value[key];
+    if (typeof field === "number" && Number.isFinite(field)) return field;
+  }
+  return undefined;
+};
+
+const labelFromPath = (value: string): string => {
+  const normalized = value.replaceAll("\\", "/");
+  const tail = normalized.split("/").filter(Boolean).at(-1);
+  return tail ?? value;
+};
+
+const targetFromOpenTarget = (
+  value: unknown,
+  fallbackLabel?: string
+): ToolActionTarget | null => {
+  const target = asRecord(value);
+  const kind = stringField(target, "kind", "type");
+  if (kind === "url") {
+    const url = stringField(target, "url", "href", "value");
+    if (url === undefined) return null;
+    return {
+      kind: "url",
+      label: fallbackLabel ?? stringField(target, "label", "title") ?? url,
+      value: url
+    };
+  }
+  if (kind === "file" || kind === "path") {
+    const path = stringField(target, "path", "filePath", "value");
+    if (path === undefined) return null;
+    return {
+      kind: "file",
+      label: fallbackLabel ?? stringField(target, "label", "title") ?? labelFromPath(path),
+      value: path
+    };
+  }
+  if (kind === "secret") {
+    const secretRef = isLyraSensitiveValueRef(target.secretRef)
+      ? target.secretRef
+      : isLyraSensitiveValueRef(value)
+        ? value
+        : null;
+    const targetId = secretRef?.id ?? stringField(target, "id", "value");
+    if (secretRef === null || targetId === undefined) return null;
+    return {
+      kind: "secret",
+      label: fallbackLabel ?? stringField(target, "label", "title") ?? secretRef.label,
+      value: targetId,
+      secretRef
+    };
+  }
+  return null;
+};
+
+const targetFromSensitiveValueRef = (
+  value: LyraSensitiveValueRef,
+  fallbackLabel?: string
+): ToolActionTarget => ({
+  kind: "secret",
+  label: fallbackLabel ?? value.label,
+  value: value.id,
+  secretRef: value
+});
+
+const uniqueActionTargets = (
+  targets: readonly (ToolActionTarget | null | undefined)[]
+): ToolActionTarget[] => {
+  const seen = new Set<string>();
+  const result: ToolActionTarget[] = [];
+  for (const target of targets) {
+    if (target === null || target === undefined) continue;
+    const key = `${target.kind}:${target.value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(target);
+  }
+  return result;
+};
+
+const imageAttachmentFromArtifact = (
+  value: unknown,
+  fallbackLabel = "Image artifact"
+): AgentImageAttachment | undefined => {
+  const artifact = asRecord(value);
+  const openTarget = targetFromOpenTarget(artifact.openTarget, fallbackLabel);
+  const path = openTarget?.kind === "file"
+    ? openTarget.value
+    : stringField(artifact, "path", "filePath");
+  if (path === undefined) {
+    return undefined;
+  }
+  const mediaType = stringField(artifact, "mediaType", "mimeType") ?? "image/png";
+  return {
+    id: stringField(artifact, "id") ?? `image-artifact-${path}`,
+    mediaType,
+    data: "",
+    label: fallbackLabel,
+    source: path,
+    width: numberField(artifact, "width") ?? null,
+    height: numberField(artifact, "height") ?? null
+  };
+};
+
+const secretTargetsFromValue = (
+  value: unknown,
+  depth = 0
+): ToolActionTarget[] => {
+  if (depth > 6) {
+    return [];
+  }
+  if (isLyraSensitiveValueRef(value)) {
+    return [targetFromSensitiveValueRef(value)];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => secretTargetsFromValue(item, depth + 1));
+  }
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) {
+    return [];
+  }
+  return Object.values(record).flatMap((item) => secretTargetsFromValue(item, depth + 1));
+};
+
+const targetsFromToolRaw = (raw: Record<string, unknown>): ToolActionTarget[] => {
+  const output = asRecord(raw.output);
+  const imageArtifact =
+    asRecord(raw.imageArtifact).path === undefined
+      ? asRecord(output.imageArtifact)
+      : asRecord(raw.imageArtifact);
+  const imageTarget = targetFromOpenTarget(imageArtifact.openTarget, "Open image");
+  const imageTargetWithMetadata = imageTarget?.kind === "file"
+    ? {
+        ...imageTarget,
+        mediaType: stringField(imageArtifact, "mediaType", "mimeType") ?? "image/png",
+        width: numberField(imageArtifact, "width") ?? null,
+        height: numberField(imageArtifact, "height") ?? null
+      }
+    : imageTarget;
+  return uniqueActionTargets([
+    targetFromOpenTarget(raw.openTarget),
+    targetFromOpenTarget(output.openTarget),
+    imageTargetWithMetadata,
+    ...secretTargetsFromValue(raw),
+    ...secretTargetsFromValue(output)
+  ]);
+};
+
 const parseJsonRecord = (value: string): Record<string, unknown> | null => {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -413,6 +569,7 @@ type ParsedWebFetchOutput = {
 
 type ParsedWorkbenchDetails = Extract<ToolDetails, { type: "workbench" }>;
 type ParsedLumenDetails = Extract<ToolDetails, { type: "lumen" }>;
+type ParsedSoftwareDetails = Extract<ToolDetails, { type: "software" }>;
 
 type ParsedLumenElement = {
   readonly id: string;
@@ -433,7 +590,8 @@ const LUMEN_ACTIONS = new Set([
   "navigate",
   "read",
   "see",
-  "wait"
+  "wait",
+  "read_until"
 ]);
 const LUMEN_OBSERVATION_HEADER =
   /^Observation\s+(\S+)\s+\(([^)]+)\)\s+for\s+(.+?)(?:\s+-\s+(https?:\/\/\S+))?$/u;
@@ -448,6 +606,16 @@ const isHttpUrl = (value: string): boolean =>
 
 const isLyraLumenTool = (tool: AgentToolActivity): boolean =>
   tool.name.toLowerCase() === "lyra_lumen";
+
+const isSoftwareTool = (tool: AgentToolActivity): boolean => {
+  const toolName = tool.name.toLowerCase();
+  return toolName === "software"
+    || toolName === "software_invoke_capability"
+    || toolName === "software_inspect_capability"
+    || toolName === "software_read_state"
+    || toolName === "software_list_capabilities"
+    || toolName.startsWith("software.");
+};
 
 const compactText = (value: string): string =>
   value.replace(/\s+/gu, " ").trim();
@@ -576,6 +744,8 @@ const lumenTitle = (tool: AgentToolActivity): string => {
       return "Captured browser snapshot";
     case "wait":
       return "Waited in browser";
+    case "read_until":
+      return "Read browser until condition";
     default:
       return "Lyra Lumen";
   }
@@ -584,7 +754,9 @@ const lumenTitle = (tool: AgentToolActivity): string => {
 const toLumenDetails = (
   tool: AgentToolActivity,
   output: string,
-  screenshot: string | undefined
+  screenshot: string | undefined,
+  screenshotImage: AgentImageAttachment | undefined,
+  targets: readonly ToolActionTarget[]
 ): ParsedLumenDetails => {
   const input = toolInputRecord(tool);
   const action = normalizeLumenAction(stringField(input, "action"));
@@ -640,7 +812,7 @@ const toLumenDetails = (
     const host = urlHost(url);
     if (host !== undefined) chips.push(host);
     excerpt = truncateText(url ?? output, 120);
-  } else if (action === "wait") {
+  } else if (action === "wait" || action === "read_until") {
     const timeout = input.timeout_ms ?? input.timeoutMs;
     if (typeof timeout === "number" && Number.isFinite(timeout)) {
       chips.push(`${Math.round(timeout)}ms`);
@@ -664,7 +836,9 @@ const toLumenDetails = (
     targetMode,
     peek,
     ...(output.trim().length === 0 ? {} : { text: output }),
-    ...(screenshot === undefined ? {} : { screenshot })
+    ...(screenshot === undefined ? {} : { screenshot }),
+    ...(screenshotImage === undefined ? {} : { screenshotImage }),
+    ...(targets.length === 0 ? {} : { targets: [...targets] })
   };
 };
 
@@ -777,6 +951,18 @@ const workbenchActionLabel = (action: string): string => {
   }
 };
 
+const softwareTitle = (tool: AgentToolActivity): string => {
+  const input = toolInputRecord(tool);
+  const actionId = stringField(input, "actionId", "capabilityId");
+  if (actionId !== undefined) return actionId;
+  const action = stringField(input, "action");
+  if (action === "list_capabilities") return "Listed software capabilities";
+  if (action === "inspect_capability") return "Inspected software capability";
+  if (action === "read_state") return "Read software state";
+  if (action === "invoke_capability") return "Invoked software capability";
+  return "Software capability";
+};
+
 const parseWorkbenchListOutput = (output: string): WorkbenchTabSummary[] | null => {
   const tabs = output
     .trim()
@@ -869,6 +1055,29 @@ const toWorkbenchDetails = (tool: AgentToolActivity, output: string): ParsedWork
   };
 };
 
+const toSoftwareDetails = (
+  tool: AgentToolActivity,
+  output: string,
+  raw: Record<string, unknown>,
+  targets: readonly ToolActionTarget[]
+): ParsedSoftwareDetails => {
+  const input = toolInputRecord(tool);
+  const softwareId =
+    stringField(raw, "softwareId")
+    ?? stringField(input, "softwareId");
+  const actionId =
+    stringField(raw, "actionId", "capabilityId")
+    ?? stringField(input, "actionId", "capabilityId");
+  return {
+    type: "software",
+    action: stringField(input, "action") ?? "software",
+    ...(softwareId === undefined ? {} : { softwareId }),
+    ...(actionId === undefined ? {} : { actionId }),
+    ...(output.trim().length === 0 ? {} : { text: output }),
+    ...(targets.length === 0 ? {} : { targets: [...targets] })
+  };
+};
+
 const toToolDetails = (
   tool: AgentToolActivity,
   kind: ToolCall["kind"]
@@ -876,13 +1085,26 @@ const toToolDetails = (
   const input = asRecord(tool.input);
   const output = toolOutputText(tool);
   const outputRecord = asRecord(tool.output);
+  const rawOutputRecord = asRecord(outputRecord.raw);
   const screenshotObj = asRecord(outputRecord.screenshot);
+  const imageArtifactObj = asRecord(outputRecord.imageArtifact);
+  const rawImageArtifactObj = asRecord(rawOutputRecord.imageArtifact);
+  const imageArtifactPath =
+    stringField(imageArtifactObj, "path")
+    ?? stringField(rawImageArtifactObj, "path");
+  const screenshotImage =
+    imageAttachmentFromArtifact(rawImageArtifactObj, "Lyra Lumen snapshot")
+    ?? imageAttachmentFromArtifact(imageArtifactObj, "Lyra Lumen snapshot");
+  const targets = targetsFromToolRaw(rawOutputRecord);
   const screenshot = typeof screenshotObj.data === "string"
     ? `data:${screenshotObj.mediaType || "image/png"};base64,${screenshotObj.data}`
-    : undefined;
+    : imageArtifactPath;
 
   if (isLyraLumenTool(tool)) {
-    return toLumenDetails(tool, output, screenshot);
+    return toLumenDetails(tool, output, screenshot, screenshotImage, targets);
+  }
+  if (isSoftwareTool(tool)) {
+    return toSoftwareDetails(tool, output, rawOutputRecord, targets);
   }
   if (kind === "read") {
     return {
@@ -939,6 +1161,8 @@ const toToolCall = (tool: AgentToolActivity): ToolCall => {
   const details = toToolDetails(tool, kind);
   const title = isLyraLumenTool(tool)
     ? lumenTitle(tool)
+    : isSoftwareTool(tool)
+      ? softwareTitle(tool)
     : kind === "workbench"
       ? workbenchActionLabel(stringField(toolInputRecord(tool), "action") ?? "workbench")
       : tool.label === "Ran" || tool.label.trim().length === 0 ? tool.name : tool.label;

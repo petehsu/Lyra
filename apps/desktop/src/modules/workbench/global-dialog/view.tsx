@@ -1,13 +1,14 @@
 import { Check, Copy } from "lucide-react";
+import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { GlobalDialogState } from "./types";
+import type { GlobalDialogActionContext, GlobalDialogState } from "./types";
 
 type GlobalDialogHostProps = {
   readonly state: GlobalDialogState;
   readonly onClose: () => void;
-  readonly onSelectAction: (actionId: string) => void;
+  readonly onSelectAction: (actionId: string, context?: GlobalDialogActionContext) => void;
 };
 
 const toActionLayoutClassName = (count: number): string => {
@@ -81,6 +82,7 @@ export const GlobalDialogHost = ({
   onSelectAction
 }: GlobalDialogHostProps) => {
   const [copiedItemId, setCopiedItemId] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState("");
   const copiedResetTimerRef = useRef<number | null>(null);
 
   const clearCopiedResetTimer = useCallback((): void => {
@@ -128,9 +130,29 @@ export const GlobalDialogHost = ({
   useEffect(() => {
     if (state.isOpen === false) {
       setCopiedItemId(null);
+      setInputValue("");
       clearCopiedResetTimer();
     }
   }, [clearCopiedResetTimer, state.isOpen]);
+
+  useEffect(() => {
+    if (state.isOpen === false) {
+      return;
+    }
+    setInputValue(state.input?.value ?? "");
+  }, [state.input?.id, state.input?.value, state.isOpen]);
+
+  const submitActionId = state.input?.submitActionId
+    ?? state.actions.find((action) => action.tone === "primary")?.id
+    ?? state.actions[0]?.id;
+
+  const onSubmit = useCallback((event: FormEvent): void => {
+    event.preventDefault();
+    if (state.input === undefined || submitActionId === undefined) {
+      return;
+    }
+    onSelectAction(submitActionId, { inputValue });
+  }, [inputValue, onSelectAction, state.input, submitActionId]);
 
   useEffect(
     () => () => {
@@ -163,11 +185,12 @@ export const GlobalDialogHost = ({
         event.preventDefault();
       }}
     >
-      <section
+      <form
         className="lyra-global-dialog"
         role="dialog"
         aria-modal="true"
         aria-label={state.title}
+        onSubmit={onSubmit}
         onMouseDown={(event) => {
           event.stopPropagation();
         }}
@@ -198,6 +221,21 @@ export const GlobalDialogHost = ({
             <p>{state.description}</p>
           ) : null}
         </header>
+
+        {state.input !== undefined ? (
+          <label className="lyra-global-dialog-input" htmlFor={`global-dialog-${state.input.id}`}>
+            <span>{state.input.label}</span>
+            <input
+              id={`global-dialog-${state.input.id}`}
+              autoFocus
+              value={inputValue}
+              placeholder={state.input.placeholder}
+              onChange={(event) => {
+                setInputValue(event.currentTarget.value);
+              }}
+            />
+          </label>
+        ) : null}
 
         {state.copyItems.length > 0 ? (
           <section
@@ -259,7 +297,7 @@ export const GlobalDialogHost = ({
                   .join(" ")}
                 disabled={action.disabled}
                 onClick={() => {
-                  onSelectAction(action.id);
+                  onSelectAction(action.id, { inputValue });
                 }}
               >
                 {action.label}
@@ -267,7 +305,7 @@ export const GlobalDialogHost = ({
             ))}
           </footer>
         ) : null}
-      </section>
+      </form>
     </div>,
     document.body
   );

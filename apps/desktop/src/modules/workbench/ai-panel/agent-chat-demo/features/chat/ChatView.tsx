@@ -11,7 +11,7 @@ import { ArrowDown } from "lucide-react";
 import { APP_CONFIG } from "../../core/config";
 import { t } from "../../core/i18n";
 import { useData } from "../../data/DataProvider";
-import { Message } from "./Message";
+import { Message, shouldShowAgentActivityIndicator } from "./Message";
 import { Composer } from "./Composer";
 import { DecisionPanel, PermissionPanel } from "../panels";
 
@@ -44,6 +44,8 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [panelProgress, setPanelProgress] = useState(1);
   const hasPendingClarification = showDecisions && decisions.length > 0;
+  const activityIndicatorMessageId =
+    [...messages].reverse().find(shouldShowAgentActivityIndicator)?.id ?? null;
 
   const lastScrollTop = useRef(0);
   const rafId = useRef(0);
@@ -109,7 +111,13 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
       <div className="chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         <div className="chat-inner">
           {messages.map((m) => (
-            <Message key={m.id} message={m} />
+            <Message
+              key={m.id}
+              message={m}
+              showActivityIndicator={
+                activityIndicatorMessageId === null || m.id === activityIndicatorMessageId
+              }
+            />
           ))}
         </div>
       </div>

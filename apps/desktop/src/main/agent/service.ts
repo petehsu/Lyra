@@ -177,6 +177,53 @@ const materializeImageAttachment = (
   return { path: filePath };
 };
 
+const materializeLumenCapture = (
+  storageRoot: string,
+  tabId: string,
+  capture: {
+    readonly mimeType: string;
+    readonly imageBase64: string;
+    readonly width: number;
+    readonly height: number;
+    readonly visibleOnly: boolean;
+  }
+) => {
+  const mediaType = capture.mimeType.trim().toLowerCase();
+  if (!mediaType.startsWith("image/")) {
+    throw new Error("Lumen visual capture did not return an image.");
+  }
+  const buffer = Buffer.from(capture.imageBase64, "base64");
+  if (buffer.length === 0 || buffer.length > IMAGE_ATTACHMENT_MAX_BYTES) {
+    throw new Error("Lumen visual capture size is invalid.");
+  }
+  const directory = join(storageRoot, "lumen-evidence");
+  mkdirSync(directory, { recursive: true });
+  const artifactId = `lumen-see-${Date.now()}-${randomUUID()}`;
+  const sanitizedTabId = tabId
+    .replace(/[^A-Za-z0-9._-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 48) || "browser";
+  const filePath = join(
+    directory,
+    `${artifactId}-${sanitizedTabId}.${extensionForImageMediaType(mediaType)}`
+  );
+  writeFileSync(filePath, buffer);
+  return {
+    id: artifactId,
+    kind: "image",
+    mediaType,
+    path: filePath,
+    width: capture.width,
+    height: capture.height,
+    visibleOnly: capture.visibleOnly,
+    sizeBytes: buffer.length,
+    openTarget: {
+      kind: "file",
+      path: filePath
+    }
+  };
+};
+
 const createSoftwareCapabilityRendererClient = ({
   getWindow,
   timeoutMs = 5_000
@@ -242,6 +289,8 @@ const createSoftwareCapabilityRendererClient = ({
       await sendQuery("software.listCapabilities", payload),
     inspectCapability: async (payload: object) =>
       await sendQuery("software.inspectCapability", payload),
+    readState: async (payload: object) =>
+      await sendQuery("software.readState", payload),
     invokeCapability: async (payload: object) =>
       await sendQuery("software.invokeCapability", payload)
   };
@@ -371,6 +420,20 @@ export const createAgentIpcBridge = ({
       );
       this.name = "NonBrowserWorkbenchTabError";
       this.tab = tab;
+    }
+  }
+
+  class InvalidLumenElementIdError extends Error {
+    readonly received: string;
+    readonly recommendedTool: string;
+
+    constructor(received: string) {
+      super(
+        `elementId must be a numeric Lyra Lumen element id, not a Workbench tab id: ${received}`
+      );
+      this.name = "InvalidLumenElementIdError";
+      this.received = received;
+      this.recommendedTool = "lyra_lumen_map";
     }
   }
 
@@ -589,6 +652,46 @@ export const createAgentIpcBridge = ({
     return "isolated";
   };
 
+  const readOptionalLumenElementId = (
+    payload: Record<string, unknown>,
+    fieldName = "elementId"
+  ): number | undefined => {
+    const value = payload[fieldName];
+    if (value === undefined) {
+      return undefined;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.round(value);
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      const trimmed = value.trim();
+      const parsed = Number(trimmed);
+      if (Number.isFinite(parsed) && /^\d+$/u.test(trimmed)) {
+        return Math.round(parsed);
+      }
+      throw new InvalidLumenElementIdError(trimmed);
+    }
+    throw new Error(`${fieldName} must be a numeric Lyra Lumen element id`);
+  };
+
+  const readOptionalLumenTargetRef = (
+    payload: Record<string, unknown>,
+    fieldName = "targetRef"
+  ): string | undefined => {
+    const value = payload[fieldName] ?? payload.lumenTargetRef;
+    if (value === undefined) {
+      return undefined;
+    }
+    if (typeof value !== "string" || value.trim().length === 0) {
+      throw new Error(`${fieldName} must be a non-empty Lyra Lumen targetRef string`);
+    }
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("lumen:")) {
+      throw new Error(`${fieldName} must be a stable Lyra Lumen targetRef from lyra_lumen_map`);
+    }
+    return trimmed;
+  };
+
   const readLumenPoint = (payload: Record<string, unknown>) => {
     const value = payload.point;
     if (value === null || typeof value !== "object") {
@@ -631,10 +734,41 @@ export const createAgentIpcBridge = ({
       message:
         `Target tab is ${describeWorkbenchTabKind(targetTab)}, not a browser page. ` +
         "Lyra Lumen did not run on this tab.",
-      recommendedTool: "workbench.readTab",
+      recommendedTool: "workbench_read_tab",
+      recommendedHostMethod: "workbench.readTab",
       tab: targetTab,
       observation,
       ...(observationError === undefined ? {} : { observationError })
+    };
+  };
+
+  const withLumenTargetIds = <T extends Record<string, unknown>>(
+    result: T,
+    tabId: string,
+    elementId?: number
+  ) => {
+    const observationId =
+      typeof result.observationId === "string"
+        ? result.observationId
+        : typeof result.afterObservationId === "string"
+          ? result.afterObservationId
+          : undefined;
+    const resolvedElementId =
+      elementId
+      ?? (typeof result.elementId === "number" && Number.isFinite(result.elementId)
+        ? Math.round(result.elementId)
+        : undefined);
+    const resolvedTargetRef =
+      typeof result.targetRef === "string" && result.targetRef.length > 0
+        ? result.targetRef
+        : undefined;
+    return {
+      ...result,
+      workbenchTabId: tabId,
+      browserTabId: tabId,
+      ...(observationId === undefined ? {} : { lumenObservationId: observationId }),
+      ...(resolvedElementId === undefined ? {} : { lumenElementId: resolvedElementId }),
+      ...(resolvedTargetRef === undefined ? {} : { lumenTargetRef: resolvedTargetRef })
     };
   };
 
@@ -647,6 +781,24 @@ export const createAgentIpcBridge = ({
     } catch (error) {
       if (error instanceof NonBrowserWorkbenchTabError) {
         return await createLyraLumenNotApplicable(requestedMethod, error.tab);
+      }
+      if (error instanceof InvalidLumenElementIdError) {
+        return {
+          ok: false,
+          kind: "lyraLumenResult",
+          requestedMethod,
+          invalidIdentifier: {
+            field: "elementId",
+            received: error.received,
+            expected: "lumenElementId"
+          },
+          correction: {
+            message:
+              "Workbench tab ids and Lumen element ids are separate. Call lyra_lumen_map for the target tab, then pass a numeric element id from that observation.",
+            recommendedTool: error.recommendedTool
+          },
+          nextRecommendedAction: error.recommendedTool
+        };
       }
       return {
         ok: false,
@@ -680,13 +832,18 @@ export const createAgentIpcBridge = ({
     let previousContent: string | null = null;
     let stableSince = Date.now();
     let lastContent = "";
+    let lastReadContent: Awaited<ReturnType<typeof browser.readAgentPage>> | null = null;
 
-    while (Date.now() <= deadline) {
+    while (Date.now() <= deadline - 320) {
+      const remainingMs = deadline - Date.now();
+      const readTimeoutMs = Math.max(250, Math.min(4_000, remainingMs - 60));
       const content = await browser.readAgentPage(tabId, {
         strategy: "focus",
         targetMode: request.targetMode,
+        timeoutMs: readTimeoutMs,
         ...(request.maxChars === undefined ? {} : { maxChars: request.maxChars })
       });
+      lastReadContent = content;
       lastContent = content.content;
       if (firstContent === null) {
         firstContent = lastContent;
@@ -716,11 +873,19 @@ export const createAgentIpcBridge = ({
       await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
     }
 
-    const content = await browser.readAgentPage(tabId, {
+    const content = lastReadContent ?? await browser.readAgentPage(tabId, {
       strategy: "focus",
       targetMode: request.targetMode,
+      timeoutMs: 250,
       ...(request.maxChars === undefined ? {} : { maxChars: request.maxChars })
     });
+    if (
+      request.until === "textContains"
+      && request.text !== undefined
+      && content.content.includes(request.text)
+    ) {
+      return { content, matched: true, elapsedMs: Date.now() - startedAt };
+    }
     return {
       content,
       matched: false,
@@ -761,11 +926,11 @@ export const createAgentIpcBridge = ({
         targetMode,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
-      return {
+      return withLumenTargetIds({
         ...observation,
         kind: "lyraLumenMap",
         nextRecommendedAction: observation.elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
-      };
+      }, tabId);
     }),
     "lyraLumen.act": withLyraLumenResult("lyraLumen.act", async (payload) => {
       const browser = getBrowserBridge();
@@ -773,7 +938,9 @@ export const createAgentIpcBridge = ({
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
-      const result = payload.elementId === undefined
+      const elementId = readOptionalLumenElementId(payload);
+      const targetRef = readOptionalLumenTargetRef(payload);
+      const result = elementId === undefined && targetRef === undefined
         ? await browser.actOnAgentPoint(tabId, {
             point: readLumenPoint(payload),
             interaction: readLumenInteraction(payload),
@@ -781,16 +948,17 @@ export const createAgentIpcBridge = ({
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           })
         : await browser.actOnAgentElement(tabId, {
-            elementId: readNumberField(payload, "elementId"),
+            ...(elementId === undefined ? {} : { elementId }),
+            ...(targetRef === undefined ? {} : { targetRef }),
             interaction: readLumenInteraction(payload),
             targetMode,
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           });
-      return {
+      return withLumenTargetIds({
         ...result,
         kind: "lyraLumenActionResult",
         nextRecommendedAction: "lyra_lumen.map"
-      };
+      }, tabId, elementId);
     }),
     "lyraLumen.reveal": withLyraLumenResult("lyraLumen.reveal", async (payload) => {
       const browser = getBrowserBridge();
@@ -802,6 +970,8 @@ export const createAgentIpcBridge = ({
         80,
         Math.min(2_000, readOptionalNumberField(payload, "idleMs") ?? 500)
       );
+      const elementId = readOptionalLumenElementId(payload);
+      const targetRef = readOptionalLumenTargetRef(payload);
       const interactionPayload = {
         ...payload,
         interaction: payload.interaction ?? "hover"
@@ -811,7 +981,8 @@ export const createAgentIpcBridge = ({
         targetMode,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
-      const actionResult = payload.elementId === undefined
+      const actionResult = elementId === undefined
+        && targetRef === undefined
         ? await browser.actOnAgentPoint(tabId, {
             point: readLumenPoint(payload),
             interaction: readLumenInteraction(interactionPayload),
@@ -819,17 +990,18 @@ export const createAgentIpcBridge = ({
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           })
         : await browser.actOnAgentElement(tabId, {
-            elementId: readNumberField(payload, "elementId"),
+            ...(elementId === undefined ? {} : { elementId }),
+            ...(targetRef === undefined ? {} : { targetRef }),
             interaction: readLumenInteraction(interactionPayload),
             targetMode,
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           });
       if (actionResult.ok === false) {
-        return {
+        return withLumenTargetIds({
           ...actionResult,
           kind: "lyraLumenActionResult",
           nextRecommendedAction: "lyra_lumen.map"
-        };
+        }, tabId, elementId);
       }
       await pauseForLumenIdle(idleMs);
       const after = await browser.observeAgentPage(tabId, {
@@ -841,7 +1013,7 @@ export const createAgentIpcBridge = ({
       const revealedElements = after.elements.filter(
         (element) => !beforeKeys.has(elementRevealKey(element))
       );
-      return {
+      return withLumenTargetIds({
         ...actionResult,
         kind: "lyraLumenActionResult",
         tabId,
@@ -857,53 +1029,67 @@ export const createAgentIpcBridge = ({
             : `Hover reveal exposed ${revealedElements.length} new actionable element${revealedElements.length === 1 ? "" : "s"}.`,
         nextRecommendedAction:
           revealedElements.length === 0 ? "lyra_lumen.map" : "lyra_lumen.act"
-      };
+      }, tabId, elementId);
     }),
     "lyraLumen.type": withLyraLumenResult("lyraLumen.type", async (payload) => {
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser capability is not available");
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
-      const elementId = readOptionalNumberField(payload, "elementId");
+      const elementId = readOptionalLumenElementId(payload);
+      const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const result = await browser.typeIntoAgentElement(tabId, {
         ...(elementId === undefined ? {} : { elementId }),
+        ...(targetRef === undefined ? {} : { targetRef }),
         text: readStringField(payload, "text"),
         clear: payload.clear === true,
         targetMode,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
-      return { ...result, kind: "lyraLumenActionResult", nextRecommendedAction: "lyra_lumen.map" };
+      return withLumenTargetIds({
+        ...result,
+        kind: "lyraLumenActionResult",
+        nextRecommendedAction: "lyra_lumen.map"
+      }, tabId, elementId);
     }),
     "lyraLumen.press": withLyraLumenResult("lyraLumen.press", async (payload) => {
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser capability is not available");
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
-      const elementId = readOptionalNumberField(payload, "elementId");
+      const elementId = readOptionalLumenElementId(payload);
+      const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const result = await browser.pressAgentKey(tabId, {
         key: readStringField(payload, "key"),
         ...(elementId === undefined ? {} : { elementId }),
+        ...(targetRef === undefined ? {} : { targetRef }),
         targetMode,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
-      return { ...result, kind: "lyraLumenActionResult", nextRecommendedAction: "lyra_lumen.map" };
+      return withLumenTargetIds({
+        ...result,
+        kind: "lyraLumenActionResult",
+        nextRecommendedAction: "lyra_lumen.map"
+      }, tabId, elementId);
     }),
     "lyraLumen.submit": withLyraLumenResult("lyraLumen.submit", async (payload) => {
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser capability is not available");
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
-      const elementId = readOptionalNumberField(payload, "elementId");
+      const elementId = readOptionalLumenElementId(payload);
+      const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const result = await browser.pressAgentKey(tabId, {
         key: readOptionalStringField(payload, "key") ?? "Enter",
         ...(elementId === undefined ? {} : { elementId }),
+        ...(targetRef === undefined ? {} : { targetRef }),
         targetMode,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
-      return {
+      return withLumenTargetIds({
         ...result,
         kind: "lyraLumenActionResult",
         submitted: true,
@@ -912,7 +1098,7 @@ export const createAgentIpcBridge = ({
             ? "Submitted the focused control with Chromium virtual keyboard."
             : `Submitted element ${elementId} with Chromium virtual keyboard.`,
         nextRecommendedAction: "lyra_lumen.wait"
-      };
+      }, tabId, elementId);
     }),
     "lyraLumen.focusScan": withLyraLumenResult("lyraLumen.focusScan", async (payload) => {
       const browser = getBrowserBridge();
@@ -928,7 +1114,55 @@ export const createAgentIpcBridge = ({
         ...(typeof payload.restoreFocus === "boolean" ? { restoreFocus: payload.restoreFocus } : {}),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
-      return { ...result, kind: "lyraLumenFocusResult", nextRecommendedAction: "lyra_lumen.act" };
+      return withLumenTargetIds({
+        ...result,
+        kind: "lyraLumenFocusResult",
+        nextRecommendedAction: "lyra_lumen.act"
+      }, tabId);
+    }),
+    "lyraLumen.followAudit": withLyraLumenResult("lyraLumen.followAudit", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode({ ...payload, targetMode: payload.targetMode ?? "live" });
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const maxActions = readOptionalNumberField(payload, "maxActions");
+      const result = await browser.readAgentFollowAudit(tabId, {
+        targetMode,
+        ...(maxActions === undefined ? {} : { maxActions })
+      });
+      return withLumenTargetIds({
+        ...result,
+        nextRecommendedAction: "lyra_lumen.map"
+      }, tabId);
+    }),
+    "lyraLumen.audit": withLyraLumenResult("lyraLumen.audit", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode({ ...payload, targetMode: payload.targetMode ?? "live" });
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const maxEntries = readOptionalNumberField(payload, "maxEntries");
+      const result = await browser.auditAgentPageDiagnostics(tabId, {
+        targetMode,
+        ...(maxEntries === undefined ? {} : { maxEntries })
+      });
+      return withLumenTargetIds({
+        ...result,
+        nextRecommendedAction: "lyra_lumen.map"
+      }, tabId);
+    }),
+    "lyraLumen.elevate": withLyraLumenResult("lyraLumen.elevate", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode({ ...payload, targetMode: payload.targetMode ?? "isolated" });
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const result = await browser.elevateAgentPage(tabId, {
+        targetMode,
+        ...(typeof payload.reason === "string" ? { reason: payload.reason } : {})
+      });
+      return withLumenTargetIds({
+        ...result,
+        nextRecommendedAction: result.userActionRequired ? "ask_user" : "lyra_lumen.map"
+      }, tabId);
     }),
     "lyraLumen.navigate": withLyraLumenResult("lyraLumen.navigate", async (payload) => {
       const browser = getBrowserBridge();
@@ -937,18 +1171,22 @@ export const createAgentIpcBridge = ({
       const explicitTabId = readTabId(payload);
       const targetMode = readLumenTargetMode(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      let resolvedTabId = explicitTabId ?? browser.readActiveTabId() ?? "";
       const res = targetMode === "live"
         ? await browser.navigate({
             address: url,
             newTab: payload.newTab === true,
             ...(explicitTabId === null ? {} : { tabId: explicitTabId })
           })
-        : await browser.navigateAgentPage(await resolveBrowserAgentTabId(payload, targetMode), {
-            url,
-            targetMode,
-            ...(timeoutMs === undefined ? {} : { timeoutMs })
-          });
-      return {
+        : await (async () => {
+            resolvedTabId = await resolveBrowserAgentTabId(payload, targetMode);
+            return await browser.navigateAgentPage(resolvedTabId, {
+              url,
+              targetMode,
+              ...(timeoutMs === undefined ? {} : { timeoutMs })
+            });
+          })();
+      return withLumenTargetIds({
         ok: true,
         kind: "lyraLumenNavigate",
         tabId: res.tabId,
@@ -956,22 +1194,24 @@ export const createAgentIpcBridge = ({
         title: res.title,
         targetMode,
         message: `Navigated Lyra Lumen to ${res.address}.`
-      };
+      }, res.tabId ?? resolvedTabId);
     }),
     "lyraLumen.read": withLyraLumenResult("lyraLumen.read", async (payload) => {
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser capability is not available");
       const strategy = readLumenStrategy(payload, "focus");
       const maxChars = readOptionalNumberField(payload, "maxChars");
+      const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
       const content = await browser.readAgentPage(tabId, {
         strategy,
         targetMode,
-        ...(maxChars === undefined ? {} : { maxChars })
+        ...(maxChars === undefined ? {} : { maxChars }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
       if (strategy === "domFallback") {
-        return {
+        return withLumenTargetIds({
           ok: true,
           kind: "lyraLumenRead",
           tabId,
@@ -981,9 +1221,9 @@ export const createAgentIpcBridge = ({
           summary: content,
           truncated: "truncated" in content ? content.truncated : false,
           nextRecommendedAction: "lyra_lumen.map"
-        };
+        }, tabId);
       }
-      return {
+      return withLumenTargetIds({
         ok: true,
         kind: "lyraLumenRead",
         tabId,
@@ -995,32 +1235,58 @@ export const createAgentIpcBridge = ({
         ...("endChar" in content ? { endChar: content.endChar } : {}),
         ...("totalChars" in content ? { totalChars: content.totalChars } : {}),
         nextRecommendedAction: "lyra_lumen.map"
-      };
+      }, tabId);
     }),
     "lyraLumen.see": withLyraLumenResult("lyraLumen.see", async (payload) => {
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser capability is not available");
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
-      const capture = await browser.captureAgentPage(tabId, { targetMode });
-      return {
+      const capture = await browser.captureAgentPage(tabId, { targetMode }).catch(async (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("background_visual_capture_unsupported") === false) {
+          throw error;
+        }
+        const fallback = await browser.readAgentPage(tabId, {
+          strategy: "focus",
+          targetMode,
+          timeoutMs: 4_000
+        }).catch(() => null);
+        return {
+          ok: true,
+          kind: "lyraLumenSeeFallback",
+          tabId,
+          targetMode,
+          visualCapture: {
+            ok: false,
+            reason: "background_visual_capture_unsupported"
+          },
+          content: fallback?.content ?? "",
+          truncated: fallback === null ? false : ("truncated" in fallback ? fallback.truncated : false),
+          message:
+            "Visual capture is unavailable while this browser tab is in the background; Lyra used text extraction instead.",
+          nextRecommendedAction: "lyra_lumen.map"
+        };
+      });
+      if ("imageBase64" in capture === false) {
+        return withLumenTargetIds(capture, tabId);
+      }
+      const imageArtifact = materializeLumenCapture(storageRoot, tabId, capture);
+      return withLumenTargetIds({
         ok: true,
         kind: "lyraLumenSee",
         tabId,
         targetMode,
         mimeType: capture.mimeType,
-        imageBase64: capture.imageBase64,
         width: capture.width,
         height: capture.height,
         visibleOnly: capture.visibleOnly,
-        screenshot: {
-          mediaType: capture.mimeType,
-          data: capture.imageBase64,
-          width: capture.width,
-          height: capture.height
-        },
+        imageArtifact,
+        evidenceRefs: [imageArtifact.id],
+        message:
+          `Captured browser visual evidence ${imageArtifact.id} (${capture.width}x${capture.height}).`,
         nextRecommendedAction: "lyra_lumen.map"
-      };
+      }, tabId);
     }),
     "lyraLumen.wait": withLyraLumenResult("lyraLumen.wait", async (payload) => {
       const browser = getBrowserBridge();
@@ -1031,6 +1297,7 @@ export const createAgentIpcBridge = ({
         250,
         Math.min(30_000, readOptionalNumberField(payload, "timeoutMs") ?? 10_000)
       );
+      const waitBudgetMs = Math.max(250, timeoutMs - 350);
       const idleMs = Math.max(
         20,
         Math.min(5_000, readOptionalNumberField(payload, "idleMs") ?? 800)
@@ -1038,15 +1305,20 @@ export const createAgentIpcBridge = ({
       const until = readLumenWaitUntil(payload);
       const text = readOptionalStringField(payload, "text");
       const maxChars = readOptionalNumberField(payload, "maxChars");
+      await browser.showAgentActivity(tabId, {
+        action: "wait",
+        targetMode,
+        durationMs: Math.max(900, Math.min(5_000, timeoutMs))
+      });
       const result = await waitForLumenPage(browser, tabId, {
         targetMode,
         until,
-        timeoutMs,
+        timeoutMs: waitBudgetMs,
         idleMs,
         ...(maxChars === undefined ? {} : { maxChars }),
         ...(text === undefined ? {} : { text })
       });
-      return {
+      return withLumenTargetIds({
         ok: true,
         kind: "lyraLumenWait",
         tabId,
@@ -1062,8 +1334,25 @@ export const createAgentIpcBridge = ({
           ? `Wait condition '${until}' was met after ${result.elapsedMs}ms.`
           : `Wait condition '${until}' timed out after ${result.elapsedMs}ms.`,
         nextRecommendedAction: "lyra_lumen.map"
-      };
+      }, tabId);
     })
+  };
+
+  const normalizeSoftwarePayload = (payload: unknown): Record<string, unknown> => {
+    const request = normalizePayload(payload);
+    const capabilityId =
+      typeof request.capabilityId === "string" && request.capabilityId.trim().length > 0
+        ? request.capabilityId.trim()
+        : undefined;
+    const actionId =
+      typeof request.actionId === "string" && request.actionId.trim().length > 0
+        ? request.actionId.trim()
+        : capabilityId;
+    return {
+      ...request,
+      ...(capabilityId === undefined ? {} : { capabilityId }),
+      ...(actionId === undefined ? {} : { actionId })
+    };
   };
 
   const hostCapabilityHandlers = {
@@ -1072,9 +1361,11 @@ export const createAgentIpcBridge = ({
     "software.listCapabilities": async (payload: unknown) =>
       await softwareCapabilitiesClient.listCapabilities(normalizePayload(payload)),
     "software.inspectCapability": async (payload: unknown) =>
-      await softwareCapabilitiesClient.inspectCapability(normalizePayload(payload)),
+      await softwareCapabilitiesClient.inspectCapability(normalizeSoftwarePayload(payload)),
+    "software.readState": async (payload: unknown) =>
+      await softwareCapabilitiesClient.readState(normalizeSoftwarePayload(payload)),
     "software.invokeCapability": async (payload: unknown) =>
-      await softwareCapabilitiesClient.invokeCapability(normalizePayload(payload))
+      await softwareCapabilitiesClient.invokeCapability(normalizeSoftwarePayload(payload))
   };
 
   for (const [method, handler] of Object.entries(hostCapabilityHandlers)) {

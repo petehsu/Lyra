@@ -9,9 +9,16 @@ export type BrowserAgentCursorOverlayAction =
   | "type"
   | "press";
 
+export type BrowserAgentCursorOverlayPhase =
+  | "move"
+  | "down"
+  | "up"
+  | "idle";
+
 export type BrowserAgentCursorOverlayOptions = {
   readonly action: BrowserAgentCursorOverlayAction;
   readonly durationMs: number;
+  readonly phase?: BrowserAgentCursorOverlayPhase;
   readonly cursor?: {
     readonly x: number;
     readonly y: number;
@@ -33,10 +40,12 @@ const normalizeScriptNumber = (value: number | undefined): number | null => {
 export const buildAgentCursorOverlayScript = ({
   action,
   durationMs,
+  phase = "idle",
   cursor
 }: BrowserAgentCursorOverlayOptions): string => {
   const payload = {
     action,
+    phase,
     durationMs: Math.max(500, Math.min(8_000, Math.round(durationMs))),
     x: normalizeScriptNumber(cursor?.x),
     y: normalizeScriptNumber(cursor?.y),
@@ -95,6 +104,7 @@ export const buildAgentCursorOverlayScript = ({
       mount.appendChild(host);
     }
     host.dataset.lyraAgentAction = payload.action;
+    host.dataset.lyraAgentPhase = payload.phase;
     host.style.position = "fixed";
     host.style.left = "0px";
     host.style.top = "0px";
@@ -106,68 +116,70 @@ export const buildAgentCursorOverlayScript = ({
     host.style.contain = "layout style";
     host.style.overflow = "visible";
     host.style.willChange = "transform, opacity";
+    host.style.transition = "transform 180ms cubic-bezier(0.16, 1, 0.3, 1), opacity 120ms ease-out";
     host.style.transform = "translate3d(" + (explicitPoint.x - 6) + "px, " + (explicitPoint.y - 5) + "px, 0)";
 
     const root = host.shadowRoot || (typeof host.attachShadow === "function" ? host.attachShadow({ mode: "open" }) : host);
-    while (root.firstChild) {
-      root.removeChild(root.firstChild);
+    let wrap = root.querySelector("[data-lyra-agent-cursor-wrap]");
+    const isNewWrap = !(wrap instanceof HTMLElement);
+    if (isNewWrap) {
+      wrap = document.createElement("div");
+      wrap.setAttribute("data-lyra-agent-cursor-wrap", "true");
+      wrap.style.position = "absolute";
+      wrap.style.left = "0px";
+      wrap.style.top = "0px";
+      wrap.style.width = "52px";
+      wrap.style.height = "52px";
+      wrap.style.pointerEvents = "none";
+      wrap.style.transformOrigin = "6px 5px";
+      wrap.style.overflow = "visible";
+      wrap.style.transition = "transform 90ms ease-out";
+    }
+    wrap.style.transform = payload.phase === "down" ? "scale(0.82)" : "scale(1)";
+
+    let aura = wrap.querySelector("[data-lyra-agent-cursor-aura]");
+    if (!(aura instanceof HTMLElement)) {
+      aura = document.createElement("div");
+      aura.setAttribute("data-lyra-agent-cursor-aura", "true");
+      aura.style.position = "absolute";
+      aura.style.left = "-19px";
+      aura.style.top = "-19px";
+      aura.style.width = "90px";
+      aura.style.height = "90px";
+      aura.style.borderRadius = "999px";
+      aura.style.background = "radial-gradient(circle, rgba(68, 210, 255, 0.36) 0%, rgba(85, 130, 255, 0.18) 38%, rgba(85, 130, 255, 0) 72%)";
+      aura.style.filter = "blur(2px)";
+      wrap.appendChild(aura);
     }
 
-    const wrap = document.createElement("div");
-    wrap.style.position = "absolute";
-    wrap.style.left = "0px";
-    wrap.style.top = "0px";
-    wrap.style.width = "52px";
-    wrap.style.height = "52px";
-    wrap.style.pointerEvents = "none";
-    wrap.style.transformOrigin = "6px 5px";
-    wrap.style.overflow = "visible";
+    if (wrap.querySelector("svg") === null) {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("width", "42");
+      svg.setAttribute("height", "42");
+      svg.setAttribute("viewBox", "0 0 256 256");
+      svg.setAttribute("fill", "none");
+      svg.style.position = "absolute";
+      svg.style.left = "0px";
+      svg.style.top = "0px";
+      svg.style.overflow = "visible";
+      svg.style.filter =
+        "drop-shadow(0 1px 2px rgba(0, 0, 0, 0.72)) drop-shadow(0 0 12px rgba(57, 201, 255, 0.72))";
 
-    const aura = document.createElement("div");
-    aura.style.position = "absolute";
-    aura.style.left = "-19px";
-    aura.style.top = "-19px";
-    aura.style.width = "90px";
-    aura.style.height = "90px";
-    aura.style.borderRadius = "999px";
-    aura.style.background = "radial-gradient(circle, rgba(68, 210, 255, 0.36) 0%, rgba(85, 130, 255, 0.18) 38%, rgba(85, 130, 255, 0) 72%)";
-    aura.style.filter = "blur(2px)";
-
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("width", "42");
-    svg.setAttribute("height", "42");
-    svg.setAttribute("viewBox", "0 0 256 256");
-    svg.setAttribute("fill", "none");
-    svg.style.position = "absolute";
-    svg.style.left = "0px";
-    svg.style.top = "0px";
-    svg.style.overflow = "visible";
-    svg.style.filter =
-      "drop-shadow(0 1px 2px rgba(0, 0, 0, 0.72)) drop-shadow(0 0 12px rgba(57, 201, 255, 0.72))";
-
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", payload.path);
-    path.setAttribute("fill", "rgba(248, 252, 255, 0.98)");
-    path.setAttribute("stroke", "rgba(35, 118, 255, 0.98)");
-    path.setAttribute("stroke-width", "17");
-    path.setAttribute("stroke-linejoin", "round");
-    svg.appendChild(path);
-
-    wrap.appendChild(aura);
-    wrap.appendChild(svg);
-    root.appendChild(wrap);
-
-    const baseTransform = host.style.transform;
-    if (typeof host.animate === "function") {
-      host.animate(
-        [
-          { transform: baseTransform + " scale(0.92)", opacity: "0.78" },
-          { transform: baseTransform + " scale(1)", opacity: "1" }
-        ],
-        { duration: 160, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }
-      );
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", payload.path);
+      path.setAttribute("fill", "rgba(248, 252, 255, 0.98)");
+      path.setAttribute("stroke", "rgba(35, 118, 255, 0.98)");
+      path.setAttribute("stroke-width", "17");
+      path.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(path);
+      wrap.appendChild(svg);
     }
-    if (typeof aura.animate === "function") {
+
+    if (isNewWrap) {
+      root.appendChild(wrap);
+    }
+
+    if (isNewWrap && typeof aura.animate === "function") {
       aura.animate(
         [
           { transform: "scale(0.86)", opacity: "0.58" },
@@ -180,6 +192,7 @@ export const buildAgentCursorOverlayScript = ({
     if (typeof window.__lyraAgentCursorTimer === "number") {
       window.clearTimeout(window.__lyraAgentCursorTimer);
     }
+    const safetyDurationMs = Math.max(90_000, Math.min(300_000, payload.durationMs * 12));
     window.__lyraAgentCursorTimer = window.setTimeout(() => {
       const remove = () => {
         if (host.parentNode) {
@@ -199,7 +212,7 @@ export const buildAgentCursorOverlayScript = ({
         return;
       }
       remove();
-    }, payload.durationMs);
+    }, safetyDurationMs);
 
     return true;
   } catch (_error) {

@@ -3,6 +3,9 @@ import type { WorkbenchThemeId } from "../theme";
 import type { TerminalThemeMode } from "../terminal-theme";
 import type { WorkbenchUiPackId } from "../ui-platform";
 
+const docsEntryAddress =
+  import.meta.env.VITE_LYRA_DOCS_ENTRY_ADDRESS ?? "http://localhost:5174/docs";
+
 export const WORKBENCH_CONFIG = {
   locale: "zh-CN" as WorkbenchLocale,
   theme: "lyra-system" as WorkbenchThemeId,
@@ -10,7 +13,7 @@ export const WORKBENCH_CONFIG = {
   uiPackId: "classic" as WorkbenchUiPackId,
   browser: {
     homeSearchAddress: "lyra://search",
-    docsEntryAddress: "http://localhost:5174/docs",
+    docsEntryAddress,
     maxSearchTitleLength: 18,
     resultsPerEngine: 5,
     searchEngines: [

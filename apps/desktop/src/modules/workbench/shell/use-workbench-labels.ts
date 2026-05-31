@@ -848,6 +848,14 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
             openDisabledReason: t("softwareStore.contextRequired")
           },
           {
+            id: "login-manager",
+            title: t("softwareStore.loginManagerTitle"),
+            description: t("softwareStore.loginManagerDescription"),
+            category: t("softwareStore.categorySystem"),
+            agentAccess: "controllable" as const,
+            openable: true
+          },
+          {
             id: "software-store",
             title: t("softwareStore.selfTitle"),
             description: t("softwareStore.selfDescription"),
@@ -856,6 +864,49 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
             openable: true
           }
         ] satisfies readonly SoftwareStoreBuiltinApp[]
+      },
+      loginManager: {
+        title: t("loginManager.title"),
+        open: t("loginManager.open"),
+        tabTitle: t("loginManager.tabTitle"),
+        searchPlaceholder: t("loginManager.searchPlaceholder"),
+        refresh: t("loginManager.refresh"),
+        sessionsTab: t("loginManager.sessionsTab"),
+        credentialsTab: t("loginManager.credentialsTab"),
+        reviewTab: t("loginManager.reviewTab"),
+        passwordsUnavailable: t("loginManager.passwordsUnavailable"),
+        emptySessionsTitle: t("loginManager.emptySessionsTitle"),
+        emptySessionsDescription: t("loginManager.emptySessionsDescription"),
+        emptyCredentialsTitle: t("loginManager.emptyCredentialsTitle"),
+        emptyCredentialsDescription: t("loginManager.emptyCredentialsDescription"),
+        openSite: t("loginManager.openSite"),
+        logoutSite: t("loginManager.logoutSite"),
+        deleteCredential: t("loginManager.deleteCredential"),
+        reveal: t("loginManager.reveal"),
+        copy: t("loginManager.copy"),
+        copied: t("loginManager.copied"),
+        fill: t("loginManager.fill"),
+        edit: t("loginManager.edit"),
+        save: t("loginManager.save"),
+        cancel: t("loginManager.cancel"),
+        accountLabel: t("loginManager.accountLabel"),
+        authMethodLabel: t("loginManager.authMethodLabel"),
+        notesLabel: t("loginManager.notesLabel"),
+        statusObserved: t("loginManager.statusObserved"),
+        statusPossible: t("loginManager.statusPossible"),
+        sourceObserved: t("loginManager.sourceObserved"),
+        sourceInferred: t("loginManager.sourceInferred"),
+        sourceManual: t("loginManager.sourceManual"),
+        sourceUnknown: t("loginManager.sourceUnknown"),
+        methodLabels: {
+          site_session: t("loginManager.methodSiteSession"),
+          password: t("loginManager.methodPassword"),
+          passkey: t("loginManager.methodPasskey"),
+          oauth: t("loginManager.methodOauth"),
+          sso: t("loginManager.methodSso"),
+          magic_link: t("loginManager.methodMagicLink"),
+          unknown: t("loginManager.methodUnknown")
+        }
       },
       workspaceI18n: {
         searchPlaceholder: t("browser.searchPlaceholder"),

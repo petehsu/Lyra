@@ -502,6 +502,7 @@ export const reduceWorkspaceTabsState = (
       const nextAddress = toSafeAddress(action.pageState.address);
       const nextTitle = toNonEmptyTrimmed(action.pageState.title);
       const nextFaviconUrl = action.pageState.faviconUrl?.trim();
+      const nextRestoreState = action.pageState.restoreState;
       if (nextAddress === null || nextTitle === null) {
         return unchanged(state);
       }
@@ -521,7 +522,10 @@ export const reduceWorkspaceTabsState = (
             tab.title === nextTitle &&
             tab.displayAddress === nextAddress &&
             tab.inputValue === nextAddress &&
-            tab.faviconUrl === nextFaviconValue
+            tab.faviconUrl === nextFaviconValue &&
+            tab.browserRestoreState?.scrollX === nextRestoreState?.scrollX &&
+            tab.browserRestoreState?.scrollY === nextRestoreState?.scrollY &&
+            tab.browserRestoreState?.capturedAt === nextRestoreState?.capturedAt
           ) {
             return tab;
           }
@@ -533,7 +537,10 @@ export const reduceWorkspaceTabsState = (
             inputValue: nextAddress,
             ...(nextFaviconValue === undefined
               ? {}
-              : { faviconUrl: nextFaviconValue })
+              : { faviconUrl: nextFaviconValue }),
+            ...(nextRestoreState === undefined
+              ? {}
+              : { browserRestoreState: nextRestoreState })
           };
         })
       });

@@ -16,19 +16,20 @@ const labels: WorkbenchChromeLabels = {
   moveTerminalToBottom: "Move terminal bottom",
   openSettings: "Open settings",
   openSoftwareStore: "Open Software Store",
+  openLoginManager: "Open Login Manager",
   openFiles: "Open files",
   openAgentSessionHistory: "Open Agent History",
   openDocs: "Open docs",
   minimizeWindow: "Minimize",
   toggleMaximizeWindow: "Maximize",
-  closeWindow: "Close",
-  openLoginManager: "Login Manager"
+  closeWindow: "Close"
 };
 
 const createActions = (): WorkbenchActionApi => ({
   openNewTab: vi.fn(),
   openSettings: vi.fn(),
   openSoftwareStore: vi.fn(),
+  openLoginManager: vi.fn(),
   openFileManager: vi.fn(),
   openAgentSessionHistory: vi.fn(),
   openDocs: vi.fn(),
@@ -37,8 +38,7 @@ const createActions = (): WorkbenchActionApi => ({
   toggleTerminalPanelSide: vi.fn(),
   minimizeWindow: vi.fn(),
   toggleMaximizeWindow: vi.fn(),
-  closeWindow: vi.fn(),
-  openLoginManager: vi.fn()
+  closeWindow: vi.fn()
 });
 
 const presentationState: WorkbenchPresentationState = {
@@ -50,7 +50,7 @@ const presentationState: WorkbenchPresentationState = {
 };
 
 describe("WorkbenchChrome", () => {
-  test("renders the agent history button immediately after notifications", () => {
+  test("renders the login manager and agent history buttons immediately after notifications", () => {
     const actions = createActions();
 
     render(
@@ -105,10 +105,17 @@ describe("WorkbenchChrome", () => {
     const notificationButton = screen.getByRole("button", {
       name: "Open notification center"
     });
+    const loginButton = screen.getByRole("button", { name: "Open Login Manager" });
     const historyButton = screen.getByRole("button", { name: "Open Agent History" });
     expect(
-      notificationButton.compareDocumentPosition(historyButton) & Node.DOCUMENT_POSITION_FOLLOWING
+      notificationButton.compareDocumentPosition(loginButton) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
+    expect(
+      loginButton.compareDocumentPosition(historyButton) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    fireEvent.click(loginButton);
+    expect(actions.openLoginManager).toHaveBeenCalledTimes(1);
 
     fireEvent.click(historyButton);
     expect(actions.openAgentSessionHistory).toHaveBeenCalledTimes(1);

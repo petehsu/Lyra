@@ -536,6 +536,15 @@ const createDesktopApi = (): {
       reload: async () => undefined,
       stop: async () => undefined,
       readPageState: async () => null,
+      searchInPage: async () => ({
+        tabId: "browser-tab-test",
+        address: "https://example.test/",
+        title: "Example",
+        query: "test",
+        totalMatches: 0,
+        matches: [],
+        truncated: false
+      }),
       setElementPickerMode: async () => undefined,
       applyWebTheme: async () => undefined,
       capturePage: async () => ({
@@ -657,6 +666,10 @@ const createDesktopApi = (): {
         packId: request.packId,
         reloadRequired: request.packId !== "classic",
         activated: request.packId === "classic"
+      }),
+      uninstall: async (request) => ({
+        packId: request.packId,
+        removed: true
       }),
       resolveRuntime: async () => null
     },

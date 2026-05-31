@@ -48,14 +48,21 @@ import type {
 } from "./image-viewer";
 import type { TerminalThemePresetId } from "./terminal-theme";
 import type {
+  WorkbenchBrowserChromePopoverRequest,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
   WorkbenchBrowserElementPickerMode,
   WorkbenchBrowserElementPickerOwner,
   WorkbenchBrowserElementPickerPhase,
   WorkbenchBrowserElementPickerState,
+  WorkbenchBrowserAgentElevationResult,
   WorkbenchBrowserAgentActivityEvent,
+  WorkbenchBrowserPageDiagnosticsResult,
+  WorkbenchBrowserPageRestoreState,
+  WorkbenchBrowserSharedControlEvent,
   WorkbenchLumenActivityEvent,
+  WorkbenchLumenFollowAction,
+  WorkbenchLumenFollowAudit,
   WorkbenchBrowserEvent,
   WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
@@ -63,6 +70,8 @@ import type {
   WorkbenchBrowserNavigateResult,
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserReadPageStateRequest,
+  WorkbenchBrowserSearchInPageRequest,
+  WorkbenchBrowserSearchInPageResult,
   WorkbenchBrowserSetElementPickerModeRequest,
   WorkbenchBrowserTopologySnapshot,
   WorkbenchBrowserWebThemeSnapshot
@@ -83,12 +92,20 @@ import type {
   UiuxRequestActivationRequest,
   UiuxRequestActivationResponse,
   UiuxResolveRuntimeRequest,
-  UiuxSetTrustStateRequest
+  UiuxSetTrustStateRequest,
+  UiuxUninstallRequest,
+  UiuxUninstallResponse
 } from "./uiux-packs";
 import type {
   SoftwareCapabilitiesQueryRequest,
   SoftwareCapabilitiesQueryResult
 } from "./software-capabilities";
+import type {
+  LoginManagerApi
+} from "./login-manager";
+import type {
+  LyraSensitiveValueApi
+} from "./sensitive-value";
 import type { AgentApi } from "./agent";
 
 export type {
@@ -246,14 +263,24 @@ export type {
   DownloadManagerUpdateSettingsRequest
 } from "./download-manager";
 export type {
+  WorkbenchBrowserChromePopoverRequest,
+  WorkbenchBrowserChromeSecurityPopoverPayload,
+  WorkbenchBrowserClientRect,
   WorkbenchBrowserElementPickerAppearance,
   WorkbenchBrowserElementPickerDisableCause,
   WorkbenchBrowserElementPickerMode,
   WorkbenchBrowserElementPickerOwner,
   WorkbenchBrowserElementPickerPhase,
   WorkbenchBrowserElementPickerState,
+  WorkbenchBrowserAgentElevationResult,
   WorkbenchBrowserAgentActivityEvent,
+  WorkbenchBrowserPageDiagnosticEntry,
+  WorkbenchBrowserPageDiagnosticsResult,
+  WorkbenchBrowserPageRestoreState,
+  WorkbenchBrowserSharedControlEvent,
   WorkbenchLumenActivityEvent,
+  WorkbenchLumenFollowAction,
+  WorkbenchLumenFollowAudit,
   WorkbenchBrowserEvent,
   WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
@@ -263,6 +290,9 @@ export type {
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserPageSpec,
   WorkbenchBrowserReadPageStateRequest,
+  WorkbenchBrowserSearchInPageMatch,
+  WorkbenchBrowserSearchInPageRequest,
+  WorkbenchBrowserSearchInPageResult,
   WorkbenchBrowserSetElementPickerModeRequest,
   WorkbenchBrowserTopologySnapshot,
   WorkbenchBrowserWebThemePalette,
@@ -309,8 +339,42 @@ export type {
   SoftwareInvokeCapabilityRequest,
   SoftwareInvokeCapabilityResponse,
   SoftwareListCapabilitiesRequest,
-  SoftwareListCapabilitiesResponse
+  SoftwareListCapabilitiesResponse,
+  SoftwareReadStateRequest,
+  SoftwareReadStateResponse
 } from "./software-capabilities";
+export type {
+  LoginManagerApi,
+  LoginManagerAuthMethod,
+  LoginManagerAuthMethodKind,
+  LoginManagerClearSiteRequest,
+  LoginManagerClearSiteResponse,
+  LoginManagerCredential,
+  LoginManagerDeleteCredentialRequest,
+  LoginManagerEvent,
+  LoginManagerFactSource,
+  LoginManagerFillCredentialRequest,
+  LoginManagerFillCredentialResponse,
+  LoginManagerRevealCredentialRequest,
+  LoginManagerRevealCredentialResponse,
+  LoginManagerSession,
+  LoginManagerSessionSignals,
+  LoginManagerSessionStatus,
+  LoginManagerSnapshot,
+  LoginManagerUpdateSessionRequest
+} from "./login-manager";
+export type {
+  LyraSensitiveValueApi,
+  LyraSensitiveValueCapability,
+  LyraSensitiveValueKind,
+  LyraSensitiveValueOwner,
+  LyraSensitiveValueOwnerRef,
+  LyraSensitiveValueOwnership,
+  LyraSensitiveValuePlaintextVisibility,
+  LyraSensitiveValueRef,
+  LyraSensitiveValueRevealRequest,
+  LyraSensitiveValueRevealResponse
+} from "./sensitive-value";
 export type {
   BuiltinUiuxPackSummary,
   InstalledUiuxPack,
@@ -325,7 +389,9 @@ export type {
   UiuxRequestActivationRequest,
   UiuxRequestActivationResponse,
   UiuxResolveRuntimeRequest,
-  UiuxSetTrustStateRequest
+  UiuxSetTrustStateRequest,
+  UiuxUninstallRequest,
+  UiuxUninstallResponse
 } from "./uiux-packs";
 
 export const LYRA_CHANNELS = {
@@ -409,11 +475,21 @@ export const LYRA_CHANNELS = {
   workbenchBrowserReload: "lyra:workbench-browser/reload",
   workbenchBrowserStop: "lyra:workbench-browser/stop",
   workbenchBrowserReadPageState: "lyra:workbench-browser/read-page-state",
+  workbenchBrowserSearchInPage: "lyra:workbench-browser/search-in-page",
+  workbenchBrowserSetChromePopover: "lyra:workbench-browser/set-chrome-popover",
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
   workbenchBrowserApplyWebTheme: "lyra:workbench-browser/apply-web-theme",
   workbenchBrowserCapturePage: "lyra:workbench-browser/capture-page",
   workbenchBrowserCaptureWindow: "lyra:workbench-browser/capture-window",
   workbenchBrowserEvent: "lyra:workbench-browser/event",
+  loginManagerList: "lyra:login-manager/list",
+  loginManagerUpdateSession: "lyra:login-manager/update-session",
+  loginManagerDeleteCredential: "lyra:login-manager/delete-credential",
+  loginManagerRevealCredential: "lyra:login-manager/reveal-credential",
+  loginManagerFillCredential: "lyra:login-manager/fill-credential",
+  loginManagerClearSite: "lyra:login-manager/clear-site",
+  loginManagerEvent: "lyra:login-manager/event",
+  sensitiveValuesRevealToUser: "lyra:sensitive-values/reveal-to-user",
   lspOpenDocument: "lyra:lsp/open-document",
   lspChangeDocument: "lyra:lsp/change-document",
   lspSaveDocument: "lyra:lsp/save-document",
@@ -509,6 +585,7 @@ export const LYRA_CHANNELS = {
   uiuxInstallFromGit: "lyra:uiux/install-from-git",
   uiuxInstallFromNpm: "lyra:uiux/install-from-npm",
   uiuxSetTrustState: "lyra:uiux/set-trust-state",
+  uiuxUninstall: "lyra:uiux/uninstall",
   uiuxRequestActivation: "lyra:uiux/request-activation",
   uiuxResolveRuntime: "lyra:uiux/resolve-runtime",
   workbenchStateReadSync: "lyra:workbench-state/read-sync",
@@ -1429,6 +1506,12 @@ export type WorkbenchBrowserApi = {
   readonly readPageState: (
     request?: WorkbenchBrowserReadPageStateRequest
   ) => Promise<WorkbenchBrowserPageRuntimeState | null>;
+  readonly searchInPage: (
+    request: WorkbenchBrowserSearchInPageRequest
+  ) => Promise<WorkbenchBrowserSearchInPageResult>;
+  readonly setChromePopover?: (
+    request: WorkbenchBrowserChromePopoverRequest
+  ) => Promise<void>;
   readonly setElementPickerMode: (
     request: WorkbenchBrowserSetElementPickerModeRequest
   ) => Promise<void>;
@@ -1470,8 +1553,7 @@ export type WorkbenchStateKey =
   | "ai-panel-tabs"
   | "terminal-dock"
   | "notifications"
-  | "layout"
-  | "login-manager";
+  | "layout";
 
 export type WorkbenchStateApi = {
   readonly readSync: (key: WorkbenchStateKey) => string | null;
@@ -1501,6 +1583,7 @@ export type UiuxPacksApi = {
   readonly installFromGit: (request: UiuxInstallFromGitRequest) => Promise<InstalledUiuxPack>;
   readonly installFromNpm: (request: UiuxInstallFromNpmRequest) => Promise<InstalledUiuxPack>;
   readonly setTrustState: (request: UiuxSetTrustStateRequest) => Promise<InstalledUiuxPack>;
+  readonly uninstall: (request: UiuxUninstallRequest) => Promise<UiuxUninstallResponse>;
   readonly requestActivation: (
     request: UiuxRequestActivationRequest
   ) => Promise<UiuxRequestActivationResponse>;
@@ -1519,6 +1602,8 @@ export type LyraDesktopApi = {
   readonly downloads?: DownloadManagerApi;
   readonly imageViewer?: ImageViewerApi;
   readonly workbenchBrowser: WorkbenchBrowserApi;
+  readonly loginManager?: LoginManagerApi;
+  readonly sensitiveValues?: LyraSensitiveValueApi;
   readonly lsp: LspApi;
   readonly terminal: TerminalApi;
   readonly agent?: AgentApi;

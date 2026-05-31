@@ -194,6 +194,8 @@ export const WorkbenchShell = () => {
     activeUiPackId: preferencesModel.preferences.uiPackId,
     tabsModel,
     fileManagerModel,
+    imageViewerModel,
+    terminalModel,
     onOpenSettingsSection: openSettingsSectionFromCapability
   });
   const uiRuntime = useWorkbenchUiRuntime(
@@ -211,7 +213,7 @@ export const WorkbenchShell = () => {
     docsTabTitle: t("docs.tabTitle"),
     agentSessionHistoryTitle: t("agentHistory.tabTitle"),
     softwareStoreTitle: t("softwareStore.tabTitle"),
-    loginManagerTitle: t("loginManager.tabTitle" as any) || "登录账户管理",
+    loginManagerTitle: t("loginManager.tabTitle"),
     locale: preferencesModel.preferences.locale,
     resolvedThemeId
   });
@@ -607,6 +609,7 @@ export const WorkbenchShell = () => {
       labels: labels.agentSessionHistory,
       activeSessionId: activeAgentSessionId,
       onOpenSession: onOpenAgentSession,
+      openDialog: globalDialogModel.openDialog,
       locale: preferencesModel.preferences.locale
     }
   });
@@ -703,6 +706,8 @@ export const WorkbenchShell = () => {
         navigationControl={
           <TitlebarNavigation
             {...titlebarNavigation}
+            activeBrowserTabId={activeBrowserTabId}
+            browserChromePopoverBridge={desktopApi?.workbenchBrowser}
             trailingControl={
               titlebarElementPicker.visible ? (
                 <TitlebarElementPickerButton

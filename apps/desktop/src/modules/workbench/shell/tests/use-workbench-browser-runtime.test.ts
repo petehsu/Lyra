@@ -4,6 +4,7 @@ import type {
   WorkbenchBrowserPageRuntimeState
 } from "../../../../shared/desktop-bridge";
 import type { WorkspaceTab, WorkspaceVisibleLayout } from "../../workspace-tabs";
+import { browserAgentVisualStateLabel } from "../agent-browser-activity-overlay";
 import {
   arePageRuntimeStatesEquivalentForTests,
   resolveBrowserAgentCursorViewportPoint,
@@ -113,5 +114,15 @@ describe("resolveBrowserAgentCursorViewportPoint", () => {
         { x: 32, y: 44 }
       )
     ).toBeNull();
+  });
+});
+
+describe("browserAgentVisualStateLabel", () => {
+  test("names visible Agent activity states for hover click typing focus and wait", () => {
+    expect(browserAgentVisualStateLabel({ action: "act", interaction: "hover" })).toBe("Hover");
+    expect(browserAgentVisualStateLabel({ action: "act", interaction: "click" })).toBe("Click");
+    expect(browserAgentVisualStateLabel({ action: "type", interaction: null })).toBe("Typing");
+    expect(browserAgentVisualStateLabel({ action: "focus", interaction: null })).toBe("Focus");
+    expect(browserAgentVisualStateLabel({ action: "wait", interaction: null })).toBe("Wait");
   });
 });

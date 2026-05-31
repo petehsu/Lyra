@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Archive,
   Bot,
-  Check,
   Clock3,
   Folder,
   History,
@@ -13,8 +12,7 @@ import {
   Search,
   Star,
   StarOff,
-  Trash2,
-  X
+  Trash2
 } from "lucide-react";
 
 import "../ai-panel/agent-chat-demo/App.css";
@@ -342,6 +340,7 @@ export const AgentSessionHistorySurface = ({
   labels,
   activeSessionId = null,
   onOpenSession,
+  openDialog,
   locale
 }: AgentSessionHistorySurfaceProps) => {
   if (locale !== undefined) {
@@ -355,9 +354,6 @@ export const AgentSessionHistorySurface = ({
   const [openingSessionId, setOpeningSessionId] = useState<string | null>(null);
   const [preview, setPreview] = useState<AgentSessionHistoryPreviewState>(EMPTY_PREVIEW_STATE);
   const [operationSessionId, setOperationSessionId] = useState<string | null>(null);
-  const [renameTarget, setRenameTarget] = useState<AgentSessionSummary | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<AgentSessionSummary | null>(null);
 
   const loadSessions = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) {
@@ -497,32 +493,78 @@ export const AgentSessionHistorySurface = ({
     });
   }, [desktopApi, labels.runtimeUnavailable, runSessionAction]);
 
-  const openRenameDialog = useCallback((session: AgentSessionSummary): void => {
-    setRenameTarget(session);
-    setRenameValue(session.customTitle ?? session.title);
-  }, []);
-
-  const submitRename = useCallback(async (title: string | null): Promise<void> => {
+  const submitRename = useCallback(async (
+    session: AgentSessionSummary,
+    title: string | null
+  ): Promise<void> => {
     const agentApi = desktopApi?.agent;
-    if (agentApi === undefined || renameTarget === null) {
+    if (agentApi === undefined) {
       setErrorMessage(labels.runtimeUnavailable);
       return;
     }
-    const sessionId = renameTarget.id;
+    const sessionId = session.id;
     await runSessionAction(sessionId, async () => {
       await agentApi.renameSession({ sessionId, title });
     });
-    setRenameTarget(null);
-    setRenameValue("");
-  }, [desktopApi, labels.runtimeUnavailable, renameTarget, runSessionAction]);
+  }, [desktopApi, labels.runtimeUnavailable, runSessionAction]);
 
-  const confirmDelete = useCallback(async (): Promise<void> => {
+  const openRenameDialog = useCallback((session: AgentSessionSummary): void => {
+    openDialog({
+      title: labels.renameTitle,
+      source: {
+        title: labels.title,
+        subtitle: session.customTitle ?? session.title,
+        iconLabel: "AI",
+        iconTone: "accent"
+      },
+      input: {
+        id: `rename-${session.id}`,
+        label: labels.renamePlaceholder,
+        value: session.customTitle ?? session.title,
+        placeholder: labels.renamePlaceholder,
+        submitActionId: "save"
+      },
+      actions: [
+        {
+          id: "clear",
+          label: labels.clearRename,
+          onSelect: () => {
+            void submitRename(session, null);
+          }
+        },
+        {
+          id: "cancel",
+          label: labels.cancelAction
+        },
+        {
+          id: "save",
+          label: labels.saveRename,
+          tone: "primary",
+          onSelect: ({ inputValue }) => {
+            const nextTitle = inputValue?.trim() ?? "";
+            void submitRename(session, nextTitle.length === 0 ? null : nextTitle);
+          }
+        }
+      ]
+    });
+  }, [
+    labels.cancelAction,
+    labels.clearRename,
+    labels.renamePlaceholder,
+    labels.renameTitle,
+    labels.saveRename,
+    labels.title,
+    openDialog,
+    submitRename
+  ]);
+
+  const confirmDelete = useCallback(async (session: AgentSessionSummary): Promise<void> => {
     const agentApi = desktopApi?.agent;
-    if (agentApi === undefined || deleteTarget === null) {
+    if (agentApi === undefined) {
       setErrorMessage(labels.runtimeUnavailable);
       return;
     }
-    const sessionId = deleteTarget.id;
+    const sessionId = session.id;
     await runSessionAction(sessionId, async () => {
       await agentApi.deleteSession({ sessionId });
       setPreview((current) =>
@@ -533,14 +575,47 @@ export const AgentSessionHistorySurface = ({
         await onOpenSession(snapshot.id);
       }
     });
-    setDeleteTarget(null);
   }, [
     activeSessionId,
-    deleteTarget,
     desktopApi,
     labels.runtimeUnavailable,
     onOpenSession,
     runSessionAction
+  ]);
+
+  const openDeleteDialog = useCallback((session: AgentSessionSummary): void => {
+    openDialog({
+      title: labels.deleteConfirmTitle,
+      description: labels.deleteConfirmDescription,
+      source: {
+        title: labels.title,
+        subtitle: session.customTitle ?? session.title,
+        iconLabel: "AI",
+        iconTone: "danger"
+      },
+      actions: [
+        {
+          id: "cancel",
+          label: labels.cancelAction
+        },
+        {
+          id: "delete",
+          label: labels.deleteConfirmAction,
+          tone: "danger",
+          onSelect: () => {
+            void confirmDelete(session);
+          }
+        }
+      ]
+    });
+  }, [
+    confirmDelete,
+    labels.cancelAction,
+    labels.deleteConfirmAction,
+    labels.deleteConfirmDescription,
+    labels.deleteConfirmTitle,
+    labels.title,
+    openDialog
   ]);
 
   const renderGroup = (
@@ -574,7 +649,7 @@ export const AgentSessionHistorySurface = ({
               onToggleSaved={toggleSaved}
               onToggleArchived={toggleArchived}
               onRename={openRenameDialog}
-              onDelete={setDeleteTarget}
+              onDelete={openDeleteDialog}
             />
           ))}
         </div>
@@ -660,85 +735,6 @@ export const AgentSessionHistorySurface = ({
         />
       </section>
 
-      {renameTarget === null ? null : (
-        <div className="lyra-agent-history-dialog-backdrop" role="presentation">
-          <form
-            className="lyra-agent-history-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label={labels.renameTitle}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitRename(renameValue.trim().length === 0 ? null : renameValue);
-            }}
-          >
-            <header>
-              <strong>{labels.renameTitle}</strong>
-              <button
-                type="button"
-                aria-label={labels.cancelAction}
-                onClick={() => setRenameTarget(null)}
-              >
-                <X size={14} aria-hidden="true" />
-              </button>
-            </header>
-            <input
-              autoFocus
-              value={renameValue}
-              placeholder={labels.renamePlaceholder}
-              onChange={(event) => setRenameValue(event.currentTarget.value)}
-            />
-            <footer>
-              <button type="button" onClick={() => void submitRename(null)}>
-                {labels.clearRename}
-              </button>
-              <button type="button" onClick={() => setRenameTarget(null)}>
-                {labels.cancelAction}
-              </button>
-              <button type="submit" className="lyra-agent-history-dialog-primary">
-                <Check size={14} aria-hidden="true" />
-                {labels.saveRename}
-              </button>
-            </footer>
-          </form>
-        </div>
-      )}
-
-      {deleteTarget === null ? null : (
-        <div className="lyra-agent-history-dialog-backdrop" role="presentation">
-          <section
-            className="lyra-agent-history-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label={labels.deleteConfirmTitle}
-          >
-            <header>
-              <strong>{labels.deleteConfirmTitle}</strong>
-              <button
-                type="button"
-                aria-label={labels.cancelAction}
-                onClick={() => setDeleteTarget(null)}
-              >
-                <X size={14} aria-hidden="true" />
-              </button>
-            </header>
-            <p>{labels.deleteConfirmDescription}</p>
-            <footer>
-              <button type="button" onClick={() => setDeleteTarget(null)}>
-                {labels.cancelAction}
-              </button>
-              <button
-                type="button"
-                className="lyra-agent-history-dialog-danger"
-                onClick={() => void confirmDelete()}
-              >
-                <Trash2 size={14} aria-hidden="true" />
-                {labels.deleteConfirmAction}
-              </button>
-            </footer>
-          </section>
-        </div>
-      )}
     </section>
   );
 };

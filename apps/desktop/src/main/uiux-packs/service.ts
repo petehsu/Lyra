@@ -19,7 +19,9 @@ import type {
   UiuxRequestActivationRequest,
   UiuxRequestActivationResponse,
   UiuxResolveRuntimeRequest,
-  UiuxSetTrustStateRequest
+  UiuxSetTrustStateRequest,
+  UiuxUninstallRequest,
+  UiuxUninstallResponse
 } from "../../shared/uiux-packs";
 import type { WorkbenchStateIpcBridge } from "../workbench-state";
 import {
@@ -28,6 +30,7 @@ import {
   readTrustedUiuxPack,
   readUiuxRegistryDocument,
   requestUiuxPackActivationInRegistry,
+  uninstallUiuxPack,
   updateUiuxPackTrustState,
   writeUiuxRegistryDocument
 } from "./registry";
@@ -290,6 +293,14 @@ export const createUiuxPacksIpcBridge = ({
       })
   );
   ipcMain.handle(
+    LYRA_CHANNELS.uiuxUninstall,
+    (_event, request: UiuxUninstallRequest): UiuxUninstallResponse =>
+      uninstallUiuxPack({
+        storageRoot,
+        packId: normalizeString(request.packId, "pack id")
+      })
+  );
+  ipcMain.handle(
     LYRA_CHANNELS.uiuxRequestActivation,
     (_event, request: UiuxRequestActivationRequest): UiuxRequestActivationResponse => {
       const packId = normalizeString(request.packId, "pack id");
@@ -325,6 +336,7 @@ export const createUiuxPacksIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.uiuxInstallFromGit);
       ipcMain.removeHandler(LYRA_CHANNELS.uiuxInstallFromNpm);
       ipcMain.removeHandler(LYRA_CHANNELS.uiuxSetTrustState);
+      ipcMain.removeHandler(LYRA_CHANNELS.uiuxUninstall);
       ipcMain.removeHandler(LYRA_CHANNELS.uiuxRequestActivation);
       ipcMain.removeHandler(LYRA_CHANNELS.uiuxResolveRuntime);
     }

@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync, inflateSync } from "node:zlib";
@@ -16,13 +17,23 @@ const PNG_SIGNATURE = Buffer.from([
 ]);
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(scriptDir, "..", "..");
-const sourceLogoPath = join(rootDir, "apps", "desktop", "src", "renderer", "assets", "logo.png");
+const desktopDir = join(rootDir, "apps", "desktop");
+const desktopRequire = createRequire(join(desktopDir, "package.json"));
+const rendererAssetsDir = join(desktopDir, "src", "renderer", "assets");
+const brandDir = join(rendererAssetsDir, "brand");
+const generatedBrandDir = join(brandDir, "generated");
+const sourceMarkPath = join(brandDir, "lyra-mark.svg");
+const smallMarkPath = join(brandDir, "lyra-mark-small.svg");
+const legacyLogoPngPath = join(rendererAssetsDir, "logo.png");
+const legacyLogoSvgPath = join(rendererAssetsDir, "logo.svg");
+const siteFaviconPath = join(rootDir, "web", "site", "public", "favicon.svg");
 const iconRoot = join(rootDir, "apps", "desktop", "resources", "icons");
 const appIconDir = join(iconRoot, "app");
 const macIconDir = join(iconRoot, "macos");
 const macIconsetDir = join(macIconDir, "lyra.iconset");
 const winIconDir = join(iconRoot, "win");
 const linuxIconDir = join(iconRoot, "linux");
+const LYRA_MARK_THEME_COLOR = "#5c78e2";
 
 const crcTable = new Uint32Array(256);
 for (let i = 0; i < crcTable.length; i += 1) {
@@ -57,8 +68,7 @@ const paethPredictor = (left: number, above: number, upperLeft: number): number 
   return upperLeft;
 };
 
-const decodePng = (path: string): PngImage => {
-  const buffer = readFileSync(path);
+const decodePngBuffer = (buffer: Buffer): PngImage => {
   assertPngSignature(buffer);
 
   let offset = PNG_SIGNATURE.length;
@@ -362,6 +372,207 @@ const writePng = (path: string, image: PngImage): void => {
   writeFileSync(path, encodePng(image));
 };
 
+const fillRect = (
+  image: PngImage,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: Rgba
+): void => {
+  const left = Math.max(0, Math.floor(x));
+  const top = Math.max(0, Math.floor(y));
+  const right = Math.min(image.width, Math.ceil(x + width));
+  const bottom = Math.min(image.height, Math.ceil(y + height));
+  for (let py = top; py < bottom; py += 1) {
+    for (let px = left; px < right; px += 1) {
+      const index = (py * image.width + px) * 4;
+      image.data[index] = color[0];
+      image.data[index + 1] = color[1];
+      image.data[index + 2] = color[2];
+      image.data[index + 3] = color[3];
+    }
+  }
+};
+
+const drawAlphaImage = (
+  target: PngImage,
+  source: PngImage,
+  left: number,
+  top: number,
+  color: Rgba
+): void => {
+  for (let y = 0; y < source.height; y += 1) {
+    for (let x = 0; x < source.width; x += 1) {
+      const targetX = left + x;
+      const targetY = top + y;
+      if (targetX < 0 || targetY < 0 || targetX >= target.width || targetY >= target.height) {
+        continue;
+      }
+      const sourceIndex = (y * source.width + x) * 4;
+      const alpha = source.data[sourceIndex + 3] / 255;
+      if (alpha <= 0) {
+        continue;
+      }
+      blendPixel(target.data, (targetY * target.width + targetX) * 4, color, alpha);
+    }
+  }
+};
+
+const createSmallMarkPreview = (smallMark: PngImage): PngImage => {
+  const sizes = [16, 20, 24, 32, 48, 64] as const;
+  const cellSize = 76;
+  const margin = 20;
+  const rowGap = 16;
+  const width = margin * 2 + cellSize * sizes.length;
+  const height = margin * 2 + cellSize * 2 + rowGap;
+  const image: PngImage = {
+    width,
+    height,
+    data: new Uint8Array(width * height * 4)
+  };
+
+  fillRect(image, 0, 0, width, height, [238, 240, 244, 255]);
+
+  for (let index = 0; index < sizes.length; index += 1) {
+    const size = sizes[index];
+    const x = margin + index * cellSize;
+    const topY = margin;
+    const bottomY = margin + cellSize + rowGap;
+    const resized = resizeImage(smallMark, size);
+    const offset = Math.round((cellSize - size) / 2);
+
+    fillRect(image, x, topY, cellSize - 8, cellSize, [255, 255, 255, 255]);
+    fillRect(image, x, bottomY, cellSize - 8, cellSize, [18, 20, 25, 255]);
+    drawAlphaImage(image, resized, x + offset - 4, topY + offset, [0, 0, 0, 255]);
+    drawAlphaImage(image, resized, x + offset - 4, bottomY + offset, [255, 255, 255, 255]);
+  }
+
+  return image;
+};
+
+const readSvg = (path: string): string => {
+  const source = readFileSync(path, "utf8").trim();
+  if (source.includes("currentColor") === false) {
+    throw new Error(`brand mark must use currentColor: ${path}`);
+  }
+  return source;
+};
+
+const fixedColorSvg = (source: string, color: string): string =>
+  source.replace(/fill="currentColor"/g, `fill="${color}"`);
+
+const writeSvg = (path: string, source: string): void => {
+  ensureDir(dirname(path));
+  writeFileSync(path, `${source.trim()}\n`);
+};
+
+const writeBrandSvgVariants = (source: string): void => {
+  writeSvg(join(generatedBrandDir, "lyra-mark-black.svg"), fixedColorSvg(source, "#000000"));
+  writeSvg(join(generatedBrandDir, "lyra-mark-white.svg"), fixedColorSvg(source, "#ffffff"));
+  writeSvg(
+    join(generatedBrandDir, "lyra-mark-accent.svg"),
+    fixedColorSvg(source, LYRA_MARK_THEME_COLOR)
+  );
+  writeSvg(join(generatedBrandDir, "lyra-mask-icon.svg"), fixedColorSvg(source, "#000000"));
+  writeSvg(join(generatedBrandDir, "lyra-favicon.svg"), fixedColorSvg(source, LYRA_MARK_THEME_COLOR));
+  writeSvg(siteFaviconPath, fixedColorSvg(source, LYRA_MARK_THEME_COLOR));
+  writeSvg(legacyLogoSvgPath, source);
+};
+
+type PlaywrightBrowser = {
+  readonly close: () => Promise<void>;
+  readonly newPage: (options: {
+    readonly viewport: { readonly width: number; readonly height: number };
+    readonly deviceScaleFactor: number;
+  }) => Promise<PlaywrightPage>;
+};
+
+type PlaywrightPage = {
+  readonly setContent: (html: string) => Promise<void>;
+  readonly locator: (selector: string) => {
+    readonly screenshot: (options: {
+      readonly omitBackground: boolean;
+      readonly type: "png";
+    }) => Promise<Buffer>;
+  };
+};
+
+type PlaywrightModule = {
+  readonly chromium: {
+    readonly launch: (options: { readonly headless: boolean }) => Promise<PlaywrightBrowser>;
+  };
+};
+
+const loadPlaywright = (): PlaywrightModule => desktopRequire("playwright") as PlaywrightModule;
+
+const renderSvgToPng = async (
+  browser: PlaywrightBrowser,
+  source: string,
+  color: string,
+  size: number
+): Promise<PngImage> => {
+  const page = await browser.newPage({
+    viewport: { width: size, height: size },
+    deviceScaleFactor: 1
+  });
+  await page.setContent(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html,
+      body {
+        width: ${size}px;
+        height: ${size}px;
+        margin: 0;
+        background: transparent;
+      }
+      #mark {
+        width: ${size}px;
+        height: ${size}px;
+        color: ${color};
+      }
+      #mark > svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        color: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="mark">${source}</div>
+  </body>
+</html>`);
+  const png = await page.locator("#mark").screenshot({
+    omitBackground: true,
+    type: "png"
+  });
+  return decodePngBuffer(png);
+};
+
+const writeBrandPngVariants = async (
+  browser: PlaywrightBrowser,
+  source: string,
+  smallSource: string
+): Promise<PngImage> => {
+  const blackMark = await renderSvgToPng(browser, source, "#000000", 1024);
+  const whiteMark = await renderSvgToPng(browser, source, "#ffffff", 1024);
+  const accentMark = await renderSvgToPng(browser, source, LYRA_MARK_THEME_COLOR, 1024);
+  const smallMark = await renderSvgToPng(browser, smallSource, "#000000", 128);
+
+  writePng(join(generatedBrandDir, "lyra-mark-black-1024.png"), blackMark);
+  writePng(join(generatedBrandDir, "lyra-mark-white-1024.png"), whiteMark);
+  writePng(join(generatedBrandDir, "lyra-mark-accent-1024.png"), accentMark);
+  writePng(join(generatedBrandDir, "lyra-mark-small-128.png"), smallMark);
+  writePng(join(generatedBrandDir, "lyra-mark-small-preview.png"), createSmallMarkPreview(smallMark));
+  writePng(join(generatedBrandDir, "lyra-favicon-32.png"), resizeImage(accentMark, 32));
+  writePng(legacyLogoPngPath, resizeImage(blackMark, 496));
+
+  return blackMark;
+};
+
 const writeMacIconset = (lightIcon: PngImage): void => {
   ensureDir(macIconsetDir);
   const entries = [
@@ -455,12 +666,27 @@ const writeLinuxIcons = (sourceIcon: PngImage): void => {
   }
 };
 
-const main = (): void => {
-  if (existsSync(sourceLogoPath) === false) {
-    throw new Error(`logo source not found: ${sourceLogoPath}`);
+const main = async (): Promise<void> => {
+  if (existsSync(sourceMarkPath) === false) {
+    throw new Error(`brand mark source not found: ${sourceMarkPath}`);
+  }
+  if (existsSync(smallMarkPath) === false) {
+    throw new Error(`small brand mark source not found: ${smallMarkPath}`);
   }
 
-  const sourceLogo = decodePng(sourceLogoPath);
+  const sourceMark = readSvg(sourceMarkPath);
+  const smallMark = readSvg(smallMarkPath);
+  writeBrandSvgVariants(sourceMark);
+
+  const { chromium } = loadPlaywright();
+  const browser = await chromium.launch({ headless: true });
+  let sourceLogo: PngImage;
+  try {
+    sourceLogo = await writeBrandPngVariants(browser, sourceMark, smallMark);
+  } finally {
+    await browser.close();
+  }
+
   const lightIcon = createRoundedAppIcon(sourceLogo, [255, 255, 255, 255], [0, 0, 0, 255]);
   const darkIcon = createRoundedAppIcon(sourceLogo, [0, 0, 0, 255], [255, 255, 255, 255]);
 
@@ -473,10 +699,14 @@ const main = (): void => {
   writeLinuxIcons(lightIcon);
 
   console.info("generated Lyra app icon assets:");
+  console.info(`  mark:  ${generatedBrandDir}`);
   console.info(`  app:   ${appIconDir}`);
   console.info(`  mac:   ${join(macIconDir, "lyra.icns")}`);
   console.info(`  win:   ${join(winIconDir, "lyra.ico")}`);
   console.info(`  linux: ${linuxIconDir}`);
 };
 
-main();
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});

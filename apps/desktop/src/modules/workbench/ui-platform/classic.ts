@@ -16,6 +16,7 @@ import { AgentOvernightSurface } from "../agent-overnight";
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
 import { NotificationCenterSurface } from "../notifications";
 import { AgentSessionHistorySurface } from "../agent-session-history";
+import { LoginManagerSurface } from "../login-manager";
 import { WorkbenchChrome } from "../shell/workbench-chrome";
 import { WorkspaceSurfaceRouter } from "../shell/workspace-surface-router";
 import { TerminalDock, TerminalWorkspaceSurface } from "../terminal-dock";
@@ -68,7 +69,8 @@ export const CLASSIC_WORKBENCH_UI_PACK = {
       agentSelfDev: AgentSelfDevSurface,
       agentOvernight: AgentOvernightSurface,
       notificationCenter: NotificationCenterSurface,
-      agentSessionHistory: AgentSessionHistorySurface
+      agentSessionHistory: AgentSessionHistorySurface,
+      loginManager: LoginManagerSurface
     }
   },
   interactions: CLASSIC_WORKBENCH_INTERACTION_POLICIES

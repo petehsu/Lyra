@@ -4,6 +4,7 @@ import type {
   LyraDesktopApi
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
+import type { GlobalDialogModel } from "../global-dialog";
 
 export type AgentSessionHistoryAppId = "agent-session-history";
 export type AgentSessionHistoryAppIconKey = "agent-session-history-default";
@@ -51,6 +52,7 @@ export type AgentSessionHistorySurfaceProps = {
   readonly labels: AgentSessionHistoryLabels;
   readonly activeSessionId?: string | null;
   readonly onOpenSession: (sessionId: string) => Promise<void> | void;
+  readonly openDialog: GlobalDialogModel["openDialog"];
   readonly locale?: WorkbenchLocale;
 };
 

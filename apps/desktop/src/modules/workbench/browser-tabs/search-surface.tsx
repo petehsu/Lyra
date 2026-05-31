@@ -44,7 +44,12 @@ export const BrowserSearchSurface = ({
       <div className="lyra-browser-search-row">
         <div className="lyra-browser-pill" ref={onPillRef}>
           <span className="lyra-logo-circle lyra-logo-static">
-            <LyraBrandLogo logoUrl={logoUrl} />
+            <LyraBrandLogo
+              logoUrl={logoUrl}
+              motion="ambient"
+              spinIntensity="subtle"
+              spinDurationMs={22000}
+            />
           </span>
           <input
             aria-label="browser-address-input"

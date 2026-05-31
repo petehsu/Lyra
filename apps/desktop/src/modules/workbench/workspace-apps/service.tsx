@@ -69,12 +69,12 @@ const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactN
     renderAgentOvernightAppIcon(iconKey as AgentOvernightAppIconKey),
   "agent-session-history": (iconKey) =>
     renderAgentSessionHistoryAppIcon(iconKey as AgentSessionHistoryAppIconKey),
+  "login-manager": (iconKey) =>
+    renderLoginManagerAppIcon(iconKey as LoginManagerAppIconKey),
   "notification-center": (iconKey) =>
     renderNotificationCenterAppIcon(iconKey as "notification-center-default"),
   "software-store": (iconKey) =>
-    renderSoftwareStoreAppIcon(iconKey as SoftwareStoreAppIconKey),
-  "login-manager": (iconKey) =>
-    renderLoginManagerAppIcon(iconKey as LoginManagerAppIconKey)
+    renderSoftwareStoreAppIcon(iconKey as SoftwareStoreAppIconKey)
 };
 
 const hasWorkspaceAppIconRenderer = (
@@ -123,6 +123,11 @@ export const isAgentSessionHistoryAppId = (
 ): value is AgentSessionHistoryAppId =>
   value === "agent-session-history";
 
+export const isLoginManagerAppId = (
+  value: WorkbenchAppId
+): value is LoginManagerAppId =>
+  value === "login-manager";
+
 export const isNotificationCenterAppId = (value: WorkbenchAppId): value is "notification-center" =>
   value === "notification-center";
 
@@ -130,8 +135,3 @@ export const isSoftwareStoreAppId = (
   value: WorkbenchAppId
 ): value is SoftwareStoreAppId =>
   value === "software-store";
-
-export const isLoginManagerAppId = (
-  value: WorkbenchAppId
-): value is LoginManagerAppId =>
-  value === "login-manager";

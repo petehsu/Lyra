@@ -17,8 +17,7 @@ const WORKBENCH_STATE_FILENAMES: Readonly<Record<WorkbenchStateKey, string>> = {
   "ai-panel-tabs": "ai-panel-tabs.v1.json",
   "terminal-dock": "terminal-dock.v1.json",
   notifications: "notifications.v1.json",
-  layout: "layout.v1.json",
-  "login-manager": "login-manager.v1.json"
+  layout: "layout.v1.json"
 };
 
 const isWorkbenchStateKey = (value: unknown): value is WorkbenchStateKey =>
@@ -27,8 +26,7 @@ const isWorkbenchStateKey = (value: unknown): value is WorkbenchStateKey =>
   || value === "ai-panel-tabs"
   || value === "terminal-dock"
   || value === "notifications"
-  || value === "layout"
-  || value === "login-manager";
+  || value === "layout";
 
 const normalizeKey = (value: unknown): WorkbenchStateKey => {
   if (isWorkbenchStateKey(value) === false) {

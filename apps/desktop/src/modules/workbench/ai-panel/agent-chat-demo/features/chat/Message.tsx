@@ -10,13 +10,34 @@ import { StreamingText } from "../rich-text/StreamingText";
 import { formatMessage, t } from "../../core/i18n";
 
 /** Check if any tool group in the message is still running. */
-function isMessageWorking(message: ChatMessage): boolean {
+export function isAgentMessageWorking(message: ChatMessage): boolean {
   return message.blocks.some(
     (b) => b.type === "tools" && b.group.status === "running"
   );
 }
 
-export function Message({ message }: { message: ChatMessage }) {
+export function isEmptyPendingAgentMessage(message: ChatMessage): boolean {
+  return (
+    message.author === "agent" &&
+    message.blocks.length > 0 &&
+    message.blocks.every((b) => b.type === "text" && b.body.trim().length === 0)
+  );
+}
+
+export function shouldShowAgentActivityIndicator(message: ChatMessage): boolean {
+  return (
+    message.author === "agent" &&
+    (isEmptyPendingAgentMessage(message) || isAgentMessageWorking(message))
+  );
+}
+
+export function Message({
+  message,
+  showActivityIndicator = true
+}: {
+  message: ChatMessage;
+  showActivityIndicator?: boolean;
+}) {
   const { previewRollback, rollbackMessage, isTurnRunning } = useData();
   const [rollbackPreview, setRollbackPreview] = useState<AgentRollbackPreviewResponse | null>(null);
   const [rollbackBusy, setRollbackBusy] = useState(false);
@@ -179,14 +200,16 @@ export function Message({ message }: { message: ChatMessage }) {
     );
   }
 
-  const working = isMessageWorking(message);
+  const working = isAgentMessageWorking(message);
   const textBlocks = message.blocks.filter((b) => b.type === "text");
   const lastTextId = textBlocks.at(-1)?.id ?? null;
-  const isEmptyPendingAgent =
-    message.blocks.length > 0 &&
-    message.blocks.every((b) => b.type === "text" && b.body.trim().length === 0);
+  const isEmptyPendingAgent = isEmptyPendingAgentMessage(message);
   const hasTextBlocks = textBlocks.some((b) => b.body.trim().length > 0);
   const hasImages = message.blocks.some((b) => b.type === "image");
+
+  if (isEmptyPendingAgent && !showActivityIndicator) {
+    return null;
+  }
 
   return (
     <div className="msg msg-agent">
@@ -225,8 +248,8 @@ export function Message({ message }: { message: ChatMessage }) {
             return <ToolGroupBlock key={b.id} group={b.group} />;
           })
         )}
-        {working ? (
-          <span className="msg-time msg-time-agent">
+        {working && showActivityIndicator ? (
+          <span className="msg-time msg-time-agent" aria-label={t("msg.agentResponding")}>
             <BrailleSpinner />
           </span>
         ) : (message.time && (hasTextBlocks || hasImages)) ? (

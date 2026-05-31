@@ -27,6 +27,10 @@ import type {
   SoftwareStoreAppIconKey,
   SoftwareStoreAppId
 } from "../software-store";
+import type {
+  LoginManagerAppIconKey,
+  LoginManagerAppId
+} from "../login-manager";
 
 export type {
   AgentSessionHistoryAppIconKey,
@@ -52,6 +56,10 @@ export type {
   SoftwareStoreAppIconKey,
   SoftwareStoreAppId
 } from "../software-store";
+export type {
+  LoginManagerAppIconKey,
+  LoginManagerAppId
+} from "../login-manager";
 
 export type {
   ImageViewerAppIconKey,
@@ -60,9 +68,6 @@ export type {
 
 export type NotificationCenterAppId = "notification-center";
 export type NotificationCenterAppIconKey = "notification-center-default";
-
-export type LoginManagerAppId = "login-manager";
-export type LoginManagerAppIconKey = "login-manager-default";
 
 export type WorkbenchAppId =
   | FileManagerAppId
@@ -73,9 +78,9 @@ export type WorkbenchAppId =
   | AgentSelfDevAppId
   | AgentOvernightAppId
   | AgentSessionHistoryAppId
+  | LoginManagerAppId
   | NotificationCenterAppId
-  | SoftwareStoreAppId
-  | LoginManagerAppId;
+  | SoftwareStoreAppId;
 
 export type WorkspaceAppRef = {
   readonly appId: WorkbenchAppId;
@@ -91,8 +96,8 @@ export type WorkspaceAppIconKey =
   | AgentSelfDevAppIconKey
   | AgentOvernightAppIconKey
   | AgentSessionHistoryAppIconKey
+  | LoginManagerAppIconKey
   | NotificationCenterAppIconKey
-  | SoftwareStoreAppIconKey
-  | LoginManagerAppIconKey;
+  | SoftwareStoreAppIconKey;
 
 export type WorkspaceAppIconRenderer = (iconKey: WorkspaceAppIconKey) => ReactNode;

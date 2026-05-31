@@ -15,19 +15,32 @@ export type GlobalDialogCopyItem = {
   readonly value: string;
 };
 
+export type GlobalDialogInput = {
+  readonly id: string;
+  readonly label: string;
+  readonly value?: string;
+  readonly placeholder?: string;
+  readonly submitActionId?: string;
+};
+
+export type GlobalDialogActionContext = {
+  readonly inputValue?: string;
+};
+
 export type GlobalDialogAction = {
   readonly id: string;
   readonly label: string;
   readonly tone?: GlobalDialogActionTone;
   readonly disabled?: boolean;
   readonly closeOnSelect?: boolean;
-  readonly onSelect?: () => void;
+  readonly onSelect?: (context: GlobalDialogActionContext) => void | Promise<void>;
 };
 
 export type GlobalDialogOpenRequest = {
   readonly title: string;
   readonly description?: string;
   readonly source?: GlobalDialogSource;
+  readonly input?: GlobalDialogInput;
   readonly copyItems?: readonly GlobalDialogCopyItem[];
   readonly copyActionLabel?: string;
   readonly copiedActionLabel?: string;
@@ -39,6 +52,7 @@ export type GlobalDialogState = {
   readonly title: string;
   readonly description?: string;
   readonly source?: GlobalDialogSource;
+  readonly input?: GlobalDialogInput;
   readonly copyItems: readonly GlobalDialogCopyItem[];
   readonly copyActionLabel: string;
   readonly copiedActionLabel: string;
@@ -49,7 +63,7 @@ export type GlobalDialogModel = {
   readonly state: GlobalDialogState;
   readonly openDialog: (request: GlobalDialogOpenRequest) => void;
   readonly closeDialog: () => void;
-  readonly selectAction: (actionId: string) => void;
+  readonly selectAction: (actionId: string, context?: GlobalDialogActionContext) => void;
 };
 
 export type GlobalDialogDefaults = {

@@ -7,16 +7,23 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+base64.workspace = true
 chrono = { workspace = true, features = ["clock", "serde"] }
 dirs.workspace = true
 lyra-agent-api.workspace = true
 lyra-agent-kernel.workspace = true
 lyra-agent-plugins.workspace = true
 futures = { workspace = true, features = ["executor"] }
-reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls"] }
+diffy.workspace = true
+glob.workspace = true
+reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls", "system-proxy"] }
+rusqlite.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+shlex.workspace = true
 thiserror.workspace = true
+url.workspace = true
+urlencoding.workspace = true
 uuid = { workspace = true, features = ["v4", "serde"] }
 
 [dev-dependencies]

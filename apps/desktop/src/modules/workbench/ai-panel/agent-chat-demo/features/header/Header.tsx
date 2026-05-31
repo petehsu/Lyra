@@ -264,6 +264,16 @@ export function Header() {
     }
   };
 
+  const onChangeProject = async () => {
+    if (bindingProject || isTurnRunning) return;
+    setBindingProject(true);
+    try {
+      await bindProject();
+    } finally {
+      setBindingProject(false);
+    }
+  };
+
   const actionDisabled = isTurnRunning || actionBusy !== null;
 
   return (
@@ -284,6 +294,18 @@ export function Header() {
               <span className="app-header-project-name">{projectName}</span>
             ) : null}
           </button>
+          {hasBoundProject ? (
+            <button
+              className="app-header-action app-header-project-change"
+              type="button"
+              aria-label={t("header.changeProjectBinding")}
+              title={t("header.changeProjectBinding")}
+              disabled={bindingProject || isTurnRunning}
+              onClick={() => void onChangeProject()}
+            >
+              <ArrowRightLeft aria-hidden="true" size={13} strokeWidth={1.8} />
+            </button>
+          ) : null}
         </div>
         {showNewSessionButton ? (
           <button

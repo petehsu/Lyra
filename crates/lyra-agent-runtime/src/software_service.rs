@@ -32,6 +32,57 @@ impl SoftwareService {
         }
     }
 
+    pub fn inspect_capability(
+        &self,
+        software_id: &str,
+        capability_id: Option<&str>,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        let mut payload = serde_json::json!({
+            "softwareId": software_id,
+        });
+        if let Some(capability_id) = capability_id {
+            payload["capabilityId"] = serde_json::Value::String(capability_id.to_string());
+        }
+        match self
+            .backend
+            .call_host_capability("software.inspectCapability", payload)
+        {
+            Ok(value) => Ok(value),
+            Err(error) => Ok(serde_json::json!({
+                "softwareId": software_id,
+                "capabilityId": capability_id,
+                "hostCapabilityAvailable": false,
+                "message": error,
+            })),
+        }
+    }
+
+    pub fn read_state(
+        &self,
+        software_id: Option<&str>,
+        capability_id: Option<&str>,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        let mut payload = serde_json::json!({});
+        if let Some(software_id) = software_id {
+            payload["softwareId"] = serde_json::Value::String(software_id.to_string());
+        }
+        if let Some(capability_id) = capability_id {
+            payload["capabilityId"] = serde_json::Value::String(capability_id.to_string());
+        }
+        match self
+            .backend
+            .call_host_capability("software.readState", payload)
+        {
+            Ok(value) => Ok(value),
+            Err(error) => Ok(serde_json::json!({
+                "softwareId": software_id,
+                "capabilityId": capability_id,
+                "hostCapabilityAvailable": false,
+                "message": error,
+            })),
+        }
+    }
+
     pub fn minimal_exposure_policy(&self) -> serde_json::Value {
         serde_json::json!({
             "selection": "taskWorkspacePermission",
@@ -57,5 +108,22 @@ mod tests {
         let policy = SoftwareService::default().minimal_exposure_policy();
         assert_eq!(policy["selection"], "taskWorkspacePermission");
         assert_eq!(policy["maxToolSchemaMode"], "lightweightSummary");
+    }
+
+    #[test]
+    fn software_service_declares_inspect_and_read_state_policy_fields() {
+        let policy = SoftwareService::default().minimal_exposure_policy();
+        assert!(
+            policy["fields"]
+                .as_array()
+                .expect("fields")
+                .contains(&"readableState".into())
+        );
+        assert!(
+            policy["fields"]
+                .as_array()
+                .expect("fields")
+                .contains(&"commands".into())
+        );
     }
 }

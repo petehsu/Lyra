@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
+use lyra_agent_plugins::LyraSkillState;
 use lyra_agent_runtime::{AgentRuntimeServices, LyraAgentBackend};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 #[derive(Debug, Parser)]
@@ -43,6 +44,10 @@ enum AgentCommand {
         #[command(subcommand)]
         command: ToolsCommand,
     },
+    Skills {
+        #[command(subcommand)]
+        command: SkillsCommand,
+    },
     Software {
         #[command(subcommand)]
         command: SoftwareCommand,
@@ -68,6 +73,14 @@ enum ProviderCommand {
 #[derive(Debug, Subcommand)]
 enum ToolsCommand {
     List,
+}
+
+#[derive(Debug, Subcommand)]
+enum SkillsCommand {
+    List,
+    Inspect { id: String },
+    Activate { id: String },
+    Deactivate { id: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -112,7 +125,39 @@ fn handle_agent(command: AgentCommand, services: &AgentRuntimeServices) -> serde
             "events": services.event_bus.replay(),
         })),
         AgentCommand::Tools { command } => match command {
-            ToolsCommand::List => Ok(services.tool_activity.built_in_capabilities()),
+            ToolsCommand::List => Ok(services.tool_activity.cli_capabilities()),
+        },
+        AgentCommand::Skills { command } => match command {
+            SkillsCommand::List => Ok(json!({
+                "skills": services
+                    .skill_registry
+                    .list()
+                    .into_iter()
+                    .map(skill_state_json)
+                    .collect::<Vec<_>>()
+            })),
+            SkillsCommand::Inspect { id } => services
+                .skill_registry
+                .inspect(&id)
+                .map(skill_state_json)
+                .map(|skill| json!({ "skill": skill }))
+                .ok_or_else(|| {
+                    lyra_agent_runtime::AgentRuntimeError::Core(format!(
+                        "Lyra skill is not registered: {id}"
+                    ))
+                }),
+            SkillsCommand::Activate { id } => services
+                .skill_registry
+                .activate(&id)
+                .map(skill_state_json)
+                .map(|skill| json!({ "skill": skill }))
+                .map_err(|error| lyra_agent_runtime::AgentRuntimeError::Core(error.to_string())),
+            SkillsCommand::Deactivate { id } => services
+                .skill_registry
+                .deactivate(&id)
+                .map(skill_state_json)
+                .map(|skill| json!({ "skill": skill }))
+                .map_err(|error| lyra_agent_runtime::AgentRuntimeError::Core(error.to_string())),
         },
         AgentCommand::Software { command } => match command {
             SoftwareCommand::List => services.software.list_capabilities(),
@@ -141,4 +186,17 @@ fn run_prompt_with_events(
         );
     }
     Ok(value)
+}
+
+fn skill_state_json(skill: LyraSkillState) -> Value {
+    json!({
+        "id": skill.manifest.id,
+        "name": skill.manifest.name,
+        "version": skill.manifest.version,
+        "description": skill.manifest.description,
+        "prompt": skill.manifest.prompt,
+        "permissions": skill.manifest.permissions,
+        "toolCapabilities": skill.manifest.tool_capabilities,
+        "active": skill.active,
+    })
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
@@ -26,7 +26,6 @@ import type { AgentGitLabels } from "../agent-git";
 import type { AgentSelfDevLabels } from "../agent-selfdev";
 import type { AgentOvernightLabels } from "../agent-overnight";
 import { SoftwareStoreSurface, type SoftwareStoreSurfaceProps } from "../software-store";
-import { LoginManagerSurface } from "../login-manager";
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchSplitThreePaneLayout } from "../preferences";
 import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/types";
@@ -203,8 +202,10 @@ export type WorkspaceSurfaceRouterProps = {
     readonly labels: AgentSessionHistorySurfaceProps["labels"];
     readonly activeSessionId: string | null;
     readonly onOpenSession: AgentSessionHistorySurfaceProps["onOpenSession"];
+    readonly openDialog: AgentSessionHistorySurfaceProps["openDialog"];
     readonly locale?: AgentSessionHistorySurfaceProps["locale"];
   };
+  readonly loginManager: ComponentProps<WorkbenchSurfaceAdapters["loginManager"]>;
   readonly softwareStore: SoftwareStoreSurfaceProps;
 };
 
@@ -273,10 +274,12 @@ const renderSurfaceModel = (
       const Adapter = surfaceAdapters.agentSessionHistory;
       return <Adapter {...model.props} />;
     }
+    case "loginManager": {
+      const Adapter = surfaceAdapters.loginManager;
+      return <Adapter {...model.props} />;
+    }
     case "softwareStore":
       return <SoftwareStoreSurface {...model.props} />;
-    case "loginManager":
-      return <LoginManagerSurface {...model.props} />;
     case "empty":
       return null;
     default:

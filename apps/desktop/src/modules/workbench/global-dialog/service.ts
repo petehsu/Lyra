@@ -2,8 +2,10 @@ import { useCallback, useState } from "react";
 
 import type {
   GlobalDialogAction,
+  GlobalDialogActionContext,
   GlobalDialogCopyItem,
   GlobalDialogDefaults,
+  GlobalDialogInput,
   GlobalDialogSource,
   GlobalDialogModel,
   GlobalDialogOpenRequest,
@@ -63,6 +65,27 @@ const normalizeSource = (
   };
 };
 
+const normalizeInput = (
+  input: GlobalDialogInput | undefined
+): GlobalDialogInput | undefined => {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  const id = normalizeText(input.id, "input.id");
+  const label = normalizeText(input.label, "input.label");
+  const placeholder = normalizeOptionalText(input.placeholder);
+  const submitActionId = normalizeOptionalText(input.submitActionId);
+
+  return {
+    id,
+    label,
+    value: input.value ?? "",
+    ...(placeholder === undefined ? {} : { placeholder }),
+    ...(submitActionId === undefined ? {} : { submitActionId })
+  };
+};
+
 const normalizeCopyItems = (
   copyItems: readonly GlobalDialogCopyItem[] | undefined
 ): readonly GlobalDialogCopyItem[] => {
@@ -103,6 +126,7 @@ export const useGlobalDialogModel = (
     const title = normalizeText(request.title, "title");
     const description = normalizeOptionalText(request.description);
     const source = normalizeSource(request.source);
+    const input = normalizeInput(request.input);
     const copyItems = normalizeCopyItems(request.copyItems);
     const copyActionLabel = normalizeOptionalText(request.copyActionLabel)
       ?? defaults.copyActionLabel;
@@ -117,6 +141,7 @@ export const useGlobalDialogModel = (
         ? {}
         : { description }),
       ...(source === undefined ? {} : { source }),
+      ...(input === undefined ? {} : { input }),
       copyItems,
       copyActionLabel,
       copiedActionLabel,
@@ -128,19 +153,22 @@ export const useGlobalDialogModel = (
     setState(createClosedState(defaults));
   }, [defaults]);
 
-  const selectAction = useCallback((actionId: string): void => {
+  const selectAction = useCallback((
+    actionId: string,
+    context: GlobalDialogActionContext = {}
+  ): void => {
     const target = state.actions.find((action) => action.id === actionId);
     if (target === undefined || target.disabled) {
       return;
     }
 
     if (target.closeOnSelect === false) {
-      target.onSelect?.();
+      void target.onSelect?.(context);
       return;
     }
 
     try {
-      target.onSelect?.();
+      void target.onSelect?.(context);
     } finally {
       closeDialog();
     }

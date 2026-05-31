@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  AgentRuntimeEvent,
   LyraDesktopApi,
   WorkbenchBrowserAgentActivityEvent,
   WorkbenchBrowserPageRuntimeState
@@ -31,7 +32,10 @@ type BrowserPageHostDescriptor = {
 export type BrowserAgentVisualState = {
   readonly active: boolean;
   readonly inputActive: boolean;
+  readonly cursorVisible: boolean;
+  readonly cursorPhase: NonNullable<WorkbenchBrowserAgentActivityEvent["cursorPhase"]>;
   readonly action: WorkbenchBrowserAgentActivityEvent["action"] | null;
+  readonly interaction: WorkbenchBrowserAgentActivityEvent["interaction"] | null;
   readonly tabId: string | null;
   readonly targetMode: WorkbenchBrowserAgentActivityEvent["targetMode"] | null;
   readonly cursor: {
@@ -76,7 +80,10 @@ const DEFAULT_PAGE_NAVIGATION_STATE: PageNavigationState = {
 const IDLE_BROWSER_AGENT_VISUAL_STATE: BrowserAgentVisualState = {
   active: false,
   inputActive: false,
+  cursorVisible: false,
+  cursorPhase: "idle",
   action: null,
+  interaction: null,
   tabId: null,
   targetMode: null,
   cursor: null
@@ -99,7 +106,10 @@ const arePageRuntimeStatesEquivalent = (
   && first.isLoading === second.isLoading
   && first.canGoBack === second.canGoBack
   && first.canGoForward === second.canGoForward
-  && first.isHtmlFullscreen === second.isHtmlFullscreen;
+  && first.isHtmlFullscreen === second.isHtmlFullscreen
+  && first.restoreState?.scrollX === second.restoreState?.scrollX
+  && first.restoreState?.scrollY === second.restoreState?.scrollY
+  && first.restoreState?.capturedAt === second.restoreState?.capturedAt;
 
 export const resolveBrowserAgentCursorViewportPoint = (
   hostRect: Pick<DOMRectReadOnly, "left" | "top" | "width" | "height">,
@@ -153,6 +163,7 @@ export const useWorkbenchBrowserRuntime = ({
     useState<BrowserAgentVisualState>(IDLE_BROWSER_AGENT_VISUAL_STATE);
   const pageHostByTabIdRef = useRef(new Map<string, HTMLElement>());
   const browserAgentVisualTimerRef = useRef<number | null>(null);
+  const browserAgentCursorSafetyTimerRef = useRef<number | null>(null);
 
   const activePageRuntimeState =
     activeBrowserTabId === null
@@ -196,6 +207,9 @@ export const useWorkbenchBrowserRuntime = ({
         tabId: tab.id,
         address: tab.displayAddress,
         titleHint: tab.title,
+        ...(tab.browserRestoreState === undefined
+          ? {}
+          : { restoreState: tab.browserRestoreState }),
         isActive: tab.id === activeBrowserTabId
       }));
     void desktopApi.workbenchBrowser.syncTopology({
@@ -228,10 +242,44 @@ export const useWorkbenchBrowserRuntime = ({
       return;
     }
 
-    return desktopApi.workbenchBrowser.onEvent((event) => {
+    const hideBrowserAgentCursor = (): void => {
+      if (browserAgentVisualTimerRef.current !== null) {
+        window.clearTimeout(browserAgentVisualTimerRef.current);
+        browserAgentVisualTimerRef.current = null;
+      }
+      if (browserAgentCursorSafetyTimerRef.current !== null) {
+        window.clearTimeout(browserAgentCursorSafetyTimerRef.current);
+        browserAgentCursorSafetyTimerRef.current = null;
+      }
+      setBrowserAgentVisualState(IDLE_BROWSER_AGENT_VISUAL_STATE);
+    };
+
+    const scheduleCursorSafetyHide = (): void => {
+      if (browserAgentCursorSafetyTimerRef.current !== null) {
+        window.clearTimeout(browserAgentCursorSafetyTimerRef.current);
+      }
+      browserAgentCursorSafetyTimerRef.current = window.setTimeout(() => {
+        browserAgentCursorSafetyTimerRef.current = null;
+        setBrowserAgentVisualState(IDLE_BROWSER_AGENT_VISUAL_STATE);
+      }, 60_000);
+    };
+
+    const handleAgentRuntimeEvent = (event: AgentRuntimeEvent): void => {
+      if (
+        event.kind === "turnFinished"
+        || event.kind === "turnFailed"
+        || event.kind === "turnInterrupted"
+        || (event.kind === "followStateChanged" && event.follow.running === false)
+      ) {
+        hideBrowserAgentCursor();
+      }
+    };
+
+    const unsubscribeAgent = desktopApi.agent?.onEvent(handleAgentRuntimeEvent) ?? (() => undefined);
+    const unsubscribeBrowser = desktopApi.workbenchBrowser.onEvent((event) => {
       if (event.kind === "lumen-browser-activity" || event.kind === "agent-browser-activity") {
         const host = pageHostByTabIdRef.current.get(event.tabId) ?? null;
-        const cursor = host === null
+        const nextCursor = host === null
           ? null
           : resolveBrowserAgentCursorViewportPoint(
               host.getBoundingClientRect(),
@@ -240,18 +288,40 @@ export const useWorkbenchBrowserRuntime = ({
         if (browserAgentVisualTimerRef.current !== null) {
           window.clearTimeout(browserAgentVisualTimerRef.current);
         }
-        setBrowserAgentVisualState({
-          active: true,
-          inputActive: event.inputActive,
-          action: event.action,
-          tabId: event.tabId,
-          targetMode: event.targetMode,
-          cursor
+        scheduleCursorSafetyHide();
+        setBrowserAgentVisualState((current) => {
+          const retainedCursor =
+            nextCursor
+            ?? (current.cursorVisible && current.tabId === event.tabId ? current.cursor : null);
+          return {
+            active: true,
+            inputActive: event.inputActive,
+            cursorVisible: retainedCursor !== null,
+            cursorPhase: event.cursorPhase ?? "idle",
+            action: event.action,
+            interaction: event.interaction ?? null,
+            tabId: event.tabId,
+            targetMode: event.targetMode,
+            cursor: retainedCursor
+          };
         });
         const durationMs = Math.max(500, Math.min(8_000, Math.round(event.durationMs)));
         browserAgentVisualTimerRef.current = window.setTimeout(() => {
           browserAgentVisualTimerRef.current = null;
-          setBrowserAgentVisualState(IDLE_BROWSER_AGENT_VISUAL_STATE);
+          setBrowserAgentVisualState((current) => {
+            if (!current.cursorVisible || current.cursor === null) {
+              return IDLE_BROWSER_AGENT_VISUAL_STATE;
+            }
+            return {
+              ...current,
+              active: false,
+              inputActive: false,
+              cursorPhase: "idle",
+              action: null,
+              interaction: null,
+              targetMode: null
+            };
+          });
         }, durationMs);
         return;
       }
@@ -303,7 +373,12 @@ export const useWorkbenchBrowserRuntime = ({
       if (event.kind === "request-open-tab") {
         tabsModel.openPageInNewTab(event.address, event.title);
       }
+      return undefined;
     });
+    return () => {
+      unsubscribeAgent();
+      unsubscribeBrowser();
+    };
   }, [desktopApi, tabsModel]);
 
   useEffect(
@@ -311,6 +386,10 @@ export const useWorkbenchBrowserRuntime = ({
       if (browserAgentVisualTimerRef.current !== null) {
         window.clearTimeout(browserAgentVisualTimerRef.current);
         browserAgentVisualTimerRef.current = null;
+      }
+      if (browserAgentCursorSafetyTimerRef.current !== null) {
+        window.clearTimeout(browserAgentCursorSafetyTimerRef.current);
+        browserAgentCursorSafetyTimerRef.current = null;
       }
     },
     []

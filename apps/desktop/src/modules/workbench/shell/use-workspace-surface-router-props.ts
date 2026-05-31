@@ -14,6 +14,7 @@ import {
 import type { AgentProjectTreeModel } from "../agent-project-tree";
 import type { WorkbenchPreferencesModel } from "../preferences";
 import { createSoftwareStoreAppRequest } from "../software-store";
+import { createLoginManagerAppRequest } from "../login-manager";
 import type { SoftwareCapabilitiesRegistryModel } from "../software-capabilities";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel, WorkspaceTab } from "../workspace-tabs/types";
@@ -68,6 +69,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
     readonly labels: AgentSessionHistorySurfaceProps["labels"];
     readonly activeSessionId: string | null;
     readonly onOpenSession: AgentSessionHistorySurfaceProps["onOpenSession"];
+    readonly openDialog: AgentSessionHistorySurfaceProps["openDialog"];
     readonly locale?: AgentSessionHistorySurfaceProps["locale"];
   };
 };
@@ -175,6 +177,11 @@ export const useWorkspaceSurfaceRouterProps = ({
       onRequestClearAll: onRequestClearNotifications
     },
     agentSessionHistory,
+    loginManager: {
+      desktopApi,
+      labels: labels.loginManager,
+      onOpenSite: tabsModel.openPageInNewTab
+    },
     softwareStore: {
       desktopApi,
       labels: labels.softwareStore,
@@ -198,6 +205,10 @@ export const useWorkspaceSurfaceRouterProps = ({
         }
         if (appId === "agent-history") {
           tabsModel.openAppTab(createAgentSessionHistoryAppRequest(labels.agentSessionHistory.title));
+          return;
+        }
+        if (appId === "login-manager") {
+          tabsModel.openAppTab(createLoginManagerAppRequest(labels.loginManager.tabTitle));
           return;
         }
         if (appId === "software-store") {

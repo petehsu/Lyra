@@ -2,6 +2,7 @@ pub mod archive_service;
 pub mod browser_service;
 pub mod clarification_service;
 pub mod context_builder;
+pub mod design_tools;
 pub mod event_bus;
 pub mod event_mapper;
 pub mod follow_service;
@@ -9,6 +10,7 @@ pub mod git_runtime;
 pub mod memory_service;
 pub mod native_backend;
 pub mod permission_service;
+pub mod prompt_policy;
 pub mod provider_service;
 pub mod recovery_service;
 pub mod session_service;
@@ -17,6 +19,7 @@ pub mod todo_service;
 pub mod tool_activity_service;
 pub mod turn_runner;
 
+use lyra_agent_plugins::SkillRegistry;
 use serde_json::Value;
 use std::sync::{Arc, Mutex, OnceLock};
 use thiserror::Error;
@@ -130,6 +133,7 @@ pub struct AgentRuntimeServices {
     pub follow: follow_service::FollowService,
     pub recovery: recovery_service::RecoveryService,
     pub archive: archive_service::ArchiveService,
+    pub skill_registry: SkillRegistry,
     backend: BackendHandle,
 }
 
@@ -145,14 +149,19 @@ impl AgentRuntimeServices {
     }
 
     pub fn with_backend_handle(backend: BackendHandle) -> Self {
+        let skill_registry = SkillRegistry::with_builtin_skills();
         Self {
             session: session_service::SessionService::new(backend.clone()),
             turn_runner: turn_runner::TurnRunner::new(backend.clone()),
             event_bus: event_bus::RuntimeEventBus::new(backend.clone()),
             event_mapper: event_mapper::RuntimeEventMapper::default(),
-            tool_activity: tool_activity_service::ToolActivityService::default(),
+            tool_activity: tool_activity_service::ToolActivityService::with_skill_registry(
+                skill_registry.clone(),
+            ),
             memory: memory_service::MemoryService::new(backend.clone()),
-            context_builder: context_builder::ContextBuilder::default(),
+            context_builder: context_builder::ContextBuilder::with_skill_registry(
+                skill_registry.clone(),
+            ),
             provider: provider_service::ProviderService::new(backend.clone()),
             permission: permission_service::PermissionService::new(backend.clone()),
             clarification: clarification_service::ClarificationService::new(backend.clone()),
@@ -162,6 +171,7 @@ impl AgentRuntimeServices {
             follow: follow_service::FollowService::default(),
             recovery: recovery_service::RecoveryService::new(backend.clone()),
             archive: archive_service::ArchiveService::new(backend.clone()),
+            skill_registry,
             backend,
         }
     }
@@ -217,6 +227,18 @@ impl AgentRuntimeServices {
             "agent.memory.audit" => self.memory.audit(payload),
             "agent.memory.trim.run" => self.memory.trim(payload),
             "agent.memory.recover.run" => self.memory.recover(payload),
+            "agent.memory.longterm.create"
+            | "agent.memory.longterm.search"
+            | "agent.memory.longterm.update"
+            | "agent.memory.longterm.forget"
+            | "agent.memory.longterm.list"
+            | "agent.memory.longterm.link"
+            | "agent.memory.longterm.rebuildIndex"
+            | "agent.memory.longterm.cleanupCandidates"
+            | "agent.memory.candidates.review"
+            | "agent.memory.candidates.apply"
+            | "agent.memory.candidates.reject"
+            | "agent.memory.explainInjection" => self.backend.call(method, payload),
             "agent.memory.shared.search" => self.memory.search_shared_from_payload(payload),
             "agent.memory.shared.update" => self.memory.write_shared_from_payload(payload),
             "agent.rollback.preview" => self.backend.call(method, payload),
@@ -247,6 +269,9 @@ impl AgentRuntimeServices {
             "agent.goals.open" => self.backend.call(method, payload),
             "agent.goals.resume" => self.backend.call(method, payload),
             "agent.goals.show" => self.backend.call(method, payload),
+            "agent.goals.create" => self.backend.call(method, payload),
+            "agent.goals.update" => self.backend.call(method, payload),
+            "agent.goals.checkpoint" => self.backend.call(method, payload),
             "agent.accounts.list" => self.provider.accounts(payload),
             "agent.accounts.login" => self.provider.login_account(payload),
             "agent.accounts.loginProviders" => self.provider.login_providers(payload),
@@ -254,6 +279,9 @@ impl AgentRuntimeServices {
             "agent.accounts.loginComplete" => self.provider.complete_login(payload),
             "agent.accounts.switch" => self.provider.switch_account(payload),
             "agent.accounts.remove" => self.provider.remove_account(payload),
+            "agent.proactive.list" => self.backend.call(method, payload),
+            "agent.proactive.dismiss" => self.backend.call(method, payload),
+            "agent.proactive.openSession" => self.backend.call(method, payload),
             "agent.overnight.start" => self.backend.call(method, payload),
             "agent.overnight.list" => self.backend.call(method, payload),
             "agent.overnight.status" => self.backend.call(method, payload),

@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import type {
   ToolDetails as ToolDetailsType,
+  ToolActionTarget,
   WorkbenchTabSummary
 } from "../../core/types";
 import { ChevronIcon } from "../../components/Icons";
@@ -10,7 +11,12 @@ import { TickingNumber } from "../../components/TickingNumber";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
 import { t } from "../../core/i18n";
 import { useData } from "../../data/DataProvider";
-import { ActionText, ClickableImage } from "../rich-text/ActionTargets";
+import {
+  ActionTargetList,
+  ActionText,
+  ClickableImage,
+  isImageFileReference
+} from "../rich-text/ActionTargets";
 import { ToolPeekStrip } from "./ToolPeek";
 
 /**
@@ -33,6 +39,8 @@ export function ToolDetails({ details }: { details: ToolDetailsType }) {
       return <WorkbenchCard details={details} />;
     case "lumen":
       return <LumenCard details={details} />;
+    case "software":
+      return <SoftwareCard details={details} />;
     case "task":
       return <TaskCard details={details} />;
     case "text":
@@ -51,6 +59,10 @@ function LumenCard({
 }: {
   details: Extract<ToolDetailsType, { type: "lumen" }>;
 }) {
+  const visibleTargets = details.screenshot === undefined
+    ? details.targets
+    : details.targets?.filter((target) => !isImageActionTarget(target));
+
   return (
     <div className="info-block lumen-card">
       <ToolPeekStrip peek={details.peek} className="lumen-card-peek" />
@@ -59,15 +71,48 @@ function LumenCard({
           <ClickableImage
             src={details.screenshot}
             alt="Lyra Lumen snapshot"
+            image={details.screenshotImage}
             className="tool-screenshot-img"
+            allowTargetFallback={false}
           />
         </div>
       )}
+      <ActionTargetList targets={visibleTargets} />
       {details.text && (
         <pre className="info-pre lumen-output">
-          <ActionText text={details.text} />
+          {details.text}
         </pre>
       )}
+    </div>
+  );
+}
+
+const isImageActionTarget = (target: ToolActionTarget): boolean => {
+  if ((target.mediaType ?? "").toLowerCase().startsWith("image/")) {
+    return true;
+  }
+  return isImageFileReference(target.value);
+};
+
+function SoftwareCard({
+  details,
+}: {
+  details: Extract<ToolDetailsType, { type: "software" }>;
+}) {
+  return (
+    <div className="info-block">
+      <ActionTargetList targets={details.targets} />
+      {details.softwareId || details.actionId ? (
+        <div className="info-line">
+          {details.softwareId ? <span className="info-dim">{details.softwareId}</span> : null}
+          {details.actionId ? <span className="info-strong">{details.actionId}</span> : null}
+        </div>
+      ) : null}
+      {details.text ? (
+        <pre className="info-pre">
+          {details.text}
+        </pre>
+      ) : null}
     </div>
   );
 }

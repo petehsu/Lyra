@@ -149,6 +149,18 @@ import {
   type ImageViewerOpenResult,
   type ImageViewerReadTileRequest,
   type ImageViewerTileResponse,
+  type LoginManagerClearSiteRequest,
+  type LoginManagerClearSiteResponse,
+  type LoginManagerDeleteCredentialRequest,
+  type LoginManagerEvent,
+  type LoginManagerFillCredentialRequest,
+  type LoginManagerFillCredentialResponse,
+  type LoginManagerRevealCredentialRequest,
+  type LoginManagerRevealCredentialResponse,
+  type LoginManagerSnapshot,
+  type LoginManagerUpdateSessionRequest,
+  type LyraSensitiveValueRevealRequest,
+  type LyraSensitiveValueRevealResponse,
   type UiuxInstallFromGitRequest,
   type UiuxInstallFromLocalRequest,
   type UiuxInstallFromNpmRequest,
@@ -158,10 +170,13 @@ import {
   type UiuxRequestActivationResponse,
   type UiuxResolveRuntimeRequest,
   type UiuxSetTrustStateRequest,
+  type UiuxUninstallRequest,
+  type UiuxUninstallResponse,
   type SoftwareCapabilitiesQueryRequest,
   type SoftwareCapabilitiesQueryResult,
   type InstalledUiuxPack,
   type WorkbenchBrowserEvent,
+  type WorkbenchBrowserChromePopoverRequest,
   type WorkbenchBrowserSetElementPickerModeRequest,
   type WorkbenchBrowserLayoutSnapshot,
   type WorkbenchBrowserNavigateRequest,
@@ -173,6 +188,8 @@ import {
   type WorkbenchVisualCaptureResult,
   type WorkbenchBrowserPageRuntimeState,
   type WorkbenchBrowserReadPageStateRequest,
+  type WorkbenchBrowserSearchInPageRequest,
+  type WorkbenchBrowserSearchInPageResult,
   type WorkbenchBrowserTopologySnapshot,
   type WorkbenchStateKey,
   type LyraDesktopApi,
@@ -255,6 +272,8 @@ const terminalErrorListeners = new Set<(event: TerminalErrorEvent) => void>();
 let terminalEventBridgeReady = false;
 const workbenchBrowserEventListeners = new Set<(event: WorkbenchBrowserEvent) => void>();
 let workbenchBrowserEventBridgeReady = false;
+const loginManagerEventListeners = new Set<(event: LoginManagerEvent) => void>();
+let loginManagerEventBridgeReady = false;
 const systemNotificationActivationListeners = new Set<(
   event: SystemNotificationActivation
 ) => void>();
@@ -349,6 +368,25 @@ const ensureWorkbenchBrowserEventBridge = (): void => {
         return;
       }
       for (const listener of workbenchBrowserEventListeners) {
+        listener(payload);
+      }
+    }
+  );
+};
+
+const ensureLoginManagerEventBridge = (): void => {
+  if (loginManagerEventBridgeReady) {
+    return;
+  }
+  loginManagerEventBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.loginManagerEvent,
+    (_event: Electron.IpcRendererEvent, payload: LoginManagerEvent): void => {
+      if (payload === null || typeof payload !== "object" || payload.kind !== "snapshot") {
+        return;
+      }
+      for (const listener of loginManagerEventListeners) {
         listener(payload);
       }
     }
@@ -837,6 +875,16 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.workbenchBrowserReadPageState,
         request ?? {}
       ) as Promise<WorkbenchBrowserPageRuntimeState | null>,
+    searchInPage: (request: WorkbenchBrowserSearchInPageRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserSearchInPage,
+        request
+      ) as Promise<WorkbenchBrowserSearchInPageResult>,
+    setChromePopover: (request: WorkbenchBrowserChromePopoverRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserSetChromePopover,
+        request
+      ) as Promise<void>,
     setElementPickerMode: (request: WorkbenchBrowserSetElementPickerModeRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.workbenchBrowserSetElementPickerMode,
@@ -863,6 +911,51 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         workbenchBrowserEventListeners.delete(listener);
       };
     }
+  },
+  loginManager: {
+    list: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.loginManagerList) as Promise<LoginManagerSnapshot>,
+    updateSession: (request: LoginManagerUpdateSessionRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.loginManagerUpdateSession,
+        request
+      ) as Promise<LoginManagerSnapshot>,
+    deleteCredential: (request: LoginManagerDeleteCredentialRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.loginManagerDeleteCredential,
+        request
+      ) as Promise<LoginManagerSnapshot>,
+    revealCredential: (request: LoginManagerRevealCredentialRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.loginManagerRevealCredential,
+        request
+      ) as Promise<LoginManagerRevealCredentialResponse>,
+    fillCredential: (request: LoginManagerFillCredentialRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.loginManagerFillCredential,
+        request
+      ) as Promise<LoginManagerFillCredentialResponse>,
+    clearSite: (request: LoginManagerClearSiteRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.loginManagerClearSite,
+        request
+      ) as Promise<LoginManagerClearSiteResponse>,
+    onEvent: (listener: (event: LoginManagerEvent) => void) => {
+      ensureLoginManagerEventBridge();
+      loginManagerEventListeners.add(listener);
+      return () => {
+        loginManagerEventListeners.delete(listener);
+      };
+    }
+  },
+  sensitiveValues: {
+    revealToUser: async (
+      request: LyraSensitiveValueRevealRequest
+    ): Promise<LyraSensitiveValueRevealResponse> =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.sensitiveValuesRevealToUser,
+        request
+      ) as Promise<LyraSensitiveValueRevealResponse>
   },
   lsp: {
     openDocument: (request: LspDocumentRequest) =>
@@ -1304,6 +1397,8 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.uiuxInstallFromNpm, request) as Promise<InstalledUiuxPack>,
     setTrustState: (request: UiuxSetTrustStateRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.uiuxSetTrustState, request) as Promise<InstalledUiuxPack>,
+    uninstall: (request: UiuxUninstallRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.uiuxUninstall, request) as Promise<UiuxUninstallResponse>,
     requestActivation: (request: UiuxRequestActivationRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.uiuxRequestActivation,

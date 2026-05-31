@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
@@ -8,6 +9,7 @@ import type {
 } from "../../../../shared/desktop-bridge";
 import { AgentSessionHistorySurface } from "../view";
 import type { AgentSessionHistoryLabels } from "../types";
+import { GlobalDialogHost, useGlobalDialogModel } from "../../global-dialog";
 
 const labels: AgentSessionHistoryLabels = {
   title: "Agent History",
@@ -233,18 +235,42 @@ const createDesktopApi = (initialSessions: readonly AgentSessionSummary[] = base
   };
 };
 
+type AgentHistoryTestProps = Omit<
+  ComponentProps<typeof AgentSessionHistorySurface>,
+  "openDialog"
+>;
+
+const renderAgentHistory = (props: AgentHistoryTestProps) => {
+  const AgentHistoryWithGlobalDialog = () => {
+    const globalDialogModel = useGlobalDialogModel();
+    return (
+      <>
+        <AgentSessionHistorySurface
+          {...props}
+          openDialog={globalDialogModel.openDialog}
+        />
+        <GlobalDialogHost
+          state={globalDialogModel.state}
+          onClose={globalDialogModel.closeDialog}
+          onSelectAction={globalDialogModel.selectAction}
+        />
+      </>
+    );
+  };
+
+  return render(<AgentHistoryWithGlobalDialog />);
+};
+
 describe("AgentSessionHistorySurface", () => {
   test("loads, groups, and filters Lyra Agent sessions", async () => {
     const { api, listSessions } = createDesktopApi();
 
-    render(
-      <AgentSessionHistorySurface
-        desktopApi={api}
-        labels={labels}
-        activeSessionId={null}
-        onOpenSession={vi.fn()}
-      />
-    );
+    renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: null,
+      onOpenSession: vi.fn()
+    });
 
     await waitFor(() => {
       expect(listSessions).toHaveBeenCalledWith({ limit: 500 });
@@ -268,14 +294,12 @@ describe("AgentSessionHistorySurface", () => {
   test("uses providerLabel for display instead of providerKey", async () => {
     const { api } = createDesktopApi([sessionWithProviderIdOnly]);
 
-    render(
-      <AgentSessionHistorySurface
-        desktopApi={api}
-        labels={labels}
-        activeSessionId={null}
-        onOpenSession={vi.fn()}
-      />
-    );
+    renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: null,
+      onOpenSession: vi.fn()
+    });
 
     await screen.findByText("Provider id should not display");
     expect(screen.getByText(`Default provider / ${sessionWithProviderIdOnly.model}`))
@@ -288,14 +312,12 @@ describe("AgentSessionHistorySurface", () => {
     const { api, readSession } = createDesktopApi();
     const onOpenSession = vi.fn();
 
-    render(
-      <AgentSessionHistorySurface
-        desktopApi={api}
-        labels={labels}
-        activeSessionId="session-1"
-        onOpenSession={onOpenSession}
-      />
-    );
+    renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: "session-1",
+      onOpenSession
+    });
 
     await screen.findByText("Fix agent storage");
     fireEvent.click(screen.getByRole("button", { name: "Session preview: Review UI polish" }));
@@ -311,14 +333,12 @@ describe("AgentSessionHistorySurface", () => {
     const { api, readSession } = createDesktopApi();
     const onOpenSession = vi.fn();
 
-    render(
-      <AgentSessionHistorySurface
-        desktopApi={api}
-        labels={labels}
-        activeSessionId="session-1"
-        onOpenSession={onOpenSession}
-      />
-    );
+    renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: "session-1",
+      onOpenSession
+    });
 
     await screen.findByText("Fix agent storage");
     fireEvent.click(screen.getByRole("button", { name: "Open in AI Panel: Review UI polish" }));
@@ -330,14 +350,12 @@ describe("AgentSessionHistorySurface", () => {
   test("updates the preview from runtime events for the selected session only", async () => {
     const { api, emitAgentEvent } = createDesktopApi();
 
-    render(
-      <AgentSessionHistorySurface
-        desktopApi={api}
-        labels={labels}
-        activeSessionId={null}
-        onOpenSession={vi.fn()}
-      />
-    );
+    renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: null,
+      onOpenSession: vi.fn()
+    });
 
     await screen.findByText("Review UI polish");
     fireEvent.click(screen.getByRole("button", { name: "Session preview: Review UI polish" }));
@@ -371,14 +389,12 @@ describe("AgentSessionHistorySurface", () => {
       deleteSession
     } = createDesktopApi();
 
-    render(
-      <AgentSessionHistorySurface
-        desktopApi={api}
-        labels={labels}
-        activeSessionId={null}
-        onOpenSession={vi.fn()}
-      />
-    );
+    renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: null,
+      onOpenSession: vi.fn()
+    });
 
     await screen.findByText("Review UI polish");
     fireEvent.click(screen.getByRole("button", { name: "Saved: Review UI polish" }));
@@ -415,14 +431,12 @@ describe("AgentSessionHistorySurface", () => {
     const { api, deleteSession, createSession } = createDesktopApi();
     const onOpenSession = vi.fn();
 
-    render(
-      <AgentSessionHistorySurface
-        desktopApi={api}
-        labels={labels}
-        activeSessionId="session-1"
-        onOpenSession={onOpenSession}
-      />
-    );
+    renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: "session-1",
+      onOpenSession
+    });
 
     await screen.findByText("Fix agent storage");
     fireEvent.click(screen.getByRole("button", { name: "Delete: Fix agent storage" }));

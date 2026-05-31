@@ -55,9 +55,9 @@ const APP_IDS = new Set<WorkbenchAppId>([
   "agent-selfdev",
   "agent-overnight",
   "agent-session-history",
+  "login-manager",
   "software-store",
-  "notification-center",
-  "login-manager"
+  "notification-center"
 ]);
 
 const APP_ICON_KEYS = new Set<WorkspaceAppIconKey>([
@@ -74,9 +74,9 @@ const APP_ICON_KEYS = new Set<WorkspaceAppIconKey>([
   "agent-selfdev-default",
   "agent-overnight-default",
   "agent-session-history-default",
+  "login-manager-default",
   "software-store-default",
-  "notification-center-default",
-  "login-manager-default"
+  "notification-center-default"
 ]);
 
 const isWorkspaceAppId = (value: string): value is WorkbenchAppId => APP_IDS.has(value as WorkbenchAppId);

@@ -15,6 +15,55 @@ export type WorkbenchBrowserReadPageStateRequest = {
   readonly tabId?: string;
 };
 
+export type WorkbenchBrowserSearchInPageRequest = {
+  readonly tabId?: string;
+  readonly query: string;
+  readonly caseSensitive?: boolean;
+  readonly maxMatches?: number;
+};
+
+export type WorkbenchBrowserSearchInPageMatch = {
+  readonly index: number;
+  readonly startChar: number;
+  readonly endChar: number;
+  readonly snippet: string;
+};
+
+export type WorkbenchBrowserSearchInPageResult = {
+  readonly tabId: string;
+  readonly address: string;
+  readonly title: string;
+  readonly query: string;
+  readonly totalMatches: number;
+  readonly matches: readonly WorkbenchBrowserSearchInPageMatch[];
+  readonly truncated: boolean;
+};
+
+export type WorkbenchBrowserClientRect = {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly width: number;
+  readonly height: number;
+};
+
+export type WorkbenchBrowserSecurityLevel = "secure" | "insecure" | "system";
+
+export type WorkbenchBrowserChromeSecurityPopoverPayload = {
+  readonly level: WorkbenchBrowserSecurityLevel;
+  readonly address: string;
+  readonly domain: string;
+};
+
+export type WorkbenchBrowserChromePopoverRequest = {
+  readonly tabId?: string;
+  readonly kind: "security";
+  readonly visible: boolean;
+  readonly anchorRect?: WorkbenchBrowserClientRect;
+  readonly security?: WorkbenchBrowserChromeSecurityPopoverPayload;
+};
+
 export type WorkbenchBrowserSetElementPickerModeRequest = {
   readonly tabId: string;
   readonly enabled: boolean;
@@ -27,6 +76,7 @@ export type WorkbenchBrowserPageSpec = {
   readonly address: string;
   readonly titleHint?: string;
   readonly isActive: boolean;
+  readonly restoreState?: WorkbenchBrowserPageRestoreState;
 };
 
 export type WorkbenchBrowserWebThemePalette = {
@@ -100,7 +150,14 @@ export type WorkbenchBrowserPageRuntimeState = {
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
   readonly isHtmlFullscreen: boolean;
+  readonly restoreState?: WorkbenchBrowserPageRestoreState;
   readonly updatedAt: number;
+};
+
+export type WorkbenchBrowserPageRestoreState = {
+  readonly scrollX?: number;
+  readonly scrollY?: number;
+  readonly capturedAt: number;
 };
 
 export type WorkbenchBrowserElementPickerDisableCause =
@@ -190,19 +247,124 @@ export type WorkbenchLumenActivityAction =
   | "type"
   | "press";
 
+export type WorkbenchLumenActivityInteraction =
+  | "click"
+  | "doubleClick"
+  | "rightClick"
+  | "hover";
+
+export type WorkbenchLumenActivityCursorPhase =
+  | "move"
+  | "down"
+  | "up"
+  | "idle";
+
 export type WorkbenchLumenActivityEvent = {
   readonly kind: "lumen-browser-activity";
   readonly source: "lyra_lumen";
   readonly tabId: string;
   readonly targetMode: "isolated" | "live";
   readonly action: WorkbenchLumenActivityAction;
+  readonly interaction?: WorkbenchLumenActivityInteraction;
   readonly inputActive: boolean;
   readonly durationMs: number;
-  readonly sessionId?: string;
+  readonly sessionId: string;
+  readonly cursorPhase?: WorkbenchLumenActivityCursorPhase;
   readonly cursor?: {
     readonly x: number;
     readonly y: number;
   };
+};
+
+export type WorkbenchLumenFollowAction = {
+  readonly id: string;
+  readonly at: number;
+  readonly tabId: string;
+  readonly targetMode: "isolated" | "live";
+  readonly action: WorkbenchLumenActivityAction;
+  readonly interaction?: WorkbenchLumenActivityInteraction;
+  readonly cursorPhase?: WorkbenchLumenActivityCursorPhase;
+  readonly inputActive: boolean;
+  readonly cursor?: {
+    readonly x: number;
+    readonly y: number;
+  };
+};
+
+export type WorkbenchLumenFollowAudit = {
+  readonly ok: true;
+  readonly kind: "lyraLumenFollowAudit";
+  readonly tabId: string;
+  readonly targetMode: "isolated" | "live";
+  readonly sessionId: string | null;
+  readonly startedAt: number | null;
+  readonly updatedAt: number | null;
+  readonly totalActions: number;
+  readonly actions: readonly WorkbenchLumenFollowAction[];
+  readonly compactSummary: {
+    readonly observeCount: number;
+    readonly readCount: number;
+    readonly captureCount: number;
+    readonly waitCount: number;
+    readonly navigationCount: number;
+    readonly focusCount: number;
+    readonly pointerCount: number;
+    readonly typeCount: number;
+    readonly keyCount: number;
+    readonly interruptedCount: number;
+  };
+};
+
+export type WorkbenchBrowserPageDiagnosticSeverity =
+  | "info"
+  | "warning"
+  | "error";
+
+export type WorkbenchBrowserPageDiagnosticEntry = {
+  readonly id: string;
+  readonly at: number;
+  readonly source: "console" | "network" | "navigation" | "runtime" | "log";
+  readonly severity: WorkbenchBrowserPageDiagnosticSeverity;
+  readonly message: string;
+  readonly url?: string;
+  readonly status?: number;
+};
+
+export type WorkbenchBrowserPageDiagnosticsResult = {
+  readonly ok: true;
+  readonly kind: "lyraLumenPageDiagnostics";
+  readonly tabId: string;
+  readonly targetMode: "isolated" | "live";
+  readonly address: string;
+  readonly title: string;
+  readonly entries: readonly WorkbenchBrowserPageDiagnosticEntry[];
+  readonly summary: {
+    readonly errors: number;
+    readonly warnings: number;
+    readonly networkFailures: number;
+    readonly consoleErrors: number;
+  };
+};
+
+export type WorkbenchBrowserSharedControlEvent = {
+  readonly kind: "browser-shared-control-interrupted";
+  readonly tabId: string;
+  readonly targetMode: "live";
+  readonly sessionId: string;
+  readonly inputType: "mouse" | "keyboard";
+  readonly at: number;
+};
+
+export type WorkbenchBrowserAgentElevationResult = {
+  readonly ok: boolean;
+  readonly kind: "lyraLumenElevation";
+  readonly tabId: string;
+  readonly targetMode: "isolated" | "live";
+  readonly liveTabId?: string;
+  readonly address: string;
+  readonly title: string;
+  readonly userActionRequired: boolean;
+  readonly message: string;
 };
 
 export type WorkbenchBrowserAgentActivityAction = WorkbenchLumenActivityAction;
@@ -239,5 +401,12 @@ export type WorkbenchBrowserEvent =
       readonly kind: "element-picker-hover";
       readonly hover: WorkbenchBrowserHoveredElementInfo;
     }
+  | {
+      readonly kind: "chrome-popover-state";
+      readonly tabId: string;
+      readonly popoverKind: "security";
+      readonly visible: boolean;
+    }
+  | WorkbenchBrowserSharedControlEvent
   | WorkbenchLumenActivityEvent
   | WorkbenchLegacyBrowserAgentActivityEvent;

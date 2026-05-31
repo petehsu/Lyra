@@ -205,70 +205,38 @@
   display: block;
 }
 
-.lyra-brand-logo-blink {
-  background: transparent;
+.lyra-brand-logo-spin {
+  animation: lyra-brand-logo-smart-spin var(--lyra-brand-logo-spin-duration, 14000ms) linear infinite;
+  transform-origin: center;
+  will-change: transform;
 }
 
-.lyra-brand-logo-blink::before,
-.lyra-brand-logo-blink::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: currentColor;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
-  -webkit-mask-size: contain;
-  mask-size: contain;
+.lyra-brand-logo-spin-subtle {
+  opacity: 0.92;
 }
 
-.lyra-brand-logo-blink::before {
-  -webkit-mask-image: var(--lyra-brand-logo-url);
-  mask-image: var(--lyra-brand-logo-url);
-  animation: lyra-brand-logo-open-layer 6.4s steps(1, end) infinite;
+.lyra-brand-logo-spin-active {
+  animation-timing-function: cubic-bezier(0.62, 0, 0.38, 1);
 }
 
-.lyra-brand-logo-blink::after {
-  -webkit-mask-image: var(--lyra-brand-logo-blink-url, var(--lyra-brand-logo-url));
-  mask-image: var(--lyra-brand-logo-blink-url, var(--lyra-brand-logo-url));
-  animation: lyra-brand-logo-blink-layer 6.4s steps(1, end) infinite;
-  opacity: 0;
+.lyra-brand-logo-spin-expressive {
+  animation-timing-function: cubic-bezier(0.5, 0, 0.16, 1);
 }
 
-@keyframes lyra-brand-logo-open-layer {
-  0%,
-  1.2%,
-  2.8%,
-  3.8%,
-  5.4%,
-  100% {
-    opacity: 1;
+@keyframes lyra-brand-logo-smart-spin {
+  from {
+    transform: rotate(0turn);
   }
 
-  1.3%,
-  2.2%,
-  3.9%,
-  4.8% {
-    opacity: 0;
+  to {
+    transform: rotate(var(--lyra-brand-logo-spin-turn, 1turn));
   }
 }
 
-@keyframes lyra-brand-logo-blink-layer {
-  0%,
-  1.2%,
-  2.8%,
-  3.8%,
-  5.4%,
-  100% {
-    opacity: 0;
-  }
-
-  1.3%,
-  2.2%,
-  3.9%,
-  4.8% {
-    opacity: 1;
+@media (prefers-reduced-motion: reduce) {
+  .lyra-brand-logo-spin {
+    animation: none;
+    will-change: auto;
   }
 }
 

@@ -143,7 +143,7 @@
   display: grid;
   grid-template-columns:
     auto
-    clamp(var(--lyra-unit-220), 28vw, var(--lyra-unit-640))
+    clamp(var(--lyra-unit-220), 22vw, var(--lyra-unit-420))
     minmax(0, 1fr);
   align-items: center;
   gap: var(--lyra-unit-8);
@@ -249,7 +249,7 @@
 
 .lyra-browser-tabs-navigation .lyra-titlebar-navigation {
   width: 100%;
-  max-width: none;
+  max-width: var(--lyra-unit-420);
 }
 
 .lyra-browser-tabs-toolbar-context {

@@ -233,6 +233,7 @@ pub enum AgentRuntimeTurnState {
     CallingModel,
     StreamingModel,
     WaitingForTool,
+    WaitingForPermission,
     WaitingForUser,
     RecoveringAfterReload,
     RecoveringAfterCrash,

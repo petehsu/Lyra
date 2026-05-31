@@ -5,7 +5,7 @@ import type {
   AgentRuntimeEvent,
   AgentSessionSnapshot
 } from "../../../shared/agent";
-import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { LyraDesktopApi, LyraSensitiveValueRef } from "../../../shared/desktop-bridge";
 import type { SettingsAiModel } from "../settings-ai";
 import type {
   AgentGoalItem,
@@ -794,6 +794,28 @@ export const useLyraAgentDataProvider = (
     await openFileInWorkbench(result.path);
   }, [desktopApi, openFileInWorkbench, openUrlInWorkbench]);
 
+  const revealSensitiveValueToUser = useCallback(async (
+    ref: LyraSensitiveValueRef
+  ): Promise<string> => {
+    if (desktopApi?.sensitiveValues !== undefined) {
+      return (await desktopApi.sensitiveValues.revealToUser({
+        ref,
+        reason: "user-ai-panel"
+      })).value;
+    }
+    if (
+      ref.owner === "login-manager"
+      && ref.ownerRef.kind === "login-manager-credential"
+      && desktopApi?.loginManager !== undefined
+    ) {
+      return (await desktopApi.loginManager.revealCredential({
+        credentialId: ref.ownerRef.credentialId,
+        reason: "user-ai-panel"
+      })).password;
+    }
+    throw new Error("Sensitive value bridge is unavailable.");
+  }, [desktopApi]);
+
   const updateReasoningEffort = useCallback(async (value: string): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
     setModelBusy("switch");
@@ -882,7 +904,9 @@ export const useLyraAgentDataProvider = (
 
   const askSideQuestion = useCallback(async (question: string): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
-    await desktopApi.agent.runBtw({ sessionId: currentSessionId, question });
+    const response = await desktopApi.agent.runBtw({ sessionId: currentSessionId, question });
+    const snapshot = await desktopApi.agent.readSession({ sessionId: response.sessionId });
+    dispatch({ type: "snapshot", snapshot });
   }, [currentSessionId, desktopApi]);
 
   const splitSession = useCallback(async (): Promise<void> => {
@@ -991,6 +1015,7 @@ export const useLyraAgentDataProvider = (
       openFileInWorkbench,
       openImageInWorkbench,
       canOpenImageInWorkbench,
+      revealSensitiveValueToUser,
       sidePanel: agentSessionToSidePanel(state.session),
       sendMessage,
       captureBrowserScreenshot,
@@ -1040,6 +1065,7 @@ export const useLyraAgentDataProvider = (
     openFileInWorkbench,
     openImageInWorkbench,
     canOpenImageInWorkbench,
+    revealSensitiveValueToUser,
     openProjectTree,
     openSelfDevLab,
     openOvernightLab,

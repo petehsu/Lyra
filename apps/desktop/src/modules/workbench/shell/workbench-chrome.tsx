@@ -91,6 +91,13 @@ const WorkbenchTitlebarActions = ({
     <WorkbenchNotificationTopbar {...notificationTopbar} />
     <ChromeIconButton
       className="lyra-window-button"
+      aria-label={labels.openLoginManager}
+      onClick={actions.openLoginManager}
+    >
+      <KeyRound size={14} />
+    </ChromeIconButton>
+    <ChromeIconButton
+      className="lyra-window-button"
       aria-label={labels.openAgentSessionHistory}
       onClick={actions.openAgentSessionHistory}
     >
@@ -106,13 +113,6 @@ const WorkbenchTitlebarActions = ({
       ) : (
         <PanelBottom size={14} />
       )}
-    </ChromeIconButton>
-    <ChromeIconButton
-      className="lyra-window-button"
-      aria-label={labels.openLoginManager}
-      onClick={actions.openLoginManager}
-    >
-      <KeyRound size={14} />
     </ChromeIconButton>
     <ChromeIconButton
       className="lyra-window-button"

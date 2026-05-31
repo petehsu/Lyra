@@ -11,7 +11,9 @@ use std::path::PathBuf;
 #[cfg(unix)]
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(unix)]
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc as std_mpsc, Arc, Mutex};
+#[cfg(unix)]
+use std::time::Duration;
 
 #[cfg(unix)]
 #[cfg(unix)]
@@ -60,6 +62,12 @@ const LSP_RUNTIME_EVENT_NAME: &str = "lsp.runtime";
 const DOWNLOAD_RUNTIME_EVENT_NAME: &str = "download.runtime";
 #[cfg(unix)]
 const AGENT_RUNTIME_EVENT_NAME: &str = "agent.runtime";
+#[cfg(unix)]
+const DEFAULT_HOST_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(unix)]
+const MAX_HOST_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(120);
+#[cfg(unix)]
+const HOST_CAPABILITY_TIMEOUT_GRACE: Duration = Duration::from_secs(5);
 
 fn main() {
     run();
@@ -105,8 +113,7 @@ struct DaemonSessionManager {
 struct DaemonSessionManagerInner {
     next_id: AtomicU64,
     connections: Mutex<HashMap<u64, UnboundedSender<RuntimeEnvelope>>>,
-    pending_requests:
-        Mutex<HashMap<String, tokio::sync::oneshot::Sender<Result<Value, RuntimeError>>>>,
+    pending_requests: Mutex<HashMap<String, std_mpsc::Sender<Result<Value, RuntimeError>>>>,
 }
 
 #[cfg(unix)]
@@ -135,11 +142,21 @@ impl DaemonSessionManager {
     }
 
     fn request(&self, method: String, payload: Value) -> Result<Value, RuntimeError> {
+        let timeout = host_capability_timeout(&payload);
+        self.request_with_timeout(method, payload, timeout)
+    }
+
+    fn request_with_timeout(
+        &self,
+        method: String,
+        payload: Value,
+        timeout: Duration,
+    ) -> Result<Value, RuntimeError> {
         let req_id = format!(
             "srv-req-{}",
             self.inner.next_id.fetch_add(1, Ordering::Relaxed)
         );
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (tx, rx) = std_mpsc::channel();
         if let Ok(mut pending) = self.inner.pending_requests.lock() {
             pending.insert(req_id.clone(), tx);
         }
@@ -150,11 +167,23 @@ impl DaemonSessionManager {
             payload,
         });
 
-        match futures::executor::block_on(rx) {
+        match rx.recv_timeout(timeout) {
             Ok(res) => res,
-            Err(_) => Err(RuntimeError::new(
+            Err(std_mpsc::RecvTimeoutError::Timeout) => {
+                if let Ok(mut pending) = self.inner.pending_requests.lock() {
+                    pending.remove(&req_id);
+                }
+                Err(RuntimeError::new(
+                    "CAPABILITY_BRIDGE_TIMEOUT",
+                    format!(
+                        "host capability request timed out after {}ms",
+                        timeout.as_millis()
+                    ),
+                ))
+            }
+            Err(std_mpsc::RecvTimeoutError::Disconnected) => Err(RuntimeError::new(
                 "CAPABILITY_BRIDGE_DISCONNECTED",
-                "oneshot channel closed before reply received",
+                "host capability reply channel closed before reply received",
             )),
         }
     }
@@ -167,6 +196,18 @@ impl DaemonSessionManager {
             .map(|connections| connections.len())
             .unwrap_or(0)
     }
+}
+
+#[cfg(unix)]
+fn host_capability_timeout(payload: &Value) -> Duration {
+    let requested = payload
+        .get("timeoutMs")
+        .or_else(|| payload.pointer("/runtimeCancellation/timeoutMs"))
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map(|value| Duration::from_millis(value.round() as u64) + HOST_CAPABILITY_TIMEOUT_GRACE)
+        .unwrap_or(DEFAULT_HOST_CAPABILITY_TIMEOUT);
+    requested.min(MAX_HOST_CAPABILITY_TIMEOUT)
 }
 
 #[cfg(unix)]
@@ -439,6 +480,26 @@ mod tests {
         assert!(receiver.try_recv().is_ok());
         manager.unregister(id);
         assert_eq!(manager.connection_count(), 0);
+    }
+
+    #[test]
+    fn host_capability_request_times_out_without_reply() {
+        let manager = DaemonSessionManager::default();
+        let error = manager
+            .request_with_timeout(
+                "workbench.readTab".to_string(),
+                serde_json::json!({ "tabId": "browser-tab-1" }),
+                std::time::Duration::from_millis(10),
+            )
+            .expect_err("request should time out");
+
+        assert_eq!(error.code, "CAPABILITY_BRIDGE_TIMEOUT");
+        assert!(manager
+            .inner
+            .pending_requests
+            .lock()
+            .expect("pending lock")
+            .is_empty());
     }
 
     #[test]

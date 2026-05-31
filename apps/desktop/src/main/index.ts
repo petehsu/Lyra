@@ -28,11 +28,13 @@ import { createAgentIpcBridge } from "./agent";
 import { createFilesIpcBridge } from "./files";
 import { createDownloadManagerIpcBridge } from "./download-manager";
 import { createImageViewerIpcBridge } from "./image-viewer";
+import { createLoginManagerIpcBridge } from "./login-manager";
 import { createLspIpcBridge } from "./lsp";
 import { createLinuxCompatBridge } from "./linux-compat";
 import { resolveCurrentDesktopTarget } from "./platform-target";
 import { createLyraRuntimeClient } from "./runtime-client";
 import { createSearchIpcBridge } from "./search";
+import { createSensitiveValuesIpcBridge } from "./sensitive-values";
 import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
 import {
   applyElectronStoragePaths,
@@ -96,12 +98,14 @@ let disposeAgentBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
 let disposeDownloadManagerBridge: (() => void) | null = null;
 let disposeImageViewerBridge: (() => void) | null = null;
+let disposeLoginManagerBridge: (() => void) | null = null;
 let disposeLspBridge: (() => void) | null = null;
 let disposeWorkbenchBrowserBridge: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
 let disposeUiuxPacksBridge: (() => void) | null = null;
 let disposeRuntimeClient: (() => void) | null = null;
 let disposeSearchBridge: (() => void) | null = null;
+let disposeSensitiveValuesBridge: (() => void) | null = null;
 let disposeWorkbenchObservationRendererClient: (() => void) | null = null;
 let disposeWorkbenchObservationService: (() => void) | null = null;
 let disposeWorkbenchDocumentsService: (() => void) | null = null;
@@ -685,6 +689,15 @@ const registerIpcHandlers = (): void => {
     getWindow: () => mainWindow
   });
   disposeDownloadManagerBridge = downloadManagerBridge.dispose;
+  const loginManagerBridge = createLoginManagerIpcBridge({
+    storageRoot: storageRoots.modules.loginManager,
+    getWindow: () => mainWindow
+  });
+  disposeLoginManagerBridge = loginManagerBridge.dispose;
+  const sensitiveValuesBridge = createSensitiveValuesIpcBridge({
+    loginManager: loginManagerBridge
+  });
+  disposeSensitiveValuesBridge = sensitiveValuesBridge.dispose;
 
   const terminalBridge = createTerminalIpcBridge(
     storageRoots.modules.terminal,
@@ -715,7 +728,8 @@ const registerIpcHandlers = (): void => {
 
   workbenchBrowserBridge = createWorkbenchBrowserIpcBridge({
     getWindow: () => mainWindow,
-    downloadManager: downloadManagerBridge
+    downloadManager: downloadManagerBridge,
+    loginManager: loginManagerBridge
   });
   disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
   const workbenchStateBridge = createWorkbenchStateIpcBridge(
@@ -889,6 +903,14 @@ app.on("before-quit", () => {
   if (disposeImageViewerBridge !== null) {
     disposeImageViewerBridge();
     disposeImageViewerBridge = null;
+  }
+  if (disposeSensitiveValuesBridge !== null) {
+    disposeSensitiveValuesBridge();
+    disposeSensitiveValuesBridge = null;
+  }
+  if (disposeLoginManagerBridge !== null) {
+    disposeLoginManagerBridge();
+    disposeLoginManagerBridge = null;
   }
   if (disposeTerminalBridge !== null) {
     disposeTerminalBridge();

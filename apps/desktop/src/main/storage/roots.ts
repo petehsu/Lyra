@@ -14,6 +14,7 @@ export type LyraModuleStorageRoots = {
   readonly search: string;
   readonly imageViewer: string;
   readonly downloadManager: string;
+  readonly loginManager: string;
 };
 
 export type LyraStorageRoots = {
@@ -45,7 +46,8 @@ export const resolveLyraStorageRoots = (): LyraStorageRoots => {
       uiuxPacks: path.join(modulesRoot, "uiux-packs"),
       search: path.join(modulesRoot, "search"),
       imageViewer: path.join(modulesRoot, "image-viewer"),
-      downloadManager: path.join(modulesRoot, "download-manager")
+      downloadManager: path.join(modulesRoot, "download-manager"),
+      loginManager: path.join(modulesRoot, "login-manager")
     }
   };
 };

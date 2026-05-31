@@ -1,4 +1,5 @@
 import type { ToolPeek } from "../../core/types";
+import { imagePreviewSourceFromSource } from "../rich-text/ActionTargets";
 
 export function ToolPeekStrip({
   peek,
@@ -11,12 +12,15 @@ export function ToolPeekStrip({
   if (peek.chips.length === 0 && peek.excerpt === undefined && peek.thumbnail === undefined) {
     return null;
   }
+  const thumbnailSrc = peek.thumbnail === undefined
+    ? undefined
+    : imagePreviewSourceFromSource(peek.thumbnail.src);
 
   return (
     <span className={`tool-peek ${className}`.trim()}>
-      {peek.thumbnail !== undefined ? (
+      {peek.thumbnail !== undefined && thumbnailSrc !== undefined ? (
         <img
-          src={peek.thumbnail.src}
+          src={thumbnailSrc}
           alt={peek.thumbnail.alt}
           className="tool-peek-thumb"
         />

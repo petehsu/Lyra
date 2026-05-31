@@ -1,19 +1,9 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
-import type { AgentImageAttachment } from "../../core/types";
+import type { AgentImageAttachment, ToolActionTarget } from "../../core/types";
 import { useData } from "../../data/DataProvider";
 
-export type ActionTarget =
-  | {
-      readonly kind: "url";
-      readonly label: string;
-      readonly value: string;
-    }
-  | {
-      readonly kind: "file";
-      readonly label: string;
-      readonly value: string;
-    };
+export type ActionTarget = ToolActionTarget;
 
 type TextSegment =
   | { readonly kind: "text"; readonly text: string }
@@ -152,22 +142,79 @@ const imageAttachmentFromActionTarget = (
   };
 };
 
+const filePathFromPreviewSource = (source: string): string => {
+  const trimmed = source.trim();
+  if (!/^file:\/\//iu.test(trimmed)) {
+    return trimmed;
+  }
+  try {
+    const url = new URL(trimmed);
+    const host = url.hostname.length > 0 && url.hostname !== "localhost"
+      ? `/${url.hostname}`
+      : "";
+    const pathname = decodeURIComponent(url.pathname);
+    const filePath = `${host}${pathname}`;
+    return filePath.replace(/^\/([A-Za-z]:[\\/])/u, "$1");
+  } catch {
+    return trimmed;
+  }
+};
+
+const localImagePreviewSource = (
+  source: string,
+  mediaType = "image/png"
+): string | undefined => {
+  const trimmed = source.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  if (/^lyra-file:\/\//iu.test(trimmed)) {
+    return trimmed;
+  }
+  if (!isImageFileReference(trimmed)) {
+    return undefined;
+  }
+  const filePath = filePathFromPreviewSource(trimmed);
+  const contentType = mediaType.trim().toLowerCase().startsWith("image/")
+    ? mediaType
+    : "image/png";
+  return `lyra-file://preview?path=${encodeURIComponent(filePath)}&contentType=${encodeURIComponent(contentType)}`;
+};
+
+export const imagePreviewSourceFromSource = (
+  source: string,
+  mediaType = "image/png"
+): string | undefined => {
+  const trimmed = source.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  if (IMAGE_DATA_URL_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+  const localPreview = localImagePreviewSource(trimmed, mediaType);
+  if (localPreview !== undefined) {
+    return localPreview;
+  }
+  if (/^www\./iu.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  if (/^localhost(?::\d+)?(?:\/|$)/iu.test(trimmed)) {
+    return `http://${trimmed}`;
+  }
+  if (/^https?:\/\//iu.test(trimmed)) {
+    return trimmed;
+  }
+  return undefined;
+};
+
 export const imagePreviewSource = (image: AgentImageAttachment): string | undefined => {
   const mediaType = image.mediaType.trim().toLowerCase();
   if (mediaType.startsWith("image/") && image.data.trim().length > 0) {
     return `data:${image.mediaType};base64,${image.data}`;
   }
   const source = image.source?.trim() ?? "";
-  if (/^www\./iu.test(source)) {
-    return `https://${source}`;
-  }
-  if (/^localhost(?::\d+)?(?:\/|$)/iu.test(source)) {
-    return `http://${source}`;
-  }
-  if (/^(?:https?:\/\/|file:\/\/)/iu.test(source)) {
-    return source;
-  }
-  return undefined;
+  return imagePreviewSourceFromSource(source, image.mediaType);
 };
 
 export const splitActionText = (text: string): readonly TextSegment[] => {
@@ -236,8 +283,18 @@ export function ActionTargetButton({
   readonly className?: string | undefined;
   readonly children?: ReactNode;
 }) {
-  const { openUrlInWorkbench, openFileInWorkbench } = useData();
+  const { openUrlInWorkbench, openFileInWorkbench, revealSensitiveValueToUser } = useData();
+  const [revealedValue, setRevealedValue] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const open = () => {
+    if (target.kind === "secret") {
+      if (target.secretRef === undefined) return;
+      setBusy(true);
+      void revealSensitiveValueToUser(target.secretRef)
+        .then((value) => setRevealedValue(value))
+        .finally(() => setBusy(false));
+      return;
+    }
     if (target.kind === "url") {
       void openUrlInWorkbench(target.value, target.label).catch(() => undefined);
     } else {
@@ -251,8 +308,142 @@ export function ActionTargetButton({
       title={target.value}
       onClick={open}
     >
-      {children ?? target.label}
+      {target.kind === "secret" && revealedValue !== null
+        ? revealedValue
+        : children ?? (busy ? "Loading..." : target.label)}
     </button>
+  );
+}
+
+export function ActionTargetList({
+  targets,
+  className
+}: {
+  readonly targets: readonly ToolActionTarget[] | undefined;
+  readonly className?: string | undefined;
+}) {
+  const {
+    openUrlInWorkbench,
+    openFileInWorkbench,
+    openImageInWorkbench,
+    canOpenImageInWorkbench,
+    revealSensitiveValueToUser
+  } = useData();
+  const openableTargets = (targets ?? []).filter((target) => {
+    if (target.kind === "secret") {
+      return target.secretRef !== undefined;
+    }
+    if (target.kind === "url") return target.value.trim().length > 0;
+    if ((target.mediaType ?? "").toLowerCase().startsWith("image/")) {
+      return canOpenImageInWorkbench({
+        id: `tool-target-${target.value}`,
+        mediaType: target.mediaType ?? "image/png",
+        data: "",
+        label: target.label,
+        source: target.value,
+        width: target.width ?? null,
+        height: target.height ?? null
+      });
+    }
+    return target.value.trim().length > 0;
+  });
+  if (openableTargets.length === 0) {
+    return null;
+  }
+  return (
+    <div className={className ?? "tool-action-targets"}>
+      {openableTargets.map((target) => {
+        const open = () => {
+          if (target.kind === "secret") {
+            return;
+          }
+          if (target.kind === "url") {
+            void openUrlInWorkbench(target.value, target.label).catch(() => undefined);
+            return;
+          }
+          if ((target.mediaType ?? "").toLowerCase().startsWith("image/")) {
+            void openImageInWorkbench({
+              id: `tool-target-${target.value}`,
+              mediaType: target.mediaType ?? "image/png",
+              data: "",
+              label: target.label,
+              source: target.value,
+              width: target.width ?? null,
+              height: target.height ?? null
+            }).catch(() => undefined);
+            return;
+          }
+          void openFileInWorkbench(target.value).catch(() => undefined);
+        };
+        if (target.kind === "secret") {
+          return (
+            <SecretActionTargetButton
+              key={`${target.kind}:${target.value}`}
+              target={target}
+              revealSensitiveValueToUser={revealSensitiveValueToUser}
+            />
+          );
+        }
+        return (
+          <button
+            key={`${target.kind}:${target.value}`}
+            type="button"
+            className={`action-text-link action-text-link-${target.kind}`}
+            title={target.value}
+            onClick={open}
+          >
+            {target.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SecretActionTargetButton({
+  target,
+  revealSensitiveValueToUser
+}: {
+  readonly target: ToolActionTarget;
+  readonly revealSensitiveValueToUser: ReturnType<typeof useData>["revealSensitiveValueToUser"];
+}) {
+  const [revealedValue, setRevealedValue] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const ref = target.secretRef;
+
+  const reveal = () => {
+    if (ref === undefined) return;
+    setBusy(true);
+    void revealSensitiveValueToUser(ref)
+      .then((value) => setRevealedValue(value))
+      .finally(() => setBusy(false));
+  };
+
+  const copy = () => {
+    if (revealedValue === null) {
+      return;
+    }
+    void navigator.clipboard.writeText(revealedValue).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    });
+  };
+
+  return (
+    <span className="action-text-secret">
+      <button
+        type="button"
+        className="action-text-link action-text-link-secret"
+        title={target.value}
+        onClick={revealedValue === null ? reveal : copy}
+        disabled={busy || ref === undefined}
+      >
+        {revealedValue === null
+          ? (busy ? "Loading..." : target.label)
+          : (copied ? "Copied" : revealedValue)}
+      </button>
+    </span>
   );
 }
 
@@ -260,12 +451,14 @@ export function ClickableImage({
   src,
   alt,
   image,
-  className
+  className,
+  allowTargetFallback = true
 }: {
   readonly src: string | undefined;
   readonly alt?: string | null | undefined;
   readonly image?: AgentImageAttachment | null | undefined;
   readonly className?: string | undefined;
+  readonly allowTargetFallback?: boolean | undefined;
 }) {
   const {
     openUrlInWorkbench,
@@ -273,8 +466,15 @@ export function ClickableImage({
     openImageInWorkbench,
     canOpenImageInWorkbench
   } = useData();
-  const dataImage = src === undefined ? null : imageAttachmentFromDataUrl(src, alt ?? null);
-  const target = src === undefined ? null : classifyActionTarget(src);
+  const displaySrc = src === undefined
+    ? (image === undefined || image === null ? undefined : imagePreviewSource(image))
+    : (localImagePreviewSource(src, image?.mediaType) ?? src);
+  const dataImage = displaySrc === undefined
+    ? null
+    : imageAttachmentFromDataUrl(displaySrc, alt ?? null);
+  const target = src === undefined || allowTargetFallback === false
+    ? null
+    : classifyActionTarget(src);
   const targetImage = imageAttachmentFromActionTarget(target, alt ?? null);
   const imageToOpen = image ?? dataImage ?? targetImage;
   const canOpenImage = imageToOpen !== null && canOpenImageInWorkbench(imageToOpen);
@@ -295,7 +495,7 @@ export function ClickableImage({
     }
   };
 
-  if (src === undefined) {
+  if (displaySrc === undefined) {
     if (!canOpenImage || imageToOpen === null) {
       return null;
     }
@@ -315,11 +515,11 @@ export function ClickableImage({
 
   if (!canOpen) {
     if (className === undefined) {
-      return <img src={src} alt={alt ?? ""} />;
+      return <img src={displaySrc} alt={alt ?? ""} />;
     }
     return (
       <span className={className}>
-        <img src={src} alt={alt ?? ""} />
+        <img src={displaySrc} alt={alt ?? ""} />
       </span>
     );
   }
@@ -331,7 +531,7 @@ export function ClickableImage({
       title="Open image in Workbench"
       onClick={open}
     >
-      <img src={src} alt={alt ?? ""} />
+      <img src={displaySrc} alt={alt ?? ""} />
       <span className="action-image-overlay">Open in Workbench</span>
     </button>
   );

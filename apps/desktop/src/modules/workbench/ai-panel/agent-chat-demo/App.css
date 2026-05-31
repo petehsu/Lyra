@@ -2675,6 +2675,30 @@
   font-family: var(--code-font);
 }
 
+.tool-action-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
+.tool-action-targets .action-text-link {
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--color-border-subtle) 66%);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tool-action-targets .action-text-link-secret {
+  border-color: color-mix(in srgb, var(--color-warn) 42%, var(--color-border-subtle) 58%);
+  background: color-mix(in srgb, var(--color-warn) 10%, transparent);
+  color: var(--color-text);
+  font-family: var(--code-font);
+}
+
 /* Mermaid */
 .mermaid-container {
   margin: 8px 0;
@@ -3651,6 +3675,48 @@
 
 .composer-send[data-mode="pause"] {
   background: color-mix(in srgb, var(--color-text) 84%, var(--color-surface-3) 16%);
+}
+
+.composer-send[data-mode="sending"] {
+  background: color-mix(in srgb, var(--color-text) 92%, var(--color-surface-3) 8%);
+  cursor: default;
+}
+
+.composer-send-logo {
+  width: var(--composer-send-logo-size, 15px);
+  height: var(--composer-send-logo-size, 15px);
+  display: block;
+  background: currentColor;
+  -webkit-mask-image: var(--composer-send-logo-url);
+  mask-image: var(--composer-send-logo-url);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  transform-origin: center;
+  animation: composer-send-logo-spin var(--composer-send-logo-spin-duration, 760ms) linear infinite;
+}
+
+.composer-send[data-mode="pause"] .composer-send-logo {
+  --composer-send-logo-spin-duration: 1180ms;
+}
+
+@keyframes composer-send-logo-spin {
+  from {
+    transform: rotate(0turn);
+  }
+
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-send-logo {
+    animation: none;
+  }
 }
 
 .composer-send:disabled {

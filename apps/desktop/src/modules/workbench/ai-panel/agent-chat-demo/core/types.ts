@@ -7,6 +7,8 @@
 // be reused from a server-side rendering pipeline or type-checked from
 // external data providers.
 
+import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
+
 export type ToolStatus = "running" | "success" | "error";
 
 export type ToolKind =
@@ -59,6 +61,16 @@ export type ToolDetails =
       peek: ToolPeek;
       text?: string;
       screenshot?: string | undefined;
+      screenshotImage?: AgentImageAttachment | undefined;
+      targets?: ToolActionTarget[];
+    }
+  | {
+      type: "software";
+      action: string;
+      softwareId?: string;
+      actionId?: string;
+      text?: string;
+      targets?: ToolActionTarget[];
     }
   | { type: "task"; tasks: TodoTask[] }
   | { type: "text"; body: string }
@@ -118,6 +130,16 @@ export interface AgentImageAttachment {
   source?: string | null;
   width?: number | null;
   height?: number | null;
+}
+
+export interface ToolActionTarget {
+  kind: "url" | "file" | "secret";
+  label: string;
+  value: string;
+  mediaType?: string;
+  width?: number | null;
+  height?: number | null;
+  secretRef?: LyraSensitiveValueRef;
 }
 
 export type GroupStatus = "running" | "done";

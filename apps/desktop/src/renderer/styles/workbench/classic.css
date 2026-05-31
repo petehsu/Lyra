@@ -10,6 +10,7 @@
 @import "./image-viewer.css";
 @import "./ai-panel.css";
 @import "./agent-session-history.css";
+@import "./login-manager.css";
 @import "./agent-project-tree.css";
 @import "./agent-git.css";
 @import "./agent-selfdev.css";
@@ -18,5 +19,4 @@
 @import "./software-store.css";
 @import "./terminal.css";
 @import "./file-editor.css";
-@import "./login-manager.css";
 @import "./omnibox-styles.css";

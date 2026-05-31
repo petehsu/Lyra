@@ -9,12 +9,14 @@ describe("buildAgentCursorOverlayScript", () => {
   test("injects the Bibata cursor overlay at the requested page point", () => {
     const script = buildAgentCursorOverlayScript({
       action: "act",
+      phase: "move",
       durationMs: 1_900,
       cursor: { x: 42.4, y: 84.6 }
     });
 
     expect(script).toContain(LYRA_AGENT_PAGE_CURSOR_HOST_ID);
     expect(script).toContain('"action":"act"');
+    expect(script).toContain('"phase":"move"');
     expect(script).toContain('"durationMs":1900');
     expect(script).toContain('"x":42');
     expect(script).toContain('"y":85');
@@ -40,6 +42,7 @@ describe("buildAgentCursorOverlayScript", () => {
 
     const script = buildAgentCursorOverlayScript({
       action: "press",
+      phase: "down",
       durationMs: 800,
       cursor: { x: 24, y: 36 }
     });
@@ -51,6 +54,7 @@ describe("buildAgentCursorOverlayScript", () => {
     expect(host?.style.zIndex).toBe("2147483647");
     expect(host?.style.contain).toBe("layout style");
     expect(host?.style.overflow).toBe("visible");
+    expect(host?.dataset.lyraAgentPhase).toBe("down");
     expect(host?.shadowRoot?.querySelector("svg")).toBeInstanceOf(SVGElement);
   });
 });

@@ -14,7 +14,8 @@ import type {
   InstalledUiuxPack,
   UiuxPackManifest,
   UiuxPackSource,
-  UiuxPackTrustState
+  UiuxPackTrustState,
+  UiuxUninstallResponse
 } from "../../shared/uiux-packs";
 import type {
   LyraCapabilityRisk,
@@ -494,6 +495,35 @@ export const readTrustedUiuxPack = (
     return null;
   }
   return pack;
+};
+
+export const uninstallUiuxPack = ({
+  storageRoot,
+  packId
+}: {
+  readonly storageRoot: string;
+  readonly packId: string;
+}): UiuxUninstallResponse => {
+  const registry = readUiuxRegistryDocument(storageRoot);
+  const existing = registry.installed.find((pack) => pack.id === packId);
+  if (existing === undefined) {
+    throw new Error(`UIUX pack is not installed: ${packId}`);
+  }
+  rmSync(existing.packagePath, { recursive: true, force: true });
+  writeUiuxRegistryDocument(storageRoot, {
+    version: 1,
+    installed: registry.installed.filter((pack) => pack.id !== packId),
+    ...(registry.activeExternalPackId === packId || registry.activeExternalPackId === undefined
+      ? {}
+      : { activeExternalPackId: registry.activeExternalPackId }),
+    ...(registry.pendingExternalPackId === packId || registry.pendingExternalPackId === undefined
+      ? {}
+      : { pendingExternalPackId: registry.pendingExternalPackId })
+  });
+  return {
+    packId,
+    removed: true
+  };
 };
 
 export const requestUiuxPackActivationInRegistry = ({

@@ -35,6 +35,7 @@ export type SoftwareListCapabilitiesResponse = {
 
 export type SoftwareInspectCapabilityRequest = {
   readonly softwareId: string;
+  readonly capabilityId?: string;
   readonly actionId?: string;
 };
 
@@ -42,6 +43,20 @@ export type SoftwareInspectCapabilityResponse = {
   readonly software: LyraSoftwareManifest;
   readonly action?: LyraSoftwareActionManifest;
   readonly handlerRegistered: boolean;
+  readonly readableState?: unknown;
+};
+
+export type SoftwareReadStateRequest = {
+  readonly softwareId?: string;
+  readonly capabilityId?: string;
+  readonly actionId?: string;
+  readonly instanceId?: string;
+};
+
+export type SoftwareReadStateResponse = {
+  readonly softwareId?: string;
+  readonly capabilityId?: string;
+  readonly state: unknown;
 };
 
 export type SoftwareInvokeCapabilityRequest = {
@@ -89,6 +104,11 @@ export type SoftwareCapabilitiesQueryRequest =
     }
   | {
       readonly requestId: string;
+      readonly method: "software.readState";
+      readonly payload: SoftwareReadStateRequest;
+    }
+  | {
+      readonly requestId: string;
       readonly method: "software.invokeCapability";
       readonly payload: SoftwareInvokeCapabilityRequest;
     };
@@ -100,6 +120,7 @@ export type SoftwareCapabilitiesQueryResult =
       readonly result:
         | SoftwareListCapabilitiesResponse
         | SoftwareInspectCapabilityResponse
+        | SoftwareReadStateResponse
         | SoftwareInvokeCapabilityResponse;
     }
   | {

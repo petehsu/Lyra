@@ -310,6 +310,38 @@ if (fs.existsSync(path.join(ROOT, "vendor", "portable-pty"))) {
   violations.push("Vendored PTY source must live under third-party/rust/portable-pty, not the old vendor PTY path.");
 }
 
+const nativeBackendFile = path.join(ROOT, "crates/lyra-agent-runtime/src/native_backend.rs");
+const nativeBackendDir = path.join(ROOT, "crates/lyra-agent-runtime/src/native_backend");
+const nativeBackendMod = path.join(nativeBackendDir, "mod.rs");
+
+function countLines(file: string): number {
+  return fs.readFileSync(file, "utf8").split(/\r?\n/).length;
+}
+
+if (fs.existsSync(nativeBackendFile)) {
+  violations.push(
+    "crates/lyra-agent-runtime/src/native_backend.rs must not be reintroduced; keep native backend code in the native_backend/ module tree."
+  );
+}
+
+if (fs.existsSync(nativeBackendMod)) {
+  const lineCount = countLines(nativeBackendMod);
+  if (lineCount > 500) {
+    violations.push(
+      `crates/lyra-agent-runtime/src/native_backend/mod.rs is ${lineCount} lines; keep the dispatch/root module under 500 lines.`
+    );
+  }
+}
+
+if (fs.existsSync(nativeBackendDir)) {
+  for (const file of walk(nativeBackendDir).filter((entry) => path.extname(entry) === ".rs")) {
+    const lineCount = countLines(file);
+    if (lineCount > 2000) {
+      violations.push(`${rel(file)} is ${lineCount} lines; split native backend modules by domain before they exceed 2000 lines.`);
+    }
+  }
+}
+
 for (const file of files) {
   const content = fs.readFileSync(file, "utf8");
   checkImportBoundaries(file, content);

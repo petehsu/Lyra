@@ -26,6 +26,10 @@ import type {
 } from "../../../shared/desktop-bridge";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import type { WorkbenchUiPackId } from "../ui-platform";
+import {
+  softwareStoreDetailKey,
+  subscribeSoftwareStoreDetailRequests
+} from "./service";
 import type {
   SoftwareStoreAgentAccess,
   SoftwareStoreBuiltinApp,
@@ -351,8 +355,23 @@ export const SoftwareStoreSurface = ({
     if (selectedKey !== null && items.some((item) => item.key === selectedKey)) {
       return;
     }
+    if (
+      selectedKey !== null
+      && (selectedKey.startsWith("software:") || selectedKey.startsWith("uiux:"))
+    ) {
+      return;
+    }
     setSelectedKey(items[0]?.key ?? null);
   }, [items, selectedKey]);
+
+  useEffect(
+    () => subscribeSoftwareStoreDetailRequests((request) => {
+      setQuery("");
+      setFilter(request.kind === "uiux" ? "uiux" : "all");
+      setSelectedKey(softwareStoreDetailKey(request));
+    }),
+    []
+  );
 
   const selectedItem = useMemo(
     () => items.find((item) => item.key === selectedKey) ?? null,

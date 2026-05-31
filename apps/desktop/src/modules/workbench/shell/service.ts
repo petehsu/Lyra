@@ -24,7 +24,10 @@ import {
 import type { WorkbenchLayoutPreset, WorkbenchPanelKey } from "./types";
 
 export const DIVIDER_SIZE = 0;
-export const LOGO_URL = new URL("../../../renderer/assets/logo.svg", import.meta.url).toString();
+export const LOGO_URL = new URL(
+  "../../../renderer/assets/brand/lyra-mark.svg",
+  import.meta.url
+).toString();
 
 export type PanelViewportSize = {
   readonly width: number;

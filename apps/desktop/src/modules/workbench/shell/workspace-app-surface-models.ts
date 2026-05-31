@@ -7,9 +7,9 @@ import {
   isAgentSelfDevAppId,
   isAgentOvernightAppId,
   isAgentSessionHistoryAppId,
+  isLoginManagerAppId,
   isNotificationCenterAppId,
   isSoftwareStoreAppId,
-  isLoginManagerAppId
 } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type {
@@ -232,6 +232,7 @@ export const createAppSurfaceRenderModel = (
         labels: context.agentSessionHistory.labels,
         activeSessionId: context.agentSessionHistory.activeSessionId,
         onOpenSession: context.agentSessionHistory.onOpenSession,
+        openDialog: context.agentSessionHistory.openDialog,
         ...(context.agentSessionHistory.locale === undefined
           ? {}
           : { locale: context.agentSessionHistory.locale })
@@ -239,19 +240,17 @@ export const createAppSurfaceRenderModel = (
     };
   }
 
+  if (isLoginManagerAppId(tab.appId)) {
+    return {
+      kind: "loginManager",
+      props: context.loginManager
+    };
+  }
+
   if (isSoftwareStoreAppId(tab.appId)) {
     return {
       kind: "softwareStore",
       props: context.softwareStore
-    };
-  }
-
-  if (isLoginManagerAppId(tab.appId)) {
-    return {
-      kind: "loginManager",
-      props: {
-        desktopApi: context.desktopApi
-      }
     };
   }
 

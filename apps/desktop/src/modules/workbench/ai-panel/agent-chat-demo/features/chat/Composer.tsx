@@ -1,4 +1,11 @@
-import { useState, useRef, useEffect, type ChangeEvent, type FormEvent } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  type CSSProperties,
+  type ChangeEvent,
+  type FormEvent
+} from "react";
 import {
   ArrowUp,
   Camera,
@@ -6,7 +13,6 @@ import {
   Crosshair,
   Image as ImageIcon,
   Monitor,
-  Pause,
   Plus,
   X
 } from "lucide-react";
@@ -18,6 +24,14 @@ const MIN_HEIGHT = 64;
 const MAX_HEIGHT = 200;
 const TOOLBAR_ICON_SIZE = 14;
 const TOOLBAR_ICON_STROKE_WIDTH = 2.1;
+const SEND_LOGO_BURST_MS = 560;
+const LYRA_COMPOSER_SEND_LOGO_URL = new URL(
+  "../../../../../../renderer/assets/brand/lyra-mark.svg",
+  import.meta.url
+).toString();
+const SEND_LOGO_STYLE = {
+  "--composer-send-logo-url": `url("${LYRA_COMPOSER_SEND_LOGO_URL}")`
+} as CSSProperties;
 
 const attachmentId = (prefix: string): string => {
   const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -77,17 +91,40 @@ export function Composer({
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [sendBusy, setSendBusy] = useState(false);
+  const [sendLogoVisible, setSendLogoVisible] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sendInFlightRef = useRef(false);
+  const sendLogoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSendLogoBurst = () => {
+    if (sendLogoTimerRef.current !== null) {
+      clearTimeout(sendLogoTimerRef.current);
+    }
+    setSendLogoVisible(true);
+    sendLogoTimerRef.current = setTimeout(() => {
+      setSendLogoVisible(false);
+      sendLogoTimerRef.current = null;
+    }, SEND_LOGO_BURST_MS);
+  };
 
   const submit = async () => {
-    if (disabledReason !== undefined) return;
+    if (disabledReason !== undefined || sendInFlightRef.current) return;
     const trimmed = value.trim();
     if (trimmed.length === 0 && attachments.length === 0) return;
-    await onSend(trimmed, attachments);
-    setValue("");
-    setAttachments([]);
-    setAttachmentMenuOpen(false);
+    sendInFlightRef.current = true;
+    setSendBusy(true);
+    showSendLogoBurst();
+    try {
+      await onSend(trimmed, attachments);
+      setValue("");
+      setAttachments([]);
+      setAttachmentMenuOpen(false);
+    } finally {
+      sendInFlightRef.current = false;
+      setSendBusy(false);
+    }
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -139,10 +176,17 @@ export function Composer({
     }
   }, [value]);
 
-  const canSend = disabledReason === undefined && (value.trim().length > 0 || attachments.length > 0);
+  useEffect(() => () => {
+    if (sendLogoTimerRef.current !== null) {
+      clearTimeout(sendLogoTimerRef.current);
+    }
+  }, []);
+
+  const canSend = disabledReason === undefined && !sendBusy && (value.trim().length > 0 || attachments.length > 0);
   const hasDraft = value.trim().length > 0 || attachments.length > 0;
   const showPauseButton = isTurnRunning && !hasDraft;
-  const primaryActionLabel = showPauseButton ? t("composer.pause") : t("composer.send");
+  const primaryActionMode = sendLogoVisible ? "sending" : showPauseButton ? "pause" : "send";
+  const primaryActionLabel = primaryActionMode === "pause" ? t("composer.pause") : t("composer.send");
   const followLabel = browserFollowModeEnabled
     ? t("composer.stopFollowingAgent")
     : t("composer.followAgent");
@@ -343,13 +387,14 @@ export function Composer({
             <Crosshair size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
           </button>
           <button
-            type={showPauseButton ? "button" : "submit"}
+            type={primaryActionMode === "send" ? "submit" : "button"}
             className="composer-send"
-            data-mode={showPauseButton ? "pause" : "send"}
-            disabled={showPauseButton ? cancelBusy : !canSend}
+            data-mode={primaryActionMode}
+            disabled={primaryActionMode === "pause" ? cancelBusy : primaryActionMode === "send" ? !canSend : false}
+            aria-busy={primaryActionMode === "sending" ? "true" : undefined}
             aria-label={primaryActionLabel}
             title={primaryActionLabel}
-            onClick={showPauseButton
+            onClick={primaryActionMode === "pause"
               ? () => {
                   if (cancelBusy) return;
                   setCancelBusy(true);
@@ -357,8 +402,8 @@ export function Composer({
                 }
               : undefined}
           >
-            {showPauseButton ? (
-              <Pause size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
+            {primaryActionMode === "sending" || primaryActionMode === "pause" ? (
+              <span className="composer-send-logo" style={SEND_LOGO_STYLE} aria-hidden="true" />
             ) : (
               <ArrowUp size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
             )}

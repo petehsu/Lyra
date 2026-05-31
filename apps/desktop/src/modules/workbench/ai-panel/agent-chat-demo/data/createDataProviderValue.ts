@@ -13,6 +13,7 @@ import type {
 } from "../core/types";
 import { t } from "../core/i18n";
 import type { AgentRollbackPreviewResponse } from "../../../../../shared/agent";
+import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
 import type { DataProviderValue } from "./DataProvider";
 
 export interface CreateDataProviderValueInput {
@@ -30,6 +31,7 @@ export interface CreateDataProviderValueInput {
   openFileInWorkbench?: (filePath: string) => Promise<void>;
   openImageInWorkbench?: (image: AgentImageAttachment) => Promise<void>;
   canOpenImageInWorkbench?: (image: AgentImageAttachment) => boolean;
+  revealSensitiveValueToUser?: (ref: LyraSensitiveValueRef) => Promise<string>;
   sidePanel?: AgentSidePanel | null;
   sendMessage?: (text: string, images?: readonly AgentImageAttachment[]) => Promise<void>;
   captureBrowserScreenshot?: () => Promise<AgentImageAttachment | null>;
@@ -86,6 +88,9 @@ export function createDataProviderValue({
   openFileInWorkbench = () => resolved,
   openImageInWorkbench = () => resolved,
   canOpenImageInWorkbench = () => false,
+  revealSensitiveValueToUser = async () => {
+    throw new Error("Sensitive value bridge is unavailable.");
+  },
   sidePanel = null,
   sendMessage = () => resolved,
   captureBrowserScreenshot = () => Promise.resolve(null),
@@ -141,6 +146,7 @@ export function createDataProviderValue({
     openFileInWorkbench,
     openImageInWorkbench,
     canOpenImageInWorkbench,
+    revealSensitiveValueToUser,
     sidePanel,
     sendMessage,
     captureBrowserScreenshot,

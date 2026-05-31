@@ -160,6 +160,7 @@ export type AgentRuntimeTurnState =
   | "calling_model"
   | "streaming_model"
   | "waiting_for_tool"
+  | "waiting_for_permission"
   | "waiting_for_user"
   | "recovering_after_reload"
   | "recovering_after_crash"

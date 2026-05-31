@@ -8,9 +8,9 @@ export {
   isAgentSelfDevAppId,
   isAgentOvernightAppId,
   isAgentSessionHistoryAppId,
+  isLoginManagerAppId,
   isNotificationCenterAppId,
-  isSoftwareStoreAppId,
-  isLoginManagerAppId
+  isSoftwareStoreAppId
 } from "./service";
 export type {
   AgentGitAppIconKey,
@@ -23,12 +23,12 @@ export type {
   AgentProjectTreeAppId,
   AgentSessionHistoryAppIconKey,
   AgentSessionHistoryAppId,
+  LoginManagerAppIconKey,
+  LoginManagerAppId,
   SoftwareStoreAppIconKey,
   SoftwareStoreAppId,
   NotificationCenterAppIconKey,
   NotificationCenterAppId,
-  LoginManagerAppIconKey,
-  LoginManagerAppId,
   ImageViewerAppIconKey,
   ImageViewerAppId,
   WorkbenchAppId,

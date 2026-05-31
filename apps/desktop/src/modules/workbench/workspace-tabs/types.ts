@@ -1,5 +1,6 @@
 import type { WorkbenchAppId, WorkspaceAppIconKey } from "../workspace-apps";
 import type { WorkbenchSplitOverflowPolicy } from "../preferences";
+import type { WorkbenchBrowserPageRestoreState } from "../../../shared/workbench-browser";
 
 export type WorkspaceTabPageKind =
   | "search"
@@ -28,6 +29,7 @@ export type WorkspaceTab = {
   readonly filePath?: string;
   readonly fileSessionId?: string;
   readonly isDirty?: boolean;
+  readonly browserRestoreState?: WorkbenchBrowserPageRestoreState;
 };
 
 export type WorkspaceTabPageMeta = {
@@ -39,6 +41,7 @@ export type WorkspaceTabPageRuntimeState = {
   readonly address: string;
   readonly title: string;
   readonly faviconUrl?: string;
+  readonly restoreState?: WorkbenchBrowserPageRestoreState;
 };
 
 export type WorkspaceResolvedNavigation =

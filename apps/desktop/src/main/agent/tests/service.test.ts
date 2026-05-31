@@ -562,13 +562,17 @@ describe("Agent IPC bridge", () => {
         activeElementId: null,
         focusOrder: [] as number[]
       })),
-      actOnAgentElement: vi.fn(async () => ({
+      actOnAgentElement: vi.fn(async (
+        _tabId: string,
+        request: { readonly elementId?: number; readonly targetRef?: string }
+      ) => ({
         ok: true,
         kind: "lyraLumenActionResult",
         tabId: "page-1",
         inputMode: "chromium",
         targetMode: "isolated",
-        elementId: 3,
+        ...(request.elementId === undefined ? {} : { elementId: request.elementId }),
+        ...(request.targetRef === undefined ? {} : { targetRef: request.targetRef }),
         x: 40,
         y: 50
       })),
@@ -624,6 +628,23 @@ describe("Agent IPC bridge", () => {
         hasMore: false,
         extractionMethod: "lumen:recent-text-tail"
       })),
+      captureAgentPage: vi.fn(async () => ({
+        tabId: "page-1",
+        targetMode: "isolated",
+        mimeType: "image/png",
+        imageBase64: "aGVsbG8=",
+        width: 320,
+        height: 180,
+        visibleOnly: true
+      })),
+      showAgentActivity: vi.fn(async (
+        _tabId: string,
+        request: { readonly action: "wait"; readonly targetMode?: "isolated" | "live" }
+      ) => ({
+        tabId: "page-1",
+        targetMode: request.targetMode ?? "isolated",
+        action: request.action
+      })),
       navigate: vi.fn(async () => ({
         address: "https://example.com/docs",
         tabId: null,
@@ -634,6 +655,54 @@ describe("Agent IPC bridge", () => {
         tabId: "page-1",
         title: "Docs",
         targetMode: "isolated"
+      })),
+      readAgentFollowAudit: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenFollowAudit",
+        tabId: "page-1",
+        targetMode: "live",
+        sessionId: "follow-1",
+        startedAt: 100,
+        updatedAt: 200,
+        totalActions: 2,
+        actions: [],
+        compactSummary: {
+          observeCount: 1,
+          readCount: 0,
+          captureCount: 0,
+          waitCount: 0,
+          navigationCount: 0,
+          focusCount: 0,
+          pointerCount: 1,
+          typeCount: 0,
+          keyCount: 0,
+          interruptedCount: 0
+        }
+      })),
+      auditAgentPageDiagnostics: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenPageDiagnostics",
+        tabId: "page-1",
+        targetMode: "live",
+        address: "https://example.com",
+        title: "Example",
+        entries: [],
+        summary: {
+          errors: 0,
+          warnings: 0,
+          networkFailures: 0,
+          consoleErrors: 0
+        }
+      })),
+      elevateAgentPage: vi.fn(async () => ({
+        ok: true,
+        kind: "lyraLumenElevation",
+        tabId: "page-1",
+        targetMode: "isolated",
+        address: "https://example.com/login",
+        title: "Login",
+        userActionRequired: true,
+        message: "visible tab requested"
       }))
     };
 
@@ -731,6 +800,39 @@ describe("Agent IPC bridge", () => {
       elementId: 3,
       interaction: "hover",
       targetMode: "isolated"
+    });
+
+    await expect(
+      registered.get("lyraLumen.act")?.({
+        targetRef: "lumen:stable-target",
+        interaction: "click"
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenActionResult",
+      targetRef: "lumen:stable-target"
+    });
+    expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
+      targetRef: "lumen:stable-target",
+      interaction: "click",
+      targetMode: "isolated"
+    });
+
+    await expect(
+      registered.get("lyraLumen.act")?.({
+        elementId: "browser-tab-75",
+        interaction: "click"
+      })
+    ).resolves.toMatchObject({
+      ok: false,
+      kind: "lyraLumenResult",
+      invalidIdentifier: {
+        field: "elementId",
+        received: "browser-tab-75",
+        expected: "lumenElementId"
+      },
+      correction: {
+        recommendedTool: "lyra_lumen_map"
+      }
     });
 
     await expect(
@@ -837,6 +939,20 @@ describe("Agent IPC bridge", () => {
       interaction: "hover",
       targetMode: "isolated"
     });
+    await expect(
+      registered.get("lyraLumen.act")?.({
+        elementId: 8,
+        interaction: "click"
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenActionResult",
+      elementId: 8
+    });
+    expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
+      elementId: 8,
+      interaction: "click",
+      targetMode: "isolated"
+    });
 
     await expect(
       registered.get("lyraLumen.type")?.({ text: "hello focused editor" })
@@ -876,6 +992,60 @@ describe("Agent IPC bridge", () => {
     });
 
     browserBridge.readAgentPage.mockClear();
+    await expect(
+      registered.get("lyraLumen.read")?.({ timeoutMs: 750, maxChars: 2048 })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenRead",
+      strategy: "focus",
+      content: "recent page tail"
+    });
+    expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
+      strategy: "focus",
+      targetMode: "isolated",
+      maxChars: 2048,
+      timeoutMs: 750
+    });
+
+    await expect(
+      registered.get("lyraLumen.see")?.({})
+    ).resolves.toMatchObject({
+      kind: "lyraLumenSee",
+      width: 320,
+      height: 180,
+      imageArtifact: expect.objectContaining({
+        kind: "image",
+        mediaType: "image/png",
+        width: 320,
+        height: 180
+      }),
+      evidenceRefs: [expect.stringMatching(/^lumen-see-/u)]
+    });
+    await expect(
+      registered.get("lyraLumen.see")?.({})
+    ).resolves.not.toHaveProperty("imageBase64");
+
+    browserBridge.captureAgentPage.mockRejectedValueOnce(new Error("background_visual_capture_unsupported"));
+    browserBridge.readAgentPage.mockClear();
+    await expect(
+      registered.get("lyraLumen.see")?.({ targetMode: "live" })
+    ).resolves.toMatchObject({
+      ok: true,
+      kind: "lyraLumenSeeFallback",
+      targetMode: "live",
+      content: "recent page tail",
+      visualCapture: {
+        ok: false,
+        reason: "background_visual_capture_unsupported"
+      },
+      nextRecommendedAction: "lyra_lumen.map"
+    });
+    expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
+      strategy: "focus",
+      targetMode: "live",
+      timeoutMs: 4000
+    });
+
+    browserBridge.readAgentPage.mockClear();
     browserBridge.readAgentPage.mockResolvedValueOnce({
       tabId: "page-1",
       targetMode: "isolated",
@@ -907,7 +1077,13 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "focus",
-      targetMode: "isolated"
+      targetMode: "isolated",
+      timeoutMs: expect.any(Number)
+    });
+    expect(browserBridge.showAgentActivity).toHaveBeenCalledWith("page-1", {
+      action: "wait",
+      targetMode: "isolated",
+      durationMs: 900
     });
 
     await expect(
@@ -957,6 +1133,40 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.navigate).toHaveBeenCalledWith({
       address: "https://example.com/docs",
       newTab: true
+    });
+
+    await expect(
+      registered.get("lyraLumen.followAudit")?.({ maxActions: 10 })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenFollowAudit",
+      sessionId: "follow-1"
+    });
+    expect(browserBridge.readAgentFollowAudit).toHaveBeenCalledWith("page-1", {
+      targetMode: "live",
+      maxActions: 10
+    });
+
+    await expect(
+      registered.get("lyraLumen.audit")?.({})
+    ).resolves.toMatchObject({
+      kind: "lyraLumenPageDiagnostics",
+      summary: {
+        errors: 0
+      }
+    });
+    expect(browserBridge.auditAgentPageDiagnostics).toHaveBeenCalledWith("page-1", {
+      targetMode: "live"
+    });
+
+    await expect(
+      registered.get("lyraLumen.elevate")?.({ reason: "captcha" })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenElevation",
+      userActionRequired: true
+    });
+    expect(browserBridge.elevateAgentPage).toHaveBeenCalledWith("page-1", {
+      targetMode: "isolated",
+      reason: "captcha"
     });
 
     bridge.dispose();
@@ -1104,7 +1314,7 @@ describe("Agent IPC bridge", () => {
       kind: "lyraLumenResult",
       notApplicable: true,
       requestedMethod: "lyraLumen.map",
-      recommendedTool: "workbench.readTab",
+      recommendedTool: "workbench_read_tab",
       tab: {
         tabId: "terminal-1",
         observationKind: "terminal"

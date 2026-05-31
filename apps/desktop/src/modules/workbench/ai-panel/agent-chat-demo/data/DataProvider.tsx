@@ -13,6 +13,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import type { AgentRollbackPreviewResponse } from "../../../../../shared/agent";
+import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
 import type {
   AgentAutomationSettings,
   AgentGoalItem,
@@ -69,6 +70,9 @@ export interface DataProviderValue {
 
   /** Whether an inline or attached image has a working route into the Workbench. */
   canOpenImageInWorkbench(image: AgentImageAttachment): boolean;
+
+  /** Reveal a model-opaque sensitive value to the user in the UI without returning it to Agent context. */
+  revealSensitiveValueToUser(ref: LyraSensitiveValueRef): Promise<string>;
 
   /** Lyra Agent side-panel pages such as `/btw` answers and goals. */
   sidePanel?: AgentSidePanel | null;

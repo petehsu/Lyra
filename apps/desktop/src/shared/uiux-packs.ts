@@ -87,6 +87,15 @@ export type UiuxSetTrustStateRequest = {
   readonly trustState: UiuxPackTrustState;
 };
 
+export type UiuxUninstallRequest = {
+  readonly packId: string;
+};
+
+export type UiuxUninstallResponse = {
+  readonly packId: string;
+  readonly removed: boolean;
+};
+
 export type UiuxRequestActivationRequest = {
   readonly packId: string;
 };

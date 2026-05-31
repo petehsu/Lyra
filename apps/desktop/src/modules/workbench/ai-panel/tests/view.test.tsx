@@ -138,7 +138,7 @@ const createDesktopApi = () => {
   let rollbackRestoreSnapshot = snapshot;
   let modelsResponse = agentModels;
   let browserFollowModeEnabled = false;
-  const createSession = vi.fn(async () => snapshot);
+  const createSession = vi.fn(async () => readSnapshot);
   const runImprove = vi.fn(async () => ({
     sessionId: "session-1",
     turnId: "turn-improve",
@@ -190,6 +190,10 @@ const createDesktopApi = () => {
   const materializeImageAttachment = vi.fn(async () => ({
     path: "/Users/petehsu/.lyra/modules/agent/message-images/agent-output.png"
   }));
+  const revealSensitiveValue = vi.fn(async () => ({
+    refId: "login-manager:credential-password:credential-example",
+    value: "super-secret-password"
+  }));
   const readBrowserFollowMode = vi.fn(async () => ({
     enabled: browserFollowModeEnabled
   }));
@@ -236,6 +240,9 @@ const createDesktopApi = () => {
           listener = null;
         };
       })
+    },
+    sensitiveValues: {
+      revealToUser: revealSensitiveValue
     }
   } as unknown as LyraDesktopApi;
   return {
@@ -248,6 +255,7 @@ const createDesktopApi = () => {
     runJudge,
     bindProject,
     materializeImageAttachment,
+    revealSensitiveValue,
     readBrowserFollowMode,
     updateBrowserFollowMode,
     emit: (event: AgentRuntimeEvent) => {
@@ -495,6 +503,52 @@ describe("AiPanelSurface", () => {
     expect(await screen.findByText("I am checking the page.")).toBeInTheDocument();
     expect(screen.getByLabelText("Pause")).toBeInTheDocument();
     expect(screen.getByLabelText("Agent is responding")).toBeInTheDocument();
+  });
+
+  test("renders only one Agent responding indicator for a running timeline", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      messages: [
+        {
+          id: "message-user-1",
+          role: "user",
+          text: "Find the official video",
+          createdAt: "2026-05-13T00:00:01.000Z"
+        },
+        {
+          id: "message-assistant-tools",
+          role: "assistant",
+          text: "",
+          blocks: [
+            {
+              type: "tool",
+              id: "tool-tool-read-browser",
+              toolId: "tool-read-browser"
+            }
+          ],
+          createdAt: "2026-05-13T00:00:02.000Z"
+        }
+      ],
+      tools: [
+        {
+          id: "tool-read-browser",
+          name: "workbench.read_tab",
+          label: "Read browser text",
+          status: "running",
+          input: {},
+          output: null,
+          startedAt: "2026-05-13T00:00:02.000Z"
+        }
+      ],
+      turnStatus: "running",
+      activeTurnId: "turn-1",
+      follow: { running: true, activity: "Reading" }
+    });
+    renderPanel(api);
+
+    expect(await screen.findByLabelText("Pause")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Agent is responding")).toHaveLength(1);
   });
 
   test("uses the composer primary button for pause only while running with no draft", async () => {
@@ -801,17 +855,26 @@ describe("AiPanelSurface", () => {
     });
   });
 
-  test("does not expose project rebinding after a project is bound", async () => {
-    const { api, setReadSnapshot } = createDesktopApi();
+  test("allows changing the project binding after a project is bound", async () => {
+    const { api, bindProject, setReadSnapshot } = createDesktopApi();
+    const requestProjectBind = vi.fn(async () => "/Users/petehsu/Documents/Other");
     setReadSnapshot({
       ...snapshot,
       workingDir: "/Users/petehsu/Documents/Lyra",
       projectBound: true
     });
-    renderPanel(api);
+    renderPanel(api, requestProjectBind);
 
     await screen.findByText("Lyra");
-    expect(screen.queryByLabelText("Change Project Binding")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Change Project Binding"));
+
+    await waitFor(() => {
+      expect(requestProjectBind).toHaveBeenCalledWith("/Users/petehsu/Documents/Lyra");
+      expect(bindProject).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        workingDir: "/Users/petehsu/Documents/Other"
+      });
+    });
   });
 
   test("starts improve and refactor from the header more menu and poke from todos", async () => {
@@ -1035,6 +1098,220 @@ describe("AiPanelSurface", () => {
     expect(screen.getByText("12 chars").closest(".tool-call-body")).not.toBeNull();
     expect(screen.getByText("element 9").closest(".tool-call-body")).not.toBeNull();
     expect(screen.queryByText("secret-value")).not.toBeInTheDocument();
+  });
+
+  test("opens Lyra Lumen image artifacts in the Workbench image viewer", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const onOpenFile = vi.fn();
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "lyra-lumen-see",
+        name: "lyra_lumen",
+        label: "Ran",
+        status: "completed",
+        input: {
+          action: "see",
+          targetMode: "isolated"
+        },
+        output: {
+          content:
+            "Captured Lyra Lumen visual evidence lumen-see-1 (320x180) at /Users/petehsu/.lyra/lumen-evidence/lumen-see-1.png.",
+          raw: {
+            imageArtifact: {
+              id: "lumen-see-1",
+              kind: "image",
+              mediaType: "image/png",
+              path: "/Users/petehsu/.lyra/lumen-evidence/lumen-see-1.png",
+              width: 320,
+              height: 180,
+              openTarget: {
+                kind: "file",
+                path: "/Users/petehsu/.lyra/lumen-evidence/lumen-see-1.png"
+              }
+            }
+          },
+          error: null
+        },
+        startedAt: "2026-05-13T00:00:02.000Z",
+        finishedAt: "2026-05-13T00:00:02.500Z"
+      }]
+    });
+    renderPanel(
+      api,
+      undefined,
+      undefined,
+      "en-US",
+      undefined,
+      undefined,
+      onOpenFile
+    );
+
+    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await screen.findByText("Captured browser snapshot"));
+    const previews = await screen.findAllByAltText("Lyra Lumen snapshot");
+    expect(previews).toHaveLength(2);
+    for (const preview of previews) {
+      expect(preview).toHaveAttribute(
+        "src",
+        "lyra-file://preview?path=%2FUsers%2Fpetehsu%2F.lyra%2Flumen-evidence%2Flumen-see-1.png&contentType=image%2Fpng"
+      );
+    }
+    expect(screen.queryByRole("button", { name: "Open image" })).toBeNull();
+    fireEvent.click(await screen.findByTitle("Open image in Workbench"));
+    expect(onOpenFile).toHaveBeenCalledWith(
+      "/Users/petehsu/.lyra/lumen-evidence/lumen-see-1.png",
+      undefined
+    );
+  });
+
+  test("renders software open targets only when tool output provides explicit targets", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const onOpenFile = vi.fn();
+    setReadSnapshot({
+      ...snapshot,
+      tools: [
+        {
+          id: "software-open-target",
+          name: "software_invoke_capability",
+          label: "Ran",
+          status: "completed",
+          input: {
+            action: "invoke_capability",
+            softwareId: "file-manager",
+            actionId: "file-manager.revealPath"
+          },
+          output: {
+            content: "Invoked file-manager/file-manager.revealPath\n/Users/tester/Pictures/chart.png",
+            raw: {
+              softwareId: "file-manager",
+              actionId: "file-manager.revealPath",
+              output: {
+                opened: true,
+                path: "/Users/tester/Pictures/chart.png",
+                openTarget: {
+                  kind: "file",
+                  path: "/Users/tester/Pictures/chart.png"
+                }
+              }
+            },
+            error: null
+          },
+          startedAt: "2026-05-13T00:00:02.000Z",
+          finishedAt: "2026-05-13T00:00:02.500Z"
+        },
+        {
+          id: "software-no-target",
+          name: "software_invoke_capability",
+          label: "Ran",
+          status: "completed",
+          input: {
+            action: "invoke_capability",
+            softwareId: "terminal",
+            actionId: "terminal.readVisibleBuffer"
+          },
+          output: {
+            content: "Terminal mentioned /Users/tester/Pictures/not-a-button.png",
+            raw: {
+              softwareId: "terminal",
+              actionId: "terminal.readVisibleBuffer",
+              output: {
+                activeOutput: "/Users/tester/Pictures/not-a-button.png"
+              }
+            },
+            error: null
+          },
+          startedAt: "2026-05-13T00:00:03.000Z",
+          finishedAt: "2026-05-13T00:00:03.500Z"
+        }
+      ]
+    });
+    renderPanel(api, undefined, undefined, "en-US", undefined, undefined, onOpenFile);
+
+    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click((await screen.findAllByText("file-manager.revealPath"))[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "chart.png" }));
+    expect(onOpenFile).toHaveBeenCalledWith("/Users/tester/Pictures/chart.png", undefined);
+
+    fireEvent.click((await screen.findAllByText("terminal.readVisibleBuffer"))[0]!);
+    expect(screen.queryByRole("button", { name: /not-a-button/u })).not.toBeInTheDocument();
+  });
+
+  test("renders sensitive value refs as user-owned buttons without exposing plaintext to Agent text", async () => {
+    const { api, setReadSnapshot, revealSensitiveValue } = createDesktopApi();
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "software-secret-target",
+        name: "software_invoke_capability",
+        label: "Ran",
+        status: "completed",
+        input: {
+          action: "invoke_capability",
+          softwareId: "login-manager",
+          actionId: "login-manager.readState"
+        },
+        output: {
+          content: "Read Login Manager state. Password values are represented as model-opaque refs.",
+          raw: {
+            softwareId: "login-manager",
+            actionId: "login-manager.readState",
+            output: {
+              credentials: [{
+                id: "credential-example",
+                hostname: "example.com",
+                username: "alice@example.com",
+                hasPassword: true,
+                passwordRef: {
+                  kind: "lyra-sensitive-value-ref",
+                  id: "login-manager:credential-password:credential-example",
+                  owner: "login-manager",
+                  valueKind: "password",
+                  ownership: "user_owned",
+                  label: "Password for alice@example.com",
+                  description: "Saved password for example.com",
+                  displayHint: "••••••••",
+                  ownerRef: {
+                    kind: "login-manager-credential",
+                    credentialId: "credential-example",
+                    origin: "https://example.com",
+                    username: "alice@example.com"
+                  },
+                  capabilities: [
+                    "list_metadata",
+                    "use",
+                    "fill",
+                    "reveal_to_user",
+                    "copy_to_clipboard"
+                  ],
+                  modelVisibility: "metadata_only",
+                  plaintextVisibility: "user_reveal_only"
+                }
+              }]
+            }
+          },
+          error: null
+        },
+        startedAt: "2026-05-13T00:00:02.000Z",
+        finishedAt: "2026-05-13T00:00:02.500Z"
+      }]
+    });
+    renderPanel(api);
+
+    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click((await screen.findAllByText("login-manager.readState"))[0]!);
+    expect(screen.queryByText("super-secret-password")).toBeNull();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Password for alice@example.com" }));
+    expect(await screen.findByRole("button", { name: "super-secret-password" })).toBeInTheDocument();
+    expect(revealSensitiveValue).toHaveBeenCalledWith({
+      ref: expect.objectContaining({
+        id: "login-manager:credential-password:credential-example",
+        owner: "login-manager",
+        modelVisibility: "metadata_only"
+      }),
+      reason: "user-ai-panel"
+    });
   });
 
   test("renders web search results as clickable Workbench links", async () => {

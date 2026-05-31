@@ -57,4 +57,21 @@ describe("Lyra runtime client", () => {
 
     expect(env.PLAYWRIGHT_BROWSERS_PATH).toBe("/custom/ms-playwright");
   });
+
+  test("resolves runtime host request timeout from tool payload", () => {
+    expect(
+      runtimeClientInternalsForTests.resolveRuntimeHostRequestTimeoutMs({ timeoutMs: 8_000 })
+    ).toBe(8_000);
+    expect(
+      runtimeClientInternalsForTests.resolveRuntimeHostRequestTimeoutMs({
+        runtimeCancellation: { timeoutMs: 12_000 }
+      })
+    ).toBe(12_000);
+    expect(
+      runtimeClientInternalsForTests.resolveRuntimeHostRequestTimeoutMs({ timeoutMs: 1 })
+    ).toBe(250);
+    expect(
+      runtimeClientInternalsForTests.resolveRuntimeHostRequestTimeoutMs({ timeoutMs: 999_999 })
+    ).toBe(120_000);
+  });
 });

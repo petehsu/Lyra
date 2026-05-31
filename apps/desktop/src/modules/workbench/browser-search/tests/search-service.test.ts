@@ -304,6 +304,15 @@ describe("aggregated search service", () => {
           reload: vi.fn(async () => undefined),
           stop: vi.fn(async () => undefined),
           readPageState: vi.fn(async () => null),
+          searchInPage: vi.fn(async () => ({
+            tabId: "browser-tab-test",
+            address: "https://example.test/",
+            title: "Example",
+            query: "test",
+            totalMatches: 0,
+            matches: [],
+            truncated: false
+          })),
           setElementPickerMode: vi.fn(async () => undefined),
           applyWebTheme: vi.fn(async () => undefined),
           capturePage: vi.fn(async () => ({
@@ -371,6 +380,10 @@ describe("aggregated search service", () => {
             packId: request.packId,
             reloadRequired: request.packId !== "classic",
             activated: request.packId === "classic"
+          })),
+          uninstall: vi.fn(async (request) => ({
+            packId: request.packId,
+            removed: true
           })),
           resolveRuntime: vi.fn(async () => null)
         },

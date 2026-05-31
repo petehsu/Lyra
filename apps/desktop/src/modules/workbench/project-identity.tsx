@@ -10,7 +10,10 @@ import {
 import type { FilesApi } from "../../shared/desktop-bridge";
 import type { FileManagerEntry } from "../../shared/file-manager";
 
-const LYRA_LOGO_URL = new URL("../../renderer/assets/logo.svg", import.meta.url).toString();
+const LYRA_LOGO_URL = new URL(
+  "../../renderer/assets/brand/lyra-mark.svg",
+  import.meta.url
+).toString();
 const MAX_PROJECT_LOGO_SCAN_DIRS = 18;
 const MAX_PROJECT_LOGO_SCAN_DEPTH = 2;
 const PROJECT_LOGO_CACHE_TTL_MS = 5 * 60 * 1000;

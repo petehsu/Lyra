@@ -29,6 +29,9 @@ describe("Lyra storage roots", () => {
     expect(roots.modules.runtime).toBe(
       path.join("/Users/tester", ".lyra", "modules", "runtime")
     );
+    expect(roots.modules.loginManager).toBe(
+      path.join("/Users/tester", ".lyra", "modules", "login-manager")
+    );
 
     homeSpy.mockRestore();
   });
@@ -50,7 +53,8 @@ describe("Lyra storage roots", () => {
         uiuxPacks: "/Users/tester/.lyra/modules/uiux-packs",
         search: "/Users/tester/.lyra/modules/search",
         imageViewer: "/Users/tester/.lyra/modules/image-viewer",
-        downloadManager: "/Users/tester/.lyra/modules/download-manager"
+        downloadManager: "/Users/tester/.lyra/modules/download-manager",
+        loginManager: "/Users/tester/.lyra/modules/login-manager"
       }
     };
 

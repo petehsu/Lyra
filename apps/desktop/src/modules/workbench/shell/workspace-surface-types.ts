@@ -26,8 +26,8 @@ export type SurfacePropsByKind = {
   readonly agentOvernight: ComponentProps<WorkbenchSurfaceAdapters["agentOvernight"]>;
   readonly notificationCenter: ComponentProps<WorkbenchSurfaceAdapters["notificationCenter"]>;
   readonly agentSessionHistory: ComponentProps<WorkbenchSurfaceAdapters["agentSessionHistory"]>;
-  readonly softwareStore: SoftwareStoreSurfaceProps;
   readonly loginManager: LoginManagerSurfaceProps;
+  readonly softwareStore: SoftwareStoreSurfaceProps;
 };
 
 export type WorkspaceSurfaceRenderModel =

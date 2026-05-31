@@ -8,6 +8,9 @@ import { resolveNativeResourceCandidates } from "./native-resource-paths";
 
 const PROTOCOL_VERSION = 1;
 const HANDSHAKE_METHOD = "runtime.handshake";
+const MIN_HOST_REQUEST_TIMEOUT_MS = 250;
+const DEFAULT_HOST_REQUEST_TIMEOUT_MS = 30_000;
+const MAX_HOST_REQUEST_TIMEOUT_MS = 120_000;
 
 type RuntimeError = {
   readonly code: string;
@@ -98,6 +101,25 @@ const toError = (error: RuntimeError | undefined, fallback: string): Error =>
     ...(error?.code === undefined ? {} : { code: error.code }),
     ...(error?.details === undefined ? {} : { details: error.details })
   });
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object";
+
+const readFinitePositiveNumber = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+
+const resolveRuntimeHostRequestTimeoutMs = (payload: unknown): number => {
+  const requested = isRecord(payload)
+    ? readFinitePositiveNumber(payload.timeoutMs)
+      ?? (isRecord(payload.runtimeCancellation)
+        ? readFinitePositiveNumber(payload.runtimeCancellation.timeoutMs)
+        : undefined)
+    : undefined;
+  const timeoutMs = Math.round(requested ?? DEFAULT_HOST_REQUEST_TIMEOUT_MS);
+  return Math.max(MIN_HOST_REQUEST_TIMEOUT_MS, Math.min(MAX_HOST_REQUEST_TIMEOUT_MS, timeoutMs));
+};
 
 const createSocket = (socketPath: string): Promise<net.Socket> =>
   new Promise((resolve, reject) => {
@@ -254,11 +276,53 @@ export const createLyraRuntimeClient = (
         return;
       }
 
-      void Promise.resolve(handler(envelope.payload))
-        .then((result) => {
+      const timeoutMs = resolveRuntimeHostRequestTimeoutMs(envelope.payload);
+      let settled = false;
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+        settled = true;
+        timeoutHandle = null;
+        try {
           writeEnvelope({
             kind: "response",
             id: envelope.id,
+            ok: false,
+            error: {
+              code: "RUNTIME_HOST_REQUEST_TIMEOUT",
+              message:
+                `Runtime host handler ${envelope.method} timed out after ` +
+                `${timeoutMs}ms`,
+              details: {
+                method: envelope.method,
+                timeoutMs
+              }
+            }
+          });
+        } catch (error) {
+          console.warn("[lyra-runtime] failed to send runtime host timeout response", error);
+        }
+      }, timeoutMs);
+
+      const finishHostRequest = (
+        reply: Omit<Extract<RuntimeEnvelope, { kind: "response" }>, "kind" | "id">
+      ): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timeoutHandle !== null) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
+        }
+        writeEnvelope({
+          kind: "response",
+          id: envelope.id,
+          ...reply
+        });
+      };
+
+      void Promise.resolve(handler(envelope.payload))
+        .then((result) => {
+          finishHostRequest({
             ok: true,
             result
           });
@@ -274,9 +338,7 @@ export const createLyraRuntimeClient = (
               ? (error as { details?: unknown }).details
               : undefined;
           try {
-            writeEnvelope({
-              kind: "response",
-              id: envelope.id,
+            finishHostRequest({
               ok: false,
               error: {
                 code,
@@ -478,5 +540,6 @@ export const runtimeClientInternalsForTests = {
   resolveLyraDesignNodePathEntries,
   resolveLyraDesignPlaywrightBrowsersPath,
   resolveAgentRuntimeDir,
-  resolveSocketPath
+  resolveSocketPath,
+  resolveRuntimeHostRequestTimeoutMs
 };

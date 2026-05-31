@@ -72,8 +72,7 @@ const COLOR_EXEMPT_FILES = [
 const TS_INLINE_PX_ALLOWLIST = [
   /apps\/desktop\/src\/modules\/workbench\/shell\/use-panel-layout\.ts$/,
   /apps\/desktop\/src\/modules\/workbench\/global-dialog\/view\.tsx$/,
-  /apps\/desktop\/src\/modules\/workbench\/browser-tabs\/tab-strip\.tsx$/,
-  /apps\/desktop\/src\/modules\/workbench\/login-manager\/view\.tsx$/
+  /apps\/desktop\/src\/modules\/workbench\/browser-tabs\/tab-strip\.tsx$/
 ];
 
 const CSS_LITERAL_SCAN_EXEMPT_FILES = [
@@ -82,7 +81,6 @@ const CSS_LITERAL_SCAN_EXEMPT_FILES = [
   /apps\/desktop\/src\/renderer\/styles\/workbench\/agent-project-tree\.css$/,
   /apps\/desktop\/src\/renderer\/styles\/workbench\/agent-selfdev\.css$/,
   /apps\/desktop\/src\/renderer\/styles\/workbench\/agent-session-history\.css$/,
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/login-manager\.css$/,
   /apps\/desktop\/src\/renderer\/styles\/workbench\/omnibox-styles\.css$/,
   /apps\/desktop\/src\/modules\/workbench\/ai-panel\/agent-chat-demo\/(?:App|index)\.css$/,
   /apps\/desktop\/src\/modules\/workbench\/ai-panel\/agent-chat-demo\/styles\/tokens\.css$/
