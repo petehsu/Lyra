@@ -62,7 +62,7 @@ const docsEntryAddress = (port: number): string =>
 
 const sleep = async (ms: number): Promise<void> =>
   new Promise((resolve) => {
-    setTimeout(resolve, ms).unref();
+    setTimeout(resolve, ms);
   });
 
 const probeDocsServer = async (port: number): Promise<boolean> =>
